@@ -305,7 +305,7 @@ change**.
    part is designed to fit and covers either short gap. A first-article check is
    still worth ten minutes, but the footprint no longer depends on which
    variant arrives — **the same board takes the XKB part or a Thonkiconn.**
-2. **OLED module, resolved.** The footprint now follows the `HS13L02B4S01`
+3. **OLED module, resolved.** The footprint now follows the `HS13L02B4S01`
    drawing: 35.4 x 33.5mm body, header row 2.0mm from the connector-side edge,
    active area 29.42 x 14.70mm centred 12.70mm below the header row, panel
    window 30.5 x 16.0mm at (0, 42.8). The module's four 3.2mm holes are not
@@ -321,3 +321,4 @@ change**.
 | 12mm illuminated button | 41033204 | white LED Vf 3.2V is marginal on 3.3V; LCSC C692901 is red (~2.0V) |
 | Amphenol ACJS-MV35-3 stereo jack | 41011901 | only 10 in stock; XKB C381127 keeps one jack family |
 | Mono jack | 41001190 | chassis-mount, wrong pads, out of stock to 2026-11-13 |
+| Thonkiconn `PJ398SM` | 41020778 | **discontinued** - Electrokit's page says "outdated and no longer active". There is no current PCB-mount Thonkiconn listing, so this fallback does not exist; the XKB `PJ-301M` from LCSC is the way. |
