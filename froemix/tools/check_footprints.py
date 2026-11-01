@@ -176,6 +176,16 @@ def main():
     expected = kicad_pads(args.src, args.pcb)
     actual = circuit_pads(args.circuit)
 
+    # Parts deleted from tscircuit/ on purpose (REMOVED_REFS) are still in the
+    # frozen KiCad board, so drop them from the KiCad side; everything else is
+    # compared pad for pad as before.
+    from kicad2tscircuit import REMOVED_REFS  # noqa: E402
+
+    if REMOVED_REFS:
+        print(f"removed on purpose (tscircuit only, see doc/DESIGN-REVIEW.md R01/R02): "
+              f"{', '.join(sorted(REMOVED_REFS))}")
+        expected = {ref: entry for ref, entry in expected.items() if ref not in REMOVED_REFS}
+
     problems = []
     for ref, entry in sorted(expected.items()):
         got = actual.get(ref)
@@ -203,6 +213,7 @@ def main():
     # failing them as unknown.
     from kicad2tscircuit import (  # noqa: E402
         EXTRA_COMPONENTS,
+        TSCIRCUIT_ONLY_FOOTPRINTS,
         TSCIRCUIT_ONLY_REFS,
         FootprintLibrary,
     )
@@ -223,16 +234,22 @@ def main():
             problems.append((ref, "not in the KiCad board"))
             continue
         want_fp = next(fp for r, k, v, fp, *_ in EXTRA_COMPONENTS if r == ref)
-        pads = {}
-        for pad in children(lib.defs[want_fp], "pad"):
-            at, size = child(pad, "at"), child(pad, "size")
-            x, y = float(at[1]), float(at[2])
-            w, h = float(size[1]), float(size[2])
-            if round(float(at[3]) if len(at) > 3 else 0.0) % 180:
-                w, h = h, w
-            drill = child(pad, "drill")
-            pads[pad[1]] = (w, h, round(float(drill[1]), 3) if drill else 0.0,
-                            round(x, 3), round(-y, 3))
+        if want_fp in TSCIRCUIT_ONLY_FOOTPRINTS:
+            # footprint authored in tscircuit/ only: compare against its
+            # declared pad geometry instead of a KiCad library footprint
+            pads = {num: (w, h, 0.0, x, y)
+                    for num, w, h, x, y in TSCIRCUIT_ONLY_FOOTPRINTS[want_fp]}
+        else:
+            pads = {}
+            for pad in children(lib.defs[want_fp], "pad"):
+                at, size = child(pad, "at"), child(pad, "size")
+                x, y = float(at[1]), float(at[2])
+                w, h = float(size[1]), float(size[2])
+                if round(float(at[3]) if len(at) > 3 else 0.0) % 180:
+                    w, h = h, w
+                drill = child(pad, "drill")
+                pads[pad[1]] = (w, h, round(float(drill[1]), 3) if drill else 0.0,
+                                round(x, 3), round(-y, 3))
         want_pads = normalize(pads, mirror=actual[ref].get("layer") == "bottom")
         got_pads = normalize(actual[ref]["pads"])
         if set(want_pads) != set(got_pads):

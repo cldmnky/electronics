@@ -22,6 +22,15 @@ are maintained (see §2). All design work happens in
   - board width props (`defaultTraceWidth`/`minTraceWidth` 0.25mm) and the
     `nets.tsx` width-policy comment
   - the hand-maintained header comment on the eight ported section files
+  - **the parts the review added/removed**: `REMOVED_REFS` (D2, R49, R50) and the
+    `EXTRA_COMPONENTS` blocks (C28–C34, Q2, R58–R60, D5, R51–R57); the generator
+    has no counterpart for them, so they show up as missing/extra components in
+    the diff
+  - **the six `INTENTIONAL_PIN_MOVES`** — U11.3, U11.12, R31.1, R32.1, R39.2,
+    R40.2 — i.e. six net-connection lines that differ from the port
+  - `lib/pins.ts` (curated pin labels) and `scripts/` (`gate.sh`/`release.sh`
+    have no generator counterpart; `regen:check` reports the whole directory as
+    "Only in .")
   Widths, refs and nets are NO LONGER a red flag on their own — we own them.
   Compare against the port baseline (`git log`), not against an expectation of
   identity.
@@ -37,14 +46,17 @@ are maintained (see §2). All design work happens in
 cd froemix/tscircuit
 bun install                    # once
 bun run dev                    # local web app, http://localhost:3020 (live reload)
-bun run gate                   # the 10-step headless gate, see below (CI entry point)
+bun run gate                   # the 15-step headless gate, see below (CI entry point)
 bunx tsci build --autorouter-debug --autorouter-debug-dir dist/autorouter-debug
 bun run check:erc              # KiCad ERC, 0 UNEXCLUDED errors (2 known-benign
                                # pin_not_driven excluded in tmp/froemix.kicad_pro)
-bun run check:netlist          # KiCad netlist vs built, must MATCH (105 nets)
-bun run check:footprints       # pads vs KiCad, must MATCH (382 KiCad + 28 added
-                               # = 410 pads)
+bun run check:netlist          # KiCad netlist vs built, must MATCH (102 nets)
+bun run check:extras           # tscircuit-only parts: pins, removed refs, pin moves
+bun run check:footprints       # pads vs KiCad, must MATCH (376 KiCad + 51 added
+                               # = 427 pads)
 bun run check:parts            # JLCPCB parts vs schematic (needs network)
+bun run check:values           # value literals vs built values and MPNs
+bun run check:silk             # B/F silkscreen inside the board outline (gerbers)
 bunx tsci check netlist        # Errors 0, Warnings 0
 bunx tsci check placement      # Errors 0, Warnings 1 (known H1 warning, §4 — the
                                # CLI exits 1 on it, so trust `bun run gate`)
@@ -63,22 +75,29 @@ One pass/fail contract, release minus the fab exports, safe in CI:
 
 1. KiCad ERC — 0 unexcluded
 2. `tsci build` — autoroutes, writes `dist/index/circuit.json`
-3. `check:netlist` — 105 nets match
-4. `check:footprints` — 410 pads match
-5. `check:parts` — 34 unique JLCPCB parts match (needs network)
-6. `tsci check netlist` — Errors 0, Warnings 0
-7. `tsci check placement` — Errors 0, exactly the one known H1 warning
-8. `tsci check shorts`
-9. `tsci check pcb-style`
-10. `tsci snapshot --test --3d` — schematic/PCB/3D match `__snapshots__/`
+3. `check:netlist` — 102 nets match
+4. `check:extras` — tscircuit-only parts: every `EXTRA_COMPONENTS` pin on its
+   declared net, no `REMOVED_REFS` left, all six `INTENTIONAL_PIN_MOVES` applied
+5. `check:footprints` — 427 pads match
+6. `check:parts` — 38 unique JLCPCB parts match (needs network)
+7. `check:values` — TSX value literals vs built circuit and MPNs
+8. `tsci check source` — Errors 0
+9. `tsci check pin_specification` — Errors 0
+10. `tsci check netlist` — Errors 0, Warnings 0
+11. `tsci check placement` — Errors 0, exactly the one known H1 warning
+12. `tsci check shorts`
+13. `tsci check pcb-style`
+14. `check_silk.py` — B/F silkscreen inside the `Edge_Cuts` outline
+15. `tsci snapshot --test --3d` — schematic/PCB/3D match `__snapshots__/`
 
-Runtime ~40s warm, ~1min from a clean tree (no `dist/`, no `.tscircuit/cache`).
-The build runs second because steps 3–5 compare against the BUILT circuit. Two
+Runtime ~60s warm, ~90s from a clean tree (no `dist/`, no `.tscircuit/cache`).
+The build runs second because steps 3–7 compare against the BUILT circuit. Two
 steps have no usable exit code, so the gate
 parses instead: `check:erc` always exits 0 (the gate requires the report to be
 written and the unexcluded count to be 0) and `tsci check placement` exits 1 on
 the known warning (the gate requires 0 error entries and exactly the H1 warning
-— a second warning fails). Per-step logs land in `$TMPDIR/froemix-gate/`.
+— a second warning fails). Step 14 exports gerbers into a temp dir, so it needs
+no network; per-step logs land in `$TMPDIR/froemix-gate/`.
 `FROEMIX_SKIP_ERC=1` skips step 1 on a machine without KiCad and prints that the
 result is incomplete; nothing else is skippable. ngspice is not needed.
 
@@ -95,14 +114,15 @@ fallback, see RESULTS.md. If a resistor or capacitor value changes in the TSX,
 update the matching deck: the decks are copies, not a source of truth.
 
 Current findings (full table in `tools/sim/RESULTS.md`): audio in gain 0.1000
-but −3 dB at 19.7 kHz and audio out gain 9.900 into 100k with −3 dB at 20.5 kHz
-(both chains have TWO cascaded poles, so the "28 kHz / 34 kHz" single-pole
-figures that used to be quoted are wrong); CV in maps ±5 V to exactly 0/3.3 V
-but the endpoints sit on the rails so the MCP6002 clips them to 0.030/3.270 V;
-CV out 0…3.3 V → 0…4.940 V into 100k as designed; the −10 V reference draws
-0.809 mA at VEE = −12 V and never drops below 0.445 mA, 3.6× the 125 µA design
-minimum. 1 % scaling resistors cost 24 ¢/octave (CV in) and 47–49 ¢/octave
-worst case (CV out).
+but −3 dB at 19.7 kHz; audio out gain 3.300 before the 1 k (3.2673 at the jack)
+with −3 dB at 30.9 kHz (30.0 kHz with the TL074 model); CV in is
+0.3010 V/V over ±5 V, i.e. 0.1046…3.1146 V with no clipping anywhere in the
+sweep; CV out is 1.5121 V/V and load-independent (4.990 V at 100k, 50k, 10k and
+open); the −10 V reference draws 0.809 mA at VEE = −12 V and never drops below
+0.445 mA, 3.6× the 125 µA design minimum. 1 % scaling resistors cost 24 ¢/octave
+(CV in) and 48.5 ¢/octave worst case (CV out). Both audio chains have TWO
+cascaded poles — the "28 kHz / 34 kHz" single-pole figures that used to be
+quoted are wrong, do not repeat them.
 
 ### Release (`bun run release` -> `scripts/release.sh`)
 
@@ -116,7 +136,7 @@ operations, nothing outside `fab/` is deleted.
 
 Measure routing with: unconnected ports (`pcb_port_not_connected_error`) must be
 0; then minimize vias, then total copper mm (sum `pcb_trace` segment lengths in
-`dist/index/circuit.json`). Reference: 293 traces / 323 vias / 4730mm / 0
+`dist/index/circuit.json`). Reference: 304 traces / 325 vias / 4934mm / 0
 unconnected / 0 overlaps. The autorouter is deterministic — identical trees
 rebuild byte-identical numbers.
 
@@ -124,9 +144,13 @@ The 285/291/4662 baseline this section used to quote predates the 0.25mm width
 floor (§3) and the fabrication aids, which landed together: 0.2 -> 0.25mm is
 +25% copper *width* (no extra length by itself) and the 8 test points add 8
 connections to existing nets, and the router re-solves everything from source,
-so 293/323/4730 is the combined result of both (they were not measured
+so 293/323/4730 was the combined result of both (they were not measured
 separately). It is a trade, not a regression: 0 unconnected, 0 overlaps, shorts
-and pcb-style clean. The 4 fiducials carry no nets and change no routing.
+and pcb-style clean. The 4 fiducials carry no nets and change no routing. The
+300/325/4931 revision added the Design-review MIDI OUT rework (D2 and R49/R50
+out; Q2, R58, R59/R60, D5, C31, C32 in), and the current **304/325/4934** adds
+the Type A MIDI OUT move (driver beside the Seed, 22 Ω source) plus C33/C34,
+measured the same way.
 
 Not gated (deliberately): KiCad PCB DRC — `tmp/froemix.kicad_pcb` is a frozen
 mid-edit reference, layout lives here now. Schematic-placement label
@@ -135,7 +159,7 @@ inside `<schematicsheet>` in the installed version, so there is nothing to
 apply. `tracehint` (standalone and nested) is silently ignored by the
 installed core — route control is placement + phases + widths.
 
-## 3. Hard placement rules
+## 3. Hard rules (placement, values, silkscreen, netlist)
 
 - **Frozen connectors** (mechanical contract with the euro board — NEVER move):
   `CN1 (-17.58,59.64,top)`, `CN2 (12.42,-36.36,top)`, `CN3 (8.11,59.63,top)`,
@@ -149,18 +173,43 @@ installed core — route control is placement + phases + widths.
   footprint variants, see §5 — tscircuit rotates courtyard *centers* but keeps
   their *axes*, skewing every rotated courtyard).
 - **Decoupling pairs move together** (cap follows its IC by the same delta):
-  C4/C5-U2, C10/C11-U3, C14/C15-U11, C17/C18-U12, C19-U13, C20-U14, C28-U15,
-  C1/C29/C30-Daisy pins 39/38/38. Distances are the *routed copper path* from
-  cap pad to IC pad (re-measure with `bun run report:decoupling`, which reads
+  C31-U1, C4/C5-U2, C10/C11-U3, C14/C15-U11, C17/C18-U12, C19-U13, C20-U14,
+  C28-U15, C32-U16, C1/C29/C30-Daisy pins 39/38/38. Distances are the *routed
+  copper path* (re-measure with `bun run report:decoupling`, which reads
   `dist/index/circuit.json`; centre-to-centre numbers are ~1.5mm smaller and
-  hide detours): C4 4.8, C5 5.2, C10 4.7, C11 5.2, C14 4.5, C15 2.6, C17 6.6,
-  C18 5.7, C19 3.8, C20 5.4, C28 3.4, C29 3.6; bulk C1 9.0 and C30 18.9
-  (P3V3_D bulk sits in the SD/OLED corner — acceptable for bulk, the first
-  thing to improve if placement is ever reworked). Keep the IC pairs under
-  ~7mm of routed copper.
+  hide detours). **Rail leg / GND leg**, in mm, measured on the current tree:
+
+  | IC | cap | rail leg | GND leg (return pin) |
+  | --- | --- | --- | --- |
+  | U1 (CD4051, P3V3_A) | C31 | 7.55 | 11.04 (p7 VEE) |
+  | U2 | C4 VCC / C5 VEE | 9.03 / 8.73 | 4.76 (p3 IN1P) / 5.20 (p12 IN4P) |
+  | U3 | C10 VCC / C11 VEE | 7.98 / 7.87 | 4.70 / 4.71 |
+  | U11 | C14 VCC / C15 VEE | 7.72 / 2.89 | 6.22 / 2.62 |
+  | U12 | C17 VCC / C18 VEE | 8.40 / 9.16 | 6.15 / 4.97 |
+  | U13 (MCP6002, P3V3_A) | C19 | 3.81 | 29.45 (p4 VSS) |
+  | U14 (LM4040, N10V_REF) | C20 | 5.73 | 7.08 (p1 CATHODE) |
+  | U15 (TLP2362, P3V3_D) | C28 | 5.46 | 3.45 (p4 GND) |
+  | DaisySeed1 | C29 / C30 (P3V3_D) | 4.70 / 19.12 | 3.60 / 27.85 (p40 DGND) |
+  | DaisySeed1 | C1 (P5V) | 11.30 | 9.03 (p40 DGND) |
+  | U16 | C32 (U16_VIN_P) | 2.32 | n/a (isolated) |
+
+  The GND leg is measured to the IC's **supply-return pin** (a pin named
+  GND/VSS/DGND/VMINUS/VEE), not to any pin that happens to sit on the GND net:
+  the TL074 non-inverting inputs and U13's INA_P are grounded but are not the
+  return, and crediting them made the report quote U1 9.77 / U13 27.92. U14 has
+  no such pin (shunt reference), so its GND leg falls back to the nearest pad.
+  Keep the IC rail legs under ~10mm and U13's odd 29mm GND leg in mind: it is
+  the C19 return, not the rail — the rail leg (3.81mm) is what the bypass is
+  for, and GND is additionally under the pour (not in the graph). Bulk C1
+  11.3mm and C30 19.12mm sit in the SD/OLED corner — acceptable for bulk, the
+  first thing to improve if placement is ever reworked.
 - **Courtyards are keepouts**: no overlaps (Errors 0 gate), M3 holes at
-  (±36.95,±60.75) stay clear, use ≤5mm-OD standoff hardware (5.5mm reaches
-  0.3mm into J2's courtyard). Board edge clearance ≥0.4mm.
+  (±36.95,±60.75) stay clear, use ≤5mm-OD standoff hardware. The 5.5mm-OD claim
+  used to be justified with J2; that was wrong — **J2's courtyard edge is
+  3.96mm from the (−36.95,−60.75) hole centre**, so a 5.5mm standoff clears it by
+  1.2mm. The hardware limit comes from the other two holes: **C25** is 2.95mm
+  from the (36.95,−60.75) hole and **CN1** 3.05mm from (−36.95,60.75), so
+  ≤5mm OD (r = 2.5mm, 0.45mm clear). Board edge clearance ≥0.4mm.
 - **JLCPCB 4-layer/1oz rules on `<board>` are floors, not targets** (their
   minimums: trace/space 0.09mm, drill 0.15mm, ring 0.10mm):
   `defaultTraceWidth 0.25mm`, `minTraceWidth 0.25mm`,
@@ -176,19 +225,69 @@ installed core — route control is placement + phases + widths.
   `<copperpour connectsTo="net.GND" layer="bottom" clearance="0.3mm"
   boardEdgeMargin="0.5mm" />`. 0.3mm to pads/traces/cutouts, 0.5mm to the board
   edge (the board minimum is 0.4mm — the pour margin defaults to `clearance`,
-  i.e. 0.3mm, which fails the build's copper-to-board-edge DRC). Built result: 8
-  `pcb_copper_pour`
-  regions on the bottom, 7498mm² main plane over the whole board with 91 holes
-  plus 7 connected islands, 7540mm² total. The pour is generated **after**
-  routing and the router does not route into it, so the trace/via numbers are
-  unchanged (293/323/4730) and GND is still routed explicitly; making the pour
-  carry GND current means pour-aware routing (`unbroken`), which is untested.
+  i.e. 0.3mm, which fails the build's copper-to-board-edge DRC). Built result:
+  **3 `pcb_copper_pour` regions** on the bottom, 7429.2 + 0.5 + 0.4 mm² =
+  7430.1 mm² of copper with 95 clearance holes, 71.5 % of the 80.9 × 128.5 mm
+  board. The
+  pour is generated **after** routing and the router does not route into it, so
+  the trace/via numbers are unchanged (304/325/4934) and GND is still routed
+  explicitly; making the pour carry GND current means pour-aware routing
+  (`unbroken`), which is untested.
 - **Pours need `holeOffsetX`/`holeOffsetY` on every `circular_hole_with_rect_pad`
   pad** (§5). Without them core leaves `hole_offset_x/y` undefined, the copper
   pour connectivity pass in `@tscircuit/core` dies in `@flatten-js/core`
   (`TypeError: undefined is not an object (evaluating 'node.item.key.low')`) and
   the build is fatal. Min repro + root cause: `doc/pour-repro/`. This is a
   local workaround for an upstream defaulting bug — do not "clean up" the props.
+- **No RKM-in-the-middle value literals.** The installed value parser silently
+drops the digits after the multiplier, so `4K7` builds as **4 kΩ** and `49K9` as
+**49 kΩ** — the BOM comment, the schematic and any analysis then disagree with
+the fitted part. Write `4.7k`, `49.9k`, `30.1k`, `187k`. `check:values` (gate step
+7) compares every passive literal against the built numeric value *and* the MPN,
+so a regression fails the gate instead of surviving to the order.
+- **Every bottom-side silkscreen text uses `anchorAlignment="center"`.** The
+renderer/exporter mirrors bottom text about its anchor, so `center_left` runs the
+glyphs in −X and off the board (that is exactly how `REV 0.1` and the date
+reached x = −47.5 mm on a board that ends at −40.45 mm, DESIGN-REVIEW R12).
+`center` mirrors onto itself. Keep every anchor ≥1.5 mm inside the edge.
+- **Silkscreen must pass `python3 ../tools/check_silk.py`** (gate step 14). It
+exports the gerbers and compares B/F `SilkScreen` coordinates against
+`Edge_Cuts` inset by 0.05 mm — real fab output, not the SVG preview. The PCB
+snapshot draws the clipped result and cannot catch this.
+- **A deliberate netlist delta goes through `INTENTIONAL_PIN_MOVES`,
+`REMOVED_REFS` or `EXTRA_COMPONENTS`** in `tools/kicad2tscircuit.py`, with the
+review item in the comment (`# ... DESIGN-REVIEW R09`) and the reason spelled
+out in `doc/DESIGN-REVIEW.md`. The KiCad project is frozen, so the check scripts
+apply those three sets to the KiCad side before comparing: adding a part,
+moving a pin or deleting a ref any other way makes `check:netlist` fail, and
+silencing it by loosening the comparison is not an option. Current sets:
+`REMOVED_REFS` = D2, R49, R50; `EXTRA_COMPONENTS` = C31, C32, C33, C34, Q2, R58,
+R59, R60, D5 (+ the older C28–C30, R51–R57); `INTENTIONAL_PIN_MOVES` =
+U11.3/U11.12, R31.1, R32.1, R39.2, R40.2. `check:extras` (gate step 4) asserts
+all three sets against the built circuit, because `check:netlist` strips
+them before comparing and would otherwise never look at those pins.
+- **Firmware contract: the STM32H750 DAC output buffer must be DISABLED.** In
+libDaisy, `DacHandle::Config buff_state = DISABLED`, i.e. the DAC channel
+drives 0…VDDA. U11A/U11D are unity-gain followers on the two DAC outputs for
+exactly this reason: the unbuffered DAC is a 10.3–16 kΩ source and would lose
+28 % of the CV range into the 33 kΩ summing resistors. With the buffer enabled
+the guaranteed DAC range is only 0.2 V…VDDA−0.2 V, so CV out could not reach 0 V
+or full scale and no calibration can fix it. Details:
+`doc/FRONTBOARD-INTERFACE.md` §4; simulation: `tools/sim/RESULTS.md`.
+- **`C33`/`C34` 100 pF across R39/R40 are load-compensation, not tone control.**
+R09 moved the CV-out feedback past the 1 kΩ series resistor, which made the 1 kΩ
+and anything patched onto the jack part of the TL074 loop; 1 nF then rang (54 %
+overshoot, ~18° phase margin) and 10 nF was worse. The 100 pF gives a 15.9 kHz
+zero, which cancels the worst 1 kΩ/10 nF pole: **the CV-out spec is ≤10 nF of
+cable/load capacitance** — 1 nF and 10 nF steps are clean (0 % overshoot, 48 µs
+settle), 100 nF rings on full-scale steps (~50 % overshoot, 230 µs). The same
+pole caps CV-out bandwidth at ~16 kHz, far above any CV signal. Deck 5 in
+`tools/sim` (`cv_out_step_small/full.dat`) is the proof — do not delete the caps
+and do not raise them (a bigger cap slows every CV edge).
+- **The front board's `M_ADC_*` restriction is a hard interface rule, not a
+note.** Pots/attenuverters from this board's own `P3V3_A`/`GND`, 0–3.3 V in
+every power order; otherwise U1 (CD4051) and the Seed ADC pins (24/25/28–30) can
+be damaged. `doc/FRONTBOARD-INTERFACE.md` §1 (R14).
 
 ## 4. Known warnings (do not chase)
 
@@ -210,6 +309,18 @@ installed core — route control is placement + phases + widths.
 - Every footprint in `lib/footprints.tsx` is pad-for-pad identical to the KiCad
   board (verified by `check_footprints.py`: pad numbers, sizes, drills,
   positions ±0.05mm). THT hole diameters are assembly-critical — never round.
+- **Tscircuit-only footprints** (no KiCad counterpart, asserted against
+  `TSCIRCUIT_ONLY_FOOTPRINTS` in `tools/kicad2tscircuit.py` — keep the three in
+  sync):
+  - `FP_jclpcb_R2512` — the 1 W MIDI OUT resistors R59 (22 Ω, `C118189`) and
+    R60 (33 Ω, `C53728`). 2512 body 6.35 × 3.2 mm, two 1.5 × 2.8 mm pads on a
+    5.2 mm centre spacing, silk outside the pads, **7.2 × 3.7 mm courtyard**
+    (0.25 mm margin).
+  - `FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD` (C24/C25) — the KiCad footprint only
+    marked polarity (6.5 × 3.18 mm courtyard offset from the pads). It now
+    carries the real **8 mm body circle** (r = 4.0 mm silk) and an
+    **8.6 × 8.6 mm courtyard**, so the placement checker sees the can the part
+    actually occupies (R11). Pads, drills and the `+` marker are unchanged.
 - Every `circular_hole_with_rect_pad` pad carries `holeOffsetX="0mm"
   holeOffsetY="0mm"`. That is not a geometry change (0 is the default) but the
   copper pour requires it: core 0.0.2242 emits `hole_offset_x/y` as `undefined`
@@ -239,7 +350,10 @@ installed core — route control is placement + phases + widths.
   Rotation offsets were corrected for the EasyEDA↔KiCad frame difference (our
   TSSOP/SOIC pad-1 is top-left, EasyEDA's bottom-left).
 - No transferable model (pad-only in 3D): Daisy Seed, J1/J2/H1, C65114/C3406
-  (EasyEDA origin offsets don't transfer). Link real STEP models when available.
+  (EasyEDA origin offsets don't transfer), C118189/C53728 (the 2512 MIDI
+  resistors), C559769 (C32), C14665 (C33/C34) and C23000/C22896 (the new 0603
+  values). Link real STEP models
+  when available.
 - Cosmetic known-issues: IC pin-1 dots are derived, not measured; C25's
   electrolytic stripe is wrong by construction (C24/C25 share one footprint
   with opposite polarity); TLP2362 dot may be off (mirrored numbering).
@@ -266,28 +380,42 @@ release`; no item is aspirational.
 
 - **Width policy**: board floor 0.25mm (`defaultTraceWidth`/`minTraceWidth`), so
   no copper is thinner than 0.25mm; power rails keep 0.3–0.6mm nominal (§3).
-- **Silkscreen**: 34 texts in `sections/silk.tsx` — every IC/module, every
-  connector, C24/C25, D1–D4, TP1–TP8, plus `FROEMIX`, `REV 0.1` and the date.
+- **Silkscreen**: 31 texts in `sections/silk.tsx` — every IC/module, every
+  connector, C24/C25, D1/D3/D4/D5, plus `FROEMIX`, `REV 0.1`, the date and the
+  two-line hand-solder legend. Every text is `anchorAlignment="center"` and the
+  whole layer is provably inside the outline (`check_silk.py`, gate step 14).
   The 0603/1206 passives stay unlabelled (labels do not fit between their
   courtyards); assemble those from the CPL.
 - **Fiducials**: 4 bare-copper FID pads on the bottom (`FabricationSection`).
 - **Test points**: 8 bottom-side TP pads — P5V, P3V3_D, P3V3_A, VCC, VEE,
   N10V_REF, SYNC_IN, MULTIPLEX_ADC_1.
-- **Decoupling**: every IC pair ≤6.6mm of routed copper, C14/C15 now 4.5/2.6mm
-  (were 13.2/18.6); bulk C1 9.0mm, C30 18.9mm (§3 has the table).
-- **Regression gates**: ERC + netlist + footprints + parts + build + tscircuit
-  checks + snapshot diff behind one command (`bun run gate`, §2).
+- **Decoupling**: U1 has a local C31 (7.55 mm rail leg); every IC rail leg is
+  ≤9.16 mm and the report is pin/net/layer aware (§3 has the table). C14/C15
+  went from 13.2/18.6 mm to 7.72/2.89 mm as part of the CV rework; the GND legs
+  are quoted to the IC's return pin, not to any grounded pin.
+- **Regression gates**: 15 steps — ERC + build + netlist + tscircuit-only parts
+  (`check:extras`) + footprints + parts +
+  value literals + source/pin_spec/netlist + placement + shorts + pcb-style +
+  silkscreen bounds + snapshot diff behind one command (`bun run gate`, §2).
 - **Analog verification**: 4 ngspice decks in `tools/sim/` (audio in/out, CV
   in/out, −10 V reference) with a measured-vs-expected table in
-  `tools/sim/RESULTS.md`; gains and scaling confirmed, two audio roll-offs and
-  the clipped CV-in endpoints documented (§2).
+  `tools/sim/RESULTS.md`; gains and scaling confirmed, the two audio roll-offs
+  and the CV-in headroom documented (§2).
+- **Design review closed**: every R01–R14 finding is fixed or has a named gate
+  (`doc/DESIGN-REVIEW.md`, "Resolution status" and "Second review round"): MIDI
+  OUT rework (Q2/R58/R59/R60, **Type A**: 22 Ω source into the tip, 33 Ω sink
+  through Q2 from the ring), D2 removed, DAC followers + buffer-off firmware
+  rule, D5 sync clamp, 33k audio feedback, 30.1k/187k CV in, load-independent
+  CV out plus the C33/C34 100 pF load compensation, U1 bypass,
+  value-literal + extras + silkscreen gates, real electrolytic courtyards,
+  written 5 V budget (`doc/POWER-BUDGET.md`) and the front-board interface
+  (`doc/FRONTBOARD-INTERFACE.md`).
 - **Fab export**: `bun run release` writes gerbers/bom/pnp/svg/step into
   `froemix/fab/` (§2).
 - **GND copper pour**: bottom-layer GND plane builds (`copperpour` in
   `index.circuit.tsx`, requires the `holeOffsetX`/`holeOffsetY` workaround, §3),
-  8 regions / 7540mm² of copper, gate 12/12 green, routing unchanged at
-  293 traces / 323 vias / 4730mm / 0 unconnected / 0 overlaps, `B_Cu.gbr` grew
-  52KB → 371KB.
+  3 regions / 7430.1 mm² / 95 clearance holes = 71.5 % of the board, gate 15/15
+  green, routing 304 traces / 325 vias / 4934mm / 0 unconnected / 0 overlaps.
 
 **Open — close these before ordering**
 
@@ -298,15 +426,27 @@ release`; no item is aspirational.
 - **GND/chassis tie**: no single-point tie to the standoffs or the rack chassis
   is implemented and no decision is recorded. Decide before the euro board
   defines the grounding scheme.
-- **Mux input clamps**: `M_ADC_*` has no series-R/Schottky clamps; pots on the
-  euro board must stay inside 0–3.3V (README "Deliberately not changed").
-- **CV tolerance**: 1% scaling resistors, ~3% worst-case gain error — firmware
-  calibration required as designed; 0.1% parts are the alternative.
+- **U16 5 V margin** (R13): budget written, measurement open. The 1 W/200 mA
+  converter has no worst-case margin on paper (194 mA max without the H1
+  module, 267 mA with it). The ≤170 mA P5V acceptance test in
+  `doc/POWER-BUDGET.md` must be run during bring-up; FAIL swaps in the 2 W
+  module (7-pin SIP, new footprint + placement + baseline).
+- **Front board is not designed** (R14): the electrical contract is frozen in
+  `doc/FRONTBOARD-INTERFACE.md` (M_ADC pot-only/0–3.3 V, CN1/CN2 pinout, CV and
+  audio levels, 3.3 V budget, acceptance test); the board and its test are open.
+- **CV tolerance**: 1% scaling resistors, ~2 % of scale (CV in) / ~4.04 % worst
+  case (CV out) — firmware calibration required as designed; 0.1 % parts are the
+  alternative.
 - **Encoder**: no encoder pins on the base board; CN2 pads 11–15 are unused and
   reserved for that decision.
-- **JLC second side / CPL mirror**: all rotations are 0 and 97 of 110
-  placements are bottom-side; verify the mirrored CPL against JLCPCB's
-  bottom-side expectation before paying for assembly.
+- **JLC second side / CPL mirror**: 98 of the 106 SMT placements are bottom-side
+  and the exported CPL mirrors them (92 at 180°, 6 at 0°; 8 top parts at 0°);
+  verify against JLCPCB's bottom-side expectation before paying for assembly.
+- **MIDI receiver threshold**: the on-board receiver is a TLP2362 with a **5 mA
+  maximum switching threshold** (recommended on-current from 7.5 mA) while our
+  own Type A transmitter delivers **4.48 mA worst case** into a receiver at
+  1.7 V Vf. A marginal CA-033 transmitter can be intermittent — verify with the
+  real units (`doc/FRONTBOARD-INTERFACE.md` §2).
 - **DFM review of the exported gerbers**: nobody has opened
   `froemix/fab/froemix-gerbers.zip` in a fab viewer yet. `check shorts` and
   `check pcb-style` are routing checks, not a DFM audit (mask expansion,

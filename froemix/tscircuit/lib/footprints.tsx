@@ -235,13 +235,20 @@ export const FP_jclpcb_C1206 = (
 )
 
 // jclpcb:CAP-TH_BD8.0-P3.50-D0.6-FD   (from froemix.kicad_pcb)
+// The KiCad footprint only marks polarity: no body outline, and a 6.5 x 3.18mm
+// courtyard offset from the pad line. The selected part (LCSC C2749) is an
+// 8mm-diameter radial can, so the body circle (r=4.0, centred on the midpoint
+// of the pads) and an 8.4 x 8.4mm courtyard are added here to make the real
+// keepout visible to the placement checker (DESIGN-REVIEW R11). Pads and the
+// polarity marker are unchanged.
 export const FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD = (
   <footprint>
     <platedhole pcbX="-1.75mm" pcbY="0mm" portHints={["pin1"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
     <platedhole pcbX="1.75mm" pcbY="0mm" portHints={["pin2"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    <silkscreencircle pcbX="0mm" pcbY="0mm" radius="4mm" strokeWidth="0.1mm" />
     <silkscreenpath route={[{ x: -2.83, y: 0.53 }, { x: -2.83, y: 1.88 }]} />
     <silkscreenpath route={[{ x: -2.2, y: 1.2 }, { x: -3.45, y: 1.2 }]} />
-    <courtyardrect pcbX="-0.45mm" pcbY="0.54mm" width="6.5mm" height="3.18mm" />
+    <courtyardrect pcbX="0mm" pcbY="0mm" width="8.6mm" height="8.6mm" />
   </footprint>
 )
 
@@ -506,6 +513,27 @@ export const FP_jclpcb_R1206 = (
     <silkscreenpath route={[{ x: 2.31, y: 1.08 }, { x: 0.95, y: 1.08 }]} />
     <silkscreenpath route={[{ x: 2.31, y: -1.08 }, { x: 2.31, y: 1.08 }]} />
     <courtyardrect pcbX="0mm" pcbY="0mm" width="5.12mm" height="2.66mm" />
+  </footprint>
+)
+
+// jclpcb:R2512   (authored here, no KiCad counterpart: the 1W 22R/33R MIDI
+// OUT parts. 2512 body 6.35x3.2mm, pads 1.5x2.8mm on a 5.2mm centre spacing,
+// silk drawn the way the jclpcb resistor footprints draw it - outside the pads,
+// 0.23mm clear of the pad edge - and a 7.2x3.7mm courtyard, i.e. 0.25mm of
+// margin on every side of the 6.35x3.2mm body (the old 3.3mm height left only
+// 0.05mm above/below it). tools/check_footprints.py asserts these pads against
+// TSCIRCUIT_ONLY_FOOTPRINTS in tools/kicad2tscircuit.py, keep the three in sync.)
+export const FP_jclpcb_R2512 = (
+  <footprint>
+    <smtpad pcbX="-2.6mm" pcbY="0mm" portHints={["pin1"]} shape="rect" width="1.5mm" height="2.8mm" layer="top" />
+    <smtpad pcbX="2.6mm" pcbY="0mm" portHints={["pin2"]} shape="rect" width="1.5mm" height="2.8mm" layer="top" />
+    <silkscreenpath route={[{ x: -3.575, y: 1.63 }, { x: -1.925, y: 1.63 }]} />
+    <silkscreenpath route={[{ x: -3.575, y: -1.63 }, { x: -3.575, y: 1.63 }]} />
+    <silkscreenpath route={[{ x: -1.925, y: -1.63 }, { x: -3.575, y: -1.63 }]} />
+    <silkscreenpath route={[{ x: 1.925, y: -1.63 }, { x: 3.575, y: -1.63 }]} />
+    <silkscreenpath route={[{ x: 3.575, y: 1.63 }, { x: 1.925, y: 1.63 }]} />
+    <silkscreenpath route={[{ x: 3.575, y: -1.63 }, { x: 3.575, y: 1.63 }]} />
+    <courtyardrect pcbX="0mm" pcbY="0mm" width="7.2mm" height="3.7mm" />
   </footprint>
 )
 

@@ -4,3 +4,4 @@ dist/
 *.log
 __pycache__/
 __snapshots__/*.diff.*
+node_modules

@@ -270,10 +270,30 @@ export const MainSection = () => (
         "pin11": "net.P3V3_D",
         "pin12": "net.P3V3_D",
       }} />
-    {/* R51 4K7 - EXTRA_R51 - LCSC C23162 - 0603WAF4701T5E - I2C SCL pull-up, cf. Patch R77 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
+    {/* C31 100nF - EXTRA_C31 - LCSC C14663 - CC0603KRX7R9BB104 - U1 VDD bypass: the CD4051 had no local supply capacitor (DESIGN-REVIEW R06) - jclpcb:C0603 */}
+    <capacitor
+      name="C31"
+      capacitance="100nF"
+      footprint={FP_jclpcb_C0603}
+      pcbX="-7.70mm"
+      pcbY="26.80mm"
+      layer="bottom"
+      supplierPartNumbers={{ jlcpcb: ["C14663"] }}
+      manufacturerPartNumber="CC0603KRX7R9BB104"
+      cadModel={{
+      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C14663.obj?uuid=ac9b32e974bc448eab36b1293f859dcb",
+      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C14663.step?uuid=ac9b32e974bc448eab36b1293f859dcb",
+      pcbRotationOffset: 0,
+      modelOriginPosition: { x: 0, y: 0, z: -0.4 },
+    }}
+      connections={{
+        "pin1": "net.P3V3_A",
+        "pin2": "net.GND",
+      }} />
+    {/* R51 4.7k - EXTRA_R51 - LCSC C23162 - 0603WAF4701T5E - I2C SCL pull-up, cf. Patch R77 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
     <resistor
       name="R51"
-      resistance="4K7"
+      resistance="4.7k"
       footprint={FP_jclpcb_R0603}
       pcbX="6.5mm"
       pcbY="51.8mm"
@@ -290,10 +310,10 @@ export const MainSection = () => (
         "pin1": "net.SCL",
         "pin2": "net.P3V3_D",
       }} />
-    {/* R52 4K7 - EXTRA_R52 - LCSC C23162 - 0603WAF4701T5E - I2C SDA pull-up, cf. Patch R89/R91 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
+    {/* R52 4.7k - EXTRA_R52 - LCSC C23162 - 0603WAF4701T5E - I2C SDA pull-up, cf. Patch R89/R91 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
     <resistor
       name="R52"
-      resistance="4K7"
+      resistance="4.7k"
       footprint={FP_jclpcb_R0603}
       pcbX="10mm"
       pcbY="51.8mm"

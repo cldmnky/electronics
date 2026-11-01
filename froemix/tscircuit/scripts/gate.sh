@@ -87,15 +87,29 @@ run build bun run build
 step "KiCad netlist vs built circuit"
 run netlist bun run check:netlist
 
-# 4. Footprints vs KiCad board: pad for pad.
+# 4. tscircuit-only parts. check_netlist strips EXTRA_COMPONENTS before
+# comparing, so nothing above looks at their pins: this asserts every extra
+# part exists with its LCSC code and every declared pin sits on the declared
+# net, that no REMOVED_REFS survived and that every INTENTIONAL_PIN_MOVES entry
+# is actually applied in the build.
+step "tscircuit-only parts - EXTRA_COMPONENTS vs built circuit"
+run extras bun run check:extras
+
+# 5. Footprints vs KiCad board: pad for pad.
 step "Footprints vs KiCad board"
 run footprints bun run check:footprints
 
-# 5. JLCPCB parts vs schematic (needs network).
+# 6. JLCPCB parts vs schematic (needs network).
 step "JLCPCB parts vs schematic (network)"
 run parts bun run check:parts
 
-# 6. tscircuit source/connectivity diagnostics. `check source` and
+# 7. Passive values: the TSX literals vs the BUILT numeric values and the MPNs.
+# The installed parser truncates RKM literals (4K7 -> 4k) without failing
+# anything, so this step re-reads the source and the build (DESIGN-REVIEW R07).
+step "Passive values - literals vs built circuit and MPNs"
+run values bun run check:values
+
+# 8. tscircuit source/connectivity diagnostics. `check source` and
 # `check pin_specification` are part of the skill's pre-export checklist; they
 # may warn (datasheet fetch timeouts, U14's passive-only pins) but must not
 # report errors.
@@ -130,7 +144,7 @@ printf '    ok (see log)\n'
 step "tsci check netlist"
 run check-netlist bunx tsci check netlist
 
-# 7. Placement DRC: Errors 0. `tsci check placement` exits nonzero on the one
+# 11. Placement DRC: Errors 0. `tsci check placement` exits nonzero on the one
 # known H1 false positive (a warning), so the gate asserts the counts and that
 # the single warning is exactly that one - a new warning fails the gate.
 step "tsci check placement - Errors 0 (known H1 warning allowed)"
@@ -155,15 +169,22 @@ printf '    ok in %ds\n' "$((SECONDS - STEP_START))"
 grep -E '^- .*_warning:' "$PLACEMENT_LOG" | sed 's/^/    /'
 grep -E '^(Errors|Warnings): ' "$PLACEMENT_LOG" | sed 's/^/    /'
 
-# 8. Copper shorts (gerber-derived).
+# 12. Copper shorts (gerber-derived).
 step "tsci check shorts"
 run check-shorts bunx tsci check shorts
 
-# 9. Routing style.
+# 13. Routing style.
 step "tsci check pcb-style"
 run check-pcb-style bunx tsci check pcb-style
 
-# 10. Regenerate schematic/PCB/3D and diff against the committed baselines.
+# 14. Silkscreen inside the board outline (DESIGN-REVIEW R12): the bottom
+# notes were exported off the board for months because no step looked at the
+# gerber coordinates. Exports the gerbers and compares B/F silk against
+# Edge_Cuts, so it sees exactly what the fab receives.
+step "Silkscreen inside the board outline"
+run silk bun run check:silk
+
+# 15. Regenerate schematic/PCB/3D and diff against the committed baselines.
 step "tsci snapshot --test --3d"
 run snapshot bunx tsci snapshot --test --3d
 

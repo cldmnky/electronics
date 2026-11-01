@@ -6,7 +6,7 @@
 // Source: tmp/power.kicad_sch
 
 import { B1205S_PINS } from "../lib/pins"
-import { FP_4ms_Connector_Pins_2x08_2_54mm_TH_EurorackPower_Shrouded_R90, FP_jclpcb_C1206, FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD, FP_jclpcb_L0603, FP_jclpcb_PWRM_TH_4P_L11_5_W6_0_P2_54_B1503S, FP_jclpcb_SOD_123_L2_7_W1_6_LS3_7_RD_1 } from "../lib/footprints"
+import { FP_4ms_Connector_Pins_2x08_2_54mm_TH_EurorackPower_Shrouded_R90, FP_jclpcb_C0603, FP_jclpcb_C1206, FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD, FP_jclpcb_L0603, FP_jclpcb_PWRM_TH_4P_L11_5_W6_0_P2_54_B1503S, FP_jclpcb_SOD_123_L2_7_W1_6_LS3_7_RD_1 } from "../lib/footprints"
 
 export const PowerSection = () => (
   <schematicsheet name="power" displayName="Power" sheetIndex={4}>
@@ -54,8 +54,8 @@ export const PowerSection = () => (
       capacitance="100uF"
       footprint={FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD}
       polarized={true}
-      pcbX="27.63mm"
-      pcbY="-47.23mm"
+      pcbX="28mm"
+      pcbY="-44.5mm"
       layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C2749"] }}
       manufacturerPartNumber="50V 100uF 8X12"
@@ -75,8 +75,8 @@ export const PowerSection = () => (
       capacitance="100uF"
       footprint={FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD}
       polarized={true}
-      pcbX="11.95mm"
-      pcbY="-55.46mm"
+      pcbX="33.5mm"
+      pcbY="-53.5mm"
       layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C2749"] }}
       manufacturerPartNumber="50V 100uF 8X12"
@@ -275,6 +275,20 @@ export const PowerSection = () => (
         "VIN_P": "net.U16_VIN_P",
         "VOUT_N": "net.GND",
         "VOUT_P": "net.P5V",
+      }} />
+    {/* C32 1uF - EXTRA_C32 - LCSC C559769 - CC0603KRX7R9BB105 - U16 input bypass across VIN_P/VIN_N, YLPTEC B_S-1WR3 datasheet Table 1: 24 VDC input -> Cin 1uF/50V. C26 sits before L1/L2, so it is not the local post-inductor input cap (DESIGN-REVIEW R13) - jclpcb:C0603 */}
+    <capacitor
+      name="C32"
+      capacitance="1uF"
+      footprint={FP_jclpcb_C0603}
+      pcbX="3.96mm"
+      pcbY="-53.10mm"
+      layer="bottom"
+      supplierPartNumbers={{ jlcpcb: ["C559769"] }}
+      manufacturerPartNumber="CC0603KRX7R9BB105"
+      connections={{
+        "pin1": "net.U16_VIN_P",
+        "pin2": "net.U16_VIN_N",
       }} />
   </schematicsheet>
 )

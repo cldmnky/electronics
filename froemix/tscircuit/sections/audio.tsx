@@ -468,18 +468,19 @@ export const AudioSection = () => (
         "pin1": "net.AUDIO_OUT_R",
         "pin2": "net.U3C_IN_N",
       }} />
-    {/* R13 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
+    {/* R13 33k - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R13"
-      resistance="100k"
+      resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
       pcbY="-0.87mm"
       layer="bottom"
-      supplierPartNumbers={{ jlcpcb: ["C25803"] }}
+      supplierPartNumbers={{ jlcpcb: ["C4216"] }}
+      manufacturerPartNumber="0603WAF3302T5E"
       cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C25803.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C25803.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C4216.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C4216.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
       pcbRotationOffset: 0,
       modelOriginPosition: { x: -0.004999999999999977, y: 0, z: -0.01 },
     }}
@@ -487,18 +488,19 @@ export const AudioSection = () => (
         "pin1": "net.U3A_IN_N",
         "pin2": "net.NET_C8_2",
       }} />
-    {/* R14 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
+    {/* R14 33k - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R14"
-      resistance="100k"
+      resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
       pcbY="-0.87mm"
       layer="bottom"
-      supplierPartNumbers={{ jlcpcb: ["C25803"] }}
+      supplierPartNumbers={{ jlcpcb: ["C4216"] }}
+      manufacturerPartNumber="0603WAF3302T5E"
       cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C25803.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C25803.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C4216.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C4216.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
       pcbRotationOffset: 0,
       modelOriginPosition: { x: -0.004999999999999977, y: 0, z: -0.01 },
     }}

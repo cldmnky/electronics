@@ -10,6 +10,17 @@
   "stock": 253099,
   "type": "Multilayer Ceramic Capacitors MLCC - SMD/SMT"
  },
+ "C118189": {
+  "assembly": false,
+  "brand": "UNI-ROYAL(Uniroyal Elec)",
+  "code": "C118189",
+  "describe": "-55\u2103~+155\u2103 1W 200V 22\u03a9 Thick Film Resistor \u00b11% \u00b1100ppm/\u2103 2512 Chip Resistor - Surface Mount ROHS",
+  "erp": "\u539a\u819c\u7535\u963b 22\u03a9 \u00b11% 1W",
+  "model": "25121WF220JT4E",
+  "package": "2512",
+  "stock": 59733,
+  "type": "Chip Resistor - Surface Mount"
+ },
  "C13585": {
   "assembly": false,
   "brand": "Samsung Electro-Mechanics",
@@ -30,6 +41,17 @@
   "model": "CC0603KRX7R9BB104",
   "package": "0603",
   "stock": 41548417,
+  "type": "Multilayer Ceramic Capacitors MLCC - SMD/SMT"
+ },
+ "C14665": {
+  "assembly": false,
+  "brand": "YAGEO",
+  "code": "C14665",
+  "describe": "100pF 50V NP0 \u00b15% 0603 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS",
+  "erp": "100pF \u00b15% 50V",
+  "model": "CC0603JRNPO9BN101",
+  "package": "0603",
+  "stock": 1663697,
   "type": "Multilayer Ceramic Capacitors MLCC - SMD/SMT"
  },
  "C1671": {
@@ -164,6 +186,17 @@
   "stock": 715,
   "type": "Pin Headers"
  },
+ "C22896": {
+  "assembly": false,
+  "brand": "UNI-ROYAL(Uniroyal Elec)",
+  "code": "C22896",
+  "describe": "-55\u2103~+155\u2103 100mW 187k\u03a9 75V Thick Film Resistor \u00b11% \u00b1100ppm/\u2103 0603 Chip Resistor - Surface Mount ROHS",
+  "erp": "\u539a\u819c\u7535\u963b 187k\u03a9 \u00b11% 100mW",
+  "model": "0603WAF1873T5E",
+  "package": "0603",
+  "stock": 22747,
+  "type": "Chip Resistor - Surface Mount"
+ },
  "C22962": {
   "assembly": false,
   "brand": "UNI-ROYAL(Uniroyal Elec)",
@@ -173,6 +206,17 @@
   "model": "0603WAF2200T5E",
   "package": "0603",
   "stock": 3041593,
+  "type": "Chip Resistor - Surface Mount"
+ },
+ "C23000": {
+  "assembly": false,
+  "brand": "UNI-ROYAL(Uniroyal Elec)",
+  "code": "C23000",
+  "describe": "-55\u2103~+155\u2103 100mW 30.1k\u03a9 75V Thick Film Resistor \u00b11% \u00b1100ppm/\u2103 0603 Chip Resistor - Surface Mount ROHS",
+  "erp": "\u539a\u819c\u7535\u963b 30.1k\u03a9 \u00b11% 100mW",
+  "model": "0603WAF3012T5E",
+  "package": "0603",
+  "stock": 68991,
   "type": "Chip Resistor - Surface Mount"
  },
  "C23140": {
@@ -351,6 +395,17 @@
   "stock": 7219,
   "type": "Isolated Power Modules"
  },
+ "C53728": {
+  "assembly": false,
+  "brand": "UNI-ROYAL(Uniroyal Elec)",
+  "code": "C53728",
+  "describe": "-55\u2103~+155\u2103 1W 200V 33\u03a9 Thick Film Resistor \u00b11% \u00b1100ppm/\u2103 2512 Chip Resistor - Surface Mount ROHS",
+  "erp": "\u539a\u819c\u7535\u963b 33\u03a9 \u00b11% 1W",
+  "model": "25121WF330JT4E",
+  "package": "2512",
+  "stock": 54790,
+  "type": "Chip Resistor - Surface Mount"
+ },
  "C55393": {
   "assembly": false,
   "brand": "Samsung Electro-Mechanics",
@@ -360,6 +415,17 @@
   "model": "CL10C561JB8NNNC",
   "package": "0603",
   "stock": 0,
+  "type": "Multilayer Ceramic Capacitors MLCC - SMD/SMT"
+ },
+ "C559769": {
+  "assembly": false,
+  "brand": "YAGEO",
+  "code": "C559769",
+  "describe": "1uF 50V X7R \u00b110% 0603 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS",
+  "erp": "1uF \u00b110% 50V",
+  "model": "CC0603KRX7R9BB105",
+  "package": "0603",
+  "stock": 841880,
   "type": "Multilayer Ceramic Capacitors MLCC - SMD/SMT"
  },
  "C57112": {

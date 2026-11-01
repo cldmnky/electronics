@@ -36,8 +36,9 @@ build: ## compile the design to dist/index/circuit.json
 	cd $(TSCIRCUIT) && $(BUN) run build
 
 # The gate is the regression contract: ERC -> build -> netlist -> footprints ->
-# parts -> tsci source/pin_spec/netlist/placement/shorts/pcb-style -> snapshots.
-gate: ## full 12-step regression gate (about 50s warm)
+# parts -> value literals -> tsci source/pin_spec/netlist/placement/shorts/
+# pcb-style -> silkscreen bounds -> snapshots.
+gate: ## full 14-step regression gate (about 65s warm)
 	cd $(TSCIRCUIT) && $(BUN) run gate
 
 release: ## gate + export gerbers/BOM/CPL/SVG/STEP into fab/
@@ -50,7 +51,7 @@ snapshots: ## refresh the schematic/PCB/3D snapshots
 erc: ## KiCad ERC on the ported schematics (0 unexcluded errors expected)
 	cd $(TSCIRCUIT) && $(BUN) run check:erc
 
-netlist: ## KiCad netlist vs built board (must match, 105 nets)
+netlist: ## KiCad netlist vs built board (must match, 102 nets)
 	cd $(TSCIRCUIT) && $(BUN) run check:netlist
 
 footprints: ## pads vs the KiCad board (must match pad for pad)
@@ -60,7 +61,7 @@ parts: ## JLCPCB part numbers vs schematic (needs network)
 	cd $(TSCIRCUIT) && $(BUN) run check:parts
 
 decoupling: ## cap -> IC routed-copper distances (informational)
-	python3 tools/report_decoupling.py
+	python3 tools/report_decoupling.py --circuit $(TSCIRCUIT)/dist/index/circuit.json
 
 sim: ## run the four ngspice analog decks (needs ngspice)
 	cd tools/sim && bash run.sh
@@ -72,7 +73,7 @@ assembly: ## print the hand-assembly sheet (parts JLC does not mount)
 	@printf '\n=== hand-assembly: parts JLC does not mount ======================\n'
 	@printf 'sheet: doc/ASSEMBLY.md (copied to fab/ on release)\n\n'
 	@grep -E '^\| `' doc/ASSEMBLY.md | sed 's/|/ /g' | cut -c1-150
-	@printf '\norder of work: H1 -> J2 -> C24/C25 -> U16 -> CN1-4/J1 -> DaisySeed1 last\n'
+	@printf '\norder of work: H1 -> J2 -> U16/C24/C25 -> CN1-4/J1 -> rails + J1 shunts -> DaisySeed1 last\n'
 	@printf '==================================================================\n'
 
 order: release ## print the JLC order sheet and the files to upload
@@ -82,11 +83,11 @@ order: release ## print the JLC order sheet and the files to upload
 	@printf 'guide   : doc/JLC-ASSEMBLY.md\n\n'
 	@printf 'upload these:\n'
 	@printf '  gerbers : %s/froemix-gerbers.zip\n' "$(FAB)"
-	@printf '  BOM     : %s/froemix-bom-jlc.csv   (34 unique parts, 110 placements)\n' "$(FAB)"
-	@printf '  CPL     : %s/froemix-cpl-jlc.csv   (100 SMT placements, THT excluded)\n\n' "$(FAB)"
+	@printf '  BOM     : %s/froemix-bom-jlc.csv   (36 unique parts, 114 placements)\n' "$(FAB)"
+	@printf '  CPL     : %s/froemix-cpl-jlc.csv   (104 SMT placements, THT excluded)\n\n' "$(FAB)"
 	@printf 'tick on the order page:\n'
 	@printf '  [ ] surface finish ENIG (flat pads for the 40 Daisy through-holes)\n'
-	@printf '  [ ] assembly for BOTH sides (97 of 110 placements are on the bottom)\n'
+	@printf '  [ ] assembly for BOTH sides (96 of 104 SMT placements are on the bottom)\n'
 	@printf '  [ ] 4 layers, 1.6 mm, 1 oz outer copper\n'
 	@printf '  [ ] inspect: fiducials bright, bottom rotations sane, Daisy footprint empty\n'
 	@printf '==================================================================\n'
