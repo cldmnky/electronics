@@ -200,8 +200,8 @@ V(J_CV_OUT_n) = 1.5121 × V(DAC)
 
 `P3V3_D` and `P3V3_A` are **not** generated on the base board: both come out of
 the Daisy Seed (its onboard 3.3 V regulator, fed from `P5V`), which is itself
-fed by a **1 W / 200 mA unregulated** isolated converter. The whole 5 V budget
-therefore scales with the 3.3 V load:
+fed by the base board's **2 W / 400 mA unregulated** isolated converter (U16,
+B2405S-2WR3). The whole 5 V budget therefore scales with the 3.3 V load:
 
 ```
 I(P5V) ≈ I(P3V3_D total) × 0.733     (3.3/5 V, 90 % efficiency)
@@ -221,11 +221,14 @@ figures, no measurement yet):
 | H1 PMOD codec/DSP module (optional, external) | 40 mA | 100 mA |
 | **Total** | **160 mA** | **364 mA** |
 
-| Case | 5 V current | vs the 200 mA rating |
+| Case | 5 V current | vs the 400 mA rating |
 | --- | --- | --- |
-| Typical, no H1 | 88 mA | 44 %, ok |
-| Max, no H1 | 194 mA | 97 %, no margin |
-| Max, with H1 | 267 mA | 134 %, **exceeds the rating** |
+| Typical, no H1 | 88 mA | 22 %, ok |
+| Max, no H1 | 194 mA | 49 %, ok |
+| Max, with H1 | 267 mA | 67 %, ok (133 mA = 33 % margin) |
+
+A front board that adds more than ~130 mA at 3.3 V (≈95 mA at 5 V) no longer
+fits that margin — see `doc/POWER-BUDGET.md` §3 before adding more load.
 
 `P3V3_A` loads on the base board are small — U1 CD4051 (µA), U13 MCP6002
 (≤0.2 mA), R25 10 kΩ, the bypasses — so roughly **1 mA typ / 2 mA max**,
@@ -286,7 +289,7 @@ Run in this order before the front board is trusted with the base board:
    current source.
 8. **Current.** Measure `P3V3_A` and `P3V3_D` current with the panel connected
    and compare with §5's ≤10 mA/≤10 mA budget, then re-run the `P5V`
-   acceptance test in `doc/POWER-BUDGET.md` (PASS ≤ 170 mA) with the front
+   acceptance test in `doc/POWER-BUDGET.md` (PASS ≤ 300 mA) with the front
    board attached.
 
 Record the numbers here when they exist. Until step 8 passes, the front board

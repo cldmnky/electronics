@@ -126,8 +126,34 @@ def main():
         EXTRA_COMPONENTS,
         INTENTIONAL_PIN_MOVES,
         REMOVED_REFS,
+        SYMBOL_PIN_RENUMBER,
         TSCIRCUIT_ONLY_REFS,
     )
+
+    # Pins that changed NUMBER (without changing net) when the part changed
+    # (SYMBOL_PIN_RENUMBER: U16 went from the 1W 4-lead SIP to the 2W module's
+    # 1/2/4/6 pin-out). Rebuild the KiCad side with the new numbers - every net
+    # keeps exactly the nodes it had, so nothing is skipped. The mapping is
+    # applied in one pass, so pairwise swaps (U16 pin 1 <-> 2) are safe.
+    renumbered = 0
+    if SYMBOL_PIN_RENUMBER:
+        missing = {(ref, pin) for ref, pin in SYMBOL_PIN_RENUMBER
+                   if not any((ref, pin) in nodes for nodes in expected.values())}
+        if missing:
+            sys.exit("SYMBOL_PIN_RENUMBER: " + ", ".join(f"{r}.{p}" for r, p in sorted(missing))
+                     + " is in no KiCad net - fix or drop the entry")
+        rebuilt = {}
+        for name, nodes in expected.items():
+            new_nodes = set()
+            for node in nodes:
+                target = (node[0], SYMBOL_PIN_RENUMBER.get(node, node[1]))
+                if target[1] != node[1]:
+                    renumbered += 1
+                new_nodes.add(target)
+            rebuilt[name] = new_nodes
+        expected = {name: nodes for name, nodes in rebuilt.items() if len(nodes) >= 2}
+        print(f"symbol pin renumbers applied: {renumbered} "
+              "(kicad2tscircuit.SYMBOL_PIN_RENUMBER, U16 2W module pin-out)")
 
     # Pins that deliberately changed net since the KiCad project was frozen
     # (INTENTIONAL_PIN_MOVES: R03 followers, R09 feedback pickup). Apply them to

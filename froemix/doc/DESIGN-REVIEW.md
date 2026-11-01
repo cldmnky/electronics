@@ -39,7 +39,7 @@ closed by a schematic change on this revision.
 | R10 | **Fixed** | `sections/cv.tsx` (R33/R42 30.1k, R34/R43 187k) | ±5 V now maps to 0.1046…3.1146 V (0.301 V/V, offset 1.6096 V) instead of exactly 0/3.3 V; the worst 1 % corner is 0.0742/3.1775 V, ≥60 mV clear of the MCP6002's rails. 1 % parts cost ±2.02 % of scale instead of clipping the endpoint. |
 | R11 | **Fixed** | `lib/footprints.tsx` (`FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD`, C24/C25 at (28.0,−44.5) and (33.5,−53.5)) | The footprint now carries the real 8 mm body circle (r = 4.0 mm silk) and an 8.6 × 8.6 mm courtyard (was 6.5 × 3.18 mm offset from the pads), so the placement checker sees the can. Pads/drills unchanged. |
 | R12 | **Fixed** | `sections/silk.tsx`, `tools/check_silk.py`, gate step 14 | Every text is `anchorAlignment="center"`; the exported silk now spans x −36.58…39.77 (bottom) inside a −40.45…40.45 board, and the gate compares the gerber coordinates of both silk layers against `Edge_Cuts`. |
-| R13 | **Closed by measurement gate** | `doc/POWER-BUDGET.md`, `sections/power.tsx` (C32) | U16 stays B2405S-1WR3 (1 W / 200 mA, unregulated, 20 mA minimum load) with a written budget — 194 mA worst case without the H1 module, 267 mA with it — and a mandatory acceptance test (PASS ≤ 170 mA on P5V in idle / SD write / full DSP load). The datasheet input capacitor is now fitted: C32 1 µF/50 V (C559769) across VIN_P/VIN_N, 2.3 mm from the pad. **The converter rating still depends on that measurement.** |
+| R13 | **Fixed (2 W module) + measurement open** | `doc/POWER-BUDGET.md`, `sections/power.tsx` (U16, C32), `lib/pins.ts`, `lib/footprints.tsx` | U16 is now the **2 W / 400 mA B2405S-2WR3** (`C5369484`) on its own 4-lead 1/2/4/6 land pattern, because the written budget (194 mA worst case without the H1 module, 267 mA with it) did not fit the 1 W part's 200 mA. The budget now closes at 49 % / 67 % of the rating, C32 1 µF/50 V (C559769) is still the datasheet input capacitor (now 2.64 mm of routed rail from module pins 1/2), and the acceptance test stays as a bring-up step with the documented **PASS ≤ 300 mA**. **The measurement is still outstanding; the rating is not.** |
 | R14 | **Closed by interface specification** | `doc/FRONTBOARD-INTERFACE.md` | `M_ADC_0…7` are specified as pot/attenuverter-only, powered from this board's own `P3V3_A`/`GND`, inside 0–3.3 V in every power order, with a front-board acceptance test that measures all eight pins at both pot extremes and in three power orders. **No clamp was added to this revision, so the restriction on the front board is what keeps U1 and the Seed ADC pins alive.** |
 
 Two findings are therefore *not* closed by hardware on this revision, and that
@@ -386,6 +386,14 @@ check for silkscreen. Refreshing snapshots does not validate readability.
 ## Unclosed risks — do not mistake these for measured failures
 
 ### R13 — U16 has only a 1 W / 200 mA output budget for the Seed and peripherals
+
+**Status: the finding is fixed, the measurement is not.** This section is the
+finding as raised against the 1 W B2405S-1WR3 (C3031175). U16 is now the 2 W
+B2405S-2WR3 (C5369484, module pins 1/2/4/6) with its own footprint, placement
+and pin map; the budget closes at 194 mA / 267 mA worst case against 400 mA, and
+the acceptance test in `doc/POWER-BUDGET.md` is PASS ≤ 300 mA, to be run during
+bring-up before the module is fitted for good. The rest of this section is the
+reasoning that led to the swap.
 
 **P1 sign-off risk; actual overload has not been measured.**
 `tscircuit/sections/power.tsx:250–278`;

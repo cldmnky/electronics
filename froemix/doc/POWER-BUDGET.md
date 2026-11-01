@@ -1,46 +1,62 @@
 # U16 5 V rail — power budget and acceptance test
 
-**Status: budget only, nothing here is measured yet.** This file records the
-5 V budget required by DESIGN-REVIEW R13, the input capacitor that R13 asked
-for (C32), and the test that has to be run before the board is signed off. Do
-not characterize P5V as a regulated precision 5 V rail.
+**Status: budget closes with margin on the 2 W module; nothing here is measured
+yet.** This file records the 5 V budget required by DESIGN-REVIEW R13, the input
+capacitor that R13 asked for (C32), and the test that has to be run during
+bring-up. Do not characterize P5V as a regulated precision 5 V rail.
 
 ## 1. The converter and its ratings
 
 | Item | Value | Source |
 | --- | --- | --- |
-| U16 part | B2405S-1WR3 (JLCPCB C3031175), SIP-4, 11.6 × 6.0 mm, 2.54 mm pitch | JLC part record |
+| U16 part | B2405S-**2**WR3 (JLCPCB C5369484), YLPTEC, 4-lead SIP on the B_S-2WR3 pin-out, body 19.65 × 7.05 × 10.16 mm | JLC part record |
+| Leads | **1 = +Vin, 2 = −Vin, 4 = 0V, 6 = +Vo**; positions 1–2–4–6 on a 2.54 mm grid, leads 3 and 5 do not exist | datasheet / EasyEDA footprint for C5369484 |
 | Input range | 21.6 … 26.4 VDC (24 V nominal), i.e. VCC − VEE ≈ 23.4 V | datasheet |
-| Output | 5 V, **1 W / 200 mA maximum**, **unregulated** | datasheet |
-| Minimum load | **20 mA** | datasheet (YLPTEC/MORNSUN B_S-1WR3 series) |
+| Output | 5 V, **2 W / 400 mA maximum**, **unregulated** | datasheet |
+| Minimum load | **40 mA** | datasheet (YLPTEC/MORNSUN B_S-2WR3 series) |
 | Isolation | 1.5 kVDC | datasheet |
-| Board footprint | `jclpcb:PWRM-TH_4P-L11.5-W6.0-P2.54_B1503S`, 4 pads at 2.54 mm | `lib/footprints.tsx` |
+| Board footprint | `jclpcb:PWRM-TH-4P-L19.65-W7.05-P2.54-B2405S-2W` — 4 plated holes, 1.0 mm drill / 1.8 mm pad, at x = −6.35 / −3.81 / +1.27 / +6.35 mm | `lib/footprints.tsx` |
+
+**Why the 2 W part and not the 1 W one.** The 1 W B2405S-1WR3 (200 mA) cannot
+cover the worst case: 194 mA estimated without the H1 expansion module and
+267 mA with it (§3). R13 therefore fitted the 2 W member of the same family on
+the same 24 V input. That swap is not a value change: the 2 W part is a
+different package (19.65 × 7.05 mm body, 4 leads on the 1/2/4/6 positions of a
+12.7 mm span instead of 4 leads on 1…4), so U16 has its own footprint, its own
+placement and a re-solved autoroute. §5 lists exactly what moved.
 
 Two consequences that are easy to get wrong:
 
 - **Unregulated.** The 5 V output is an unfiltered, load- and input-dependent
   voltage (typ. ±10 % over the load range, worse at light load). Anything that
-  needs 5.0 V ± 5 % is not supported by this rail.
-- **20 mA minimum load.** With the Seed removed, the only P5V loads are C1/C27
-  (no DC path) and TP1 — the converter runs at no load and the output rises.
-  Never power the board for a measurement without the Seed installed, or load
-  P5V with ≥ 20 mA (e.g. 220 Ω to GND) first.
+  needs 5.0 V ± 5 % is not supported by this rail. The 2 W part has the same
+  behaviour; only the current rating changed.
+- **40 mA minimum load** (was 20 mA on the 1 W part). With the Seed removed the
+  only P5V loads are C1/C27 (no DC path) and TP1, so the converter runs at no
+  load and the output rises. Never power the board for a measurement without the
+  Seed installed, or load P5V with ≥ 40 mA (e.g. 120 Ω to GND) first.
 
 **Input capacitor (DESIGN-REVIEW R13):** C32, 1 µF / 50 V 0603 (C559769,
-CC0603KRX7R9BB105), directly across VIN_P (pin 2) and VIN_N (pin 1) of U16,
-2.3 mm pad-centre from the VIN_P pad. The B_S-1WR3 datasheet table 1 asks for
-1 µF/50 V on a 24 VDC input. C26 (10 µF, 50 V) sits across VCC/VEE **before**
-L1/L2 and is therefore not the recommended local input bypass, even though it
-is electrically on the same two nets.
+CC0603KRX7R9BB105), across VIN_P (**module pin 1**) and VIN_N (**module pin 2**)
+of U16. The B_S-2WR3 datasheet table 1 asks for 1 µF/50 V on a 24 VDC input. C26
+(10 µF, 50 V) sits across VCC/VEE **before** L1/L2 and is therefore not the
+recommended local input bypass, even though it is electrically on the same two
+nets. The routed C32→U16 leg is **2.64 mm** (rail leg, `bun run
+report:decoupling`); C32 sits between the two input leads on the far side of the
+lead row, because the module body hangs 6.15 mm to the other side of the leads
+(§5).
+
+**Output capacitor:** C27 10 µF on P5V is the recommended output cap and stays
+where it is.
 
 ## 2. What hangs off the 5 V rail
 
 P5V has exactly one consumer plus its capacitors and test point:
 
 ```
-U16.VOUT_P ── P5V ──┬── C1  10uF      ┬── DaisySeed1.VIN  (pin 39)
-                    ├── C27 10uF      └── TP1
-                    └── (nothing else on the base board)
+U16.VOUT_P (pin 6) ── P5V ──┬── C1  10uF      ┬── DaisySeed1.VIN  (pin 39)
+                            ├── C27 10uF      └── TP1
+                            └── (nothing else on the base board)
 ```
 
 Everything else is downstream of the Seed's **onboard 3.3 V regulator**, which
@@ -88,32 +104,33 @@ datasheet/part record, `[est]` = engineering estimate for this design.
 
 Converted to the 5 V rail (× 0.733, the factor from §2):
 
-| Case | 5 V current | Fraction of the 200 mA rating | Verdict against 200 mA |
+| Case | 5 V current | Fraction of the 400 mA rating | Verdict against 400 mA |
 | --- | --- | --- | --- |
-| Typical, no H1 | 88 mA | 44 % | ok |
-| Max, no H1 | **194 mA** | **97 %** | no margin — inside the rating but only just |
-| Typical with H1 | 117 mA | 59 % | ok |
-| Max with H1 | **267 mA** | **134 %** | **exceeds the rating** |
+| Typical, no H1 | 88 mA | 22 % | ok |
+| Max, no H1 | 194 mA | 49 % | ok |
+| Typical with H1 | 117 mA | 29 % | ok |
+| Max with H1 | **267 mA** | **67 %** | **ok — inside the rating with 133 mA (33 %) of margin** |
 
-Also add the converter's own losses (not specified in the datasheet) and the
-5 V test-point/measurement tolerance, and the "max, no H1" row is at the edge.
-The honest summary is: **the 1 W part has no margin in the worst case, and the
-H1 module cannot be budgeted at all.** That is why the rail gets an acceptance
-test instead of a claim.
+The converter's own losses are not specified in the datasheet, and the 5 V
+test-point measurement adds a small tolerance. Even so the budget closes in
+every case: the worst case is 67 % of the rating, and the case that could not be
+budgeted on the 1 W part (H1 fitted) has 33 % headroom. The minimum load is the
+remaining care item: 40 mA, i.e. the Seed installed or a 120 Ω dummy load.
 
 ## 4. Acceptance test (must be run before sign-off)
 
 Setup:
 
-- Board on the bench, **U16 installed**, Seed installed (20 mA minimum load and
-  the 3.3 V regulator are what is being measured).
+- Board on the bench, **U16 installed**, Seed installed (the Seed is both the
+  40 mA minimum load and the 3.3 V regulator whose efficiency is being
+  measured).
 - **Current-limited bench supply on J2** (§3 of AGENTS.md: J2 pins 9/10 = +12 V,
   1/2 = −12 V, 3–8 = GND), limit 150 mA per rail, ±12.0 V.
-- Ammeter in series with U16 pin 4 (VOUT_P) or a current probe on the P5V
+- Ammeter in series with U16 pin 6 (VOUT_P) or a current probe on the P5V
   copper; do **not** break the trace — lift one leg of C1 and use the pad, or
   use a series shunt on TP1/P5V.
 - Measure with a DMM in DC mode over ≥ 10 s per state; record the 5 V rail
-  voltage at U16 pin 4 as well.
+  voltage at U16 pin 6 as well.
 
 States to record:
 
@@ -126,34 +143,56 @@ States to record:
 
 Pass/fail:
 
-- **PASS ≤ 170 mA** on P5V in every state (85 % of the 200 mA rating, i.e. 30 mA
-  of headroom for the datasheet tolerances and the unmeasured loads). The rail
-  must also stay above the Seed's 5 V minimum (4.5 V per the Seed datasheet) in
-  every state.
-- **FAIL > 170 mA**, or a rail sag below 4.5 V, or audible/visible reset
-  behaviour during SD writes → **replace U16 with a 2 W module** (§5).
+- **PASS ≤ 300 mA** on P5V in every state. 300 mA is 75 % of the 400 mA rating
+  and 33 mA above the worst-case estimate of §3 (267 mA) — the margin covers
+  datasheet tolerance, converter efficiency and the unmeasured loads while
+  still catching a real overload long before the module's limit. The rail must
+  also stay above the Seed's 5 V minimum (4.5 V per the Seed datasheet) in every
+  state.
+- **FAIL > 300 mA**, or a rail sag below 4.5 V, or audible/visible reset
+  behaviour during SD writes → the load is higher than §3 assumes; find it
+  (H1 module, front-panel 3.3 V take-off on CN1 pin 14) before moving to a
+  larger converter — and that means another footprint, placement and baseline,
+  not another value swap.
 
-Record the four numbers in this file when they exist. Until then R13 stays open.
+Record the four numbers in this file when they exist. Until then R13 stays open
+on the measurement, not on the rating: **measure before the module is fitted for
+good**, i.e. do not sign the board off on the paper budget alone.
 
-## 5. Fallback: the 2 W module (package caveat)
+## 5. What the 2 W swap changed on this board
 
-If the test fails, the drop-in-class replacement is a **2 W / 400 mA** member of
-the same isolated SIP family (e.g. B2405S-**2**WR3). It is *not* a drop-in:
+Recorded so the next revision does not have to re-derive it (this section used
+to be "fallback: the 2 W module, 7-pin SIP, not a drop-in" — the 2 W B_S-2WR3 is
+in fact a 4-lead SIP on the module's own 1/2/4/6 positions, not a 7-pin part):
 
-- The 2 W parts are **7-pin SIP with a 15.24 mm pin span**, not the 4-pin
-  2.54 mm-pitch pattern of the 1 W part. The current footprint
-  (`jclpcb:PWRM-TH_4P-L11.5-W6.0-P2.54_B1503S`, 4 pads, 2.54 mm pitch) cannot
-  carry it, so the change needs **a new through-hole footprint**, a new
-  placement for U16 (it is a hand-soldered bottom-side part in the rack
-  cavity), a courtyard re-check against J2/C23/C25/L1, and a fresh autoroute +
-  snapshot baseline.
-- Pin numbering and the position of the two input/output pin pairs differ, so
-  the schematic symbol pins (VIN_N/VIN_P/VOUT_N/VOUT_P = 1/2/3/4) must be
-  re-mapped, not just re-footprinted.
-- The 2 W part still needs the same input capacitor (C32 covers it) and still
-  has a minimum-load requirement; check its datasheet before assuming the
-  no-load behaviour improves.
-
-This is recorded as a *plan*, not a change: U16 stays B2405S-1WR3 on this
-revision. Changing it is a placement + footprint + routing revision, not a
-value swap.
+- **Footprint** `jclpcb:PWRM-TH-4P-L19.65-W7.05-P2.54-B2405S-2W`
+  (`tscircuit/lib/footprints.tsx`): 4 plated holes, 1.0 mm drill / 1.8 mm pad, at
+  local x = −6.35 / −3.81 / +1.27 / +6.35 mm on y = 0 (lead 1 → lead 6 = 12.7 mm).
+  Body silk 19.65 × 7.05 mm spanning x −8.56 … +11.10 and **y −6.147 … +0.903**
+  (the lead row is 0.90 mm from one long edge of the body, not centred), body
+  hanging 6.15 mm to one side; courtyard +0.25 mm on every side, i.e. x
+  −8.815 … +11.325, y −6.390 … +1.160. Geometry is the part's own, harvested
+  from the LCSC/EasyEDA footprint (`tsci import C5369484`), not a symmetric
+  assumption. Pin 1 has a square pad plus a 45° silk bevel and a lead tick, and
+  the guide line inside the body is broken exactly where leads 3 and 5 are
+  absent, so the module cannot be hand-fitted one 2.54 mm position off.
+- **Pin map** (`tscircuit/lib/pins.ts`, `B2405S_2W_PINS`): pin 1 `VIN_P`, pin 2
+  `VIN_N`, pin 4 `VOUT_N`, pin 6 `VOUT_P`. The frozen KiCad symbol had 1..4 as
+  −Vin, +Vin, −Vo, +Vo, so the numbers are rewritten for the comparison by
+  `SYMBOL_PIN_RENUMBER` in `tools/kicad2tscircuit.py` (1↔2 swap on the input
+  pair, 3→4 and 4→6 on the output pair); every U16 net keeps exactly the nodes
+  it had. Note that this also corrects the input polarity: pad 1 is the
+  module's **+Vin**, and it is wired to `U16_VIN_P`.
+- **Placement** U16 moved to (8.50, −49.50) mm on the bottom, body overhang
+  toward the bottom board edge (courtyard x −2.825 … +17.315, y −55.890 …
+  −48.340). Clear of J2 (1.19 mm), C24 (6.4 mm), C25, the four M3 holes and the
+  board edge (`bunx tsci check placement`: 0 errors).
+- **C32** moved to (13.58, −47.10) mm, between the two input leads on the side
+  of the lead row the body does not overhang; the routed rail leg is 2.64 mm.
+- **C23** stayed at (4.94, −54.67) mm: it is a **top**-side part and the module
+  hangs off the **bottom**, so there is no physical or courtyard conflict (the
+  placement checker compares courtyards per layer). Its pads are 5.2 mm from the
+  U16 lead row, clear of the 1.0 mm drills.
+- **Routing** re-solved: **304 traces / 334 vias / 4971 mm** of copper, 0
+  unconnected (the previous board with the 1 W part was 304/325/4934). Snapshots
+  regenerated.

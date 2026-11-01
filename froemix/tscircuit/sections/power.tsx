@@ -5,8 +5,8 @@
 // Power sheet: Eurorack +-12V entry, +5V rail and +/-10V rails
 // Source: tmp/power.kicad_sch
 
-import { B1205S_PINS } from "../lib/pins"
-import { FP_4ms_Connector_Pins_2x08_2_54mm_TH_EurorackPower_Shrouded_R90, FP_jclpcb_C0603, FP_jclpcb_C1206, FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD, FP_jclpcb_L0603, FP_jclpcb_PWRM_TH_4P_L11_5_W6_0_P2_54_B1503S, FP_jclpcb_SOD_123_L2_7_W1_6_LS3_7_RD_1 } from "../lib/footprints"
+import { B2405S_2W_PINS } from "../lib/pins"
+import { FP_4ms_Connector_Pins_2x08_2_54mm_TH_EurorackPower_Shrouded_R90, FP_jclpcb_C0603, FP_jclpcb_C1206, FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD, FP_jclpcb_L0603, FP_jclpcb_PWRM_TH_4P_L19_65_W7_05_P2_54_B2405S_2W, FP_jclpcb_SOD_123_L2_7_W1_6_LS3_7_RD_1 } from "../lib/footprints"
 
 export const PowerSection = () => (
   <schematicsheet name="power" displayName="Power" sheetIndex={4}>
@@ -247,11 +247,11 @@ export const PowerSection = () => (
         "pin1": "net.VEE",
         "pin2": "net.U16_VIN_N",
       }} />
-    {/* U16 B1205S-1WR3 - B1205S-1WR3_C5365649 - LCSC C3031175 - B2405S-1WR3 - jclpcb:PWRM-TH_4P-L11.5-W6.0-P2.54_B1503S */}
+    {/* U16 B2405S-2WR3 - LCSC C5369484 - YLPTEC B2405S-2WR3 - 2W/400mA isolated 24V->5V SIP module, 40mA minimum load, unregulated (doc/POWER-BUDGET.md). Leads 1/2/4/6 = Vin/GND/0V/+Vo on the B_S-2WR3 pin-out - jclpcb:PWRM-TH-4P-L19.65-W7.05-P2.54-B2405S-2W */}
     <chip
       name="U16"
-      footprint={FP_jclpcb_PWRM_TH_4P_L11_5_W6_0_P2_54_B1503S}
-      pinLabels={B1205S_PINS}
+      footprint={FP_jclpcb_PWRM_TH_4P_L19_65_W7_05_P2_54_B2405S_2W}
+      pinLabels={B2405S_2W_PINS}
       pinAttributes={{
         "VIN_N": { requiresPower: true },
         "VIN_P": { requiresPower: true },
@@ -259,16 +259,16 @@ export const PowerSection = () => (
         "VOUT_P": { providesPower: true },
       }}
       schPinArrangement={{ leftSide: ["VIN_N", "VIN_P"], rightSide: ["VOUT_N", "VOUT_P"] }}
-      pcbX="3.39mm"
-      pcbY="-50.78mm"
+      pcbX="8.5mm"
+      pcbY="-49.5mm"
       layer="bottom"
-      supplierPartNumbers={{ jlcpcb: ["C3031175"] }}
-      manufacturerPartNumber="B2405S-1WR3"
+      supplierPartNumbers={{ jlcpcb: ["C5369484"] }}
+      manufacturerPartNumber="B2405S-2WR3"
       cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C3031175.obj?uuid=f1c020aaa5b0488180ed500910c4cc9d",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C3031175.step?uuid=f1c020aaa5b0488180ed500910c4cc9d",
+      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C5369484.obj?uuid=e19f3101130346ec95635bac40ee053a",
+      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C5369484.step?uuid=e19f3101130346ec95635bac40ee053a",
       pcbRotationOffset: 0,
-      modelOriginPosition: { x: 0, y: -2.3189945999999964, z: -0.00000819999999990273 },
+      modelOriginPosition: { x: -1.2549885999999333, y: 2.6150061999999252, z: -0.10000799999999987 },
     }}
       connections={{
         "VIN_N": "net.U16_VIN_N",
@@ -276,13 +276,13 @@ export const PowerSection = () => (
         "VOUT_N": "net.GND",
         "VOUT_P": "net.P5V",
       }} />
-    {/* C32 1uF - EXTRA_C32 - LCSC C559769 - CC0603KRX7R9BB105 - U16 input bypass across VIN_P/VIN_N, YLPTEC B_S-1WR3 datasheet Table 1: 24 VDC input -> Cin 1uF/50V. C26 sits before L1/L2, so it is not the local post-inductor input cap (DESIGN-REVIEW R13) - jclpcb:C0603 */}
+    {/* C32 1uF - EXTRA_C32 - LCSC C559769 - CC0603KRX7R9BB105 - U16 input bypass across VIN_P (module pin 1) and VIN_N (module pin 2), YLPTEC B_S-2WR3 datasheet Table 1: 24 VDC input -> Cin 1uF/50V. Sits between the two input leads, on the far side of the lead row from the module body. C26 sits before L1/L2, so it is not the local post-inductor input cap (DESIGN-REVIEW R13) - jclpcb:C0603 */}
     <capacitor
       name="C32"
       capacitance="1uF"
       footprint={FP_jclpcb_C0603}
-      pcbX="3.96mm"
-      pcbY="-53.10mm"
+      pcbX="13.58mm"
+      pcbY="-47.1mm"
       layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C559769"] }}
       manufacturerPartNumber="CC0603KRX7R9BB105"

@@ -66,11 +66,16 @@ export const TLP2362_PINS = {
   pin6: "VCC",
 } as const
 
-export const B1205S_PINS = {
-  pin1: "VIN_N",
-  pin2: "VIN_P",
-  pin3: "VOUT_N",
-  pin4: "VOUT_P",
+// U16 is a YLPTEC/MORNSUN B2405S-2WR3 (2 W, LCSC C5369484) in the 4-lead SIP
+// B_S-2WR3 package: pin 1 = +Vin, pin 2 = -Vin, pin 4 = 0V, pin 6 = +Vo, and
+// pins 3 and 5 do not exist. Numbers come from the module, not the KiCad
+// symbol (which used 1..4 in the order -Vin, +Vin, -Vo, +Vo) - see
+// SYMBOL_PIN_RENUMBER in froemix/tools/kicad2tscircuit.py.
+export const B2405S_2W_PINS = {
+  pin1: "VIN_P",
+  pin2: "VIN_N",
+  pin4: "VOUT_N",
+  pin6: "VOUT_P",
 } as const
 
 export const MMBT3904_PINS = {

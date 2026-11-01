@@ -395,6 +395,17 @@
   "stock": 7219,
   "type": "Isolated Power Modules"
  },
+ "C5369484": {
+  "assembly": false,
+  "brand": "YLPTEC",
+  "code": "C5369484",
+  "describe": "-40\u2103~+85\u2103 1 1.5kV 100kHz 10mm 19.5mm 1mA 21.6V~26.4V 2400uF 2W 400mA 50mVp-p 5V 7mm 88% Short Circuit Protection SIP,19.5x7mm Isolated Power Modules ROHS",
+  "erp": "\u3010\u63d2\u4ef6\u3011 2W\u5b9a\u7535\u538b\u8f93\u5165\u9694\u79bb\u975e\u7a33\u538b\u5355\u8def\u8f93\u51faDC/DC\u7535\u6e90\u6a21\u5757",
+  "model": "B2405S-2WR3",
+  "package": "SIP,19.5x7mm",
+  "stock": 4784,
+  "type": "Isolated Power Modules"
+ },
  "C53728": {
   "assembly": false,
   "brand": "UNI-ROYAL(Uniroyal Elec)",

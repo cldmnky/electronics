@@ -356,13 +356,15 @@ PART_OVERRIDES = {
         "why": "2.54-2*6PWZ (C60565) has 62 pcs in stock",
     },
     # U16 is fed differentially VCC-VEE (~23.4V). The B1205S (12V in,
-    # 10.8-13.2V range) would be destroyed; the Patch reference uses a 24V
-    # isolator in the same wiring. Same SIP4 footprint/pinout.
+    # 10.8-13.2V range) would be destroyed, so it is a 24V-input member of the
+    # family. It is the 2 W B2405S-2WR3, not the 1 W B2405S-1WR3: the worst-case
+    # 5V load (194 mA without the H1 module, 267 mA with it) exceeds the 1 W
+    # part's 200 mA rating. See doc/POWER-BUDGET.md.
     "U16": {
-        "lcsc": "C3031175",
-        "mpn": "B2405S-1WR3",
-        "brand": "MORNSUN",
-        "why": "B1205S-1WR3 is 12V in (10.8-13.2V) but sees VCC-VEE ~23.4V; B2405S-1WR3 is 24V in (21.6-26.4V)",
+        "lcsc": "C5369484",
+        "mpn": "B2405S-2WR3",
+        "brand": "YLPTEC",
+        "why": "24V in (21.6-26.4V) for VCC-VEE ~23.4V, and 2W/400mA because the worst-case P5V load is 267mA with H1 fitted",
     },
     # TLP2362 VO is open-collector: 33k gives sloppy rise times at 31.25kbps.
     # 2.2k is the proven center value for 3.3V MIDI.
@@ -585,17 +587,53 @@ INTENTIONAL_PIN_MOVES = {
     ("R40", "2"): "J_CV_OUT_1",
 }
 
+# Symbol pins that kept their NET but changed their PIN NUMBER when the part
+# changed, applied to the KiCad-side netlist before INTENTIONAL_PIN_MOVES. The
+# number is the module's, not the frozen KiCad symbol's, so the comparison still
+# runs pin for pin - nothing is skipped or loosened.
+#   U16 - the 1W B2405S-1WR3 (4-lead SIP, symbol pins 1..4 = -Vin, +Vin, -Vo,
+#         +Vo) became the 2W B2405S-2WR3 (4 leads on the B_S-2WR3 pin-out 1, 2,
+#         4, 6 = +Vin, -Vin, 0V, +Vo). The input pair simply swapped numbers
+#         (1=-Vin becomes 2=-Vin, 2=+Vin becomes 1=+Vin - the KiCad symbol had
+#         +Vin on the pad the module uses for -Vin), and the output pair moved
+#         up: VOUT_N (pin 3, 0V) is now module pin 4 and VOUT_P (pin 4, +Vo) is
+#         now module pin 6. Every U16 net keeps exactly the nodes it had; only
+#         the numbers on the KiCad side are rewritten. See doc/POWER-BUDGET.md.
+SYMBOL_PIN_RENUMBER = {
+    ("U16", "1"): "2",
+    ("U16", "2"): "1",
+    ("U16", "3"): "4",
+    ("U16", "4"): "6",
+}
+
 # Nets and footprints that exist ONLY in tscircuit/ (no KiCad counterpart).
 # TSCIRCUIT_ONLY_NETS are created by the R02 driver: Q2 splits USART1_TX into
 # the base net and the collector net, both internal to the MIDI OUT stage.
 # TSCIRCUIT_ONLY_FOOTPRINTS holds the pad geometry (number, width, height, x, y
-# in the footprint frame, before the bottom-side mirror) of footprints authored
-# in tscircuit/lib/footprints.tsx because the KiCad library has no counterpart;
-# check_footprints compares against this table, so keep the two pad-for-pad
-# equal. R2512 is the 1W 33R land pattern: 1.5x2.8mm pads, 5.2mm centres.
+# in the footprint frame, before the bottom-side mirror, plus the drill when it
+# is not zero) of footprints authored in tscircuit/lib/footprints.tsx because
+# the KiCad library has no counterpart; check_footprints compares against this
+# table, so keep the two pad-for-pad equal. R2512 is the 1W 33R land pattern:
+# 1.5x2.8mm pads, 5.2mm centres. The B2405S_2W pattern is the 2W U16 module:
+# four 1.0mm-drill pads (1.8mm outer) on the module's 1, 2, 4, 6 positions.
 TSCIRCUIT_ONLY_NETS = {"NET_Q2_B", "NET_Q2_C"}
 TSCIRCUIT_ONLY_FOOTPRINTS = {
     "jclpcb:R2512": [("1", 1.5, 2.8, -2.6, 0.0), ("2", 1.5, 2.8, 2.6, 0.0)],
+    "jclpcb:PWRM-TH-4P-L19.65-W7.05-P2.54-B2405S-2W": [
+        ("1", 1.8, 1.8, -6.35, 0.0, 1.0),
+        ("2", 1.8, 1.8, -3.81, 0.0, 1.0),
+        ("4", 1.8, 1.8, 1.27, 0.0, 1.0),
+        ("6", 1.8, 1.8, 6.35, 0.0, 1.0),
+    ],
+}
+
+# Refs whose KiCad footprint was replaced on purpose by a tscircuit-only
+# footprint, so check_footprints verifies them against
+# TSCIRCUIT_ONLY_FOOTPRINTS instead of the frozen KiCad land pattern. Only U16:
+# the 1W B1503S 4-pad pattern cannot carry the 2W B2405S-2WR3, whose leads sit
+# on the 1, 2, 4, 6 positions of a 19.65 x 7.05mm body (doc/POWER-BUDGET.md).
+REPLACED_FOOTPRINTS = {
+    "U16": "jclpcb:PWRM-TH-4P-L19.65-W7.05-P2.54-B2405S-2W",
 }
 
 # Fabrication aids that exist ONLY in tscircuit/ and have no KiCad counterpart
@@ -974,7 +1012,7 @@ PIN_LABELS = {
         "1": "ANODE", "3": "CATHODE", "4": "GND", "5": "VO", "6": "VCC",
     },
     "jclpcb:B1205S-1WR3_C5365649": {
-        "1": "VIN_N", "2": "VIN_P", "3": "VOUT_N", "4": "VOUT_P",
+        "1": "VIN_P", "2": "VIN_N", "4": "VOUT_N", "6": "VOUT_P",
     },
     "jclpcb:MMBT3904_C181119": {"1": "B", "2": "E", "3": "C"},
     "MCU_Module:Electrosmith_Daisy_Seed_Rev4": {
@@ -998,7 +1036,7 @@ PIN_CONST = {
     "jclpcb:MCP6002T-I_SN": "MCP6002_PINS",
     "jclpcb:LM4040C10IDBZR": "LM4040_PINS",
     "jclpcb:TLP2362(TPL,E(T": "TLP2362_PINS",
-    "jclpcb:B1205S-1WR3_C5365649": "B1205S_PINS",
+    "jclpcb:B1205S-1WR3_C5365649": "B2405S_2W_PINS",
     "jclpcb:MMBT3904_C181119": "MMBT3904_PINS",
     "MCU_Module:Electrosmith_Daisy_Seed_Rev4": "DAISY_SEED_PINS",
 }

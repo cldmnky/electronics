@@ -21,7 +21,7 @@ over. The board also carries a mirrored legend
 | `J1` | 2×3 2.54 mm header (**MIDI polarity selector**) | THT | top | C65114 | pin 1 square; needs **two shunts**, see below |
 | `J2` | 2×8 2.54 mm IDC box header (Eurorack power) | THT shrouded | bottom | C3406 | pin 1 = the square/`1`-marked pad; the built silk key/notch is on the **lower long side** (y ≈ −59.25…−60.56), i.e. **the same board edge as the two lower M3 holes**. Check the shroud key against the ribbon connector before soldering — the key must engage the connector's polarizing rib, not force it |
 | `C24`, `C25` | 100 µF 50 V radial electrolytic, 8 × 12 mm | THT, 3.5 mm pitch | bottom | C2749 | **polarity**: `+` marked on silk; C25 is the negative-rail cap, its `+` faces **GND**. Body is 8 mm — the silk circle is the can, keep neighbours clear of it |
-| `U16` | B2405S-1WR3, isolated 24 V→5 V SIP module | THT, 4-pin SIP | bottom | C3031175 | pin 1 = the `-VIN` end; module stands **up** (≈10 mm tall) |
+| `U16` | B2405S-**2**WR3, isolated 24 V→5 V SIP module (2 W / 400 mA) | THT, 4 leads on the 1-2-4-6 positions of a 2.54 mm grid | bottom | C5369484 | **pin 1 = `+VIN`** (square pad, 45° silk bevel and lead tick); leads 3 and 5 are absent, and the silk guide line inside the body is broken at those two positions, so the module cannot go in one position off. The body hangs 6.15 mm to one side of the lead row (toward the bottom board edge). Module stands **up** (≈10 mm tall) |
 | `DaisySeed1` | Electrosmith Daisy Seed Rev4 module | 2 × 20 × 2.54 mm, 15.24 mm row spacing | bottom | — | pin 1 at the end marked on silk; the module lies **horizontally**, and its **USB receptacle is at the LEFT (−X) end of the module** (board x ≈ −25…−26.5, y ≈ 36.5…44.5), reachable **from behind** the board. There is no cutout to align with |
 | `J1` shunts ×2 | 2.54 mm jumper shunt (not shipped with the board) | — | on `J1` | — | two shunts, Type A or Type B, see the MIDI section |
 | `FID1–FID4` | fiducials | bare copper, 1 mm + 0.5 mm mask window | bottom | — | do nothing (no part) |
@@ -91,8 +91,8 @@ the gear in front of you is Type B.
    pins of each header, check the header sits square, then do the rest.
 4. **Verify the rails with the module out of the socket** — `+12 V` and
    `−12 V` on `J2` from a **current-limited** supply (start at 50 mA/rail,
-   ±12.0 V), with a **dummy load on P5V** (220 Ω to GND, i.e. ~23 mA — `U16`
-   needs a ≥20 mA minimum load and its output rises at no load). `J2` is wired
+   ±12.0 V), with a **dummy load on P5V** (120 Ω to GND, i.e. ~42 mA — `U16`
+   needs a ≥40 mA minimum load and its output rises at no load). `J2` is wired
    the standard Eurorack way: pads **1/2 = −12 V**, **3–8 = GND**, **9/10 =
    +12 V**, pads 11–16 (the bus 5 V/CV/GATE pins) are unconnected here. Expect
    ≈11.7 V at `TP4` (VCC) and `TP5` (VEE) after the Schottky drop, 5 V at
@@ -113,7 +113,7 @@ the gear in front of you is Type B.
    `TP3` 3.3 V analog, `TP4` ≈ +11.7 V, `TP5` ≈ −11.7 V, `TP6` −10.0 V
    reference, `TP7` sync input, `TP8` muxed ADC node. Run the P5V budget test
    in [`POWER-BUDGET.md`](POWER-BUDGET.md) before calling the unit good
-   (PASS ≤ 170 mA on P5V in every firmware state).
+   (PASS ≤ 300 mA on P5V in every firmware state).
 8. **Clean and inspect**: flux off, then a continuity pass on P5V / P3V3_D /
    P3V3_A / VCC / VEE / N10V_REF against the corresponding `TP` pads — every
    rail has a 1.2 mm test pad on the bottom side for exactly this.
@@ -123,8 +123,8 @@ the gear in front of you is Type B.
 - **Two-sided build**: the machine-placed parts are on both faces (98 bottom,
   8 top). Handle the board by the edges; the bottom side carries the analog
   circuitry and the plane.
-- **5 V rail is not a regulated 5.000 V rail.** `U16` (B2405S-1WR3) is a 1 W /
-  200 mA **unregulated** isolated converter with a 20 mA minimum load: expect
+- **5 V rail is not a regulated 5.000 V rail.** `U16` (B2405S-2WR3) is a 2 W /
+  400 mA **unregulated** isolated converter with a 40 mA minimum load: expect
   roughly ±10 % over load, worse at light load. Never measure the board with
   `P5V` unloaded. Budget, worst case and acceptance test:
   [`POWER-BUDGET.md`](POWER-BUDGET.md).
