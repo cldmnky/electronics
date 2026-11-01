@@ -197,6 +197,7 @@ reachable from the back.
 | `tsci check shorts` | no shorts |
 | `tsci check pcb-style` | clean |
 | `scripts/check_mating.py` | 3 sockets pin-for-pin on the base board, 26 panel parts aligned with their holes, 31 holes all claimed, window at (0, 40.5) |
+| `scripts/check_madc.py` | the 8 `M_ADC_*` nets are closed islands of pots/joystick/button referenced only to `P3V3_A`/`GND` (the base-board mux has no clamps - see `doc/FRONTBOARD-INTERFACE.md`) |
 | `tsci snapshot --test` | schematic + PCB baselines match |
 
 The build log's `source_pin_missing_trace_warning`s are the 10 mono-jack tip
