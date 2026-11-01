@@ -1,0 +1,73 @@
+* =====================================================================
+* froemix audio_out.cir -- AUDIO OUTPUT chain, left channel
+* =====================================================================
+* Source of truth: tscircuit/sections/audio.tsx. U3 = TL074, VCC = +12 V,
+* VEE = -12 V. The right channel (U3C/U3D, R12/R14/R15/R18/C9/C13) is
+* identical; only the left channel is simulated.
+*
+*   AUDIO_OUT_L --R11 10k-- U3A_IN_N       inverting x10
+*                            R13 100k || C8 47pF -> NET_C8_2 (U3A out)
+*   NET_C8_2    --R16 100k-- U3B_IN_N      inverting x1
+*                            R17 100k || C12 47pF -> NET_C12_2 (U3B out)
+*   NET_C12_2   --R19 1k---- J_AUDIO_OUT_L  series output R into the load
+*   J_AUDIO_OUT_L --RLOAD 100k-- GND        standard eurorack input impedance
+*
+* EXPECTED (analytic, ideal opamps):
+*   DC gain, open load = 10 * 1 = +10.00 = +20.00 dB
+*   DC gain, 100k load = 10 * 100k/(100k+1k) = +9.901 = +19.91 dB
+*                        (the 1k series R and the 100k input R form a divider)
+*   -3 dB (relative to the loaded DC gain) = 33.9 kHz per stage on its own
+*                  (1/(2*pi*100k*47p) = 33.86 kHz); with BOTH stages cascaded
+*                  the -3 dB point falls to 0.6436 x 33.86 kHz = 21.8 kHz
+*   gain at 20 kHz  = 9.901 / (1+(20/33.86)^2) = 7.34 (+17.3 dB) for two
+*                  identical poles (the denominator is squared); the fitted
+*                  TL074 lands ~0.3 dB below that because of its 3 MHz GBW
+*   Headroom: the chain is DC-coupled (R11 goes straight to AUDIO_OUT_L, no
+*                  series capacitor in the netlist), so whatever DC level the
+*                  Daisy codec output sits at is amplified x10 and eats into
+*                  the TL074's +/-10 V swing. For the AC figures above the
+*                  source is assumed offset-free (V1 DC 0), which is the only
+*                  thing this deck claims.
+*
+* Run: ngspice -b audio_out.cir   (or: bash run.sh, from this directory)
+* Raw output: out/audio_out.log, out/audio_out_ac.dat
+* =====================================================================
+
+* --- single-pole opamp: A0 = gm*RP, fp = GBW/A0, output clamped to the rails
+* TL074: A0 ~ 200k (106 dB), GBW 3 MHz, output swing ~1.5 V inside the rails.
+.subckt OPAMP INP INN OUT VP VM PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+RIN   INP INN 1T
+G1    0   NI  INP INN 1m
+RP    NI  0   {A0*1k}
+CP    NI  0   {1m/(6.283185307*GBW)}
+B1    OUT 0   V = max(min(V(NI), V(VP)-HEAD), V(VM)+HEAD)
+.ends
+
+VCC VCC 0 DC 12
+VEE VEE 0 DC -12
+
+* AC stimulus: 1 V so v(J_AUDIO_OUT_L) reads directly as the transfer function
+V1 AUDIO_OUT_L 0 DC 0 AC 1
+
+* stage 1: U3A, inverting x10, 47pF across the 100k feedback
+R11 AUDIO_OUT_L U3A_IN_N 10k
+R13 U3A_IN_N NET_C8_2 100k
+C8  U3A_IN_N NET_C8_2 47p
+XU3A 0 U3A_IN_N NET_C8_2 VCC VEE OPAMP
+
+* stage 2: U3B, inverting x1, 47pF across the 100k feedback
+R16 NET_C8_2 U3B_IN_N 100k
+R17 U3B_IN_N NET_C12_2 100k
+C12 U3B_IN_N NET_C12_2 47p
+XU3B 0 U3B_IN_N NET_C12_2 VCC VEE OPAMP
+
+* series output resistor + eurorack input impedance
+R19 NET_C12_2 J_AUDIO_OUT_L 1k
+RLOAD J_AUDIO_OUT_L 0 100k
+
+.control
+set noaskquit
+ac dec 200 1 1meg
+wrdata out/audio_out_ac.dat vdb(J_AUDIO_OUT_L) vdb(NET_C12_2)
+.endc
+.end

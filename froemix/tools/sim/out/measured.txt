@@ -1,0 +1,56 @@
+
+## Audio in (J_AUDIO_IN_L -> AUDIO_IN_L, U2 TL074)
+quantity                               measured
+DC gain                                 0.10000
+DC gain (dB)                            -20.000
+f(-3 dB) Hz                               19707
+gain at 1 kHz (dB)                      -20.009
+gain at 20 kHz                          0.07028
+gain at 20 kHz (dB)                     -23.063
+stage 1 out NET_C2_2                     -0.000   (DC gain, dB)
+
+## Audio out (AUDIO_OUT_L -> J_AUDIO_OUT_L, U3 TL074, 100k load)
+quantity                               measured
+DC gain                                 9.90035
+DC gain (dB)                             19.913
+f(-3 dB) Hz                               20455
+gain at 1 kHz (dB)                       19.904
+gain at 20 kHz                          7.10961
+gain at 20 kHz (dB)                      17.037
+U3B out NET_C12_2 (pre-R19)              19.999   (DC gain, dB)
+
+## CV in (J_CV_IN_1 -> CV_IN_1, U13 MCP6002 on 3.3 V)
+   expected: +/-5 V -> 0.000 / 3.300 V, scale 0.330 V/V, both endpoints ON a rail
+instance      V(Vin=-5V)  V(Vin=+5V)  scale V/V  scale err  cents/oct
+IDEAL            3.29995     0.00000    0.33000    -0.001%       -0.0
+1%_N5HI          3.36662     0.00000    0.33666     2.019%       24.2
+1%_N5LO          3.23461     0.00000    0.32346    -1.982%      -23.8
+1%_P5HI          3.26728     0.03267    0.32346    -1.982%      -23.8
+1%_P5LO          3.33328    -0.03333    0.33666     2.019%       24.2
+0.1%_N5HI        3.30656     0.00000    0.33066     0.199%        2.4
+0.1%_N5LO        3.29336     0.00000    0.32934    -0.201%       -2.4
+0.1%_P5HI        3.29665     0.00330    0.32934    -0.201%       -2.4
+0.1%_P5LO        3.30325    -0.00330    0.33066     0.199%        2.4
+MCP6002          3.27000     0.03000    0.32400    -1.818%      -21.8
+   cents/octave = 1200 * fractional scale error; the fixed part of the
+   error (the CV-IN offset term) is not in this column -- see RESULTS.md
+   the MCP6002 row's scale is measured across a saturated transfer curve;
+   its in-range scale is the IDEAL row's (0.330 V/V) -- see finding 2
+
+## CV out (CV_OUT_1 -> J_CV_OUT_1, U12 TL074, 100k load)
+   expected: 0.000 / 4.940 V loaded (4.990 V open), scale 1.4971 V/V loaded
+instance      V(Vdac=0V) V(Vdac=3.3V)  scale V/V  scale err  cents/oct
+NOM              0.00000      4.94048    1.49712    -0.002%       -0.0
+1%_MAX           0.00000      5.14211    1.55822     4.079%       48.9
+1%_MIN           0.00000      4.74676    1.43841    -3.923%      -47.1
+0.1%_MAX         0.00000      4.96028    1.50312     0.399%        4.8
+0.1%_MIN         0.00000      4.92076    1.49114    -0.401%       -4.8
+
+## -10 V reference (U14 LM4040C10, R41 2.2k, VEE sweep)
+   expected: 0.809 mA at VEE = -12.0 V, worst case 0.445 mA at -11.2 V
+    VEE  V(N10V_REF)  I_cathode uA
+ -11.20    -10.00022         445.4
+ -11.70    -10.00034         672.6
+ -12.00    -10.00040         808.9
+ -12.20    -10.00045         899.8
+minimum over the whole sweep: 445.4 uA  (LM4040-10 needs 100 uA, brief asks >125 uA)

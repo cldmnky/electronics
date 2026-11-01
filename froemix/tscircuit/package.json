@@ -1,0 +1,31 @@
+{
+  "name": "froemix",
+  "version": "0.1.0",
+  "description": "Froemix - Daisy Seed based Eurorack module, converted from the KiCad project in ../tmp",
+  "type": "module",
+  "main": "index.circuit.tsx",
+  "scripts": {
+    "dev": "tsci dev",
+    "build": "tsci build",
+    "snapshot": "tsci snapshot",
+    "gate": "bash scripts/gate.sh",
+    "release": "bash scripts/release.sh",
+    "check": "tsci check netlist",
+    "check:netlist": "python3 ../tools/check_netlist.py",
+    "check:footprints": "python3 ../tools/check_footprints.py",
+    "check:parts": "python3 ../tools/check_parts.py",
+    "report:decoupling": "python3 ../tools/report_decoupling.py",
+    "check:all": "bun run check:netlist && bun run check:footprints && bun run check:parts",
+    "regen": "python3 ../tools/kicad2tscircuit.py",
+    "regen:check": "python3 ../tools/kicad2tscircuit.py --out /tmp/froemix-regen-check && diff -r -x dist -x __snapshots__ -x node_modules -x .tscircuit -x package.json -x tsconfig.json -x bun.lock -x .gitignore -x .parts-cache.json -x checks /tmp/froemix-regen-check .",
+    "check:erc": "export PATH=\"/Applications/KiCad/KiCad.app/Contents/MacOS:$PATH\"; kicad-cli sch erc --severity-exclusions -o /tmp/froemix-erc.rpt ../tmp/froemix.kicad_sch >/dev/null 2>&1; echo \"unexcluded errors/warnings:\"; grep -cE '^\\s+; (error|warning)$' /tmp/froemix-erc.rpt || echo 0"
+  },
+  "dependencies": {
+    "tscircuit": "^0.0.3044"
+  },
+  "devDependencies": {
+    "@tscircuit/cli": "^0.1.2427",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}

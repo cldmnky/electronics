@@ -1,0 +1,71 @@
+* =====================================================================
+* froemix ref_bias.cir -- -10 V reference (U14 LM4040C10IDBZR) bias current
+* =====================================================================
+* Source of truth: tscircuit/sections/cv.tsx. U14 is a 2-terminal shunt
+* reference wired as a NEGATIVE reference: cathode to GND, anode to
+* N10V_REF, so the regulated node sits 10 V below ground.
+*
+*   GND --[U14 cathode .. anode]-- N10V_REF --R41 2.2k-- VEE (-12 V)
+*   N10V_REF --C20 100nF-- GND
+*   N10V_REF --R34 200k--> U13_INA_N (virtual ground)  ] the two CV-IN
+*   N10V_REF --R43 200k--> U13_INB_N (virtual ground)  ] summing resistors
+*
+* Reference current: the shunt is the only path from GND into N10V_REF, so
+* KCL at N10V_REF gives
+*   I_shunt = I_R41 - I_loads
+*   I_R41   = (V(N10V_REF) - VEE) / 2.2k      (current N10V_REF -> VEE)
+*   I_loads = 2 * 10 V / 200k = 100 uA        (current GND -> N10V_REF, the
+*                                             two summing resistors see the
+*                                             opamp virtual grounds at 0 V)
+* i.e. the summing loads *reduce* the shunt current by 100 uA -- they supply
+* part of the R41 current themselves.
+*
+* EXPECTED
+*   VEE = -12.0 V -> I_R41 = (12.0 - 10.0)/2.2k = 0.909 mA
+*                    - 0.100 mA of summing loads  = 0.809 mA cathode current
+*   VEE = -11.2 V -> I_R41 = 1.2/2.2k = 0.545 mA  -> 0.445 mA cathode current
+*   VEE = -12.2 V -> I_R41 = 2.2/2.2k = 1.000 mA  -> 0.900 mA cathode current
+*   LM4040-10 minimum operating current: 100 uA (datasheet), the design
+*   brief's acceptance threshold is 125 uA. Worst case in the sweep is
+*   0.445 mA, i.e. 3.6x the 125 uA floor -- regulation holds with margin.
+*   N10V_REF = -10.000 V throughout, less the 0.5 ohm x I_shunt drop
+*   (~0.4 mV). LM4040C10 initial accuracy is +/-0.5% (i.e. -9.95..-10.05 V for
+*   a real part); not modelled here.
+*   The brief's "~0.77 mA" corresponds to VEE ~ -11.9 V, not -12.0 V; at the
+*   nominal -12 V rail this board draws 0.809 mA.
+*
+* Model: behavioural ideal shunt (10.0 V source + 0.5 ohm dynamic impedance).
+* It regulates at any current, so it cannot by itself prove the >= 100 uA
+* requirement -- that is why the deck reports the current, not the voltage.
+*
+* Run: ngspice -b ref_bias.cir   (or: bash run.sh, from this directory)
+* Raw output: out/ref_bias.log, out/ref_bias_dc.dat
+* =====================================================================
+
+.subckt LM4040_10 CATHODE ANODE PARAMS: VZ=10.0 RZ=0.5
+RZ   CATHODE K     {RZ}
+VS   K       ANODE {VZ}
+.ends
+
+* VEE sweeps across the range a real -12 V rail can sit at
+VEE   VEE 0 DC -12
+
+* 0 V sense source: i(VSENSE) is the U14 cathode current, negative for current
+* flowing GND -> cathode -> anode -> N10V_REF (the deck reports the magnitude)
+VSENSE CATH 0 DC 0
+XU14  CATH N10V_REF LM4040_10
+
+* bias resistor and the reference bypass cap
+R41 N10V_REF VEE 2.2k
+C20 N10V_REF 0   100n
+
+* CV-IN summing resistors, seen by the reference as 200k to ground at DC
+R34 N10V_REF 0 200k
+R43 N10V_REF 0 200k
+
+.control
+set noaskquit
+dc VEE -12.2 -11.2 0.01
+wrdata out/ref_bias_dc.dat v(N10V_REF) i(VSENSE) v(VEE)
+.endc
+.end

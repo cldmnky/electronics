@@ -1,0 +1,72 @@
+* =====================================================================
+* froemix audio_in.cir -- AUDIO INPUT chain, left channel
+* =====================================================================
+* Source of truth: tscircuit/sections/audio.tsx (nets match the schematic
+* net names so the deck can be read against the board). U2 = TL074,
+* VCC = +12 V, VEE = -12 V. The right channel (U2C/U2D, R2/R3/R6/R7/C3/C9)
+* is identical; only the left channel is simulated.
+*
+*   J_AUDIO_IN_L --R1 100k-- U2A_IN_N      inverting x1 buffer
+*                            R4 100k || C2 47pF -> NET_C2_2 (U2A out)
+*   NET_C2_2     --R5 100k-- U2B_IN_N      inverting x0.1 stage
+*                            R8 10k || C7 560pF -> NET_C7_2 (U2B out)
+*   NET_C7_2     --R9 1k---- AUDIO_IN_L    series output R, Daisy ADC (high-Z, no load)
+*
+* EXPECTED (analytic, ideal opamps):
+*   DC gain      = (-1) * (-0.1) = +0.1000  = -20.00 dB
+*                  (two inverting stages, so the sign is positive)
+*   -3 dB        = 28.4 kHz  -- single-pole estimate from the 10k || 560pF
+*                  stage (1/(2*pi*10k*560p) = 28.42 kHz), i.e. the figure the
+*                  design brief quotes
+*                = 19.9 kHz  -- cascade of BOTH poles: 1/(2*pi*100k*47p)
+*                  = 33.86 kHz and 1/(2*pi*10k*560p) = 28.42 kHz
+*                  => (1+(f/33.86k)^2)(1+(f/28.42k)^2) = 2 at f = 19.9 kHz
+*   gain at 20 kHz  = 0.1 / sqrt((1+(20/33.86)^2)(1+(20/28.42)^2))
+*                  = 0.0704 (-23.05 dB) if the cascade figure is right
+*                  (the 10k || 560pF pole alone would give 0.0818, -21.75 dB)
+*   R9 1k into an open (Daisy ADC) load: no attenuation, gain unchanged
+*   Output headroom: 0.1 x a +/-10 V eurorack signal = +/-1 V, inside the
+*                  TL074 swing (+/-10 V) -- no clipping expected.
+*
+* Run: ngspice -b audio_in.cir   (or: bash run.sh, from this directory)
+* Raw output: out/audio_in.log, out/audio_in_ac.dat
+* =====================================================================
+
+* --- single-pole opamp: A0 = gm*RP, fp = GBW/A0, output clamped to the rails
+* TL074: A0 ~ 200k (106 dB), GBW 3 MHz, output swing ~1.5 V inside the rails.
+* gm is fixed at 1 mS, so RP = A0/1m and CP = 1m/(2*pi*GBW) keeps fp = GBW/A0.
+.subckt OPAMP INP INN OUT VP VM PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+RIN   INP INN 1T
+G1    0   NI  INP INN 1m
+RP    NI  0   {A0*1k}
+CP    NI  0   {1m/(6.283185307*GBW)}
+B1    OUT 0   V = max(min(V(NI), V(VP)-HEAD), V(VM)+HEAD)
+.ends
+
+VCC VCC 0 DC 12
+VEE VEE 0 DC -12
+
+* AC stimulus: 1 V so v(out) reads directly as the transfer function
+V1 J_AUDIO_IN_L 0 DC 0 AC 1
+
+* stage 1: U2A, inverting x1, 47pF across the 100k feedback
+R1  J_AUDIO_IN_L U2A_IN_N 100k
+R4  U2A_IN_N NET_C2_2 100k
+C2  U2A_IN_N NET_C2_2 47p
+XU2A 0 U2A_IN_N NET_C2_2 VCC VEE OPAMP
+
+* stage 2: U2B, inverting x0.1, 560pF across the 10k feedback
+R5  NET_C2_2 U2B_IN_N 100k
+R8  U2B_IN_N NET_C7_2 10k
+C7  U2B_IN_N NET_C7_2 560p
+XU2B 0 U2B_IN_N NET_C7_2 VCC VEE OPAMP
+
+* series output resistor into the Daisy Seed ADC (high-Z, modelled as open)
+R9  NET_C7_2 AUDIO_IN_L 1k
+
+.control
+set noaskquit
+ac dec 200 1 1meg
+wrdata out/audio_in_ac.dat vdb(AUDIO_IN_L) vdb(NET_C2_2)
+.endc
+.end

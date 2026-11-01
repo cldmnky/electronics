@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.tscircuit/
+*.log
+__pycache__/
+__snapshots__/*.diff.*

@@ -1,0 +1,53 @@
+{
+  "_comment": "Canonical JLCPCB order settings for the froemix base board. tscircuit has no prop for surface finish or assembly side, so these live here and are copied into fab/ by `bun run release` / `make release`. Upload the artifacts listed in doc/JLC-ASSEMBLY.md and set these options on the order page.",
+  "board": {
+    "layers": 4,
+    "dimensions_mm": [80.9, 128.5],
+    "thickness_mm": 1.6,
+    "outer_copper_oz": 1,
+    "inner_copper_oz": 0.5,
+    "surface_finish": "ENIG",
+    "surface_finish_reason": "flat pads for the 40 through-hole Daisy Seed pads and the 2.00mm headers; tin/HASL leaves uneven mounds that make the module sit off-square",
+    "solder_mask": "green",
+    "silkscreen": "white",
+    "impedance_control": false,
+    "castellated": false,
+    "gold_fingers": false,
+    "min_trace_width_mm": 0.25,
+    "min_via_drill_mm": 0.2,
+    "min_via_pad_mm": 0.45,
+    "edge_clearance_mm": 0.4
+  },
+  "assembly": {
+    "service": "JLCPCB SMT assembly",
+    "sides": 2,
+    "sides_reason": "97 of 110 placements are on the bottom (all analog/audio/CV/MIDI circuitry); only the mating headers, rail SMD and PMOD live on top. Two-sided means two stencil/paste passes - enable 'assembly for both sides'.",
+    "stencil": "yes, one per side",
+    "through_hole": "hand solder",
+    "through_hole_parts": ["CN1", "CN2", "CN3", "CN4", "H1", "J1", "J2", "C24", "C25", "U16"],
+    "through_hole_note": "kept in the BOM but excluded from the CPL; add them back on the order page only if you pay for JLCPCB THT assembly",
+    "do_not_place": ["DaisySeed1"],
+    "do_not_place_note": "Daisy Seed module is already owned; it is absent from BOM and CPL by design",
+    "fiducials": "4 x 1mm bare copper with 0.5mm mask window at (+-33, +-63)mm - verify bright in the placement preview",
+    "files": {
+      "gerbers": "froemix-gerbers.zip",
+      "bom": "froemix-bom-jlc.csv",
+      "cpl": "froemix-cpl-jlc.csv"
+    },
+    "expected_counts": {
+      "bom_unique_parts": 34,
+      "bom_placements": 110,
+      "cpl_smt_placements": 100,
+      "through_hole_excluded": 10
+    }
+  },
+  "inspect_before_paying": [
+    "4 layers, 80.9 x 128.5 mm, four 3.2mm M3 holes",
+    "ENIG selected (not HASL)",
+    "assembly for BOTH sides enabled",
+    "bottom-side rotations sane in the 3D preview (all 0 or 180 deg, H1 270)",
+    "fiducials bright copper, not mask-covered",
+    "Daisy Seed footprint empty (module is hand-fitted)",
+    "GND plane visible on the bottom layer preview"
+  ]
+}
