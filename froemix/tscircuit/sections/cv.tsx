@@ -6,7 +6,7 @@
 // Source: tmp/cv.kicad_sch
 
 import { LM4040_PINS, MCP6002_PINS, MMBT3904_PINS, TL074_PINS } from "../lib/pins"
-import { FP_jclpcb_C0603, FP_jclpcb_R0603, FP_jclpcb_R1206, FP_jclpcb_SOIC_8_L4_9_W3_9_P1_27_LS6_0_BL, FP_jclpcb_SOT_23_3_L2_9_W1_6_P1_90_LS2_8_BR, FP_jclpcb_SOT_23_3_L3_0_W1_7_P0_95_LS2_9_BR, FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL } from "../lib/footprints"
+import { FP_jclpcb_C0603, FP_jclpcb_R0603, FP_jclpcb_R1206, FP_jclpcb_SOIC_8_L4_9_W3_9_P1_27_LS6_0_BL, FP_jclpcb_SOD_323_L1_8_W1_3_LS2_5_RD, FP_jclpcb_SOT_23_3_L2_9_W1_6_P1_90_LS2_8_BR, FP_jclpcb_SOT_23_3_L3_0_W1_7_P0_95_LS2_9_BR, FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL } from "../lib/footprints"
 
 export const CvSection = () => (
   <schematicsheet name="cv" displayName="CV" sheetIndex={3}>
@@ -164,6 +164,43 @@ export const CvSection = () => (
         "pin1": "net.U13_INB_N",
         "pin2": "net.CV_IN_2",
       }} />
+    {/* C33 100pF 50V C0G - CC0603JRNPO9BN101 - LCSC C14665 - jclpcb:C0603
+        CV-out channel 2 loop compensation across R39 (pin 1 matches R39 pin 1): the
+        feedback is taken at the jack side of R45 (load-independent gain, R09),
+        so the 1k plus cable capacitance sits INSIDE the TL074 loop - an
+        uncompensated capacitive load rings (phase margin ~18 deg at 1nF, worse
+        at 10nF). 100pF across the 100k puts the compensation zero at
+        1/(2*pi*100k*100p) = 15.9kHz, the same as the worst-case 1k/10nF load
+        pole, and limits the CV-out bandwidth to ~16kHz (fine for CV). */}
+    <capacitor
+      name="C33"
+      capacitance="100pF"
+      footprint={FP_jclpcb_C0603}
+      pcbX="18.5mm"
+      pcbY="-10.5mm"
+      layer="bottom"
+      supplierPartNumbers={{ jlcpcb: ["C14665"] }}
+      manufacturerPartNumber="CC0603JRNPO9BN101"
+      connections={{
+        "pin1": "net.U12D_IN_N",
+        "pin2": "net.J_CV_OUT_2",
+      }} />
+    {/* C34 100pF 50V C0G - CC0603JRNPO9BN101 - LCSC C14665 - jclpcb:C0603
+        CV-out channel 1, across R40 (U12B / J_CV_OUT_1);
+        same 15.9kHz compensation zero as C33, see that comment. */}
+    <capacitor
+      name="C34"
+      capacitance="100pF"
+      footprint={FP_jclpcb_C0603}
+      pcbX="0mm"
+      pcbY="-19.16mm"
+      layer="bottom"
+      supplierPartNumbers={{ jlcpcb: ["C14665"] }}
+      manufacturerPartNumber="CC0603JRNPO9BN101"
+      connections={{
+        "pin1": "net.U12B_IN_N",
+        "pin2": "net.J_CV_OUT_1",
+      }} />
     {/* Q1 MMBT3904 - MMBT3904_C181119 - LCSC C181119 - jclpcb:SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR */}
     <transistor
       name="Q1"
@@ -184,6 +221,29 @@ export const CvSection = () => (
         "base": "net.NET_Q1_1",
         "emitter": "net.GND",
         "collector": "net.NET_Q1_3",
+      }} />
+    {/* D5 1N4148WS - LCSC C2128 - jclpcb:SOD-323_L1.8-W1.3-LS2.5-RD
+        reverse base-emitter clamp across Q1 (DESIGN-REVIEW R04): cathode to the
+        base, anode to GND, so a negative patch can only pull the base to about
+        -0.6 V instead of -9.1 V (Q1's emitter-base rating is 6 V). pad 1 of the
+        SOD-323 footprint is the cathode. */}
+    <diode
+      name="D5"
+      footprint={FP_jclpcb_SOD_323_L1_8_W1_3_LS2_5_RD}
+      pinLabels={{ pin1: "cathode", pin2: "anode" }}
+      pcbX="13.8mm"
+      pcbY="1.4mm"
+      layer="bottom"
+      supplierPartNumbers={{ jlcpcb: ["C2128"] }}
+      cadModel={{
+      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C2128.obj?uuid=7459fe65e23146c0a8d836e46a0add72",
+      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C2128.step?uuid=7459fe65e23146c0a8d836e46a0add72",
+      pcbRotationOffset: 0,
+      modelOriginPosition: { x: 0, y: 0.00011430000006384944, z: 0 },
+    }}
+      connections={{
+        "anode": "net.GND",
+        "cathode": "net.NET_Q1_1",
       }} />
     {/* R21 33K - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
@@ -243,10 +303,10 @@ export const CvSection = () => (
         "pin1": "net.GND",
         "pin2": "net.NET_Q1_1",
       }} />
-    {/* R24 49K9 - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
+    {/* R24 49.9k - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
     <resistor
       name="R24"
-      resistance="49K9"
+      resistance="49.9k"
       footprint={FP_jclpcb_R0603}
       pcbX="10.26mm"
       pcbY="-8.66mm"
@@ -377,7 +437,9 @@ export const CvSection = () => (
         "pin1": "net.J_CV_IN_1",
         "pin2": "net.U13_INA_N",
       }} />
-    {/* R31 33K - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
+    {/* R31 33K - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603
+        fed from the U11A follower output (DESIGN-REVIEW R03), not from the DAC:
+        see the U11 IN1P/OUT1 entry at the bottom of this sheet */}
     <resistor
       name="R31"
       resistance="33k"
@@ -393,10 +455,11 @@ export const CvSection = () => (
       modelOriginPosition: { x: -0.004999999999999977, y: 0, z: -0.01 },
     }}
       connections={{
-        "pin1": "net.CV_OUT_1",
+        "pin1": "net.U11A_IN_N",
         "pin2": "net.U12A_IN_N",
       }} />
-    {/* R32 33K - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
+    {/* R32 33K - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603
+        fed from the U11D follower output (DESIGN-REVIEW R03) */}
     <resistor
       name="R32"
       resistance="33k"
@@ -412,21 +475,23 @@ export const CvSection = () => (
       modelOriginPosition: { x: -0.004999999999999977, y: 0, z: -0.01 },
     }}
       connections={{
-        "pin1": "net.CV_OUT_2",
+        "pin1": "net.U11D_IN_N",
         "pin2": "net.U12C_IN_N",
       }} />
-    {/* R33 33K - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
+    {/* R33 30.1K - 0603WAF3012T5E - LCSC C23000 - jclpcb:R0603
+        CV-in summer ratio for 0.10..3.11 V headroom, DESIGN-REVIEW R10 */}
     <resistor
       name="R33"
-      resistance="33k"
+      resistance="30.1k"
       footprint={FP_jclpcb_R0603}
       pcbX="6.44mm"
       pcbY="28.19mm"
       layer="bottom"
-      supplierPartNumbers={{ jlcpcb: ["C4216"] }}
+      supplierPartNumbers={{ jlcpcb: ["C23000"] }}
+      manufacturerPartNumber="0603WAF3012T5E"
       cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C4216.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C4216.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C23000.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C23000.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
       pcbRotationOffset: 0,
       modelOriginPosition: { x: -0.004999999999999977, y: 0, z: -0.01 },
     }}
@@ -434,18 +499,20 @@ export const CvSection = () => (
         "pin1": "net.U13_INA_N",
         "pin2": "net.CV_IN_1",
       }} />
-    {/* R34 200K - 0603WAF2003T5E - LCSC C25811 - jclpcb:R0603 */}
+    {/* R34 187K - 0603WAF1873T5E - LCSC C22896 - jclpcb:R0603
+        CV-in summer offset leg, DESIGN-REVIEW R10 */}
     <resistor
       name="R34"
-      resistance="200k"
+      resistance="187k"
       footprint={FP_jclpcb_R0603}
       pcbX="13.1mm"
       pcbY="-12.72mm"
       layer="bottom"
-      supplierPartNumbers={{ jlcpcb: ["C25811"] }}
+      supplierPartNumbers={{ jlcpcb: ["C22896"] }}
+      manufacturerPartNumber="0603WAF1873T5E"
       cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C25811.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C25811.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C22896.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C22896.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
       pcbRotationOffset: 0,
       modelOriginPosition: { x: -0.004999999999999977, y: 0, z: -0.01 },
     }}
@@ -529,7 +596,11 @@ export const CvSection = () => (
         "pin1": "net.NET_R36_2",
         "pin2": "net.U12D_IN_N",
       }} />
-    {/* R39 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
+    {/* R39 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603
+        feedback is picked up at the JACK side of R45, so the 1k is inside the
+        loop and the gain no longer depends on how many modules are patched
+        (DESIGN-REVIEW R09). C33 100pF sits across this resistor to compensate
+        the load pole that the in-loop 1k/cable capacitance creates. */}
     <resistor
       name="R39"
       resistance="100k"
@@ -546,9 +617,11 @@ export const CvSection = () => (
     }}
       connections={{
         "pin1": "net.U12D_IN_N",
-        "pin2": "net.NET_R39_2",
+        "pin2": "net.J_CV_OUT_2",
       }} />
-    {/* R40 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
+    {/* R40 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603
+        feedback picked up after R46, same as R39 (DESIGN-REVIEW R09); C34
+        100pF across this resistor is the matching load-pole compensation. */}
     <resistor
       name="R40"
       resistance="100k"
@@ -565,7 +638,7 @@ export const CvSection = () => (
     }}
       connections={{
         "pin1": "net.U12B_IN_N",
-        "pin2": "net.NET_R40_2",
+        "pin2": "net.J_CV_OUT_1",
       }} />
     {/* R41 2.2K - 0603WAF2201T5E - LCSC C4190 - jclpcb:R0603 */}
     <resistor
@@ -586,18 +659,20 @@ export const CvSection = () => (
         "pin1": "net.N10V_REF",
         "pin2": "net.VEE",
       }} />
-    {/* R42 33K - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
+    {/* R42 30.1K - 0603WAF3012T5E - LCSC C23000 - jclpcb:R0603
+        CV-in summer ratio, channel 2 (DESIGN-REVIEW R10) */}
     <resistor
       name="R42"
-      resistance="33k"
+      resistance="30.1k"
       footprint={FP_jclpcb_R0603}
       pcbX="15.82mm"
       pcbY="28.19mm"
       layer="bottom"
-      supplierPartNumbers={{ jlcpcb: ["C4216"] }}
+      supplierPartNumbers={{ jlcpcb: ["C23000"] }}
+      manufacturerPartNumber="0603WAF3012T5E"
       cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C4216.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C4216.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C23000.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C23000.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
       pcbRotationOffset: 0,
       modelOriginPosition: { x: -0.004999999999999977, y: 0, z: -0.01 },
     }}
@@ -605,18 +680,20 @@ export const CvSection = () => (
         "pin1": "net.U13_INB_N",
         "pin2": "net.CV_IN_2",
       }} />
-    {/* R43 200K - 0603WAF2003T5E - LCSC C25811 - jclpcb:R0603 */}
+    {/* R43 187K - 0603WAF1873T5E - LCSC C22896 - jclpcb:R0603
+        CV-in summer offset leg, channel 2 (DESIGN-REVIEW R10) */}
     <resistor
       name="R43"
-      resistance="200k"
+      resistance="187k"
       footprint={FP_jclpcb_R0603}
       pcbX="13.1mm"
       pcbY="-19.16mm"
       layer="bottom"
-      supplierPartNumbers={{ jlcpcb: ["C25811"] }}
+      supplierPartNumbers={{ jlcpcb: ["C22896"] }}
+      manufacturerPartNumber="0603WAF1873T5E"
       cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C25811.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C25811.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C22896.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C22896.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
       pcbRotationOffset: 0,
       modelOriginPosition: { x: -0.004999999999999977, y: 0, z: -0.01 },
     }}
@@ -681,7 +758,13 @@ export const CvSection = () => (
         "pin1": "net.NET_R40_2",
         "pin2": "net.J_CV_OUT_1",
       }} />
-    {/* U11 TL074 - LCSC C96507 - jclpcb:TSSOP-14_L5.0-W4.4-P0.65-LS6.4-BL */}
+    {/* U11 TL074 - LCSC C96507 - jclpcb:TSSOP-14_L5.0-W4.4-P0.65-LS6.4-BL
+        U11A/U11D are the two spare channels: unity-gain followers between the
+        unbuffered DAC outputs and the 33k summing resistors (DESIGN-REVIEW R03).
+        With the DAC's internal buffer disabled its ~13k source impedance only
+        has to drive a TL074 input; the 0.2V..VREF-0.2V buffered range is then
+        not in the signal path. OUT1/IN1N and OUT4/IN4N are the follower straps,
+        IN1P/IN4P take the DAC nets and R31/R32 hang off the follower outputs. */}
     <chip
       name="U11"
       footprint={FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL}
@@ -716,7 +799,7 @@ export const CvSection = () => (
       connections={{
         "OUT1": "net.U11A_IN_N",
         "IN1N": "net.U11A_IN_N",
-        "IN1P": "net.GND",
+        "IN1P": "net.CV_OUT_1",
         "VPLUS": "net.VCC",
         "IN2P": "net.GND",
         "IN2N": "net.U11B_IN_N",
@@ -725,7 +808,7 @@ export const CvSection = () => (
         "IN3N": "net.U11C_IN_N",
         "IN3P": "net.GND",
         "VMINUS": "net.VEE",
-        "IN4P": "net.GND",
+        "IN4P": "net.CV_OUT_2",
         "IN4N": "net.U11D_IN_N",
         "OUT4": "net.U11D_IN_N",
       }} />

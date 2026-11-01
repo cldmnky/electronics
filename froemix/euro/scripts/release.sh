@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# Froemix euro board release: run the euro gate, then export the fab artifacts
+# for BOTH euro entries (the front board and its panel) into froemix/fab/euro/.
+#
+# Same conventions as the base board's scripts/release.sh: the gerbers export
+# writes a zip that also carries bom.csv + pick_and_place.csv, so those two are
+# extracted next to it. The panel is a mechanical FR4 board (2mm, holes and
+# silkscreen only), so it gets its own gerbers/step under fab/euro/panel/.
+#
+# Nothing outside froemix/fab/ is deleted; fab/ is generated output.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+PROJECT_DIR=$(pwd)
+FAB_DIR=$(cd .. && pwd)/fab/euro
+ENTRY=index.circuit.tsx
+PANEL=panel.circuit.tsx
+
+printf '\n########## 1. euro gate ##########\n'
+bash "$PROJECT_DIR/scripts/gate.sh"
+
+printf '\n########## 2. euro fab exports ##########\n'
+rm -rf "$FAB_DIR"
+mkdir -p "$FAB_DIR" "$FAB_DIR/panel"
+
+export_fmt() { # export_fmt <entry> <format> <output-file>
+  local entry=$1 fmt=$2 out=$3
+  local start=$SECONDS
+  printf '    %-10s %-14s -> %s ...' "$entry" "$fmt" "${out#"$FAB_DIR"/}"
+  if ! npx tsci export "$entry" -f "$fmt" -o "$out" >"${TMPDIR:-/tmp}/froemix-euro-export-$fmt.log" 2>&1; then
+    printf ' FAILED\n'
+    tail -20 "${TMPDIR:-/tmp}/froemix-euro-export-$fmt.log" >&2
+    exit 1
+  fi
+  printf ' ok (%ds)\n' "$((SECONDS - start))"
+}
+
+export_fmt "$ENTRY" gerbers "$FAB_DIR/euro-gerbers.zip"
+export_fmt "$ENTRY" step "$FAB_DIR/euro.step"
+export_fmt "$ENTRY" schematic-svg "$FAB_DIR/euro-schematic.svg"
+export_fmt "$ENTRY" pcb-svg "$FAB_DIR/euro-pcb.svg"
+
+export_fmt "$PANEL" gerbers "$FAB_DIR/panel/panel-gerbers.zip"
+export_fmt "$PANEL" step "$FAB_DIR/panel/panel.step"
+
+# bom.csv + pick_and_place.csv live inside the board's gerbers zip.
+python3 - "$FAB_DIR/euro-gerbers.zip" "$FAB_DIR" <<'PY'
+import pathlib
+import sys
+import zipfile
+
+archive, fab_dir = sys.argv[1], pathlib.Path(sys.argv[2])
+wanted = {"bom.csv": "euro-bom.csv", "pick_and_place.csv": "euro-pnp.csv"}
+with zipfile.ZipFile(archive) as zf:
+    names = set(zf.namelist())
+    for member, dest in wanted.items():
+        if member not in names:
+            sys.exit(f"{archive}: no {member} in the gerbers zip")
+        (fab_dir / dest).write_bytes(zf.read(member))
+print("    extracted bom.csv -> euro-bom.csv, pick_and_place.csv -> euro-pnp.csv")
+PY
+
+cp ../doc/EURO-BOARD.md "$FAB_DIR/EURO-BOARD.md"
+
+# JLCPCB assembly files, same convention as the base board: their SMT order takes
+# a BOM (one row per part, grouped by designator, with quantity) and a CPL (one
+# row per SMT placement). The tscircuit exports are per-designator and include
+# the through-hole parts in the pick-and-place, so derive the JLC-shaped
+# versions here instead of hand-editing on the order page.
+python3 - "$FAB_DIR" <<'PY2'
+import csv
+import pathlib
+import re
+import sys
+
+fab = pathlib.Path(sys.argv[1])
+# Through-hole parts: hand-soldered unless JLC's through-hole service is
+# ordered. Everything not listed here must be SMT and is checked below.
+THT = {
+    "CN1", "CN2", "CN4",                       # 2.00mm mating sockets
+    "J3", "J4", "J5", "J6", "J7", "J8",       # mono jacks
+    "J9", "J10", "J11", "J12",                 # CV jacks
+    "J13", "J14",                              # TRS MIDI jacks
+    "RV1", "RV2", "RV3", "RV4", "RV5", "RV6",  # pots
+    "SW1", "SW2",                              # joystick, button
+    "DL1", "DL2", "DL3", "DL4", "DL5", "DL6",  # 3mm jack LEDs
+    "D1",                                       # 3mm panel LED
+    "DS1",                                      # OLED module header
+}
+SMT_RE = re.compile(r"^(R\d+|D[2-7])$")
+
+bom_rows = list(csv.DictReader((fab / "euro-bom.csv").open()))
+pnp_rows = list(csv.DictReader((fab / "euro-pnp.csv").open()))
+
+unknown = [r["Designator"] for r in bom_rows
+           if r["Designator"] not in THT and not SMT_RE.match(r["Designator"])]
+if unknown:
+    sys.exit(f"euro release: unclassified designators (add to THT or SMT_RE): {', '.join(unknown)}")
+
+# JLCPCB reads "Comment" as the human description (1k, 2.2k, ...). The exported
+# Comment column holds the manufacturer part number, so prefer Value, then the
+# LCSC code for modules whose value is the part number.
+groups = {}
+for row in bom_rows:
+    lcsc = (row.get("JLCPCB Part #") or "").strip()
+    value = (row.get("Value") or "").strip()
+    mpn = (row.get("Comment") or "").strip()
+    # passives carry a human value ("10k"), modules carry an MPN; the LCSC code
+    # is only a last resort so nothing lands on the order page blank.
+    if value and value != lcsc:
+        comment = value
+    elif mpn and mpn != lcsc:
+        comment = mpn
+    else:
+        comment = lcsc
+    footprint = (row.get("Footprint", "") or "").strip()
+    # tscircuit repeats the LCSC code in Footprint for parts without a package
+    # name; JLCPCB resolves the footprint from the part number, so write "-".
+    if footprint == lcsc or not footprint:
+        footprint = "-"
+    groups.setdefault((comment, footprint, lcsc), []).append(row["Designator"])
+
+with (fab / "euro-bom-jlc.csv").open("w", newline="") as fh:
+    w = csv.writer(fh)
+    w.writerow(["Comment", "Designator", "Footprint", "LCSC Part #", "Quantity"])
+    for (comment, footprint, lcsc), refs in sorted(groups.items(), key=lambda kv: kv[1][0]):
+        w.writerow([comment, ",".join(sorted(refs)), footprint, lcsc, len(refs)])
+
+smt = [r for r in pnp_rows if r["Designator"] not in THT]
+with (fab / "euro-cpl-jlc.csv").open("w", newline="") as fh:
+    w = csv.writer(fh)
+    w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
+    for r in smt:
+        w.writerow([r["Designator"], r["Mid X"], r["Mid Y"], r["Layer"], r["Rotation"]])
+
+(fab / "euro-pnp-all.csv").write_bytes((fab / "euro-pnp.csv").read_bytes())
+
+# Cross-checks: every SMT part must be in the CPL, every CPL row must be an SMT
+# part, and nothing may be silently missing from either file.
+bom_smt = {r["Designator"] for r in bom_rows if SMT_RE.match(r["Designator"])}
+cpl_smt = {r["Designator"] for r in smt}
+if bom_smt != cpl_smt:
+    sys.exit("euro release: SMT BOM/CPL mismatch "
+             f"(bom-only {sorted(bom_smt - cpl_smt)}, cpl-only {sorted(cpl_smt - bom_smt)})")
+missing_lcsc = [r["Designator"] for r in bom_rows if not (r.get("JLCPCB Part #") or "").strip()]
+print(f"    euro-bom-jlc.csv         {len(groups)} unique parts, {len(bom_rows)} placements")
+print(f"    euro-cpl-jlc.csv         {len(smt)} SMT placements ({len(THT)} THT hand-solder)")
+print(f"    euro-pnp-all.csv         {len(pnp_rows)} placements (reference, incl. THT)")
+if missing_lcsc:
+    print(f"    WARNING: no JLCPCB part number for {', '.join(missing_lcsc)}")
+PY2
+
+printf '\n########## 3. artifacts ##########\n'
+( cd "$FAB_DIR" && find . -type f | sort | while read -r f; do
+    bytes=$(wc -c < "$f" | tr -d ' ')
+    printf '    %-28s %9.1f KB\n' "${f#./}" "$(awk -v b="$bytes" 'BEGIN {printf "%.1f", b/1024}')"
+  done )
+printf '    folder: %s\n' "$FAB_DIR"

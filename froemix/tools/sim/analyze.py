@@ -80,7 +80,7 @@ def audio(name: str, title: str, extra_labels: list[str]) -> None:
 
 def cv_in_out() -> None:
     print("\n## CV in (J_CV_IN_1 -> CV_IN_1, U13 MCP6002 on 3.3 V)")
-    print("   expected: +/-5 V -> 0.000 / 3.300 V, scale 0.330 V/V, both endpoints ON a rail")
+    print("   expected: +/-5 V -> 3.1146 / 0.1046 V, scale 0.3010 V/V, ~100 mV inboard of the rails")
 
     x, columns = read_vectors(os.path.join(OUT, "cv_in_dc.dat"))
     labels = [
@@ -100,18 +100,17 @@ def cv_in_out() -> None:
         low = columns[index][0]  # Vin = -5 V, first sweep point
         high = columns[index][-1]  # Vin = +5 V, last sweep point
         scale = (low - high) / 10.0
-        error = scale / 0.33 - 1
+        error = scale / 0.3010 - 1
         print(f"{label:12s} {low:11.5f} {high:11.5f} {scale:10.5f} {error * 100:9.3f}% {error * 1200:10.1f}")
     print("   cents/octave = 1200 * fractional scale error; the fixed part of the\n"
           "   error (the CV-IN offset term) is not in this column -- see RESULTS.md")
-    print("   the MCP6002 row's scale is measured across a saturated transfer curve;\n"
-          "   its in-range scale is the IDEAL row's (0.330 V/V) -- see finding 2")
 
-    print("\n## CV out (CV_OUT_1 -> J_CV_OUT_1, U12 TL074, 100k load)")
-    print("   expected: 0.000 / 4.940 V loaded (4.990 V open), scale 1.4971 V/V loaded")
+    print("\n## CV out (CV_OUT_1 -> J_CV_OUT_1, U12 TL074, U11A follower, load sweep)")
+    print("   expected: 0.000 / 4.990 V and scale 1.5121 V/V for EVERY load (R40/R39")
+    print("   sense past the 1k series R, so 100k/50k/10k/open all land on the same number)")
     x, columns = read_vectors(os.path.join(OUT, "cv_out_dc.dat"))
-    labels = ["NOM", "1%_MAX", "1%_MIN", "0.1%_MAX", "0.1%_MIN"]
-    nominal = 49.9 / 33 * 100 / 101  # 1.51212 * the 1k/100k load divider
+    labels = ["NOM", "OPEN", "50K", "10K", "DAC13K", "1%_MAX", "1%_MIN", "0.1%_MAX", "0.1%_MIN"]
+    nominal = 49.9 / 33 * 100 / 100  # 1.51212: the 1k is inside the loop, no load divider
     print(f"{'instance':12s} {'V(Vdac=0V)':>11s} {'V(Vdac=3.3V)':>12s} {'scale V/V':>10s} {'scale err':>10s} {'cents/oct':>10s}")
     for index, label in enumerate(labels):
         low = columns[index][0]
@@ -119,6 +118,53 @@ def cv_in_out() -> None:
         scale = (high - low) / 3.3
         error = scale / nominal - 1
         print(f"{label:12s} {low:11.5f} {high:12.5f} {scale:10.5f} {error * 100:9.3f}% {error * 1200:10.1f}")
+    opamp = columns[len(labels)][-1]
+    print(f"{'10K, U12B out':12s} {'':11s} {opamp:12.5f}   (before the 1k: 1k * (Iload + Ifb) above the jack)")
+
+
+def step_metrics(x: list[float], y: list[float]) -> dict:
+    """Overshoot / settling / ringing of a step from 0 at t = 1us."""
+    step = 1e-6
+    tail = [value for t, value in zip(x, y) if t >= x[-1] - 0.1 * (x[-1] - step)]
+    final = sum(tail) / len(tail)
+    peak = max(y)
+    overshoot = (peak - final) / abs(final) * 100.0 if final else 0.0
+    low, high = 0.99 * final, 1.01 * final
+    outside = [t for t, value in zip(x, y) if t > step and not (low <= value <= high)]
+    settled = "never" if outside and outside[-1] > x[-1] - 0.05 * (x[-1] - step) else (
+        f"{outside[-1] * 1e6:.0f}us" if outside else "<1us")
+    ring = [value for t, value in zip(x, y) if t >= x[-1] - 0.25 * (x[-1] - step)]
+    ripple = (max(ring) - min(ring)) if ring else 0.0
+    ripple_pct = ripple / abs(final) * 100.0 if final else 0.0
+    if ripple_pct > 1.0:
+        rings = f"rings, {ripple * 1000:.0f}mV pp"
+    elif ripple_pct > 0.1:
+        rings = f"damped ring, {ripple * 1000:.1f}mV pp"
+    else:
+        rings = "no ring"
+    return {
+        "final": final,
+        "overshoot": overshoot,
+        "settled": settled,
+        "rings": rings,
+    }
+
+
+def cv_out_stability() -> None:
+    loads = ["1nF", "10nF", "100nF"]
+    for name, title in (("small", "CV out load-capacitance step, 0.1V DAC (linear)"),
+                        ("full", "CV out load-capacitance step, 3.3V DAC (full scale)")):
+        x, columns = read_vectors(os.path.join(OUT, f"cv_out_step_{name}.dat"))
+        print(f"\n## {title}")
+        print(f"{'load':6s} {'CF':4s} {'overshoot':>10s} {'settle 1%':>10s}  {'ringing':22s}")
+        for index, load in enumerate(loads):
+            for offset, label in ((0, "0"), (1, "100p")):
+                metrics = step_metrics(x, columns[index * 2 + offset])
+                print(f"{load:6s} {label:4s} {metrics['overshoot']:9.1f}% "
+                      f"{metrics['settled']:>10s}  {metrics['rings']:22s}")
+    print("   the 100pF column is the fitted C33/C34 (across R39/R40); 0 is the")
+    print("   old board. Full-scale 100nF is limited by the opamp output clamp")
+    print("   charging 100nF through the 1k (see RESULTS.md).")
 
 
 def ref_bias() -> None:
@@ -135,13 +181,14 @@ def ref_bias() -> None:
 
 
 def main() -> int:
-    missing = [name for name in ("audio_in_ac", "audio_out_ac", "cv_in_dc", "cv_out_dc", "ref_bias_dc") if not os.path.exists(os.path.join(OUT, f"{name}.dat"))]
+    missing = [name for name in ("audio_in_ac", "audio_out_ac", "cv_in_dc", "cv_out_dc", "cv_out_step_small", "cv_out_step_full", "ref_bias_dc") if not os.path.exists(os.path.join(OUT, f"{name}.dat"))]
     if missing:
         print(f"missing raw output: {', '.join(missing)} -- run `bash run.sh` first", file=sys.stderr)
         return 0
     audio("audio_in", "Audio in (J_AUDIO_IN_L -> AUDIO_IN_L, U2 TL074)", ["stage 1 out NET_C2_2"])
     audio("audio_out", "Audio out (AUDIO_OUT_L -> J_AUDIO_OUT_L, U3 TL074, 100k load)", ["U3B out NET_C12_2 (pre-R19)"])
     cv_in_out()
+    cv_out_stability()
     ref_bias()
     return 0
 

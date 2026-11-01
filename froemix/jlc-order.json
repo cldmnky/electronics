@@ -21,7 +21,7 @@
   "assembly": {
     "service": "JLCPCB SMT assembly",
     "sides": 2,
-    "sides_reason": "97 of 110 placements are on the bottom (all analog/audio/CV/MIDI circuitry); only the mating headers, rail SMD and PMOD live on top. Two-sided means two stencil/paste passes - enable 'assembly for both sides'.",
+    "sides_reason": "98 of the 106 SMT placements are on the bottom (all analog/audio/CV/MIDI circuitry); only the rail SMD sits on top and the mating headers/PMOD are through-hole. Two-sided means two stencil/paste passes - enable 'assembly for both sides'.",
     "stencil": "yes, one per side",
     "through_hole": "hand solder",
     "through_hole_parts": ["CN1", "CN2", "CN3", "CN4", "H1", "J1", "J2", "C24", "C25", "U16"],
@@ -35,9 +35,9 @@
       "cpl": "froemix-cpl-jlc.csv"
     },
     "expected_counts": {
-      "bom_unique_parts": 34,
-      "bom_placements": 110,
-      "cpl_smt_placements": 100,
+      "bom_unique_parts": 38,
+      "bom_placements": 116,
+      "cpl_smt_placements": 106,
       "through_hole_excluded": 10
     }
   },
@@ -45,9 +45,10 @@
     "4 layers, 80.9 x 128.5 mm, four 3.2mm M3 holes",
     "ENIG selected (not HASL)",
     "assembly for BOTH sides enabled",
-    "bottom-side rotations sane in the 3D preview (all 0 or 180 deg, H1 270)",
+    "bottom-side rotations sane in the 3D preview (92 placements at 180, 6 at 0, 8 top at 0; H1 is hand-soldered at 270)",
     "fiducials bright copper, not mask-covered",
     "Daisy Seed footprint empty (module is hand-fitted)",
-    "GND plane visible on the bottom layer preview"
+    "GND plane visible on the bottom layer preview",
+    "the 2512 MIDI resistors (R59/R60) and the 1uF C32 are placed, not dropped as unusual parts"
   ]
 }

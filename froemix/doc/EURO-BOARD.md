@@ -101,9 +101,9 @@ its own resistor from that node to GND, and a 10k pull-up to `P3V3_A` sets idle.
 | idle | none | 3.30 V |
 | press | 0 (direct) | 0.00 V |
 | up | 1k | 0.30 V |
-| down | 3.3k | 0.82 V |
-| left | 6.8k | 1.34 V |
-| right | 15k | 1.98 V |
+| down | 2.2k | 0.60 V |
+| left | 4.7k | 1.05 V |
+| right | 10k | 1.65 V |
 
 The CD4051's ~250 Ω Ron adds ~2 % error, and a 12-bit ADC puts the closest pair
 (press/up) ~370 counts apart. **The ladder is a firmware contract**: the
@@ -179,11 +179,17 @@ The panel window is 30.5 x 16.0mm, centred on the active area at (0, 42.8):
 
 ## 5. Assembly
 
-Mixed, like the base board: 14 SMD parts on the bottom (8 × 0603 resistor,
+Mixed, like the base board: **19 SMD parts on the bottom** (13 × 0603 resistor,
 6 × SOD-323 diode) that JLCPCB can place, and everything else through-hole by
 hand: 10 mono jacks, 2 TRS jacks, 6 pots, the joystick, the button, 7 LEDs
 (6 jack + 1 panel), the 1x7 OLED header and the three 2.00mm sockets (CN1, CN2,
 CN4) on the bottom.
+
+`make release` writes the JLCPCB-shaped assembly files next to the fabrication
+data: `fab/euro/euro-bom-jlc.csv` (14 unique parts, 50 placements) and
+`fab/euro/euro-cpl-jlc.csv` (the 19 SMT placements; the 31 through-hole parts are
+BOM-only, exactly like the base board's THT policy). `euro-pnp-all.csv` is the
+unfiltered placement list for reference.
 
 Socket stack: the base board's 2.00mm pin headers and the 2.00mm female sockets
 overlap (the socket body is ~8.5mm), so a 12 mm M3 spacer between the boards
@@ -202,6 +208,7 @@ reachable from the back.
 | `tsci check shorts` | no shorts |
 | `tsci check pcb-style` | clean |
 | `scripts/check_mating.py` | 3 sockets pin-for-pin on the base board, 26 panel parts aligned with their holes, 31 holes all claimed, window at (0, 40.5) |
+| `scripts/check_madc.py` | the 8 `M_ADC_*` nets are closed islands of pots/joystick/button referenced only to `P3V3_A`/`GND` (the base-board mux has no clamps - see `doc/FRONTBOARD-INTERFACE.md`) |
 | `tsci snapshot --test` | schematic + PCB baselines match |
 
 The build log's `source_pin_missing_trace_warning`s are the 10 mono-jack tip
@@ -218,7 +225,7 @@ channels:
 
 1. **Channel 6 (joystick)** — six levels, table in §2. Read after the CD4051
    selects channel 6; the settle time must cover the mux's ~250 Ω and the
-   ladder's worst case (15k + 10k).
+   ladder's worst case (10k + 10k).
 2. **Channel 7 (button)** — two levels: ~0 V pressed, ~3.3 V released. The LED
    is in the pull-up path, so do not drive that channel as an output.
 

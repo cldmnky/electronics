@@ -2,56 +2,89 @@
 * froemix cv_inout.cir -- CV input summer (U13) and CV output scaler (U12)
 * =====================================================================
 * Source of truth: tscircuit/sections/cv.tsx (nets match the schematic net
-* names). Two independent circuits in one deck.
+* names). Two independent circuits in one deck; channel 1 is drawn, channel 2
+* (R42/R43/R44, U13B, U12C/D, R32/R36/R38/R39/R45) is identical.
 *
 * --- CV IN: J_CV_IN_1 -> Daisy ADC_3 (CV_IN_1), U13 = MCP6002 on 3.3 V
 *   J_CV_IN_1 --R30 100k-- U13_INA_N        inverting summer
-*                          R33 33k  -> CV_IN_1 (U13 OUTA)
-*                          R34 200k -> N10V_REF (-10 V)
-*                          C16 10nF across R33 (482 Hz pole; no DC effect)
-*   Vout = -(R33/R30)*Vin + (R33/R34)*10V = -0.330*Vin + 1.650
+*                          R33 30.1k -> CV_IN_1 (U13 OUTA)
+*                          R34 187k  -> N10V_REF (-10 V)
+*                          C16 10nF across R33 (529 Hz pole; no DC effect)
+*   Vout = -(R33/R30)*Vin + (R33/R34)*10V = -0.3010*Vin + 1.6096
 *
 * EXPECTED (CV IN)
-*   Vin = +5 V -> 0.000 V ; Vin = -5 V -> 3.300 V. So +/-5 V maps to 0..3.3 V,
-*   inverted, with both endpoints sitting exactly ON a rail.
-*   scale = 0.330 V/V: 1 V/oct at the jack -> 0.330 V/oct at the ADC.
-*   MCP6002 output swing is ~25-30 mV inside the rails, so a real part cannot
-*   reach either endpoint: expect ~0.030 V and ~3.270 V, losing the outer ~1%
-*   of the ADC range at both ends. The *_IDEAL columns (rails at +/-100 V, i.e.
-*   an unclamped opamp) show the intended mapping and the tolerance spread; the
-*   _MCP column shows what the fitted part actually does.
+*   Vin = +5 V -> 0.1046 V ; Vin = -5 V -> 3.1146 V. So +/-5 V maps into
+*   0.10..3.11 V, i.e. ~100 mV of guard band below the 3.3 V rail and above
+*   GND instead of the 0/3.3 V that the previous 33k/200k ratios demanded and
+*   the MCP6002 could not reach (DESIGN-REVIEW R10).
+*   scale = 0.3010 V/V: 1 V/oct at the jack -> 0.301 V/oct at the ADC.
+*   MCP6002 output swing is ~25-30 mV inside the rails, so the *_MCP column
+*   reproduces the ideal mapping instead of clipping: 0.1046 V and 3.1146 V are
+*   both >= 30 mV clear of a rail, which is the whole point of R10.
 *   Tolerance: the two ratio terms each carry ~2x the resistor tolerance
 *   (RF/RIN for the scale, RF/RREF for the offset), so 1% parts give a
-*   +/-2.02% scale error and +/-2.02% of 1.65 V = +/-33 mV of offset;
-*   0.1% parts give +/-0.202% / +/-3.3 mV.
+*   +/-2.02% scale error and +/-2.02% of 1.6096 V = +/-32.5 mV of offset;
+*   0.1% parts give +/-0.202% / +/-3.25 mV.
 *   In pitch terms 1200 cents/octave * 0.0202 = 24.2 cents/octave (1% parts),
 *   2.4 cents/octave (0.1% parts).
 *
 * --- CV OUT: Daisy DAC_OUT2 (CV_OUT_1) -> J_CV_OUT_1, U12 = TL074 on +/-12 V
-*   CV_OUT_1 --R31 33k-- U12A_IN_N     inverting x1.512
-*                        R35 49.9k -> NET_R35_2 (U12A out)
-*   NET_R35_2 --R37 100k-- U12B_IN_N   inverting x1
-*                          R40 100k -> NET_R40_2 (U12B out)
-*   NET_R40_2 --R46 1k--- J_CV_OUT_1   series R, 100k eurorack load
-*   Vout = (R35/R31)*(R40/R37)*Vin = 1.5121*Vin
+*   The DAC is used with its internal buffer DISABLED (~13k source
+*   impedance), so the two spare TL074 channels U11A/U11D are unity-gain
+*   followers in front of the 33k summing resistors (DESIGN-REVIEW R03):
+*   CV_OUT_1 --U11A follower-- U11A_IN_N --R31 33k-- U12A_IN_N
+*                R35 49.9k -> NET_R35_2 (U12A out)
+*   NET_R35_2 --R37 100k-- U12B_IN_N     inverting x1
+*                 R40 100k -> J_CV_OUT_1  feedback picked up AFTER R46
+*   NET_R40_2 (U12B out) --R46 1k-- J_CV_OUT_1 -- RLOAD (eurorack input)
+*   Vout(jack) = (R35/R31)*(R40/R37)*Vin = 1.5121*Vin
 *
 * EXPECTED (CV OUT)
-*   Vin = 0 V -> 0.000 V ; Vin = 3.3 V -> 4.990 V open, 4.940 V into 100k
-*   (0..3.3 V -> 0..5 V; the 1k series R costs 1% into a 100k load)
+*   Vin = 0 V -> 0.000 V ; Vin = 3.3 V -> 4.990 V into 100k, 50k, 10k or
+*   nothing at all. The 1k R46 is inside the feedback loop (DESIGN-REVIEW
+*   R09), so the load no longer forms a divider with it: the jack voltage is
+*   load-independent and only the opamp output moves
+*   (V(U12B out) = Vjack * (1 + 1k/RLOAD + 1k/R40) - the second term is the
+*   feedback resistor's own current: 5.090 V at 100k, 5.539 V at 10k), which
+*   stays far inside the TL074's +/-10 V swing.
 *   scale = 1.5121 V/V: 1 V/oct at the DAC -> 1.512 V/oct at the jack, so the
 *   firmware must emit 0.661 V/oct to get 1 V/oct out.
-*   The output never leaves the TL074's +/-10 V swing, so no clipping.
+*   The DAC13K column repeats the nominal case with a 13k source resistance in
+*   series with VDAC (the unbuffered DAC): the jack level does not move,
+*   because 13k only has to drive the follower's input. Without the follower
+*   the same 13k would sit in series with R31 and cost ~28% (1.5121 ->
+*   49.9/(33+13)*100/100 = 1.085).
 *   Tolerance: two cascaded ratios, each ~2x tolerance -> +/-4.04% worst case,
 *   +/-2.86% RSS: 48.5 / 34.3 cents/octave for 1% parts, 4.9 / 3.4 for 0.1%.
 *   NOTE the -10 V reference is ideal (VREF) here; ref_bias.cir covers the real
 *   LM4040. Its +/-0.5% initial accuracy only shifts the CV-IN offset (fixed,
 *   calibratable) -- it changes no scale factor.
 *
+* --- CV OUT load-capacitance stability (C33/C34 100pF across R39/R40)
+*   R09 moved the CV-OUT feedback to the jack side of R45/R46, so the 1k and
+*   the cable capacitance sit inside the TL074 loop. Uncompensated that loop
+*   is marginal (about 18 deg phase margin at a 1nF load, from the closed-form
+*   dominant pole + 1k*C load pole) and it rings: the tran run below shows
+*   54% overshoot at 1nF, 84% at 10nF and no settling at 100nF. C33/C34 100pF
+*   across the 100k feedback resistors put a zero at
+*   fz = 1/(2*pi*100k*100p) = 15.9kHz, which is also the worst-case 1k/10nF
+*   load pole, and limit the CV-OUT bandwidth to ~16kHz - fine for a DC..audio
+*   CV output. The tran run steps the DAC into 1nF, 10nF and 100nF at the jack,
+*   with CF=0 (old board) and CF=100p (fitted C33/C34), at two amplitudes:
+*   0.1V DAC (0.151V at the jack, the linear case) and 3.3V full scale.
+*   Expected: 0% overshoot at 1nF/10nF and ~1.5% at 100nF small signal; the
+*   full-scale 100nF step is limited by the opamp output clamp (the opamp has
+*   to charge 100nF through the 1k), which is why it still overshoots.
+*
 * Not modelled: opamp input offset voltage (MCP6002 Vos +/-4.5 mV -> a fixed
-* ~4.5 cent CV-IN offset) and resistor tempco. Both are offsets, not scale.
+* ~4.5 cent CV-IN offset, TL074 Vos up to 10 mV per stage in the CV-OUT path),
+* resistor tempco, and opamp output current limiting (the OPAMP subckt clamps
+* the output voltage, not the current). Offsets are offsets, not scale; the
+* clamp is what bounds the full-scale 100nF step here.
 *
 * Run: ngspice -b cv_inout.cir   (or: bash run.sh, from this directory)
-* Raw output: out/cv_inout.log, out/cv_in_dc.dat, out/cv_out_dc.dat
+* Raw output: out/cv_inout.log, out/cv_in_dc.dat, out/cv_out_dc.dat,
+*             out/cv_out_step_small.dat, out/cv_out_step_full.dat
 * =====================================================================
 
 * --- single-pole opamp: A0 = gm*RP, fp = GBW/A0, output clamped to the rails
@@ -66,7 +99,7 @@ B1    OUT 0   V = max(min(V(NI), V(VP)-HEAD), V(VM)+HEAD)
 * --- CV input summer, U13
 * NREF is a port, not a global node: inside a subcircuit ngspice treats unknown
 * names as local, so N10V_REF has to be passed in explicitly.
-.subckt CVIN IN OUT VP VM NREF PARAMS: RF=33k RIN=100k RREF=200k A0=1e5 GBW=1e6 HEAD=0.03
+.subckt CVIN IN OUT VP VM NREF PARAMS: RF=30.1k RIN=100k RREF=187k A0=1e5 GBW=1e6 HEAD=0.03
 R30 IN  SUM {RIN}
 R33 SUM OUT {RF}
 R34 NREF SUM {RREF}
@@ -74,16 +107,24 @@ C16 SUM OUT 10n
 XOP 0 SUM OUT VP VM OPAMP PARAMS: A0={A0} GBW={GBW} HEAD={HEAD}
 .ends
 
-* --- CV output scaler, U12 (TL074: A0 200k, GBW 3 MHz, 1.5 V headroom)
-.subckt CVOUT IN OUT VP VM PARAMS: R1=33k RF1=49.9k R2=100k RF2=100k
-R31  IN   SUM1 {R1}
-R35  SUM1 MID  {RF1}
-XOP1 0 SUM1 MID VP VM OPAMP PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
-R37  MID  SUM2 {R2}
-R40  SUM2 NOUT {RF2}
-XOP2 0 SUM2 NOUT VP VM OPAMP PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
-R46  NOUT OUT  1k
-RLOAD OUT 0    100k
+* --- CV output scaler, U12 (TL074: A0 200k, GBW 3 MHz, 1.5 V headroom), with
+* --- the U11A follower in front of R31 and the R40 feedback taken at the jack
+* --- side of R46 (load-independent gain, 1k still protects the output).
+* --- CF is C33/C34 across the 100k feedback (0 = uncompensated board), CL is
+* --- the load capacitance at the jack.
+.subckt CVOUT IN OUT VP VM PARAMS: R1=33k RF1=49.9k R2=100k RF2=100k RLOAD=100k RS=0.001 CF=0 CL=0
+RSDAC IN    DAC   {RS}
+XOPB  DAC   BUF   BUF   VP VM OPAMP PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+R31   BUF   SUM1  {R1}
+R35   SUM1  MID   {RF1}
+XOP1  0     SUM1  MID   VP VM OPAMP PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+R37   MID   SUM2  {R2}
+R40   OUT   SUM2  {RF2}
+CFB   SUM2  OUT   {CF}
+XOP2  0     SUM2  NOUT  VP VM OPAMP PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+R46   NOUT  OUT   1k
+RLOAD OUT   0     {RLOAD}
+CLOAD OUT   0     {CL}
 .ends
 
 * --- supplies: P3V3_A for U13, VCC/VEE for U12, ideal -10 V reference,
@@ -104,36 +145,66 @@ VDAC CV_OUT_1  0 DC 0
 * low extreme of that endpoint. Two corners are not enough: with RF and RIN
 * scaled together the scale and offset errors cancel at the +5 V endpoint by
 * construction, so the cross corners are needed to bound it.
-*   scale max  S = RF/RIN up   -> RF 33.33k, RIN 99k
-*   scale min  S = RF/RIN down -> RF 32.67k, RIN 101k
-*   offset max O = RF/RREF up  -> RREF 198k
-*   offset min O = RF/RREF down-> RREF 202k
-XIN_IDEAL   J_CV_IN_1 CVIN_IDEAL   VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=33k     RIN=100k   RREF=200k
-XIN1_N5HI   J_CV_IN_1 CVIN1_N5HI   VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=33.33k  RIN=99k    RREF=198k
-XIN1_N5LO   J_CV_IN_1 CVIN1_N5LO   VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=32.67k  RIN=101k   RREF=202k
-XIN1_P5HI   J_CV_IN_1 CVIN1_P5HI   VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=32.67k  RIN=101k   RREF=198k
-XIN1_P5LO   J_CV_IN_1 CVIN1_P5LO   VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=33.33k  RIN=99k    RREF=202k
-XIN01_N5HI  J_CV_IN_1 CVIN01_N5HI  VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=33.033k RIN=99.9k  RREF=199.8k
-XIN01_N5LO  J_CV_IN_1 CVIN01_N5LO  VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=32.967k RIN=100.1k RREF=200.2k
-XIN01_P5HI  J_CV_IN_1 CVIN01_P5HI  VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=32.967k RIN=100.1k RREF=199.8k
-XIN01_P5LO  J_CV_IN_1 CVIN01_P5LO  VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=33.033k RIN=99.9k  RREF=200.2k
+*   scale max  S = RF/RIN up   -> RF 30.401k, RIN 99k
+*   scale min  S = RF/RIN down -> RF 29.799k, RIN 101k
+*   offset max O = RF/RREF up  -> RREF 185.13k
+*   offset min O = RF/RREF down-> RREF 188.87k
+XIN_IDEAL   J_CV_IN_1 CVIN_IDEAL   VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=30.1k    RIN=100k   RREF=187k
+XIN1_N5HI   J_CV_IN_1 CVIN1_N5HI   VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=30.401k  RIN=99k    RREF=185.13k
+XIN1_N5LO   J_CV_IN_1 CVIN1_N5LO   VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=29.799k  RIN=101k   RREF=188.87k
+XIN1_P5HI   J_CV_IN_1 CVIN1_P5HI   VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=29.799k  RIN=101k   RREF=185.13k
+XIN1_P5LO   J_CV_IN_1 CVIN1_P5LO   VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=30.401k  RIN=99k    RREF=188.87k
+XIN01_N5HI  J_CV_IN_1 CVIN01_N5HI  VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=30.1301k RIN=99.9k  RREF=186.813k
+XIN01_N5LO  J_CV_IN_1 CVIN01_N5LO  VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=30.0699k RIN=100.1k RREF=187.187k
+XIN01_P5HI  J_CV_IN_1 CVIN01_P5HI  VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=30.0699k RIN=100.1k RREF=186.813k
+XIN01_P5LO  J_CV_IN_1 CVIN01_P5LO  VPIDEAL VMIDEAL N10V_REF CVIN PARAMS: RF=30.1301k RIN=99.9k  RREF=187.187k
 * --- CV IN, the fitted part (MCP6002: A0 100k, GBW 1 MHz, RRO 30 mV)
-XIN_MCP     J_CV_IN_1 CVIN_MCP     P3V3_A  0       N10V_REF CVIN PARAMS: RF=33k     RIN=100k   RREF=200k A0=1e5 GBW=1e6 HEAD=0.03
+XIN_MCP     J_CV_IN_1 CVIN_MCP     P3V3_A  0       N10V_REF CVIN PARAMS: RF=30.1k    RIN=100k   RREF=187k A0=1e5 GBW=1e6 HEAD=0.03
 
-* --- CV OUT instances: nominal, 1% corners, 0.1% corners
+* --- CV OUT instances: nominal into 100k / open / 50k / 10k, the same thing
+* --- with a 13k unbuffered-DAC source, and the 1% / 0.1% corners
 XOUT_NOM   CV_OUT_1 CVOUT_NOM   VCC VEE CVOUT PARAMS: R1=33k     RF1=49.9k    R2=100k   RF2=100k
+XOUT_OPEN  CV_OUT_1 CVOUT_OPEN  VCC VEE CVOUT PARAMS: R1=33k     RF1=49.9k    R2=100k   RF2=100k RLOAD=1G
+XOUT_50K   CV_OUT_1 CVOUT_50K   VCC VEE CVOUT PARAMS: R1=33k     RF1=49.9k    R2=100k   RF2=100k RLOAD=50k
+XOUT_10K   CV_OUT_1 CVOUT_10K   VCC VEE CVOUT PARAMS: R1=33k     RF1=49.9k    R2=100k   RF2=100k RLOAD=10k
+XOUT_DAC13 CV_OUT_1 CVOUT_DAC13 VCC VEE CVOUT PARAMS: R1=33k     RF1=49.9k    R2=100k   RF2=100k RS=13k
 XOUT_1MAX  CV_OUT_1 CVOUT_1MAX  VCC VEE CVOUT PARAMS: R1=32.67k  RF1=50.399k  R2=99k    RF2=101k
 XOUT_1MIN  CV_OUT_1 CVOUT_1MIN  VCC VEE CVOUT PARAMS: R1=33.33k  RF1=49.401k  R2=101k   RF2=99k
 XOUT_01MAX CV_OUT_1 CVOUT_01MAX VCC VEE CVOUT PARAMS: R1=32.967k RF1=49.9499k R2=99.9k RF2=100.1k
 XOUT_01MIN CV_OUT_1 CVOUT_01MIN VCC VEE CVOUT PARAMS: R1=33.033k RF1=49.8501k R2=100.1k RF2=99.9k
+
+* --- CV OUT load-capacitance stability: a 0.1V DAC step (0.151V at the jack,
+* --- linear) and a 3.3V full-scale step, into 1nF / 10nF / 100nF, with CF=0
+* --- (the old board) and CF=100p (C33/C34 fitted). RLOAD is open here: the
+* --- load pole is 1k*CL and a resistive load only damps it slightly.
+VSTEP_S J_CV_STEP_S 0 PULSE(0 0.1 1u 100n 100n 10m 20m)
+VSTEP_F J_CV_STEP_F 0 PULSE(0 3.3 1u 100n 100n 10m 20m)
+XS_1N_0   J_CV_STEP_S STEP_S_1N_0   VCC VEE CVOUT PARAMS: RLOAD=1G CF=0    CL=1n
+XS_1N_C   J_CV_STEP_S STEP_S_1N_C   VCC VEE CVOUT PARAMS: RLOAD=1G CF=100p CL=1n
+XS_10N_0  J_CV_STEP_S STEP_S_10N_0  VCC VEE CVOUT PARAMS: RLOAD=1G CF=0    CL=10n
+XS_10N_C  J_CV_STEP_S STEP_S_10N_C  VCC VEE CVOUT PARAMS: RLOAD=1G CF=100p CL=10n
+XS_100N_0 J_CV_STEP_S STEP_S_100N_0 VCC VEE CVOUT PARAMS: RLOAD=1G CF=0    CL=100n
+XS_100N_C J_CV_STEP_S STEP_S_100N_C VCC VEE CVOUT PARAMS: RLOAD=1G CF=100p CL=100n
+XF_1N_0   J_CV_STEP_F STEP_F_1N_0   VCC VEE CVOUT PARAMS: RLOAD=1G CF=0    CL=1n
+XF_1N_C   J_CV_STEP_F STEP_F_1N_C   VCC VEE CVOUT PARAMS: RLOAD=1G CF=100p CL=1n
+XF_10N_0  J_CV_STEP_F STEP_F_10N_0  VCC VEE CVOUT PARAMS: RLOAD=1G CF=0    CL=10n
+XF_10N_C  J_CV_STEP_F STEP_F_10N_C  VCC VEE CVOUT PARAMS: RLOAD=1G CF=100p CL=10n
+XF_100N_0 J_CV_STEP_F STEP_F_100N_0 VCC VEE CVOUT PARAMS: RLOAD=1G CF=0    CL=100n
+XF_100N_C J_CV_STEP_F STEP_F_100N_C VCC VEE CVOUT PARAMS: RLOAD=1G CF=100p CL=100n
 
 .control
 set noaskquit
 * CV in: +/-5 V jack swing
 dc VIN -5 5 0.05
 wrdata out/cv_in_dc.dat v(CVIN_IDEAL) v(CVIN1_N5HI) v(CVIN1_N5LO) v(CVIN1_P5HI) v(CVIN1_P5LO) v(CVIN01_N5HI) v(CVIN01_N5LO) v(CVIN01_P5HI) v(CVIN01_P5LO) v(CVIN_MCP)
-* CV out: 0..3.3 V DAC swing
+* CV out: 0..3.3 V DAC swing. CVOUT_10K_xOP is the U12B output (before R46):
+* it rises with the load current, the jack voltage does not.
 dc VDAC 0 3.3 0.033
-wrdata out/cv_out_dc.dat v(CVOUT_NOM) v(CVOUT_1MAX) v(CVOUT_1MIN) v(CVOUT_01MAX) v(CVOUT_01MIN)
+wrdata out/cv_out_dc.dat v(CVOUT_NOM) v(CVOUT_OPEN) v(CVOUT_50K) v(CVOUT_10K) v(CVOUT_DAC13) v(CVOUT_1MAX) v(CVOUT_1MIN) v(CVOUT_01MAX) v(CVOUT_01MIN) v(XOUT_10K.NOUT)
+* CV out load-cap stability: 0.1V and 3.3V DAC steps into 1n/10n/100n, with
+* CF=0 (old board) and CF=100p (C33/C34), from t=1us.
+tran 20n 600u
+wrdata out/cv_out_step_small.dat v(STEP_S_1N_0) v(STEP_S_1N_C) v(STEP_S_10N_0) v(STEP_S_10N_C) v(STEP_S_100N_0) v(STEP_S_100N_C)
+wrdata out/cv_out_step_full.dat v(STEP_F_1N_0) v(STEP_F_1N_C) v(STEP_F_10N_0) v(STEP_F_10N_C) v(STEP_F_100N_0) v(STEP_F_100N_C)
 .endc
 .end
