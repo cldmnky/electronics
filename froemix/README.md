@@ -88,6 +88,15 @@ Design record, floorplan and the open decisions (joystick sourcing, OLED
 module, jack height, button part, CN3/SD, panel material):
 [`doc/EURO-BOARD.md`](doc/EURO-BOARD.md).
 
+### Faceplate design and fabrication
+
+The panel-specific record is [doc/FRONT-PANEL.md](doc/FRONT-PANEL.md): material
+comparison, two white-on-black design directions, JLCPCB order settings and a
+first-article fit checklist. Recommended material is **2mm FR4 with standard
+black solder mask and white print**, ordered separately from the electronic
+boards, without assembly or a stencil. A Gerber check is not a physical-fit
+approval; the button reach, knob hardware and rack clearance still need checks.
+
 ## Base board <-> eurorack board interface
 
 `CN1`/`CN2` are 2.00mm 16-pin headers (`A2005WV-16P`); `CN2` is the jack bus,

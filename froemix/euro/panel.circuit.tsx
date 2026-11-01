@@ -3,15 +3,27 @@
 // This is a mechanical board: no copper, no nets. Only the outline, the holes
 // and the silkscreen. Every hole is read from lib/layout.ts, the same table the
 // front board (`index.circuit.tsx`) places its parts from, so panel and board
-// cannot drift apart. Stack-up and the open questions: froemix/doc/EURO-BOARD.md.
+// cannot drift apart. Stack-up and the open questions: froemix/doc/EURO-BOARD.md,
+// material and order notes: froemix/doc/FRONT-PANEL.md.
+//
+// Printed artwork is NOT text: lib/panel-art.ts turns every legend into
+// single-stroke polylines and this file emits one `<silkscreenpath>` per
+// polyline with an explicit stroke width. `<silkscreentext>` is banned on a
+// panel because its print width is `font_size * 0.09` (0.099mm at 1.1mm), which
+// is thinner than JLCPCB will print reliably. Checks: lib/panel-checks.ts.
 //
 // Cutouts/holes:
 //   4x M3 rail screws   (+/-43.3, +/-61.25)   Doepfer 3U
-//   8x pot bushings     M7                     Alpha 9mm
-//  12x jack bushings    6.2mm                  PJ398SM (mono) / PJ320A (TRS)
-//   1x 3mm LED
-//   1x OLED window      30 x 15.5mm           1.3" 128x64 module
+//   6x pot bushings     M7                     Alpha 9mm
+//  12x jack bushings    6.2mm                  XKB PJ-301M-2-B (mono) /
+//                                               XKB PJ-301M-3-B (TRS)
+//   6x jack LEDs         3.2mm
+//   1x panel LED         3.2mm
+//   1x navigation switch 7.0mm
+//   1x MODE button      12.2mm
+//   1x OLED window      30.5 x 16.0mm, R0.5 internal corners, rounded polygon
 
+import { Fragment } from "react"
 import {
   BOARD_H,
   BOARD_W,
@@ -21,135 +33,108 @@ import {
   JACK_LEDS,
   JOYSTICK,
   LED_AT,
-  OLED_WINDOW,
-  OLED,
   POTS,
   RAIL_HOLES,
 } from "./lib/layout"
+import {
+  DEFAULT_PANEL_DESIGN,
+  isPanelDesignId,
+  panelArtwork,
+  type PanelDesignId,
+} from "./lib/panel-art"
 
-export default () => (
-  <board width={`${BOARD_W}mm`} height={`${BOARD_H}mm`} thickness="2mm">
-    {/* rack screws */}
-    {RAIL_HOLES.map((h, i) => (
-      <hole key={`rail-${i}`} diameter={`${HOLE.rail}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} />
-    ))}
+/**
+ * Selected design. `FROEMIX_PANEL_DESIGN=signal` (or `--inject-props
+ * '{"design":"signal"}'`) builds the alternative artwork; the default is the
+ * recommended starting point, not a decision the owner has made.
+ */
+const resolveDesign = (fromProps?: string): PanelDesignId => {
+  const raw =
+    fromProps ?? (typeof process === "undefined" ? undefined : process.env?.FROEMIX_PANEL_DESIGN)
+  if (!raw) return DEFAULT_PANEL_DESIGN
+  if (!isPanelDesignId(raw)) {
+    throw new Error(
+      `panel.circuit.tsx: unknown panel design ${JSON.stringify(raw)}; use "nord" or "signal"`,
+    )
+  }
+  return raw
+}
 
-    {/* jack bushings */}
-    {JACKS.map((j) => (
+export default ({ design }: { design?: string } = {}) => {
+  const art = panelArtwork(resolveDesign(design))
+
+  return (
+    <board
+      width={`${BOARD_W}mm`}
+      height={`${BOARD_H}mm`}
+      thickness={`${art.outline.thickness}mm`}
+    >
+      {/* rack screws */}
+      {RAIL_HOLES.map((h, i) => (
+        <Fragment key={`rail-${i}`}>
+          <hole diameter={`${HOLE.rail}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} />
+        </Fragment>
+      ))}
+
+      {/* jack bushings */}
+      {JACKS.map((j) => (
+        <Fragment key={`jack-${j.name}`}>
+          <hole diameter={`${HOLE.jack}mm`} pcbX={`${j.x}mm`} pcbY={`${j.y}mm`} />
+        </Fragment>
+      ))}
+
+      {/* pot bushings */}
+      {POTS.map((p) => (
+        <Fragment key={`pot-${p.name}`}>
+          <hole diameter={`${HOLE.pot}mm`} pcbX={`${p.x}mm`} pcbY={`${p.y}mm`} />
+        </Fragment>
+      ))}
+
+      {/* UI joystick + illuminated MODE button */}
       <hole
-        key={`jack-${j.name}`}
-        diameter={`${HOLE.jack}mm`}
-        pcbX={`${j.x}mm`}
-        pcbY={`${j.y}mm`}
+        diameter={`${HOLE.joy}mm`}
+        pcbX={`${JOYSTICK.x}mm`}
+        pcbY={`${JOYSTICK.y}mm`}
       />
-    ))}
-
-    {/* pot bushings */}
-    {POTS.map((p) => (
       <hole
-        key={`pot-${p.name}`}
-        diameter={`${HOLE.pot}mm`}
-        pcbX={`${p.x}mm`}
-        pcbY={`${p.y}mm`}
+        diameter={`${HOLE.button}mm`}
+        pcbX={`${BUTTON.x}mm`}
+        pcbY={`${BUTTON.y}mm`}
       />
-    ))}
 
-    {/* UI joystick + illuminated MODE button */}
-    <hole
-      diameter={`${HOLE.joy}mm`}
-      pcbX={`${JOYSTICK.x}mm`}
-      pcbY={`${JOYSTICK.y}mm`}
-    />
-    <hole
-      diameter={`${HOLE.button}mm`}
-      pcbX={`${BUTTON.x}mm`}
-      pcbY={`${BUTTON.y}mm`}
-    />
+      {/* signal-activity LEDs, one above each watched jack */}
+      {JACK_LEDS.map((l) => (
+        <Fragment key={`jackled-${l.name}`}>
+          <hole diameter={`${HOLE.jackLed}mm`} pcbX={`${l.x}mm`} pcbY={`${l.y}mm`} />
+        </Fragment>
+      ))}
 
-    {/* signal-activity LEDs, one above each watched jack */}
-    {JACK_LEDS.map((l) => (
+      {/* panel indicator LED */}
       <hole
-        key={`jackled-${l.name}`}
-        diameter={`${HOLE.jackLed}mm`}
-        pcbX={`${l.x}mm`}
-        pcbY={`${l.y}mm`}
+        diameter={`${HOLE.led}mm`}
+        pcbX={`${LED_AT.x}mm`}
+        pcbY={`${LED_AT.y}mm`}
       />
-    ))}
 
-    {/* panel indicator LED */}
-    <hole
-      diameter={`${HOLE.led}mm`}
-      pcbX={`${LED_AT.x}mm`}
-      pcbY={`${LED_AT.y}mm`}
-    />
+      {/*
+        1.3" display window. A rounded polygon, not a rect: R0.5 internal
+        corners are routable, sharp ones are not, and `RectCutoutProps` has no
+        corner radius. The bounding box (30.5 x 16.0 at 0,42.8) is unchanged.
+      */}
+      <cutout shape="polygon" points={art.window.polygon} />
 
-    {/* 1.3" display window */}
-    <cutout
-      shape="rect"
-      width={`${OLED.windowW}mm`}
-      height={`${OLED.windowH}mm`}
-      pcbX={`${OLED_WINDOW.x}mm`}
-      pcbY={`${OLED_WINDOW.y}mm`}
-    />
-
-    {/* labels under each jack and pot */}
-    {JACKS.map((j) => (
-      <silkscreentext
-        key={`lbl-${j.name}`}
-        text={j.label}
-        fontSize="1.1mm"
-        anchorAlignment="center"
-        pcbX={`${j.x}mm`}
-        pcbY={`${j.y - 8.6}mm`}
-      />
-    ))}
-    {POTS.map((p) => (
-      <silkscreentext
-        key={`lbl-${p.name}`}
-        text={p.label}
-        fontSize="1.1mm"
-        anchorAlignment="center"
-        pcbX={`${p.x}mm`}
-        pcbY={`${p.y - 9.6}mm`}
-      />
-    ))}
-
-    {/* UI control labels */}
-    <silkscreentext
-      text={JOYSTICK.label}
-      fontSize="1.2mm"
-      anchorAlignment="center"
-      pcbX={`${JOYSTICK.x}mm`}
-      pcbY={`${JOYSTICK.y - 9.6}mm`}
-    />
-    <silkscreentext
-      text={BUTTON.label}
-      fontSize="1.2mm"
-      anchorAlignment="center"
-      pcbX={`${BUTTON.x}mm`}
-      pcbY={`${BUTTON.y - 9.6}mm`}
-    />
-
-    <silkscreentext
-      text="FROEMIX"
-      fontSize="2.6mm"
-      anchorAlignment="center"
-      pcbX="0mm"
-      pcbY="-59.8mm"
-    />
-    <silkscreentext
-      text="daisy seed dsp - 20hp"
-      fontSize="1.2mm"
-      anchorAlignment="center"
-      pcbX="0mm"
-      pcbY="-62.4mm"
-    />
-    <silkscreentext
-      text="REV 0.1"
-      fontSize="1.2mm"
-      anchorAlignment="center"
-      pcbX="0mm"
-      pcbY="61.6mm"
-    />
-  </board>
-)
+      {/* printed artwork: one stroked path per line, never a text primitive */}
+      {art.elements.flatMap((element) =>
+        element.paths.map((path, i) => (
+          <Fragment key={`${element.id}-${i}`}>
+            <silkscreenpath
+              layer="top"
+              strokeWidth={`${element.strokeWidth}mm`}
+              route={path}
+            />
+          </Fragment>
+        )),
+      )}
+    </board>
+  )
+}

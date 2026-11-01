@@ -11,6 +11,11 @@ built circuit JSON on every gate run.
 
 Status: **designed, routed, gated.** Not ordered. Open decisions in §8.
 
+For the current faceplate artwork, material comparison, manufacturing files and
+pre-order mechanical checklist, use [FRONT-PANEL.md](FRONT-PANEL.md). Its panel
+geometry and ordering notes supersede the older faceplate assumptions below;
+the electronic boards are unchanged by that artwork revision.
+
 ## 1. Mechanical contract
 
 Everything in this section comes from the base board and must not change.
@@ -237,8 +242,10 @@ channels:
    Options: mate CN3 and add a front micro-SD socket, or a 1x8 test header.
 5. **OLED module.** The draft assumes the common 1.3"/7-pin/2.54mm module, 35.5
    x 33mm, no mounting holes.
-6. **Panel material.** PCB panel (2mm FR4) as modelled; aluminium would be a
-   drill file only, with engraved labels instead of silkscreen.
+6. **Panel material.** Recommended: 2mm FR4, black mask / white print. See
+   [FRONT-PANEL.md](FRONT-PANEL.md) for the comparison and JLCPCB settings.
+   An anodised aluminium alternative needs the separate JLCCNC mechanical-CAD
+   and marking workflow; an ordinary PCB drill file alone does not specify it.
 7. **Board height.** 128.5mm matches the base board. If the rack rails are the
    limit, both boards move together — do not change one.
 8. **Encoder dropped.** Base board CN2 pads 11–15 stay reserved and unconnected;

@@ -10,9 +10,13 @@
 #   4. tsci check shorts     unintended copper
 #   5. tsci check pcb-style  odd-angle / staircase routing
 #   6. check_mating.py       mating contract, panel alignment, 0 unconnected ports
-#   7. tsci snapshot --test  schematic/PCB match __snapshots__/
+#   7. panel_check.ts        panel artwork: frozen holes, rounded window, stroke
+#                            widths, hardware keepouts, no copper
+#   8. panel tests           mutation tests for the panel checks (bun test)
+#   9. tsci snapshot --test  schematic/PCB match __snapshots__/
 #
-# Runtime ~1min warm. Per-step logs land in $TMPDIR/froemix-euro-gate/.
+# Runtime ~1min warm. Per-step logs land in $TMPDIR/froemix-euro-gate/. The
+# panel steps read the panel circuit JSON the build step just wrote.
 # Needs bun (the tscircuit CLI is a bun program) and python3.
 
 set -uo pipefail
@@ -47,6 +51,8 @@ step "check placement" npx tsci check placement
 step "check shorts"   npx tsci check shorts
 step "check pcb-style" npx tsci check pcb-style
 step "mating contract" python3 scripts/check_mating.py
+step "panel artwork"  bun scripts/panel_check.ts
+step "panel tests"    bun test lib/panel
 step "snapshot diff"  npx tsci snapshot --test
 
 # ---------------------------------------------------------------------------
