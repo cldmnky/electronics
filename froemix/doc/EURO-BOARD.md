@@ -242,3 +242,50 @@ channels:
    limit, both boards move together — do not change one.
 8. **Encoder dropped.** Base board CN2 pads 11–15 stay reserved and unconnected;
    the UI is the 5-way plus the button.
+
+## 9. BOM and sourcing
+
+Rule (`froemix/AGENTS.md` §9): **LCSC/JLCPCB first, Electrokit for anything LCSC
+does not stock.** No other supplier. Parts with a `supplierPartNumbers` entry in
+the TSX are LCSC; the rest are listed here.
+
+### LCSC (in the design, code in the TSX)
+
+| Qty | Part | Code |
+| --- | --- | --- |
+| 6+1 | 1k 0603 (ladder "up", panel LED series R, button series R) | C21190 |
+| 1 | 2.2k 0603 (ladder "down" in 2.2k form, jack LED ballast x6 separate) | C4190 |
+| 1 | 4.7k 0603 (ladder "left") | C23162 |
+| 2 | 10k 0603 (joystick pull-up, ladder "right") | C25804 |
+| 1 | 2.2k x6 jack LED resistors | C4190 |
+| 6 | 1N4148WS SOD-323 (jack LED diodes) | C2128 |
+| 1 | 12mm illuminated button, red, K6-1212A02 | C692901 |
+
+### Electrokit (`https://www.electrokit.com/`)
+
+| Qty | Part | Art. nr | Price | Note |
+| --- | --- | --- | --- | --- |
+| 6 | Alps RK09K, 10k lin, 6mm knurled shaft | 41012043 | 25 SEK | **exact match** to the footprint - the linked datasheet names `RK09K1130A5R` |
+| 1 | 5-way navigation switch, 12.4 x 12.4mm | 41035331 | 19.50 SEK | function matches, **footprint differs**: 6 pins on a 12.9 x 8.0mm pattern, 4 x 1.4mm + 2 x 1.2mm drills |
+| 1 | 1.3" 128x64 SPI OLED, Waveshare "1.3inch OLED Module (C)" | 41024144 | 109 SEK | **footprint differs**: SH1107, 30 x 39.5mm board, pin order VCC/GND/DIN/CLK/CS/DC/RST |
+
+### Blocked: the jacks
+
+Electrokit has **no PCB-mount mono 3.5mm jack** (its `41001190` is chassis-mount
+with solder lugs, wrong pad layout, and out of stock until 2026-11-13). Its
+PCB-mount stereo option is the Amphenol `ACJS-MV35-3` (`41011901`, 18.50 SEK,
+10 in stock, 2-row pin pattern, three 2.0mm pegs, no slots).
+
+So the Thonkiconn `PJ398SM` / `PJ366ST` that `lib/footprints.tsx` currently
+implements cannot be sourced under the rule. The choices:
+
+1. **Move all 12 jacks to the Amphenol `ACJS-MV35-3`** - one part for mono and
+   TRS MIDI, M6 bushing, 6.0mm panel hole (the panel does not change), but the
+   board footprint changes for every jack and Electrokit had only 10 in stock
+   for a 12-piece build.
+2. **Find a 3.5mm PCB-mount jack at LCSC** - LCSC-first, so this is the
+   preferred direction if such a part exists with a usable layout.
+3. Keep the Thonkiconn and break the rule - not acceptable without a decision.
+
+A lookup for option 2 (plus LCSC confirmation for the sockets, LEDs, OLED and
+pot) is the next step; the jack decision lands here before any footprint work.
