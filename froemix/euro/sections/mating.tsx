@@ -26,7 +26,8 @@ export const MatingSockets = () => (
       name="CN1"
       footprint={FP_SOCKET_2P00_16}
       pinCount={MATE.CN1.pins}
-      mpn="PZ2.0-1x16"
+      mpn="HC-PM200-4.3H-1x16PZ"
+      supplierPartNumbers={{ jlcpcb: ["C22373851"] }}
       layer="bottom"
       pcbX={`${MATE.CN1.x}mm`}
       pcbY={`${MATE.CN1.y}mm`}
@@ -43,7 +44,8 @@ export const MatingSockets = () => (
       name="CN2"
       footprint={FP_SOCKET_2P00_16}
       pinCount={MATE.CN2.pins}
-      mpn="PZ2.0-1x16"
+      mpn="HC-PM200-4.3H-1x16PZ"
+      supplierPartNumbers={{ jlcpcb: ["C22373851"] }}
       layer="bottom"
       pcbX={`${MATE.CN2.x}mm`}
       pcbY={`${MATE.CN2.y}mm`}
@@ -59,7 +61,8 @@ export const MatingSockets = () => (
       name="CN4"
       footprint={FP_SOCKET_2P00_7}
       pinCount={MATE.CN4.pins}
-      mpn="PZ2.0-1x7"
+      mpn="HX PM2.0-1x7P ZC"
+      supplierPartNumbers={{ jlcpcb: ["C22438139"] }}
       layer="bottom"
       pcbX={`${MATE.CN4.x}mm`}
       pcbY={`${MATE.CN4.y}mm`}

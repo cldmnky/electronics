@@ -246,46 +246,48 @@ channels:
 ## 9. BOM and sourcing
 
 Rule (`froemix/AGENTS.md` §9): **LCSC/JLCPCB first, Electrokit for anything LCSC
-does not stock.** No other supplier. Parts with a `supplierPartNumbers` entry in
-the TSX are LCSC; the rest are listed here.
+does not stock.** The Eurokit lookup was done first, then the LCSC sweep — and
+**every part has an LCSC code**, so nothing in this design comes from Electrokit.
+Electrokit's numbers are kept below only as the record of the comparison.
 
-### LCSC (in the design, code in the TSX)
+| Qty | Part | LCSC | Stock | Basic/Ext | Note |
+| --- | --- | --- | --- | --- | --- |
+| 10 | 3.5mm mono jack + tip switch, M6x0.5 | C381126 | 745 | Ext | XKB `PJ-301M-2-B`; **replaces the Thonkiconn** |
+| 2 | 3.5mm stereo jack (TRS MIDI), M6x0.5 | C381127 | 620 | Ext | XKB `PJ-301M-3-B` |
+| 1 | 5-way navigation switch, 10.2 x 10.2mm | C42377836 | 2,669 | Ext | XUNPU `WS-1004-ARL10026`, 6 pins |
+| 1 | 12mm illuminated button, red | C692901 | — | — | Hroparts `K6-1212A02` |
+| 6 | 9mm pot, 10k lin, knurled 6mm, LM1 15mm | C470294 | 125 | Ext | Alps `RK09K1130A8G` (slotted-shaft `RK09K1130AP5` = C470295, 3,022) |
+| 1 | 1.3" 128x64 SPI OLED, SH1106 | C42432559 | 37 | Ext | HS `HS13L02B4S01`, 35.4 x 33.5mm, 7-pin 2.54, GND/VCC/SCK/SDI/RES/DC/CS |
+| 2 | 2.00mm 1x16 pin socket, 4.3mm | C22373851 | 5,076 | Ext | `HC-PM200-4.3H-1x16PZ` |
+| 1 | 2.00mm 1x7 pin socket, 4.3mm | C22438139 | 4,740 | Ext | `HX PM2.0-1x7P ZC` |
+| 7 | 3mm LED red 630nm | C440523 | 139,540 | Ext | TOGIALED; **pin 1 = anode** (footprint follows it) |
+| 6 | 1N4148WS SOD-323 | C2128 | — | — | jack LED diodes |
+| 7 | 1k 0603 | C21190 | — | Basic | ladder "up", panel LED R, button R |
+| 6 | 2.2k 0603 | C4190 | — | Basic | jack LED ballast |
+| 1 | 4.7k 0603 | C23162 | — | Basic | ladder "left" |
+| 2 | 10k 0603 | C25804 | — | Basic | joystick pull-up, ladder "right" |
 
-| Qty | Part | Code |
+Thonkiconn `PJ398SM` / `PJ366ST` return **0 results at LCSC** and Electrokit has
+no PCB-mount mono jack at all, so the jacks move to the XKB `PJ-301M` family —
+the same M6x0.5 bushing and the same 6.0mm panel hole, so **the panel does not
+change**.
+
+### Still to verify before ordering
+
+1. **XKB jack pad layout.** `lib/footprints.tsx` still draws the Thonkiconn pad
+   table (sleeve / tip switch / tip in one line at 0 / 3.1 / 11.4mm). The XKB
+   drawing prints no hole map — it must be confirmed against the part or its
+   drawing before the board is ordered.
+2. **OLED mounting holes.** The module has 4 x 3.3mm holes at 28.5mm spacing and
+   its header row 2.0mm from the board edge; the footprint has neither yet.
+
+### Electrokit (record only — not used)
+
+| Part | Art. nr | Why not |
 | --- | --- | --- |
-| 6+1 | 1k 0603 (ladder "up", panel LED series R, button series R) | C21190 |
-| 1 | 2.2k 0603 (ladder "down" in 2.2k form, jack LED ballast x6 separate) | C4190 |
-| 1 | 4.7k 0603 (ladder "left") | C23162 |
-| 2 | 10k 0603 (joystick pull-up, ladder "right") | C25804 |
-| 1 | 2.2k x6 jack LED resistors | C4190 |
-| 6 | 1N4148WS SOD-323 (jack LED diodes) | C2128 |
-| 1 | 12mm illuminated button, red, K6-1212A02 | C692901 |
-
-### Electrokit (`https://www.electrokit.com/`)
-
-| Qty | Part | Art. nr | Price | Note |
-| --- | --- | --- | --- | --- |
-| 6 | Alps RK09K, 10k lin, 6mm knurled shaft | 41012043 | 25 SEK | **exact match** to the footprint - the linked datasheet names `RK09K1130A5R` |
-| 1 | 5-way navigation switch, 12.4 x 12.4mm | 41035331 | 19.50 SEK | function matches, **footprint differs**: 6 pins on a 12.9 x 8.0mm pattern, 4 x 1.4mm + 2 x 1.2mm drills |
-| 1 | 1.3" 128x64 SPI OLED, Waveshare "1.3inch OLED Module (C)" | 41024144 | 109 SEK | **footprint differs**: SH1107, 30 x 39.5mm board, pin order VCC/GND/DIN/CLK/CS/DC/RST |
-
-### Blocked: the jacks
-
-Electrokit has **no PCB-mount mono 3.5mm jack** (its `41001190` is chassis-mount
-with solder lugs, wrong pad layout, and out of stock until 2026-11-13). Its
-PCB-mount stereo option is the Amphenol `ACJS-MV35-3` (`41011901`, 18.50 SEK,
-10 in stock, 2-row pin pattern, three 2.0mm pegs, no slots).
-
-So the Thonkiconn `PJ398SM` / `PJ366ST` that `lib/footprints.tsx` currently
-implements cannot be sourced under the rule. The choices:
-
-1. **Move all 12 jacks to the Amphenol `ACJS-MV35-3`** - one part for mono and
-   TRS MIDI, M6 bushing, 6.0mm panel hole (the panel does not change), but the
-   board footprint changes for every jack and Electrokit had only 10 in stock
-   for a 12-piece build.
-2. **Find a 3.5mm PCB-mount jack at LCSC** - LCSC-first, so this is the
-   preferred direction if such a part exists with a usable layout.
-3. Keep the Thonkiconn and break the rule - not acceptable without a decision.
-
-A lookup for option 2 (plus LCSC confirmation for the sockets, LEDs, OLED and
-pot) is the next step; the jack decision lands here before any footprint work.
+| Alps RK09K 10k lin | 41012043 | LCSC C470294 is the same family |
+| 5-way switch 12.4 x 12.4mm | 41035331 | LCSC C42377836 is smaller, cheaper, more stock |
+| Waveshare 1.3" OLED (C) | 41024144 | SH1107 + different pin order; LCSC C42432559 matches our pinout |
+| 12mm illuminated button | 41033204 | white LED Vf 3.2V is marginal on 3.3V; LCSC C692901 is red (~2.0V) |
+| Amphenol ACJS-MV35-3 stereo jack | 41011901 | only 10 in stock; XKB C381127 keeps one jack family |
+| Mono jack | 41001190 | chassis-mount, wrong pads, out of stock to 2026-11-13 |

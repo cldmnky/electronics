@@ -17,7 +17,8 @@ export const DisplaySection = () => (
       name="DS1"
       footprint={FP_OLED_1P3}
       pinCount={7}
-      mpn="OLED-1.3-SPI-7P"
+      mpn="HS13L02B4S01"
+      supplierPartNumbers={{ jlcpcb: ["C42432559"] }}
       pcbX={`${OLED_AT.x}mm`}
       pcbY={`${OLED_AT.y}mm`}
       schPinArrangement={{ leftSide: [1, 3, 5, 7], rightSide: [2, 4, 6] }}
@@ -44,13 +45,14 @@ export const DisplaySection = () => (
       pcbY={`${LED_R_AT.y}mm`}
       connections={{ pin1: "net.LED", pin2: "net.LED_ANODE" }}
     />
-    <diode
+    <led
       name="D1"
       footprint={FP_LED_3MM}
-      mpn="LED-3MM"
+      mpn="TJ-L3FYTLDRMFCSFLC2R-A5"
+      supplierPartNumbers={{ jlcpcb: ["C440523"] }}
       pcbX={`${LED_AT.x}mm`}
       pcbY={`${LED_AT.y}mm`}
-      pinLabels={{ pin1: "cathode", pin2: "anode" }}
+      pinLabels={{ pin1: "anode", pin2: "cathode" }}
       connections={{ anode: "net.LED_ANODE", cathode: "net.GND" }}
     />
   </>

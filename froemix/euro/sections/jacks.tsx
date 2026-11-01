@@ -28,7 +28,8 @@ export const JacksSection = () => (
           footprint={FP_JACK_MONO}
           pinCount={3}
           pinLabels={{ pin1: "sleeve", pin2: "tip" }}
-          mpn="WQP-PJ398SM"
+          mpn="PJ-301M-2-B"
+          supplierPartNumbers={{ jlcpcb: ["C381126"] }}
           pcbX={`${at.x}mm`}
           pcbY={`${at.y}mm`}
           schPinArrangement={schPinArrangement}
@@ -44,7 +45,8 @@ export const JacksSection = () => (
           footprint={FP_JACK_TRS}
           pinCount={3}
           pinLabels={{ pin1: "tip", pin2: "ring", pin3: "sleeve" }}
-          mpn="WQP-PJ366ST"
+          mpn="PJ-301M-3-B"
+          supplierPartNumbers={{ jlcpcb: ["C381127"] }}
           pcbX={`${at.x}mm`}
           pcbY={`${at.y}mm`}
           schPinArrangement={schPinArrangement}

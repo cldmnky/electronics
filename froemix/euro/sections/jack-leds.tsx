@@ -51,8 +51,9 @@ export const JackLedsSection = () => (
             key={`l-${jl.name}`}
             name={jl.name}
             footprint={FP_LED_3MM}
-            mpn="LED-3MM"
-            pinLabels={{ pin1: "cathode", pin2: "anode" }}
+            mpn="TJ-L3FYTLDRMFCSFLC2R-A5"
+            supplierPartNumbers={{ jlcpcb: ["C440523"] }}
+            pinLabels={{ pin1: "anode", pin2: "cathode" }}
             pcbX={`${jl.x}mm`}
             pcbY={`${jl.y}mm`}
             connections={{ anode: `net.${jl.base}_K`, cathode: "net.GND" }}

@@ -161,7 +161,10 @@ export const FP_R0603 = (
 )
 
 // --------------------------------------------------------------------------
-// 3mm THT LED (KiCad LED_D3.0mm). pin1 = cathode (K), pin2 = anode (A).
+// 3mm THT LED, geometry from KiCad LED_D3.0mm but pin1 = ANODE.
+// The supplier part (LCSC C440523, TOGIALED 3mm red) maps pin 1 to the anode,
+// and the build fails on a polarity mismatch, so the square pad (pin 1) marks
+// the anode here - the opposite of the KiCad LED_D3.0mm convention.
 // --------------------------------------------------------------------------
 
 export const FP_LED_3MM = (
@@ -428,65 +431,54 @@ export const FP_POT_RK09K_R90 = (
 )
 
 // --------------------------------------------------------------------------
-// 5-way multi-control switch ("UI joystick"): 5 momentary contacts that share
-// one common pin - up, down, left, right, centre press.
+// 5-way navigation switch, XUNPU `WS-1004-ARL10026` (LCSC C42377836).
 //
-// PROVISIONAL: pad grid and courtyard follow the Alps SKQUCAA010 family
-// datasheet (5 directional contacts on a 5.0 x 2.5mm grid around the centre,
-// one common pin at the back, 0.9mm shafts). Correct against the fitted part
-// before ordering - doc/EURO-BOARD.md §7.
+// Numbers from the datasheet's PCB layout: six equal columns 10.50mm apart in
+// X, three rows 1.85mm apart in Y, square pads, 0.70mm pins. Functions from the
+// printed function table - pin 1 is the COMMON pin and every direction closes
+// to it:
+//   F1 up    = 1-4     F2 left  = 1-2     F3 down = 1-6
+//   F4 right = 1-5     F5 press = 1-3
 //
-// pin1 = common (the mux channel node), pin2..pin6 = up/down/left/right/press.
+// The pad map does not say which side faces the panel, so up/down may swap on
+// the fitted part - a mounting/firmware detail, not a board change.
+// Drill 1.0mm and pad 1.8mm are our choice: the drawing prints the pin width
+// (0.70mm) but no pad size.
 // --------------------------------------------------------------------------
 
 export const FP_JOY_5WAY = (
   <footprint insertionDirection="from_above">
-    {/* pin1 A (up) */}
+    {/* pin1 common */}
     <platedhole
-      pcbX="-5.15mm"
-      pcbY="3.275mm"
+      pcbX="-5.25mm"
+      pcbY="1.85mm"
       portHints={["pin1"]}
       shape="circular_hole_with_rect_pad"
-      holeDiameter="1.2mm"
-      rectPadWidth="2mm"
-      rectPadHeight="2mm"
+      holeDiameter="1mm"
+      rectPadWidth="1.6mm"
+      rectPadHeight="1.6mm"
       holeOffsetX="0mm"
       holeOffsetY="0mm"
     />
-    {/* pin2 B (left) - the two middle pins are 1.0mm drill, 1.8mm pad, and sit
-        0.45mm off the column centre */}
-    <platedhole pcbX="-5.15mm" pcbY="-0.425mm" portHints={["pin2"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
-    {/* pin3 C (down) */}
-    <platedhole pcbX="-5.15mm" pcbY="-3.225mm" portHints={["pin3"]} shape="circle" holeDiameter="1.2mm" outerDiameter="2mm" />
-    {/* pin4 common */}
-    <platedhole pcbX="5.15mm" pcbY="-3.225mm" portHints={["pin4"]} shape="circle" holeDiameter="1.2mm" outerDiameter="2mm" />
-    {/* pin5 D (right) */}
-    <platedhole pcbX="5.15mm" pcbY="-0.425mm" portHints={["pin5"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
-    {/* pin6 centre push */}
-    <platedhole pcbX="5.15mm" pcbY="3.275mm" portHints={["pin6"]} shape="circle" holeDiameter="1.2mm" outerDiameter="2mm" />
-    {/* body 10 x 10mm, snap-in; collar dia 6.5, stem 3.2mm square */}
-    <silkscreenpath route={[{ x: -5, y: 5 }, { x: 5, y: 5 }]} />
-    <silkscreenpath route={[{ x: -5, y: 5 }, { x: -5, y: -5 }]} />
-    <silkscreenpath route={[{ x: 5, y: 5 }, { x: 5, y: -5 }]} />
-    <silkscreenpath route={[{ x: -5, y: -5 }, { x: 5, y: -5 }]} />
-    <silkscreencircle pcbX="0mm" pcbY="0mm" radius="3.25mm" />
+    {/* pin2 left (F2) */}
+    <platedhole pcbX="-5.25mm" pcbY="0mm" portHints={["pin2"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    {/* pin3 centre press (F5) */}
+    <platedhole pcbX="-5.25mm" pcbY="-1.85mm" portHints={["pin3"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    {/* pin4 up (F1) */}
+    <platedhole pcbX="5.25mm" pcbY="1.85mm" portHints={["pin4"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    {/* pin5 right (F4) */}
+    <platedhole pcbX="5.25mm" pcbY="0mm" portHints={["pin5"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    {/* pin6 down (F3) */}
+    <platedhole pcbX="5.25mm" pcbY="-1.85mm" portHints={["pin6"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    {/* body 10.2 x 10.2mm, 3.15mm button on top */}
+    <silkscreenpath route={[{ x: -5.1, y: 5.1 }, { x: 5.1, y: 5.1 }]} />
+    <silkscreenpath route={[{ x: -5.1, y: 5.1 }, { x: -5.1, y: -5.1 }]} />
+    <silkscreenpath route={[{ x: 5.1, y: 5.1 }, { x: 5.1, y: -5.1 }]} />
+    <silkscreenpath route={[{ x: -5.1, y: -5.1 }, { x: 5.1, y: -5.1 }]} />
+    <silkscreencircle pcbX="0mm" pcbY="0mm" radius="1.6mm" />
     <courtyardrect pcbX="0mm" pcbY="0mm" width="12.5mm" height="10.5mm" />
   </footprint>
 )
-
-// --------------------------------------------------------------------------
-// 12mm illuminated push button, Korean Hroparts `K6-1212A02` (LCSC C692901).
-//
-// Numbers from the series datasheet "PCB Layout, pattern side": switch pads at
-// (+/-6.05, +/-4.35) on 1.3mm drills, the two LED pads 3.5mm apart on the centre
-// line with 1.8mm drills. The part has SIX electrical pins - C1/C2 are one
-// internally connected rail and C3/C4 the other - plus two 0.8mm locating pegs
-// at (0, +/-6.75) that are NOT in this footprint: they are non-plated and
-// declared as board holes in index.circuit.tsx.
-//
-// pin1/pin2 = switch rail 1, pin3/pin4 = switch rail 2, pin5/pin6 = LED.
-// The LED polarity is not in the datasheet - check the part before soldering.
-// --------------------------------------------------------------------------
 
 export const FP_BUTTON_12MM = (
   <footprint insertionDirection="from_above">

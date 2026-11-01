@@ -20,7 +20,8 @@ export const PotsSection = () => (
         name={pot.name}
         footprint={FP_POT_RK09K_R90}
         maxResistance="10k"
-        mpn="RK09K1130A5R"
+        mpn="RK09K1130A8G"
+        supplierPartNumbers={{ jlcpcb: ["C470294"] }}
         pcbX={`${pot.x}mm`}
         pcbY={`${pot.y}mm`}
         schPinArrangement={{ leftSide: [1, 3], rightSide: [2] }}

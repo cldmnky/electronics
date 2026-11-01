@@ -22,20 +22,21 @@ export const JoystickSection = () => (
       name={JOYSTICK.name}
       footprint={FP_JOY_5WAY}
       pinCount={6}
-      mpn="SKQUCAA010"
+      mpn="WS-1004-ARL10026"
+      supplierPartNumbers={{ jlcpcb: ["C42377836"] }}
       pinLabels={{
         pin1: "common",
-        pin2: "up",
-        pin3: "down",
-        pin4: "left",
+        pin2: "left",
+        pin3: "press",
+        pin4: "up",
         pin5: "right",
-        pin6: "press",
+        pin6: "down",
       }}
       pcbX={`${JOYSTICK.x}mm`}
       pcbY={`${JOYSTICK.y}mm`}
       schPinArrangement={{
-        leftSide: ["common", "press"],
-        rightSide: ["up", "down", "left", "right"],
+        leftSide: ["common"],
+        rightSide: ["left", "press", "up", "right", "down"],
       }}
       connections={{
         common: `net.${JOYSTICK.net}`,
