@@ -302,6 +302,14 @@
       [
         "lib_symbol_issues|698500|495300|08f412ba-5275-4672-b7dc-b936a21867dc|00000000-0000-0000-0000-000000000000|||",
         ""
+      ],
+      [
+        "pin_not_driven|1320800|469900|acd5910e-3784-41b9-805c-6f3a01d37516|00000000-0000-0000-0000-000000000000|||",
+        "AUDIO_IN_1 driven through R9 1k from U2 opamp output; ERC cannot trace through passives"
+      ],
+      [
+        "pin_not_driven|1320800|495300|acd5910e-3784-41b9-805c-6f3a01d37516|00000000-0000-0000-0000-000000000000|||",
+        "AUDIO_IN_2 driven through R10 1k from U2 opamp output; ERC cannot trace through passives"
       ]
     ],
     "meta": {
