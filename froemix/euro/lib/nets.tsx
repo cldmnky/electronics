@@ -40,6 +40,31 @@ export const Nets = () => (
     <net name="M_ADC_6" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
     <net name="M_ADC_7" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
 
+
+    {/* --- UI controls on the two freed mux channels --- */}
+    {/* joystick ladder: each direction pin has its own resistor to GND */}
+    <net name="JOY_UP" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="JOY_DOWN" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="JOY_LEFT" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="JOY_RIGHT" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    {/* illuminated button: 1k -> button LED -> M_ADC_7 -> switch -> GND */}
+    <net name="BTN_LED" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+
+    {/* --- signal-activity LEDs: jack net -> 2.2k -> diode -> LED -> GND --- */}
+    {/* _D is the node at the diode anode, _K the node at the LED anode */}
+    <net name="INL_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="INL_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="INR_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="INR_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="OUTL_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="OUTL_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="OUTR_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="OUTR_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="CV1_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="CV1_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="CV2_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    <net name="CV2_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+
     {/* display (CN4) + panel indicator (CN1 pin 13) */}
     <net name="OLED_CS" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
     <net name="OLED_SCL" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />

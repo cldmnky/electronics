@@ -1,15 +1,15 @@
 # Euro board (front board + panel) — 20HP
 
 The Eurorack front half of Froemix: the board that carries the jacks, the pots,
-the MIDI sockets, the display and the panel. It mates with the 16HP base board,
-which holds all the analog circuitry.
+the UI controls, the MIDI sockets, the display and the panel. It mates with the
+16HP base board, which holds all the analog circuitry.
 
 Live design: `euro/index.circuit.tsx` (front board) and `euro/panel.circuit.tsx`
 (panel). Both import `euro/lib/layout.ts`, so a panel hole and its part on the
 board cannot drift apart — `euro/scripts/check_mating.py` proves it from the
 built circuit JSON on every gate run.
 
-Status: **designed, routed, gated.** Not ordered. Open decisions in §7.
+Status: **designed, routed, gated.** Not ordered. Open decisions in §8.
 
 ## 1. Mechanical contract
 
@@ -32,56 +32,96 @@ the base board's top-side 2.00mm pin headers.
 Bottom-side footprints mirror about their origin (`froemix/AGENTS.md` §5), so the
 sockets are authored pre-mirrored (pin 1 at +X in footprint space) and land with
 pin 1 on the base board's pin 1. `check_mating.py` asserts pin 1 and pin N of
-each socket against the base board's coordinates, which is what catches a broken
-mirror before the boards are made.
+each socket against the base board's coordinates.
 
-CN3 (micro SD) is **not** mated: see §7.
+CN3 (micro SD) is **not** mated: see §8.
 
 ### Stack-up (front to back)
 
 ```
 panel (2mm)            0 mm      pot/jack bushings + nuts, M3 rack screws
-front board           10.0 mm    jacks, pots, OLED, LED on top; sockets on bottom
+front board           10.0 mm    jacks, pots, UI, OLED, LEDs on top; sockets on bottom
 base board            22.0 mm    12mm M3 spacers, tall parts hang off the back
 power + Daisy         back
 ```
 
 `PANEL_GAP = 10.0mm` is the front board to panel distance. It is set by the
-Thonkiconn jack (the bushing, ~9mm from the board surface, is the panel
-support) and must be confirmed against the fitted parts before ordering: it is
-the one number that decides whether the jack tips and pot bushings reach the
-panel through a 2mm panel.
+Thonkiconn jack (the bushing, ~9mm from the board surface, carries the panel)
+and must be confirmed against the fitted parts before ordering.
 
 ## 2. What the front board carries
 
-Fixed by the base board pinout (`README.md`, "Base board <-> eurorack board
-interface"):
-
 | Group | Count | Part | Net |
 | --- | --- | --- | --- |
-| pots | 8 | Alps RK09K1130A5R, 10k linear | `M_ADC_0`..`M_ADC_7` |
+| pots | 6 | Alps RK09K1130A5R, 10k linear | `M_ADC_0`..`M_ADC_5` |
+| UI joystick | 1 | 5-way multi-control, 5 momentary contacts | `M_ADC_6` (ladder) |
+| UI button | 1 | 12mm illuminated tactile, switch + LED | `M_ADC_7` |
 | audio in | 2 | PJ398SM mono jack | `J_AUDIO_IN_L/R` |
 | audio out | 2 | PJ398SM mono jack | `J_AUDIO_OUT_L/R` |
 | CV in | 2 | PJ398SM mono jack | `J_CV_IN_1/2` |
 | CV out | 2 | PJ398SM mono jack | `J_CV_OUT_1/2` |
 | sync in/out | 2 | PJ398SM mono jack | `J_SYNC_IN`, `J_SYNC_OUT` |
 | MIDI in/out | 2 | PJ366ST stereo jack (TRS MIDI) | `J_MIDI_IN_TIP/RING`, `J_MIDI_OUT_TIP/RING` |
+| jack LEDs | 6 | 3mm LED + 2.2k + 1N4148 per jack | audio in/out L/R, CV out 1/2 |
 | display | 1 | 1.3" 128x64 SPI OLED | `OLED_CS/SCL/DC/SDA/RES` |
 | indicator | 1 | 3mm THT LED + 1k series R | `LED` |
 | rails | — | `P3V3_A`, `P3V3_D`, `GND` | |
 
-Pots are wired as dividers across `P3V3_A`/`GND`, so the mux inputs can never
-leave the CD4051's 0–3.3V range (`froemix/AGENTS.md` §4, "Mux input clamps").
-10k keeps the source impedance the CD4051 sees at ≤2.5k and the total pot
-current at 2.6mA. Pin 1 = CCW (GND), pin 2 = wiper, pin 3 = CW (3.3V).
+### Pots (6)
+
+Wired as dividers across `P3V3_A`/`GND`, so the mux inputs can never leave the
+CD4051's 0–3.3V range (`froemix/AGENTS.md` §4, "Mux input clamps"). 10k keeps
+the source impedance the CD4051 sees at ≤2.5k and the total pot current at
+2.0mA. Pin 1 = CCW (GND), pin 2 = wiper, pin 3 = CW (3.3V).
+
+### UI joystick (5-way, one mux channel)
+
+`M_ADC_6` carries five controls as a resistor ladder. All five contacts share
+the switch's common pin, which is the mux channel node; each direction connects
+its own resistor from that node to GND, and a 10k pull-up to `P3V3_A` sets idle.
+
+| State | Resistor to GND | Node voltage |
+| --- | --- | --- |
+| idle | none | 3.30 V |
+| press | 0 (direct) | 0.00 V |
+| up | 1k | 0.30 V |
+| down | 3.3k | 0.82 V |
+| left | 6.8k | 1.34 V |
+| right | 15k | 1.98 V |
+
+The CD4051's ~250 Ω Ron adds ~2 % error, and a 12-bit ADC puts the closest pair
+(press/up) ~370 counts apart. **The ladder is a firmware contract**: the
+firmware decodes levels, not pins.
+
+### UI button (illuminated, one mux channel)
+
+`M_ADC_7`. The button's own LED doubles as the pull-up, so the button shows its
+state with no GPIO and no firmware:
+
+```
+P3V3_A -- 1k -- LED(A) -- LED(K) --+-- M_ADC_7
+                                   +-- switch -- GND
+```
+
+Released: no current path, LED dark, the node floats to 3.3 V (full scale).
+Pressed: the node is 0 V and the LED lights at (3.3 − 2.0)/1k = 1.3 mA.
+
+### Jack activity LEDs (6, zero pins)
+
+The signal at the jack drives its own LED — no GPIO, no firmware:
+
+```
+jack net -- 2.2k -- 1N4148 -->|-- LED -->|-- GND
+```
+
+The series diode passes only positive excursions, so audio and CV never put a
+reverse half-cycle on the LED. At a 5 V peak: (5 − 0.7 − 2.0)/2.2k = 1.0 mA.
 
 Sleeves are GND on every jack. The mono jacks' tip-switch pads are left
 unconnected on purpose: inputs are AC-coupled on the base board, so a
 normal-to-ground adds nothing, and an output must not be shorted by an empty
-socket.
-
-MIDI needs TIP *and* RING, so the two MIDI sockets are stereo (PJ366ST, 3 pads,
-slotted holes); the other ten are mono with a switch contact (PJ398SM, 3 pads).
+socket. MIDI needs TIP *and* RING, so those two are stereo (PJ366ST, 3 pads,
+slotted holes).
 
 ## 3. Panel floorplan
 
@@ -89,14 +129,18 @@ slotted holes); the other ten are mono with a switch contact (PJ398SM, 3 pads).
 
 | y (mm) | Contents |
 | --- | --- |
-| +58 … +25 | 1.3" OLED module (35.5 x 33mm body, window at (0, +40.5)); 4 pots each side |
-| +45, +25 | pots: x = ±28, ±43 (15mm pitch) |
+| +57 … +24 | 1.3" OLED module (35.5 x 33mm body, window at (0, +40.5)); pots and UI either side |
+| +45 | pots: x = ±28, ±43 (15mm pitch) |
+| +25 | pot (-43), **UI joystick (-28)**, **MODE button (+28)**, pot (+43) |
+| -3 | 4 jack LEDs, one above each audio jack |
 | -14 | jacks: audio in L/R, audio out L/R, sync in/out (x = -42 … +42, 16.8mm pitch) |
+| -30 | 2 jack LEDs above CV out 1/2 |
 | -47 | jacks: CV in 1/2, CV out 1/2, MIDI in/out |
 | -59.8 | `FROEMIX` + `daisy seed dsp - 20hp` |
 | ±61.25 | M3 rack screws (±43.3) |
 
-Pot labels P1–P8 sit under each knob; jack labels under each jack.
+Labels: P1–P6 under each pot, `UI` under the joystick, `MODE` under the button,
+a jack name under each jack.
 
 ## 4. Display
 
@@ -107,20 +151,20 @@ The module is soldered **flat to the top of the front board**, header row at
 (0, 57): its 7 pads are a plain 1x7 2.54mm pattern, and the seven `OLED_*`
 signals run straight across the board from the CN4 socket (bottom side,
 (24.5, 59.63)) to those pads. It is *not* plugged into CN4, because a 2.54mm
-socket plus the module's own header would put the glass ~12mm behind the panel,
-past the jack bushings.
+socket plus the module's own header would put the glass ~12mm behind the panel.
 
 The panel window is 30 x 15.5mm at (0, 40.5).
 
 ## 5. Assembly
 
-The front board is all through-hole: 10 mono jacks, 2 TRS jacks, 8 pots, a 1x7
-2.54mm OLED header, 1 LED, 1 resistor, and the three 2.00mm sockets (CN1, CN2,
-CN4) on the bottom. None of it is JLCPCB SMT work, so the board is ordered bare
-and hand-soldered — the base board carries the SMT.
+Mixed, like the base board: 14 SMD parts on the bottom (8 × 0603 resistor,
+6 × SOD-323 diode) that JLCPCB can place, and everything else through-hole by
+hand: 10 mono jacks, 2 TRS jacks, 6 pots, the joystick, the button, 7 LEDs
+(6 jack + 1 panel), the 1x7 OLED header and the three 2.00mm sockets (CN1, CN2,
+CN4) on the bottom.
 
 Socket stack: the base board's 2.00mm pin headers and the 2.00mm female sockets
-overlap (the socket body is ~8.5mm), so a 12mm M3 spacer between the boards
+overlap (the socket body is ~8.5mm), so a 12 mm M3 spacer between the boards
 leaves ~4mm of air and keeps the Daisy's USB port and the PMOD opening
 reachable from the back.
 
@@ -130,38 +174,52 @@ reachable from the back.
 
 | Step | Result |
 | --- | --- |
-| `tsci build` | 2 circuits, 63 traces / 33 vias / 2179mm copper, 0 unconnected |
+| `tsci build` | 2 circuits, 98 traces / 58 vias / 2497mm copper, 0 unconnected |
 | `tsci check netlist` | source diagnostics, no errors |
 | `tsci check placement` | Errors 0, Warnings 0 |
 | `tsci check shorts` | no shorts |
 | `tsci check pcb-style` | clean |
-| `scripts/check_mating.py` | sockets pin-for-pin on the base board, 20 parts aligned with the panel, window at (0, 40.5) |
+| `scripts/check_mating.py` | 3 sockets pin-for-pin on the base board, 26 panel parts aligned with their holes, 31 holes all claimed, window at (0, 40.5) |
 | `tsci snapshot --test` | schematic + PCB baselines match |
 
-The 15 `source_pin_missing_trace_warning`s in the build log are the 10 mono-jack
-tip switches and CN2 pins 11–15 (encoder reserve) — every one is deliberate.
+The build log's `source_pin_missing_trace_warning`s are the 10 mono-jack tip
+switches and CN2 pins 11–15 (encoder reserve) — every one is deliberate.
 
-## 7. Open questions (decide before ordering)
+`scripts/gate.sh` treats `tsci check placement`'s exit code as advisory: that
+command exits 1 on any informational `issues:` note (for example "rotate R5")
+even with 0 errors and 0 warnings, so the log parse is the authority.
 
-1. **CN3 / micro SD.** The base board exposes the SD bus on CN3, in parallel
-   with the Daisy module's own slot. Options: (a) leave CN3 unmated, use the
-   Daisy's slot from the back — what this draft does; (b) mate CN3 and add a
-   micro-SD socket to the front board with a card slot cut into the panel;
-   (c) mate CN3 and pass it to a 1x8 test header.
-2. **OLED module.** The draft assumes the common 1.3"/7-pin/2.54mm module with a
-   35.5 x 33mm body and no mounting holes. A module with 4x M2 holes needs those
-   holes on the front board, and the window size changes with the module.
-3. **Jack height / stack-up.** `PANEL_GAP = 10.0mm` decides the whole stack.
-   Measure the fitted PJ398SM and RK09K bushings and update §1.
-4. **Pots.** Alps RK09K1130A5R, 10k linear, 6mm knurled shaft. Any 9mm vertical
-   pot with the same pad pitch drops in; a different shaft needs a different
-   knob, not a different board.
-5. **Encoder.** CN2 pads 11–15 are reserved on the base board and unused here.
-   The draft leaves the five socket pads unconnected on purpose.
-6. **Panel material.** PCB panel (2mm FR4, fabs with the board, silkscreen
-   legend) as modelled. Aluminium would need a drill file only, and the
-   silkscreen labels would become engraving.
-7. **LED.** `LED` is Daisy `ADC_1` (pin 23) driving a 1k/3mm indicator. If it
-   should be a power indicator instead, it must move to a rail.
-8. **Board height.** 128.5mm matches the base board. If the rack rails are the
-   limiting item, both boards move to ~110mm together — do not change one.
+## 7. Firmware contract
+
+The front board adds no wires, so everything the UI does is encoded on two mux
+channels:
+
+1. **Channel 6 (joystick)** — six levels, table in §2. Read after the CD4051
+   selects channel 6; the settle time must cover the mux's ~250 Ω and the
+   ladder's worst case (15k + 10k).
+2. **Channel 7 (button)** — two levels: ~0 V pressed, ~3.3 V released. The LED
+   is in the pull-up path, so do not drive that channel as an output.
+
+## 8. Open questions (decide before ordering)
+
+1. **Joystick sourcing.** The Alps `SKQUCAA010` is "not recommended for new
+   designs" and no LCSC/JLC listing exists — it must be bought from a
+   distributor (Newark 59M1983, element14 1435775, Mouser). LCSC stock
+   alternative: `SKRHABE010` (C139794, ~$0.39), the same 5-way function but SMD
+   and much smaller, so it needs a different panel treatment. **This is the one
+   part that can block the build.**
+2. **Joystick stem height.** The body is 10mm tall, i.e. flush with
+   `PANEL_GAP = 10.0mm`. Either fit a cap that clamps over the 3.2mm stem above
+   the panel, or reduce `PANEL_GAP`. Measure the part.
+3. **Button part.** The footprint is provisional (E-Switch TL1240 / PB6149
+   family, 12mm, 4 pads). Confirm the exact part before ordering.
+4. **CN3 / micro SD.** Left unmated; the Daisy's own slot is used from the back.
+   Options: mate CN3 and add a front micro-SD socket, or a 1x8 test header.
+5. **OLED module.** The draft assumes the common 1.3"/7-pin/2.54mm module, 35.5
+   x 33mm, no mounting holes.
+6. **Panel material.** PCB panel (2mm FR4) as modelled; aluminium would be a
+   drill file only, with engraved labels instead of silkscreen.
+7. **Board height.** 128.5mm matches the base board. If the rack rails are the
+   limit, both boards move together — do not change one.
+8. **Encoder dropped.** Base board CN2 pads 11–15 stay reserved and unconnected;
+   the UI is the 5-way plus the button.

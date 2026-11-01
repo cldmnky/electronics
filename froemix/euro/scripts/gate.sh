@@ -27,7 +27,12 @@ step() {
   local name="$1"; shift
   printf '\n=== %s\n' "$name"
   local log="$LOG_DIR/${name// /-}.log"
-  if "$@" >"$log" 2>&1; then
+  # `tsci check placement` exits 1 whenever it prints any "issues:" entry, even
+  # with Errors 0 / Warnings 0 (informational notes such as "rotate R5"). The
+  # log parse at the bottom of this script is the authority for that step.
+  local lenient=0
+  if [ "$name" = "check placement" ]; then lenient=1; fi
+  if "$@" >"$log" 2>&1 || { [ "$lenient" = 1 ] && grep -q "Errors: 0" "$log"; }; then
     echo "  ok"
   else
     echo "  FAILED - see $log"

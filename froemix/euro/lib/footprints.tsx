@@ -426,3 +426,100 @@ export const FP_POT_RK09K_R90 = (
     <courtyardrect pcbX="0mm" pcbY="-1.45mm" width="13.3mm" height="14.4mm" />
   </footprint>
 )
+
+// --------------------------------------------------------------------------
+// 5-way multi-control switch ("UI joystick"): 5 momentary contacts that share
+// one common pin - up, down, left, right, centre press.
+//
+// PROVISIONAL: pad grid and courtyard follow the Alps SKQUCAA010 family
+// datasheet (5 directional contacts on a 5.0 x 2.5mm grid around the centre,
+// one common pin at the back, 0.9mm shafts). Correct against the fitted part
+// before ordering - doc/EURO-BOARD.md §7.
+//
+// pin1 = common (the mux channel node), pin2..pin6 = up/down/left/right/press.
+// --------------------------------------------------------------------------
+
+export const FP_JOY_5WAY = (
+  <footprint insertionDirection="from_above">
+    {/* pin1 A (up) */}
+    <platedhole
+      pcbX="-5.15mm"
+      pcbY="3.275mm"
+      portHints={["pin1"]}
+      shape="circular_hole_with_rect_pad"
+      holeDiameter="1.2mm"
+      rectPadWidth="2mm"
+      rectPadHeight="2mm"
+      holeOffsetX="0mm"
+      holeOffsetY="0mm"
+    />
+    {/* pin2 B (left) - the two middle pins are 1.0mm drill, 1.8mm pad, and sit
+        0.45mm off the column centre */}
+    <platedhole pcbX="-5.15mm" pcbY="-0.425mm" portHints={["pin2"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
+    {/* pin3 C (down) */}
+    <platedhole pcbX="-5.15mm" pcbY="-3.225mm" portHints={["pin3"]} shape="circle" holeDiameter="1.2mm" outerDiameter="2mm" />
+    {/* pin4 common */}
+    <platedhole pcbX="5.15mm" pcbY="-3.225mm" portHints={["pin4"]} shape="circle" holeDiameter="1.2mm" outerDiameter="2mm" />
+    {/* pin5 D (right) */}
+    <platedhole pcbX="5.15mm" pcbY="-0.425mm" portHints={["pin5"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
+    {/* pin6 centre push */}
+    <platedhole pcbX="5.15mm" pcbY="3.275mm" portHints={["pin6"]} shape="circle" holeDiameter="1.2mm" outerDiameter="2mm" />
+    {/* body 10 x 10mm, snap-in; collar dia 6.5, stem 3.2mm square */}
+    <silkscreenpath route={[{ x: -5, y: 5 }, { x: 5, y: 5 }]} />
+    <silkscreenpath route={[{ x: -5, y: 5 }, { x: -5, y: -5 }]} />
+    <silkscreenpath route={[{ x: 5, y: 5 }, { x: 5, y: -5 }]} />
+    <silkscreenpath route={[{ x: -5, y: -5 }, { x: 5, y: -5 }]} />
+    <silkscreencircle pcbX="0mm" pcbY="0mm" radius="3.25mm" />
+    <courtyardrect pcbX="0mm" pcbY="0mm" width="12.5mm" height="10.5mm" />
+  </footprint>
+)
+
+// --------------------------------------------------------------------------
+// 12mm illuminated tactile push button: 2 switch pins + 2 LED pins.
+//
+// PROVISIONAL: 4.5 x 6.5mm pad grid and a 12mm body, the layout used by the
+// E-Switch TL1240 / PB6149 family. Correct against the fitted part before
+// ordering - doc/EURO-BOARD.md §7.
+//
+// pin1/pin2 = switch (NO), pin3 = LED anode, pin4 = LED cathode.
+// --------------------------------------------------------------------------
+
+export const FP_BUTTON_12MM = (
+  <footprint insertionDirection="from_above">
+    <platedhole
+      pcbX="-3.25mm"
+      pcbY="-2.25mm"
+      portHints={["pin1"]}
+      shape="circular_hole_with_rect_pad"
+      holeDiameter="0.9mm"
+      rectPadWidth="1.7mm"
+      rectPadHeight="1.7mm"
+      holeOffsetX="0mm"
+      holeOffsetY="0mm"
+    />
+    <platedhole pcbX="-3.25mm" pcbY="2.25mm" portHints={["pin2"]} shape="circle" holeDiameter="0.9mm" outerDiameter="1.7mm" />
+    <platedhole pcbX="3.25mm" pcbY="-2.25mm" portHints={["pin3"]} shape="circle" holeDiameter="0.9mm" outerDiameter="1.7mm" />
+    <platedhole pcbX="3.25mm" pcbY="2.25mm" portHints={["pin4"]} shape="circle" holeDiameter="0.9mm" outerDiameter="1.7mm" />
+    <silkscreenpath route={[{ x: -5.5, y: -5.5 }, { x: 5.5, y: -5.5 }]} />
+    <silkscreenpath route={[{ x: -5.5, y: -5.5 }, { x: -5.5, y: 5.5 }]} />
+    <silkscreenpath route={[{ x: 5.5, y: -5.5 }, { x: 5.5, y: 5.5 }]} />
+    <silkscreenpath route={[{ x: -5.5, y: 5.5 }, { x: 5.5, y: 5.5 }]} />
+    <courtyardrect pcbX="0mm" pcbY="0mm" width="12.6mm" height="12.6mm" />
+  </footprint>
+)
+
+// --------------------------------------------------------------------------
+// SOD-323 diode (1N4148W) - pad-for-pad the base board's footprint
+// (lib/footprints.tsx, FP_jclpcb_SOD_323_L1_8_W1_3_LS2_5_RD). pin1 = cathode.
+// --------------------------------------------------------------------------
+
+export const FP_SOD323 = (
+  <footprint insertionDirection="from_above">
+    <smtpad pcbX="-1.17mm" pcbY="0mm" portHints={["pin1"]} shape="rect" width="1mm" height="0.75mm" layer="top" />
+    <smtpad pcbX="1.17mm" pcbY="0mm" portHints={["pin2"]} shape="rect" width="1mm" height="0.75mm" layer="top" />
+    <silkscreenpath route={[{ x: -0.85, y: 0.73 }, { x: 0.91, y: 0.73 }]} />
+    <silkscreenpath route={[{ x: -0.85, y: -0.73 }, { x: 0.91, y: -0.73 }]} />
+    <silkscreenpath route={[{ x: -0.44, y: 0.73 }, { x: -0.44, y: -0.73 }]} />
+    <courtyardrect pcbX="0mm" pcbY="0mm" width="3.84mm" height="1.96mm" />
+  </footprint>
+)

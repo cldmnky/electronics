@@ -131,57 +131,94 @@ def hole_at(x, y, tol=0.01):
 
 
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import re  # noqa: E402
 
-# read the layout table without executing TypeScript: the positions are literal
-lay = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "..", "lib", "layout.ts")).read()
+HERE = os.path.dirname(os.path.abspath(__file__))
+LAYOUT = os.path.join(HERE, "..", "lib", "layout.ts")
+lay = open(LAYOUT).read()
+
+# Every front-panel part is one `{ name: "X", ... x: <n>, y: <n> ... }` block in
+# lib/layout.ts. Read them all - pots, jacks, jack LEDs, the joystick and the
+# button - without executing TypeScript.
+def objects(text):
+    """Every top-level {...} block, brace-matched (the joystick has a nested ladder)."""
+    out, i = [], 0
+    while True:
+        i = text.find("{", i)
+        if i < 0:
+            return out
+        depth, j = 0, i
+        while j < len(text):
+            if text[j] == "{":
+                depth += 1
+            elif text[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        out.append(text[i:j + 1])
+        i = j + 1
 
 
-def table(name):
-    body = re.search(name + r"\s*:\s*\w+\[\]\s*=\s*\[(.*?)\n\]", lay, re.S)
-    if not body:
-        return []
-    rows = []
-    for m in re.finditer(
-        r'\{\s*name:\s*"([^"]+)".*?label:\s*"([^"]*)".*?x:\s*(-?[\d.]+),\s*y:\s*(-?[\d.]+)\s*\}',
-        body.group(1), re.S):
-        rows.append({"name": m.group(1), "label": m.group(2),
-                     "x": float(m.group(3)), "y": float(m.group(4))})
-    return rows
+PARTS = []
+for body in objects(lay):
+    mn = re.search(r"\bname:\s*\"([^\"]+)\"", body)
+    mx = re.search(r"\bx:\s*(-?[\d.]+)", body)
+    my = re.search(r"\by:\s*(-?[\d.]+)", body)
+    if mn and mx and my:
+        PARTS.append({"name": mn.group(1), "x": float(mx.group(1)), "y": float(my.group(1))})
 
-
-print("front-panel parts, board vs panel:")
-for part in table("POTS") + table("JACKS"):
+print(f"front-panel parts, board vs panel ({len(PARTS)} declared):")
+checked = 0
+claimed = []
+for part in PARTS:
     c = centres.get(part["name"])
     if c is None:
-        fail(f"{part['name']}: not on the board")
+        fail(f"{part['name']}: declared in layout.ts but not placed on the board")
         continue
-    dx = abs(c["x"] - part["x"])
-    dy = abs(c["y"] - part["y"])
-    hole = hole_at(part["x"], part["y"])
-    if dx > 0.01 or dy > 0.01:
-        fail(f"{part['name']} placed at ({c['x']:.2f}, {c['y']:.2f}), "
-             f"layout says ({part['x']:.2f}, {part['y']:.2f}) "
-             f"- the footprint origin is not the panel hole")
-    if not hole:
+    checked += 1
+    if abs(c["x"] - part["x"]) > 0.01 or abs(c["y"] - part["y"]) > 0.01:
+        fail(f"{part['name']} placed at ({c['x']:.2f}, {c['y']:.2f}), layout says "
+             f"({part['x']:.2f}, {part['y']:.2f}) - footprint origin is not the panel hole")
+    if not hole_at(part["x"], part["y"]):
         fail(f"{part['name']}: no panel hole at ({part['x']:.2f}, {part['y']:.2f})")
-print(f"  {len(table('POTS'))} pots + {len(table('JACKS'))} jacks checked, "
-      f"{sum(1 for h in p_holes)} panel holes")
+    claimed.append((part["x"], part["y"]))
+print(f"  {checked} parts checked")
+
+# visible panel LED: placed at LED_AT in sections/display.tsx, not a table row
+led_at = re.search(r"(?<!O)LED_AT: Pt = \{ x: (-?[\d.]+), y: (-?[\d.]+) \}", lay)
+if led_at:
+    lx, ly = float(led_at.group(1)), float(led_at.group(2))
+    if not hole_at(lx, ly):
+        fail(f"panel indicator LED: no hole at ({lx:.2f}, {ly:.2f})")
+    claimed.append((lx, ly))
+
+# Doepfer rail screws: 7.5mm in from each side, 3.0mm from top and bottom
+panel_w = float(re.search(r"PANEL_W = ([\d.]+)", lay).group(1))
+panel_h = float(re.search(r"PANEL_H = ([\d.]+)", lay).group(1))
+rail_x, rail_y = panel_w / 2 - 7.5, panel_h / 2 - 3.0
+for rx in (-rail_x, rail_x):
+    for ry in (-rail_y, rail_y):
+        if not hole_at(rx, ry):
+            fail(f"no rail screw hole at ({rx:.2f}, {ry:.2f})")
+        claimed.append((rx, ry))
+
+orphans = [h for h in p_holes
+           if not any(abs(h["x"] - cx) < 0.01 and abs(h["y"] - cy) < 0.01 for cx, cy in claimed)]
+if orphans:
+    fail(f"{len(orphans)} panel holes have no part: "
+         + ", ".join(f"({h['x']:.1f},{h['y']:.1f})" for h in orphans[:6]))
+print(f"  {len(p_holes)} panel holes, all claimed")
 
 # display window
-# the window is derived in layout.ts: OLED_AT.y + windowOffsetY
-oled_y = float(re.search(r"OLED_AT: Pt = \{ x: ([\d.-]+), y: ([\d.-]+) \}", lay).group(2))
-win_dy = float(re.search(r"windowOffsetY: ([\d.-]+)", lay).group(1))
+oled_y = float(re.search(r"OLED_AT: Pt = \{ x: (-?[\d.]+), y: (-?[\d.]+) \}", lay).group(2))
+win_dy = float(re.search(r"windowOffsetY: (-?[\d.]+)", lay).group(1))
 if p_cut:
     wx, wy = 0.0, oled_y + win_dy
     cut = p_cut[0]
     cx = cut.get("center", {}).get("x", cut.get("x"))
     cy = cut.get("center", {}).get("y", cut.get("y"))
-    if cx is None:
-        print(f"  display window: cutout has no position in circuit JSON (skipped)")
-    elif abs(cx - wx) > 0.01 or abs(cy - wy) > 0.01:
+    if abs(cx - wx) > 0.01 or abs(cy - wy) > 0.01:
         fail(f"panel window at ({cx:.2f}, {cy:.2f}), layout says ({wx:.2f}, {wy:.2f})")
     else:
         print(f"  display window ({cut['width']} x {cut['height']}mm) at ({wx:.2f}, {wy:.2f})")

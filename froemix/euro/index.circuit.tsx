@@ -16,6 +16,9 @@ import { Nets } from "./lib/nets"
 import { MatingSockets } from "./sections/mating"
 import { JacksSection } from "./sections/jacks"
 import { PotsSection } from "./sections/pots"
+import { JoystickSection } from "./sections/joystick"
+import { ButtonSection } from "./sections/button"
+import { JackLedsSection } from "./sections/jack-leds"
 import { DisplaySection } from "./sections/display"
 
 export default () => (
@@ -45,6 +48,9 @@ export default () => (
     <MatingSockets />
     <JacksSection />
     <PotsSection />
+    <JoystickSection />
+    <ButtonSection />
+    <JackLedsSection />
     <DisplaySection />
 
     {/* GND plane on the bottom, same convention as the base board */}

@@ -38,6 +38,7 @@ export const DisplaySection = () => (
       resistance="1k"
       footprint={FP_R0603}
       mpn="0603WAF1001T5E"
+      layer="bottom"
       pcbX={`${LED_R_AT.x}mm`}
       pcbY={`${LED_R_AT.y}mm`}
       connections={{ pin1: "net.LED", pin2: "net.LED_ANODE" }}

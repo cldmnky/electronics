@@ -5,7 +5,7 @@ Daisy Seed based Eurorack module. The design is split over two boards:
 | Board | Contents | Status |
 | --- | --- | --- |
 | **base board** (`tmp/`, `tscircuit/`) | Daisy Seed, CD4051 ADC multiplexer, Eurorack power entry (+/-12V -> VCC/VEE, +5V, -10V reference), audio in/out buffers, CV in attenuverters, CV out drivers, sync in/out, opto isolated MIDI, OLED/microSD/PMOD headers, board-to-board headers | converted to tscircuit |
-| **eurorack board** (`euro/`, `doc/EURO-BOARD.md`) | 20HP front board: 10 mono jacks + 2 TRS MIDI jacks, 8 pots, 1.3" OLED, LED, and the panel | designed, routed, gated |
+| **eurorack board** (`euro/`, `doc/EURO-BOARD.md`) | 20HP front board: 10 mono jacks + 2 TRS MIDI jacks, 6 pots, 5-way UI joystick, illuminated MODE button, 6 jack activity LEDs, 1.3" OLED, and the panel | designed, routed, gated |
 
 Inspiration: Electrosmith Daisy Patch (`~/Downloads/Patch-Design-Files-EAGLE`,
 20HP, 19 jacks, SMT euro jacks + TRS MIDI).
@@ -70,15 +70,23 @@ bun run dev            # live preview
 bun run gate           # build + checks + mating contract + snapshot diff
 ```
 
-It mates with the base board through CN1 (MIDI, muxed pot inputs, LED, rails),
-CN2 (the jack bus) and CN4 (display), on 2.00mm sockets on its bottom side, at
-the base board's own frozen coordinates. CN3 (micro SD) is intentionally not
-mated yet. `euro/scripts/check_mating.py` verifies, from the built circuit JSON,
-that every socket pin lands on the base board's pin, that all 20 panel controls
-sit exactly above their panel holes, and that nothing is left unrouted.
+It mates with the base board through CN1 (MIDI, muxed pot inputs, UI controls,
+LED, rails), CN2 (the jack bus) and CN4 (display), on 2.00mm sockets on its
+bottom side, at the base board's own frozen coordinates. CN3 (micro SD) is
+intentionally not mated yet. `euro/scripts/check_mating.py` verifies, from the
+built circuit JSON, that every socket pin lands on the base board's pin, that
+all 26 panel parts sit exactly above their panel holes, that no panel hole is
+orphaned, and that nothing is left unrouted.
 
-Design record, floorplan and the open decisions (OLED module, jack height,
-CN3/SD, encoder, panel material): [`doc/EURO-BOARD.md`](doc/EURO-BOARD.md).
+The UI costs no extra wires: the 5-way joystick and the illuminated button sit
+on the two muxed pot channels `M_ADC_6`/`M_ADC_7` as resistor ladders (see
+`doc/EURO-BOARD.md` §2 and §7 — the ladder levels are a firmware contract). The
+six jack LEDs need no pins at all: each one is driven by its own jack signal
+through a diode and a resistor.
+
+Design record, floorplan and the open decisions (joystick sourcing, OLED
+module, jack height, button part, CN3/SD, panel material):
+[`doc/EURO-BOARD.md`](doc/EURO-BOARD.md).
 
 ## Base board <-> eurorack board interface
 

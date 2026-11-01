@@ -15,8 +15,11 @@
 import {
   BOARD_H,
   BOARD_W,
+  BUTTON,
   HOLE,
   JACKS,
+  JACK_LEDS,
+  JOYSTICK,
   LED_AT,
   OLED_WINDOW,
   OLED,
@@ -48,6 +51,28 @@ export default () => (
         diameter={`${HOLE.pot}mm`}
         pcbX={`${p.x}mm`}
         pcbY={`${p.y}mm`}
+      />
+    ))}
+
+    {/* UI joystick + illuminated MODE button */}
+    <hole
+      diameter={`${HOLE.joy}mm`}
+      pcbX={`${JOYSTICK.x}mm`}
+      pcbY={`${JOYSTICK.y}mm`}
+    />
+    <hole
+      diameter={`${HOLE.button}mm`}
+      pcbX={`${BUTTON.x}mm`}
+      pcbY={`${BUTTON.y}mm`}
+    />
+
+    {/* signal-activity LEDs, one above each watched jack */}
+    {JACK_LEDS.map((l) => (
+      <hole
+        key={`jackled-${l.name}`}
+        diameter={`${HOLE.jackLed}mm`}
+        pcbX={`${l.x}mm`}
+        pcbY={`${l.y}mm`}
       />
     ))}
 
@@ -88,6 +113,22 @@ export default () => (
         pcbY={`${p.y - 9.6}mm`}
       />
     ))}
+
+    {/* UI control labels */}
+    <silkscreentext
+      text={JOYSTICK.label}
+      fontSize="1.2mm"
+      anchorAlignment="center"
+      pcbX={`${JOYSTICK.x}mm`}
+      pcbY={`${JOYSTICK.y - 9.6}mm`}
+    />
+    <silkscreentext
+      text={BUTTON.label}
+      fontSize="1.2mm"
+      anchorAlignment="center"
+      pcbX={`${BUTTON.x}mm`}
+      pcbY={`${BUTTON.y - 9.6}mm`}
+    />
 
     <silkscreentext
       text="FROEMIX"
