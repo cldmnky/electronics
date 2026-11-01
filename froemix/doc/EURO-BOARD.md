@@ -273,9 +273,23 @@ no PCB-mount mono jack at all, so the jacks move to the XKB `PJ-301M` family —
 the same M6x0.5 bushing and the same 6.0mm panel hole, so **the panel does not
 change**.
 
+### Decisions taken
+
+- **Jacks stay PCB-mount.** A panel-mount ("hole mount") variant was considered
+  and rejected: it would move 12 jacks off the board onto a wire harness (24
+  panel solder joints plus crimps) and gain nothing, because the panel holes are
+  the same 6.2mm either way and the `PJ-301M` pad question is already covered by
+  the slotted pads. Everything on this board is bought from LCSC and the SMD
+  side is JLCPCB-placed as it stands.
+- **Assembly split** (unchanged): 14 SMD parts on the bottom (8 x 0603 resistor,
+  6 x SOD-323 diode) are placed by JLCPCB; the through-hole side - 12 jacks,
+  6 pots, joystick, button, 7 LEDs, OLED header, 3 sockets - is hand-soldered
+  unless JLC's through-hole service is ordered. The panel is a bare PCB.
+
 ### Still to verify before ordering
 
-1. **Jack pad line — resolved to a tolerant footprint.** The XKB `PJ-301M`
+1. **Jack pad line — resolved to a tolerant footprint** (see also "Decisions",
+   above: the PCB-mount jack stays). The XKB `PJ-301M`
    datasheet has **no PCB land pattern**, so the pads were cross-checked against
    two independent footprints of the same family:
 
