@@ -1,17 +1,20 @@
-# Froemix base board — project tasks.
+# Froemix — project tasks.
 #
-# The design is the hand-maintained tscircuit source in tscircuit/ (the KiCad
-# project in tmp/ is a frozen port reference). Run `make` or `make help` for the
-# target list; everything delegates to the scripts in tscircuit/ so there is one
-# implementation per task.
+# Two tscircuit designs: the base board in tscircuit/ and the 20HP euro board in
+# euro/ (front board + panel). Every target below covers BOTH unless it is
+# base-board specific (ERC/netlist/parts/sim/assembly are KiCad or analog checks
+# that only exist for the base board). `make release` produces every fab set:
+# fab/ for the base board, fab/euro/ for the front board and its panel.
 
 SHELL      := /bin/bash
 TSCIRCUIT  := tscircuit
+EURO       := euro
 FAB        := fab
+EURO_FAB   := $(FAB)/euro
 BUN        := bun
 
-# Kept in one place so every target reports the same board.
-BOARD      := froemix base board (80.9 x 128.5 mm, 4 layers, 16HP x 3U)
+# Kept in one place so every target reports the same boards.
+BOARD      := froemix base board (80.9 x 128.5 mm, 4 layers, 16HP x 3U) + euro board (20HP front board + panel)
 
 .DEFAULT_GOAL := help
 .PHONY: help install dev build gate release snapshots erc netlist footprints \
@@ -24,29 +27,37 @@ help: ## show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | sort \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}'
-	@printf '\nartifacts land in %s/ ; the order settings live in jlc-order.json\n' "$(FAB)"
+	@printf '\nartifacts: %s/ (base board) and %s/ (euro board + panel)\n' "$(FAB)" "$(EURO_FAB)"
+	@printf 'order settings: jlc-order.json ; base-board hand assembly: doc/ASSEMBLY.md\n'
 
-install: ## install node dependencies (once)
+install: ## install node dependencies for both boards (once)
 	cd $(TSCIRCUIT) && $(BUN) install
+	cd $(EURO) && $(BUN) install
 
-dev: ## local web app with live reload at http://localhost:3020
+dev: ## base-board dev server (euro: `cd euro && bun run dev`)
 	cd $(TSCIRCUIT) && $(BUN) run dev
 
-build: ## compile the design to dist/index/circuit.json
+build: ## compile both designs (base + euro board and panel)
 	cd $(TSCIRCUIT) && $(BUN) run build
+	cd $(EURO) && $(BUN) run build
 
-# The gate is the regression contract: ERC -> build -> netlist -> footprints ->
-# parts -> value literals -> tsci source/pin_spec/netlist/placement/shorts/
-# pcb-style -> silkscreen bounds -> snapshots.
-gate: ## full 14-step regression gate (about 65s warm)
+# The gates are the regression contracts: base board ERC -> build -> netlist ->
+# footprints -> parts -> value literals -> tsci source/pin_spec/netlist/
+# placement/shorts/pcb-style -> silkscreen bounds -> snapshots (15 steps), then
+# the euro board's 8 steps (build, netlist, placement, shorts, style, mating,
+# mux-input contract, snapshots).
+gate: ## full base-board (15 steps) + euro-board (8 steps) regression gates
 	cd $(TSCIRCUIT) && $(BUN) run gate
+	cd $(EURO) && $(BUN) run gate
 
-release: ## gate + export gerbers/BOM/CPL/SVG/STEP into fab/
+release: ## gates + export ALL fab sets (base board, euro board, panel) into fab/
 	cd $(TSCIRCUIT) && $(BUN) run release
 	@cp jlc-order.json $(FAB)/jlc-order.json
+	cd $(EURO) && bash scripts/release.sh
 
-snapshots: ## refresh the schematic/PCB/3D snapshots
+snapshots: ## refresh both boards' schematic/PCB/3D snapshots
 	cd $(TSCIRCUIT) && $(BUN) x tsci snapshot --update --3d
+	cd $(EURO) && $(BUN) x tsci snapshot --update --3d
 
 erc: ## KiCad ERC on the ported schematics (0 unexcluded errors expected)
 	cd $(TSCIRCUIT) && $(BUN) run check:erc
@@ -76,31 +87,35 @@ assembly: ## print the hand-assembly sheet (parts JLC does not mount)
 	@printf '\norder of work: H1 -> J2 -> U16/C24/C25 -> CN1-4/J1 -> rails + J1 shunts -> DaisySeed1 last\n'
 	@printf '==================================================================\n'
 
-order: release ## print the JLC order sheet and the files to upload
+order: release ## print the order sheet and the files to upload for both boards
 	@printf '\n=== JLCPCB order =================================================\n'
 	@printf 'board   : %s\n' "$(BOARD)"
 	@printf 'settings: jlc-order.json (ENIG, assembly on BOTH sides, THT hand-solder)\n'
-	@printf 'guide   : doc/JLC-ASSEMBLY.md\n\n'
-	@printf 'upload these:\n'
+	@printf 'guide   : doc/JLC-ASSEMBLY.md (base) / doc/EURO-BOARD.md (euro)\n\n'
+	@printf 'base board - upload these:\n'
 	@printf '  gerbers : %s/froemix-gerbers.zip\n' "$(FAB)"
-	@printf '  BOM     : %s/froemix-bom-jlc.csv   (36 unique parts, 114 placements)\n' "$(FAB)"
-	@printf '  CPL     : %s/froemix-cpl-jlc.csv   (104 SMT placements, THT excluded)\n\n' "$(FAB)"
+	@printf '  BOM     : %s/froemix-bom-jlc.csv\n' "$(FAB)"
+	@printf '  CPL     : %s/froemix-cpl-jlc.csv\n\n' "$(FAB)"
+	@printf 'euro board + panel - upload these:\n'
+	@printf '  front   : %s/euro-gerbers.zip + %s/euro-bom.csv\n' "$(EURO_FAB)" "$(EURO_FAB)"
+	@printf '  panel   : %s/panel/panel-gerbers.zip (2mm FR4, holes + silk only)\n\n' "$(EURO_FAB)"
 	@printf 'tick on the order page:\n'
 	@printf '  [ ] surface finish ENIG (flat pads for the 40 Daisy through-holes)\n'
-	@printf '  [ ] assembly for BOTH sides (96 of 104 SMT placements are on the bottom)\n'
-	@printf '  [ ] 4 layers, 1.6 mm, 1 oz outer copper\n'
+	@printf '  [ ] assembly for BOTH sides of the base board\n'
+	@printf '  [ ] 4 layers, 1.6 mm, 1 oz outer copper (base) / 2 layers, 2 mm (panel, 1-layer)\n'
 	@printf '  [ ] inspect: fiducials bright, bottom rotations sane, Daisy footprint empty\n'
 	@printf '==================================================================\n'
 
 check-all: gate ## run every check (alias of gate)
 	@printf '\nindividual checks also available: make erc netlist footprints parts decoupling\n'
 
-clean: ## remove build output, caches and check artifacts
+clean: ## remove both boards' build output, caches and check artifacts
 	rm -rf $(TSCIRCUIT)/dist $(TSCIRCUIT)/.tscircuit $(TSCIRCUIT)/checks
+	rm -rf $(EURO)/dist $(EURO)/.tscircuit $(EURO)/checks
 
-fab-clean: ## remove generated fabrication artifacts
+fab-clean: ## remove generated fabrication artifacts (both boards)
 	rm -rf $(FAB)
 
-distclean: clean fab-clean ## also drop node_modules and simulated output
-	rm -rf $(TSCIRCUIT)/node_modules tools/sim/out
-	@printf 'removed:$(TSCIRCUIT)/node_modules, tools/sim/out\n'
+distclean: clean fab-clean ## also drop node_modules (both) and simulated output
+	rm -rf $(TSCIRCUIT)/node_modules $(EURO)/node_modules tools/sim/out
+	@printf 'removed: $(TSCIRCUIT)/node_modules, $(EURO)/node_modules, tools/sim/out\n'
