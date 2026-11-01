@@ -19,17 +19,21 @@ export const ButtonSection = () => (
     <connector
       name={BUTTON.name}
       footprint={FP_BUTTON_12MM}
-      pinCount={4}
-      mpn="TL1240"
-      pinLabels={{ pin1: "sw1", pin2: "sw2", pin3: "ledA", pin4: "ledK" }}
+      pinCount={6}
+      mpn="K6-1212A02"
+      supplierPartNumbers={{ jlcpcb: ["C692901"] }}
+      pinLabels={{ pin1: "swA1", pin2: "swA2", pin3: "swB1", pin4: "swB2", pin5: "led1", pin6: "led2" }}
       pcbX={`${BUTTON.x}mm`}
       pcbY={`${BUTTON.y}mm`}
-      schPinArrangement={{ leftSide: ["sw1", "ledK"], rightSide: ["sw2", "ledA"] }}
+      schPinArrangement={{ leftSide: ["swA1", "swB1", "led1"], rightSide: ["swA2", "swB2", "led2"] }}
       connections={{
-        sw1: `net.${BUTTON.net}`,
-        sw2: "net.GND",
-        ledA: "net.BTN_LED",
-        ledK: `net.${BUTTON.net}`,
+        // both pins of a rail are the same contact - wire them together
+        swA1: `net.${BUTTON.net}`,
+        swA2: `net.${BUTTON.net}`,
+        swB1: "net.GND",
+        swB2: "net.GND",
+        led1: "net.BTN_LED",
+        led2: `net.${BUTTON.net}`,
       }}
     />
 
@@ -38,9 +42,10 @@ export const ButtonSection = () => (
       resistance={BUTTON.seriesR}
       footprint={FP_R0603}
       mpn="0603WAF1001T5E"
+      supplierPartNumbers={{ jlcpcb: ["C21190"] }}
       layer="bottom"
       pcbX="33mm"
-      pcbY="15.5mm"
+      pcbY="13.5mm"
       connections={{ pin1: "net.P3V3_A", pin2: "net.BTN_LED" }}
     />
   </>

@@ -133,9 +133,12 @@ export const POTS: Pot[] = [
  * resistor from the channel node to GND; a 10k pull-up to P3V3_A sets the idle
  * level. Levels seen by the ADC (3.3V rail, ignoring the CD4051's ~200R):
  *
- *   idle  3.30V   press 0.00V   up 0.30V   down 0.82V   left 1.34V   right 1.98V
+ *   idle 3.300V  press 0.000V  up 0.300V  down 0.595V  left 1.055V  right 1.650V
  *
- * 12-bit ADC: the closest pair is press/up at ~370 counts apart.
+ * 12-bit ADC: the closest pair is press/up at ~370 counts apart. The four
+ * resistor values are all LCSC basic parts already used on the base board
+ * (1k C21190, 2.2k C4190, 4.7k C23162, 10k C25804), so the ladder adds no new
+ * sourcing question.
  */
 export const JOYSTICK = {
   name: "SW1",
@@ -146,11 +149,11 @@ export const JOYSTICK = {
   pullup: "10k",
   /** direction -> series resistor to GND */
   ladder: [
-    { dir: "up", r: "1k" },
-    { dir: "down", r: "3.3k" },
-    { dir: "left", r: "6.8k" },
-    { dir: "right", r: "15k" },
-    { dir: "press", r: "0" }, // direct to GND
+    { dir: "up", r: "1k", mpn: "0603WAF1001T5E", lcsc: "C21190" },
+    { dir: "down", r: "2.2k", mpn: "0603WAF2201T5E", lcsc: "C4190" },
+    { dir: "left", r: "4.7k", mpn: "0603WAF4701T5E", lcsc: "C23162" },
+    { dir: "right", r: "10k", mpn: "0603WAF1002T5E", lcsc: "C25804" },
+    { dir: "press", r: "0", mpn: "", lcsc: "" }, // direct to GND, no part
   ],
 } as const
 
@@ -280,7 +283,7 @@ export const HOLE = {
 } as const
 
 /** Board-to-panel distance at which the panel sits on the pot/jack bushings. */
-export const PANEL_GAP = 10.0
+export const PANEL_GAP = 9.0
 /** Euro board to base board spacing (M3 spacers, 2.00mm socket stack height). */
 export const BASE_GAP = 12.0
 

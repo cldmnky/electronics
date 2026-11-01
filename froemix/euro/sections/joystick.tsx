@@ -53,6 +53,7 @@ export const JoystickSection = () => (
       resistance={JOYSTICK.pullup}
       footprint={FP_R0603}
       mpn="0603WAF1002T5E"
+      supplierPartNumbers={{ jlcpcb: ["C25804"] }}
       layer="bottom"
       pcbX="-33mm"
       pcbY="18mm"
@@ -66,7 +67,9 @@ export const JoystickSection = () => (
         name={`R${3 + i}`}
         resistance={JOYSTICK.ladder[i].r}
         footprint={FP_R0603}
-        mpn="0603WAF1002T5E"
+        mpn={JOYSTICK.ladder[i].mpn}
+        supplierPartNumbers={{ jlcpcb: [JOYSTICK.ladder[i].lcsc] }}
+      supplierPartNumbers={{ jlcpcb: ["C25804"] }}
         layer="bottom"
         pcbX={`${-29.5 + i * 3.5}mm`}
         pcbY="18mm"

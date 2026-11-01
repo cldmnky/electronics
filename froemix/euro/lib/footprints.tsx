@@ -475,36 +475,54 @@ export const FP_JOY_5WAY = (
 )
 
 // --------------------------------------------------------------------------
-// 12mm illuminated tactile push button: 2 switch pins + 2 LED pins.
+// 12mm illuminated push button, Korean Hroparts `K6-1212A02` (LCSC C692901).
 //
-// PROVISIONAL: 4.5 x 6.5mm pad grid and a 12mm body, the layout used by the
-// E-Switch TL1240 / PB6149 family. Correct against the fitted part before
-// ordering - doc/EURO-BOARD.md §7.
+// Numbers from the series datasheet "PCB Layout, pattern side": switch pads at
+// (+/-6.05, +/-4.35) on 1.3mm drills, the two LED pads 3.5mm apart on the centre
+// line with 1.8mm drills. The part has SIX electrical pins - C1/C2 are one
+// internally connected rail and C3/C4 the other - plus two 0.8mm locating pegs
+// at (0, +/-6.75) that are NOT in this footprint: they are non-plated and
+// declared as board holes in index.circuit.tsx.
 //
-// pin1/pin2 = switch (NO), pin3 = LED anode, pin4 = LED cathode.
+// pin1/pin2 = switch rail 1, pin3/pin4 = switch rail 2, pin5/pin6 = LED.
+// The LED polarity is not in the datasheet - check the part before soldering.
 // --------------------------------------------------------------------------
 
 export const FP_BUTTON_12MM = (
   <footprint insertionDirection="from_above">
+    {/* switch rail 1 (C1, C2) - the pair is internally connected */}
     <platedhole
-      pcbX="-3.25mm"
-      pcbY="-2.25mm"
+      pcbX="-6.05mm"
+      pcbY="4.35mm"
       portHints={["pin1"]}
       shape="circular_hole_with_rect_pad"
-      holeDiameter="0.9mm"
-      rectPadWidth="1.7mm"
-      rectPadHeight="1.7mm"
+      holeDiameter="1.3mm"
+      rectPadWidth="2mm"
+      rectPadHeight="2mm"
       holeOffsetX="0mm"
       holeOffsetY="0mm"
     />
-    <platedhole pcbX="-3.25mm" pcbY="2.25mm" portHints={["pin2"]} shape="circle" holeDiameter="0.9mm" outerDiameter="1.7mm" />
-    <platedhole pcbX="3.25mm" pcbY="-2.25mm" portHints={["pin3"]} shape="circle" holeDiameter="0.9mm" outerDiameter="1.7mm" />
-    <platedhole pcbX="3.25mm" pcbY="2.25mm" portHints={["pin4"]} shape="circle" holeDiameter="0.9mm" outerDiameter="1.7mm" />
-    <silkscreenpath route={[{ x: -5.5, y: -5.5 }, { x: 5.5, y: -5.5 }]} />
-    <silkscreenpath route={[{ x: -5.5, y: -5.5 }, { x: -5.5, y: 5.5 }]} />
-    <silkscreenpath route={[{ x: 5.5, y: -5.5 }, { x: 5.5, y: 5.5 }]} />
-    <silkscreenpath route={[{ x: -5.5, y: 5.5 }, { x: 5.5, y: 5.5 }]} />
-    <courtyardrect pcbX="0mm" pcbY="0mm" width="12.6mm" height="12.6mm" />
+    <platedhole pcbX="6.05mm" pcbY="4.35mm" portHints={["pin2"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
+    {/* switch rail 2 (C3, C4) */}
+    <platedhole pcbX="-6.05mm" pcbY="-4.35mm" portHints={["pin3"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
+    <platedhole pcbX="6.05mm" pcbY="-4.35mm" portHints={["pin4"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
+    {/* LED - the 1.8mm drills are larger than the switch drills on purpose.
+        Polarity is NOT in the datasheet: check the part before soldering. */}
+    <platedhole pcbX="0mm" pcbY="-1.75mm" portHints={["pin5"]} shape="circle" holeDiameter="1.8mm" outerDiameter="2.4mm" />
+    <platedhole pcbX="0mm" pcbY="1.75mm" portHints={["pin6"]} shape="circle" holeDiameter="1.8mm" outerDiameter="2.4mm" />
+    {/* locating pegs at (0, +/-6.75), 0.8mm. They are plastic and unplated on
+        the real part; they are modelled as plated holes here because the
+        placement DRC rejects a board-level <hole> inside a footprint
+        courtyard, and the pegs sit inside the pad span. No port, no net. */}
+    <platedhole pcbX="0mm" pcbY="6.75mm" shape="circle" holeDiameter="0.8mm" outerDiameter="1mm" />
+    <platedhole pcbX="0mm" pcbY="-6.75mm" shape="circle" holeDiameter="0.8mm" outerDiameter="1mm" />
+    {/* body 12 x 12mm, cap dia 8.2mm on top */}
+    <silkscreenpath route={[{ x: -6, y: 6 }, { x: 6, y: 6 }]} />
+    <silkscreenpath route={[{ x: -6, y: 6 }, { x: -6, y: -6 }]} />
+    <silkscreenpath route={[{ x: 6, y: 6 }, { x: 6, y: -6 }]} />
+    <silkscreenpath route={[{ x: -6, y: -6 }, { x: 6, y: -6 }]} />
+    <silkscreencircle pcbX="0mm" pcbY="0mm" radius="4.1mm" />
+    <courtyardrect pcbX="0mm" pcbY="0mm" width="15.5mm" height="14mm" />
   </footprint>
 )
 

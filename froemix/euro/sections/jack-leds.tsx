@@ -29,6 +29,7 @@ export const JackLedsSection = () => (
             resistance="2.2k"
             footprint={FP_R0603}
             mpn="0603WAF2201T5E"
+            supplierPartNumbers={{ jlcpcb: ["C4190"] }}
             layer="bottom"
             pcbX={`${jl.x}mm`}
             pcbY={isCv ? "-24mm" : "4mm"}
@@ -39,6 +40,7 @@ export const JackLedsSection = () => (
             name={`D${2 + i}`}
             footprint={FP_SOD323}
             mpn="1N4148WS"
+            supplierPartNumbers={{ jlcpcb: ["C2128"] }}
             layer="bottom"
             pinLabels={{ pin1: "cathode", pin2: "anode" }}
             pcbX={`${jl.x}mm`}

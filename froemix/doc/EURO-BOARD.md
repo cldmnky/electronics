@@ -40,14 +40,25 @@ CN3 (micro SD) is **not** mated: see §8.
 
 ```
 panel (2mm)            0 mm      pot/jack bushings + nuts, M3 rack screws
-front board           10.0 mm    jacks, pots, UI, OLED, LEDs on top; sockets on bottom
-base board            22.0 mm    12mm M3 spacers, tall parts hang off the back
+front board            9.0 mm    jacks, pots, UI, OLED, LEDs on top; sockets on bottom
+base board            21.0 mm    12mm M3 spacers, tall parts hang off the back
 power + Daisy         back
 ```
 
-`PANEL_GAP = 10.0mm` is the front board to panel distance. It is set by the
-Thonkiconn jack (the bushing, ~9mm from the board surface, carries the panel)
-and must be confirmed against the fitted parts before ordering.
+`PANEL_GAP = 9.0mm` is the front board to panel distance. It is set by the
+**PJ398SM jack's shoulder** (9mm from the board surface; the panel rests there
+and is clamped by the bushing and nut). Everything else has to reach that plane:
+
+| Part | Height to its panel shoulder | At a 9mm gap |
+| --- | --- | --- |
+| PJ398SM / PJ366ST jack | 9.0mm | sets the gap |
+| Alps RK09K pot | ~5.5mm body + M7 bushing | bushing reaches the panel, nut clamps |
+| SKQUCAA010 5-way | 10.0mm body | 1.0mm proud of the panel — a cap goes on the 3.2mm stem |
+| K6-1212A02 button | 7.3mm cap top | **1.7mm short** — see §8 |
+
+The button is the one part that does not reach. A 2mm riser under the switch, a
+taller cap, or a panel-mount button with flying leads are the three fixes;
+decide with the part in hand.
 
 ## 2. What the front board carries
 
@@ -95,8 +106,13 @@ firmware decodes levels, not pins.
 
 ### UI button (illuminated, one mux channel)
 
-`M_ADC_7`. The button's own LED doubles as the pull-up, so the button shows its
-state with no GPIO and no firmware:
+Part: Korean Hroparts `K6-1212A02` (LCSC `C692901`, JLCPCB-stocked, 12mm, red
+LED). Six electrical pins — C1/C2 are one internally connected switch rail and
+C3/C4 the other, so the two pads of each rail are wired in parallel — plus two
+0.8mm locating pegs that sit at (0, ±6.75) from the centre.
+
+The button's own LED doubles as the pull-up, so the button shows its state with
+no GPIO and no firmware:
 
 ```
 P3V3_A -- 1k -- LED(A) -- LED(K) --+-- M_ADC_7
@@ -211,8 +227,11 @@ channels:
 2. **Joystick stem height.** The body is 10mm tall, i.e. flush with
    `PANEL_GAP = 10.0mm`. Either fit a cap that clamps over the 3.2mm stem above
    the panel, or reduce `PANEL_GAP`. Measure the part.
-3. **Button part.** The footprint is provisional (E-Switch TL1240 / PB6149
-   family, 12mm, 4 pads). Confirm the exact part before ordering.
+3. **Button height and LED polarity.** The `K6-1212A02` cap tops out at 7.3mm
+   against a 9mm panel gap (§1) — it needs a riser, a taller cap, or a
+   panel-mount part. Its datasheet draws LED `+`/`-` but does not map them to
+   pin positions: check the polarity on the part before soldering, because a
+   reversed LED simply never lights.
 4. **CN3 / micro SD.** Left unmated; the Daisy's own slot is used from the back.
    Options: mate CN3 and add a front micro-SD socket, or a 1x8 test header.
 5. **OLED module.** The draft assumes the common 1.3"/7-pin/2.54mm module, 35.5
