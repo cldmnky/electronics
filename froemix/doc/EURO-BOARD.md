@@ -184,7 +184,9 @@ CN4) on the bottom.
 data: `fab/euro/euro-bom-jlc.csv` (14 unique parts, 50 placements) and
 `fab/euro/euro-cpl-jlc.csv` (the 19 SMT placements; the 31 through-hole parts are
 BOM-only, exactly like the base board's THT policy). `euro-pnp-all.csv` is the
-unfiltered placement list for reference.
+unfiltered placement list for reference, and `euro-bom-smt.csv` /
+`euro-bom-hand.csv` are the same split as upload-sized / shopping-list files
+(the hand file lists the 31 through-hole parts with quantity, MPN and side).
 
 Socket stack: the base board's 2.00mm pin headers and the 2.00mm female sockets
 overlap (the socket body is ~8.5mm), so a 12 mm M3 spacer between the boards

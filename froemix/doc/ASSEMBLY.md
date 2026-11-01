@@ -84,6 +84,14 @@ Type A shunts unless the gear in front of you is Type B.
   (tip) buzzes to pad 6/1 (opto cathode side), pad 3 (ring) buzzes to pad 5/2
   (opto anode side, through `R47`).
 
+## Parts to buy
+
+`fab/froemix-bom-hand.csv` (written by `make release`) is this sheet's shopping
+list: LCSC code, quantity, value/MPN, package, designators and the side each part
+sits on. The table above adds the orientation cues that matter when soldering
+them. The 2x8 IDC key, the 40 Daisy holes and the 2.00 mm headers are the parts
+most likely to be fitted one position off - check the silk before soldering.
+
 ## Order of work
 
 1. **Inspect the JLC return** — 106 SMT placements, 4 bare fiducials and 8 bare

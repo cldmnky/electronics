@@ -109,6 +109,53 @@ with (fab / "froemix-cpl-jlc.csv").open("w", newline="") as fh:
         w.writerow([r["Designator"], r["Mid X"], r["Mid Y"], r["Layer"], r["Rotation"]])
 
 (fab / "froemix-pnp-all.csv").write_bytes((fab / "froemix-pnp.csv").read_bytes())
+
+# Two upload-sized BOMs next to the combined one: the SMT file contains only the
+# parts JLCPCB places (so the order page has nothing to un-tick), and the hand
+# file is the shopping list for everything soldered by hand.
+layer = {r["Designator"]: r["Layer"] for r in pnp_rows}
+smt_refs = set(layer) - THT
+smt_groups, hand_groups = {}, {}
+for row in bom_rows:
+    ref = row["Designator"]
+    lcsc = (row.get("JLCPCB Part #") or "").strip()
+    value = (row.get("Value") or "").strip()
+    mpn = (row.get("Comment") or "").strip()
+    footprint = (row.get("Footprint", "") or "").strip()
+    package = "-" if footprint == lcsc or not footprint else footprint
+    comment = value or mpn or lcsc
+    if ref in smt_refs:
+        smt_groups.setdefault((comment, package, lcsc), []).append(ref)
+    else:
+        hand_groups.setdefault((lcsc, mpn or comment, comment, package), []).append(ref)
+
+with (fab / "froemix-bom-smt.csv").open("w", newline="") as fh:
+    w = csv.writer(fh)
+    w.writerow(["Comment", "Designator", "Footprint", "LCSC Part #", "Quantity"])
+    for (comment, package, lcsc), refs in sorted(smt_groups.items(), key=lambda kv: kv[1][0]):
+        w.writerow([comment, ",".join(sorted(refs)), package, lcsc, len(refs)])
+
+with (fab / "froemix-bom-hand.csv").open("w", newline="") as fh:
+    w = csv.writer(fh)
+    w.writerow(["LCSC Part #", "Quantity", "Comment", "MPN", "Package",
+                "Designators", "Side"])
+    for (lcsc, mpn, comment, package), refs in sorted(hand_groups.items(), key=lambda kv: kv[1][0]):
+        sides = sorted({layer.get(r, "?") for r in refs})
+        w.writerow([lcsc, len(refs), comment, mpn, package,
+                    ",".join(sorted(refs)), "/".join(sides)])
+
+# The split must be exhaustive and agree with the CPL.
+all_refs = {r["Designator"] for r in bom_rows}
+split_refs = {r for refs in smt_groups.values() for r in refs} | {r for refs in hand_groups.values() for r in refs}
+if all_refs != split_refs:
+    sys.exit(f"BOM split lost designators: {sorted(all_refs ^ split_refs)}")
+if smt_refs != {r["Designator"] for r in smt}:
+    sys.exit("BOM split disagrees with the CPL about which parts are SMT")
+
+hand_count = sum(len(r) for r in hand_groups.values())
+print(f"    froemix-bom-smt.csv      {len(smt_groups)} unique parts, {len(smt_refs)} placements (JLC places these)")
+print(f"    froemix-bom-hand.csv     {len(hand_groups)} unique parts, {hand_count} placements (hand-solder list)")
+
 missing_lcsc = [r["Designator"] for r in bom_rows if not (r.get("JLCPCB Part #") or "").strip()]
 print(f"    froemix-bom-jlc.csv      {len(groups)} unique parts, {len(bom_rows)} placements")
 print(f"    froemix-cpl-jlc.csv      {len(smt)} SMT placements ({len(THT)} THT excluded)")

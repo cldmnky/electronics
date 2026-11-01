@@ -329,11 +329,14 @@ per-designator exports tscircuit writes natively):
 | Board | Upload | File |
 | --- | --- | --- |
 | base | Gerbers | `fab/froemix-gerbers.zip` |
-| base | BOM | `fab/froemix-bom-jlc.csv` (one row per unique part, with quantity) |
-| base | CPL | `fab/froemix-cpl-jlc.csv` (106 SMT placements; the 10 through-hole parts are excluded) |
+| base | BOM (JLC) | `fab/froemix-bom-jlc.csv` - all 38 parts, for reference |
+| base | BOM (upload) | **`fab/froemix-bom-smt.csv`** - only the 31 parts JLCPCB places |
+| base | BOM (hand) | **`fab/froemix-bom-hand.csv`** - the 8 parts you solder yourself, as a shopping list |
+| base | CPL | `fab/froemix-cpl-jlc.csv` (107 SMT placements) |
 | euro | Gerbers | `fab/euro/euro-gerbers.zip` |
-| euro | BOM | `fab/euro/euro-bom-jlc.csv` (14 unique parts, 50 placements) |
-| euro | CPL | `fab/euro/euro-cpl-jlc.csv` (19 SMT placements; the 31 through-hole parts are excluded) |
+| euro | BOM (upload) | **`fab/euro/euro-bom-smt.csv`** - 5 unique parts, 19 placements |
+| euro | BOM (hand) | **`fab/euro/euro-bom-hand.csv`** - 9 unique parts, 31 through-hole |
+| euro | CPL | `fab/euro/euro-cpl-jlc.csv` (19 SMT placements) |
 | euro panel | Gerbers | `fab/euro/panel/panel-gerbers.zip` (2 mm FR4, holes + silkscreen only) |
 
 `make release` produces both sets in one run (`fab/` for the base board,

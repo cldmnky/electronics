@@ -94,10 +94,11 @@ order: release ## print the order sheet and the files to upload for both boards
 	@printf 'guide   : doc/JLC-ASSEMBLY.md (base) / doc/EURO-BOARD.md (euro)\n\n'
 	@printf 'base board - upload these:\n'
 	@printf '  gerbers : %s/froemix-gerbers.zip\n' "$(FAB)"
-	@printf '  BOM     : %s/froemix-bom-jlc.csv\n' "$(FAB)"
+	@printf '  BOM     : %s/froemix-bom-smt.csv (upload; hand list: froemix-bom-hand.csv)\n' "$(FAB)"
 	@printf '  CPL     : %s/froemix-cpl-jlc.csv\n\n' "$(FAB)"
 	@printf 'euro board + panel - upload these:\n'
-	@printf '  front   : %s/euro-gerbers.zip + %s/euro-bom-jlc.csv\n' "$(EURO_FAB)" "$(EURO_FAB)"
+	@printf '  front   : %s/euro-gerbers.zip + %s/euro-bom-smt.csv\n' "$(EURO_FAB)" "$(EURO_FAB)"
+	@printf '            hand list: %s/euro-bom-hand.csv\n' "$(EURO_FAB)"
 	@printf '            %s/euro-cpl-jlc.csv (19 SMT; THT hand-solder)\n' "$(EURO_FAB)"
 	@printf '  panel   : %s/panel/panel-gerbers.zip (2mm FR4, holes + silk only)\n\n' "$(EURO_FAB)"
 	@printf 'tick on the order page:\n'
