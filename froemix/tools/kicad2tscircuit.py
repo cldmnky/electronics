@@ -518,28 +518,35 @@ EXTRA_COMPONENTS = [
     # dissipated 3.3^2/33 = 330mW into a grounded ring (367mW at 3.465V over
     # 32.67R) and R50 sat between the MCU pin and the jack. R59/R60 are the 1W
     # 2512 replacement behind Q2+R58, which move the MCU pin out of the fault
-    # path - an emitter follower would not do, the collector has to sink the
-    # loop current. Q2 pin1/2/3 = base/emitter/collector.
+    # path.
     #
-    # The jack is TRS Type A (tip = DIN pin 4 = current source, the MIDI
-    # Association default; the front board wires it straight through), so R59
-    # 22R sources P3V3_D into the TIP and R60 33R is the RING sink behind Q2.
-    # 22R keeps the source >=4.5mA into a worst-case receiver (1.235V over
-    # 275.6R = 4.48mA) and dissipates 3.3^2/22 = 0.50W into a grounded tip;
-    # R60 stays 33R because a 3.3V fault on the ring is 94mA through Q2 (10R
-    # would be ~300mA).
-    ("Q2", "Q", "MMBT3904", "jclpcb:SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR", "midi",
-     {"1": "NET_Q2_B", "2": "GND", "3": "NET_Q2_C"}, "C181119", "MMBT3904",
-     "MIDI OUT open-collector driver, keeps the MCU pin off the jack"),
+    # The jack is TRS Type A: ring = DIN pin 4 = current SOURCE, tip = DIN pin 5
+    # = current SINK (Type B is the swap). So R59 22R sources P3V3_D into the
+    # RING through Q2 and R60 33R is the TIP sink to GND. 22R keeps the source
+    # >=4.5mA into a worst-case receiver (1.235V over 275.6R = 4.48mA); a ring
+    # shorted to GND with the driver on is 3.3/22 = 150mA (below Q2's 200mA) and
+    # 0.50W in R59, and a tip shorted to 3.3V is 330mW in R60 - both 1W parts.
+    #
+    # Q2 is a PNP (MMBT3906) high-side switch, not the NPN open collector this
+    # started as: a UART idles HIGH, so an NPN sink conducted at idle and broke
+    # the loop on the start bit, i.e. inverted MIDI. The PNP is OFF at idle/high-Z
+    # (R61 10k holds base at emitter) and ON for the start bit, so no firmware
+    # inversion is needed. Pin 1/2/3 = base/emitter/collector.
+    ("Q2", "Q", "MMBT3906", "jclpcb:SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR", "midi",
+     {"1": "NET_Q2_B", "2": "P3V3_D", "3": "NET_Q2_C"}, "C53444", "MMBT3906LT1G",
+     "MIDI OUT PNP high-side driver, off at idle, keeps the MCU pin off the jack"),
     ("R58", "R", "4K7", "jclpcb:R0603", "midi",
      {"1": "USART1_TX", "2": "NET_Q2_B"}, "C23162", "0603WAF4701T5E",
      "MIDI OUT driver base resistor for Q2"),
     ("R59", "R", "22R", "jclpcb:R2512", "midi",
-     {"1": "J_MIDI_OUT_TIP", "2": "P3V3_D"}, "C118189", "25121WF220JT4E",
-     "MIDI OUT Type A tip current source 22R 1W 2512, replaces R49"),
+     {"1": "J_MIDI_OUT_RING", "2": "NET_Q2_C"}, "C118189", "25121WF220JT4E",
+     "MIDI OUT Type A ring current source 22R 1W 2512, replaces R49"),
     ("R60", "R", "33R", "jclpcb:R2512", "midi",
-     {"1": "J_MIDI_OUT_RING", "2": "NET_Q2_C"}, "C53728", "25121WF330JT4E",
-     "MIDI OUT Type A ring current sink 33R 1W 2512, replaces R50"),
+     {"1": "J_MIDI_OUT_TIP", "2": "GND"}, "C53728", "25121WF330JT4E",
+     "MIDI OUT Type A tip current sink 33R 1W 2512 to GND, replaces R50"),
+    ("R61", "R", "10K", "jclpcb:R0603", "midi",
+     {"1": "NET_Q2_B", "2": "P3V3_D"}, "C25804", "0603WAF1002T5E",
+     "MIDI OUT driver base pull-up, holds Q2 off while USART1_TX is high-Z"),
     # SYNC IN reverse base-emitter clamp, DESIGN-REVIEW R04: Q1 is MMBT3904 with
     # the emitter at GND and its base fed from J_SYNC_IN through R22 100k, so a
     # -10V patch pulls the base to -9.1V against a 6V emitter-base rating. The

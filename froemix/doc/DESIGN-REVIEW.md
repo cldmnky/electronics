@@ -28,12 +28,12 @@ closed by a schematic change on this revision.
 | Item | Status | Where | One-line reason + the number that changed |
 | --- | --- | --- | --- |
 | R01 | **Fixed** | `sections/midi.tsx` (`REMOVED_REFS`: D2) | D2 was forward-parallel with the U15 LED; removed, D1 stays. MIDI IN current is now ~5.27 mA through the normal 220 Ω path instead of a 0.7 V shunt. |
-| R02 | **Fixed** | `sections/midi.tsx`, `lib/footprints.tsx` (`FP_jclpcb_R2512`) | MIDI OUT is a **Type A** transmitter: `R59` **22 Ω 1 W 2512** (`C118189`) sources `P3V3_D` into `J_MIDI_OUT_TIP`, and an open-collector MMBT3904 (`Q2`, `C181119`, base through `R58` 4.7k) sinks `J_MIDI_OUT_RING` through `R60` **33 Ω 1 W 2512** (`C53728`), so the MCU pin no longer sits on the cable. A shorted cable now puts 0.50 W in R59 and 0.33 W in R60, both 1 W parts (33 % of rating). Worst-case loop current is still **4.48 mA (≈4.5 mA)** into a receiver at the TLP2362's 1.7 V maximum Vf (3.135 V − 1.7 V − 0.2 V over 22 Ω + 33 Ω + 220 Ω). |
+| R02 | **Fixed** | `sections/midi.tsx`, `lib/footprints.tsx` (`FP_jclpcb_R2512`) | MIDI OUT is a non-inverting **Type A** transmitter: `Q2` is an **MMBT3906 PNP** (`C53444`, base through `R58` 4.7k, pulled up by `R61` 10k to `P3V3_D`) that switches `P3V3_D` into `R59` **22 Ω 1 W 2512** (`C118189`) and out on the **ring** (DIN pin 4, source), while the **tip** returns through `R60` **33 Ω 1 W 2512** (`C53728`) to GND (DIN pin 5, sink) — so the MCU pin no longer sits on the cable **and** the polarity is right: idle (UART high) leaves the PNP off, i.e. no loop current, and the start bit turns it on. Faults: a ring shorted to GND with the driver on is 3.3/22 = 150 mA, inside Q2's 200 mA rating, and 0.50 W in R59's 1 W part; a tip shorted to 3.3 V is 0.33 W in R60's 1 W part; a tip shorted to GND is nothing. Worst-case loop current is still **4.48 mA (≈4.5 mA)** into a receiver at the TLP2362's 1.7 V maximum Vf (3.135 V − 1.7 V − 0.2 V over 22 Ω + 33 Ω + 220 Ω). |
 | R03 | **Fixed** | `sections/cv.tsx`, `INTENTIONAL_PIN_MOVES` (U11.3/12, R31.1, R32.1) | The two spare TL074 channels are unity-gain followers on the DAC outputs, so the unbuffered DAC's 13 kΩ only drives an opamp input. Simulation: 1.5121 V/V with the 13 kΩ source (was 1.085 without the follower). **Firmware must disable the DAC buffer** (`buff_state = DISABLED`). |
 | R04 | **Fixed** | `sections/cv.tsx` (D5, C2128) | 1N4148WS across Q1 base-emitter, cathode on the base: a −10 V patch now clamps at about −0.6 V instead of driving −9.09 V into a 6 V-rated junction. |
-| R05 | **Fixed** | `doc/ASSEMBLY.md` (rewritten) | J2's key is documented on the lower long side (silk y ≈ −59.25…−60.56, same edge as the lower M3 holes), the Daisy USB is documented at the module's **−X** end (board x ≈ −25…−26.5, y ≈ 36.5…44.5), J1 is documented as a Type A/B jumper block needing **two shunts** (not board parts) with the corrected map — **Type A = shunts 4–5 and 3–1** (tip → anode), **Type B = 3–5 and 4–6** — and the sequence is power-first with a dummy load on P5V before the module is fitted. |
-| R06 | **Fixed** | `sections/main.tsx` (C31), `tools/report_decoupling.py` | U1 has a local 100 nF VDD bypass in `P3V3_A` (7.55 mm routed rail leg; C19 used to be a 29.96 mm path away). The report is now one graph per net, layer-aware, measured to the supply pin: U1 7.55 mm rail / 11.04 mm GND, and the GND leg is the IC's return pin (VSS/VEE/DGND/GND), not a grounded signal input. |
-| R07 | **Fixed** | `sections/main.tsx`, `sections/cv.tsx`, `tools/check_values.py`, gate step 7 | R51/R52 are `4.7k` and R24 is `49.9k` (built 4700 / 49900 Ω, MPN `0603WAF4701T5E` / `0603WAF4992T5E`); a gate step now compares every passive literal with the built value and the MPN (94 literals, 37 MPN cross-checks). |
+| R05 | **Fixed** | `doc/ASSEMBLY.md` (rewritten) | J2's key is documented on the lower long side (silk y ≈ −59.25…−60.56, same edge as the lower M3 holes), the Daisy USB is documented at the module's **−X** end (board x ≈ −25…−26.5, y ≈ 36.5…44.5), J1 is documented as a Type A/B jumper block needing **two shunts** (not board parts) with the corrected map — **Type A = shunts 3–5 and 4–6** (ring → opto anode, tip → opto cathode), **Type B = 4–2 and 3–1**, and a 2.54 mm shunt only bridges the 2.54 mm pairs (4–5 is a 3.59 mm diagonal, never a valid pair) — and the sequence is power-first with a dummy load on P5V before the module is fitted. |
+| R06 | **Fixed** | `sections/main.tsx` (C31), `tools/report_decoupling.py` | U1 has a local 100 nF VDD bypass in `P3V3_A` (7.71 mm routed rail leg; C19 used to be a 29.96 mm path away). The report is now one graph per net, layer-aware, measured to the supply pin: U1 7.71 mm rail / 12.98 mm GND, and the GND leg is the IC's return pin (VSS/VEE/DGND/GND/VMINUS), not a grounded signal input. A part whose return pin sits on another rail (the TL074s' VMINUS on VEE) now prints `-` instead of crediting a grounded non-inverting input; only a part with no named return pin at all (U14) falls back to the nearest pad on GND. |
+| R07 | **Fixed** | `sections/main.tsx`, `sections/cv.tsx`, `tools/check_values.py`, gate step 7 | R51/R52 are `4.7k` and R24 is `49.9k` (built 4700 / 49900 Ω, MPN `0603WAF4701T5E` / `0603WAF4992T5E`); a gate step now compares every passive literal with the built value and the MPN (95 literals, 38 MPN cross-checks). |
 | R08 | **Fixed** | `sections/audio.tsx` (R13/R14 = 33k, C4216) | Output gain is 3.300 (10.37 dB), so 1 Vrms full scale is 4.62 V peak at the jack against ±11.7 V rails — no rail clipping. −3 dB at 30.9 kHz simulated (30.0 kHz with the TL074 model) instead of 20.5 kHz at ×9.9. |
 | R09 | **Fixed** | `sections/cv.tsx` (R39/R40, `INTENTIONAL_PIN_MOVES` R39.2/R40.2, C33/C34) | Feedback is taken past the 1 kΩ series resistor, so the DC gain is a load-independent 1.5121 V/V into 100 k, 50 k, 10 k and open (was 4.941 / 4.892 / 4.536 V: −11.8 and −98 ¢/octave of load error). That puts the 1 kΩ and the cable capacitance inside the loop, so `C33`/`C34` **100 pF across R39/R40** (zero at 15.9 kHz) compensate it: stable (0 % overshoot) to about **10 nF** of cable capacitance, marginal at 100 nF full scale, verified in `tools/sim` (deck 5). The 1 kΩ still limits a short to ~5 mA. |
 | R10 | **Fixed** | `sections/cv.tsx` (R33/R42 30.1k, R34/R43 187k) | ±5 V now maps to 0.1046…3.1146 V (0.301 V/V, offset 1.6096 V) instead of exactly 0/3.3 V; the worst 1 % corner is 0.0742/3.1775 V, ≥60 mV clear of the MCP6002's rails. 1 % parts cost ±2.02 % of scale instead of clipping the endpoint. |
@@ -55,19 +55,27 @@ the fixes rather than in the original design. What changed after it:
 
 - **J1's Type A/B map was inverted.** The built nets decide it, not the prose:
   pads 1/6 are the U15 **cathode** node, pads 2/5 reach the **anode** through
-  R47, pad 3 is the ring and pad 4 the tip. Type A sources current on the tip,
-  i.e. tip → anode, so **Type A = shunts 4–5 + 3–1** and **Type B = 3–5 + 4–6**
-  (`doc/ASSEMBLY.md` and the R05 finding above were corrected).
-- **MIDI OUT is now a Type A transmitter.** It was Type B, which would have
-  required a crossover in the front-panel wiring; tip is the current source
-  (`R59`) and ring the sink (`R60` through `Q2`), so the panel jack wires
-  straight through. `doc/FRONTBOARD-INTERFACE.md` CN1 pins 3/4 were re-labelled
-  to match: pin 3 = OUT tip = source, pin 4 = OUT ring = sink.
+  R47, pad 3 is the ring and pad 4 the tip. Type A puts the sender's current
+  source on the **ring** (DIN pin 4) and its sink on the **tip** (DIN pin 5), so
+  a Type A receiver takes ring → anode: **Type A = shunts 3–5 + 4–6** and
+  **Type B = 4–2 + 3–1** (`doc/ASSEMBLY.md` and the R05 finding above were
+  corrected). A 2.54 mm shunt only bridges the 2.54 mm pairs (1–2, 1–3, 2–4,
+  3–4, 3–5, 4–6, 5–6); **4–5 is a 3.59 mm diagonal** and the old text specified
+  it, which no shunt can fit.
+- **MIDI OUT was inverted and is now a non-inverting Type A transmitter.** The
+  NPN open collector conducted at UART idle (high) and broke the loop on the
+  start bit — the opposite of MIDI — and it put the source on the tip. `Q2` is
+  now an MMBT3906 **PNP high-side switch** (`C53444`, emitter on `P3V3_D`, base
+  through `R58`, pulled up by `R61`), so idle/high-Z = off = no loop current and
+  the start bit = on; the source leaves through `R59` on the **ring** and the
+  **tip** is the sink through `R60` to GND. The panel jack wires straight
+  through, and `doc/FRONTBOARD-INTERFACE.md` CN1 pins 3/4 were re-labelled to
+  match: pin 3 = OUT tip = sink, pin 4 = OUT ring = source.
 - **`R59` is 22 Ω 1 W (`C118189`), not 33 Ω**, so the transmitter keeps **4.48 mA
   (≈4.5 mA)** worst-case loop current into a receiver at the TLP2362's 1.7 V
   maximum Vf while the 0603 resistors that started R02 are gone. `R60` stays
-  33 Ω: a ring pulled to 3.3 V then drives 94 mA through `Q2`, inside its
-  200 mA rating.
+  33 Ω: a tip pulled to 3.3 V then dissipates 330 mW in the 1 W part, and a ring
+  shorted to GND is 150 mA through `Q2`, inside its 200 mA rating.
 - **`C33`/`C34` 100 pF were added across R39/R40.** Moving the CV-out feedback
   past the 1 kΩ (the R09 fix) put the 1 kΩ and the cable capacitance inside the
   TL074 loop, and 1 nF rang with ~18° of phase margin. The 100 pF zero at
@@ -233,9 +241,12 @@ unipolar-only interface; relying on patch discipline is weak for Eurorack.
   instructions**. With no shunts, the MIDI input path is open even after R01 is
   fixed. From the built nets: J1 pads 1/6 are the opto **cathode** node, pads
   2/5 go through R47 to the opto **anode**, pad 3 is the ring and pad 4 the tip.
-  TRS **Type A** puts the current source on tip, i.e. tip → anode, so Type A is
-  shunts **4–5 and 3–1**; Type B (tip/ring swapped) is **3–5 and 4–6**. Shunts
-  4–2 / 3–6 are electrically identical to 4–5 / 3–1 (pads 2 and 5 are one net).
+  TRS **Type A** puts the sender's current source on the ring (DIN pin 4) and its
+  sink on the tip (DIN pin 5), so a receiver takes ring → anode: Type A is
+  shunts **3–5 and 4–6**; Type B (tip/ring swapped) is **4–2 and 3–1**. A
+  2.54 mm shunt only bridges pads 2.54 mm apart — the pairs on this block are
+  1–2, 1–3, 2–4, 3–4, 3–5, 4–6 and 5–6 — and the electrically equivalent
+  3–2 / 4–1 are 3.59 mm diagonals, so they are not an option either.
   Verify against the selected jack/cable with a meter.
 
 **Action:** replace ambiguous prose with annotated top/bottom assembly drawings

@@ -23,48 +23,55 @@ over. The board also carries a mirrored legend
 | `C24`, `C25` | 100 µF 50 V radial electrolytic, 8 × 12 mm | THT, 3.5 mm pitch | bottom | C2749 | **polarity**: `+` marked on silk; C25 is the negative-rail cap, its `+` faces **GND**. Body is 8 mm — the silk circle is the can, keep neighbours clear of it |
 | `U16` | B2405S-**2**WR3, isolated 24 V→5 V SIP module (2 W / 400 mA) | THT, 4 leads on the 1-2-4-6 positions of a 2.54 mm grid | bottom | C5369484 | **pin 1 = `+VIN`** (square pad, 45° silk bevel and lead tick); leads 3 and 5 are absent, and the silk guide line inside the body is broken at those two positions, so the module cannot go in one position off. The body hangs 6.15 mm to one side of the lead row (toward the bottom board edge). Module stands **up** (≈10 mm tall) |
 | `DaisySeed1` | Electrosmith Daisy Seed Rev4 module | 2 × 20 × 2.54 mm, 15.24 mm row spacing | bottom | — | pin 1 at the end marked on silk; the module lies **horizontally**, and its **USB receptacle is at the LEFT (−X) end of the module** (board x ≈ −25…−26.5, y ≈ 36.5…44.5), reachable **from behind** the board. There is no cutout to align with |
-| `J1` shunts ×2 | 2.54 mm jumper shunt (not shipped with the board) | — | on `J1` | — | two shunts, Type A or Type B, see the MIDI section |
+| `J1` shunts ×2 | 2.54 mm jumper shunt (not shipped with the board) | — | on `J1` | — | two shunts, Type A (3–5 + 4–6) or Type B (4–2 + 3–1), see the MIDI section |
 | `FID1–FID4` | fiducials | bare copper, 1 mm + 0.5 mm mask window | bottom | — | do nothing (no part) |
 | `TP1–TP8` | test points | bare copper, 1.2 mm | bottom | — | do nothing (probe points) |
 
 Nothing else changed for hand assembly with the last design revision: the new
-parts (`Q2`, `R58`, `R59`, `R60`, `D5`, `C31`, `C32`, `C33`, `C34`, the
+parts (`Q2`, `R58`, `R59`, `R60`, `R61`, `D5`, `C31`, `C32`, `C33`, `C34`, the
 re-valued CV resistors) are 0603/SOT-23/2512 SMD and are all machine-placed by
 JLC. `C24`/`C25` kept their 3.5 mm pitch and their through-holes; only the silk
 body circle and the courtyard grew to the real 8 mm can.
 
-## MIDI input polarity — `J1` (read this before fitting the shunts)
+## MIDI polarity — `J1` shunts and the OUT wiring (read before fitting the shunts)
 
 `J1` is **not** a MIDI socket: it is a 2 × 3 jumper block that selects the
 TRS MIDI pinout. The MIDI socket lives on the front-panel board; `J1` sets
-which TRS contact is tip and which is ring for the receive path.
+which TRS contact reaches which side of the optocoupler on the receive path.
 
 | `J1` pad | Net | What it is |
 | --- | --- | --- |
 | 1, 6 | `NET_D1_A` | optocoupler **cathode** node (U15 CATHODE, D1 anode) |
 | 2, 5 | `NET_J1_2` | → `R47` 220 Ω → optocoupler **anode** (`NET_D1_K`) |
-| 3 | `J_MIDI_IN_RING` | TRS **ring** contact (current sink, MIDI IN) |
-| 4 | `J_MIDI_IN_TIP` | TRS **tip** contact (current source, MIDI IN) |
+| 3 | `J_MIDI_IN_RING` | TRS **ring** contact — DIN pin 4, the sender's current **source** |
+| 4 | `J_MIDI_IN_TIP` | TRS **tip** contact — DIN pin 5, the sender's current **sink** |
 
-MIDI TRS **Type A** puts the transmitter's current source on the **tip** and
-its sink (DIN pin 5) on the **ring**; Type B swaps the two. On a receiver that
-means Type A is *tip → LED anode*, and that is what pads 4–5 select. The two
-pinouts, as built:
+MIDI TRS **Type A** puts the transmitter's current source (DIN pin 4) on the
+**ring** and its sink (DIN pin 5) on the **tip**; Type B swaps the two. A
+receiver must therefore take the **ring to the LED anode** and the **tip to
+the cathode**, and that is what pads 3–5 and 4–6 select. The two pinouts, as
+built:
 
 | Type | Shunts | Path |
 | --- | --- | --- |
-| **A** | **4–5 and 3–1** | tip → pad 5 → `R47` → opto anode; ring → pad 1 → opto cathode |
-| **B** | 3–5 and 4–6 | ring → pad 5 → `R47` → opto anode; tip → pad 6 → opto cathode |
+| **A** | **3–5 and 4–6** | ring → pad 5 → `R47` → opto anode; tip → pad 6 → opto cathode |
+| **B** | **4–2 and 3–1** | tip → pad 2 → `R47` → opto anode; ring → pad 1 → opto cathode |
 
-Shunting 4–2 / 3–6 instead of 4–5 / 3–1 is **electrically identical** (pads 2
-and 5 are one net) — either pair is a valid Type A; likewise 3–2 / 4–1 for
-Type B.
+**A 2.54 mm shunt bridges two pads 2.54 mm apart, and nothing else.** On this
+2 × 3 block those pairs are 1–2, 1–3, 2–4, 3–4, 3–5, 4–6 and 5–6; every other
+pair is at least 3.59 mm away — **4–5 is a 3.59 mm diagonal** — and a 2.54 mm
+shunt cannot reach across it, so never specify one. The electrically identical
+pairs 3–2 / 4–1 (pads 2 and 5 are one net) are diagonal for the same reason and
+are not an option either.
 
-**This board's MIDI OUT is Type A too** (`R59` 22 Ω 1 W sources `P3V3_D` into
-`J_MIDI_OUT_TIP`, `R60` 33 Ω sinks `J_MIDI_OUT_RING` through `Q2`), so a
-front-panel jack wired **straight through** (tip → tip, ring → ring) is
-correct for Type A equipment on both directions. Fit the Type A shunts unless
-the gear in front of you is Type B.
+**This board's MIDI OUT is Type A too.** `Q2` (MMBT3906 PNP) switches
+`P3V3_D` through `R59` 22 Ω 1 W out on the **ring** — the source, DIN pin 4 —
+and the **tip** returns through `R60` 33 Ω 1 W to GND — the sink, DIN pin 5.
+Because the driver is a high-side PNP it is **off at idle** (UART high or
+high-Z), so no loop current flows until a start bit turns it on, which is what
+MIDI expects. A front-panel jack wired **straight through** (tip → tip, ring →
+ring) is therefore correct for Type A equipment in both directions. Fit the
+Type A shunts unless the gear in front of you is Type B.
 
 - **Two 2.54 mm jumper shunts are required** and they are **not** board parts:
   they are not in the BOM, not in the CPL and JLC does not fit them. Buy two
@@ -74,8 +81,8 @@ the gear in front of you is Type B.
   all), and the wrong pair silently swaps tip/ring — the opto then sees the
   wrong polarity and, in the reverse direction, is protected by D1 but deaf.
   With a Type A front panel (the default here) the meter check is simply: pad 4
-  (tip) and pad 5 (opto anode side) buzz, pad 3 (ring) and pad 1 (opto cathode
-  side) buzz.
+  (tip) buzzes to pad 6/1 (opto cathode side), pad 3 (ring) buzzes to pad 5/2
+  (opto anode side, through `R47`).
 
 ## Order of work
 

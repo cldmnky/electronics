@@ -78,7 +78,7 @@ P3V3_D consumers on this board (`dist/index/circuit.json`, net P3V3_D):
 | H1 (PMOD) | 6, 11, 12 | optional external codec/DSP module |
 | U15 TLP2362 | VCC (6) | MIDI IN optocoupler, plus R48 2.2 k LED pull-up |
 | I2C pull-ups | R51, R52 4.7 k | SCL/SDA |
-| MIDI OUT ring | R59 33 R → J_MIDI_OUT_RING | only conducts into the far end / a fault |
+| MIDI OUT ring | `Q2` + R59 22 R → J_MIDI_OUT_RING | only conducts into the far end / a fault, and only while a start bit holds the PNP on |
 | Front panel | CN1 pin 14 | 3.3 V is also brought out on the euro connector |
 | Decoupling | C28, C29, C30 | 2 × 100 nF + 10 µF |
 
@@ -126,20 +126,31 @@ Setup:
   measured).
 - **Current-limited bench supply on J2** (§3 of AGENTS.md: J2 pins 9/10 = +12 V,
   1/2 = −12 V, 3–8 = GND), limit 150 mA per rail, ±12.0 V.
-- Ammeter in series with U16 pin 6 (VOUT_P) or a current probe on the P5V
-  copper; do **not** break the trace — lift one leg of C1 and use the pad, or
-  use a series shunt on TP1/P5V.
-- Measure with a DMM in DC mode over ≥ 10 s per state; record the 5 V rail
-  voltage at U16 pin 6 as well.
+- **Current insertion point: U16's `+Vo` lead, pin 6.** Nothing on this board is
+  in series with the rail: **C1/C27 are parallel bypasses and TP1 is a tap on
+  P5V**, so neither can carry the rail current — an ammeter from TP1 to GND
+  would short P5V through the meter and read only its own burden. Lift the
+  `+Vo` lead out of its plated hole and insert the meter between the lead and
+  its pad, or clip a current probe around that lead (or around the P5V wire).
+  **C1 and TP1 are not insertion points** — do not open C1 and do not probe
+  TP1-to-GND in current mode.
+- **Peaks and sag need a scope, not a DMM.** The pass/fail criteria are burst
+  peaks and rail sag; a DMM in DC mode over 10 s averages exactly those away, so
+  it cannot establish either. Capture **P5V current and P5V voltage together on
+  a scope**: current probe (or a low-value series shunt at the insertion point
+  above) on one channel, TP1 on the other, at ≥ 1 MS/s with a time base that
+  shows individual SD write bursts. The DMM average is a cross-check of the
+  scope's mean, not the measurement.
 
-States to record:
+States to record (scope peak current and deepest P5V dip for each):
 
 1. **Idle** — firmware booted, no audio, SD mounted, OLED on.
-2. **SD write** — sustained card write (`dd` of a large file), measure the peak.
+2. **SD write** — sustained card write (`dd` of a large file): record the peak
+   current of a burst and the P5V dip it causes, not just the average.
 3. **Full DSP load** — worst-case audio algorithm at full sample rate, both
    channels, OLED on.
 4. **Repeat 1–3 with the H1 module connected** if the front/expansion board is
-   part of the build.
+   part of the build (the attach itself is a step load — capture it too).
 
 Pass/fail:
 
@@ -155,9 +166,10 @@ Pass/fail:
   larger converter — and that means another footprint, placement and baseline,
   not another value swap.
 
-Record the four numbers in this file when they exist. Until then R13 stays open
-on the measurement, not on the rating: **measure before the module is fitted for
-good**, i.e. do not sign the board off on the paper budget alone.
+Record the peak current and the minimum P5V voltage of all four states in this
+file when they exist (scope capture, DMM average beside it). Until then R13
+stays open on the measurement, not on the rating: **measure before the module is
+fitted for good**, i.e. do not sign the board off on the paper budget alone.
 
 ## 5. What the 2 W swap changed on this board
 
@@ -193,6 +205,6 @@ in fact a 4-lead SIP on the module's own 1/2/4/6 positions, not a 7-pin part):
   hangs off the **bottom**, so there is no physical or courtyard conflict (the
   placement checker compares courtyards per layer). Its pads are 5.2 mm from the
   U16 lead row, clear of the 1.0 mm drills.
-- **Routing** re-solved: **304 traces / 334 vias / 4971 mm** of copper, 0
+- **Routing** re-solved: **306 traces / 335 vias / 4978.7 mm** of copper, 0
   unconnected (the previous board with the 1 W part was 304/325/4934). Snapshots
   regenerated.

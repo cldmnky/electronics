@@ -15,12 +15,17 @@ The interface is two 2.00 mm 16-pin headers (`A2005WV-16P`, LCSC `C225268`):
 
 ## 1. HARD requirements on `M_ADC_0` … `M_ADC_7`
 
-`M_ADC_0…7` are **pot/attenuverter wiper inputs**, nothing else.
+`M_ADC_0…7` are **pot/attenuverter wiper inputs** — on the panel that exists,
+`M_ADC_0…5` are the six pots, `M_ADC_6` the UI joystick's resistor ladder and
+`M_ADC_7` the illuminated button's switch divider (`doc/EURO-BOARD.md` §2) —
+nothing else. All of them are the same class of divider referenced only to
+this board's `P3V3_A`/`GND`, which is what the rules below constrain.
 
-- **HARD: the only thing that may drive `M_ADC_*` is a potentiometer or
-  attenuverter divider powered from this board's own `P3V3_A` and `GND`**
-  (`CN1` pin 15 / pin 16). No external CV, no ±12 V, no 5 V logic, no signal
-  from an independently powered module, no "just for a test" bench supply.
+- **HARD: the only thing that may drive `M_ADC_*` is a divider (potentiometer,
+  attenuverter, resistor ladder or switch) powered from this board's own
+  `P3V3_A` and `GND`** (`CN1` pin 15 / pin 16). No external CV, no ±12 V, no
+  5 V logic, no signal from an independently powered module, no "just for a
+  test" bench supply.
 - **HARD: the voltage on every `M_ADC_*` pin must stay within 0 … 3.3 V at all
   times — including every power-up and power-down order**, with either board
   connected first, and while the front board is powered but the base board is
@@ -72,11 +77,11 @@ order); the front board just must not make the mux input high-impedance.
 
 | CN1 | net | Notes |
 | --- | --- | --- |
-| 1 | `J_MIDI_IN_TIP` | MIDI IN TRS tip (current source from the sender; lands on the opto anode side) |
-| 2 | `J_MIDI_IN_RING` | MIDI IN TRS ring (current sink) |
-| 3 | `J_MIDI_OUT_TIP` | MIDI OUT TRS tip (current source, `R59` 22 Ω 1 W from `P3V3_D`) |
-| 4 | `J_MIDI_OUT_RING` | MIDI OUT TRS ring (current sink, open-collector `Q2` through `R60` 33 Ω) |
-| 5–12 | `M_ADC_0` … `M_ADC_7` | **§1 applies** — pot wipers only |
+| 1 | `J_MIDI_IN_TIP` | MIDI IN TRS tip — DIN pin 5, the sender's current **sink**; reaches the opto cathode through the `J1` Type A shunts |
+| 2 | `J_MIDI_IN_RING` | MIDI IN TRS ring — DIN pin 4, the sender's current **source**; reaches the opto anode through `R47` |
+| 3 | `J_MIDI_OUT_TIP` | MIDI OUT TRS tip — this board's current **sink** (DIN pin 5): `R60` 33 Ω 1 W to GND |
+| 4 | `J_MIDI_OUT_RING` | MIDI OUT TRS ring — this board's current **source** (DIN pin 4): `Q2` (MMBT3906 PNP) switches `P3V3_D` into `R59` 22 Ω 1 W |
+| 5–12 | `M_ADC_0` … `M_ADC_7` | **§1 applies** — pot / joystick / button wipers only |
 | 13 | `LED` | Seed `ADC_1` pin driven as an output; the panel LED needs its own series resistor |
 | 14 | `P3V3_D` | 3.3 V digital, from the Seed's onboard regulator — see §5 |
 | 15 | `P3V3_A` | 3.3 V analog, from the Seed `V3V3_A` — the **only** rail a pot may be powered from |
@@ -89,14 +94,18 @@ front board only wires tip/ring through to the socket.
 **Both directions are Type A on this board, so the panel jack wires straight
 through** (tip → tip, ring → ring on both the IN and the OUT socket).
 
-- **MIDI OUT: Type A transmitter.** Tip carries the current source (`R59`
-  22 Ω 1 W from `P3V3_D`, **4.48 mA ≈ 4.5 mA** worst-case loop current into a
-  receiver at the TLP2362's 1.7 V maximum Vf), ring is the sink (`R60` 33 Ω into
-  `Q2`'s open collector). Do not cross tip/ring on the panel: a crossover would
-  turn the pair into Type B and every Type A device would see reversed
-  polarity.
-- **MIDI IN: defaults to Type A via shunts 4–5 + 3–1** on `J1`. Type B (3–5 +
-  4–6) is available for Type B gear; the front board does not decide it.
+- **MIDI OUT: Type A transmitter.** The **ring** carries the current source
+  (`Q2` switches `P3V3_D` into `R59` 22 Ω 1 W, **4.48 mA ≈ 4.5 mA** worst-case
+  loop current into a receiver at the TLP2362's 1.7 V maximum Vf), and the
+  **tip** is the sink (`R60` 33 Ω 1 W to GND). `Q2` is a high-side PNP, so it
+  is **off at idle** (UART high or high-Z) and a start bit turns it on — the
+  loop current is present only while data is being sent, as MIDI requires. Do
+  not cross tip/ring on the panel: a crossover would turn the pair into Type B
+  and every Type A device would see reversed polarity.
+- **MIDI IN: defaults to Type A via shunts 3–5 + 4–6** on `J1`. Type B (4–2 +
+  3–1) is available for Type B gear; the front board does not decide it. A
+  2.54 mm shunt only bridges pads 2.54 mm apart, and 4–5 is a 3.59 mm diagonal,
+  so it can never be one of the pairs.
 - **Receiver threshold limitation:** the on-board receiver is a **TLP2362 with
   a 5 mA maximum switching threshold** (recommended on-current from 7.5 mA),
   while this board's own transmitter delivers **4.48 mA (≈4.5 mA) worst case**
@@ -259,16 +268,30 @@ Run in this order before the front board is trusted with the base board:
 
 1. **Meter, unpowered.** With the front board alone: no continuity from any
    `M_ADC_*` pad to `+12 V`, `−12 V`, `5 V`, `P3V3_D` or any jack tip/ring.
-   Each `M_ADC_n` reaches exactly one pot wiper. Check the `CN1`/`CN2` pin-1
+   Each `M_ADC_n` reaches exactly one control node — a pot wiper, the joystick
+   ladder or the button — and nothing else. Check the `CN1`/`CN2` pin-1
    orientation against the base board before mating (2.00 mm headers are not
    keyed).
-2. **Standalone 3.3 V sweep.** Power the front board from an isolated 3.3 V
-   supply on `P3V3_A`/`GND` only. Turn every pot and attenuverter to both
-   extremes and confirm `M_ADC_0…7` stay within 0 … 3.3 V at all times
-   (expect ≈0 V … ≈3.3 V). No point may exceed 3.3 V or go negative.
-3. **Sequencing.** Mate the boards and repeat (2) for both orders: front board
-   powered first, base board powered first, and with the base board off while
-   the front board is on. In every case `M_ADC_*` must stay ≤ `P3V3_A`.
+2. **Standalone sweep, every control through every state.** Power the front
+   board from an isolated 3.3 V supply on `P3V3_A`/`GND` only — no other rail,
+   no base board — and confirm every `M_ADC_*` pin stays within 0 … 3.3 V in
+   every state of the control that drives it:
+   - `M_ADC_0…5` — the six pots (and any attenuverter wired to them): both
+     extremes, expect ≈0 V … ≈3.3 V.
+   - `M_ADC_6` — the UI joystick's resistor ladder: the five switch states
+     (up / down / left / right / press) **plus the idle state with nothing
+     pressed**. Every state must be a distinct, stable level inside 0 … 3.3 V.
+   - `M_ADC_7` — the illuminated button: released (no switch current, LED dark,
+     the node sits near `P3V3_A`) and pressed (≈0 V, the button's LED lights at
+     ~1.3 mA through its series resistor). The LED is in the pull-up path, so
+     the channel must never be driven as an output.
+   No point may exceed 3.3 V or go negative in any state, and every level must
+   come from this board's own `P3V3_A`/`GND` divider — not from the supply, a
+   jack or a second module.
+3. **Sequencing.** Mate the boards and repeat (2) — every control in every state
+   — for both orders: front board powered first, base board powered first, and
+   with the base board off while the front board is on. In every case `M_ADC_*`
+   must stay ≤ `P3V3_A`.
 4. **CV in.** Patch a calibrated ±5 V into `J_CV_IN_1`/`2` and measure at
    `TP`/ADC: 3.1146 V at −5 V, 0.1046 V at +5 V (0.0742/3.1775 V allowed at the
    1 % resistor corners), no clipping at either end.
@@ -282,11 +305,13 @@ Run in this order before the front board is trusted with the base board:
    ≈30 kHz roll-off and no DC offset at the jack. Feed ±10 V into
    `J_AUDIO_IN_*` and confirm ≈1.0 V at the ADC.
 7. **MIDI.** With the `J1` shunts fitted for the chosen TRS type (Type A =
-   4–5 + 3–1, the default), a MIDI note from a known-good source produces
+   3–5 + 4–6, the default), a MIDI note from a known-good source produces
    activity on `USART1_RX`; unplug and re-plug the cable with the boards powered
    to prove the opto input survives (D1 clamps the reverse direction, D2 is
-   gone). Then check the OUT path with a Type A receiver: tip must be the
-   current source.
+   gone). Then check the OUT path with a Type A receiver: the **ring** must be
+   the current source (`Q2` on, sourcing through `R59`) and the **tip** the
+   sink (`R60` to GND) — at idle the source is off and no loop current flows,
+   and a start bit turns it on.
 8. **Current.** Measure `P3V3_A` and `P3V3_D` current with the panel connected
    and compare with §5's ≤10 mA/≤10 mA budget, then re-run the `P5V`
    acceptance test in `doc/POWER-BUDGET.md` (PASS ≤ 300 mA) with the front

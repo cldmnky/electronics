@@ -20,10 +20,14 @@ What it does now, reading the BUILT circuit (`dist/index/circuit.json`):
     IC's supply net to the IC pin on that same supply net - the pin identity
     comes from the netlist (name + number), never from "any pad".
   * the GND RETURN is reported separately: the cap's GND pad to the IC's GND
-    return pin (a pin whose name is GND/VSS/DGND/VMINUS/VEE, falling back to
-    any pin on the net for an IC that has no such pin), restricted to the GND
-    net. A decoupling loop is rail leg + GND return; the rail leg alone is not
-    the loop inductance.
+    return pin (a pin whose name is GND/VSS/DGND/VMINUS/VEE), restricted to the
+    GND net. A decoupling loop is rail leg + GND return; the rail leg alone is
+    not the loop inductance. When the IC's return pin exists but sits on a
+    DIFFERENT rail (a dual-supply op-amp's VMINUS on VEE) the GND leg is '-' and
+    no fallback is attempted: the only pins such a part has on GND are grounded
+    signal inputs (TL074 IN1P...), which are not the return and used to be
+    credited with a 4.7 mm "loop". The fallback to the nearest pad on GND stays
+    for a part with no named return pin at all (U14, a shunt reference).
   * the bottom GND pour is NOT in the graph, so GND numbers are upper bounds.
 
 Every powered IC on the board is covered (see PAIRS). Informational only: it
@@ -255,8 +259,25 @@ def measure(graphs, ports, ref: str, net: str, cap: str, prefer_pin_names=()):
     return best[0], f"pin{best[1]['pin_number']}", label(best[2])
 
 
+def supply_return_pins(ports, ref: str) -> list[dict]:
+    """The pads of `ref` whose pin name says supply return, on any net."""
+    return [p for p in ports.get(ref, [])
+            if (p.get("pin_name") or "").upper() in GROUND_PIN_NAMES]
+
+
 def measure_gnd(graphs, ports, ref: str, cap: str):
-    """Cap GND pad -> the IC's GND return pin, restricted to the GND net."""
+    """Cap GND pad -> the IC's GND return pin, restricted to the GND net.
+
+    A part whose named return pin is on another rail has no GND leg to report:
+    the TL074's return is VMINUS (VEE), and its only pins on GND are grounded
+    signal inputs, so falling back to the nearest GND pad would quote the input
+    wiring as a decoupling loop. '-' (None) is the honest answer; the rail legs
+    already cover that loop. Parts with no named return pin at all (U14, a
+    shunt reference) still fall back to the nearest pad on GND.
+    """
+    returns = supply_return_pins(ports, ref)
+    if returns and not any(GND_NET in p["nets"] for p in returns):
+        return None, None, None
     return measure(graphs, ports, ref, GND_NET, cap, GROUND_PIN_NAMES)
 
 
@@ -306,8 +327,9 @@ def main() -> None:
     print(note)
     for cap, ref, reason in missing:
         print(f"  no measurement for {cap} -> {ref}: {reason}")
-    print("\nU2/U3/U11/U12 are dual-supply TL074s with no GND pin: their return path is the")
-    print("other rail, so the GND leg column is '-' and the two rail legs are separate loops.")
+    print("\nU2/U3/U11/U12 are dual-supply TL074s: their supply return is VMINUS on")
+    print("VEE, so they have no GND return pin and the GND leg column is '-' - the two")
+    print("rail legs are the two loops, and their only pins on GND are grounded inputs.")
     print("A decoupling loop needs both legs; a rail leg alone is not a loop inductance.")
 
 

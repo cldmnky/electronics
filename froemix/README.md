@@ -110,15 +110,17 @@ module, jack height, button part, CN3/SD, panel material):
 
 Other headers: `CN3` micro SD, `CN4` OLED (SPI + DC/RES), `H1` PMOD (I2S + I2C),
 `J1` MIDI 2x3 **polarity-select jumper block** (two shunts — not a socket;
-**Type A = shunts 4–5 + 3–1**, **Type B = 3–5 + 4–6**, see
-[`doc/ASSEMBLY.md`](doc/ASSEMBLY.md)), `J2` Eurorack 2x8 power.
+**Type A = shunts 3–5 + 4–6**, **Type B = 4–2 + 3–1**, see
+[`doc/ASSEMBLY.md`](doc/ASSEMBLY.md)), `J2` Eurorack 2x8 power. A 2.54 mm
+shunt only bridges two pads 2.54 mm apart, so the diagonal 4–5 (3.59 mm) can
+never be one of the pairs.
 
 **Both MIDI directions are TRS Type A on this board**: the OUT socket is a Type
-A transmitter (tip = current source through `R59` 22 Ω 1 W from `P3V3_D`, ring =
-sink through `R60` 33 Ω and `Q2`), and the IN defaults to Type A with the `J1`
-shunts above. A straight-through panel wiring (tip → tip, ring → ring) is
-correct for both; the alternative would have been a Type B OUT, which needs a
-crossover.
+A transmitter (ring = current source through `R59` 22 Ω 1 W from `P3V3_D` behind
+the `Q2` PNP high-side switch, tip = sink through `R60` 33 Ω to GND), and the
+IN defaults to Type A with the `J1` shunts above. A straight-through panel
+wiring (tip → tip, ring → ring) is correct for both; the alternative would have
+been a Type B OUT, which needs a crossover.
 
 The electrical contract for the front board (naming, limits, power budget and
 its acceptance test) is [`doc/FRONTBOARD-INTERFACE.md`](doc/FRONTBOARD-INTERFACE.md):
@@ -136,7 +138,7 @@ bun run gate               # everything below + build + snapshot diff (CI entry 
 bun run check:erc          # KiCad ERC, 0 unexcluded errors/warnings
 bun run check:netlist      # 102 nets must match the KiCad netlist
 bun run check:extras       # tscircuit-only parts: pins, removed refs, pin moves
-bun run check:footprints   # every pad: number, size, drill, position (427 pads)
+bun run check:footprints   # every pad: number, size, drill, position (429 pads)
 bun run check:parts        # JLCPCB part numbers vs schematic (needs network)
 bun run check:values       # TSX value literals vs built values and MPNs
 bun run check:silk         # B/F silkscreen inside the board outline (gerbers)
@@ -152,13 +154,13 @@ bun run dev                # interactive preview/editing
 ```
 
 Current status: the gate is green (`bun run gate`, 15/15 steps). Netlist 102/102
-nets, 427 pads match KiCad pad for pad (376 KiCad + 51 added; U16's four pads
+nets, 429 pads match KiCad pad for pad (376 KiCad + 53 added; U16's four pads
 are verified against the authored 2 W land pattern instead, see
 `REPLACED_FOOTPRINTS`), `tsci check
 netlist` Errors 0/Warnings 0, placement Errors 0 (plus the known H1 false
 positive), shorts and pcb-style clean, silkscreen provably inside the outline,
-routing 304 traces / 334 vias / 4971mm copper / 0 unconnected / 0 overlaps,
-JLCPCB parts validated (116 components, 38 unique parts) and every passive
+routing 306 traces / 335 vias / 4979mm copper / 0 unconnected / 0 overlaps,
+JLCPCB parts validated (117 components, 39 unique parts) and every passive
 value literal checked against the built value. `bun run release` writes gerbers,
 BOM, pick-and-place, schematic/PCB SVGs and STEP into `fab/`. What is still open
 is listed under [Production readiness](#production-readiness).
@@ -232,13 +234,13 @@ the tscircuit source.
 | R33, R42 | 33k → **30.1k** (`C23000`) | R10: the 33k/200k summer mapped ±5 V onto exactly 0/3.3 V, so the MCP6002 clipped both endpoints |
 | R34, R43 | 200k → **187k** (`C22896`) | R10: offset leg, moves CV in to 0.104…3.114 V with 60 mV of rail headroom at the 1 % corners |
 | D2 | **removed** (`C2128` 1N4148WS) | R01: it was in parallel with the U15 opto LED in the forward direction, so MIDI IN could never work. D1 (antiparallel) stays |
-| R49, R50 | **removed** (33 Ω 0603 `C23140`, 100 mW) | R02: a grounded ring dissipates 330 mW. Replaced by the 1 W 2512 `R59`/`R60` behind the new `Q2` driver (next table), which also makes the OUT a **Type A** transmitter |
+| R49, R50 | **removed** (33 Ω 0603 `C23140`, 100 mW) | R02: a grounded ring dissipates 330 mW. Replaced by the 1 W 2512 `R59`/`R60` around the new `Q2` PNP driver (next table), which also makes the OUT a **Type A** transmitter |
 | U11A/U11D | spare TL074 channels rewired as **unity-gain followers** | R03: the unbuffered DAC is a ~13 kΩ source; the followers keep the 33k summing resistors from costing 28 % of the range (firmware must disable the DAC buffer). U11 pins 3/12 and R31/R32 pin 1 moved nets |
 | R39, R40 | feedback pickup moved **past** the 1 k series resistor, plus **C33/C34 100 pF** across them | R09: 1 k outside the loop made CV gain load-dependent (−11.8 ¢/octave from one to two 100k inputs); the gain is now a load-independent 1.5121. Moving it inside the loop put the cable capacitance there too, so 100 pF per channel compensates that pole (stable to ~10 nF) |
 
 ### BOM notes
 
-- 38 unique parts. The passives, diodes, the MMBT3904s and the 10nF CV caps are
+- 39 unique parts. The passives, diodes, the MMBT3904/MMBT3906 SOT-23s and the 10nF CV caps are
   JLCPCB library parts; there is no basic replacement for the TL074, CD4051,
   MCP6002, LM4040, TLP2362 or B2405S, so the extended-part fee applies to those
   (JLC shows the exact basic/extended split and the fee on the order page).
@@ -263,13 +265,14 @@ the entries when convenient. The netlist/footprint checks know about them, so
 | C28 | 100nF 0603 `C14663`, P3V3_D–GND at U15 | TLP2362 datasheet: 0.1µF bypass pin6–pin4 within 1cm, mandatory |
 | C29 | 100nF 0603 `C14663`, P3V3_D–GND | P3V3_D had no decoupling (only P3V3_A has C19) |
 | C30 | 10µF 1206 `C13585`, P3V3_D–GND | P3V3_D bulk for SD/OLED current spikes |
-| C31 | 100nF 0603 `C14663`, P3V3_A–GND at U1 | R06: U1 (CD4051) had no local bypass — C19 sits 25.6 mm away at U13. Now 7.73 mm of routed rail |
+| C31 | 100nF 0603 `C14663`, P3V3_A–GND at U1 | R06: U1 (CD4051) had no local bypass — C19 sits 25.6 mm away at U13. Now 7.71 mm of routed rail |
 | C32 | 1µF/50V 0603 `C559769`, `U16_VIN_P`–`U16_VIN_N` | R13: the B2405S datasheet asks for 1 µF/50 V **at the input pins** (module pins 1/2, 2.64 mm of routed rail); C26 sits before L1/L2 and is not that cap |
 | C33, C34 | 100pF C0G 0603 `C14665`, across R39/R40 (CV out 2 / CV out 1) | R09 follow-up: the in-loop 1 kΩ plus cable capacitance rang (~18° phase margin at 1 nF); the 100 pF zero at 15.9 kHz makes 1 nF and 10 nF loads clean (`tools/sim` deck 5) |
-| Q2 | MMBT3904 SOT-23 `C181119`, open collector on `NET_Q2_C` | R02: MIDI OUT driver, so the MCU pin no longer sits on the cable |
-| R58 | 4.7k 0603 `C23162`, `USART1_TX` → Q2 base | R02: Q2 base resistor |
-| R59 | 22 Ω **1 W 2512** `C118189` (`FP_jclpcb_R2512`, authored here), `P3V3_D` → `J_MIDI_OUT_TIP` | R02 + Type A: the MIDI OUT **current source**. 0.50 W into a shorted cable on a 1 W part, and still 4.48 mA worst case into a receiver at 1.7 V Vf |
-| R60 | 33 Ω **1 W 2512** `C53728`, `NET_Q2_C` → `J_MIDI_OUT_RING` | R02: the MIDI OUT **current sink** behind Q2's open collector (94 mA through Q2 if the ring is pulled to 3.3 V, inside its 200 mA rating); replaced the 100 mW 0603 R49/R50 |
+| Q2 | MMBT3906 **PNP** SOT-23 `C53444`, emitter `P3V3_D`, collector `NET_Q2_C` | R02: MIDI OUT high-side driver — off at UART idle (high/high-Z), on for the start bit, so the loop current is not inverted and the MCU pin never sits on the cable |
+| R58 | 4.7k 0603 `C23162`, `USART1_TX` → Q2 base | R02: Q2 base resistor (~0.47 mA of base current with the UART low) |
+| R59 | 22 Ω **1 W 2512** `C118189` (`FP_jclpcb_R2512`, authored here), `NET_Q2_C` → `J_MIDI_OUT_RING` | R02 + Type A: the MIDI OUT **current source** on the ring (DIN pin 4). 0.50 W into a ring shorted to GND on a 1 W part, and still 4.48 mA worst case into a receiver at 1.7 V Vf |
+| R60 | 33 Ω **1 W 2512** `C53728`, `J_MIDI_OUT_TIP` → `GND` | R02 + Type A: the MIDI OUT **current sink** on the tip (DIN pin 5), no transistor in the return; 0.33 W if the tip is pulled to 3.3 V. Replaced the 100 mW 0603 R49/R50 |
+| R61 | 10k 0603 `C25804`, `NET_Q2_B` → `P3V3_D` | R02 follow-up: holds the Q2 base at its emitter while `USART1_TX` is high-Z (reset/bootloader), so a floating UART cannot turn the source on |
 | D5 | 1N4148WS SOD-323 `C2128`, cathode on `NET_Q1_1` | R04: clamps Q1's base-emitter, so a −10 V sync patch can no longer exceed the 6 V rating |
 | R51, R52 | 4.7k 0603 `C23162`, SCL/SDA to P3V3_D | I2C needs pull-ups (cf. Patch R77/R89/R91) |
 | R53–R57 | 47k 0603 `C25819`, SD_DAT0–3 + SD_CMD to P3V3_D | SD needs pull-ups (cf. Patch R3–R7 47K) |
@@ -349,11 +352,11 @@ bottom-rotation check and the order-day checklist:
 | done | **Silkscreen** — 31 texts: IC/connector/electrolytic/diode refdes, `FROEMIX`, `REV 0.1`, date, hand-solder legend; every glyph is provably inside the outline (gate step 14) |
 | done | **Fiducials** — 4 FID pads, bottom side in the corner keepouts: bare copper with a 0.5mm mask window and no paste (verified in `B_Cu`+`B_Mask`, absent from `B_Paste`). `<fiducial>` itself exports mask-covered pads in this version, so they are one-pad footprints instead |
 | done | **Test points** — 8 bottom-side TP pads: P5V, P3V3_D, P3V3_A, VCC, VEE, N10V_REF, SYNC_IN, MULTIPLEX_ADC_1 |
-| done | **Decoupling** — every IC pair ≤9.3mm of routed copper (VCC/VEE legs), U1 now has its own C31 at 7.73mm; C14/C15 7.77/2.89mm; bulk C1 11.3mm / C30 19.02mm. GND legs are measured to the IC's return pin (U13 VSS 38.29mm) — see AGENTS.md §3 |
+| done | **Decoupling** — every IC rail leg ≤11.8mm of routed copper (VCC/VEE legs), U1 now has its own C31 at 7.71mm; C14/C15 7.87/2.89mm; bulk C1 11.80mm / C30 19.09mm. GND legs are measured to the IC's return pin (U13 VSS 36.07mm); a dual-supply part whose return is the other rail (the TL074s' VMINUS on VEE) reports `-` instead of a grounded signal input — see AGENTS.md §3 |
 | done | **Gates** — 15 steps: ERC, build, netlist, tscircuit-only parts (`check:extras`), footprints, JLCPCB parts, passive value literals, source/pin_spec/netlist, placement, shorts, pcb-style, silkscreen bounds, snapshot diff behind `bun run gate` |
 | done | **Design review R01–R14** — every finding either fixed in the design or closed by a named document/gate (`doc/DESIGN-REVIEW.md`, "Resolution status") |
 | done | **Fab export** — `bun run release` → gerbers, BOM, PnP, schematic/PCB SVG, STEP in `fab/` |
-| done | **GND copper pour** — bottom-layer GND plane: 4 pour regions, 7411.0mm² of copper with 88 clearance holes = 71.3 % of the 80.9 × 128.5mm board, 0.3mm clearances, 0.5mm to the board edge. Needs `holeOffsetX/Y="0mm"` on rect-pad plated holes (upstream defaulting bug, `doc/pour-repro/`); routing 304/334/4971 |
+| done | **GND copper pour** — bottom-layer GND plane: 4 pour regions, 7411.0mm² of copper with 88 clearance holes = 71.3 % of the 80.9 × 128.5mm board, 0.3mm clearances, 0.5mm to the board edge. Needs `holeOffsetX/Y="0mm"` on rect-pad plated holes (upstream defaulting bug, `doc/pour-repro/`); routing 306/335/4979 |
 | closed by interface spec | **Mux input clamps** — `M_ADC_*` has no series-R/Schottky clamp. Closed by [`doc/FRONTBOARD-INTERFACE.md`](doc/FRONTBOARD-INTERFACE.md) (R14): pot/attenuverter wipers from `P3V3_A`/`GND` only, inside 0–3.3 V in every power order, with a front-board acceptance test |
 | closed: 2 W module fitted | **U16 5 V margin** — the 1 W/200 mA converter had no worst-case margin on paper (194 mA max without the H1 module, 267 mA with it). U16 is now the **2 W/400 mA B2405S-2WR3** (`C5369484`, own footprint/placement, module pin-out 1/2/4/6), so the budget closes at 49 %/67 % of the rating, and the ≤300 mA acceptance test in [`doc/POWER-BUDGET.md`](doc/POWER-BUDGET.md) (R13) still has to be measured during bring-up; the measurement is not part of the gate |
 | open | **Single-point GND/chassis tie** — not implemented, no decision recorded (standoffs vs rack chassis) |
@@ -435,7 +438,7 @@ PWR / signal):
 | audio | x −37…−16, y −34…16 | bottom | U2/U3 + all audio passives |
 | cv | x 2…20, y −34…16 | bottom | U11/U12/U13/U14, Q1, D5 + all CV/sync passives, and C33/C34 at their feedback resistors R39 (17.78, −15.94) / R40 (3.74, −19.16) |
 | midi | x 22…37, y −34…−13 | bottom | U15, J1 (top), D1, R47/R48, C28 (U15's bypass) |
-| midi drv | x −37…−29, y 34…54 | bottom | the MIDI OUT driver, moved out of the midi island into the left/top strip beside the Seed: Q2 (−31, 41), R58 (−30.5, 36.5), R59/R60 1 W 2512 (−33, 52 / −33, 46) |
+| midi drv | x −37…−29, y 32…54 | bottom | the MIDI OUT driver, moved out of the midi island into the left/top strip beside the Seed: Q2 (−31, 41), R58 (−30.5, 36.5), R61 (−30.5, 33.5), R59/R60 1 W 2512 (−33, 52 / −33, 46) |
 | h1 | x 22…37, y −12…16 | bottom | H1 (PMOD, opening faces the right edge) |
 | pwr | x ±34, y −61.5…−45 | top SMD / bottom THT | rail decoupling, ferrites, Schottkys on top; J2, U16 (2 W module at (8.5, −49.5), body overhang toward the bottom edge), bulk electrolytics on the back |
 
@@ -460,7 +463,7 @@ PWR / signal):
   `hole_offset_x/y` as `undefined`, the pour connectivity pass builds NaN arc
   vertices and the build dies in `@flatten-js/core`
   (`node.item.key.low` undefined). Repro + root cause: `doc/pour-repro/`.
-  Routing is unaffected (304/334/4971, GND still routed explicitly).
+  Routing is unaffected (306/335/4979, GND still routed explicitly).
 - J2/H1 use pre-rotated footprint variants (`PRE_ROTATED_FOOTPRINTS`): tscircuit
   rotates courtyard *centers* but keeps their *axes*, skewing every rotated
   courtyard (H1's landed 13mm off, on top of U13). Variants bake the rotation
@@ -492,16 +495,18 @@ The board uses tscircuit's built-in local autorouter (`autorouter="auto-local"`
 — no cloud calls), one global phase over all 102 nets after phase-0-only and
 split-phase attempts: frozen phase-0 GND walls blocked signal routing
 (`immutable fixed route conflict`), so everything solves together instead.
-Result: **304 traces, 334 vias, 0 unconnected, 0 overlaps**, `check shorts` and
-`check pcb-style` clean, **4971mm** of copper (sum of segment lengths, verified
+Result: **306 traces, 335 vias, 0 unconnected, 0 overlaps**, `check shorts` and
+`check pcb-style` clean, **4978.7mm** of copper (sum of segment lengths, verified
 against `dist/index/circuit.json`). History: grid packing 446 vias → zone
 packing 372 → 0.25mm width floor + 8 fabrication test points 293/323/4730 →
 MIDI OUT rework 300/325/4931 (D2 and two 0603 parts out, Q2 + three resistors +
 one diode in, and the CV-out/CV-in value changes do not move copper) →
 Type A MIDI + C33/C34 **304/325/4934** (the MIDI OUT driver moved beside the
 Seed) →
-this revision **304/334/4971** (U16 became the 2 W module: new footprint,
-longer body, new placement, C32 moved next to the input leads). Board runs
+**304/334/4971** (U16 became the 2 W module: new footprint, longer body, new
+placement, C32 moved next to the input leads) → this revision **306/335/4978.7**
+(the MIDI OUT driver became a PNP high-side switch, so R59 moved to the ring and
+R60 to the tip/GND, plus R61 on the base). Board runs
 `autorouterEffortLevel="5x"` (measured: identical output to default effort —
 kept as declared intent).
 Placement is grouped by function (audio/CV/midi/power/daisy zones + affinity
@@ -515,7 +520,7 @@ control is placement + phases + widths, plus manual `pcbPath` if a net ever
 demands it. A bottom GND plane now exists (see the copper-pour entry above),
 but it did not change the routing: the pour is generated after the router runs
 and the router does not route into it, so GND is still 0.25–0.3mm traces with
-the plane underneath and the numbers stay 304/334/4971. GND carries 57 pins on
+the plane underneath and the numbers stay 306/335/4978.7. GND carries 57 pins on
 the KiCad netlist — the next biggest net has 14 — so GND is still the single
 largest consumer of traces, and pour-aware routing (the pour's `unbroken` prop,
 untested here) is the remaining via saver. Reproduce

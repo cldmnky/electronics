@@ -384,6 +384,17 @@
   "stock": 96905,
   "type": "Analog Switches, Multiplexers"
  },
+ "C53444": {
+  "assembly": false,
+  "brand": "onsemi",
+  "code": "C53444",
+  "describe": "-55\u2103~+150\u2103 1 PNP 200mA 225mW 250MHz 250mV 40V 50nA 5V 60 PNP SOT-23 Bipolar (BJT) ROHS",
+  "erp": "MMBT3906LT1G",
+  "model": "MMBT3906LT1G",
+  "package": "SOT-23",
+  "stock": 901513,
+  "type": "Bipolar (BJT)"
+ },
  "C5365649": {
   "assembly": false,
   "brand": "YLPTEC",

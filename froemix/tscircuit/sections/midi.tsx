@@ -68,28 +68,29 @@ export const MidiSection = () => (
         "pin5": "net.NET_J1_2",
         "pin6": "net.NET_D1_A",
       }} />
-    {/* Q2 MMBT3904 - MMBT3904 - LCSC C181119 - jclpcb:SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR
-        MIDI OUT open-collector driver (DESIGN-REVIEW R02): USART1_TX drives the
-        base through R58 and the collector sinks J_MIDI_OUT_RING through R60, so
-        a shorted cable can no longer overload the MCU pin. */}
+    {/* Q2 MMBT3906 - MMBT3906LT1G - LCSC C53444 - jclpcb:SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR
+        MIDI OUT high-side driver (DESIGN-REVIEW R02): a PNP whose emitter is on
+        P3V3_D, base driven from USART1_TX through R58 and pulled up by R61, and
+        collector feeding R59 into J_MIDI_OUT_RING. The polarity is the point:
+        MIDI carries no loop current at idle, and a UART idles HIGH, so an NPN
+        open-collector sink (the previous Q2) conducted at idle and dropped out
+        on the start bit - inverted. With the PNP, idle/high-Z leaves the base at
+        the emitter (R61) and the transistor OFF, and the start bit (TX low)
+        turns it ON. No firmware inversion, and the MCU pin stays off the cable.
+        No EasyEDA 3D model - pad-only in 3D. */}
     <transistor
       name="Q2"
-      type="npn"
+      type="pnp"
       footprint={FP_jclpcb_SOT_23_3_L2_9_W1_6_P1_90_LS2_8_BR}
       pinLabels={{ pin1: "base", pin2: "emitter", pin3: "collector" }}
       pcbX="-31mm"
       pcbY="41mm"
       layer="bottom"
-      supplierPartNumbers={{ jlcpcb: ["C181119"] }}
-      cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C181119.obj?uuid=cefd4596db214da394d9632b2b88f8f2",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C181119.step?uuid=cefd4596db214da394d9632b2b88f8f2",
-      pcbRotationOffset: 180,
-      modelOriginPosition: { x: 0.000012699999956566899, y: 0, z: 0 },
-    }}
+      supplierPartNumbers={{ jlcpcb: ["C53444"] }}
+      manufacturerPartNumber="MMBT3906LT1G"
       connections={{
         "base": "net.NET_Q2_B",
-        "emitter": "net.GND",
+        "emitter": "net.P3V3_D",
         "collector": "net.NET_Q2_C",
       }} />
     {/* R47 220R - 0603WAF2200T5E - LCSC C22962 - jclpcb:R0603 */}
@@ -132,7 +133,9 @@ export const MidiSection = () => (
         "pin2": "net.P3V3_D",
       }} />
     {/* R58 4K7 - 0603WAF4701T5E - LCSC C23162 - jclpcb:R0603 - MIDI OUT driver
-        base resistor for Q2 */}
+        base resistor for Q2: with USART1_TX low the base node sits at
+        3.3V - Veb ~= 2.55V, so R58 carries 0.54mA and R61 0.075mA, i.e. ~0.47mA
+        of base current - enough for the 4.48mA loop at hFE >= 30 */}
     <resistor
       name="R58"
       resistance="4.7k"
@@ -153,15 +156,16 @@ export const MidiSection = () => (
         "pin2": "net.NET_Q2_B",
       }} />
     {/* R59 22R 1W - 25121WF220JT4E - LCSC C118189 - jclpcb:R2512 - MIDI OUT
-        TIP current source: TRS Type A (tip = DIN pin 4 = current source), the
-        MIDI Association default, so the front board wires the jack straight
-        through. 22R still delivers ~4.5mA into a worst-case receiver: 3.3V
-        -5% = 3.135V, minus Vf(max) 1.7V and Vce(sat) 0.2V leaves 1.235V over
-        22R + 33R (+1%, 55.6R) + a 220R receiver = 275.6R -> 4.48mA. A grounded
-        ring (a tip-to-ring cable short) puts 3.3^2/22 = 0.50W in the 1W part.
-        This replaces
-        the 100mW 0603 R49 (DESIGN-REVIEW R02). No EasyEDA 3D model - pad-only
-        in 3D. */}
+        RING current source: TRS Type A is ring = DIN pin 4 = source and tip =
+        DIN pin 5 = sink (Type B is the swap), the MIDI Association default, so
+        the front board wires the jack straight through. R59 sits between Q2's
+        collector and J_MIDI_OUT_RING and delivers ~4.5mA into a worst-case
+        receiver: 3.3V -5% = 3.135V, minus Vf(max) 1.7V and Vce(sat) 0.2V
+        leaves 1.235V over 22R + 33R (+1%, 55.6R) + a 220R receiver = 275.6R ->
+        4.48mA. A ring shorted to GND with the driver on is the 22R fault:
+        3.3/22 = 150mA, inside Q2's 200mA rating, and 3.3^2/22 = 0.50W in this
+        1W part. This replaces the 100mW 0603 R49
+        (DESIGN-REVIEW R02). No EasyEDA 3D model - pad-only in 3D. */}
     <resistor
       name="R59"
       resistance="22"
@@ -172,16 +176,16 @@ export const MidiSection = () => (
       supplierPartNumbers={{ jlcpcb: ["C118189"] }}
       manufacturerPartNumber="25121WF220JT4E"
       connections={{
-        "pin1": "net.J_MIDI_OUT_TIP",
-        "pin2": "net.P3V3_D",
+        "pin1": "net.J_MIDI_OUT_RING",
+        "pin2": "net.NET_Q2_C",
       }} />
     {/* R60 33R 1W - 25121WF330JT4E - LCSC C53728 - jclpcb:R2512 - MIDI OUT
-        RING current sink (Type A), fed from Q2's open collector instead of
-        straight from the MCU pin (DESIGN-REVIEW R02). Keep 33R: a ring pulled
-        to 3.3V (the tip of a Type-A source shorted to our ring by a mis-wired
-        cable) drives (3.3 - 0.2)/33 = 94mA through Q2, inside the MMBT3904's
-        200mA rating; 10R would be ~300mA and is not an option. A grounded
-        ring dissipates 3.3^2/33 = 330mW in the 1W part. Pad-only in 3D. */}
+        TIP current sink (Type A): J_MIDI_OUT_TIP straight to GND, no transistor
+        in the return, so the OUT loop is source = P3V3_D -> Q2 -> R59 -> ring
+        and sink = tip -> R60 -> GND. Keep 33R: a tip pulled to 3.3V (the ring
+        of a Type-B source shorted to our tip by a mis-wired cable) dissipates
+        3.3^2/33 = 330mW in this 1W part, and a tip shorted to GND is nothing.
+        Pad-only in 3D. */}
     <resistor
       name="R60"
       resistance="33"
@@ -192,8 +196,31 @@ export const MidiSection = () => (
       supplierPartNumbers={{ jlcpcb: ["C53728"] }}
       manufacturerPartNumber="25121WF330JT4E"
       connections={{
-        "pin1": "net.J_MIDI_OUT_RING",
-        "pin2": "net.NET_Q2_C",
+        "pin1": "net.J_MIDI_OUT_TIP",
+        "pin2": "net.GND",
+      }} />
+    {/* R61 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 - Q2 base pull-up:
+        holds the PNP base at its emitter (P3V3_D) while USART1_TX is high-Z
+        (reset, bootloader, pin not yet configured), so a floating UART cannot
+        turn the MIDI OUT source on and put loop current on the cable at idle */}
+    <resistor
+      name="R61"
+      resistance="10k"
+      footprint={FP_jclpcb_R0603}
+      pcbX="-30.5mm"
+      pcbY="33.5mm"
+      layer="bottom"
+      supplierPartNumbers={{ jlcpcb: ["C25804"] }}
+      manufacturerPartNumber="0603WAF1002T5E"
+      cadModel={{
+      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C25804.obj?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C25804.step?uuid=6bd5cd867e9542ebae21caaf5d2d4c4d",
+      pcbRotationOffset: 0,
+      modelOriginPosition: { x: -0.004999999999999977, y: 0, z: -0.01 },
+    }}
+      connections={{
+        "pin1": "net.NET_Q2_B",
+        "pin2": "net.P3V3_D",
       }} />
     {/* U15 TLP2362 - TLP2362(TPL,E(T - LCSC C37658 - jclpcb:OPTO-SMD-5_L3.7-W4.6-P1.27-LS7.0-BR */}
     <chip

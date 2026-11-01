@@ -23,7 +23,7 @@ are maintained (see §2). All design work happens in
     `nets.tsx` width-policy comment
   - the hand-maintained header comment on the eight ported section files
   - **the parts the review added/removed**: `REMOVED_REFS` (D2, R49, R50) and the
-    `EXTRA_COMPONENTS` blocks (C28–C34, Q2, R58–R60, D5, R51–R57); the generator
+    `EXTRA_COMPONENTS` blocks (C28–C34, Q2, R58–R61, D5, R51–R57); the generator
     has no counterpart for them, so they show up as missing/extra components in
     the diff
   - **the six `INTENTIONAL_PIN_MOVES`** — U11.3, U11.12, R31.1, R32.1, R39.2,
@@ -58,8 +58,8 @@ bun run check:erc              # KiCad ERC, 0 UNEXCLUDED errors (2 known-benign
                                # pin_not_driven excluded in tmp/froemix.kicad_pro)
 bun run check:netlist          # KiCad netlist vs built, must MATCH (102 nets)
 bun run check:extras           # tscircuit-only parts: pins, removed refs, pin moves
-bun run check:footprints       # pads vs KiCad, must MATCH (376 KiCad + 51 added
-                               # = 427 pads)
+bun run check:footprints       # pads vs KiCad, must MATCH (376 KiCad + 53 added
+                               # = 429 pads)
 bun run check:parts            # JLCPCB parts vs schematic (needs network)
 bun run check:values           # value literals vs built values and MPNs
 bun run check:silk             # B/F silkscreen inside the board outline (gerbers)
@@ -84,8 +84,8 @@ One pass/fail contract, release minus the fab exports, safe in CI:
 3. `check:netlist` — 102 nets match
 4. `check:extras` — tscircuit-only parts: every `EXTRA_COMPONENTS` pin on its
    declared net, no `REMOVED_REFS` left, all six `INTENTIONAL_PIN_MOVES` applied
-5. `check:footprints` — 427 pads match
-6. `check:parts` — 38 unique JLCPCB parts match (needs network)
+5. `check:footprints` — 429 pads match
+6. `check:parts` — 39 unique JLCPCB parts match (needs network)
 7. `check:values` — TSX value literals vs built circuit and MPNs
 8. `tsci check source` — Errors 0
 9. `tsci check pin_specification` — Errors 0
@@ -142,7 +142,7 @@ operations, nothing outside `fab/` is deleted.
 
 Measure routing with: unconnected ports (`pcb_port_not_connected_error`) must be
 0; then minimize vias, then total copper mm (sum `pcb_trace` segment lengths in
-`dist/index/circuit.json`). Reference: 304 traces / 334 vias / 4971mm / 0
+`dist/index/circuit.json`). Reference: 306 traces / 335 vias / 4978.7mm / 0
 unconnected / 0 overlaps. The autorouter is deterministic — identical trees
 rebuild byte-identical numbers.
 
@@ -155,9 +155,11 @@ separately). It is a trade, not a regression: 0 unconnected, 0 overlaps, shorts
 and pcb-style clean. The 4 fiducials carry no nets and change no routing. The
 300/325/4931 revision added the Design-review MIDI OUT rework (D2 and R49/R50
 out; Q2, R58, R59/R60, D5, C31, C32 in), 304/325/4934 added the Type A MIDI OUT
-move (driver beside the Seed, 22 Ω source) plus C33/C34, and the current
-**304/334/4971** is the U16 2 W swap (new 19.65mm-long footprint, new placement,
-C32 moved to the input leads) — all measured the same way.
+move (driver beside the Seed, 22 Ω source) plus C33/C34, **304/334/4971** is
+the U16 2 W swap (new 19.65mm-long footprint, new placement, C32 moved to the
+input leads), and the current **306/335/4978.7** is the MIDI OUT polarity fix
+(Q2 became a PNP high-side switch, R59 moved to the ring, R60 to the tip/GND,
+R61 added on the base) — all measured the same way.
 
 Not gated (deliberately): KiCad PCB DRC — `tmp/froemix.kicad_pcb` is a frozen
 mid-edit reference, layout lives here now. Schematic-placement label
@@ -188,28 +190,33 @@ installed core — route control is placement + phases + widths.
 
   | IC | cap | rail leg | GND leg (return pin) |
   | --- | --- | --- | --- |
-  | U1 (CD4051, P3V3_A) | C31 | 7.73 | 12.98 (p7 VEE) |
-  | U2 | C4 VCC / C5 VEE | 9.21 / 8.69 | 4.69 (p3 IN1P) / 4.98 (p12 IN4P) |
-  | U3 | C10 VCC / C11 VEE | 9.26 / 8.42 | 4.74 / 6.76 |
-  | U11 | C14 VCC / C15 VEE | 7.77 / 2.89 | 6.35 / 2.62 |
-  | U12 | C17 VCC / C18 VEE | 8.81 / 8.00 | 10.41 / 7.41 |
-  | U13 (MCP6002, P3V3_A) | C19 | 3.81 | 38.29 (p4 VSS) |
-  | U14 (LM4040, N10V_REF) | C20 | 6.55 | 8.78 (p1 CATHODE) |
+  | U1 (CD4051, P3V3_A) | C31 | 7.71 | 12.98 (p7 VEE) |
+  | U2 | C4 VCC / C5 VEE | 11.71 / 8.69 | - (return is VMINUS on VEE) |
+  | U3 | C10 VCC / C11 VEE | 9.26 / 8.37 | - |
+  | U11 | C14 VCC / C15 VEE | 7.87 / 2.89 | - |
+  | U12 | C17 VCC / C18 VEE | 9.17 / 9.24 | - |
+  | U13 (MCP6002, P3V3_A) | C19 | 3.81 | 36.07 (p4 VSS) |
+  | U14 (LM4040, N10V_REF) | C20 | 5.66 | 6.70 (p1 CATHODE) |
   | U15 (TLP2362, P3V3_D) | C28 | 5.46 | 3.45 (p4 GND) |
-  | DaisySeed1 | C29 / C30 (P3V3_D) | 4.70 / 19.02 | 3.60 / 29.80 (p40 DGND) |
-  | DaisySeed1 | C1 (P5V) | 11.30 | 9.03 (p40 DGND) |
+  | DaisySeed1 | C29 / C30 (P3V3_D) | 4.70 / 19.09 | 3.60 / 29.80 (p40 DGND) |
+  | DaisySeed1 | C1 (P5V) | 11.80 | 9.03 (p40 DGND) |
   | U16 (B2405S-2WR3, 2 W) | C32 (U16_VIN_P) | 2.64 | n/a (isolated) |
 
   The GND leg is measured to the IC's **supply-return pin** (a pin named
   GND/VSS/DGND/VMINUS/VEE), not to any pin that happens to sit on the GND net:
   the TL074 non-inverting inputs and U13's INA_P are grounded but are not the
-  return, and crediting them made the report quote U1 9.77 / U13 27.92. U14 has
-  no such pin (shunt reference), so its GND leg falls back to the nearest pad.
-  Keep the IC rail legs under ~10mm and U13's odd 38mm GND leg in mind: it is
+  return, and crediting them made the report quote U1 9.77 / U13 27.92. A part
+  whose return pin sits on **another rail** now prints `-` and no fallback is
+  attempted: the TL074s return through VMINUS (VEE), so their only pins on GND
+  are grounded non-inverting inputs and the old report quoted a fake 4.7mm
+  "loop" (IN1P). The fallback to the nearest pad on GND stays only for a part
+  with no named return pin at all (U14, a shunt reference).
+  Keep the IC rail legs near 10mm and U13's odd 36mm GND leg in mind: it is
   the C19 return, not the rail — the rail leg (3.81mm) is what the bypass is
-  for, and GND is additionally under the pour (not in the graph). Bulk C1
-  11.3mm and C30 19.02mm sit in the SD/OLED corner — acceptable for bulk, the
-  first thing to improve if placement is ever reworked.
+  for, and GND is additionally under the pour (not in the graph). U2's C4 VCC
+  leg is 11.71mm (9.21mm before the MIDI OUT rework re-solved the autoroute);
+  bulk C1 11.80mm and C30 19.09mm sit in the SD/OLED corner — acceptable for
+  bulk, the first thing to improve if placement is ever reworked.
 - **Courtyards are keepouts**: no overlaps (Errors 0 gate), M3 holes at
   (±36.95,±60.75) stay clear, use ≤5mm-OD standoff hardware. The 5.5mm-OD claim
   used to be justified with J2; that was wrong — **J2's courtyard edge is
@@ -238,7 +245,7 @@ installed core — route control is placement + phases + widths.
   board (the 1 W board was 3 regions / 7430.1 mm² / 95 holes / 71.5 %; the U16
   2 W swap re-solved the routing and re-poured). The
   pour is generated **after** routing and the router does not route into it, so
-  the trace/via numbers are unchanged (304/334/4971) and GND is still routed
+  the trace/via numbers are unchanged (306/335/4978.7) and GND is still routed
   explicitly; making the pour carry GND current means pour-aware routing
   (`unbroken`), which is untested.
 - **Pours need `holeOffsetX`/`holeOffsetY` on every `circular_hole_with_rect_pad`
@@ -272,7 +279,7 @@ moving a pin, renumbering a pin or deleting a ref any other way makes
 `check:netlist` fail, and
 silencing it by loosening the comparison is not an option. Current sets:
 `REMOVED_REFS` = D2, R49, R50; `EXTRA_COMPONENTS` = C31, C32, C33, C34, Q2, R58,
-R59, R60, D5 (+ the older C28–C30, R51–R57); `INTENTIONAL_PIN_MOVES` =
+R59, R60, R61, D5 (+ the older C28–C30, R51–R57); `INTENTIONAL_PIN_MOVES` =
 U11.3/U11.12, R31.1, R32.1, R39.2, R40.2; `SYMBOL_PIN_RENUMBER` = U16
 1↔2 (the input pair swaps numbers because the module's pin 1 is +Vin) and
 3→4, 4→6 (the output pair, the 2 W module's own pin numbers —
@@ -382,9 +389,10 @@ be damaged. `doc/FRONTBOARD-INTERFACE.md` §1 (R14).
   TSSOP/SOIC pad-1 is top-left, EasyEDA's bottom-left).
 - No transferable model (pad-only in 3D): Daisy Seed, J1/J2/H1, C65114/C3406
   (EasyEDA origin offsets don't transfer), C118189/C53728 (the 2512 MIDI
-  resistors), C559769 (C32), C14665 (C33/C34) and C23000/C22896 (the new 0603
-  values). Link real STEP models
-  when available.
+  resistors), C559769 (C32), C14665 (C33/C34), C23000/C22896 (the new 0603
+  values) and C53444 (Q2's MMBT3906: the model is on the CDN but its
+  rotation/origin offsets have not been verified against pad 1). Link real STEP
+  models when available.
 - Cosmetic known-issues: IC pin-1 dots are derived, not measured; C25's
   electrolytic stripe is wrong by construction (C24/C25 share one footprint
   with opposite polarity); TLP2362 dot may be off (mirrored numbering).
@@ -420,11 +428,13 @@ release`; no item is aspirational.
 - **Fiducials**: 4 bare-copper FID pads on the bottom (`FabricationSection`).
 - **Test points**: 8 bottom-side TP pads — P5V, P3V3_D, P3V3_A, VCC, VEE,
   N10V_REF, SYNC_IN, MULTIPLEX_ADC_1.
-- **Decoupling**: U1 has a local C31 (7.73 mm rail leg); every IC rail leg is
-  ≤9.26 mm and the report is pin/net/layer aware (§3 has the table). C14/C15
-  went from 13.2/18.6 mm to 7.77/2.89 mm as part of the CV rework; U16's input
-  cap C32 is 2.64 mm from its lead. The GND legs
-  are quoted to the IC's return pin, not to any grounded pin.
+- **Decoupling**: U1 has a local C31 (7.71 mm rail leg); every IC rail leg is
+  ≤11.71 mm (U2's C4, which moved from 9.21 mm when the MIDI OUT rework
+  re-solved the autoroute) and the report is pin/net/layer aware (§3 has the
+  table). C14/C15 went from 13.2/18.6 mm to 7.87/2.89 mm as part of the CV
+  rework; U16's input cap C32 is 2.64 mm from its lead. The GND legs
+  are quoted to the IC's return pin, not to any grounded pin, and are `-` for a
+  part whose return is the other rail.
 - **5 V rail is the 2 W module**: U16 is the 2 W/400 mA B2405S-2WR3
   (`C5369484`) on its own 4-lead 1/2/4/6 land pattern instead of the 1 W part,
   so the worst-case budget closes at 67 % of the rating (R13,
@@ -439,8 +449,9 @@ release`; no item is aspirational.
   and the CV-in headroom documented (§2).
 - **Design review closed**: every R01–R14 finding is fixed or has a named gate
   (`doc/DESIGN-REVIEW.md`, "Resolution status" and "Second review round"): MIDI
-  OUT rework (Q2/R58/R59/R60, **Type A**: 22 Ω source into the tip, 33 Ω sink
-  through Q2 from the ring), D2 removed, DAC followers + buffer-off firmware
+  OUT rework (Q2/R58/R59/R60/R61, **Type A** and non-inverting: the MMBT3906 PNP
+  sources `P3V3_D` through 22 Ω into the ring and is off at idle, 33 Ω sinks the
+  tip to GND), D2 removed, DAC followers + buffer-off firmware
   rule, D5 sync clamp, 33k audio feedback, 30.1k/187k CV in, load-independent
   CV out plus the C33/C34 100 pF load compensation, U1 bypass,
   value-literal + extras + silkscreen gates, real electrolytic courtyards,
@@ -451,7 +462,7 @@ release`; no item is aspirational.
 - **GND copper pour**: bottom-layer GND plane builds (`copperpour` in
   `index.circuit.tsx`, requires the `holeOffsetX`/`holeOffsetY` workaround, §3),
   4 regions / 7411.0 mm² / 88 clearance holes = 71.3 % of the board, gate 15/15
-  green, routing 304 traces / 334 vias / 4971mm / 0 unconnected / 0 overlaps.
+  green, routing 306 traces / 335 vias / 4978.7mm / 0 unconnected / 0 overlaps.
 
 **Open — close these before ordering**
 
