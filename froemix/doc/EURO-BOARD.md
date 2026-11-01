@@ -96,9 +96,9 @@ its own resistor from that node to GND, and a 10k pull-up to `P3V3_A` sets idle.
 | idle | none | 3.30 V |
 | press | 0 (direct) | 0.00 V |
 | up | 1k | 0.30 V |
-| down | 3.3k | 0.82 V |
-| left | 6.8k | 1.34 V |
-| right | 15k | 1.98 V |
+| down | 2.2k | 0.60 V |
+| left | 4.7k | 1.05 V |
+| right | 10k | 1.65 V |
 
 The CD4051's ~250 Ω Ron adds ~2 % error, and a 12-bit ADC puts the closest pair
 (press/up) ~370 counts apart. **The ladder is a firmware contract**: the
@@ -213,7 +213,7 @@ channels:
 
 1. **Channel 6 (joystick)** — six levels, table in §2. Read after the CD4051
    selects channel 6; the settle time must cover the mux's ~250 Ω and the
-   ladder's worst case (15k + 10k).
+   ladder's worst case (10k + 10k).
 2. **Channel 7 (button)** — two levels: ~0 V pressed, ~3.3 V released. The LED
    is in the pull-up path, so do not drive that channel as an output.
 
