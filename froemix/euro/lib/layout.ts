@@ -239,8 +239,8 @@ export const JACK_LEDS: JackLed[] = [
 ]
 
 /**
- * 1.3" 128x64 SPI OLED (SH1106/SSD1306 module, 35.5 x 33mm PCB, 7-pin 2.54
- * header). The module is soldered flat to the TOP of the board on a 1x7
+ * 1.3" 128x64 SPI OLED, HS13L02B4S01 (LCSC C42432559), SH1106, 35.4 x 33.5mm
+ * PCB, 7-pin 2.54 header (GND VCC SCK SDI RES DC CS). The module is soldered flat to the TOP of the board on a 1x7
  * footprint, directly under a 30 x 15.5mm window in the panel. It is not
  * plugged into CN4: CN4 is the base board's OLED header, and the 7 signals are
  * wired straight across from the mating socket to the module - that keeps the
@@ -250,15 +250,16 @@ export const OLED = {
   // module origin = centre of the 7-pin header row
   pinPitch: 2.54,
   pins: 7,
-  bodyW: 35.5,
-  bodyH: 33.0,
-  windowW: 30.0,
-  windowH: 15.5,
-  windowOffsetY: -16.5, // window centre, relative to the header row
+  bodyW: 35.4,
+  bodyH: 33.5,
+  // active area 29.42 x 14.70mm; the view area is 31.42 x 16.70mm
+  windowW: 30.5,
+  windowH: 16.0,
+  windowOffsetY: -12.7, // window centre, relative to the header row (datasheet)
 } as const
 
 /** Header row centre; the module body hangs below it. */
-export const OLED_AT: Pt = { x: 0, y: 57.0 }
+export const OLED_AT: Pt = { x: 0, y: 55.5 }
 
 /** Panel window centre (the glass), derived from the module position. */
 export const OLED_WINDOW: Pt = {

@@ -169,7 +169,8 @@ signals run straight across the board from the CN4 socket (bottom side,
 (24.5, 59.63)) to those pads. It is *not* plugged into CN4, because a 2.54mm
 socket plus the module's own header would put the glass ~12mm behind the panel.
 
-The panel window is 30 x 15.5mm at (0, 40.5).
+The panel window is 30.5 x 16.0mm, centred on the active area at (0, 42.8):
+`OLED_AT.y` (55.5) + `windowOffsetY` (-12.7).
 
 ## 5. Assembly
 
@@ -274,12 +275,19 @@ change**.
 
 ### Still to verify before ordering
 
-1. **XKB jack pad layout.** `lib/footprints.tsx` still draws the Thonkiconn pad
-   table (sleeve / tip switch / tip in one line at 0 / 3.1 / 11.4mm). The XKB
-   drawing prints no hole map — it must be confirmed against the part or its
-   drawing before the board is ordered.
-2. **OLED mounting holes.** The module has 4 x 3.3mm holes at 28.5mm spacing and
-   its header row 2.0mm from the board edge; the footprint has neither yet.
+1. **XKB jack pad layout — the one open hardware risk.** The XKB `PJ-301M`
+   datasheet has **no PCB land pattern at all**: it prints 8.20mm between the two
+   lugs (the Thonkiconn's equivalent spacing is 8.3mm between tip-switch and
+   tip), and it prints no three-hole line. So `lib/footprints.tsx` still carries
+   the Thonkiconn table (sleeve / tip switch / tip in a line at 0 / 3.1 /
+   11.4mm), which is *consistent* with the 8.2mm print but not proven. Check the
+   first part that arrives against the pads, or get the XKB mechanical drawing,
+   before ordering the boards.
+2. **OLED module, resolved.** The footprint now follows the `HS13L02B4S01`
+   drawing: 35.4 x 33.5mm body, header row 2.0mm from the connector-side edge,
+   active area 29.42 x 14.70mm centred 12.70mm below the header row, panel
+   window 30.5 x 16.0mm at (0, 42.8). The module's four 3.2mm holes are not
+   used - it is soldered on its seven pins.
 
 ### Electrokit (record only — not used)
 

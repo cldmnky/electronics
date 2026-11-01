@@ -137,12 +137,18 @@ export const FP_OLED_1P3 = (
         />
       )
     })}
-    {/* module body outline, 35.5 x 33mm hanging below the header row */}
-    <silkscreenpath route={[{ x: -17.75, y: 0 }, { x: 17.75, y: 0 }]} />
-    <silkscreenpath route={[{ x: -17.75, y: 0 }, { x: -17.75, y: -33 }]} />
-    <silkscreenpath route={[{ x: -17.75, y: -33 }, { x: 17.75, y: -33 }]} />
-    <silkscreenpath route={[{ x: 17.75, y: -33 }, { x: 17.75, y: 0 }]} />
-    <courtyardrect pcbX="0mm" pcbY="-16.5mm" width="35.5mm" height="33mm" />
+    {/* Module: 35.4 x 33.5mm, header row 2.0mm from the connector-side edge
+        (datasheet HS13L02B4S01). Body from +2.0 to -31.5mm. The module's four
+        3.2mm mounting holes are NOT used: the module is soldered on its seven
+        pins - add them if a bracket is ever wanted. */}
+    <silkscreenpath route={[{ x: -17.7, y: 2 }, { x: 17.7, y: 2 }]} />
+    <silkscreenpath route={[{ x: -17.7, y: 2 }, { x: -17.7, y: -31.5 }]} />
+    <silkscreenpath route={[{ x: 17.7, y: 2 }, { x: 17.7, y: -31.5 }]} />
+    <silkscreenpath route={[{ x: -17.7, y: -31.5 }, { x: 17.7, y: -31.5 }]} />
+    {/* active area 29.42 x 14.70mm, centre 12.70mm below the header row */}
+    <silkscreenpath route={[{ x: -14.7, y: -5.35 }, { x: 14.7, y: -5.35 }]} />
+    <silkscreenpath route={[{ x: -14.7, y: -20.05 }, { x: 14.7, y: -20.05 }]} />
+    <courtyardrect pcbX="0mm" pcbY="-14.75mm" width="35.4mm" height="33.5mm" />
   </footprint>
 )
 
