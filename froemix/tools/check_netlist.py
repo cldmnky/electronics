@@ -118,11 +118,72 @@ def main():
     expected = kicad_nets(args.src, args.kicad_cli)
     actual = tscircuit_nets(args.circuit)
 
+    # Parts deleted from tscircuit/ on purpose (REMOVED_REFS) have no counterpart
+    # in the built circuit, so drop their pins from the KiCad side and compare
+    # everything else strictly. A net whose remaining nodes are fewer than two
+    # drops out on both sides (the built circuit skips single-pin nets too).
+    from kicad2tscircuit import (  # noqa: E402
+        EXTRA_COMPONENTS,
+        INTENTIONAL_PIN_MOVES,
+        REMOVED_REFS,
+        SYMBOL_PIN_RENUMBER,
+        TSCIRCUIT_ONLY_REFS,
+    )
+
+    # Pins that changed NUMBER (without changing net) when the part changed
+    # (SYMBOL_PIN_RENUMBER: U16 went from the 1W 4-lead SIP to the 2W module's
+    # 1/2/4/6 pin-out). Rebuild the KiCad side with the new numbers - every net
+    # keeps exactly the nodes it had, so nothing is skipped. The mapping is
+    # applied in one pass, so pairwise swaps (U16 pin 1 <-> 2) are safe.
+    renumbered = 0
+    if SYMBOL_PIN_RENUMBER:
+        missing = {(ref, pin) for ref, pin in SYMBOL_PIN_RENUMBER
+                   if not any((ref, pin) in nodes for nodes in expected.values())}
+        if missing:
+            sys.exit("SYMBOL_PIN_RENUMBER: " + ", ".join(f"{r}.{p}" for r, p in sorted(missing))
+                     + " is in no KiCad net - fix or drop the entry")
+        rebuilt = {}
+        for name, nodes in expected.items():
+            new_nodes = set()
+            for node in nodes:
+                target = (node[0], SYMBOL_PIN_RENUMBER.get(node, node[1]))
+                if target[1] != node[1]:
+                    renumbered += 1
+                new_nodes.add(target)
+            rebuilt[name] = new_nodes
+        expected = {name: nodes for name, nodes in rebuilt.items() if len(nodes) >= 2}
+        print(f"symbol pin renumbers applied: {renumbered} "
+              "(kicad2tscircuit.SYMBOL_PIN_RENUMBER, U16 2W module pin-out)")
+
+    # Pins that deliberately changed net since the KiCad project was frozen
+    # (INTENTIONAL_PIN_MOVES: R03 followers, R09 feedback pickup). Apply them to
+    # the KiCad side, then drop the nets that fall below two nodes.
+    moved = 0
+    for (ref, pin), target in INTENTIONAL_PIN_MOVES.items():
+        node = (ref, pin)
+        if node in expected.get(target, ()):
+            continue
+        source = next((name for name, nodes in expected.items() if node in nodes), None)
+        if source is None:
+            sys.exit(f"INTENTIONAL_PIN_MOVES: {ref}.{pin} is in no KiCad net "
+                     "(typo, or its old net had a single node) - fix or drop the entry")
+        expected[source].discard(node)
+        expected.setdefault(target, set()).add(node)
+        moved += 1
+    expected = {name: nodes for name, nodes in expected.items() if len(nodes) >= 2}
+    print(f"intentional pin moves applied: {moved} "
+          f"(kicad2tscircuit.INTENTIONAL_PIN_MOVES, see doc/DESIGN-REVIEW.md R03/R09)")
+
+    if REMOVED_REFS:
+        print(f"removed on purpose (tscircuit only, see doc/DESIGN-REVIEW.md R01/R02): "
+              f"{', '.join(sorted(REMOVED_REFS))}")
+        expected = {name: {node for node in nodes if node[0] not in REMOVED_REFS}
+                    for name, nodes in expected.items()}
+        expected = {name: nodes for name, nodes in expected.items() if len(nodes) >= 2}
+
     # Extra parts added in tscircuit (EXTRA_COMPONENTS: pull-ups, decoupling,
     # bypass) join existing nets, so strip their pins before comparing. What
     # matters is that every KiCad pin still lands in the same group.
-    from kicad2tscircuit import EXTRA_COMPONENTS, TSCIRCUIT_ONLY_REFS  # noqa: E402
-
     # EXTRA_COMPONENTS are parts added on existing KiCad footprints;
     # TSCIRCUIT_ONLY_REFS are tscircuit-only fabrication aids (test points).
     extra_refs = {ref for ref, *_ in EXTRA_COMPONENTS} | TSCIRCUIT_ONLY_REFS

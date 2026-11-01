@@ -5,29 +5,31 @@
 * VEE = -12 V. The right channel (U3C/U3D, R12/R14/R15/R18/C9/C13) is
 * identical; only the left channel is simulated.
 *
-*   AUDIO_OUT_L --R11 10k-- U3A_IN_N       inverting x10
-*                            R13 100k || C8 47pF -> NET_C8_2 (U3A out)
+*   AUDIO_OUT_L --R11 10k-- U3A_IN_N       inverting x3.3   (DESIGN-REVIEW R08)
+*                            R13 33k || C8 47pF -> NET_C8_2 (U3A out)
 *   NET_C8_2    --R16 100k-- U3B_IN_N      inverting x1
 *                            R17 100k || C12 47pF -> NET_C12_2 (U3B out)
 *   NET_C12_2   --R19 1k---- J_AUDIO_OUT_L  series output R into the load
 *   J_AUDIO_OUT_L --RLOAD 100k-- GND        standard eurorack input impedance
 *
 * EXPECTED (analytic, ideal opamps):
-*   DC gain, open load = 10 * 1 = +10.00 = +20.00 dB
-*   DC gain, 100k load = 10 * 100k/(100k+1k) = +9.901 = +19.91 dB
+*   DC gain, open load = 3.3 * 1 = +3.300 = +10.37 dB
+*   DC gain, 100k load = 3.3 * 100k/(100k+1k) = +3.267 = +10.28 dB
 *                        (the 1k series R and the 100k input R form a divider)
-*   -3 dB (relative to the loaded DC gain) = 33.9 kHz per stage on its own
-*                  (1/(2*pi*100k*47p) = 33.86 kHz); with BOTH stages cascaded
-*                  the -3 dB point falls to 0.6436 x 33.86 kHz = 21.8 kHz
-*   gain at 20 kHz  = 9.901 / (1+(20/33.86)^2) = 7.34 (+17.3 dB) for two
-*                  identical poles (the denominator is squared); the fitted
-*                  TL074 lands ~0.3 dB below that because of its 3 MHz GBW
-*   Headroom: the chain is DC-coupled (R11 goes straight to AUDIO_OUT_L, no
-*                  series capacitor in the netlist), so whatever DC level the
-*                  Daisy codec output sits at is amplified x10 and eats into
-*                  the TL074's +/-10 V swing. For the AC figures above the
-*                  source is assumed offset-free (V1 DC 0), which is the only
-*                  thing this deck claims.
+*   -3 dB: stage 1 pole 1/(2*pi*33k*47p) = 102.6 kHz, stage 2 pole
+*                  1/(2*pi*100k*47p) = 33.86 kHz; two DIFFERENT cascaded poles
+*                  put -3 dB at 30.9 kHz (not 0.6436 x the lower pole)
+*   gain at 20 kHz  = 3.267 / (sqrt(1+(20/102.6)^2)*sqrt(1+(20/33.86)^2))
+*                  = 2.76 (+8.82 dB); the fitted TL074 lands a little below
+*                  that because of its 3 MHz GBW
+*   Headroom (R08): a 1 Vrms full-scale Seed output is 3.267 x 1.414 =
+*                  4.62 V peak at the jack into 100k, inside the TL074's
+*                  +/-10 V swing. The old 100k feedback asked for 14.1 V peak
+*                  and clipped at ~10.1 V. The chain is DC-coupled (R11 goes
+*                  straight to AUDIO_OUT_L, no series capacitor in the
+*                  netlist), so any DC offset on the Daisy codec output is
+*                  amplified 3.3x; V1 DC 0 assumes an offset-free source, which
+*                  is the only thing this deck claims.
 *
 * Run: ngspice -b audio_out.cir   (or: bash run.sh, from this directory)
 * Raw output: out/audio_out.log, out/audio_out_ac.dat
@@ -49,9 +51,9 @@ VEE VEE 0 DC -12
 * AC stimulus: 1 V so v(J_AUDIO_OUT_L) reads directly as the transfer function
 V1 AUDIO_OUT_L 0 DC 0 AC 1
 
-* stage 1: U3A, inverting x10, 47pF across the 100k feedback
+* stage 1: U3A, inverting x3.3, 47pF across the 33k feedback
 R11 AUDIO_OUT_L U3A_IN_N 10k
-R13 U3A_IN_N NET_C8_2 100k
+R13 U3A_IN_N NET_C8_2 33k
 C8  U3A_IN_N NET_C8_2 47p
 XU3A 0 U3A_IN_N NET_C8_2 VCC VEE OPAMP
 

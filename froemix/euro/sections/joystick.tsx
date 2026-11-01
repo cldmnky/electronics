@@ -7,7 +7,7 @@
 //                   +-- switch contact -- resistor -- GND, one per direction
 //
 // Levels at the ADC (ignoring the CD4051's ~250R Ron, a ~2% error):
-//   idle 3.30V | press 0.00V | up 0.30V | down 0.82V | left 1.34V | right 1.98V
+//   idle 3.30V | press 0.00V | up 0.30V | down 0.60V | left 1.05V | right 1.65V
 //
 // The press contact has no resistor: it shorts the node to GND. All five
 // contacts share the switch's common pin, so the ladder needs no extra net per
@@ -70,7 +70,6 @@ export const JoystickSection = () => (
         footprint={FP_R0603}
         mpn={JOYSTICK.ladder[i].mpn}
         supplierPartNumbers={{ jlcpcb: [JOYSTICK.ladder[i].lcsc] }}
-      supplierPartNumbers={{ jlcpcb: ["C25804"] }}
         layer="bottom"
         pcbX={`${-29.5 + i * 3.5}mm`}
         pcbY="18mm"

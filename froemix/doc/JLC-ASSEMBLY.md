@@ -7,10 +7,10 @@ hand-edit the files in `froemix/fab/`.
 
 | Step on jlcpcb.com | File |
 | --- | --- |
-| Quote → Add gerber file | `froemix-gerbers.zip` (13 fab files + edge cuts + 4 drill files) |
+| Quote → Add gerber file | `froemix-gerbers.zip` (13 fab files: 9 copper/mask/silk gerbers + `Edge_Cuts` + 2 drill files) |
 | BOM (assembly) | `froemix-bom-jlc.csv` — one row per unique part, `Comment, Designator, Footprint, LCSC Part #, Quantity` |
 | CPL / placement (assembly) | `froemix-cpl-jlc.csv` — SMT placements only, `Designator, Mid X, Mid Y, Layer, Rotation` |
-| Reference only | `froemix-pnp-all.csv` (all 110 placements incl. THT), `froemix-bom.csv` (per-designator), `froemix-schematic.svg`, `froemix-pcb.svg`, `froemix.step` |
+| Reference only | `froemix-pnp-all.csv` (all 116 placements incl. THT), `froemix-bom.csv` (per-designator), `froemix-schematic.svg`, `froemix-pcb.svg`, `froemix.step` |
 
 ## Board options
 
@@ -31,7 +31,7 @@ hand-edit the files in `froemix/fab/`.
 
 `CN1`, `CN2`, `CN3`, `CN4` (2.00 mm headers), `H1` (right-angle PMOD),
 `J1` (2×3 MIDI header), `J2` (Eurorack 2×8 shrouded), `C24`, `C25`
-(8 mm radial electrolytics), `U16` (B1205S SIP module).
+(8 mm radial electrolytics), `U16` (B2405S SIP module).
 
 They stay in the BOM (you still have to buy them) but not in the CPL, so JLC's
 SMT line will not try to place them. Choose one of:
@@ -42,15 +42,16 @@ SMT line will not try to place them. Choose one of:
    on the order page if you want them placed; JLC quotes THT separately and
    their library coverage for these headers/modules is partial.
 
-**Two-sided assembly:** 97 of 110 placements are on the bottom, 13 on the top
-(the mating headers, rail SMD). Enable "assembly for both sides" — that is two
+**Two-sided assembly:** 98 of the 106 SMT placements are on the bottom, 8 on the
+top (rail SMD). Enable "assembly for both sides" — that is two
 paste/stencil passes, and it costs more than a single-sided run.
 
 **Bottom-side rotation:** the exported CPL is in JLCPCB's convention (X/Y in mm,
 bottom layers mirrored, rotation in degrees CCW). All placements are 0°/180°
-except H1 (270°, its footprint is a pre-rotated variant). **Check the 3D preview
-of the assembled board on the order page before paying** — a wrong bottom-side
-rotation is the classic failure here, and it is free to check.
+except H1 (270°, its footprint is a pre-rotated variant): 92 of the 98 bottom
+placements are at 180° and 6 at 0°, the 8 top placements at 0°. **Check the 3D
+preview of the assembled board on the order page before paying** — a wrong
+bottom-side rotation is the classic failure here, and it is free to check.
 
 ## Parts already covered / excluded
 
@@ -71,9 +72,11 @@ dots appear as bright copper, not covered by mask.
 
 ## GND plane (bottom layer)
 
-8 pour regions: one 79.9 × 127.5 mm plane covering the whole board (0.5 mm in
-from the edge, 91 pad/trace clearances) plus 7 small connected islands —
-7540 mm² of copper in total, 0.3 mm clear to any other copper. GND is *also*
+3 pour regions: one 79.9 × 127.5 mm plane (0.5 mm in from the edge) with 95
+pad/trace clearance holes, plus two slivers of 0.5 and 0.4 mm² — 7430.1 mm² of
+copper in total (71.5 % of the 80.9 × 128.5 mm board), 0.3 mm clear to any
+other copper.
+GND is *also*
 routed as explicit 0.25–0.3 mm traces because the router does not route into the
 pour, so the plane is a shield and a return layer, not the sole return path.
 It is in `B_Cu.gbr`: after uploading, check the gerber preview shows the plane
@@ -87,16 +90,17 @@ without a preheat plate.
 - **10 THT parts** are hand-solder (above).
 - **CV scaling** relies on firmware calibration (±1 % resistors) — see
   `../tools/sim/RESULTS.md`.
-- **Mux inputs** (`M_ADC_0..7`) are unclamped: the euro board must not feed
-  more than 0–3.3 V into them.
+- **Mux inputs** (`M_ADC_0..7`) are unclamped: pot/attenuverter wipers from this
+  board's own `P3V3_A`/`GND` only, 0–3.3 V in every power order — the hard
+  contract is `doc/FRONTBOARD-INTERFACE.md`.
 
 ## Order-day checklist
 
 1. `bun run release` — regenerates every file above and refuses to finish if any
    gate step fails.
 2. Upload `froemix-gerbers.zip`; confirm 4 layers, 80.9 × 128.5 mm, 3.2 mm holes.
-3. Upload BOM + CPL; confirm **110** lines in the BOM summary and **100** SMT
-   placements (110 − 10 THT).
+3. Upload BOM + CPL; confirm **38** lines in the BOM summary and **106** SMT
+   placements (116 − 10 THT).
 4. Inspect the assembly preview: fiducials bright, no part off-board, bottom
    rotations sane, Daisy footprint empty.
 5. Order PCB + stencil; assembly 2-sided if you want the bottom side machine

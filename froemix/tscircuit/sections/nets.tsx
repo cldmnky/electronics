@@ -74,6 +74,8 @@ export const Nets = () => (
     {/* Net-(J1-Pad2) */}<net name="NET_J1_2" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
     {/* Net-(Q1-Pad1) */}<net name="NET_Q1_1" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
     {/* Net-(Q1-Pad3) */}<net name="NET_Q1_3" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    {/* MIDI OUT driver base (tscircuit only, DESIGN-REVIEW R02) */}<net name="NET_Q2_B" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
+    {/* MIDI OUT driver collector (tscircuit only, DESIGN-REVIEW R02) */}<net name="NET_Q2_C" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
     {/* Net-(R24-Pad2) */}<net name="NET_R24_2" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
     {/* Net-(R28-Pad2) */}<net name="NET_R28_2" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
     {/* Net-(R35-Pad2) */}<net name="NET_R35_2" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />

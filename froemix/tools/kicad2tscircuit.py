@@ -356,13 +356,15 @@ PART_OVERRIDES = {
         "why": "2.54-2*6PWZ (C60565) has 62 pcs in stock",
     },
     # U16 is fed differentially VCC-VEE (~23.4V). The B1205S (12V in,
-    # 10.8-13.2V range) would be destroyed; the Patch reference uses a 24V
-    # isolator in the same wiring. Same SIP4 footprint/pinout.
+    # 10.8-13.2V range) would be destroyed, so it is a 24V-input member of the
+    # family. It is the 2 W B2405S-2WR3, not the 1 W B2405S-1WR3: the worst-case
+    # 5V load (194 mA without the H1 module, 267 mA with it) exceeds the 1 W
+    # part's 200 mA rating. See doc/POWER-BUDGET.md.
     "U16": {
-        "lcsc": "C3031175",
-        "mpn": "B2405S-1WR3",
-        "brand": "MORNSUN",
-        "why": "B1205S-1WR3 is 12V in (10.8-13.2V) but sees VCC-VEE ~23.4V; B2405S-1WR3 is 24V in (21.6-26.4V)",
+        "lcsc": "C5369484",
+        "mpn": "B2405S-2WR3",
+        "brand": "YLPTEC",
+        "why": "24V in (21.6-26.4V) for VCC-VEE ~23.4V, and 2W/400mA because the worst-case P5V load is 267mA with H1 fitted",
     },
     # TLP2362 VO is open-collector: 33k gives sloppy rise times at 31.25kbps.
     # 2.2k is the proven center value for 3.3V MIDI.
@@ -382,6 +384,24 @@ PART_OVERRIDES = {
         "value": "1K",
         "why": "100R gate out overloads the TL074 on short; 1k like the other outs",
     },
+    # Audio out, DESIGN-REVIEW R08: a 1Vrms full-scale Seed output through the
+    # 100k/10k stage asks for 14.1V peak and the TL074 clips at about 10.1V.
+    # 33k makes the first stage x3.3 (4.62V peak at the jack), the 10k input R
+    # and the unity second stage are unchanged.
+    "R13": {
+        "lcsc": "C4216",
+        "mpn": "0603WAF3302T5E",
+        "brand": "UNI-ROYAL(Uniroyal Elec)",
+        "value": "33K",
+        "why": "audio-out x10 clips at full scale; x3.3 fits the rails, R08",
+    },
+    "R14": {
+        "lcsc": "C4216",
+        "mpn": "0603WAF3302T5E",
+        "brand": "UNI-ROYAL(Uniroyal Elec)",
+        "value": "33K",
+        "why": "audio-out x10 clips at full scale; x3.3 fits the rails, R08",
+    },
     # CV-in feedback caps: 100nF across 33k = 48Hz LPF, kills audio-rate FM.
     # The Patch reference uses 10nF-class parts here (480Hz). Base part C57112.
     "C16": {
@@ -397,6 +417,38 @@ PART_OVERRIDES = {
         "brand": "YAGEO",
         "value": "10nF",
         "why": "100nF feedback = 48Hz LPF on CV in; 10nF = 480Hz",
+    },
+    # CV-in summer ratios: 33k/200k map +/-5V onto exactly 0/3.3V, so the MCP6002
+    # clips both endpoints. 30.1k/187k move 0..3.3V in to 0.104..3.114V, which
+    # leaves 100mV of rail headroom while keeping the 0.301V/V scale (R30/R44 are
+    # still 100k). DESIGN-REVIEW R10.
+    "R33": {
+        "lcsc": "C23000",
+        "mpn": "0603WAF3012T5E",
+        "brand": "UNI-ROYAL(Uniroyal Elec)",
+        "value": "30.1K",
+        "why": "CV-in summer ratio for rail headroom, design-review R10",
+    },
+    "R34": {
+        "lcsc": "C22896",
+        "mpn": "0603WAF1873T5E",
+        "brand": "UNI-ROYAL(Uniroyal Elec)",
+        "value": "187K",
+        "why": "CV-in summer offset leg for rail headroom, design-review R10",
+    },
+    "R42": {
+        "lcsc": "C23000",
+        "mpn": "0603WAF3012T5E",
+        "brand": "UNI-ROYAL(Uniroyal Elec)",
+        "value": "30.1K",
+        "why": "CV-in summer ratio for rail headroom, design-review R10",
+    },
+    "R43": {
+        "lcsc": "C22896",
+        "mpn": "0603WAF1873T5E",
+        "brand": "UNI-ROYAL(Uniroyal Elec)",
+        "value": "187K",
+        "why": "CV-in summer offset leg for rail headroom, design-review R10",
     },
 }
 
@@ -416,6 +468,29 @@ EXTRA_COMPONENTS = [
     ("C30", "C", "10uF", "jclpcb:C1206", "main",
      {"1": "P3V3_D", "2": "GND"}, "C13585", "CL31A106KBHNNNE",
      "P3V3_D bulk for SD/OLED spikes"),
+    # U1 (CD4051) ran on P3V3_A with no local bypass - C19 sits at U13, 25.6mm
+    # away. DESIGN-REVIEW R06.
+    ("C31", "C", "100nF", "jclpcb:C0603", "main",
+     {"1": "P3V3_A", "2": "GND"}, "C14663", "CC0603KRX7R9BB104",
+     "U1 VDD bypass, local to pin 16"),
+    # U16 input capacitor, YLPTEC B_S-1WR3 datasheet Table 1 (24VDC -> Cin
+    # 1uF/50V). C26 sits on VCC/VEE before L1/L2, so it is not this cap.
+    # DESIGN-REVIEW R13.
+    ("C32", "C", "1uF", "jclpcb:C0603", "power",
+     {"1": "U16_VIN_P", "2": "U16_VIN_N"}, "C559769", "CC0603KRX7R9BB105",
+     "U16 input bypass across VIN_P/VIN_N, datasheet table 1"),
+    # CV out load-pole compensation, DESIGN-REVIEW R09 follow-up: the CV-out
+    # feedback is taken after the 1k series resistor, so a capacitive load sits
+    # inside the TL074 loop (18 deg phase margin at 1nF, ringing at 10nF).
+    # 100pF across the 100k feedback resistor puts the compensation zero at
+    # 15.9kHz, the worst-case 1k/10nF load pole, and caps the CV bandwidth at
+    # ~16kHz. Pin 1 matches the R39/R40 pin 1 (the summing node).
+    ("C33", "C", "100pF", "jclpcb:C0603", "cv",
+     {"1": "U12D_IN_N", "2": "J_CV_OUT_2"}, "C14665", "CC0603JRNPO9BN101",
+     "CV out channel 2 feedback compensation across R39, 15.9kHz zero"),
+    ("C34", "C", "100pF", "jclpcb:C0603", "cv",
+     {"1": "U12B_IN_N", "2": "J_CV_OUT_1"}, "C14665", "CC0603JRNPO9BN101",
+     "CV out channel 1 feedback compensation across R40, 15.9kHz zero"),
     # I2C needs pull-ups; the Patch reference has 4K7 to +3V3_D.
     ("R51", "R", "4K7", "jclpcb:R0603", "main",
      {"1": "SCL", "2": "P3V3_D"}, "C23162", "0603WAF4701T5E",
@@ -439,7 +514,134 @@ EXTRA_COMPONENTS = [
     ("R57", "R", "47K", "jclpcb:R0603", "main",
      {"1": "SD_CMD", "2": "P3V3_D"}, "C25819", "0603WAF4702T5E",
      "SD CMD pull-up, cf. Patch R5"),
+    # MIDI OUT, DESIGN-REVIEW R02: the fitted 33R 0603 parts (C23140, 100mW)
+    # dissipated 3.3^2/33 = 330mW into a grounded ring (367mW at 3.465V over
+    # 32.67R) and R50 sat between the MCU pin and the jack. R59/R60 are the 1W
+    # 2512 replacement behind Q2+R58, which move the MCU pin out of the fault
+    # path.
+    #
+    # The jack is TRS Type A: ring = DIN pin 4 = current SOURCE, tip = DIN pin 5
+    # = current SINK (Type B is the swap). So R59 22R sources P3V3_D into the
+    # RING through Q2 and R60 33R is the TIP sink to GND. 22R keeps the source
+    # >=4.5mA into a worst-case receiver (1.235V over 275.6R = 4.48mA); a ring
+    # shorted to GND with the driver on is 3.3/22 = 150mA (below Q2's 200mA) and
+    # 0.50W in R59, and a tip shorted to 3.3V is 330mW in R60 - both 1W parts.
+    #
+    # Q2 is a PNP (MMBT3906) high-side switch, not the NPN open collector this
+    # started as: a UART idles HIGH, so an NPN sink conducted at idle and broke
+    # the loop on the start bit, i.e. inverted MIDI. The PNP is OFF at idle/high-Z
+    # (R61 10k holds base at emitter) and ON for the start bit, so no firmware
+    # inversion is needed. Pin 1/2/3 = base/emitter/collector.
+    ("Q2", "Q", "MMBT3906", "jclpcb:SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR", "midi",
+     {"1": "NET_Q2_B", "2": "P3V3_D", "3": "NET_Q2_C"}, "C53444", "MMBT3906LT1G",
+     "MIDI OUT PNP high-side driver, off at idle, keeps the MCU pin off the jack"),
+    ("R58", "R", "4K7", "jclpcb:R0603", "midi",
+     {"1": "USART1_TX", "2": "NET_Q2_B"}, "C23162", "0603WAF4701T5E",
+     "MIDI OUT driver base resistor for Q2"),
+    ("R59", "R", "22R", "jclpcb:R2512", "midi",
+     {"1": "J_MIDI_OUT_RING", "2": "NET_Q2_C"}, "C118189", "25121WF220JT4E",
+     "MIDI OUT Type A ring current source 22R 1W 2512, replaces R49"),
+    ("R60", "R", "33R", "jclpcb:R2512", "midi",
+     {"1": "J_MIDI_OUT_TIP", "2": "GND"}, "C53728", "25121WF330JT4E",
+     "MIDI OUT Type A tip current sink 33R 1W 2512 to GND, replaces R50"),
+    ("R61", "R", "10K", "jclpcb:R0603", "midi",
+     {"1": "NET_Q2_B", "2": "P3V3_D"}, "C25804", "0603WAF1002T5E",
+     "MIDI OUT driver base pull-up, holds Q2 off while USART1_TX is high-Z"),
+    # SYNC IN reverse base-emitter clamp, DESIGN-REVIEW R04: Q1 is MMBT3904 with
+    # the emitter at GND and its base fed from J_SYNC_IN through R22 100k, so a
+    # -10V patch pulls the base to -9.1V against a 6V emitter-base rating. The
+    # diode sits across base-emitter with the cathode on the base (pad 1 of the
+    # SOD-323 is the cathode), so a negative patch clamps at about -0.6V and the
+    # 100k only has to supply that diode current. Q1's positive behaviour is
+    # unchanged (the diode is reverse biased for any base voltage above GND).
+    ("D5", "D", "1N4148WS", "jclpcb:SOD-323_L1.8-W1.3-LS2.5-RD", "cv",
+     {"1": "NET_Q1_1", "2": "GND"}, "C2128", "1N4148WST4",
+     "SYNC IN reverse base-emitter clamp across Q1"),
 ]
+
+# Parts removed from tscircuit/ on purpose; the KiCad project is frozen, so the
+# check scripts drop these refs from the KiCad side before comparing instead of
+# failing them as missing. See doc/DESIGN-REVIEW.md:
+#   D2     - R01: directly in parallel with the U15 LED in the forward
+#            direction, so it shunts the optocoupler and MIDI IN never works.
+#            D1 (antiparallel) is the reverse-protection diode and stays.
+#   R49,   - R02: replaced by the 1W 2512 R59/R60 behind the Q2 driver, whose
+#   R50      connectivity deliberately differs (R50 no longer touches
+#            USART1_TX).
+REMOVED_REFS = {"D2", "R49", "R50"}  # removed on purpose, see doc/DESIGN-REVIEW.md R01
+
+# Pins that deliberately moved to another net after the KiCad project was
+# frozen. check_netlist.py applies these to the KiCad-side netlist before
+# comparing (remove the pin from its old net, add it to the named net, then drop
+# nets with fewer than two nodes); every other pin stays strictly compared.
+# Refs and pins are strings exactly as they appear in the KiCad netlist.
+#   U11.3,  U11.12 - R03: the two spare TL074 channels become unity-gain
+#                     followers on the DAC outputs, so their non-inverting
+#                     inputs leave GND and take the DAC nets (the OUT/IN-
+#                     straps are unchanged, pins 1/2 and 13/14).
+#   R31.1,  R32.1  - R03: the 33k CV-out summing resistors are fed from the
+#                     follower outputs instead of directly from the DAC (which
+#                     with its internal buffer disabled is a ~13k source).
+#   R39.2,  R40.2  - R09: the CV-out feedback is picked up at the jack side of
+#                     the 1k short-protection resistors, so the 1k sits inside
+#                     the loop and the gain no longer depends on the load.
+INTENTIONAL_PIN_MOVES = {
+    ("U11", "3"): "CV_OUT_1",
+    ("U11", "12"): "CV_OUT_2",
+    ("R31", "1"): "U11A_IN_N",
+    ("R32", "1"): "U11D_IN_N",
+    ("R39", "2"): "J_CV_OUT_2",
+    ("R40", "2"): "J_CV_OUT_1",
+}
+
+# Symbol pins that kept their NET but changed their PIN NUMBER when the part
+# changed, applied to the KiCad-side netlist before INTENTIONAL_PIN_MOVES. The
+# number is the module's, not the frozen KiCad symbol's, so the comparison still
+# runs pin for pin - nothing is skipped or loosened.
+#   U16 - the 1W B2405S-1WR3 (4-lead SIP, symbol pins 1..4 = -Vin, +Vin, -Vo,
+#         +Vo) became the 2W B2405S-2WR3 (4 leads on the B_S-2WR3 pin-out 1, 2,
+#         4, 6 = +Vin, -Vin, 0V, +Vo). The input pair simply swapped numbers
+#         (1=-Vin becomes 2=-Vin, 2=+Vin becomes 1=+Vin - the KiCad symbol had
+#         +Vin on the pad the module uses for -Vin), and the output pair moved
+#         up: VOUT_N (pin 3, 0V) is now module pin 4 and VOUT_P (pin 4, +Vo) is
+#         now module pin 6. Every U16 net keeps exactly the nodes it had; only
+#         the numbers on the KiCad side are rewritten. See doc/POWER-BUDGET.md.
+SYMBOL_PIN_RENUMBER = {
+    ("U16", "1"): "2",
+    ("U16", "2"): "1",
+    ("U16", "3"): "4",
+    ("U16", "4"): "6",
+}
+
+# Nets and footprints that exist ONLY in tscircuit/ (no KiCad counterpart).
+# TSCIRCUIT_ONLY_NETS are created by the R02 driver: Q2 splits USART1_TX into
+# the base net and the collector net, both internal to the MIDI OUT stage.
+# TSCIRCUIT_ONLY_FOOTPRINTS holds the pad geometry (number, width, height, x, y
+# in the footprint frame, before the bottom-side mirror, plus the drill when it
+# is not zero) of footprints authored in tscircuit/lib/footprints.tsx because
+# the KiCad library has no counterpart; check_footprints compares against this
+# table, so keep the two pad-for-pad equal. R2512 is the 1W 33R land pattern:
+# 1.5x2.8mm pads, 5.2mm centres. The B2405S_2W pattern is the 2W U16 module:
+# four 1.0mm-drill pads (1.8mm outer) on the module's 1, 2, 4, 6 positions.
+TSCIRCUIT_ONLY_NETS = {"NET_Q2_B", "NET_Q2_C"}
+TSCIRCUIT_ONLY_FOOTPRINTS = {
+    "jclpcb:R2512": [("1", 1.5, 2.8, -2.6, 0.0), ("2", 1.5, 2.8, 2.6, 0.0)],
+    "jclpcb:PWRM-TH-4P-L19.65-W7.05-P2.54-B2405S-2W": [
+        ("1", 1.8, 1.8, -6.35, 0.0, 1.0),
+        ("2", 1.8, 1.8, -3.81, 0.0, 1.0),
+        ("4", 1.8, 1.8, 1.27, 0.0, 1.0),
+        ("6", 1.8, 1.8, 6.35, 0.0, 1.0),
+    ],
+}
+
+# Refs whose KiCad footprint was replaced on purpose by a tscircuit-only
+# footprint, so check_footprints verifies them against
+# TSCIRCUIT_ONLY_FOOTPRINTS instead of the frozen KiCad land pattern. Only U16:
+# the 1W B1503S 4-pad pattern cannot carry the 2W B2405S-2WR3, whose leads sit
+# on the 1, 2, 4, 6 positions of a 19.65 x 7.05mm body (doc/POWER-BUDGET.md).
+REPLACED_FOOTPRINTS = {
+    "U16": "jclpcb:PWRM-TH-4P-L19.65-W7.05-P2.54-B2405S-2W",
+}
 
 # Fabrication aids that exist ONLY in tscircuit/ and have no KiCad counterpart
 # (8 bottom-side test points; the 4 fiducials are board-level pads with no
@@ -660,7 +862,10 @@ class FootprintLibrary:
         return kicad_name in self.defs
 
     def const(self, kicad_name: str) -> str:
-        if kicad_name not in self.defs:
+        # TSCIRCUIT_ONLY_FOOTPRINTS live in tscircuit/lib/footprints.tsx only, so
+        # there is nothing to transcribe - the const name is all the generator
+        # needs (the footprint definition itself is a hand-maintained delta).
+        if kicad_name not in self.defs and kicad_name not in TSCIRCUIT_ONLY_FOOTPRINTS:
             sys.exit(f"footprint {kicad_name} not found in the KiCad board/library")
         return fp_const_name(kicad_name)
 
@@ -814,7 +1019,7 @@ PIN_LABELS = {
         "1": "ANODE", "3": "CATHODE", "4": "GND", "5": "VO", "6": "VCC",
     },
     "jclpcb:B1205S-1WR3_C5365649": {
-        "1": "VIN_N", "2": "VIN_P", "3": "VOUT_N", "4": "VOUT_P",
+        "1": "VIN_P", "2": "VIN_N", "4": "VOUT_N", "6": "VOUT_P",
     },
     "jclpcb:MMBT3904_C181119": {"1": "B", "2": "E", "3": "C"},
     "MCU_Module:Electrosmith_Daisy_Seed_Rev4": {
@@ -838,7 +1043,7 @@ PIN_CONST = {
     "jclpcb:MCP6002T-I_SN": "MCP6002_PINS",
     "jclpcb:LM4040C10IDBZR": "LM4040_PINS",
     "jclpcb:TLP2362(TPL,E(T": "TLP2362_PINS",
-    "jclpcb:B1205S-1WR3_C5365649": "B1205S_PINS",
+    "jclpcb:B1205S-1WR3_C5365649": "B2405S_2W_PINS",
     "jclpcb:MMBT3904_C181119": "MMBT3904_PINS",
     "MCU_Module:Electrosmith_Daisy_Seed_Rev4": "DAISY_SEED_PINS",
 }
@@ -1159,8 +1364,8 @@ def layout_zone(ref: str, sheet: str) -> str:
         return "daisyface"
     if ref == "U1" or ref in ("C1", "C29", "C30"):
         return "center"
-    if ref in ("R49", "R50", "R51", "R52", "R53", "R54", "R55", "R56",
-                "R57"):
+    if ref in ("R58", "R59", "R60", "R51", "R52", "R53", "R54", "R55",
+                "R56", "R57"):
         return "topband"
     if sheet == "audio":
         return "audio"
@@ -1678,13 +1883,16 @@ def build_components(src_dir: str, pcb_file: str, kicad_cli: str):
         if not comp.lcsc:
             comp.lcsc = lcsc_by_libpart.get(comp.libpart or comp.ref, "")
 
-    # extra components missing from KiCad (pull-ups, decoupling, bypass).
-    # They join existing nets only, so the KiCad netlist stays intact.
+    # extra components missing from KiCad (pull-ups, decoupling, bypass). They
+    # join existing nets, apart from the MIDI OUT driver, whose two internal nets
+    # are TSCIRCUIT_ONLY_NETS and exist in tscircuit/ only. The netlist check
+    # compares the KiCad side with REMOVED_REFS dropped and the extra pins
+    # stripped, so the KiCad netlist stays the reference for every other pin.
     for ref, kind, value, fp_name, sheet, pin_nets, lcsc, mpn, why in EXTRA_COMPONENTS:
-        if not footprints.has(fp_name):
+        if not footprints.has(fp_name) and fp_name not in TSCIRCUIT_ONLY_FOOTPRINTS:
             sys.exit(f"extra part {ref}: footprint {fp_name} not found")
         for pin, net in pin_nets.items():
-            if net not in net_map.values():
+            if net not in net_map.values() and net not in TSCIRCUIT_ONLY_NETS:
                 sys.exit(f"extra part {ref}: net {net} does not exist")
         raw = {
             "ref": ref,

@@ -235,13 +235,20 @@ export const FP_jclpcb_C1206 = (
 )
 
 // jclpcb:CAP-TH_BD8.0-P3.50-D0.6-FD   (from froemix.kicad_pcb)
+// The KiCad footprint only marks polarity: no body outline, and a 6.5 x 3.18mm
+// courtyard offset from the pad line. The selected part (LCSC C2749) is an
+// 8mm-diameter radial can, so the body circle (r=4.0, centred on the midpoint
+// of the pads) and an 8.4 x 8.4mm courtyard are added here to make the real
+// keepout visible to the placement checker (DESIGN-REVIEW R11). Pads and the
+// polarity marker are unchanged.
 export const FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD = (
   <footprint>
     <platedhole pcbX="-1.75mm" pcbY="0mm" portHints={["pin1"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
     <platedhole pcbX="1.75mm" pcbY="0mm" portHints={["pin2"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    <silkscreencircle pcbX="0mm" pcbY="0mm" radius="4mm" strokeWidth="0.1mm" />
     <silkscreenpath route={[{ x: -2.83, y: 0.53 }, { x: -2.83, y: 1.88 }]} />
     <silkscreenpath route={[{ x: -2.2, y: 1.2 }, { x: -3.45, y: 1.2 }]} />
-    <courtyardrect pcbX="-0.45mm" pcbY="0.54mm" width="6.5mm" height="3.18mm" />
+    <courtyardrect pcbX="0mm" pcbY="0mm" width="8.6mm" height="8.6mm" />
   </footprint>
 )
 
@@ -460,22 +467,48 @@ export const FP_jclpcb_OPTO_SMD_5_L3_7_W4_6_P1_27_LS7_0_BR = (
   </footprint>
 )
 
-// jclpcb:PWRM-TH_4P-L11.5-W6.0-P2.54_B1503S   (from froemix.kicad_pcb)
-export const FP_jclpcb_PWRM_TH_4P_L11_5_W6_0_P2_54_B1503S = (
+// jclpcb:PWRM-TH-4P-L19.65-W7.05-P2.54-B2405S-2W   (authored here, no KiCad
+// counterpart: the 2W U16 module)
+//
+// U16 is a YLPTEC/MORNSUN B2405S-2WR3 (2W/400mA, LCSC C5369484) on the
+// B_S-2WR3 4-lead SIP pattern: leads 1, 2, 4, 6 (3 and 5 do not exist) on a
+// 2.54mm grid, lead 1 -> 6 = 12.7mm. Geometry is the part's own, harvested with
+// `tsci import C5369484` from the LCSC/EasyEDA footprint - body 19.65 x 7.05 x
+// 10.16mm, drill 1.0mm, pad 1.8mm - NOT a symmetric assumption: the lead row
+// sits 0.90mm from one long edge of the body and 6.15mm from the other, so the
+// body silk spans y -6.147..+0.903 and the courtyard y -6.390..+1.160 about the
+// lead row at y = 0, with the body hanging 6.15mm to one side (that is the
+// assembly keepout, doc/POWER-BUDGET.md §5).
+//
+// Pin 1 is marked twice because a hand-fitted module must not go in shifted: a
+// square (bevel-free) pin-1 pad, and a 45 degree bevel plus a lead tick at the
+// pin-1 corner of the silk body. The gaps in the guide line inside the body sit
+// exactly where leads 3 and 5 are absent (-1.27mm and +3.81mm), so a module
+// shifted by one 2.54mm position puts a lead on a gap. The top body edge is
+// broken at every lead because the pads come within 0.003mm of it in the source
+// geometry (lead row 0.90mm from a 7.05mm-wide body, 1.8mm pads); the breaks
+// keep the silk off the mask openings. tools/check_footprints.py
+// verifies the pads against TSCIRCUIT_ONLY_FOOTPRINTS / REPLACED_FOOTPRINTS in
+// tools/kicad2tscircuit.py, keep the three in sync.
+export const FP_jclpcb_PWRM_TH_4P_L19_65_W7_05_P2_54_B2405S_2W = (
   <footprint>
-    <platedhole pcbX="-3.81mm" pcbY="0mm" portHints={["pin1"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
-    <platedhole pcbX="-1.27mm" pcbY="0mm" portHints={["pin2"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
-    <platedhole pcbX="1.27mm" pcbY="0mm" portHints={["pin3"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
-    <platedhole pcbX="3.81mm" pcbY="0mm" portHints={["pin4"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
-    <silkscreenpath route={[{ x: -5.75, y: 5.43 }, { x: 5.75, y: 5.43 }]} />
-    <silkscreenpath route={[{ x: -5.75, y: -0.59 }, { x: -5.75, y: 5.41 }]} />
-    <silkscreenpath route={[{ x: -5.75, y: -0.59 }, { x: -4.78, y: -0.59 }]} />
-    <silkscreenpath route={[{ x: -2.85, y: -0.59 }, { x: -2.24, y: -0.59 }]} />
-    <silkscreenpath route={[{ x: -0.31, y: -0.59 }, { x: 0.3, y: -0.59 }]} />
-    <silkscreenpath route={[{ x: 2.23, y: -0.59 }, { x: 2.84, y: -0.59 }]} />
-    <silkscreenpath route={[{ x: 4.77, y: -0.59 }, { x: 5.75, y: -0.59 }]} />
-    <silkscreenpath route={[{ x: 5.75, y: 5.41 }, { x: 5.75, y: -0.59 }]} />
-    <courtyardrect pcbX="0mm" pcbY="2.265mm" width="12mm" height="6.83mm" />
+    <platedhole pcbX="-6.35mm" pcbY="0mm" portHints={["pin1"]} shape="circular_hole_with_rect_pad" holeDiameter="1mm" rectPadWidth="1.8mm" rectPadHeight="1.8mm" holeOffsetX="0mm" holeOffsetY="0mm" />
+    <platedhole pcbX="-3.81mm" pcbY="0mm" portHints={["pin2"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
+    <platedhole pcbX="1.27mm" pcbY="0mm" portHints={["pin4"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
+    <platedhole pcbX="6.35mm" pcbY="0mm" portHints={["pin6"]} shape="circle" holeDiameter="1mm" outerDiameter="1.8mm" />
+    <silkscreenpath route={[{ x: -7.4, y: 0.903 }, { x: -8.56, y: -0.257 }]} />
+    <silkscreenpath route={[{ x: -8.56, y: -0.257 }, { x: -8.56, y: -6.147 }]} />
+    <silkscreenpath route={[{ x: -8.56, y: -6.147 }, { x: 11.1, y: -6.147 }]} />
+    <silkscreenpath route={[{ x: 11.1, y: -6.147 }, { x: 11.1, y: 0.903 }]} />
+    <silkscreenpath route={[{ x: 11.1, y: 0.903 }, { x: 7.4, y: 0.903 }]} />
+    <silkscreenpath route={[{ x: 5.3, y: 0.903 }, { x: 2.32, y: 0.903 }]} />
+    <silkscreenpath route={[{ x: 0.22, y: 0.903 }, { x: -2.76, y: 0.903 }]} />
+    <silkscreenpath route={[{ x: -4.86, y: 0.903 }, { x: -5.3, y: 0.903 }]} />
+    <silkscreenpath route={[{ x: -8.56, y: 0 }, { x: -7.55, y: 0 }]} />
+    <silkscreenpath route={[{ x: -8.56, y: -2.6 }, { x: -1.87, y: -2.6 }]} />
+    <silkscreenpath route={[{ x: -0.67, y: -2.6 }, { x: 3.21, y: -2.6 }]} />
+    <silkscreenpath route={[{ x: 4.41, y: -2.6 }, { x: 11.1, y: -2.6 }]} />
+    <courtyardrect pcbX="1.255mm" pcbY="-2.615mm" width="20.14mm" height="7.55mm" />
   </footprint>
 )
 
@@ -506,6 +539,27 @@ export const FP_jclpcb_R1206 = (
     <silkscreenpath route={[{ x: 2.31, y: 1.08 }, { x: 0.95, y: 1.08 }]} />
     <silkscreenpath route={[{ x: 2.31, y: -1.08 }, { x: 2.31, y: 1.08 }]} />
     <courtyardrect pcbX="0mm" pcbY="0mm" width="5.12mm" height="2.66mm" />
+  </footprint>
+)
+
+// jclpcb:R2512   (authored here, no KiCad counterpart: the 1W 22R/33R MIDI
+// OUT parts. 2512 body 6.35x3.2mm, pads 1.5x2.8mm on a 5.2mm centre spacing,
+// silk drawn the way the jclpcb resistor footprints draw it - outside the pads,
+// 0.23mm clear of the pad edge - and a 7.2x3.7mm courtyard, i.e. 0.25mm of
+// margin on every side of the 6.35x3.2mm body (the old 3.3mm height left only
+// 0.05mm above/below it). tools/check_footprints.py asserts these pads against
+// TSCIRCUIT_ONLY_FOOTPRINTS in tools/kicad2tscircuit.py, keep the three in sync.)
+export const FP_jclpcb_R2512 = (
+  <footprint>
+    <smtpad pcbX="-2.6mm" pcbY="0mm" portHints={["pin1"]} shape="rect" width="1.5mm" height="2.8mm" layer="top" />
+    <smtpad pcbX="2.6mm" pcbY="0mm" portHints={["pin2"]} shape="rect" width="1.5mm" height="2.8mm" layer="top" />
+    <silkscreenpath route={[{ x: -3.575, y: 1.63 }, { x: -1.925, y: 1.63 }]} />
+    <silkscreenpath route={[{ x: -3.575, y: -1.63 }, { x: -3.575, y: 1.63 }]} />
+    <silkscreenpath route={[{ x: -1.925, y: -1.63 }, { x: -3.575, y: -1.63 }]} />
+    <silkscreenpath route={[{ x: 1.925, y: -1.63 }, { x: 3.575, y: -1.63 }]} />
+    <silkscreenpath route={[{ x: 3.575, y: 1.63 }, { x: 1.925, y: 1.63 }]} />
+    <silkscreenpath route={[{ x: 3.575, y: -1.63 }, { x: 3.575, y: 1.63 }]} />
+    <courtyardrect pcbX="0mm" pcbY="0mm" width="7.2mm" height="3.7mm" />
   </footprint>
 )
 

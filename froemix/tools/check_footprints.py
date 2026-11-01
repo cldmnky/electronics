@@ -165,6 +165,15 @@ def normalize(pads, mirror=False):
     return {num: (w, h, d, round(x - min_x, 2), round(y - min_y, 2)) for num, (w, h, d, x, y) in pads.items()}
 
 
+def table_pads(entries):
+    """TSCIRCUIT_ONLY_FOOTPRINTS rows -> {number: (w, h, drill, x, y)}
+
+    A row is (number, width, height, x, y) or (number, width, height, x, y,
+    drill); the drill defaults to 0 for SMD patterns."""
+    return {row[0]: (row[1], row[2], row[5] if len(row) > 5 else 0.0, row[3], row[4])
+            for row in entries}
+
+
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ap = argparse.ArgumentParser()
@@ -176,13 +185,36 @@ def main():
     expected = kicad_pads(args.src, args.pcb)
     actual = circuit_pads(args.circuit)
 
+    # Parts deleted from tscircuit/ on purpose (REMOVED_REFS) are still in the
+    # frozen KiCad board, so drop them from the KiCad side; everything else is
+    # compared pad for pad as before. Refs in REPLACED_FOOTPRINTS (U16's 2W
+    # module) are compared against TSCIRCUIT_ONLY_FOOTPRINTS instead of the
+    # frozen KiCad land pattern.
+    from kicad2tscircuit import (  # noqa: E402
+        REMOVED_REFS,
+        REPLACED_FOOTPRINTS,
+        TSCIRCUIT_ONLY_FOOTPRINTS,
+    )
+
+    if REMOVED_REFS:
+        print(f"removed on purpose (tscircuit only, see doc/DESIGN-REVIEW.md R01/R02): "
+              f"{', '.join(sorted(REMOVED_REFS))}")
+        expected = {ref: entry for ref, entry in expected.items() if ref not in REMOVED_REFS}
+
     problems = []
+    for ref in sorted(REPLACED_FOOTPRINTS):
+        print(f"footprint replaced on purpose (tscircuit only): {ref} -> "
+              f"{REPLACED_FOOTPRINTS[ref]}")
     for ref, entry in sorted(expected.items()):
         got = actual.get(ref)
         if not got:
             problems.append((ref, "missing in the tscircuit board"))
             continue
-        want_pads = normalize(entry["pads"], mirror=got.get("layer") == "bottom")
+        replaced = REPLACED_FOOTPRINTS.get(ref)
+        want_pads = normalize(
+            table_pads(TSCIRCUIT_ONLY_FOOTPRINTS[replaced]) if replaced else entry["pads"],
+            mirror=got.get("layer") == "bottom",
+        )
         got_pads = normalize(got["pads"])
         if set(want_pads) != set(got_pads):
             problems.append(
@@ -203,6 +235,7 @@ def main():
     # failing them as unknown.
     from kicad2tscircuit import (  # noqa: E402
         EXTRA_COMPONENTS,
+        TSCIRCUIT_ONLY_FOOTPRINTS,
         TSCIRCUIT_ONLY_REFS,
         FootprintLibrary,
     )
@@ -223,16 +256,21 @@ def main():
             problems.append((ref, "not in the KiCad board"))
             continue
         want_fp = next(fp for r, k, v, fp, *_ in EXTRA_COMPONENTS if r == ref)
-        pads = {}
-        for pad in children(lib.defs[want_fp], "pad"):
-            at, size = child(pad, "at"), child(pad, "size")
-            x, y = float(at[1]), float(at[2])
-            w, h = float(size[1]), float(size[2])
-            if round(float(at[3]) if len(at) > 3 else 0.0) % 180:
-                w, h = h, w
-            drill = child(pad, "drill")
-            pads[pad[1]] = (w, h, round(float(drill[1]), 3) if drill else 0.0,
-                            round(x, 3), round(-y, 3))
+        if want_fp in TSCIRCUIT_ONLY_FOOTPRINTS:
+            # footprint authored in tscircuit/ only: compare against its
+            # declared pad geometry instead of a KiCad library footprint
+            pads = table_pads(TSCIRCUIT_ONLY_FOOTPRINTS[want_fp])
+        else:
+            pads = {}
+            for pad in children(lib.defs[want_fp], "pad"):
+                at, size = child(pad, "at"), child(pad, "size")
+                x, y = float(at[1]), float(at[2])
+                w, h = float(size[1]), float(size[2])
+                if round(float(at[3]) if len(at) > 3 else 0.0) % 180:
+                    w, h = h, w
+                drill = child(pad, "drill")
+                pads[pad[1]] = (w, h, round(float(drill[1]), 3) if drill else 0.0,
+                                round(x, 3), round(-y, 3))
         want_pads = normalize(pads, mirror=actual[ref].get("layer") == "bottom")
         got_pads = normalize(actual[ref]["pads"])
         if set(want_pads) != set(got_pads):
