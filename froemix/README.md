@@ -326,11 +326,18 @@ table above.
 JLC-shaped assembly files (their SMT line takes a BOM and a CPL, not the
 per-designator exports tscircuit writes natively):
 
-| Upload | File |
-| --- | --- |
-| Gerbers | `fab/froemix-gerbers.zip` |
-| BOM | `fab/froemix-bom-jlc.csv` (one row per unique part, with quantity) |
-| CPL | `fab/froemix-cpl-jlc.csv` (106 SMT placements; the 10 through-hole parts are excluded) |
+| Board | Upload | File |
+| --- | --- | --- |
+| base | Gerbers | `fab/froemix-gerbers.zip` |
+| base | BOM | `fab/froemix-bom-jlc.csv` (one row per unique part, with quantity) |
+| base | CPL | `fab/froemix-cpl-jlc.csv` (106 SMT placements; the 10 through-hole parts are excluded) |
+| euro | Gerbers | `fab/euro/euro-gerbers.zip` |
+| euro | BOM | `fab/euro/euro-bom-jlc.csv` (14 unique parts, 50 placements) |
+| euro | CPL | `fab/euro/euro-cpl-jlc.csv` (19 SMT placements; the 31 through-hole parts are excluded) |
+| euro panel | Gerbers | `fab/euro/panel/panel-gerbers.zip` (2 mm FR4, holes + silkscreen only) |
+
+`make release` produces both sets in one run (`fab/` for the base board,
+`fab/euro/` for the front board and panel).
 | Reference | `fab/froemix-pnp-all.csv`, `fab/froemix-bom.csv`, SVGs, `froemix.step` |
 
 Hand-mount instructions for everything JLC does not place (10 through-hole

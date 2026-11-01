@@ -97,7 +97,8 @@ order: release ## print the order sheet and the files to upload for both boards
 	@printf '  BOM     : %s/froemix-bom-jlc.csv\n' "$(FAB)"
 	@printf '  CPL     : %s/froemix-cpl-jlc.csv\n\n' "$(FAB)"
 	@printf 'euro board + panel - upload these:\n'
-	@printf '  front   : %s/euro-gerbers.zip + %s/euro-bom.csv\n' "$(EURO_FAB)" "$(EURO_FAB)"
+	@printf '  front   : %s/euro-gerbers.zip + %s/euro-bom-jlc.csv\n' "$(EURO_FAB)" "$(EURO_FAB)"
+	@printf '            %s/euro-cpl-jlc.csv (19 SMT; THT hand-solder)\n' "$(EURO_FAB)"
 	@printf '  panel   : %s/panel/panel-gerbers.zip (2mm FR4, holes + silk only)\n\n' "$(EURO_FAB)"
 	@printf 'tick on the order page:\n'
 	@printf '  [ ] surface finish ENIG (flat pads for the 40 Daisy through-holes)\n'
