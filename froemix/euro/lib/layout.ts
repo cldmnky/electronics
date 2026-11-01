@@ -10,7 +10,9 @@
 // (froemix/AGENTS.md §3), unchanged, because both boards are centred on the
 // same panel. See froemix/doc/EURO-BOARD.md for the stack-up.
 
-export const PANEL_W = 101.6 // 20HP x 5.08mm
+import { ACTUATORS, STACK } from "./mechanical"
+
+export const PANEL_W = 101.6 // 20HP x 5.08mm; finished-width/rack check still required
 export const PANEL_H = 128.5 // 3U
 export const BOARD_W = PANEL_W
 export const BOARD_H = PANEL_H
@@ -48,8 +50,8 @@ export const STANDOFF_HOLES: Pt[] = [
 export const MATE = {
   CN1: { x: -17.58, y: 59.64, pins: 16, pitch: 2.0 },
   CN2: { x: 12.42, y: -36.36, pins: 16, pitch: 2.0 },
-  CN3: { x: 8.11, y: 59.63, pins: 8, pitch: 2.0 }, // reserved, not mated
-  CN4: { x: 24.5, y: 59.63, pins: 7, pitch: 2.0 }, // built base board uses 24.5
+  CN3: { x: 8.14, y: 59.63, pins: 8, pitch: 2.0 }, // reserved, not mated; footprint origin
+  CN4: { x: 24.5, y: 59.63, pins: 7, pitch: 2.0 }, // both footprint origins; bbox centre is 24.47
 } as const
 
 /** Net carried by each pin of the CN1 / CN2 sockets (base board pinout). */
@@ -280,13 +282,13 @@ export const HOLE = {
   rail: 3.2, // M3
   standoff: 3.2, // M3 clear
   button: 12.2, // 12mm illuminated tactile
-  joy: 7.0, // clears the 6.5mm collar; the 3.2mm stem and its knob sit above
+  joy: ACTUATORS.joystick.holeDiameter, // 8mm: swept envelope of the extended XUNPU stem/cap
 } as const
 
-/** Board-to-panel distance at which the panel sits on the pot/jack bushings. */
-export const PANEL_GAP = 9.0
-/** Euro board to base board spacing (M3 spacers, 2.00mm socket stack height). */
-export const BASE_GAP = 12.0
+/** Control TOP to panel UNDERSIDE. Assembly target, not a measured XKB shoulder. */
+export const PANEL_GAP = STACK.panelGap
+/** Base TOP to control BOTTOM: 11mm clear spacers, NOT PCB centre spacing. */
+export const BASE_GAP = STACK.baseGap
 
 /**
  * Footprint origins vs panel-hole positions.

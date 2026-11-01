@@ -32,7 +32,7 @@ froemix/
 │   ├── index.circuit.tsx    jacks, pots, OLED, LED + the 3 sockets that mate CN1/CN2/CN4
 │   ├── panel.circuit.tsx    the front panel (holes + silkscreen, no copper)
 │   ├── lib/layout.ts        ONE table of coordinates, imported by board and panel
-│   ├── lib/footprints.tsx   PJ398SM / PJ366ST jack, Alps RK09K, sockets, OLED, LED
+│   ├── lib/footprints.tsx   XKB PJ-301M jack, Alps RK09K, sockets, OLED, LED
 │   ├── panel/               built-artwork Nord/Signal previews and 1:1 fit templates
 │   └── scripts/             board/panel gates and separate fabrication releases
 ├── tscircuit/           the base board design (hand-maintained)
@@ -97,12 +97,16 @@ comparison, two white-on-black design directions, JLCPCB order settings and a
 first-article fit checklist. Recommended material is **2mm FR4 with standard
 black solder mask and white print**, ordered separately from the electronic
 boards, without assembly or a stencil. A Gerber check is not a physical-fit
-approval; the button reach, knob hardware and rack clearance still need checks.
+approval. The corrected Z stack, cut-to-seven CN4 preparation, printable MODE/NAV
+actuator prototypes and remaining physical acceptance tests are in
+[`doc/MECHANICAL-STACK.md`](doc/MECHANICAL-STACK.md).
 
 ## Base board <-> eurorack board interface
 
-`CN1`/`CN2` are 2.00mm 16-pin headers (`A2005WV-16P`); `CN2` is the jack bus,
-`CN1` carries MIDI, the muxed ADC inputs and power.
+`CN1`/`CN2` are 2.00mm 16-pin headers — now XKB **6mm-shoulder + 4mm-post**
+`X4612WV-16I-C40D28-E60` (C2883069), with **11mm clear spacers**, mating the
+existing 4.3mm front sockets. The old short `A2005WV-16P` cannot reach across
+the stack. `CN2` is the jack bus, `CN1` carries MIDI, muxed ADC inputs and power.
 
 | CN2 | net | CN1 | net |
 | --- | --- | --- | --- |
@@ -221,7 +225,8 @@ the entries when convenient.
 | R23 | `C728283` (1 mΩ 1 W current sense) | `C17927` `1206W4F1004T5E` (1 MΩ ±1%, **basic**) | schematic value is `1M`, the old part was a library leftover |
 | C6, C7 | `C55393` `CL10C561JB8NNNC` | `C107054` `CC0603JRNPO9BN561` (560 pF NP0 ±5% 50 V) | old part is **discontinued, 0 stock** |
 | J2 | none | `C3406` (2×8 2.54 mm IDC box header) | no JLCPCB part number in the KiCad BOM |
-| CN4 | `C225259` `A2005WV-7P` | `C22438290` `HX PZ2.0-1x7P ZZ` | only **9 pcs** in stock |
+| CN1, CN2 | `C225268` `A2005WV-16P` (2mm shoulder) | `C2883069` `X4612WV-16I-C40D28-E60` (6mm total shoulder + 4mm post) | mechanical review: the old header could not enter the 4.3mm socket across the stack; pads/XY/nets unchanged |
+| CN4 | `C225259` `A2005WV-7P` | `C2883061` `X4612WV-08I-C40D28-E60`, **cut to seven ways** | same 6mm stack; the stocked seven-way member (C2883060) did not resolve in JLC's catalogue |
 | CN3 | `C225260` `A2005WV-8P` | `C22438291` `HX PZ2.0-1x8P ZZ` | only 131 pcs in stock |
 | H1 | `C60565` `2.54-2*6PWZ` | `C22373932` `HC-PM254-8.5H-2x6PW` | only 62 pcs in stock; body depth 8.5 mm vs the 12.5 mm drawn in the footprint, same 2.54 mm pad grid |
 | U16 | `C5365649` `B1205S-1WR3` (12V in, 1 W/200 mA) | `C5369484` `B2405S-2WR3` (24V in, **2 W/400 mA**) | input sees VCC−VEE ≈ 23.4V, double the 13.2V max; and the worst-case 5 V load (194 mA without the H1 module, 267 mA with it) does not fit 200 mA — see [`doc/POWER-BUDGET.md`](doc/POWER-BUDGET.md). Different package, so U16 also has its own footprint/placement |
@@ -254,10 +259,9 @@ the tscircuit source.
   JLCPCB library parts; there is no basic replacement for the TL074, CD4051,
   MCP6002, LM4040, TLP2362 or B2405S, so the extended-part fee applies to those
   (JLC shows the exact basic/extended split and the fee on the order page).
-- `CN1`/`CN2` (`C225268` `A2005WV-16P`) still have ~715 pcs in stock - enough for a
-  short run, and the 2.00 mm 1×16 alternatives had less (50-61 pcs).
-- Every part on the board now has >2000 pcs in stock except `CN1`/`CN2`
-  (`C225268` `A2005WV-16P`, ~715 pcs, two per board) - fine for a prototype run.
+- `CN1`/`CN2` are now `C2883069` (198 pcs at selection, two per board); CN4's
+  `C2883061` had 832 pcs. These are hand-fitted THT parts, not SMT-line stock.
+  Re-check live stock before ordering a run; `check:parts` does not stock-plan.
 - The H1 swap changes the right-angle header body depth (12.5 -> 8.5 mm). Same
   pad grid, but check it against the PMOD cable/enclosure before ordering.
 - `DaisySeed1` is `doNotPlace` (module already in hand); `J2` has no
@@ -319,7 +323,7 @@ table above.
   **CN1** within 3.05mm of the (−36.95, 60.75) hole, so ≤5mm OD is the hardware
   limit there (a 5.5mm standoff would sit on C25's courtyard). Also: sanity-check
   the CPL rotation/mirror mapping for bottom-side parts with JLC (classic
-  bottom-mirror trap — 92 of the 98 bottom placements are at 180° and 6 at 0°,
+  bottom-mirror trap — 93 of the 99 bottom placements are at 180° and 6 at 0°,
   all 8 top placements at 0°, but verify); 6x C1671 47pF caps emit
   `source_part_not_found_warning` (no EasyEDA 3D-model match — the LCSC part
   itself validates fine, they just render pad-only in 3D); the ~90
@@ -383,8 +387,9 @@ bottom-rotation check and the order-day checklist:
 | open | **CV scaling 1%** — ~2 % of scale on CV in, ~4.04 % worst case on CV out (24 ¢ / 48.5 ¢ per octave, simulated), plus fixed offsets; firmware calibration required, 0.1 % parts are the alternative |
 | open | **Encoder** — no encoder pins on the base board; CN2 pads 11–15 unused, decision deferred |
 | open | **THT parts in the SMT order** — the 10 through-hole parts (CN1–CN4, H1, J1, J2, C24, C25, U16) are in `froemix-bom.csv` and `froemix-pnp.csv` with no hand-solder flag; decide JLC through-hole assembly vs hand soldering before ordering |
-| open | **JLC second side / CPL mirror** — 98 of the 106 SMT placements are on the bottom, and the exported CPL mirrors them (92 at 180°, 6 at 0°; the 8 top placements are 0°). H1 is THT and sits at 270° in `froemix-pnp-all.csv` only. Verify that against JLCPCB's bottom-side preview before ordering assembly |
+| open | **JLC second side / CPL mirror** — 99 of the 107 SMT placements are on the bottom, and the exported CPL mirrors them (93 at 180°, 6 at 0°; the 8 top placements are 0°). H1 is THT and sits at 270° in `froemix-pnp-all.csv` only. Verify that against JLCPCB's bottom-side preview before ordering assembly |
 | open | **MIDI receiver threshold** — the on-board receiver is a TLP2362 with a **5 mA maximum switching threshold** (recommended on-current from 7.5 mA), while this board's own Type A transmitter delivers **4.48 mA worst case** into a receiver at 1.7 V Vf. A marginal transmitter at the CA-033 corner can be intermittent; verify with the real units before relying on the link. Stated in [`doc/FRONTBOARD-INTERFACE.md`](doc/FRONTBOARD-INTERFACE.md) §2 |
+| open | **Mechanical first article** — the corrected 11mm-clear stack, CN4 cut-to-seven preparation, printed MODE/NAV actuators, J1/shunt height, trimmed rear tails, OLED support, bushing threads and rack/rail fit all need physical acceptance; see [`doc/MECHANICAL-STACK.md`](doc/MECHANICAL-STACK.md). Software gates only establish dimensions and identities |
 | open | **DFM review of the exported gerbers** — nobody has opened `fab/froemix-gerbers.zip` in a fab viewer yet (mask expansion, annular ring, drills, panel) |
 
 ## Design review

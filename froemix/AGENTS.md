@@ -173,11 +173,21 @@ installed core — route control is placement + phases + widths.
 - **Frozen connectors** (mechanical contract with the euro board — NEVER move):
   `CN1 (-17.58,59.64,top)`, `CN2 (12.42,-36.36,top)`, `CN3 (8.11,59.63,top)`,
   `CN4 (24.47,59.63,top)`, `H1 (28.5,20,bottom)`, `J1 (26.16,-15.89,top)`,
-  `J2 (-18.5,-56,bottom)`. CN1 top + CN2 bottom = opposite-end support.
+  `J2 (-18.5,-56,bottom)`. These are historical built bounding-box centres:
+  **CN3/CN4 footprint origins (`pcbX`) are 8.14 / 24.50**, respectively; wider
+  pin-1 pads shift the bbox by −0.03mm. Do not move a matching socket to the bbox
+  coordinate. All 39 mated pads are now checked against both built boards.
+  CN1/CN2 are at opposite board ends, but **both are on top**.
 - **Sides are load-bearing.** TOP = mating headers + low-profile SMD only.
   Everything else (all tall bodies: Daisy, C24/C25, U16, J2, H1) hangs off the
   BOTTOM into the rack cavity. The euro board closes over the top at header
   height — any tall body on top blocks mating. Keep it that way.
+  **Corrected mechanical stack:** CN1/CN2 are C2883069 XKB E60 headers (6mm
+  TOTAL shoulder + 4mm post), CN4 is C2883061 eight-way **cut to seven ways**;
+  front sockets stay 4.3mm. Use **11mm clear spacers**, not 12mm. J1+shunts
+  ≤9.5mm, front-board rear tails ≤1mm; set J1 before stacking. Source dimensions,
+  printable MODE/NAV actuators and physical acceptance: `doc/MECHANICAL-STACK.md`.
+  These are assembly dimensions, not invented tscircuit component-Z props.
 - **No `pcbRotation` on any component** (rotation is baked into pre-rotated
   footprint variants, see §5 — tscircuit rotates courtyard *centers* but keeps
   their *axes*, skewing every rotated courtyard).
@@ -387,7 +397,8 @@ be damaged. `doc/FRONTBOARD-INTERFACE.md` §1 (R14).
   Emitted as `cadModel={{...}}`. C1671 reuses C14663's identical 0603 body.
   Rotation offsets were corrected for the EasyEDA↔KiCad frame difference (our
   TSSOP/SOIC pad-1 is top-left, EasyEDA's bottom-left).
-- No transferable model (pad-only in 3D): Daisy Seed, J1/J2/H1, C65114/C3406
+- No transferable model (pad-only in 3D): CN1/CN2/CN4 (new E60 headers; old
+  short-header models removed), Daisy Seed, J1/J2/H1, C65114/C3406
   (EasyEDA origin offsets don't transfer), C118189/C53728 (the 2512 MIDI
   resistors), C559769 (C32), C14665 (C33/C34), C23000/C22896 (the new 0603
   values) and C53444 (Q2's MMBT3906: the model is on the CDN but its
@@ -478,9 +489,10 @@ release`; no item is aspirational.
   400 mA), but the ≤300 mA P5V acceptance test in `doc/POWER-BUDGET.md` must be
   run during bring-up — the module is hand-fitted, so measuring the rail before
   it is fitted for good is part of the build, not a formality.
-- **Front board is not designed** (R14): the electrical contract is frozen in
-  `doc/FRONTBOARD-INTERFACE.md` (M_ADC pot-only/0–3.3 V, CN1/CN2 pinout, CV and
-  audio levels, 3.3 V budget, acceptance test); the board and its test are open.
+- **Front board physical acceptance**: euro is designed and gated, including
+  its own-rail mux-input contract. The corrected header/spacer/actuator design
+  in `doc/MECHANICAL-STACK.md` still needs a real first article: mating contact,
+  printed-part reach/travel, OLED support, bushing threads and rack/rail fit.
 - **CV tolerance**: 1% scaling resistors, ~2 % of scale (CV in) / ~4.04 % worst
   case (CV out) — firmware calibration required as designed; 0.1 % parts are the
   alternative.

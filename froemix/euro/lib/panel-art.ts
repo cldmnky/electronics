@@ -931,10 +931,10 @@ const navTicks = (style: PanelStyle): ArtElement => ({
   kind: "tick",
   strokeWidth: style.groupStroke,
   paths: [
-    radialTick(JOYSTICK.x, JOYSTICK.y, 90, 4.4, 5.7),
-    radialTick(JOYSTICK.x, JOYSTICK.y, 0, 4.4, 5.7),
-    radialTick(JOYSTICK.x, JOYSTICK.y, 270, 4.4, 5.7),
-    radialTick(JOYSTICK.x, JOYSTICK.y, 180, 4.4, 5.7),
+    radialTick(JOYSTICK.x, JOYSTICK.y, 90, HOLE.joy / 2 + 0.8, 5.7),
+    radialTick(JOYSTICK.x, JOYSTICK.y, 0, HOLE.joy / 2 + 0.8, 5.7),
+    radialTick(JOYSTICK.x, JOYSTICK.y, 270, HOLE.joy / 2 + 0.8, 5.7),
+    radialTick(JOYSTICK.x, JOYSTICK.y, 180, HOLE.joy / 2 + 0.8, 5.7),
   ],
 })
 

@@ -40,8 +40,17 @@ export_fmt "$ENTRY" step "$FAB_DIR/euro.step"
 export_fmt "$ENTRY" schematic-svg "$FAB_DIR/euro-schematic.svg"
 export_fmt "$ENTRY" pcb-svg "$FAB_DIR/euro-pcb.svg"
 
-export_fmt "$PANEL" gerbers "$FAB_DIR/panel/panel-gerbers.zip"
+# Use the panel's real Gerber/profile/drill verification, not an unchecked
+# direct export. The existing order-file path stays stable.
+bun scripts/panel_release.ts
+DESIGN="${FROEMIX_PANEL_DESIGN:-nord}"
+cp "dist/panel-release/froemix-panel-$DESIGN-gerbers.zip" "$FAB_DIR/panel/panel-gerbers.zip"
+cp "dist/panel-release/panel-release-$DESIGN.json" "$FAB_DIR/panel/"
+mkdir -p "$FAB_DIR/panel/preview"
+cp dist/panel-release/preview/* "$FAB_DIR/panel/preview/"
 export_fmt "$PANEL" step "$FAB_DIR/panel/panel.step"
+bun scripts/mechanical_release.ts "$FAB_DIR/mechanical"
+cp ../doc/FRONT-PANEL.md "$FAB_DIR/panel/"
 
 # bom.csv + pick_and_place.csv live inside the board's gerbers zip.
 python3 - "$FAB_DIR/euro-gerbers.zip" "$FAB_DIR" <<'PY'

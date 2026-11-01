@@ -9,7 +9,9 @@ Live design: `euro/index.circuit.tsx` (front board) and `euro/panel.circuit.tsx`
 board cannot drift apart — `euro/scripts/check_mating.py` proves it from the
 built circuit JSON on every gate run.
 
-Status: **designed, routed, gated.** Not ordered. Open decisions in §8.
+Status: **designed, routed, gated; physical first article pending.** Not ordered.
+[MECHANICAL-STACK.md](MECHANICAL-STACK.md) is the corrected Z/part/preparation
+contract and supersedes the former 12mm spacer and actuator-height assumptions.
 
 For the current faceplate artwork, material comparison, manufacturing files and
 pre-order mechanical checklist, use [FRONT-PANEL.md](FRONT-PANEL.md). Its panel
@@ -25,7 +27,7 @@ Everything in this section comes from the base board and must not change.
 | Panel | 20HP x 3U = 101.6 x 128.5mm, 2mm | this design |
 | Front board | 101.6 x 128.5mm, 2 layers | this design |
 | Base board | 80.9 x 128.5mm, 4 layers | `froemix/AGENTS.md` |
-| Mating sockets | CN1 (-17.58, 59.64), CN2 (12.42, -36.36), CN4 (24.5, 59.63) | base board `sections/main.tsx` |
+| Mating socket footprint origins | CN1 (-17.58, 59.64), CN2 (12.42, -36.36), CN4 (24.50, 59.63) | base board `sections/main.tsx`; CN4 bbox centre 24.47 is not its origin |
 | Base board standoffs | (±36.95, ±60.75), M3 | base board `index.circuit.tsx` |
 | Rail screws | (±43.3, ±61.25), M3 | Doepfer 3U |
 
@@ -36,34 +38,34 @@ the base board's top-side 2.00mm pin headers.
 
 Bottom-side footprints mirror about their origin (`froemix/AGENTS.md` §5), so the
 sockets are authored pre-mirrored (pin 1 at +X in footprint space) and land with
-pin 1 on the base board's pin 1. `check_mating.py` asserts pin 1 and pin N of
-each socket against the base board's coordinates.
+pin 1 on the base board's pin 1. `check_mating.py` compares all 39 pads and their
+nets to the actual built base board, plus the frozen coordinates and faces.
 
 CN3 (micro SD) is **not** mated: see §8.
 
 ### Stack-up (front to back)
 
 ```
-panel (2mm)            0 mm      pot/jack bushings + nuts, M3 rack screws
-front board            9.0 mm    jacks, pots, UI, OLED, LEDs on top; sockets on bottom
-base board            21.0 mm    12mm M3 spacers, tall parts hang off the back
-power + Daisy         back
+panel underside        0.0 mm    front face is -2mm; M3 rack screws
+front board TOP        9.0 mm    assembly target; controls/OLED face panel
+front board BOTTOM    10.6 mm    1.6mm PCB; 4.3mm sockets toward base
+base board TOP        21.6 mm    11mm clear M3 spacers; 6mm-shoulder headers
+base board BOTTOM     23.2 mm    tall bodies / power / Daisy toward rack cavity
 ```
 
-`PANEL_GAP = 9.0mm` is the front board to panel distance. It is set by the
-**PJ398SM jack's shoulder** (9mm from the board surface; the panel rests there
-and is clamped by the bushing and nut). Everything else has to reach that plane:
+`PANEL_GAP = 9.0mm` means **front PCB top to panel underside**, an assembly
+target, not a measured shoulder on the currently selected XKB jack. The XKB
+drawing gives an 8.8mm body and additional bushing geometry; old PJ398SM/Alps
+height claims are not evidence for replacement parts. Jig the actual panel,
+jacks and pots before soldering. Actuator calculations cover an 8.5–9.6mm gap
+and the 1.8–2.2mm panel thickness range.
 
-| Part | Height to its panel shoulder | At a 9mm gap |
-| --- | --- | --- |
-| PJ398SM / PJ366ST jack | 9.0mm | sets the gap |
-| Alps RK09K pot | ~5.5mm body + M7 bushing | bushing reaches the panel, nut clamps |
-| SKQUCAA010 5-way | 10.0mm body | 1.0mm proud of the panel — a cap goes on the 3.2mm stem |
-| K6-1212A02 button | 7.3mm cap top | **1.7mm short** — see §8 |
-
-The button is the one part that does not reach. A 2mm riser under the switch, a
-taller cap, or a panel-mount button with flying leads are the three fixes;
-decide with the part in hand.
+The bare K6-1212A02 cap (7.3mm) and XUNPU stem (10mm) do not reach beyond the
+panel front. Release now includes a **5.8mm-added-height captive MODE plunger**
+and **5mm-added-height NAV cap** as printable STL prototypes. NAV alone changes
+from Ø7 to Ø8mm; every centre stays fixed. A 2mm button riser was not a solution
+through a 2.2mm panel, and its short pins cannot simply span a taller riser.
+See [MECHANICAL-STACK.md](MECHANICAL-STACK.md) for dimensions, assembly and tests.
 
 ## 2. What the front board carries
 
@@ -72,11 +74,11 @@ decide with the part in hand.
 | pots | 6 | Alps RK09K1130A5R, 10k linear | `M_ADC_0`..`M_ADC_5` |
 | UI joystick | 1 | 5-way multi-control, 5 momentary contacts | `M_ADC_6` (ladder) |
 | UI button | 1 | 12mm illuminated tactile, switch + LED | `M_ADC_7` |
-| audio in | 2 | PJ398SM mono jack | `J_AUDIO_IN_L/R` |
-| audio out | 2 | PJ398SM mono jack | `J_AUDIO_OUT_L/R` |
-| CV in | 2 | PJ398SM mono jack | `J_CV_IN_1/2` |
-| CV out | 2 | PJ398SM mono jack | `J_CV_OUT_1/2` |
-| sync in/out | 2 | PJ398SM mono jack | `J_SYNC_IN`, `J_SYNC_OUT` |
+| audio in | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_AUDIO_IN_L/R` |
+| audio out | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_AUDIO_OUT_L/R` |
+| CV in | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_CV_IN_1/2` |
+| CV out | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_CV_OUT_1/2` |
+| sync in/out | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_SYNC_IN`, `J_SYNC_OUT` |
 | MIDI in/out | 2 | PJ366ST stereo jack (TRS MIDI) | `J_MIDI_IN_TIP/RING`, `J_MIDI_OUT_TIP/RING` |
 | jack LEDs | 6 | 3mm LED + 2.2k + 1N4148 per jack | audio in/out L/R, CV out 1/2 |
 | display | 1 | 1.3" 128x64 SPI OLED | `OLED_CS/SCL/DC/SDA/RES` |
@@ -112,7 +114,8 @@ firmware decodes levels, not pins.
 ### UI button (illuminated, one mux channel)
 
 Part: Korean Hroparts `K6-1212A02` (LCSC `C692901`, JLCPCB-stocked, 12mm, red
-LED). Six electrical pins — C1/C2 are one internally connected switch rail and
+LED). Its bare 7.3mm cap does not reach the panel; the supplied `mode-plunger.stl`
+adds 5.8mm (see [MECHANICAL-STACK.md](MECHANICAL-STACK.md)). Six electrical pins — C1/C2 are one internally connected switch rail and
 C3/C4 the other, so the two pads of each rail are wired in parallel — plus two
 0.8mm locating pegs that sit at (0, ±6.75) from the centre.
 
@@ -150,7 +153,7 @@ slotted holes).
 
 | y (mm) | Contents |
 | --- | --- |
-| +57 … +24 | 1.3" OLED module (35.5 x 33mm body, window at (0, +40.5)); pots and UI either side |
+| +57.5 … +24 | OLED module 35.4 x 33.5mm; window at (0, +42.8); pots and UI either side |
 | +45 | pots: x = ±28, ±43 (15mm pitch) |
 | +25 | pot (-43), **UI joystick (-28)**, **MODE button (+28)**, pot (+43) |
 | -3 | 4 jack LEDs, one above each audio jack |
@@ -165,14 +168,15 @@ a jack name under each jack.
 
 ## 4. Display
 
-1.3" 128x64 SPI OLED module (SH1106 or SSD1306), 35.5 x 33mm PCB, 7-pin 2.54mm
-header along the top edge of the back, active area 29.4 x 14.7mm.
+Selected 1.3" 128x64 SPI OLED module HS13L02B4S01 / C42432559 (SH1106),
+35.4 x 33.5mm PCB, 7-pin 2.54mm header, active area 29.42 x 14.70mm.
 
 The module is soldered **flat to the top of the front board**, header row at
-(0, 57): its 7 pads are a plain 1x7 2.54mm pattern, and the seven `OLED_*`
+(0, 55.5): its 7 pads are a plain 1x7 2.54mm pattern, and the seven `OLED_*`
 signals run straight across the board from the CN4 socket (bottom side,
 (24.5, 59.63)) to those pads. It is *not* plugged into CN4, because a 2.54mm
-socket plus the module's own header would put the glass ~12mm behind the panel.
+socket plus the module's own header would put the glass roughly a centimetre
+further back and outside the 9mm actuator/panel budget.
 
 The panel window is 30.5 x 16.0mm, centred on the active area at (0, 42.8):
 `OLED_AT.y` (55.5) + `windowOffsetY` (-12.7).
@@ -193,10 +197,16 @@ unfiltered placement list for reference, and `euro-bom-smt.csv` /
 `euro-bom-hand.csv` are the same split as upload-sized / shopping-list files
 (the hand file lists the 31 through-hole parts with quantity, MPN and side).
 
-Socket stack: the base board's 2.00mm pin headers and the 2.00mm female sockets
-overlap (the socket body is ~8.5mm), so a 12 mm M3 spacer between the boards
-leaves ~4mm of air and keeps the Daisy's USB port and the PMOD opening
-reachable from the back.
+Socket stack: **6mm-shoulder E60 male + 4mm post**, existing **4.3mm socket**,
+**11mm clear spacer**: insertion 3.3mm, insulator clearance 0.7mm nominal.
+The old 2mm male could not reach across a 12mm gap. CN4 is a stocked eight-way
+C2883061 strip **cut to seven ways before fitting**. J1/shunts ≤9.5mm; trim
+front-board rear tails ≤1mm; set/test shunts before stacking. See the mechanical
+guide for tolerance arithmetic and the physical contact/retention test.
+
+`make release` also includes `fab/euro/mechanical/` (two STL actuator prototypes,
+a hardware list, dimension manifest and mechanical guide). The panel ZIP now
+goes through the panel-specific actual Gerber/profile/NPTH verifier.
 
 ## 6. Verification
 
@@ -209,10 +219,12 @@ reachable from the back.
 | `tsci check placement` | Errors 0, Warnings 0 |
 | `tsci check shorts` | no shorts |
 | `tsci check pcb-style` | clean |
-| `scripts/check_mating.py` | 3 sockets pin-for-pin on the base board, 26 declared panel parts aligned, 31 holes all claimed, R0.5 window at (0, 42.8) |
+| `scripts/check_mating.py` | all 39 actual base/front pads and nets; faces, standoffs, 27 control holes, R0.5 OLED window |
+| `scripts/mechanical_check.ts` | selected built supplier identities, stack insertion/clearance and actuator envelopes |
+| `scripts/test_mating.py` / `bun test lib/mechanical` | negative mating/part/Z tests and printable-solid topology/dimensions |
 | `scripts/check_madc.py` | the 8 `M_ADC_*` nets are closed islands of pots/joystick/button referenced only to `P3V3_A`/`GND` (the base-board mux has no clamps - see `doc/FRONTBOARD-INTERFACE.md`) |
 | `scripts/panel_check.ts` | frozen 31-hole geometry, OLED bounds/radius, stroked artwork and hardware keepouts pass |
-| `bun test lib/panel` | 121 tests pass; geometry, artwork, export and preview regressions |
+| `bun test lib/panel lib/mechanical` | panel geometry/art/export/preview plus mechanical regression tests |
 | `tsci snapshot --test` | schematic + PCB baselines match |
 
 The build log's `source_pin_missing_trace_warning`s are the 10 mono-jack tip
@@ -239,19 +251,18 @@ channels:
    `WS-1004-ARL10026` (LCSC C42377836), not the retired Alps assumption.
    LCSC/JLCPCB remains the first supplier; use Electrokit for any unavailable
    part, as required by `AGENTS.md` §9.
-2. **Joystick stem height — unverified.** Measure the selected XUNPU part and
-   its actual cap against `PANEL_GAP = 9.0mm` and the 2mm faceplate. The old
-   Alps body/stem dimensions do not establish that this part reaches through
-   the panel. See [FRONT-PANEL.md](FRONT-PANEL.md) before ordering.
-3. **Button height and LED polarity.** The `K6-1212A02` cap tops out at 7.3mm
-   against a 9mm panel gap (§1) — it needs a riser, a taller cap, or a
-   panel-mount part. Its datasheet draws LED `+`/`-` but does not map them to
-   pin positions: check the polarity on the part before soldering, because a
-   reversed LED simply never lights.
+2. **Joystick cap — dimensioned prototype supplied.** XUNPU's drawing gives
+   10mm overall height, 3.15mm square stem. Print/finish `nav-cap.stl` and test
+   all directions and centre press through the revised Ø8mm hole. The ±8° CAD
+   test envelope is not a datasheet travel guarantee.
+3. **Button reach — captive plunger supplied.** Print `mode-plunger.stl` in
+   translucent resin, flange behind the panel. Test free return and no preload.
+   Check the actual K6 LED polarity before soldering: its drawing does not
+   reliably number the +/− pin positions.
 4. **CN3 / micro SD.** Left unmated; the Daisy's own slot is used from the back.
    Options: mate CN3 and add a front micro-SD socket, or a 1x8 test header.
-5. **OLED module.** The draft assumes the common 1.3"/7-pin/2.54mm module, 35.5
-   x 33mm, no mounting holes.
+5. **OLED module.** C42432559 is selected and the XY/window offsets are checked.
+   Actual glass/bezel Z, support and viewing angle still need a physical check.
 6. **Panel material.** Recommended: 2mm FR4, black mask / white print. See
    [FRONT-PANEL.md](FRONT-PANEL.md) for the comparison and JLCPCB settings.
    An anodised aluminium alternative needs the separate JLCCNC mechanical-CAD
@@ -298,7 +309,7 @@ change**.
   the same 6.2mm either way and the `PJ-301M` pad question is already covered by
   the slotted pads. Everything on this board is bought from LCSC and the SMD
   side is JLCPCB-placed as it stands.
-- **Assembly split** (unchanged): 14 SMD parts on the bottom (8 x 0603 resistor,
+- **Assembly split** (unchanged): 19 SMD parts on the bottom (13 x 0603 resistor,
   6 x SOD-323 diode) are placed by JLCPCB; the through-hole side - 12 jacks,
   6 pots, joystick, button, 7 LEDs, OLED header, 3 sockets - is hand-soldered
   unless JLC's through-hole service is ordered. The panel is a bare PCB.

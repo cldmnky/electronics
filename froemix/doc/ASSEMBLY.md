@@ -1,7 +1,7 @@
 # Hand-assembly sheet — parts JLC does not mount
 
 Everything in `froemix-cpl-jlc.csv` is machine-placed by JLCPCB's SMT line
-(106 placements: 98 on the bottom, 8 on the top). This sheet covers
+(107 placements: 99 on the bottom, 8 on the top). This sheet covers
 **everything else**: the 10 through-hole parts kept out of the CPL, the two
 jumper shunts for `J1` (not board parts), the Daisy Seed module (dual
 `doNotPlace`), and the bare-copper aids.
@@ -14,11 +14,11 @@ over. The board also carries a mirrored legend
 
 | Ref | Part | Package / footprint | Side | LCSC | Orientation cue |
 | --- | --- | --- | --- | --- | --- |
-| `CN1`, `CN2` | A2005WV-16P, 2.00 mm pin header, 1×16 | THT, 2.00 mm pitch | top | C225268 | pin 1 = **square pad** (left end, marked on silk) |
+| `CN1`, `CN2` | X4612WV-16I-C40D28-E60, 1×16 2mm, **6mm total shoulder + 4mm post** | THT, unchanged pads | top | C2883069 | pin 1 square; do not substitute old short A2005WV; use **11mm clear spacers** |
 | `CN3` | HX PZ2.0-1x8P, 2.00 mm pin header | THT | top | C22438291 | pin 1 square pad |
-| `CN4` | HX PZ2.0-1x7P, 2.00 mm pin header | THT | top | C22438290 | pin 1 square pad |
+| `CN4` | X4612WV-08I-C40D28-E60 **cut to seven ways**, 6mm total shoulder + 4mm post | THT, unchanged seven pads | top | C2883061 | remove **pin 8 and its cell in both mouldings** before fitting; retain pin 1 at square pad |
 | `H1` | HC-PM254-8.5H, 2×6 2.54 mm right-angle (PMOD) | THT right-angle | bottom | C22373932 | body extends **+X**, toward the right board edge; pin 1 square |
-| `J1` | 2×3 2.54 mm header (**MIDI polarity selector**) | THT | top | C65114 | pin 1 square; needs **two shunts**, see below |
+| `J1` | 2×3 2.54 mm header (**MIDI polarity selector**) | THT | top | C65114 | pin 1 square; two ordinary shunts, **installed height ≤9.5mm**; set/test before stacking |
 | `J2` | 2×8 2.54 mm IDC box header (Eurorack power) | THT shrouded | bottom | C3406 | pin 1 = the square/`1`-marked pad; the built silk key/notch is on the **lower long side** (y ≈ −59.25…−60.56), i.e. **the same board edge as the two lower M3 holes**. Check the shroud key against the ribbon connector before soldering — the key must engage the connector's polarizing rib, not force it |
 | `C24`, `C25` | 100 µF 50 V radial electrolytic, 8 × 12 mm | THT, 3.5 mm pitch | bottom | C2749 | **polarity**: `+` marked on silk; C25 is the negative-rail cap, its `+` faces **GND**. Body is 8 mm — the silk circle is the can, keep neighbours clear of it |
 | `U16` | B2405S-**2**WR3, isolated 24 V→5 V SIP module (2 W / 400 mA) | THT, 4 leads on the 1-2-4-6 positions of a 2.54 mm grid | bottom | C5369484 | **pin 1 = `+VIN`** (square pad, 45° silk bevel and lead tick); leads 3 and 5 are absent, and the silk guide line inside the body is broken at those two positions, so the module cannot go in one position off. The body hangs 6.15 mm to one side of the lead row (toward the bottom board edge). Module stands **up** (≈10 mm tall) |
@@ -84,6 +84,18 @@ Type A shunts unless the gear in front of you is Type B.
   (tip) buzzes to pad 6/1 (opto cathode side), pad 3 (ring) buzzes to pad 5/2
   (opto anode side, through `R47`).
 
+## Corrected stack and actuator parts
+
+Use [MECHANICAL-STACK.md](MECHANICAL-STACK.md): **11mm clear spacers**, 6mm-total-
+shoulder male headers, 4.3mm female sockets. The former 12mm spacer / short
+header combination did not mate. Trim front-board rear-facing tails to ≤1mm;
+J1+shunts ≤9.5mm. Set and meter-test J1 before stacking: changing its type later
+requires power-off and board separation. Daisy USB/SD and H1 are rear-accessed.
+
+The release includes `fab/euro/mechanical/` with two printable actuator
+prototypes (MODE/NAV), dimensions, hardware list and first-article checklist.
+These are not electronic BOM/CPL entries or proof of physical fit.
+
 ## Parts to buy
 
 `fab/froemix-bom-hand.csv` (written by `make release`) is this sheet's shopping
@@ -94,7 +106,7 @@ most likely to be fitted one position off - check the silk before soldering.
 
 ## Order of work
 
-1. **Inspect the JLC return** — 106 SMT placements, 4 bare fiducials and 8 bare
+1. **Inspect the JLC return** — 107 SMT placements, 4 bare fiducials and 8 bare
    test points already on the board. Confirm the GND plane is visible on the
    bottom and the Daisy footprint is empty.
 2. **Right-angle parts first** (they cannot be added once neighbours are tall):
@@ -102,8 +114,10 @@ most likely to be fitted one position off - check the silk before soldering.
    ribbon connector before soldering it down.
 3. **Power stage next, before anything expensive is on the board**: `U16`,
    `C24`, `C25` (watch polarity: C25's `+` faces GND, i.e. away from the VEE
-   pad), then the headers `CN1`–`CN4` and `J1`. Solder the two opposite corner
-   pins of each header, check the header sits square, then do the rest.
+   pad), then the headers `CN1`–`CN4` and `J1`. Prepare CN4 to seven ways first.
+   Dry-mate CN1/CN2/CN4 to the front sockets with **11mm clear spacers**; do not
+   force or bottom pins. Tack opposite end pins, check square/flush placement,
+   then solder the rest. CN3 stays short and deliberately unmated.
 4. **Verify the rails with the module out of the socket** — `+12 V` and
    `−12 V` on `J2` from a **current-limited** supply (start at 50 mA/rail,
    ±12.0 V), with a **dummy load on P5V** (120 Ω to GND, i.e. ~42 mA — `U16`
@@ -135,7 +149,7 @@ most likely to be fitted one position off - check the silk before soldering.
 
 ## Notes
 
-- **Two-sided build**: the machine-placed parts are on both faces (98 bottom,
+- **Two-sided build**: the machine-placed parts are on both faces (99 bottom,
   8 top). Handle the board by the edges; the bottom side carries the analog
   circuitry and the plane.
 - **5 V rail is not a regulated 5.000 V rail.** `U16` (B2405S-2WR3) is a 2 W /
@@ -150,8 +164,9 @@ most likely to be fitted one position off - check the silk before soldering.
   has its own connectors and an SD slot on the underside.
 - **Heights to plan for** (all on the bottom, i.e. inside the rack cavity
   behind the panel): Daisy ≈ 12 mm, `U16` ≈ 10 mm, `C24`/`C25` ≈ 12 mm, `J2`
-  shroud ≈ 9 mm, `H1` ≈ 8.5 mm. The top side is flat apart from the 2.00 mm
-  headers (`CN1`–`CN4`) and the 2.54 mm `J1`.
+  shroud ≈ 9 mm, `H1` ≈ 8.5 mm. On top, CN1/CN2/CN4 have 6mm shoulders and 4mm
+  mating posts; CN3 stays short. `J1` plus its shunts must measure ≤9.5mm.
+  Board-centre spacing is not the clear spacer length; see the datum diagram.
 - **Jumper shunts are consumables, not BOM lines**: two 2.54 mm shunts on `J1`,
   see the MIDI section. Nothing else on this sheet is a loose part.
 - **Fiducials / test points are not parts**: nothing to fit, nothing in the BOM.

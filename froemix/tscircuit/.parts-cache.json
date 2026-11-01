@@ -307,6 +307,28 @@
   "stock": 143458,
   "type": "Aluminum Electrolytic Capacitors - Leaded"
  },
+ "C2883061": {
+  "assembly": false,
+  "brand": "XKB Connection",
+  "code": "C2883061",
+  "describe": "-40\u2103~+105\u2103 1 1x8P 250V 2mm 2mm 2mm 3A 8P Black Brass Gold Pin Header \u63d2\u4ef6,P=2mm Pin Headers ROHS",
+  "erp": "1x8P \u95f4\u8ddd:2mm \u65b9\u9488 \u76f4\u63d2 \u3010\u63d2\u4ef6\u3011",
+  "model": "X4612WV-08I-C40D28-E60",
+  "package": "Plugin,P=2mm",
+  "stock": 832,
+  "type": "Pin Headers"
+ },
+ "C2883069": {
+  "assembly": false,
+  "brand": "XKB Connection",
+  "code": "C2883069",
+  "describe": "-40\u2103~+105\u2103 1 16P 1x16P 250V 2mm 2mm 2mm 3A Black Brass Gold Pin Header \u63d2\u4ef6,P=2mm Pin Headers ROHS",
+  "erp": "1x16P \u95f4\u8ddd:2mm \u65b9\u9488 \u76f4\u63d2",
+  "model": "X4612WV-16I-C40D28-E60",
+  "package": "Plugin,P=2mm",
+  "stock": 198,
+  "type": "Pin Headers"
+ },
  "C3031175": {
   "assembly": false,
   "brand": "YLPTEC",

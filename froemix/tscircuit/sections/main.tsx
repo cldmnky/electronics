@@ -70,7 +70,10 @@ export const MainSection = () => (
         "pin1": "net.P3V3_D",
         "pin2": "net.GND",
       }} />
-    {/* CN1 A2005WV-16P - LCSC C225268 - jclpcb:HDR-TH_16P-P2.00-V-M */}
+    {/* CN1 XKB 6mm stacking header - C2883069; pads/XY unchanged.
+        E60 is 6mm TOTAL shoulder height; 4mm exposed posts mate the 4.3mm
+        euro sockets across an 11mm clear gap (doc/MECHANICAL-STACK.md).
+        Old 2mm-shoulder A2005WV CAD model removed: it misrepresents the height. */}
     <connector
       name="CN1"
       footprint={FP_jclpcb_HDR_TH_16P_P2_00_V_M}
@@ -78,13 +81,8 @@ export const MainSection = () => (
       schPinArrangement={{ leftSide: [1, 3, 5, 7, 9, 11, 13, 15], rightSide: [2, 4, 6, 8, 10, 12, 14, 16] }}
       pcbX="-17.58mm"
       pcbY="59.64mm"
-      supplierPartNumbers={{ jlcpcb: ["C225268"] }}
-      cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C225268.obj?uuid=a7f72e52c0db453aa9c56a72ae587e86",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C225268.step?uuid=a7f72e52c0db453aa9c56a72ae587e86",
-      pcbRotationOffset: 0,
-      modelOriginPosition: { x: -0.000025400000140507473, y: 0, z: 0.19999400000000023 },
-    }}
+      supplierPartNumbers={{ jlcpcb: ["C2883069"] }}
+      manufacturerPartNumber="X4612WV-16I-C40D28-E60"
       connections={{
         "pin1": "net.J_MIDI_IN_TIP",
         "pin2": "net.J_MIDI_IN_RING",
@@ -103,7 +101,7 @@ export const MainSection = () => (
         "pin15": "net.P3V3_A",
         "pin16": "net.GND",
       }} />
-    {/* CN2 A2005WV-16P - LCSC C225268 - jclpcb:HDR-TH_16P-P2.00-V-M */}
+    {/* CN2 same 6mm stacking header as CN1; C2883069, frozen pads/XY. */}
     <connector
       name="CN2"
       footprint={FP_jclpcb_HDR_TH_16P_P2_00_V_M}
@@ -111,13 +109,8 @@ export const MainSection = () => (
       schPinArrangement={{ leftSide: [1, 3, 5, 7, 9, 11, 13, 15], rightSide: [2, 4, 6, 8, 10, 12, 14, 16] }}
       pcbX="12.42mm"
       pcbY="-36.36mm"
-      supplierPartNumbers={{ jlcpcb: ["C225268"] }}
-      cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C225268.obj?uuid=a7f72e52c0db453aa9c56a72ae587e86",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C225268.step?uuid=a7f72e52c0db453aa9c56a72ae587e86",
-      pcbRotationOffset: 0,
-      modelOriginPosition: { x: -0.000025400000140507473, y: 0, z: 0.19999400000000023 },
-    }}
+      supplierPartNumbers={{ jlcpcb: ["C2883069"] }}
+      manufacturerPartNumber="X4612WV-16I-C40D28-E60"
       connections={{
         "pin1": "net.J_AUDIO_IN_L",
         "pin2": "net.J_AUDIO_IN_R",
@@ -157,7 +150,10 @@ export const MainSection = () => (
         "pin7": "net.SD_CMD",
         "pin8": "net.SD_CLK",
       }} />
-    {/* CN4 OLED - A2005WV-7P - LCSC C22438290 - HX PZ2.0-1x7P ZZ - jclpcb:HDR-TH_7P-P2.00-V-M */}
+    {/* CN4 OLED - C2883061 X4612WV-08I-C40D28-E60, cut to SEVEN ways:
+        remove pin 8 AND its two plastic cells before fitting; retain pin 1.
+        Same 6mm shoulder / 4mm post as CN1/CN2. Frozen seven-pad land pattern.
+        The stocked 7-way E60 was absent from JLC's catalogue at selection. */}
     <connector
       name="CN4"
       footprint={FP_jclpcb_HDR_TH_7P_P2_00_V_M}
@@ -165,14 +161,8 @@ export const MainSection = () => (
       schPinArrangement={{ leftSide: [1, 3, 5, 7], rightSide: [2, 4, 6] }}
       pcbX="24.5mm"
       pcbY="59.63mm"
-      supplierPartNumbers={{ jlcpcb: ["C22438290"] }}
-      manufacturerPartNumber="HX PZ2.0-1x7P ZZ"
-      cadModel={{
-      objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C22438290.obj?uuid=f62ae0b40c5a45078f02d1bb9a0fea45",
-      stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C22438290.step?uuid=f62ae0b40c5a45078f02d1bb9a0fea45",
-      pcbRotationOffset: 0,
-      modelOriginPosition: { x: 0, y: 0, z: 0.19999400000000023 },
-    }}
+      supplierPartNumbers={{ jlcpcb: ["C2883061"] }}
+      manufacturerPartNumber="X4612WV-08I-C40D28-E60"
       connections={{
         "pin1": "net.GND",
         "pin2": "net.P3V3_D",

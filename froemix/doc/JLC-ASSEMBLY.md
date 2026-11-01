@@ -42,13 +42,18 @@ SMT line will not try to place them. Choose one of:
    on the order page if you want them placed; JLC quotes THT separately and
    their library coverage for these headers/modules is partial.
 
-**Two-sided assembly:** 98 of the 106 SMT placements are on the bottom, 8 on the
+**Two-sided assembly:** 99 of the 107 SMT placements are on the bottom, 8 on the
 top (rail SMD). Enable "assembly for both sides" — that is two
 paste/stencil passes, and it costs more than a single-sided run.
 
+The three mating headers are hand-fitted THT: CN1/CN2 are C2883069, CN4 is a
+C2883061 eight-way strip **prepared to seven ways before fitting**. Do not accept
+an old short A2005WV substitute; the stack needs the 6mm shoulder. See
+[`MECHANICAL-STACK.md`](MECHANICAL-STACK.md).
+
 **Bottom-side rotation:** the exported CPL is in JLCPCB's convention (X/Y in mm,
 bottom layers mirrored, rotation in degrees CCW). All placements are 0°/180°
-except H1 (270°, its footprint is a pre-rotated variant): 92 of the 98 bottom
+except H1 (270°, its footprint is a pre-rotated variant): 93 of the 99 bottom
 placements are at 180° and 6 at 0°, the 8 top placements at 0°. **Check the 3D
 preview of the assembled board on the order page before paying** — a wrong
 bottom-side rotation is the classic failure here, and it is free to check.

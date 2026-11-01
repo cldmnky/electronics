@@ -10,8 +10,13 @@ requirement, not a preference: the base board has no protection that would
 survive a violation, and one violation can destroy parts that are not
 replaceable from stock (the owned Daisy Seed module).
 
-The interface is two 2.00 mm 16-pin headers (`A2005WV-16P`, LCSC `C225268`):
-`CN2` is the jack bus, `CN1` carries MIDI, the muxed ADC inputs and 3.3 V.
+The interface is two 2.00 mm 16-pin headers. Their purchase identity is now the
+6mm-shoulder XKB `X4612WV-16I-C40D28-E60` (`C2883069`) so the existing 4.3mm
+front sockets mate across 11mm clear spacers; the old `A2005WV-16P` was too
+short. Pads, positions and labels are unchanged. `CN2` is the jack bus; `CN1`
+carries MIDI, the muxed ADC inputs and 3.3 V. The mechanical contract (including
+CN4 cut to seven ways and the J1/shunt limit) is
+[`MECHANICAL-STACK.md`](MECHANICAL-STACK.md).
 
 ## 1. HARD requirements on `M_ADC_0` … `M_ADC_7`
 

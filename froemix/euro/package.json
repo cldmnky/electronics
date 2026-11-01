@@ -26,6 +26,8 @@
     "tscircuit": "^0.0.3044"
   },
   "devDependencies": {
+    "@jscad/modeling": "2.13.0",
+    "@jscad/stl-serializer": "2.1.23",
     "@tscircuit/cli": "^0.1.2427",
     "@types/react": "^19.0.0",
     "typescript": "^5.7.0"

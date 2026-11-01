@@ -8,7 +8,9 @@ faceplate and no stencil, BOM or pick-and-place file is needed for it.
 **Recommendation:** 2.0mm FR4, standard black solder mask, white silkscreen,
 routed outline, non-plated control holes. This preserves the existing nominal
 panel thickness and the tscircuit-only workflow. It is a design recommendation,
-not a placed order or an approval of the mechanical stack.
+not a placed order or an approval of the mechanical stack. The corrected
+header/spacer and printable actuator design is in
+[MECHANICAL-STACK.md](MECHANICAL-STACK.md); its physical acceptance is still open.
 
 ## Materials investigated
 
@@ -45,15 +47,19 @@ firmware or the PCB layout.
 
 ## Geometry contract
 
-All 31 existing circular holes retain their centres and diameters from
-`euro/lib/layout.ts`. The existing outer size remains 101.6 × 128.5mm and
-nominal thickness remains 2mm. The base board remains 16HP. Do not reposition a
-control or a mating connector to fit artwork.
+All 31 circular holes retain their centres from `euro/lib/layout.ts`. The
+mechanical stack correction intentionally enlarges **only NAV at (−28,25)**
+from **Ø7 to Ø8mm** for the extended cap's swept envelope. The other 30 diameters,
+101.6 ×128.5mm outline and 2mm nominal thickness stay unchanged. The audited
+fixture records that exception and retains its pre-artwork hashes as historical
+provenance, not as hashes of the revised geometry. The base remains 16HP.
+Do not reposition controls/connectors to fit artwork.
 
 The OLED opening retains its **30.5 × 16.0mm bounding box** and centre
 **(0, 42.8)mm**. Its formerly sharp internal corners need a routing radius of at
 least **0.5mm**. Rounded internal corners are the one intentional mechanical
-change in this panel revision. They must appear in the actual profile export,
+change in the artwork revision; the later NAV enlargement is recorded above.
+They must appear in the actual profile export,
 not only in a mockup.
 
 ### What the manufacturing files mean
@@ -69,7 +75,7 @@ not only in a mockup.
 
 JLCPCB says holes at or above 6.3mm are CNC-routed from a smaller drilled hole.
 The exporter can describe circular holes in the NPTH file. This does not prove
-how CAM will process them. Ask CAM to confirm the 7.0, 7.2 and 12.2mm holes are
+how CAM will process them. Ask CAM to confirm the 8.0, 7.2 and 12.2mm holes are
 routed to their finished sizes. If CAM requests profile circles instead, change
 the export and rerun the geometry checks; do not duplicate a hole in both files.
 
@@ -154,12 +160,14 @@ A passing circuit or artwork test does not establish real mechanical fit.
 4. Check jack/pot bushing thread engagement through a **2.2mm worst-case** panel.
    Confirm the control PCB's 128.5mm height clears the rack rails; that pre-existing
    board dimension is not changed by this artwork revision.
-5. The current `PANEL_GAP` is **9.0mm**. The documented button cap is **7.3mm**
-   above the control PCB, already 1.7mm short of the nominal panel underside.
-   Solve the cap/riser/reach mechanically; adding decoration does not solve it.
-6. Check the actual **current XUNPU** navigation switch and cap through the
-   opening. Old Alps joystick height statements elsewhere are not measurements
-   of this replacement part.
+5. The nominal `PANEL_GAP` is **9mm, PCB top to panel underside**. Fit the
+   supplied translucent **MODE plunger**, 5.8mm above the original 7.3mm cap,
+   with its flange behind the panel. Test free return/no preload. Do not raise
+   the switch on a 2mm riser: that still doesn't reach through a thick panel.
+6. Fit the supplied **NAV cap** to the current XUNPU 3.15mm square stem and test
+   full directional/centre travel through the new **Ø8mm** opening. Its ±8°
+   swept-envelope calculation is a prototype test bound, not a datasheet travel
+   specification. See the mechanical guide and `fab/euro/mechanical/` STLs.
 7. Check OLED glass, bezel and rounded opening alignment with the actual module.
    Verify viewing angle, module support and the clearance behind the panel.
 8. Review the actual Gerber silk/profile and all NPTH holes in the uploaded CAM
@@ -169,18 +177,20 @@ A passing circuit or artwork test does not establish real mechanical fit.
 
 The implementation has automated panel-artwork and fabrication-file checks, plus
 manual inspection of an independently rendered Gerber silk/profile/drill view.
-The control-hole centres and diameters were compared directly with the original
-panel export, not only with a second copy of the new layout data.
+The original artwork revision compared all holes directly with the old panel
+export. The later mechanical fix preserves all centres and 30 diameters and
+records the sole NAV Ø7→8mm change explicitly; artwork and actual exported
+Gerber/NPTH checks now use that revised contract.
 
-Final verification, after merging the latest `main` (including the mux-input
-contract and electronic-board release fixes):
+Historical artwork-revision verification (before the later mechanical-stack
+fix; current gate additionally checks Z/part identities and actuator prototypes):
 
 | Check | Result |
 | --- | --- |
 | `bun run panel:test` | 121 pass, 0 fail across 6 test files |
 | `bun run panel:check --variants` | Nord and Signal pass; minimum artwork stroke 0.25mm |
 | `bun run panel:release` and `--design signal` | Both ZIPs pass actual Gerber/profile/NPTH inspection |
-| `bun run gate` | All 10 euro-board steps pass, including the preserved mux-input contract |
+| `bun run gate` | historical: 10 euro steps at that revision; the current gate has 11, including the mechanical stack |
 | Original vs exported holes | All 31 positions and diameters identical |
 | Profile | 2 closed loops; original outer size, R0.5 OLED opening at the original centre and bounds |
 | Copper / paste / bottom legend | No drawn features |
@@ -191,15 +201,19 @@ contract and electronic-board release fixes):
 The initial visual check caught a misplaced print-template origin and an
 unapplied responsive SVG selector; both were corrected and have regression
 tests. Style detection also now rejects a mismatched `--design` instead of
-writing a misleadingly named preview. Electronic source files remain identical
-to the merged `main`.
+writing a misleadingly named preview. The later mechanical fix changes only the
+three base-header purchase identities (no pad/position/net changes), the Z/assembly
+contract and the NAV opening/nearby ticks. After it, the full euro gate (11 steps)
+and `make release` pass; `tsc --noEmit` still has the same 8 pre-existing errors,
+none in the new mechanical/panel files.
 
 Readable checked previews and print templates are committed in `euro/panel/`.
 The HTML bundles in `doc/panel-concepts/` are only the earlier concept studies.
 
-An independent reviewer agent timed out without delivering a review. The PR is
-therefore a **draft with independent review pending**. This is separate from the
-CAM acceptance and physical-fit checks above. A passing test suite is not a
+An independent reviewer agent on the artwork revision timed out without
+delivering a review. Independent mechanical review, CAM acceptance and the
+physical-fit checks above remain separate requirements; the artwork PR has
+since been merged, so the former “draft PR” description is historical. A passing test suite is not a
 substitute for any of those reviews.
 
 ## Official sources

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Euro board mechanical + connectivity gate.
 
-Reads the BUILT circuit JSON of both boards and proves three things:
+Reads the BUILT circuit JSON of both boards and the panel:
 
 1. The three mating sockets sit exactly on the base board's frozen connector
    coordinates, pin for pin, on the bottom side. The sockets are pre-mirrored
@@ -10,16 +10,27 @@ Reads the BUILT circuit JSON of both boards and proves three things:
 2. Every front-panel part is where lib/layout.ts says it is, and every panel
    hole is above its part - the panel and the board read the same table, and
    this is what proves it.
-3. The board routed completely: 0 unconnected ports, 0 trace errors.
+3. All 39 mating pads and their nets (including five reserved/unconnected
+   positions), connector faces and the four board-to-board standoffs agree.
+4. The board routed completely: 0 unconnected ports, 0 trace errors.
 
-Run `tsci build` first (scripts/gate.sh does).
+Z/part identities are checked separately by mechanical_check.ts. Build BOTH
+boards first (`make build`); scripts/gate.sh builds the euro entries.
 """
 
+import argparse
 import json
+import os
+import re
 import sys
 
-BOARD = "dist/index/circuit.json"
-PANEL = "dist/panel/circuit.json"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ap = argparse.ArgumentParser(description=__doc__)
+ap.add_argument("--base", default=os.path.join(HERE, "../../tscircuit/dist/index/circuit.json"))
+ap.add_argument("--board", default=os.path.join(HERE, "../dist/index/circuit.json"))
+ap.add_argument("--panel", default=os.path.join(HERE, "../dist/panel/circuit.json"))
+args = ap.parse_args()
+BOARD, PANEL = args.board, args.panel
 
 # Frozen connector contract with the base board (froemix/AGENTS.md §3). The
 # base board is the authority; these are its built coordinates.
@@ -39,8 +50,11 @@ def fail(msg):
 
 
 def load(path):
-    with open(path) as f:
-        return json.load(f)
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        sys.exit(f"missing {path}\nBuild BOTH boards first: make build (or the base gate), then the euro gate.")
 
 
 def index(cj):
@@ -72,14 +86,44 @@ def index(cj):
             continue
         out.setdefault(name, []).append(
             {"name": sp.get("name"), "x": e["x"], "y": e["y"],
-             "layers": e.get("layers", []), }
+             "source_port_id": sp["source_port_id"], "layers": e.get("layers", []), }
         )
     return out, centres
 
 
 # ---------------------------------------------------------------- 1. mating
 board = load(BOARD)
+base = load(args.base)
 ports, centres = index(board)
+base_ports, base_centres = index(base)
+
+
+def net_names(cj):
+    """Transitive source_trace graph: compare named nets, not JSON-local IDs."""
+    graph = {}
+    names = {e["source_net_id"]: e["name"] for e in cj if e["type"] == "source_net"}
+    for e in cj:
+        if e["type"] != "source_trace":
+            continue
+        ids = e.get("connected_source_port_ids", []) + e.get("connected_source_net_ids", [])
+        for node in ids:
+            graph.setdefault(node, set()).update(ids)
+    result = {}
+    for e in cj:
+        if e["type"] != "source_port":
+            continue
+        start = e["source_port_id"]
+        seen, todo = set(), [start]
+        while todo:
+            node = todo.pop()
+            if node not in seen:
+                seen.add(node)
+                todo.extend(graph.get(node, set()) - seen)
+        result[start] = {names[node] for node in seen if node in names}
+    return result
+
+
+base_nets, front_nets = net_names(base), net_names(board)
 print("mating sockets (bottom side, onto the base board headers):")
 for ref, spec in MATE.items():
     half = (spec["pins"] - 1) * PITCH / 2
@@ -95,14 +139,19 @@ for ref, spec in MATE.items():
     if len(got) != spec["pins"]:
         fail(f"{ref}: expected {spec['pins']} pads, found {len(got)}")
         continue
-    for pin in (1, spec["pins"]):
-        want_x = spec["x"] - half if pin == 1 else spec["x"] + half
+    base_got = {p["name"]: p for p in base_ports.get(ref, [])}
+    for pin in range(1, spec["pins"] + 1):
+        want_x = spec["x"] - half + (pin - 1) * PITCH
         p = got[pin]
         if abs(p["x"] - want_x) > 0.01 or abs(p["y"] - spec["y"]) > 0.01:
-            fail(
-                f"{ref} pin{pin} at ({p['x']:.3f}, {p['y']:.3f}), "
-                f"base board has ({want_x:.3f}, {spec['y']:.3f}) - mirror or offset is wrong"
-            )
+            fail(f"{ref} pin{pin}: frozen coordinate ({want_x:.3f}, {spec['y']:.3f}) mismatch")
+        bp = base_got.get(f"pin{pin}")
+        if not bp:
+            fail(f"base {ref} pin{pin} is missing")
+        elif abs(bp["x"] - p["x"]) > 0.01 or abs(bp["y"] - p["y"]) > 0.01:
+            fail(f"{ref} pin{pin}: base/front pads do not coincide")
+        elif base_nets[bp["source_port_id"]] != front_nets[p["source_port_id"]]:
+            fail(f"{ref} pin{pin}: net mismatch {base_nets[bp['source_port_id']]} vs {front_nets[p['source_port_id']]}")
     # every pin must be 2.00mm apart on the row
     ys = {round(p["y"], 2) for p in got.values()}
     if len(ys) != 1:
@@ -110,15 +159,23 @@ for ref, spec in MATE.items():
     print(f"  {ref}: {spec['pins']} pads, pin1 x={got[1]['x']:.2f}, "
           f"pin{spec['pins']} x={got[spec['pins']]['x']:.2f}, y={spec['y']:.2f}")
 
-# the sockets must be on the bottom
-for e in board:
-    if e["type"] != "pcb_component":
-        continue
-    src = next((s for s in board
-                if s["type"] == "source_component"
-                and s["source_component_id"] == e.get("source_component_id")), {})
-    if src.get("name") in MATE and e.get("layer") != "bottom":
-        fail(f"{src['name']}: layer is {e.get('layer')}, must be bottom")
+# These are component faces, NOT the copper layers of through-hole pcb_ports.
+for cj, label, side in ((base, "base header", "top"), (board, "front socket", "bottom")):
+    names = {s["source_component_id"]: s.get("name") for s in cj if s["type"] == "source_component"}
+    for e in cj:
+        if e["type"] == "pcb_component" and names.get(e.get("source_component_id")) in MATE:
+            if e.get("layer") != side:
+                fail(f"{label} {names[e['source_component_id']]}: layer must be {side}")
+
+standoffs = {(x, y) for x in (-36.95, 36.95) for y in (-60.75, 60.75)}
+for cj, label in ((base, "base"), (board, "front")):
+    holes = [e for e in cj if e["type"] == "pcb_hole"]
+    if len(holes) != 4:
+        fail(f"{label}: expected four board-to-board NPTH standoffs, got {len(holes)}")
+    for x, y in standoffs:
+        if not any(abs(h["x"] - x) < 0.01 and abs(h["y"] - y) < 0.01
+                   and abs(h["hole_diameter"] - 3.2) < 0.01 for h in holes):
+            fail(f"{label}: missing 3.2mm standoff at ({x}, {y})")
 
 # ------------------------------------------------- 2. panel <-> board alignment
 panel = load(PANEL)
@@ -130,10 +187,6 @@ def hole_at(x, y, tol=0.01):
     return any(abs(h["x"] - x) < tol and abs(h["y"] - y) < tol for h in p_holes)
 
 
-import os
-import re  # noqa: E402
-
-HERE = os.path.dirname(os.path.abspath(__file__))
 LAYOUT = os.path.join(HERE, "..", "lib", "layout.ts")
 lay = open(LAYOUT).read()
 
@@ -184,6 +237,12 @@ for part in PARTS:
         fail(f"{part['name']}: no panel hole at ({part['x']:.2f}, {part['y']:.2f})")
     claimed.append((part["x"], part["y"]))
 print(f"  {checked} parts checked")
+panel_refs = {p["name"] for p in PARTS} | {"D1", "DS1"}
+source_names = {e["source_component_id"]: e.get("name") for e in board if e["type"] == "source_component"}
+for pc in board:
+    if pc["type"] == "pcb_component" and source_names.get(pc.get("source_component_id")) in panel_refs:
+        if pc.get("layer") != "top":
+            fail(f"{source_names[pc['source_component_id']]}: panel control/module must face top")
 
 # visible panel LED: placed at LED_AT in sections/display.tsx, not a table row
 led_at = re.search(r"(?<!O)LED_AT: Pt = \{ x: (-?[\d.]+), y: (-?[\d.]+) \}", lay)
@@ -191,6 +250,9 @@ if led_at:
     lx, ly = float(led_at.group(1)), float(led_at.group(2))
     if not hole_at(lx, ly):
         fail(f"panel indicator LED: no hole at ({lx:.2f}, {ly:.2f})")
+    c = centres.get("D1")
+    if not c or abs(c["x"] - lx) > 0.01 or abs(c["y"] - ly) > 0.01:
+        fail("D1: panel indicator footprint origin does not match its hole")
     claimed.append((lx, ly))
 
 # Doepfer rail screws: 7.5mm in from each side, 3.0mm from top and bottom

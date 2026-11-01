@@ -333,13 +333,27 @@ PART_OVERRIDES = {
         "brand": "BOOMELE(Boom Precision Elec)",
         "why": "no JLCPCB part number in the KiCad BOM; 2x8 2.54mm IDC box header",
     },
-    # A2005WV headers: the same 2.00mm headers, but in stock. A2005WV-7P had 9 pcs
-    # and A2005WV-8P 131 pcs left at JLCPCB.
+    # Mechanical review: 2mm-shoulder headers cannot mate across the old 12mm
+    # gap. E60 is a 6mm TOTAL shoulder + 4mm mating post, with the existing
+    # 4.3mm sockets and 11mm clear spacers. Pads/XY/layers/nets stay frozen.
+    # doc/MECHANICAL-STACK.md; CN4's stocked 8-way strip is cut to seven ways.
+    "CN1": {
+        "lcsc": "C2883069",
+        "mpn": "X4612WV-16I-C40D28-E60",
+        "brand": "XKB Connection",
+        "why": "6mm stacking shoulder for the 11mm base-to-control gap",
+    },
+    "CN2": {
+        "lcsc": "C2883069",
+        "mpn": "X4612WV-16I-C40D28-E60",
+        "brand": "XKB Connection",
+        "why": "same stack as CN1; no change to the 16-pad land pattern",
+    },
     "CN4": {
-        "lcsc": "C22438290",
-        "mpn": "HX PZ2.0-1x7P ZZ",
-        "brand": "hanxia",
-        "why": "A2005WV-7P (C225259) has 9 pcs in stock",
+        "lcsc": "C2883061",
+        "mpn": "X4612WV-08I-C40D28-E60",
+        "brand": "XKB Connection",
+        "why": "6mm stacking shoulder; remove pin 8 and both plastic cells before fitting the frozen seven-pad footprint",
     },
     "CN3": {
         "lcsc": "C22438291",
