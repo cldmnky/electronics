@@ -135,6 +135,47 @@ with (fab / "euro-cpl-jlc.csv").open("w", newline="") as fh:
 
 (fab / "euro-pnp-all.csv").write_bytes((fab / "euro-pnp.csv").read_bytes())
 
+# Upload-sized split: euro-bom-smt.csv has only what JLCPCB places, and
+# euro-bom-hand.csv is the shopping list for the hand-soldered through-hole side.
+layer = {r["Designator"]: r["Layer"] for r in pnp_rows}
+smt_groups, hand_groups = {}, {}
+for row in bom_rows:
+    ref = row["Designator"]
+    lcsc = (row.get("JLCPCB Part #") or "").strip()
+    value = (row.get("Value") or "").strip()
+    mpn = (row.get("Comment") or "").strip()
+    footprint = (row.get("Footprint", "") or "").strip()
+    package = "-" if footprint == lcsc or not footprint else footprint
+    comment = value if value and value != lcsc else (mpn if mpn and mpn != lcsc else lcsc)
+    if ref in THT:
+        hand_groups.setdefault((lcsc, mpn or comment, comment, package), []).append(ref)
+    else:
+        smt_groups.setdefault((comment, package, lcsc), []).append(ref)
+
+with (fab / "euro-bom-smt.csv").open("w", newline="") as fh:
+    w = csv.writer(fh)
+    w.writerow(["Comment", "Designator", "Footprint", "LCSC Part #", "Quantity"])
+    for (comment, package, lcsc), refs in sorted(smt_groups.items(), key=lambda kv: kv[1][0]):
+        w.writerow([comment, ",".join(sorted(refs)), package, lcsc, len(refs)])
+
+with (fab / "euro-bom-hand.csv").open("w", newline="") as fh:
+    w = csv.writer(fh)
+    w.writerow(["LCSC Part #", "Quantity", "Comment", "MPN", "Package",
+                "Designators", "Side"])
+    for (lcsc, mpn, comment, package), refs in sorted(hand_groups.items(), key=lambda kv: kv[1][0]):
+        sides = sorted({layer.get(r, "?") for r in refs})
+        w.writerow([lcsc, len(refs), comment, mpn, package,
+                    ",".join(sorted(refs)), "/".join(sides)])
+
+all_refs = {r["Designator"] for r in bom_rows}
+split_refs = {r for refs in smt_groups.values() for r in refs} | {r for refs in hand_groups.values() for r in refs}
+if all_refs != split_refs:
+    sys.exit(f"BOM split lost designators: {sorted(all_refs ^ split_refs)}")
+
+hand_count = sum(len(r) for r in hand_groups.values())
+print(f"    euro-bom-smt.csv         {len(smt_groups)} unique parts, {sum(len(r) for r in smt_groups.values())} placements (JLC places these)")
+print(f"    euro-bom-hand.csv        {len(hand_groups)} unique parts, {hand_count} placements (hand-solder list)")
+
 # Cross-checks: every SMT part must be in the CPL, every CPL row must be an SMT
 # part, and nothing may be silently missing from either file.
 bom_smt = {r["Designator"] for r in bom_rows if SMT_RE.match(r["Designator"])}

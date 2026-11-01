@@ -105,3 +105,8 @@ without a preheat plate.
    rotations sane, Daisy footprint empty.
 5. Order PCB + stencil; assembly 2-sided if you want the bottom side machine
    placed.
+
+
+## Which BOM to upload
+
+Upload `*-bom-smt.csv`; `*-bom-hand.csv` is the hand-solder shopping list.
