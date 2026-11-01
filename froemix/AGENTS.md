@@ -451,3 +451,24 @@ release`; no item is aspirational.
   `froemix/fab/froemix-gerbers.zip` in a fab viewer yet. `check shorts` and
   `check pcb-style` are routing checks, not a DFM audit (mask expansion,
   annular ring, drill sizes, panel rails).
+
+## 9. Sourcing rule (both boards)
+
+Default supplier for every part is **LCSC / JLCPCB** - that is what `check_parts.py`
+validates against and what the SMT line places. **Any part that LCSC does not
+stock must be bought from Electrokit (`https://www.electrokit.com/`).** No third
+supplier, no distributor-only parts.
+
+Consequences to respect when a part is added:
+
+- Prefer an LCSC part, and prefer one that is **basic** at JLCPCB.
+- If the only option is not at LCSC, look for the Electrokit equivalent
+  *before* the footprint is drawn: the footprint follows the part that can
+  actually be bought. Record the Electrokit article number next to the LCSC
+  column in the BOM, and note in the design record (`doc/EURO-BOARD.md` §8 for
+  the euro board) that the part is distributor-sourced.
+- A part that is "not recommended for new designs" or discontinued **and** not at
+  LCSC is a stop item: find the replacement part from Electrokit, do not design
+  it in and hope.
+- The euro board's BOM and its Electrokit mapping live in `doc/EURO-BOARD.md`
+  ("BOM and sourcing"). Keep it current when a part changes.

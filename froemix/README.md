@@ -5,7 +5,7 @@ Daisy Seed based Eurorack module. The design is split over two boards:
 | Board | Contents | Status |
 | --- | --- | --- |
 | **base board** (`tmp/`, `tscircuit/`) | Daisy Seed, CD4051 ADC multiplexer, Eurorack power entry (+/-12V -> VCC/VEE, +5V, -10V reference), audio in/out buffers, CV in attenuverters, CV out drivers, sync in/out, opto isolated MIDI, OLED/microSD/PMOD headers, board-to-board headers | converted to tscircuit |
-| **eurorack board** (20HP, to be designed) | jacks, pots/attenuverters, MIDI TRS, display and panel hardware, mounted in the rack | not started — electrical interface frozen in [`doc/FRONTBOARD-INTERFACE.md`](doc/FRONTBOARD-INTERFACE.md) |
+| **eurorack board** (`euro/`, `doc/EURO-BOARD.md`) | 20HP front board: 10 mono jacks + 2 TRS MIDI jacks, 6 pots, 5-way UI joystick, illuminated MODE button, 6 jack activity LEDs, 1.3" OLED, and the panel | designed, routed, gated; the electrical contract it must meet is [`doc/FRONTBOARD-INTERFACE.md`](doc/FRONTBOARD-INTERFACE.md) |
 
 Inspiration: Electrosmith Daisy Patch (`~/Downloads/Patch-Design-Files-EAGLE`,
 20HP, 19 jacks, SMT euro jacks + TRS MIDI).
@@ -28,7 +28,13 @@ froemix/
 │   ├── report_decoupling.py cap -> IC routed-copper distances (informational)
 │   ├── lcsc_models.json     EasyEDA 3D models per LCSC code (harvested once)
 │   └── sim/                 four ngspice decks + RESULTS.md (gain, CV, ref bias)
-├── tscircuit/           the design (hand-maintained)
+├── euro/                the 20HP front board + panel (tscircuit project)
+│   ├── index.circuit.tsx    jacks, pots, OLED, LED + the 3 sockets that mate CN1/CN2/CN4
+│   ├── panel.circuit.tsx    the front panel (holes + silkscreen, no copper)
+│   ├── lib/layout.ts        ONE table of coordinates, imported by board and panel
+│   ├── lib/footprints.tsx   PJ398SM / PJ366ST jack, Alps RK09K, sockets, OLED, LED
+│   └── scripts/             gate.sh + check_mating.py (mating contract, panel alignment)
+├── tscircuit/           the base board design (hand-maintained)
 │   ├── index.circuit.tsx    board outline + one <schematicsheet> per KiCad sheet
 │   ├── sections/*.tsx       components per sheet, nets.tsx with all <net> elements,
 │   │                        fabrication.tsx (fiducials/test points), silk.tsx
@@ -53,6 +59,35 @@ edits made since the port — review it, don't blindly overwrite either side.
 The verification scripts (`check_netlist`, `check_footprints`, `check_parts`)
 keep working unchanged: they compare the KiCad sources against the BUILT
 `dist/index/circuit.json`, not against the generator.
+
+## Eurorack (front) board
+
+The 20HP board that carries every panel control, plus its panel:
+
+```bash
+cd euro
+bun install            # once
+bun run dev            # live preview
+bun run gate           # build + checks + mating contract + snapshot diff
+```
+
+It mates with the base board through CN1 (MIDI, muxed pot inputs, UI controls,
+LED, rails), CN2 (the jack bus) and CN4 (display), on 2.00mm sockets on its
+bottom side, at the base board's own frozen coordinates. CN3 (micro SD) is
+intentionally not mated yet. `euro/scripts/check_mating.py` verifies, from the
+built circuit JSON, that every socket pin lands on the base board's pin, that
+all 26 panel parts sit exactly above their panel holes, that no panel hole is
+orphaned, and that nothing is left unrouted.
+
+The UI costs no extra wires: the 5-way joystick and the illuminated button sit
+on the two muxed pot channels `M_ADC_6`/`M_ADC_7` as resistor ladders (see
+`doc/EURO-BOARD.md` §2 and §7 — the ladder levels are a firmware contract). The
+six jack LEDs need no pins at all: each one is driven by its own jack signal
+through a diode and a resistor.
+
+Design record, floorplan and the open decisions (joystick sourcing, OLED
+module, jack height, button part, CN3/SD, panel material):
+[`doc/EURO-BOARD.md`](doc/EURO-BOARD.md).
 
 ## Base board <-> eurorack board interface
 

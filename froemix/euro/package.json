@@ -1,0 +1,27 @@
+{
+  "name": "froemix-euro",
+  "version": "0.1.0",
+  "description": "Froemix euro board (20HP) - jacks, pots, MIDI TRS, OLED and panel; mates with the 16HP base board",
+  "type": "module",
+  "main": "index.circuit.tsx",
+  "scripts": {
+    "dev": "tsci dev",
+    "build": "tsci build",
+    "snapshot": "tsci snapshot",
+    "gate": "bash scripts/gate.sh",
+    "check": "tsci check netlist",
+    "check:placement": "tsci check placement",
+    "check:shorts": "tsci check shorts",
+    "check:pcb-style": "tsci check pcb-style",
+    "check:mating": "python3 scripts/check_mating.py",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tscircuit": "^0.0.3044"
+  },
+  "devDependencies": {
+    "@tscircuit/cli": "^0.1.2427",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}
