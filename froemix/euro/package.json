@@ -14,9 +14,15 @@
     "check:shorts": "tsci check shorts",
     "check:pcb-style": "tsci check pcb-style",
     "check:mating": "python3 scripts/check_mating.py",
+    "panel:build": "tsci build panel.circuit.tsx",
+    "panel:check": "bun scripts/panel_check.ts",
+    "panel:preview": "bun scripts/panel_preview.ts",
+    "panel:release": "bun scripts/panel_release.ts",
+    "panel:test": "bun test lib/panel",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tscircuit/alphabet": "^0.0.25",
     "tscircuit": "^0.0.3044"
   },
   "devDependencies": {

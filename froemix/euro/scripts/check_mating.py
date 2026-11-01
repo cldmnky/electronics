@@ -210,18 +210,129 @@ if orphans:
          + ", ".join(f"({h['x']:.1f},{h['y']:.1f})" for h in orphans[:6]))
 print(f"  {len(p_holes)} panel holes, all claimed")
 
-# display window
+# ---------------------------------------------------------------------------
+# Display window. The opening must keep the centre and the 30.5 x 16.0mm
+# bounding box the panel has always had, and its internal corners must be R0.5:
+# JLCPCB will not route a sharp internal rectangle. `RectCutoutProps` has no
+# corner radius and core drops the field, so the panel emits the window as a
+# polygon of chords - this check measures the polygon, it does not trust the
+# shape name. `lib/panel-checks.ts` runs the same tests on the same numbers.
+# ---------------------------------------------------------------------------
+WINDOW_RADIUS = 0.5
+WINDOW_SIZE = (30.5, 16.0)  # OLED.windowW x OLED.windowH in lib/layout.ts
+MAX_VERTEX_DEVIATION = 0.05
+MAX_CHORD_SAGITTA = 0.1
+MIN_CHORDS_PER_CORNER = 8
+
+
+def polyline_bounds(points):
+    xs = [p["x"] for p in points]
+    ys = [p["y"] for p in points]
+    return (
+        (min(xs) + max(xs)) / 2,
+        (min(ys) + max(ys)) / 2,
+        max(xs) - min(xs),
+        max(ys) - min(ys),
+    )
+
+
+def sd_rounded_rect(px, py, cx, cy, w, h, r):
+    """Signed distance to a rounded rectangle: negative inside, 0 on the edge."""
+    qx = abs(px - cx) - (w / 2 - r)
+    qy = abs(py - cy) - (h / 2 - r)
+    outside = (max(qx, 0.0) ** 2 + max(qy, 0.0) ** 2) ** 0.5
+    return outside + min(max(qx, qy), 0.0) - r
+
+
+def corner_stats(points, cx, cy, w, h, r):
+    """Chords per 90 degree corner and the coarsest chord sagitta found."""
+    corners = [
+        (cx + w / 2 - r, cy + h / 2 - r, 1, 1),
+        (cx - w / 2 + r, cy + h / 2 - r, -1, 1),
+        (cx - w / 2 + r, cy - h / 2 + r, -1, -1),
+        (cx + w / 2 - r, cy - h / 2 + r, 1, -1),
+    ]
+    chords = []
+    sagitta = 0.0
+    for ccx, ccy, sx, sy in corners:
+        on_arc = []
+        for i, p in enumerate(points):
+            dx = (p["x"] - ccx) * sx
+            dy = (p["y"] - ccy) * sy
+            if dx < -1e-6 or dy < -1e-6:
+                continue
+            dist = (dx * dx + dy * dy) ** 0.5
+            if abs(dist - r) > 0.02:
+                continue
+            on_arc.append((i, p, dx, dy))
+        n = 0
+        for k in range(len(on_arc) - 1):
+            i0, a, _, _ = on_arc[k]
+            i1, b, _, _ = on_arc[k + 1]
+            if i1 != i0 + 1:
+                continue  # a closed contour repeats its first point at the end
+            n += 1
+            mx = (a["x"] + b["x"]) / 2
+            my = (a["y"] + b["y"]) / 2
+            gap = r - ((mx - ccx) ** 2 + (my - ccy) ** 2) ** 0.5
+            sagitta = max(sagitta, gap)
+        chords.append(n)
+    return min(chords) if chords else 0, sagitta
+
+
 oled_y = float(re.search(r"OLED_AT: Pt = \{ x: (-?[\d.]+), y: (-?[\d.]+) \}", lay).group(2))
 win_dy = float(re.search(r"windowOffsetY: (-?[\d.]+)", lay).group(1))
-if p_cut:
+if len(p_cut) != 1:
+    fail(f"expected exactly 1 panel cutout, found {len(p_cut)}")
+elif p_cut:
     wx, wy = 0.0, oled_y + win_dy
     cut = p_cut[0]
-    cx = cut.get("center", {}).get("x", cut.get("x"))
-    cy = cut.get("center", {}).get("y", cut.get("y"))
-    if abs(cx - wx) > 0.01 or abs(cy - wy) > 0.01:
-        fail(f"panel window at ({cx:.2f}, {cy:.2f}), layout says ({wx:.2f}, {wy:.2f})")
+    shape = cut.get("shape", "rect")
+    if shape == "rect":
+        cx = cut.get("center", {}).get("x", cut.get("x"))
+        cy = cut.get("center", {}).get("y", cut.get("y"))
+        size = (cut["width"], cut["height"])
+        # a rect is only acceptable with a real internal radius; core cannot
+        # emit one, so on this panel a rect means the corners are sharp
+        radius = cut.get("corner_radius")
+        if radius is None:
+            fail("panel window is a sharp rectangle; JLCPCB needs R0.5 internal corners")
+        else:
+            print(f"  display window ({size[0]} x {size[1]}mm, R{radius}) at ({cx:.2f}, {cy:.2f})")
+    elif shape == "polygon":
+        points = cut.get("points") or []
+        if len(points) < 4:
+            fail(f"panel window polygon has {len(points)} points")
+            points = []
+        if points:
+            cx, cy, w, h = polyline_bounds(points)
+            size = (w, h)
+            worst = max(
+                abs(sd_rounded_rect(p["x"], p["y"], cx, cy, w, h, WINDOW_RADIUS)) for p in points
+            )
+            chords, sagitta = corner_stats(points, cx, cy, w, h, WINDOW_RADIUS)
+            if worst > MAX_VERTEX_DEVIATION:
+                fail(f"panel window departs {worst:.3f}mm from a R{WINDOW_RADIUS} rounded "
+                     f"rectangle (limit {MAX_VERTEX_DEVIATION}mm)")
+            if chords < MIN_CHORDS_PER_CORNER:
+                fail(f"panel window corners use {chords} chords per 90 degrees, "
+                     f"need at least {MIN_CHORDS_PER_CORNER}")
+            if sagitta > MAX_CHORD_SAGITTA:
+                fail(f"panel window corner chord sagitta is {sagitta:.4f}mm, "
+                     f"limit is {MAX_CHORD_SAGITTA}mm")
+            print(f"  display window ({size[0]:.3f} x {size[1]:.3f}mm, R{WINDOW_RADIUS}, "
+                  f"{chords} chords/corner, sagitta {sagitta:.4f}mm) at ({cx:.2f}, {cy:.2f})")
     else:
-        print(f"  display window ({cut['width']} x {cut['height']}mm) at ({wx:.2f}, {wy:.2f})")
+        fail(f"panel window is a {shape} cutout; only a rounded rectangle is accepted")
+        cx = cy = None
+        size = (None, None)
+
+    if cx is not None:
+        if abs(cx - wx) > 0.01 or abs(cy - wy) > 0.01:
+            fail(f"panel window at ({cx:.2f}, {cy:.2f}), layout says ({wx:.2f}, {wy:.2f})")
+        if abs(size[0] - WINDOW_SIZE[0]) > 0.01 or abs(size[1] - WINDOW_SIZE[1]) > 0.01:
+            fail(f"panel window is {size[0]:.3f} x {size[1]:.3f}mm, layout says "
+                 f"{WINDOW_SIZE[0]} x {WINDOW_SIZE[1]}mm")
 
 # --------------------------------------------- 3. connectivity of the board
 unconnected = [e for e in board if e["type"] == "pcb_port_not_connected_error"]
