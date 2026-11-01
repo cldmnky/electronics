@@ -95,9 +95,10 @@ metric units, empty copper and absence of assembly data. It writes:
 
 - `euro/dist/panel-release/froemix-panel-<design>-gerbers.zip` — the fabrication
   upload, not the electronic control board's Gerbers.
-- `euro/dist/panel-release/panel-release.json` — selected style, SHA-256,
-  geometry, check results and the order-remarks text. A later release updates
-  this manifest for the newly selected design; check the filename before upload.
+- `euro/dist/panel-release/panel-release-<design>.json` — each style's SHA-256,
+  geometry, check results and order-remarks text. `panel-release.json` is also
+  written as the most recently selected release; check its design and ZIP
+  filename before upload.
 - `euro/dist/panel-release/preview/panel-<design>-preview.svg` / `.html` — the
   exact built print paths, with conservative hardware outlines for reference.
 - `euro/dist/panel-release/preview/panel-<design>-print-1to1.svg` — A4 dimensional
@@ -170,6 +171,31 @@ The implementation has automated panel-artwork and fabrication-file checks, plus
 manual inspection of an independently rendered Gerber silk/profile/drill view.
 The control-hole centres and diameters were compared directly with the original
 panel export, not only with a second copy of the new layout data.
+
+Final verification, after merging the latest `main` (including the mux-input
+contract and electronic-board release fixes):
+
+| Check | Result |
+| --- | --- |
+| `bun run panel:test` | 121 pass, 0 fail across 6 test files |
+| `bun run panel:check --variants` | Nord and Signal pass; minimum artwork stroke 0.25mm |
+| `bun run panel:release` and `--design signal` | Both ZIPs pass actual Gerber/profile/NPTH inspection |
+| `bun run gate` | All 10 euro-board steps pass, including the preserved mux-input contract |
+| Original vs exported holes | All 31 positions and diameters identical |
+| Profile | 2 closed loops; original outer size, R0.5 OLED opening at the original centre and bounds |
+| Copper / paste / bottom legend | No drawn features |
+| Phone and desktop previews | Checked at 390px and 1280px, no horizontal overflow, console errors or failed requests |
+| A4 fit template | Panel correctly placed at x54.2–155.8 / y20–148.5mm; 100mm bar and notes below the panel |
+| `tsc --noEmit` | Not green: 8 pre-existing electronic-file diagnostics remain; none in panel files |
+
+The initial visual check caught a misplaced print-template origin and an
+unapplied responsive SVG selector; both were corrected and have regression
+tests. Style detection also now rejects a mismatched `--design` instead of
+writing a misleadingly named preview. Electronic source files remain identical
+to the merged `main`.
+
+Readable checked previews and print templates are committed in `euro/panel/`.
+The HTML bundles in `doc/panel-concepts/` are only the earlier concept studies.
 
 An independent reviewer agent timed out without delivering a review. The PR is
 therefore a **draft with independent review pending**. This is separate from the

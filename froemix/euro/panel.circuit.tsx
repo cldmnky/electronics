@@ -14,7 +14,7 @@
 //
 // Cutouts/holes:
 //   4x M3 rail screws   (+/-43.3, +/-61.25)   Doepfer 3U
-//   6x pot bushings     M7                     Alpha 9mm
+//   6x pot bushings     M7                     Alps RK09K
 //  12x jack bushings    6.2mm                  XKB PJ-301M-2-B (mono) /
 //                                               XKB PJ-301M-3-B (TRS)
 //   6x jack LEDs         3.2mm

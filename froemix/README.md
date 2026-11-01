@@ -33,7 +33,8 @@ froemix/
 │   ├── panel.circuit.tsx    the front panel (holes + silkscreen, no copper)
 │   ├── lib/layout.ts        ONE table of coordinates, imported by board and panel
 │   ├── lib/footprints.tsx   PJ398SM / PJ366ST jack, Alps RK09K, sockets, OLED, LED
-│   └── scripts/             gate.sh + check_mating.py (mating contract, panel alignment)
+│   ├── panel/               built-artwork Nord/Signal previews and 1:1 fit templates
+│   └── scripts/             board/panel gates and separate fabrication releases
 ├── tscircuit/           the base board design (hand-maintained)
 │   ├── index.circuit.tsx    board outline + one <schematicsheet> per KiCad sheet
 │   ├── sections/*.tsx       components per sheet, nets.tsx with all <net> elements,
@@ -68,7 +69,7 @@ The 20HP board that carries every panel control, plus its panel:
 cd euro
 bun install            # once
 bun run dev            # live preview
-bun run gate           # build + checks + mating contract + snapshot diff
+bun run gate           # 10 steps: board + mux contract + panel art/tests + snapshots
 ```
 
 It mates with the base board through CN1 (MIDI, muxed pot inputs, UI controls,

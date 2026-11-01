@@ -202,13 +202,15 @@ reachable from the back.
 
 | Step | Result |
 | --- | --- |
-| `tsci build` | 2 circuits, 98 traces / 58 vias / 2497mm copper, 0 unconnected |
+| `tsci build` | 2 circuits, 100 traces / 71 vias / 2497mm copper, 0 unconnected |
 | `tsci check netlist` | source diagnostics, no errors |
 | `tsci check placement` | Errors 0, Warnings 0 |
 | `tsci check shorts` | no shorts |
 | `tsci check pcb-style` | clean |
-| `scripts/check_mating.py` | 3 sockets pin-for-pin on the base board, 26 panel parts aligned with their holes, 31 holes all claimed, window at (0, 40.5) |
+| `scripts/check_mating.py` | 3 sockets pin-for-pin on the base board, 26 declared panel parts aligned, 31 holes all claimed, R0.5 window at (0, 42.8) |
 | `scripts/check_madc.py` | the 8 `M_ADC_*` nets are closed islands of pots/joystick/button referenced only to `P3V3_A`/`GND` (the base-board mux has no clamps - see `doc/FRONTBOARD-INTERFACE.md`) |
+| `scripts/panel_check.ts` | frozen 31-hole geometry, OLED bounds/radius, stroked artwork and hardware keepouts pass |
+| `bun test lib/panel` | 121 tests pass; geometry, artwork, export and preview regressions |
 | `tsci snapshot --test` | schematic + PCB baselines match |
 
 The build log's `source_pin_missing_trace_warning`s are the 10 mono-jack tip
@@ -231,15 +233,14 @@ channels:
 
 ## 8. Open questions (decide before ordering)
 
-1. **Joystick sourcing.** The Alps `SKQUCAA010` is "not recommended for new
-   designs" and no LCSC/JLC listing exists — it must be bought from a
-   distributor (Newark 59M1983, element14 1435775, Mouser). LCSC stock
-   alternative: `SKRHABE010` (C139794, ~$0.39), the same 5-way function but SMD
-   and much smaller, so it needs a different panel treatment. **This is the one
-   part that can block the build.**
-2. **Joystick stem height.** The body is 10mm tall, i.e. flush with
-   `PANEL_GAP = 10.0mm`. Either fit a cap that clamps over the 3.2mm stem above
-   the panel, or reduce `PANEL_GAP`. Measure the part.
+1. **Joystick sourcing — selected.** The current BOM uses XUNPU
+   `WS-1004-ARL10026` (LCSC C42377836), not the retired Alps assumption.
+   LCSC/JLCPCB remains the first supplier; use Electrokit for any unavailable
+   part, as required by `AGENTS.md` §9.
+2. **Joystick stem height — unverified.** Measure the selected XUNPU part and
+   its actual cap against `PANEL_GAP = 9.0mm` and the 2mm faceplate. The old
+   Alps body/stem dimensions do not establish that this part reaches through
+   the panel. See [FRONT-PANEL.md](FRONT-PANEL.md) before ordering.
 3. **Button height and LED polarity.** The `K6-1212A02` cap tops out at 7.3mm
    against a 9mm panel gap (§1) — it needs a riser, a taller cap, or a
    panel-mount part. Its datasheet draws LED `+`/`-` but does not map them to
