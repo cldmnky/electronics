@@ -275,14 +275,22 @@ change**.
 
 ### Still to verify before ordering
 
-1. **XKB jack pad layout — the one open hardware risk.** The XKB `PJ-301M`
-   datasheet has **no PCB land pattern at all**: it prints 8.20mm between the two
-   lugs (the Thonkiconn's equivalent spacing is 8.3mm between tip-switch and
-   tip), and it prints no three-hole line. So `lib/footprints.tsx` still carries
-   the Thonkiconn table (sleeve / tip switch / tip in a line at 0 / 3.1 /
-   11.4mm), which is *consistent* with the 8.2mm print but not proven. Check the
-   first part that arrives against the pads, or get the XKB mechanical drawing,
-   before ordering the boards.
+1. **Jack pad line — resolved to a tolerant footprint.** The XKB `PJ-301M`
+   datasheet has **no PCB land pattern**, so the pads were cross-checked against
+   two independent footprints of the same family:
+
+   | Source | short gap | long gap | span |
+   | --- | --- | --- | --- |
+   | KiCad official (QingPu WQP-PJ398SM) | 3.1mm | 8.3mm | 11.4mm |
+   | 4ms `PJ301M-12` (shipping product) | 2.41mm | 8.56mm | 10.97mm |
+   | XKB drawing (prints only the long gap) | — | 8.20mm | — |
+
+   The long gap agrees within 0.4mm; the short gap disagrees by 0.7mm. The real
+   pins are 1.0 x 0.2mm **flat tabs**, which want slots anyway, so all three
+   pads are 1.2 x 2.0mm slots along the pin line: that takes the tab the way the
+   part is designed to fit and covers either short gap. A first-article check is
+   still worth ten minutes, but the footprint no longer depends on which
+   variant arrives — **the same board takes the XKB part or a Thonkiconn.**
 2. **OLED module, resolved.** The footprint now follows the `HS13L02B4S01`
    drawing: 35.4 x 33.5mm body, header row 2.0mm from the connector-side edge,
    active area 29.42 x 14.70mm centred 12.70mm below the header row, panel

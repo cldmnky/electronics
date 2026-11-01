@@ -200,8 +200,21 @@ export const FP_LED_3MM = (
 )
 
 // --------------------------------------------------------------------------
-// Thonkiconn PJ398SM mono 3.5mm jack (official KiCad footprint
-// Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical_CircularHoles, pads S/T/TN).
+// Mono 3.5mm Eurorack jack, PJ-301M family: XKB `PJ-301M-2-B` (LCSC C381126) or
+// the Thonkiconn PJ398SM / PJ301M-12, which share the mechanics.
+//
+// PAD LINE. Three pads in one line with a LONG gap (sleeve to tip) and a SHORT
+// gap (sleeve to tip-switch). Two published footprints of this family give:
+//   KiCad official (QingPu WQP-PJ398SM): sleeve 0, tip switch 3.1, tip 11.4
+//   4ms PJ301M-12 (shipping Eurorack product): 0 / 8.56 / 10.97 from the other
+//     end, i.e. the same two gaps in reverse order
+// and the XKB drawing prints 8.20mm across the long gap (vs 8.3 / 8.56).
+// The long gap agrees within 0.4mm; the SHORT gap disagrees by 0.7mm (3.1 vs
+// 2.41). The real pins are 1.0 x 0.2mm flat tabs that want slots anyway, so
+// every pad here is a 1.2 x 2.0mm slot along the pin line: it swallows the
+// family tolerance AND takes the tab the way the part was designed to be
+// fitted. Pad ring 0.4/0.3mm, and the 2.6mm pad height keeps 0.5mm to the
+// neighbouring pad (3.1mm apart).
 //
 // Origin = the jack barrel (the panel hole), not pad S: the KiCad footprint's
 // origin is 6.48mm away from the barrel, so every pad is shifted by that much
@@ -218,28 +231,31 @@ export const FP_JACK_MONO = (
       pcbX="0mm"
       pcbY="6.48mm"
       portHints={["pin1"]}
-      shape="circular_hole_with_rect_pad"
-      holeDiameter="1.22mm"
-      rectPadWidth="1.93mm"
-      rectPadHeight="1.83mm"
-      holeOffsetX="0mm"
-      holeOffsetY="0mm"
+      shape="oval"
+      holeWidth="1.2mm"
+      holeHeight="2mm"
+      outerWidth="2mm"
+      outerHeight="2.6mm"
     />
     <platedhole
       pcbX="0mm"
       pcbY="-4.92mm"
       portHints={["pin2"]}
-      shape="circle"
-      holeDiameter="1.43mm"
-      outerDiameter="2.13mm"
+      shape="oval"
+      holeWidth="1.2mm"
+      holeHeight="2mm"
+      outerWidth="2mm"
+      outerHeight="2.6mm"
     />
     {/* tip switch - no port, not used */}
     <platedhole
       pcbX="0mm"
       pcbY="3.38mm"
-      shape="circle"
-      holeDiameter="1.42mm"
-      outerDiameter="2.13mm"
+      shape="oval"
+      holeWidth="1.2mm"
+      holeHeight="2mm"
+      outerWidth="2mm"
+      outerHeight="2.6mm"
     />
     {/* body 9.0 x 10.45mm, barrel towards -Y */}
     <silkscreenpath route={[{ x: -4.5, y: -6.0 }, { x: 4.5, y: -6.0 }]} />
@@ -252,9 +268,9 @@ export const FP_JACK_MONO = (
 )
 
 // --------------------------------------------------------------------------
-// Thonkiconn PJ366ST / WQP419GR stereo (TRS) 3.5mm jack - the TRS-MIDI socket.
-// Author: clacktronics/AudioJacks, `Jack_3.5mm_QingPu_WQP-PJ366ST_Vertical`
-// (legacy `(module ...)` file, numbers transcribed).
+// Stereo (TRS) 3.5mm jack - the TRS-MIDI socket. XKB `PJ-301M-3-B` (LCSC
+// C381127), same body and bushing as the mono part, or the QingPu PJ366ST.
+// Same slotted-pad treatment as the mono jack (see above).
 //
 // Origin = the jack barrel. Pads are slotted (1.6 x 0.6mm) with 2.6 x 2.6mm
 // pads; tscircuit models a slot as an oval plated hole.
@@ -268,9 +284,9 @@ export const FP_JACK_TRS = (
       pcbY="4.92mm"
       portHints={["pin1"]}
       shape="oval"
-      holeWidth="1.6mm"
-      holeHeight="0.6mm"
-      outerWidth="2.6mm"
+      holeWidth="1.2mm"
+      holeHeight="2mm"
+      outerWidth="2mm"
       outerHeight="2.6mm"
     />
     <platedhole
@@ -278,9 +294,9 @@ export const FP_JACK_TRS = (
       pcbY="-3.38mm"
       portHints={["pin2"]}
       shape="oval"
-      holeWidth="1.6mm"
-      holeHeight="0.6mm"
-      outerWidth="2.6mm"
+      holeWidth="1.2mm"
+      holeHeight="2mm"
+      outerWidth="2mm"
       outerHeight="2.6mm"
     />
     <platedhole
@@ -288,10 +304,10 @@ export const FP_JACK_TRS = (
       pcbY="-6.48mm"
       portHints={["pin3"]}
       shape="oval"
-      holeWidth="1.6mm"
-      holeHeight="0.6mm"
-      outerWidth="3.1mm"
-      outerHeight="2.1mm"
+      holeWidth="1.2mm"
+      holeHeight="2mm"
+      outerWidth="2mm"
+      outerHeight="2.6mm"
     />
     <silkscreenpath route={[{ x: -4.5, y: -4.47 }, { x: 4.5, y: -4.47 }]} />
     <silkscreenpath route={[{ x: -4.5, y: -4.47 }, { x: -4.5, y: 5.98 }]} />
