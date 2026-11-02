@@ -11,6 +11,8 @@
 # Neither the gate nor this script writes to git, and nothing outside
 # froemix/fab/ is deleted (that directory is generated output).
 set -euo pipefail
+export FROEMIX_BUILD_DATE="${FROEMIX_BUILD_DATE:-$(date -u +%F)}"
+printf 'Build date (UTC): %s\n' "$FROEMIX_BUILD_DATE"
 
 cd "$(dirname "$0")/.."
 PROJECT_DIR=$(pwd)

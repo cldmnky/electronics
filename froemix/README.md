@@ -61,6 +61,23 @@ The verification scripts (`check_netlist`, `check_footprints`, `check_parts`)
 keep working unchanged: they compare the KiCad sources against the BUILT
 `dist/index/circuit.json`, not against the generator.
 
+## Printed board identity
+
+The base, euro board and panel share `shared/build-info.ts`: **Rev 0.1** and a
+UTC `YYYY-MM-DD` build date are printed on their rear faces. The base also
+carries the Nord monoline FROEMIX wordmark, an OSHW gear and a short hand-build
+reminder. The gear is not a certification mark; its attribution, share-alike
+notice and compliance caveat are in [`assets/README.md`](assets/README.md).
+
+`make release` captures one date for all three outputs. Set
+`FROEMIX_BUILD_DATE=2026-11-02 make release` to reproduce a dated set; use a
+real calendar date. A revision bump is an explicit edit to `BOARD_REVISION` in
+`shared/build-info.ts`. The snapshot gate deliberately uses `2024-08-10`, so
+snapshots are stable and that reference date is **not** the release date.
+Install both board projects with `make install`: the base reuses the euro
+panel's canonical Nord wordmark geometry. Check the generated rear silkscreens
+in the manufacturer preview; a successful gate is not CAM approval.
+
 ## Eurorack (front) board
 
 The 20HP board that carries every panel control, plus its panel:

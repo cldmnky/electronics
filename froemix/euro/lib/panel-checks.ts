@@ -18,6 +18,7 @@
 // It does NOT prove mechanical fit with real hardware, nor that JLCPCB accepts
 // the files. Those stay in froemix/doc/FRONT-PANEL.md.
 
+import { PANEL_REAR_STROKE, panelRearPaths } from "./panel-rear"
 import {
   MIN_ELEMENT_CLEARANCE,
   MIN_GLYPH_CLEARANCE,
@@ -375,7 +376,7 @@ export const artworkMismatch = (
   art: PanelArtwork,
 ): { missing: number; extra: number; built: number; art: number } => {
   const builtKeys = new Map<string, number>()
-  for (const path of circuitJson.filter((e) => e.type === "pcb_silkscreen_path")) {
+  for (const path of circuitJson.filter((e) => e.type === "pcb_silkscreen_path" && (e.layer ?? "top") === "top")) {
     const key = pathKey(path.route ?? [], path.stroke_width ?? 0)
     builtKeys.set(key, (builtKeys.get(key) ?? 0) + 1)
   }
@@ -420,6 +421,14 @@ export const checkBuiltArtwork = (circuitJson: CjElement[], art: PanelArtwork): 
     )
   }
 
+  // The rear is separate from the front-artwork comparison, but must match the
+  // complete revision/date geometry exactly (including duplicate segments).
+  const rear = silk.filter((e) => e.layer === "bottom")
+  const expectedRear = panelRearPaths().map((p) => pathKey(p, PANEL_REAR_STROKE)).sort()
+  const builtRear = rear.map((p) => pathKey(p.route ?? [], p.stroke_width ?? 0)).sort()
+  if (JSON.stringify(expectedRear) !== JSON.stringify(builtRear)) {
+    problems.push(fail("silk", "rear revision/date paths differ from the build identity"))
+  }
   const margin = PANEL_MARGIN(art)
   const windowPolygon = art.window.polygon
   for (const path of silk) {
@@ -429,7 +438,7 @@ export const checkBuiltArtwork = (circuitJson: CjElement[], art: PanelArtwork): 
       problems.push(fail("silk", `path ${path.pcb_silkscreen_path_id} has ${route.length} points`))
       continue
     }
-    if ((path.layer ?? "top") !== "top") {
+    if (!["top", "bottom"].includes(path.layer ?? "top")) {
       problems.push(fail("silk", `path ${path.pcb_silkscreen_path_id} is on layer ${path.layer}`))
     }
     if (sw < MIN_STROKE_WIDTH - 1e-9) {

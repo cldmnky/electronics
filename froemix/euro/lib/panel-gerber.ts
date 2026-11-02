@@ -16,6 +16,7 @@
 // Not proven here: how JLCPCB's CAM turns 6.3mm+ holes into routed holes, and
 // whether the finished panel fits real hardware. See doc/FRONT-PANEL.md.
 
+import { PANEL_REAR_STROKE, panelRearPaths } from "./panel-rear"
 import { MIN_STROKE_WIDTH, artworkPaths, type PanelArtwork } from "./panel-art"
 import { measureRoundedCorners, type PanelFixture, type Problem } from "./panel-checks"
 import { polylineBounds, type Pt } from "./panel-geometry"
@@ -413,8 +414,31 @@ export const verifyPanelRelease = (opts: {
       )
     }
   }
-  if (silkBottom.length > 0 && silkBottom[0]!.draws.length > 0) {
-    problems.push(fail("silk", `${silkBottom[0]!.name} prints on the back; the panel legend is top only`))
+  if (silkBottom.length !== 1) {
+    problems.push(fail("silk", `expected 1 rear identity legend, found ${silkBottom.length}`))
+  } else {
+    const rear = silkBottom[0]!
+    const expected = panelRearPaths().length
+    if (rear.contours.length !== expected || rear.draws.length === 0) {
+      problems.push(fail("silk", `${rear.name} prints ${rear.contours.length} rear paths; expected ${expected}`))
+    }
+    // Gerber writers may append a closing point even to open paths. Compare
+    // geometry at exporter precision, retaining duplicate paths as a multiset.
+    const contourKey = (path: Pt[]) => {
+      const coords = path.map(p => `${p.x.toFixed(5)},${p.y.toFixed(5)}`)
+      if (coords.length > 2 && coords[coords.length - 1] === coords[0]) coords.pop()
+      return coords.join("|")
+    }
+    const actual = rear.contours.map(contourKey).sort()
+    const want = panelRearPaths().map(contourKey).sort()
+    if (JSON.stringify(actual) !== JSON.stringify(want)) {
+      problems.push(fail("silk", `${rear.name} rear revision/date geometry differs from the build identity`))
+    }
+    for (const a of rear.apertures.filter((v) => rear.usedApertures.includes(v.code))) {
+      if (Math.abs(a.diameter - PANEL_REAR_STROKE) > 1e-6) {
+        problems.push(fail("silk", `${rear.name} rear identity aperture is ${a.diameter}mm, expected ${PANEL_REAR_STROKE}mm`))
+      }
+    }
   }
   if (masks.length !== 2) {
     problems.push(fail("mask", `expected 2 mask layers, found ${masks.length}`))

@@ -7,6 +7,7 @@
 # their numbers: KiCad ERC (check:erc only prints a count) and the placement
 # DRC (the one known H1 warning must stay a warning, not an error).
 set -euo pipefail
+export FROEMIX_BUILD_DATE="${FROEMIX_BUILD_DATE:-$(date -u +%F)}"
 
 cd "$(dirname "$0")/.."
 PROJECT_DIR=$(pwd)
@@ -87,6 +88,7 @@ run build bun run build
 # intentionally still on top. Exercise the checker against negative mutations.
 python3 scripts/check_smt_side.py
 python3 scripts/test_smt_side.py
+bun test scripts/test_silk.test.ts
 
 # 3. KiCad netlist vs built circuit: pin for pin.
 step "KiCad netlist vs built circuit"
@@ -191,7 +193,16 @@ run silk bun run check:silk
 
 # 15. Regenerate schematic/PCB/3D and diff against the committed baselines.
 step "tsci snapshot --test --3d"
-run snapshot bunx tsci snapshot --test --3d
+# snapshot reads dist: compare a fixed date, then restore the release build.
+snapshot_diff() (
+  local saved
+  saved=$(mktemp -d)
+  cp dist/index/circuit.json "$saved/index.json"
+  trap 'cp "$saved/index.json" dist/index/circuit.json; rm -rf "$saved"' EXIT
+  export FROEMIX_BUILD_DATE=2024-08-10
+  bun run build && bunx tsci snapshot --test --3d
+)
+run snapshot snapshot_diff
 
 printf '\n=== gate passed: %d steps in %ds' "$STEP" "$((SECONDS - GATE_START))"
 if [ -n "$INCOMPLETE" ]; then

@@ -12,6 +12,9 @@ EURO       := euro
 FAB        := fab
 EURO_FAB   := $(FAB)/euro
 BUN        := bun
+# Capture one UTC build date for every subprocess in a two-board release.
+# Override for an intentional reproducible build (YYYY-MM-DD).
+export FROEMIX_BUILD_DATE ?= $(shell date -u +%F)
 
 # Kept in one place so every target reports the same boards.
 BOARD      := froemix base board (80.9 x 128.5 mm, 4 layers, 16HP x 3U) + euro board (20HP front board + panel)
@@ -58,8 +61,8 @@ release: ## gates + export ALL fab sets (base board, euro board, panel) into fab
 	cd $(EURO) && bash scripts/release.sh
 
 snapshots: ## refresh both boards' schematic/PCB/3D snapshots
-	cd $(TSCIRCUIT) && $(BUN) x tsci snapshot --update --3d
-	cd $(EURO) && $(BUN) x tsci snapshot --update --3d
+	cd $(TSCIRCUIT) && FROEMIX_BUILD_DATE=2024-08-10 $(BUN) x tsci build && FROEMIX_BUILD_DATE=2024-08-10 $(BUN) x tsci snapshot --update --3d
+	cd $(EURO) && FROEMIX_BUILD_DATE=2024-08-10 $(BUN) x tsci build && FROEMIX_BUILD_DATE=2024-08-10 $(BUN) x tsci snapshot --update --3d
 
 erc: ## KiCad ERC on the ported schematics (0 unexcluded errors expected)
 	cd $(TSCIRCUIT) && $(BUN) run check:erc

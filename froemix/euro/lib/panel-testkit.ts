@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { artworkPaths, type PanelArtwork } from "./panel-art"
+import { PANEL_REAR_STROKE, panelRearPaths } from "./panel-rear"
 import type { PanelFixture } from "./panel-checks"
 import type { ReleaseFile } from "./panel-gerber"
 
@@ -56,6 +57,10 @@ export const syntheticPanel = (art: PanelArtwork, fixture = loadFixture()): CjEl
       route: p.path.map((q) => ({ x: q.x, y: q.y })),
     })
   })
+  panelRearPaths().forEach((route, i) => elements.push({
+    type: "pcb_silkscreen_path", pcb_silkscreen_path_id: `rear_${i}`,
+    layer: "bottom", stroke_width: PANEL_REAR_STROKE, route,
+  }))
   return elements
 }
 
@@ -141,6 +146,10 @@ export const syntheticRelease = (art: PanelArtwork, fixture = loadFixture()): Re
     {
       name: "F_SilkScreen.gbr",
       text: `%TF.FileFunction,Legend,Top*%\n${gerberPaths(artworkPaths(art))}`,
+    },
+    {
+      name: "B_SilkScreen.gbr",
+      text: `%TF.FileFunction,Legend,Bot*%\n${gerberPaths(panelRearPaths().map(path => ({ path, strokeWidth: PANEL_REAR_STROKE })))}`,
     },
     {
       name: "F_Mask.gbr",

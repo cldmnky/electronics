@@ -21,6 +21,7 @@
 # Needs bun (the tscircuit CLI is a bun program) and python3.
 
 set -uo pipefail
+export FROEMIX_BUILD_DATE="${FROEMIX_BUILD_DATE:-$(date -u +%F)}"
 cd "$(dirname "$0")/.."
 
 LOG_DIR="${TMPDIR:-/tmp}/froemix-euro-gate"
@@ -56,7 +57,18 @@ step "mux input contract" python3 scripts/check_madc.py
 step "mechanical stack" bun scripts/mechanical_check.ts
 step "panel artwork"  bun scripts/panel_check.ts
 step "regression tests" bash -c 'python3 scripts/test_mating.py && bun test lib/panel lib/mechanical'
-step "snapshot diff"  npx tsci snapshot --test
+# tsci snapshot reads dist rather than rebuilding; preserve the actual dated
+# build for later release checks while comparing a deterministic snapshot.
+snapshot_diff() (
+  local saved
+  saved=$(mktemp -d)
+  cp dist/index/circuit.json "$saved/index.json"
+  cp dist/panel/circuit.json "$saved/panel.json"
+  trap 'cp "$saved/index.json" dist/index/circuit.json; cp "$saved/panel.json" dist/panel/circuit.json; rm -rf "$saved"' EXIT
+  export FROEMIX_BUILD_DATE=2024-08-10
+  npx tsci build && npx tsci snapshot --test
+)
+step "snapshot diff" snapshot_diff
 
 # ---------------------------------------------------------------------------
 # Two tscircuit checks exit 0 even when they report errors, so their logs are

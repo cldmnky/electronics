@@ -12,6 +12,7 @@
 // board (the three 2.00mm sockets). Nothing tall on the bottom but the sockets.
 
 import { BOARD_H, BOARD_W, BUTTON, STANDOFF_HOLES } from "./lib/layout"
+import { BOARD_REVISION, buildDate } from "../shared/build-info"
 import { Nets } from "./lib/nets"
 import { MatingSockets } from "./sections/mating"
 import { JacksSection } from "./sections/jacks"
@@ -52,6 +53,12 @@ export default () => (
     <ButtonSection />
     <JackLedsSection />
     <DisplaySection />
+
+    {/* Board identity on the rear, clear of sockets and mounting holes. */}
+    <silkscreentext text={`FROEMIX EURO REV ${BOARD_REVISION}`} layer="bottom"
+      anchorAlignment="center" fontSize="1.7mm" pcbX="0mm" pcbY="-58mm" />
+    <silkscreentext text={buildDate()} layer="bottom" anchorAlignment="center"
+      fontSize="1.7mm" pcbX="0mm" pcbY="-60mm" />
 
     {/* GND plane on the bottom, same convention as the base board */}
     <copperpour

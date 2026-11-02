@@ -121,7 +121,8 @@ export const renderPanelContent = (
     }
   }
 
-  for (const path of circuitJson.filter((e) => e.type === "pcb_silkscreen_path")) {
+  // This is a front-face preview; the build-identity print is on the rear.
+  for (const path of circuitJson.filter((e) => e.type === "pcb_silkscreen_path" && (e.layer ?? "top") === "top")) {
     const route = (path.route ?? []) as Pt[]
     if (route.length < 2) continue
     const d = `M ${route.map((p) => `${num(p.x)} ${num(p.y)}`).join(" L ")}`
