@@ -12,6 +12,9 @@ EURO       := euro
 FAB        := fab
 EURO_FAB   := $(FAB)/euro
 BUN        := bun
+# Capture one UTC build date for every subprocess in a two-board release.
+# Override for an intentional reproducible build (YYYY-MM-DD).
+export FROEMIX_BUILD_DATE ?= $(shell date -u +%F)
 
 # Kept in one place so every target reports the same boards.
 BOARD      := froemix base board (80.9 x 128.5 mm, 4 layers, 16HP x 3U) + euro board (20HP front board + panel)
@@ -58,8 +61,8 @@ release: ## gates + export ALL fab sets (base board, euro board, panel) into fab
 	cd $(EURO) && bash scripts/release.sh
 
 snapshots: ## refresh both boards' schematic/PCB/3D snapshots
-	cd $(TSCIRCUIT) && $(BUN) x tsci snapshot --update --3d
-	cd $(EURO) && $(BUN) x tsci snapshot --update --3d
+	cd $(TSCIRCUIT) && FROEMIX_BUILD_DATE=2024-08-10 $(BUN) x tsci build && FROEMIX_BUILD_DATE=2024-08-10 $(BUN) x tsci snapshot --update --3d
+	cd $(EURO) && FROEMIX_BUILD_DATE=2024-08-10 $(BUN) x tsci build && FROEMIX_BUILD_DATE=2024-08-10 $(BUN) x tsci snapshot --update --3d
 
 erc: ## KiCad ERC on the ported schematics (0 unexcluded errors expected)
 	cd $(TSCIRCUIT) && $(BUN) run check:erc
@@ -92,7 +95,7 @@ assembly: ## print the hand-assembly sheet (parts JLC does not mount)
 order: release ## print the order sheet and the files to upload for both boards
 	@printf '\n=== JLCPCB order =================================================\n'
 	@printf 'board   : %s\n' "$(BOARD)"
-	@printf 'settings: jlc-order.json (lead-free HASL, assembly on BOTH sides, THT hand-solder)\n'
+	@printf 'settings: jlc-order.json (lead-free HASL, SMT on BOTTOM only, THT hand-solder)\n'
 	@printf 'guide   : doc/JLC-ASSEMBLY.md (base) / doc/EURO-BOARD.md (euro)\n\n'
 	@printf 'base board - upload these:\n'
 	@printf '  gerbers : %s/froemix-gerbers.zip\n' "$(FAB)"
@@ -106,7 +109,7 @@ order: release ## print the order sheet and the files to upload for both boards
 	@printf '  mech    : %s/mechanical/ (MODE/NAV STLs, hardware list, stack + acceptance guide)\n\n' "$(EURO_FAB)"
 	@printf 'tick on the order page:\n'
 	@printf '  [ ] surface finish lead-free HASL (confirm quote and assembly preview)\n'
-	@printf '  [ ] assembly for BOTH sides of the base board\n'
+	@printf '  [ ] base SMT assembly on BOTTOM only (all 107 placements); THT fitted by hand\n'
 	@printf '  [ ] 4 layers, 1.6 mm, 1 oz outer copper (base) / 2 layers, 2 mm, empty copper (panel)\n'
 	@printf '  [ ] headers are 6mm-shoulder X4612 (not old short A2005WV); CN4 cut to 7 ways\n'
 	@printf '  [ ] stack: 11mm clear spacers; J1+shunts <=9.5mm; front tails <=1mm\n'

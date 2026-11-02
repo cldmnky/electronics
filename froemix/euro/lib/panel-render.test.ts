@@ -130,7 +130,7 @@ describe("panel content", () => {
     )
     const svg = renderPanelContent(changed, { theme: PANEL_THEMES.studio })
     expect(count(svg, 'stroke-width="0.66"')).toBe(
-      changed.filter((e) => e.type === "pcb_silkscreen_path").length,
+      changed.filter((e) => e.type === "pcb_silkscreen_path" && e.layer === "top").length,
     )
   })
 

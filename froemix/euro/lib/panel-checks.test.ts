@@ -218,10 +218,17 @@ describe("printed artwork", () => {
     expect(hasProblem(checks(circuitJson), "silk", /only stroked paths/)).toBe(true)
   })
 
-  test("printing on the back layer is caught", () => {
+  test("moving front artwork to the back is caught", () => {
     const circuitJson = fresh()
     circuitJson.find((e) => e.type === "pcb_silkscreen_path")!.layer = "bottom"
-    expect(hasProblem(checks(circuitJson), "silk", /on layer bottom/)).toBe(true)
+    expect(hasProblem(checks(circuitJson), "silk", /rear revision\/date paths differ/)).toBe(true)
+  })
+
+  test("missing rear identity is caught", () => {
+    const circuitJson = fresh()
+    const i = circuitJson.findIndex((e) => e.type === "pcb_silkscreen_path" && e.layer === "bottom")
+    circuitJson.splice(i, 1)
+    expect(hasProblem(checks(circuitJson), "silk", /rear revision\/date paths differ/)).toBe(true)
   })
 })
 

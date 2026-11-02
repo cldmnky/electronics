@@ -11,6 +11,8 @@
 # Neither the gate nor this script writes to git, and nothing outside
 # froemix/fab/ is deleted (that directory is generated output).
 set -euo pipefail
+export FROEMIX_BUILD_DATE="${FROEMIX_BUILD_DATE:-$(date -u +%F)}"
+printf 'Build date (UTC): %s\n' "$FROEMIX_BUILD_DATE"
 
 cd "$(dirname "$0")/.."
 PROJECT_DIR=$(pwd)
@@ -102,6 +104,11 @@ with (fab / "froemix-bom-jlc.csv").open("w", newline="") as fh:
         w.writerow([comment, ",".join(sorted(refs)), footprint, lcsc, len(refs)])
 
 smt = [r for r in pnp_rows if r["Designator"] not in THT]
+# Check the actual export as well as circuit.json: never upload a mixed-side
+# CPL while ordering single-sided assembly.
+if len(smt) != 107 or any(r["Layer"].lower() != "bottom" for r in smt):
+    sys.exit(f"Expected 107 bottom-side SMT placements in exported CPL; got {len(smt)}: "
+             f"{[(r['Designator'], r['Layer']) for r in smt if r['Layer'].lower() != 'bottom']}")
 with (fab / "froemix-cpl-jlc.csv").open("w", newline="") as fh:
     w = csv.writer(fh)
     w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])

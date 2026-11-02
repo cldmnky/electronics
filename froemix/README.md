@@ -61,6 +61,23 @@ The verification scripts (`check_netlist`, `check_footprints`, `check_parts`)
 keep working unchanged: they compare the KiCad sources against the BUILT
 `dist/index/circuit.json`, not against the generator.
 
+## Printed board identity
+
+The base, euro board and panel share `shared/build-info.ts`: **Rev 0.1** and a
+UTC `YYYY-MM-DD` build date are printed on their rear faces. The base also
+carries the Nord monoline FROEMIX wordmark, an OSHW gear and a short hand-build
+reminder. The gear is not a certification mark; its attribution, share-alike
+notice and compliance caveat are in [`assets/README.md`](assets/README.md).
+
+`make release` captures one date for all three outputs. Set
+`FROEMIX_BUILD_DATE=2026-11-02 make release` to reproduce a dated set; use a
+real calendar date. A revision bump is an explicit edit to `BOARD_REVISION` in
+`shared/build-info.ts`. The snapshot gate deliberately uses `2024-08-10`, so
+snapshots are stable and that reference date is **not** the release date.
+Install both board projects with `make install`: the base reuses the euro
+panel's canonical Nord wordmark geometry. Check the generated rear silkscreens
+in the manufacturer preview; a successful gate is not CAM approval.
+
 ## Eurorack (front) board
 
 The 20HP board that carries every panel control, plus its panel:
@@ -173,7 +190,7 @@ are verified against the authored 2 W land pattern instead, see
 `REPLACED_FOOTPRINTS`), `tsci check
 netlist` Errors 0/Warnings 0, placement Errors 0 (plus the known H1 false
 positive), shorts and pcb-style clean, silkscreen provably inside the outline,
-routing 306 traces / 335 vias / 4979mm copper / 0 unconnected / 0 overlaps,
+routing 306 traces / 330 vias / 4948mm copper / 0 unconnected / 0 overlaps,
 JLCPCB parts validated (117 components, 39 unique parts) and every passive
 value literal checked against the built value. `bun run release` writes gerbers,
 BOM, pick-and-place, schematic/PCB SVGs and STEP into `fab/`. What is still open
@@ -323,8 +340,8 @@ table above.
   **CN1** within 3.05mm of the (−36.95, 60.75) hole, so ≤5mm OD is the hardware
   limit there (a 5.5mm standoff would sit on C25's courtyard). Also: sanity-check
   the CPL rotation/mirror mapping for bottom-side parts with JLC (classic
-  bottom-mirror trap — 93 of the 99 bottom placements are at 180° and 6 at 0°,
-  all 8 top placements at 0°, but verify); 6x C1671 47pF caps emit
+  bottom-mirror trap — 101 of the 107 bottom placements are at 180° and 6 at
+  0°, but verify); 6x C1671 47pF caps emit
   `source_part_not_found_warning` (no EasyEDA 3D-model match — the LCSC part
   itself validates fine, they just render pad-only in 3D); the ~90
   `source_component_availability_warning`s are build-time data gaps, not BOM
@@ -367,7 +384,7 @@ Electrical contract for the front (euro/panel) board — connector pinout, CV an
 audio levels, the `M_ADC` restriction and the 3.3 V budget:
 [`doc/FRONTBOARD-INTERFACE.md`](doc/FRONTBOARD-INTERFACE.md).
 
-Full guide, including the THT hand-solder choice, two-sided assembly, the
+Full guide, including THT hand soldering, single-sided bottom SMT assembly, the
 bottom-rotation check and the order-day checklist:
 [`doc/JLC-ASSEMBLY.md`](doc/JLC-ASSEMBLY.md) (also copied into `fab/`).
 
@@ -379,18 +396,18 @@ bottom-rotation check and the order-day checklist:
 | done | **Silkscreen** — 31 texts: IC/connector/electrolytic/diode refdes, `FROEMIX`, `REV 0.1`, date, hand-solder legend; every glyph is provably inside the outline (gate step 14) |
 | done | **Fiducials** — 4 FID pads, bottom side in the corner keepouts: bare copper with a 0.5mm mask window and no paste (verified in `B_Cu`+`B_Mask`, absent from `B_Paste`). `<fiducial>` itself exports mask-covered pads in this version, so they are one-pad footprints instead |
 | done | **Test points** — 8 bottom-side TP pads: P5V, P3V3_D, P3V3_A, VCC, VEE, N10V_REF, SYNC_IN, MULTIPLEX_ADC_1 |
-| done | **Decoupling** — every IC rail leg ≤11.8mm of routed copper (VCC/VEE legs), U1 now has its own C31 at 7.71mm; C14/C15 7.87/2.89mm; bulk C1 11.80mm / C30 19.09mm. GND legs are measured to the IC's return pin (U13 VSS 36.07mm); a dual-supply part whose return is the other rail (the TL074s' VMINUS on VEE) reports `-` instead of a grounded signal input — see AGENTS.md §3 |
+| done | **Decoupling** — every IC rail leg ≤11.8mm of routed copper (VCC/VEE legs), U1 now has its own C31 at 7.71mm; C14/C15 7.87/2.89mm; bulk C1 11.80mm / C30 19.09mm. GND legs are measured to the IC's return pin (U13 VSS 36.19mm); a dual-supply part whose return is the other rail (the TL074s' VMINUS on VEE) reports `-` instead of a grounded signal input — see AGENTS.md §3 |
 | done | **Gates** — 15 steps: ERC, build, netlist, tscircuit-only parts (`check:extras`), footprints, JLCPCB parts, passive value literals, source/pin_spec/netlist, placement, shorts, pcb-style, silkscreen bounds, snapshot diff behind `bun run gate` |
 | done | **Design review R01–R14** — every finding either fixed in the design or closed by a named document/gate (`doc/DESIGN-REVIEW.md`, "Resolution status") |
 | done | **Fab export** — `bun run release` → gerbers, BOM, PnP, schematic/PCB SVG, STEP in `fab/` |
-| done | **GND copper pour** — bottom-layer GND plane: 4 pour regions, 7411.0mm² of copper with 88 clearance holes = 71.3 % of the 80.9 × 128.5mm board, 0.3mm clearances, 0.5mm to the board edge. Needs `holeOffsetX/Y="0mm"` on rect-pad plated holes (upstream defaulting bug, `doc/pour-repro/`); routing 306/335/4979 |
+| done | **GND copper pour** — bottom-layer GND plane: 5 regions, approximately 7383.1mm² with 73 clearance holes = 71.0 % of the 80.9 × 128.5mm board, 0.3mm clearances, 0.5mm to the board edge. Needs `holeOffsetX/Y="0mm"` on rect-pad plated holes (upstream defaulting bug, `doc/pour-repro/`); routing 306/330/4948 |
 | closed by interface spec | **Mux input clamps** — `M_ADC_*` has no series-R/Schottky clamp. Closed by [`doc/FRONTBOARD-INTERFACE.md`](doc/FRONTBOARD-INTERFACE.md) (R14): pot/attenuverter wipers from `P3V3_A`/`GND` only, inside 0–3.3 V in every power order, with a front-board acceptance test |
 | closed: 2 W module fitted | **U16 5 V margin** — the 1 W/200 mA converter had no worst-case margin on paper (194 mA max without the H1 module, 267 mA with it). U16 is now the **2 W/400 mA B2405S-2WR3** (`C5369484`, own footprint/placement, module pin-out 1/2/4/6), so the budget closes at 49 %/67 % of the rating, and the ≤300 mA acceptance test in [`doc/POWER-BUDGET.md`](doc/POWER-BUDGET.md) (R13) still has to be measured during bring-up; the measurement is not part of the gate |
 | open | **Single-point GND/chassis tie** — not implemented, no decision recorded (standoffs vs rack chassis) |
 | open | **CV scaling 1%** — ~2 % of scale on CV in, ~4.04 % worst case on CV out (24 ¢ / 48.5 ¢ per octave, simulated), plus fixed offsets; firmware calibration required, 0.1 % parts are the alternative |
 | open | **Encoder** — no encoder pins on the base board; CN2 pads 11–15 unused, decision deferred |
 | open | **THT parts in the SMT order** — the 10 through-hole parts (CN1–CN4, H1, J1, J2, C24, C25, U16) are in `froemix-bom.csv` and `froemix-pnp.csv` with no hand-solder flag; decide JLC through-hole assembly vs hand soldering before ordering |
-| open | **JLC second side / CPL mirror** — 99 of the 107 SMT placements are on the bottom, and the exported CPL mirrors them (93 at 180°, 6 at 0°; the 8 top placements are 0°). H1 is THT and sits at 270° in `froemix-pnp-all.csv` only. Verify that against JLCPCB's bottom-side preview before ordering assembly |
+| open | **JLC CPL mirror** — all 107 SMT placements are bottom-side (101 at 180°, 6 at 0°). H1 is THT and sits at 270° in `froemix-pnp-all.csv` only. Verify every polarity and the bottom-side preview before ordering single-sided assembly |
 | open | **MIDI receiver threshold** — the on-board receiver is a TLP2362 with a **5 mA maximum switching threshold** (recommended on-current from 7.5 mA), while this board's own Type A transmitter delivers **4.48 mA worst case** into a receiver at 1.7 V Vf. A marginal transmitter at the CA-033 corner can be intermittent; verify with the real units before relying on the link. Stated in [`doc/FRONTBOARD-INTERFACE.md`](doc/FRONTBOARD-INTERFACE.md) §2 |
 | open | **Mechanical first article** — the corrected 11mm-clear stack, CN4 cut-to-seven preparation, printed MODE/NAV actuators, J1/shunt height, trimmed rear tails, OLED support, bushing threads and rack/rail fit all need physical acceptance; see [`doc/MECHANICAL-STACK.md`](doc/MECHANICAL-STACK.md). Software gates only establish dimensions and identities |
 | open | **DFM review of the exported gerbers** — nobody has opened `fab/froemix-gerbers.zip` in a fab viewer yet (mask expansion, annular ring, drills, panel) |
@@ -468,7 +485,7 @@ PWR / signal):
 | midi | x 22…37, y −34…−13 | bottom | U15, J1 (top), D1, R47/R48, C28 (U15's bypass) |
 | midi drv | x −37…−29, y 32…54 | bottom | the MIDI OUT driver, moved out of the midi island into the left/top strip beside the Seed: Q2 (−31, 41), R58 (−30.5, 36.5), R61 (−30.5, 33.5), R59/R60 1 W 2512 (−33, 52 / −33, 46) |
 | h1 | x 22…37, y −12…16 | bottom | H1 (PMOD, opening faces the right edge) |
-| pwr | x ±34, y −61.5…−45 | top SMD / bottom THT | rail decoupling, ferrites, Schottkys on top; J2, U16 (2 W module at (8.5, −49.5), body overhang toward the bottom edge), bulk electrolytics on the back |
+| pwr | x ±34, y −61.5…−42 | bottom SMD / bottom THT | rail capacitors, inductors and Schottkys moved to bottom; J2, U16 (2 W module at (8.5, −49.5), body overhang toward the bottom edge), bulk electrolytics on the back |
 
 - 4× M3 mounting holes (3.2mm) 3.5mm from each corner; conn/pwr zones keep
   clear of them in x.
@@ -482,16 +499,15 @@ PWR / signal):
   position; see `pin_decoupling`).
 - GND has a copper pour on the bottom: `index.circuit.tsx` declares
   `<copperpour connectsTo="net.GND" layer="bottom" clearance="0.3mm"
-  boardEdgeMargin="0.5mm" />`. Built result: **4 pour regions** on the bottom,
-  **7411.0 mm²** of copper (a 7371.1 mm² plane plus slivers of 39.5, 0.5 and
-  0.0 mm²) with **88 clearance holes**, 0.3mm to pads/traces and 0.5mm to the
-  board edge — 71.3 % of the 80.9 × 128.5 mm board. The pour needs a local
+  boardEdgeMargin="0.5mm" />`. Built result: **5 pour regions** on the bottom,
+  approximately **7383.1 mm²** of copper with **73 clearance holes**, 0.3mm to
+  pads/traces and 0.5mm to the board edge — 71.0 % of the 80.9 × 128.5 mm board. The pour needs a local
   workaround for an upstream defaulting bug: without `holeOffsetX`/`holeOffsetY="0mm"` on the
   `circular_hole_with_rect_pad` plated holes, `@tscircuit/core` emits
   `hole_offset_x/y` as `undefined`, the pour connectivity pass builds NaN arc
   vertices and the build dies in `@flatten-js/core`
   (`node.item.key.low` undefined). Repro + root cause: `doc/pour-repro/`.
-  Routing is unaffected (306/335/4979, GND still routed explicitly).
+  The pour is applied after routing; GND is still routed explicitly.
 - J2/H1 use pre-rotated footprint variants (`PRE_ROTATED_FOOTPRINTS`): tscircuit
   rotates courtyard *centers* but keeps their *axes*, skewing every rotated
   courtyard (H1's landed 13mm off, on top of U13). Variants bake the rotation
@@ -523,8 +539,8 @@ The board uses tscircuit's built-in local autorouter (`autorouter="auto-local"`
 — no cloud calls), one global phase over all 102 nets after phase-0-only and
 split-phase attempts: frozen phase-0 GND walls blocked signal routing
 (`immutable fixed route conflict`), so everything solves together instead.
-Result: **306 traces, 335 vias, 0 unconnected, 0 overlaps**, `check shorts` and
-`check pcb-style` clean, **4978.7mm** of copper (sum of segment lengths, verified
+Result: **306 traces, 330 vias, 0 unconnected, 0 overlaps**, `check shorts` and
+`check pcb-style` clean, **4948.2mm** of copper (sum of segment lengths, verified
 against `dist/index/circuit.json`). History: grid packing 446 vias → zone
 packing 372 → 0.25mm width floor + 8 fabrication test points 293/323/4730 →
 MIDI OUT rework 300/325/4931 (D2 and two 0603 parts out, Q2 + three resistors +
@@ -532,9 +548,9 @@ one diode in, and the CV-out/CV-in value changes do not move copper) →
 Type A MIDI + C33/C34 **304/325/4934** (the MIDI OUT driver moved beside the
 Seed) →
 **304/334/4971** (U16 became the 2 W module: new footprint, longer body, new
-placement, C32 moved next to the input leads) → this revision **306/335/4978.7**
-(the MIDI OUT driver became a PNP high-side switch, so R59 moved to the ring and
-R60 to the tip/GND, plus R61 on the base). Board runs
+placement, C32 moved next to the input leads) → **306/335/4978.7**
+(MIDI OUT PNP correction) → **306/330/4948.2** (eight power SMT parts moved to
+the bottom; TP1 and the frozen connectors remain in place). Board runs
 `autorouterEffortLevel="5x"` (measured: identical output to default effort —
 kept as declared intent).
 Placement is grouped by function (audio/CV/midi/power/daisy zones + affinity
@@ -548,7 +564,7 @@ control is placement + phases + widths, plus manual `pcbPath` if a net ever
 demands it. A bottom GND plane now exists (see the copper-pour entry above),
 but it did not change the routing: the pour is generated after the router runs
 and the router does not route into it, so GND is still 0.25–0.3mm traces with
-the plane underneath and the numbers stay 306/335/4978.7. GND carries 57 pins on
+the plane underneath; current numbers are 306/330/4948.2. GND carries 57 pins on
 the KiCad netlist — the next biggest net has 14 — so GND is still the single
 largest consumer of traces, and pour-aware routing (the pour's `unbroken` prop,
 untested here) is the remaining via saver. Reproduce

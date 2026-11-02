@@ -15,6 +15,11 @@
 // mirrors onto itself, and every anchor stays >=1.5mm inside the edge.
 // `tools/check_silk.py` gates the actual gerber coordinates.
 
+import { Fragment } from "react"
+import { wordmarkPaths } from "../../euro/lib/panel-art"
+import { BOARD_REVISION, buildDate } from "../../shared/build-info"
+import { oshwPaths } from "../../shared/oshw"
+
 type Refdes = {
   text: string
   x: number
@@ -22,22 +27,14 @@ type Refdes = {
   layer: "top" | "bottom"
 }
 
-// Board logo + hand-assembly legend, drawn from silkscreen primitives so it
-// lands in the gerbers with no image pipeline. Bottom layer: that is the face
-// you see with the module in the rack (the top holds the mating headers).
-// The badge is a 13x7mm rect at (-34,-52)..(-21,-45): four waveform bars in
-// the left half, the wordmark and tagline centred in the right half.
-const LOGO = { x: -34, y: -52 }
-const LOGO_BARS = [
-  { dx: 1.3, h: 2.0 },
-  { dx: 2.4, h: 3.6 },
-  { dx: 3.5, h: 4.5 },
-  { dx: 4.6, h: 2.8 },
-]
-
+// Bottom artwork is deliberately outside J2's full courtyard. Paths mirror X
+// in the bottom-layer Gerber so they read correctly when viewed from the rear.
+const BRAND = { x: -29.5, y: -46.5 }
+// Increasing board Y runs upward when the rear is viewed by the builder.
 const HAND_SOLDER = [
-  "HAND SOLDER: CN1-4 H1 J1 J2",
-  "C24 C25 U16 + DAISY SEED MODULE",
+  "SET J1 BEFORE STACK",
+  "C24 C25 U16 DAISY SOCKETS",
+  "HAND: CN1-4 H1 J1 J2",
 ]
 
 const REFDES: Refdes[] = [
@@ -52,10 +49,8 @@ const REFDES: Refdes[] = [
   { text: "U13", x: 4.88, y: 16.7, layer: "bottom" },
   { text: "U14", x: 3.97, y: -7.1, layer: "bottom" },
   { text: "U15", x: 21.4, y: -22.23, layer: "bottom" },
-  // U16 moved from (3.39,-43.8): the 2W module's body is 19.65mm long and hangs
-  // 6.15mm to one side of its lead row, so the label sits just above the
-  // courtyard (y -48.34) clear of C32.
-  { text: "U16", x: 8.5, y: -46.9, layer: "bottom" },
+  // Keep the 2W module label clear of the relocated C27 and U16 courtyard.
+  { text: "U16", x: 11.0, y: -57.1, layer: "bottom" },
   { text: "DaisySeed1", x: 29.5, y: 30.2, layer: "bottom" },
   // connectors
   { text: "CN1", x: -17.58, y: 57.5, layer: "top" },
@@ -72,86 +67,57 @@ const REFDES: Refdes[] = [
   // diodes
   { text: "D1", x: 24.02, y: -28.5, layer: "bottom" },
   { text: "D5", x: 13.8, y: -0.4, layer: "bottom" },
-  { text: "D3", x: -0.06, y: -57.1, layer: "top" },
-  { text: "D4", x: 6.44, y: -57.1, layer: "top" },
+  // D3/D4 now sit on the bottom; labels are below their courtyards.
+  { text: "D3", x: -0.06, y: -61.3, layer: "bottom" },
+  { text: "D4", x: 6.44, y: -61.3, layer: "bottom" },
 ]
 
 const BOARD_NOTES = [
-  { text: "REV 0.1", x: -28.5, y: -42.8 },
-  { text: "2024-08-10", x: -28.5, y: -40.4 },
+  { text: `REV ${BOARD_REVISION}`, x: -28.5, y: -40.4 },
+  { text: buildDate(), x: -28.5, y: -42.8 },
 ]
 
 export const SilkSection = () => (
   <>
     {REFDES.map((ref) => (
-      <silkscreentext
-        key={`ref-${ref.text}`}
+      <Fragment key={`ref-${ref.text}`}><silkscreentext
         text={ref.text}
         fontSize="0.7mm"
         anchorAlignment="center"
         layer={ref.layer}
         pcbX={`${ref.x}mm`}
         pcbY={`${ref.y}mm`}
-      />
+      /></Fragment>
     ))}
     {BOARD_NOTES.map((note) => (
-      <silkscreentext
-        key={`note-${note.text}`}
+      <Fragment key={`note-${note.text}`}><silkscreentext
         text={note.text}
-        fontSize="1.0mm"
+        fontSize="1.7mm"
         anchorAlignment="center"
         layer="bottom"
         pcbX={`${note.x}mm`}
         pcbY={`${note.y}mm`}
-      />
+      /></Fragment>
     ))}
-    {/* logo: badge + waveform bars + wordmark, bottom side */}
-    <silkscreenrect
-      pcbX={`${LOGO.x + 6.5}mm`}
-      pcbY={`${LOGO.y + 3.5}mm`}
-      width="13mm"
-      height="7mm"
-      layer="bottom"
-      strokeWidth="0.3mm"
-    />
-    {LOGO_BARS.map((bar, i) => (
-      <silkscreenline
-        key={`logo-bar-${i}`}
-        x1={`${LOGO.x + bar.dx}mm`}
-        y1={`${LOGO.y + 3.5 - bar.h / 2}mm`}
-        x2={`${LOGO.x + bar.dx}mm`}
-        y2={`${LOGO.y + 3.5 + bar.h / 2}mm`}
-        strokeWidth="0.45mm"
-        layer="bottom"
-      />
+    {/* Same monoline Nord wordmark as the panel, on the component-side rear. */}
+    {wordmarkPaths("FROEMIX", 1.35, BRAND.y, BRAND.x).paths.map((route, i) => (
+      <Fragment key={`brand-${i}`}><silkscreenpath layer="bottom" strokeWidth="0.2mm"
+        route={route.map(p => ({ x: 2 * BRAND.x - p.x, y: p.y }))} /></Fragment>
     ))}
-    <silkscreentext
-      text="FROEMIX"
-      fontSize="1.4mm"
-      anchorAlignment="center"
-      layer="bottom"
-      pcbX="-25.6mm"
-      pcbY="-47.6mm"
-    />
-    <silkscreentext
-      text="eurorack dsp"
-      fontSize="0.7mm"
-      anchorAlignment="center"
-      layer="bottom"
-      pcbX="-25.6mm"
-      pcbY="-50mm"
-    />
+    {/* Community OSHW gear, not an OSHWA certification mark. */}
+    {oshwPaths(-34, -32, 7).map((route, i) => (
+      <Fragment key={`oshw-${i}`}><silkscreenpath layer="bottom" strokeWidth="0.2mm" route={route} /></Fragment>
+    ))}
     {/* hand-assembly legend: the parts JLC does not place (see doc/ASSEMBLY.md) */}
     {HAND_SOLDER.map((line, i) => (
-      <silkscreentext
-        key={`hand-${i}`}
+      <Fragment key={`hand-${i}`}><silkscreentext
         text={line}
-        fontSize="0.9mm"
+        fontSize="1.7mm"
         anchorAlignment="center"
         layer="bottom"
         pcbX="-8mm"
-        pcbY={`${-33.2 + i * 1.6}mm`}
-      />
+        pcbY={`${-32.5 + i * 2}mm`}
+      /></Fragment>
     ))}
   </>
 )

@@ -15,7 +15,8 @@
     "noEmit": true,
     "types": [
       "react",
-      "tscircuit"
+      "tscircuit",
+      "bun-types"
     ]
   },
   "include": [

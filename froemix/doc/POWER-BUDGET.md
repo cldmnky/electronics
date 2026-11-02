@@ -46,8 +46,11 @@ report:decoupling`); C32 sits between the two input leads on the far side of the
 lead row, because the module body hangs 6.15 mm to the other side of the leads
 (§5).
 
-**Output capacitor:** C27 10 µF on P5V is the recommended output cap and stays
-where it is.
+**Output capacitor:** C27 10 µF on P5V is the recommended output cap. It is
+now on the bottom, relocated to (5.64, −46.50) mm for single-sided SMT.
+The P5V rail leg to U16 pin 6 is 3.79 mm; the explicitly routed GND leg to
+pin 4 is 32.55 mm, excluding the GND pour. Scope the output and load transients
+on a first article: these path lengths do not prove low impedance or stability.
 
 ## 2. What hangs off the 5 V rail
 
@@ -201,10 +204,9 @@ in fact a 4-lead SIP on the module's own 1/2/4/6 positions, not a 7-pin part):
   board edge (`bunx tsci check placement`: 0 errors).
 - **C32** moved to (13.58, −47.10) mm, between the two input leads on the side
   of the lead row the body does not overhang; the routed rail leg is 2.64 mm.
-- **C23** stayed at (4.94, −54.67) mm: it is a **top**-side part and the module
-  hangs off the **bottom**, so there is no physical or courtyard conflict (the
-  placement checker compares courtyards per layer). Its pads are 5.2 mm from the
-  U16 lead row, clear of the 1.0 mm drills.
-- **Routing** re-solved: **306 traces / 335 vias / 4978.7 mm** of copper, 0
-  unconnected (the previous board with the 1 W part was 304/325/4934). Snapshots
-  regenerated.
+- **C23** moved to (4.94, −43.50) mm on the bottom to clear the U16 body;
+  C22, C26, C27, D3, D4, L1 and L2 also moved to the bottom for single-sided
+  SMT assembly; TP1 remains in its original position. Verify the resulting
+  power routing and converter behavior during first-article bring-up.
+- **Routing** re-solved: **306 traces / 330 vias / 4948.2 mm** of copper, 0
+  unconnected. Snapshots are regenerated for the single-sided revision.

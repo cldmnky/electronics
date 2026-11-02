@@ -17,6 +17,7 @@ export const PowerSection = () => (
       footprint={FP_jclpcb_C1206}
       pcbX="20.62mm"
       pcbY="-46.44mm"
+      layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C13585"] }}
       manufacturerPartNumber="CL31A106KBHNNNE"
       cadModel={{
@@ -35,7 +36,8 @@ export const PowerSection = () => (
       capacitance="10uF"
       footprint={FP_jclpcb_C1206}
       pcbX="4.94mm"
-      pcbY="-54.67mm"
+      pcbY="-43.5mm"
+      layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C13585"] }}
       manufacturerPartNumber="CL31A106KBHNNNE"
       cadModel={{
@@ -95,8 +97,9 @@ export const PowerSection = () => (
       name="C26"
       capacitance="10uF"
       footprint={FP_jclpcb_C1206}
-      pcbX="19.86mm"
-      pcbY="-54.67mm"
+      pcbX="20.5mm"
+      pcbY="-56.8mm"
+      layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C13585"] }}
       manufacturerPartNumber="CL31A106KBHNNNE"
       cadModel={{
@@ -114,8 +117,9 @@ export const PowerSection = () => (
       name="C27"
       capacitance="10uF"
       footprint={FP_jclpcb_C1206}
-      pcbX="13.6mm"
-      pcbY="-46.44mm"
+      pcbX="5.64mm"
+      pcbY="-46.5mm"
+      layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C13585"] }}
       manufacturerPartNumber="CL31A106KBHNNNE"
       cadModel={{
@@ -136,6 +140,7 @@ export const PowerSection = () => (
       variant="schottky"
       pcbX="-0.06mm"
       pcbY="-59.01mm"
+      layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C8598"] }}
       manufacturerPartNumber="B5819W"
       cadModel={{
@@ -156,6 +161,7 @@ export const PowerSection = () => (
       variant="schottky"
       pcbX="6.44mm"
       pcbY="-59.01mm"
+      layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C8598"] }}
       manufacturerPartNumber="B5819W"
       cadModel={{
@@ -214,8 +220,9 @@ export const PowerSection = () => (
       name="L1"
       inductance="2.2uH"
       footprint={FP_jclpcb_L0603}
-      pcbX="-0.93mm"
-      pcbY="-54.25mm"
+      pcbX="19.7mm"
+      pcbY="-50.2mm"
+      layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C76797"] }}
       manufacturerPartNumber="MLZ1608A2R2WT000"
       cadModel={{
@@ -235,6 +242,7 @@ export const PowerSection = () => (
       footprint={FP_jclpcb_L0603}
       pcbX="25.75mm"
       pcbY="-54.25mm"
+      layer="bottom"
       supplierPartNumbers={{ jlcpcb: ["C76797"] }}
       manufacturerPartNumber="MLZ1608A2R2WT000"
       cadModel={{

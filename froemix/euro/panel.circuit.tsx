@@ -24,6 +24,7 @@
 //   1x OLED window      30.5 x 16.0mm, R0.5 internal corners, rounded polygon
 
 import { Fragment } from "react"
+import { PANEL_REAR_STROKE, panelRearPaths } from "./lib/panel-rear"
 import {
   BOARD_H,
   BOARD_W,
@@ -124,6 +125,11 @@ export default ({ design }: { design?: string } = {}) => {
       <cutout shape="polygon" points={art.window.polygon} />
 
       {/* printed artwork: one stroked path per line, never a text primitive */}
+      {/* Reverse-side identity; explicitly stroked like the front artwork. */}
+      {panelRearPaths().map((route, i) => (
+        <Fragment key={`rear-id-${i}`}><silkscreenpath layer="bottom"
+          strokeWidth={`${PANEL_REAR_STROKE}mm`} route={route} /></Fragment>
+      ))}
       {art.elements.flatMap((element) =>
         element.paths.map((path, i) => (
           <Fragment key={`${element.id}-${i}`}>

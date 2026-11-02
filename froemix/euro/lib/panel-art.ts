@@ -22,6 +22,7 @@
 // path from `@tscircuit/alphabet` (or a hand-placed monoline glyph), and every
 // position is computed, so the checks can measure the ink exactly.
 
+import { BOARD_REVISION } from "../../shared/build-info"
 import {
   glyphAdvanceRatio,
   glyphWidthRatio,
@@ -388,7 +389,7 @@ export const OPTIONAL_LEGENDS = [
   "CV",
   "MIDI",
   "STATUS",
-  "REV 0.1",
+  `REV ${BOARD_REVISION}`,
   "daisy seed dsp - 20hp",
   "DAISY SEED DSP / 20 HP",
 ] as const
@@ -1139,8 +1140,8 @@ export const panelArtwork = (design: PanelDesignId = DEFAULT_PANEL_DESIGN): Pane
     label({
       id: "legend-rev",
       kind: "note",
-      lines: ["REV 0.1"],
-      text: "REV 0.1",
+      lines: [`REV ${BOARD_REVISION}`],
+      text: `REV ${BOARD_REVISION}`,
       capHeight: style.rev.cap,
       strokeWidth: style.rev.stroke,
       x: style.rev.x,

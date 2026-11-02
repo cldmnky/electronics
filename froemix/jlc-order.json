@@ -20,9 +20,9 @@
   },
   "assembly": {
     "service": "JLCPCB SMT assembly",
-    "sides": 2,
-    "sides_reason": "99 of the 107 SMT placements are on the bottom (all analog/audio/CV/MIDI circuitry); only the rail SMD sits on top and the mating headers/PMOD are through-hole. Two-sided means two stencil/paste passes - enable 'assembly for both sides'.",
-    "stencil": "yes, one per side",
+    "sides": 1,
+    "sides_reason": "All 107 SMT placements are on the bottom; top-side mating headers and J1 are through-hole and are hand-soldered after SMT assembly.",
+    "stencil": "bottom only, if separately required",
     "through_hole": "hand solder",
     "through_hole_parts": ["CN1", "CN2", "CN3", "CN4", "H1", "J1", "J2", "C24", "C25", "U16"],
     "through_hole_note": "kept in the BOM but excluded from the CPL; add them back on the order page only if you pay for JLCPCB THT assembly",
@@ -44,8 +44,8 @@
   "inspect_before_paying": [
     "4 layers, 80.9 x 128.5 mm, four 3.2mm M3 holes",
     "Lead-free HASL selected; confirm JLCPCB accepts it for this board and assembly",
-    "assembly for BOTH sides enabled",
-    "bottom-side rotations sane in the 3D preview (93 placements at 180, 6 at 0, 8 top at 0; H1 is hand-soldered at 270)",
+    "single-sided SMT assembly selected on the BOTTOM; headers and J1 are hand-soldered afterwards",
+    "all 107 SMT placements on bottom; bottom-side rotations sane in the JLC preview (101 at 180, 6 at 0; H1 is hand-soldered)",
     "mating headers are the 6mm-shoulder C2883069/C2883061, not old short A2005WV; CN4 is cut to seven ways",
     "front-board stack: 11mm clear spacers, J1+shunts <=9.5mm, rear tails <=1mm (doc/MECHANICAL-STACK.md)",
     "fiducials bright copper, not mask-covered",
