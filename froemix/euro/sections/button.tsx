@@ -48,5 +48,19 @@ export const ButtonSection = () => (
       pcbY="13.5mm"
       connections={{ pin1: "net.P3V3_A", pin2: "net.BTN_LED" }}
     />
+
+    {/* Real pull-up. The LED is only an indicator; relying on its leakage left
+        the released mux node at an undefined intermediate voltage. */}
+    <resistor
+      name="R8"
+      resistance={BUTTON.pullupR}
+      footprint={FP_R0603}
+      mpn="0603WAF1002T5E"
+      supplierPartNumbers={{ jlcpcb: ["C25804"] }}
+      layer="bottom"
+      pcbX="28mm"
+      pcbY="16.5mm"
+      connections={{ pin1: "net.P3V3_A", pin2: `net.${BUTTON.net}` }}
+    />
   </>
 )
