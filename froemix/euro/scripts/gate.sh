@@ -56,7 +56,7 @@ step "mating contract" python3 scripts/check_mating.py
 step "mux input contract" python3 scripts/check_madc.py
 step "mechanical stack" bun scripts/mechanical_check.ts
 step "panel artwork"  bun scripts/panel_check.ts
-step "regression tests" bash -c 'python3 scripts/test_mating.py && bun test lib/panel lib/mechanical'
+step "regression tests" bash -c 'python3 scripts/test_mating.py && python3 scripts/test_madc.py && bun test lib/panel lib/mechanical'
 # tsci snapshot reads dist rather than rebuilding; preserve the actual dated
 # build for later release checks while comparing a deterministic snapshot.
 snapshot_diff() (

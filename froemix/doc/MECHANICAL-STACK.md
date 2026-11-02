@@ -1,10 +1,12 @@
 # Froemix mechanical stack — corrected assembly contract
 
 This supersedes the old 12mm-spacer / “8.5mm socket” description. Coordinates,
-connector sides, electrical nets and both PCB outlines are unchanged. The only
-panel machining change is **NAV Ø7.0 → Ø8.0mm at (−28, 25)** for the extended
-actuator's swept envelope; all 31 hole centres and the other 30 diameters stay
-unchanged. The OLED opening remains 30.5 × 16mm, R0.5, at (0, 42.8).
+connector sides, electrical nets and both PCB outlines are unchanged. Panel
+machining changes: **NAV Ø7.0 → Ø8.0mm at (−28, 25)** for the extended
+actuator's swept envelope, and **removal of the four audio activity-LED holes**
+at y = −3 with their LEDs (the direct LED load distorted the audio jacks). The
+other 26 diameters and the OLED opening (30.5 × 16mm, R0.5, at 0, 42.8) stay
+unchanged.
 
 **Status: dimensioned design and printable prototypes, not physical approval.**
 No parts were measured and no rack/CAM order was approved by the software gate.

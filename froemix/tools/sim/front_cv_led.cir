@@ -1,0 +1,43 @@
+* CV output final inverting stage: R37/R40=100k, C34=100p, R46=1k.
+* First gain stage is an ideal negative 4.99V step. Both loads are 100k||10nF;
+* LED side additionally carries 2.2k, diode, LED. Opposite channel symmetric.
+* The behavioral op-amp has voltage and bandwidth limits but NO output-current
+* limit or slew-rate model. LED models are illustrative, not supplier models.
+.subckt OPAMP INP INN OUT VP VM
+RIN INP INN 1T
+G1 0 NI INP INN 1m
+RP NI 0 200meg
+CP NI 0 53.0516477p
+B1 OUT 0 V=max(min(V(NI),V(VP)-1.5),V(VM)+1.5)
+.ends
+VP vp 0 12
+VM vm 0 -12
+VIN vin 0 PULSE(0 -4.99 100u 1u 1u 2m 4m)
+RIN1 vin s1 100k
+RF1 jack1 s1 100k
+CF1 jack1 s1 100p
+XOP1 0 s1 op1 vp vm OPAMP
+RS1 op1 jack1 1k
+RL1 jack1 0 100k
+CL1 jack1 0 10n
+RIN2 vin s2 100k
+RF2 jack2 s2 100k
+CF2 jack2 s2 100p
+XOP2 0 s2 op2 vp vm OPAMP
+RS2 op2 jack2 1k
+RL2 jack2 0 100k
+CL2 jack2 0 10n
+RLED jack2 diode 2.2k
+D1 diode leda D4148
+D2 leda 0 DLED
+.model D4148 D(IS=2.52n N=1.752)
+.model DLED D(IS=1e-20 N=2)
+.control
+set noaskquit
+set wr_singlescale
+set wr_vecnames
+tran 0.1u 1m
+wrdata out/front_cv_led.dat v(jack1) v(jack2) v(op2) v(diode)
+quit
+.endc
+.end

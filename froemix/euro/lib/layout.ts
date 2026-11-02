@@ -160,14 +160,17 @@ export const JOYSTICK = {
 } as const
 
 /**
- * Illuminated button on M_ADC_7. The button's own LED doubles as the pull-up:
+ * Illuminated button on M_ADC_7:
  *
  *   P3V3_A -- 1k -- LED(A) -- LED(K) -- node(M_ADC_7) -- switch -- GND
+ *   P3V3_A -- 10k --------------------- node(M_ADC_7)
  *
- * Not pressed: no current path, the LED is dark and the node floats up to 3.3V
- * through the 1k + LED leakage, so the ADC reads full scale.
- * Pressed: the node is 0V and the LED lights at (3.3 - 2.0)/1k = 1.3mA.
- * The button therefore shows its own state with no GPIO and no firmware.
+ * The 10k is a real pull-up. The LED is an indicator only and must never be the
+ * only pull-up: with the switch released its leakage left the mux node at an
+ * unpredictable intermediate voltage, not a defined 3.3V.
+ * Released: R8 pulls the node toward P3V3_A; leakage and sampling affect it.
+ * Pressed:  the node is 0V; the LED lights at (3.3 - 2.0)/1k = 1.3mA and R8
+ * draws an additional 0.33mA.
  */
 export const BUTTON = {
   name: "SW2",
@@ -176,6 +179,7 @@ export const BUTTON = {
   x: 28,
   y: 25,
   seriesR: "1k",
+  pullupR: "10k",
 } as const
 
 export type Jack = {
@@ -217,27 +221,34 @@ export type JackLed = {
   net: string
   /** net-name stem; the chain uses `${base}_D` (diode anode) and `${base}_K` (LED anode) */
   base: string
+  /** explicit refs, so removing the audio LEDs does not renumber the CV ones */
+  resistor: string
+  diode: string
   x: number
   y: number
 }
 
 /**
- * Signal-activity LEDs on the six jack signals that matter most. Zero pins, no
- * firmware: the jack signal itself drives the LED through a diode (positive
- * excursions only), a 2.2k resistor and a 3mm LED.
+ * Signal-activity LEDs on the two CV outputs. Zero pins, no firmware: the jack
+ * signal drives the LED through a diode (positive excursions only), a 2.2k
+ * resistor and a 3mm LED.
  *
  *   jacknet -- |< -- 2.2k -- LED -- GND
  *
  * At 5V peak: (5 - 0.7 - 2.0)/2.2k = 1.0mA. The series diode keeps the reverse
  * half-cycle off the LED.
+ *
+ * The four AUDIO indicators (DL1-DL4) were removed: a direct diode/LED branch
+ * on an audio jack is a nonlinear load outside the base board's output feedback
+ * loop. It clipped the positive peak and produced ~4.5% THD at the output and
+ * ~4.8% at an input driven from 1k. CV outputs are different: their 1k series
+ * resistor sits inside the compensated op-amp loop. The loop can correct
+ * loading within its current, voltage, bandwidth and stability limits; verify
+ * the combined CV indicator and external load on hardware.
  */
 export const JACK_LEDS: JackLed[] = [
-  { name: "DL1", net: "J_AUDIO_IN_L", base: "INL", x: -42, y: -3 },
-  { name: "DL2", net: "J_AUDIO_IN_R", base: "INR", x: -25.2, y: -3 },
-  { name: "DL3", net: "J_AUDIO_OUT_L", base: "OUTL", x: -8.4, y: -3 },
-  { name: "DL4", net: "J_AUDIO_OUT_R", base: "OUTR", x: 8.4, y: -3 },
-  { name: "DL5", net: "J_CV_OUT_1", base: "CV1", x: -8.4, y: -30 },
-  { name: "DL6", net: "J_CV_OUT_2", base: "CV2", x: 8.4, y: -30 },
+  { name: "DL5", net: "J_CV_OUT_1", base: "CV1", resistor: "R14", diode: "D6", x: -8.4, y: -30 },
+  { name: "DL6", net: "J_CV_OUT_2", base: "CV2", resistor: "R15", diode: "D7", x: 8.4, y: -30 },
 ]
 
 /**

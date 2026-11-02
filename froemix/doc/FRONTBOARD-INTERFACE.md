@@ -56,8 +56,10 @@ this board's `P3V3_A`/`GND`, which is what the rules below constrain.
 `M_ADC_*` are read through a single CD4051, so keep the source resistance low:
 a 10 kΩ pot is at most 2.5 kΩ at mid-travel, a 100 kΩ pot is 25 kΩ and slows
 the sample-and-hold settling noticeably. Firmware owns the channel switching
-delay (a few µs between a mux address change and the ADC sample is the sane
-order); the front board just must not make the mux input high-impedance.
+delay and ADC acquisition time; the released MODE node has a 10 kΩ pull-up,
+higher source resistance than a pot wiper. Verify settling on real hardware
+when switching from a low channel to released MODE, including the actual ADC
+sample time and scan rate; no particular delay has been qualified.
 
 ## 2. Connector pinout
 
@@ -288,8 +290,9 @@ Run in this order before the front board is trusted with the base board:
      pressed**. Every state must be a distinct, stable level inside 0 … 3.3 V.
    - `M_ADC_7` — the illuminated button: released (no switch current, LED dark,
      the node sits near `P3V3_A`) and pressed (≈0 V, the button's LED lights at
-     ~1.3 mA through its series resistor). The LED is in the pull-up path, so
-     the channel must never be driven as an output.
+     approximately 1.3 mA through its series resistor, depending on LED Vf).
+     R8 provides the direct 10 kΩ pull-up; the LED is a separate indicator
+     branch. The channel must never be driven as an output.
    No point may exceed 3.3 V or go negative in any state, and every level must
    come from this board's own `P3V3_A`/`GND` divider — not from the supply, a
    jack or a second module.

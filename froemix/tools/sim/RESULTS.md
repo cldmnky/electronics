@@ -10,8 +10,9 @@ prints is `out/measured.txt`.
 
 ```bash
 cd froemix/tools/sim
-bash run.sh            # 4 decks + analyze.py, writes out/ and out/measured.txt
-python3 analyze.py     # re-analyse existing out/ without re-running SPICE
+bash run.sh                 # base decks + front-board checks, writes out/
+python3 analyze.py          # re-analyse existing base output
+python3 test_frontboard.py  # run only the front-board checks (requires ngspice)
 ```
 
 Nothing here touches the board: the decks are standalone `.cir` files
@@ -25,6 +26,30 @@ changes in the TSX, change the deck — the deck is a copy, not a source.
 | `audio_out.cir` | U3A/U3B, L channel — `sections/audio.tsx` | AC 1 Hz…1 MHz |
 | `cv_inout.cir` | U13 CV-in summer, U11A follower + U12 CV-out scaler — `sections/cv.tsx` | DC sweep ±5 V, DC sweep 0…3.3 V (load sweep), tran step into 1n/10n/100n load |
 | `ref_bias.cir` | U14 LM4040C10 + R41 — `sections/cv.tsx` | DC sweep VEE −12.2…−11.2 V |
+
+## Front-board checks
+
+`test_frontboard.py` runs three additional decks and fails if their modeled
+bounds are violated. They are hand transcriptions, **not generated from the
+built netlist**; update and review them when circuit values change. The euro
+mux/removed-reference checker independently verifies the built design.
+
+| Deck | What is modeled | Illustrative ngspice 47 result |
+| --- | --- | --- |
+| `front_audio.cir` | 1 kHz output with 1 kΩ series / 100 kΩ load and input with 1 kΩ source / 100 kΩ base load; compare removed diode/LED branch against no branch | THD harmonics 2–10: output 0.0000% / 4.5324%, input 0.0000% / 4.8431% (new / old) |
+| `front_mode.cir` | 10 kΩ pull-up with 1 µA leakage; LED and switch; a discharged 100 pF ADC capacitor connected through 250 Ω | 3.290 V released, 0.000159 V pressed, 1.263 mA LED current, 3.28963 V sampled 9 µs after connecting |
+| `front_cv_led.cir` | last compensated CV stage, 100 kΩ plus 10 nF external load, compare with and without 2.2 kΩ / diode / LED branch | 4.98995 / 4.98994 V, LED 1.079 mA, peak 4.98994 V (without / with LED) |
+
+These are **illustrative models, not specifications or measured hardware**.
+The audio driver is idealized, not a full TL074; the LED/diode models are not
+fitted-part models. The MODE capacitor, switch resistance and leakage are
+assumptions, not an STM32/CD4051 acquisition model. The CV op-amp has neither
+output-current limiting nor slew rate. No claim is made for arbitrary source
+impedance, firmware timing, fault conditions, temperature, unpowered or power
+sequencing, LED brightness, CV current limits or stability with other loads.
+Bench-test actual MODE levels and brightness, channel-to-channel settling at
+firmware scan rate, and CV output with actual LEDs and expected cable/load.
+The automated numeric bounds apply only to these modeled cases.
 
 ## Measured vs expected
 

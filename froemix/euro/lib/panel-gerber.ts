@@ -9,7 +9,7 @@
 //   * both copper layers are empty - the panel has no electrical function
 //   * the top legend really is printed: many drawn segments, and every aperture
 //     (which IS the printed stroke width) is at least 0.2mm
-//   * the NPTH drill file holds all 31 holes at the frozen coordinates and tool
+//   * the NPTH drill file holds all 27 holes at the frozen coordinates and tool
 //     diameters, and no plated hole is drilled into a mechanical panel
 //   * no assembly data rides along
 //
@@ -444,7 +444,7 @@ export const verifyPanelRelease = (opts: {
     problems.push(fail("mask", `expected 2 mask layers, found ${masks.length}`))
   }
 
-  // --- drill: NPTH only, all 31 holes, correct tool sizes
+  // --- drill: NPTH only, all 27 holes, correct tool sizes
   const npth = drills.filter((d) => /NonPlated|NPTH/i.test(d.fileFunction) || /npth/i.test(d.name))
   const other = drills.filter((d) => !npth.includes(d))
   if (npth.length !== 1) {

@@ -92,6 +92,52 @@ output was changed. P1 means resolve before ordering a patchable module; P2
 means correct or explicitly accept the limitation. Risks that need measurement
 are identified separately from confirmed connectivity/value errors.
 
+## Front-board LED fix (post-review, before first order)
+
+Two front-board findings were fixed after the design review and before the
+first fabrication order:
+
+- **Audio activity LEDs removed (DL1–DL4, R10–R13, D2–D5).** The direct
+  `jack -> 2.2k -> 1N4148 -> LED -> GND` branch is a nonlinear load. On the
+  audio outputs it sits outside the base board's op-amp feedback loop; an
+  illustrative ngspice run of the existing output chain with the front-board
+  branch gave ~3.98 V positive / 4.62 V negative peaks and **~4.5 % THD** at
+  full scale. On an audio input driven from 1 kΩ it gave **~4.8 % THD** at the
+  jack. Both are illustrative models, not hardware measurements, but the
+  loading is unambiguous from the connectivity. The four LEDs and their four
+  panel holes are gone. The two CV-output LEDs remain: their 1 kΩ series
+  resistor is inside the compensated CV feedback loop (R09), so the LED current
+  can be corrected within the amplifier's limits. Combined external load,
+  LED behaviour and stability still require physical verification.
+- **MODE pull-up added (R8, 10 kΩ, P3V3_A to M_ADC_7).** The button LED was
+  previously the only pull-up. Its leakage left the released mux node at an
+  undefined intermediate voltage; an illustrative LED model gave roughly
+  1.6–2.0 V depending on ADC/mux loading, not the documented 3.3 V. R8 defines
+  a low-impedance DC pull-up; the LED is now only an indicator. Pressed, R8
+  draws approximately 0.33 mA in addition to the nominal 1.3 mA LED current.
+  Released-state accuracy and acquisition settling need hardware verification.
+
+`check_madc.py` now asserts the 10 kΩ R8 connection and rejects the removed
+audio-LED refs; the panel fixture records the four-hole removal as an audited
+mechanical revision. Counts: 12 SMT + 27 THT placements, 27 panel holes.
+
+### DFM disposition before ordering
+
+Do not reroute the base board just to change the autorouter clearance setting in
+this electrical fix: previous trial reroutes did not eliminate the ~0.1 mm
+minimum and reduced via annular-ring margin. This is **not a clearance waiver**.
+The independent layout review identified 17 distinct different-net via pairs
+at approximately 0.100–0.149 mm; that estimate is not a comprehensive Gerber
+DRC. The 0.25 mm trace-width floor is not a spacing guarantee, and the shorts
+check does not qualify these clearances. Ask JLC CAM to explicitly accept the
+actual released base Gerbers, selected 4-layer/1 oz stackup and their tightest
+copper clearances **before submitting**. If CAM rejects them, stop and revise
+routing in a separately verified change. Also obtain CAM review for the newly
+routed front board; the base via-pair count does not characterize it. Check
+annular rings, drill registration, mask and critical polarity/pin-1 silk after
+CAM clipping as well. No CAM approval or physical manufacturability is claimed
+here.
+
 ## Evidence and coverage
 
 - `make gate`: **12/12 passed**, including ERC, netlist/footprint/part comparisons,
