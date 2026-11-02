@@ -83,6 +83,11 @@ fi
 step "tsci build"
 run build bun run build
 
+# Machine placement must remain bottom-only; through-hole mating headers are
+# intentionally still on top. Exercise the checker against negative mutations.
+python3 scripts/check_smt_side.py
+python3 scripts/test_smt_side.py
+
 # 3. KiCad netlist vs built circuit: pin for pin.
 step "KiCad netlist vs built circuit"
 run netlist bun run check:netlist

@@ -92,7 +92,7 @@ assembly: ## print the hand-assembly sheet (parts JLC does not mount)
 order: release ## print the order sheet and the files to upload for both boards
 	@printf '\n=== JLCPCB order =================================================\n'
 	@printf 'board   : %s\n' "$(BOARD)"
-	@printf 'settings: jlc-order.json (lead-free HASL, assembly on BOTH sides, THT hand-solder)\n'
+	@printf 'settings: jlc-order.json (lead-free HASL, SMT on BOTTOM only, THT hand-solder)\n'
 	@printf 'guide   : doc/JLC-ASSEMBLY.md (base) / doc/EURO-BOARD.md (euro)\n\n'
 	@printf 'base board - upload these:\n'
 	@printf '  gerbers : %s/froemix-gerbers.zip\n' "$(FAB)"
@@ -106,7 +106,7 @@ order: release ## print the order sheet and the files to upload for both boards
 	@printf '  mech    : %s/mechanical/ (MODE/NAV STLs, hardware list, stack + acceptance guide)\n\n' "$(EURO_FAB)"
 	@printf 'tick on the order page:\n'
 	@printf '  [ ] surface finish lead-free HASL (confirm quote and assembly preview)\n'
-	@printf '  [ ] assembly for BOTH sides of the base board\n'
+	@printf '  [ ] base SMT assembly on BOTTOM only (all 107 placements); THT fitted by hand\n'
 	@printf '  [ ] 4 layers, 1.6 mm, 1 oz outer copper (base) / 2 layers, 2 mm, empty copper (panel)\n'
 	@printf '  [ ] headers are 6mm-shoulder X4612 (not old short A2005WV); CN4 cut to 7 ways\n'
 	@printf '  [ ] stack: 11mm clear spacers; J1+shunts <=9.5mm; front tails <=1mm\n'

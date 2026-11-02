@@ -46,9 +46,10 @@ the generated BOM. The socket part is not yet selected or fit-validated; see
    on the order page if you want them placed; JLC quotes THT separately and
    their library coverage for these headers/modules is partial.
 
-**Two-sided assembly:** 99 of the 107 SMT placements are on the bottom, 8 on the
-top (rail SMD). Enable "assembly for both sides" — that is two
-paste/stencil passes, and it costs more than a single-sided run.
+**Single-sided SMT assembly:** all 107 SMT placements are on the **bottom**.
+Select bottom-side-only assembly and verify the JLC preview. The mating headers
+and J1 remain on top, but are through-hole parts fitted by hand after SMT; they
+do not require a second SMT placement pass.
 
 The three mating headers are hand-fitted THT: CN1/CN2 are C2883069, CN4 is a
 C2883061 eight-way strip **prepared to seven ways before fitting**. Do not accept
@@ -57,8 +58,8 @@ an old short A2005WV substitute; the stack needs the 6mm shoulder. See
 
 **Bottom-side rotation:** the exported CPL is in JLCPCB's convention (X/Y in mm,
 bottom layers mirrored, rotation in degrees CCW). All SMT placements are 0°/180°:
-93 of the 99 bottom placements are at 180° and 6 at 0°, the 8 top placements
-at 0°. H1 is a hand-soldered through-hole part, not in the SMT CPL. **Check the 3D
+101 of the 107 bottom placements are at 180° and 6 at 0°. H1 is a hand-soldered
+through-hole part, not in the SMT CPL. **Check the 3D
 preview of the assembled board on the order page before paying** — a wrong
 bottom-side rotation is the classic failure here, and it is free to check.
 
@@ -83,10 +84,9 @@ dots appear as bright copper, not covered by mask.
 
 ## GND plane (bottom layer)
 
-3 pour regions: one 79.9 × 127.5 mm plane (0.5 mm in from the edge) with 95
-pad/trace clearance holes, plus two slivers of 0.5 and 0.4 mm² — 7430.1 mm² of
-copper in total (71.5 % of the 80.9 × 128.5 mm board), 0.3 mm clear to any
-other copper.
+Five pour regions, 0.5 mm in from the edge with 73 clearance holes:
+approximately 7383.1 mm² total (71.0 % of the 80.9 × 128.5 mm board),
+0.3 mm clear to other copper.
 GND is *also*
 routed as explicit 0.25–0.3 mm traces because the router does not route into the
 pour, so the plane is a shield and a return layer, not the sole return path.
@@ -111,12 +111,12 @@ without a preheat plate.
    gate step fails.
 2. Upload `froemix-gerbers.zip`; confirm 4 layers, 80.9 × 128.5 mm, 3.2 mm holes.
 3. Upload the **SMT-only BOM** `froemix-bom-smt.csv` and
-   `froemix-cpl-jlc.csv`; confirm **107** SMT placements (99 bottom, 8 top).
+   `froemix-cpl-jlc.csv`; confirm **107** SMT placements, all on the bottom.
    The combined BOM is a reference, not the SMT upload.
 4. Inspect the assembly preview: fiducials bright, no part off-board, bottom
    rotations sane, Daisy footprint empty.
-5. Order PCB + stencil; assembly 2-sided if you want the bottom side machine
-   placed.
+5. Select single-sided **bottom** SMT assembly; order a separate stencil only
+   if you need one. Hand-solder the through-hole parts and Daisy sockets later.
 
 
 ## Which BOM to upload

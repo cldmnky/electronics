@@ -1,7 +1,7 @@
 # Hand-assembly sheet — parts JLC does not mount
 
 Everything in `froemix-cpl-jlc.csv` is machine-placed by JLCPCB's SMT line
-(107 placements: 99 on the bottom, 8 on the top). This sheet covers
+(all 107 placements on the bottom). This sheet covers
 **everything else**: the 10 through-hole parts kept out of the CPL, the two
 jumper shunts for `J1`, two Daisy female socket strips and the Daisy Seed
 module (`doNotPlace`), and the bare-copper aids. The socket strips and shunts
@@ -156,9 +156,9 @@ The table above adds orientation cues. The 2×8 IDC key, 40 Daisy holes and
 
 ## Notes
 
-- **Two-sided build**: the machine-placed parts are on both faces (99 bottom,
-  8 top). Handle the board by the edges; the bottom side carries the analog
-  circuitry and the plane.
+- **Single-sided SMT**: all 107 machine-placed parts are on the bottom. The
+  top still carries hand-soldered through-hole mating headers and J1. Handle the
+  board by the edges; the bottom side carries the circuitry and GND plane.
 - **5 V rail is not a regulated 5.000 V rail.** `U16` (B2405S-2WR3) is a 2 W /
   400 mA **unregulated** isolated converter with a 40 mA minimum load: expect
   roughly ±10 % over load, worse at light load. Never measure the board with

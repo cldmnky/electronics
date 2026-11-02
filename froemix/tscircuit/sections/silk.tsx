@@ -52,10 +52,8 @@ const REFDES: Refdes[] = [
   { text: "U13", x: 4.88, y: 16.7, layer: "bottom" },
   { text: "U14", x: 3.97, y: -7.1, layer: "bottom" },
   { text: "U15", x: 21.4, y: -22.23, layer: "bottom" },
-  // U16 moved from (3.39,-43.8): the 2W module's body is 19.65mm long and hangs
-  // 6.15mm to one side of its lead row, so the label sits just above the
-  // courtyard (y -48.34) clear of C32.
-  { text: "U16", x: 8.5, y: -46.9, layer: "bottom" },
+  // Keep the 2W module label clear of the relocated C27 and U16 courtyard.
+  { text: "U16", x: 11.0, y: -57.1, layer: "bottom" },
   { text: "DaisySeed1", x: 29.5, y: 30.2, layer: "bottom" },
   // connectors
   { text: "CN1", x: -17.58, y: 57.5, layer: "top" },
@@ -72,8 +70,9 @@ const REFDES: Refdes[] = [
   // diodes
   { text: "D1", x: 24.02, y: -28.5, layer: "bottom" },
   { text: "D5", x: 13.8, y: -0.4, layer: "bottom" },
-  { text: "D3", x: -0.06, y: -57.1, layer: "top" },
-  { text: "D4", x: 6.44, y: -57.1, layer: "top" },
+  // D3/D4 now sit on the bottom; labels are below their courtyards.
+  { text: "D3", x: -0.06, y: -61.3, layer: "bottom" },
+  { text: "D4", x: 6.44, y: -61.3, layer: "bottom" },
 ]
 
 const BOARD_NOTES = [

@@ -142,7 +142,7 @@ operations, nothing outside `fab/` is deleted.
 
 Measure routing with: unconnected ports (`pcb_port_not_connected_error`) must be
 0; then minimize vias, then total copper mm (sum `pcb_trace` segment lengths in
-`dist/index/circuit.json`). Reference: 306 traces / 335 vias / 4978.7mm / 0
+`dist/index/circuit.json`). Reference: 306 traces / 330 vias / 4948.2mm / 0
 unconnected / 0 overlaps. The autorouter is deterministic — identical trees
 rebuild byte-identical numbers.
 
@@ -157,9 +157,9 @@ and pcb-style clean. The 4 fiducials carry no nets and change no routing. The
 out; Q2, R58, R59/R60, D5, C31, C32 in), 304/325/4934 added the Type A MIDI OUT
 move (driver beside the Seed, 22 Ω source) plus C33/C34, **304/334/4971** is
 the U16 2 W swap (new 19.65mm-long footprint, new placement, C32 moved to the
-input leads), and the current **306/335/4978.7** is the MIDI OUT polarity fix
-(Q2 became a PNP high-side switch, R59 moved to the ring, R60 to the tip/GND,
-R61 added on the base) — all measured the same way.
+input leads), **306/335/4978.7** is the MIDI OUT polarity fix, and the current
+**306/330/4948.2** moves eight power SMT parts to the bottom without moving TP1.
+All were measured the same way.
 
 Not gated (deliberately): KiCad PCB DRC — `tmp/froemix.kicad_pcb` is a frozen
 mid-edit reference, layout lives here now. Schematic-placement label
@@ -178,8 +178,9 @@ installed core — route control is placement + phases + widths.
   pin-1 pads shift the bbox by −0.03mm. Do not move a matching socket to the bbox
   coordinate. All 39 mated pads are now checked against both built boards.
   CN1/CN2 are at opposite board ends, but **both are on top**.
-- **Sides are load-bearing.** TOP = mating headers + low-profile SMD only.
-  Everything else (all tall bodies: Daisy, C24/C25, U16, J2, H1) hangs off the
+- **Sides are load-bearing.** TOP = mating headers and J1, hand-fitted THT.
+  All 107 SMT placements are on BOTTOM (enforced by the single-side check);
+  all tall bodies (Daisy sockets, C24/C25, U16, J2, H1) also hang off the
   BOTTOM into the rack cavity. The euro board closes over the top at header
   height — any tall body on top blocks mating. Keep it that way.
   **Corrected mechanical stack:** CN1/CN2 are C2883069 XKB E60 headers (6mm
@@ -201,12 +202,12 @@ installed core — route control is placement + phases + widths.
   | IC | cap | rail leg | GND leg (return pin) |
   | --- | --- | --- | --- |
   | U1 (CD4051, P3V3_A) | C31 | 7.71 | 12.98 (p7 VEE) |
-  | U2 | C4 VCC / C5 VEE | 11.71 / 8.69 | - (return is VMINUS on VEE) |
-  | U3 | C10 VCC / C11 VEE | 9.26 / 8.37 | - |
+  | U2 | C4 VCC / C5 VEE | 8.98 / 7.72 | - (return is VMINUS on VEE) |
+  | U3 | C10 VCC / C11 VEE | 7.94 / 7.56 | - |
   | U11 | C14 VCC / C15 VEE | 7.87 / 2.89 | - |
-  | U12 | C17 VCC / C18 VEE | 9.17 / 9.24 | - |
-  | U13 (MCP6002, P3V3_A) | C19 | 3.81 | 36.07 (p4 VSS) |
-  | U14 (LM4040, N10V_REF) | C20 | 5.66 | 6.70 (p1 CATHODE) |
+  | U12 | C17 VCC / C18 VEE | 9.45 / 7.68 | - |
+  | U13 (MCP6002, P3V3_A) | C19 | 3.81 | 36.19 (p4 VSS) |
+  | U14 (LM4040, N10V_REF) | C20 | 6.61 | 10.67 (p1 CATHODE) |
   | U15 (TLP2362, P3V3_D) | C28 | 5.46 | 3.45 (p4 GND) |
   | DaisySeed1 | C29 / C30 (P3V3_D) | 4.70 / 19.09 | 3.60 / 29.80 (p40 DGND) |
   | DaisySeed1 | C1 (P5V) | 11.80 | 9.03 (p40 DGND) |
@@ -221,11 +222,10 @@ installed core — route control is placement + phases + widths.
   are grounded non-inverting inputs and the old report quoted a fake 4.7mm
   "loop" (IN1P). The fallback to the nearest pad on GND stays only for a part
   with no named return pin at all (U14, a shunt reference).
-  Keep the IC rail legs near 10mm and U13's odd 36mm GND leg in mind: it is
+  Keep the IC rail legs near 10mm and U13's 36.19mm GND leg in mind: it is
   the C19 return, not the rail — the rail leg (3.81mm) is what the bypass is
   for, and GND is additionally under the pour (not in the graph). U2's C4 VCC
-  leg is 11.71mm (9.21mm before the MIDI OUT rework re-solved the autoroute);
-  bulk C1 11.80mm and C30 19.09mm sit in the SD/OLED corner — acceptable for
+  leg is 8.98mm; bulk C1 11.80mm and C30 19.09mm sit in the SD/OLED corner — acceptable for
   bulk, the first thing to improve if placement is ever reworked.
 - **Courtyards are keepouts**: no overlaps (Errors 0 gate), M3 holes at
   (±36.95,±60.75) stay clear, use ≤5mm-OD standoff hardware. The 5.5mm-OD claim
@@ -250,12 +250,10 @@ installed core — route control is placement + phases + widths.
   boardEdgeMargin="0.5mm" />`. 0.3mm to pads/traces/cutouts, 0.5mm to the board
   edge (the board minimum is 0.4mm — the pour margin defaults to `clearance`,
   i.e. 0.3mm, which fails the build's copper-to-board-edge DRC). Built result:
-  **4 `pcb_copper_pour` regions** on the bottom, 7371.1 + 39.5 + 0.5 + 0.0 mm² =
-  7411.0 mm² of copper with 88 clearance holes, 71.3 % of the 80.9 × 128.5 mm
-  board (the 1 W board was 3 regions / 7430.1 mm² / 95 holes / 71.5 %; the U16
-  2 W swap re-solved the routing and re-poured). The
+  **5 `pcb_copper_pour` regions** on the bottom, approximately 7383.1 mm² of
+  copper with 73 clearance holes, 71.0 % of the 80.9 × 128.5 mm board. The
   pour is generated **after** routing and the router does not route into it, so
-  the trace/via numbers are unchanged (306/335/4978.7) and GND is still routed
+  the current routing is 306/330/4948.2 and GND is still routed
   explicitly; making the pour carry GND current means pour-aware routing
   (`unbroken`), which is untested.
 - **Pours need `holeOffsetX`/`holeOffsetY` on every `circular_hole_with_rect_pad`
@@ -440,10 +438,8 @@ release`; no item is aspirational.
 - **Test points**: 8 bottom-side TP pads — P5V, P3V3_D, P3V3_A, VCC, VEE,
   N10V_REF, SYNC_IN, MULTIPLEX_ADC_1.
 - **Decoupling**: U1 has a local C31 (7.71 mm rail leg); every IC rail leg is
-  ≤11.71 mm (U2's C4, which moved from 9.21 mm when the MIDI OUT rework
-  re-solved the autoroute) and the report is pin/net/layer aware (§3 has the
-  table). C14/C15 went from 13.2/18.6 mm to 7.87/2.89 mm as part of the CV
-  rework; U16's input cap C32 is 2.64 mm from its lead. The GND legs
+  ≤11.80 mm and the report is pin/net/layer aware (§3 has the table).
+  C14/C15 are 7.87/2.89 mm; U16's input cap C32 is 2.64 mm from its lead. The GND legs
   are quoted to the IC's return pin, not to any grounded pin, and are `-` for a
   part whose return is the other rail.
 - **5 V rail is the 2 W module**: U16 is the 2 W/400 mA B2405S-2WR3
@@ -472,8 +468,8 @@ release`; no item is aspirational.
   `froemix/fab/` (§2).
 - **GND copper pour**: bottom-layer GND plane builds (`copperpour` in
   `index.circuit.tsx`, requires the `holeOffsetX`/`holeOffsetY` workaround, §3),
-  4 regions / 7411.0 mm² / 88 clearance holes = 71.3 % of the board, gate 15/15
-  green, routing 306 traces / 335 vias / 4978.7mm / 0 unconnected / 0 overlaps.
+  5 regions / 7383.1 mm² / 73 clearance holes = 71.0 % of the board, gate 15/15
+  green, routing 306 traces / 330 vias / 4948.2mm / 0 unconnected / 0 overlaps.
 
 **Open — close these before ordering**
 
@@ -498,9 +494,9 @@ release`; no item is aspirational.
   alternative.
 - **Encoder**: no encoder pins on the base board; CN2 pads 11–15 are unused and
   reserved for that decision.
-- **JLC second side / CPL mirror**: 98 of the 106 SMT placements are bottom-side
-  and the exported CPL mirrors them (92 at 180°, 6 at 0°; 8 top parts at 0°);
-  verify against JLCPCB's bottom-side expectation before paying for assembly.
+- **JLC CPL mirror**: all 107 SMT placements are bottom-side (101 at 180°, 6 at
+  0° in the exported CPL); verify polarity and JLCPCB's bottom-side preview
+  before paying for single-sided assembly.
 - **MIDI receiver threshold**: the on-board receiver is a TLP2362 with a **5 mA
   maximum switching threshold** (recommended on-current from 7.5 mA) while our
   own Type A transmitter delivers **4.48 mA worst case** into a receiver at
