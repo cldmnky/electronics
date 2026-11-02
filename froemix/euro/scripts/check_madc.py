@@ -7,7 +7,8 @@ closed island of panel controls referenced to this board's own P3V3_A/GND:
 
     pot:      P3V3_A -- 10k -- wiper --> M_ADC_n, other end GND
     joystick: P3V3_A -- 10k -- common --> M_ADC_6, direction ladder to GND
-    button:   P3V3_A -- 1k -- LED --> M_ADC_7 -- switch --> GND
+    button:   P3V3_A -- 10k --------------------- M_ADC_7 -- switch --> GND
+              P3V3_A -- 1k -- LED --> BTN_LED -- M_ADC_7 (indicator only)
 
 This check walks each M_ADC_* net through the allowed panel-control parts and
 fails if the island reaches anything else - another rail, an external jack, or
@@ -29,7 +30,7 @@ MUX = [f"M_ADC_{i}" for i in range(8)]
 # Panel controls that may sit on a mux net, and the nets their other pins are
 # allowed to reach. CN1 is the mating connector: an allowed endpoint, never
 # traversed (traversing it would walk into the whole base board).
-CONTROLS = {f"RV{i}" for i in range(1, 7)} | {"SW1", "SW2"} | {f"R{i}" for i in range(2, 8)}
+CONTROLS = {f"RV{i}" for i in range(1, 7)} | {"SW1", "SW2"} | {f"R{i}" for i in range(2, 9)}
 ENDPOINTS = {"CN1"}
 RAILS = {"GND", "P3V3_A"}
 ALLOWED_NETS = set(MUX) | {"P3V3_A", "GND", "JOY_UP", "JOY_DOWN", "JOY_LEFT", "JOY_RIGHT", "BTN_LED"}
@@ -109,6 +110,28 @@ def main() -> None:
                 f"{net}: island reaches {', '.join(sorted(stray))}, outside "
                 f"P3V3_A/GND and the panel-control nets")
 
+    # The MODE input needs a real resistor pull-up, not LED leakage. This also
+    # catches a future edit that removes R8 while leaving the button circuit.
+    components = {
+        e["name"]: e for e in circuit
+        if e["type"] == "source_component" and e.get("name")
+    }
+    for removed in ("DL1", "DL2", "DL3", "DL4", "R10", "R11", "R12", "R13",
+                    "D2", "D3", "D4", "D5"):
+        if removed in components:
+            problems.append(
+                f"{removed}: audio activity LED parts must stay removed; the "
+                f"direct LED load distorts the audio jacks")
+
+    r8 = components.get("R8")
+    if not r8:
+        problems.append("R8: 10k MODE pull-up is missing")
+    else:
+        if r8.get("resistance") != 10000:
+            problems.append(f"R8: expected 10k, found {r8.get('resistance')!r}")
+        if by_ref.get("R8") != {"M_ADC_7", "P3V3_A"}:
+            problems.append(f"R8: expected P3V3_A/M_ADC_7, found {sorted(by_ref.get('R8', ()))}")
+
     if problems:
         print("mux-input contract VIOLATED (DESIGN-REVIEW R14):")
         for problem in problems:
@@ -116,7 +139,7 @@ def main() -> None:
         sys.exit(1)
     print(f"mux inputs OK: {len(MUX)} M_ADC nets are closed islands of "
           f"{len(CONTROLS)} panel controls referenced only to P3V3_A/GND "
-          f"(endpoint CN1)")
+          f"(endpoint CN1); MODE has its own 10k pull-up")
 
 
 if __name__ == "__main__":

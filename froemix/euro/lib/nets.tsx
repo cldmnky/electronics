@@ -50,16 +50,8 @@ export const Nets = () => (
     {/* illuminated button: 1k -> button LED -> M_ADC_7 -> switch -> GND */}
     <net name="BTN_LED" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
 
-    {/* --- signal-activity LEDs: jack net -> 2.2k -> diode -> LED -> GND --- */}
+    {/* --- CV-output activity LEDs: jack net -> 2.2k -> diode -> LED -> GND --- */}
     {/* _D is the node at the diode anode, _K the node at the LED anode */}
-    <net name="INL_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
-    <net name="INL_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
-    <net name="INR_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
-    <net name="INR_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
-    <net name="OUTL_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
-    <net name="OUTL_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
-    <net name="OUTR_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
-    <net name="OUTR_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
     <net name="CV1_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
     <net name="CV1_K" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />
     <net name="CV2_D" nominalTraceWidth="0.25mm" routingPhaseIndex={0} />

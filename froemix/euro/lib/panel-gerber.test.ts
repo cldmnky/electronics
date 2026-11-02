@@ -99,7 +99,7 @@ describe.each(PANEL_DESIGN_IDS)("%s release", (design) => {
     })
     expect(result.problems).toEqual([])
     expect(result.summary.profile.contours).toBe(2)
-    expect(result.summary.drill.holes).toBe(31)
+    expect(result.summary.drill.holes).toBe(27)
     expect(result.summary.silk.minAperture).toBeGreaterThanOrEqual(0.2)
   })
 })

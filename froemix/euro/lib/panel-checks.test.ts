@@ -80,7 +80,7 @@ describe("frozen geometry", () => {
     const i = circuitJson.findIndex((e) => e.type === "pcb_hole")
     circuitJson.splice(i, 1)
     const problems = checks(circuitJson)
-    expect(hasProblem(problems, "holes", /panel has 30 holes/)).toBe(true)
+    expect(hasProblem(problems, "holes", /panel has 26 holes/)).toBe(true)
   })
 
   test("an extra hole is caught", () => {

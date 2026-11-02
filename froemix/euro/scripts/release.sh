@@ -96,7 +96,7 @@ THT = {
     "J13", "J14",                              # TRS MIDI jacks
     "RV1", "RV2", "RV3", "RV4", "RV5", "RV6",  # pots
     "SW1", "SW2",                              # joystick, button
-    "DL1", "DL2", "DL3", "DL4", "DL5", "DL6",  # 3mm jack LEDs
+    "DL5", "DL6",                              # 3mm CV jack LEDs
     "D1",                                       # 3mm panel LED
     "DS1",                                      # OLED module header
 }

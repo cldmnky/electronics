@@ -5,7 +5,7 @@ Daisy Seed based Eurorack module. The design is split over two boards:
 | Board | Contents | Status |
 | --- | --- | --- |
 | **base board** (`tmp/`, `tscircuit/`) | Daisy Seed, CD4051 ADC multiplexer, Eurorack power entry (+/-12V -> VCC/VEE, +5V, -10V reference), audio in/out buffers, CV in attenuverters, CV out drivers, sync in/out, opto isolated MIDI, OLED/microSD/PMOD headers, board-to-board headers | converted to tscircuit |
-| **eurorack board** (`euro/`, `doc/EURO-BOARD.md`) | 20HP front board: 10 mono jacks + 2 TRS MIDI jacks, 6 pots, 5-way UI joystick, illuminated MODE button, 6 jack activity LEDs, 1.3" OLED, and the panel | designed, routed, gated; the electrical contract it must meet is [`doc/FRONTBOARD-INTERFACE.md`](doc/FRONTBOARD-INTERFACE.md) |
+| **eurorack board** (`euro/`, `doc/EURO-BOARD.md`) | 20HP front board: 10 mono jacks + 2 TRS MIDI jacks, 6 pots, 5-way UI joystick, illuminated MODE button, 2 CV-output activity LEDs, 1.3" OLED, and the panel | designed, routed, gated; the electrical contract it must meet is [`doc/FRONTBOARD-INTERFACE.md`](doc/FRONTBOARD-INTERFACE.md) |
 
 Inspiration: Electrosmith Daisy Patch (`~/Downloads/Patch-Design-Files-EAGLE`,
 20HP, 19 jacks, SMT euro jacks + TRS MIDI).
@@ -101,14 +101,14 @@ LED, rails), CN2 (the jack bus) and CN4 (display), on 2.00mm sockets on its
 bottom side, at the base board's own frozen coordinates. CN3 (micro SD) is
 intentionally not mated yet. `euro/scripts/check_mating.py` verifies, from the
 built circuit JSON, that every socket pin lands on the base board's pin, that
-all 26 panel parts sit exactly above their panel holes, that no panel hole is
+all 22 panel parts sit exactly above their panel holes, that no panel hole is
 orphaned, and that nothing is left unrouted.
 
 The UI costs no extra wires: the 5-way joystick and the illuminated button sit
 on the two muxed pot channels `M_ADC_6`/`M_ADC_7` as resistor ladders (see
-`doc/EURO-BOARD.md` §2 and §7 — the ladder levels are a firmware contract). The
-six jack LEDs need no pins at all: each one is driven by its own jack signal
-through a diode and a resistor.
+`doc/EURO-BOARD.md` §2 and §7 — the ladder levels are a firmware contract). The two CV jack LEDs need no pins at all: each one is driven by its own jack
+signal through a diode and a resistor. The four audio LEDs were removed because
+their direct diode/LED load distorted the audio jacks.
 
 Design record, floorplan and the open decisions (joystick sourcing, OLED
 module, jack height, button part, CN3/SD, panel material):
@@ -374,9 +374,9 @@ per-designator exports tscircuit writes natively):
 | base | BOM (hand) | **`fab/froemix-bom-hand.csv`** - the 8 parts you solder yourself, as a shopping list |
 | base | CPL | `fab/froemix-cpl-jlc.csv` (107 SMT placements) |
 | euro | Gerbers | `fab/euro/euro-gerbers.zip` |
-| euro | BOM (upload) | **`fab/euro/euro-bom-smt.csv`** - 5 unique parts, 19 placements |
-| euro | BOM (hand) | **`fab/euro/euro-bom-hand.csv`** - 9 unique parts, 31 through-hole |
-| euro | CPL | `fab/euro/euro-cpl-jlc.csv` (19 SMT placements) |
+| euro | BOM (upload) | **`fab/euro/euro-bom-smt.csv`** - 5 unique parts, 12 placements |
+| euro | BOM (hand) | **`fab/euro/euro-bom-hand.csv`** - 9 unique parts, 27 through-hole |
+| euro | CPL | `fab/euro/euro-cpl-jlc.csv` (12 SMT placements) |
 | euro panel | Gerbers | `fab/euro/panel/panel-gerbers.zip` (2 mm FR4, holes + silkscreen only) |
 
 `make release` produces both sets in one run (`fab/` for the base board,

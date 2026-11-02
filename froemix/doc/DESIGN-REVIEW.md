@@ -92,6 +92,33 @@ output was changed. P1 means resolve before ordering a patchable module; P2
 means correct or explicitly accept the limitation. Risks that need measurement
 are identified separately from confirmed connectivity/value errors.
 
+## Front-board LED fix (post-review, before first order)
+
+Two front-board findings were fixed after the design review and before the
+first fabrication order:
+
+- **Audio activity LEDs removed (DL1–DL4, R10–R13, D2–D5).** The direct
+  `jack -> 2.2k -> 1N4148 -> LED -> GND` branch is a nonlinear load. On the
+  audio outputs it sits outside the base board's op-amp feedback loop; an
+  illustrative ngspice run of the existing output chain with the front-board
+  branch gave ~3.98 V positive / 4.62 V negative peaks and **~4.5 % THD** at
+  full scale. On an audio input driven from 1 kΩ it gave **~4.8 % THD** at the
+  jack. Both are illustrative models, not hardware measurements, but the
+  loading is unambiguous from the connectivity. The four LEDs and their four
+  panel holes are gone. The two CV-output LEDs remain: their 1 kΩ series
+  resistor is inside the compensated CV feedback loop (R09), so the LED current
+  is corrected rather than becoming an audio-band error.
+- **MODE pull-up added (R8, 10 kΩ, P3V3_A to M_ADC_7).** The button LED was
+  previously the only pull-up. Its leakage left the released mux node at an
+  undefined intermediate voltage; an illustrative LED model gave roughly
+  1.6–2.0 V depending on ADC/mux loading, not the documented 3.3 V. R8 defines
+  the released level; the LED is now only an indicator. Pressed, R8 draws
+  0.33 mA in addition to the 1.3 mA LED current.
+
+`check_madc.py` now asserts the 10 kΩ R8 connection and rejects the removed
+audio-LED refs; the panel fixture records the four-hole removal as an audited
+mechanical revision. Counts: 12 SMT + 27 THT placements, 27 panel holes.
+
 ## Evidence and coverage
 
 - `make gate`: **12/12 passed**, including ERC, netlist/footprint/part comparisons,

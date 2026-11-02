@@ -17,7 +17,7 @@
 //   6x pot bushings     M7                     Alps RK09K
 //  12x jack bushings    6.2mm                  XKB PJ-301M-2-B (mono) /
 //                                               XKB PJ-301M-3-B (TRS)
-//   6x jack LEDs         3.2mm
+//   2x CV jack LEDs      3.2mm
 //   1x panel LED         3.2mm
 //   1x navigation switch 7.0mm
 //   1x MODE button      12.2mm
@@ -103,7 +103,7 @@ export default ({ design }: { design?: string } = {}) => {
         pcbY={`${BUTTON.y}mm`}
       />
 
-      {/* signal-activity LEDs, one above each watched jack */}
+      {/* CV-output activity LEDs, one above each CV output jack */}
       {JACK_LEDS.map((l) => (
         <Fragment key={`jackled-${l.name}`}>
           <hole diameter={`${HOLE.jackLed}mm`} pcbX={`${l.x}mm`} pcbY={`${l.y}mm`} />
