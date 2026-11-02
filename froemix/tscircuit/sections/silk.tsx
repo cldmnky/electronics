@@ -16,9 +16,9 @@
 // `tools/check_silk.py` gates the actual gerber coordinates.
 
 import { Fragment } from "react"
-import { wordmarkPaths } from "../../euro/lib/panel-art"
-import { BOARD_REVISION, buildDate } from "../../shared/build-info"
-import { oshwPaths } from "../../shared/oshw"
+import { wordmarkPaths } from "../lib/wordmark"
+import { BOARD_REVISION, buildDate } from "../lib/build-info"
+import { oshwPaths } from "../lib/oshw"
 
 type Refdes = {
   text: string

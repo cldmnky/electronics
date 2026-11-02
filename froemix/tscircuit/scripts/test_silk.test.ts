@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
-import { wordmarkPaths } from "../../euro/lib/panel-art"
-import { BOARD_REVISION, buildDate } from "../../shared/build-info"
-import { oshwPaths } from "../../shared/oshw"
+import { wordmarkPaths as euroWordmarkPaths } from "../../euro/lib/panel-art"
+import * as euroInfo from "../../euro/lib/build-info"
+import { BOARD_REVISION, buildDate } from "../lib/build-info"
+import { wordmarkPaths } from "../lib/wordmark"
+import { oshwPaths } from "../lib/oshw"
 
 const circuit: any[] = JSON.parse(readFileSync("dist/index/circuit.json", "utf8"))
 const bottomTexts = circuit.filter(e => e.type === "pcb_silkscreen_text" && e.layer === "bottom")
@@ -15,9 +17,17 @@ test("base board prints the current revision, UTC date and hand-assembly notes",
   }
 })
 
+test("the base copy of the identity and wordmark matches the euro source", () => {
+  expect(BOARD_REVISION).toBe(euroInfo.BOARD_REVISION)
+  expect(buildDate()).toBe(euroInfo.buildDate())
+  expect(wordmarkPaths("FROEMIX", 1.35, -46.5, -29.5)).toEqual(
+    euroWordmarkPaths("FROEMIX", 1.35, -46.5, -29.5),
+  )
+})
+
 test("the Nord wordmark and OSHW gear are emitted on the rear", () => {
   const expected = [
-    ...wordmarkPaths("FROEMIX", 1.35, -46.5, -29.5).paths.map(path => path.map(p => ({ x: -59-p.x, y: p.y }))),
+    ...euroWordmarkPaths("FROEMIX", 1.35, -46.5, -29.5).paths.map(path => path.map(p => ({ x: -59-p.x, y: p.y }))),
     ...oshwPaths(-34, -32, 7),
   ].map(key).sort()
   const actual = boardPaths.map(p => key(p.route)).sort()

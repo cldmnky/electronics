@@ -22,7 +22,7 @@
 // path from `@tscircuit/alphabet` (or a hand-placed monoline glyph), and every
 // position is computed, so the checks can measure the ink exactly.
 
-import { BOARD_REVISION } from "../../shared/build-info"
+import { BOARD_REVISION } from "./build-info"
 import {
   glyphAdvanceRatio,
   glyphWidthRatio,

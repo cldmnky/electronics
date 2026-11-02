@@ -30,5 +30,5 @@ for (const c of commands) {
 // pitch overlaps the 0.2mm aperture. Gear shape remains in the artwork license.
 const points = out.map(([px, py]) => [Number(px.toFixed(3)), Number(py.toFixed(3))])
 const source = `// Generated from the OSHW gear by tools/make_oshw_gear.ts; see assets/README.md.\nexport const OSHW_OUTLINE: readonly (readonly [number, number])[] = ${JSON.stringify(points)}\n`
-writeFileSync("../shared/oshw-outline.ts", source)
+writeFileSync("../tscircuit/lib/oshw-outline.ts", source)
 console.log(`Generated ${out.length} outline vertices`)

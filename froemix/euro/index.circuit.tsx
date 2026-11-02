@@ -12,7 +12,7 @@
 // board (the three 2.00mm sockets). Nothing tall on the bottom but the sockets.
 
 import { BOARD_H, BOARD_W, BUTTON, STANDOFF_HOLES } from "./lib/layout"
-import { BOARD_REVISION, buildDate } from "../shared/build-info"
+import { BOARD_REVISION, buildDate } from "./lib/build-info"
 import { Nets } from "./lib/nets"
 import { MatingSockets } from "./sections/mating"
 import { JacksSection } from "./sections/jacks"

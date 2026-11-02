@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
-import { BOARD_REVISION, buildDate } from "../../shared/build-info"
+import { BOARD_REVISION, buildDate } from "./build-info"
 
 test("built euro board has the same rear revision and build date", () => {
   const circuit: any[] = JSON.parse(readFileSync("dist/index/circuit.json", "utf8"))

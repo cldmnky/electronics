@@ -5,7 +5,7 @@ by **Macklin Chaffee**, downloaded from
 <https://oshwa.org/resources/open-source-hardware-logo/> (source:
 <https://resources.oshwa.org/files/assets/oshw-logo-filled-black.svg>).
 OSHWA describes the gear logo as **CC-SA**. The generated gear-only outline
-`../shared/oshw-outline.ts` and its scanline silkscreen adaptation are derived
+`../tscircuit/lib/oshw-outline.ts` and its scanline silkscreen adaptation are derived
 from that artwork and are offered under the same share-alike terms. The SVG is
 retained here for provenance and modification; the rest of this repository's
 license is not a replacement for the artwork's terms.

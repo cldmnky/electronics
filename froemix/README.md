@@ -63,20 +63,27 @@ keep working unchanged: they compare the KiCad sources against the BUILT
 
 ## Printed board identity
 
-The base, euro board and panel share `shared/build-info.ts`: **Rev 0.1** and a
-UTC `YYYY-MM-DD` build date are printed on their rear faces. The base also
-carries the Nord monoline FROEMIX wordmark, an OSHW gear and a short hand-build
-reminder. The gear is not a certification mark; its attribution, share-alike
-notice and compliance caveat are in [`assets/README.md`](assets/README.md).
+The base, euro board and panel carry **Rev 0.1** and a UTC `YYYY-MM-DD` build
+date on their rear faces. The base also carries the Nord monoline FROEMIX
+wordmark, an OSHW gear and a short hand-build reminder. The gear is not a
+certification mark; its attribution, share-alike notice and compliance caveat
+are in [`assets/README.md`](assets/README.md).
+
+`tsci dev` only serves files inside the project it is started in, so imports
+from a common `shared/` directory break the browser preview even though a Node
+build resolves them. The identity constants therefore live in both
+`tscircuit/lib/build-info.ts` and `euro/lib/build-info.ts`, and the base's
+`tscircuit/lib/wordmark.ts` mirrors the euro panel's `MONO_GLYPHS`. This is a
+checked duplication, not a second source of truth: `tscircuit/scripts/test_silk.test.ts`
+asserts both revisions and dates are equal and that the base's built wordmark is
+byte-for-byte the euro geometry. A revision bump changes both files.
 
 `make release` captures one date for all three outputs. Set
 `FROEMIX_BUILD_DATE=2026-11-02 make release` to reproduce a dated set; use a
-real calendar date. A revision bump is an explicit edit to `BOARD_REVISION` in
-`shared/build-info.ts`. The snapshot gate deliberately uses `2024-08-10`, so
+real calendar date. The snapshot gate deliberately uses `2024-08-10`, so
 snapshots are stable and that reference date is **not** the release date.
-Install both board projects with `make install`: the base reuses the euro
-panel's canonical Nord wordmark geometry. Check the generated rear silkscreens
-in the manufacturer preview; a successful gate is not CAM approval.
+Install both board projects with `make install`. Check the generated rear
+silkscreens in the manufacturer preview; a successful gate is not CAM approval.
 
 ## Eurorack (front) board
 
