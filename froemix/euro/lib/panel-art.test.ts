@@ -131,10 +131,10 @@ describe.each(designs.map((art) => [art.design, art] as const))("%s artwork", (d
   })
 })
 
-test("both designs print the same 31 hardware keepouts", () => {
+test("both designs print the same 27 hardware keepouts", () => {
   for (const art of designs) {
-    expect(art.keepouts).toHaveLength(31)
-    expect(new Set(art.keepouts.map((k) => k.id)).size).toBe(31)
+    expect(art.keepouts).toHaveLength(27)
+    expect(new Set(art.keepouts.map((k) => k.id)).size).toBe(27)
   }
 })
 

@@ -1,0 +1,28 @@
+* MODE: R8=10k pull-up; R7=1k plus switch LED to button node.
+* Released under an illustrative 1uA sink; pressed via 0.1 ohm switch.
+* Simplified sample-and-hold: connect an initially discharged 100pF cap to
+* MODE at 1us through 250 ohms. Not a CD4051 or STM32 datasheet model.
+* No parasitics, previous channel driver, tolerances or bounce modelled.
+VCC vcc 0 3.3
+R8 vcc mode 10k
+R7 vcc led_a 1k
+D1 led_a mode DLED
+ILEAK mode 0 1u
+R8P vcc pressed 10k
+R7P vcc led_ap 1k
+D1P led_ap pressed DLED
+RSW pressed 0 0.1
+SAMPLE mode adc ctrl 0 SWMOD
+VCTRL ctrl 0 PULSE(0 3.3 1u 1n 1n 12u 30u)
+CADC adc 0 100p IC=0
+.model DLED D(IS=1e-20 N=2)
+.model SWMOD SW(RON=250 ROFF=1e12 VT=1.65 VH=0)
+.control
+set noaskquit
+set wr_singlescale
+set wr_vecnames
+tran 10n 12u uic
+wrdata out/front_mode.dat v(mode) v(pressed) i(vcc) v(adc) v(led_a) v(led_ap)
+quit
+.endc
+.end

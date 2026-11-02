@@ -24,3 +24,4 @@ for deck in audio_in audio_out cv_inout ref_bias; do
 done
 
 python3 analyze.py | tee out/measured.txt
+python3 test_frontboard.py | tee out/frontboard-measured.txt

@@ -31,8 +31,8 @@ describe.each(["nord", "signal"] as const)("%s preview", (design) => {
     }
   })
 
-  test("draws the frozen geometry: 31 holes and the rounded window", () => {
-    expect(count(svg, "<circle ")).toBeGreaterThanOrEqual(31)
+  test("draws the frozen geometry: 27 holes and the rounded window", () => {
+    expect(count(svg, "<circle ")).toBeGreaterThanOrEqual(27)
     expect(svg).toContain("<polygon ")
     expect(svg).toContain('viewBox="-50.8 -64.25 101.6 128.5"')
   })

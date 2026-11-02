@@ -1,0 +1,33 @@
+* Front-board audio loading regression, left channels; right is symmetric.
+* Idealized base-output Thevenin source 4.667 Vpk + R19=1k into 100k.
+* Input source 5 Vpk + 1k into approximate base input impedance 100k.
+* NEW has no LED load. OLD models the removed 2.2k/diode/LED branch.
+* Diode models are illustrative, not actual part or TL074 models. No cable or
+* power-sequencing effects. These decks are transcriptions, not netlist exports.
+VOUT outsrc 0 SIN(0 4.667 1k)
+ROUTN outsrc outnew 1k
+RLOADN outnew 0 100k
+ROUTO outsrc outold 1k
+RLOADO outold 0 100k
+ROLDOUT outold outd 2.2k
+DOUT outd outled D4148
+DLEDOUT outled 0 DLED
+VIN insrc 0 SIN(0 5 1k)
+RINN insrc innew 1k
+RBASEINN innew 0 100k
+RINO insrc inold 1k
+RBASEINO inold 0 100k
+ROLDIN inold ind 2.2k
+DIN ind inled D4148
+DLEDIN inled 0 DLED
+.model D4148 D(IS=2.52n N=1.752)
+.model DLED D(IS=1e-20 N=2)
+.control
+set noaskquit
+set wr_singlescale
+set wr_vecnames
+tran 1u 20m
+wrdata out/front_audio.dat v(outnew) v(outold) v(innew) v(inold)
+quit
+.endc
+.end

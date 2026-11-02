@@ -1,11 +1,39 @@
 {
-  "note": "Pre-artwork geometry with one audited mechanical revision below. Original source hashes remain historical provenance, NOT hashes of this revised fixture. All 31 centres, 30 diameters and the outline stay frozen. OLED corners remain R0.5 within the original bounds.",
+  "note": "Pre-artwork geometry with two audited mechanical revisions below. Original source hashes remain historical provenance, NOT hashes of this revised fixture. The remaining 27 centres, 26 diameters and the outline stay frozen. OLED corners remain R0.5 within the original bounds.",
   "mechanicalRevisions": [
     {
-      "hole": { "x": -28, "y": 25 },
+      "hole": {
+        "x": -28,
+        "y": 25
+      },
       "fromDiameter": 7,
       "toDiameter": 8,
       "reason": "Clear the extended XUNPU stem/cap swept envelope through the panel, including tilt and routing allowance; doc/MECHANICAL-STACK.md. No electronic part moved."
+    },
+    {
+      "removedHoles": [
+        {
+          "x": -42,
+          "y": -3,
+          "diameter": 3.2
+        },
+        {
+          "x": -25.2,
+          "y": -3,
+          "diameter": 3.2
+        },
+        {
+          "x": -8.4,
+          "y": -3,
+          "diameter": 3.2
+        },
+        {
+          "x": 8.4,
+          "y": -3,
+          "diameter": 3.2
+        }
+      ],
+      "reason": "Remove the four audio activity-LED holes with their LEDs. The direct diode/LED branch was a nonlinear load outside the audio output feedback loop (and on the input source), causing clipping and several percent THD. CV-output LEDs remain; no other hole moved."
     }
   ],
   "source": {
@@ -103,26 +131,6 @@
       "x": 42,
       "y": -14,
       "diameter": 6.2
-    },
-    {
-      "x": -42,
-      "y": -3,
-      "diameter": 3.2
-    },
-    {
-      "x": -25.2,
-      "y": -3,
-      "diameter": 3.2
-    },
-    {
-      "x": -8.4,
-      "y": -3,
-      "diameter": 3.2
-    },
-    {
-      "x": 8.4,
-      "y": -3,
-      "diameter": 3.2
     },
     {
       "x": -43,

@@ -49,13 +49,14 @@ the mechanical geometry is identical.
 
 ## Geometry contract
 
-All 31 circular holes retain their centres from `euro/lib/layout.ts`. The
-mechanical stack correction intentionally enlarges **only NAV at (−28,25)**
-from **Ø7 to Ø8mm** for the extended cap's swept envelope. The other 30 diameters,
-101.6 ×128.5mm outline and 2mm nominal thickness stay unchanged. The audited
-fixture records that exception and retains its pre-artwork hashes as historical
-provenance, not as hashes of the revised geometry. The base remains 16HP.
-Do not reposition controls/connectors to fit artwork.
+The panel has **27 circular holes**, read from `euro/lib/layout.ts`. Two
+audited mechanical revisions are recorded in the fixture: NAV at (−28,25) is
+**Ø8mm** (from Ø7) for the extended cap's swept envelope, and the four audio
+activity-LED holes at y = −3 were removed with the audio LEDs. The other 26
+diameters, the 101.6 ×128.5mm outline and the 2mm nominal thickness stay
+unchanged. The fixture retains its pre-artwork hashes as historical provenance,
+not as hashes of the revised geometry. The base remains 16HP. Do not reposition
+controls/connectors to fit artwork.
 
 The OLED opening retains its **30.5 × 16.0mm bounding box** and centre
 **(0, 42.8)mm**. Its formerly sharp internal corners need a routing radius of at
@@ -180,9 +181,10 @@ A passing circuit or artwork test does not establish real mechanical fit.
 The implementation has automated panel-artwork and fabrication-file checks, plus
 manual inspection of an independently rendered Gerber silk/profile/drill view.
 The original artwork revision compared all holes directly with the old panel
-export. The later mechanical fix preserves all centres and 30 diameters and
-records the sole NAV Ø7→8mm change explicitly; artwork and actual exported
-Gerber/NPTH checks now use that revised contract.
+export. The later mechanical fixes preserve all remaining centres and 26 diameters and
+record the NAV Ø7→8mm change and the removal of the four audio-LED holes
+explicitly; artwork and actual exported Gerber/NPTH checks use that revised
+contract.
 
 Historical artwork-revision verification (before the later mechanical-stack
 fix; current gate additionally checks Z/part identities and actuator prototypes):
@@ -193,7 +195,7 @@ fix; current gate additionally checks Z/part identities and actuator prototypes)
 | `bun run panel:check --variants` | Nord and Signal pass; minimum artwork stroke 0.25mm |
 | `bun run panel:release` and `--design nord` | Both ZIPs pass actual Gerber/profile/NPTH inspection |
 | `bun run gate` | historical: 10 euro steps at that revision; the current gate has 11, including the mechanical stack |
-| Original vs exported holes | All 31 positions and diameters identical |
+| Original vs exported holes | All 27 positions and diameters identical |
 | Profile | 2 closed loops; original outer size, R0.5 OLED opening at the original centre and bounds |
 | Copper / paste / bottom legend | No drawn features |
 | Phone and desktop previews | Checked at 390px and 1280px, no horizontal overflow, console errors or failed requests |

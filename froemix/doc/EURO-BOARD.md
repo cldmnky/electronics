@@ -80,7 +80,7 @@ See [MECHANICAL-STACK.md](MECHANICAL-STACK.md) for dimensions, assembly and test
 | CV out | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_CV_OUT_1/2` |
 | sync in/out | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_SYNC_IN`, `J_SYNC_OUT` |
 | MIDI in/out | 2 | PJ366ST stereo jack (TRS MIDI) | `J_MIDI_IN_TIP/RING`, `J_MIDI_OUT_TIP/RING` |
-| jack LEDs | 6 | 3mm LED + 2.2k + 1N4148 per jack | audio in/out L/R, CV out 1/2 |
+| jack LEDs | 2 | 3mm LED + 2.2k + 1N4148 per CV output | CV out 1/2 only; audio LEDs removed |
 | display | 1 | 1.3" 128x64 SPI OLED | `OLED_CS/SCL/DC/SDA/RES` |
 | indicator | 1 | 3mm THT LED + 1k series R | `LED` |
 | rails | — | `P3V3_A`, `P3V3_D`, `GND` | |
@@ -119,27 +119,39 @@ adds 5.8mm (see [MECHANICAL-STACK.md](MECHANICAL-STACK.md)). Six electrical pins
 C3/C4 the other, so the two pads of each rail are wired in parallel — plus two
 0.8mm locating pegs that sit at (0, ±6.75) from the centre.
 
-The button's own LED doubles as the pull-up, so the button shows its state with
-no GPIO and no firmware:
+The button's LED is an indicator only; R8 is the real pull-up, so the released
+level is defined without GPIO or firmware:
 
 ```
 P3V3_A -- 1k -- LED(A) -- LED(K) --+-- M_ADC_7
                                    +-- switch -- GND
+P3V3_A -- 10k ---------------------+
 ```
 
-Released: no current path, LED dark, the node floats to 3.3 V (full scale).
-Pressed: the node is 0 V and the LED lights at (3.3 − 2.0)/1k = 1.3 mA.
+Released: R8 pulls the node toward P3V3_A; leakage and ADC sampling can cause
+some error. Pressed: the node is near 0 V; assuming a 2.0 V LED drop, the LED
+current is approximately 1.3 mA and R8 adds 0.33 mA. Verify brightness and
+released-state settling with the actual LED, mux, firmware scan and ADC timing.
 
-### Jack activity LEDs (6, zero pins)
+### CV-output activity LEDs (2, zero pins)
 
-The signal at the jack drives its own LED — no GPIO, no firmware:
+The signal at the CV jack drives its own LED — no GPIO, no firmware:
 
 ```
-jack net -- 2.2k -- 1N4148 -->|-- LED -->|-- GND
+CV jack net -- 2.2k -- 1N4148 -->|-- LED -->|-- GND
 ```
 
-The series diode passes only positive excursions, so audio and CV never put a
-reverse half-cycle on the LED. At a 5 V peak: (5 − 0.7 − 2.0)/2.2k = 1.0 mA.
+The series diode passes only positive excursions. At a 5 V peak:
+(5 − 0.7 − 2.0)/2.2k = 1.0 mA. The CV-output 1k sits inside the compensated
+op-amp loop, so feedback can correct the load within the amplifier's current,
+voltage, bandwidth and stability limits. The combined LED and external load
+still needs bench validation.
+
+**Audio LEDs removed.** The four audio indicators drove the same diode/LED
+branch directly from the audio jacks. On the outputs that branch was outside the
+base board's feedback loop: an illustrative simulation produced ~4.5 % THD at
+full scale; on an input it loaded the external source through a nonlinear 2.2k
+(~4.8 % THD in a model with a 1k source). These are not hardware measurements. They are gone from the front board and panel.
 
 Sleeves are GND on every jack. The mono jacks' tip-switch pads are left
 unconnected on purpose: inputs are AC-coupled on the base board, so a
@@ -156,7 +168,7 @@ slotted holes).
 | +57.5 … +24 | OLED module 35.4 x 33.5mm; window at (0, +42.8); pots and UI either side |
 | +45 | pots: x = ±28, ±43 (15mm pitch) |
 | +25 | pot (-43), **UI joystick (-28)**, **MODE button (+28)**, pot (+43) |
-| -3 | 4 jack LEDs, one above each audio jack |
+| -3 | no LEDs; the four audio indicator holes were removed |
 | -14 | jacks: audio in L/R, audio out L/R, sync in/out (x = -42 … +42, 16.8mm pitch) |
 | -30 | 2 jack LEDs above CV out 1/2 |
 | -47 | jacks: CV in 1/2, CV out 1/2, MIDI in/out |
@@ -183,19 +195,19 @@ The panel window is 30.5 x 16.0mm, centred on the active area at (0, 42.8):
 
 ## 5. Assembly
 
-Mixed, like the base board: **19 SMD parts on the bottom** (13 × 0603 resistor,
-6 × SOD-323 diode) that JLCPCB can place, and everything else through-hole by
-hand: 10 mono jacks, 2 TRS jacks, 6 pots, the joystick, the button, 7 LEDs
-(6 jack + 1 panel), the 1x7 OLED header and the three 2.00mm sockets (CN1, CN2,
-CN4) on the bottom.
+Mixed, like the base board: **12 SMD parts on the bottom** (9 × 0603 resistor,
+3 × SOD-323 diode) that JLCPCB can place, and everything else through-hole by
+hand: 10 mono jacks, 2 TRS jacks, 6 pots, the joystick, the button, 3 LEDs
+(2 CV jack + 1 panel), the 1x7 OLED header and the three 2.00mm sockets (CN1,
+CN2, CN4) on the bottom. R8 is the added 10k MODE pull-up.
 
 `make release` writes the JLCPCB-shaped assembly files next to the fabrication
-data: `fab/euro/euro-bom-jlc.csv` (14 unique parts, 50 placements) and
-`fab/euro/euro-cpl-jlc.csv` (the 19 SMT placements; the 31 through-hole parts are
+data: `fab/euro/euro-bom-jlc.csv` (14 unique parts, 39 placements) and
+`fab/euro/euro-cpl-jlc.csv` (the 12 SMT placements; the 27 through-hole parts are
 BOM-only, exactly like the base board's THT policy). `euro-pnp-all.csv` is the
 unfiltered placement list for reference, and `euro-bom-smt.csv` /
 `euro-bom-hand.csv` are the same split as upload-sized / shopping-list files
-(the hand file lists the 31 through-hole parts with quantity, MPN and side).
+(the hand file lists the 27 through-hole parts with quantity, MPN and side).
 
 Socket stack: **6mm-shoulder E60 male + 4mm post**, existing **4.3mm socket**,
 **11mm clear spacer**: insertion 3.3mm, insulator clearance 0.7mm nominal.
@@ -214,16 +226,16 @@ goes through the panel-specific actual Gerber/profile/NPTH verifier.
 
 | Step | Result |
 | --- | --- |
-| `tsci build` | 2 circuits, 100 traces / 71 vias / 2497mm copper, 0 unconnected |
+| `tsci build` | 2 circuits, 86 traces / 53 vias / 2351mm copper, 0 unconnected |
 | `tsci check netlist` | source diagnostics, no errors |
 | `tsci check placement` | Errors 0, Warnings 0 |
 | `tsci check shorts` | no shorts |
 | `tsci check pcb-style` | clean |
-| `scripts/check_mating.py` | all 39 actual base/front pads and nets; faces, standoffs, 27 control holes, R0.5 OLED window |
+| `scripts/check_mating.py` | all 39 actual base/front pads and nets; faces, standoffs, 27 panel holes, R0.5 OLED window |
 | `scripts/mechanical_check.ts` | selected built supplier identities, stack insertion/clearance and actuator envelopes |
 | `scripts/test_mating.py` / `bun test lib/mechanical` | negative mating/part/Z tests and printable-solid topology/dimensions |
-| `scripts/check_madc.py` | the 8 `M_ADC_*` nets are closed islands of pots/joystick/button referenced only to `P3V3_A`/`GND` (the base-board mux has no clamps - see `doc/FRONTBOARD-INTERFACE.md`) |
-| `scripts/panel_check.ts` | frozen 31-hole geometry, OLED bounds/radius, stroked artwork and hardware keepouts pass |
+| `scripts/check_madc.py` | the 8 `M_ADC_*` nets are closed islands of pots/joystick/button referenced only to `P3V3_A`/`GND`; MODE has its own 10k pull-up |
+| `scripts/panel_check.ts` | frozen 27-hole geometry, OLED bounds/radius, stroked artwork and hardware keepouts pass |
 | `bun test lib/panel lib/mechanical` | panel geometry/art/export/preview plus mechanical regression tests |
 | `tsci snapshot --test` | schematic + PCB baselines match |
 
@@ -242,8 +254,9 @@ channels:
 1. **Channel 6 (joystick)** — six levels, table in §2. Read after the CD4051
    selects channel 6; the settle time must cover the mux's ~250 Ω and the
    ladder's worst case (10k + 10k).
-2. **Channel 7 (button)** — two levels: ~0 V pressed, ~3.3 V released. The LED
-   is in the pull-up path, so do not drive that channel as an output.
+2. **Channel 7 (button)** — nominally ~0 V pressed, near P3V3_A released.
+   R8 is the pull-up; the LED is an indicator branch. Do not drive the channel
+   as an output, and verify acquisition timing and thresholds on hardware.
 
 ## 8. Open questions (decide before ordering)
 
@@ -289,12 +302,12 @@ Electrokit's numbers are kept below only as the record of the comparison.
 | 1 | 1.3" 128x64 SPI OLED, SH1106 | C42432559 | 37 | Ext | HS `HS13L02B4S01`, 35.4 x 33.5mm, 7-pin 2.54, GND/VCC/SCK/SDI/RES/DC/CS |
 | 2 | 2.00mm 1x16 pin socket, 4.3mm | C22373851 | 5,076 | Ext | `HC-PM200-4.3H-1x16PZ` |
 | 1 | 2.00mm 1x7 pin socket, 4.3mm | C22438139 | 4,740 | Ext | `HX PM2.0-1x7P ZC` |
-| 7 | 3mm LED red 630nm | C440523 | 139,540 | Ext | TOGIALED; **pin 1 = anode** (footprint follows it) |
-| 6 | 1N4148WS SOD-323 | C2128 | — | — | jack LED diodes |
-| 7 | 1k 0603 | C21190 | — | Basic | ladder "up", panel LED R, button R |
-| 6 | 2.2k 0603 | C4190 | — | Basic | jack LED ballast |
+| 3 | 3mm LED red 630nm | C440523 | 139,540 | Ext | TOGIALED; **pin 1 = anode** (footprint follows it); panel LED + 2 CV LEDs |
+| 2 | 1N4148WS SOD-323 | C2128 | — | — | CV LED series diodes |
+| 3 | 1k 0603 | C21190 | — | Basic | ladder "up", panel LED R, button R |
+| 3 | 2.2k 0603 | C4190 | — | Basic | ladder "down" + CV LED ballast |
 | 1 | 4.7k 0603 | C23162 | — | Basic | ladder "left" |
-| 2 | 10k 0603 | C25804 | — | Basic | joystick pull-up, ladder "right" |
+| 3 | 10k 0603 | C25804 | — | Basic | joystick pull-up, ladder "right", MODE pull-up R8 |
 
 Thonkiconn `PJ398SM` / `PJ366ST` return **0 results at LCSC** and Electrokit has
 no PCB-mount mono jack at all, so the jacks move to the XKB `PJ-301M` family —
@@ -309,9 +322,9 @@ change**.
   the same 6.2mm either way and the `PJ-301M` pad question is already covered by
   the slotted pads. Everything on this board is bought from LCSC and the SMD
   side is JLCPCB-placed as it stands.
-- **Assembly split** (unchanged): 19 SMD parts on the bottom (13 x 0603 resistor,
-  6 x SOD-323 diode) are placed by JLCPCB; the through-hole side - 12 jacks,
-  6 pots, joystick, button, 7 LEDs, OLED header, 3 sockets - is hand-soldered
+- **Assembly split**: 12 SMD parts on the bottom (9 x 0603 resistor, 3 x
+  SOD-323 diode) are placed by JLCPCB; the through-hole side - 12 jacks,
+  6 pots, joystick, button, 3 LEDs, OLED header, 3 sockets - is hand-soldered
   unless JLC's through-hole service is ordered. The panel is a bare PCB.
 
 ### Still to verify before ordering
