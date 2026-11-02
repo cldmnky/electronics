@@ -358,7 +358,10 @@ per-designator exports tscircuit writes natively):
 | Reference | `fab/froemix-pnp-all.csv`, `fab/froemix-bom.csv`, SVGs, `froemix.step` |
 
 Hand-mount instructions for everything JLC does not place (10 through-hole
-parts, two `J1` jumper shunts + the Daisy module): [`doc/ASSEMBLY.md`](doc/ASSEMBLY.md).
+board parts, two separately sourced 1×20 female Daisy socket strips, two `J1`
+jumper shunts and the plug-in Daisy module): [`doc/ASSEMBLY.md`](doc/ASSEMBLY.md).
+The sockets and shunts are not in the generated hand BOM; no socket part has
+been selected or physically validated. The base-board finish is lead-free HASL.
 
 Electrical contract for the front (euro/panel) board — connector pinout, CV and
 audio levels, the `M_ADC` restriction and the 3.3 V budget:

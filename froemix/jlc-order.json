@@ -6,8 +6,8 @@
     "thickness_mm": 1.6,
     "outer_copper_oz": 1,
     "inner_copper_oz": 0.5,
-    "surface_finish": "ENIG",
-    "surface_finish_reason": "flat pads for the 40 through-hole Daisy Seed pads and the 2.00mm headers; tin/HASL leaves uneven mounds that make the module sit off-square",
+    "surface_finish": "Lead-free HASL",
+    "surface_finish_reason": "cost-conscious finish for the board's SMT and through-hole parts; Daisy plugs into hand-soldered female sockets. Confirm JLCPCB's quote and assembly preview.",
     "solder_mask": "green",
     "silkscreen": "white",
     "impedance_control": false,
@@ -27,7 +27,7 @@
     "through_hole_parts": ["CN1", "CN2", "CN3", "CN4", "H1", "J1", "J2", "C24", "C25", "U16"],
     "through_hole_note": "kept in the BOM but excluded from the CPL; add them back on the order page only if you pay for JLCPCB THT assembly",
     "do_not_place": ["DaisySeed1"],
-    "do_not_place_note": "Daisy Seed module is already owned; it is absent from BOM and CPL by design",
+    "do_not_place_note": "Daisy Seed module is already owned; it is absent from BOM and CPL by design. Hand-solder two separately purchased 1x20 female socket strips to its footprint; no socket part is selected or included in the generated BOM.",
     "fiducials": "4 x 1mm bare copper with 0.5mm mask window at (+-33, +-63)mm - verify bright in the placement preview",
     "files": {
       "gerbers": "froemix-gerbers.zip",
@@ -43,13 +43,13 @@
   },
   "inspect_before_paying": [
     "4 layers, 80.9 x 128.5 mm, four 3.2mm M3 holes",
-    "ENIG selected (not HASL)",
+    "Lead-free HASL selected; confirm JLCPCB accepts it for this board and assembly",
     "assembly for BOTH sides enabled",
     "bottom-side rotations sane in the 3D preview (93 placements at 180, 6 at 0, 8 top at 0; H1 is hand-soldered at 270)",
     "mating headers are the 6mm-shoulder C2883069/C2883061, not old short A2005WV; CN4 is cut to seven ways",
     "front-board stack: 11mm clear spacers, J1+shunts <=9.5mm, rear tails <=1mm (doc/MECHANICAL-STACK.md)",
     "fiducials bright copper, not mask-covered",
-    "Daisy Seed footprint empty (module is hand-fitted)",
+    "Daisy footprint empty in JLC preview; two separately sourced female socket strips hand-soldered later, module plugged in after rail checks",
     "GND plane visible on the bottom layer preview",
     "the 2512 MIDI resistors (R59/R60) and the 1uF C32 are placed, not dropped as unusual parts"
   ]

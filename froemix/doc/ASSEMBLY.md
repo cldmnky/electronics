@@ -3,8 +3,9 @@
 Everything in `froemix-cpl-jlc.csv` is machine-placed by JLCPCB's SMT line
 (107 placements: 99 on the bottom, 8 on the top). This sheet covers
 **everything else**: the 10 through-hole parts kept out of the CPL, the two
-jumper shunts for `J1` (not board parts), the Daisy Seed module (dual
-`doNotPlace`), and the bare-copper aids.
+jumper shunts for `J1`, two Daisy female socket strips and the Daisy Seed
+module (`doNotPlace`), and the bare-copper aids. The socket strips and shunts
+are separate purchases, not entries in the generated board BOM or CPL.
 
 Silkscreen references: every part below has its refdes printed next to it on
 the **bottom** (component) side, so they read correctly when you flip the board
@@ -22,7 +23,8 @@ over. The board also carries a mirrored legend
 | `J2` | 2×8 2.54 mm IDC box header (Eurorack power) | THT shrouded | bottom | C3406 | pin 1 = the square/`1`-marked pad; the built silk key/notch is on the **lower long side** (y ≈ −59.25…−60.56), i.e. **the same board edge as the two lower M3 holes**. Check the shroud key against the ribbon connector before soldering — the key must engage the connector's polarizing rib, not force it |
 | `C24`, `C25` | 100 µF 50 V radial electrolytic, 8 × 12 mm | THT, 3.5 mm pitch | bottom | C2749 | **polarity**: `+` marked on silk; C25 is the negative-rail cap, its `+` faces **GND**. Body is 8 mm — the silk circle is the can, keep neighbours clear of it |
 | `U16` | B2405S-**2**WR3, isolated 24 V→5 V SIP module (2 W / 400 mA) | THT, 4 leads on the 1-2-4-6 positions of a 2.54 mm grid | bottom | C5369484 | **pin 1 = `+VIN`** (square pad, 45° silk bevel and lead tick); leads 3 and 5 are absent, and the silk guide line inside the body is broken at those two positions, so the module cannot go in one position off. The body hangs 6.15 mm to one side of the lead row (toward the bottom board edge). Module stands **up** (≈10 mm tall) |
-| `DaisySeed1` | Electrosmith Daisy Seed Rev4 module | 2 × 20 × 2.54 mm, 15.24 mm row spacing | bottom | — | pin 1 at the end marked on silk; the module lies **horizontally**, and its **USB receptacle is at the LEFT (−X) end of the module** (board x ≈ −25…−26.5, y ≈ 36.5…44.5), reachable **from behind** the board. There is no cutout to align with |
+| Daisy sockets ×2 | Straight 1×20 female through-hole socket strips, 2.54 mm pitch | Daisy footprint: 2 rows, 15.24 mm apart, 1.1 mm plated holes | bottom | Not selected | Check tail dimensions against finished holes, contact compatibility with the actual Daisy pins, and clearance before buying. Prefer LCSC/JLCPCB, otherwise Electrokit. |
+| `DaisySeed1` | Electrosmith Daisy Seed Rev4 module, plugged into the sockets | 2 × 20 × 2.54 mm, 15.24 mm row spacing | bottom | — | pin 1 at the end marked on silk; USB is at the **left (−X)** end (board x ≈ −25…−26.5, y ≈ 36.5…44.5). Rear access and clearance with the selected sockets require a physical check. |
 | `J1` shunts ×2 | 2.54 mm jumper shunt (not shipped with the board) | — | on `J1` | — | two shunts, Type A (3–5 + 4–6) or Type B (4–2 + 3–1), see the MIDI section |
 | `FID1–FID4` | fiducials | bare copper, 1 mm + 0.5 mm mask window | bottom | — | do nothing (no part) |
 | `TP1–TP8` | test points | bare copper, 1.2 mm | bottom | — | do nothing (probe points) |
@@ -98,11 +100,12 @@ These are not electronic BOM/CPL entries or proof of physical fit.
 
 ## Parts to buy
 
-`fab/froemix-bom-hand.csv` (written by `make release`) is this sheet's shopping
-list: LCSC code, quantity, value/MPN, package, designators and the side each part
-sits on. The table above adds the orientation cues that matter when soldering
-them. The 2x8 IDC key, the 40 Daisy holes and the 2.00 mm headers are the parts
-most likely to be fitted one position off - check the silk before soldering.
+`fab/froemix-bom-hand.csv` (written by `make release`) lists the 10 board BOM
+through-hole placements. **Also buy two 1×20 female Daisy socket strips and two
+J1 shunts separately**; neither has a board BOM entry, and no socket part number
+has been selected or physically validated. The Daisy module is already owned.
+The table above adds orientation cues. The 2×8 IDC key, 40 Daisy holes and
+2.00 mm headers are easy to fit one position off: check the silk before soldering.
 
 ## Order of work
 
@@ -118,7 +121,13 @@ most likely to be fitted one position off - check the silk before soldering.
    Dry-mate CN1/CN2/CN4 to the front sockets with **11mm clear spacers**; do not
    force or bottom pins. Tack opposite end pins, check square/flush placement,
    then solder the rest. CN3 stays short and deliberately unmated.
-4. **Verify the rails with the module out of the socket** — `+12 V` and
+4. **Install the Daisy sockets and verify the rails with the module removed.**
+   On the unpowered board, dry-fit two compatible 1×20 female strips on the
+   bottom, checking pin 1 and both rows. Use the Daisy's fitted male pins as an
+   alignment jig only if they match the selected contacts; tack the socket ends,
+   then remove the Daisy before soldering the remaining socket joints. Check
+   alignment, all 40 joints, nearby parts and solder tails before proceeding.
+   Apply `+12 V` and
    `−12 V` on `J2` from a **current-limited** supply (start at 50 mA/rail,
    ±12.0 V), with a **dummy load on P5V** (120 Ω to GND, i.e. ~42 mA — `U16`
    needs a ≥40 mA minimum load and its output rises at no load). `J2` is wired
@@ -131,13 +140,11 @@ most likely to be fitted one position off - check the silk before soldering.
    that is correct. Never fit the Seed first and power up to "see if it
    works": a short on the rails then takes the module with it.
 5. **Fit the two `J1` shunts** in the polarity the front board needs (above).
-6. **Daisy Seed last**, and only after the rails verified: it is the part you
-   least want to desolder, and it is the one part you cannot buy from JLCPCB.
-   Fit it, tack two opposite corner pins, verify the board sits flat and the
-   module is not cocked on a bent pin, then solder all 40 pins. The USB
-   receptacle ends up at the **left (−X) end of the module, on the bottom
-   side**, so it is reachable from behind the assembled module — no alignment
-   step against a board edge.
+6. **Plug in the Daisy Seed last**, with power off and only after the rails
+   pass. Check pin 1 and both rows, then seat the male pins evenly into the
+   female sockets. Do not solder the module to the sockets. Its USB receptacle
+   is at the **left (−X) end** on the bottom side; confirm rear access with
+   the actual socket height and rack.
 7. **Re-check the rails with the module fitted** — `TP1` 5 V, `TP2` 3.3 V,
    `TP3` 3.3 V analog, `TP4` ≈ +11.7 V, `TP5` ≈ −11.7 V, `TP6` −10.0 V
    reference, `TP7` sync input, `TP8` muxed ADC node. Run the P5V budget test
@@ -157,18 +164,21 @@ most likely to be fitted one position off - check the silk before soldering.
   roughly ±10 % over load, worse at light load. Never measure the board with
   `P5V` unloaded. Budget, worst case and acceptance test:
   [`POWER-BUDGET.md`](POWER-BUDGET.md).
-- **Iron settings**: 320–350 °C, chisel tip for the headers, fine tip for the
-  Daisy's 2.54 mm pitch. Use leaded or lead-free per your supply; the board is
-  ENIG, so either wets well.
-- **Do not reflow the Daisy** unless you have a controlled profile: the module
-  has its own connectors and an SD slot on the underside.
+- **Iron settings**: 320–350 °C, chisel tip for the headers and an appropriate
+  tip for the Daisy sockets' 2.54 mm pitch. The selected finish is **lead-free
+  HASL**; use suitable solder and flux, and verify good wetting.
+- **Keep the Daisy out during soldering and reflow**; it plugs in after the
+  socket joints are soldered and the rails pass their checks.
 - **Heights to plan for** (all on the bottom, i.e. inside the rack cavity
-  behind the panel): Daisy ≈ 12 mm, `U16` ≈ 10 mm, `C24`/`C25` ≈ 12 mm, `J2`
-  shroud ≈ 9 mm, `H1` ≈ 8.5 mm. On top, CN1/CN2/CN4 have 6mm shoulders and 4mm
+  behind the panel): the socketed Daisy's total projection is **not yet
+  determined**; measure it with the selected sockets, pins and module. `U16` is
+  ≈10 mm, `C24`/`C25` ≈12 mm, `J2` shroud ≈9 mm, `H1` ≈8.5 mm. On top,
+  CN1/CN2/CN4 have 6mm shoulders and 4mm
   mating posts; CN3 stays short. `J1` plus its shunts must measure ≤9.5mm.
   Board-centre spacing is not the clear spacer length; see the datum diagram.
 - **Jumper shunts are consumables, not BOM lines**: two 2.54 mm shunts on `J1`,
-  see the MIDI section. Nothing else on this sheet is a loose part.
+  see the MIDI section. The two Daisy female socket strips are also separate
+  purchases and are not present in the generated hand BOM.
 - **Fiducials / test points are not parts**: nothing to fit, nothing in the BOM.
   If you probe them, use a fine spring pin; they are 1.2 mm bare copper.
 

@@ -57,8 +57,14 @@ control PCB TOP                       9.0   panel-facing controls/OLED
 control PCB BOTTOM                   10.6   sockets face toward the base
                                     | 11.0mm clear spacer |
 base PCB TOP                         21.6   headers/J1 face toward control PCB
-base PCB BOTTOM                      23.2   Daisy, converter, power, tall parts
+base PCB BOTTOM                      23.2   Daisy sockets, converter, power, tall parts
 ```
+
+The Daisy plugs into two hand-soldered 1×20 female socket strips on the base
+bottom, not directly into the PCB. Their part and the resulting Daisy projection
+are not yet measured. Check socket contact/tail fit, nearby component clearance,
+front-side solder tails, total rack depth and rear USB access with actual parts.
+The sockets and two J1 shunts are separate purchases, not in the board BOM.
 
 Do not confuse the **11mm surface gap** with the **12.6mm PCB centre spacing**.
 The original stack drawing omitted the control PCB thickness.
@@ -183,7 +189,8 @@ Before paying for a batch:
    current-limited LED test before soldering. The K6 drawing doesn't number
    LED +/− positions reliably; this is still a physical polarity check.
 5. Confirm OLED alignment/support, knob/nut/washer envelopes and thread depth.
-6. Test adjacent-module and rack-rail fit with the actual panel/PCBs. Print the
+6. Test adjacent-module and rack-rail fit with the actual panel/PCBs and
+   socketed Daisy; measure its total depth and check rear USB access. Print the
    1:1 template at actual size and measure its 100mm calibration bar first.
 7. Approve actual Gerber/profile/NPTH production files with CAM, including the
    new Ø8mm NAV opening, 2mm material and empty copper.

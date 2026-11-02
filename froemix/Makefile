@@ -86,13 +86,13 @@ assembly: ## print the hand-assembly sheet (parts JLC does not mount)
 	@printf '\n=== hand-assembly: parts JLC does not mount ======================\n'
 	@printf 'sheet: doc/ASSEMBLY.md (copied to fab/ on release)\n\n'
 	@grep -E '^\| `' doc/ASSEMBLY.md | sed 's/|/ /g' | cut -c1-150
-	@printf '\norder of work: H1 -> J2 -> U16/C24/C25 -> CN1-4/J1 -> rails + J1 shunts -> DaisySeed1 last\n'
+	@printf '\norder of work: H1 -> J2 -> U16/C24/C25 -> CN1-4/J1 -> Daisy sockets -> rails + J1 shunts -> plug in Daisy last\n'
 	@printf '==================================================================\n'
 
 order: release ## print the order sheet and the files to upload for both boards
 	@printf '\n=== JLCPCB order =================================================\n'
 	@printf 'board   : %s\n' "$(BOARD)"
-	@printf 'settings: jlc-order.json (ENIG, assembly on BOTH sides, THT hand-solder)\n'
+	@printf 'settings: jlc-order.json (lead-free HASL, assembly on BOTH sides, THT hand-solder)\n'
 	@printf 'guide   : doc/JLC-ASSEMBLY.md (base) / doc/EURO-BOARD.md (euro)\n\n'
 	@printf 'base board - upload these:\n'
 	@printf '  gerbers : %s/froemix-gerbers.zip\n' "$(FAB)"
@@ -105,12 +105,13 @@ order: release ## print the order sheet and the files to upload for both boards
 	@printf '  panel   : %s/panel/panel-gerbers.zip (2mm FR4, holes + silk only; verified by panel:release)\n' "$(EURO_FAB)"
 	@printf '  mech    : %s/mechanical/ (MODE/NAV STLs, hardware list, stack + acceptance guide)\n\n' "$(EURO_FAB)"
 	@printf 'tick on the order page:\n'
-	@printf '  [ ] surface finish ENIG (flat pads for the 40 Daisy through-holes)\n'
+	@printf '  [ ] surface finish lead-free HASL (confirm quote and assembly preview)\n'
 	@printf '  [ ] assembly for BOTH sides of the base board\n'
 	@printf '  [ ] 4 layers, 1.6 mm, 1 oz outer copper (base) / 2 layers, 2 mm, empty copper (panel)\n'
 	@printf '  [ ] headers are 6mm-shoulder X4612 (not old short A2005WV); CN4 cut to 7 ways\n'
 	@printf '  [ ] stack: 11mm clear spacers; J1+shunts <=9.5mm; front tails <=1mm\n'
 	@printf '  [ ] inspect: fiducials bright, bottom rotations sane, Daisy footprint empty\n'
+	@printf '  [ ] separately source two 1x20 female Daisy sockets; verify fit and rack clearance\n'
 	@printf '==================================================================\n'
 
 check-all: gate ## run every check (alias of gate)

@@ -21,9 +21,10 @@ hand-edit the files in `froemix/fab/`.
   the corners (3.2 mm drill).
 - **Min trace/space** 0.25 mm (well inside JLCPCB's 0.09 mm 4-layer capability),
   **min via** 0.2 mm drill / 0.45 mm pad, **edge clearance** 0.4 mm.
-- **Surface finish** ENIG if budget allows: the 0.5 mm fiducial dots and the
-  1.2 mm test points are tinned either way, but ENIG keeps the 40 Daisy
-  through-holes flat for the module.
+- **Surface finish**: select **lead-free HASL** for the base board. Confirm it
+  is accepted for this board and SMT assembly in JLCPCB's quote and inspect the
+  assembly preview. The Daisy plugs into separately purchased hand-soldered
+  female sockets; ENIG is not required merely to seat those sockets.
 
 ## Assembly: what JLC can and cannot place
 
@@ -33,8 +34,11 @@ hand-edit the files in `froemix/fab/`.
 `J1` (2×3 MIDI header), `J2` (Eurorack 2×8 shrouded), `C24`, `C25`
 (8 mm radial electrolytics), `U16` (B2405S SIP module).
 
-They stay in the BOM (you still have to buy them) but not in the CPL, so JLC's
-SMT line will not try to place them. Choose one of:
+They are in the combined reference BOM and hand BOM, but not the SMT upload BOM
+or CPL. Buy them separately for hand assembly. Also source two 1×20 female
+2.54 mm Daisy socket strips and two J1 shunts: these loose parts are not in
+the generated BOM. The socket part is not yet selected or fit-validated; see
+[`ASSEMBLY.md`](ASSEMBLY.md). Choose one of:
 
 1. **SMT only + hand solder the THT** — cheapest, and the parts are all
    through-hole with generous pitch. This is what the CPL assumes.
@@ -52,16 +56,18 @@ an old short A2005WV substitute; the stack needs the 6mm shoulder. See
 [`MECHANICAL-STACK.md`](MECHANICAL-STACK.md).
 
 **Bottom-side rotation:** the exported CPL is in JLCPCB's convention (X/Y in mm,
-bottom layers mirrored, rotation in degrees CCW). All placements are 0°/180°
-except H1 (270°, its footprint is a pre-rotated variant): 93 of the 99 bottom
-placements are at 180° and 6 at 0°, the 8 top placements at 0°. **Check the 3D
+bottom layers mirrored, rotation in degrees CCW). All SMT placements are 0°/180°:
+93 of the 99 bottom placements are at 180° and 6 at 0°, the 8 top placements
+at 0°. H1 is a hand-soldered through-hole part, not in the SMT CPL. **Check the 3D
 preview of the assembled board on the order page before paying** — a wrong
 bottom-side rotation is the classic failure here, and it is free to check.
 
 ## Parts already covered / excluded
 
 - **Daisy Seed** is `doNotPlace` in the design (you own it). It is therefore
-  absent from both the BOM and the CPL — intended.
+  absent from both the BOM and the CPL — intended. Solder its two female socket
+  strips by hand and plug in the module after rail checks; do not solder the
+  module directly to the board.
 - **Fiducials and test points** are bare copper, `doNotPlace`, and absent from
   the BOM/CPL.
 - Every assembled part carries an LCSC part number; `bun run check:parts`
@@ -104,8 +110,9 @@ without a preheat plate.
 1. `bun run release` — regenerates every file above and refuses to finish if any
    gate step fails.
 2. Upload `froemix-gerbers.zip`; confirm 4 layers, 80.9 × 128.5 mm, 3.2 mm holes.
-3. Upload BOM + CPL; confirm **38** lines in the BOM summary and **106** SMT
-   placements (116 − 10 THT).
+3. Upload the **SMT-only BOM** `froemix-bom-smt.csv` and
+   `froemix-cpl-jlc.csv`; confirm **107** SMT placements (99 bottom, 8 top).
+   The combined BOM is a reference, not the SMT upload.
 4. Inspect the assembly preview: fiducials bright, no part off-board, bottom
    rotations sane, Daisy footprint empty.
 5. Order PCB + stencil; assembly 2-sided if you want the bottom side machine
