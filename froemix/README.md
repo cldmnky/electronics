@@ -118,7 +118,9 @@ module, jack height, button part, CN3/SD, panel material):
 
 The panel-specific record is [doc/FRONT-PANEL.md](doc/FRONT-PANEL.md): material
 comparison, two white-on-black design directions, JLCPCB order settings and a
-first-article fit checklist. Recommended material is **2mm FR4 with standard
+first-article fit checklist. **Signal** is the selected direction for this
+revision (`FROEMIX_PANEL_DESIGN=nord` builds the Nord alternative). Recommended
+material is **2mm FR4 with standard
 black solder mask and white print**, ordered separately from the electronic
 boards, without assembly or a stencil. A Gerber check is not a physical-fit
 approval. The corrected Z stack, cut-to-seven CN4 preparation, printable MODE/NAV

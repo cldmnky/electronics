@@ -9,12 +9,13 @@
 // draws. No fonts, no text primitives: a stroked path cannot silently become a
 // 0.099mm hairline the way `font_size * strokeWidthRatio` does.
 //
-// Two designs share one mechanical geometry:
-//   `nord`   - the recommended default (NOT a selection the owner has made):
-//              large monoline FROEMIX across the empty central band, hairline
-//              zone rules, dial ticks in the top arc, small filled squares for
-//              inputs and outlined squares for outputs.
-//   `signal` - the bolder alternative: central wordmark flanked by a waveform,
+// Two designs share one mechanical geometry. The owner selected `signal` for
+// this revision; `nord` remains buildable and both variants stay checked:
+//   `nord`   - the restrained studio direction: large monoline FROEMIX across
+//              the empty central band, hairline zone rules, dial ticks in the
+//              top arc, small filled squares for inputs and outlined squares
+//              for outputs.
+//   `signal` - the selected direction: central wordmark flanked by a waveform,
 //              bold rings on the outputs, corner brackets around the zones.
 //
 // The owner's design concepts are a visual reference only. Browser fonts and
@@ -296,8 +297,8 @@ export const textPaths = (
 
 export type PanelDesignId = "nord" | "signal"
 
-/** Recommended starting point for the owner's choice; not a selection. */
-export const DEFAULT_PANEL_DESIGN: PanelDesignId = "nord"
+/** Selected direction for this revision; override with FROEMIX_PANEL_DESIGN. */
+export const DEFAULT_PANEL_DESIGN: PanelDesignId = "signal"
 
 export const PANEL_DESIGN_IDS: PanelDesignId[] = ["nord", "signal"]
 
@@ -537,7 +538,7 @@ export const PANEL_STYLES: Record<PanelDesignId, PanelStyle> = {
   nord: {
     id: "nord",
     name: "Nord",
-    note: "recommended default: monoline wordmark across the central band, hairline rules, restrained marks",
+    note: "alternative: monoline wordmark across the central band, hairline rules, restrained marks",
     portLabelDy: -8.6,
     portCap: LABEL_CAP,
     portStroke: 0.25,
@@ -565,7 +566,7 @@ export const PANEL_STYLES: Record<PanelDesignId, PanelStyle> = {
   signal: {
     id: "signal",
     name: "Signal",
-    note: "bolder technical alternative: wordmark flanked by a waveform, output rings, zone brackets",
+    note: "owner-selected: wordmark flanked by a waveform, output rings, zone brackets",
     portLabelDy: -9.1,
     portCap: 1.35,
     portStroke: 0.28,

@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 // Froemix front panel - release.
 //
-//   bun run panel:release                 fabricate-ready panel, recommended default design
-//   bun run panel:release --design signal the alternative artwork
+//   bun run panel:release                 fabricate-ready panel, selected signal design
+//   bun run panel:release --design nord   the alternative artwork
 //
 // What it does, in order:
 //   1. builds and checks EVERY panel design, so a variant cannot rot
@@ -102,6 +102,10 @@ export const main = (argv: string[]): number => {
     return 1
   }
   const design: PanelDesignId = requested
+  mkdirSync(OUT, { recursive: true })
+  // release.sh reads this so the file names it copies cannot drift from the
+  // design panel_release.ts actually exported.
+  writeFileSync(join(OUT, "selected-design.txt"), `${design}\n`)
 
   console.log("########## 1. build and check every design ##########")
   let problems = 0
@@ -193,8 +197,8 @@ export const main = (argv: string[]): number => {
     design,
     designNote:
       design === DEFAULT_PANEL_DESIGN
-        ? "recommended default direction; not an owner selection"
-        : "alternative direction",
+        ? "owner-selected direction for this revision"
+        : "alternative direction, not selected for this revision",
     material: "FR4 2.0mm, standard black solder mask, white top legend, no copper, no assembly",
     outline: panelArtwork(design).outline,
     window: {

@@ -257,7 +257,7 @@ export const renderPreviewHtml = (svg: string, art: PanelArtwork, notes: string)
 </head>
 <body>
 <h1>FROEMIX 20HP faceplate - ${art.design}</h1>
-<p>${art.design === "nord" ? "Restrained studio direction (recommended default, not an owner selection)." : "Bolder technical direction: output brackets carry the weight."} White ink on black mask, 2mm FR4. The panel drawing below is generated from the built circuit JSON, so it is the same geometry that is exported for JLCPCB. Dashed circles are installed hardware keepouts, drawn as an illustration only.</p>
+<p>${art.design === "nord" ? "Restrained studio direction (alternative, not selected for this revision)." : "Owner-selected direction: the waveform motif and output brackets carry the weight."} White ink on black mask, 2mm FR4. The panel drawing below is generated from the built circuit JSON, so it is the same geometry that is exported for JLCPCB. Dashed circles are installed hardware keepouts, drawn as an illustration only.</p>
 ${svg}
 <dl>
   <dt>outline</dt><dd>${art.outline.width} x ${art.outline.height}mm, ${art.outline.thickness}mm FR4</dd>

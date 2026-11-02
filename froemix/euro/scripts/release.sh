@@ -45,7 +45,9 @@ export_fmt "$ENTRY" pcb-svg "$FAB_DIR/euro-pcb.svg"
 # Use the panel's real Gerber/profile/drill verification, not an unchecked
 # direct export. The existing order-file path stays stable.
 bun scripts/panel_release.ts
-DESIGN="${FROEMIX_PANEL_DESIGN:-nord}"
+# panel_release.ts records the design it actually exported; naming the file from
+# that value keeps this copy in step with DEFAULT_PANEL_DESIGN / --design.
+DESIGN=$(cat dist/panel-release/selected-design.txt)
 cp "dist/panel-release/froemix-panel-$DESIGN-gerbers.zip" "$FAB_DIR/panel/panel-gerbers.zip"
 cp "dist/panel-release/panel-release-$DESIGN.json" "$FAB_DIR/panel/"
 mkdir -p "$FAB_DIR/panel/preview"

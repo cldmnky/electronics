@@ -29,10 +29,12 @@ are illustrations, not extra printing layers.
 
 ## Design direction
 
-Two monochrome directions are being compared: **Nord**, a restrained studio
-instrument, and **Signal**, a bolder technical instrument. Both must retain the
-same geometry. The final visual choice is the owner's; neither changes the
-firmware or the PCB layout.
+Two monochrome directions are available: **Nord**, a restrained studio
+instrument, and **Signal**, a bolder technical instrument. The owner selected
+**Signal** for this revision; it is now the default built by `panel:build` and
+`make release`. Nord remains buildable with `--design nord` and both variants
+stay checked. The choice does not change the firmware or the PCB layout, and
+the mechanical geometry is identical.
 
 - Keep `FROEMIX` prominent. Group audio, CV, sync and MIDI ports clearly.
 - Distinguish outputs without relying on colour: outlines, brackets or line
@@ -85,12 +87,12 @@ From `froemix/euro/` (Bun must be on PATH):
 
 ```sh
 bun install --frozen-lockfile
-bun run panel:build                      # Nord, the recommended default
+bun run panel:build                      # selected Signal artwork
 bun run panel:check --variants           # check both artwork directions
 bun run panel:test                       # manufacturing-check mutation tests
 bun run panel:preview --variants         # SVG / HTML / A4 print templates
-bun run panel:release                    # checked Nord Gerber ZIP
-bun run panel:release --design signal    # checked Signal alternative
+bun run panel:release                    # checked Signal Gerber ZIP
+bun run panel:release --design nord      # checked Nord alternative
 bun run gate                            # existing board gate plus panel checks
 ```
 
@@ -189,7 +191,7 @@ fix; current gate additionally checks Z/part identities and actuator prototypes)
 | --- | --- |
 | `bun run panel:test` | 121 pass, 0 fail across 6 test files |
 | `bun run panel:check --variants` | Nord and Signal pass; minimum artwork stroke 0.25mm |
-| `bun run panel:release` and `--design signal` | Both ZIPs pass actual Gerber/profile/NPTH inspection |
+| `bun run panel:release` and `--design nord` | Both ZIPs pass actual Gerber/profile/NPTH inspection |
 | `bun run gate` | historical: 10 euro steps at that revision; the current gate has 11, including the mechanical stack |
 | Original vs exported holes | All 31 positions and diameters identical |
 | Profile | 2 closed loops; original outer size, R0.5 OLED opening at the original centre and bounds |

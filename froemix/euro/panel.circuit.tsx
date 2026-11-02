@@ -45,9 +45,9 @@ import {
 } from "./lib/panel-art"
 
 /**
- * Selected design. `FROEMIX_PANEL_DESIGN=signal` (or `--inject-props
- * '{"design":"signal"}'`) builds the alternative artwork; the default is the
- * recommended starting point, not a decision the owner has made.
+ * Selected design. The owner chose `signal`, which is the default;
+ * `FROEMIX_PANEL_DESIGN=nord` (or `--inject-props '{"design":"nord"}'`) builds
+ * the alternative artwork for comparison.
  */
 const resolveDesign = (fromProps?: string): PanelDesignId => {
   const raw =

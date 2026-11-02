@@ -36,8 +36,8 @@ test("the mechanical contract is unchanged", () => {
   }
 })
 
-test("the default design is the recommended nord direction, not a selection", () => {
-  expect(DEFAULT_PANEL_DESIGN).toBe("nord")
+test("the default design is the owner-selected signal direction", () => {
+  expect(DEFAULT_PANEL_DESIGN).toBe("signal")
   expect(PANEL_STYLES.nord.id).toBe("nord")
   expect(PANEL_STYLES.signal.id).toBe("signal")
 })
