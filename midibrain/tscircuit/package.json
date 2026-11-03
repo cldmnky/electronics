@@ -1,0 +1,24 @@
+{
+  "name": "midibrain-hardware",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsci build",
+    "dev": "tsci dev",
+    "test": "bun test lib/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "panel:preview": "bun run scripts/panel-preview.ts",
+    "placement": "bun run scripts/check_placement.ts",
+    "release": "bash scripts/release.sh"
+  },
+  "dependencies": {
+    "tscircuit": "0.0.3044"
+  },
+  "devDependencies": {
+    "@tscircuit/cli": "0.1.2427",
+    "@types/react": "19.3.0",
+    "bun-types": "1.4.4",
+    "typescript": "5.9.3"
+  }
+}

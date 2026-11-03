@@ -1,0 +1,8 @@
+* Pi 3.3 V enables the SN74LVC1G126 output buffers; pull-down disables them when Pi is off.
+Vpi pi 0 PWL(0 3.3 1m 3.3 1.001m 0 2m 0)
+R19 pi oe 100
+R20 oe 0 100k
+.tran 1u 2m
+.meas tran v_oe_on FIND V(oe) AT=0.5m
+.meas tran v_oe_off FIND V(oe) AT=1.5m
+.end

@@ -1,0 +1,17 @@
+* MIDI IN loop and open-collector receiver check. Behavioral opto output, not a TLP2362 model.
+Vsrc src 0 PWL(0 3.3 1m 3.3 1.001m 0 2m 0)
+Rsrc src ring 22
+Rtip tip 0 33
+R220 ring anode 220
+Dled anode cathode DLED
+Vsense cathode tip 0
+V3V3 3v3 0 3.3
+Rpu 3v3 vo 2.2k
+Bout vo 0 I = min(0.3 * abs(I(Vsense)), 1.2m)
+.model DLED D(Is=1e-12 N=1.8 Rs=5)
+.tran 1u 2m
+.meas tran i_active FIND I(Vsense) AT=0.5m
+.meas tran v_active FIND V(vo) AT=0.5m
+.meas tran i_idle FIND I(Vsense) AT=1.5m
+.meas tran v_idle FIND V(vo) AT=1.5m
+.end

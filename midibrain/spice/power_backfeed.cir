@@ -1,0 +1,15 @@
+* Pi 5 V -> Pico VSYS Schottky and Pico USB ORing check. Simplified diode model.
+Vpi pi 0 PWL(0 5 1m 5 1.001m 0 2m 0)
+Vusb usb 0 PWL(0 0 1m 0 1.001m 5 2m 5)
+Vsen_pi pi pi_d 0
+Dpi pi_d vsys DSCH
+Vsen_usb usb usb_d 0
+Dusb usb_d vsys DSCH
+Rload vsys 0 100
+.model DSCH D(Is=1e-6 N=1.05 Rs=0.03)
+.tran 1u 2m
+.meas tran v_pi_mode FIND V(vsys) AT=0.5m
+.meas tran i_usb_back FIND I(Vsen_usb) AT=0.5m
+.meas tran v_usb_mode FIND V(vsys) AT=1.5m
+.meas tran i_pi_back FIND I(Vsen_pi) AT=1.5m
+.end

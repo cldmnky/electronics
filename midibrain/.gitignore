@@ -1,0 +1,24 @@
+tscircuit/node_modules/
+tscircuit/dist/
+tscircuit/checks/
+tscircuit/.tscircuit/
+tsccache/
+build/
+fab/
+.DS_Store
+# Generated CAD binaries (reproducible from generator scripts; the current
+# bracket STL/STEP are stale vs layout — do not commit binaries)
+*.stl
+*.step
+# CWD droppings from `tsci export` runs (release keeps canonical copies in fab/)
+*.circuit-pcb.svg
+# Generated board SVGs (reproducible via tsci export; not linked from docs)
+assets/front-pcb.svg
+assets/base-pcb.svg
+# Generated view artifacts not linked from docs (reproducible via make targets;
+# the doc-linked renders stay tracked so docs read on any platform)
+assets/front-panel-pcb.png
+assets/front-3d.png
+# Python caches
+__pycache__/
+*.pyc

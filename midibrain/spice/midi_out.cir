@@ -1,0 +1,18 @@
+* MIDI OUT current-loop check. Simplified 3.3 V PNP source, 22R/33R, 220R receiver and 1.7 V LED.
+V3V3 3v3 0 3.3
+Vtx tx 0 PWL(0 3.3 1m 3.3 1.001m 0 2m 0)
+Rbase tx b 4.7k
+Rpull b 3v3 10k
+Q1 c b e QPNP
+Re e 3v3 0.1
+Rring c ring 22
+Rrecv ring nled 220
+Vled nled tip 1.7
+Rtip tip 0 33
+.model QPNP PNP(Is=1e-14 Bf=100 Vaf=50)
+.tran 1u 2m
+.meas tran i_idle FIND I(Vled) AT=0.5m
+.meas tran i_active FIND I(Vled) AT=1.5m
+.meas tran v_ring_idle FIND V(ring) AT=0.5m
+.meas tran v_ring_active FIND V(ring) AT=1.5m
+.end

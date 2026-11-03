@@ -1,0 +1,304 @@
+import { Fragment } from "react"
+import { A_1N4148WS } from "./imports/A_1N4148WS"
+import { B3F_4055 } from "./imports/B3F_4055"
+import { BH254V_26P } from "./imports/BH254V_26P"
+import { PEC11R_4215F_S0024 } from "./imports/PEC11R_4215F_S0024"
+import { FP_JACK_TRS } from "./lib/jack"
+import { SKRHABE010 } from "./imports/SKRHABE010"
+import { TLP2362_TPL_E } from "./imports/TLP2362_TPL_E"
+import {
+  DISPLAY_ANNOTATIONS,
+  FEEDTHROUGH_BRACKET,
+  FRONT_BOARD_HOLES,
+  FRONT_INTERCONNECT,
+  FRONT_REAR_MOUNT,
+  FRONT_PCB,
+  FRONT_TOP_NOTCH,
+  JACK_Y,
+  LCD_MOUNT_HOLES,
+  LCD_WINDOW,
+  LED_Y,
+  MOUNT_HOLE_DIAMETER,
+  midiJackX,
+  RIGHT_CONTROLS,
+  DISPLAY_CONCEPT,
+  TRANSPORT_Y,
+  transportButtonX,
+  displayAnnotationXY,
+} from "./lib/layout"
+
+// FRONT/UI BOARD. Prototype schematic/placement; not a fabrication release.
+// SMD parts are JLCPCB/LCSC candidates. THT controls/jacks are hand-soldered.
+// All positions import from lib/layout.ts (single source); nothing here may
+// re-state a coordinate.
+
+type RProps = {
+  name: string
+  value: string
+  x: string
+  y: string
+  lcsc: string
+  mpn: string
+  p1: string
+  p2: string
+  footprint?: string
+  rot?: string
+}
+const R = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot }: RProps) => (
+  <resistor
+    name={name}
+    resistance={value}
+    footprint={footprint}
+    pcbX={x}
+    pcbY={y}
+    pcbRotation={rot}
+    layer="bottom"
+    supplierPartNumbers={{ jlcpcb: [lcsc] }}
+    manufacturerPartNumber={mpn}
+    connections={{ pin1: p1, pin2: p2 }}
+  />
+)
+
+type CProps = { name: string; value: string; x: string; y: string; lcsc: string; mpn: string; p1: string; p2: string; footprint?: string }
+const C = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603" }: CProps) => (
+  <capacitor
+    name={name}
+    capacitance={value}
+    footprint={footprint}
+    pcbX={x}
+    pcbY={y}
+    layer="bottom"
+    supplierPartNumbers={{ jlcpcb: [lcsc] }}
+    manufacturerPartNumber={mpn}
+    connections={{ pin1: p1, pin2: p2 }}
+  />
+)
+
+// Sleeve decoupling cap follows its jack: 6 mm left, 5.5 mm above the barrel.
+const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: number; x: number; y: number }) => {
+  const j = `J${ch}`, u = `U${ch}`, d = `D${ch}`
+  const rx = `${x}mm`, ry = `${y}mm`
+  const ring = `net.MIDI_IN_${ch}_RING`
+  const tip = `net.MIDI_IN_${ch}_TIP`
+  const anode = `net.MIDI_IN_${ch}_ANODE`
+  const rxNet = `net.MIDI_IN_${ch}_RX`
+  return (
+    <>
+      <connector
+        name={j}
+        footprint={FP_JACK_TRS}
+        pinCount={3}
+        pinLabels={{ pin1: "tip", pin2: "ring", pin3: "sleeve" }}
+        manufacturerPartNumber="PJ-301M-3-B"
+        supplierPartNumbers={{ jlcpcb: ["C381127"] }}
+        pcbX={`${jackX}mm`}
+        pcbY={`${jackY}mm`}
+        layer="top"
+        connections={{ tip, ring, sleeve: `net.MIDI_IN_${ch}_SLEEVE` }}
+      />
+      <TLP2362_TPL_E
+        name={u}
+        pcbX={rx}
+        pcbY={ry}
+        layer="bottom"
+        pinAttributes={{ pin1: { isPassive: true }, pin3: { isPassive: true }, pin4: { requiresGround: true }, pin5: { isPassive: true }, pin6: { requiresPower: true } }}
+        connections={{
+          pin1: anode,
+          pin3: tip,
+          pin4: "net.GND",
+          pin5: rxNet,
+          pin6: "net.P3V3",
+        }}
+      />
+      <A_1N4148WS
+        name={d}
+        pcbX={`${x + 8}mm`}
+        pcbY={`${y + 2}mm`}
+        layer="bottom"
+        connections={{ cathode: anode, anode: tip }}
+      />
+      <R name={`R${ch}`} value="220" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
+      <R name={`R${ch + 2}`} value="2.2k" x={`${x + 8}mm`} y={`${y - 4}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={rxNet} p2="net.P3V3" />
+      <C name={`C${ch}`} value="100nF" x={`${jackX - 6}mm`} y={`${jackY + 5.5}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
+      <C name={`C${ch + 2}`} value="100nF" x={`${x + 4}mm`} y={`${y + 3}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+    </>
+  )
+}
+
+const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: number; x: number; y: number }) => {
+  const j = `J${ch + 2}`, q = `Q${ch}`
+  const ring = `net.MIDI_OUT_${ch}_RING`
+  const tip = `net.MIDI_OUT_${ch}_TIP`
+  const base = `net.MIDI_OUT_${ch}_BASE`
+  const col = `net.MIDI_OUT_${ch}_COLLECTOR`
+  const tx = `net.MIDI_OUT_${ch}_TX`
+  return (
+    <>
+      <connector
+        name={j}
+        footprint={FP_JACK_TRS}
+        pinCount={3}
+        pinLabels={{ pin1: "tip", pin2: "ring", pin3: "sleeve" }}
+        manufacturerPartNumber="PJ-301M-3-B"
+        supplierPartNumbers={{ jlcpcb: ["C381127"] }}
+        pcbX={`${jackX}mm`}
+        pcbY={`${jackY}mm`}
+        layer="top"
+        connections={{ tip, ring, sleeve: "net.GND" }}
+      />
+      <transistor
+        name={q}
+        type="pnp"
+        footprint="sot23"
+        pcbX={`${x}mm`}
+        pcbY={`${y}mm`}
+        layer="bottom"
+        pinLabels={{ pin1: "base", pin2: "emitter", pin3: "collector" }}
+        supplierPartNumbers={{ jlcpcb: ["C53444"] }}
+        manufacturerPartNumber="MMBT3906LT1G"
+        connections={{ base, emitter: "net.P3V3", collector: col }}
+      />
+      <R name={`R${ch + 4}`} value="4.7k" x={`${x - 2}mm`} y={`${y + 6}mm`} lcsc="C23162" mpn="0603WAF4701T5E" p1={tx} p2={base} />
+      <R name={`R${ch + 6}`} value="10k" x={`${x + 6}mm`} y={`${y + 6}mm`} lcsc="C25804" mpn="0603WAF1002T5E" p1={base} p2="net.P3V3" />
+      <R name={`R${ch + 8}`} value="22" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C118189" mpn="25121WF220JT4E" footprint="2512" rot="90deg" p1={col} p2={ring} />
+      <R name={`R${ch + 10}`} value="33" x={`${x + 4.5}mm`} y={`${y - 6}mm`} lcsc="C53728" mpn="25121WF330JT4E" footprint="2512" p1={tip} p2="net.GND" />
+    </>
+  )
+}
+
+// Transport buttons: one B3F-4055 per transport column plus PLAY START in the
+// right-hand control column. X positions come from lib/layout.ts.
+const TRANSPORT_SWITCHES = [
+  { name: "SW1", button: "REC", net: "net.REC" },
+  { name: "SW2", button: "OVER DUB", net: "net.OVER_DUB" },
+  { name: "SW3", button: "STOP", net: "net.STOP" },
+  { name: "SW4", button: "PLAY", net: "net.PLAY" },
+  { name: "SW5", button: "PLAY START", net: "net.PLAY_START" },
+] as const
+
+// LEDs above REC / OVER DUB / PLAY, with their 330R series resistors 4 mm left.
+// Anode nets and LCSC parts unchanged from the routed prototype.
+const FRONT_LED_PARTS = [
+  { name: "D3", button: "REC", lcsc: "C2295", mpn: "KT-0805R", drive: "net.REC_LED", anode: "net.REC_LED_A" },
+  { name: "D4", button: "OVER DUB", lcsc: "C2295", mpn: "KT-0805R", drive: "net.OVERDUB_LED", anode: "net.OVERDUB_LED_A" },
+  { name: "D5", button: "PLAY", lcsc: "C2297", mpn: "KT-0805G", drive: "net.PLAY_LED", anode: "net.PLAY_LED_A" },
+] as const
+
+export default () => (
+  <board width={`${FRONT_PCB.width}mm`} height={`${FRONT_PCB.height}mm`} thickness={`${FRONT_PCB.thickness}mm`} layers={2} minBoardEdgeClearance="0.2mm">
+    <cutout shape="rect" width={`${FRONT_TOP_NOTCH.width}mm`} height={`${FRONT_TOP_NOTCH.height}mm`} pcbX={`${FRONT_TOP_NOTCH.x}mm`} pcbY={`${FRONT_TOP_NOTCH.y}mm`} />
+    {FRONT_BOARD_HOLES.map((h, i) => (
+      <Fragment key={`board-hole-${i}`}><hole name={`BOARD_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
+    ))}
+    {FRONT_REAR_MOUNT.map((h, i) => (
+      <Fragment key={`mount-hole-${i}`}><hole name={`MOUNT_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
+    ))}
+    {LCD_MOUNT_HOLES.map((h, i) => (
+      <Fragment key={`lcd-hole-${i}`}><hole name={`LCD_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
+    ))}
+    {/* LCD assembly silkscreen: vendor outline, active-area window and hole pattern. */}
+    <silkscreenrect pcbX={`${DISPLAY_CONCEPT.x}mm`} pcbY={`${DISPLAY_CONCEPT.y}mm`} width={`${DISPLAY_CONCEPT.width}mm`} height={`${DISPLAY_CONCEPT.height}mm`} strokeWidth="0.15mm" layer="top" />
+    <silkscreenrect pcbX={`${LCD_WINDOW.x}mm`} pcbY={`${LCD_WINDOW.y}mm`} width={`${LCD_WINDOW.width}mm`} height={`${LCD_WINDOW.height}mm`} strokeWidth="0.12mm" layer="top" />
+    {LCD_MOUNT_HOLES.map((h, i) => (
+      <Fragment key={`lcd-silk-${i}`}><silkscreencircle pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} radius="1.8mm" strokeWidth="0.15mm" layer="top" /></Fragment>
+    ))}
+    {DISPLAY_ANNOTATIONS.map((a, i) => {
+      const p = displayAnnotationXY(a)
+      return (
+        <Fragment key={`lcd-note-${i}`}>
+          <silkscreentext text={a.text} pcbX={`${p.x}mm`} pcbY={`${p.y}mm`} fontSize={`${a.fontSize}mm`} anchorAlignment="center" layer="top" />
+        </Fragment>
+      )
+    })}
+    {FEEDTHROUGH_BRACKET.mountX.map((x, i) => (
+      <Fragment key={`bracket-${i}`}><hole name={`BRACKET_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${x}mm`} pcbY={`${FEEDTHROUGH_BRACKET.mountY}mm`} /></Fragment>
+    ))}
+
+    {/* MIDI circuits: opto/output drivers under the LCD (bottom layer); jacks
+        in the four shared transport/MIDI columns at the bottom edge. */}
+    <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={-45} y={10} />
+    <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={-15} y={10} />
+    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={-45} y={-13} />
+    <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} x={-15} y={-13} />
+
+    <SKRHABE010
+      name="U5"
+      pcbX={`${RIGHT_CONTROLS.NAV.x}mm`}
+      pcbY={`${RIGHT_CONTROLS.NAV.y}mm`}
+      layer="top"
+      connections={{ COM: "net.GND", A: "net.NAV_UP", B: "net.NAV_DOWN", C: "net.NAV_LEFT", D: "net.NAV_RIGHT", CEN: "net.NAV_PRESS", pin7: "net.GND", pin8: "net.GND" }}
+    />
+    <PEC11R_4215F_S0024
+      name="U6"
+      pcbX={`${RIGHT_CONTROLS.TEMPO.x}mm`}
+      pcbY={`${RIGHT_CONTROLS.TEMPO.y}mm`}
+      layer="top"
+      connections={{ A: "net.ENC_A", B: "net.ENC_B", C: "net.GND", pin4: "net.GND", pin5: "net.ENC_SW", pin7: "net.GND", pin8: "net.GND" }}
+    />
+    {TRANSPORT_SWITCHES.map(sw => (
+      <B3F_4055
+        key={sw.name}
+        name={sw.name}
+        pcbX={`${transportButtonX(sw.button)}mm`}
+        pcbY={`${TRANSPORT_Y}mm`}
+        layer="top"
+        connections={{ pin1: "net.GND", pin3: sw.net }}
+      />
+    ))}
+    <B3F_4055 name="SW6" pcbX={`${RIGHT_CONTROLS.SHIFT_EXIT.x}mm`} pcbY={`${RIGHT_CONTROLS.SHIFT_EXIT.y}mm`} layer="top" connections={{ pin1: "net.GND", pin3: "net.SHIFT_EXIT" }} />
+
+    {FRONT_LED_PARTS.map((led, i) => (
+      <Fragment key={led.name}>
+        <R name={`R${13 + i}`} value="330" x={`${transportButtonX(led.button) - 4}mm`} y={`${LED_Y}mm`} lcsc="C23138" mpn="0603WAF3300T5E" p1={led.drive} p2={led.anode} />
+        <led
+          name={led.name}
+          pcbX={`${transportButtonX(led.button)}mm`}
+          pcbY={`${LED_Y}mm`}
+          layer="top"
+          footprint="0805"
+          supplierPartNumbers={{ jlcpcb: [led.lcsc] }}
+          manufacturerPartNumber={led.mpn}
+          connections={{ anode: led.anode, cathode: "net.GND" }}
+        />
+      </Fragment>
+    ))}
+    <C name="C5" value="10uF" x="50mm" y="46mm" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
+    <C name="C6" value="100nF" x="60mm" y="-12mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+
+    <BH254V_26P
+      name="J5"
+      pcbX={`${FRONT_INTERCONNECT.x}mm`}
+      pcbY={`${FRONT_INTERCONNECT.y}mm`}
+      pcbRotation={`${FRONT_INTERCONNECT.rotation}deg`}
+      layer="bottom"
+      connections={{
+        pin1: "net.P3V3",
+        pin2: "net.GND",
+        pin3: "net.MIDI_IN_1_RX",
+        pin4: "net.MIDI_OUT_1_TX",
+        pin5: "net.MIDI_IN_2_RX",
+        pin6: "net.MIDI_OUT_2_TX",
+        pin7: "net.NAV_UP",
+        pin8: "net.NAV_DOWN",
+        pin9: "net.NAV_LEFT",
+        pin10: "net.NAV_RIGHT",
+        pin11: "net.NAV_PRESS",
+        pin12: "net.ENC_A",
+        pin13: "net.ENC_B",
+        pin14: "net.ENC_SW",
+        pin15: "net.REC",
+        pin16: "net.OVER_DUB",
+        pin17: "net.STOP",
+        pin18: "net.PLAY",
+        pin19: "net.PLAY_START",
+        pin20: "net.REC_LED",
+        pin21: "net.OVERDUB_LED",
+        pin22: "net.P3V3",
+        pin23: "net.PLAY_LED",
+        pin24: "net.GND",
+        pin25: "net.GND",
+        pin26: "net.SHIFT_EXIT",
+      }}
+    />
+  </board>
+)

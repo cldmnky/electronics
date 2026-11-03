@@ -1,0 +1,12 @@
+* Pi GPIO25 -> 2N7002 open-drain reset of Pico RUN.
+Vpi pi 0 PWL(0 3.3 1m 3.3 1.001m 0 2m 0)
+Rg pi gate 10k
+Rpd gate 0 100k
+M1 run gate 0 0 NMOS
+Rpu 3v3 run 10k
+V3 3v3 0 3.3
+.model NMOS NMOS(Vto=1.5 Kp=0.2)
+.tran 1u 2m
+.meas tran v_run_on FIND V(run) AT=0.5m
+.meas tran v_run_off FIND V(run) AT=1.5m
+.end

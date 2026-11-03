@@ -1,0 +1,79 @@
+{
+  "_comment": "Canonical JLCPCB order settings for MIDI Brain. tscircuit has no prop for surface finish or assembly side, so these live here and are copied into fab/ by `make release`. Upload the artifacts listed in docs/JLC-ASSEMBLY.md and set these options on the order page. Prototype outputs, not a fabrication release: resolve docs/acceptance.md gates and recheck all LCSC stock before paying.",
+  "front": {
+    "board": {
+      "layers": 2,
+      "dimensions_mm": [128, 112],
+      "thickness_mm": 1.6,
+      "outer_copper_oz": 1,
+      "surface_finish": "Lead-free HASL",
+      "solder_mask": "green",
+      "silkscreen": "white"
+    },
+    "assembly": {
+      "service": "JLCPCB SMT assembly",
+      "sides": 2,
+      "sides_reason": "27 SMT placements bottom (MIDI/opto/passives) and 4 top (U5 nav, D3/D4/D5 LEDs). Bottom-only is possible if the 4 top parts are hand-soldered, but the nav switch is fiddly by hand.",
+      "through_hole": "hand solder",
+      "through_hole_parts": ["J1", "J2", "J3", "J4", "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "U6", "J5"],
+      "files": {
+        "gerbers": "fab/front/front-gerbers.zip",
+        "bom": "fab/front/front-bom-jlc.csv",
+        "cpl": "fab/front/front-cpl-jlc.csv"
+      },
+      "expected_counts": {
+        "bom_placements": 43,
+        "cpl_smt_placements": 31,
+        "cpl_smt_top": 4,
+        "cpl_smt_bottom": 27,
+        "tht_excluded": 12
+      }
+    }
+  },
+  "rear": {
+    "board": {
+      "layers": 2,
+      "dimensions_mm": [101.6, 112],
+      "thickness_mm": 1.6,
+      "outer_copper_oz": 1,
+      "surface_finish": "Lead-free HASL",
+      "solder_mask": "green",
+      "silkscreen": "white"
+    },
+    "assembly": {
+      "service": "JLCPCB SMT assembly",
+      "sides": 1,
+      "sides_reason": "All 18 SMT placements are on the bottom; THT sockets/headers are hand-soldered after SMT.",
+      "stencil": "bottom only, if separately required",
+      "through_hole": "hand solder",
+      "through_hole_parts": ["J_PICO_L", "J_PICO_R", "J_PI", "J_FRONT"],
+      "through_hole_note": "No LCSC numbers in the design (generic 2.54 mm parts); source for the bench. Kept out of the SMT CPL by design.",
+      "files": {
+        "gerbers": "fab/rear/rear-gerbers.zip",
+        "bom": "fab/rear/rear-bom-jlc.csv",
+        "cpl": "fab/rear/rear-cpl-jlc.csv"
+      },
+      "expected_counts": {
+        "bom_placements": 22,
+        "cpl_smt_placements": 18,
+        "cpl_smt_bottom": 18,
+        "tht_excluded": 4
+      }
+    }
+  },
+  "panel": {
+    "board": {
+      "layers": 2,
+      "dimensions_mm": [132.08, 128.5],
+      "thickness_mm": 1.6,
+      "surface_finish": "none required (no copper)",
+      "solder_mask": "none, both sides",
+      "silkscreen": "white",
+      "assembly": false,
+      "acceptance_note": "Confirm JLCPCB accepts a no-solder-mask both-sides FR-4 order before paying; still an open item."
+    },
+    "files": {
+      "gerbers": "fab/panel/panel-gerbers.zip"
+    }
+  }
+}
