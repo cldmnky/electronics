@@ -260,10 +260,10 @@ channels:
 
 ## 8. Open questions (decide before ordering)
 
-1. **Joystick sourcing — selected.** The current BOM uses XUNPU
+1. **Joystick sourcing — unresolved.** The footprint uses XUNPU
    `WS-1004-ARL10026` (LCSC C42377836), not the retired Alps assumption.
-   LCSC/JLCPCB remains the first supplier; use Electrokit for any unavailable
-   part, as required by `AGENTS.md` §9.
+   An approved RS, Electrokit or DigiKey EU source, or a verified compatible
+   replacement, is still required for this hand-soldered part.
 2. **Joystick cap — dimensioned prototype supplied.** XUNPU's drawing gives
    10mm overall height, 3.15mm square stem. Print/finish `nav-cap.stl` and test
    all directions and centre press through the revised Ø8mm hole. The ±8° CAD
@@ -287,10 +287,11 @@ channels:
 
 ## 9. BOM and sourcing
 
-Rule (`froemix/AGENTS.md` §9): **LCSC/JLCPCB first, Electrokit for anything LCSC
-does not stock.** The Eurokit lookup was done first, then the LCSC sweep — and
-**every part has an LCSC code**, so nothing in this design comes from Electrokit.
-Electrokit's numbers are kept below only as the record of the comparison.
+Rule (`froemix/AGENTS.md` §9): hand-soldered parts must be sourced from **RS,
+Electrokit or DigiKey with EU sales**; JLCPCB/LCSC may supply JLC-placed SMT.
+The table below records the original design identities and historical LCSC
+stock, **not an EU shopping list**. Sourcing and compatible substitutes remain
+unresolved: see [EU-SOURCING.md](EU-SOURCING.md).
 
 | Qty | Part | LCSC | Stock | Basic/Ext | Note |
 | --- | --- | --- | --- | --- | --- |
@@ -320,8 +321,8 @@ change**.
   and rejected: it would move 12 jacks off the board onto a wire harness (24
   panel solder joints plus crimps) and gain nothing, because the panel holes are
   the same 6.2mm either way and the `PJ-301M` pad question is already covered by
-  the slotted pads. Everything on this board is bought from LCSC and the SMD
-  side is JLCPCB-placed as it stands.
+  the slotted pads. This was the original LCSC selection; an approved EU
+  source or verified replacement is now required. JLCPCB places the SMD side.
 - **Assembly split**: 12 SMD parts on the bottom (9 x 0603 resistor, 3 x
   SOD-323 diode) are placed by JLCPCB; the through-hole side - 12 jacks,
   6 pots, joystick, button, 3 LEDs, OLED header, 3 sockets - is hand-soldered
@@ -352,7 +353,7 @@ change**.
    window 30.5 x 16.0mm at (0, 42.8). The module's four 3.2mm holes are not
    used - it is soldered on its seven pins.
 
-### Electrokit (record only — not used)
+### Electrokit (historical comparison; recheck availability and fit)
 
 | Part | Art. nr | Why not |
 | --- | --- | --- |
@@ -362,4 +363,4 @@ change**.
 | 12mm illuminated button | 41033204 | white LED Vf 3.2V is marginal on 3.3V; LCSC C692901 is red (~2.0V) |
 | Amphenol ACJS-MV35-3 stereo jack | 41011901 | only 10 in stock; XKB C381127 keeps one jack family |
 | Mono jack | 41001190 | chassis-mount, wrong pads, out of stock to 2026-11-13 |
-| Thonkiconn `PJ398SM` | 41020778 | **discontinued** - Electrokit's page says "outdated and no longer active". There is no current PCB-mount Thonkiconn listing, so this fallback does not exist; the XKB `PJ-301M` from LCSC is the way. |
+| Thonkiconn `PJ398SM` | 41020778 | Previously listed as outdated and inactive. Neither this nor the XKB LCSC reference establishes an approved EU source; recheck availability and fit. |

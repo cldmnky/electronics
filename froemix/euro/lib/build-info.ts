@@ -3,7 +3,7 @@
 // Keep identical to `tscircuit/lib/build-info.ts`: the base gate compares both
 // copies. The duplication exists because `tsci dev` cannot serve imports from
 // outside a project directory.
-export const BOARD_REVISION = "0.1"
+export const BOARD_REVISION = "0.2"
 
 /** UTC build date, captured by the release scripts. Override for reproducible builds. */
 export function buildDate(): string {

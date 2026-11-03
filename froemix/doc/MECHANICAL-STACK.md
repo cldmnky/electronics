@@ -35,7 +35,7 @@ against it from **both built boards**, rather than trusting a comment.
 | Base CN4 | XKB `X4612WV-08I-C40D28-E60`, **C2883061**, one | Buy the stocked 8-way strip. **Remove the LAST pin and its cell in BOTH mouldings**, dress the cut, retain the original pin-1 end. Fit the resulting seven-way strip to the existing seven holes. Do not leave an eighth metal stub or plastic overhang. |
 | Front CN1, CN2 | Hong Cheng `HC-PM200-4.3H-1x16PZ`, C22373851 | Existing 4.3 ±0.15mm socket body, 2.8mm solder tails. |
 | Front CN4 | Hanxia `HX PM2.0-1x7P ZC`, C22438139 | Existing seven-way 4.3 ±0.15mm socket. |
-| Board spacers ×4 | **11.0 ±0.1mm clear length**, M3 female/female | ≤5mm OD insulating columns preferred, at (±36.95, ±60.75). Screw heads/washers ≤5.5mm OD at the tight board holes. Use LCSC stock or Electrokit per the project sourcing rule. |
+| Board spacers ×4 | **11.0 ±0.1mm clear length**, M3 female/female | ≤5mm OD insulating columns preferred, at (±36.95, ±60.75). Screw heads/washers ≤5.5mm OD at the tight board holes. Source from RS, Electrokit or DigiKey with EU sales; confirm dimensions. |
 
 C2883060 is a seven-way member of the same family, but did not resolve in the
 JLC catalogue when selected. The BOM deliberately buys the stocked eight-way

@@ -19,6 +19,7 @@ import { Fragment } from "react"
 import { wordmarkPaths } from "../lib/wordmark"
 import { BOARD_REVISION, buildDate } from "../lib/build-info"
 import { oshwPaths } from "../lib/oshw"
+import { BAR_HALF_LENGTH, CATHODE_BARS, DOT_RADIUS, MARKER_STROKE, PIN1_DOTS } from "../lib/polarity-markers"
 
 type Refdes = {
   text: string
@@ -79,6 +80,17 @@ const BOARD_NOTES = [
 
 export const SilkSection = () => (
   <>
+    {/* These coordinates name physical board pads, not the unreliable 3D model dots. */}
+    {PIN1_DOTS.map(({ ref, x, y }) => (
+      <Fragment key={`pin1-${ref}`}><silkscreencircle layer="bottom"
+        pcbX={`${x}mm`} pcbY={`${y}mm`} radius={`${DOT_RADIUS}mm`}
+        strokeWidth={`${MARKER_STROKE}mm`} /></Fragment>
+    ))}
+    {CATHODE_BARS.map(({ ref, x, y }) => (
+      <Fragment key={`cathode-${ref}`}><silkscreenpath layer="bottom"
+        strokeWidth={`${MARKER_STROKE}mm`}
+        route={[{ x, y: y - BAR_HALF_LENGTH }, { x, y: y + BAR_HALF_LENGTH }]} /></Fragment>
+    ))}
     {REFDES.map((ref) => (
       <Fragment key={`ref-${ref.text}`}><silkscreentext
         text={ref.text}

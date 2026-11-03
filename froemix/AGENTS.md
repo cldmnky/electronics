@@ -509,21 +509,20 @@ release`; no item is aspirational.
 
 ## 9. Sourcing rule (both boards)
 
-Default supplier for every part is **LCSC / JLCPCB** - that is what `check_parts.py`
-validates against and what the SMT line places. **Any part that LCSC does not
-stock must be bought from Electrokit (`https://www.electrokit.com/`).** No third
-supplier, no distributor-only parts.
+JLCPCB/LCSC may supply the parts JLC places. **All hand-soldered parts must be
+sourced from RS Components, Electrokit or DigiKey with EU sales.** LCSC numbers
+in existing hand BOMs are design references, not approved sources. Some parts
+and mechanically compatible replacements are still unresolved; do not treat the
+current hand BOM as an EU shopping list. `doc/EU-SOURCING.md` describes the
+search tool and review requirements.
 
-Consequences to respect when a part is added:
-
-- Prefer an LCSC part, and prefer one that is **basic** at JLCPCB.
-- If the only option is not at LCSC, look for the Electrokit equivalent
-  *before* the footprint is drawn: the footprint follows the part that can
-  actually be bought. Record the Electrokit article number next to the LCSC
-  column in the BOM, and note in the design record (`doc/EURO-BOARD.md` §8 for
-  the euro board) that the part is distributor-sourced.
-- A part that is "not recommended for new designs" or discontinued **and** not at
-  LCSC is a stop item: find the replacement part from Electrokit, do not design
-  it in and hope.
-- The euro board's BOM and its Electrokit mapping live in `doc/EURO-BOARD.md`
-  ("BOM and sourcing"). Keep it current when a part changes.
+- For machine-placed SMT, prefer an LCSC part that is **basic** at JLCPCB;
+  `check_parts.py` validates that supplier data.
+- For hand-fitted components and loose assembly hardware, find an approved EU
+  seller before ordering and verify the exact part's electrical, footprint,
+  mechanical and mating requirements. Record the reviewed supplier and MPN.
+- Do not silently substitute an unavailable or discontinued part. A change to
+  board-to-board headers, jacks, display, actuator or converter can require a
+  board/panel redesign and first-article checks.
+- `tools/source_parts.py` generates supplier search links and optional DigiKey
+  API candidates, not compatibility approvals or a complete shopping list.

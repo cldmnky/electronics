@@ -5,7 +5,10 @@ Everything in `froemix-cpl-jlc.csv` is machine-placed by JLCPCB's SMT line
 **everything else**: the 10 through-hole parts kept out of the CPL, the two
 jumper shunts for `J1`, two Daisy female socket strips and the Daisy Seed
 module (`doNotPlace`), and the bare-copper aids. The socket strips and shunts
-are separate purchases, not entries in the generated board BOM or CPL.
+are separate purchases, not entries in the generated board BOM or CPL. Source
+all hand-fitted parts from RS, Electrokit or DigiKey with EU sales; the LCSC
+references below identify the designed parts, not approved purchases. See
+[EU-SOURCING.md](EU-SOURCING.md).
 
 Silkscreen references: every part below has its refdes printed next to it on
 the **bottom** (component) side, so they read correctly when you flip the board
@@ -23,7 +26,7 @@ over. The board also carries a mirrored legend
 | `J2` | 2×8 2.54 mm IDC box header (Eurorack power) | THT shrouded | bottom | C3406 | pin 1 = the square/`1`-marked pad; the built silk key/notch is on the **lower long side** (y ≈ −59.25…−60.56), i.e. **the same board edge as the two lower M3 holes**. Check the shroud key against the ribbon connector before soldering — the key must engage the connector's polarizing rib, not force it |
 | `C24`, `C25` | 100 µF 50 V radial electrolytic, 8 × 12 mm | THT, 3.5 mm pitch | bottom | C2749 | **polarity**: `+` marked on silk; C25 is the negative-rail cap, its `+` faces **GND**. Body is 8 mm — the silk circle is the can, keep neighbours clear of it |
 | `U16` | B2405S-**2**WR3, isolated 24 V→5 V SIP module (2 W / 400 mA) | THT, 4 leads on the 1-2-4-6 positions of a 2.54 mm grid | bottom | C5369484 | **pin 1 = `+VIN`** (square pad, 45° silk bevel and lead tick); leads 3 and 5 are absent, and the silk guide line inside the body is broken at those two positions, so the module cannot go in one position off. The body hangs 6.15 mm to one side of the lead row (toward the bottom board edge). Module stands **up** (≈10 mm tall) |
-| Daisy sockets ×2 | Straight 1×20 female through-hole socket strips, 2.54 mm pitch | Daisy footprint: 2 rows, 15.24 mm apart, 1.1 mm plated holes | bottom | Not selected | Check tail dimensions against finished holes, contact compatibility with the actual Daisy pins, and clearance before buying. Prefer LCSC/JLCPCB, otherwise Electrokit. |
+| Daisy sockets ×2 | Straight 1×20 female through-hole socket strips, 2.54 mm pitch | Daisy footprint: 2 rows, 15.24 mm apart, 1.1 mm plated holes | bottom | Not selected | Check tail dimensions against finished holes, contact compatibility with the actual Daisy pins, and clearance before buying. Source from RS, Electrokit or DigiKey with EU sales. |
 | `DaisySeed1` | Electrosmith Daisy Seed Rev4 module, plugged into the sockets | 2 × 20 × 2.54 mm, 15.24 mm row spacing | bottom | — | pin 1 at the end marked on silk; USB is at the **left (−X)** end (board x ≈ −25…−26.5, y ≈ 36.5…44.5). Rear access and clearance with the selected sockets require a physical check. |
 | `J1` shunts ×2 | 2.54 mm jumper shunt (not shipped with the board) | — | on `J1` | — | two shunts, Type A (3–5 + 4–6) or Type B (4–2 + 3–1), see the MIDI section |
 | `FID1–FID4` | fiducials | bare copper, 1 mm + 0.5 mm mask window | bottom | — | do nothing (no part) |

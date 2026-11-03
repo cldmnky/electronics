@@ -4,7 +4,7 @@
 // files inside its own project directory, so a shared import outside this
 // folder breaks the browser preview. `scripts/test_silk.test.ts` asserts both
 // copies carry the same revision and the same build date.
-export const BOARD_REVISION = "0.1"
+export const BOARD_REVISION = "0.2"
 
 /** UTC build date, captured by the release scripts. Override for reproducible builds. */
 export function buildDate(): string {
