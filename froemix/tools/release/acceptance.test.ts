@@ -107,6 +107,24 @@ describe("required item list", () => {
     }
   })
 
+  test("midi_output also requires primary-datasheet verification of the GPIO limits", () => {
+    // Bench current alone cannot prove an absolute per-pin rating: the
+    // STM32H750 limits (20 mA, VOL 0.4 V, VOH) and the reset state are
+    // assumptions until a primary ST datasheet is checked.
+    const item = REQUIRED_ITEMS.find((entry) => entry.id === "midi_output")!
+    expect(item).toBeDefined()
+    expect(item.requirement).toMatch(/datasheet/i)
+    expect(item.requirement).toMatch(/STM32H750/)
+    expect(item.requirement).toMatch(/20 mA/)
+    expect(item.requirement).toMatch(/reset state/i)
+    expect(item.requirement).toMatch(/assumptions?/i)
+  })
+
+  test("every item is still in the unchanged 19-item list", () => {
+    expect(REQUIRED_IDS.length).toBe(19)
+    expect(REQUIRED_IDS).toContain("midi_output")
+  })
+
   test("no requirement invents a measurement or an approved part", () => {
     // Requirements may state limits ("<= 300 mA") but must not contain a
     // measured result, a part number or a supplier approval.

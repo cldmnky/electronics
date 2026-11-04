@@ -131,7 +131,7 @@ documentation-only commit does not.
 | `cv_cable_load` | CV out stable with ≤ 10 nF cable/load; overshoot and settle recorded |
 | `mux_sync` | Mux and sync in every power order, including back-fed, with no damage or latch-up |
 | `midi_input` | Receiver threshold, high-current input, fault temperature |
-| `midi_output` | Legacy receiver headroom, rise/fall edges, sustained ring/tip fault temperatures |
+| `midi_output` | Legacy receiver headroom, rise/fall edges, sustained ring/tip fault temperatures, plus the STM32H750 GPIO absolute limits and reset state verified against a primary ST datasheet (20 mA per pin, VOL 0.4 V, VOH and reset are assumptions, not measurements) |
 | `ground_tie` | Single-point ground/chassis tie decided and measured |
 | `esd` | ESD test on every exposed jack, opening and connector, with protection parts recorded |
 | `dfm_cpl` | DFM/CPL review of both boards' and the panel's exported gerbers, BOM and placement preview |
@@ -223,6 +223,7 @@ values, DRC and silkscreen steps are for.
 | Fasteners ≤ 5 mm OD | actual head/washer MPNs not selected |
 | P5V rail ≤ 300 mA | budget only (`doc/POWER-BUDGET.md`); no loaded measurement |
 | MIDI receiver threshold | datasheet limits only, no bench data |
+| STM32H750 GPIO limits for the MIDI output (20 mA per pin, VOL 0.4 V, VOH, reset state) | explicit assumptions; primary ST datasheet not yet verified, so no absolute rating is claimed |
 | ESD, ground/chassis tie | not measured; no decision recorded for the tie |
 | DFM/CPL, first article | not done |
 | KiCad ERC (prototype) | 0 unexcluded, 7 excluded, genuine KiCad 10.0.7 |

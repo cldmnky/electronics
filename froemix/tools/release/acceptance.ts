@@ -126,7 +126,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "midi_output",
     title: "MIDI output legacy headroom, edges and faults",
-    requirement: "Transmitter current into legacy receiver loads, rise/fall edges and sustained ring/tip fault temperatures measured; CA-033 compliance is not inferred from a receiver-only calculation.",
+    requirement: "Transmitter current into legacy receiver loads, rise/fall edges and sustained ring/tip fault temperatures measured; CA-033 compliance is not inferred from a receiver-only calculation. The STM32H750 GPIO absolute limits and reset state must also be verified against a primary ST datasheet: the 20 mA per-pin limit, VOL 0.4 V, VOH and the reset state are explicit assumptions today, and a bench current measurement alone cannot prove an absolute rating.",
   },
   {
     id: "ground_tie",
