@@ -145,6 +145,8 @@ void testRoundTrip() {
   original.mainComp.mode = 1;
   original.mixer.channels[2].cueSend = 0.75f;
   original.mixer.channels[2].out34Send = 0.5f;
+  original.mixer.channels[2].monitor = 2;
+  original.mixer.channels[3].monitor = 0;
   original.mixer.out34Mode = 1;
 
   TempDir dir;

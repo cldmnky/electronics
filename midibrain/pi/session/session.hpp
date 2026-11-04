@@ -75,6 +75,9 @@ struct MixerChannelState {
   std::array<float, audio::kNumSends> send{};
   float cueSend = 0.0f;    // per-track CUE bus send level (v2)
   float out34Send = 0.0f;  // per-track OUT3&4 send level (v2)
+  // Input monitoring (MPC-style): 0 = off (never pass live input),
+  // 1 = auto (live input iff armed, or no active take playing), 2 = on.
+  int monitor = 1;
   friend bool operator==(const MixerChannelState&, const MixerChannelState&) = default;
 };
 

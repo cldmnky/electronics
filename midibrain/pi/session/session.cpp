@@ -518,6 +518,13 @@ bool decodeMixer(const JsonValue& node, MixerState& out, std::string& error) {
       if (!readOptionalFloat(item, "out34", channel.out34Send, path, error)) {
         return false;
       }
+      int monitor = channel.monitor;
+      if (!readOptionalInt(item, "monitor", monitor, path, error)) {
+        return false;
+      }
+      if (monitor < 0) monitor = 0;
+      if (monitor > 2) monitor = 2;
+      channel.monitor = monitor;
       if (const JsonValue* send = item.find("send")) {
         if (send->type != JsonValue::Type::Array) {
           error = "session: \"" + path + ".send\" is not an array";
@@ -1086,6 +1093,8 @@ std::string encode(const Snapshot& snapshot) {
     appendNumber(out, channel.cueSend);
     out += ",\"out34\":";
     appendNumber(out, channel.out34Send);
+    out += ",\"monitor\":";
+    appendNumber(out, channel.monitor);
     out += "}";
   }
   out += "],\"master\":";
