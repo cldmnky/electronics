@@ -258,6 +258,65 @@ class ModelProvenanceTests(unittest.TestCase):
             simlib.spice_number("1M")
 
 
+class MidiReferenceTests(unittest.TestCase):
+    """The weakest-sender corners are pinned numbers, not prose."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="sim-midi-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_reference_currents_are_reproduced(self):
+        for corner, (sender, direction, loss, vf, reference) in \
+                models.MIDI_SENDER_CORNERS.items():
+            with self.subTest(corner=corner):
+                value = models.midi_sender_current(sender, direction, loss, vf)
+                self.assertAlmostEqual(value, reference, delta=reference * 1e-4)
+
+    def test_deck_case_parameters_follow_the_reference(self):
+        for corner in models.MIDI_SENDER_CORNERS:
+            params = models.midi_sender_case_parameters(corner)
+            deck = copy_deck("midi_in.cir", self.tmp)
+            text = deck.read_text()
+            name = f"XR_{corner.upper()}"
+            self.assertIn(name, text)
+            self.assertEqual(models.check_midi_sender_cases(deck), [])
+
+    def test_changed_tolerance_cannot_improve_a_corner(self):
+        for corner, (sender, direction, loss, vf, reference) in \
+                models.MIDI_SENDER_CORNERS.items():
+            with self.subTest(corner=corner):
+                loose = models.midi_sender_current(sender, direction, loss, vf,
+                                                   r47_tol=0.02)
+                self.assertGreater(abs(loose - reference), reference * 0.002,
+                                   "a 2 % R47 tolerance must leave the 0.2 % band")
+
+    def test_changed_driver_loss_cannot_improve_a_corner(self):
+        for corner, (sender, direction, loss, vf, reference) in \
+                models.MIDI_SENDER_CORNERS.items():
+            with self.subTest(corner=corner):
+                worse = models.midi_sender_current(sender, direction, loss + 0.1, vf)
+                self.assertGreater(abs(worse - reference), reference * 0.002,
+                                   "a 0.1 V driver loss change must leave the band")
+
+    def test_changed_vf_cannot_improve_a_corner(self):
+        for corner, (sender, direction, loss, vf, reference) in \
+                models.MIDI_SENDER_CORNERS.items():
+            with self.subTest(corner=corner):
+                worse = models.midi_sender_current(sender, direction, loss, vf + 0.05)
+                self.assertGreater(abs(worse - reference), reference * 0.002,
+                                   "a 50 mV VF change must leave the band")
+
+    def test_deck_case_parameter_drift_is_detected(self):
+        deck = copy_deck("midi_in.cir", self.tmp,
+                         edit=lambda t: t.replace(
+                             "PARAMS: VSRC=4.2 RSRC=462 R47=222.2 VF=1.85",
+                             "PARAMS: VSRC=4.3 RSRC=462 R47=222.2 VF=1.85"))
+        problems = models.check_midi_sender_cases(deck)
+        self.assertTrue(any("VSRC" in p for p in problems), problems)
+
+
 class ReaderTests(unittest.TestCase):
     """Bad or absent output must raise, never read as a number."""
 

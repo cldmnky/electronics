@@ -44,15 +44,15 @@
 * --- inverting totem-pole output that switches at the datasheet threshold.
 * --- VF is a case parameter so every VF corner in the table above can be run.
 .subckt TLP2361 A K VO VCC GND PARAMS: VF=1.65 ITH=1.6m
-RSNS  A   A1 1
+RSNS  A   A1 1m
 DIDE  A1  A2 DMINI
 VFX   A2  K  {VF}
 * the 1 ohm RSNS turns the LED current into a voltage the behavioural output
 * can use (a device current inside a B source did not converge); the extra
 * 1 ohm is 0.4 % of the loop and is part of the model, not a board part
-BVO   VOI 0  V = v(VCC)*max(0,min(1,({ITH}-(v(A)-v(A1)))/(0.5*{ITH})))
+BVO   VOI 0  V = v(VCC)*max(0,min(1,({ITH}-(v(A)-v(A1))/1m)/(0.5*{ITH})))
 ROUT  VOI VO 100
-.model DMINI D(IS=1e-9 N=0.01)
+.model DMINI D(IS=1e-9 N=1m)
 .ends
 
 * --- one receiver loop, parameterised; terminal RING exists so the loop
@@ -91,6 +91,19 @@ XR_TYP   N_R2  RXCHAIN PARAMS: VSRC=3.465 RSRC=55    R47=220   VF=1.65
 XR_CA033 N_R3  RXCHAIN PARAMS: VSRC=3.135 RSRC=55.55 R47=231   VF=1.9
 * a 5 V legacy transmitter, 2 x 220 ohm at +5 %: 5.63 mA
 XR_5V    N_R4  RXCHAIN PARAMS: VSRC=5.25  RSRC=418   R47=220   VF=1.65
+* CA-033 5 V +-10 %, RA/RC 220 +-5 %, R47 at its tolerance, the WEAKEST legal
+* loop: 4.5 V - 0.3 V driver loss - 1.85 V VF over (2 x 220 x 1.05) + 222.2
+* = 3.4347 mA
+XR_CA5V_LO N_R8 RXCHAIN PARAMS: VSRC=4.2 RSRC=462 R47=222.2 VF=1.85
+* CA-033 5 V +-10 %, same legs, the STRONGEST legal loop: 5.5 - 0 - 1.35 V
+* over (2 x 220 x 0.95) + 217.8 = 6.5272 mA
+XR_CA5V_HI N_R9 RXCHAIN PARAMS: VSRC=5.5 RSRC=418 R47=217.8 VF=1.35
+* CA-033 3.3 V +-5 %, RA 33 / RC 10 +-5 %, WEAKEST loop:
+* 3.135 - 0.3 - 1.85 over (43 x 1.05) + 222.2 = 3.6843 mA
+XR_CA33_LO N_R10 RXCHAIN PARAMS: VSRC=2.835 RSRC=45.15 R47=222.2 VF=1.85
+* the same legs, STRONGEST loop: 3.465 - 0 - 1.35 over (43 x 0.95) + 217.8
+* = 8.1771 mA
+XR_CA33_HI N_R11 RXCHAIN PARAMS: VSRC=3.465 RSRC=40.85 R47=217.8 VF=1.35
 * a NON-COMPLIANT 5 V transmitter (33/10 legs at -5 %): 14.8 mA
 XR_5VLEG N_R5  RXCHAIN PARAMS: VSRC=5.5   RSRC=40.85 R47=220   VF=1.65
 * reverse polarity: D1 conducts, the LED must not see a reverse voltage
@@ -120,6 +133,14 @@ meas dc ca_cathode FIND v(XR_CA033.CT) AT=1
 meas dc v5_ring FIND v(N_R4) AT=1
 meas dc v5_anode FIND v(XR_5V.AN) AT=1
 meas dc leg_ring FIND v(N_R5) AT=1
+meas dc ca5lo_ring FIND v(N_R8) AT=1
+meas dc ca5lo_anode FIND v(XR_CA5V_LO.AN) AT=1
+meas dc ca5hi_ring FIND v(N_R9) AT=1
+meas dc ca5hi_anode FIND v(XR_CA5V_HI.AN) AT=1
+meas dc ca33lo_ring FIND v(N_R10) AT=1
+meas dc ca33lo_anode FIND v(XR_CA33_LO.AN) AT=1
+meas dc ca33hi_ring FIND v(N_R11) AT=1
+meas dc ca33hi_anode FIND v(XR_CA33_HI.AN) AT=1
 meas dc leg_anode FIND v(XR_5VLEG.AN) AT=1
 meas dc rev_ring FIND v(N_R6) AT=1
 meas dc rev_anode FIND v(XR_REV.AN) AT=1

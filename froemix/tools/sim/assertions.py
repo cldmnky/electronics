@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import models
 import simlib
 from simlib import DeckRun
 
@@ -622,14 +623,44 @@ def midi_in(run: DeckRun) -> list[Check]:
                        run.measure("main_anode") - run.measure("main_cathode"), 1.62, 1.69,
                        " V", "VF 1.65 V (datasheet maximum at 2 mA) plus the model's "
                        "diode and sense drops", fmt="{:.4f}"))
-    checks.append(band(deck, "old TLP2362 would be marginal on this loop (negative)",
-                       own / (rx["tlp2362_ith"] * 1e3), 1.0, 1.2, " x",
-                       "1.07x its 5 mA maximum threshold: the negative case the part "
-                       "change removed", fmt="{:.3f}"))
-    checks.append(band(deck, "old TLP2362 below its recommended on-current (negative)",
-                       own, 0.0, rx["tlp2362_recommended"] * 1e3, " mA",
-                       "0.71x of 7.5 mA recommended -- not guaranteed, hence TLP2361",
-                       fmt="{:.4f}"))
+    # --- the weakest and strongest LEGAL sender loops (models.MIDI_SENDERS).
+    # The receiver path (R47, LED, D1) is the fitted board; the sender is the
+    # other device and is an explicit assumption.
+    prefixes = {"ca5v_lo": "ca5lo", "ca5v_hi": "ca5hi",
+                "ca33_lo": "ca33lo", "ca33_hi": "ca33hi"}
+    for corner, (sender, direction, loss, vf, reference) in models.MIDI_SENDER_CORNERS.items():
+        params = models.midi_sender_case_parameters(corner)
+        prefix = prefixes[corner]
+        measured = (run.measure(f"{prefix}_ring") - run.measure(f"{prefix}_anode")) \
+            / params["R47"]
+        band_width = reference * 0.002
+        checks.append(band(deck, f"sender {corner}: loop current (reference)",
+                           measured, reference - band_width, reference + band_width, " A",
+                           f"models.midi_sender_current({sender!r}, {direction!r}, "
+                           f"{loss} V driver loss, VF {vf} V) = {reference * 1e3:.4f} mA; "
+                           "0.2 % band so a changed tolerance or bound cannot pass",
+                           fmt="{:.6f}"))
+    weak = {}
+    for corner in ("ca5v_lo", "ca33_lo"):
+        params = models.midi_sender_case_parameters(corner)
+        prefix = prefixes[corner]
+        weak[corner] = (run.measure(f"{prefix}_ring") - run.measure(f"{prefix}_anode")) \
+            / params["R47"]
+        checks.append(band(deck, f"sender {corner}: TLP2361 switches at 125 C",
+                           weak[corner] / rx["ith"], 1.5, 10.0, " x",
+                           "IFHL maximum 1.6 mA at 125 C; the weakest legal loop must "
+                           "exceed it with margin", fmt="{:.3f}"))
+        checks.append(band(deck, f"sender {corner}: old TLP2362 does NOT switch "
+                                 "(negative)", weak[corner], 0.0, rx["tlp2362_ith"], " A",
+                           "the replaced part needs <= 5 mA; the weakest legal loop is "
+                           "below it -- the guaranteed-margin defect", fmt="{:.6f}"))
+    for corner in ("ca5v_hi", "ca33_hi"):
+        params = models.midi_sender_case_parameters(corner)
+        prefix = prefixes[corner]
+        strong = (run.measure(f"{prefix}_ring") - run.measure(f"{prefix}_anode")) / params["R47"]
+        checks.append(band(deck, f"sender {corner}: inside the TLP2361 absolute maximum",
+                           strong, 0.0, rx["if_abs_max"], " A",
+                           "the strongest legal loop must stay under 10 mA", fmt="{:.6f}"))
     return checks
 
 

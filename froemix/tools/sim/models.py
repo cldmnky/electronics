@@ -87,9 +87,10 @@ _add("subckt", "AOFET", {"RDS": 1e-06, "VT": 0.5},
 _add("model", "SWFET", {"RON": 1e-3, "ROFF": 1e12, "VT": 0.0, "VH": 1e-3},
      "ideal switch behind the explicit RDS resistor; the control voltage is pre-biased "
      "by the model's VT so one RDS parameter covers every case.")
-_add("model", "DMINI", {"IS": 1e-9, "N": 0.01},
-     "near-ideal diode: the opto LED forward drop is carried by an explicit VF source, "
-     "so a datasheet VF corner can be swept; this diode only provides reverse blocking.")
+_add("model", "DMINI", {"IS": 1e-9, "N": 1e-3},
+     "near-ideal diode (N = 1 mV/decade): the opto LED forward drop is carried by an "
+     "EXPLICIT BEHAVIOURAL VF voltage source, so a VF corner can be swept; this diode "
+     "only provides reverse blocking and contributes under 1 mV of drop.")
 _add("subckt", "OPTOLED", {"VF": 1.65},
      "receiver LED drop corner at 2 mA (TLP2361-style); the real LED curve is not "
      "modelled.")
@@ -119,12 +120,102 @@ MIDI_ASSUMPTIONS: dict[str, tuple[str, str]] = {
                                  "the typical loop of 6.5 mA is at the top of it -- "
                                  "pending bench item (doc §7.3)"),
     "TLP2362_IFHL_MAX_A": ("5e-3", "replaced TLP2362 IFHL maximum: the negative case"),
+    "SENDER_DRIVER_LOSS_LOW_V": ("0.3", "the weakest legal sender's driver loss: "
+                                 "ASSUMPTION for the low-current corner, NOT a datasheet "
+                                 "guarantee"),
+    "SENDER_VF_LOW_V": ("1.85", "LED forward drop at the low-current corner: ASSUMPTION, "
+                        "not a full-temperature datasheet limit"),
+    "SENDER_VF_HIGH_V": ("1.35", "LED forward drop at the high-current corner: ASSUMPTION; "
+                         "the model's LED is a fixed behavioural voltage, so this proves "
+                         "neither LED voltage nor current safety over temperature"),
+    "R47_TOLERANCE": ("0.01", "R47 220 ohm at 1 %, the fitted part's tolerance"),
 }
+
+# The legal sender test loops (CA-033 / MIDI 1.0 test circuits). These describe the
+# OTHER device on the cable, not this board: they are ASSUMPTIONS. The low-current
+# corner uses a 0.3 V driver loss and VF 1.85 V; the high-current corner uses no
+# driver loss and VF 1.35 V. Neither VF is a datasheet guarantee for all currents
+# and temperatures -- the model's LED is a fixed voltage, so nothing here proves
+# LED voltage or current safety over temperature.
+MIDI_SENDERS: dict[str, dict] = {
+    "ca033_5v": {"rail": (4.5, 5.5), "legs": 440.0, "rail_note": "5 V +-10 %, RA/RC 220+220"},
+    "ca033_33": {"rail": (3.135, 3.465), "legs": 43.0, "rail_note": "3.3 V +-5 %, RA 33 / RC 10"},
+}
+MIDI_R47 = 220.0
+MIDI_R47_TOL = 0.01
+MIDI_LEGS_TOL = 0.05
+# corner -> (sender, direction, driver loss V, VF V, reference current A)
+MIDI_SENDER_CORNERS: dict[str, tuple[str, str, float, float, float]] = {
+    "ca5v_lo": ("ca033_5v", "lo", 0.3, 1.85, 3.4347e-3),
+    "ca5v_hi": ("ca033_5v", "hi", 0.0, 1.35, 6.5272e-3),
+    "ca33_lo": ("ca033_33", "lo", 0.3, 1.85, 3.6843e-3),
+    "ca33_hi": ("ca033_33", "hi", 0.0, 1.35, 8.1771e-3),
+}
+
+
+def midi_sender_current(sender: str, direction: str, driver_loss: float, vf: float,
+                        r47_tol: float = MIDI_R47_TOL,
+                        legs_tol: float = MIDI_LEGS_TOL) -> float:
+    """Loop current of one legal sender/test circuit, in amperes.
+
+    ``lo`` is the weakest legal loop: the low rail, the driver's 0.3 V loss, the
+    high VF, and every resistance at the end that reduces the current. ``hi`` is
+    the strongest. The arithmetic is the same as doc/ELECTRICAL-VERIFICATION.md
+    §5 and is the only place these corners are defined: a changed tolerance or
+    driver bound changes this number, so it cannot silently improve a corner.
+    """
+    spec = MIDI_SENDERS[sender]
+    rail = spec["rail"][0] if direction == "lo" else spec["rail"][1]
+    legs = spec["legs"] * (1 + legs_tol) if direction == "lo" else spec["legs"] * (1 - legs_tol)
+    r47 = MIDI_R47 * (1 + r47_tol) if direction == "lo" else MIDI_R47 * (1 - r47_tol)
+    return (rail - driver_loss - vf) / (legs + r47)
+
+
+def midi_sender_case_parameters(corner: str) -> dict[str, float]:
+    """The deck case values for one corner (VSRC, RSRC, VF, and R47)."""
+    sender, direction, loss, vf, _ = MIDI_SENDER_CORNERS[corner]
+    spec = MIDI_SENDERS[sender]
+    rail = spec["rail"][0] if direction == "lo" else spec["rail"][1]
+    legs = spec["legs"] * (1 + MIDI_LEGS_TOL) if direction == "lo" else spec["legs"] * (1 - MIDI_LEGS_TOL)
+    r47 = MIDI_R47 * (1 + MIDI_R47_TOL) if direction == "lo" else MIDI_R47 * (1 - MIDI_R47_TOL)
+    return {"VSRC": rail - loss, "RSRC": legs, "R47": r47, "VF": vf}
+
+
+def check_midi_sender_cases(deck_path: Path) -> list[str]:
+    """The deck's sender cases must carry the reference parameters exactly."""
+    problems: list[str] = []
+    if Path(deck_path).name != "midi_in.cir":
+        return problems
+    text = Path(deck_path).read_text()
+    for corner in MIDI_SENDER_CORNERS:
+        name = "XR_" + corner.upper()
+        match = re.search(rf"^{name}\s+\S+\s+RXCHAIN\s+PARAMS:\s*(.+)$", text, re.M)
+        if not match:
+            problems.append(f"midi_in.cir: the sender corner {corner} ({name}) is gone")
+            continue
+        params = dict(re.findall(r"([A-Za-z_]\w*)\s*=\s*([^\s]+)", match.group(1)))
+        wanted = midi_sender_case_parameters(corner)
+        for key, value in wanted.items():
+            raw = params.get(key)
+            try:
+                actual = spice_number(raw, f"midi_in.cir:{name}.{key}") if raw else None
+            except SimError:
+                actual = None
+            if actual is None or abs(actual - value) > 1e-9 * max(abs(value), 1.0):
+                problems.append(
+                    f"midi_in.cir: {name} {key} is {raw!r}, the reference corner needs "
+                    f"{value:g}. The corner values come from MIDI_SENDERS / "
+                    "MIDI_SENDER_CORNERS; change them there with a reason."
+                )
+    return problems
+
 
 MIDI_DECK_TOKENS: dict[str, list[tuple[str, str]]] = {
     "midi_out.cir": [("VOL 0.4 V", "MCU_VOL_V"), ("2.735", "MCU_VOH_MIN_V"),
                      ("645p", "AO3401A_CISS_F")],
-    "midi_in.cir": [("1.6m", "TLP2361_IFHL_MAX_A")],
+    "midi_in.cir": [("1.6m", "TLP2361_IFHL_MAX_A"),
+                     ("VF=1.85", "SENDER_VF_LOW_V"), ("VF=1.35", "SENDER_VF_HIGH_V"),
+                     ("VSRC=4.2", "SENDER_DRIVER_LOSS_LOW_V")],
 }
 
 # ON resistance of the CD4051 model is a resistor value, recorded here so a
@@ -275,6 +366,7 @@ if __name__ == "__main__":
     problems = [p for deck in decks for p in check_models(deck)]
     problems += [p for deck in decks for p in check_mux_assumptions(deck)]
     problems += [p for deck in decks for p in check_midi_assumptions(deck)]
+    problems += [p for deck in decks for p in check_midi_sender_cases(deck)]
     if problems:
         print(f"model provenance: {len(problems)} problem(s)")
         for problem in problems:

@@ -61,7 +61,7 @@ SSW SD D VS 0 SWFET
 .subckt OPTOLED A K PARAMS: VF=1.65
 DIDE A X DMINI
 VFX  X K {VF}
-.model DMINI D(IS=1e-9 N=0.01)
+.model DMINI D(IS=1e-9 N=1m)
 .ends
 
 * --- one transmitter chain, parameterised so the corner cases can be run

@@ -5,7 +5,7 @@
 leaves its limit, when a linked value or connection no longer matches the
 tscircuit source, when a model parameter is not in the provenance table, or when
 a `wrdata` file / `.meas` result is missing, empty or holds a NaN. The last run
-reported **164 checks over 11 decks, all passing**, on Linux with native
+reported **172 checks over 11 decks, all passing**, on Linux with native
 `ngspice-39`; the earlier base-board table in this file was measured with
 `ngspice-47` on macOS and the numbers agree to about 0.1 %.
 
@@ -332,8 +332,32 @@ it is the worst case for R59 and the best case for Q2 (doc §4).
 | Reverse polarity: D1 current | ≤12 mA | 8.829 mA |
 | Idle loop: VO high (fail-safe through R48) | ≥3.2 V | 3.3000 V |
 | Receiving: VO low (inverting) | ≤0.4 V | 0.1435 V |
-| LED forward drop at the fitted corner | 1.62…1.69 V | 1.6600 V |
-| Old TLP2362 on this loop (**negative**) | 1.0…1.2× its 5 mA threshold, < 7.5 mA | 1.06×, 5.313 mA |
+| LED forward drop at the fitted corner | 1.62…1.69 V | 1.6504 V |
+
+The loop current of a *legal but weak* sender is the case that matters for a
+margin claim, so the deck now runs all four corners of the two legal CA-033 test
+loops. The sender is the other device, and every sender number below is an
+explicit **ASSUMPTION**, not a datasheet guarantee; the receiver path (R47, D1,
+U15) is the fitted board and is source-linked.
+
+| Legal sender corner (models.MIDI_SENDERS) | Reference | Measured | TLP2361 (1.6 mA, 125 °C) | old TLP2362 (5 mA) |
+| --- | --- | --- | --- | --- |
+| 5 V ±10 %, RA/RC 220+220 ±5 %, 0.3 V driver loss, VF 1.85 V | 3.4347 mA | 3.4341 mA | **2.15× passes** | **fails** (below 5 mA) |
+| 3.3 V ±5 %, RA 33 / RC 10 ±5 %, 0.3 V driver loss, VF 1.85 V | 3.6843 mA | 3.6828 mA | **2.30× passes** | **fails** |
+| 5 V ±10 %, 0 V driver loss, VF 1.35 V | 6.5272 mA | 6.5266 mA | 4.08× passes, inside 10 mA | n/a |
+| 3.3 V ±5 %, 0 V driver loss, VF 1.35 V | 8.1771 mA | 8.1754 mA | 5.11× passes, inside 10 mA | n/a |
+
+R47 is taken at its fitted 1 % tolerance in every corner. The 0.2 % assertion
+band is deliberate: the reference currents come from
+`models.midi_sender_current()`, so changing a legal-sender tolerance, the driver
+loss or the VF moves the number out of the band and five tests prove it (a 2 %
+R47 tolerance, a 0.1 V driver-loss change and a 50 mV VF change all leave the
+band). That is what makes "the weak case passes" and "the old part fails"
+statements with teeth instead of prose.
+
+The non-compliant 5 V sender (33/10 Ω legs, 14.76 mA) stays a **separate**
+case: it is outside the specification, and its over-current result must not be
+mixed into the legal-corner table.
 
 ## MIDI: what is assumed, and what is still open
 
@@ -348,8 +372,13 @@ numbers is changed on only one side.
 Still open (not asserted as passing):
 
 * the TLP2361 input **high-current** qualification: the non-compliant 5 V case
-  reaches 14.69 mA, above the 10 mA absolute maximum, and nothing on the board
-  clamps it;
+  reaches 14.76 mA, above the 10 mA absolute maximum, and nothing on the board
+  clamps it. The strongest *legal* loop reaches 8.18 mA, inside the absolute
+  maximum but above the 6 mA recommended point;
+* the LED model is a **fixed behavioural voltage**, so these cases prove the
+  loop current and the threshold margin at the declared corners only. They
+  prove nothing about LED forward voltage or current safety over temperature,
+  nor about a real receiver LED's dynamic behaviour;
 * the 6.58 mA typical loop is above the TLP2361 6 mA recommended on-current
   (inside the absolute maximum) — measure IF on a real unit;
 * VOL/VOH/reset state and the 20 mA limit need a measurement on a real Seed;
