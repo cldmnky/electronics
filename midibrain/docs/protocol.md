@@ -93,16 +93,42 @@ Pi → Pico:
 | `0x15` MIDI_SEND | port, size, bytes | Immediate UART emit (no scheduled timeline yet) |
 | `0x16` MODE | 0 local, 1 manual | Panel-transport authority; resets to local on boot/HELLO |
 | `0x17` CLOCK_SOURCE | source, follow mask | External clock follow. source 0 = internal, 1 = TRS IN1, 2 = TRS IN2 (3+ rejected); mask bit 0 = TRS IN1 transport follow, bit 1 = TRS IN2, reserved bits (including USB bit 2, Pi-side only) rejected (length 3). RAM state resets to internal/no-follow at boot, so the Pi re-sends after HELLO. The Pico always sends clock; follow retunes tempo only and coasts at the last estimate on source loss |
-| `0x18` MIDI_ROUTE | src, dst, flags | Starts a fresh Wave-1 pipe chain for one physical TRS route and clears its runtime state (dispatcher rotation, sustain latch, pending note lengths). src/dst 0 = TRS IN1/OUT1, 1 = TRS IN2/OUT2; there are no virtual/USB ports on the Pico, so routes touching USB stay Pi-side. flags bit 0 = route on, reserved bits must be zero (length 4). RAM only; the Pi re-sends after HELLO. |
-| `0x19` MIDI_ROUTE_PIPE | src, dst, index, type, bypass, paramOffset, paramCount, params[paramCount] int16 LE | Sets/replaces one pipe in that route's chain. index 0..7 (send pipes in order: index <= the current pipe count; index == count appends, index < count replaces), type 1..16 (Wave-2 ids 12..16 are stored but pass through on this firmware), bypass 0/1, paramOffset+paramCount <= 10, paramCount <= 5 (length 8 + 2×paramCount; send more parameter chunks with a larger offset). Positional parameter order is the `MidiPipeType` contract in `pi/session/session.hpp`; missing parameters use the safe defaults documented in `firmware/pico/midi_pipe.hpp`. Pipe chains are evaluated in index order for the bytes routed through `0x1A`. |
+| `0x18` MIDI_ROUTE | src, dst, flags | Starts a fresh pipe chain for one physical TRS route and clears its runtime state (dispatcher rotation, sustain latch, pending note lengths, clocked pipe holds and grids). src/dst 0 = TRS IN1/OUT1, 1 = TRS IN2/OUT2; there are no virtual/USB ports on the Pico, so routes touching USB stay Pi-side. flags bit 0 = route on, reserved bits must be zero (length 4). RAM only; the Pi re-sends after HELLO. |
+| `0x19` MIDI_ROUTE_PIPE | src, dst, index, type, bypass, paramOffset, paramCount, params[paramCount] int16 LE | Sets/replaces one pipe in that route's chain. index 0..7 (send pipes in order: index <= the current pipe count; index == count appends, index < count replaces), type 1..16 (both waves are evaluated on this firmware; Wave-2 ids 12..16 are clocked, see below), bypass 0/1, paramOffset+paramCount <= 10, paramCount <= 5 (length 8 + 2×paramCount; send more parameter chunks with a larger offset). Positional parameter order is the `MidiPipeType` contract in `pi/session/session.hpp`; missing parameters use the safe defaults documented in `firmware/pico/midi_pipe.hpp`. Pipe chains are evaluated in index order for the bytes routed through `0x1A`. |
 | `0x1A` MIDI_ROUTE_SEND | src, dst, size, bytes | Emits one routed message through the configured `(src,dst)` pipe chain on the physical TRS output. src/dst 0..1, size 1..3 (length 4 + size). A route that is not enabled drops the message; plain `0x15` remains the unprocessed immediate path. |
 | `0x1B` CLOCK_ROUTE_EXT | port, tempoDiv, syncDelayMs LE16 | Per-output clock divider/delay. port 0 = OUT1 (uart0), 1 = OUT2 (uart1); tempoDiv 1/2/4 (invalid values clamp to 1) drops ticks so `tickIndex % tempoDiv != 0` is not emitted (24 → 12 → 6 PPQN), and syncDelayMs 0..500 (larger values clamp to 500) delays only 0xF8 clock bytes through a per-output delay line. Transport bytes FA/FB/FC bypass the delay line and keep their order among themselves, so a delayed clock byte may arrive after a transport byte: transport timing stays authoritative while the clock phase is shifted. A config change clears queued delayed ticks. RAM state, re-sent after HELLO. |
 | `0x20` STATUS_REQ | none | Liveness/status probe; the Pico answers with `0x21` (length 1) |
 | `0x22` REBOOT | mode: 0 normal firmware reboot, 1 USB boot | 0 restarts the application from flash via the watchdog; 1 enters BOOTSEL for the firmware-update flow (length 2). No ACK: mode 0 shows up as a session change, mode 1 as link silence. |
 | `0x23` RESET_LINK | none | Mint a fresh Pico session and re-announce state/tempo without rebooting; the Pi re-handshakes (length 1) |
 
-Control-plane use on the Pi: `0x20` STATUS_REQ is the liveness probe. Send it
-when the link has been quiet and use the uptime/ticks/counters to distinguish
+### Wave-2 clocked pipes (`0x19` types 12..16)
+
+The Pico is the clock master, so these pipes run on its own 24-PPQN tick alarm
+and need no extra wire code or timing message: `0x19` already carries up to 10
+int16 positional params (the largest Wave-2 pipe, Arp, needs 6). A division is
+24 >> div ticks (1/4 = 24, 1/8 = 12, 1/16 = 6, 1/32 = 3), so swing, gates and
+repeat spacing are quantised to whole ticks. Events a clocked pipe generates
+re-enter the chain after that pipe, so later pipes see them exactly like routed
+bytes.
+
+| Type | Params | Behaviour |
+|---|---|---|
+| 12 Arp | div 0..3 (1/4, 1/8, 1/16, 1/32), type 0 up/1 down/2 updown/3 random/4 chord, octaves 1..4, swing 0..100, accent 0..100, gatePct 1..100 | Held note-ons are consumed, not passed; the first step lands on the next division boundary after the first hold, then one pattern note per step. `octaves` stacks the held set 12 semitones higher, `updown` repeats neither endpoint (60 64 67 → 60 64 67 64), `chord` plays every base-octave held note at once. swing 50 is straight; above 50 every odd step is delayed by (swing-50) % of the step, below 50 it plays early. accent scales the velocity of every fourth grid step by (100+accent) %; gatePct is the note length as a percentage of the step. Releasing every held note stops the grid and sends the note-offs immediately. |
+| 13 Repeater | div 0..3, repeats 1..8, falloff 0..100 | The same held-note engine, but every step retriggers the whole held set with a half-step gate. falloff attenuates each successive strike by (100-falloff) % down to velocity 1; the burst position restarts every `repeats` steps and with every new hold. |
+| 14 CcLfo | cc 0..127, wave 0 sine/1 tri/2 square/3 saw, div 0..3, depth 0..127, center 0..127 | Emits one CC per division step on MIDI channel 1 (the contract has no channel param; put a ChannelRemap after it to move it). One wave cycle spans 8 division steps (at 120 bpm: 1 Hz at 1/16, 2 Hz at 1/32, 2 s at 1/8, 4 s at 1/4) sampled at 8 points; the value is center + depth × shape / 127, clamped to 0..127. Routed bytes pass unchanged. |
+| 15 Harmonizer | n 0..4 voices, i1..i4 semitone offsets -48..48 | The input note passes and up to n distinct voices are added (offset 0, duplicates and notes outside 0..127 are skipped). Per-note reference counts make each note-off release exactly the notes its note-on created, so two held notes that map onto the same output note release in order, and a retriggered note-on adds no voices. Order against a Sustain pipe decides what it sees: with Sustain before it the CC64 release burst arrives as the input note-off, so voices release together with the input note; with Sustain after it the voice note-offs are latched and released like any other note-off. |
+| 16 MidiDelay | delayMs 0..2000, repeats 0..8, falloff 0..100 | Every note-on/note-off/CC passes dry and is echoed `repeats` times, delayMs apart, each echo attenuated by falloff (note-on velocity never below 1). Echoes re-enter after the pipe, so a note-off echo keeps the echoed gate length. Bounded memory: at most 32 simultaneous delayed events per pipe, and one slot carries a whole repeat chain; past that the new echo is dropped and the dry event still passes. delayMs 0 is off. |
+
+Caps: 16 held notes per pipe, a 32-entry arp pattern (lowest entries win), 16
+notes sounding per pipe and 24 harmonizer reference entries. A chain config
+change (`0x18` or `0x19`) clears the clocked runtime state, drops queued
+MidiDelay echoes, and releases every note a clocked pipe had already turned on
+on the next main-loop pass, so editing a chain cannot leave a note sounding. A
+main-loop stall replays at most 8 missed steps per pass and then rejoins the
+current grid; transport START resets the tick count the grid is derived from,
+so the arp/LFO phase restarts with transport.
+
+Control-plane use on the Pi: `0x20` STATUS_REQ is the liveness probe. Send itwhen the link has been quiet and use the uptime/ticks/counters to distinguish
 an idle Pico from a wedged one; a host-side watchdog can treat repeated
 missing or stale responses as a link failure. `0x22` mode 0 is recovery —
 restart the Pico firmware when the link cannot be resynced. Mode 1 enters

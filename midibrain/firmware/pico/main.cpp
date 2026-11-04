@@ -155,9 +155,11 @@ mb::ClockGates clock_gates;
 // transport bytes are emitted directly. The alarm pushes, the main loop pops.
 mb::ClockDelayLine clock_delay[2];
 volatile uint32_t clock_delay_drops = 0;
-// Wave-1 MIDI FX chains for the four physical TRS routes, indexed [src][dst]
+// Wave-1/2 MIDI FX chains for the four physical TRS routes, indexed [src][dst]
 // (0 = IN1/OUT1, 1 = IN2/OUT2). Configured by EV_MIDI_ROUTE* and evaluated for
 // EV_MIDI_ROUTE_SEND; plain EV_MIDI_SEND stays the unprocessed immediate path.
+// The clocked Wave-2 pipes (arp, repeater, LFO) are stepped from clock_ticks in
+// drain_route_engines(), so the Pico tick alarm is their only clock.
 mb::MidiPipeChain route_pipes[2][2];
 // External clock follow (RAM only). Default: internal generator, no transport
 // follow; the Pi re-sends its last-known config after HELLO. The generator
@@ -281,15 +283,21 @@ void emit_pipe_output(uint8_t dst, const mb::PipeOutput& out) {
   }
 }
 
-// Fixed-length note-offs are generated in the main loop, never in the clock
-// IRQ: the route engines are not IRQ-safe and emit to a UART through the same
-// guarded path as any other routed message.
-void drain_route_note_offs() {
+// Fixed-length note-offs, delay echoes and the clocked Wave-2 pipes are
+// serviced in the main loop, never in the clock IRQ: the route engines are not
+// IRQ-safe and emit to a UART through the same guarded path as any other routed
+// message. clock_ticks is read once per pass; a missed tick is caught up by the
+// engine (bounded to kMaxStepsPerCall steps, then it resyncs to the grid).
+void drain_route_engines() {
   const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+  const uint32_t ticks = clock_ticks;
   for (uint8_t src = 0; src < 2; ++src) {
     for (uint8_t dst = 0; dst < 2; ++dst) {
-      const mb::PipeOutput out = route_pipes[src][dst].tick(now_ms);
-      if (out.count != 0) emit_pipe_output(dst, out);
+      mb::MidiPipeChain& chain = route_pipes[src][dst];
+      const mb::PipeOutput timed = chain.tick(now_ms);
+      if (timed.count != 0) emit_pipe_output(dst, timed);
+      const mb::PipeOutput clocked = chain.clockTick(ticks, now_ms);
+      if (clocked.count != 0) emit_pipe_output(dst, clocked);
     }
   }
 }
@@ -912,7 +920,7 @@ int main() {
     }
     drain_midi();
     clock_delay_service();
-    drain_route_note_offs();
+    drain_route_engines();
     const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
     if (now_ms - last_ms >= 1) {
       last_ms = now_ms;
