@@ -10,7 +10,7 @@
 # PipeWire's JACK-compatible client library (libjack.so.0) must be built, and
 # JACK2 must NOT be: the owner decision is "PipeWire's libjack, never JACK2".
 #
-# Buildroot 2025.02 package/pipewire/pipewire.mk only passes
+# Buildroot 2026.08 package/pipewire/pipewire.mk (lines 103-107, same upstream logic) only passes
 # -Dpipewire-jack=enabled when BR2_PACKAGE_JACK2=y, which would drag JACK2
 # into the image. PipeWire's own meson project builds src/pipewire-jack (the
 # libjack.so.0 client plus the jack headers) without any JACK2 dependency; the
