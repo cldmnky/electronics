@@ -17,17 +17,18 @@ docs/MECHANICAL-VERIFICATION.md.
 Z: the bracket sits on the REAR side of the front board; Z = 0 is the board
 rear face and Z = thickness is the rear of the part. Print it flat on Z = 0.
 
-CadQuery, installed locally (do NOT install into the system Python):
+CadQuery, installed in a local environment (do NOT install into the system
+Python):
 
     uv venv /tmp/cq-venv
     uv pip install --python /tmp/cq-venv/bin/python cadquery
     /tmp/cq-venv/bin/python mechanical/feedthrough_bracket.py
 
-If CadQuery's loader complains about ``libGL.so.1`` on a headless machine, the
-geometry path never calls GL; a local stub in /tmp satisfies the loader:
-
-    gcc -shared -fPIC -O0 /tmp/glstub.c -o /tmp/fakelib/libGL.so.1
-    LD_LIBRARY_PATH=/tmp/fakelib /tmp/cq-venv/bin/python mechanical/feedthrough_bracket.py
+CadQuery needs the platform OpenGL libraries (``libGL``, ``libGLX``,
+``libOpenGL``, ``libGLdispatch``), because the OpenCascade kernel links against
+them even for a geometry-only run. Use the distribution packages, or unpack them
+in a local prefix and point ``LD_LIBRARY_PATH`` at that prefix. Do not substitute
+a stub library: a no-op ``libGL`` hides a broken environment instead of fixing it.
 """
 from __future__ import annotations
 

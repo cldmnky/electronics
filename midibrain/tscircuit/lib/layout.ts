@@ -69,47 +69,116 @@ export const PI_HOLES = [-1, 1].flatMap(sx => [-1, 1].map(sy => ({
 })))
 
 // ---- 3.5-inch DSI LCD, Waveshare SKU 33087 ----
-// Vendor drawing: 88.87 x 56.00 mm module, 75.80 x 45.36 mm active area,
-// 58 x 49 mm Pi-compatible mounting pattern, 6.70 mm rear depth. DSI, 3.3 V
-// and I2C touch share one 15-pin FPC. The display mounts on the FRONT board
-// (no PCB cutout); the panel carries the cutout.
-// Owner-approved centre (-17, 11): 2 mm left and 4 mm up from (-15, 7).
-export const DISPLAY_CONCEPT = { x: -17, y: 11, width: 88.87, height: 56.0, innerWidth: 75.8, innerHeight: 45.36 } as const
+// PRIMARY SOURCES (both measured for this pass):
+//   2D drawing: 3.5_inch_DSI_LCD_H-2D-PDF.pdf
+//               (files.waveshare.com/wiki/3.5inch_DSI_LCD_H)
+//   3D model:   3.5_inch_DSI_LCD_H_3D-STP.zip ->
+//               "3.5 inch DSI LCD (H)_3d-20251129.stp"
+// The model was imported with CadQuery 2.8.0 and its planes/cylinders read
+// directly, in the RAW model frame (z = 0 at the lens front face, -z rearward):
+//   lens front plane  z =  0.000   x +-44.435 (88.870)   y +-26.280 (52.560)
+//   PCB rear plane    z = -6.700   x -43.380..43.120 (86.500, centre -0.130)
+//                                  y +-28.000 (56.000)
+//   mounting bosses   4 off, body r2.75 with an r1.25 M2.5 thread,
+//                     z -6.700..-10.700, centres x -39.880/+18.120, y +-24.500
+//   model bbox        x -44.435..44.635: a 0.200 mm shell feature past the lens
+//                     OD at z -0.26..-3.95, i.e. inside the panel thickness zone
+// The GLASS aperture derives from the LENS, not the PCB: the PCB is 3.44 mm
+// taller than the lens and never passes the panel. The lens and the PCB are not
+// concentric: the PCB centre is 0.13 mm off the lens centre.
+//
+// LAYOUT ORIENTATION: the raw model is rotated 180 degrees about Z, a rigid
+// rotation chosen so the 25 mm PCB margin sits at front-view LEFT, which is the
+// existing code intent. Rotated values used below:
+//   lens OD     88.87 x 52.56        (x +-44.435, y +-26.28)
+//   PCB         86.50 x 56.00        (x -43.12..+43.38, centre +0.13)
+//   bosses      x -18.12 / +39.88, y +-24.50
+//   active VA   x -34.995..+40.805, centre +2.905
+// Physical first article still has to confirm every one of these.
+export const DISPLAY_DATUM = {
+  source2d: "3.5_inch_DSI_LCD_H-2D-PDF.pdf",
+  source3d: "3.5_inch_DSI_LCD_H_3D-STP.zip -> 3.5 inch DSI LCD (H)_3d-20251129.stp",
+  rotationDeg: 180,
+  rawPcbCentreOffsetX: -0.13, // raw model frame
+  pcbCentreOffsetX: 0.13,     // after the 180 degree rotation, layout frame
+  rawModelMaxX: 44.635,       // 0.200 mm past the lens OD, inside the panel zone
+  firstArticlePending: true,
+} as const
 
-// Display-local hole centres from the vendor drawing: module PCB 86.50 x
-// 56.00 mm, holes at x = 25.00 / 83.00 mm from the PCB left and y = 3.50 /
-// 52.50 mm from the PCB bottom, i.e. -18.25 / +39.75 mm and +-24.5 mm from
-// the glass centre. Asymmetric in X: keep the offsets, never re-normalise.
+export const DISPLAY_VENDOR = {
+  lens: { width: 88.87, height: 52.56, tolerance: 0.2 },
+  active: { width: 75.8, height: 45.36, tolerance: 0.2 },
+  pcb: { width: 86.5, height: 56.0 },
+  // Depths from the LENS FRONT face (model z = 0).
+  lensFrontToPcbRear: 6.7,
+  // The four mounting bosses reach 4.0 mm behind the PCB rear face and are the
+  // rear-most feature. This 4.0 is therefore the BOSS projection and the
+  // remainder of the 10.7 mm overall depth, not a connector-only figure.
+  pcbRearToBossEnd: 4.0,
+  overallDepth: 10.7,
+  standoffDiameter: 3.0, // boss thread is r1.25 (M2.5 tap) per the model
+} as const
+
+// Owner-approved centre (-17, 11): 2 mm left and 4 mm up from (-15, 7).
+// width/height are the LENS outline: that is the envelope the panel aperture
+// and the front-board silkscreen must follow. The PCB outline is carried
+// separately, and it is NOT concentric with the lens.
+export const DISPLAY_CONCEPT = {
+  x: -17,
+  y: 11,
+  width: DISPLAY_VENDOR.lens.width,
+  height: DISPLAY_VENDOR.lens.height,
+  innerWidth: DISPLAY_VENDOR.active.width,
+  innerHeight: DISPLAY_VENDOR.active.height,
+  pcb: DISPLAY_VENDOR.pcb,
+} as const
+
+// Display-local BOSS centres in the layout frame, read from the 3D model after
+// the 180 degree rotation: x -18.12 / +39.88 (58 mm pitch), y +-24.50 (49 mm
+// pitch). These four bosses are what a spacer screws onto, so they are the
+// mounting pattern. The earlier -18.25 / +39.75 omitted the 0.13 mm PCB-to-lens
+// offset. With the PCB centre at +0.13 the 25.00 mm margin falls on the LEFT and
+// 3.50 mm on the right, as the orientation intends. Never re-normalise.
 export const DISPLAY_STANDOFFS = [
-  { x: -18.25, y: -24.5 },
-  { x: 39.75, y: -24.5 },
-  { x: -18.25, y: 24.5 },
-  { x: 39.75, y: 24.5 },
+  { x: -18.12, y: -24.5 },
+  { x: 39.88, y: -24.5 },
+  { x: -18.12, y: 24.5 },
+  { x: 39.88, y: 24.5 },
 ] as const
 
-// PROVISIONAL display interface, ONE definition only. The earlier 3.5 mm value
-// in this file and the 8-10 mm figure in docs/ described two different
-// quantities at the same time; they cannot both hold, so 3.5 mm is withdrawn.
-// standoffHeight = front-board top face to the display mounting PCB. 9.0 mm is
-// the middle of the earlier 8-10 mm candidate range and is bounded below by
-// the vendor's 6.7 mm rear envelope plus the unreleased FPC-latch height. It
-// is a planning value with a stated Z datum (see PROVISIONAL_Z), not a
-// measured clearance. The old separate 3 mm "additionalClearanceSpacer" is
-// gone: it would double-count the same gap.
+// PROVISIONAL display interface. The spacer screws onto the BOSS ENDS, which
+// are 4.0 mm behind the display PCB rear face, NOT onto the PCB plane, so two
+// separate quantities are recorded and must never be conflated:
+//   planeSeparation = front-board TOP face -> display PCB REAR face (9.0 mm)
+//   spacerLength    = planeSeparation - boss projection (5.0 mm)
+// Ordering a 9 mm spacer while intending a 9 mm plane separation would add the
+// boss projection again and push the display through the panel. The old 3.5 mm
+// value in this file may have meant the free length beyond the bosses; either
+// reading is withdrawn in favour of the two explicit numbers. 9.0 mm itself is
+// the middle of the earlier 8-10 mm candidate range and stays PROVISIONAL.
+export const DISPLAY_STANDOFF = {
+  planeSeparation: 9.0,                                              // provisional
+  spacerLength: mm3(9.0 - DISPLAY_VENDOR.pcbRearToBossEnd),           // 5.0
+} as const
+
 export const DISPLAY_STACK = {
-  glass: 88.87,
-  overallDepth: 10.7,
-  rearEnvelopeDepth: 6.7,
-  standoffHeight: 9.0,
-  standoffDiameter: 3.0,
+  lensWidth: DISPLAY_VENDOR.lens.width,
+  lensHeight: DISPLAY_VENDOR.lens.height,
+  pcbWidth: DISPLAY_VENDOR.pcb.width,
+  pcbHeight: DISPLAY_VENDOR.pcb.height,
+  overallDepth: DISPLAY_VENDOR.overallDepth,
+  lensFrontToPcbRear: DISPLAY_VENDOR.lensFrontToPcbRear,
+  bossProjection: DISPLAY_VENDOR.pcbRearToBossEnd,
+  planeSeparation: DISPLAY_STANDOFF.planeSeparation,
+  spacerLength: DISPLAY_STANDOFF.spacerLength,
+  standoffDiameter: DISPLAY_VENDOR.standoffDiameter,
   piWidth: 85,
   piHeight: 56,
   piMountPitchLong: 58,
   piMountPitchShort: 49,
 } as const
-// Bezel and glass in front of the display mounting PCB.
-export const DISPLAY_FORWARD_ENVELOPE =
-  DISPLAY_STACK.overallDepth - DISPLAY_STACK.rearEnvelopeDepth // 4.0
+// Display depth behind the display PCB, to the rear-most point: the boss ends.
+export const DISPLAY_BEHIND_PCB = DISPLAY_VENDOR.pcbRearToBossEnd // 4.0
 
 // Front-board LCD standoff holes derive from the display centre plus the
 // fixed display-local offsets above. Do not re-state their positions.
@@ -118,11 +187,19 @@ export const LCD_MOUNT_HOLES = DISPLAY_STANDOFFS.map(o => ({
   y: DISPLAY_CONCEPT.y + o.y,
 }))
 
-// Active area: 3.60 mm from the glass left and 9.44 mm from the right, so its
-// centre is 2.935 mm left of the glass centre. The panel window adds 0.5 mm
-// per side; the front-board silkscreen rectangle uses the same window.
-const DISPLAY_ACTIVE_OFFSET_X = -2.935
-const DISPLAY_WINDOW_CLEARANCE = 0.5
+// Active area along the LENS long axis. From the 2D drawing: LENS OD 88.87,
+// LENS VA 75.8, borders 3.63 and 9.44 (3.63 + 75.8 + 9.44 = 88.87), so the
+// active centre is (3.63 - 9.44)/2 = -2.905 mm from the lens centre in the RAW
+// model frame, toward the 9.44 border. The 3D model agrees independently: the
+// active face spans raw x -40.805..+34.995, centre -2.905.
+//
+// After the 180 degree layout rotation the offset becomes +2.905 mm, i.e. to the
+// RIGHT. The earlier -2.905 was the raw-frame sign, not the layout sign; that
+// mixed sign is withdrawn. Only the front-board SILKSCREEN window uses this
+// value: the panel aperture is derived from the symmetric lens outline, so no
+// mechanical feature depends on it. Physical first article still pending.
+export const DISPLAY_ACTIVE_OFFSET_X = mm3(-(3.63 - 9.44) / 2) // +2.905
+const DISPLAY_WINDOW_CLEARANCE = 0.5 // silkscreen-only; illustrative
 export const LCD_WINDOW = {
   x: DISPLAY_CONCEPT.x + DISPLAY_ACTIVE_OFFSET_X,
   y: DISPLAY_CONCEPT.y,
@@ -130,29 +207,31 @@ export const LCD_WINDOW = {
   height: DISPLAY_CONCEPT.innerHeight + 2 * DISPLAY_WINDOW_CLEARANCE,
 }
 
-// Panel cutout for the LCD glass; centred on the display, sized over the
-// 88.87 x 56.00 mm module with a PROVISIONAL allowance. The LCD itself mounts
-// on the front board.
+// Panel cutout for the LCD glass; centred on the display, sized over the LENS
+// OUTLINE (88.87 x 52.56 mm), not the 86.5 x 56.0 mm PCB, which is 3.44 mm
+// taller and never passes the panel. The LCD itself mounts on the front board.
 //
-// Clearance per side: JLCPCB profile/cutout tolerance is +-0.2 mm; the
-// module's own tolerance and the panel-to-module registration are NOT
-// measured. 0.7 mm = 0.2 fab tolerance + 0.5 unverified registration and
-// assembly allowance. Planning value, not a fit approval.
+// Clearance per side, each term stated:
+//   0.2 mm  JLCPCB profile/cutout tolerance (+-0.2)
+//   0.2 mm  vendor LENS OD tolerance (+-0.2; the whole tolerance is charged to
+//           one side, the worst case for an off-centre lens)
+//   0.5 mm  panel-to-module registration and assembly, NOT measured
+//   = 0.9 mm per side. Planning value, not a fit approval.
 //
 // Corners: a routed inside corner cannot be sharp, so the aperture is emitted
 // as a rounded rectangle with an explicit relief radius. For per-side
 // allowance c and corner radius r the clearance at a square module corner is
-// r - |r - c| * sqrt(2). With c = 0.7 and r = 1.0 that is 0.576 mm, so no
+// r - |r - c| * sqrt(2). With c = 0.9 and r = 1.0 that is 0.859 mm, so no
 // corner is tighter than the 0.5 mm target: the aperture is expanded, never
 // rounded inward of the minimum. r = 1.0 mm is the PROVISIONAL router radius;
 // confirm it with the fabricator. Do not shrink this aperture to the old
 // 89.2 x 56.3 mm (0.165/0.15 mm per side) - that was inside fab tolerance.
-export const LCD_CUTOUT_ALLOWANCE = { perSide: 0.7, cornerRadius: 1.0 } as const
+export const LCD_CUTOUT_ALLOWANCE = { perSide: 0.9, cornerRadius: 1.0 } as const
 export const PANEL_LCD_CUTOUT = {
   x: DISPLAY_CONCEPT.x,
   y: DISPLAY_CONCEPT.y,
-  width: mm3(DISPLAY_CONCEPT.width + 2 * LCD_CUTOUT_ALLOWANCE.perSide), // 90.27
-  height: mm3(DISPLAY_CONCEPT.height + 2 * LCD_CUTOUT_ALLOWANCE.perSide), // 57.40
+  width: mm3(DISPLAY_VENDOR.lens.width + 2 * LCD_CUTOUT_ALLOWANCE.perSide),  // 90.67
+  height: mm3(DISPLAY_VENDOR.lens.height + 2 * LCD_CUTOUT_ALLOWANCE.perSide), // 54.36
   cornerRadius: LCD_CUTOUT_ALLOWANCE.cornerRadius,
 } as const
 
@@ -191,9 +270,9 @@ export const roundedRectOutline = (
 // Front-board top-silkscreen engineering notes. Offsets are display-local, so
 // the text follows the display; do not place these by absolute coordinates.
 export const DISPLAY_ANNOTATIONS = [
-  { text: "LCD 3.5in DSI 88.87 x 56.00", dx: 0, dy: 29, fontSize: 1.2 },
-  { text: "ACTIVE 75.80 x 45.36", dx: DISPLAY_ACTIVE_OFFSET_X, dy: 26, fontSize: 1.0 },
-  { text: "HOLES 58.00 x 49.00 / LEFT 25.00 / RIGHT 3.50", dx: 10, dy: -34, fontSize: 0.9 },
+  { text: "LCD 3.5in DSI LENS 88.87 x 52.56", dx: 0, dy: 26.5, fontSize: 1.2 },
+  { text: "PCB 86.50 x 56.00 / ACTIVE 75.80 x 45.36", dx: 0, dy: -31, fontSize: 0.9 },
+  { text: "HOLES 58.00 x 49.00 / 25.00 FROM PCB END", dx: 0, dy: 23.5, fontSize: 0.9 },
   { text: "DSI 15P", dx: 37, dy: 23, fontSize: 1.0 },
 ] as const
 export const displayAnnotationXY = (a: { dx: number; dy: number }) => ({
@@ -209,43 +288,51 @@ export const displayAnnotationXY = (a: { dx: number; dy: number }) => ({
 // measurement, and none of them certifies a gap.
 //
 // Assumption A: the display glass front sits flush with the panel front face.
-// Assumption B: the display standoff is DISPLAY_STACK.standoffHeight (9.0 mm).
+// Assumption B: the plane separation is DISPLAY_STANDOFF.planeSeparation
+// (9.0 mm, front-board top face to display PCB rear face), which needs a 5.0 mm
+// spacer because the display bosses already extend 4.0 mm below that plane.
 // Part dimension: the display is 10.7 mm overall with a 6.7 mm rear envelope
 // (vendor). Bezel plus glass forward of the display PCB is therefore 4.0 mm.
 //
 export const DISPLAY_GLASS_FRONT_Z = 0 as const // Assumption A, not a measurement
 
+// Vendor depths are measured from the LENS FRONT face, so they chain directly:
+//   0.00 lens front (assumed flush with the panel front)
+//   6.70 display PCB REAR face          (vendor: lens front -> PCB rear)
+//  10.70 display rear-most point        (vendor: + 4.0 PCB rear -> connector)
 export const PROVISIONAL_Z = {
   panelFront: 0,
-  panelRear: PANEL.thickness,                                                                // 1.60
-  displayFront: DISPLAY_GLASS_FRONT_Z,                                                       // 0.00 (assumed)
-  displayPcb: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_FORWARD_ENVELOPE),                          // 4.00
-  displayRearMost: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_FORWARD_ENVELOPE + DISPLAY_STACK.rearEnvelopeDepth), // 10.70
-  frontBoardTop: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_FORWARD_ENVELOPE + DISPLAY_STACK.standoffHeight),      // 13.00
-  frontBoardRear: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_FORWARD_ENVELOPE + DISPLAY_STACK.standoffHeight + FRONT_PCB.thickness), // 14.60
+  panelRear: PANEL.thickness,                                                        // 1.60
+  displayGlassFront: DISPLAY_GLASS_FRONT_Z,                                          // 0.00 (assumed)
+  displayPcbRear: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.lensFrontToPcbRear),     // 6.70
+  displayRearMost: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.overallDepth),          // 10.70
+  frontBoardTop: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.lensFrontToPcbRear + DISPLAY_STANDOFF.planeSeparation), // 15.70
+  frontBoardRear: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.lensFrontToPcbRear + DISPLAY_STANDOFF.planeSeparation + FRONT_PCB.thickness), // 17.30
 } as const
 // The panel-to-board gap FALLS OUT of assumptions A and B. It is a
 // consequence of a design target, not evidence for it, and it is not certified.
-export const PANEL_TO_FRONT_BOARD_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear) // 11.40
+export const PANEL_TO_FRONT_BOARD_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear) // 14.10
 
-// Light-pipe reach is NOT proven. The Bivar PLP2-400-C is 10.16 mm long, so it
-// covers 10.16 mm of the 11.4 mm gap and the remainder must come from the 0805
-// LED body plus how the pipe seats in a 1.6 mm panel. No LED height and no
-// seating allowance is recorded here: both are unmeasured, and inventing them
-// would fake a reach check. Pending: the Bivar drawing and the actual LED.
+// Light-pipe reach is NOT proven, and with the corrected stack it no longer
+// looks adequate. The Bivar PLP2-400-C is 10.16 mm long against a 14.1 mm
+// panel-to-board gap, so 3.94 mm is unaccounted. No LED height and no seating
+// allowance is recorded here: both are unmeasured, and inventing them would
+// fake a reach check. Pending: the Bivar drawing, the actual LED, and very
+// likely a different (longer) light pipe.
 export const LIGHT_PIPE = { part: "Bivar PLP2-400-C", length: 10.16 } as const
 export const LIGHT_PIPE_REACH = {
-  gap: PANEL_TO_FRONT_BOARD_GAP,                            // 11.40
+  gap: PANEL_TO_FRONT_BOARD_GAP,                            // 14.10
   pipeLength: LIGHT_PIPE.length,                            // 10.16
-  unaccounted: mm3(PANEL_TO_FRONT_BOARD_GAP - LIGHT_PIPE.length), // 1.24, PENDING
+  unaccounted: mm3(PANEL_TO_FRONT_BOARD_GAP - LIGHT_PIPE.length), // 3.94, PENDING
 } as const
 
 // Tallest front-board top-side part with a manufacturer-stated height: the
 // MIDI receiver in the Toshiba 11-4L1S body, maximum installed height
 // 2.1 +-0.1 mm (drawing p.15). It does NOT prove the display underside: the
 // display's own underside component map, its FPC latch and the module
-// tolerance are unmapped. The provisional stack leaves only 0.1 mm to this
-// part, so NO assembled clearance is claimed here. Named physical gate.
+// tolerance are unmapped. The corrected stack leaves 5.0 mm from the
+// front-board top face to the connector rear-most point (2.8 mm over this part
+// alone), so NO assembled clearance is claimed here. Named physical gate.
 export const FRONT_TOP_SMD_MAX_HEIGHT = {
   part: "MIDI receiver, Toshiba 11-4L1S body",
   height: 2.2,
@@ -317,7 +404,9 @@ const BRACKET_MOUNT_Y = 46.5
 const bracketOutline = {
   x1: mm3(Math.min(...BRACKET_MOUNT_X) - BRACKET_ALLOWANCE.mountEdgeWall), // -63.0
   x2: mm3(Math.max(...BRACKET_MOUNT_X) + BRACKET_ALLOWANCE.mountEdgeWall), // 58.0
-  y1: mm3(DISPLAY_CONCEPT.y + DISPLAY_CONCEPT.height / 2 + BRACKET_ALLOWANCE.displayClearance), // 41.5
+  // Referenced to the display PCB outline (86.5 x 56.0), the taller of the two
+  // display envelopes: its top edge is 1.72 mm above the lens top edge.
+  y1: mm3(DISPLAY_CONCEPT.y + DISPLAY_VENDOR.pcb.height / 2 + BRACKET_ALLOWANCE.displayClearance), // 41.5
   y2: NOTCH_TOP, // 56.0
 }
 
@@ -395,6 +484,8 @@ export const mechanicalExport = () => ({
   frontPcb: FRONT_PCB,
   rearPcb: REAR_PCB,
   display: { ...DISPLAY_CONCEPT, stack: DISPLAY_STACK },
+  displayDatum: DISPLAY_DATUM,
+  displayStandoff: DISPLAY_STANDOFF,
   provisionalZ: PROVISIONAL_Z,
   displayUndersideGap: DISPLAY_UNDERSIDE_GAP,
   frontTopSmdMaxHeight: FRONT_TOP_SMD_MAX_HEIGHT,

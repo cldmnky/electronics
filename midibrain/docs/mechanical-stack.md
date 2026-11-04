@@ -13,7 +13,7 @@ X direction.
 | Item | Value | Note |
 |---|---|---|
 | Front panel | 26HP × 3U, 132.08 × 128.5 × 1.6 | Rail holes X ±58.54, Y ±61.25 (3.0 mm edge inset, Doepfer 3U rule). |
-| Front/UI PCB | 128 × 112 × 1.6 | Four LCD standoff holes on the vendor's asymmetric 58 × 49 mm pattern. |
+| Front/UI PCB | 128 × 112 × 1.6 | Four display standoff holes on the boss pattern from the 3D model: x −18.12/+39.88, y ±24.50 (58 × 49 mm). |
 | Rear/base PCB | 101.6 × 112 × 1.6 (20HP) | Pi hole grid 58 × 49 mm (portrait), Pico on the left. |
 | Installed depth target | ≤110 mm | Target retained. Not verified; see the depth section. |
 
@@ -23,48 +23,84 @@ REC/OVER DUB/PLAY at y = −24; MIDI jacks at y = −47.5 in the four transport 
 
 ## Provisional Z stack
 
-The chain rests on two **explicit assumptions** and one vendor depth figure. It does not certify a gap.
+The chain rests on two **explicit assumptions** and the vendor depth figures. It does not certify a gap.
 
 - Assumption A: the display glass front sits flush with the panel front face (Z = 0). Nothing has measured this.
-- Assumption B: the display standoff is **9.0 mm** (front-board top face to the display mounting PCB).
-- Vendor figure: the display is 10.7 mm overall with a 6.7 mm rear envelope, so 4.0 mm lies forward of its PCB.
+- Assumption B: the display standoff is **9.0 mm** (front-board top face to the display PCB **rear** face).
+- Vendor figures, from the 2D drawing **and** the 3D model (both primary): 6.7 mm from the **lens front face to the
+  display PCB rear face**, then 4.0 mm from that PCB rear face to the **mounting-boss ends**, which are the rear-most
+  feature; overall 10.7 mm = 6.7 + 4.0. The earlier note called 6.7 the "rear envelope" and 4.0 the "forward envelope";
+  that assignment was reversed and is withdrawn, and the 4.0 mm is not a connector-only figure.
 
 | Feature | Z (mm) | Basis |
 |---|---:|---|
 | Panel front / rear faces | 0 / 1.60 | 1.6 mm FR-4. |
 | Display glass front | 0.00 | Assumption A, not measured. |
 | Display mounting PCB | 4.00 | Forward envelope 4.0 below assumption A. |
-| Display rear-most point | 10.70 | 6.7 mm vendor rear envelope. |
-| Front-board top face | 13.00 | Display PCB + 9.0 mm standoff (assumption B). |
-| Front-board rear face | 14.60 | 1.6 mm board. |
-| Panel rear → front-board top | 11.40 | Falls out of A and B; a consequence, not evidence. |
+| Display PCB rear face | 6.70 | Vendor: lens front face to PCB rear. |
+| Display rear-most point (connector) | 10.70 | Vendor overall depth 10.7. |
+| Front-board top face | 15.70 | Display PCB rear face + 9.0 mm standoff (assumption B). |
+| Front-board rear face | 17.30 | 1.6 mm board. |
+| Panel rear → front-board top | 14.10 | Falls out of A and B; a consequence, not evidence. |
+
+**Spacer length is not the plane separation.** The spacer screws onto the boss ends, which already reach 4.0 mm below the
+display PCB rear face, so:
+
+| Quantity | Provisional value | Meaning |
+|---|---:|---|
+| Plane separation | 9.0 mm | Front-board top face to display PCB **rear face**. |
+| Boss projection | 4.0 mm | Boss ends stand 4.0 mm behind that PCB rear face (primary model). |
+| Spacer length | 5.0 mm | What to order: plane separation − boss projection. |
+
+Ordering a 9 mm spacer while intending a 9 mm plane separation would add the boss projection a second time and push the
+display through the panel. The old `3.5 mm` may have meant the free length beyond the bosses; that reading is withdrawn in
+favour of the two explicit numbers. Both remain provisional.
 
 **One standoff definition only.** The earlier `3.5 mm` value in `layout.ts` and the `8–10 mm` figure in the older
 text described different quantities at the same time; `3.5 mm` is withdrawn and the separate 3 mm "additional
 clearance spacer" is gone because it double-counted the same gap. 9.0 mm is provisional: it is the middle of the old
-8–10 mm candidate range and it exceeds the 6.7 mm rear envelope.
+8–10 mm candidate range, and the 6.7 mm from lens front to PCB rear plus the 4.0 mm connector depth fit inside it.
 
-**Display underside — pending, no clearance claimed.** The display rear-most point (10.70) is 2.30 mm from the
+**Display underside — pending, no clearance claimed.** The display rear-most point (10.70) is 5.00 mm from the
 front-board top face. The tallest front-side part with a manufacturer-stated height is the MIDI receiver in the
-Toshiba 11-4L1S body, **maximum installed height 2.1 ± 0.1 mm (drawing p. 15)**, i.e. 2.2 mm — only 0.1 mm less than
-the gap. That figure does **not** prove the display underside: the display's own underside component map, its 15-pin
+Toshiba 11-4L1S body, **maximum installed height 2.1 ± 0.1 mm (drawing p. 15)**, i.e. 2.2 mm, which leaves 2.80 mm over
+that part. That figure does **not** prove the display underside: the display's own underside component map, its 15-pin
 FPC latch and the module tolerance are unmapped. Keep this as a gate.
 
-**Light pipe — reach pending.** The Bivar PLP2-400-C is 10.16 mm long and the provisional panel-to-board gap is
-11.40 mm. The remaining 1.24 mm must come from the 0805 LED body plus how the pipe seats in a 1.6 mm panel; neither is
-measured, and no LED height or seat allowance is recorded in the layout. Check the Bivar drawing and the actual LED.
+**Light pipe — reach pending, and now clearly short.** The Bivar PLP2-400-C is 10.16 mm long and the provisional
+panel-to-board gap is 14.10 mm, so 3.94 mm is unaccounted. No LED height or seat allowance is recorded, because neither
+is measured. Check the Bivar drawing and the actual LED, and expect a different (longer) light pipe to be needed.
 
 ## LCD aperture (panel cutout)
 
 | Property | Value | Reason |
 |---|---:|---|
-| Size | 90.27 × 57.40 | Module 88.87 × 56.00 plus 0.7 mm per side. |
+| Size | 90.67 × 54.36 | **LENS OD** 88.87 × 52.56 plus 0.9 mm per side. The 86.5 × 56.0 PCB never passes the panel, so the PCB height must not size the aperture. |
 | Corner relief | 1.0 mm radius | A routed inside corner cannot be sharp; emitted as an explicit rounded polygon. |
-| Clearance per side | 0.70 | 0.2 mm JLCPCB profile tolerance + 0.5 mm unverified registration/assembly allowance. |
-| Corner clearance | 0.571 measured | Polygon chords lie inside the true arc, so the aperture is slightly smaller than the exact rounded rectangle; measured on the built panel by `scripts/check_placement.ts`, above the 0.5 mm target. |
+| Clearance per side | 0.90 | 0.2 mm JLCPCB profile tolerance + 0.2 mm vendor LENS OD tolerance (all charged to one side) + 0.5 mm unverified registration/assembly allowance. |
+| Corner clearance | 0.851 measured | Polygon chords lie inside the true arc, so the aperture is slightly smaller than the exact rounded rectangle; measured on the built panel by `scripts/check_placement.ts`, above the 0.5 mm target. |
+
+Primary sources for the display: the 2D drawing `3.5_inch_DSI_LCD_H-2D-PDF.pdf` and the 3D model
+`3.5_inch_DSI_LCD_H_3D-STP.zip` → `3.5 inch DSI LCD (H)_3d-20251129.stp`. The model was read with CadQuery 2.8.0: lens
+front plane z = 0 spans x ±44.435, y ±26.280; the PCB rear plane z = −6.7 spans x −43.38…43.12 (centre −0.13) and
+y ±28.0; four bosses (body r2.75, M2.5 thread r1.25) reach z −10.7 at x −39.88/+18.12, y ±24.5. The model also reaches
+x 44.635, i.e. 0.200 mm past the lens OD, inside the panel thickness zone; the 0.9 mm per-side allowance still leaves
+0.7 mm there.
 
 The withdrawn 89.2 × 56.3 mm aperture left 0.165 mm horizontally and 0.15 mm vertically per side, inside the ±0.2 mm
-fabrication tolerance. It is not to be restored. `tscircuit` has no rounded-rectangle cutout, so `panel.circuit.tsx`
+fabrication tolerance, and it sized the height from the PCB instead of the lens. It is not to be restored.
+
+**Active area and silkscreen window.** The LENS VA is 75.8 × 45.36 mm with long-axis borders 3.63 mm and 9.44 mm, so the
+active centre sits (3.63 − 9.44)/2 = −2.905 mm from the lens centre in the **raw model frame**. The layout rotates that
+model 180° about Z (so the 25 mm PCB margin sits at front-view LEFT), which makes the layout offset **+2.905 mm, i.e. to
+the right**; the model agrees independently (raw active face x −40.805…+34.995). Only the front-board *silkscreen* window
+uses this value: the panel aperture comes from the symmetric lens outline, so no mechanical feature depends on it. Glass
+centre (−17, 11) and all control centres are unchanged.
+
+**Mounting holes.** The four display bosses, not the PCB corners, are the mounting pattern: after the 180° rotation they
+sit at x −18.12 and +39.88, y ±24.50 (58 × 49 mm pitch). The earlier −18.25 / +39.75 omitted the 0.13 mm PCB-to-lens
+offset, which places the PCB centre at +0.13. That puts the 25.00 mm margin on the LEFT and 3.50 mm on the right, as the
+chosen orientation intends. Physical first article still has to confirm the pattern. `tscircuit` has no rounded-rectangle cutout, so `panel.circuit.tsx`
 emits `roundedRectOutline()` from `lib/layout.ts` as a polygon.
 
 ## Board-to-board relationship
@@ -88,12 +124,12 @@ decision.
 
 | Segment | Provisional | Basis |
 |---|---:|---|
-| Front-board rear face | 14.6 | See the Z stack. |
+| Front-board rear face | 17.3 | See the Z stack. |
 | Front↔rear gap (J5 IDC plug + cable bend) | 20 | Candidate range 18–22. |
 | Rear/base PCB | 1.6 | 1.6 mm FR-4. |
 | Pi spacer + Pi PCB | 4 | Candidate. |
 | Pi cooler + M.2 HAT+ + SSD | 30 | Candidate range 20–30. |
-| **Total from the panel front face** | **70.2** | Sum of the above. |
+| **Total from the panel front face** | **72.9** | Sum of the above. |
 
 The ≤110 mm target therefore holds on paper at the high end of every candidate, and `lib/layout.test.ts` keeps the
 chain inside it. That is arithmetic on unmeasured candidates, not a verified installed depth: no cooler/HAT/SSD,
@@ -107,8 +143,8 @@ the Eurorack bus.
 
 - Width/height: 26HP (132.08 mm) fits a 140 HP row; 128.5 mm fits 3U; rail holes are at the Doepfer 3U positions
   Y ±61.25 after the 2026-11 fix. Round Ø3.2 holes suit the Go's sliding M3 nuts; slotted holes are still recommended.
-- Depth: the provisional stack is **≈57–69 mm behind the panel back** (70.2 − 1.6 = 68.6 mm at the high end, and
-  ≈56.6 mm at the low end). That exceeds the 40 mm lower row by 17–29 mm and is at or over the 62 mm upper row
+- Depth: the provisional stack is **≈59–71 mm behind the panel back** (72.9 − 1.6 = 71.3 mm at the high end, and
+  ≈59.3 mm at the low end). That exceeds the 40 mm lower row by 19–31 mm and is at or over the 62 mm upper row
   before tolerances, ribbon folds, the Pico USB plug and airflow.
 - **Verdict: not approved for the Eurorack Go. Do not plan this module for that case.** No fabrication release until
   the case is reselected or the Pi/cooler/NVMe stack leaves the rack. The ≤110 mm target was never compatible with a

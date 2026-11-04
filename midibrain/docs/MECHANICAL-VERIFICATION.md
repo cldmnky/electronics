@@ -16,26 +16,33 @@ Run from `midibrain/` unless stated. `PATH=/workspace/home/.bun/bin:$PATH` for B
 | `cd tscircuit && bun run typecheck` | clean (`tsc --noEmit`) | Types of the layout, panel circuit, placement check and export script. |
 | `cd tscircuit && bun run scripts/export-mechanical.ts` | writes `mechanical/layout.json` | The CAD bridge is generated from the canonical layout; the script writes no other file. |
 | `cd tscircuit && bun run scripts/export-mechanical.ts --check` | "is up to date", exit 0, file hash unchanged | The tracked JSON matches the layout and `--check` writes nothing. A stale or missing file exits 1; an unknown argument exits 2. |
-| `cd tscircuit && bun test lib/layout.test.ts lib/panel-art.test.ts` | 25 pass, 0 fail | Geometry rules, JSON staleness, `--check` modes, provisional-stack invariants. |
+| `cd tscircuit && bun test lib/layout.test.ts lib/panel-art.test.ts` | 31 pass, 0 fail | Geometry rules, JSON staleness, `--check` modes, provisional-stack invariants. |
 | `cd tscircuit && bun run build` | 3 circuits built | Panel/front/rear build with the new rounded-polygon aperture. |
 | `cd tscircuit && bun run placement` | 230 pass, 0 fail | Built circuit JSON matches the shared coordinates, including the measured aperture-corner clearance. |
-| `python3 -m unittest discover -s mechanical -p 'test_*.py'` | 43 tests, OK | Pure bracket/aperture geometry, plus regression tests that reject the reviewed defects. |
-| `/tmp/cq-venv/bin/python mechanical/feedthrough_bracket.py` | 11 cuts, 1 solid, 3790.1 mm³, self-check pass, STL/STEP written | The CadQuery solid is buildable and every intended cut exists. |
+| `python3 -m unittest discover -s mechanical -p 'test_*.py'` | 49 tests, OK | Pure bracket/aperture geometry, plus regression tests that reject the reviewed defects. |
+| `/tmp/cq-venv/bin/python mechanical/feedthrough_bracket.py` | 11 cuts, 1 solid, 3790.1 mm³, self-check pass, STL/STEP written (genuine libGL, CadQuery 2.8.0) | The CadQuery solid is buildable and every intended cut exists. |
 | `git status --short` | only owned files touched | No change outside the assigned files (see §7). |
 
-CadQuery was installed locally, never into the system Python:
+CadQuery setup is the standard one, in a local environment (never in the system Python):
 
 ```
 uv venv /tmp/cq-venv
 uv pip install --python /tmp/cq-venv/bin/python cadquery
+/tmp/cq-venv/bin/python mechanical/feedthrough_bracket.py
 ```
 
-On this headless host CadQuery's loader wants `libGL.so.1`, which the system does not have and which must not be
-system-installed. The geometry path never calls GL, so a stub library in `/tmp` satisfies the loader only:
+CadQuery requires the genuine platform OpenGL libraries (`libGL`, `libGLX`, `libOpenGL`, `libGLdispatch`): the
+OpenCascade kernel links against them even for a geometry-only run. Install them as distribution packages, or unpack
+them into a local prefix and set `LD_LIBRARY_PATH` to it. **Do not substitute a stub library.** A no-op `libGL` hides a
+broken environment instead of fixing it, and it is not a project instruction.
+
+Recorded result with the genuine kernel (CadQuery 2.8.0, Debian bookworm `libGL` family unpacked under
+`/tmp/cq-gl-prefix` and used through `LD_LIBRARY_PATH`):
 
 ```
-gcc -shared -fPIC -O0 /tmp/glstub.c -o /tmp/fakelib/libGL.so.1   # no-op symbols
-LD_LIBRARY_PATH=/tmp/fakelib /tmp/cq-venv/bin/python mechanical/feedthrough_bracket.py
+LD_LIBRARY_PATH=/tmp/cq-gl-prefix/usr/lib/x86_64-linux-gnu \
+  /tmp/cq-venv/bin/python mechanical/feedthrough_bracket.py
+# 11 cuts, 1 solid, 3790.1 mm3, self-check pass, STL/STEP written
 ```
 
 STL/STEP are generated, reproducible and stay untracked (`.gitignore`: `*.stl`, `*.step`).
@@ -62,17 +69,49 @@ would repair a stale tracked file and then pass with an uncommitted change. `--c
 stale or missing file and exits 2 for an unknown argument. Tests for all four cases (fresh, stale, missing, unknown
 argument) are in `lib/layout.test.ts`, and each one proves the file content is unchanged afterwards.
 
+## 1a. Primary evidence for the display
+
+Two manufacturer files were read for this pass, and both were measured rather than quoted:
+
+- 2D drawing: `3.5_inch_DSI_LCD_H-2D-PDF.pdf` (`files.waveshare.com/wiki/3.5inch_DSI_LCD_H`).
+- 3D model: `3.5_inch_DSI_LCD_H_3D-STP.zip` → `3.5 inch DSI LCD (H)_3d-20251129.stp`, imported with CadQuery 2.8.0.
+
+Measured in the raw model frame (z = 0 at the lens front face, −z rearward):
+
+| Feature | Measurement |
+|---|---|
+| Lens front plane z = 0 | x −44.435…+44.435 (88.870), y ±26.280 (52.560) |
+| PCB rear plane z = −6.7 | x −43.380…+43.120 (86.500, centre −0.130), y ±28.000 (56.000) |
+| Mounting bosses (4) | body r2.75 with an r1.25 M2.5 thread, z −6.70…−10.70, centres x −39.880/+18.120, y ±24.500 |
+| Model bounding box | x −44.435…44.635, y ±28.000, z −10.700…0.000 |
+
+Consequences now in the canonical data:
+
+- Lens and PCB are **separate envelopes and are not concentric**: the PCB centre is 0.13 mm off the lens centre.
+- The 4.0 mm behind the PCB rear face is the **mounting-boss envelope**, which is the rear-most feature. It is not a
+  connector-only figure. A spacer screws onto the boss ends.
+- **Plane separation and spacer length are different numbers.** Plane separation 9.0 mm (front-board top face to display
+  PCB rear face, still provisional) needs a **5.0 mm spacer**, because the bosses already reach 4.0 mm below that plane.
+  A 9 mm spacer would add the boss projection again and push the display through the panel.
+- **Orientation:** the raw model is rotated 180° about Z so the 25 mm PCB margin falls at front-view LEFT. The bosses then
+  sit at x −18.12 / +39.88, the PCB centre at +0.13, and the active area at +2.905 mm. The earlier hole offsets
+  (−18.25/+39.75) omitted the 0.13 mm offset, and the earlier active sign (−2.905) was the raw-frame sign. Both are
+  corrected; glass centre (−17, 11) and all control centres are unchanged.
+- The model reaches x 44.635, i.e. 0.200 mm past the lens OD, inside the panel thickness zone. The 0.9 mm per-side
+  aperture allowance still leaves about 0.7 mm there.
+- **Physical first article is still pending** for the hole pattern, the active-area position and the boss thread.
+
 ## 2. LCD aperture
 
 | Property | Withdrawn | Now | Note |
 |---|---:|---:|---|
-| Size | 89.2 × 56.3 | **90.27 × 57.40** | Module 88.87 × 56.00 + 0.7 mm per side. |
-| Clearance per side | 0.165 / 0.15 | **0.70** | JLCPCB profile tolerance ±0.2 mm plus 0.5 mm unverified registration/assembly allowance. |
+| Size | 89.2 × 56.3 | **90.67 × 54.36** | Vendor **LENS OD** 88.87 × 52.56 + 0.9 mm per side. The 86.5 × 56.0 PCB never passes the panel, so the PCB height must not size the aperture. |
+| Clearance per side | 0.165 / 0.15 | **0.90** | 0.2 mm JLCPCB profile tolerance + 0.2 mm vendor LENS OD tolerance (all on one side) + 0.5 mm unverified registration/assembly allowance. |
 | Corner relief | sharp rect | **1.0 mm radius**, explicit | Routed inside corners cannot be sharp. |
-| Corner clearance to a square module corner | 0.165 / 0.15 | **0.571 measured** | Measured on the built panel polygon, not on a formula. |
+| Corner clearance to a square module corner | 0.165 / 0.15 | **0.851 measured** | Measured on the built panel polygon, not on a formula. |
 
 The aperture was **expanded**, not rounded inward. The polygon chords lie inside the true corner arc, so the emitted
-aperture is marginally smaller than the exact rounded rectangle: the 0.571 mm figure is the measured segment distance,
+aperture is marginally smaller than the exact rounded rectangle: the 0.851 mm figure is the measured segment distance,
 which is the case that matters. `lib/layout.test.ts` and `mechanical/test_bracket_geometry.py` both measure it, and
 `scripts/check_placement.ts` re-measures it on the built panel.
 
@@ -95,18 +134,24 @@ vendor **panel openings only**; the rear body, flange and cable-bundle envelopes
 
 ## 4. Provisional stack, depth and case verdict
 
-- One display standoff definition: **9.0 mm**, front-board top face to the display mounting PCB. It replaces the
-  contradictory `3.5 mm` (layout) and `8–10 mm` (prose) pair; the separate 3 mm spacer is gone.
-- Assumptions, not measurements: glass front flush with the panel front face, and the 9.0 mm standoff. The
-  panel-to-board gap (11.40 mm) follows from them.
-- Display underside: 2.30 mm available, tallest known front-side part 2.20 mm (Toshiba 11-4L1S MIDI receiver, max
-  installed 2.1 ± 0.1 mm, p. 15). That leaves 0.1 mm and does **not** prove the display underside: the component map,
-  FPC latch and module tolerance are unmapped. Open.
-- Light pipe: 10.16 mm pipe against an 11.40 mm gap; the remaining 1.24 mm is unmeasured (LED body plus pipe seat).
+- Glass and PCB envelopes are now separate in the canonical data: LENS OD 88.87 × 52.56 ±0.2, LENS VA 75.8 × 45.36
+  ±0.2, PCB 86.5 × 56.0. The active-area offset is **+2.905 mm** in the layout frame (the −2.905 of the raw model frame
+  after a 180° rotation); only the front-board silkscreen window uses it. Mounting holes are the bosses at
+  x −18.12/+39.88, y ±24.50, i.e. the 0.13 mm PCB-to-lens offset is now included.
+- One display interface definition, split into two quantities: **plane separation 9.0 mm** (front-board TOP face to
+  display PCB REAR face, provisional) and **spacer length 5.0 mm** (plane separation − 4.0 mm boss projection). It
+  replaces the contradictory `3.5 mm` (layout) and `8–10 mm` (prose) pair; the separate 3 mm spacer is gone.
+- Z chain from the vendor side view (corrected): lens front 0.00 → display PCB rear 6.70 → connector rear-most 10.70;
+  front-board top 15.70; front-board rear 17.30. Assumptions, not measurements: lens front flush with the panel front
+  face, and the 9.0 mm standoff. The panel-to-board gap (14.10 mm) follows from them.
+- Display underside: 5.00 mm available, tallest known front-side part 2.20 mm (Toshiba 11-4L1S MIDI receiver, max
+  installed 2.1 ± 0.1 mm, p. 15), i.e. 2.80 mm over that part. That does **not** prove the display underside: the
+  component map, FPC latch and module tolerance are unmapped. Open.
+- Light pipe: 10.16 mm pipe against a 14.10 mm gap; 3.94 mm is unmeasured and unexplained, so a longer pipe is likely.
   Open.
-- Depth: 70.2 mm from the panel front face at the high end of every candidate, inside the owner's ≤110 mm target on
+- Depth: 72.9 mm from the panel front face at the high end of every candidate, inside the owner's ≤110 mm target on
   paper only.
-- Eurorack Go (40 mm lower row, 62 mm upper row): the stack is ≈57–69 mm behind the panel back. **No approval.**
+- Eurorack Go (40 mm lower row, 62 mm upper row): the stack is ≈59–71 mm behind the panel back. **No approval.**
 
 ## 5. Open physical gates (no fake pass)
 
@@ -114,8 +159,8 @@ Each item needs a measurement or a sample, not an estimate. None of them is clos
 
 | Gate | What is still unproven |
 |---|---|
-| Display underside / FPC map | The display's rear component map, the 15-pin FPC latch and cable bend against the front-board top SMD (tallest known 2.2 mm in a 2.30 mm gap) and against the (−44, 43) spacer head. |
-| Light pipe | 10.16 mm pipe reach and seating against the actual LED and panel thickness. |
+| Display underside / FPC map | The display's rear component map, the 15-pin FPC latch and cable bend against the front-board top SMD (tallest known 2.2 mm in a 5.00 mm gap) and against the (−44, 43) spacer head. |
+| Light pipe | 10.16 mm pipe against a 14.10 mm gap: reach, seating and the likely need for a different part. |
 | Controls reach | Encoder shaft/knob, NAV cap, button actuators and jack bushings through 1.6 mm FR-4 plus the panel-to-board gap; that the reach matches each purchased part. |
 | Jack bushing/nut retention | PJ-301M-3-B barrel and nut clamping on a 1.6 mm panel, the 6.2 mm hole and the 4 mm jack pitch. |
 | M2.5 head/washer envelope | The Ø6.5 bracket head clearance and the 1.65 mm ligaments are assumptions; measure the screws, nuts and washers. |
@@ -151,7 +196,8 @@ Not edited here, by instruction. Requested by the mechanical pass:
 4. `docs/decisions.md` — record the single 9.0 mm provisional display standoff with the Z datum, and the USB-C
    feedthrough as an open part choice rated 3 A today.
 5. `docs/design-review.md` — "LCD lowered to y = 0", "display glass y = −24…32", "8–10 mm standoffs" and
-   "89.2 × 56.3 mm cutout" are stale; the display centre is (−17, 11) and the aperture is 90.27 × 57.40 mm.
+   "89.2 × 56.3 mm cutout" are stale; the display centre is (−17, 11), the aperture is 90.67 × 54.36 mm, the lens is
+   88.87 × 52.56 and the 6.7/4.0 mm depth labels were reversed.
 6. `docs/acceptance.md` — add the §5 gates as named acceptance items.
 7. `docs/fab-check.md` — the panel LCD cutout is now a rounded-rectangle polygon (28 points, r = 1.0 mm), not a rect;
    state that in the panel row.

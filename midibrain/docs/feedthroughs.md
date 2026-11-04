@@ -23,7 +23,8 @@ generated from it. Verification record: `docs/MECHANICAL-VERIFICATION.md`.
 - USB-A, each: **14.9 × 7.3 mm** opening (vendor 14.65 × 7.10 plus 0.25 assembly allowance), 2 × **Ø3.5 mm** holes
   **30 mm** apart on the Adafruit 908 drawing.
 - USB-C: **12.6 × 7.6 mm** slot for SparkFun CAB-15455, two Ø3.2 holes on 18 mm centres for the clamp.
-- LCD aperture: 90.27 × 57.40 mm with 1.0 mm corner relief at (−17, 11); see `docs/mechanical-stack.md`.
+- LCD aperture: 90.67 × 54.36 mm with 1.0 mm corner relief at (−17, 11), sized from the vendor LENS OD
+  (88.87 × 52.56), not the module PCB; see `docs/mechanical-stack.md`.
 - Leave at least 25–35 mm behind the panel for the cable tails and bend radius. Unverified.
 - These are **panel openings**. They do not prove the rear body, flange or cable-bundle envelopes: those stay pending
   against the purchased samples.

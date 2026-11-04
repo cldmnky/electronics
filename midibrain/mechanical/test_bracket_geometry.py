@@ -249,17 +249,20 @@ class LcdApertureTest(unittest.TestCase):
         return min(self._segment_distance(px, py, *self.outline[i], *self.outline[(i + 1) % n])
                    for i in range(n))
 
-    def test_aperture_is_larger_than_the_module_with_the_planned_allowance(self) -> None:
+    def test_aperture_follows_the_lens_not_the_module_pcb(self) -> None:
         allowance = self.cut["allowances"]["perSide"]
         self.assertAlmostEqual(self.cut["width"], self.module["width"] + 2 * allowance, places=6)
         self.assertAlmostEqual(self.cut["height"], self.module["height"] + 2 * allowance, places=6)
-        # The withdrawn 89.2 x 56.3 mm aperture left only 0.165 / 0.15 mm per side,
-        # which is inside the +-0.2 mm fabrication tolerance.
-        self.assertGreater(self.cut["width"], 89.2)
-        self.assertGreater(self.cut["height"], 56.3)
+        # display.width/height are the LENS outline from the vendor drawing.
+        self.assertAlmostEqual(self.module["width"], 88.87, places=6)
+        self.assertAlmostEqual(self.module["height"], 52.56, places=6)
+        # The PCB is taller than the aperture, so it never passes the panel.
+        self.assertGreater(self.module["pcb"]["height"], self.cut["height"])
+        self.assertGreater(self.module["pcb"]["width"], 0)
 
-    def test_allowance_covers_the_fabrication_tolerance(self) -> None:
-        self.assertGreaterEqual(self.cut["allowances"]["perSide"], 0.2 + 0.5 - 1e-9)
+    def test_allowance_covers_fabrication_and_lens_tolerance(self) -> None:
+        # 0.2 fabrication + 0.2 vendor lens OD + 0.5 unverified registration.
+        self.assertGreaterEqual(self.cut["allowances"]["perSide"], 0.2 + 0.2 + 0.5 - 1e-9)
 
     def test_corner_relief_is_explicit_and_manufacturable(self) -> None:
         self.assertGreaterEqual(self.cut["cornerRadius"], 0.5)
@@ -347,6 +350,63 @@ class RegressionTest(unittest.TestCase):
             bg.validate(bg.bracket_geometry(data), data)
 
 
+class DisplayEnvelopeTest(unittest.TestCase):
+    """Separate glass and PCB envelopes, and the corrected Z chain."""
+
+    def setUp(self) -> None:
+        self.data = layout()
+        self.vendor = self.data["display"]
+        self.z = self.data["provisionalZ"]
+
+    def test_glass_and_pcb_envelopes_are_separate(self) -> None:
+        self.assertAlmostEqual(self.vendor["width"], 88.87, places=6)
+        self.assertAlmostEqual(self.vendor["height"], 52.56, places=6)
+        self.assertAlmostEqual(self.vendor["pcb"]["width"], 86.5, places=6)
+        self.assertAlmostEqual(self.vendor["pcb"]["height"], 56.0, places=6)
+
+    def test_depth_chain_matches_the_vendor_side_view(self) -> None:
+        stack = self.vendor["stack"]
+        # 6.7 = lens front -> display PCB rear; 4.0 = PCB rear -> boss ends, the
+        # rear-most feature (not a connector-only figure).
+        self.assertAlmostEqual(stack["lensFrontToPcbRear"], 6.7, places=6)
+        self.assertAlmostEqual(stack["bossProjection"], 4.0, places=6)
+        self.assertAlmostEqual(stack["overallDepth"], 10.7, places=6)
+        self.assertNotIn("rearEnvelopeDepth", stack)
+
+    def test_spacer_length_and_plane_separation_are_separate(self) -> None:
+        stack = self.vendor["stack"]
+        # The spacer screws onto the boss ends, 4.0 mm behind the PCB rear face.
+        self.assertAlmostEqual(stack["planeSeparation"], 9.0, places=6)
+        self.assertAlmostEqual(stack["spacerLength"], 5.0, places=6)
+        self.assertAlmostEqual(stack["spacerLength"],
+                               stack["planeSeparation"] - stack["bossProjection"], places=6)
+
+    def test_mounting_bosses_follow_the_step_model(self) -> None:
+        # Raw model bosses x -39.880/+18.120, rotated 180 degrees for the layout.
+        datum = self.data["displayDatum"]
+        self.assertEqual(datum["rotationDeg"], 180)
+        self.assertAlmostEqual(datum["pcbCentreOffsetX"], 0.13, places=6)
+        self.assertTrue(datum["firstArticlePending"])
+
+    def test_z_values_follow_the_standoff_datum(self) -> None:
+        stack = self.vendor["stack"]
+        self.assertAlmostEqual(self.z["displayPcbRear"], 6.7, places=6)
+        self.assertAlmostEqual(self.z["displayRearMost"], 10.7, places=6)
+        # front-board top = display PCB rear plane + 9.0 mm plane separation
+        self.assertAlmostEqual(self.z["frontBoardTop"],
+                               stack["lensFrontToPcbRear"] + stack["planeSeparation"], places=6)
+        self.assertAlmostEqual(self.z["frontBoardTop"], 15.7, places=6)
+        self.assertAlmostEqual(self.data["panelToFrontBoardGap"], 14.1, places=6)
+        self.assertAlmostEqual(self.data["displayUndersideGap"], 5.0, places=6)
+        self.assertAlmostEqual(self.data["displayUndersideGap"],
+                               self.z["frontBoardTop"] - self.z["displayRearMost"], places=6)
+
+    def test_light_pipe_reach_is_pending_and_short(self) -> None:
+        reach = self.data["lightPipeReach"]
+        self.assertAlmostEqual(reach["unaccounted"], 3.94, places=6)
+        self.assertNotIn("seatAllowance", self.data["lightPipe"])
+
+
 class ProvisionalDataTest(unittest.TestCase):
     """Unverified numbers must stay visible, and must not read as measurements."""
 
@@ -369,9 +429,11 @@ class ProvisionalDataTest(unittest.TestCase):
         data = layout()
         gap = data["displayUndersideGap"]
         tallest = data["frontTopSmdMaxHeight"]["height"]
-        self.assertAlmostEqual(gap - tallest, 0.1, places=6)
-        self.assertLess(gap - tallest, 0.5,
-                        "only 0.1 mm above the tallest known part: keep this pending")
+        # 5.0 mm to the connector rear-most point, 2.8 mm over the tallest part
+        # with a stated height. Still pending: the display underside map, FPC
+        # latch and module tolerance are unmapped.
+        self.assertAlmostEqual(gap - tallest, 2.8, places=6)
+        self.assertEqual(data["frontTopSmdMaxHeight"]["height"], 2.2)
 
     def test_depth_chain_stays_inside_the_owner_target(self) -> None:
         data = layout()

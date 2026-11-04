@@ -198,7 +198,12 @@ def bracket_geometry(layout: dict | None = None) -> BracketGeometry:
         tie_holes=[Circle(c["x"], c["y"], c["diameter"]) for c in b["tieHoles"]],
         notch=Rect(notch["left"], notch["bottom"], notch["right"], notch["top"]),
         board=Rect(-front["width"] / 2, -front["height"] / 2, front["width"] / 2, front["height"] / 2),
-        display_top=data["display"]["y"] + data["display"]["height"] / 2,
+        # The display PCB (86.5 x 56.0) is taller than the lens outline
+        # (88.87 x 52.56), so the bracket clears whichever reaches higher.
+        display_top=max(
+            data["display"]["y"] + data["display"]["height"] / 2,
+            data["display"]["y"] + data["display"].get("pcb", {}).get("height", 0) / 2,
+        ),
         material_to_cuts=data["bracketAllowance"]["materialToCuts"],
     )
 
