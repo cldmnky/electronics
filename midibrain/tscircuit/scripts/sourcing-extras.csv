@@ -12,18 +12,18 @@ cable,CAB_PICO_USB,1,Micro-USB to USB-A programming cable ~0.3 m,,cable,rear,han
 cable,CAB_USBC_PANEL,1,SparkFun CAB-15455 USB-C F panel to USB-C M 305 mm USB 2.0 3 A,,cable,panel,hand,SparkFun,3 A rated not 5 A; test vcgencmd get_throttled under load; REJECTED for the 5 A USB-C path - no 5 A or thermal test recorded and no approved MPN; exact 5 A rated feedthrough pending (acceptance item usb_c_5a_path)
 cable,CAB_USBA_AUDIO,1,Adafruit 908 USB-A F panel to USB-A M 340 mm,,cable,panel,hand,Adafruit,UMC/audio panel port
 cable,CAB_USBA_HUB,1,Adafruit 908 USB-A F panel to USB-A M 340 mm,,cable,panel,hand,Adafruit,MIDI hub panel port
-cable,CAB_PSU,1,Official Raspberry Pi 27 W USB-C PSU 5.1 V/5 A ~1.2 m,,PSU,external,hand,Pi reseller,Plugs into CAB_USBC_PANEL; the feedthrough is only 3 A
+cable,CAB_PSU,1,Official Raspberry Pi 27 W USB-C PSU 5.1 V/5 A ~1.2 m,,PSU,external,hand,Pi reseller,Complete 5 A panel cable chain still to select; the inherited 3 A CAB_USBC_PANEL is rejected for this use
 cable,CAB_UMC_USB,1,USB-A male to USB-B male 1 m,,cable,external,hand,,UMC1820 to front USB-A audio port
 cable,CAB_HUB_USB,1,USB-A male to USB-B male (or hub-specific upstream) 0.5-1 m,,cable,external,hand,,Powered MIDI hub to front USB-A hub port; verify hub connector
 cable,CAB_ADAT,2,Optical ADAT cable 0.5-1 m,,cable,external,hand,,UMC1820 to ADA8200; second cable for clock if needed
 cable,CAB_SPDIF,1,Coaxial or optical S/PDIF cable 0.5-1 m,,cable,external,hand,,Stereo source to UMC1820 S/PDIF input; connector type TBD
 cable,CAB_MIDI_TRS,4,3.5 mm TRS Type A to DIN 5 MIDI cable 1 m,,cable,external,hand,,Two inputs and two outputs
 cable,CAB_HUB_PSU,1,Powered hub supply (manufacturer-specific),,PSU,external,hand,,Exact hub and PSU TBD
-hardware,STANDOFF_PANEL,4,M2.5 standoff length TBD (~10 mm + panel gap) + 8x screw/nut,,,panel-front,hand,,Positions (+-61 +-53); length set at mockup
+hardware,STANDOFF_PANEL,4,M2.5 standoff length TBD (14.1 mm provisional panel gap) + 8x screw/nut,,,panel-front,hand,,Positions (+-61 +-53); exact part and fitted length pending zstack; plane gap is not a purchased-part approval
 hardware,SPACER_BOARDS,4,M2.5 spacer length TBD (~18-20 mm) + 8x screw/nut top-left low-profile head,,,front-rear,hand,,Positions (+-44 +43/-52); length set at J5 bend mockup
 hardware,SPACER_PI,4,M2.5 spacer 2.5 mm (or 5 mm if SD-vs-R-zone clash) + screws,,,rear,hand,,Positions per PI_HOLES; see docs/mechanical-stack.md
-hardware,STANDOFF_LCD,4,M2.5 standoff 3.5 mm + screws,,,front,hand,,Display to front board at LCD_MOUNT_HOLES
-hardware,LP1-3,3,Bivar PLP2-400-C clear light pipe,,,panel,hand,DigiKey or Mouser,4.0 mm panel holes; length vs panel gap at mockup; light-pipe length is pending acceptance item light_pipes
-hardware,BR1,1,USB feedthrough bracket PETG (mechanical/feedthrough-bracket.stl),,,front,print,self,REGEN PENDING: generator is stale vs layout; do not print as-is
+hardware,STANDOFF_LCD,4,M2.5 spacer candidate 5 mm beyond boss ends + screws (PROVISIONAL),,,front,hand,,Display to front board at LCD_MOUNT_HOLES; 9 mm PCB-plane separation includes 4 mm bosses; exact part and fitted length pending zstack
+hardware,LP1-3,3,Bivar PLP2-400-C clear light pipe,,,panel,hand,DigiKey or Mouser,4.0 mm panel holes; length vs panel gap at mockup; light-pipe length is pending acceptance item light_pipes; 10.16 mm reference is NOT approved for the 14.1 mm provisional gap; replacement length and seating must be selected before purchase
+hardware,BR1,1,USB feedthrough bracket PETG (mechanical/feedthrough-bracket.stl),,,front,print,self,Generated from canonical mechanical/layout.json; CAD self-check verified; actual printed fit and cable retention remain pending
 hardware,KNOB1,1,Knob for PEC11R shaft (shaft spec TBD from datasheet),,,panel-front,hand,,"Not specified yet; shaft/detent and panel height unverified; knob fit is pending acceptance item control_actuator, not an approved part"
 hardware,RAILSCREW,4,M3 rail screws (usually supplied with the Eurorack case),,,panel,hand,case,Installer-provided

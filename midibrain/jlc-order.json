@@ -17,7 +17,7 @@
       "service": "JLCPCB SMT assembly",
       "sides": 1,
       "sides_reason": "All 31 SMT placements are on the top (panel side). The rear face carries only the J5 THT body and THT tails.",
-      "through_hole": "hand solder",
+      "through_hole": "hand solder except U6: qualified process required",
       "through_hole_parts": [
         "J1",
         "J2",
@@ -34,7 +34,7 @@
       ],
       "files": {
         "gerbers": "fab/front/front-gerbers.zip",
-        "bom": "fab/front/front-bom-jlc.csv",
+        "bom": "fab/front/front-bom-smt.csv",
         "cpl": "fab/front/front-cpl-jlc.csv"
       },
       "expected_counts": {
@@ -72,10 +72,10 @@
         "J_PI",
         "J_FRONT"
       ],
-      "through_hole_note": "No LCSC numbers in the design (generic 2.54 mm parts); source for the bench. Kept out of the SMT CPL by design.",
+      "through_hole_note": "J_PI/J_FRONT use the selected XFCN imported headers with reference C-numbers; Pico sockets need exact bench sourcing. All four headers/sockets are THT and stay out of the SMT CPL.",
       "files": {
         "gerbers": "fab/rear/rear-gerbers.zip",
-        "bom": "fab/rear/rear-bom-jlc.csv",
+        "bom": "fab/rear/rear-bom-smt.csv",
         "cpl": "fab/rear/rear-cpl-jlc.csv"
       },
       "expected_counts": {
