@@ -1,6 +1,8 @@
 // Host tests for the JUCE-free Pico link core. Asserts only (no framework):
 // builds with the plain `c++ -std=c++20 -Wall -Wextra -Werror` line from
 // pi/ARCHITECTURE.md and prints one PASS line per behaviour.
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -67,6 +69,23 @@ class CountingTransport : public ISpiTransport {
     return inner_.transfer(out, in);
   }
   unsigned calls = 0;
+
+ private:
+  ISpiTransport& inner_;
+};
+
+// Records every outbound 32-byte frame (idle-fill repeats included), so a test
+// can check the wire bytes of a specific sender.
+class RecordingTransport : public ISpiTransport {
+ public:
+  explicit RecordingTransport(ISpiTransport& inner) : inner_(inner) {}
+  bool transfer(const std::uint8_t out[32], std::uint8_t in[32]) override {
+    mb::Bytes wire{};
+    std::copy(out, out + mb::frame_size, wire.begin());
+    frames.push_back(wire);
+    return inner_.transfer(out, in);
+  }
+  std::vector<mb::Bytes> frames;
 
  private:
   ISpiTransport& inner_;
@@ -318,6 +337,153 @@ void testClockSourceSender() {
   std::cout << "PASS clock source: source/mask validated, applied and resent after HELLO\n";
 }
 
+void testMidiRouteSender() {
+  EmulatorTransport pico;
+  PicoLink link(pico);
+  assert(pumpUntil(link, 200, [&] { return link.linkUp(); }));
+  pump(link, 25);
+  drain(link);
+
+  // Boot: every TRS route is off with an empty chain (RAM defaults).
+  for (std::uint8_t src = 0; src < 2; ++src) {
+    for (std::uint8_t dst = 0; dst < 2; ++dst) {
+      assert(pico.midiRoute(src, dst).flags == 0);
+      assert(pico.midiRoute(src, dst).pipe_count == 0);
+    }
+  }
+
+  // Begin + a two-chunk Filter: 5 params then 3 more at offset 5, exactly the
+  // frame limit (route_pipe_param_frame_max).
+  const std::int16_t filter[5] = {1, 0, 1, 1, 0};
+  const std::int16_t tail[3] = {1, 1, 0};
+  assert(link.midiRoute(0, 1, true));
+  assert(link.midiRoutePipe(0, 1, 0, 1, false, 0, filter, 5));
+  assert(link.midiRoutePipe(0, 1, 0, 1, false, 5, tail, 3));
+  pump(link, 30);
+  assert(pico.midiRoute(0, 1).flags == mb::ROUTE_FLAG_ON);
+  assert(pico.midiRoute(0, 1).pipe_count == 1);
+  const auto& filter_pipe = pico.midiRoute(0, 1).pipes[0];
+  assert(filter_pipe.type == 1 && !filter_pipe.bypass);
+  assert(filter_pipe.param_count == 8);
+  assert(filter_pipe.params[0] == 1 && filter_pipe.params[4] == 0);
+  assert(filter_pipe.params[5] == 1 && filter_pipe.params[7] == 0);
+
+  // index == pipe_count appends; a gap is rejected before it reaches the wire.
+  const std::int16_t chance = 35;
+  assert(!link.midiRoutePipe(0, 1, 2, 6, false, 0, &chance, 1));
+  assert(link.midiRoutePipe(0, 1, 1, 6, false, 0, &chance, 1));
+  pump(link, 20);
+  assert(pico.midiRoute(0, 1).pipe_count == 2);
+  assert(pico.midiRoute(0, 1).pipes[1].type == 6);
+  assert(pico.midiRoute(0, 1).pipes[1].param_count == 1);
+  assert(pico.midiRoute(0, 1).pipes[1].params[0] == 35);
+
+  // Sender-side validation mirrors the wire limits: only the two physical TRS
+  // routes exist, types are 1..16, 5 params per chunk and 10 per pipe, and a
+  // continuation must match the pipe it extends.
+  assert(!link.midiRoute(2, 0, true));
+  assert(!link.midiRoute(0, 2, true));
+  assert(!link.midiRoutePipe(2, 0, 0, 1, false, 0, nullptr, 0));
+  assert(!link.midiRoutePipe(0, 0, 0, 0, false, 0, nullptr, 0));
+  assert(!link.midiRoutePipe(0, 0, 0, 17, false, 0, nullptr, 0));
+  assert(!link.midiRoutePipe(0, 0, 0, 1, false, 0, nullptr, 6));
+  assert(!link.midiRoutePipe(0, 0, 0, 1, false, 6, nullptr, 5));
+  assert(!link.midiRoutePipe(0, 0, 0, 1, false, 0, nullptr, 1));
+  assert(!link.midiRoutePipe(0, 0, 1, 1, false, 0, nullptr, 0));
+  assert(link.midiRoute(0, 0, true));
+  assert(link.midiRoutePipe(0, 0, 0, 1, false, 0, filter, 5));
+  const std::int16_t one = 1;
+  assert(!link.midiRoutePipe(0, 0, 0, 2, false, 5, &one, 1));  // type mismatch
+  pump(link, 20);
+  assert(pico.midiRoute(0, 0).pipe_count == 1);
+  assert(pico.midiRoute(0, 0).pipes[0].type == 1);
+
+  // A continuation chunk's bypass byte is ignored, matching the firmware's
+  // setPipeChunk (the type is the only identity check for offset > 0).
+  assert(link.midiRoute(1, 1, true));
+  assert(link.midiRoutePipe(1, 1, 0, 2, false, 0, &one, 1));
+  const std::int16_t window[2] = {60, 72};
+  assert(link.midiRoutePipe(1, 1, 0, 2, true, 1, window, 2));
+  pump(link, 20);
+  assert(!pico.midiRoute(1, 1).pipes[0].bypass);  // the begin chunk's value
+  assert(pico.midiRoute(1, 1).pipes[0].param_count == 3);
+  assert(pico.midiRoute(1, 1).pipes[0].params[1] == 60);
+  assert(pico.midiRoute(1, 1).pipes[0].params[2] == 72);
+
+  // A Pico power cycle drops the RAM chains; the reconnect re-sends 0x18
+  // before the chunks, so the pipe count and params come back.
+  pico.reboot();
+  assert(pumpUntil(link, 300, [&] { return link.linkUp(); }));
+  pump(link, 40);
+  assert(pico.midiRoute(0, 1).flags == mb::ROUTE_FLAG_ON);
+  assert(pico.midiRoute(0, 1).pipe_count == 2);
+  assert(pico.midiRoute(0, 1).pipes[0].param_count == 8);
+  assert(pico.midiRoute(0, 1).pipes[0].params[5] == 1);
+  assert(pico.midiRoute(0, 1).pipes[1].params[0] == 35);
+  assert(pico.midiRoute(0, 0).pipe_count == 1);
+
+  // RESET_LINK keeps the Pico RAM state and the Pi re-asserts the cache.
+  const std::uint32_t reset_from = link.session();
+  assert(link.resetLink());
+  assert(pumpUntil(link, 300, [&] { return link.session() != reset_from && link.linkUp(); }));
+  pump(link, 40);
+  assert(pico.midiRoute(0, 1).flags == mb::ROUTE_FLAG_ON);
+  assert(pico.midiRoute(0, 1).pipe_count == 2);
+
+  // A fresh begin clears the chain on both sides (the firmware begin() contract).
+  assert(link.midiRoute(0, 1, false));
+  pump(link, 20);
+  assert(pico.midiRoute(0, 1).flags == 0);
+  assert(pico.midiRoute(0, 1).pipe_count == 0);
+  std::cout << "PASS midi route: chain begin/chunks validated, applied and resent after HELLO\n";
+}
+
+void testMidiRouteEncoding() {
+  EmulatorTransport pico;
+  RecordingTransport recorded(pico);
+  PicoLink link(recorded);
+  assert(pumpUntil(link, 200, [&] { return link.linkUp(); }));
+  pump(link, 20);
+  recorded.frames.clear();
+
+  assert(link.midiRoute(1, 0, true));
+  const std::int16_t params[2] = {-7, 300};
+  assert(link.midiRoutePipe(1, 0, 0, 11, true, 0, params, 2));
+  pump(link, 20);
+
+  bool saw_route = false;
+  bool saw_pipe = false;
+  for (const auto& wire : recorded.frames) {
+    mb::Frame frame{};
+    assert(mb::decode(wire, frame));
+    if (frame.type != mb::Type::control_event) continue;
+    if (frame.payload[0] == mb::EV_MIDI_ROUTE && !saw_route) {
+      assert(frame.length == 4);
+      assert(frame.payload[1] == 1 && frame.payload[2] == 0);
+      assert(frame.payload[3] == mb::ROUTE_FLAG_ON);
+      saw_route = true;
+    }
+    if (frame.payload[0] == mb::EV_MIDI_ROUTE_PIPE && !saw_pipe) {
+      assert(frame.length == 8 + 2 * 2);
+      assert(frame.payload[1] == 1 && frame.payload[2] == 0);
+      assert(frame.payload[3] == 0);   // pipe index
+      assert(frame.payload[4] == 11);  // Transform
+      assert(frame.payload[5] == 1);   // bypass
+      assert(frame.payload[6] == 0 && frame.payload[7] == 2);
+      const auto low = static_cast<std::uint16_t>(frame.payload[8] |
+                                                  (frame.payload[9] << 8));
+      const auto high = static_cast<std::uint16_t>(frame.payload[10] |
+                                                   (frame.payload[11] << 8));
+      assert(static_cast<std::int16_t>(low) == -7);
+      assert(static_cast<std::int16_t>(high) == 300);
+      saw_pipe = true;
+    }
+  }
+  assert(saw_route);
+  assert(saw_pipe);
+  std::cout << "PASS midi route encoding: 0x18/0x19 payloads and int16 LE params\n";
+}
+
 void testStatusRequest() {
   EmulatorTransport pico;
   PicoLink link(pico);
@@ -519,6 +685,8 @@ int main() {
   testTempoTransportManual();
   testClockRouteSender();
   testClockSourceSender();
+  testMidiRouteSender();
+  testMidiRouteEncoding();
   testStatusRequest();
   testTxOverflowStatus();
   testRebootAndResetLink();

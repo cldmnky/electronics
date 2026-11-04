@@ -195,6 +195,45 @@ void EmulatorTransport::handle(const mb::Frame& f) {
       transport_follow_mask_ = mask;
       break;
     }
+    case mb::EV_MIDI_ROUTE: {
+      std::uint8_t src = 0, dst = 0, flags = 0;
+      if (!mb::unpack_midi_route(f, src, dst, flags)) return;
+      // begin(): fresh chain, runtime state cleared, flags applied.
+      midi_routes_[src][dst] = MidiRouteState{};
+      midi_routes_[src][dst].flags = flags;
+      break;
+    }
+    case mb::EV_MIDI_ROUTE_PIPE: {
+      std::uint8_t src = 0, dst = 0, index = 0, type = 0, offset = 0;
+      bool bypass = false;
+      std::int16_t raw[mb::route_pipe_param_frame_max]{};
+      std::size_t count = 0;
+      if (!mb::unpack_midi_route_pipe(f, src, dst, index, type, bypass, offset, raw,
+                                      mb::route_pipe_param_frame_max, count))
+        return;
+      MidiRouteState& chain = midi_routes_[src][dst];
+      // Same shape rules as the firmware's MidiPipeChain::setPipeChunk: an
+      // invalid index/type mismatch is a bad frame, not a silent append.
+      if (offset == 0) {
+        if (index > chain.pipe_count) return;
+      } else {
+        if (index >= chain.pipe_count) return;
+        // setPipeChunk compares the type only; bypass on a continuation chunk
+        // is ignored by the firmware, not a second identity field.
+        if (chain.pipes[index].type != type) return;
+      }
+      RoutePipeState& pipe = chain.pipes[index];
+      if (offset == 0) {
+        pipe = RoutePipeState{};
+        pipe.type = type;
+        pipe.bypass = bypass;
+        if (index == chain.pipe_count) ++chain.pipe_count;
+      }
+      for (std::size_t i = 0; i < count; ++i) pipe.params[offset + i] = raw[i];
+      if (offset + count > pipe.param_count)
+        pipe.param_count = static_cast<std::uint8_t>(offset + count);
+      break;
+    }
     case mb::EV_LED_SET:
       if (f.length < 3) return;
       led_mask_ = f.payload[1];
@@ -311,6 +350,8 @@ void EmulatorTransport::reboot() {
   clock_route_flags_[1] = mb::CLOCK_ROUTE_DEFAULT;
   clock_source_ = mb::CLOCK_SOURCE_INTERNAL;
   transport_follow_mask_ = 0;
+  // The Pico's route_pipes are RAM: a power cycle starts them off and empty.
+  midi_routes_ = {};
   led_mask_ = 0;
   led_states_ = 0;
   sent_midi_.clear();
@@ -555,6 +596,7 @@ void PicoLink::handle(const mb::Frame& f, std::uint64_t now_us) {
         // per-output route now that the session is confirmed.
         resendClockRoutes();
         resendClockSource();
+        resendMidiRoutes();
       }
       break;
     case mb::Type::control_event:
@@ -719,6 +761,89 @@ void PicoLink::resendClockSource() {
   mb::Frame f{};
   if (!mb::pack_clock_source(f, 0, 0, clock_source_, clock_source_mask_)) return;
   queueFrame(f);
+}
+
+bool PicoLink::midiRoute(std::uint8_t src, std::uint8_t dst, bool on) {
+  const std::uint8_t flags = on ? mb::ROUTE_FLAG_ON : 0;
+  mb::Frame f{};
+  if (!mb::pack_midi_route(f, 0, 0, src, dst, flags)) return false;
+  if (!queueFrame(f)) return false;
+  // 0x18 starts a fresh chain on the Pico: the cache mirrors that, so a
+  // reconnect re-sends the begin before any pipe chunk of this route.
+  CachedMidiRoute& cache = midi_routes_[src][dst];
+  cache = CachedMidiRoute{};
+  cache.known = true;
+  cache.flags = flags;
+  return true;
+}
+
+bool PicoLink::midiRoutePipe(std::uint8_t src, std::uint8_t dst, std::uint8_t index,
+                             std::uint8_t type, bool bypass,
+                             std::uint8_t param_offset, const std::int16_t* params,
+                             std::size_t count) {
+  if (src > 1 || dst > 1) return false;  // only the two physical TRS routes
+  if (count != 0 && params == nullptr) return false;
+  CachedMidiRoute& cache = midi_routes_[src][dst];
+  // Mirror the firmware's setPipeChunk acceptance before queueing, so the
+  // cache can never describe a chain the Pico refused.
+  if (param_offset == 0) {
+    if (index > cache.pipe_count) return false;
+  } else {
+    if (index >= cache.pipe_count) return false;
+    // setPipeChunk's continuation identity is the type; bypass is ignored on
+    // an offset > 0 chunk, so mirror that instead of rejecting the frame.
+    if (cache.pipes[index].type != type) return false;
+  }
+  mb::Frame f{};
+  if (!mb::pack_midi_route_pipe(f, 0, 0, src, dst, index, type, bypass,
+                                param_offset, params, count))
+    return false;
+  if (!queueFrame(f)) return false;
+  CachedRoutePipe& pipe = cache.pipes[index];
+  if (param_offset == 0) {
+    pipe = CachedRoutePipe{};
+    pipe.type = type;
+    pipe.bypass = bypass;
+    if (index == cache.pipe_count) ++cache.pipe_count;
+  }
+  for (std::size_t i = 0; i < count; ++i) pipe.params[param_offset + i] = params[i];
+  if (param_offset + count > pipe.param_count)
+    pipe.param_count = static_cast<std::uint8_t>(param_offset + count);
+  // A pipe before its 0x18 still describes a real (off) chain; remember it so
+  // a reconnect reproduces the Pico state instead of dropping the config.
+  cache.known = true;
+  return true;
+}
+
+void PicoLink::resendMidiRoutes() {
+  for (std::uint8_t src = 0; src < 2; ++src) {
+    for (std::uint8_t dst = 0; dst < 2; ++dst) {
+      const CachedMidiRoute& cache = midi_routes_[src][dst];
+      if (!cache.known) continue;
+      mb::Frame begin{};
+      if (!mb::pack_midi_route(begin, 0, 0, src, dst, cache.flags)) continue;
+      queueFrame(begin);
+      for (std::uint8_t index = 0; index < cache.pipe_count; ++index) {
+        const CachedRoutePipe& pipe = cache.pipes[index];
+        for (std::uint8_t offset = 0; offset < pipe.param_count;
+             offset = static_cast<std::uint8_t>(
+                 offset + mb::route_pipe_param_frame_max)) {
+          const std::uint8_t remaining =
+              static_cast<std::uint8_t>(pipe.param_count - offset);
+          const std::uint8_t chunk = static_cast<std::uint8_t>(
+              remaining < mb::route_pipe_param_frame_max
+                  ? remaining
+                  : mb::route_pipe_param_frame_max);
+          mb::Frame f{};
+          if (!mb::pack_midi_route_pipe(f, 0, 0, src, dst, index, pipe.type,
+                                        pipe.bypass, offset,
+                                        &pipe.params[offset], chunk))
+            continue;
+          queueFrame(f);
+        }
+      }
+    }
+  }
 }
 
 bool PicoLink::clockEnable(bool on) {

@@ -61,6 +61,22 @@ class EmulatorTransport : public ISpiTransport {
   // Scripted panel input, queued as CONTROL_EVENT frames.
   void injectButton(std::uint8_t id, std::uint8_t value);
   bool injectMidi(std::uint8_t port, const std::uint8_t* data, std::uint8_t n);
+  // Wave-1 MIDI FX chain the Pi configured on this emulated Pico (0x18/0x19).
+  // flags bit0 = route on; pipe params are positional int16 like the wire.
+  struct RoutePipeState {
+    std::uint8_t type{};
+    bool bypass{};
+    std::uint8_t param_count{};
+    std::array<std::int16_t, mb::route_pipe_param_max> params{};
+  };
+  struct MidiRouteState {
+    std::uint8_t flags{};
+    std::uint8_t pipe_count{};
+    std::array<RoutePipeState, mb::route_pipe_count_max> pipes{};
+  };
+  const MidiRouteState& midiRoute(std::uint8_t src, std::uint8_t dst) const {
+    return midi_routes_[src][dst];
+  }
   // Local tempo change (encoder path): affects tick rate, queues EV_TEMPO.
   void setTempo(std::uint16_t bpm_x100);
   // Power-cycle: new session id, handshake state cleared.
@@ -128,6 +144,10 @@ class EmulatorTransport : public ISpiTransport {
                                         mb::CLOCK_ROUTE_DEFAULT};
   std::uint8_t led_mask_ = 0;
   std::uint8_t led_states_ = 0;
+  // Wave-1 chain state per physical TRS route, [src][dst] (0 = IN1/OUT1),
+  // mirroring the firmware's route_pipes[2][2]: a begin clears it and pipe
+  // chunks fill it in order. reboot() resets it to the boot default.
+  std::array<std::array<MidiRouteState, 2>, 2> midi_routes_{};
   std::uint16_t tx_overflow_ = 0;
   std::uint16_t rx_overflow_ = 0;
   bool reboot_requested_ = false;
@@ -241,6 +261,19 @@ class PicoLink {
   // last successfully queued config is re-sent after HELLO; the Pico resets to
   // internal/no-follow at boot.
   bool clockSource(std::uint8_t source, std::uint8_t transport_mask);
+  // MIDI FX Wave-1 chain for one physical TRS route (0x18/0x19). src/dst are
+  // 0 = TRS IN1/OUT1, 1 = TRS IN2/OUT2; routes touching USB stay Pi-side and
+  // are rejected here. midiRoute() starts a fresh chain (the firmware clears
+  // its pipes and runtime state), so send it before that route's pipes.
+  // midiRoutePipe() mirrors the firmware's setPipeChunk rules: offset 0 with
+  // index == pipe count appends, index < count replaces; a larger offset
+  // extends an existing pipe of the same type (the continuation chunk's
+  // bypass byte is ignored, as in firmware). The last successfully
+  // queued chain per route is re-sent after HELLO, in wire order.
+  bool midiRoute(std::uint8_t src, std::uint8_t dst, bool on);
+  bool midiRoutePipe(std::uint8_t src, std::uint8_t dst, std::uint8_t index,
+                     std::uint8_t type, bool bypass, std::uint8_t param_offset,
+                     const std::int16_t* params, std::size_t count);
   // Deprecated in the firmware (clock is always on); sent for compatibility.
   bool clockEnable(bool on);
   bool ledSet(std::uint8_t mask, std::uint8_t states);
@@ -266,6 +299,7 @@ class PicoLink {
   bool enqueueHello();
   void resendClockRoutes();
   void resendClockSource();
+  void resendMidiRoutes();
   void push(const Event& e);
 
   ISpiTransport& transport_;
@@ -290,6 +324,21 @@ class PicoLink {
   std::uint8_t clock_source_ = 0;
   std::uint8_t clock_source_mask_ = 0;
   bool clock_source_known_ = false;
+  // Last-known Wave-1 chain per physical TRS route, [src][dst], re-sent after
+  // HELLO in the same order the firmware applied it (0x18, then pipe chunks).
+  struct CachedRoutePipe {
+    std::uint8_t type = 0;
+    bool bypass = false;
+    std::uint8_t param_count = 0;
+    std::array<std::int16_t, mb::route_pipe_param_max> params{};
+  };
+  struct CachedMidiRoute {
+    bool known = false;
+    std::uint8_t flags = 0;
+    std::uint8_t pipe_count = 0;
+    std::array<CachedRoutePipe, mb::route_pipe_count_max> pipes{};
+  };
+  std::array<std::array<CachedMidiRoute, 2>, 2> midi_routes_{};
   TickFn tick_fn_;
   Stats stats_;
 };

@@ -12,8 +12,21 @@ Works (host-tested, `PASS` lines from `test_link.cpp`):
 - Control plane: `statusRequest()`/`lastStatus()` (0x20/0x21 liveness and
   counters), `rebootPico()` (0x22 normal or USB boot), `resetLink()` (0x23
   new session without rebooting).
+- MIDI FX route config: `midiRoute(src,dst,on)` (0x18) and
+  `midiRoutePipe(src,dst,index,type,bypass,offset,params,count)` (0x19) for the
+  four physical TRS routes only (src/dst 0 = IN1/OUT1, 1 = IN2/OUT2; USB routes
+  are Pi-side and rejected). The sender mirrors the firmware's
+  `MidiPipeChain::setPipeChunk` shape rules before queueing, so its cache can
+  never describe a chain the Pico refused. Each route's last successfully
+  queued chain is re-sent after HELLO in wire order (0x18 first, then chunked
+  params of at most 5 per frame), covering Pico power cycles and RESET_LINK;
+  a new `midiRoute()` starts a fresh chain and clears the cached pipes, exactly
+  like firmware `begin()`. `EmulatorTransport` records the applied chain for
+  tests (`midiRoute(src,dst)`), and `reboot()` resets it as RAM would.
 - Wire format never redefined: `link.hpp` includes the firmware
   `protocol.hpp`/`midi.hpp` and uses `mb::encode/decode` plus `EV_*`/`CTL_*`.
+  The 0x18/0x19 payloads come from `mb::pack_midi_route*`, matched against the
+  firmware worker's `firmware/pico/protocol.hpp` (read-only).
 Stubbed / unverified:
 - `LinuxSpidevTransport` (1 MHz, mode 0, full-32B-or-fail) and `ReadyGpio`
   (BCM 24) compile under `__linux__` only; elsewhere ctors throw. Unrun on Pi.

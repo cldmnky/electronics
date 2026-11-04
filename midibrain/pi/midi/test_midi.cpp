@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <initializer_list>
 #include <vector>
 
 #include "buttons.hpp"
@@ -30,6 +31,8 @@ void pass(const char* name) { std::printf("PASS %s\n", name); }
 using mnky::midi::Action;
 using mnky::midi::DeliverFn;
 using mnky::midi::MidiEvent;
+using mnky::midi::PipeConfig;
+using mnky::midi::PipeType;
 using mnky::midi::Port;
 using mnky::midi::Router;
 using mnky::midi::UsbClock;
@@ -245,6 +248,141 @@ void transpose() {
   r.route(message(Port::TrsIn1, 0, 0x90, 60, 100), capture);
   CHECK(log.empty());  // TrsIn1 keeps its -80 and still drops note 60
   pass("transpose");
+}
+
+// ---------------------------------------------------------------------------
+// MIDI FX pipes: Pi-owned USB routes evaluate once, TRS->TRS stays firmware's
+// ---------------------------------------------------------------------------
+PipeConfig fxPipe(PipeType type, std::initializer_list<std::int32_t> params,
+                  bool bypass = false) {
+  PipeConfig config;
+  config.type = type;
+  config.bypass = bypass;
+  for (std::int32_t value : params) {
+    if (config.paramCount >= config.params.size()) break;
+    config.params[config.paramCount++] = value;
+  }
+  return config;
+}
+
+void routingPipes() {
+  // Side ownership is one rule and covers all nine routes.
+  CHECK(!mnky::midi::piOwnsPipeChain(Port::TrsIn1, Port::TrsOut1));
+  CHECK(!mnky::midi::piOwnsPipeChain(Port::TrsIn1, Port::TrsOut2));
+  CHECK(!mnky::midi::piOwnsPipeChain(Port::TrsIn2, Port::TrsOut1));
+  CHECK(!mnky::midi::piOwnsPipeChain(Port::TrsIn2, Port::TrsOut2));
+  CHECK(mnky::midi::piOwnsPipeChain(Port::UsbIn, Port::TrsOut1));
+  CHECK(mnky::midi::piOwnsPipeChain(Port::UsbIn, Port::TrsOut2));
+  CHECK(mnky::midi::piOwnsPipeChain(Port::UsbIn, Port::UsbOut));
+  CHECK(mnky::midi::piOwnsPipeChain(Port::TrsIn1, Port::UsbOut));
+  CHECK(mnky::midi::piOwnsPipeChain(Port::TrsIn2, Port::UsbOut));
+
+  std::vector<Delivery> log;
+  const DeliverFn capture = [&log](Port dst, const MidiEvent& ev) { log.push_back({dst, ev}); };
+
+  // A chain on the USB destination route runs; the same source's TRS route
+  // stays a plain copy. A note-on-only filter is the cheapest proof.
+  Router r;
+  const PipeConfig noteOnly = fxPipe(PipeType::Filter, {1, 0, 0, 0, 0, 0, 0, 0});
+  CHECK(r.setPipes(Port::TrsIn1, Port::UsbOut, &noteOnly, 1));
+  CHECK(r.pipeCount(Port::TrsIn1, Port::UsbOut) == 1);
+  CHECK(r.pipeCount(Port::TrsIn1, Port::TrsOut1) == 0);
+  CHECK(!r.setPipes(Port::TrsOut1, Port::TrsIn1, &noteOnly, 1));
+  CHECK(r.setRoute(Port::TrsIn1, Port::TrsOut1, true));
+  CHECK(r.setRoute(Port::TrsIn1, Port::UsbOut, true));
+
+  r.route(message(Port::TrsIn1, 0, 0x90, 60, 100), capture);
+  CHECK(log.size() == 2);
+  CHECK(log[0].dst == Port::TrsOut1 && log[0].ev.data[0] == 0x90);
+  CHECK(log[1].dst == Port::UsbOut && log[1].ev.data[0] == 0x90);
+  log.clear();
+  r.route(message(Port::TrsIn1, 0, 0xB0, 7, 100), capture);
+  CHECK(log.size() == 1);              // only the unpiped TRS route
+  CHECK(log[0].dst == Port::TrsOut1);
+  CHECK(r.pipeDiagnostics().evaluations == 2);
+
+  // No double processing: a piped TRS->TRS route is delivered unprocessed and
+  // the Pi never evaluates its chain (the Pico does, via EV_MIDI_ROUTE_SEND).
+  Router firmwareOwned;
+  const PipeConfig dropAll = fxPipe(PipeType::Chance, {100});
+  CHECK(firmwareOwned.setPipes(Port::TrsIn1, Port::TrsOut1, &dropAll, 1));
+  CHECK(firmwareOwned.pipeCount(Port::TrsIn1, Port::TrsOut1) == 1);
+  CHECK(firmwareOwned.setRoute(Port::TrsIn1, Port::TrsOut1, true));
+  log.clear();
+  firmwareOwned.route(message(Port::TrsIn1, 0, 0x90, 60, 100), capture);
+  CHECK(log.size() == 1);  // 100 % chance would have dropped it if evaluated
+  CHECK(log[0].dst == Port::TrsOut1 && log[0].ev.data[1] == 60);
+  CHECK(firmwareOwned.pipeDiagnostics().evaluations == 0);
+  firmwareOwned.tick(1000, capture);  // tick is Pi-owned routes only
+  CHECK(log.size() == 1);
+
+  // Mask -> pipes -> transpose: a dispatcher rotates channel 1 onto channel 2,
+  // but the mask already removed channel 1, so nothing is delivered.
+  Router order;
+  const PipeConfig dispatcher = fxPipe(PipeType::Dispatcher, {2, 2});
+  CHECK(order.setPipes(Port::TrsIn1, Port::UsbOut, &dispatcher, 1));
+  order.setChannelMask(Port::TrsIn1, 0x0002);  // channel 2 only
+  CHECK(order.setRoute(Port::TrsIn1, Port::UsbOut, true));
+  log.clear();
+  order.route(message(Port::TrsIn1, 0, 0x90, 60, 100), capture);
+  CHECK(log.empty());  // a mask applied after the pipes would have passed ch2
+  order.route(message(Port::TrsIn1, 1, 0x90, 60, 100), capture);
+  CHECK(log.size() == 1);
+  CHECK((log[0].ev.data[0] & 0x0F) == 1);  // already channel 2, slot 0
+
+  // Pipes then transpose: C# quantizes down to C, then +1 semitone -> C#.
+  // Transposing first would give D -> D, so the order is observable.
+  Router quantized;
+  const PipeConfig cMajor = fxPipe(PipeType::ScaleQuantize, {1, 0});
+  CHECK(quantized.setPipes(Port::TrsIn1, Port::UsbOut, &cMajor, 1));
+  quantized.setTranspose(Port::TrsIn1, 1);
+  CHECK(quantized.setRoute(Port::TrsIn1, Port::UsbOut, true));
+  CHECK(quantized.setRoute(Port::TrsIn1, Port::TrsOut2, true));
+  log.clear();
+  quantized.route(message(Port::TrsIn1, 0, 0x90, 61, 100), capture);
+  CHECK(log.size() == 2);
+  // Destination order is fixed: TRS OUT2 before the USB fan-out.
+  CHECK(log[0].dst == Port::TrsOut2 && log[0].ev.data[1] == 62);
+  CHECK(log[1].dst == Port::UsbOut && log[1].ev.data[1] == 61);
+
+  // Wave-2 chains configure (Wire/session tolerance) but refuse evaluation;
+  // the app log seam reports the pipe index and a static reason.
+  Router wave2;
+  const PipeConfig arp = fxPipe(PipeType::Arp, {});
+  CHECK(wave2.setPipes(Port::UsbIn, Port::TrsOut1, &arp, 1));
+  CHECK(wave2.setRoute(Port::UsbIn, Port::TrsOut1, true));
+  log.clear();
+  wave2.route(message(Port::UsbIn, 0, 0x90, 60, 100), capture);
+  CHECK(log.empty());
+  CHECK(wave2.pipeDiagnostics().rejected == 1);
+  CHECK(wave2.pipeDiagnostics().lastRejectReason != nullptr);
+  CHECK(wave2.pipeDiagnostics().lastRejectPipe == 0);
+
+  // NoteLength on a Pi-owned route: the note-off is due on the time line and
+  // Router::tick emits it, not the next incoming message.
+  Router length;
+  const PipeConfig fixed = fxPipe(PipeType::NoteLength, {100});
+  CHECK(length.setPipes(Port::UsbIn, Port::TrsOut2, &fixed, 1));
+  CHECK(length.setRoute(Port::UsbIn, Port::TrsOut2, true));
+  length.setPipeSeed(Port::UsbIn, Port::TrsOut2, 777);
+  CHECK(length.pipeSeed(Port::UsbIn, Port::TrsOut2) == 777);
+  log.clear();
+  length.route(message(Port::UsbIn, 0, 0x90, 60, 100, 1000000), capture);
+  CHECK(log.size() == 1 && log[0].ev.data[0] == 0x90);
+  log.clear();
+  length.tick(1099, capture);
+  CHECK(log.empty());
+  length.tick(1100, capture);
+  CHECK(log.size() == 1);
+  CHECK(log[0].dst == Port::TrsOut2 && log[0].ev.data[0] == 0x80);
+  CHECK(log[0].ev.data[1] == 60);
+
+  // Invalid chains leave the previous config in place.
+  const PipeConfig chance = fxPipe(PipeType::Chance, {0});
+  CHECK(length.setPipes(Port::UsbIn, Port::TrsOut2, &chance, 1));
+  CHECK(!length.setPipes(Port::UsbIn, Port::TrsOut2, nullptr, 9));
+  CHECK(length.pipeCount(Port::UsbIn, Port::TrsOut2) == 1);
+  pass("routing pipes");
 }
 
 // ---------------------------------------------------------------------------
@@ -612,6 +750,7 @@ int main() {
   fanOut();
   channelFilter();
   transpose();
+  routingPipes();
   clockTempoAndTransport();
   clockOffsetUnderJitter();
   clockPhaseScheduling();

@@ -49,6 +49,7 @@ endif()
 
 add_library(mnky_midi STATIC
   router.cpp
+  midifx.cpp
   clock.cpp
   usb.cpp
   learn.cpp
@@ -69,6 +70,11 @@ if(MB_MIDI_STANDALONE)
   target_link_libraries(test_midi PRIVATE mnky_midi)
   target_compile_options(test_midi PRIVATE -Wall -Wextra -Werror)
   add_test(NAME test_midi COMMAND test_midi)
+
+  add_executable(test_midifx test_midifx.cpp)
+  target_link_libraries(test_midifx PRIVATE mnky_midi)
+  target_compile_options(test_midifx PRIVATE -Wall -Wextra -Werror)
+  add_test(NAME test_midifx COMMAND test_midifx)
 
   add_executable(test_learn test_learn.cpp)
   target_link_libraries(test_learn PRIVATE mnky_midi)
