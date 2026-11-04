@@ -13,6 +13,7 @@ export const AudioSection = () => (
     {/* C2 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C2"
+      schRotation={90}
       schSectionName="audio-in"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
@@ -33,6 +34,7 @@ export const AudioSection = () => (
     {/* C3 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C3"
+      schRotation={90}
       schSectionName="audio-in"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
@@ -93,6 +95,7 @@ export const AudioSection = () => (
     {/* C6 560pF - CL10C561JB8NNNC - LCSC C107054 - CC0603JRNPO9BN561 - jclpcb:C0603 */}
     <capacitor
       name="C6"
+      schRotation={90}
       schSectionName="audio-in"
       capacitance="560pF"
       footprint={FP_jclpcb_C0603}
@@ -114,6 +117,7 @@ export const AudioSection = () => (
     {/* C7 560pF - CL10C561JB8NNNC - LCSC C107054 - CC0603JRNPO9BN561 - jclpcb:C0603 */}
     <capacitor
       name="C7"
+      schRotation={90}
       schSectionName="audio-in"
       capacitance="560pF"
       footprint={FP_jclpcb_C0603}
@@ -135,6 +139,7 @@ export const AudioSection = () => (
     {/* C8 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C8"
+      schRotation={90}
       schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
@@ -155,6 +160,7 @@ export const AudioSection = () => (
     {/* C9 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C9"
+      schRotation={90}
       schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
@@ -215,6 +221,7 @@ export const AudioSection = () => (
     {/* C12 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C12"
+      schRotation={90}
       schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
@@ -235,6 +242,7 @@ export const AudioSection = () => (
     {/* C13 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C13"
+      schRotation={90}
       schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
@@ -255,6 +263,7 @@ export const AudioSection = () => (
     {/* R1 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R1"
+      schRotation={90}
       schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -275,6 +284,7 @@ export const AudioSection = () => (
     {/* R2 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R2"
+      schRotation={90}
       schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -295,6 +305,7 @@ export const AudioSection = () => (
     {/* R3 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R3"
+      schRotation={90}
       schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -315,6 +326,7 @@ export const AudioSection = () => (
     {/* R4 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R4"
+      schRotation={90}
       schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -335,6 +347,7 @@ export const AudioSection = () => (
     {/* R5 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R5"
+      schRotation={-90}
       schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -355,6 +368,7 @@ export const AudioSection = () => (
     {/* R6 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R6"
+      schRotation={-90}
       schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -375,6 +389,7 @@ export const AudioSection = () => (
     {/* R7 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R7"
+      schRotation={90}
       schSectionName="audio-in"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
@@ -395,6 +410,7 @@ export const AudioSection = () => (
     {/* R8 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R8"
+      schRotation={90}
       schSectionName="audio-in"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
@@ -415,6 +431,7 @@ export const AudioSection = () => (
     {/* R9 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R9"
+      schRotation={-90}
       schSectionName="audio-in"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
@@ -435,6 +452,7 @@ export const AudioSection = () => (
     {/* R10 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R10"
+      schRotation={-90}
       schSectionName="audio-in"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
@@ -455,6 +473,7 @@ export const AudioSection = () => (
     {/* R11 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R11"
+      schRotation={-90}
       schSectionName="audio-out"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
@@ -475,6 +494,7 @@ export const AudioSection = () => (
     {/* R12 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R12"
+      schRotation={-90}
       schSectionName="audio-out"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
@@ -495,6 +515,7 @@ export const AudioSection = () => (
     {/* R13 33k - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R13"
+      schRotation={90}
       schSectionName="audio-out"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
@@ -516,6 +537,7 @@ export const AudioSection = () => (
     {/* R14 33k - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R14"
+      schRotation={90}
       schSectionName="audio-out"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
@@ -537,6 +559,7 @@ export const AudioSection = () => (
     {/* R15 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R15"
+      schRotation={-90}
       schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -557,6 +580,7 @@ export const AudioSection = () => (
     {/* R16 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R16"
+      schRotation={-90}
       schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -577,6 +601,7 @@ export const AudioSection = () => (
     {/* R17 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R17"
+      schRotation={90}
       schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -597,6 +622,7 @@ export const AudioSection = () => (
     {/* R18 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R18"
+      schRotation={90}
       schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -617,6 +643,7 @@ export const AudioSection = () => (
     {/* R19 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R19"
+      schRotation={-90}
       schSectionName="audio-out"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
@@ -637,6 +664,7 @@ export const AudioSection = () => (
     {/* R20 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R20"
+      schRotation={-90}
       schSectionName="audio-out"
       resistance="1k"
       footprint={FP_jclpcb_R0603}

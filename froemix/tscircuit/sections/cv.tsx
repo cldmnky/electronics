@@ -51,6 +51,7 @@ export const CvSection = () => (
     {/* C16 10nF - CC0603KRX7R9BB104 - LCSC C57112 - 0603B103K500NT - jclpcb:C0603 */}
     <capacitor
       name="C16"
+      schRotation={90}
       schSectionName="cv"
       capacitance="10nF"
       footprint={FP_jclpcb_C0603}
@@ -152,6 +153,7 @@ export const CvSection = () => (
     {/* C21 10nF - CC0603KRX7R9BB104 - LCSC C57112 - 0603B103K500NT - jclpcb:C0603 */}
     <capacitor
       name="C21"
+      schRotation={90}
       schSectionName="cv"
       capacitance="10nF"
       footprint={FP_jclpcb_C0603}
@@ -180,6 +182,7 @@ export const CvSection = () => (
         pole, and limits the CV-out bandwidth to ~16kHz (fine for CV). */}
     <capacitor
       name="C33"
+      schRotation={-90}
       schSectionName="cv"
       capacitance="100pF"
       footprint={FP_jclpcb_C0603}
@@ -197,6 +200,7 @@ export const CvSection = () => (
         same 15.9kHz compensation zero as C33, see that comment. */}
     <capacitor
       name="C34"
+      schRotation={-90}
       schSectionName="cv"
       capacitance="100pF"
       footprint={FP_jclpcb_C0603}
@@ -258,6 +262,7 @@ export const CvSection = () => (
     {/* R21 33K - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R21"
+      schRotation={90}
       schSectionName="sync"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
@@ -319,6 +324,7 @@ export const CvSection = () => (
     {/* R24 49.9k - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
     <resistor
       name="R24"
+      schRotation={90}
       schSectionName="sync"
       resistance="49.9k"
       footprint={FP_jclpcb_R0603}
@@ -359,6 +365,7 @@ export const CvSection = () => (
     {/* R26 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R26"
+      schRotation={-90}
       schSectionName="sync"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -399,6 +406,7 @@ export const CvSection = () => (
     {/* R28 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R28"
+      schRotation={90}
       schSectionName="sync"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -419,6 +427,7 @@ export const CvSection = () => (
     {/* R29 1K - ERJP03F1000V - LCSC C21190 - 0603WAF1001T5E - jclpcb:R0603 */}
     <resistor
       name="R29"
+      schRotation={-90}
       schSectionName="sync"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
@@ -440,6 +449,7 @@ export const CvSection = () => (
     {/* R30 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R30"
+      schRotation={90}
       schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -462,6 +472,7 @@ export const CvSection = () => (
         see the U11 IN1P/OUT1 entry at the bottom of this sheet */}
     <resistor
       name="R31"
+      schRotation={-90}
       schSectionName="cv"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
@@ -483,6 +494,7 @@ export const CvSection = () => (
         fed from the U11D follower output (DESIGN-REVIEW R03) */}
     <resistor
       name="R32"
+      schRotation={-90}
       schSectionName="cv"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
@@ -504,6 +516,7 @@ export const CvSection = () => (
         CV-in summer ratio for 0.10..3.11 V headroom, DESIGN-REVIEW R10 */}
     <resistor
       name="R33"
+      schRotation={90}
       schSectionName="cv"
       resistance="30.1k"
       footprint={FP_jclpcb_R0603}
@@ -547,6 +560,7 @@ export const CvSection = () => (
     {/* R35 49.9K - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
     <resistor
       name="R35"
+      schRotation={90}
       schSectionName="cv"
       resistance="49.9k"
       footprint={FP_jclpcb_R0603}
@@ -567,6 +581,7 @@ export const CvSection = () => (
     {/* R36 49.9K - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
     <resistor
       name="R36"
+      schRotation={90}
       schSectionName="cv"
       resistance="49.9k"
       footprint={FP_jclpcb_R0603}
@@ -587,6 +602,7 @@ export const CvSection = () => (
     {/* R37 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R37"
+      schRotation={-90}
       schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -607,6 +623,7 @@ export const CvSection = () => (
     {/* R38 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R38"
+      schRotation={-90}
       schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -631,6 +648,7 @@ export const CvSection = () => (
         the load pole that the in-loop 1k/cable capacitance creates. */}
     <resistor
       name="R39"
+      schRotation={-90}
       schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -653,6 +671,7 @@ export const CvSection = () => (
         100pF across this resistor is the matching load-pole compensation. */}
     <resistor
       name="R40"
+      schRotation={-90}
       schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -673,6 +692,7 @@ export const CvSection = () => (
     {/* R41 2.2K - 0603WAF2201T5E - LCSC C4190 - jclpcb:R0603 */}
     <resistor
       name="R41"
+      schRotation={-90}
       schSectionName="cv"
       resistance="2.2k"
       footprint={FP_jclpcb_R0603}
@@ -694,6 +714,7 @@ export const CvSection = () => (
         CV-in summer ratio, channel 2 (DESIGN-REVIEW R10) */}
     <resistor
       name="R42"
+      schRotation={90}
       schSectionName="cv"
       resistance="30.1k"
       footprint={FP_jclpcb_R0603}
@@ -737,6 +758,7 @@ export const CvSection = () => (
     {/* R44 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R44"
+      schRotation={90}
       schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
@@ -757,6 +779,7 @@ export const CvSection = () => (
     {/* R45 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R45"
+      schRotation={-90}
       schSectionName="cv"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
@@ -777,6 +800,7 @@ export const CvSection = () => (
     {/* R46 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R46"
+      schRotation={-90}
       schSectionName="cv"
       resistance="1k"
       footprint={FP_jclpcb_R0603}

@@ -61,6 +61,7 @@ import sys
 VDD = 3.3                  # nominal P3V3_D
 VDD_TOL = 0.05             # CA-033: +-5 % for 3.3 V signaling
 R_TOL = 0.01               # UNI-ROYAL F code = +-1 %
+CA033_R_TOL = 0.05         # CA-033 assumes +-5 % resistors
 V_RX_MAX = 1.9             # CA-033 receiver model: LED VF max
 R_RX = 220.0               # CA-033 receiver model: series resistor
 R_RX_TOL = 0.05            # CA-033 resistor tolerance
@@ -190,11 +191,16 @@ def numbers(values):
     vtx_max = VDD * (1 + VDD_TOL)
     legs_min = (r59 + r60) * (1 - R_TOL)
     legs_max = (r59 + r60) * (1 + R_TOL)
+    legs_max_ca033 = (r59 + r60) * (1 + CA033_R_TOL)
     rds_hot = FET_RDS_25 * FET_RDS_HOT_FACTOR
     out["rds_hot"] = rds_hot
     out["i_out_worst"] = max(0.0, (vtx_min - V_RX_MAX) / (legs_max + R_RX * (1 + R_RX_TOL) + rds_hot))
     out["i_out_typ"] = max(0.0, (VDD - 1.65) / (r59 + r60 + R_RX + FET_RDS_25))
-    out["ca033_min"] = (vtx_min - V_RX_MAX) / (43.0 * (1 + R_TOL) + R_RX * (1 + R_RX_TOL))
+    # CA-033's own 43 ohm example, with ITS assumptions (+-5 % resistors), and
+    # ours under the same assumptions, so the two are comparable.
+    out["ca033_example"] = (vtx_min - V_RX_MAX) / (43.0 * (1 + CA033_R_TOL) + R_RX * (1 + CA033_R_TOL))
+    out["out_ca033_assumptions"] = (vtx_min - V_RX_MAX) / (legs_max_ca033 + R_RX * (1 + CA033_R_TOL))
+    out["pc900v_worst"] = 4.0e-3   # CA-033: "worst-case forward current requirement of 4 mA"
 
     # the same transmitter into THIS board's receiver (TLP2361 + R47 220R 1%)
     r47 = values["R47"]
@@ -254,10 +260,13 @@ def evaluate(values, out):
           f"OUT worst-case loop {out['i_out_worst'] * 1e3:.2f} mA is below the 4.2 mA "
           "design floor")
     check(None,
-          f"OUT worst-case loop {out['i_out_worst'] * 1e3:.2f} mA vs the CA-033 43 ohm "
-          f"reference {out['ca033_min'] * 1e3:.2f} mA: "
-          f"{(out['ca033_min'] - out['i_out_worst']) * 1e3:.2f} mA short (55 R legs, "
-          "fault-driven 22 R tip) - documented limit, not a violation")
+          f"OUT worst-case loop {out['i_out_worst'] * 1e3:.2f} mA (1 % parts) / "
+          f"{out['out_ca033_assumptions'] * 1e3:.2f} mA (CA-033's own +-5 % resistor "
+          f"assumption). CA-033 sets no minimum loop current: its recommended 33/10 R "
+          f"values would give {out['ca033_example'] * 1e3:.2f} mA under those "
+          f"assumptions, so this design is {(out['ca033_example'] - out['out_ca033_assumptions']) * 1e3:.2f} mA "
+          f"below that example and {(out['out_ca033_assumptions'] - out['pc900v_worst']) * 1e3:.2f} mA above "
+          "the PC900V 4 mA worst-case figure - documented limitation, not a clean margin")
 
     # this board's own receiver on the same loop
     check(out["ifhl_margin"] >= 2.0,
@@ -356,8 +365,8 @@ def main() -> int:
     if not args.quiet:
         print("MIDI OUT - Type A transmitter, AO3401A high side, 3.3 V +-5 %")
         print(f"  loop into a CA-033 receiver : {out['i_out_worst'] * 1e3:6.2f} mA worst, "
-              f"{out['i_out_typ'] * 1e3:6.2f} mA typical (CA-033 43 ohm reference "
-              f"{out['ca033_min'] * 1e3:.2f} mA)")
+              f"{out['i_out_typ'] * 1e3:6.2f} mA typical; CA-033 33/10 ohm example "
+              f"{out['ca033_example'] * 1e3:.2f} mA, PC900V worst case 4.00 mA")
         print(f"  RDS(on) at 125 C (bound)    : {out['rds_hot'] * 1e3:6.1f} mOhm")
         print("MIDI IN - TLP2361 receiver, R47 220 R")
         print(f"  IF from this board          : {out['i_in_worst'] * 1e3:6.2f} mA worst, "

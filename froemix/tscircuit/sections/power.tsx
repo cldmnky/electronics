@@ -99,6 +99,7 @@ export const PowerSection = () => (
     {/* C26 10uF - CL31A106KBHNNNE - LCSC C13585 - CL31A106KBHNNNE - jclpcb:C1206 */}
     <capacitor
       name="C26"
+      schRotation={-90}
       schSectionName="entry"
       capacitance="10uF"
       footprint={FP_jclpcb_C1206}
@@ -299,6 +300,7 @@ export const PowerSection = () => (
     {/* C32 1uF - EXTRA_C32 - LCSC C559769 - CC0603KRX7R9BB105 - U16 input bypass across VIN_P (module pin 1) and VIN_N (module pin 2), YLPTEC B_S-2WR3 datasheet Table 1: 24 VDC input -> Cin 1uF/50V. Sits between the two input leads, on the far side of the lead row from the module body. C26 sits before L1/L2, so it is not the local post-inductor input cap (DESIGN-REVIEW R13) - jclpcb:C0603 */}
     <capacitor
       name="C32"
+      schRotation={-90}
       schSectionName="p5v"
       capacitance="1uF"
       footprint={FP_jclpcb_C0603}

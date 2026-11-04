@@ -8,7 +8,12 @@ was not reachable, and what remains a physical measurement.
 
 Nothing here changes the mechanical contract: no pad, pin number, net or
 placement moved. The built circuit still has **102 nets and 429 pads**, all
-connector and control centres are unchanged, and no part is rotated.
+connector and control centres are unchanged, and no PCB part is rotated.
+
+**No hardware was measured for this document.** Every current and power below is
+arithmetic from a data sheet or a circuit value; every physical item that needs
+a bench (MCU levels, loop current, receiver threshold, derating in a closed
+rack) is listed as open in §7. Nothing here is a bench result.
 
 ## 1. What changed, and what did not
 
@@ -47,6 +52,7 @@ Two element-level facts, both verified in the installed core:
 | AOS **AO3401A** Rev 3.1 (December 2023), on disk | RDS(on) ≤ 85 mΩ at VGS = −2.5 V, ≤ 60 mΩ at −4.5 V, 50 mΩ at −10 V and 75 mΩ at 125 °C; VGS(th) −0.5…−1.3 V; VGS ±12 V; ID −4.0 A (25 °C) / −3.2 A (70 °C); IDSS −1 µA (25 °C) / −5 µA (125 °C) at VGS = 0; Qg(4.5 V) 7 nC; Ciss 645 pF; SOT-23 pinout G/S/D |
 | **Uniroyal** thick-film chip resistors, Feb 12 2019 V.3, on disk | `25121WF330JT4E` = 2512 body, 1 W (codes 5–6 "1W"), F = ±1 %, 330J = 33.0 Ω; 1 W is the rating up to 70 °C ambient, derated above it |
 | **MIDI CA-033** (MIDI 1.0 Electrical Specification Update, 2014), on disk | 3.3 V ±5 % signalling; RA 33 Ω / RC 10 Ω recommended; the receiver is an LED + 220 Ω with VF ≤ 1.9 V and "must require less than 5 mA to turn on"; the short-circuit guidance that produced the 0.5 W RA requirement |
+| LCSC product page `https://www.lcsc.com/product-detail/C22828.html` (HTTP 200, 410 103 bytes, SHA-256 `25e436cafe13d129da78bb53350b71c56622679d14d6eaed922fc37b3a4db61c`) and the JLCPCB parts API answer for `C22828` (7 934 bytes, SHA-256 `214e1ebe104c1c591deb3d9809f838e3590e6e2fc39c0afd5b88890232ea2219`) | the **180 Ω** gate resistor is `C22828` = `0603WAF1800T5E`, UNI-ROYAL, 0603, "100mW 180Ω 75V Thick Film Resistor ±1%", 2 232 417 in stock at the time of the query |
 | LCSC part pages (fetched, quoted in the BOM) | that `C22828` = 0603WAF1800T5E (180 Ω 1 %), `C4190` = 0603WAF2201T5E (2.2 kΩ), `C53728` = 25121WF330JT4E, `C118189` = 25121WF220JT4E, `C15127` = AO3401A, `C107626` = TLP2361(TPL,E — no part number in this document is a guess |
 
 **Not verified — stated as an assumption.** The **STM32H750** data sheet could
@@ -87,13 +93,20 @@ tolerance ±5 % (CA-033), resistors ±1 %, RDS(on) at 125 °C = 85 mΩ × 1.5 =
 
 Two consequences worth stating plainly:
 
-- **4.31 mA is 0.19 mA below what CA-033's recommended 33 Ω/10 Ω values
-  produce.** The 22 Ω tip resistor is a fault-driven choice (§4) and the legs
-  are therefore 55 Ω, not 43 Ω. A receiver that strictly needs more than
-  4.31 mA is out of contract for this board, and CA-033's own "must turn on below
-  5 mA" limit leaves this transmitter 0.7 mA short of the worst case it allows.
-  This is a **documented limitation**, not a fault; recovering it needs a
-  different fault strategy on the tip leg.
+- **4.31 mA against CA-033's own example, read correctly.** CA-033 states a
+  5 mA current loop and requires the receiver to turn on with **less than
+  5 mA**; it sets **no minimum transmitter current**. Its recommended 3.3 V
+  values (RA 33 Ω source, RC 10 Ω sink) would give **4.47 mA** worst case under
+  its own ±5 % resistor assumption — that is an example computed from those
+  values, not a normative 4.47/4.50 mA floor. Under the same assumptions this
+  board's 55 Ω legs give **4.28 mA** (4.31 mA with its 1 % parts), i.e.
+  **0.19 mA below that example** and **0.28 mA above the 4 mA worst-case
+  current** CA-033 quotes for the PC900V. The 22 Ω tip resistor is the
+  fault-driven choice (§4), so the legs are 55 Ω, not 43 Ω. Consequence: a
+  receiver whose turn-on threshold sits above about 4.3 mA at 3.3 V can be
+  marginal with this transmitter. That is a **documented limitation of the
+  transmitter, not a clean margin and not a measured result**; recovering it
+  needs a different fault strategy on the tip leg.
 - **VGS(on) = −2.528 V** is just inside the −2.5 V RDS(on) spec point, so the
   85 mΩ figure applies. If the MCU's VOL were worse than 0.4 V the FET would be
   less enhanced — the assumption is what protects this number, which is why it
@@ -140,56 +153,84 @@ output, so loop current off (UART idle) gives VO high, and a start bit pulls VO
 low. VOH is ≥ 3.2 V at −20 µA (the MCU input draws microamps), VOL is ≤ 0.4 V
 into the 3.2 mA rating, and R48's 1.5 mA flows only when VO is low.
 
-## 6. Schematic: what was changed and what it measures
+## 6. Schematic: what was changed, and the before/after numbers
 
-The rendered schematic is produced by the installed core's auto-layout; there is
-no supported way to place a component at an exact `schX`/`schY` inside
-`<schematicsheet>` on this version (`_getSchematicLayoutMode` falls back to
-`match-adapt`, and a section's members are packed again inside the section). So
-the changes stay inside what the installed elements support:
+The rendered schematic comes from the installed core's auto-layout; on this
+version there is no supported way to pin a component to an exact `schX`/`schY`
+inside `<schematicsheet>` (`_getSchematicLayoutMode` falls back to
+`match-adapt`, and a section's members are packed again inside the section). All
+changes therefore use elements the installed core supports, and every number
+below was measured twice with the **same** tool on **two** trees: the frozen
+baseline `e0606da` (read-only worktree, built the same way) and this tree.
 
-1. **Functional grouping** via `schSectionName` on every component, two groups
-   per sheet (`audio-in`/`audio-out`, `cv`/`sync`, `daisy`/`headers`,
-   `entry`/`p5v`, `midi-in`/`midi-out`). The core lays each group out and then
-   arranges the groups, which is what separates the receiver from the
-   transmitter on the MIDI sheet and audio-in from audio-out.
-2. **Sheet notes**: 6…11 `<schematictext>` lines per sheet covering rails,
-   direction, values and part numbers, decoupling and the interface warnings
-   (`M_ADC` rule, J1 shunt map, DAC buffer, fault ratings). They are placed in
-   the free band at the top of each A4 frame, `y` 11.1 down in 0.45 steps, and
-   `tools/check_schematic.py` proves they do not touch a component, a net label
-   or each other.
-3. **`<schematicsection>` titles were tried and removed**: on a sheet with more
-   than two groups the section bounds overlap, so the titles were drawn on top
-   of each other and over the parts. The measured evidence is in the review
-   notes; `schSectionName` without the title element keeps the grouping and
-   loses the collision.
+1. **Component orientation.** `tsci check schematic-placement` flags every
+   two-pin part whose power-connected pin does not face up and prints the exact
+   `deltaSchRotation`. Applying those deltas as the supported `schRotation` prop
+   (24 on the CV sheet, 28 on Audio, 2 on Power) removes **54 of 54** such
+   findings. This is a layout fix in the schematic, not a PCB change: no pad,
+   no net and no placement moves.
+2. **Functional grouping.** `schSectionName` groups the sheets that have two
+   natural halves (audio in/out, CV/sync, 5 V entry/converter, MIDI in/out). The
+   core lays each group out and then arranges the groups, which is what
+   separates the MIDI receiver from the transmitter. The Root sheet keeps a
+   single group on purpose: two groups there **added three** label collisions
+   (18 → 21), so the grouping was removed there and the Root sheet matches the
+   baseline again.
+3. **Sheet notes.** 6…10 `<schematictext>` lines per sheet (rails, direction,
+   values and part numbers, decoupling, interface warnings), placed in the free
+   band at the top of the A4 frame.
+4. **`<schematicsection>` titles were tried and removed.** With more than two
+   groups the section bounds overlap, so the titles were drawn on top of each
+   other and over the parts. `schSectionName` without the title element keeps
+   the grouping and loses the collision.
 
-Measured with `tools/check_schematic.py` on the built circuit (net label to net
-label, and net label over a pin-name text, using the core's own text metric):
+### 6.1 Identical checks, baseline `e0606da` → this tree
 
-| Sheet | components | net labels | notes | label/label | label/pin-name |
-| --- | --- | --- | --- | --- | --- |
-| main | 18 | 67 | 8 | 21 | 0 |
-| midi | 11 | 7 | 11 | 0 | 0 |
-| audio | 34 | 16 | 7 | 0 | 0 |
-| cv | 42 | 35 | 7 | 1 | 0 |
-| power | 13 | 18 | 6 | 0 | 0 |
+`tsci check schematic-placement`, same tool, same input (`dist/index/circuit.json`
+from each tree):
 
-Total label/label overlaps: **22**, all inside the packed Daisy/header cluster on
-the Root sheet. An independent estimate from the rendered SVG (every `<text>`
-box, same 0.55 × font-size width model, run on the committed pre-change snapshot
-and on the new export) gives **309 → 296** overlapping text pairs
-(Root 178 → 179, MIDI 21 → 13, Audio 47 → 43, CV 58 → 56, Power 5 → 5). That is a
-real but modest improvement: the notes make the sheets self-describing, the
-grouping separates the functional blocks, and the remaining collisions are the
-auto-layout packing long pin names against net labels.
+| Finding | `e0606da` | this tree |
+| --- | --- | --- |
+| `TwoPinComponentShouldBeVertical` | **54** | **0** |
+| `ComponentNetLabelCollision` groups | 4 | 3 |
+| `SchematicTextCollision` | 3 | 1 |
+| `DiodeResistorNotAligned` | 3 | 4 |
+
+`tools/check_schematic.py`, same tool, same input:
+
+| Sheet | label/label before | label/label after | notes added |
+| --- | --- | --- | --- |
+| main | 18 | 18 | 8 |
+| midi | 0 | 0 | 10 |
+| audio | 0 | 0 | 7 |
+| cv | 1 | 1 | 7 |
+| power | 0 | 0 | 6 |
+| **total** | **19** | **19** | 38 |
+
+Rendered SVG, same estimator on both exports (every `<text>` box, 0.55 ×
+font-size width model; the baseline export and this tree's export were produced
+by the same command):
+
+| Sheet | overlapping text pairs before | after |
+| --- | --- | --- |
+| Root | 178 | 178 |
+| MIDI | 21 | 12 |
+| Audio | 47 | 34 |
+| CV | 58 | 40 |
+| Power | 5 | 5 |
+| **total** | **309** | **269 (−40, −12.9 %)** |
+
+So: the render improves by 40 overlapping text pairs, the placement checker
+loses all 54 orientation findings, and the label/label count is **unchanged, not
+improved**. Nineteen label/label collisions remain, 18 of them in the packed
+Daisy/header cluster on the Root sheet. **This schematic is not a clean
+production service drawing and is not claimed to be one**; what it is, is a
+measured improvement over the baseline with the remaining defects counted.
 
 **What cannot be measured here:** pin names drawn *inside* a symbol box are
 rendered by the schematic-symbol renderer and are not circuit JSON, so a
 programmatic "label over pin name" count only covers port labels. Those
-collisions remain a human/visual check — the honest remaining diagnostic, not a
-claim of a clean sheet.
+collisions stay a human/visual check.
 
 ## 7. Open items (physical or pending)
 
@@ -208,11 +249,13 @@ claim of a clean sheet.
 5. **U15 is pad-only in 3D** (the C37658 EasyEDA model belonged to the old
    part, and no verified model for C107626 exists). Same policy as the other
    models without verified offsets (AGENTS.md §6).
-6. **Schematic label collisions** (22 label/label, plus the pin-name ones that
-   cannot be measured) stay as the auto-layout produces them. The next real
-   improvement is chip splitting for the Daisy and the TL074s with
-   `<schematicbox>`, and/or per-sheet `sheetWidth`/`sheetHeight` if upstream
-   stops warning about non-default sizes.
+6. **Schematic label collisions are reduced, not closed.** 19 label/label
+   collisions remain (18 on the Root sheet), and the pin-name collisions inside
+   the symbol boxes cannot be counted at all (§6.1). The drawing is **not**
+   production-ready as a service schematic. The next real improvements are chip
+   splitting for the Daisy and the TL074s with `<schematicbox>` (one box per
+   unit, so a 39-pin box stops sharing a row with the headers), and per-sheet
+   `sheetWidth`/`sheetHeight` if upstream stops warning about non-default sizes.
 
 ## 8. Reproduce
 
@@ -228,6 +271,17 @@ python3 ../tools/check_footprints.py             # 429 pads, unchanged
 python3 ../tools/check_netlist.py --kicad-cli /path/to/kicad-cli   # 102 nets
 KICAD_CLI=/path/to/kicad-cli python3 ../tools/test_kicad_cli.py    # resolver tests
 bunx tsci export index.circuit.tsx -f schematic-svg -o /tmp/froemix-sch.svg
+```
+
+To reproduce the before/after numbers of §6.1, build the frozen baseline in a
+throwaway worktree and run the same two tools on it:
+
+```bash
+git worktree add --detach /tmp/froemix-baseline e0606da
+cd /tmp/froemix-baseline/froemix/tscircuit && bun install && bunx tsci build
+bunx tsci export index.circuit.tsx -f schematic-svg -o /tmp/base.svg
+bunx tsci check schematic-placement dist/index/circuit.json
+python3 <this tree>/froemix/tools/check_schematic.py --circuit dist/index/circuit.json
 ```
 
 `check_elec.py` and `check_schematic.py` are not in `scripts/gate.sh` yet (that

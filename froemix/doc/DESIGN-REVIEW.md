@@ -28,7 +28,7 @@ closed by a schematic change on this revision.
 | Item | Status | Where | One-line reason + the number that changed |
 | --- | --- | --- | --- |
 | R01 | **Fixed** | `sections/midi.tsx` (`REMOVED_REFS`: D2) | D2 was forward-parallel with the U15 LED; removed, D1 stays. MIDI IN current is now **5.34 mA worst case** through the normal 220 Ω path instead of a 0.7 V shunt (recomputed for the TLP2361, third round). |
-| R02 | **Fixed (third round)** | `sections/midi.tsx`, `lib/pins.ts`, `lib/footprints.tsx` | MIDI OUT is a non-inverting **Type A** transmitter, and the driver is now an **AO3401A P-channel MOSFET** (`C15127`, pins 1/2/3 = gate/source/drain) instead of the MMBT3906 PNP: the PNP's 3.437 mA legacy corner ran its 200 mA / 0.35 W SOT-23 case close to the limit on a grounded ring, and a FET switch has no base-current error. Gate network **R58 180 Ω** (`C22828`) + **R61 2.2 kΩ** (`C4190`): peak **19.44 mA** (inside the assumed 20 mA per-pin maximum), VGS(on) **−2.528 V** worst case, |VGS(off)| **0.370 V** (below the 0.5 V minimum threshold, so the FET is off at idle, reset and high-Z). The 1 W 2512 parts swapped: **R59 33 Ω** (`C53728`) in the MOSFET/ring path and **R60 22 Ω** (`C118189`) as the permanently grounded tip sink, which has no transistor in it and is set by the fault alone (0.551 W of a 1 W part, where 10 Ω would be 1.20 W). Ring fault **106 mA**, 0.368 W in R59 and 1.4 mW in the FET. Loop current **4.31 mA** worst case into a CA-033 receiver (55 Ω legs, 1.9 V, +1 % parts, RDS(on) 0.13 Ω) — 0.19 mA below what CA-033's own 43 Ω values give, see `doc/ELECTRICAL-VERIFICATION.md`. |
+| R02 | **Fixed (third round)** | `sections/midi.tsx`, `lib/pins.ts`, `lib/footprints.tsx` | MIDI OUT is a non-inverting **Type A** transmitter, and the driver is now an **AO3401A P-channel MOSFET** (`C15127`, pins 1/2/3 = gate/source/drain) instead of the MMBT3906 PNP: the PNP's 3.437 mA legacy corner ran its 200 mA / 0.35 W SOT-23 case close to the limit on a grounded ring, and a FET switch has no base-current error. Gate network **R58 180 Ω** (`C22828`) + **R61 2.2 kΩ** (`C4190`): peak **19.44 mA** (inside the assumed 20 mA per-pin maximum), VGS(on) **−2.528 V** worst case, |VGS(off)| **0.370 V** (below the 0.5 V minimum threshold, so the FET is off at idle, reset and high-Z). The 1 W 2512 parts swapped: **R59 33 Ω** (`C53728`) in the MOSFET/ring path and **R60 22 Ω** (`C118189`) as the permanently grounded tip sink, which has no transistor in it and is set by the fault alone (0.551 W of a 1 W part, where 10 Ω would be 1.20 W). Ring fault **106 mA**, 0.368 W in R59 and 1.4 mW in the FET. Loop current **4.31 mA** worst case into a CA-033 receiver (55 Ω legs, 1.9 V, +1 % parts, RDS(on) 0.13 Ω); CA-033's own 33/10 Ω example gives 4.47 mA under its ±5 % assumptions and CA-033 sets no minimum, see `doc/ELECTRICAL-VERIFICATION.md`. |
 | R03 | **Fixed** | `sections/cv.tsx`, `INTENTIONAL_PIN_MOVES` (U11.3/12, R31.1, R32.1) | The two spare TL074 channels are unity-gain followers on the DAC outputs, so the unbuffered DAC's 13 kΩ only drives an opamp input. Simulation: 1.5121 V/V with the 13 kΩ source (was 1.085 without the follower). **Firmware must disable the DAC buffer** (`buff_state = DISABLED`). |
 | R04 | **Fixed** | `sections/cv.tsx` (D5, C2128) | 1N4148WS across Q1 base-emitter, cathode on the base: a −10 V patch now clamps at about −0.6 V instead of driving −9.09 V into a 6 V-rated junction. |
 | R05 | **Fixed** | `doc/ASSEMBLY.md` (rewritten) | J2's key is documented on the lower long side (silk y ≈ −59.25…−60.56, same edge as the lower M3 holes), the Daisy USB is documented at the module's **−X** end (board x ≈ −25…−26.5, y ≈ 36.5…44.5), J1 is documented as a Type A/B jumper block needing **two shunts** (not board parts) with the corrected map — **Type A = shunts 3–5 and 4–6** (ring → opto anode, tip → opto cathode), **Type B = 4–2 and 3–1**, and a 2.54 mm shunt only bridges the 2.54 mm pairs (4–5 is a 3.59 mm diagonal, never a valid pair) — and the sequence is power-first with a dummy load on P5V before the module is fitted. |
@@ -92,7 +92,8 @@ the fixes rather than in the original design. What changed after it:
   datasheet limits (`tools/test_elec.py` breaks the circuit on purpose to prove
   the check fails). `tools/check_schematic.py` asserts that every sheet's notes
   stay clear of the components, the net labels and each other, and reports the
-  auto-layout's own label collisions instead of hiding them.
+  auto-layout's own label collisions instead of hiding them; its output is a
+  counted diagnostic, not a clean bill of health.
 
 ### Third review round — MIDI electrical (part and value level)
 
@@ -153,11 +154,25 @@ with 429 pads**.
 **assumption** (20 mA, VOL 0.4 V, VOH ≥ VDD − 0.4 V) because st.com could not be
 reached from this host and no mirror with the primary text was found, so the
 gate drive is bounded rather than guaranteed; the loop current is **4.31 mA**
-against CA-033's 4.50 mA reference, because the 22 Ω tip is fault-driven; this
-board's own loop reaches **6.54 mA typical** against the TLP2361's 6 mA
-recommended on-current (inside the 10 mA absolute maximum); and a non-compliant
-5 V source using 33/10 Ω legs would drive **14.8 mA** into the receiver, above
-its absolute maximum — that corner waits for the physical gate.
+(4.28 mA under CA-033's own ±5 % assumptions) where CA-033's 33/10 Ω example
+gives 4.47 mA and its PC900V worst case is 4 mA — CA-033 sets no minimum, but a
+receiver above about 4.3 mA can be marginal; this board's own loop reaches
+**6.54 mA typical** against the TLP2361's 6 mA recommended on-current (inside the
+10 mA absolute maximum); and a non-compliant 5 V source using 33/10 Ω legs would
+drive **14.8 mA** into the receiver, above its absolute maximum — that corner
+waits for the physical gate. No hardware was measured for any of these numbers.
+
+**Schematic, measured against the frozen baseline `e0606da`** (identical tools on
+both trees): the placement checker's 54 "two-pin part should be vertical"
+findings are **all resolved** by applying the `schRotation` deltas it prints
+(24 on CV, 28 on Audio, 2 on Power); `ComponentNetLabelCollision` groups go
+**4 → 3**, `SchematicTextCollision` **3 → 1**; the rendered SVG loses **40 of
+309** overlapping text pairs (**−12.9 %**; MIDI 21 → 12, Audio 47 → 34,
+CV 58 → 40) while the sheets gain 38 note lines. The label/label count from the
+circuit JSON is **unchanged at 19**, 18 of them in the Root sheet's Daisy/header
+cluster, and pin names inside symbol boxes cannot be counted at all. **The
+drawing is improved and still not production-ready** — it is not claimed as a
+clean service schematic.
 
 This is a review, not a redesign: no circuit, placement, BOM, or fabrication
 output was changed. P1 means resolve before ordering a patchable module; P2
