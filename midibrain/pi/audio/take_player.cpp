@@ -5,39 +5,16 @@
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace mnky::audio {
 namespace {
 
-constexpr std::uint16_t kFormatPcm = 1;
-constexpr std::uint16_t kFormatFloat = 3;
-constexpr std::uint32_t kRequiredSampleRate = 48000;
 constexpr int kReadChunkFrames = 256;
 // Shortest loop that still gets a seam ramp: below this a wrap is not audible.
 constexpr std::uint64_t kMinLoopFrames = 4;
 
-std::uint16_t le16(const unsigned char* bytes) {
-    return static_cast<std::uint16_t>(bytes[0]) |
-           static_cast<std::uint16_t>(static_cast<std::uint16_t>(bytes[1]) << 8);
-}
-
-std::uint32_t le32(const unsigned char* bytes) {
-    return static_cast<std::uint32_t>(bytes[0]) |
-           (static_cast<std::uint32_t>(bytes[1]) << 8) |
-           (static_cast<std::uint32_t>(bytes[2]) << 16) |
-           (static_cast<std::uint32_t>(bytes[3]) << 24);
-}
-
-float leFloat(const unsigned char* bytes) {
-    const std::uint32_t bits = le32(bytes);
-    float value = 0.0f;
-    std::memcpy(&value, &bits, sizeof value);
-    return value;
-}
-
-std::string quoted(const std::string& path) {
-    return "\"" + path + "\"";
-}
+float dbToLinear(float db) { return std::pow(10.0f, db / 20.0f); }
 
 }  // namespace
 
@@ -70,114 +47,20 @@ void TakePlayer::refuse(const std::string& message, std::string* error) {
     std::fprintf(stderr, "mnky audio: take refused: %s\n", message.c_str());
 }
 
+void TakePlayer::note(const std::string& message) {
+    // A clamp or a skipped region is not a failure: the rest of the edit still
+    // plays, but the reason must be visible rather than silently swallowed.
+    std::fprintf(stderr, "mnky audio: take edit: %s\n", message.c_str());
+}
+
 bool TakePlayer::inspectWav(const std::string& path, WavInfo& info,
                             std::string* error) {
-    std::FILE* file = std::fopen(path.c_str(), "rb");
-    if (file == nullptr) {
-        refuse("cannot open " + quoted(path), error);
-        return false;
-    }
-    if (std::fseek(file, 0, SEEK_END) != 0) {
-        std::fclose(file);
-        refuse("cannot measure " + quoted(path), error);
-        return false;
-    }
-    const long fileSize = std::ftell(file);
-    if (fileSize < 12 || std::fseek(file, 0, SEEK_SET) != 0) {
-        std::fclose(file);
-        refuse(quoted(path) + " is not a readable RIFF/WAVE file", error);
-        return false;
-    }
-
-    unsigned char header[12] = {};
-    if (std::fread(header, 1, sizeof header, file) != sizeof header ||
-        std::memcmp(header, "RIFF", 4) != 0 ||
-        std::memcmp(header + 8, "WAVE", 4) != 0) {
-        std::fclose(file);
-        refuse(quoted(path) + " is not a RIFF/WAVE file", error);
-        return false;
-    }
-
-    WavInfo found;
-    bool haveFmt = false;
-    bool haveData = false;
-    std::uint64_t offset = 12;
-    const std::uint64_t total = static_cast<std::uint64_t>(fileSize);
-    while (offset + 8 <= total) {
-        unsigned char chunk[8] = {};
-        if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0 ||
-            std::fread(chunk, 1, sizeof chunk, file) != sizeof chunk) {
-            break;
-        }
-        const std::uint32_t chunkBytes = le32(chunk + 4);
-        const std::uint64_t payload = offset + 8;
-        if (payload > total) break;
-        const std::uint64_t available = total - payload;
-        const std::uint64_t present =
-            std::min<std::uint64_t>(chunkBytes, available);
-
-        if (std::memcmp(chunk, "fmt ", 4) == 0) {
-            if (present < 16) {
-                std::fclose(file);
-                refuse(quoted(path) + " has a short fmt chunk", error);
-                return false;
-            }
-            unsigned char fmt[16] = {};
-            if (std::fread(fmt, 1, sizeof fmt, file) != sizeof fmt) {
-                std::fclose(file);
-                refuse(quoted(path) + " has an unreadable fmt chunk", error);
-                return false;
-            }
-            found.format = le16(fmt);
-            found.channels = le16(fmt + 2);
-            found.sampleRate = le32(fmt + 4);
-            found.bits = le16(fmt + 14);
-            haveFmt = true;
-        } else if (std::memcmp(chunk, "data", 4) == 0) {
-            found.dataOffset = payload;
-            found.dataBytes = present;
-            haveData = true;
-        }
-        offset = payload + present + (chunkBytes & 1u);
-    }
-    std::fclose(file);
-
-    if (!haveFmt || !haveData) {
-        refuse(quoted(path) + " is missing a fmt or data chunk", error);
-        return false;
-    }
-    if (found.sampleRate != kRequiredSampleRate) {
-        refuse(quoted(path) + " is " + std::to_string(found.sampleRate) +
-                   " Hz; take playback requires 48000 Hz and never resamples",
-               error);
-        return false;
-    }
-    if (found.channels < 1 || found.channels > 2) {
-        refuse(quoted(path) + " has " + std::to_string(found.channels) +
-                   " channels; take playback accepts mono or stereo",
-               error);
-        return false;
-    }
-    const bool float32 =
-        found.format == kFormatFloat && found.bits == 32;
-    const bool pcm16 = found.format == kFormatPcm && found.bits == 16;
-    if (!float32 && !pcm16) {
-        refuse(quoted(path) + " uses WAV format " +
-                   std::to_string(found.format) + "/" +
-                   std::to_string(found.bits) +
-                   " bit; take playback accepts 32-bit float or 16-bit PCM",
-               error);
-        return false;
-    }
-    const std::uint64_t frameBytes =
-        static_cast<std::uint64_t>(found.channels) * (found.bits / 8u);
-    if (frameBytes == 0 || found.dataBytes < frameBytes) {
-        refuse(quoted(path) + " has no audio frames", error);
-        return false;
-    }
-    info = found;
-    return true;
+    std::string reason;
+    if (inspectTakeWav(path, info, reason)) return true;
+    refuse(reason, error);
+    return false;
 }
+
 
 bool TakePlayer::startLayer(int track, Layer& layer, const std::string& path,
                             const WavInfo& info, std::uint64_t startFrame,
@@ -186,26 +69,26 @@ bool TakePlayer::startLayer(int track, Layer& layer, const std::string& path,
         static_cast<std::uint64_t>(info.channels) * (info.bits / 8u);
     const std::uint64_t totalFrames = info.dataBytes / frameBytes;
     if (totalFrames == 0) {
-        refuse(quoted(path) + " has no audio frames", error);
+        refuse(wav_detail::quoted(path) + " has no audio frames", error);
         return false;
     }
     const std::uint64_t lengthFrames =
         startFrame < totalFrames ? totalFrames - startFrame : 0;
     const LoopWindow window =
-        loopWindowFor(track, mTracks[track], lengthFrames);
+        loopWindowFor(track, mTracks[track], lengthFrames, startFrame);
     const std::uint64_t streamStart =
         window.looping ? window.startFrames : 0;
 
     std::FILE* file = std::fopen(path.c_str(), "rb");
     if (file == nullptr) {
-        refuse("cannot open " + quoted(path), error);
+        refuse("cannot open " + wav_detail::quoted(path), error);
         return false;
     }
     layer.path = path;
     layer.file = file;
     layer.channels = info.channels;
     layer.bytesPerSample = info.bits / 8u;
-    layer.floatSamples = info.format == kFormatFloat;
+    layer.floatSamples = info.floatSamples();
     layer.lengthFrames = lengthFrames;
     layer.remainingFrames = lengthFrames - streamStart;
     layer.loopStartFrames = window.startFrames;
@@ -225,7 +108,7 @@ bool TakePlayer::startLayer(int track, Layer& layer, const std::string& path,
         if (byteOffset > static_cast<std::uint64_t>(LONG_MAX) ||
             std::fseek(file, static_cast<long>(byteOffset), SEEK_SET) != 0) {
             stopLayer(layer);
-            refuse("cannot seek " + quoted(path), error);
+            refuse("cannot seek " + wav_detail::quoted(path), error);
             return false;
         }
     }
@@ -259,7 +142,8 @@ bool TakePlayer::startLayer(int track, Layer& layer, const std::string& path,
 }
 
 TakePlayer::LoopWindow TakePlayer::loopWindowFor(int track, const Track& slot,
-                                                 std::uint64_t lengthFrames) const {
+                                                 std::uint64_t lengthFrames,
+                                                 std::uint64_t originFrame) const {
     LoopWindow window;  // linear by default
     if (!slot.loop.enabled) return window;
     if (!(slot.loop.endBeats > slot.loop.startBeats)) {
@@ -282,7 +166,7 @@ TakePlayer::LoopWindow TakePlayer::loopWindowFor(int track, const Track& slot,
         if (frames > limit) frames = limit;
         return static_cast<std::int64_t>(frames);
     };
-    const std::int64_t origin = static_cast<std::int64_t>(slot.startFrame);
+    const std::int64_t origin = static_cast<std::int64_t>(originFrame);
     const std::int64_t lastFrame = static_cast<std::int64_t>(lengthFrames);
     const std::int64_t start = std::clamp<std::int64_t>(
         beatsToFrames(slot.loop.startBeats) - origin, 0, lastFrame);
@@ -391,6 +275,12 @@ void TakePlayer::clearTrackLocked(int track) {
     if (track < 0 || track >= kMaxTracks) return;
     Track& slot = mTracks[track];
     stopTrackLocked(track);
+    // Clearing a track drops its whole take voice: the stack *and* the region
+    // edit. A caller that wants the unedited stack back uses clearRegions().
+    slot.regionMode.store(false, std::memory_order_release);
+    slot.regionEdits.clear();
+    slot.edit.clear();
+    slot.editFrames = 0;
     slot.pathCount = 0;
     for (std::string& path : slot.paths) path.clear();
 }
@@ -399,10 +289,14 @@ void TakePlayer::stopTrackLocked(int track) {
     Track& slot = mTracks[track];
     slot.count.store(0, std::memory_order_release);
     for (Layer& layer : slot.layers) stopLayer(layer);
+    stopEditStream(slot.editStream);
 }
 
 bool TakePlayer::startTrackLocked(int track, std::string* error) {
     Track& slot = mTracks[track];
+    if (slot.regionMode.load(std::memory_order_acquire)) {
+        return startEditLocked(track, error);
+    }
     if (slot.pathCount == 0) {
         slot.count.store(0, std::memory_order_release);
         return true;
@@ -474,6 +368,243 @@ std::string TakePlayer::takePath(int track, int layer) const {
     return slot.layers[layer].path;
 }
 
+int TakePlayer::regionCount(int track) const {
+    if (track < 0 || track >= kMaxTracks) return 0;
+    const Track& slot = mTracks[track];
+    if (!slot.regionMode.load(std::memory_order_acquire)) return 0;
+    return static_cast<int>(slot.regionEdits.size());
+}
+
+std::uint64_t TakePlayer::editedFrames(int track) const {
+    if (track < 0 || track >= kMaxTracks) return 0;
+    const Track& slot = mTracks[track];
+    if (!slot.regionMode.load(std::memory_order_acquire)) return 0;
+    return slot.editFrames;
+}
+
+float TakePlayer::Region::gainAt(std::uint64_t position) const {
+    if (position >= frames) return 0.0f;
+    float value = gain;
+    if (fadeInFrames > 0 && position < fadeInFrames) {
+        value *= static_cast<float>(position) /
+                 static_cast<float>(fadeInFrames);
+    }
+    if (fadeOutFrames > 0) {
+        const std::uint64_t tail = frames - 1 - position;
+        if (tail < fadeOutFrames) {
+            value *= static_cast<float>(tail) /
+                     static_cast<float>(fadeOutFrames);
+        }
+    }
+    return value;
+}
+
+bool TakePlayer::regionPeak(const std::string& path, const WavInfo& info,
+                            std::uint64_t startFrame, std::uint64_t frames,
+                            float& peak, std::string& error) {
+    peak = 0.0f;
+    std::FILE* file = std::fopen(path.c_str(), "rb");
+    if (file == nullptr) {
+        error = "cannot open " + wav_detail::quoted(path) + " to normalize it";
+        return false;
+    }
+    const std::uint64_t byteOffset =
+        info.dataOffset + startFrame * info.frameBytes();
+    if (byteOffset > static_cast<std::uint64_t>(LONG_MAX) ||
+        std::fseek(file, static_cast<long>(byteOffset), SEEK_SET) != 0) {
+        std::fclose(file);
+        error = "cannot seek " + wav_detail::quoted(path) + " to normalize it";
+        return false;
+    }
+    constexpr int kPeakChunkFrames = 1024;
+    float chunk[kPeakChunkFrames] = {};
+    std::uint64_t remaining = frames;
+    while (remaining > 0) {
+        const int want = static_cast<int>(std::min<std::uint64_t>(
+            remaining, static_cast<std::uint64_t>(kPeakChunkFrames)));
+        const int got = decodeTakeFrames(file, info.channels, info.bits / 8u,
+                                         info.floatSamples(), chunk, want);
+        if (got <= 0) {
+            note(wav_detail::quoted(path) +
+                 " is shorter than its header claims; normalized the frames "
+                 "that are present");
+            break;
+        }
+        for (int i = 0; i < got; ++i) {
+            peak = std::max(peak, std::fabs(chunk[i]));
+        }
+        remaining -= static_cast<std::uint64_t>(got);
+    }
+    std::fclose(file);
+    // A NaN sample would poison every later multiply; treat it as silence.
+    if (!std::isfinite(peak)) peak = 0.0f;
+    return true;
+}
+
+bool TakePlayer::setRegions(int track, const std::vector<TakeRegion>& regions,
+                            double framesPerBeat, std::uint64_t startFrame,
+                            std::string* error) {
+    if (track < 0 || track >= kMaxTracks) {
+        refuse("track " + std::to_string(track) + " is out of range", error);
+        return false;
+    }
+    if (regions.empty()) {
+        clearRegions(track);
+        return true;
+    }
+    if (!std::isfinite(framesPerBeat) || framesPerBeat <= 0.0) {
+        refuse("track " + std::to_string(track) +
+                   " region edit needs a tempo to map beats to frames",
+               error);
+        return false;
+    }
+    const auto beatFrames = [framesPerBeat](double beats) {
+        if (!std::isfinite(beats) || beats <= 0.0) return std::uint64_t{0};
+        const double frames = std::floor(beats * framesPerBeat + 0.5);
+        if (!(frames > 0.0)) return std::uint64_t{0};
+        const double limit = static_cast<double>(
+            std::numeric_limits<std::uint64_t>::max() / 8);
+        if (frames > limit) return static_cast<std::uint64_t>(limit);
+        return static_cast<std::uint64_t>(frames);
+    };
+
+    // Resolve the whole list before touching the live voice: a refused take
+    // must leave the previous state intact, and the normalize peak pass belongs
+    // at load/apply time, not in the reader thread.
+    std::vector<Region> plan;
+    plan.reserve(regions.size());
+    std::uint64_t cursor = 0;
+    for (std::size_t index = 0; index < regions.size(); ++index) {
+        const TakeRegion& region = regions[index];
+        const std::string where =
+            "track " + std::to_string(track) + " region " +
+            std::to_string(index);
+        if (region.take.empty()) {
+            note(where + " names no take; skipped");
+            continue;
+        }
+        WavInfo info;
+        std::string reason;
+        if (!inspectTakeWav(region.take, info, reason)) {
+            refuse(where + ": " + reason, error);
+            return false;
+        }
+        const std::uint64_t sourceFrames = info.frames();
+        std::uint64_t sliceStart = 0;
+        if (!std::isfinite(region.offsetBeats) || region.offsetBeats < 0.0) {
+            note(where +
+                 " has a negative or non-finite offset; starting at the take "
+                 "start");
+        } else {
+            sliceStart = beatFrames(region.offsetBeats);
+        }
+        if (sliceStart >= sourceFrames) {
+            note(where + " starts at or past the end of " +
+                 wav_detail::quoted(region.take) + "; skipped");
+            continue;
+        }
+        std::uint64_t sliceFrames = sourceFrames - sliceStart;
+        if (region.lengthBeats > 0.0) {
+            const std::uint64_t wanted = beatFrames(region.lengthBeats);
+            if (wanted > sliceFrames) {
+                note(where + " is longer than the rest of " +
+                     wav_detail::quoted(region.take) +
+                     "; clamped to the take end");
+            } else {
+                sliceFrames = wanted;
+            }
+        }
+        if (sliceFrames == 0) {
+            note(where + " is shorter than one frame; skipped");
+            continue;
+        }
+        std::uint64_t fadeIn = beatFrames(region.fadeInBeats);
+        if (fadeIn > sliceFrames) {
+            note(where +
+                 " fade-in is longer than the region; clamped to the region");
+            fadeIn = sliceFrames;
+        }
+        std::uint64_t fadeOut = beatFrames(region.fadeOutBeats);
+        if (fadeOut > sliceFrames) {
+            note(where +
+                 " fade-out is longer than the region; clamped to the region");
+            fadeOut = sliceFrames;
+        }
+        Region resolved;
+        resolved.path = region.take;
+        resolved.info = info;
+        resolved.sourceStart = sliceStart;
+        resolved.frames = sliceFrames;
+        resolved.fadeInFrames = fadeIn;
+        resolved.fadeOutFrames = fadeOut;
+        float gainDb = std::isfinite(region.gainDb) ? region.gainDb : 0.0f;
+        gainDb = std::clamp(gainDb, -96.0f, 12.0f);
+        resolved.gain = dbToLinear(gainDb);
+        if (region.normalize) {
+            float peak = 0.0f;
+            if (!regionPeak(resolved.path, resolved.info, resolved.sourceStart,
+                            resolved.frames, peak, reason)) {
+                refuse(where + ": " + reason, error);
+                return false;
+            }
+            // One peak pass per region, scaled to kNormalizePeakDbfs. A region
+            // with no signal has no peak to scale to, so its gain is unchanged.
+            if (peak > 0.0f) {
+                resolved.gain *= dbToLinear(kNormalizePeakDbfs) / peak;
+            }
+        }
+        resolved.streamStart = cursor;
+        cursor += resolved.frames;
+        plan.push_back(std::move(resolved));
+    }
+
+    enterControl();
+    Track& slot = mTracks[track];
+    stopTrackLocked(track);
+    slot.regionEdits = regions;
+    slot.edit = std::move(plan);
+    slot.editFrames = cursor;
+    slot.framesPerBeat = framesPerBeat;
+    slot.editStartFrame = startFrame;
+    slot.regionMode.store(true, std::memory_order_release);
+    bool ok = startEditLocked(track, error);
+    if (!ok) {
+        // The plan was resolved before the switch, so this is an I/O failure
+        // (for example a file removed between the peak pass and the open). Fall
+        // back to the unedited stack rather than leave a half-applied edit.
+        slot.regionMode.store(false, std::memory_order_release);
+        slot.regionEdits.clear();
+        slot.edit.clear();
+        slot.editFrames = 0;
+        stopEditStream(slot.editStream);
+        restartTrackLocked(track, nullptr);
+    }
+    const bool emptyEdit = ok && slot.editFrames == 0;
+    leaveControl();
+    if (emptyEdit) {
+        note("track " + std::to_string(track) +
+             " region edit resolves to no frames; the track plays silence");
+    }
+    return ok;
+}
+
+void TakePlayer::clearRegions(int track) {
+    if (track < 0 || track >= kMaxTracks) return;
+    enterControl();
+    Track& slot = mTracks[track];
+    const bool wasRegionMode =
+        slot.regionMode.exchange(false, std::memory_order_acq_rel);
+    if (wasRegionMode) {
+        stopEditStream(slot.editStream);
+        slot.regionEdits.clear();
+        slot.edit.clear();
+        slot.editFrames = 0;
+        // The stack was stored while the edit played, so it resumes now.
+        if (slot.pathCount > 0) restartTrackLocked(track, nullptr);
+    }
+    leaveControl();
+}
+
 int TakePlayer::readFrames(Layer& layer, float* mono, int frames) {
     if (layer.file == nullptr || mono == nullptr || frames <= 0 ||
         layer.remainingFrames == 0) {
@@ -482,35 +613,12 @@ int TakePlayer::readFrames(Layer& layer, float* mono, int frames) {
     const int wanted = static_cast<int>(
         std::min<std::uint64_t>(static_cast<std::uint64_t>(frames),
                                 layer.remainingFrames));
-    const int frameBytes = layer.channels * layer.bytesPerSample;
-    unsigned char raw[kReadChunkFrames * 2 * 4] = {};
-    const std::size_t got =
-        std::fread(raw, static_cast<std::size_t>(frameBytes),
-                   static_cast<std::size_t>(wanted), layer.file);
-    if (got == 0) return 0;
-
-    for (std::size_t frame = 0; frame < got; ++frame) {
-        const unsigned char* sample = raw + frame * static_cast<std::size_t>(frameBytes);
-        float value = 0.0f;
-        if (layer.floatSamples) {
-            value = leFloat(sample);
-            if (layer.channels == 2) {
-                value = 0.5f * (value + leFloat(sample + 4));
-            }
-        } else {
-            const std::int16_t left =
-                static_cast<std::int16_t>(le16(sample));
-            value = static_cast<float>(left) / 32768.0f;
-            if (layer.channels == 2) {
-                const std::int16_t right =
-                    static_cast<std::int16_t>(le16(sample + 2));
-                value = 0.5f * (value + static_cast<float>(right) / 32768.0f);
-            }
-        }
-        mono[frame] = value;
-    }
+    const int got = decodeTakeFrames(layer.file, layer.channels,
+                                     layer.bytesPerSample, layer.floatSamples,
+                                     mono, wanted);
+    if (got <= 0) return 0;
     layer.remainingFrames -= static_cast<std::uint64_t>(got);
-    return static_cast<int>(got);
+    return got;
 }
 
 void TakePlayer::readLoop(Layer* layer) {
@@ -556,15 +664,14 @@ bool TakePlayer::seekStream(Layer& layer, std::uint64_t position) {
     return true;
 }
 
-void TakePlayer::applyLoopFade(const Layer& layer, std::uint64_t position,
-                               int frames, float* mono) {
-    const std::uint64_t loopFrames =
-        layer.loopEndFrames - layer.loopStartFrames;
+void TakePlayer::applySeamFade(std::uint64_t loopStart, std::uint64_t loopEnd,
+                               std::uint64_t position, int frames,
+                               float* mono) {
+    const std::uint64_t loopFrames = loopEnd - loopStart;
     const std::uint64_t fade = loopSeamFade(loopFrames);
     for (int i = 0; i < frames; ++i) {
-        const std::uint64_t offset = position +
-                                     static_cast<std::uint64_t>(i) -
-                                     layer.loopStartFrames;
+        const std::uint64_t offset =
+            position + static_cast<std::uint64_t>(i) - loopStart;
         float gain = 1.0f;
         if (offset < fade) {
             gain = static_cast<float>(offset) / static_cast<float>(fade);
@@ -593,7 +700,8 @@ int TakePlayer::produceFrames(Layer& layer, float* mono, int frames) {
         static_cast<std::uint64_t>(frames), layer.loopEndFrames - position));
     const int got = readFrames(layer, mono, frames);
     if (got <= 0) return 0;
-    applyLoopFade(layer, position, got, mono);
+    applySeamFade(layer.loopStartFrames, layer.loopEndFrames, position, got,
+                  mono);
     return got;
 }
 
