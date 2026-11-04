@@ -277,15 +277,21 @@ $(fs_ls "${d}/platforminputcontexts" 2>/dev/null || true)
 	else
 		bad "Qt virtual keyboard platforminputcontext plugin is missing"
 	fi
+	# Qt Multimedia's PulseAudio audio backend: the exact plugin file name
+	# depends on the Qt version (older trees install a pulse plugin, 6.5+ fold
+	# it into the multimedia plugin), so assert the pieces that must exist:
+	# libpulse itself and at least one multimedia plugin.
+	fs_has /usr/lib/libpulse.so.0 && ok "libpulse.so.0 present (Qt Pulse backend)" || \
+		bad "libpulse.so.0 is missing, so Qt has no PulseAudio backend"
 	qt_audio_plugins=
 	for d in /usr/lib/qt6/plugins /usr/lib/qt/plugins; do
 		qt_audio_plugins="${qt_audio_plugins}$(fs_ls "${d}/multimedia" 2>/dev/null || true)
 "
 	done
-	if printf '%s\n' "${qt_audio_plugins}" | grep -qi 'pulse'; then
-		ok "Qt Multimedia PulseAudio backend plugin present"
+	if printf '%s\n' "${qt_audio_plugins}" | grep -q 'lib.*\.so'; then
+		ok "Qt Multimedia plugin(s) present in plugins/multimedia"
 	else
-		bad "Qt Multimedia PulseAudio backend plugin (plugins/multimedia/*pulse*) is missing"
+		bad "no Qt Multimedia plugin found in plugins/multimedia"
 	fi
 	if fs_has /usr/bin/Xwayland; then
 		bad "Xwayland is in the image, but this product uses native Wayland only"
