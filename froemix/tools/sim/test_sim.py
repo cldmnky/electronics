@@ -133,6 +133,41 @@ class LinkageTests(unittest.TestCase):
         self.assertTrue(any("R99" in p and "neither linked" in p for p in problems),
                         problems)
 
+    def test_small_source_value_drift_is_detected(self):
+        """0.4 % drift is inside the check_values window but is still drift."""
+        audio = self.sections / "audio.tsx"
+        text = audio.read_text()
+        audio.write_text(re.sub(r'name="R4"(\s+)resistance="100k"',
+                                r'name="R4"\1resistance="100400"', text, count=1))
+        problems = source_link.check_all(base_sections=self.sections)
+        self.assertTrue(any("R4" in p and "100400" in p for p in problems), problems)
+        self.assertTrue(any("exactly" in p for p in problems), problems)
+
+    def test_small_deck_value_drift_is_detected(self):
+        """The deck side is held to the same exact-nominal rule."""
+        deck = copy_deck("audio_out.cir", self.tmp,
+                         edit=lambda t: t.replace("R13 U3A_IN_N NET_C8_2 33k",
+                                                  "R13 U3A_IN_N NET_C8_2 33100"))
+        boards = source_link.load_boards()
+        problems = source_link.check_deck(deck, source_link.DECK_LINKS["audio_out.cir"],
+                                          "audio_out.cir", boards)
+        self.assertTrue(any("R13" in p and "33100" in p for p in problems), problems)
+
+    def test_small_instance_parameter_drift_is_detected(self):
+        deck = copy_deck("cv_inout.cir", self.tmp,
+                         edit=lambda t: t.replace("RF1=49.9k", "RF1=49.95k"))
+        boards = source_link.load_boards()
+        problems = source_link.check_deck_params(deck, source_link.DECK_PARAMS["cv_inout.cir"],
+                                                boards)
+        self.assertTrue(any("RF1" in p for p in problems), problems)
+
+    def test_nominal_values_match_to_parsing_precision(self):
+        self.assertTrue(source_link.same_value(30100.0, 30.1e3))
+        self.assertTrue(source_link.same_value(2.2e3, 2.2 * 10 ** 3))
+        self.assertFalse(source_link.same_value(33000.0, 33100.0))
+        self.assertFalse(source_link.same_value(100000.0, 100400.0))
+        self.assertFalse(source_link.same_value(4.99e4, 4.995e4))
+
     def test_current_source_passes(self):
         self.assertEqual(source_link.check_all(), [])
 
@@ -302,10 +337,35 @@ class RunnerTests(unittest.TestCase):
         work = self.tmp / "work"
         code = run_checks.main(["--deck", "audio_in", "--workdir", str(work)])
         self.assertEqual(code, 0)
-        self.assertTrue((work / "audio_in" / "out" / "audio_in_ac.dat").is_file())
+        runs = list(work.glob("audio_in-*/out/audio_in_ac.dat"))
+        self.assertEqual(len(runs), 1, f"expected one fresh run directory, got {runs}")
         after = {path.name: (path.stat().st_size, path.stat().st_mtime_ns)
                  for path in OUT.glob("*")}
         self.assertEqual(before, after, "the run must not touch the committed out/")
+
+    @unittest.skipUnless(NGSPICE, "ngspice not installed")
+    def test_existing_workdir_is_never_deleted(self):
+        """--workdir may hold anything: a fresh child is made, nothing removed."""
+        root = self.tmp / "wroot"
+        (root / "keepme").mkdir(parents=True)
+        sentinel = root / "keepme" / "SENTINEL"
+        sentinel.write_text("keep\n")
+        decoy = root / "audio_in"           # same name as the deck, but a file
+        decoy.write_text("not a directory\n")
+        code = run_checks.main(["--deck", "audio_in", "--workdir", str(root)])
+        self.assertEqual(code, 0)
+        self.assertEqual(sentinel.read_text(), "keep\n", "a caller's tree was changed")
+        self.assertEqual(decoy.read_text(), "not a directory\n")
+        children = [path for path in root.iterdir()
+                    if path.is_dir() and path.name.startswith("audio_in-")]
+        self.assertEqual(len(children), 1, children)
+        self.assertTrue((children[0] / "out" / "audio_in_ac.dat").is_file())
+        # a second run must not delete the first run's directory either
+        self.assertEqual(run_checks.main(["--deck", "audio_in", "--workdir", str(root)]), 0)
+        again = [path for path in root.iterdir()
+                 if path.is_dir() and path.name.startswith("audio_in-")]
+        self.assertEqual(len(again), 2, "the previous run directory was removed")
+        self.assertTrue((children[0] / "out" / "audio_in_ac.dat").is_file())
 
     @unittest.skipUnless(NGSPICE, "ngspice not installed")
     def test_failing_assertion_returns_nonzero(self):

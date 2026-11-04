@@ -29,8 +29,12 @@ missing simulator is a **failure, never a skip**.
 
 ## Isolation — why a stale file cannot pass
 
-Each deck is copied into a fresh directory below `$TMPDIR/froemix-sim/` and run
-there, with its own `wrdata` files, its own log and its own stderr (the harmless
+Each deck is copied into a **new, uniquely named** directory and run there,
+with its own `wrdata` files, its own log and its own stderr. The default root
+is `$TMPDIR/froemix-sim/`; `--workdir DIR` puts a fresh `DIR/<deck>-<random>/`
+child there instead. An existing directory, or anything inside the requested
+work root, is **never deleted** -- a caller's tree must survive a run, and one
+run must not remove another (the harmless
 `libtinfo` warning of a native ngspice is kept, never treated as a design
 error). The reader rejects a missing file, an empty or header-only file, a
 ragged row, a non-finite value, a missing `.meas` name and any `Error:` line in
@@ -65,7 +69,13 @@ the front decks `euro/sections/*.tsx` + `euro/lib/layout.ts`) with the same SI
 literal parser gate step 7 uses, and links **63 deck elements** to their source
 parts. For each linked element it compares
 
-* the **value** (0.5 % window, i.e. the same window `check_values.py` uses), and
+* the **value** to numerical parsing precision (relative window 1e-9): a deck
+  transcribes the NOMINAL value of a part, so `33000` and `33100` ohm must NOT
+  compare equal. Physical part tolerance is a different subject and lives in
+  the 1 % / 0.1 % corner instances of the CV decks, which are engineering cases
+  declared in `ASSUMPTIONS`; the same applies to the assertion bands in
+  `assertions.py`, which are engineering limits and stay separate from this
+  equality rule; and
 * the **connection**: every deck node is mapped to a named source pin (or to the
   net of another part's pin), so a changed net, a swapped pin or a reordered
   polar part fails.
@@ -77,10 +87,14 @@ source parts must be declared in `ASSUMPTIONS` with a reason (supplies,
 stimuli, case loads, model internals); an undeclared element fails.
 
 `test_sim.py` proves the linkage has teeth: an altered source **value**
-(`R4` 100k → 110k), an altered source **connection** (`R19` pin 2, U11 `IN1P`,
-U1 `X0`), an altered **deck** value, an altered deck node, an unexplained deck
-element and an out-of-table **model limit** (GBW 3 MHz → 30 MHz, diode `N`) are
-each detected.
+(`R4` 100k → 110k, and a small 100k → 100.4k drift below 0.5 %), an altered
+source **connection** (`R19` pin 2, U11 `IN1P`, U1 `X0`), an altered **deck**
+value (33k → 33100), an altered deck node, a small instance-parameter drift
+(`RF1` 49.9k → 49.95k), an unexplained deck element and an out-of-table **model
+limit** (GBW 3 MHz → 30 MHz, diode `N`) are each detected. Two further tests
+hold the runner: a caller-supplied `--workdir` keeps every file and directory it
+had (a sentinel file, a same-named file, an older run directory), and a failing
+assertion exits nonzero.
 
 ## Model provenance, and what is NOT modelled
 

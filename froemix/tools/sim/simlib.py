@@ -195,13 +195,23 @@ def run_deck(deck: str | Path, workdir: str | Path, ngspice: str | None = None,
                    returncode=proc.returncode, measures=read_measures(text))
 
 
-def private_workdir(tag: str = "run") -> Path:
-    """Fresh directory below $TMPDIR/froemix-sim-... (never the repo's out/).
+def private_workdir(tag: str = "run", root: str | Path | None = None) -> Path:
+    """Fresh, uniquely named directory for one deck's run.
 
-    The directory is kept after the run so a failure can be triaged (log,
-    stderr and raw data are all there); it lives below TMPDIR, not in the repo.
+    Default: below ``$TMPDIR/froemix-sim/``. With ``root``: a new unique child
+    of that root (created if it does not exist). Either way the directory is
+    NEW and nothing that already exists is removed -- a caller-supplied
+    ``--workdir`` may hold anything, so the runner must never delete it. The
+    run directory is kept afterwards so a failure can be triaged (log, stderr
+    and raw data are all inside).
     """
-    base = Path(os.environ.get("TMPDIR", tempfile.gettempdir())) / "froemix-sim"
+    if root is None:
+        base = Path(os.environ.get("TMPDIR", tempfile.gettempdir())) / "froemix-sim"
+        base.mkdir(parents=True, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix=f"{tag}-", dir=base))
+    base = Path(root)
+    if base.exists() and not base.is_dir():
+        raise SimError(f"--workdir {base} exists and is not a directory")
     base.mkdir(parents=True, exist_ok=True)
     return Path(tempfile.mkdtemp(prefix=f"{tag}-", dir=base))
 

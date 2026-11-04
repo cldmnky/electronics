@@ -53,7 +53,13 @@ BASE_SECTIONS = FROEMIX / "tscircuit" / "sections"
 EURO_SECTIONS = FROEMIX / "euro" / "sections"
 EURO_LAYOUT = FROEMIX / "euro" / "lib" / "layout.ts"
 
-TOLERANCE = 0.005  # 0.5 %, the same window check_values.py uses
+# A deck transcribes the NOMINAL value of a part, so the two numbers must be
+# equal to numerical parsing precision -- not merely inside some window. A
+# 0.3 % drift (33000 -> 33100 ohm) means the deck no longer describes the
+# board. Physical part tolerance is a different thing and lives where it
+# belongs: the 1 % / 0.1 % corner instances in the CV decks, whose values are
+# engineering cases declared in ASSUMPTIONS, not source values.
+SOURCE_VALUE_REL_TOL = 1e-9
 
 ELEMENT_RE = re.compile(
     r"<(resistor|capacitor|inductor|diode|led|chip|transistor|connector|potentiometer)\b(.*?)/>",
@@ -71,6 +77,20 @@ ATTRIBUTE_RE = re.compile(r'([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:"([^"]*)"|\{([^}]*
 
 class LinkError(RuntimeError):
     """The deck and the source disagree."""
+
+
+def same_value(a: float, b: float, rel_tol: float = SOURCE_VALUE_REL_TOL) -> bool:
+    """True when two nominal values agree to floating-point parsing precision.
+
+    Uses a relative window (default 1e-9), so ``30.1k`` and ``30100`` match
+    while ``33000`` and ``33100`` do not. It is deliberately NOT the 0.5 %
+    window of ``check_values.py``: that gate compares a literal with the built
+    circuit, this one asks whether the deck still transcribes the same part.
+    """
+    scale = max(abs(a), abs(b))
+    if scale == 0:
+        return a == b
+    return abs(a - b) <= rel_tol * scale
 
 
 @dataclass
@@ -668,11 +688,12 @@ def check_deck(deck_path: Path, links: list[Link], deck: str,
                 except SimError as exc:
                     problems.append(str(exc))
                 else:
-                    if not check_values.close(component.value, deck_value):
+                    if not same_value(component.value, deck_value):
                         problems.append(
                             f"{deck_path.name}: {link.spice} = {element.value} but the source "
                             f"{link.ref} in {component.file} is {component.value_text} "
-                            f"({component.value:g} vs {deck_value:g})")
+                            f"({component.value:g} vs {deck_value:g}); the nominal "
+                            "values must match exactly, not within a window")
 
         if link.pairs is not None:
             checks: list[tuple[str, str, str]] = []  # (deck node, expected net, shown)
@@ -766,10 +787,11 @@ def check_deck_params(deck_path: Path, links: list[ParamLink],
             except SimError as exc:
                 problems.append(str(exc))
                 continue
-            if not check_values.close(component.value, value):
+            if not same_value(component.value, value):
                 problems.append(f"{deck_path.name}: {link.spice} {param} = {raw} but the "
                                 f"source {ref} is {component.value_text} "
-                                f"({component.value:g} vs {value:g})")
+                                f"({component.value:g} vs {value:g}); the nominal "
+                                "values must match exactly, not within a window")
     return problems
 
 

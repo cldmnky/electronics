@@ -13,9 +13,11 @@ What a run does, in order:
      euro board for the front decks).
   2. model provenance (``models.py``): every model parameter in a deck is in
      the documented table, and every deck value is unambiguous SPICE.
-  3. the decks themselves, each copied into a fresh private directory under
-     ``$TMPDIR/froemix-sim/`` and run with its own log, so no result can come
-     from a stale or committed file. ngspice stderr is kept beside the log.
+  3. the decks themselves, each copied into a NEW uniquely named directory
+     (``$TMPDIR/froemix-sim/<deck>-XXXX``, or ``--workdir DIR`` ->
+     ``DIR/<deck>-XXXX``) and run with its own log, so no result can come from a
+     stale or committed file. ngspice stderr is kept beside the log. Nothing
+     that already exists is deleted: a run never touches the caller's tree.
   4. the assertion tables (``assertions.py``).
 
 Exit codes: 0 every check passed, 1 at least one check failed (including a
@@ -27,7 +29,6 @@ repository: the committed ``out/`` directory is history, not a result.
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
 from pathlib import Path
 
@@ -93,9 +94,13 @@ def run(deck_names: list[str], ngspice: str | None, workdir: Path | None,
     failures: list[assertions.Check] = []
     passed = 0
     for deck in selected:
-        work = workdir / deck if workdir else simlib.private_workdir(deck)
-        if work.exists():
-            shutil.rmtree(work)
+        # a fresh unique child every time: an existing --workdir, or anything
+        # inside it, is never deleted
+        try:
+            work = simlib.private_workdir(deck, root=workdir)
+        except simlib.SimError as exc:
+            print(f"\nFAIL {exc}", file=sys.stderr)
+            return 2
         try:
             result = simlib.run_deck(HERE / f"{deck}.cir", work, ngspice=exe)
             checks = assertions.DECK_CHECKS[deck](result)
