@@ -224,6 +224,8 @@ else
 	done
 	fs_has /var/lib/systemd/linger/mnkybox && ok "lingering enabled for user mnkybox" || \
 		bad "lingering is not enabled (/var/lib/systemd/linger/mnkybox missing)"
+	fs_has /usr/lib/systemd/system/user@.service && ok "systemd user manager unit present (user@.service)" || \
+		bad "user@.service is missing, so lingering cannot start the session"
 
 	# Audio contract: Qt Multimedia -> PulseAudio backend -> pipewire-pulse.
 	for f in /usr/bin/pipewire-pulse /usr/bin/pw-link /usr/bin/wpctl \
