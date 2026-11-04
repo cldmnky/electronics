@@ -23,6 +23,7 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <cmath>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -177,6 +178,81 @@ class ScreenshotRunner final : public QObject {
                         controller_->midiMonitor()->setHideClock(true);
                         controller_->setTab(6);
                       }});
+    steps_.push_back({"33-eq", [this] {
+                        controller_->hideValuePopup();
+                        controller_->showShiftFace(false);
+                        controller_->eq()->selectMain();
+                        controller_->eq()->selectSubject(2);
+                        // Band 1 low shelf, band 2 notch, band 3 presence,
+                        // band 4 air; band 3 selected (pink).
+                        eqBand(0, 2, 120.0, 4.0, 0.8);
+                        eqBand(1, 3, 500.0, -3.0, 2.5);
+                        eqBand(2, 3, 3000.0, 2.5, 1.5);
+                        eqBand(3, 4, 9000.0, 3.0, 0.8);
+                        controller_->eq()->selectBand(2);
+                        controller_->hideValuePopup();
+                        controller_->setTab(7);
+                      }});
+    steps_.push_back({"33-eq-popup", [this] {
+                        // Transient readout on a Q change (Hz/dB/Q popups).
+                        controller_->eq()->selectBand(1);
+                        controller_->eq()->adjustQ(0.5);
+                        controller_->setTab(7);
+                      }});
+    steps_.push_back({"33-eq-full", [this] {
+                        controller_->hideValuePopup();
+                        controller_->eq()->selectBand(2);
+                        controller_->setFullscreen(true);
+                        controller_->setTab(7);
+                        controller_->hideValuePopup();
+                      }});
+    steps_.push_back({"33-xy", [this] {
+                        controller_->hideValuePopup();
+                        controller_->setFullscreen(false);
+                        // Two fingers, one per grid, held down together: the
+                        // TouchPoint ids (41, 42) are the QML point ids.
+                        controller_->xy()->touchBegin(0, 41, 0.18, 0.72);
+                        controller_->xy()->touchBegin(1, 42, 0.62, 0.35);
+                        controller_->hideValuePopup();
+                        controller_->setTab(8);
+                      }});
+    steps_.push_back({"33-xy-params", [this] {
+                        // Secondary parameters of the reverb grid live in the
+                        // shared ConfigPopup (draft + OK), not on the grid.
+                        controller_->hideValuePopup();
+                        controller_->setTab(8);
+                        controller_->openConfig(QStringLiteral("reverb"));
+                      }});
+    steps_.push_back({"33-xy-freeze", [this] {
+                        controller_->configCancel();
+                        controller_->xy()->toggleFreeze();
+                        controller_->setTab(8);
+                      }});
+    steps_.push_back({"33-eq-type", [this] {
+                        controller_->setFullscreen(false);
+                        controller_->eq()->selectBand(2);
+                        controller_->setTab(7);
+                        controller_->openConfig(QStringLiteral("eqtype"));
+                      }});
+    steps_.push_back({"33-eq-shift", [this] {
+                        // SHIFT face: the band sliders and the six type buttons
+                        // (the panel reaches it with a 500 ms EXIT long-hold).
+                        controller_->configCancel();
+                        controller_->hideValuePopup();
+                        controller_->showShiftFace(true);
+                        controller_->setTab(7);
+                      }});
+  }
+
+  // Scripted absolute EQ band values: type 0..5, frequency, gain, Q.
+  void eqBand(int band, int type, double freqHz, double gainDb, double q) {
+    controller_->eq()->selectBand(band);
+    controller_->eq()->selectType(type);
+    controller_->eq()->adjustFreq(std::log2(freqHz / 1000.0));
+    if (type == 2 || type == 3 || type == 4) {
+      controller_->eq()->adjustGain(gainDb);
+    }
+    controller_->eq()->adjustQ(q - 1.0);
   }
 
   void start() {
@@ -313,6 +389,8 @@ int main(int argc, char* argv[]) {
   engine.rootContext()->setContextProperty(QStringLiteral("midimon"), controller.midiMonitor());
   engine.rootContext()->setContextProperty(QStringLiteral("tools"), controller.tools());
   engine.rootContext()->setContextProperty(QStringLiteral("config"), controller.config());
+  engine.rootContext()->setContextProperty(QStringLiteral("eq"), controller.eq());
+  engine.rootContext()->setContextProperty(QStringLiteral("xy"), controller.xy());
 
   controller.start();
   engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));

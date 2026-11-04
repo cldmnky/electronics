@@ -15,6 +15,8 @@ namespace mnky::app {
 namespace {
 constexpr int kProjectsTabIndex = 5;
 constexpr int kMonitorTabIndex = 6;
+constexpr int kEqTabIndex = 7;
+constexpr int kXyTabIndex = 8;
 
 std::uint64_t nowMs() {
   using namespace std::chrono;
@@ -32,10 +34,10 @@ std::string learnTarget(int strip, const char* parameter) {
 AppController::AppController(bool emulator, QObject* parent)
     : QObject(parent),
       midi_(emulator),
-      audio_(mixer_, fx_, state_, emulator),
+      audio_(mixer_, fx_, performance_, state_, emulator),
       link_(midi_, state_, emulator) {
-  context_ = std::make_unique<AppContext>(
-      AppContext{state_, mixer_, fx_, midi_, audio_, link_, settings_});
+  context_ = std::make_unique<AppContext>(AppContext{
+      state_, mixer_, fx_, midi_, audio_, link_, settings_, eqModel_, performance_});
 
   mixerVm_ = std::make_unique<MixerViewModel>(mixer_, settings_);
   routingVm_ = std::make_unique<RoutingViewModel>(midi_);
@@ -49,7 +51,24 @@ AppController::AppController(bool emulator, QObject* parent)
   sessionVm_ = std::make_unique<SessionViewModel>(state_, mixer_, link_, settings_);
   midiMonitorVm_ = std::make_unique<MidiMonitorViewModel>(midi_);
   toolsVm_ = std::make_unique<ToolsViewModel>(state_, link_);
-  configVm_ = std::make_unique<ConfigPopupModel>(state_, mixer_, settings_);
+  configVm_ =
+      std::make_unique<ConfigPopupModel>(state_, mixer_, settings_, eqModel_, performance_);
+  eqVm_ = std::make_unique<EqViewModel>(eqModel_);
+  xyVm_ = std::make_unique<XyViewModel>(performance_);
+  // Every EQ/XY screen change shows one transient readout, the same single
+  // popup instance the sliders and the panel EDIT path drive.
+  connect(eqVm_.get(), &EqViewModel::valuePopupRequested, this,
+          [this](const QString& label, const QString& kind, double value) {
+            showValuePopup(label, kind, value);
+          });
+  connect(eqVm_.get(), &EqViewModel::textPopupRequested, this,
+          [this](const QString& label, const QString& text) {
+            showTextPopup(label, text);
+          });
+  connect(xyVm_.get(), &XyViewModel::textPopupRequested, this,
+          [this](const QString& label, const QString& text) {
+            showTextPopup(label, text);
+          });
   connect(recorderVm_.get(), &RecorderViewModel::activeTakeChanged, mixerVm_.get(),
           &MixerViewModel::notifyActiveTakesChanged);
 
@@ -114,11 +133,22 @@ void AppController::shutdown() {
 void AppController::setTab(int tab) {
   const int clamped = std::clamp(tab, 0, kScreenCount - 1);
   if (clamped == tab_) return;
+  // Fullscreen belongs to the EQ grid; any tab change brings the bridge back so
+  // the other screens keep their tab row and transport strip.
+  if (fullscreen_ && clamped != kEqTabIndex) setFullscreen(false);
+  hideValuePopup();
   focusByScreen_[tab_] = focusIndex_;
   tab_ = clamped;
   state_.currentTab.store(tab_);
   focusIndex_ = focusByScreen_[tab_];
   emit tabChanged();
+  rebuildFocusIds();
+}
+
+void AppController::setFullscreen(bool fullscreen) {
+  if (fullscreen == fullscreen_) return;
+  fullscreen_ = fullscreen;
+  emit fullscreenChanged();
   rebuildFocusIds();
 }
 
@@ -590,6 +620,13 @@ void AppController::performPanelFocus(const Intent& intent) {
     return;
   }
 
+  // EDIT on the EQ grid or an X/Y grid: the directions are the control (node
+  // frequency/gain, grid point), so they never move the focus ring there.
+  if (panelMode_ == QStringLiteral("edit") && performGridEdit(intent)) {
+    rebuildFocusIds();
+    return;
+  }
+
   switch (intent.kind) {
     case Intent::Kind::NavUp:
     case Intent::Kind::NavLeft:
@@ -618,6 +655,29 @@ void AppController::performPanelFocus(const Intent& intent) {
     default:
       break;
   }
+}
+
+bool AppController::performGridEdit(const Intent& intent) {
+  const int dx = intent.kind == Intent::Kind::NavLeft
+                     ? -1
+                     : (intent.kind == Intent::Kind::NavRight ? 1 : 0);
+  const int dy = intent.kind == Intent::Kind::NavUp
+                     ? -1
+                     : (intent.kind == Intent::Kind::NavDown ? 1 : 0);
+  if (dx == 0 && dy == 0) return false;
+  QString id = focusId_;
+  if (id.startsWith(QStringLiteral("shift."))) id = id.mid(6);
+  if (id == QStringLiteral("eq.band.select") || id.startsWith(QStringLiteral("eq.node."))) {
+    eqVm_->nudgeSelected(dx, dy, shiftHeld_);
+    return true;
+  }
+  if (id == QStringLiteral("xy.delay") || id == QStringLiteral("xy.reverb")) {
+    const int grid = id == QStringLiteral("xy.reverb") ? PerformanceModel::kReverbGrid
+                                                      : PerformanceModel::kDelayGrid;
+    xyVm_->nudge(grid, dx, dy, shiftHeld_);
+    return true;
+  }
+  return false;
 }
 
 void AppController::moveFocus(int delta) {
@@ -733,6 +793,20 @@ bool AppController::isEditableFocus(const QString& focusId) const {
            id.startsWith(QStringLiteral("monitor.out34")) ||
            id.startsWith(QStringLiteral("monitor.comp.mode"));
   }
+  if (id == QStringLiteral("eq.subject.track")) return true;
+  if (id == QStringLiteral("eq.band.gain") || id == QStringLiteral("eq.band.q") ||
+      id == QStringLiteral("eq.band.freq")) {
+    return true;
+  }
+  if (id == QStringLiteral("xy.delay") || id == QStringLiteral("xy.reverb")) return true;
+  if (id == QStringLiteral("config.delay.feedback") ||
+      id == QStringLiteral("config.delay.mix") ||
+      id == QStringLiteral("config.delay.division") ||
+      id == QStringLiteral("config.reverb.predelay") ||
+      id == QStringLiteral("config.reverb.decay") ||
+      id == QStringLiteral("config.reverb.damping")) {
+    return true;
+  }
   if (id == QStringLiteral("tools.brightness")) return true;
   if (id == QStringLiteral("learn.target")) return true;
   return false;
@@ -780,6 +854,24 @@ void AppController::activateFocus() {
       } else if (parts[2] == QStringLiteral("rec")) {
         configVm_->setSendRec(source);
       }
+    } else if (parts[1] == QStringLiteral("eqtype") && parts.size() >= 3) {
+      configVm_->setEqType(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("delay") && parts.size() >= 3) {
+      if (parts[2] == QStringLiteral("beat")) {
+        configVm_->setDelayBeat(!configVm_->delayBeat());
+      } else if (parts[2] == QStringLiteral("ping")) {
+        configVm_->setDelayPing(!configVm_->delayPing());
+      } else if (parts[2] == QStringLiteral("div.prev")) {
+        configVm_->setDelayDivision(configVm_->delayDivision() - 1);
+      } else if (parts[2] == QStringLiteral("div.next")) {
+        configVm_->setDelayDivision(configVm_->delayDivision() + 1);
+      }
+    } else if (parts[1] == QStringLiteral("reverb") && parts.size() >= 3) {
+      if (parts[2] == QStringLiteral("model")) {
+        configVm_->setReverbModel(parts.size() >= 4 ? parts[3].toInt() : 0);
+      }
+    } else if (parts[1] == QStringLiteral("delay") || parts[1] == QStringLiteral("reverb")) {
+      setPanelMode(QStringLiteral("edit"));
     } else if (parts[1] == QStringLiteral("gain") || parts[1] == QStringLiteral("bars") ||
                parts[1] == QStringLiteral("thresh") || parts[1] == QStringLiteral("ratio") ||
                parts[1] == QStringLiteral("attack") || parts[1] == QStringLiteral("release") ||
@@ -1123,6 +1215,61 @@ void AppController::activateFocus() {
     return;
   }
 
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("eq")) {
+    if (parts[1] == QStringLiteral("subject")) {
+      if (parts.size() >= 3 && parts[2] == QStringLiteral("main")) {
+        eqVm_->selectMain();
+      } else {
+        // Track stepper: EDIT hands the encoder to the subject list.
+        setPanelMode(QStringLiteral("edit"));
+      }
+    } else if (parts[1] == QStringLiteral("band") && parts.size() >= 3) {
+      if (parts[2] == QStringLiteral("select")) {
+        // The panel A-button: one PRESS steps to the next band.
+        eqVm_->stepBand(1);
+      } else if (parts[2] == QStringLiteral("type") && parts.size() >= 4) {
+        eqVm_->selectType(parts[3].toInt());
+      } else if (parts[2] == QStringLiteral("type")) {
+        openConfig(QStringLiteral("eqtype"));
+      } else if (parts[2] == QStringLiteral("gain") ||
+                 parts[2] == QStringLiteral("q") ||
+                 parts[2] == QStringLiteral("freq")) {
+        setPanelMode(QStringLiteral("edit"));
+      }
+    } else if (parts[1] == QStringLiteral("node") && parts.size() >= 3) {
+      // PRESS on a node selects that band and gives the directions to it.
+      eqVm_->selectBand(parts[2].toInt());
+      setPanelMode(QStringLiteral("edit"));
+    } else if (parts[1] == QStringLiteral("fullscreen")) {
+      setFullscreen(!fullscreen_);
+      showTextPopup(QStringLiteral("EQ VIEW"),
+                    fullscreen_ ? QStringLiteral("FULLSCREEN - bridge hidden")
+                                : QStringLiteral("PANEL - bridge shown"));
+    }
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("xy")) {
+    if (parts[1] == QStringLiteral("freeze")) {
+      xyVm_->toggleFreeze();
+    } else if (parts[1] == QStringLiteral("delay") ||
+               parts[1] == QStringLiteral("reverb")) {
+      if (parts.size() >= 3 && parts[2] == QStringLiteral("params")) {
+        // Freeze owns every reverb parameter until it is released, so the
+        // popup would accept and then write nothing: say so instead.
+        if (parts[1] == QStringLiteral("reverb") && xyVm_->frozen()) {
+          showTextPopup(QStringLiteral("REVERB"),
+                        QStringLiteral("FREEZE locks the reverb params"));
+        } else {
+          openConfig(parts[1]);
+        }
+      } else {
+        setPanelMode(QStringLiteral("edit"));
+      }
+    }
+    return;
+  }
+
   if (parts.size() >= 2 && parts[0] == QStringLiteral("learn")) {
     if (parts[1] == QStringLiteral("target")) setPanelMode(QStringLiteral("edit"));
   }
@@ -1179,6 +1326,40 @@ void AppController::adjustFocused(int detents, bool fine) {
       configVm_->setCompMakeupDb(configVm_->compMakeupDb() + step * (fine ? 0.1 : 0.5));
       showValuePopup(QStringLiteral("COMP MAKEUP"), QStringLiteral("db"),
                      configVm_->compMakeupDb());
+    } else if (parts[1] == QStringLiteral("delay") && parts.size() >= 3) {
+      if (parts[2] == QStringLiteral("feedback")) {
+        configVm_->setDelayFeedback(configVm_->delayFeedback() +
+                                    step * (fine ? 0.005 : 0.02));
+        showValuePopup(QStringLiteral("DELAY FEEDBACK"), QStringLiteral("percent"),
+                       configVm_->delayFeedback());
+      } else if (parts[2] == QStringLiteral("mix")) {
+        configVm_->setDelayMix(configVm_->delayMix() + step * (fine ? 0.005 : 0.02));
+        showValuePopup(QStringLiteral("DELAY MIX"), QStringLiteral("percent"),
+                       configVm_->delayMix());
+      } else if (parts[2] == QStringLiteral("division")) {
+        configVm_->setDelayDivision(configVm_->delayDivision() +
+                                    (detents > 0 ? 1 : -1));
+        showTextPopup(QStringLiteral("DELAY DIVISION"),
+                      QString::fromLatin1(audio::fx::Delay::divisionName(
+                          configVm_->delayDivision())));
+      }
+    } else if (parts[1] == QStringLiteral("reverb") && parts.size() >= 3) {
+      if (parts[2] == QStringLiteral("predelay")) {
+        configVm_->setReverbPredelayMs(configVm_->reverbPredelayMs() +
+                                       step * (fine ? 1.0 : 5.0));
+        showValuePopup(QStringLiteral("REVERB PREDELAY"), QStringLiteral("ms"),
+                       configVm_->reverbPredelayMs());
+      } else if (parts[2] == QStringLiteral("decay")) {
+        configVm_->setReverbDecay(configVm_->reverbDecay() +
+                                  step * (fine ? 0.005 : 0.02));
+        showValuePopup(QStringLiteral("REVERB DECAY"), QStringLiteral("generic"),
+                       configVm_->reverbDecay());
+      } else if (parts[2] == QStringLiteral("damping")) {
+        configVm_->setReverbDamping(configVm_->reverbDamping() +
+                                    step * (fine ? 0.005 : 0.02));
+        showValuePopup(QStringLiteral("REVERB DAMPING"), QStringLiteral("generic"),
+                       configVm_->reverbDamping());
+      }
     }
     return;
   }
@@ -1378,6 +1559,36 @@ void AppController::adjustFocused(int detents, bool fine) {
     return;
   }
 
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("eq")) {
+    if (parts[1] == QStringLiteral("subject") && parts.size() >= 3) {
+      eqVm_->stepSubject(detents > 0 ? 1 : -1);
+    } else if (parts[1] == QStringLiteral("band") && parts.size() >= 3) {
+      if (parts[2] == QStringLiteral("gain")) {
+        eqVm_->adjustGain(step * (fine ? 0.1 : 0.5));
+      } else if (parts[2] == QStringLiteral("q")) {
+        eqVm_->adjustQ(step * (fine ? EqModel::kQStepFine : EqModel::kQStep));
+      } else if (parts[2] == QStringLiteral("freq")) {
+        eqVm_->adjustFreq(step * (fine ? EqModel::kFreqStepOctaves / 4.0
+                                       : EqModel::kFreqStepOctaves));
+      }
+    } else if (parts[1] == QStringLiteral("node") && parts.size() >= 3) {
+      // Encoder in EDIT on a node: frequency (the focused value), SHIFT fine.
+      eqVm_->adjustFreq(step * (fine ? EqModel::kFreqStepOctaves / 4.0
+                                     : EqModel::kFreqStepOctaves));
+    }
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("xy")) {
+    if (parts[1] == QStringLiteral("delay") || parts[1] == QStringLiteral("reverb")) {
+      const int grid = parts[1] == QStringLiteral("reverb")
+                           ? PerformanceModel::kReverbGrid
+                           : PerformanceModel::kDelayGrid;
+      xyVm_->nudge(grid, 0, detents > 0 ? 1 : -1, fine);
+    }
+    return;
+  }
+
   if (parts.size() >= 2 && parts[0] == QStringLiteral("tools") &&
       parts[1] == QStringLiteral("brightness")) {
     toolsVm_->setBrightness(toolsVm_->brightness() + detents * (fine ? 1 : 5));
@@ -1485,6 +1696,25 @@ void AppController::rebuildFocusIds() {
       ids.push_back(QStringLiteral("config.cuestyle.1"));
       ids.push_back(QStringLiteral("config.out34.0"));
       ids.push_back(QStringLiteral("config.out34.1"));
+    } else if (kind == QStringLiteral("eqtype")) {
+      for (int type = 0; type < EqModel::kTypeCount; ++type) {
+        ids.push_back(QStringLiteral("config.eqtype.%1").arg(type));
+      }
+    } else if (kind == QStringLiteral("delay")) {
+      ids.push_back(QStringLiteral("config.delay.beat"));
+      ids.push_back(QStringLiteral("config.delay.ping"));
+      ids.push_back(QStringLiteral("config.delay.div.prev"));
+      ids.push_back(QStringLiteral("config.delay.division"));
+      ids.push_back(QStringLiteral("config.delay.div.next"));
+      ids.push_back(QStringLiteral("config.delay.feedback"));
+      ids.push_back(QStringLiteral("config.delay.mix"));
+    } else if (kind == QStringLiteral("reverb")) {
+      for (int model = 0; model < audio::fx::Reverb::kModelCount; ++model) {
+        ids.push_back(QStringLiteral("config.reverb.model.%1").arg(model));
+      }
+      ids.push_back(QStringLiteral("config.reverb.predelay"));
+      ids.push_back(QStringLiteral("config.reverb.decay"));
+      ids.push_back(QStringLiteral("config.reverb.damping"));
     } else {
       ids.push_back(QStringLiteral("config.on"));
       ids.push_back(QStringLiteral("config.mode.0"));
@@ -1593,6 +1823,19 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("shift.tools.brightness"));
         }
         break;
+      case 7: {
+        // EQ SHIFT face: the band editor is too tall for the tile row, so the
+        // sliders and the six explicit band types live here.
+        ids.push_back(QStringLiteral("shift.eq.subject.main"));
+        ids.push_back(QStringLiteral("shift.eq.subject.track"));
+        ids.push_back(QStringLiteral("shift.eq.band.gain"));
+        ids.push_back(QStringLiteral("shift.eq.band.q"));
+        ids.push_back(QStringLiteral("shift.eq.band.freq"));
+        for (int type = 0; type < EqModel::kTypeCount; ++type) {
+          ids.push_back(QStringLiteral("shift.eq.type.%1").arg(type));
+        }
+        break;
+      }
       case 5:
         ids.push_back(QStringLiteral("shift.projects.new"));
         ids.push_back(QStringLiteral("shift.projects.rename"));
@@ -1695,6 +1938,32 @@ void AppController::rebuildFocusIds() {
         for (int port = 0; port < midi::kPortCount; ++port) {
           ids.push_back(QStringLiteral("midimon.port.%1").arg(port));
         }
+        break;
+      }
+      case kEqTabIndex: {
+        // EQ grid: subject selector, the A-button band step, one node per band,
+        // the four corners and the fullscreen toggle.
+        ids.push_back(QStringLiteral("eq.subject.main"));
+        ids.push_back(QStringLiteral("eq.subject.track"));
+        ids.push_back(QStringLiteral("eq.band.select"));
+        for (int band = 0; band < EqModel::kBandCount; ++band) {
+          ids.push_back(QStringLiteral("eq.node.%1").arg(band));
+        }
+        ids.push_back(QStringLiteral("eq.band.gain"));
+        ids.push_back(QStringLiteral("eq.band.q"));
+        ids.push_back(QStringLiteral("eq.band.freq"));
+        ids.push_back(QStringLiteral("eq.band.type"));
+        ids.push_back(QStringLiteral("eq.fullscreen"));
+        break;
+      }
+      case kXyTabIndex: {
+        // X/Y performance: the two grids, the freeze toggle and the two
+        // secondary-parameter popups.
+        ids.push_back(QStringLiteral("xy.delay"));
+        ids.push_back(QStringLiteral("xy.reverb"));
+        ids.push_back(QStringLiteral("xy.freeze"));
+        ids.push_back(QStringLiteral("xy.delay.params"));
+        ids.push_back(QStringLiteral("xy.reverb.params"));
         break;
       }
       default:
@@ -1920,6 +2189,10 @@ void AppController::showValuePopup(const QString& label, const QString& kind,
     text = formatTempo(static_cast<int>(std::lround(value)));
   } else if (kind == QStringLiteral("int")) {
     text = formatIntValue(value);
+  } else if (kind == QStringLiteral("hz")) {
+    text = formatHzValue(value);
+  } else if (kind == QStringLiteral("q")) {
+    text = formatQValue(value);
   } else {
     text = formatGenericValue(value);
   }

@@ -21,6 +21,10 @@ QtObject {
     readonly property color soloOn: "#ffc107"
     readonly property color muteOn: "#ff7043"
     readonly property color ok: "#66bb6a"
+    // Selected EQ node. USER-MANUAL section 9: "four nodes with the selected one
+    // pink" -- the accent stays reserved for the focus ring and the tab.
+    readonly property color nodePink: "#f06292"
+    readonly property color gridLine: "#262b33"
 
     readonly property int touch: 44
     readonly property int tabHeight: 52

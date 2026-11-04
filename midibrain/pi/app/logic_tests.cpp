@@ -23,6 +23,7 @@
 #include "audio/engine.hpp"
 #include "audio_backend.hpp"
 #include "audio_glue.hpp"
+#include "eq_model.hpp"
 #include "learn_view_model.hpp"
 #include "link_client.hpp"
 #include "logic.hpp"
@@ -31,6 +32,7 @@
 #include "midi_monitor_view_model.hpp"
 #include "mixer_model.hpp"
 #include "mixer_view_model.hpp"
+#include "performance_model.hpp"
 #include "project_io.hpp"
 #include "project_logic.hpp"
 #include "recorder_view_model.hpp"
@@ -274,6 +276,9 @@ void valueFormatTests() {
   checkEqual(formatRatioValue(4.0f), "4.0:1", "ratio formatting");
   checkEqual(formatMillisecondsValue(10.0f), "10 ms", "millisecond formatting");
   checkEqual(formatGenericValue(-1.25), "-1.25", "generic FX parameter formatting");
+  checkEqual(formatHzValue(80.0), "80 Hz", "Hz formatting below 1 kHz");
+  checkEqual(formatHzValue(1200.0), "1.20 kHz", "kHz formatting above 1 kHz");
+  checkEqual(formatQValue(1.5), "Q 1.50", "Q formatting");
 }
 
 void learnTests() {
@@ -365,8 +370,9 @@ void takeAdoptionTests() {
   SessionSettings settings;
   MixerModel mixer;
   FxManager fx;
+  PerformanceModel performance;
   MidiGlue midi(false);
-  AudioGlue audio(mixer, fx, state, true);
+  AudioGlue audio(mixer, fx, performance, state, true);
   LinkClient link(midi, state, true);
   const auto base = std::filesystem::temp_directory_path() /
                     ("mnkybox-take-adopt-" +
@@ -480,10 +486,12 @@ void projectRoundTripTests() {
   SessionSettings settings;
   MixerModel mixer;
   FxManager fx;
+  PerformanceModel performance;
+  EqModel eq;
   MidiGlue midi(false);
-  AudioGlue audio(mixer, fx, state, true);
+  AudioGlue audio(mixer, fx, performance, state, true);
   LinkClient link(midi, state, true);
-  AppContext context{state, mixer, fx, midi, audio, link, settings};
+  AppContext context{state, mixer, fx, midi, audio, link, settings, eq, performance};
 
   mixer.setGainDb(2, -6.0f);
   mixer.setPan(2, 0.25f);
@@ -533,6 +541,21 @@ void projectRoundTripTests() {
   check(midi.addLearnBinding(74, 2, "mixer.ch03.gain", 0),
         "project test learn binding");
 
+  // EQ bands (one track + Main) and the X/Y performance positions ride in the
+  // session fx section.
+  eq.setSubject(1);
+  eq.setType(0, 3);
+  eq.setFreqHz(0, 800.0);
+  eq.setGainDb(0, -3.0);
+  eq.setQ(0, 2.0);
+  eq.setType(1, 1);
+  eq.setSubject(EqModel::kMainSubject);
+  eq.setType(3, 4);
+  eq.setFreqHz(3, 9000.0);
+  eq.setGainDb(3, 2.5);
+  performance.setPoint(PerformanceModel::kDelayGrid, 0.25, 0.75);
+  performance.setPoint(PerformanceModel::kReverbGrid, 0.8, 0.2);
+
   const auto directory = std::filesystem::temp_directory_path() /
                          ("mnkybox-project-test-" +
                           std::to_string(std::chrono::steady_clock::now()
@@ -553,6 +576,16 @@ void projectRoundTripTests() {
   mixer.setMonitor(2, 1);
   mixer.setMonitor(3, 1);
   settings.reset();
+  eq.setSubject(1);
+  eq.setType(0, 0);
+  eq.setFreqHz(0, 1000.0);
+  eq.setGainDb(0, 0.0);
+  eq.setQ(0, 1.0);
+  eq.setType(1, 0);
+  eq.setSubject(EqModel::kMainSubject);
+  eq.setType(3, 0);
+  performance.setPoint(PerformanceModel::kDelayGrid, 0.5, 0.5);
+  performance.setPoint(PerformanceModel::kReverbGrid, 0.5, 0.5);
   midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, false);
   midi.clearLearnBindings();
 
@@ -599,9 +632,315 @@ void projectRoundTripTests() {
   check(midi.learnBindings().size() == 1 &&
             midi.learnBindings().front().target == "mixer.ch03.gain",
         "project load restores the MIDI-learn map");
+  eq.setSubject(1);
+  check(eq.type(0) == 3 && std::abs(eq.freqHz(0) - 800.0) < 0.01 &&
+            std::abs(eq.gainDb(0) + 3.0) < 0.01 && std::abs(eq.q(0) - 2.0) < 0.01,
+        "project load restores a track's EQ bands");
+  check(eq.type(1) == 1, "project load restores a cut band type");
+  eq.setSubject(EqModel::kMainSubject);
+  check(eq.type(3) == 4 && std::abs(eq.gainDb(3) - 2.5) < 0.01,
+        "project load restores the Main EQ bands");
+  checkNear(eq.freqHz(3), 9000.0, 0.01, "project load restores the Main band frequency");
+  checkNear(performance.x(PerformanceModel::kDelayGrid), 0.25, 1e-6,
+            "project load restores the delay X/Y position");
+  checkNear(performance.y(PerformanceModel::kDelayGrid), 0.75, 1e-6,
+            "project load restores the delay Y position");
+  checkNear(performance.x(PerformanceModel::kReverbGrid), 0.8, 1e-6,
+            "project load restores the reverb X/Y position");
+  checkNear(performance.y(PerformanceModel::kReverbGrid), 0.2, 1e-6,
+            "project load restores the reverb Y position");
 
   std::error_code removeError;
   std::filesystem::remove_all(directory, removeError);
+}
+
+// EQ grid: log-frequency/gain mapping, band types and the summed response, plus
+// the X/Y performance mapping and the freeze macro. The mode values come from
+// the shipped audio::fx effects, so these checks measure the real DSP.
+void eqAndXyTests() {
+  EqModel eq;
+  check(eq.subject() == EqModel::kMainSubject, "EQ defaults to the Main subject");
+  check(eq.band() == 0, "EQ defaults to band 1");
+  check(eq.type(0) == 0, "EQ bands default to None");
+  checkNear(eq.freqHz(0), 1000.0, 0.5, "EQ bands default to 1 kHz");
+
+  checkNear(EqModel::freqToX(20.0), 0.0, 1e-9, "20 Hz is the left grid edge");
+  checkNear(EqModel::freqToX(20000.0), 1.0, 1e-9, "20 kHz is the right grid edge");
+  for (const double hz : {20.0, 100.0, 1000.0, 10000.0, 20000.0}) {
+    checkNear(EqModel::xToFreq(EqModel::freqToX(hz)), hz, hz * 1e-9,
+              "log-frequency grid round trip");
+  }
+  checkNear(EqModel::yToGain(EqModel::gainToY(6.0)), 6.0, 1e-9,
+            "gain/grid-y round trip");
+  checkNear(EqModel::yToGain(0.0), -24.0, 1e-9, "the grid bottom is -24 dB");
+  checkNear(EqModel::yToGain(1.0), 24.0, 1e-9, "the grid top is +24 dB");
+
+  // Types: None/LCut/LShelf/Param/HShelf/HCut, and cuts carry no gain.
+  eq.setType(0, 1);
+  check(eq.type(0) == 1 && !EqModel::typeHasGain(1), "a low cut has no gain axis");
+  eq.setGainDb(0, 6.0);
+  checkNear(eq.gainDb(0), 0.0, 1e-9, "a cut band ignores gain writes");
+  eq.setType(0, 3);
+  eq.setGainDb(0, 6.0);
+  checkNear(eq.gainDb(0), 6.0, 1e-9, "a parametric band accepts gain");
+  eq.setType(0, 1);
+  checkNear(eq.gainDb(0), 0.0, 1e-9, "switching to a cut neutralises the stored gain");
+  eq.setType(0, 5);
+  eq.cycleType(0, 1);
+  check(eq.type(0) == 0, "type cycling wraps High Cut -> None");
+  eq.cycleType(0, -1);
+  check(eq.type(0) == 5, "type cycling wraps None -> High Cut");
+  checkEqual(EqModel::typeShortName(1) + "/" + EqModel::typeShortName(2) + "/" +
+                 EqModel::typeShortName(3) + "/" + EqModel::typeShortName(4),
+             "LCut/LShelf/Param/HShelf", "band type short names");
+  checkEqual(EqModel::typeLongName(2), "Low Shelf", "band type long name from the effect");
+
+  // Ranges clamp to the effect's own parameter limits.
+  eq.setType(0, 3);
+  eq.setFreqHz(0, 5.0);
+  checkNear(eq.freqHz(0), 20.0, 1e-9, "frequency clamps at 20 Hz");
+  eq.setFreqHz(0, 50000.0);
+  checkNear(eq.freqHz(0), 20000.0, 1e-9, "frequency clamps at 20 kHz");
+  eq.setGainDb(0, 99.0);
+  checkNear(eq.gainDb(0), 24.0, 1e-9, "gain clamps at +24 dB");
+  eq.setQ(0, 0.0);
+  checkNear(eq.q(0), 0.1, 1e-9, "Q clamps at 0.1");
+
+  // Touch drag / panel steps.
+  eq.setFreqHz(0, 1000.0);
+  eq.setGainDb(0, 0.0);
+  check(eq.nodeAt(EqModel::freqToX(1000.0), 0.5) == 0, "the touch hit test finds a node");
+  check(eq.nodeAt(0.0, 1.0) == -1, "an empty corner has no node");
+  eq.dragBand(0, 0.25, 0.75);
+  checkNear(eq.freqHz(0), EqModel::xToFreq(0.25), 1e-6, "drag maps x to log frequency");
+  checkNear(eq.gainDb(0), EqModel::yToGain(0.75), 1e-6, "drag maps y to gain");
+  const double before = eq.freqHz(0);
+  eq.nudgeBand(0, 1, 0, false);
+  checkNear(eq.freqHz(0), before * std::pow(2.0, 1.0 / 12.0), 1e-6,
+            "one panel step is a semitone");
+  eq.nudgeBand(0, 0, 1, false);
+  checkNear(eq.gainDb(0), EqModel::yToGain(0.75) + 0.5, 1e-6,
+            "one panel step is +0.5 dB");
+  eq.setType(0, 1);
+  const double cutQ = eq.q(0);
+  eq.nudgeBand(0, 0, 1, false);
+  check(eq.q(0) > cutQ, "a cut band's up/down adjusts Q");
+
+  // Summed response: silence-free defaults and a real +12 dB parametric peak.
+  EqModel flat;
+  const auto& flatCurve = flat.curve();
+  double flatMax = 0.0;
+  for (const float db : flatCurve) flatMax = std::max(flatMax, std::abs(double(db)));
+  check(static_cast<int>(flatCurve.size()) == EqModel::kCurvePoints,
+        "the curve has one point per display column");
+  check(flatMax < 0.01, "four None bands measure as a flat 0 dB response");
+
+  EqModel peak;
+  peak.setType(0, 3);
+  peak.setFreqHz(0, 1000.0);
+  peak.setGainDb(0, 12.0);
+  peak.setQ(0, 1.0);
+  const auto& peakCurve = peak.curve();
+  int loudest = 0;
+  for (int i = 1; i < static_cast<int>(peakCurve.size()); ++i) {
+    if (peakCurve[static_cast<std::size_t>(i)] > peakCurve[static_cast<std::size_t>(loudest)]) {
+      loudest = i;
+    }
+  }
+  checkNear(EqModel::xToFreq(double(loudest) / (EqModel::kCurvePoints - 1)), 1000.0, 120.0,
+            "the +12 dB parametric band peaks at its 1 kHz frequency");
+  checkNear(peakCurve[static_cast<std::size_t>(loudest)], 12.0, 0.3,
+            "the peak reads the band gain");
+
+  // Subject and band selection wrap through Main / all four bands.
+  EqModel select;
+  select.setSubject(0);
+  select.stepSubject(-1);
+  check(select.subject() == EqModel::kMainSubject, "subject wrapping reaches Main");
+  select.stepSubject(1);
+  check(select.subject() == 0, "subject wrapping reaches track 1");
+  checkEqual(EqModel::subjectName(EqModel::kMainSubject), "MAIN", "Main subject name");
+  checkEqual(EqModel::subjectName(4), "IN 05", "track subject name");
+  select.setBand(3);
+  select.stepBand(1);
+  check(select.band() == 0, "band stepping wraps");
+
+  // Session round trip through the model's own capture/apply.
+  EqModel source;
+  source.setType(2, 3);
+  source.setFreqHz(2, 640.0);
+  source.setGainDb(2, -4.5);
+  source.setQ(2, 2.25);
+  source.setType(EqModel::kBandCount - 1, 1);
+  EqModel restored;
+  restored.apply(source.capture());
+  checkNear(restored.freqHz(2), 640.0, 0.01, "EQ capture/apply keeps frequency");
+  checkNear(restored.gainDb(2), -4.5, 0.01, "EQ capture/apply keeps gain");
+  checkNear(restored.q(2), 2.25, 0.01, "EQ capture/apply keeps Q");
+  check(restored.type(2) == 3 && restored.type(3) == 1, "EQ capture/apply keeps types");
+
+  // X/Y performance: the frozen mapping, panel steps, freeze and persistence.
+  PerformanceModel xy;
+  using Model = PerformanceModel;
+  const int dg = PerformanceModel::kDelayGrid;
+  const int rg = PerformanceModel::kReverbGrid;
+  checkNear(xy.param(dg, audio::fx::Delay::kBpCutoffHz), 20.0 + 0.5 * (20000.0 - 20.0),
+            1e-6, "delay X starts at the middle of the cutoff range");
+  xy.setPoint(Model::kDelayGrid, 0.0, 0.0);
+  checkNear(xy.param(dg, audio::fx::Delay::kBpCutoffHz), 20.0, 1e-6,
+            "delay X = 0 is the lowest cutoff");
+  checkNear(xy.param(dg, audio::fx::Delay::kBpWidthOct), 0.1, 1e-6,
+            "delay Y = 0 is the narrowest width");
+  xy.setPoint(Model::kDelayGrid, 1.0, 1.0);
+  checkNear(xy.param(dg, audio::fx::Delay::kBpCutoffHz), 20000.0, 1e-6,
+            "delay X = 1 is the highest cutoff");
+  checkNear(xy.param(dg, audio::fx::Delay::kBpWidthOct), 4.0, 1e-6,
+            "delay Y = 1 is the widest width");
+  xy.setPoint(Model::kReverbGrid, 0.0, 0.0);
+  checkNear(xy.param(rg, audio::fx::Reverb::kSize), 0.25, 1e-6,
+            "reverb X = 0 is the smallest size");
+  checkNear(xy.param(rg, audio::fx::Reverb::kMix), 0.0, 1e-6,
+            "reverb Y = 0 is the lowest level");
+  xy.setPoint(Model::kReverbGrid, 1.0, 1.0);
+  checkNear(xy.param(rg, audio::fx::Reverb::kSize), 2.0, 1e-6,
+            "reverb X = 1 is the largest size");
+  checkNear(xy.param(rg, audio::fx::Reverb::kMix), 1.0, 1e-6,
+            "reverb Y = 1 is full level");
+  check(xy.setPoint(Model::kDelayGrid, 5.0, -2.0), "an out-of-range point is clamped");
+  checkNear(xy.x(Model::kDelayGrid), 1.0, 1e-9, "clamped x");
+  checkNear(xy.y(Model::kDelayGrid), 0.0, 1e-9, "clamped y");
+  xy.setPoint(Model::kDelayGrid, 0.5, 0.5);
+  xy.nudge(Model::kDelayGrid, 1, 0, false);
+  checkNear(xy.x(Model::kDelayGrid), 0.52, 1e-9, "a fine panel step is 0.02");
+  xy.nudge(Model::kDelayGrid, 1, 0, true);
+  checkNear(xy.x(Model::kDelayGrid), 0.62, 1e-9, "a SHIFT panel step is 0.10");
+
+  xy.setPoint(Model::kReverbGrid, 0.4, 0.4);
+  const double decay = xy.param(rg, audio::fx::Reverb::kDecay);
+  const double damping = xy.param(rg, audio::fx::Reverb::kDamping);
+  const double size = xy.param(rg, audio::fx::Reverb::kSize);
+  const double mix = xy.param(rg, audio::fx::Reverb::kMix);
+  xy.setFrozen(true);
+  check(xy.frozen(), "freeze latches");
+  checkNear(xy.param(rg, audio::fx::Reverb::kDecay), 0.98, 1e-9,
+            "freeze sets the longest decay");
+  checkNear(xy.param(rg, audio::fx::Reverb::kDamping), 0.0, 1e-9,
+            "freeze removes the damping");
+  checkNear(xy.param(rg, audio::fx::Reverb::kMix), 1.0, 1e-9, "freeze is fully wet");
+  checkNear(xy.param(rg, audio::fx::Reverb::kSize), 2.0, 1e-9,
+            "freeze uses the largest size");
+  check(!xy.setPoint(Model::kReverbGrid, 0.1, 0.1), "the reverb grid is locked while frozen");
+  check(xy.setPoint(Model::kDelayGrid, 0.3, 0.7), "the delay grid stays live while frozen");
+  xy.setFrozen(false);
+  check(!xy.frozen(), "freeze releases");
+  checkNear(xy.param(rg, audio::fx::Reverb::kDecay), decay, 1e-9,
+            "release restores the decay");
+  checkNear(xy.param(rg, audio::fx::Reverb::kDamping), damping, 1e-9,
+            "release restores the damping");
+  checkNear(xy.param(rg, audio::fx::Reverb::kSize), size, 1e-9,
+            "release restores the size");
+  checkNear(xy.param(rg, audio::fx::Reverb::kMix), mix, 1e-9,
+            "release restores the level");
+  checkNear(xy.x(Model::kReverbGrid), 0.4, 1e-9, "release restores the reverb point");
+
+  const auto positions = xy.capture();
+  PerformanceModel restoredXy;
+  restoredXy.apply(positions);
+  checkNear(restoredXy.x(Model::kDelayGrid), positions.delayX, 1e-6,
+            "X/Y capture/apply keeps the delay X position");
+  checkNear(restoredXy.y(Model::kReverbGrid), positions.reverbY, 1e-6,
+            "X/Y capture/apply keeps the reverb Y position");
+  checkEqual(xy.gridName(Model::kDelayGrid) + "/" + xy.gridName(Model::kReverbGrid),
+             "DELAY/REVERB", "grid names");
+}
+
+// The send chain behind the X/Y grids: the built-in delay/reverb process the
+// FX1/FX2 send bus ahead of the CLAP slot, and the grid positions reach the DSP.
+class HalvingEffect final : public audio::IEffect {
+ public:
+  void process(float* const* ch, int nch, int n) override {
+    ++calls;
+    for (int channel = 0; channel < nch; ++channel) {
+      for (int i = 0; i < n; ++i) ch[channel][i] *= 0.5f;
+    }
+  }
+  const char* name() const override { return "halving-test-slot"; }
+  int calls = 0;
+};
+
+struct SendChainResult {
+  double tail = 0.0;
+  int peakFrame = -1;
+  float peak = 0.0f;
+  int blocks = 0;
+};
+
+// One impulse through the send chain, then 140 blocks of silence: the tail is
+// the energy after the first 100 frames, the peak frame shows where the echo or
+// the reverb build-up lands.
+SendChainResult runSendChain(PerformanceModel& model, int grid,
+                             audio::IEffect* clap = nullptr) {
+  if (clap != nullptr) model.setClapEffect(grid, clap);
+  model.setSampleRate(48000.0);
+  audio::IEffect& effect = model.effect(grid);
+  std::vector<float> left(audio::kBlockSize, 0.0f);
+  std::vector<float> right(audio::kBlockSize, 0.0f);
+  left[0] = 1.0f;
+  right[0] = 1.0f;
+  SendChainResult result;
+  int frame = 0;
+  for (int block = 0; block < 140; ++block) {
+    float* channels[2] = {left.data(), right.data()};
+    effect.process(channels, 2, audio::kBlockSize);
+    ++result.blocks;
+    for (int i = 0; i < audio::kBlockSize; ++i, ++frame) {
+      const float value = std::abs(left[static_cast<std::size_t>(i)]);
+      if (value > result.peak) {
+        result.peak = value;
+        result.peakFrame = frame;
+      }
+      if (frame > 100) {
+        result.tail += double(left[static_cast<std::size_t>(i)]) *
+                       left[static_cast<std::size_t>(i)];
+      }
+    }
+    std::fill(left.begin(), left.end(), 0.0f);
+    std::fill(right.begin(), right.end(), 0.0f);
+  }
+  return result;
+}
+
+void sendChainTests() {
+  const int delayGrid = PerformanceModel::kDelayGrid;
+  const int reverbGrid = PerformanceModel::kReverbGrid;
+
+  PerformanceModel delaySend;
+  delaySend.setPoint(delayGrid, 0.5, 0.5);
+  HalvingEffect clap;
+  const auto delay = runSendChain(delaySend, delayGrid, &clap);
+  check(delay.peakFrame > 11800 && delay.peakFrame < 12200,
+        "the built-in delay repeats the FX1 send impulse at its 250 ms time");
+  check(delay.peak > 0.0f, "the built-in delay produces audio on the send bus");
+  check(clap.calls > 0, "the chain forwards the send bus to the CLAP slot");
+  check(clap.calls == delay.blocks, "the chain reaches the CLAP slot every block");
+
+  PerformanceModel dryReverb;
+  dryReverb.setPoint(reverbGrid, 0.5, 0.0);
+  const auto dry = runSendChain(dryReverb, reverbGrid);
+  check(dry.tail < 1e-9, "reverb level 0 leaves the send bus dry");
+  PerformanceModel wetReverb;
+  wetReverb.setPoint(reverbGrid, 0.5, 1.0);
+  const auto wet = runSendChain(wetReverb, reverbGrid);
+  check(wet.tail > 1e-3, "reverb level 1 adds the wet tail");
+
+  PerformanceModel smallReverb;
+  smallReverb.setPoint(reverbGrid, 0.02, 1.0);
+  const auto small = runSendChain(smallReverb, reverbGrid);
+  PerformanceModel largeReverb;
+  largeReverb.setPoint(reverbGrid, 0.98, 1.0);
+  const auto large = runSendChain(largeReverb, reverbGrid);
+  check(small.peakFrame > 0 && large.peakFrame > small.peakFrame + 1000,
+        "reverb size (grid X) moves the tail later in the DSP");
 }
 
 // Take-loop beat field, I/O assignment and clock-gate value rules: the pure
@@ -786,6 +1125,8 @@ int runAll() {
   learnCaptureTests();
   projectRoundTripTests();
   loopAndIoTests();
+  eqAndXyTests();
+  sendChainTests();
   midiMonitorTests();
   clockGateTests();
   styleTests();

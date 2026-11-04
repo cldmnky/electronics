@@ -11,11 +11,13 @@
 #include "../../session/session.hpp"
 #include "app_state.hpp"
 #include "audio_glue.hpp"
+#include "eq_model.hpp"
 #include "fx_slot.hpp"
 #include "link_client.hpp"
 #include "logic.hpp"
 #include "midi_glue.hpp"
 #include "mixer_model.hpp"
+#include "performance_model.hpp"
 #include "session_settings.hpp"
 
 namespace mnky::app::project {
@@ -109,6 +111,11 @@ session::Snapshot captureSnapshot(const AppContext& context) {
   context.mixer.applyTo(scratch);
   SlotTargets targets(context);
   auto snapshot = session::capture(context.midi.routerSnapshot(), scratch, targets.pointers);
+  // EQ bands and X/Y performance positions live in the session fx section
+  // (v2: Snapshot::fx.eq / fx.xy); they are app-owned, so they are filled here
+  // rather than by session::capture().
+  snapshot.fx.eq = context.eq.capture();
+  snapshot.fx.xy = context.performance.capture();
   snapshot.transport.bpmX100 = context.state.tempoX100.load();
   snapshot.click.enabled = context.state.clickEnabled.load();
   snapshot.click.level = context.state.clickLevel.load();
@@ -246,6 +253,8 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
   session::apply(result.snapshot, router, scratch, targets.pointers);
   context.midi.replaceRouter(router);
   applyMixer(context, result.snapshot.mixer);
+  context.eq.apply(result.snapshot.fx.eq);
+  context.performance.apply(result.snapshot.fx.xy);
 
   std::vector<midi::LearnBinding> bindings;
   for (const auto& entry : result.snapshot.midimap) {
@@ -319,6 +328,28 @@ std::string fingerprint(const AppContext& context) {
       appendFloat(out, "pa", fx.paramValue(param));
     }
   }
+
+  // EQ: every band of all 18 tracks plus Main (type, gain, frequency, Q).
+  const auto eq = context.eq.capture();
+  for (int track = 0; track <= audio::kMaxInputs; ++track) {
+    for (int band = 0; band < 4; ++band) {
+      const auto& entry = track >= audio::kMaxInputs
+                              ? eq.main[static_cast<std::size_t>(band)]
+                              : eq.tracks[static_cast<std::size_t>(track)]
+                                         [static_cast<std::size_t>(band)];
+      appendInt(out, "eqt", entry.type);
+      appendFloat(out, "eqg", entry.gainDb);
+      appendFloat(out, "eqf", entry.freqHz);
+      appendFloat(out, "eqq", entry.q);
+    }
+  }
+  // X/Y performance positions. The reverb freeze macro is a gesture, not a
+  // setting, so it is deliberately not in the fingerprint (it cannot be saved).
+  const auto xy = context.performance.capture();
+  appendFloat(out, "xydx", xy.delayX);
+  appendFloat(out, "xydy", xy.delayY);
+  appendFloat(out, "xyrx", xy.reverbX);
+  appendFloat(out, "xyry", xy.reverbY);
 
   appendInt(out, "bpm", context.state.tempoX100.load());
   appendInt(out, "ce", context.state.clickEnabled.load() ? 1 : 0);

@@ -27,6 +27,7 @@
 #include "emulator_synth.hpp"
 #include "fx_slot.hpp"
 #include "mixer_model.hpp"
+#include "performance_model.hpp"
 #include "session_settings.hpp"
 
 QT_BEGIN_NAMESPACE
@@ -61,7 +62,10 @@ struct AudioBackendState {
 
 class AudioGlue {
  public:
-  AudioGlue(MixerModel& mixer, FxManager& fx, AppState& state, bool emulator);
+  // The two send buses are a chain: the built-in delay/reverb that the X/Y
+  // grids drive runs first, then the app's CLAP slot for that bus.
+  AudioGlue(MixerModel& mixer, FxManager& fx, PerformanceModel& performance,
+            AppState& state, bool emulator);
   ~AudioGlue();
   AudioGlue(const AudioGlue&) = delete;
   AudioGlue& operator=(const AudioGlue&) = delete;
@@ -132,6 +136,7 @@ class AudioGlue {
 
   MixerModel& mixer_;
   FxManager& fx_;
+  PerformanceModel& performance_;
   AppState& state_;
   bool emulatorStartup_ = false;  // --emulator: start on the generator
   std::atomic<bool> emulated_{false};

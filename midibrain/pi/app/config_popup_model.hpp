@@ -7,7 +7,9 @@
 #include <QString>
 
 #include "app_state.hpp"
+#include "eq_model.hpp"
 #include "mixer_model.hpp"
+#include "performance_model.hpp"
 #include "session_settings.hpp"
 
 namespace mnky::app {
@@ -40,9 +42,21 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(QString sendSummary READ sendSummary NOTIFY summariesChanged)
   Q_PROPERTY(QString monitorSummary READ monitorSummary NOTIFY summariesChanged)
   Q_PROPERTY(QString compSummary READ compSummary NOTIFY summariesChanged)
+  Q_PROPERTY(int eqType READ eqType WRITE setEqType NOTIFY changed)
+  Q_PROPERTY(int delayBeat READ delayBeat WRITE setDelayBeat NOTIFY changed)
+  Q_PROPERTY(int delayPing READ delayPing WRITE setDelayPing NOTIFY changed)
+  Q_PROPERTY(int delayDivision READ delayDivision WRITE setDelayDivision NOTIFY changed)
+  Q_PROPERTY(QString divisionText READ divisionText NOTIFY changed)
+  Q_PROPERTY(double delayFeedback READ delayFeedback WRITE setDelayFeedback NOTIFY changed)
+  Q_PROPERTY(double delayMix READ delayMix WRITE setDelayMix NOTIFY changed)
+  Q_PROPERTY(int reverbModel READ reverbModel WRITE setReverbModel NOTIFY changed)
+  Q_PROPERTY(double reverbPredelayMs READ reverbPredelayMs WRITE setReverbPredelayMs NOTIFY changed)
+  Q_PROPERTY(double reverbDecay READ reverbDecay WRITE setReverbDecay NOTIFY changed)
+  Q_PROPERTY(double reverbDamping READ reverbDamping WRITE setReverbDamping NOTIFY changed)
 
  public:
   ConfigPopupModel(AppState& state, MixerModel& mixer, SessionSettings& settings,
+                   EqModel& eq, PerformanceModel& performance,
                    QObject* parent = nullptr);
 
   bool open() const { return open_; }
@@ -71,6 +85,17 @@ class ConfigPopupModel final : public QObject {
   QString sendSummary() const { return sendSummary_; }
   QString monitorSummary() const { return monitorSummary_; }
   QString compSummary() const { return compSummary_; }
+  int eqType() const { return eqType_; }
+  int delayBeat() const { return delayBeat_; }
+  int delayPing() const { return delayPing_; }
+  int delayDivision() const { return delayDivision_; }
+  QString divisionText() const;
+  double delayFeedback() const { return delayFeedback_; }
+  double delayMix() const { return delayMix_; }
+  int reverbModel() const { return reverbModel_; }
+  double reverbPredelayMs() const { return reverbPredelayMs_; }
+  double reverbDecay() const { return reverbDecay_; }
+  double reverbDamping() const { return reverbDamping_; }
 
   void setClickMode(int value);
   void setClickOutput(int value);
@@ -91,6 +116,16 @@ class ConfigPopupModel final : public QObject {
   void setCompReleaseMs(double value);
   void setCompMakeupDb(double value);
   void setCompMode(int value);
+  void setEqType(int value);
+  void setDelayBeat(int value);
+  void setDelayPing(int value);
+  void setDelayDivision(int value);
+  void setDelayFeedback(double value);
+  void setDelayMix(double value);
+  void setReverbModel(int value);
+  void setReverbPredelayMs(double value);
+  void setReverbDecay(double value);
+  void setReverbDamping(double value);
 
   // AppController entry points.
   bool openKind(const QString& kind);
@@ -112,6 +147,8 @@ class ConfigPopupModel final : public QObject {
   AppState& state_;
   MixerModel& mixer_;
   SessionSettings& settings_;
+  EqModel& eq_;
+  PerformanceModel& performance_;
   bool open_ = false;
   QString kind_;
   QString title_;
@@ -138,6 +175,17 @@ class ConfigPopupModel final : public QObject {
   QString sendSummary_;
   QString monitorSummary_;
   QString compSummary_;
+  // EQ band type / delay / reverb secondary-parameter drafts.
+  int eqType_ = 0;
+  int delayBeat_ = 0;
+  int delayPing_ = 0;
+  int delayDivision_ = 3;
+  double delayFeedback_ = 0.35;
+  double delayMix_ = 1.0;
+  int reverbModel_ = 0;
+  double reverbPredelayMs_ = 20.0;
+  double reverbDecay_ = 0.7;
+  double reverbDamping_ = 0.5;
 };
 
 }  // namespace mnky::app

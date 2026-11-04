@@ -15,8 +15,8 @@
 
 namespace mnky::app {
 
-inline constexpr int kScreenCount = 7;  // Mixer, Routing, FX, Recorder, System,
-                                        // Projects, Monitor
+inline constexpr int kScreenCount = 9;  // Mixer, Routing, FX, Recorder, System,
+                                        // Projects, Monitor, EQ, X/Y
 inline constexpr int kNumStrips = 18;   // audio::kMaxInputs
 
 // One thing the app does in response to a panel gesture or a screen control.
@@ -320,6 +320,25 @@ inline std::string formatMillisecondsValue(float ms) {
 inline std::string formatGenericValue(double value) {
   char buffer[32] = {};
   std::snprintf(buffer, sizeof buffer, "%.2f", value);
+  return buffer;
+}
+
+// EQ node frequency and the delay X axis: 80 Hz / 12.00 kHz.
+inline std::string formatHzValue(double hz) {
+  if (!(hz > 0.0)) hz = 0.0;
+  char buffer[24] = {};
+  if (hz >= 1000.0) {
+    std::snprintf(buffer, sizeof buffer, "%.2f kHz", hz / 1000.0);
+  } else {
+    std::snprintf(buffer, sizeof buffer, "%.0f Hz", hz);
+  }
+  return buffer;
+}
+
+// EQ band Q: the value popup reads Q 0.71 rather than a bare number.
+inline std::string formatQValue(double q) {
+  char buffer[24] = {};
+  std::snprintf(buffer, sizeof buffer, "Q %.2f", q);
   return buffer;
 }
 

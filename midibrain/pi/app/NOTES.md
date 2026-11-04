@@ -305,6 +305,84 @@ pactl list short sink-inputs                                                 # o
 * The tab row is now seven screens (`kScreenCount = 7`, Monitor last); the tab
   bar shows seven equal cells at 800 px.
 
+## Wave 5: EQ GRID / X/Y PERFORMANCE (33-*)
+
+* **Two new tabs** - the tab row is nine equal cells: Mixer, Routing, FX,
+  Recorder, System, Projects, Monitor, **EQ**, **X/Y**. The existing indices are
+  unchanged, `kScreenCount` is 9 and the panel tab ids are `tab.0..8`.
+  `app.fullscreen` hides the tab row and the transport strip; `setTab` restores
+  the bridge when another tab is picked.
+* **EQ grid** (`qml/screens/EqScreen.qml`, `eq_model.*`, `eq_view_model.*`) -
+  log-frequency x gain grid (20 Hz..20 kHz, +/-24 dB) with four draggable nodes
+  (the selected one pink), the summed response curve, a track + MAIN subject
+  selector, the selected band's GAIN/Q/FREQUENCY/TYPE corners and the FULLSCREEN
+  toggle. Band values live in one `audio::fx::Eq` per subject (18 tracks + Main),
+  so the ranges (gain +/-24 dB, Q 0.1..10, 20 Hz..20 kHz), the band type names
+  and the curve come from the shipped effect instead of a second copy. The curve
+  is that effect's own impulse response sampled at 49 log-spaced frequencies, so
+  it cannot drift from the DSP. Types are None/LCut/LShelf/Param/HShelf/HCut; a
+  cut band shows `-- (cut)` instead of a dB value and ignores gain writes, and
+  switching a band into a cut neutralises its stored gain.
+* **EQ has no audio insert yet** - `audio::Engine` exposes only the two FX send
+  buses, both owned by the FX screen's CLAP slots. There is no per-track or
+  main-bus insert, so every EQ instance is edited, displayed and
+  project-persisted but **not processed in the audio path**. A follow-up audio
+  piece adds the inserts; this wave makes no EQ audio claim.
+* **EQ panel path** - focus ring `eq.subject.main`, `eq.subject.track`,
+  `eq.band.select`, `eq.node.0..3`, `eq.band.gain`, `eq.band.q`, `eq.band.freq`,
+  `eq.band.type`, `eq.fullscreen`. PRESS on a node selects that band and enters
+  EDIT; in EDIT the directions move the node (left/right = frequency, and with
+  SHIFT the coarse half-octave step; up/down = gain) while the encoder moves
+  frequency (SHIFT = fine). `eq.band.select` is the A-button equivalent: one
+  PRESS steps to the next band (wrapping 4 -> 1). PRESS on the TYPE corner opens
+  the `eqtype` ConfigPopup, the secondary type picker; the SHIFT face carries the
+  band steppers and all six type buttons (`shift.eq.*`). On a cut band SHIFT+up/
+  down adjusts Q instead of gain (USER-MANUAL section 9), and every change shows
+  one transient popup (`1.00 kHz`, `+3.0 dB`, `Q 1.50`, or
+  `Param - 3.00 kHz - +2.5 dB` for a drag).
+* **X/Y performance** (`qml/screens/XyScreen.qml`, `performance_model.*`,
+  `xy_view_model.*`) - two grids with the frozen USER-MANUAL section 10 mapping:
+  delay X = feedback-filter cutoff / Y = width, reverb X = size / Y = level. Both
+  go through the effects' own X/Y seam (`Effect::setXY` + `setXYNormalized`), so
+  the normalization and the ranges belong to `audio::fx`; the delay cutoff axis is
+  therefore **linear in Hz**, as that seam documents (x = 0.5 is ~10 kHz).
+* **The two grids are audible** - `PerformanceModel` runs the built-in
+  `audio::fx::Delay` (send 1) and `audio::fx::Reverb` (send 2) **ahead of** the
+  CLAP slot adapters on the engine's two send buses (`AudioGlue`), so a grid move
+  is heard on the FX1/FX2 returns. The chain only `try_lock`s on the audio thread:
+  a parameter write makes one block pass through dry, the `FxSlot::Adapter` rule.
+  Both effects start fully wet because a send bus carries a copy of the strip; the
+  delay/reverb secondary parameters are editable in the `delay`/`reverb`
+  ConfigPopups. Nothing here is measured (no latency, no level claim).
+* **Multitouch** - each grid owns its `MultiPointTouchArea` and forwards every Qt
+  `TouchPoint` id to `XyViewModel`, so one finger on each grid is two independent
+  points at once. The header badge and the app log both read
+  `2 TOUCH - DELAY x1 + REVERB x1`. The offscreen screenshot runner cannot
+  synthesize real `QTouchEvent`s, so `33-xy.png` drives the same view-model entry
+  point the `TouchPoint` handlers call (`touchBegin(grid, pointId, x, y)`) with
+  two point ids; the `MultiPointTouchArea` delivery itself needs real touch
+  hardware and stays unverified.
+* **Freeze** - panel-punchable (`xy.freeze`, PRESS toggles; the on-screen button
+  is the same call). The shipped `Reverb` header has no freeze parameter, so
+  freeze is a macro: longest decay (0.98), no damping, fully wet, largest size,
+  and release restores every reverb parameter plus the grid position. While
+  frozen the reverb grid and the reverb secondary parameters are locked and the
+  point is drawn at the maximum corner; the delay grid stays live.
+* **X/Y panel path** - ring `xy.delay`, `xy.reverb`, `xy.freeze`,
+  `xy.delay.params`, `xy.reverb.params`. PRESS on a grid enters EDIT, the
+  directions move the point (0.02 per step, 0.10 with SHIFT), the encoder moves Y
+  and PRESS drops out of EDIT. The PARAMS entries open the `delay` (Beat, Ping,
+  Division, Feedback, Mix) and `reverb` (Model, Predelay, Decay, Damping)
+  ConfigPopups.
+* **Persistence** - session v2 `Snapshot::fx.eq` (per track + Main, four bands
+  each) and `Snapshot::fx.xy` (normalized positions) are captured and applied by
+  `project_io` and folded into the dirty fingerprint, so project save/load and the
+  dirty dot cover every EQ band and every grid position. The freeze flag is a
+  performance gesture, not a setting: it lives in the model only and is
+  deliberately outside the fingerprint, because nothing could save it.
+* **Theme** - `Style.nodePink` (#f06292) is the selected EQ node and the freeze
+  state; the accent stays the focus-ring/tab colour.
+
 ## Panel interaction (docs/panel-interaction.md)
 
 Implemented in `AppController` with a focus ring per screen and IDs such as
@@ -356,6 +434,8 @@ Implemented in `AppController` with a focus ring per screen and IDs such as
 | Session apply | **works**; mixer/router/FX/tempo/click/midimap |
 | Click config | **works** (enable, level, 1-8 bars; session round-trip) |
 | MIDI-learn capture mode | **works** (target picker, arm, next CC binds, remove/clear; persisted in `midimap`) |
+| EQ grid: 4 nodes, response curve, corners, track+Main, fullscreen | **works** (UI + params + session); engine has no EQ insert, so no DSP claim |
+| X/Y performance grids, multitouch, panel path, freeze | **works**; built-in delay/reverb run on the FX1/FX2 sends ahead of the CLAP slots; freeze is a parameter macro |
 
 ### Explicitly dropped / changed from the JUCE app
 
@@ -410,6 +490,40 @@ Linux guest (Debian bookworm arm64, Qt 6.4.2):
   **9/9 PNGs**, 0 failures. The wave-3 set is checked in as
   `qemu/screenshots/31-{mixer,clip,track,takes,punch,monitor,tools,keypad,value-popup}.png`.
   The earlier 30-* set and the live PipeWire evidence are kept alongside it.
+
+### Wave 5 run (EQ + X/Y)
+
+macOS (Qt 6.12.0, AppleClang, fresh build directory `/tmp/pi-eq-final`):
+
+* `cmake -S midibrain/pi -B /tmp/pi-eq-final2 -DCMAKE_PREFIX_PATH=$(brew --prefix qt)`
+  then `cmake --build /tmp/pi-eq-final2 -j8`: **exit 0, zero warnings** (a clean
+  configure+build of the shared tree; one earlier attempt raced another team's
+  mid-edit `pi/midi` CMake and was simply re-run).
+* `ctest --test-dir /tmp/pi-eq-final2 --output-on-failure`: **16/16 passed**
+  (`mnkybox_app_logic` = 298 checks, 0 failures; the wave added 94 EQ/X/Y checks,
+  including one impulse test per send chain that proves the built-in delay and
+  reverb really process the FX1/FX2 buses and that the grid X/Y positions reach
+  the DSP).
+* `QT_QPA_PLATFORM=offscreen ./app/mnkybox --screenshots /tmp/eq-shots`:
+  **21/21 PNGs**, 0 failures, no QML warnings; the new steps are `33-eq`,
+  `33-eq-popup`, `33-eq-full`, `33-xy`, `33-xy-params`, `33-xy-freeze`,
+  `33-eq-type`, `33-eq-shift`.
+
+Linux guest (Debian bookworm arm64, Qt 6.4.2, `~/pi-build2`):
+
+* rsync of the same tree (excluding `qemu`, `build`, `node_modules`, `dist`,
+  `fab`, `.git`) + `cmake -S ~/mb-src/pi -B ~/pi-build2` + full
+  `cmake --build ~/pi-build2 -j8`: **exit 0, no warnings, 10.4 s** (ccache warm;
+  the shared tree also carried other teams' midi/audio changes).
+* `ctest --output-on-failure`: **16/16 passed**.
+* `QT_QPA_PLATFORM=offscreen ./app/mnkybox --screenshots ~/qt-shots-33`:
+  **21/21 PNGs**, 0 failures, no QML warnings; the log carries
+  `xy: 2 TOUCH - DELAY x1 + REVERB x1` from the multitouch step, and
+  `--unittests` prints 298 checks, 0 failures. The wave-5 set
+  is checked in as
+  `qemu/screenshots/33-{eq,eq-popup,eq-full,eq-shift,eq-type,xy,xy-params,xy-freeze}.png`.
+  The 31-*/32-* shots still show the old seven-tab row (this wave only wrote
+  33-* files).
 
 No hardware, touch-panel, audio-timing, measured metronome-level or JACK/PipeWire
 routing test is claimed. The screenshots are offscreen software-renderer grabs,

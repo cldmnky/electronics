@@ -18,7 +18,7 @@ Window {
     color: Style.background
 
     readonly property var tabNames: ["Mixer", "Routing", "FX", "Recorder", "System",
-                                     "Projects", "Monitor"]
+                                     "Projects", "Monitor", "EQ", "XY"]
 
     Column {
         anchors.fill: parent
@@ -28,9 +28,12 @@ Window {
             width: parent.width
             height: Style.tabHeight
             color: Style.panelDark
+            // EQ fullscreen hides the whole bridge (tab row + transport strip);
+            // AppController::setTab restores it when another tab is picked.
+            visible: !app.fullscreen
 
             readonly property bool shiftMode: app.panelMode === "shift"
-            readonly property int tabCount: 7
+            readonly property int tabCount: 9
 
             Row {
                 anchors.fill: parent
@@ -93,14 +96,17 @@ Window {
         }
 
         TransportStrip {
+            id: transport
             width: parent.width
             height: Style.transportHeight
+            visible: !app.fullscreen
         }
 
         Loader {
             id: screenLoader
             width: parent.width
-            height: parent.height - tabBar.height - Style.transportHeight
+            height: parent.height - (tabBar.visible ? tabBar.height : 0)
+                    - (transport.visible ? Style.transportHeight : 0)
             source: {
                 switch (app.tab) {
                 case 0: return "screens/MixerScreen.qml"
@@ -110,6 +116,8 @@ Window {
                 case 4: return "screens/SystemScreen.qml"
                 case 5: return "screens/ProjectsScreen.qml"
                 case 6: return "screens/MidiMonitorScreen.qml"
+                case 7: return "screens/EqScreen.qml"
+                case 8: return "screens/XyScreen.qml"
                 default: return ""
                 }
             }

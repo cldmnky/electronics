@@ -23,8 +23,14 @@ QString sendName(int source) {
 }  // namespace
 
 ConfigPopupModel::ConfigPopupModel(AppState& state, MixerModel& mixer,
-                                   SessionSettings& settings, QObject* parent)
-    : QObject(parent), state_(state), mixer_(mixer), settings_(settings) {
+                                   SessionSettings& settings, EqModel& eq,
+                                   PerformanceModel& performance, QObject* parent)
+    : QObject(parent),
+      state_(state),
+      mixer_(mixer),
+      settings_(settings),
+      eq_(eq),
+      performance_(performance) {
   refreshSummaries();
 }
 
@@ -35,13 +41,18 @@ int ConfigPopupModel::clampBoolChoice(int value) { return value == 1 ? 1 : 0; }
 
 bool ConfigPopupModel::openKind(const QString& kind) {
   if (kind != QStringLiteral("metronome") && kind != QStringLiteral("sends") &&
-      kind != QStringLiteral("monitor") && kind != QStringLiteral("comp")) {
+      kind != QStringLiteral("monitor") && kind != QStringLiteral("comp") &&
+      kind != QStringLiteral("eqtype") && kind != QStringLiteral("delay") &&
+      kind != QStringLiteral("reverb")) {
     return false;
   }
   kind_ = kind;
   title_ = kind == QStringLiteral("metronome") ? QStringLiteral("METRONOME")
            : kind == QStringLiteral("sends")   ? QStringLiteral("SEND SOURCE")
            : kind == QStringLiteral("monitor") ? QStringLiteral("MONITOR")
+           : kind == QStringLiteral("eqtype")  ? QStringLiteral("EQ BAND TYPE")
+           : kind == QStringLiteral("delay")   ? QStringLiteral("DELAY")
+           : kind == QStringLiteral("reverb")  ? QStringLiteral("REVERB")
                                                : QStringLiteral("MAIN COMP");
   loadDraft();
   open_ = true;
@@ -70,6 +81,22 @@ void ConfigPopupModel::loadDraft() {
   compReleaseMs_ = settings_.mainComp.releaseMs;
   compMakeupDb_ = settings_.mainComp.makeupDb;
   compMode_ = settings_.mainComp.mode;
+  eqType_ = eq_.type(eq_.band());
+  const int delayGrid = PerformanceModel::kDelayGrid;
+  const int reverbGrid = PerformanceModel::kReverbGrid;
+  delayBeat_ = static_cast<int>(std::lround(
+      performance_.param(delayGrid, audio::fx::Delay::kBeatMode)));
+  delayPing_ = static_cast<int>(std::lround(
+      performance_.param(delayGrid, audio::fx::Delay::kPingPong)));
+  delayDivision_ = static_cast<int>(std::lround(
+      performance_.param(delayGrid, audio::fx::Delay::kDivision)));
+  delayFeedback_ = performance_.param(delayGrid, audio::fx::Delay::kFeedback);
+  delayMix_ = performance_.param(delayGrid, audio::fx::Delay::kMix);
+  reverbModel_ = static_cast<int>(std::lround(
+      performance_.param(reverbGrid, audio::fx::Reverb::kModel)));
+  reverbPredelayMs_ = performance_.param(reverbGrid, audio::fx::Reverb::kPredelayMs);
+  reverbDecay_ = performance_.param(reverbGrid, audio::fx::Reverb::kDecay);
+  reverbDamping_ = performance_.param(reverbGrid, audio::fx::Reverb::kDamping);
 }
 
 void ConfigPopupModel::accept() {
@@ -111,6 +138,24 @@ void ConfigPopupModel::commitDraft() {
   settings_.mainComp.makeupDb =
       static_cast<float>(std::clamp(compMakeupDb_, -36.0, 36.0));
   settings_.mainComp.mode = clampBoolChoice(compMode_);
+  // Only the open popup's own drafts are written: an OK on the metronome popup
+  // must not push a stale EQ/delay/reverb draft back into the models.
+  if (kind_ == QStringLiteral("eqtype")) {
+    eq_.setType(eq_.band(), eqType_);
+  } else if (kind_ == QStringLiteral("delay")) {
+    const int delayGrid = PerformanceModel::kDelayGrid;
+    performance_.setParam(delayGrid, audio::fx::Delay::kBeatMode, delayBeat_);
+    performance_.setParam(delayGrid, audio::fx::Delay::kPingPong, delayPing_);
+    performance_.setParam(delayGrid, audio::fx::Delay::kDivision, delayDivision_);
+    performance_.setParam(delayGrid, audio::fx::Delay::kFeedback, delayFeedback_);
+    performance_.setParam(delayGrid, audio::fx::Delay::kMix, delayMix_);
+  } else if (kind_ == QStringLiteral("reverb")) {
+    const int reverbGrid = PerformanceModel::kReverbGrid;
+    performance_.setParam(reverbGrid, audio::fx::Reverb::kModel, reverbModel_);
+    performance_.setParam(reverbGrid, audio::fx::Reverb::kPredelayMs, reverbPredelayMs_);
+    performance_.setParam(reverbGrid, audio::fx::Reverb::kDecay, reverbDecay_);
+    performance_.setParam(reverbGrid, audio::fx::Reverb::kDamping, reverbDamping_);
+  }
 }
 
 void ConfigPopupModel::refreshSummaries() {
@@ -148,6 +193,58 @@ void ConfigPopupModel::refreshSummaries() {
   monitorSummary_ = monitor;
   compSummary_ = comp;
   emit summariesChanged();
+}
+
+QString ConfigPopupModel::divisionText() const {
+  return QString::fromLatin1(audio::fx::Delay::divisionName(delayDivision_));
+}
+
+void ConfigPopupModel::setEqType(int value) {
+  eqType_ = std::clamp(value, 0, EqModel::kTypeCount - 1);
+  emit changed();
+}
+void ConfigPopupModel::setDelayBeat(int value) {
+  delayBeat_ = clampBoolChoice(value);
+  emit changed();
+}
+void ConfigPopupModel::setDelayPing(int value) {
+  delayPing_ = clampBoolChoice(value);
+  emit changed();
+}
+void ConfigPopupModel::setDelayDivision(int value) {
+  delayDivision_ = std::clamp(value, 0, audio::fx::Delay::kDivCount - 1);
+  emit changed();
+}
+void ConfigPopupModel::setDelayFeedback(double value) {
+  delayFeedback_ = std::clamp(value, 0.0, 0.95);
+  emit changed();
+}
+void ConfigPopupModel::setDelayMix(double value) {
+  delayMix_ = std::clamp(value, 0.0, 1.0);
+  emit changed();
+}
+void ConfigPopupModel::setReverbModel(int value) {
+  reverbModel_ = std::clamp(value, 0, audio::fx::Reverb::kModelCount - 1);
+  // A reverb model is a preset: show the decay/damping it selects so OK writes
+  // back exactly what the popup displays.
+  performance_.setReverbModel(reverbModel_);
+  reverbDecay_ = performance_.param(PerformanceModel::kReverbGrid,
+                                    audio::fx::Reverb::kDecay);
+  reverbDamping_ = performance_.param(PerformanceModel::kReverbGrid,
+                                      audio::fx::Reverb::kDamping);
+  emit changed();
+}
+void ConfigPopupModel::setReverbPredelayMs(double value) {
+  reverbPredelayMs_ = std::clamp(value, 0.0, 200.0);
+  emit changed();
+}
+void ConfigPopupModel::setReverbDecay(double value) {
+  reverbDecay_ = std::clamp(value, 0.0, 0.98);
+  emit changed();
+}
+void ConfigPopupModel::setReverbDamping(double value) {
+  reverbDamping_ = std::clamp(value, 0.0, 1.0);
+  emit changed();
 }
 
 #define CONFIG_SETTER(name, field, expression)                 \

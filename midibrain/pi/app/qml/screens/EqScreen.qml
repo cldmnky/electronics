@@ -1,0 +1,499 @@
+import QtQuick
+import Mnkybox 1.0
+import "../components"
+
+// EQ: log-frequency x gain grid with four draggable nodes (the selected one is
+// pink), the summed response curve, and the selected band's Gain/Q/Frequency/
+// Type corners. Track selector plus MAIN picks the subject; FULL hides the
+// shell's tab row and transport strip (app.fullscreen). SHIFT is the explicit
+// band editor: sliders for the focused band and the six band types.
+Item {
+    id: screen
+
+    readonly property bool shiftFace: app.panelMode === "shift"
+
+    // ---- normal face ------------------------------------------------------
+    Column {
+        visible: !screen.shiftFace
+        anchors.fill: parent
+        anchors.margins: Style.margin
+        spacing: 4
+
+        Row {
+            width: parent.width
+            height: Style.touch
+            spacing: 4
+
+            Text {
+                width: 58
+                height: parent.height
+                text: "SUBJECT"
+                color: Style.textDim
+                font.pixelSize: Style.fontSmall
+                font.bold: true
+                verticalAlignment: Text.AlignVCenter
+            }
+            TouchButton {
+                width: 74
+                height: parent.height
+                text: "MAIN"
+                checked: eq.subject === 18
+                focusId: "eq.subject.main"
+                onClicked: eq.selectMain()
+            }
+            TouchButton {
+                width: Style.touch
+                height: parent.height
+                text: "-"
+                textSize: 20
+                onClicked: eq.stepSubject(-1)
+            }
+            Rectangle {
+                width: 96
+                height: parent.height
+                color: Style.panelDark
+                radius: Style.corner
+                border.width: app.focusId === "eq.subject.track" ? 2 : Style.outlineWidth
+                border.color: app.focusId === "eq.subject.track" ? Style.accent : Style.outline
+                Text {
+                    anchors.centerIn: parent
+                    text: eq.subjectText
+                    color: Style.text
+                    font.pixelSize: Style.fontBody
+                    font.bold: true
+                }
+                TapHandler {
+                    onTapped: app.showTextPopup("EQ SUBJECT", eq.subjectText)
+                }
+            }
+            TouchButton {
+                width: Style.touch
+                height: parent.height
+                text: "+"
+                textSize: 20
+                onClicked: eq.stepSubject(1)
+            }
+            TouchButton {
+                width: 168
+                height: parent.height
+                text: eq.bandText
+                textSize: Style.fontSmall
+                checked: false
+                focusId: "eq.band.select"
+                onClicked: eq.stepBand(1)
+            }
+            TouchButton {
+                width: parent.width - 58 - 74 - 44 - 96 - 44 - 168 - 28
+                height: parent.height
+                text: app.fullscreen ? "EXIT FULL" : "FULLSCREEN"
+                textSize: Style.fontSmall
+                checked: app.fullscreen
+                focusId: "eq.fullscreen"
+                onClicked: app.setFullscreen(!app.fullscreen)
+            }
+        }
+
+        Item {
+            id: grid
+            width: parent.width
+            height: parent.height - Style.touch * 2 - 8
+
+            Rectangle {
+                anchors.fill: parent
+                color: Style.panelDark
+                radius: Style.corner
+                border.width: app.focusId === "eq.node." + eq.band ? 2 : Style.outlineWidth
+                border.color: app.focusId === "eq.node." + eq.band ? Style.accent : Style.outline
+            }
+
+            readonly property var freqTicks: [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+
+            Canvas {
+                id: plot
+                anchors.fill: parent
+                anchors.margins: 1
+
+                Connections {
+                    target: eq
+                    function onCurveChanged() { plot.requestPaint() }
+                    function onChanged() { plot.requestPaint() }
+                }
+
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    // Log-frequency grid + the 0 dB axis.
+                    const ticks = grid.freqTicks
+                    ctx.lineWidth = 1
+                    for (let i = 0; i < ticks.length; ++i) {
+                        const x = Math.log(ticks[i] / 20) / Math.log(1000) * width
+                        ctx.beginPath()
+                        if (ticks[i] === 1000) {
+                            ctx.strokeStyle = Style.outline.toString()
+                            ctx.moveTo(x, 0)
+                            ctx.lineTo(x, height)
+                        } else {
+                            ctx.strokeStyle = Style.gridLine.toString()
+                            ctx.moveTo(x, 0)
+                            ctx.lineTo(x, height)
+                        }
+                        ctx.stroke()
+                    }
+                    for (let db = 24; db >= -24; db -= 12) {
+                        const y = (24 - db) / 48 * height
+                        ctx.beginPath()
+                        ctx.strokeStyle = db === 0 ? Style.outline.toString()
+                                                   : Style.gridLine.toString()
+                        ctx.moveTo(0, y)
+                        ctx.lineTo(width, y)
+                        ctx.stroke()
+                    }
+                    // Summed response of the four bands (EqModel impulse response).
+                    const curve = eq.curve
+                    if (curve.length > 1) {
+                        ctx.beginPath()
+                        ctx.strokeStyle = Style.text.toString()
+                        ctx.lineWidth = 2
+                        for (let i = 0; i < curve.length; ++i) {
+                            const x = i / (curve.length - 1) * width
+                            const y = (1.0 - curve[i]) * height
+                            if (i === 0) ctx.moveTo(x, y)
+                            else ctx.lineTo(x, y)
+                        }
+                        ctx.stroke()
+                    }
+                    // Frequency labels along the bottom edge.
+                    ctx.fillStyle = Style.textDim.toString()
+                    ctx.font = "9px sans-serif"
+                    for (let i = 0; i < ticks.length; ++i) {
+                        const x = Math.log(ticks[i] / 20) / Math.log(1000) * width
+                        const label = ticks[i] >= 1000 ? (ticks[i] / 1000) + "k"
+                                                       : String(ticks[i])
+                        ctx.fillText(label, Math.min(width - 22, x + 2), height - 3)
+                    }
+                    ctx.fillText("+24", 3, 11)
+                    ctx.fillText("-24", 3, height - 14)
+                }
+            }
+
+            // One draggable node per band. Positions come from the model, so a
+            // touch drag and the panel EDIT path move the same numbers.
+            Repeater {
+                model: eq.nodes
+                delegate: Rectangle {
+                    readonly property int bandIndex: index
+                    readonly property bool selected: modelData.selected
+                    width: selected ? 30 : 24
+                    height: width
+                    radius: width / 2
+                    x: modelData.x * grid.width - width / 2
+                    y: (1.0 - modelData.y) * grid.height - height / 2
+                    color: selected ? Style.nodePink : Style.panel
+                    border.width: selected ? 3 : 2
+                    border.color: selected ? Style.nodePink : Style.text
+                    opacity: modelData.type === 0 ? 0.55 : 1.0
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: parent.bandIndex + 1
+                        color: parent.selected ? Style.panelDark : Style.text
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+                }
+            }
+
+            DragHandler {
+                id: nodeDrag
+                target: null
+                property int node: -1
+
+                function normalized(nx, ny) {
+                    return [Math.max(0.0, Math.min(1.0, nx / grid.width)),
+                            Math.max(0.0, Math.min(1.0, 1.0 - ny / grid.height))]
+                }
+
+                onActiveChanged: {
+                    if (active) {
+                        const p = normalized(centroid.position.x, centroid.position.y)
+                        node = eq.nodeAt(p[0], p[1])
+                        if (node >= 0) eq.selectBand(node)
+                    } else {
+                        node = -1
+                    }
+                }
+
+                onCentroidChanged: {
+                    if (!active || node < 0) return
+                    const p = normalized(centroid.position.x, centroid.position.y)
+                    eq.dragBand(node, p[0], p[1])
+                }
+            }
+        }
+
+        Row {
+            width: parent.width
+            height: Style.touch
+            spacing: 4
+
+            CornerChip {
+                width: (parent.width - 12) / 4
+                height: parent.height
+                label: "GAIN"
+                value: eq.cutBand ? "-- (cut)" : eq.gainText
+                focusId: "eq.band.gain"
+                onMinus: eq.adjustGain(-0.5)
+                onPlus: eq.adjustGain(0.5)
+            }
+            CornerChip {
+                width: (parent.width - 12) / 4
+                height: parent.height
+                label: "Q"
+                value: eq.qText
+                focusId: "eq.band.q"
+                onMinus: eq.adjustQ(-0.05)
+                onPlus: eq.adjustQ(0.05)
+            }
+            CornerChip {
+                width: (parent.width - 12) / 4
+                height: parent.height
+                label: "FREQUENCY"
+                value: eq.freqText
+                focusId: "eq.band.freq"
+                onMinus: eq.adjustFreq(-1.0 / 12.0)
+                onPlus: eq.adjustFreq(1.0 / 12.0)
+            }
+            CornerChip {
+                width: (parent.width - 12) / 4
+                height: parent.height
+                label: "TYPE"
+                value: eq.typeText
+                focusId: "eq.band.type"
+                onMinus: eq.cycleType(-1)
+                onPlus: eq.cycleType(1)
+                onPick: app.openConfig("eqtype")
+            }
+        }
+    }
+
+    // ---- SHIFT face: the explicit band editor ------------------------------
+    Column {
+        visible: screen.shiftFace
+        anchors.fill: parent
+        anchors.margins: Style.margin
+        spacing: 4
+
+        Row {
+            width: parent.width
+            height: Style.touch
+            spacing: 4
+
+            Text {
+                width: parent.width - 256
+                height: parent.height
+                text: "SHIFT - " + eq.subjectText + " " + eq.bandText
+                color: Style.textDim
+                font.pixelSize: Style.fontSmall
+                font.bold: true
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+            TouchButton {
+                width: 58
+                height: parent.height
+                text: "MAIN"
+                textSize: Style.fontSmall
+                checked: eq.subject === 18
+                focusId: "shift.eq.subject.main"
+                onClicked: eq.selectMain()
+            }
+            TouchButton {
+                width: 190
+                height: parent.height
+                text: "TRACK  " + eq.subjectText
+                textSize: Style.fontSmall
+                focusId: "shift.eq.subject.track"
+                onClicked: app.showTextPopup("EQ SUBJECT", eq.subjectText)
+            }
+        }
+
+        ConfigRow {
+            width: parent.width
+            height: Style.touch
+            label: "GAIN"
+            value: eq.cutBand ? "-- (cut)" : eq.gainText
+            shadowFocusId: "shift.eq.band.gain"
+            onMinus: eq.adjustGain(-0.5)
+            onPlus: eq.adjustGain(0.5)
+        }
+        ConfigRow {
+            width: parent.width
+            height: Style.touch
+            label: "Q"
+            value: eq.qText
+            shadowFocusId: "shift.eq.band.q"
+            onMinus: eq.adjustQ(-0.05)
+            onPlus: eq.adjustQ(0.05)
+        }
+        ConfigRow {
+            width: parent.width
+            height: Style.touch
+            label: "FREQUENCY"
+            value: eq.freqText
+            shadowFocusId: "shift.eq.band.freq"
+            onMinus: eq.adjustFreq(-1.0 / 12.0)
+            onPlus: eq.adjustFreq(1.0 / 12.0)
+        }
+
+        Text {
+            width: parent.width
+            height: 16
+            text: "BAND TYPE - cut filters have no gain"
+            color: Style.textDim
+            font.pixelSize: Style.fontSmall
+            font.bold: true
+            verticalAlignment: Text.AlignVCenter
+        }
+        Row {
+            width: parent.width
+            height: Style.touch
+            spacing: 4
+
+            Repeater {
+                model: 6
+                delegate: TouchButton {
+                    width: (parent.width - 20) / 6
+                    height: parent.height
+                    text: ["NONE", "LCUT", "LSHELF", "PARAM", "HSHELF", "HCUT"][index]
+                    textSize: Style.fontSmall
+                    checked: eq.nodes[eq.band].type === index
+                    focusId: "shift.eq.type." + index
+                    onClicked: eq.selectType(index)
+                }
+            }
+        }
+
+        Text {
+            width: parent.width
+            text: "Drag a node on the grid; the panel's directions move the selected node in EDIT (SHIFT = coarse frequency / Q on a cut band). The A-button and the BAND chip step bands."
+            color: Style.textDim
+            font.pixelSize: 10
+            wrapMode: Text.Wrap
+        }
+    }
+
+    // One shared corner/row shape: label, value, and -/+ steppers. Tapping the
+    // TYPE chip opens the band-type ConfigPopup (secondary parameter picker).
+    component CornerChip: Rectangle {
+        id: chip
+        property string label: ""
+        property string value: ""
+        property string focusId: ""
+        signal minus()
+        signal plus()
+        signal pick()
+
+        color: Style.panelDark
+        radius: Style.corner
+        border.width: app.focusId === chip.focusId ? 2 : Style.outlineWidth
+        border.color: app.focusId === chip.focusId ? Style.accent : Style.outline
+
+        Text {
+            x: 6
+            y: 3
+            text: chip.label
+            color: Style.textDim
+            font.pixelSize: 9
+            font.bold: true
+        }
+        Text {
+            x: 6
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - 74
+            text: chip.value
+            color: Style.text
+            font.pixelSize: Style.fontBody
+            font.bold: true
+            elide: Text.ElideRight
+        }
+        Text {
+            anchors.right: parent.right
+            anchors.rightMargin: 4
+            y: 3
+            text: "..."
+            color: Style.textDim
+            font.pixelSize: 10
+            visible: chip.focusId === "eq.band.type"
+        }
+        TouchButton {
+            width: 30
+            height: parent.height
+            x: parent.width - 68
+            text: "-"
+            textSize: 16
+            onClicked: chip.minus()
+        }
+        TouchButton {
+            width: 30
+            height: parent.height
+            x: parent.width - 34
+            text: "+"
+            textSize: 16
+            onClicked: chip.plus()
+        }
+        TapHandler {
+            // Only the TYPE chip is a button; the value chips are steppers.
+            enabled: chip.focusId === "eq.band.type"
+            onTapped: chip.pick()
+        }
+    }
+
+    component ConfigRow: Row {
+        id: row
+        property string label: ""
+        property string value: ""
+        property string shadowFocusId: ""
+        signal minus()
+        signal plus()
+
+        spacing: 4
+        Text {
+            width: 92
+            height: parent.height
+            text: row.label
+            color: Style.textDim
+            font.pixelSize: Style.fontSmall
+            font.bold: true
+            verticalAlignment: Text.AlignVCenter
+        }
+        Rectangle {
+            width: parent.width - 92 - 145
+            height: parent.height
+            color: Style.panelDark
+            radius: Style.corner
+            border.width: app.focusId === row.shadowFocusId ? 2 : Style.outlineWidth
+            border.color: app.focusId === row.shadowFocusId ? Style.accent : Style.outline
+            Text {
+                anchors.centerIn: parent
+                text: row.value
+                color: Style.text
+                font.pixelSize: Style.fontBody
+                font.bold: true
+            }
+        }
+        TouchButton {
+            width: 68
+            height: parent.height
+            text: "-"
+            textSize: 18
+            onClicked: row.minus()
+        }
+        TouchButton {
+            width: 69
+            height: parent.height
+            text: "+"
+            textSize: 18
+            onClicked: row.plus()
+        }
+    }
+}

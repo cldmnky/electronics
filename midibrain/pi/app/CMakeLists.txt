@@ -22,6 +22,8 @@ set(MNKY_APP_SOURCES
   config_popup_model.cpp
   audio_glue.cpp
   emulator_synth.cpp
+  eq_model.cpp
+  eq_view_model.cpp
   fx_slot.cpp
   fx_view_model.cpp
   learn_view_model.cpp
@@ -32,6 +34,7 @@ set(MNKY_APP_SOURCES
   midi_monitor_view_model.cpp
   mixer_model.cpp
   mixer_view_model.cpp
+  performance_model.cpp
   project_io.cpp
   project_logic.cpp
   projects_view_model.cpp
@@ -41,7 +44,8 @@ set(MNKY_APP_SOURCES
   session_view_model.cpp
   system_view_model.cpp
   tools_view_model.cpp
-  wav_info.cpp)
+  wav_info.cpp
+  xy_view_model.cpp)
 
 set(MNKY_APP_HEADERS
   app_context.hpp
@@ -51,6 +55,8 @@ set(MNKY_APP_HEADERS
   audio_backend.hpp
   audio_glue.hpp
   emulator_synth.hpp
+  eq_model.hpp
+  eq_view_model.hpp
   fx_slot.hpp
   fx_view_model.hpp
   learn_view_model.hpp
@@ -61,6 +67,7 @@ set(MNKY_APP_HEADERS
   midi_monitor_view_model.hpp
   mixer_model.hpp
   mixer_view_model.hpp
+  performance_model.hpp
   project_io.hpp
   project_logic.hpp
   projects_view_model.hpp
@@ -72,7 +79,8 @@ set(MNKY_APP_HEADERS
   system_view_model.hpp
   text_buffer.hpp
   tools_view_model.hpp
-  wav_info.hpp)
+  wav_info.hpp
+  xy_view_model.hpp)
 
 add_executable(mnkybox ${MNKY_APP_SOURCES} ${MNKY_APP_HEADERS})
 set_target_properties(mnkybox PROPERTIES AUTOMOC ON)
@@ -128,6 +136,8 @@ qt_add_resources(mnkybox "qml"
     qml/screens/MonitorScreen.qml
     qml/screens/ToolsStatusScreen.qml
     qml/screens/SystemShiftFace.qml
+    qml/screens/EqScreen.qml
+    qml/screens/XyScreen.qml
     qml/overlays/ConfigPopup.qml
     qml/overlays/Keypad.qml
     qml/overlays/ConfirmDialog.qml)

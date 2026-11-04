@@ -16,6 +16,8 @@
 #include "app_state.hpp"
 #include "config_popup_model.hpp"
 #include "audio_glue.hpp"
+#include "eq_model.hpp"
+#include "eq_view_model.hpp"
 #include "fx_slot.hpp"
 #include "fx_view_model.hpp"
 #include "learn_view_model.hpp"
@@ -24,6 +26,7 @@
 #include "midi_monitor_view_model.hpp"
 #include "mixer_model.hpp"
 #include "mixer_view_model.hpp"
+#include "performance_model.hpp"
 #include "project_logic.hpp"
 #include "projects_view_model.hpp"
 #include "recorder_view_model.hpp"
@@ -32,12 +35,14 @@
 #include "session_view_model.hpp"
 #include "system_view_model.hpp"
 #include "tools_view_model.hpp"
+#include "xy_view_model.hpp"
 
 namespace mnky::app {
 
 class AppController final : public QObject {
   Q_OBJECT
   Q_PROPERTY(int tab READ tab WRITE setTab NOTIFY tabChanged)
+  Q_PROPERTY(bool fullscreen READ fullscreen WRITE setFullscreen NOTIFY fullscreenChanged)
   Q_PROPERTY(bool dirty READ dirty NOTIFY dirtyChanged)
   Q_PROPERTY(bool recording READ recording NOTIFY transportChanged)
   Q_PROPERTY(bool rolling READ rolling NOTIFY transportChanged)
@@ -78,6 +83,10 @@ class AppController final : public QObject {
 
   int tab() const { return tab_; }
   void setTab(int tab);
+  // EQ fullscreen: the shell hides the tab row and the transport strip so the
+  // grid gets the whole 800x480 panel. Leaving the EQ tab restores the bridge.
+  bool fullscreen() const { return fullscreen_; }
+  Q_INVOKABLE void setFullscreen(bool fullscreen);
   bool dirty() const { return state_.dirty.load(); }
   bool recording() const { return audio_.recording(); }
   bool rolling() const { return state_.rolling.load(); }
@@ -134,6 +143,8 @@ class AppController final : public QObject {
   MidiMonitorViewModel* midiMonitor() { return midiMonitorVm_.get(); }
   ToolsViewModel* tools() { return toolsVm_.get(); }
   ConfigPopupModel* config() { return configVm_.get(); }
+  EqViewModel* eq() { return eqVm_.get(); }
+  XyViewModel* xy() { return xyVm_.get(); }
 
   // Transport / screen actions used by QML buttons.
   Q_INVOKABLE void play();
@@ -173,6 +184,7 @@ class AppController final : public QObject {
 
  signals:
   void tabChanged();
+  void fullscreenChanged();
   void dirtyChanged();
   void transportChanged();
   void clickChanged();
@@ -190,6 +202,8 @@ class AppController final : public QObject {
   void timerTick();
   void perform(const Intent& intent);
   void performPanelFocus(const Intent& intent);
+  // EDIT-mode directions on the EQ node / X/Y grid. Returns true when handled.
+  bool performGridEdit(const Intent& intent);
   void moveFocus(int delta);
   void activateFocus();
   void adjustFocused(int detents, bool fine);
@@ -216,6 +230,10 @@ class AppController final : public QObject {
   SessionSettings settings_;
   MixerModel mixer_;
   FxManager fx_;
+  // Declared before AudioGlue: the send chains are wired into the engine by the
+  // audio glue, and the EQ instances are the screen's parameter store.
+  PerformanceModel performance_;
+  EqModel eqModel_;
   MidiGlue midi_;
   AudioGlue audio_;
   LinkClient link_;
@@ -232,9 +250,12 @@ class AppController final : public QObject {
   std::unique_ptr<MidiMonitorViewModel> midiMonitorVm_;
   std::unique_ptr<ToolsViewModel> toolsVm_;
   std::unique_ptr<ConfigPopupModel> configVm_;
+  std::unique_ptr<EqViewModel> eqVm_;
+  std::unique_ptr<XyViewModel> xyVm_;
 
   QTimer timer_;
   int tab_ = 0;
+  bool fullscreen_ = false;
   int toolsPage_ = 0;
   int systemShiftPage_ = 0;
   int refreshTicks_ = 0;

@@ -205,8 +205,18 @@ class AudioGlue::AudioInputConsumer final : public QIODevice {
   QAudioFormat format_;
 };
 
-AudioGlue::AudioGlue(MixerModel& mixer, FxManager& fx, AppState& state, bool emulator)
-    : mixer_(mixer), fx_(fx), state_(state), emulatorStartup_(emulator), emulated_(emulator) {
+AudioGlue::AudioGlue(MixerModel& mixer, FxManager& fx, PerformanceModel& performance,
+                     AppState& state, bool emulator)
+    : mixer_(mixer),
+      fx_(fx),
+      performance_(performance),
+      state_(state),
+      emulatorStartup_(emulator),
+      emulated_(emulator) {
+  // Register the CLAP adapters once: each send bus is builtin chain -> CLAP.
+  for (int send = 0; send < audio::kNumSends; ++send) {
+    performance_.setClapEffect(send, fx_.effect(send));
+  }
   for (auto& peak : peaks_) peak.store(0.0f);
   for (auto& peak : stripPeaks_) peak.store(0.0f);
   for (auto& source : monitorSend_) source.store(1);
@@ -322,6 +332,9 @@ std::string AudioGlue::openDevice(const std::string& outputDeviceId, int bufferS
   if (outputBytesPerFrame_ <= 0) return "unsupported output format";
   sampleRate_.store(outputFormat_.sampleRate() > 0 ? outputFormat_.sampleRate() : 48000.0);
   synth_.prepare(sampleRate());
+  // The built-in send effects (delay/reverb) allocate their lines for the
+  // device rate; the CLAP adapters were loaded for audio_.sampleRate() already.
+  performance_.setSampleRate(sampleRate());
 
   const int requested = clampAudioBufferSize(bufferSize);
   sink_ = std::make_unique<QAudioSink>(device, outputFormat_);
@@ -750,7 +763,7 @@ void AudioGlue::renderBlock(const float* const* inputChannelData, int numInputCh
 
     mixer_.applyTo(engine_);
     for (int send = 0; send < audio::kNumSends; ++send) {
-      engine_.setFx(send, fx_.effect(send));
+      engine_.setFx(send, &performance_.effect(send));
     }
     engine_.setPhonesSource(monitorPhones_.load(std::memory_order_relaxed) == 1
                                 ? audio::PhonesSource::Main

@@ -175,6 +175,94 @@ Rectangle {
                 }
             }
 
+            // ---- EQ BAND TYPE ---------------------------------------------
+            Column {
+                visible: config.kind === "eqtype"
+                width: parent.width
+                spacing: 4
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 4
+                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "NONE"; checked: config.eqType === 0; focusId: "config.eqtype.0"; onClicked: config.eqType = 0 }
+                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "LCUT"; checked: config.eqType === 1; focusId: "config.eqtype.1"; onClicked: config.eqType = 1 }
+                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "LSHELF"; checked: config.eqType === 2; focusId: "config.eqtype.2"; onClicked: config.eqType = 2 }
+                }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 4
+                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "PARAM"; checked: config.eqType === 3; focusId: "config.eqtype.3"; onClicked: config.eqType = 3 }
+                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "HSHELF"; checked: config.eqType === 4; focusId: "config.eqtype.4"; onClicked: config.eqType = 4 }
+                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "HCUT"; checked: config.eqType === 5; focusId: "config.eqtype.5"; onClicked: config.eqType = 5 }
+                }
+                Text {
+                    width: parent.width
+                    text: "None passes the band; LCut and HCut are cut filters with no gain; the shelves and Param use gain, frequency and Q."
+                    color: Style.textDim
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                }
+            }
+
+            // ---- DELAY (X/Y secondary parameters) -------------------------
+            Column {
+                visible: config.kind === "delay"
+                width: parent.width
+                spacing: 4
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 4
+                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: config.delayBeat ? "BEAT ON" : "BEAT OFF"; checked: config.delayBeat === 1; focusId: "config.delay.beat"; onClicked: config.delayBeat = config.delayBeat ? 0 : 1 }
+                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: config.delayPing ? "PING ON" : "PING OFF"; checked: config.delayPing === 1; focusId: "config.delay.ping"; onClicked: config.delayPing = config.delayPing ? 0 : 1 }
+                    Row {
+                        width: (parent.width - 8) / 3
+                        height: parent.height
+                        spacing: 2
+                        TouchButton { width: Style.touch; height: parent.height; text: "-"; textSize: 18; focusId: "config.delay.div.prev"; onClicked: config.delayDivision = Math.max(0, config.delayDivision - 1) }
+                        TouchButton { width: parent.width - Style.touch * 2 - 4; height: parent.height; text: config.divisionText; textSize: Style.fontSmall; focusId: "config.delay.division"; onClicked: config.delayDivision = (config.delayDivision + 1) % 8 }
+                        TouchButton { width: Style.touch; height: parent.height; text: "+"; textSize: 18; focusId: "config.delay.div.next"; onClicked: config.delayDivision = Math.min(7, config.delayDivision + 1) }
+                    }
+                }
+                ConfigSlider { width: parent.width; label: "FEEDBACK"; value: config.delayFeedback; minimumValue: 0; maximumValue: 0.95; suffix: ""; popupKind: "percent"; focusId: "config.delay.feedback"; onMoved: (v) => config.delayFeedback = v }
+                ConfigSlider { width: parent.width; label: "MIX"; value: config.delayMix; minimumValue: 0; maximumValue: 1; suffix: ""; popupKind: "percent"; focusId: "config.delay.mix"; onMoved: (v) => config.delayMix = v }
+                Text {
+                    width: parent.width
+                    text: "The grid owns cutoff (X) and width (Y). These are the delay's other controls: Beat syncs Time to the clock and Division picks the note value."
+                    color: Style.textDim
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                }
+            }
+
+            // ---- REVERB (X/Y secondary parameters) ------------------------
+            Column {
+                visible: config.kind === "reverb"
+                width: parent.width
+                spacing: 4
+                Text { width: parent.width; height: 16; text: "MODEL (applies its preset)"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.bold: true }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 4
+                    TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "CORE"; checked: config.reverbModel === 0; focusId: "config.reverb.model.0"; onClicked: config.reverbModel = 0 }
+                    TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "ROOM"; checked: config.reverbModel === 1; focusId: "config.reverb.model.1"; onClicked: config.reverbModel = 1 }
+                    TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "HALL"; checked: config.reverbModel === 2; focusId: "config.reverb.model.2"; onClicked: config.reverbModel = 2 }
+                    TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "PLATE"; checked: config.reverbModel === 3; focusId: "config.reverb.model.3"; onClicked: config.reverbModel = 3 }
+                }
+                ConfigSlider { width: parent.width; label: "PREDELAY"; value: config.reverbPredelayMs; minimumValue: 0; maximumValue: 200; suffix: " ms"; popupKind: "ms"; focusId: "config.reverb.predelay"; onMoved: (v) => config.reverbPredelayMs = v }
+                ConfigSlider { width: parent.width; label: "DECAY"; value: config.reverbDecay; minimumValue: 0; maximumValue: 0.98; suffix: ""; popupKind: "generic"; focusId: "config.reverb.decay"; onMoved: (v) => config.reverbDecay = v }
+                ConfigSlider { width: parent.width; label: "DAMPING"; value: config.reverbDamping; minimumValue: 0; maximumValue: 1; suffix: ""; popupKind: "generic"; focusId: "config.reverb.damping"; onMoved: (v) => config.reverbDamping = v }
+                Text {
+                    width: parent.width
+                    text: "The grid owns size (X) and level (Y). Freeze is the panel/touch macro: longest decay, fully wet, no damping, largest size; releasing restores these values."
+                    color: Style.textDim
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                }
+            }
+
             Item { width: 1; height: 2 }
 
             Row {
