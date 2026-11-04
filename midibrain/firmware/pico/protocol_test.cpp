@@ -88,6 +88,37 @@ int main() {
   assert(decoded.payload[0] == EV_TRANSPORT_STATE && decoded.length == 6);
   assert(decoded.payload[1] == 1);
   assert((decoded.payload[2] | (decoded.payload[3] << 8) | (decoded.payload[4] << 16) | (decoded.payload[5] << 24)) == 0x48);
+  // Control plane: STATUS_REQ/STATUS_RESP, REBOOT and RESET_LINK round trips.
+  Frame sq{};
+  assert(pack_status_req(sq, 12, 0x12345678));
+  assert(encode(sq, wire) && decode(wire, decoded));
+  assert(decoded.payload[0] == EV_STATUS_REQ && decoded.length == 1);
+  LinkStatus status{0x01020304, 0x11223344, 7, 0x2233, 0x4455, STATUS_LINK_UP | STATUS_ROLLING};
+  Frame sr{};
+  assert(pack_status_resp(sr, 13, 0x12345678, status));
+  assert(encode(sr, wire) && decode(wire, decoded));
+  assert(decoded.payload[0] == EV_STATUS_RESP && decoded.length == 15);
+  LinkStatus out{};
+  assert(unpack_status_resp(decoded, out));
+  assert(out.uptime_s == 0x01020304 && out.ticks == 0x11223344);
+  assert(out.txq_depth == 7 && out.txov == 0x2233 && out.rxov == 0x4455);
+  assert(out.flags == (STATUS_LINK_UP | STATUS_ROLLING));
+  Frame wrong = decoded;
+  wrong.payload[0] = EV_STATUS_REQ;
+  assert(!unpack_status_resp(wrong, out));
+  wrong = decoded;
+  wrong.length = 14;
+  assert(!unpack_status_resp(wrong, out));
+  Frame rb{};
+  assert(pack_reboot(rb, 14, 0x12345678, 0));
+  assert(encode(rb, wire) && decode(wire, decoded));
+  assert(decoded.payload[0] == EV_REBOOT && decoded.length == 2 && decoded.payload[1] == 0);
+  assert(pack_reboot(rb, 15, 0x12345678, 1) && rb.payload[1] == 1);
+  assert(!pack_reboot(rb, 15, 0x12345678, 2));
+  Frame rl{};
+  assert(pack_reset_link(rl, 16, 0x12345678));
+  assert(encode(rl, wire) && decode(wire, decoded));
+  assert(decoded.payload[0] == EV_RESET_LINK && decoded.length == 1);
   // Message-length table, exact for every channel status.
   for (int st = 0x80; st <= 0xEF; ++st) {
     const int hi = st & 0xF0;

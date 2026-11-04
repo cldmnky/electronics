@@ -65,6 +65,17 @@ class EmulatorTransport : public ISpiTransport {
   void setTempo(std::uint16_t bpm_x100);
   // Power-cycle: new session id, handshake state cleared.
   void reboot();
+  // 0x23 RESET_LINK: new session id and state/tempo re-announce, but tempo,
+  // transport, tick count and LED state survive (the firmware does not reboot).
+  void resetLink();
+  // Scripted 0x21 STATUS_RESP values. When unset the emulator derives the
+  // snapshot from its live state; tests use this for exact round trips.
+  void scriptStatus(const mb::LinkStatus& status) {
+    status_script_ = status;
+    status_scripted_ = true;
+  }
+  bool rebootRequested() const { return reboot_requested_; }
+  bool usbBootRequested() const { return usb_boot_requested_; }
 
   std::uint32_t session() const { return pico_session_; }
   std::uint16_t tempoX100() const { return bpm_x100_; }
@@ -73,12 +84,14 @@ class EmulatorTransport : public ISpiTransport {
   bool clockEnableSeen() const { return clock_enable_seen_; }
   std::uint8_t ledMask() const { return led_mask_; }
   std::uint8_t ledStates() const { return led_states_; }
+  std::uint32_t ticks() const { return tick_; }
   const std::vector<SentMidi>& sentMidi() const { return sent_midi_; }
   void clearSentMidi() { sent_midi_.clear(); }
 
  private:
   void handle(const mb::Frame& f);
   void advance(std::uint64_t us);
+  void resetLinkSession();
   bool queue(const mb::Frame& f);
   std::uint16_t allocSeq() { return next_seq_++; }
   std::uint32_t tickIntervalUs() const;
@@ -101,6 +114,12 @@ class EmulatorTransport : public ISpiTransport {
   std::uint16_t bpm_x100_ = kTempoDefaultX100;
   std::uint8_t led_mask_ = 0;
   std::uint8_t led_states_ = 0;
+  std::uint16_t tx_overflow_ = 0;
+  std::uint16_t rx_overflow_ = 0;
+  bool reboot_requested_ = false;
+  bool usb_boot_requested_ = false;
+  mb::LinkStatus status_script_{};
+  bool status_scripted_ = false;
   std::vector<SentMidi> sent_midi_;
 };
 
@@ -168,6 +187,8 @@ class PicoLink {
     //  Tick     u32a = tick count, u32b = Pico stamp_us, n = 0
     //  State    a[0] = rolling, n = 1, u32a = tick count at the transition
     //  Linked / LinkLost  u32a = Pico session, n = 0
+    // STATUS_RESP is a query answer, not an asynchronous event: it is cached
+    // and read with lastStatus() so exhaustive event switches stay unchanged.
     std::uint8_t a[10]{};
     std::uint8_t n{};
     std::uint32_t u32a{};
@@ -199,6 +220,14 @@ class PicoLink {
   bool clockEnable(bool on);
   bool ledSet(std::uint8_t mask, std::uint8_t states);
   bool setManual(bool manual);
+  // Control-plane (0x20-0x23): status probe, reboot (normal/USB boot), and a
+  // link resync that mints a new Pico session without rebooting it.
+  bool statusRequest();
+  bool rebootPico(bool usbBoot);
+  bool resetLink();
+  // Latest 0x21 answer; false until a response arrives. Cleared when the Pico
+  // session changes, so a cached snapshot never outlives its Pico boot.
+  bool lastStatus(mb::LinkStatus& out) const;
   void onTick(TickFn fn) { tick_fn_ = std::move(fn); }
   // Pico session currently in use; piSession() is the local one we minted.
   std::uint32_t session() const { return pico_session_; }
@@ -223,6 +252,8 @@ class PicoLink {
   std::deque<mb::Bytes> txq_;
   mb::Bytes repeat_{};
   std::deque<Event> events_;
+  mb::LinkStatus status_{};
+  bool have_status_ = false;
   TickFn tick_fn_;
   Stats stats_;
 };

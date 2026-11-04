@@ -20,7 +20,6 @@ FxSlotPanel::FxSlotPanel(AppContext& context, int slotIndex)
                                              static_cast<juce::juce_wchar>('A' + slotIndex)),
                  juce::dontSendNotification);
   title_.setFont(style::font(16.0f, true));
-  title_.setColour(juce::Label::textColourId, style::text);
   addAndMakeVisible(title_);
 
   plugin_.setButtonText("pick plugin...");

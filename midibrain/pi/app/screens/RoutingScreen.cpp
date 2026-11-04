@@ -22,7 +22,6 @@ RoutingScreen::RoutingScreen(AppContext& context) : Screen(context) {
     sourceLabel_[source].setText(kSourceNames[static_cast<std::size_t>(source)],
                                  juce::dontSendNotification);
     sourceLabel_[source].setFont(style::font(13.0f, true));
-    sourceLabel_[source].setColour(juce::Label::textColourId, style::text);
     addAndMakeVisible(sourceLabel_[source]);
 
     destLabel_[source].setText(kDestinationNames[static_cast<std::size_t>(source)],
@@ -45,7 +44,6 @@ RoutingScreen::RoutingScreen(AppContext& context) : Screen(context) {
     for (int destination = 0; destination < kSourceCount; ++destination) {
       auto& button = route_[source][destination];
       button.setButtonText("OFF");
-      button.setColour(juce::TextButton::buttonColourId, style::panelDark);
       button.onClick = [this, source, destination] { applyRoute(source, destination); };
       addAndMakeVisible(button);
     }
@@ -54,7 +52,6 @@ RoutingScreen::RoutingScreen(AppContext& context) : Screen(context) {
       auto& button = mask_[source][channel];
       button.setButtonText(juce::String(channel + 1));
       button.setClickingTogglesState(true);
-      button.setColour(juce::TextButton::buttonColourId, style::panelDark);
       button.onClick = [this, source] { applyMask(source); };
       addAndMakeVisible(button);
     }
@@ -92,8 +89,8 @@ void RoutingScreen::syncRoute(int source, int destination) {
                                  kDestinations[static_cast<std::size_t>(destination)]);
   auto& button = route_[source][destination];
   button.setButtonText(enabled ? "ON" : "OFF");
-  button.setColour(juce::TextButton::buttonColourId,
-                   enabled ? style::accent.darker(0.4f) : style::panelDark);
+  // Routed is a selected state; the theme paints it with the accent fill.
+  button.setToggleState(enabled, juce::dontSendNotification);
 }
 
 void RoutingScreen::applyMask(int source) {
@@ -113,8 +110,6 @@ void RoutingScreen::syncMask(int source) {
   for (int channel = 0; channel < kChannelCount; ++channel) {
     const bool enabled = (mask & (1u << static_cast<unsigned>(channel))) != 0;
     mask_[source][channel].setToggleState(enabled, juce::dontSendNotification);
-    mask_[source][channel].setColour(juce::TextButton::buttonColourId,
-                                     enabled ? style::accent.darker(0.55f) : style::panelDark);
   }
 }
 

@@ -14,6 +14,7 @@
 
 #include "MainComponent.hpp"
 #include "logging.hpp"
+#include "theme.hpp"
 #include "ui_style.hpp"
 
 namespace mnky::app {
@@ -86,11 +87,15 @@ class MnkyboxApplication final : public juce::JUCEApplication {
     const bool emulator = arguments.contains("--emulator");
     mnky::app::log(juce::String("app: backends ") +
                    (emulator ? "emulator (--emulator)" : "hardware (Linux SPI/ALSA)"));
+    // Install the theme before the first widget exists. The window and every
+    // screen resolve their colours and fonts through the default look and feel.
+    juce::LookAndFeel::setDefaultLookAndFeel(&lookAndFeel_);
     mainWindow_ = std::make_unique<MainWindow>(getApplicationName(), emulator);
   }
 
   void shutdown() override {
     mainWindow_.reset();
+    juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
     if (instanceLock_ != nullptr) {
       instanceLock_->exit();
       instanceLock_.reset();
@@ -103,6 +108,9 @@ class MnkyboxApplication final : public juce::JUCEApplication {
   }
 
  private:
+  // Declared before the window (and therefore destroyed after it): every widget
+  // is gone before the theme they point at is released.
+  mnky::app::MnkyLookAndFeel lookAndFeel_;
   std::unique_ptr<juce::InterProcessLock> instanceLock_;
   std::unique_ptr<MainWindow> mainWindow_;
 };

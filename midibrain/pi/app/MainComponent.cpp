@@ -10,41 +10,11 @@
 #include "ui_style.hpp"
 
 namespace mnky::app {
-namespace {
-
-void configureLookAndFeel(juce::LookAndFeel_V4& look) {
-  look.setColourScheme(juce::LookAndFeel_V4::getMidnightColourScheme());
-  look.setColour(juce::ResizableWindow::backgroundColourId, style::background);
-  look.setColour(juce::DocumentWindow::textColourId, style::text);
-  look.setColour(juce::Label::textColourId, style::text);
-  look.setColour(juce::Slider::backgroundColourId, style::panelDark);
-  look.setColour(juce::Slider::trackColourId, style::accent.darker(0.25f));
-  look.setColour(juce::Slider::thumbColourId, style::accent);
-  look.setColour(juce::Slider::rotarySliderFillColourId, style::accent);
-  look.setColour(juce::Slider::textBoxTextColourId, style::text);
-  look.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-  look.setColour(juce::TextButton::buttonColourId, style::panel);
-  look.setColour(juce::TextButton::buttonOnColourId, style::accent.darker(0.4f));
-  look.setColour(juce::TextButton::textColourOffId, style::text);
-  look.setColour(juce::TextButton::textColourOnId, style::text);
-  look.setColour(juce::ToggleButton::textColourId, style::text);
-  look.setColour(juce::TabbedButtonBar::tabOutlineColourId, style::outline);
-  look.setColour(juce::TabbedButtonBar::frontOutlineColourId, style::accent);
-  look.setColour(juce::TabbedButtonBar::tabTextColourId, style::textDim);
-  look.setColour(juce::TabbedButtonBar::frontTextColourId, style::text);
-  look.setColour(juce::TabbedComponent::backgroundColourId, style::background);
-  look.setColour(juce::TabbedComponent::outlineColourId, style::outline);
-}
-
-}  // namespace
 
 MainComponent::MainComponent(bool forceEmulator)
     : midi_(forceEmulator),
       audio_(mixer_, fx_, forceEmulator),
       link_(midi_, state_, forceEmulator) {
-  setLookAndFeel(&lookAndFeel_);
-  configureLookAndFeel(lookAndFeel_);
-
   context_ =
       std::make_unique<AppContext>(AppContext{state_, mixer_, fx_, midi_, audio_, link_});
 
@@ -56,9 +26,8 @@ MainComponent::MainComponent(bool forceEmulator)
   midi_.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, true);
   midi_.setRoute(midi::Port::TrsIn2, midi::Port::UsbOut, true);
 
-  tabs_.setTabBarDepth(style::kTouch + 4);
+  tabs_.setTabBarDepth(style::kTabDepth);
   tabs_.setOutline(0);
-  tabs_.setColour(juce::TabbedComponent::backgroundColourId, style::background);
   addAndMakeVisible(tabs_);
 
   mixerScreen_ = new MixerScreen(*context_);
@@ -67,11 +36,11 @@ MainComponent::MainComponent(bool forceEmulator)
   recorderScreen_ = new RecorderScreen(*context_);
   systemScreen_ = new SystemScreen(*context_);
 
-  tabs_.addTab("Mixer", style::panel, mixerScreen_, true);
-  tabs_.addTab("Routing", style::panel, routingScreen_, true);
-  tabs_.addTab("FX", style::panel, fxScreen_, true);
-  tabs_.addTab("Recorder", style::panel, recorderScreen_, true);
-  tabs_.addTab("System", style::panel, systemScreen_, true);
+  tabs_.addTab("Mixer", style::background, mixerScreen_, true);
+  tabs_.addTab("Routing", style::background, routingScreen_, true);
+  tabs_.addTab("FX", style::background, fxScreen_, true);
+  tabs_.addTab("Recorder", style::background, recorderScreen_, true);
+  tabs_.addTab("System", style::background, systemScreen_, true);
 
   mixerScreen_->setSelectedStrip(state_.selectedStrip.load());
   fxScreen_->loadDefaults();
@@ -87,11 +56,10 @@ MainComponent::~MainComponent() {
   link_.stop();
   audio_.stop();
   midi_.close();
-  setLookAndFeel(nullptr);
 }
 
 void MainComponent::paint(juce::Graphics& g) {
-  g.fillAll(style::background);
+  g.fillAll(findColour(juce::ResizableWindow::backgroundColourId));
 }
 
 void MainComponent::resized() {

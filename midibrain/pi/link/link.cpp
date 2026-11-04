@@ -90,7 +90,11 @@ std::uint32_t EmulatorTransport::tickIntervalUs() const {
 bool EmulatorTransport::queue(const mb::Frame& f) {
   mb::Bytes wire{};
   if (!mb::encode(f, wire)) return false;
-  if (txq_.size() >= kMaxTxQueue) return false;  // drop-newest, as the Pico does
+  if (txq_.size() >= kMaxTxQueue) {
+    // Drop-newest, as the Pico does; the counter feeds STATUS_RESP txov.
+    if (tx_overflow_ != 0xffffu) ++tx_overflow_;
+    return false;
+  }
   txq_.push_back(wire);
   return true;
 }
@@ -195,6 +199,38 @@ void EmulatorTransport::handle(const mb::Frame& f) {
       sent_midi_.push_back(m);
       break;
     }
+    case mb::EV_STATUS_REQ: {
+      if (f.length != 1) return;
+      mb::LinkStatus status{};
+      if (status_scripted_) {
+        status = status_script_;
+      } else {
+        status.uptime_s = static_cast<std::uint32_t>(now_us_ / 1'000'000ull);
+        status.ticks = tick_;
+        status.txq_depth = static_cast<std::uint8_t>(txq_.size());
+        status.txov = tx_overflow_;
+        status.rxov = rx_overflow_;
+        status.flags = static_cast<std::uint8_t>(
+            (pi_session_ != 0 ? mb::STATUS_LINK_UP : 0) | (rolling_ ? mb::STATUS_ROLLING : 0));
+      }
+      mb::Frame resp{};
+      mb::pack_status_resp(resp, allocSeq(), pico_session_, status);
+      queue(resp);
+      break;
+    }
+    case mb::EV_REBOOT:
+      if (f.length != 2 || f.payload[1] > 1) return;
+      reboot_requested_ = true;
+      if (f.payload[1] == 0) {
+        reboot();  // normal firmware reboot: new session, link re-handshakes
+      } else {
+        usb_boot_requested_ = true;  // BOOTSEL: the application link goes away
+      }
+      break;
+    case mb::EV_RESET_LINK:
+      if (f.length != 1) return;
+      resetLinkSession();
+      break;
     default:
       break;  // Pi->Pico unknown kind, or a Pico->Pi kind echoed back
   }
@@ -264,6 +300,37 @@ void EmulatorTransport::reboot() {
   mb::encode(hello, wire);
   repeat_ = wire;
   txq_.push_back(wire);
+  next_tick_us_ = now_us_ + tickIntervalUs();
+}
+
+void EmulatorTransport::resetLink() { resetLinkSession(); }
+
+void EmulatorTransport::resetLinkSession() {
+  // Same new-session + state/tempo announcement as boot, but musical and LED
+  // state survive; only the link handshake restarts.
+  ++session_serial_;
+  pico_session_ = kEmulatorSessionBase + session_serial_;
+  pi_session_ = 0;
+  // Keep the Pi-frame dedup state so a repeated RESET_LINK frame cannot mint
+  // a second session while the Pi switches to its post-reset HELLO.
+  next_seq_ = 0;
+  txq_.clear();
+  manual_ = false;  // reconnect defaults to local, as after HELLO
+  mb::Frame hello{};
+  hello.type = mb::Type::hello;
+  hello.sequence = allocSeq();
+  hello.session = pico_session_;
+  hello.length = 0;
+  mb::Bytes wire{};
+  mb::encode(hello, wire);
+  repeat_ = wire;
+  txq_.push_back(wire);
+  mb::Frame state{};
+  mb::pack_transport_state(state, allocSeq(), pico_session_, rolling_, tick_);
+  queue(state);
+  mb::Frame tempo{};
+  mb::pack_tempo(tempo, allocSeq(), pico_session_, bpm_x100_);
+  queue(tempo);
   next_tick_us_ = now_us_ + tickIntervalUs();
 }
 
@@ -441,6 +508,7 @@ void PicoLink::handle(const mb::Frame& f, std::uint64_t now_us) {
     pico_session_ = f.session;
     have_remote_seq_ = false;
     link_up_ = false;
+    have_status_ = false;  // cached snapshot belonged to the old session
     txq_.clear();
     enqueueHello();
   }
@@ -533,6 +601,16 @@ void PicoLink::handleControl(const mb::Frame& f, std::uint64_t now_us) {
       e.n = 1;
       e.u32a = readLe32(&f.payload[2]);
       break;
+    case mb::EV_STATUS_RESP: {
+      mb::LinkStatus s{};
+      if (!mb::unpack_status_resp(f, s)) {
+        ++stats_.bad;
+        return;
+      }
+      status_ = s;
+      have_status_ = true;
+      return;  // query answer, not an asynchronous event
+    }
     default:
       return;  // Pi->Pico kinds echoed back, or future commands: ignored
   }
@@ -605,6 +683,30 @@ bool PicoLink::setManual(bool manual) {
   f.payload[0] = mb::EV_TRANSPORT_MODE;
   f.payload[1] = manual ? 1 : 0;
   return queueFrame(f);
+}
+
+bool PicoLink::statusRequest() {
+  mb::Frame f{};
+  if (!mb::pack_status_req(f, 0, 0)) return false;
+  return queueFrame(f);
+}
+
+bool PicoLink::rebootPico(bool usbBoot) {
+  mb::Frame f{};
+  if (!mb::pack_reboot(f, 0, 0, usbBoot ? 1 : 0)) return false;
+  return queueFrame(f);
+}
+
+bool PicoLink::resetLink() {
+  mb::Frame f{};
+  if (!mb::pack_reset_link(f, 0, 0)) return false;
+  return queueFrame(f);
+}
+
+bool PicoLink::lastStatus(mb::LinkStatus& out) const {
+  if (!have_status_) return false;
+  out = status_;
+  return true;
 }
 
 }  // namespace mnky::link

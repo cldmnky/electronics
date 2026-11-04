@@ -3,7 +3,8 @@
 `firmware/pico/protocol.hpp` is the shared framing core (host-tested and
 compiled into the Pico firmware unchanged): fixed 32-byte frames,
 little-endian integers, CRC-16/CCITT-FALSE. `firmware/pico/midi.hpp` adds the
-MIDI parser and the CONTROL_EVENT payload registry, also host-tested.
+MIDI parser and the CONTROL_EVENT payload registry (including the `0x20`–`0x23`
+control plane), also host-tested.
 `firmware/pico/main.cpp` is the RP2350 (Pico 2) application. `protocol_test.cpp` runs
 the codec, parser and event round-trips on the host under `make test`.
 
@@ -47,9 +48,14 @@ bad CRC, invalid length and zero session.
 - Pico boots unlinked, queues HELLO (sequence 0), raises READY. On the Pi's
   HELLO it records `pi_session`, marks link up and queues an empty ACK.
   A changed `pi_session` means Pi reboot: remote-duplicate tracking resets.
+- A Pi `0x23` RESET_LINK asks the Pico to mint a fresh session and re-announce
+  state/tempo without rebooting; tempo, transport state and tick count
+  survive. The Pi treats the new session exactly like a Pico reboot:
+  `LinkLost`, outbound flush, re-handshake, `Linked`.
 - Link-up in this revision = Pi HELLO seen. No retry/credit/flow protocol yet;
-  queue overflows are counted (`txov`, `rxov`) and reported on the USB console,
-  not recovered.
+  queue overflows are counted (`txov`, `rxov`), printed on the Pico USB
+  console and reported to the Pi in the `0x21` status response; they are not
+  recovered.
 
 ## CONTROL_EVENT registry (payload[0] = kind)
 
@@ -61,6 +67,7 @@ Pico → Pi:
 | `0x02` control | id, state/delta | Button press (1) / release (0); `0x10` ENCODER_TURN carries int8 delta (length 3) |
 | `0x04` tempo | bpm×100 LE16 | Local tempo after encoder or Pi change (length 3) |
 | `0x05` tick | tick LE32, Pico stamp_us LE32 | Clock tick notice + tick time, every tick while rolling (length 9) |
+| `0x21` STATUS_RESP | uptime_s LE32, ticks LE32, txq depth, txov LE16, rxov LE16, flags | Answer to `0x20` (length 15). Flag bit 0 = Pi HELLO seen (link up), bit 1 = rolling, bits 2–7 zero. `txov` counts outbound-frame queue overflows; `rxov` is the sum of both UART RX ring overruns (both saturate at 65535). |
 
 Control ids: 1 NAV_UP, 2 NAV_DOWN, 3 NAV_LEFT, 4 NAV_RIGHT, 5 NAV_PRESS,
 6 ENCODER_SW, 10 REC, 11 OVER_DUB, 12 STOP, 13 PLAY, 14 PLAY_START,
@@ -77,6 +84,22 @@ Pi → Pico:
 | `0x13` LED_SET | mask, states | Bits 0/1/2 = REC/OVERDUB/PLAY; local buttons mirror by default |
 | `0x15` MIDI_SEND | port, size, bytes | Immediate UART emit (no scheduled timeline yet) |
 | `0x16` MODE | 0 local, 1 manual | Panel-transport authority; resets to local on boot/HELLO |
+| `0x20` STATUS_REQ | none | Liveness/status probe; the Pico answers with `0x21` (length 1) |
+| `0x22` REBOOT | mode: 0 normal firmware reboot, 1 USB boot | 0 restarts the application from flash via the watchdog; 1 enters BOOTSEL for the firmware-update flow (length 2). No ACK: mode 0 shows up as a session change, mode 1 as link silence. |
+| `0x23` RESET_LINK | none | Mint a fresh Pico session and re-announce state/tempo without rebooting; the Pi re-handshakes (length 1) |
+
+Control-plane use on the Pi: `0x20` STATUS_REQ is the liveness probe. Send it
+when the link has been quiet and use the uptime/ticks/counters to distinguish
+an idle Pico from a wedged one; a host-side watchdog can treat repeated
+missing or stale responses as a link failure. `0x22` mode 0 is recovery —
+restart the Pico firmware when the link cannot be resynced. Mode 1 enters
+BOOTSEL/USB boot for the later Pico firmware-update flow: the Pi must expect
+the SPI link to disappear until the Pico is flashed and restarted. `0x23`
+RESET_LINK is link resync — force a new Pico session and a state/tempo
+re-announce without losing tempo, transport or tick state, e.g. after a
+Pi-side link error or stale duplicate-tracking state. A Pico reboot or a
+`0x23` RESET_LINK always appears to the Pi as a session change (`LinkLost`
+then `Linked`), so the host can use the same reconnect path for all of them.
 
 ## USB clock mirror (Pi side, pending implementation)
 

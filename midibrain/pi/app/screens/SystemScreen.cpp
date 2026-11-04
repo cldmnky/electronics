@@ -18,9 +18,6 @@ void configureEditor(juce::TextEditor& editor, float fontHeight) {
   editor.setPopupMenuEnabled(false);
   editor.setFont(juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(),
                                               fontHeight, juce::Font::plain)));
-  editor.setColour(juce::TextEditor::backgroundColourId, style::panelDark);
-  editor.setColour(juce::TextEditor::outlineColourId, style::outline);
-  editor.setColour(juce::TextEditor::textColourId, style::text);
 }
 }  // namespace
 

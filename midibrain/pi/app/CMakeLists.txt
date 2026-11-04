@@ -25,6 +25,7 @@ juce_add_gui_app(mnkybox
 
 set(MNKY_APP_SOURCES
   main.cpp
+  theme.cpp
   MainComponent.cpp
   app_state.cpp
   logging.cpp
@@ -56,6 +57,7 @@ set(MNKY_APP_HEADERS
   midi_glue.hpp
   link_client.hpp
   MainComponent.hpp
+  theme.hpp
   ui_style.hpp
   screens/Screen.hpp
   screens/MixerScreen.hpp

@@ -136,6 +136,26 @@ constexpr std::uint8_t EV_TRANSPORT_STATE = 0x06;  // Pico->Pi rolling flag + ti
 constexpr std::uint8_t EV_LED_SET = 0x13;      // Pi->Pico mask, states
 constexpr std::uint8_t EV_MIDI_SEND = 0x15;    // Pi->Pico port, size, bytes
 constexpr std::uint8_t EV_TRANSPORT_MODE = 0x16;  // Pi->Pico 0 local, 1 manual
+constexpr std::uint8_t EV_STATUS_REQ = 0x20;   // Pi->Pico liveness/status request
+constexpr std::uint8_t EV_STATUS_RESP = 0x21;  // Pico->Pi link status snapshot
+constexpr std::uint8_t EV_REBOOT = 0x22;       // Pi->Pico 0 firmware reboot, 1 USB boot
+constexpr std::uint8_t EV_RESET_LINK = 0x23;   // Pi->Pico fresh session, no reboot
+
+// EV_STATUS_RESP flags (payload[14]); other bits stay zero.
+constexpr std::uint8_t STATUS_LINK_UP = 0x01;  // Pi HELLO seen
+constexpr std::uint8_t STATUS_ROLLING = 0x02;  // transport rolling
+
+// EV_STATUS_RESP snapshot. txov/rxov are 16-bit on the wire and saturate;
+// rxov aggregates both UART RX rings (the firmware reports per-ring values on
+// its USB console).
+struct LinkStatus {
+  std::uint32_t uptime_s{};
+  std::uint32_t ticks{};
+  std::uint8_t txq_depth{};
+  std::uint16_t txov{};
+  std::uint16_t rxov{};
+  std::uint8_t flags{};
+};
 
 // Control ids for EV_CONTROL payload[1]; payload[2] is state (1/0), except
 // ENCODER_TURN which carries a signed int8 delta.
@@ -246,6 +266,76 @@ inline bool pack_transport_state(Frame& f, std::uint16_t seq, std::uint32_t sess
   f.payload[0] = EV_TRANSPORT_STATE;
   f.payload[1] = rolling ? 1 : 0;
   for (int i = 0; i < 4; ++i) f.payload[2 + i] = static_cast<std::uint8_t>(tick >> (8 * i));
+  return true;
+}
+// EV_STATUS_REQ layout: kind only. Length 1. The Pico answers with a
+// EV_STATUS_RESP snapshot on the same link, without changing link state.
+inline bool pack_status_req(Frame& f, std::uint16_t seq, std::uint32_t session) {
+  f = Frame{};
+  f.type = Type::control_event;
+  f.sequence = seq;
+  f.session = session;
+  f.length = 1;
+  f.payload[0] = EV_STATUS_REQ;
+  return true;
+}
+// EV_STATUS_RESP layout: [1..4]=uptime_s LE32, [5..8]=ticks LE32, [9]=txq
+// depth, [10..11]=txov LE16, [12..13]=rxov LE16, [14]=flags. Length 15.
+// A 16-bit counter saturates instead of wrapping so a long-running link does
+// not report a fresh zero after 65535 drops.
+inline bool pack_status_resp(Frame& f, std::uint16_t seq, std::uint32_t session,
+                             const LinkStatus& s) {
+  f = Frame{};
+  f.type = Type::control_event;
+  f.sequence = seq;
+  f.session = session;
+  f.length = 15;
+  f.payload[0] = EV_STATUS_RESP;
+  for (int i = 0; i < 4; ++i) f.payload[1 + i] = static_cast<std::uint8_t>(s.uptime_s >> (8 * i));
+  for (int i = 0; i < 4; ++i) f.payload[5 + i] = static_cast<std::uint8_t>(s.ticks >> (8 * i));
+  f.payload[9] = s.txq_depth;
+  f.payload[10] = static_cast<std::uint8_t>(s.txov);
+  f.payload[11] = static_cast<std::uint8_t>(s.txov >> 8);
+  f.payload[12] = static_cast<std::uint8_t>(s.rxov);
+  f.payload[13] = static_cast<std::uint8_t>(s.rxov >> 8);
+  f.payload[14] = s.flags;
+  return true;
+}
+inline bool unpack_status_resp(const Frame& f, LinkStatus& s) {
+  if (f.type != Type::control_event || f.length != 15 || f.payload[0] != EV_STATUS_RESP) return false;
+  s = LinkStatus{};
+  for (int i = 0; i < 4; ++i) s.uptime_s |= static_cast<std::uint32_t>(f.payload[1 + i]) << (8 * i);
+  for (int i = 0; i < 4; ++i) s.ticks |= static_cast<std::uint32_t>(f.payload[5 + i]) << (8 * i);
+  s.txq_depth = f.payload[9];
+  s.txov = static_cast<std::uint16_t>(f.payload[10] | (f.payload[11] << 8));
+  s.rxov = static_cast<std::uint16_t>(f.payload[12] | (f.payload[13] << 8));
+  s.flags = f.payload[14];
+  return true;
+}
+// EV_REBOOT layout: [1]=mode, 0 normal firmware reboot from flash (watchdog),
+// 1 USB boot (BOOTSEL) for the firmware-update flow. Length 2. There is no
+// acknowledgement: mode 0 appears to the Pi as a session change, mode 1 as a
+// silent link (the Pico is no longer running the application).
+inline bool pack_reboot(Frame& f, std::uint16_t seq, std::uint32_t session, std::uint8_t mode) {
+  if (mode > 1) return false;
+  f = Frame{};
+  f.type = Type::control_event;
+  f.sequence = seq;
+  f.session = session;
+  f.length = 2;
+  f.payload[0] = EV_REBOOT;
+  f.payload[1] = mode;
+  return true;
+}
+// EV_RESET_LINK layout: kind only. Length 1. The Pico mints a new session and
+// re-announces state/tempo without rebooting; musical state is preserved.
+inline bool pack_reset_link(Frame& f, std::uint16_t seq, std::uint32_t session) {
+  f = Frame{};
+  f.type = Type::control_event;
+  f.sequence = seq;
+  f.session = session;
+  f.length = 1;
+  f.payload[0] = EV_RESET_LINK;
   return true;
 }
 }  // namespace mb

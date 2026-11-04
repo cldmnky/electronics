@@ -41,7 +41,6 @@ RecorderScreen::RecorderScreen(AppContext& context) : Screen(context) {
   formats_.registerBasicFormats();
 
   transport_.setFont(style::font(24.0f, true));
-  transport_.setColour(juce::Label::textColourId, style::text);
   addAndMakeVisible(transport_);
 
   clock_.setFont(style::font(14.0f));
@@ -52,7 +51,8 @@ RecorderScreen::RecorderScreen(AppContext& context) : Screen(context) {
   for (int index = 0; index < kNumStrips; ++index) {
     auto* button = armButtons_.add(new juce::TextButton(juce::String(index + 1)));
     button->setClickingTogglesState(true);
-    button->setColour(juce::TextButton::buttonColourId, style::panelDark);
+    // Armed is a selected state: the theme fills it with the record colour.
+    button->setColour(juce::TextButton::buttonOnColourId, style::record);
     button->onClick = [this, index] {
       context_.mixer.setArm(index, armButtons_[index]->getToggleState());
       syncArmButtons();
@@ -82,8 +82,6 @@ RecorderScreen::RecorderScreen(AppContext& context) : Screen(context) {
 
   takeList_.setModel(&takeModel_);
   takeList_.setRowHeight(26);
-  takeList_.setColour(juce::ListBox::backgroundColourId, style::panelDark);
-  takeList_.setColour(juce::ListBox::outlineColourId, style::outline);
   takeList_.setOutlineThickness(1);
   addAndMakeVisible(takeList_);
 
@@ -140,8 +138,6 @@ void RecorderScreen::syncArmButtons() {
     if (button->getToggleState() != armed) {
       button->setToggleState(armed, juce::dontSendNotification);
     }
-    button->setColour(juce::TextButton::buttonColourId,
-                      armed ? style::record.darker(0.35f) : style::panelDark);
   }
 }
 

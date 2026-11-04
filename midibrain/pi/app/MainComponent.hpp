@@ -47,7 +47,6 @@ class MainComponent final : public juce::Component, private juce::Timer {
   LinkClient link_;
   std::unique_ptr<AppContext> context_;
 
-  juce::LookAndFeel_V4 lookAndFeel_;
   juce::TabbedComponent tabs_{juce::TabbedButtonBar::TabsAtTop};
 
   MixerScreen* mixerScreen_ = nullptr;

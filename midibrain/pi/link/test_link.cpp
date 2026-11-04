@@ -227,6 +227,117 @@ void testTempoTransportManual() {
   std::cout << "PASS tempo/transport/mode: echo + state frames, clamp, panel mode, LEDs\n";
 }
 
+void testStatusRequest() {
+  EmulatorTransport pico;
+  PicoLink link(pico);
+  assert(pumpUntil(link, 200, [&] { return link.linkUp(); }));
+  pump(link, 25);  // flush the boot announcement batch
+  drain(link);
+
+  // Default snapshot is derived from emulator state: link up, stopped.
+  assert(link.statusRequest());
+  pump(link, 20);
+  mb::LinkStatus live{};
+  assert(link.lastStatus(live));
+  assert((live.flags & mb::STATUS_LINK_UP) != 0);
+  assert((live.flags & mb::STATUS_ROLLING) == 0);
+
+  // Scripted values prove the host passes every field through unchanged.
+  mb::LinkStatus script{};
+  script.uptime_s = 0x01020304;
+  script.ticks = 0x11223344;
+  script.txq_depth = 7;
+  script.txov = 0x2233;
+  script.rxov = 0x4455;
+  script.flags = mb::STATUS_LINK_UP | mb::STATUS_ROLLING;
+  pico.scriptStatus(script);
+  assert(link.statusRequest());
+  pump(link, 20);
+  mb::LinkStatus got{};
+  assert(link.lastStatus(got));
+  assert(got.uptime_s == script.uptime_s && got.ticks == script.ticks);
+  assert(got.txq_depth == script.txq_depth);
+  assert(got.txov == script.txov && got.rxov == script.rxov);
+  assert(got.flags == script.flags);
+  std::cout << "PASS status: STATUS_REQ/STATUS_RESP live + scripted fields\n";
+}
+
+void testTxOverflowStatus() {
+  EmulatorTransport pico;
+  PicoLink link(pico);
+  assert(pumpUntil(link, 200, [&] { return link.linkUp(); }));
+  pump(link, 25);
+  drain(link);
+
+  // 20 queued frames into a 16-deep queue: 4 drop-newest, counted as txov.
+  for (int i = 0; i < 20; ++i) pico.setTempo(static_cast<std::uint16_t>(12000 + i));
+  pump(link, 40);
+  drain(link);
+  assert(link.statusRequest());
+  pump(link, 20);
+  mb::LinkStatus status{};
+  assert(link.lastStatus(status));
+  assert(status.txov >= 4);
+  std::cout << "PASS status counters: emulator tx overflow reported in STATUS_RESP\n";
+}
+
+void testRebootAndResetLink() {
+  EmulatorTransport pico;
+  PicoLink link(pico);
+  assert(pumpUntil(link, 200, [&] { return link.linkUp(); }));
+  pump(link, 25);
+  drain(link);
+
+  assert(link.setTempo(18000));
+  assert(link.transport(1));
+  pump(link, 30);
+  drain(link);
+  const std::uint32_t tick_before = pico.ticks();
+  assert(pico.tempoX100() == 18000 && pico.rolling());
+  assert(link.statusRequest());
+  pump(link, 20);
+  mb::LinkStatus before_reset{};
+  assert(link.lastStatus(before_reset));
+  assert((before_reset.flags & mb::STATUS_LINK_UP) != 0);
+  assert((before_reset.flags & mb::STATUS_ROLLING) != 0);
+
+  // RESET_LINK: fresh session, but tempo/transport/tick count survive.
+  const std::uint32_t reset_from = link.session();
+  assert(link.resetLink());
+  assert(pumpUntil(link, 300, [&] { return link.session() != reset_from && link.linkUp(); }));
+  pump(link, 30);
+  const auto reset_events = drain(link);
+  assert(countKind(reset_events, PicoLink::Event::LinkLost) == 1);
+  assert(countKind(reset_events, PicoLink::Event::Linked) >= 1);
+  assert(pico.tempoX100() == 18000 && pico.rolling());
+  assert(pico.ticks() >= tick_before);
+  const auto* reset_state = findKind(reset_events, PicoLink::Event::State);
+  assert(reset_state != nullptr && reset_state->a[0] == 1);
+  const auto* reset_tempo = findKind(reset_events, PicoLink::Event::Tempo);
+  assert(reset_tempo != nullptr && reset_tempo->u32a == 18000);
+  mb::LinkStatus stale{};
+  assert(!link.lastStatus(stale));  // old-session snapshot was invalidated
+  assert(link.statusRequest());
+  pump(link, 20);
+  mb::LinkStatus after_reset{};
+  assert(link.lastStatus(after_reset));
+  assert((after_reset.flags & mb::STATUS_LINK_UP) != 0);
+  assert((after_reset.flags & mb::STATUS_ROLLING) != 0);
+
+  // Mode 1 (USB boot) is recorded and leaves the emulated application link
+  // running; mode 0 is a real reboot with a new session.
+  assert(link.rebootPico(true));
+  pump(link, 20);
+  assert(pico.rebootRequested() && pico.usbBootRequested());
+  const std::uint32_t reboot_from = link.session();
+  assert(link.rebootPico(false));
+  assert(pumpUntil(link, 300, [&] { return link.session() != reboot_from && link.linkUp(); }));
+  const auto reboot_events = drain(link);
+  assert(countKind(reboot_events, PicoLink::Event::LinkLost) == 1);
+  assert(countKind(reboot_events, PicoLink::Event::Linked) >= 1);
+  std::cout << "PASS control plane: reboot modes + RESET_LINK resync (no reboot)\n";
+}
+
 void testTickCallbackOrdering() {
   EmulatorTransport pico;
   PicoLink link(pico);
@@ -315,6 +426,9 @@ int main() {
   testButtons();
   testSendMidiCapture();
   testTempoTransportManual();
+  testStatusRequest();
+  testTxOverflowStatus();
+  testRebootAndResetLink();
   testTickCallbackOrdering();
   testSessionChangeReconnects();
 #ifndef __linux__

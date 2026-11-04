@@ -82,21 +82,18 @@ MixerStrip::MixerStrip(MixerModel& model, int index) : model_(model), index_(ind
   mute_.setClickingTogglesState(true);
   mute_.setToggleState(model_.mute(index_), juce::dontSendNotification);
   mute_.setColour(juce::ToggleButton::tickColourId, style::muteOn);
-  mute_.setColour(juce::ToggleButton::textColourId, style::text);
   mute_.onClick = [this] { model_.setMute(index_, mute_.getToggleState()); };
   addAndMakeVisible(mute_);
 
   solo_.setClickingTogglesState(true);
   solo_.setToggleState(model_.solo(index_), juce::dontSendNotification);
   solo_.setColour(juce::ToggleButton::tickColourId, style::soloOn);
-  solo_.setColour(juce::ToggleButton::textColourId, style::text);
   solo_.onClick = [this] { model_.setSolo(index_, solo_.getToggleState()); };
   addAndMakeVisible(solo_);
 
   arm_.setClickingTogglesState(true);
   arm_.setToggleState(model_.arm(index_), juce::dontSendNotification);
   arm_.setColour(juce::ToggleButton::tickColourId, style::record);
-  arm_.setColour(juce::ToggleButton::textColourId, style::text);
   arm_.onClick = [this] { model_.setArm(index_, arm_.getToggleState()); };
   addAndMakeVisible(arm_);
 }
@@ -139,7 +136,6 @@ MasterStrip::MasterStrip(MixerModel& model, AudioGlue& audio) : model_(model), a
   name_.setText("MASTER", juce::dontSendNotification);
   name_.setJustificationType(juce::Justification::centred);
   name_.setFont(style::font(14.0f, true));
-  name_.setColour(juce::Label::textColourId, style::text);
   addAndMakeVisible(name_);
 
   gain_.setSliderStyle(juce::Slider::LinearVertical);
@@ -262,9 +258,10 @@ void MixerScreen::setBank(int bank) {
 }
 
 void MixerScreen::syncBankButtons() {
+  // The active bank is a selected state, so the theme paints it: the LAF maps
+  // TextButton::buttonOnColourId to the accent fill.
   for (int bank = 0; bank < kBankCount; ++bank) {
-    bankButtons_[bank].setColour(juce::TextButton::buttonColourId,
-                                 bank == bank_ ? style::accent.darker(0.5f) : style::panelDark);
+    bankButtons_[bank].setToggleState(bank == bank_, juce::dontSendNotification);
   }
 }
 

@@ -22,6 +22,7 @@
 #include "hardware/timer.h"
 #include "hardware/uart.h"
 #include "hardware/watchdog.h"
+#include "pico/bootrom.h"
 #include "pico/stdlib.h"
 
 #include "midi.hpp"
@@ -248,6 +249,57 @@ void announce_state() {
   queue_frame(f);
 }
 
+std::uint16_t saturate_u16(std::uint64_t v) {
+  return v > 0xffffu ? 0xffffu : static_cast<std::uint16_t>(v);
+}
+
+// 0x21 STATUS_RESP snapshot. Counters are read with IRQs masked because the
+// clock alarm and UART RX handlers mutate them; rxov is the sum of both UART
+// rings (the console keeps the per-port split).
+mb::LinkStatus link_status() {
+  mb::LinkStatus s{};
+  s.uptime_s = static_cast<std::uint32_t>(time_us_64() / 1'000'000ull);
+  const std::uint32_t saved = save_and_disable_interrupts();
+  s.ticks = clock_ticks;
+  s.txq_depth = static_cast<std::uint8_t>(txq.count);
+  s.txov = saturate_u16(txq.overflows);
+  s.rxov = saturate_u16(static_cast<std::uint64_t>(rxring[0].overruns) + rxring[1].overruns);
+  s.flags = static_cast<std::uint8_t>((hello_seen ? mb::STATUS_LINK_UP : 0) |
+                                      (transport_running ? mb::STATUS_ROLLING : 0));
+  restore_interrupts(saved);
+  return s;
+}
+
+// 0x23 RESET_LINK: start a fresh link session without rebooting. Tempo,
+// transport state and the tick count survive; the Pi sees a new session and
+// re-handshakes, then the current state/tempo are announced again.
+void reset_link_session() {
+  const std::uint32_t fresh = session_from_rosc();
+  mb::Frame hello{};
+  hello.type = mb::Type::hello;
+  hello.sequence = 0;
+  hello.session = fresh;
+  hello.length = 0;
+  mb::Bytes wire{};
+  if (!mb::encode(hello, wire)) return;
+  const std::uint32_t saved = save_and_disable_interrupts();
+  pico_session = fresh;
+  pi_session = 0;
+  next_seq = 1;
+  hello_seen = false;
+  // Keep the Pi-frame dedup state: a repeated RESET_LINK (same session and
+  // sequence) must not mint another session while the Pi is still switching
+  // to its post-reset HELLO.
+  transport_local = true;
+  while (txq.count > 0) txq.pop();  // stale frames carry the old session
+  txq.push(wire);
+  restore_interrupts(saved);
+  ready_update();
+  announce_state();
+  queue_tempo();
+  printf("[link] RESET_LINK session=%08lx\n", static_cast<unsigned long>(fresh));
+}
+
 void transport_cmd(uint8_t cmd) {
   // Transport bytes always go out; the 0xF8 stream never stops.
   uint8_t b = 0xFC;
@@ -358,6 +410,34 @@ void handle_frame(const mb::Frame& f) {
         break;
       }
       midi_emit(f.payload[1], &f.payload[3], f.payload[2]);
+      break;
+    case mb::EV_STATUS_REQ: {
+      if (f.length != 1) {
+        ++bad_frames;
+        break;
+      }
+      mb::Frame resp{};
+      if (mb::pack_status_resp(resp, alloc_seq(), pico_session, link_status())) queue_frame(resp);
+      break;
+    }
+    case mb::EV_REBOOT:
+      if (f.length != 2 || f.payload[1] > 1) {
+        ++bad_frames;
+        break;
+      }
+      printf("[link] REBOOT mode=%u\n", static_cast<unsigned>(f.payload[1]));
+      if (f.payload[1] == 0) {
+        watchdog_reboot(0, 0, 0);  // standard boot from flash
+      } else {
+        reset_usb_boot(0, 0);  // BOOTSEL/USB boot for the firmware-update flow
+      }
+      break;
+    case mb::EV_RESET_LINK:
+      if (f.length != 1) {
+        ++bad_frames;
+        break;
+      }
+      reset_link_session();
       break;
     default:
       ++ignored_kinds;  // Pico->Pi kinds echoed back, or future commands
