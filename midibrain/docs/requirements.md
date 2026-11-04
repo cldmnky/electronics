@@ -15,6 +15,6 @@
 
 - Front/UI PCB **128 × 112 mm**, rear/base PCB **101.6 × 112 mm**, each 1.6 mm and two layers. The rear board has a provisional 58 × 49 mm Pi mounting-hole grid plus board-to-front-board standoff holes. The Pi drawing's dimensions are explicitly not production data. Both boards now contain prototype circuits and routed copper but are **not fabrication-released**.
 - Visual positions in `tscircuit/lib/layout.ts` put the requested controls around a nominal 84 mm square display, but do not establish actual cutout shapes, component footprints, front-to-back spacing or cable envelopes.
-- Pico Rev3 (RP2040), full-size Pi M.2 HAT+ plus Active Cooler are candidates, not a proven combination within the enclosure. Pi 5 + NVMe + cooling mounting, ventilation, GPIO access and all cables remain to be checked.
+- Pico 2 (RP2350), full-size Pi M.2 HAT+ plus Active Cooler are candidates, not a proven combination within the enclosure. Pi 5 + NVMe + cooling mounting, ventilation, GPIO access and all cables remain to be checked.
 - SPI signal allocation is preliminary; no claim of safe power sequencing/backfeed protection.
 - No manufacturing release, schematic/ERC clearance, assembly assignment completion or hardware test exists yet.

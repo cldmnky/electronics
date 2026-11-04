@@ -1,4 +1,4 @@
-// Raspberry Pi Pico Rev 3 / RP2040. Physical pin numbers, not RP2040 pin numbers.
+// Raspberry Pi Pico 2 / RP2350. Module physical pin numbers, not RP2350 GPIO numbers.
 // Pi GPIO numbers are BCM. Pin reservations are tentative pending power/reset
 // and level/backfeed analysis; no physical wiring is qualified by this table.
 export const PICO_GPIO = [

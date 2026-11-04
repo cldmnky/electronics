@@ -39,18 +39,20 @@ time** (owner rule: a catalog C-number is not proof of fit or availability).
 
 ## Assembly: what JLC can and cannot place
 
-### Front (UI) board — two-sided SMT
+### Front (UI) board — single-sided SMT (top)
 
-`front-cpl-jlc.csv` holds **31 SMT placements**: **27 on the bottom**
-(MIDI/opto/passives/transistors) and **4 on the top** (`U5` nav, `D3`/`D4`/`D5`
-LEDs). The release script pins these sides and fails if a future edit moves a
-part across sides.
+`front-cpl-jlc.csv` holds **31 SMT placements, all on the top** (panel side):
+MIDI opto/drivers, all passives, LEDs and nav, under and around the LCD and
+controls. Select top-side-only assembly. The release script pins this and
+fails if a future edit moves any SMT part off the top side.
+
+The rear face carries only the `J5` THT body (it must mate rearward into the
+front-rear ribbon) plus THT solder tails — no SMT, nothing for JLC to place
+there.
 
 Excluded THT (hand solder, kept in the BOM): `J1`–`J4` (TRS jacks, C381127),
 `SW1`–`SW6` (buttons, C84931), `U6` (encoder, C143790), `J5` (2×13 header,
-C48687629). Options: (1) order **two-sided SMT** and hand-solder the 12 THT —
-recommended; (2) hand-solder the 4 top SMT as well and order bottom-only SMT
-(the nav switch is fiddly by hand — prefer option 1).
+C48687629).
 
 ### Rear (base) board — single-sided SMT
 
@@ -65,8 +67,8 @@ in the hand BOM with a blank LCSC column by design, not by omission.
 ### Bottom-side rotation
 
 The exported CPL is in JLCPCB's convention (X/Y in mm, bottom layers mirrored,
-rotation in degrees CCW). The front CPL mixes 180°/0°/90° bottom rotations and
-the rear is mostly 180°. **Check the assembled-board 3D preview on the order
+rotation in degrees CCW). The front CPL is all top-side rotations and the
+rear is bottom-side (mostly 180°). **Check the assembled-board 3D preview on the order
 page before paying** — a wrong bottom-side rotation is the classic failure and
 it is free to check.
 

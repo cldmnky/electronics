@@ -180,7 +180,8 @@ export const PLAY_START = { button: "PLAY START", x: RIGHT_COLUMN.x } as const
 const TRANSPORT_LEFT_X = -53
 export const TRANSPORT_COLUMN_PITCH = 24
 export const TRANSPORT_Y = -34
-export const LED_Y = TRANSPORT_Y + 9 // LEDs sit 9 mm above their buttons
+export const LED_Y = TRANSPORT_Y + 10 // LEDs sit 10 mm above their buttons:
+// button r6.2 + LED r2 needs >8.2 mm pitch for a routable FR4 web (1.8 mm)
 export const JACK_Y = -47.5
 const TRANSPORT_BUTTON_NAMES = ["REC", "OVER DUB", "STOP", "PLAY"] as const
 const MIDI_JACK_NAMES = ["MIDI IN 1", "MIDI IN 2", "MIDI OUT 1", "MIDI OUT 2"] as const
@@ -237,6 +238,11 @@ export const PANEL_CUTOUTS = {
   jack: 6.2,    // PJ-301M-3-B barrel
 } as const
 
+// Signal-style bold rings around the MIDI OUT barrels (inputs stay plain).
+// Ring band 3.625…4.175: 0.5 mm web to the 6.2 mm barrel hole, 2.8 mm to the
+// transport button cutouts above, 1.1 mm to the OUT labels below.
+export const OUT_RING = { radius: 3.9, stroke: 0.55 } as const
+
 // ---- White-silkscreen panel labels ----
 // Short panel text for the full concept ids, plus per-control label offsets;
 // labels derive from the shared control positions above.
@@ -254,6 +260,25 @@ const LABEL_OFFSET = {
   jack: -6.5,        // below the jack cutouts
   above: 7,          // above the TEMPO / NAV cutouts
   below: -7.5,       // below the SHIFT/EXIT cutout
+}
+
+// tscircuit2024 stroke-font advance, measured from built Gerber output:
+// the 10-glyph 5 mm title spans 34.45 mm, i.e. ~0.69 x fontSize per glyph.
+// The release Gerber-bbox gate is authoritative; this ratio only sizes the
+// layout-level bounds check below. Never use anchorAlignment center_left:
+// the exporter lays text LEFTWARD from the anchor (the 2026-11 title at
+// x = -51 ran to X -85.45, off the 132.08 mm panel). Use center only.
+export const SILK_ADVANCE_RATIO = 0.69 as const
+// Bottom-strip caption. The module wordmark is drawn paths now (panel-art);
+// this text primitive is the jack-field caption, centred on the jack columns
+// (-53…+19 -> centre -17) at 1.2 mm: about +-6.2 wide, 3+ mm clear of the
+// IN 2 / OUT 1 labels either side, 2.8 mm below the jack barrels.
+export const PANEL_TITLES = [
+  { text: "MIDI TRS TYPE A", x: -17, y: -54, fontSize: 1.2 },
+] as const
+export const panelTitleExtents = (t: { text: string; x: number; y: number; fontSize: number }) => {
+  const w = t.text.length * t.fontSize * SILK_ADVANCE_RATIO
+  return { x1: t.x - w / 2, y1: t.y - t.fontSize / 2, x2: t.x + w / 2, y2: t.y + t.fontSize / 2 }
 }
 export type PanelLabel = { text: string; x: number; y: number }
 export const PANEL_LABELS: readonly PanelLabel[] = [

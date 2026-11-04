@@ -1,4 +1,5 @@
 import { Fragment } from "react"
+import { brandArtPaths } from "./lib/panel-art"
 import {
   FRONT_BOARD_HOLES,
   FRONT_COLUMNS,
@@ -6,11 +7,13 @@ import {
   LED_ID,
   LED_Y,
   MOUNT_HOLE_DIAMETER,
+  OUT_RING,
   PANEL,
   PANEL_CUTOUTS,
   PANEL_LABELS,
   PANEL_LCD_CUTOUT,
   PLAY_START,
+  PANEL_TITLES,
   RAIL_HOLES,
   RAIL_HOLE_DIAMETER,
   RIGHT_CONTROLS,
@@ -64,6 +67,14 @@ export default () => (
     {jackCutouts.map((h, i) => (
       <Fragment key={`jack-${i}`}><cutout shape="circle" radius={`${PANEL_CUTOUTS.jack / 2}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
     ))}
+    {/* Signal-style bold rings around the MIDI OUT barrels (inputs plain) */}
+    {FRONT_COLUMNS.filter(c => c.jack.startsWith("MIDI OUT")).map((c, i) => (
+      <Fragment key={`out-ring-${i}`}><silkscreencircle pcbX={`${c.x}mm`} pcbY={`${JACK_Y}mm`} radius={`${OUT_RING.radius}mm`} strokeWidth={`${OUT_RING.stroke}mm`} layer="top" /></Fragment>
+    ))}
+    {/* mnkybox wordmark + flanking waves, drawn paths (see lib/panel-art.ts) */}
+    {brandArtPaths(0, -59).flatMap((g, i) => g.paths.map((p, j) => (
+      <Fragment key={`brand-${i}-${j}`}><silkscreenpath layer="top" strokeWidth={`${g.stroke}mm`} route={p} /></Fragment>
+    )))}
     {/* Front-board standoffs */}
     {FRONT_BOARD_HOLES.map((h, i) => (
       <Fragment key={`stand-${i}`}><hole name={`STAND_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
@@ -75,8 +86,9 @@ export default () => (
 
     {/* White silkscreen graphics only; no copper and no solder mask. */}
     <silkscreenrect pcbX="0mm" pcbY="0mm" width="130.08mm" height="126.5mm" strokeWidth="0.3mm" layer="top" />
-    <silkscreentext text="MIDI BRAIN" pcbX="-51mm" pcbY="-59mm" fontSize="5mm" anchorAlignment="center_left" layer="top" />
-    <silkscreentext text="MIDI TRS TYPE A" pcbX="0mm" pcbY="-59mm" fontSize="1.8mm" anchorAlignment="center" layer="top" />
+    {PANEL_TITLES.map((t, i) => (
+      <Fragment key={`title-${i}`}><silkscreentext text={t.text} pcbX={`${t.x}mm`} pcbY={`${t.y}mm`} fontSize={`${t.fontSize}mm`} anchorAlignment="center" layer="top" /></Fragment>
+    ))}
     {/* Control labels derive from the shared positions in lib/layout.ts. */}
     {PANEL_LABELS.map((l, i) => (
       <Fragment key={`label-${i}`}><silkscreentext text={l.text} pcbX={`${l.x}mm`} pcbY={`${l.y}mm`} fontSize="1.8mm" anchorAlignment="center" layer="top" /></Fragment>

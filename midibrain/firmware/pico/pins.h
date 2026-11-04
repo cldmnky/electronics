@@ -1,0 +1,29 @@
+// GENERATED from tscircuit/lib/pin-map.ts -- do not edit by hand.
+// Regen: (cd tscircuit && bun run scripts/gen-pins.ts)
+#pragma once
+#define MB_PIN_MIDI_OUT_1_UART0_TX 0  // Pico physical pin 1
+#define MB_PIN_MIDI_IN_1_UART0_RX 1  // Pico physical pin 2
+#define MB_PIN_ENCODER_SW 2  // Pico physical pin 4
+#define MB_PIN_PLAY_START 3  // Pico physical pin 5
+#define MB_PIN_MIDI_OUT_2_UART1_TX 4  // Pico physical pin 6
+#define MB_PIN_MIDI_IN_2_UART1_RX 5  // Pico physical pin 7
+#define MB_PIN_NAV_UP 6  // Pico physical pin 9
+#define MB_PIN_NAV_DOWN 7  // Pico physical pin 10
+#define MB_PIN_NAV_LEFT 8  // Pico physical pin 11
+#define MB_PIN_NAV_RIGHT 9  // Pico physical pin 12
+#define MB_PIN_NAV_PRESS 10  // Pico physical pin 14
+#define MB_PIN_ENCODER_A 11  // Pico physical pin 15
+#define MB_PIN_ENCODER_B 12  // Pico physical pin 16
+#define MB_PIN_REC 13  // Pico physical pin 17
+#define MB_PIN_OVER_DUB 14  // Pico physical pin 19
+#define MB_PIN_STOP 15  // Pico physical pin 20
+#define MB_PIN_SPI0_RX_MOSI 16  // Pico physical pin 21
+#define MB_PIN_SPI0_CSN 17  // Pico physical pin 22
+#define MB_PIN_SPI0_SCK 18  // Pico physical pin 24
+#define MB_PIN_SPI0_TX_MISO 19  // Pico physical pin 25
+#define MB_PIN_READY_IRQ 20  // Pico physical pin 26
+#define MB_PIN_PLAY 21  // Pico physical pin 27
+#define MB_PIN_PLAY_LED 22  // Pico physical pin 29
+#define MB_PIN_REC_LED 26  // Pico physical pin 31
+#define MB_PIN_OVERDUB_LED 27  // Pico physical pin 32
+#define MB_PIN_SHIFT_EXIT 28  // Pico physical pin 34

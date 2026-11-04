@@ -74,9 +74,10 @@ THT = {
     "rear": {"J_PICO_L", "J_PICO_R", "J_PI", "J_FRONT"},
 }
 # Expected SMT assembly sides, pinned so a future edit cannot silently move a
-# part to the other side. Front is two-sided (nav + LEDs on top, rest bottom);
-# rear is single-sided bottom.
-EXPECTED_TOP = {"front": {"U5", "D3", "D4", "D5"}, "rear": set()}
+# part to the other side. Both boards are single-sided for JLCPCB: front SMT
+# all on top (panel side), rear SMT all on bottom. Front J5 stays bottom — it
+# is THT and must mate rearward — and THT bodies live wherever they mate.
+EXPECTED_SMT_SIDE = {"front": "top", "rear": "bottom"}
 
 
 def norm(row, key):
@@ -114,10 +115,10 @@ for name in ("front", "rear"):
     if no_lcsc:
         sys.exit(f"{name}: SMT without LCSC part number: {', '.join(no_lcsc)}")
 
-    # Pinned assembly sides.
-    top = {r for r in smt_refs if layers[r].lower() != "bottom"}
-    if top != EXPECTED_TOP[name]:
-        sys.exit(f"{name}: top-side SMT is {sorted(top)}, expected {sorted(EXPECTED_TOP[name])}")
+    # Pinned assembly sides: every SMT placement on the expected side.
+    wrong_side = sorted(r for r in smt_refs if layers[r].lower() != EXPECTED_SMT_SIDE[name])
+    if wrong_side:
+        sys.exit(f"{name}: SMT off the {EXPECTED_SMT_SIDE[name]} side: {wrong_side}")
 
     def pkg(row):
         lcsc = norm(row, "JLCPCB Part #")
@@ -175,9 +176,8 @@ for name in ("front", "rear"):
     split_refs = {r for refs in smt_groups.values() for r in refs} | {r for refs in hand_groups.values() for r in refs}
     if all_refs != split_refs:
         sys.exit(f"{name}: BOM split lost designators: {sorted(all_refs ^ split_refs)}")
-    top_n = len(EXPECTED_TOP[name])
     print(f"    {name}-bom-smt.csv   {len(smt_groups)} unique parts, {len(smt_refs)} placements "
-          f"({top_n} top / {len(smt_refs) - top_n} bottom)")
+          f"(all {EXPECTED_SMT_SIDE[name]}, single-sided)")
     print(f"    {name}-bom-hand.csv  {len(hand_groups)} unique parts, "
           f"{sum(len(r) for r in hand_groups.values())} placements (hand solder)")
 
@@ -195,6 +195,77 @@ panel_pnp_rows = [ln for ln in pnp_raw.splitlines()[1:] if ln.strip()] if pnp_ra
 if panel_bom_rows or panel_pnp_rows:
     sys.exit(f"panel: expected no components, got BOM rows {panel_bom_rows} PNP rows {panel_pnp_rows}")
 print("    panel: no components (fabrication only, no BOM/CPL)")
+
+# Silkscreen-in-bounds gate: parse the Legend Gerbers and prove no silk
+# leaves the board outline (0.5 mm guard). Added after the 2026-11 title ran
+# 19 mm off the panel edge: unit tests only see anchor positions, never the
+# exporter's rendered glyph extents, so the Gerber file is authoritative.
+import re
+
+BOUNDS = {"front": (128, 112), "rear": (101.6, 112), "panel": (132.08, 128.5)}
+GUARD = 0.5
+
+
+def silk_bbox(text):
+    half = {}  # dcode -> half-extent (conservative pad for its marks)
+    cur, cx, cy = None, None, None
+    lo = [float("inf"), float("inf")]
+    hi = [float("-inf"), float("-inf")]
+
+    def mark(x, y):
+        pad = half.get(cur, 0.5)
+        lo[0] = min(lo[0], x - pad); lo[1] = min(lo[1], y - pad)
+        hi[0] = max(hi[0], x + pad); hi[1] = max(hi[1], y + pad)
+
+    for ln in text.splitlines():
+        if ln.startswith("G36") or ln.startswith("%SR"):
+            sys.exit(f"silk gate: unsupported Gerber construct: {ln[:60]}")
+        if ln.startswith("%ADD"):
+            m = re.match(r"%ADD(\d+)([CR]),([\d.]+)(?:X([\d.]+))?", ln)
+            if m:
+                d, kind, a, b = m.group(1), m.group(2), float(m.group(3)), m.group(4)
+                half[d] = (max(a, float(b)) if b else a) / 2
+            else:
+                nums = re.findall(r"[\d.]+", ln.split(",", 1)[1])
+                nums = [float(n) for n in nums]
+                d = re.match(r"%ADD(\d+)", ln).group(1)
+                half[d] = (max(nums) / 2) if nums else 0.5
+            continue
+        if ln.startswith("%") or (len(ln) >= 3 and ln[:3] in ("M00", "M02", "G04", "G01", "G70", "G71", "G75", "G90", "G91")):
+            continue
+        for m in re.finditer(r"D0*(\d+)", ln):
+            cur = m.group(1)
+        for m in re.finditer(r"X(-?\d+)(Y(-?\d+))?", ln):
+            cx = int(m.group(1)) / 1e6
+            if m.group(3) is not None:
+                cy = int(m.group(3)) / 1e6
+            if cur in ("1", "3") and cx is not None and cy is not None:
+                mark(cx, cy)
+        for m in re.finditer(r"(?<![XY0-9])Y(-?\d+)", ln):
+            cy = int(m.group(1)) / 1e6
+            if cur in ("1", "3") and cx is not None:
+                mark(cx, cy)
+    if lo[0] == float("inf"):
+        return None
+    return (lo[0], lo[1], hi[0], hi[1])
+
+for name, (w, h) in BOUNDS.items():
+    with zipfile.ZipFile(fab / name / f"{name}-gerbers.zip") as zf:
+        members = sorted(n for n in zf.namelist() if n in ("F_SilkScreen.gbr", "B_SilkScreen.gbr"))
+        if not members:
+            sys.exit(f"{name}: no silkscreen gerbers in the zip")
+        for member in members:
+            box = silk_bbox(zf.read(member).decode())
+            if box is None:
+                print(f"    {name}/{member}: empty, skipped")
+                continue
+            x1, y1, x2, y2 = box
+            ok_box = (x1 >= -w / 2 + GUARD and x2 <= w / 2 - GUARD and
+                      y1 >= -h / 2 + GUARD and y2 <= h / 2 - GUARD)
+            print(f"    {name}/{member}: silk X {x1:.2f}..{x2:.2f} Y {y1:.2f}..{y2:.2f} "
+                  f"(board +-({w / 2:.2f},{h / 2:.2f})) {'OK' if ok_box else 'OFF-BOARD'}")
+            if not ok_box:
+                sys.exit(f"{name}/{member}: silkscreen leaves the board outline")
 
 # Sourcing BOM: bench hand-solder rows from both boards plus the curated
 # modules/cables/hardware list. Stock snapshots must be rechecked at order time.

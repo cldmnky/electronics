@@ -17,7 +17,7 @@ Chosen stack, FRONT to REAR: front panel with an 89.2 × 56.3 mm LCD cutout; 128
 | Pi PCB | 85 × 56, portrait | Rear of the 20HP base board, component side rearward, centre +6 east of the board origin (`PI_MOUNT`). Pi spans X −22…+34: 7 mm clear of the Pico (right edge −29), 2.5 mm clear of U3/U4, 8.5 mm clear of J_FRONT, 3 mm clear of J_PI. R13–R18/Q3 sit under the Pi PCB (fine for 0603/SOT at 2.5 mm). The 12 cm DSI cable reaches Pi DSI1. |
 | Display | Waveshare `3.5inch DSI LCD (H)`, SKU 33087 | Vendor drawing: 88.87 × 56.00 mm module, 75.80 × 45.36 mm active area, 58 × 49 mm mounting holes, 6.70 mm rear depth. 480 × 800 portrait default; rotate to 800 × 480 landscape. 3.3 V 180 mA, DSI1 + I2C touch on one 15-pin FPC. |
 | Display rear interfaces | One 15-pin FPC for DSI, 3.3 V and I2C touch | The included 12 cm DSI cable adapts to the Pi 5 22-pin DSI1 connector. No HDMI or touch-USB cable. Verify FPC bend radius, latch and clearance. |
-| Control and jack centres | REC/OVER DUB/STOP/PLAY at x = −53/−29/−5/+19, PLAY START at x = +47, y = −34; LEDs at x = −53/−29/+19, y = −25; TEMPO (47,30), NAV (47,11), SHIFT/EXIT (47,−8); MIDI jacks at x = −53/−29/−5/+19, y = −47.5 | Point placement only; actual button/jack bodies, panel bushings and actuator heights still need a sample check. |
+| Control and jack centres | REC/OVER DUB/STOP/PLAY at x = −53/−29/−5/+19, PLAY START at x = +47, y = −34; LEDs at x = −53/−29/+19, y = −24; TEMPO (47,30), NAV (47,11), SHIFT/EXIT (47,−8); MIDI jacks at x = −53/−29/−5/+19, y = −47.5 | Point placement only; actual button/jack bodies, panel bushings and actuator heights still need a sample check. |
 | USB feedthrough centres | Three at y = 56; LCD centre at y = 7 (glass +35…−21) | Panel-mounted 16 mm USB-C 5 A coupler and two Adafruit 908 USB-A feedthroughs. The front board has a top relief notch and a 3D-printed bracket; see `docs/feedthroughs.md`. Cable bodies/bends still need a sample check. |
 | Pi cooler / NVMe | candidate full-size M.2 HAT+ and Pi Active Cooler | Their use and exact stacking height/clearances must be checked against the exact revisions and actual assembly. Confirm that access to the 40-pin header remains possible. |
 | HDMI, USB audio, powered hub, display touch and front USB-C | panel/feedthrough assemblies proposed | Connector orientation, length, bend radii, retention, shielding, voltage drop and Pi-port access not yet measured. |
@@ -90,6 +90,13 @@ re-proven.
   J5 IDC bend mockup). Residuals: the bracket regen must cut clearance holes
   for the top pair, and (−44, 43) needs low-profile top hardware plus a
   display-underside keepout check against the vendor drawing.
+- **Display-underside keepout over the front SMD (new with single-sided
+  top assembly):** all 27 MIDI SMD parts now share the panel side with the
+  LCD module (3.5 mm standoff gap; tallest top SMD ≈ 2 mm). Verify the
+  display's underside component map and 15-pin FPC latch against the
+  front-board top SMD before release; mitigations are taller display
+  standoffs (breaks the 10.16 mm light-pipe length) or moving SMD back to
+  the bottom (breaks single-sided assembly).
 - **Pico vs Pi overlap (was: 1 mm XY overlap + Z foul):** Pico right edge
   (X −29) against a centred Pi's left edge (X −28), with the 10–12 mm Pico
   crashing through the Pi plane (2.5 mm spacer). Fixed by shifting the Pi

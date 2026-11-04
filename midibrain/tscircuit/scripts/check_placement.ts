@@ -15,7 +15,10 @@ import {
   PANEL_LCD_CUTOUT,
   PANEL_CUTOUTS,
   PI_HOLES,
+  OUT_RING,
+  PANEL,
   PANEL_LABELS,
+  PANEL_TITLES,
   PLAY_START,
   RAIL_HOLES,
   RIGHT_CONTROLS,
@@ -24,6 +27,7 @@ import {
   USB_FEEDTHROUGHS,
   displayAnnotationXY,
 } from "../lib/layout"
+import { brandArtPaths } from "../lib/panel-art"
 
 // Placement check: verifies the BUILT circuit JSON (dist/) against the shared
 // coordinate source in lib/layout.ts. Run `tsci build` first (make placement).
@@ -108,6 +112,33 @@ for (const h of [...FRONT_BOARD_HOLES, ...RAIL_HOLES]) {
 ok(`panel: ${FRONT_BOARD_HOLES.length + RAIL_HOLES.length} standoff/rail holes, no extras`,
   panelHoles.length === FRONT_BOARD_HOLES.length + RAIL_HOLES.length + USB_FEEDTHROUGHS.length * 2)
 
+// Titles consume the shared PANEL_TITLES with center anchoring only.
+for (const t of PANEL_TITLES) {
+  const hit = byType(panel, "pcb_silkscreen_text").find(s =>
+    s.text === t.text && close(s.anchor_position.x, t.x, 1e-4) &&
+    close(s.anchor_position.y, t.y, 1e-4) && close(s.font_size, t.fontSize, 1e-4) &&
+    s.anchor_alignment === "center" && s.layer === "top")
+  ok(`panel: title "${t.text}" centred at (${t.x}, ${t.y})`, !!hit)
+}
+// Signal-style OUT rings: bold circles on the MIDI OUT barrels only.
+const rings = byType(panel, "pcb_silkscreen_circle")
+const outCols = FRONT_COLUMNS.filter(c => c.jack.startsWith("MIDI OUT"))
+for (const c of outCols) {
+  const r = rings.find(o => close(o.center.x, c.x, 1e-4) && close(o.center.y, JACK_Y, 1e-4))
+  ok(`panel: OUT ring over ${c.jack}`, !!r && close(r.radius, OUT_RING.radius, 1e-4))
+}
+ok("panel: rings on OUT barrels only", rings.length === outCols.length)
+// Brand artwork: every emitted path accounted for and inside the outline.
+const artPaths = byType(panel, "pcb_silkscreen_path")
+const expectedArtPaths = brandArtPaths(0, -59).reduce((n, g) => n + g.paths.length, 0)
+ok(`panel: ${expectedArtPaths} brand paths emitted`, artPaths.length === expectedArtPaths)
+for (const p of artPaths) {
+  const xs = p.route.map((q: { x: number }) => q.x)
+  const ys = p.route.map((q: { y: number }) => q.y)
+  const inside = Math.min(...xs) >= -PANEL.width / 2 + 0.5 && Math.max(...xs) <= PANEL.width / 2 - 0.5 &&
+    Math.min(...ys) >= -PANEL.height / 2 + 0.5 && Math.max(...ys) <= PANEL.height / 2 - 0.5
+  ok(`panel: brand path in-bounds (x ${Math.min(...xs).toFixed(1)}..${Math.max(...xs).toFixed(1)})`, inside)
+}
 // Silkscreen labels derive from the shared control positions.
 const texts = byType(panel, "pcb_silkscreen_text")
 for (const l of PANEL_LABELS) {
@@ -144,7 +175,7 @@ for (const [i, c] of FRONT_COLUMNS.entries()) {
   at(`front: ${c.jack} jack`, comp(`J${i + 1}`), { x: midiJackX(c.jack), y: JACK_Y })
 }
 for (const [i, jack] of ["MIDI IN 1", "MIDI IN 2"].entries()) {
-  at(`front: ${jack} sleeve decoupling cap`, comp(`C${i + 1}`), { x: midiJackX(jack) - 6, y: JACK_Y + 5.5 })
+  at(`front: ${jack} sleeve decoupling cap`, comp(`C${i + 1}`), { x: midiJackX(jack) - 7, y: JACK_Y + 5.5 })
 }
 
 // LEDs above REC / OVER DUB / PLAY with their 330R series resistors 4 mm left.
@@ -161,6 +192,13 @@ for (const p of LED_PARTS) {
 // Interconnect header in the corridor between display and control column.
 at("front: J5 interconnect", comp("J5"), { x: FRONT_INTERCONNECT.x, y: FRONT_INTERCONNECT.y })
 ok(`front: J5 rotated ${FRONT_INTERCONNECT.rotation} deg`, comp("J5")?.rotation === FRONT_INTERCONNECT.rotation)
+// Single-sided JLCPCB assembly: every front footprint on top, except J5
+// (THT body mating rearward into the front-rear ribbon).
+for (const c of byType(front, "pcb_component")) {
+  const name = src.get(c.source_component_id)?.name ?? c.pcb_component_id
+  const want = name === "J5" ? "bottom" : "top"
+  ok(`front: ${name} on ${want} side`, c.layer === want)
+}
 
 // Non-plated Ø2.7 holes: panel standoffs, shared front-rear grid, LCD
 // standoffs, bracket mounts.

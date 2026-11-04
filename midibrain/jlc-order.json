@@ -12,8 +12,8 @@
     },
     "assembly": {
       "service": "JLCPCB SMT assembly",
-      "sides": 2,
-      "sides_reason": "27 SMT placements bottom (MIDI/opto/passives) and 4 top (U5 nav, D3/D4/D5 LEDs). Bottom-only is possible if the 4 top parts are hand-soldered, but the nav switch is fiddly by hand.",
+      "sides": 1,
+      "sides_reason": "All 31 SMT placements are on the top (panel side). The rear face carries only the J5 THT body and THT tails.",
       "through_hole": "hand solder",
       "through_hole_parts": ["J1", "J2", "J3", "J4", "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "U6", "J5"],
       "files": {
@@ -24,8 +24,8 @@
       "expected_counts": {
         "bom_placements": 43,
         "cpl_smt_placements": 31,
-        "cpl_smt_top": 4,
-        "cpl_smt_bottom": 27,
+        "cpl_smt_top": 31,
+        "cpl_smt_bottom": 0,
         "tht_excluded": 12
       }
     }

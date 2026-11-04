@@ -10,9 +10,11 @@
     "typecheck": "tsc --noEmit",
     "panel:preview": "bun run scripts/panel-preview.ts",
     "placement": "bun run scripts/check_placement.ts",
+    "pins": "bun run scripts/gen-pins.ts",
     "release": "bash scripts/release.sh"
   },
   "dependencies": {
+    "@tscircuit/alphabet": "0.0.25",
     "tscircuit": "0.0.3044"
   },
   "devDependencies": {

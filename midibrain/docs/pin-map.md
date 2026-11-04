@@ -1,6 +1,6 @@
 # Pi / Pico allocation — preliminary
 
-Source: [Pico datasheet](https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf) figures 2 and 4 and [RP2040 datasheet](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf); [Pi GPIO documentation](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html). Pi numbering below is **40-pin physical position**, with BCM GPIO in parentheses; Pico numbering is **module physical position**, with RP2040 GPIO in parentheses. `tscircuit/lib/pin-map.ts` checks for allocation duplicates. This is a logical allocation, **not a connector footprint or approved cable pinout**.
+Source: [Pico 2 datasheet](https://datasheets.raspberrypi.com/pico/pico-2-datasheet.pdf) figures 2 and 4 and [RP2350 datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf); [Pi GPIO documentation](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html). Pi numbering below is **40-pin physical position**, with BCM GPIO in parentheses; Pico numbering is **module physical position**, with RP2350 GPIO in parentheses. The Pico 2 keeps the 21 × 51 mm 40-pin module outline, so sockets and pin positions are unchanged from the Pico 1 plan. `tscircuit/lib/pin-map.ts` checks for allocation duplicates. This is a logical allocation, **not a connector footprint or approved cable pinout**.
 
 | Function | Pi header | Pico module | Direction |
 |---|---|---|---|

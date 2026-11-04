@@ -1,4 +1,5 @@
 #include "protocol.hpp"
+#include "midi.hpp"
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -40,5 +41,41 @@ int main() {
   event.payload[0] = 1; event.payload[1] = 1; // NAV_UP pressed, simulated
   assert(encode(event, wire) && decode(wire, decoded));
   assert(decoded.session == hello.session && decoded.payload[0] == 1 && decoded.payload[1] == 1);
+  // MIDI parser: note-on with running status, realtime interleaved mid-message.
+  MidiParser p0(0);
+  assert(!p0.feed(0x90, 1000)); assert(!p0.feed(0x3C, 1001));
+  assert(p0.feed(0xF8, 1002));  // clock slips between data bytes
+  assert(p0.last().size == 1 && p0.last().data[0] == 0xF8);
+  assert(p0.feed(0x7F, 1003));
+  assert(p0.last().size == 3 && p0.last().data[0] == 0x90);
+  assert(p0.last().data[1] == 0x3C && p0.last().data[2] == 0x7F);
+  assert(!p0.feed(0x40, 1004)); assert(p0.feed(0x50, 1005));  // running status
+  assert(p0.last().data[0] == 0x90 && p0.last().data[1] == 0x40);
+  // Program change (2 bytes), song position (3 bytes), SysEx skipped.
+  MidiParser p1(1);
+  assert(!p1.feed(0xC0, 2000)); assert(p1.feed(0x05, 2001));
+  assert(p1.last().size == 2 && p1.last().port == 1);
+  assert(!p1.feed(0xF2, 2002)); assert(!p1.feed(0x00, 2003));
+  assert(p1.feed(0x20, 2004) && p1.last().size == 3);
+  assert(!p1.feed(0xF0, 2005)); assert(!p1.feed(0x41, 2006));
+  assert(!p1.feed(0xF7, 2007));  // SysEx dropped, parser recovers
+  assert(!p1.feed(0xF4, 2008) && !p1.feed(0x40, 2009));  // stale data dropped
+  // Event round-trips through real frames.
+  Frame ef{};
+  MidiMessage m{1, 3, {0x99, 0x00, 0x7F}, 0x00ABCDEF};
+  assert(pack_midi(ef, 7, 0x12345678, m));
+  assert(encode(ef, wire) && decode(wire, decoded) && unpack_midi(decoded, m));
+  assert(m.port == 1 && m.size == 3 && m.data[0] == 0x99 && m.stamp_us == 0x00ABCDEF);
+  MidiMessage badm{0, 4, {}, 0}; assert(!pack_midi(ef, 0, 1, badm));
+  Frame cf{};
+  assert(pack_control(cf, 8, 0x12345678, CTL_ENCODER_TURN, 0xFF));
+  assert(encode(cf, wire) && decode(wire, decoded));
+  assert(decoded.payload[0] == EV_CONTROL && decoded.payload[1] == CTL_ENCODER_TURN);
+  assert(static_cast<std::int8_t>(decoded.payload[2]) == -1);
+  Frame tf{};
+  assert(pack_tempo(tf, 9, 0x12345678, 12000));
+  assert(encode(tf, wire) && decode(wire, decoded));
+  assert(decoded.payload[0] == EV_TEMPO && (decoded.payload[1] | (decoded.payload[2] << 8)) == 12000);
   std::cout << "PASS: framed loopback + simulated debounced control event (no SPI hardware)\n";
+  std::cout << "PASS: MIDI parser (running status, realtime, SysEx skip) + event codecs\n";
 }

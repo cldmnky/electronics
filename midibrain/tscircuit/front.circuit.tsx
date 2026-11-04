@@ -52,7 +52,7 @@ const R = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot }: RP
     pcbX={x}
     pcbY={y}
     pcbRotation={rot}
-    layer="bottom"
+    layer="top"
     supplierPartNumbers={{ jlcpcb: [lcsc] }}
     manufacturerPartNumber={mpn}
     connections={{ pin1: p1, pin2: p2 }}
@@ -67,14 +67,16 @@ const C = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603" }: CProps)
     footprint={footprint}
     pcbX={x}
     pcbY={y}
-    layer="bottom"
+    layer="top"
     supplierPartNumbers={{ jlcpcb: [lcsc] }}
     manufacturerPartNumber={mpn}
     connections={{ pin1: p1, pin2: p2 }}
   />
 )
 
-// Sleeve decoupling cap follows its jack: 6 mm left, 5.5 mm above the barrel.
+// Sleeve decoupling cap follows its jack: 7 mm left, 5.5 mm above the barrel.
+// (7 mm keeps the 0603 1.2 mm clear of the jack-body courtyard now that all
+// SMT shares the panel side with the THT bodies.)
 const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: number; x: number; y: number }) => {
   const j = `J${ch}`, u = `U${ch}`, d = `D${ch}`
   const rx = `${x}mm`, ry = `${y}mm`
@@ -100,7 +102,7 @@ const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: n
         name={u}
         pcbX={rx}
         pcbY={ry}
-        layer="bottom"
+        layer="top"
         pinAttributes={{ pin1: { isPassive: true }, pin3: { isPassive: true }, pin4: { requiresGround: true }, pin5: { isPassive: true }, pin6: { requiresPower: true } }}
         connections={{
           pin1: anode,
@@ -114,12 +116,12 @@ const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: n
         name={d}
         pcbX={`${x + 8}mm`}
         pcbY={`${y + 2}mm`}
-        layer="bottom"
+        layer="top"
         connections={{ cathode: anode, anode: tip }}
       />
       <R name={`R${ch}`} value="220" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
       <R name={`R${ch + 2}`} value="2.2k" x={`${x + 8}mm`} y={`${y - 4}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={rxNet} p2="net.P3V3" />
-      <C name={`C${ch}`} value="100nF" x={`${jackX - 6}mm`} y={`${jackY + 5.5}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
+      <C name={`C${ch}`} value="100nF" x={`${jackX - 7}mm`} y={`${jackY + 5.5}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
       <C name={`C${ch + 2}`} value="100nF" x={`${x + 4}mm`} y={`${y + 3}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
     </>
   )
@@ -152,7 +154,7 @@ const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: 
         footprint="sot23"
         pcbX={`${x}mm`}
         pcbY={`${y}mm`}
-        layer="bottom"
+        layer="top"
         pinLabels={{ pin1: "base", pin2: "emitter", pin3: "collector" }}
         supplierPartNumbers={{ jlcpcb: ["C53444"] }}
         manufacturerPartNumber="MMBT3906LT1G"
@@ -214,8 +216,10 @@ export default () => (
       <Fragment key={`bracket-${i}`}><hole name={`BRACKET_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${x}mm`} pcbY={`${FEEDTHROUGH_BRACKET.mountY}mm`} /></Fragment>
     ))}
 
-    {/* MIDI circuits: opto/output drivers under the LCD (bottom layer); jacks
-        in the four shared transport/MIDI columns at the bottom edge. */}
+    {/* All SMT on the panel side for single-sided JLCPCB assembly: MIDI
+        opto/output drivers under the LCD (top layer); jacks in the four
+        shared transport/MIDI columns at the bottom edge. J5 stays bottom:
+        its THT body must mate rearward into the front-rear ribbon. */}
     <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={-45} y={10} />
     <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={-15} y={10} />
     <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={-45} y={-13} />

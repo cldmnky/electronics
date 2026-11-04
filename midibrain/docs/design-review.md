@@ -112,7 +112,7 @@ USB-C 5 A power, UMC audio USB-A, MIDI-hub USB-A, and display HDMI/USB-C cables 
 
 ## Electrical decisions still needed
 
-1. **Pico or Pico 2?** Both use the same 40-pin module outline; firmware and RP2350 differences must be chosen before the firmware build.
+1. **Pico or Pico 2?** Decided: **Pico 2 (RP2350)** — same 40-pin module outline and pinout, so no PCB change; firmware builds with `PICO_BOARD=pico2`. On-target smoke test (console, MIDI loopback, SPI HELLO at 150 MHz sysclk) still outstanding.
 2. **Approve the SN74LVC1G126 + B5819W + 2N7002 isolation design?** It is implemented and covered by the simplified SPICE checks.
 3. **Approve the Froemix-derived PNP MIDI output and TLP2362 input?** This is the recommended low-risk path.
 4. **Approve PJ-301M-3-B vertical TRS jacks and SKRHABE010 nav switch?** The jack is the Froemix part; the panel holes, actuator cap and physical pin mapping need a sample check.

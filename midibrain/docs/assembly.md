@@ -6,7 +6,7 @@ This is a **prototype BOM**, not an approved purchasing or manufacturing release
 
 | Board | Contents | Assembly |
 |---|---|---|
-| Front/UI, 128 × 112 mm | 5 transport buttons, 3 SMD LEDs, 4 vertical TRS jacks, 5-way nav, encoder, MIDI SMD circuitry, 2 × 13 interconnect | SMD by JLCPCB; THT controls/jacks hand-soldered |
+| Front/UI, 128 × 112 mm | 5 transport buttons, 3 SMD LEDs, 4 vertical TRS jacks, 5-way nav, encoder, MIDI SMD circuitry, 2 × 13 interconnect | Single-sided top SMD by JLCPCB; THT controls/jacks/interconnect hand-soldered |
 | Rear/base, 20HP 101.6 × 112 mm | Pico sockets, Pi ribbon, SPI buffers, reset FET, 5 V→VSYS diode, decoupling, 2 × 13 interconnect | SMD by JLCPCB; THT headers hand-soldered |
 | Front panel, 26HP 132.08 × 128.5 × 1.6 mm | Bare FR-4, no solder mask, white silkscreen, ENIG; LCD/control/USB/jack cutouts, three 4 mm LED light-pipe holes | JLCPCB PCB only; no copper/components |
 
@@ -14,23 +14,23 @@ This is a **prototype BOM**, not an approved purchasing or manufacturing release
 
 | Function | MPN | LCSC | Package | Board/side |
 |---|---|---|---|---|
-| MIDI input opto | TLP2362(TPL,E) | C37658 | SO-5 | Front/rear |
-| MIDI output PNP | MMBT3906LT1G | C53444 | SOT-23 | Front/rear |
-| MIDI input protection | 1N4148WS | C2128 | SOD-323 | Front/rear |
+| MIDI input opto | TLP2362(TPL,E) | C37658 | SO-5 | Front/front |
+| MIDI output PNP | MMBT3906LT1G | C53444 | SOT-23 | Front/front |
+| MIDI input protection | 1N4148WS | C2128 | SOD-323 | Front/front |
 | MISO/READY isolation | SN74LVC1G126DBVR | C7834 | SOT-23-5 | Rear/rear |
 | Reset FET | 2N7002 | C8545 | SOT-23 | Rear/rear |
 | Pi 5 V→VSYS Schottky | B5819W | C8598 | SOD-123 | Rear/rear |
 | 100 Ω SPI series | 0603WAF1000T5E | C22775 | 0603 | Rear/rear |
-| 220 Ω MIDI input | 0603WAF2200T5E | C22962 | 0603 | Front/rear |
-| 2.2 kΩ opto pull-up | 0603WAF2201T5E | C4190 | 0603 | Front/rear |
-| 4.7 kΩ output base | 0603WAF4701T5E | C23162 | 0603 | Front/rear |
-| 10 kΩ pull-up/gate | 0603WAF1002T5E | C25804 | 0603 | Front+rear/rear |
+| 220 Ω MIDI input | 0603WAF2200T5E | C22962 | 0603 | Front/front |
+| 2.2 kΩ opto pull-up | 0603WAF2201T5E | C4190 | 0603 | Front/front |
+| 4.7 kΩ output base | 0603WAF4701T5E | C23162 | 0603 | Front/front |
+| 10 kΩ pull-up/gate | 0603WAF1002T5E | C25804 | 0603 | Front/front + Rear/rear |
 | 100 kΩ pull-down | 0603WAF1003T5E | C25803 | 0603 | Rear/rear |
 | 330 Ω LED | 0603WAF3300T5E | C23138 | 0603 | Front/front |
-| 22 Ω 1 W output source | 25121WF220JT4E | C118189 | 2512 | Front/rear |
-| 33 Ω 1 W output sink | 25121WF330JT4E | C53728 | 2512 | Front/rear |
-| 100 nF bypass | CC0603KRX7R9BB104 | C14663 | 0603 | Front+rear/rear |
-| 10 µF bulk | CL31A106KBHNNNE | C13585 | 1206 | Front+rear/rear |
+| 22 Ω 1 W output source | 25121WF220JT4E | C118189 | 2512 | Front/front |
+| 33 Ω 1 W output sink | 25121WF330JT4E | C53728 | 2512 | Front/front |
+| 100 nF bypass | CC0603KRX7R9BB104 | C14663 | 0603 | Front/front + Rear/rear |
+| 10 µF bulk | CL31A106KBHNNNE | C13585 | 1206 | Front/front + Rear/rear |
 | REC/OVER DUB LED | KT-0805R red | C2295 | 0805 | Front/front |
 | PLAY LED | KT-0805G green | C2297 | 0805 | Front/front |
 | 5-way nav | Alps SKRHABE010 | C139794 | SMD 8-pad | Front/front |

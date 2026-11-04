@@ -1,6 +1,6 @@
 Board,Designators,Quantity,MPN,LCSC,Package,Side,Method,Source,Notes
 module,RPi5,1,Raspberry Pi 5 (RAM size TBD),,,rear,hand,Pi reseller,HAT/cooler combo candidate and unproven; see docs/mechanical-stack.md
-module,Pico1,1,Raspberry Pi Pico (fit 2x20 male headers; or Pico H),,,rear,hand,Pi reseller,Sockets J_PICO_L/R are on the rear board; plain Pico needs headers soldered first
+module,Pico1,1,Raspberry Pi Pico 2 (fit 2x20 male headers; or Pico 2 H),,,rear,hand,Pi reseller,Sockets J_PICO_L/R are on the rear board; plain Pico 2 needs headers soldered first
 module,DISP1,1,Waveshare 3.5inch DSI LCD (H) SKU 33087,,,module,front,hand,Waveshare,Includes the 12 cm DSI cable (CAB_DSI); 58x49 mm mounting holes
 module,HAT1,1,Raspberry Pi M.2 HAT+ (candidate),,,rear,hand,Pi reseller,Candidate only; stacking height unproven in the enclosure
 module,COOL1,1,Raspberry Pi Active Cooler (candidate),,,rear,hand,Pi reseller,Candidate only; unproven with HAT in the enclosure

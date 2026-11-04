@@ -13,12 +13,15 @@ import {
   JACK_Y,
   LCD_MOUNT_HOLES,
   LCD_WINDOW,
+  midiJackX,
   LED_ID,
   LED_Y,
   PANEL,
   PANEL_LCD_CUTOUT,
+  PANEL_TITLES,
   PI_HOLES,
   PI_MOUNT,
+  panelTitleExtents,
   PLAY_START,
   REAR_PCB,
   RIGHT_COLUMN,
@@ -114,7 +117,7 @@ test("transport columns align with their LEDs and MIDI jacks", () => {
     expect(point(c.jack)).toMatchObject({ x: c.x, y: JACK_Y })
   }
   // LEDs sit above REC / OVER DUB / PLAY only, centred on their buttons.
-  expect(LED_Y - TRANSPORT_Y).toBe(9)
+  expect(LED_Y - TRANSPORT_Y).toBe(10)
   for (const [button, led] of [["REC", "REC LED"], ["OVER DUB", "OVERDUB LED"], ["PLAY", "PLAY LED"]] as const) {
     expect(led).toBe(LED_ID[button as keyof typeof LED_ID])
     expect(point(led).x).toBeCloseTo(point(button).x, 9)
@@ -213,6 +216,24 @@ test("panel standoffs and the shared front-rear grid clear parts and edges", () 
   for (const h of FRONT_REAR_MOUNT.filter(h => h.y < 0)) {
     expect(h.y).toBeLessThan(JACK_Y - 3)
   }
+})
+
+test("panel caption stays on the board (no center_left overflow)", () => {
+  // The wordmark is drawn paths now (panel-art); this text primitive is the
+  // jack-field caption, centred between the IN 2 and OUT 1 columns.
+  expect(PANEL_TITLES).toHaveLength(1)
+  const t = PANEL_TITLES[0]!
+  expect(t.text).toBe("MIDI TRS TYPE A")
+  const e = panelTitleExtents(t)
+  expect(e.x1).toBeGreaterThan(-PANEL.width / 2 + 1)
+  expect(e.x2).toBeLessThan(PANEL.width / 2 - 1)
+  expect(e.y1).toBeGreaterThan(-PANEL.height / 2 + 1)
+  expect(e.y2).toBeLessThan(PANEL.height / 2 - 1)
+  expect(e.x2).toBeLessThan(midiJackX("MIDI OUT 1") - 2)
+  expect(e.x1).toBeGreaterThan(midiJackX("MIDI IN 2") + 2)
+  // Below the jack barrels, above the wordmark ink.
+  expect(t.y).toBeLessThan(JACK_Y - 3)
+  expect(t.y).toBeGreaterThan(-57)
 })
 
 test("allocated GPIO and physical pins are unique", () => {
