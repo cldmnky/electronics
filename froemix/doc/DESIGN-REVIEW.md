@@ -181,12 +181,19 @@ both trees). Three supported changes, each verified on the rendered SVG:
 `tsci check schematic-placement`: `TwoPinComponentShouldBeVertical` **54 → 0**,
 `ComponentNetLabelCollision` **4 → 2**, `SchematicTextCollision` **3 → 1**.
 `tools/svg_overlaps.py` on the exported SVGs (it reads the rendered label tag
-polygons): Root **18/13 → 0/0** label/label and label/text, Audio 0/4 → 0/2,
-CV 0/1 → 0/1, MIDI and Power 0/0; total **18/18 → 0/3**. The PCB did not move
-(`snapshot --test --3d` still passes the PCB and 3D snapshots; 429 pads and
-102 nets unchanged). The three residual overlaps are recorded exactly in
-`svg_overlaps.py --expect built-in`, which fails on any new one. **The drawing is
-materially improved and still not a finished production service schematic.**
+polygons): every sheet is **0/0** in label/label and label/text — Root 18/13 →
+0/0, Audio 0/4 → 0/0, CV 0/1 → 0/0, MIDI and Power 0/0 — and no label tag sits
+on a component body. The last two overlaps were closed by freezing the analog
+sheet positions into `lib/schematic-layout.ts` (`AUDIO_LAYOUT`, `CV_LAYOUT`) and
+nudging the C10/C11 pair once. The PCB did not move (`snapshot --test --3d`
+still passes the PCB and 3D snapshots; 429 pads and 102 nets unchanged).
+`svg_overlaps.py --expect built-in` records 0/0 with no headroom; its strict
+line (any intersection at all) shows 1 label/label and 4 label/text hairline
+contacts left, against 21/28 on the baseline. The native
+placement checker still lists stylistic items (3 CV orientation suggestions,
+4 alignment notes) and two component/label box pairs the renderer does not
+reproduce; those are open, not hidden. **The drawing is materially improved and
+still not a finished production service schematic.**
 
 This is a review, not a redesign: no circuit, placement, BOM, or fabrication
 output was changed. P1 means resolve before ordering a patchable module; P2

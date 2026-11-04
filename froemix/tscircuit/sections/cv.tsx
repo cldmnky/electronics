@@ -8,11 +8,19 @@
 import { LM4040_PINS, MCP6002_PINS, MMBT3904_PINS, TL074_PINS } from "../lib/pins"
 import { FP_jclpcb_C0603, FP_jclpcb_R0603, FP_jclpcb_R1206, FP_jclpcb_SOIC_8_L4_9_W3_9_P1_27_LS6_0_BL, FP_jclpcb_SOD_323_L1_8_W1_3_LS2_5_RD, FP_jclpcb_SOT_23_3_L2_9_W1_6_P1_90_LS2_8_BR, FP_jclpcb_SOT_23_3_L3_0_W1_7_P0_95_LS2_9_BR, FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL } from "../lib/footprints"
 
+import { CV_LAYOUT } from "../lib/schematic-layout"
+
 export const CvSection = () => (
   <schematicsheet name="cv" displayName="CV" sheetIndex={3}>
+    {/* Schematic-only relative group: `schRelative` switches the auto-layout off
+        for these children, so the frozen CV_LAYOUT coordinates are used exactly.
+        No pcbX/pcbY, footprint or net is touched, and a group inside a sheet
+        is not a subcircuit, so the nets stay global. */}
+    <group name="cv-layout" schRelative>
     {/* C14 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C14"
+      schX={CV_LAYOUT["C14"].x} schY={CV_LAYOUT["C14"].y}
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="20.6mm"
@@ -32,6 +40,7 @@ export const CvSection = () => (
     {/* C15 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C15"
+      schX={CV_LAYOUT["C15"].x} schY={CV_LAYOUT["C15"].y}
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="15.81mm"
@@ -51,8 +60,8 @@ export const CvSection = () => (
     {/* C16 10nF - CC0603KRX7R9BB104 - LCSC C57112 - 0603B103K500NT - jclpcb:C0603 */}
     <capacitor
       name="C16"
+      schX={CV_LAYOUT["C16"].x} schY={CV_LAYOUT["C16"].y}
       schRotation={90}
-      schSectionName="cv"
       capacitance="10nF"
       footprint={FP_jclpcb_C0603}
       pcbX="1.74mm"
@@ -73,7 +82,7 @@ export const CvSection = () => (
     {/* C17 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C17"
-      schSectionName="cv"
+      schX={CV_LAYOUT["C17"].x} schY={CV_LAYOUT["C17"].y}
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="9.96mm"
@@ -93,7 +102,7 @@ export const CvSection = () => (
     {/* C18 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C18"
-      schSectionName="cv"
+      schX={CV_LAYOUT["C18"].x} schY={CV_LAYOUT["C18"].y}
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="9.96mm"
@@ -113,7 +122,7 @@ export const CvSection = () => (
     {/* C19 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C19"
-      schSectionName="cv"
+      schX={CV_LAYOUT["C19"].x} schY={CV_LAYOUT["C19"].y}
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="10mm"
@@ -133,7 +142,7 @@ export const CvSection = () => (
     {/* C20 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C20"
-      schSectionName="cv"
+      schX={CV_LAYOUT["C20"].x} schY={CV_LAYOUT["C20"].y}
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="8.18mm"
@@ -153,8 +162,8 @@ export const CvSection = () => (
     {/* C21 10nF - CC0603KRX7R9BB104 - LCSC C57112 - 0603B103K500NT - jclpcb:C0603 */}
     <capacitor
       name="C21"
+      schX={CV_LAYOUT["C21"].x} schY={CV_LAYOUT["C21"].y}
       schRotation={90}
-      schSectionName="cv"
       capacitance="10nF"
       footprint={FP_jclpcb_C0603}
       pcbX="11.12mm"
@@ -182,8 +191,8 @@ export const CvSection = () => (
         pole, and limits the CV-out bandwidth to ~16kHz (fine for CV). */}
     <capacitor
       name="C33"
+      schX={CV_LAYOUT["C33"].x} schY={CV_LAYOUT["C33"].y}
       schRotation={-90}
-      schSectionName="cv"
       capacitance="100pF"
       footprint={FP_jclpcb_C0603}
       pcbX="18.5mm"
@@ -200,8 +209,8 @@ export const CvSection = () => (
         same 15.9kHz compensation zero as C33, see that comment. */}
     <capacitor
       name="C34"
+      schX={CV_LAYOUT["C34"].x} schY={CV_LAYOUT["C34"].y}
       schRotation={-90}
-      schSectionName="cv"
       capacitance="100pF"
       footprint={FP_jclpcb_C0603}
       pcbX="0mm"
@@ -216,7 +225,7 @@ export const CvSection = () => (
     {/* Q1 MMBT3904 - MMBT3904_C181119 - LCSC C181119 - jclpcb:SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR */}
     <transistor
       name="Q1"
-      schSectionName="sync"
+      schX={CV_LAYOUT["Q1"].x} schY={CV_LAYOUT["Q1"].y}
       type="npn"
       footprint={FP_jclpcb_SOT_23_3_L2_9_W1_6_P1_90_LS2_8_BR}
       pinLabels={{ pin1: "base", pin2: "emitter", pin3: "collector" }}
@@ -242,7 +251,7 @@ export const CvSection = () => (
         SOD-323 footprint is the cathode. */}
     <diode
       name="D5"
-      schSectionName="sync"
+      schX={CV_LAYOUT["D5"].x} schY={CV_LAYOUT["D5"].y}
       footprint={FP_jclpcb_SOD_323_L1_8_W1_3_LS2_5_RD}
       pinLabels={{ pin1: "cathode", pin2: "anode" }}
       pcbX="13.8mm"
@@ -262,8 +271,8 @@ export const CvSection = () => (
     {/* R21 33K - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R21"
+      schX={CV_LAYOUT["R21"].x} schY={CV_LAYOUT["R21"].y}
       schRotation={90}
-      schSectionName="sync"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="20.5mm"
@@ -283,7 +292,7 @@ export const CvSection = () => (
     {/* R22 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R22"
-      schSectionName="sync"
+      schX={CV_LAYOUT["R22"].x} schY={CV_LAYOUT["R22"].y}
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="17.78mm"
@@ -303,7 +312,7 @@ export const CvSection = () => (
     {/* R23 1M - PA1206FRF470R001L - LCSC C17927 - 1206W4F1004T5E - jclpcb:R1206 */}
     <resistor
       name="R23"
-      schSectionName="sync"
+      schX={CV_LAYOUT["R23"].x} schY={CV_LAYOUT["R23"].y}
       resistance="1M"
       footprint={FP_jclpcb_R1206}
       pcbX="4.66mm"
@@ -324,8 +333,8 @@ export const CvSection = () => (
     {/* R24 49.9k - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
     <resistor
       name="R24"
+      schX={CV_LAYOUT["R24"].x} schY={CV_LAYOUT["R24"].y}
       schRotation={90}
-      schSectionName="sync"
       resistance="49.9k"
       footprint={FP_jclpcb_R0603}
       pcbX="10.26mm"
@@ -345,7 +354,7 @@ export const CvSection = () => (
     {/* R25 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R25"
-      schSectionName="sync"
+      schX={CV_LAYOUT["R25"].x} schY={CV_LAYOUT["R25"].y}
       resistance="10k"
       footprint={FP_jclpcb_R0603}
       pcbX="14.94mm"
@@ -365,8 +374,8 @@ export const CvSection = () => (
     {/* R26 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R26"
+      schX={CV_LAYOUT["R26"].x} schY={CV_LAYOUT["R26"].y}
       schRotation={-90}
-      schSectionName="sync"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="3.74mm"
@@ -386,7 +395,7 @@ export const CvSection = () => (
     {/* R27 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R27"
-      schSectionName="sync"
+      schX={CV_LAYOUT["R27"].x} schY={CV_LAYOUT["R27"].y}
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="1.74mm"
@@ -406,8 +415,8 @@ export const CvSection = () => (
     {/* R28 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R28"
+      schX={CV_LAYOUT["R28"].x} schY={CV_LAYOUT["R28"].y}
       schRotation={90}
-      schSectionName="sync"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="8.42mm"
@@ -427,8 +436,8 @@ export const CvSection = () => (
     {/* R29 1K - ERJP03F1000V - LCSC C21190 - 0603WAF1001T5E - jclpcb:R0603 */}
     <resistor
       name="R29"
+      schX={CV_LAYOUT["R29"].x} schY={CV_LAYOUT["R29"].y}
       schRotation={-90}
-      schSectionName="sync"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="3.74mm"
@@ -449,8 +458,8 @@ export const CvSection = () => (
     {/* R30 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R30"
+      schX={CV_LAYOUT["R30"].x} schY={CV_LAYOUT["R30"].y}
       schRotation={90}
-      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="8.42mm"
@@ -472,8 +481,8 @@ export const CvSection = () => (
         see the U11 IN1P/OUT1 entry at the bottom of this sheet */}
     <resistor
       name="R31"
+      schX={CV_LAYOUT["R31"].x} schY={CV_LAYOUT["R31"].y}
       schRotation={-90}
-      schSectionName="cv"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="6.42mm"
@@ -494,8 +503,8 @@ export const CvSection = () => (
         fed from the U11D follower output (DESIGN-REVIEW R03) */}
     <resistor
       name="R32"
+      schX={CV_LAYOUT["R32"].x} schY={CV_LAYOUT["R32"].y}
       schRotation={-90}
-      schSectionName="cv"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="11.1mm"
@@ -516,8 +525,8 @@ export const CvSection = () => (
         CV-in summer ratio for 0.10..3.11 V headroom, DESIGN-REVIEW R10 */}
     <resistor
       name="R33"
+      schX={CV_LAYOUT["R33"].x} schY={CV_LAYOUT["R33"].y}
       schRotation={90}
-      schSectionName="cv"
       resistance="30.1k"
       footprint={FP_jclpcb_R0603}
       pcbX="6.44mm"
@@ -539,7 +548,7 @@ export const CvSection = () => (
         CV-in summer offset leg, DESIGN-REVIEW R10 */}
     <resistor
       name="R34"
-      schSectionName="cv"
+      schX={CV_LAYOUT["R34"].x} schY={CV_LAYOUT["R34"].y}
       resistance="187k"
       footprint={FP_jclpcb_R0603}
       pcbX="13.1mm"
@@ -560,8 +569,8 @@ export const CvSection = () => (
     {/* R35 49.9K - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
     <resistor
       name="R35"
+      schX={CV_LAYOUT["R35"].x} schY={CV_LAYOUT["R35"].y}
       schRotation={90}
-      schSectionName="cv"
       resistance="49.9k"
       footprint={FP_jclpcb_R0603}
       pcbX="17.78mm"
@@ -581,8 +590,8 @@ export const CvSection = () => (
     {/* R36 49.9K - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
     <resistor
       name="R36"
+      schX={CV_LAYOUT["R36"].x} schY={CV_LAYOUT["R36"].y}
       schRotation={90}
-      schSectionName="cv"
       resistance="49.9k"
       footprint={FP_jclpcb_R0603}
       pcbX="3.74mm"
@@ -602,8 +611,8 @@ export const CvSection = () => (
     {/* R37 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R37"
+      schX={CV_LAYOUT["R37"].x} schY={CV_LAYOUT["R37"].y}
       schRotation={-90}
-      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="8.42mm"
@@ -623,8 +632,8 @@ export const CvSection = () => (
     {/* R38 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R38"
+      schX={CV_LAYOUT["R38"].x} schY={CV_LAYOUT["R38"].y}
       schRotation={-90}
-      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="13.1mm"
@@ -648,8 +657,8 @@ export const CvSection = () => (
         the load pole that the in-loop 1k/cable capacitance creates. */}
     <resistor
       name="R39"
+      schX={CV_LAYOUT["R39"].x} schY={CV_LAYOUT["R39"].y}
       schRotation={-90}
-      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="17.78mm"
@@ -671,8 +680,8 @@ export const CvSection = () => (
         100pF across this resistor is the matching load-pole compensation. */}
     <resistor
       name="R40"
+      schX={CV_LAYOUT["R40"].x} schY={CV_LAYOUT["R40"].y}
       schRotation={-90}
-      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="3.74mm"
@@ -692,8 +701,8 @@ export const CvSection = () => (
     {/* R41 2.2K - 0603WAF2201T5E - LCSC C4190 - jclpcb:R0603 */}
     <resistor
       name="R41"
+      schX={CV_LAYOUT["R41"].x} schY={CV_LAYOUT["R41"].y}
       schRotation={-90}
-      schSectionName="cv"
       resistance="2.2k"
       footprint={FP_jclpcb_R0603}
       pcbX="8.42mm"
@@ -714,8 +723,8 @@ export const CvSection = () => (
         CV-in summer ratio, channel 2 (DESIGN-REVIEW R10) */}
     <resistor
       name="R42"
+      schX={CV_LAYOUT["R42"].x} schY={CV_LAYOUT["R42"].y}
       schRotation={90}
-      schSectionName="cv"
       resistance="30.1k"
       footprint={FP_jclpcb_R0603}
       pcbX="15.82mm"
@@ -737,7 +746,7 @@ export const CvSection = () => (
         CV-in summer offset leg, channel 2 (DESIGN-REVIEW R10) */}
     <resistor
       name="R43"
-      schSectionName="cv"
+      schX={CV_LAYOUT["R43"].x} schY={CV_LAYOUT["R43"].y}
       resistance="187k"
       footprint={FP_jclpcb_R0603}
       pcbX="13.1mm"
@@ -758,8 +767,8 @@ export const CvSection = () => (
     {/* R44 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R44"
+      schX={CV_LAYOUT["R44"].x} schY={CV_LAYOUT["R44"].y}
       schRotation={90}
-      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="13.1mm"
@@ -779,8 +788,8 @@ export const CvSection = () => (
     {/* R45 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R45"
+      schX={CV_LAYOUT["R45"].x} schY={CV_LAYOUT["R45"].y}
       schRotation={-90}
-      schSectionName="cv"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="17.78mm"
@@ -800,8 +809,8 @@ export const CvSection = () => (
     {/* R46 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R46"
+      schX={CV_LAYOUT["R46"].x} schY={CV_LAYOUT["R46"].y}
       schRotation={-90}
-      schSectionName="cv"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="3.74mm"
@@ -827,7 +836,7 @@ export const CvSection = () => (
         IN1P/IN4P take the DAC nets and R31/R32 hang off the follower outputs. */}
     <chip
       name="U11"
-      schSectionName="cv"
+      schX={CV_LAYOUT["U11"].x} schY={CV_LAYOUT["U11"].y}
       footprint={FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL}
       pinLabels={TL074_PINS}
       pinAttributes={{
@@ -876,7 +885,7 @@ export const CvSection = () => (
     {/* U12 TL074 - LCSC C96507 - jclpcb:TSSOP-14_L5.0-W4.4-P0.65-LS6.4-BL */}
     <chip
       name="U12"
-      schSectionName="cv"
+      schX={CV_LAYOUT["U12"].x} schY={CV_LAYOUT["U12"].y}
       footprint={FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL}
       pinLabels={TL074_PINS}
       pinAttributes={{
@@ -925,7 +934,7 @@ export const CvSection = () => (
     {/* U13 MCP6002T-I/SN - MCP6002T-I_SN - LCSC C7377 - jclpcb:SOIC-8_L4.9-W3.9-P1.27-LS6.0-BL */}
     <chip
       name="U13"
-      schSectionName="cv"
+      schX={CV_LAYOUT["U13"].x} schY={CV_LAYOUT["U13"].y}
       footprint={FP_jclpcb_SOIC_8_L4_9_W3_9_P1_27_LS6_0_BL}
       pinLabels={MCP6002_PINS}
       pinAttributes={{
@@ -962,7 +971,7 @@ export const CvSection = () => (
     {/* U14 LM4040C10IDBZR - LCSC C201738 - jclpcb:SOT-23-3_L3.0-W1.7-P0.95-LS2.9-BR */}
     <chip
       name="U14"
-      schSectionName="cv"
+      schX={CV_LAYOUT["U14"].x} schY={CV_LAYOUT["U14"].y}
       footprint={FP_jclpcb_SOT_23_3_L3_0_W1_7_P0_95_LS2_9_BR}
       pinLabels={LM4040_PINS}
       pinAttributes={{
@@ -983,6 +992,8 @@ export const CvSection = () => (
         "CATHODE": "net.GND",
         "ANODE": "net.N10V_REF",
       }} />
+    </group>
+
     {/* Sheet notes: fixed positions in the free band above the auto-laid-out
         components (y 11.1 down, x -15.6 left aligned). tools/check_schematic.py
         asserts every note stays clear of the component and net-label boxes. */}

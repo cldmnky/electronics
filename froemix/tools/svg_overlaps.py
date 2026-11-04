@@ -28,9 +28,9 @@ inner border rectangle), so a layout cannot quietly push a label off the page.
 
 Exit status: 0 unless --expect is given and a sheet exceeds its recorded count,
 or a label leaves its page frame.
-The recorded counts are the EXACT numbers demonstrated on this tree (Root 0/0,
-MIDI 0/0, Audio 0/2, CV 0/1, Power 0/0) - there is no headroom and no
-percentage tolerance, so any new overlap on any sheet fails.
+The recorded counts are the EXACT numbers demonstrated on this tree: all five
+sheets are 0/0, so there is no headroom and no percentage tolerance - any
+overlap on any sheet fails.
 
     python3 tools/svg_overlaps.py --expect built-in /tmp/froemix-sch.svg
 
@@ -48,7 +48,8 @@ import sys
 TEXT_RE = re.compile(r"<text([^>]*)>(.*?)</text>", re.S)
 PATH_RE = re.compile(r"<path([^>]*?)/>", re.S)
 NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
-TOUCH = 0.12
+TOUCH = 0.12          # standard threshold: >12 % of the smaller box is a collision
+STRICT = 0.0          # strict threshold: any intersection at all
 
 
 ELEMENT_RE = re.compile(r"<(text|path)((?:[^>\"']|\"[^\"]*\"|'[^']*')*?)(?:/>|>(.*?)</text>)", re.S)
@@ -153,14 +154,18 @@ def analyse(path):
 
 
 def main() -> int:
+    global TOUCH
     ap = argparse.ArgumentParser()
     ap.add_argument("svg", nargs="+")
     ap.add_argument("--json")
+    ap.add_argument("--threshold", type=float, default=TOUCH,
+                    help="overlap area / smaller box above which a pair counts (default 0.12)")
     ap.add_argument("--expect", metavar="ROOT=ll/text,...",
                     help="exact per-sheet counts as 'sheet=label_label/label_text', "
                          "comma separated; the string 'built-in' uses the numbers "
                          "demonstrated on this tree")
     args = ap.parse_args()
+    TOUCH = args.threshold
 
     report = {}
     for path in args.svg:
@@ -173,7 +178,15 @@ def main() -> int:
             total_ll += ll
             total_lt += lt
             print(f"{name:<8} {len(entry['labels']):>7} {len(entry['texts']):>7} {ll:>12} {lt:>11}")
-        print(f"{'TOTAL':<8} {'':>7} {'':>7} {total_ll:>12} {total_lt:>11}\n")
+        print(f"{'TOTAL':<8} {'':>7} {'':>7} {total_ll:>12} {total_lt:>11}")
+        # the same count with any intersection at all, so a hairline contact is
+        # never hidden behind the area threshold
+        TOUCH, saved = STRICT, TOUCH
+        strict = analyse(path)
+        TOUCH = saved
+        sll = sum(len(e["label_label"]) for e in strict.values())
+        slt = sum(len(e["label_text"]) for e in strict.values())
+        print(f"{'strict':<8} {'':>7} {'':>7} {sll:>12} {slt:>11}   (any intersection, threshold 0)\n")
         report[path] = {name: {"labels": len(e["labels"]), "texts": len(e["texts"]),
                                "label_label": len(e["label_label"]),
                                "label_text": len(e["label_text"])}
@@ -213,7 +226,7 @@ def main() -> int:
     if args.expect:
         spec = args.expect
         if spec == "built-in":
-            spec = "Root=0/0,MIDI=0/0,Audio=0/2,CV=0/1,Power=0/0"
+            spec = "Root=0/0,MIDI=0/0,Audio=0/0,CV=0/0,Power=0/0"
         expected = {}
         for item in spec.split(","):
             sheet, counts = item.split("=")

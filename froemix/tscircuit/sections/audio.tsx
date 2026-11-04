@@ -8,13 +8,20 @@
 import { TL074_PINS } from "../lib/pins"
 import { FP_jclpcb_C0603, FP_jclpcb_R0603, FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL } from "../lib/footprints"
 
+import { AUDIO_LAYOUT } from "../lib/schematic-layout"
+
 export const AudioSection = () => (
   <schematicsheet name="audio" displayName="Audio" sheetIndex={2}>
+    {/* Schematic-only relative group: `schRelative` switches the auto-layout off
+        for these children, so the frozen AUDIO_LAYOUT coordinates are used exactly.
+        No pcbX/pcbY, footprint or net is touched, and a group inside a sheet
+        is not a subcircuit, so the nets stay global. */}
+    <group name="audio-layout" schRelative>
     {/* C2 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C2"
+      schX={AUDIO_LAYOUT["C2"].x} schY={AUDIO_LAYOUT["C2"].y}
       schRotation={90}
-      schSectionName="audio-in"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-7.86mm"
@@ -34,8 +41,8 @@ export const AudioSection = () => (
     {/* C3 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C3"
+      schX={AUDIO_LAYOUT["C3"].x} schY={AUDIO_LAYOUT["C3"].y}
       schRotation={90}
-      schSectionName="audio-in"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-3.16mm"
@@ -55,7 +62,7 @@ export const AudioSection = () => (
     {/* C4 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C4"
-      schSectionName="audio-in"
+      schX={AUDIO_LAYOUT["C4"].x} schY={AUDIO_LAYOUT["C4"].y}
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="-11.04mm"
@@ -75,7 +82,7 @@ export const AudioSection = () => (
     {/* C5 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C5"
-      schSectionName="audio-in"
+      schX={AUDIO_LAYOUT["C5"].x} schY={AUDIO_LAYOUT["C5"].y}
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="-11.04mm"
@@ -95,8 +102,8 @@ export const AudioSection = () => (
     {/* C6 560pF - CL10C561JB8NNNC - LCSC C107054 - CC0603JRNPO9BN561 - jclpcb:C0603 */}
     <capacitor
       name="C6"
+      schX={AUDIO_LAYOUT["C6"].x} schY={AUDIO_LAYOUT["C6"].y}
       schRotation={90}
-      schSectionName="audio-in"
       capacitance="560pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-17.26mm"
@@ -117,8 +124,8 @@ export const AudioSection = () => (
     {/* C7 560pF - CL10C561JB8NNNC - LCSC C107054 - CC0603JRNPO9BN561 - jclpcb:C0603 */}
     <capacitor
       name="C7"
+      schX={AUDIO_LAYOUT["C7"].x} schY={AUDIO_LAYOUT["C7"].y}
       schRotation={90}
-      schSectionName="audio-in"
       capacitance="560pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-12.56mm"
@@ -139,8 +146,8 @@ export const AudioSection = () => (
     {/* C8 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C8"
+      schX={AUDIO_LAYOUT["C8"].x} schY={AUDIO_LAYOUT["C8"].y}
       schRotation={90}
-      schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-7.86mm"
@@ -160,8 +167,8 @@ export const AudioSection = () => (
     {/* C9 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C9"
+      schX={AUDIO_LAYOUT["C9"].x} schY={AUDIO_LAYOUT["C9"].y}
       schRotation={90}
-      schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-3.16mm"
@@ -181,7 +188,7 @@ export const AudioSection = () => (
     {/* C10 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C10"
-      schSectionName="audio-out"
+      schX={AUDIO_LAYOUT["C10"].x} schY={AUDIO_LAYOUT["C10"].y}
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="-0.12mm"
@@ -201,7 +208,7 @@ export const AudioSection = () => (
     {/* C11 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C11"
-      schSectionName="audio-out"
+      schX={AUDIO_LAYOUT["C11"].x} schY={AUDIO_LAYOUT["C11"].y}
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="-0.12mm"
@@ -221,8 +228,8 @@ export const AudioSection = () => (
     {/* C12 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C12"
+      schX={AUDIO_LAYOUT["C12"].x} schY={AUDIO_LAYOUT["C12"].y}
       schRotation={90}
-      schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-17.26mm"
@@ -242,8 +249,8 @@ export const AudioSection = () => (
     {/* C13 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C13"
+      schX={AUDIO_LAYOUT["C13"].x} schY={AUDIO_LAYOUT["C13"].y}
       schRotation={90}
-      schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-12.56mm"
@@ -263,8 +270,8 @@ export const AudioSection = () => (
     {/* R1 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R1"
+      schX={AUDIO_LAYOUT["R1"].x} schY={AUDIO_LAYOUT["R1"].y}
       schRotation={90}
-      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
@@ -284,8 +291,8 @@ export const AudioSection = () => (
     {/* R2 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R2"
+      schX={AUDIO_LAYOUT["R2"].x} schY={AUDIO_LAYOUT["R2"].y}
       schRotation={90}
-      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
@@ -305,8 +312,8 @@ export const AudioSection = () => (
     {/* R3 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R3"
+      schX={AUDIO_LAYOUT["R3"].x} schY={AUDIO_LAYOUT["R3"].y}
       schRotation={90}
-      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.9mm"
@@ -326,8 +333,8 @@ export const AudioSection = () => (
     {/* R4 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R4"
+      schX={AUDIO_LAYOUT["R4"].x} schY={AUDIO_LAYOUT["R4"].y}
       schRotation={90}
-      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-3.22mm"
@@ -347,8 +354,8 @@ export const AudioSection = () => (
     {/* R5 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R5"
+      schX={AUDIO_LAYOUT["R5"].x} schY={AUDIO_LAYOUT["R5"].y}
       schRotation={-90}
-      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
@@ -368,8 +375,8 @@ export const AudioSection = () => (
     {/* R6 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R6"
+      schX={AUDIO_LAYOUT["R6"].x} schY={AUDIO_LAYOUT["R6"].y}
       schRotation={-90}
-      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
@@ -389,8 +396,8 @@ export const AudioSection = () => (
     {/* R7 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R7"
+      schX={AUDIO_LAYOUT["R7"].x} schY={AUDIO_LAYOUT["R7"].y}
       schRotation={90}
-      schSectionName="audio-in"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.9mm"
@@ -410,8 +417,8 @@ export const AudioSection = () => (
     {/* R8 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R8"
+      schX={AUDIO_LAYOUT["R8"].x} schY={AUDIO_LAYOUT["R8"].y}
       schRotation={90}
-      schSectionName="audio-in"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
       pcbX="-3.22mm"
@@ -431,8 +438,8 @@ export const AudioSection = () => (
     {/* R9 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R9"
+      schX={AUDIO_LAYOUT["R9"].x} schY={AUDIO_LAYOUT["R9"].y}
       schRotation={-90}
-      schSectionName="audio-in"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="-3.22mm"
@@ -452,8 +459,8 @@ export const AudioSection = () => (
     {/* R10 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R10"
+      schX={AUDIO_LAYOUT["R10"].x} schY={AUDIO_LAYOUT["R10"].y}
       schRotation={-90}
-      schSectionName="audio-in"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
@@ -473,8 +480,8 @@ export const AudioSection = () => (
     {/* R11 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R11"
+      schX={AUDIO_LAYOUT["R11"].x} schY={AUDIO_LAYOUT["R11"].y}
       schRotation={-90}
-      schSectionName="audio-out"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.9mm"
@@ -494,8 +501,8 @@ export const AudioSection = () => (
     {/* R12 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R12"
+      schX={AUDIO_LAYOUT["R12"].x} schY={AUDIO_LAYOUT["R12"].y}
       schRotation={-90}
-      schSectionName="audio-out"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
       pcbX="-3.22mm"
@@ -515,8 +522,8 @@ export const AudioSection = () => (
     {/* R13 33k - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R13"
+      schX={AUDIO_LAYOUT["R13"].x} schY={AUDIO_LAYOUT["R13"].y}
       schRotation={90}
-      schSectionName="audio-out"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
@@ -537,8 +544,8 @@ export const AudioSection = () => (
     {/* R14 33k - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R14"
+      schX={AUDIO_LAYOUT["R14"].x} schY={AUDIO_LAYOUT["R14"].y}
       schRotation={90}
-      schSectionName="audio-out"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
@@ -559,8 +566,8 @@ export const AudioSection = () => (
     {/* R15 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R15"
+      schX={AUDIO_LAYOUT["R15"].x} schY={AUDIO_LAYOUT["R15"].y}
       schRotation={-90}
-      schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.9mm"
@@ -580,8 +587,8 @@ export const AudioSection = () => (
     {/* R16 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R16"
+      schX={AUDIO_LAYOUT["R16"].x} schY={AUDIO_LAYOUT["R16"].y}
       schRotation={-90}
-      schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-3.22mm"
@@ -601,8 +608,8 @@ export const AudioSection = () => (
     {/* R17 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R17"
+      schX={AUDIO_LAYOUT["R17"].x} schY={AUDIO_LAYOUT["R17"].y}
       schRotation={90}
-      schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
@@ -622,8 +629,8 @@ export const AudioSection = () => (
     {/* R18 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R18"
+      schX={AUDIO_LAYOUT["R18"].x} schY={AUDIO_LAYOUT["R18"].y}
       schRotation={90}
-      schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
@@ -643,8 +650,8 @@ export const AudioSection = () => (
     {/* R19 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R19"
+      schX={AUDIO_LAYOUT["R19"].x} schY={AUDIO_LAYOUT["R19"].y}
       schRotation={-90}
-      schSectionName="audio-out"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
@@ -664,8 +671,8 @@ export const AudioSection = () => (
     {/* R20 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R20"
+      schX={AUDIO_LAYOUT["R20"].x} schY={AUDIO_LAYOUT["R20"].y}
       schRotation={-90}
-      schSectionName="audio-out"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.9mm"
@@ -685,7 +692,7 @@ export const AudioSection = () => (
     {/* U2 TL074 - LCSC C96507 - jclpcb:TSSOP-14_L5.0-W4.4-P0.65-LS6.4-BL */}
     <chip
       name="U2"
-      schSectionName="audio-in"
+      schX={AUDIO_LAYOUT["U2"].x} schY={AUDIO_LAYOUT["U2"].y}
       footprint={FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL}
       pinLabels={TL074_PINS}
       pinAttributes={{
@@ -734,7 +741,7 @@ export const AudioSection = () => (
     {/* U3 TL074 - LCSC C96507 - jclpcb:TSSOP-14_L5.0-W4.4-P0.65-LS6.4-BL */}
     <chip
       name="U3"
-      schSectionName="audio-out"
+      schX={AUDIO_LAYOUT["U3"].x} schY={AUDIO_LAYOUT["U3"].y}
       footprint={FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL}
       pinLabels={TL074_PINS}
       pinAttributes={{
@@ -780,6 +787,8 @@ export const AudioSection = () => (
         "IN4N": "net.U3D_IN_N",
         "OUT4": "net.NET_C13_2",
       }} />
+    </group>
+
     {/* Sheet notes: fixed positions in the free band above the auto-laid-out
         components (y 11.1 down, x -15.6 left aligned). tools/check_schematic.py
         asserts every note stays clear of the component and net-label boxes. */}

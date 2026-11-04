@@ -243,25 +243,43 @@ tag polygons, so these are the overlap counts a reader would see:
 | --- | --- | --- |
 | Root | **18 → 0** | **13 → 0** |
 | MIDI | 0 → 0 | 0 → 0 |
-| Audio | 0 → 0 | 4 → 2 |
-| CV | 0 → 0 | 1 → 1 |
+| Audio | 0 → 0 | **4 → 0** |
+| CV | 0 → 0 | **1 → 0** |
 | Power | 0 → 0 | 0 → 0 |
-| **total** | **18 → 0** | **18 → 3** |
+| **total** | **18 → 0** | **18 → 0** |
 
-The residual three are two value texts on the Audio sheet and one on the CV
-sheet (not pin names, not labels on labels). They are recorded, not hidden:
-`tools/svg_overlaps.py --expect built-in` fails if **any** sheet exceeds the
-demonstrated count (`Root=0/0, MIDI=0/0, Audio=0/2, CV=0/1, Power=0/0`) — exact
-numbers, no headroom and no tolerance.
+No label tag sits on a component body on any sheet either (measured the same
+way: 0 of 135 tags). `tools/svg_overlaps.py --expect built-in` records all five
+sheets at `0/0`, so the check has no headroom and no tolerance: any new overlap
+on any sheet fails. The tool prints a second line with the **strict** threshold
+(any intersection at all, no area allowance): this tree has **1 label/label and
+4 label/text hairline contacts** left (Root 1/1, MIDI 0/1, Audio 0/2) against
+21/28 on the baseline. Those five are box corners that touch without covering
+text; they are recorded here rather than argued away, and the two-round budget
+did not include chasing them.
 
-### 6.4 Other sheets
+### 6.4 Audio and CV: frozen positions, then one nudge
 
-Audio, CV, Power and MIDI keep their `schSectionName` grouping and carry the
-`schRotation` deltas the placement checker asks for (24 CV, 28 Audio, 2 Power):
-that is what took those sheets from 54 orientation findings to 0 and their
-label/text overlaps from 4 to 2 (Audio) and 1 to 1 (CV). The Root sheet cannot
-use section grouping — it added three collisions — so it is the explicit layout
-above instead.
+The same pattern is used on the two analog sheets, in two bounded rounds:
+
+1. **Freeze.** `lib/schematic-layout.ts` holds `AUDIO_LAYOUT` and `CV_LAYOUT`,
+   the exact positions the installed core had produced on its own (34 and 42
+   entries). Both sheets became one non-subcircuit `<group schRelative>` using
+   those coordinates, with `schSectionName` removed. The drawing is the reviewed
+   one; only the numbers moved out of the layout engine into a named map.
+2. **Nudge.** Two residual overlaps were left, both on Audio: the `VCC` label
+   tag was drawn on C11's `100nF` value text and a `U3A_IN_N` tag on its `C11`
+   reference text. The decoupling pair C10/C11 moved up by 0.6 units as a block
+   in `AUDIO_LAYOUT`; nothing else moved, no PCB coordinate is in that file.
+
+After round 2 every sheet measures 0/0 at the 12 % area threshold, 1 label/label
+and 4 label/text at strict zero tolerance (§6.3), and 0 label tags over a
+component body. `tsci check schematic-placement` still reports
+stylistic items — 3 `TwoPinComponentShouldBeVertical` on CV (R25, R34, R43) and
+4 `DiodeResistorNotAligned`, plus 2 `ComponentNetLabelCollision` groups and 1
+`SchematicTextCollision` whose boxes the renderer does not reproduce (measured:
+no tag over a body, no tag over a text). Those are listed as stylistic, not
+closed, and no further layout round was spent on them.
 
 ### 6.5 What is still not clean
 
@@ -290,15 +308,16 @@ the remaining defects counted exactly.
 5. **U15 is pad-only in 3D** (the C37658 EasyEDA model belonged to the old
    part, and no verified model for C107626 exists). Same policy as the other
    models without verified offsets (AGENTS.md §6).
-6. **Schematic label collisions: Root closed, three left elsewhere.** The Root
-   sheet is 0 label/label and 0 label/text in the rendered SVG (§6.3). The
-   Audio sheet keeps two label/value-text overlaps and the CV sheet one; all
-   three are recorded in `tools/svg_overlaps.py --expect built-in`, which fails
-   on any new overlap. The drawing is **not** a finished production service
-   schematic. Next: explicit placement for Audio/CV (the same `<group
-   schRelative>` pattern), chip splitting for the TL074s with
-   `<schematicbox>`, and per-sheet `sheetWidth`/`sheetHeight` if upstream stops
-   warning about non-default sizes.
+6. **Schematic: the measured collisions are closed, the drawing is not
+   finished.** All five sheets are 0 label/label and 0 label/text in the
+   rendered SVG, and no label tag sits on a component body (§6.3). What remains
+   is stylistic, not a collision: 3 `TwoPinComponentShouldBeVertical` on CV and
+   4 `DiodeResistorNotAligned`, plus native `ComponentNetLabelCollision`/
+   `SchematicTextCollision` boxes that the renderer does not reproduce. The
+   drawing is **not** a finished production service schematic: chip splitting
+   for the TL074s (`<schematicbox>`), per-sheet `sheetWidth`/`sheetHeight` if
+   upstream stops warning about non-default sizes, and the CV orientation notes
+   are the next steps.
 
 ## 8. Reproduce
 
