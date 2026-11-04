@@ -1,27 +1,28 @@
 #!/usr/bin/env bash
-# Run the froemix analog verification decks and print the measured table.
+# Run and ASSERT the froemix analog verification decks.
 #
 #   cd froemix/tools/sim && bash run.sh
+#   bash run.sh --source-only        # linkage + model tables, no simulator
+#   bash run.sh --deck audio_in      # one deck
 #
-# Needs ngspice on PATH (macOS: `brew install ngspice`, Debian: `apt install
-# ngspice`). Nothing here touches the board: these are standalone SPICE decks
-# transcribed from tscircuit/sections/*.tsx, they do not read dist/ or the
-# build. Raw output lands in out/ (one .log + one .dat per deck) and the
-# measured table is written to out/measured.txt.
-set -euo pipefail
+# Needs a native ngspice on PATH (Debian/Ubuntu: `apt install ngspice`,
+# macOS: `brew install ngspice`) or `--ngspice PATH`. A missing simulator is a
+# FAILURE, not a skip: an absent simulation must never look like a passed one.
+#
+# Every deck is copied into a fresh private directory below
+# $TMPDIR/froemix-sim/ and run there with its own log and its own stderr, so a
+# result can never be read from a stale or committed file. The committed
+# `out/` directory is HISTORY (the numbers RESULTS.md quotes); nothing here
+# writes to it. Exit code 0 means every assertion held, 1 any failed check
+# (including a missing/NaN/missing-.meas result or an ngspice error line),
+# 2 an incomplete environment.
+set -uo pipefail
 
 cd "$(dirname "$0")"
 
-if ! command -v ngspice >/dev/null 2>&1; then
-    echo "ngspice not found -- install it first (brew install ngspice)" >&2
-    exit 1
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 not found -- the decks and their checks are driven from it" >&2
+    exit 2
 fi
 
-mkdir -p out
-for deck in audio_in audio_out cv_inout ref_bias; do
-    echo "== $deck =="
-    ngspice -b -o "out/$deck.log" "$deck.cir" >/dev/null
-done
-
-python3 analyze.py | tee out/measured.txt
-python3 test_frontboard.py | tee out/frontboard-measured.txt
+exec python3 run_checks.py "$@"

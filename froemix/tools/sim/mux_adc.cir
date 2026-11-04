@@ -1,0 +1,143 @@
+* =====================================================================
+* froemix mux_adc.cir -- U1 CD4051 channel select and ADC settling
+* =====================================================================
+* Source of truth: tscircuit/sections/main.tsx (U1) and
+* doc/FRONTBOARD-INTERFACE.md §1 (what may drive M_ADC_*).
+*
+*   M_ADC_0 ... M_ADC_7 --R_s (pot wiper)--> U1 X0 ... X7
+*   U1 X = MULTIPLEX_ADC_1 -- Daisy ADC_2, with the sample capacitor
+*   U1 A/B/C = MULTIPLEX_S0/S1/S2 (Seed USB_ID / USB_D_N / USB_D_P as outputs)
+*   U1 INH = GND, U1 VEE = VSS = GND, U1 VDD = P3V3_A  (asserted from the
+*   source by source_link.check_mux_rails; they are not modelled electrically
+*   because a behavioural switch has no supply pins)
+*
+* MODEL (explicitly behavioural, not a manufacturer model)
+*   Each channel is a series resistor RON = 250 ohm plus an ideal switch that
+*   closes when the three control bits decode to that channel. 250 ohm is a
+*   mid-range ON resistance for a CD4051B at 3.3 V -- an assumption, recorded
+*   in models.py, not a datasheet maximum. Nothing here models charge
+*   injection, leakage, OFF isolation, ON-resistance flatness or the mux's own
+*   control-line thresholds beyond the 1.65 V switch threshold. The ADC is a
+*   100 pF sample capacitor plus a 1 Meg leakage resistor: also an assumption.
+*
+* EXPECTED
+*   Every one of the eight codes selects exactly one channel: with channel n at
+*   0.1*(n+1) V and a 2.5 k pot mid-travel source, MULTIPLEX_ADC_1 reads
+*   0.1*(n+1) * 1Meg/(1Meg + 2.5k + 250) = 0.1*(n+1) * 0.997259.
+*   Channel-change settling: the source resistance plus RON charges the sample
+*   capacitor. With a 10 k pot (2.5 k worst case) tau = 2.75k * 100p = 275 ns,
+*   so the node is within 1 mV after 10 us -- far inside a 20 us scan window.
+*   With a 100 k pot (25 k worst case) tau = 2.525 us: the same 1 mV is first
+*   reached after about 40 us, i.e. it does NOT settle inside a 20 us window.
+*   That is the documented limit (FRONTBOARD-INTERFACE §1: a 100 k pot "slows
+*   the sample-and-hold settling noticeably"); the negative case below proves
+*   the deck can see the difference instead of asserting it.
+*
+* Not modelled: firmware scan rate, ADC acquisition time, and the real Seed
+* pin leakage. Those need a bench measurement.
+*
+* Run: ngspice -b mux_adc.cir   (or: bash run.sh, from this directory)
+* Raw output: out/mux_scan.dat, out/mux_settle.dat
+* =====================================================================
+
+* --- CD4051 switch model: ideal switch plus the ON resistance as a resistor
+.model SWM SW(RON=1m ROFF=1e12 VT=1.65 VH=0)
+
+VP33 P3V3_A 0 DC 3.3
+
+* --- eight channels, 0.1 V apart, each behind a 10 k pot's worst-case wiper
+* --- resistance (2.5 k at mid-travel); the nets are the board's own M_ADC_*
+VCH0 M_ADC_0 0 DC 0.1
+VCH1 M_ADC_1 0 DC 0.2
+VCH2 M_ADC_2 0 DC 0.3
+VCH3 M_ADC_3 0 DC 0.4
+VCH4 M_ADC_4 0 DC 0.5
+VCH5 M_ADC_5 0 DC 0.6
+VCH6 M_ADC_6 0 DC 0.7
+VCH7 M_ADC_7 0 DC 0.8
+
+RSP0 M_ADC_0 NCH0 2.5k
+RSP1 M_ADC_1 NCH1 2.5k
+RSP2 M_ADC_2 NCH2 2.5k
+RSP3 M_ADC_3 NCH3 2.5k
+RSP4 M_ADC_4 NCH4 2.5k
+RSP5 M_ADC_5 NCH5 2.5k
+RSP6 M_ADC_6 NCH6 2.5k
+RSP7 M_ADC_7 NCH7 2.5k
+
+* --- the ON resistance of each switch, then the switch itself
+RONS0 NCH0 NS0 250
+RONS1 NCH1 NS1 250
+RONS2 NCH2 NS2 250
+RONS3 NCH3 NS3 250
+RONS4 NCH4 NS4 250
+RONS5 NCH5 NS5 250
+RONS6 NCH6 NS6 250
+RONS7 NCH7 NS7 250
+
+S0 NS0 MULTIPLEX_ADC_1 SEL0 0 SWM
+S1 NS1 MULTIPLEX_ADC_1 SEL1 0 SWM
+S2 NS2 MULTIPLEX_ADC_1 SEL2 0 SWM
+S3 NS3 MULTIPLEX_ADC_1 SEL3 0 SWM
+S4 NS4 MULTIPLEX_ADC_1 SEL4 0 SWM
+S5 NS5 MULTIPLEX_ADC_1 SEL5 0 SWM
+S6 NS6 MULTIPLEX_ADC_1 SEL6 0 SWM
+S7 NS7 MULTIPLEX_ADC_1 SEL7 0 SWM
+
+* --- 1-of-8 decode from the three control levels (0/3.3 V logic)
+BSEL0 SEL0 0 V = 3.3*(1-v(MULTIPLEX_S0)/3.3)*(1-v(MULTIPLEX_S1)/3.3)*(1-v(MULTIPLEX_S2)/3.3)
+BSEL1 SEL1 0 V = 3.3*(  v(MULTIPLEX_S0)/3.3)*(1-v(MULTIPLEX_S1)/3.3)*(1-v(MULTIPLEX_S2)/3.3)
+BSEL2 SEL2 0 V = 3.3*(1-v(MULTIPLEX_S0)/3.3)*(  v(MULTIPLEX_S1)/3.3)*(1-v(MULTIPLEX_S2)/3.3)
+BSEL3 SEL3 0 V = 3.3*(  v(MULTIPLEX_S0)/3.3)*(  v(MULTIPLEX_S1)/3.3)*(1-v(MULTIPLEX_S2)/3.3)
+BSEL4 SEL4 0 V = 3.3*(1-v(MULTIPLEX_S0)/3.3)*(1-v(MULTIPLEX_S1)/3.3)*(  v(MULTIPLEX_S2)/3.3)
+BSEL5 SEL5 0 V = 3.3*(  v(MULTIPLEX_S0)/3.3)*(1-v(MULTIPLEX_S1)/3.3)*(  v(MULTIPLEX_S2)/3.3)
+BSEL6 SEL6 0 V = 3.3*(1-v(MULTIPLEX_S0)/3.3)*(  v(MULTIPLEX_S1)/3.3)*(  v(MULTIPLEX_S2)/3.3)
+BSEL7 SEL7 0 V = 3.3*(  v(MULTIPLEX_S0)/3.3)*(  v(MULTIPLEX_S1)/3.3)*(  v(MULTIPLEX_S2)/3.3)
+
+* --- ADC sample capacitor and leakage at the mux output
+CS   MULTIPLEX_ADC_1 0 100p
+RLEAK MULTIPLEX_ADC_1 0 1meg
+
+* --- the firmware scan: the three control bits walk 0,1,2,3,6,7,4,5 over
+* --- 250 us, so one run exercises every code
+VP0 MULTIPLEX_S0 0 PULSE(0 3.3 25u  1n 1n 24.999u 50u)
+VP1 MULTIPLEX_S1 0 PULSE(0 3.3 50u  1n 1n 49.999u 100u)
+VP2 MULTIPLEX_S2 0 PULSE(0 3.3 100u 1n 1n 99.999u 200u)
+
+* --- settling cases: a 3.3 V channel is deselected for a 0 V channel at
+* --- 1 us; the node must follow with tau = (R_s + RON) * 100 pF.
+* --- Not fitted parts: pots, the sample capacitor and the switch are cases.
+.subckt SAMPLER OUT PARAMS: RS=2.5k
+VCHAN SRC 0 PWL(0 3.3 1u 3.3 1.01u 0)
+RSP SRC NODE {RS}
+RON NODE DRAIN 250
+SSW DRAIN OUT SELN 0 SWM
+VSEL SELN 0 DC 3.3
+CSM OUT 0 100p
+RLM OUT 0 1meg
+.ends
+
+XS25K  SAMPLE_2K5  SAMPLER PARAMS: RS=2.5k
+XS250K SAMPLE_25K  SAMPLER PARAMS: RS=25k
+
+.control
+set noaskquit
+tran 50n 450u
+wrdata out/mux_scan.dat v(MULTIPLEX_ADC_1) v(MULTIPLEX_S0) v(MULTIPLEX_S1) v(MULTIPLEX_S2) v(SAMPLE_2K5) v(SAMPLE_25K)
+* one sample per code, 20 us after the code changed
+meas tran code1 FIND v(MULTIPLEX_ADC_1) AT=45u
+meas tran code2 FIND v(MULTIPLEX_ADC_1) AT=70u
+meas tran code3 FIND v(MULTIPLEX_ADC_1) AT=95u
+meas tran code6 FIND v(MULTIPLEX_ADC_1) AT=120u
+meas tran code7 FIND v(MULTIPLEX_ADC_1) AT=145u
+meas tran code4 FIND v(MULTIPLEX_ADC_1) AT=170u
+meas tran code5 FIND v(MULTIPLEX_ADC_1) AT=195u
+meas tran code0 FIND v(MULTIPLEX_ADC_1) AT=220u
+* settling: 10 us after the channel change, and the slower case at 40 us
+meas tran pot10k_10us FIND v(SAMPLE_2K5) AT=11u
+meas tran pot100k_10us FIND v(SAMPLE_25K) AT=11u
+meas tran pot100k_40us FIND v(SAMPLE_25K) AT=41u
+meas tran settled_target FIND v(SAMPLE_2K5) AT=60u
+quit
+.endc
+.end

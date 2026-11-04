@@ -1,302 +1,292 @@
-# Analog verification — froemix base board
+# Analog verification — froemix base board and front board
 
-**Status: RUN.** Every number in the "measured" columns below came out of
-ngspice 47 on 2026-11-01 (macOS 26.7.1 arm64, `brew install ngspice`); the
-audio-out rows were re-measured after the R08 gain change (33k feedback), and
-the CV-out rows and the new load-capacitance step rows (section 5) after the
-C33/C34 compensation and the Type A MIDI OUT pass. Raw output is committed in
-`out/` (one `.log` + the `.dat` files per deck) and the table that `run.sh`
-prints is `out/measured.txt`.
+**Status: ASSERTED AND REPEATABLE.** Every number below came out of a run of
+`froemix/tools/sim/run_checks.py`, which now fails (exit 1) when a deck result
+leaves its limit, when a linked value or connection no longer matches the
+tscircuit source, when a model parameter is not in the provenance table, or when
+a `wrdata` file / `.meas` result is missing, empty or holds a NaN. The last run
+reported **129 checks over 9 decks, all passing**, on Linux with native
+`ngspice-39`; the earlier table in this file was measured with `ngspice-47` on
+macOS and the numbers agree to about 0.1 %.
+
+These are design checks against **behavioural models**, not measurements of a
+built board, and not manufacturer SPICE models. `models.py` holds the provenance
+of every model parameter; the limits each check asserts are in `assertions.py`,
+next to the requirement they stand for.
 
 ```bash
 cd froemix/tools/sim
-bash run.sh                 # base decks + front-board checks, writes out/
-python3 analyze.py          # re-analyse existing base output
-python3 test_frontboard.py  # run only the front-board checks (requires ngspice)
+bash run.sh                  # every deck + every assertion (needs native ngspice)
+bash run.sh --source-only    # source linkage and model tables only, no simulator
+bash run.sh --deck audio_in  # one deck
+python3 -m unittest test_sim # tests for the tools themselves (drift must be caught)
+python3 analyze.py --dir <run-dir>   # human-readable table of a run directory
 ```
 
-Nothing here touches the board: the decks are standalone `.cir` files
-transcribed from `tscircuit/sections/*.tsx` (they never read `dist/` or run a
-build), and this is not part of `bun run gate`. If a resistor or capacitor
-changes in the TSX, change the deck — the deck is a copy, not a source.
+Exit codes: `0` all checks passed, `1` a check failed (including bad or absent
+output), `2` the environment is incomplete (no ngspice, no source tree). A
+missing simulator is a **failure, never a skip**.
 
-| Deck | Circuit (TSX) | Analyses |
+## Isolation — why a stale file cannot pass
+
+Each deck is copied into a fresh directory below `$TMPDIR/froemix-sim/` and run
+there, with its own `wrdata` files, its own log and its own stderr (the harmless
+`libtinfo` warning of a native ngspice is kept, never treated as a design
+error). The reader rejects a missing file, an empty or header-only file, a
+ragged row, a non-finite value, a missing `.meas` name and any `Error:` line in
+the log. The runner also refuses a deck whose first line is not a comment (SPICE
+treats that line as the title and silently drops it) and any passive value
+written with a bare `M` suffix, which SPICE reads as milli while the schematic
+means mega.
+
+Nothing writes into the repository. **The committed `out/` directory is
+history**: it holds the numbers the old macOS run produced, so `analyze.py`
+prints it with a warning that it is not a current result. Refreshing `out/`
+would dirty tracked files, so the tools do not do it.
+
+## Decks and what each one covers
+
+| Deck | Circuit (source) | Analyses |
 | --- | --- | --- |
-| `audio_in.cir` | U2A/U2B, L channel — `sections/audio.tsx` | AC 1 Hz…1 MHz |
-| `audio_out.cir` | U3A/U3B, L channel — `sections/audio.tsx` | AC 1 Hz…1 MHz |
-| `cv_inout.cir` | U13 CV-in summer, U11A follower + U12 CV-out scaler — `sections/cv.tsx` | DC sweep ±5 V, DC sweep 0…3.3 V (load sweep), tran step into 1n/10n/100n load |
-| `ref_bias.cir` | U14 LM4040C10 + R41 — `sections/cv.tsx` | DC sweep VEE −12.2…−11.2 V |
+| `audio_in.cir` | U2A/U2B, L channel — `sections/audio.tsx` | AC 1 Hz…1 MHz, 10 Vpk 1 kHz headroom, 1k/10k source impedance |
+| `audio_out.cir` | U3A/U3B, L channel — `sections/audio.tsx` | AC 1 Hz…1 MHz, load sweep (100k/50k/10k/open), 1 Vrms headroom, old gain-10 evaluation |
+| `cv_inout.cir` | U13 CV-in summer, U11A follower + U12 CV-out scaler — `sections/cv.tsx` | DC ±5 V (ideal, 1 %, 0.1 % corners, fitted MCP6002), AC CV-in pole, DC 0…3.3 V load/DAC-source sweep, tran steps into 1/10/100 nF with and without C33/C34 |
+| `ref_bias.cir` | U14 LM4040C10 + R41 — `sections/cv.tsx` | DC sweep VEE −12.2…−11.2 V, extra-load cases, VEE start-up ramp |
+| `sync_io.cir` | Q1/D5 sync input, U11B/U11C sync output — `sections/cv.tsx` | DC −10…+10 V (clamp, levels, clamp current), 0…3.3 V sync-out sweep, 1 kHz square |
+| `mux_adc.cir` | U1 CD4051 + ADC sample node — `sections/main.tsx` | 8-code channel scan (1-of-8 decode) and channel-change settling for a 10 k and a 100 k pot |
+| `front_audio.cir` | base-board audio into the front board | THD with and without the removed audio jack-LED branch |
+| `front_cv_led.cir` | last compensated CV stage — `sections/cv.tsx` + euro `jack-leds.tsx` | tran with 100k‖10 nF, LED branch present, and a 100 nF over-spec case |
+| `front_mode.cir` | euro MODE button — `euro/sections/button.tsx` | pull-up, LED current, 100 pF sample, and the "LED only" negative case |
 
-## Front-board checks
+## Source linkage — the decks cannot drift silently
 
-`test_frontboard.py` runs three additional decks and fails if their modeled
-bounds are violated. They are hand transcriptions, **not generated from the
-built netlist**; update and review them when circuit values change. The euro
-mux/removed-reference checker independently verifies the built design.
+`source_link.py` parses the canonical TSX (`tscircuit/sections/*.tsx`, and for
+the front decks `euro/sections/*.tsx` + `euro/lib/layout.ts`) with the same SI
+literal parser gate step 7 uses, and links **63 deck elements** to their source
+parts. For each linked element it compares
 
-| Deck | What is modeled | Illustrative ngspice 47 result |
-| --- | --- | --- |
-| `front_audio.cir` | 1 kHz output with 1 kΩ series / 100 kΩ load and input with 1 kΩ source / 100 kΩ base load; compare removed diode/LED branch against no branch | THD harmonics 2–10: output 0.0000% / 4.5324%, input 0.0000% / 4.8431% (new / old) |
-| `front_mode.cir` | 10 kΩ pull-up with 1 µA leakage; LED and switch; a discharged 100 pF ADC capacitor connected through 250 Ω | 3.290 V released, 0.000159 V pressed, 1.263 mA LED current, 3.28963 V sampled 9 µs after connecting |
-| `front_cv_led.cir` | last compensated CV stage, 100 kΩ plus 10 nF external load, compare with and without 2.2 kΩ / diode / LED branch | 4.98995 / 4.98994 V, LED 1.079 mA, peak 4.98994 V (without / with LED) |
+* the **value** (0.5 % window, i.e. the same window `check_values.py` uses), and
+* the **connection**: every deck node is mapped to a named source pin (or to the
+  net of another part's pin), so a changed net, a swapped pin or a reordered
+  polar part fails.
 
-These are **illustrative models, not specifications or measured hardware**.
-The audio driver is idealized, not a full TL074; the LED/diode models are not
-fitted-part models. The MODE capacitor, switch resistance and leakage are
-assumptions, not an STM32/CD4051 acquisition model. The CV op-amp has neither
-output-current limiting nor slew rate. No claim is made for arbitrary source
-impedance, firmware timing, fault conditions, temperature, unpowered or power
-sequencing, LED brightness, CV current limits or stability with other loads.
-Bench-test actual MODE levels and brightness, channel-to-channel settling at
-firmware scan rate, and CV output with actual LEDs and expected cable/load.
-The automated numeric bounds apply only to these modeled cases.
+`DECK_NETS` does the same for the behavioural mux, whose deck uses the board's
+own net names (`M_ADC_0…7`, `MULTIPLEX_S0…S2`, `MULTIPLEX_ADC_1`) against U1's
+pins, and `check_mux_rails` asserts U1 `VDD/VSS/VEE/INH`. Elements that are not
+source parts must be declared in `ASSUMPTIONS` with a reason (supplies,
+stimuli, case loads, model internals); an undeclared element fails.
 
-## Measured vs expected
+`test_sim.py` proves the linkage has teeth: an altered source **value**
+(`R4` 100k → 110k), an altered source **connection** (`R19` pin 2, U11 `IN1P`,
+U1 `X0`), an altered **deck** value, an altered deck node, an unexplained deck
+element and an out-of-table **model limit** (GBW 3 MHz → 30 MHz, diode `N`) are
+each detected.
+
+## Model provenance, and what is NOT modelled
+
+Every model parameter must appear in `models.py` with its source, or the check
+fails. The entries: TL074 (A0 2e5, GBW 3 MHz, 1.5 V output headroom, datasheet
+typical), MCP6002 (1e5, 1 MHz, 30 mV), an ideal op-amp for model validation,
+LM4040C10 (10.0 V, 0.5 Ω), 1N4148/1N4148WS forward characteristic (`IS`, `N`),
+an illustrative LED, an illustrative 10 V breakdown knee (load/start-up cases
+only), an illustrative MMBT3904-class NPN, the CD4051 250 Ω ON resistance
+(assumption, not a maximum) and a 100 pF ADC sample capacitance (assumption;
+the STM32H750 acquisition value depends on the sample time, which firmware
+owns).
+
+**The MCU is an STM32H750 (Daisy Seed).** No GPIO, ADC-leakage or drive figure
+is copied from another board; the decks only use 0…3.3 V logic and the ADC pin
+range from `doc/FRONTBOARD-INTERFACE.md`.
+
+Not modelled anywhere: op-amp input offset voltage, bias current, slew rate,
+output current limit (the clamp limits voltage, not current), noise, charge
+injection, mux OFF isolation and ON-resistance flatness, resistor tempco,
+supply tolerance other than the VEE sweep, and every thermal effect. The output
+capacitor current in the full-scale 100 nF row is therefore optimistic.
+
+## Measured vs expected (limits are asserted, not printed)
 
 ### 1. Audio in — `J_AUDIO_IN_L` → `AUDIO_IN_L` (U2, TL074, ±12 V)
 
-| Quantity | Expected | Measured | Verdict |
-| --- | --- | --- | --- |
-| DC gain (100k/100k × 100k/10k) | 0.1000 = −20.00 dB | 0.10000 = −20.000 dB | pass |
-| stage 1 DC gain (`NET_C2_2`) | 1.000 = 0.00 dB | 1.000 = −0.000 dB | pass |
-| −3 dB, single-pole estimate (brief) | 28.4 kHz (10k ∥ 560pF) | — | superseded |
-| −3 dB, both poles cascaded | 19.9 kHz (33.86k ∥ 28.42k) | **19.71 kHz** | pass |
-| gain at 1 kHz | 0.0999 | 0.09990 (−20.009 dB) | pass |
-| gain at 20 kHz | 0.0704 | 0.07028 (−23.063 dB) | pass |
+| Quantity | Limit asserted | Measured |
+| --- | --- | --- |
+| DC gain at the jack | 0.0995…0.1005 | 0.0999985 |
+| stage 1 DC gain (`NET_C2_2`) | 0.995…1.005 | 0.99999 |
+| −3 dB (both poles cascaded) | 19.0…20.6 kHz | **19.707 kHz** |
+| gain at 20 kHz | 0.0683…0.0725 | 0.070182 |
+| gain at 1 kHz | −20.11…−19.91 dB | −20.009 dB |
+| 10 Vpk headroom, peak / trough | ±0.99…±1.01 V | 0.998918 / −0.998918 V |
+| THD at 10 Vpk, 1 kHz | ≤1 % | 0.0000 % |
+| gain with a 1 k source | 0.985…0.995 | 0.989648 |
+| gain with a 10 k source | 0.904…0.914 | 0.908678 |
 
-### 2. Audio out — `AUDIO_OUT_L` → `J_AUDIO_OUT_L` (U3, TL074, ±12 V, 100k load)
+### 2. Audio out — `AUDIO_OUT_L` → `J_AUDIO_OUT_L` (U3, TL074, ±12 V)
 
-Gain is 3.3 since the R08 fix (R13/R14 = 33k instead of 100k), so a 1 Vrms
-full-scale Seed output asks for **4.62 V peak** at the jack instead of 14.1 V
-and no longer runs into the ±11.7 V rails.
+| Quantity | Limit asserted | Measured |
+| --- | --- | --- |
+| DC gain before R19 | 3.2835…3.3165 | 3.2999 |
+| DC gain at the jack (100k) | 3.2510…3.2836 | 3.26722 |
+| −3 dB | 29.0…32.5 kHz | **29.999 kHz** |
+| gain at 20 kHz | 2.70…2.80 | 2.74066 |
+| headroom at 1 Vrms in, peak / trough | ±4.55…±4.68 V | 4.61752 / −4.61752 V |
+| old gain-10 chain, clamped peak | 10.0…10.6 V | 10.3959 V |
+| THD at 1 Vrms, 1 kHz | ≤1 % | 0.0000 % |
+| load sweep at the jack (100k/50k/10k/open) | 0.9901/0.9804/0.9091/1.0000 ±0.7 % | 0.98965 / 0.97995 / 0.90868 / 0.99954 |
+| stage-2 output, every load | 0.995…1.005 | 0.999544 |
 
-| Quantity | Expected | Measured | Verdict |
-| --- | --- | --- | --- |
-| DC gain before the 1k series R | 3.300 = 10.37 dB | 3.2999 = 10.370 dB | pass |
-| DC gain at the jack (1k + 100k) | 3.2673 = 10.28 dB | 3.2672 = 10.284 dB | pass |
-| −3 dB, single-pole estimate (brief) | 33.9 kHz (100k ∥ 47pF) | — | superseded |
-| −3 dB, both poles cascaded, ideal opamps | 30.9 kHz (102.6k ∥ 33.86k) | 30.85 kHz (see note) | pass |
-| −3 dB, both poles cascaded, TL074 model | — | **30.0 kHz** | pass |
-| gain at 1 kHz | — | 3.2656 (+10.279 dB) | info |
-| gain at 20 kHz | 2.76 (+8.82 dB) | 2.7426 (+8.763 dB) | info |
-| droop at 15 kHz / 20 kHz | −0.90 / −1.52 dB | −0.905 / −1.520 dB | pass |
+### 3. CV in — `J_CV_IN_1` → `CV_IN_1` (U13, MCP6002, 3.3 V)
 
-The 30.85 kHz row is the same deck with the opamp made ideal (`A0=1e9
-GBW=1e12`); it reproduces the closed-form 30.9 kHz to 0.2 %, which is what
-validates the opamp model. The fitted TL074 costs another 3 % of bandwidth.
-Stage 1 is now the wide pole (102.6 kHz) and stage 2 the narrow one
-(33.86 kHz), so the cascaded −3 dB point is no longer 0.6436 × the low pole.
-
-### 3. CV in — `J_CV_IN_1` → `CV_IN_1` (U13, MCP6002, 3.3 V single supply)
-
-`Vout = −(R33/R30)·Vin + (R33/R34)·10 V = −0.3010·Vin + 1.6096` with R33/R42 =
-30.1k and R34/R43 = 187k (was 33k/200k → `−0.330·Vin + 1.650`, which put both
-endpoints exactly on the rails).
-
-| Quantity | Expected | Measured | Verdict |
-| --- | --- | --- | --- |
-| `V(Vin = −5 V)`, unclamped opamp | 3.1146 V | 3.11458 V | pass |
-| `V(Vin = +5 V)`, unclamped opamp | 0.1046 V | 0.10462 V | pass |
-| scale | 0.3010 V/V (0.301 V/oct) | 0.30100 V/V | pass |
-| `V(Vin = −5 V)`, real MCP6002 | 3.1146 V, no clipping | **3.11458 V** | pass |
-| `V(Vin = +5 V)`, real MCP6002 | 0.1046 V, no clipping | **0.10462 V** | pass |
-| endpoint, 1 % resistors | ±2.02 % scale, ±32.5 mV offset | 3.0529…3.1775 V / 0.0742…0.1344 V | pass (in range) |
-| endpoint, 0.1 % resistors | ±0.20 % scale, ±3.3 mV offset | 3.1084…3.1208 V / 0.1016…0.1076 V | pass |
-| pitch error, 1 % resistors | 24 ¢/octave | **±24.2 ¢/octave** (+ a fixed ±97 ¢ offset) | pass |
-| pitch error, 0.1 % resistors | 2.4 ¢/octave | **±2.4 ¢/octave** (+ a fixed ±9.7 ¢ offset) | pass |
-
-The corner instances (`*_N5HI/N5LO/P5HI/P5LO`) are the true worst cases at both
-endpoints: scaling `RF` and `RIN` together makes the scale and offset errors
-cancel at the +5 V endpoint by construction, so the cross corners are needed to
-bound it. 1 % corners are `RF 30.401k / RIN 99k / RREF 185.13k` (scale and
-offset max) and the three sign combinations; 0.1 % corners are the same at
-×0.1. Every corner now stays at least 60 mV clear of both rails (worst case
-3.1775 V and 0.0742 V against a 30 mV MCP6002 headroom), so the guard band
-holds with 1 % parts, not just nominally.
+| Quantity | Limit asserted | Measured |
+| --- | --- | --- |
+| `V(in = −5 V)` | 3.1096…3.1196 V | 3.11458 V |
+| `V(in = +5 V)` | 0.0996…0.1096 V | 0.104624 V |
+| scale | 0.30010…0.30190 V/V | 0.30100 V/V |
+| fitted MCP6002 at both ends | within 10 mV of ideal | 3.11458 / 0.104624 V |
+| 1 % corners: high / low endpoint | 0…3.24 V | 3.0529…3.1775 / 0.0742…0.1344 V |
+| 1 % corner scale error | ≤2.1 % | 1.98…2.02 % |
+| 0.1 % corner scale error | ≤0.21 % | 0.199…0.201 % |
+| gain at 10 Hz / 1 kHz | −10.48…−10.38 / −17.9…−16 dB | −10.430 / −17.036 dB |
 
 ### 4. CV out — `CV_OUT_1` → `J_CV_OUT_1` (U11A follower + U12, TL074, ±12 V)
 
-`Vout = (R35/R31)·(R40/R37)·Vin = 1.5121·Vin`, with R40/R39 sensing **past**
-the 1k series resistor and the two spare TL074 channels (U11A/U11D) buffering
-the unbuffered DAC output.
+| Quantity | Limit asserted | Measured |
+| --- | --- | --- |
+| `V(3.3 V DAC)` | 4.975…5.005 V | 4.98986 V |
+| `V(0 V DAC)` | ±2 mV | 0.00000 V |
+| load independence, open / 10k | ≤0.2 mV | 0.0010 / 0.0040 mV |
+| unbuffered DAC source 10.3k / 13k / 16k | ≤1 mV from nominal | 0.0000 mV each |
+| **no follower** (negative case) | 1.063…1.107 V/V | 1.0848 V/V |
+| 1 % corner spread | 5.15…5.21 / 4.77…4.83 V | 5.1935 / 4.7942 V |
+| 0.1 % corner spread | 4.995…5.015 / 4.965…4.985 V | 5.0099 / 4.9699 V |
+| 1 nF / 10 nF small step, C33/C34 | overshoot ≤2 %, settle ≤100 µs | 0.0 %, 48 µs |
+| 100 nF small step, C33/C34 | overshoot ≤3 % | 1.5 % |
+| 100 nF small step, **no** C33/C34 | overshoot 40…70 % | 53.6 % |
+| 1 nF small step, **no** C33/C34 | overshoot 40…70 % | 53.6 % |
+| 10 nF small step, **no** C33/C34 | overshoot ≤95 % | 84.1 % |
+| 3.3 V step into 100 nF (**above spec**) | overshoot 30…70 % | 50.5 % |
 
-| Quantity | Expected | Measured | Verdict |
-| --- | --- | --- | --- |
-| `V(Vdac = 0 V)` | 0.000 V | 0.00000 V | pass |
-| `V(Vdac = 3.3 V)`, 100k load | 4.990 V | 4.98986 V | pass |
-| `V(Vdac = 3.3 V)`, 50k load | 4.990 V (same as 100k) | 4.98986 V | pass |
-| `V(Vdac = 3.3 V)`, 10k load | 4.990 V (same as 100k) | 4.98986 V | pass |
-| `V(Vdac = 3.3 V)`, open | 4.990 V (same again) | 4.98986 V | pass |
-| `V(Vdac = 3.3 V)`, 13k DAC source (buffer disabled) | 4.990 V | 4.98986 V | pass |
-| scale at the jack | 1.5121 V/V, load-independent | 1.51208 V/V | pass |
-| U12B output at the 10k load | 5.539 V (`1k·(1/10k + 1/100k)` above the jack) | 5.53874 V | pass |
-| endpoint, 1 % resistors | ±4.04 % worst case | 4.794…5.194 V (−3.92 %…+4.08 %) | see finding 4 |
-| endpoint, 0.1 % resistors | ±0.40 % | 4.970…5.010 V (−0.40 %…+0.40 %) | info |
-| pitch error, 1 % resistors | 48.5 ¢/oct worst case (34.3 RSS) | **48.9 / 47.1 ¢/octave** (the two corners) | pass |
-| pitch error, 0.1 % resistors | 4.85 ¢/oct worst case (3.4 RSS) | **±4.8 ¢/octave** | pass |
+The CV-out spec is **≤10 nF of cable/load capacitance** (AGENTS.md §3). The
+100 nF cases are the negative control: they show what leaving the spec does, and
+they prove the compensation and the model are not a rubber stamp.
 
-The four load rows are the R09 fix: with the feedback pickup moved to the jack
-side of R46 the 1k sits inside the loop, so 100k, 50k, 10k and open all land on
-the same 4.990 V and only the opamp output moves. Previously (1k outside the
-loop) the same loads gave 4.941 / 4.892 / 4.536 V, i.e. −11.8 ¢/octave between
-one and two 100k inputs and −98 ¢/octave into 10k. The `DAC13K` row is the R03
-fix: a 13k unbuffered-DAC source in series with R31 costs 28 % without the
-follower (1.5121 → 1.085) and nothing with it.
+### 5. −10 V reference — U14 LM4040C10, R41 2.2k
 
-### 5. CV out load-capacitance stability — C33/C34 100pF across R39/R40
+| Quantity | Limit asserted | Measured |
+| --- | --- | --- |
+| `V(N10V_REF)` at VEE = −12 V | −10.02…−9.98 V | −10.00040 V |
+| shunt current at VEE = −12 V | 780…830 µA | **802.0 µA** |
+| shunt current, worst low rail (−11.2 V) | ≥125 µA | **438.4 µA** |
+| extra 22k load: `V` / shunt current | −10.05…−9.90 V / ≥125 µA | −9.9738 V / 361.0 µA |
+| extra 2.2k load (fault): \|V\| | ≤9 V | 5.930 V |
+| start-up at 1 ms (VEE still low): \|V\| | ≤5 V | 4.614 V |
+| start-up settled at 7 ms | −10.05…−9.94 V | −9.9948 V |
+| start-up peak cathode current | ≤15 mA | 0.805 mA |
 
-The R09 fix moved the CV-out feedback to the jack side of the 1k, which puts
-the 1k plus the cable capacitance inside the TL074 loop. `cv_inout.cir` now
-steps the DAC into 1 nF, 10 nF and 100 nF at the jack, with `CF=0` (the board
-before this pass) and `CF=100p` (the fitted C33/C34 across the 100k feedback
-resistors), at two amplitudes: 0.1 V DAC (0.151 V at the jack, linear) and
-3.3 V DAC (4.990 V, full scale). Raw data: `out/cv_out_step_small.dat` and
-`out/cv_out_step_full.dat`.
+The deck now uses the fitted 187k summing resistors (R34/R43), so the drain is
+**802 µA**, not the 809 µA the old 200k placeholder gave; the conclusion (3.5×
+the 125 µA threshold) is unchanged.
 
-| Load | CF | 0.1 V step overshoot | 0.1 V settle (1 %) | 3.3 V step overshoot | 3.3 V settle (1 %) |
-| --- | --- | --- | --- | --- | --- |
-| 1 nF | 0 | 53.6 % | 10 µs | 50.6 % | 10 µs |
-| 1 nF | 100 pF | **0.0 %** | **48 µs** | **0.0 %** | **48 µs** |
-| 10 nF | 0 | 84.1 % | 92 µs | 60.5 % | 101 µs |
-| 10 nF | 100 pF | **0.0 %** | **48 µs** | **0.0 %** | **48 µs** |
-| 100 nF | 0 | 94.7 % (does not settle) | never, 30 mV pp ring | 60.4 % (does not settle) | never, 1.87 V pp ring |
-| 100 nF | 100 pF | **1.5 %** | **65 µs** | 50.5 % | 230 µs |
+### 6. Sync in / sync out — Q1, D5, U11B, U11C
 
-The compensation zero is `fz = 1/(2π·100k·100p) = 15.9 kHz`. For a 10 nF load
-the 1k/10 nF load pole is exactly at 15.9 kHz, so the zero cancels it; at 1 nF
-the load pole is at 159 kHz, well above the zero, so the loop has even more
-margin. At 100 nF the load pole is at 1.59 kHz, a decade below the zero, and
-the small-signal step only just stays clean (1.5 % overshoot, 65 µs). The
-full-scale 100 nF row is **not** a stability failure: the tail has settled by
-450 µs, but the opamp model can only charge 100 nF through the 1 k (the output
-clamp is a voltage clamp, so the fault current is limited to a few mA), which
-costs ~50 % overshoot and 230 µs. So 100 pF is sufficient for the intended
-loop up to 10 nF, marginal at 100 nF full scale, and the compensation pole
-caps the CV-out signal bandwidth at ~16 kHz. No larger cap is fitted: it would
-slow every CV edge.
+| Quantity | Limit asserted | Measured |
+| --- | --- | --- |
+| base clamp at −10 V in | −0.75…−0.35 V | −0.4774 V |
+| base **without D5** at −10 V in | −9.5…−5.0 V | −9.0909 V |
+| clamp current through R22 | ≤200 µA | 95.2 µA |
+| `SYNC_IN` at +5 V in | ≤0.4 V | 0.0595 V |
+| `SYNC_IN` at −5 V in | 3.0…3.31 V | 3.3000 V |
+| `SYNC_IN` over a 1 kHz square | within 0…3.3 V | 3.3000 / 0.0595 V |
+| sync-out gain before R29 | 1.5045…1.5196 V/V | 1.5121 V/V |
+| sync-out gain at the jack | 1.4865…1.5076 V/V | 1.4971 V/V |
+| sync out at a 3.3 V logic level | 4.90…4.98 V | 4.9405 V |
 
-The uncompensated 1 nF row reproduces the review's “≈18° phase margin”
-warning: the closed-loop 1 nF response has a 9.1 dB peak at 473 kHz and the
-step overshoots 54 %. The old single-pole “28/34 kHz” style bandwidth figures
-do not apply to this loop; the CV-out bandwidth is set by C33/C34.
+### 7. U1 CD4051 and ADC settling
 
+| Quantity | Limit asserted | Measured |
+| --- | --- | --- |
+| 1-of-8 decode, every code | one channel each, ±2 mV | 8/8 channels, 0.09973…0.79781 V |
+| 10 k pot: error 10 µs after a change | ≤1 mV | 0.0000 mV |
+| 100 k pot: error 10 µs after a change | ≥10 mV | 55.6 mV |
+| 100 k pot: error at 40 µs | ≤1 mV | 0.0003 mV |
 
-### 6. −10 V reference — U14 LM4040C10, R41 2.2k, `N10V_REF`
+So a 10 k pot settles far inside a 20 µs scan window and a 100 k pot does not,
+which is the documented front-board limit. The mux ON resistance (250 Ω) and the
+sample capacitance (100 pF) are **assumptions**, recorded in `models.py`.
 
-| Quantity | Expected | Measured | Verdict |
-| --- | --- | --- | --- |
-| `V(N10V_REF)` | −10.000 V | −10.0004 V | pass |
-| cathode current, VEE = −12.0 V | 0.809 mA (KCL below) | **808.9 µA** | pass |
-| cathode current, VEE = −11.2 V | 0.445 mA | 445.4 µA | pass |
-| cathode current, VEE = −12.2 V | 0.900 mA | 899.8 µA | pass |
-| minimum over −11.2…−12.2 V | > 125 µA (brief), > 100 µA (LM4040-10 min) | **445.4 µA = 3.6×** | pass |
+### 8. Front board
 
-KCL at `N10V_REF`: `I_shunt = I_R41 − I_loads`, where `I_R41 = (V(N10V_REF) −
-VEE)/2.2k` and `I_loads = 2 × 10 V / 200k = 100 µA` (R34/R43 see the U13 virtual
-grounds, i.e. 200k to ground at DC). The summing loads *reduce* the shunt
-current — they supply part of the R41 current themselves.
+| Quantity | Limit asserted | Measured |
+| --- | --- | --- |
+| audio THD, LED branch removed | ≤0.02 % | 0.0000 % (out and in) |
+| audio THD, removed branch fitted (**negative**) | ≥1 % | 4.532 % / 4.843 % |
+| CV jack with / without the LED branch | 4.90…5.10 V | 4.98995 / 4.98994 V |
+| LED effect on the CV DC level | ≤10 mV | 0.011 mV |
+| CV jack LED current | 0.1…3 mA | 1.079 mA |
+| 100 nF CV load (**above the 10 nF spec**) | 6.0…8.0 V peak | 6.9943 V |
+| MODE released / pressed | 3.27…3.31 V / ≤10 mV | 3.29000 V / 0.000159 V |
+| button LED current when pressed | 0.2…3 mA | 1.263 mA |
+| 100 pF sample 9 µs after connecting | ≤10 mV error | 0.373 mV |
+| MODE released **without R8** (**negative**) | 0.5…2.0 V | 1.6314 V |
 
 ## Findings
 
-1. **Both audio chains have two cascaded single-pole filters, not one.** The
-   audio-in chain (unchanged) rolls off at **19.7 kHz** — 1.86 dB down at 15 kHz
-   and 2.2 dB at 20 kHz — because its two poles (33.9 kHz and 28.4 kHz) are
-   close enough to interact, so 0.6436 × the low pole is a fair estimate there.
-   The audio-out chain is now dominated by stage 2 alone: after the R08 change
-   the 33k/47pF stage-1 pole is 102.6 kHz and the 100k/47pF stage-2 pole
-   33.86 kHz, so the two different poles put −3 dB at **30.0 kHz** (measured,
-   30.85 kHz with ideal opamps) and the chain is only 0.9 dB down at 15 kHz and
-   1.5 dB at 20 kHz. The quoted "~28 kHz / ~34 kHz" single-pole figures for
-   audio in remain 44 %/65 % too high. Do not repeat them.
-2. **The CV-in endpoints used to sit exactly on the 3.3 V rails — that is
-   fixed.** With 33k/200k the nominal mapping was 0.000/3.300 V and the
-   MCP6002 output stops ~30 mV short, so the fitted board measured 0.030/3.270 V
-   and every 1 % corner clipped. R33/R42 = 30.1k and R34/R43 = 187k move the
-   transfer to `−0.3010·Vin + 1.6096`, i.e. **0.1046…3.1146 V for ±5 V**, and
-   the fitted part reproduces it exactly (no clipping anywhere in the sweep).
-   The worst 1 % corner reaches 3.1775 V / 0.0742 V, still 60 mV inside the
-   rails. The trade is 0.301 V/V instead of 0.330 V/V of ADC span — 9 % less
-   resolution — for an endpoint that a single-point calibration can no longer
-   saturate. The pitch-error figures are unchanged (±24 ¢/octave at 1 %).
-3. **The −10 V reference draws 0.809 mA, not 0.77 mA.** 0.77 mA is the R41
-   current at VEE ≈ −11.7 V (or the shunt current at VEE ≈ −11.9 V); at the
-   nominal −12.0 V rail the shunt carries 0.809 mA and the R41 current is
-   0.909 mA. Either way the LM4040's 100 µA minimum is met with 3.6× margin
-   across the whole −11.2…−12.2 V sweep, which was the actual question. (The
-   deck still models the CV-in legs as 200k; at 187k they draw 107 µA instead
-   of 100 µA, so the shunt would carry 802 µA — 0.8 % lower, same conclusion.
-   `ref_bias.cir` was left untouched on purpose.)
-4. **With 1 % resistors the CV-out worst case leaves the intended 0–5 V
-   window:** 5.194 V (+4.1 %) at the jack for a full-scale 3.3 V DAC code, and
-   4.794 V at the other extreme. That is inside the TL074's ±10 V swing so
-   nothing clips, but a downstream VCO expecting 0–5 V sees a 4.8–5.2 V range.
-   The README's "~3 % / 36 ¢/octave" is the RSS figure (2.86 % → 34.3 ¢); the
-   *worst case* is 4.04 % → 48.5 ¢/octave. 0.1 % parts bring it to ±0.40 %.
-5. **1 % parts cost 24 ¢/octave on CV in and 48 ¢/octave worst case on CV out,
-   plus fixed offsets** (CV in ±97 ¢ from the offset term, CV out none). The
-   scale error is calibratable with two points; the CV-in offset with one. Both
-   are already flagged as open items in the README/AGENTS.
-6. **The 1k CV-out series resistors are now load-independent but still the
-   current limiter.** With the feedback pickup on the jack side, R45/R46 carry
-   only the load current (25 mW into a dead short, 2.5 mW into 10 k), and the
-   TL074 output moves by `1k·(1/RLOAD + 1/R40)` — 100 mV at a 100 k input,
-   539 mV at 10 k — instead of the jack level collapsing. Short-circuit
-   current is bounded by the 1k to ~5 mA plus the opamp's own output
-   current limit, which is the protection R45/R46 were always there for.
-7. **Taking the CV-out feedback after the 1k put the load inside the loop, and
-   C33/C34 100pF are what make that loop stable.** Uncompensated the 1k/cable
-   pole rings: 54 % overshoot at 1 nF, 84 % at 10 nF and no settling at 100 nF,
-   matching the ~18° phase margin the review measured at 1 nF (9.1 dB peak at
-   473 kHz). 100 pF across each 100k feedback resistor (zero at 15.9 kHz, the
-   worst 1k/10 nF pole) removes the ringing at 1 nF and 10 nF completely and
-   leaves 1.5 % overshoot at 100 nF small signal; a full-scale step into
-   100 nF still overshoots 50 % / takes 230 µs because the opamp has to charge
-   the cap through the 1k. That is the output-current limit, not a loop
-   oscillation — the tail has settled. The same pole caps the CV-out bandwidth
-   at ~16 kHz, which is far above any CV signal.
+1. **Both audio chains have two cascaded poles; the single-pole figures in the
+   design brief are wrong.** Audio in lands at 19.707 kHz (poles 33.86 kHz and
+   28.42 kHz), audio out at 29.999 kHz (poles 102.6 kHz and 33.86 kHz). Do not
+   quote 28 kHz / 34 kHz as −3 dB points.
+2. **The audio input gain depends on the source impedance**, because R1 100k is
+   in series with the patched source: 1 k costs 0.9 % (0.9896), 10 k costs 9.1 %
+   (0.9087). Both are now asserted.
+3. **The old ×10 audio output chain hits the clamp.** The pre-R08 100k feedback
+   asks 14.1 V peak from a 1 Vrms input and the model clamps at ±10.4 V; the
+   fitted 33k asks 4.62 V. The change is what keeps the chain linear.
+4. **The follower is what makes the unbuffered DAC harmless.** With U11A/U11D
+   the DAC's 10.3…16 kΩ source changes nothing (0.0 mV); without the follower
+   the same 13 kΩ adds to R31 and the scale falls to 1.085 (−28 %).
+5. **The CV-out loop needs C33/C34.** With them, 1 nF and 10 nF overshoot 0.0 %
+   and settle in 48 µs; without them 1 nF overshoots 53.6 % and 10 nF 84.1 %.
+   Above the ≤10 nF spec the compensation runs out: 100 nF small signal is
+   marginal (1.5 %), full scale rings 50.5 % / 230 µs because the current is
+   limited by the 1 k.
+6. **The −10 V reference draws 802 µA at VEE = −12 V**, worst case 438 µA at
+   −11.2 V, i.e. 3.5× the 125 µA threshold. An extra 22k load still leaves
+   361 µA; an extra 2.2k load is a fault and the knee model shows the reference
+   collapsing to −5.93 V. The start-up ramp settles by 7 ms with a 0.805 mA peak.
+7. **The sync input clamp is load-bearing.** Without D5 the same −10 V patch
+   pulls Q1's base to −9.09 V, outside its 6 V emitter-base rating; with D5 it
+   stops at −0.48 V and R22 limits the clamp current to 95 µA. The sync output
+   is +1.5121 V/V (4.94 V at a 3.3 V logic level) and inverts nothing else.
+8. **The ADC mux works with a 10 k pot and needs a longer window with a 100 k
+   pot**: 1 mV error in under 10 µs versus about 40 µs, at a 100 pF sample
+   capacitor.
+9. **1 % parts cost 24 ¢/octave on CV in and 48 ¢/octave (worst case) on CV
+   out**, plus a fixed CV-in offset. Still an open item: firmware calibration,
+   or 0.1 % parts.
 
-## Method, and what the numbers do and do not cover
+## Reserved: MIDI (not covered here yet)
 
-- Opamp model: one-pole, `A0 = gm·RP`, pole at `GBW/A0`, output clamped to
-  `V(VP) − HEAD` / `V(VM) + HEAD`. TL074: `A0 = 2e5`, `GBW = 3 MHz`,
-  `HEAD = 1.5 V`; MCP6002: `A0 = 1e5`, `GBW = 1 MHz`, `HEAD = 30 mV`.
-  Validation: with the opamp made ideal the audio-out deck reproduces the
-  closed-form two-pole answer to 0.2 % (21.75 kHz vs 21.79 kHz) and the exact
-  divider gain (9.90099). Reproduce with
-  `sed 's/A0=2e5 GBW=3e6/A0=1e9 GBW=1e12/' audio_out.cir` in a scratch copy.
-- LM4040 model: ideal 10.0 V shunt + 0.5 Ω dynamic impedance. It regulates at
-  any current, so it cannot prove the ≥100 µA requirement by itself — the deck
-  reports the current instead, which is what the requirement is about.
-- Not modelled: opamp input offset voltage (MCP6002 Vos ±4.5 mV → ~6.7 mV at
-  the ADC, i.e. a fixed ~20 ¢ CV-in offset), input bias current, resistor
-  tempco, the LM4040C10's ±0.5 % initial tolerance (±8 mV at the CV-in
-  output, i.e. a fixed ~25 ¢ offset), supply-rail tolerance other than the VEE
-  sweep. All are offsets or second-order and none changes a scale factor. The
-  CV-out load capacitance IS modelled in the step run (section 5), but the
-  opamp only clamps its output voltage, not its output current, so the
-  full-scale 100 nF row overstates the current limit of a real TL074.
-- The audio chains are DC-coupled on this board (no series capacitor between
-  `AUDIO_OUT_L` and R11); the decks drive the source at DC 0, so any DC level on
-  the Daisy codec output is *not* covered — it would be amplified ×3.3.
-- Only the left channel of each audio pair is simulated; the right channel is
+The MIDI receiver/transmitter decks (`midi_in`, `midi_out`) are **not** part of
+this suite. The approved MIDI topology and its constants are owned by a separate
+change; until that lands, this suite makes no claim about `sections/midi.tsx`
+and no deck reads it. A change to `sections/midi.tsx` therefore does not fail
+here — a stated gap, not a silent pass. When the decks are added, their expected
+values go into `DECK_LINKS`/`assertions.py` in one place and the linkage will
+protect them like the rest.
+
+## What the numbers do and do not cover
+
+* Only the left channel of each audio pair is simulated; the right channel is
   identical by construction (R2/R3/R6/R7/C3/C9 and R12/R14/R15/R18/C13).
-- The audio decks are AC-only: they cannot show waveform clipping. The R08
-  headroom claim is arithmetic (3.267 × 1.414 V = 4.62 V peak against a ±10 V
-  swing), not a transient measurement — an isolated transient run of the old
-  ×10 chain did clip at ±10.1 V.
-
-## Alternative runner: the tscircuit WASM engine (checked, not used)
-
-Attempt (a) was to run these checks through `<analogsimulation
-spiceEngine="ngspice" />`. Result: **the CLI does not bundle a native engine,
-but it does not need one.** `@tscircuit/ngspice-spice-engine` (already in
-`node_modules`) is a thin wrapper that fetches `@tscircuit/eecircuit-engine`
-1.7.6 (a 21.7 MB ESM/WASM ngspice build) from `jscdn.tscircuit.com` at runtime.
-A scratch project in `/tmp` (`node_modules` symlinked to this project's, no
-native ngspice on PATH) built a 1:2 divider and produced
-`simulation_transient_voltage_graph` values of 1.000 V / 0.667 V, i.e. it works,
-but it needs network access and only exposes tran/op/dc/ac as circuit-json
-graphs (it parses the netlist with `spicets` and honours a single `.print`), so
-there is no `.control`/`wrdata` scripting and it cannot run these `.cir` decks
-as-is. Real ngspice (installed here in about a minute) is the better runner for
-`.cir` decks; the WASM path stays as the fallback for machines without Homebrew.
+* The audio chains are DC-coupled; the decks drive the source at DC 0, so a DC
+  offset on the Daisy codec output is *not* covered (it would be amplified 3.3×).
+* Op-amp offsets, bias currents, slew rate, output-current limiting, noise,
+  temperature, mux charge injection and cable parasitics are not modelled.
+* The reference deck's nominal numbers use an ideal shunt (it regulates at any
+  current); the load and start-up cases use an illustrative breakdown knee. The
+  ≥100 µA minimum is therefore shown by the reported current, not by a
+  regulation failure.
+* The CD4051 and the ADC sample node are a behavioural switch + resistor +
+  capacitor, not a mux model.
+* Nothing here is a substitute for the bring-up measurements listed in
+  `froemix/AGENTS.md` §8 (5 V rail, front board first article, CV tolerance,
+  MIDI receiver threshold).

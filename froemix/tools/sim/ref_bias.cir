@@ -38,8 +38,19 @@
 * It regulates at any current, so it cannot by itself prove the >= 100 uA
 * requirement -- that is why the deck reports the current, not the voltage.
 *
+* --- The load and start-up cases below use a second, explicitly illustrative
+* --- model: a diode breakdown knee (.model DZ10 BV=10 IBV=1m RS=0.5), because
+* --- the ideal shunt cannot lose regulation at any current. It is NOT a
+* --- manufacturer model and it is NOT used for the nominal current numbers
+* --- above. What it is used for: an extra 22k load (0.45 mA) must keep the
+* --- reference in regulation, an extra 2.2k load (4.5 mA) must break it, and
+* --- a VEE ramp must show the reference reaching -10 V only once the bias
+* --- current exists.
+* Loads in the source are R34/R43 (2 x 200k = 100 uA); the 22k / 2.2k are
+* cases, not fitted parts.
+*
 * Run: ngspice -b ref_bias.cir   (or: bash run.sh, from this directory)
-* Raw output: out/ref_bias.log, out/ref_bias_dc.dat
+* Raw output: out/ref_bias_dc.dat, out/ref_bias_start.dat
 * =====================================================================
 
 .subckt LM4040_10 CATHODE ANODE PARAMS: VZ=10.0 RZ=0.5
@@ -60,12 +71,64 @@ R41 N10V_REF VEE 2.2k
 C20 N10V_REF 0   100n
 
 * CV-IN summing resistors, seen by the reference as 200k to ground at DC
-R34 N10V_REF 0 200k
-R43 N10V_REF 0 200k
+R34 N10V_REF 0 187k
+R43 N10V_REF 0 187k
+
+* --- illustrative breakdown knee for the load and start-up cases only
+.model DZ10 D(BV=10 IBV=1m RS=0.5)
+
+* --- load case 1: the same circuit plus 22k (0.45 mA extra). Still inside the
+* --- minimum-current budget, so the reference must hold -10 V.
+DZ22  NREF_D22 CATH_D22 DZ10
+VSENSE22 CATH_D22 0 DC 0
+R41D22 NREF_D22 VEE 2.2k
+C20D22 NREF_D22 0 100n
+R34D22 NREF_D22 0 187k
+R43D22 NREF_D22 0 187k
+RL22   NREF_D22 0 22k
+
+* --- load case 2: 2.2k (4.5 mA extra) is a fault. The knee model must show
+* --- that the reference leaves regulation; the ideal shunt cannot.
+DZ2K  NREF_D2K CATH_D2K DZ10
+VSENSE2K CATH_D2K 0 DC 0
+R41D2K NREF_D2K VEE 2.2k
+C20D2K NREF_D2K 0 100n
+R34D2K NREF_D2K 0 187k
+R43D2K NREF_D2K 0 187k
+RL2K   NREF_D2K 0 2.2k
+
+* --- start-up: VEE ramps 0 -> -12 V in 2 ms and stays there. The reference
+* --- node must follow only once the bias current exists, and the cathode
+* --- current must stay below the LM4040's 15 mA absolute maximum.
+VRAMP RAMP_VEE 0 PWL(0 0 2m -12 8m -12)
+DZR   NREF_R CATH_R DZ10
+VSENSER CATH_R 0 DC 0
+R41R  RAMP_VEE NREF_R 2.2k
+C20R  NREF_R 0 100n
+R34R  NREF_R 0 187k
+R43R  NREF_R 0 187k
+
+* --- dummy source: a two-point dc sweep reads the load cases at one operating
+* --- point each, so they can be asserted next to the swept numbers
+VDUM DUM 0 DC 0
 
 .control
 set noaskquit
 dc VEE -12.2 -11.2 0.01
 wrdata out/ref_bias_dc.dat v(N10V_REF) i(VSENSE) v(VEE)
+meas dc vref_mid FIND v(N10V_REF) AT=-12
+meas dc ishunt_min MIN i(VSENSE)
+dc VDUM 0 1 1
+meas dc load22_v FIND v(NREF_D22) AT=1
+meas dc load22_i FIND i(VSENSE22) AT=1
+meas dc overload_v FIND v(NREF_D2K) AT=1
+meas dc overload_i FIND i(VSENSE2K) AT=1
+tran 10u 8m
+wrdata out/ref_bias_start.dat v(NREF_R) v(RAMP_VEE) i(VSENSER)
+meas tran start_early FIND v(NREF_R) AT=1m
+meas tran start_final FIND v(NREF_R) AT=7m
+meas tran start_i_max MAX i(VSENSER)
+meas tran start_i_min MIN i(VSENSER)
+quit
 .endc
 .end
