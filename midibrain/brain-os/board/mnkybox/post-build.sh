@@ -85,12 +85,17 @@ ln -sfn ../cypress/cyfmac43455-sdio.clm_blob "${FW}/brcmfmac43455-sdio.clm_blob"
 enable_unit() {
 	unit="$1"
 	wants="$2"
-	[ -f "${TARGET_DIR}/usr/lib/systemd/system/${unit}" ] || \
-		[ -f "${TARGET_DIR}/etc/systemd/system/${unit}" ] || \
+	# Our own units live in /etc/systemd/system (overlay), package units in
+	# /usr/lib/systemd/system; link to whichever exists so systemd resolves it.
+	if [ -f "${TARGET_DIR}/etc/systemd/system/${unit}" ]; then
+		unit_path="/etc/systemd/system/${unit}"
+	elif [ -f "${TARGET_DIR}/usr/lib/systemd/system/${unit}" ]; then
+		unit_path="/usr/lib/systemd/system/${unit}"
+	else
 		die "unit ${unit} is missing from the root filesystem"
+	fi
 	mkdir -p "${TARGET_DIR}/etc/systemd/system/${wants}.wants"
-	ln -sfn "/usr/lib/systemd/system/${unit}" \
-		"${TARGET_DIR}/etc/systemd/system/${wants}.wants/${unit}"
+	ln -sfn "${unit_path}" "${TARGET_DIR}/etc/systemd/system/${wants}.wants/${unit}"
 }
 enable_unit systemd-networkd.service multi-user.target
 enable_unit dropbear.service multi-user.target
@@ -105,8 +110,9 @@ enable_unit mnkybox-firstboot.service multi-user.target
 # pipewire/wireplumber/weston/app units live in the overlay and are complete
 # replacements, not drop-ins, so nothing else is needed here.
 
-# Runtime directory for the session: created before any unit that needs it.
-mkdir -p "${TARGET_DIR}/run"
+# Mount point for the FAT boot partition (fstab mounts p1 here) and runtime
+# directory for the session.
+mkdir -p "${TARGET_DIR}/boot" "${TARGET_DIR}/run"
 install -d -m 0755 "${TARGET_DIR}/var/lib/mnkybox"
 
 # Empty machine-id: systemd generates a stable one on first boot.

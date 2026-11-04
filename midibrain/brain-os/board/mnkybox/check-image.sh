@@ -108,27 +108,32 @@ rootfs_bytes=$(wc -c < "${ROOTFS}" 2>/dev/null || echo 0)
 # ------------------------------------------------------------------ FAT content
 head1 "boot partition (p1, FAT32)"
 FAT_IMG="${IMG}@@$((p1_start * 512))"
-fat_list="$(mdir -i "${FAT_IMG}" :: 2>/dev/null || true)"
+
+# mdir on an explicit path is case-insensitive on FAT and returns non-zero when
+# the entry does not exist, which is what we want here.
+fat_has() { # $1 = path inside the FAT partition
+	mdir -i "${FAT_IMG}" "::/$1" >/dev/null 2>&1
+}
 for f in config.txt cmdline.txt kernel_2712.img bcm2712-rpi-5-b.dtb; do
-	if printf '%s\n' "${fat_list}" | grep -qi " ${f}$"; then
+	if fat_has "${f}"; then
 		ok "boot/${f}"
 	else
 		bad "boot/${f} is missing"
 	fi
 done
 for d in overlays mnkybox; do
-	if mdir -i "${FAT_IMG}" "::/${d}" >/dev/null 2>&1; then
+	if fat_has "${d}"; then
 		ok "boot/${d}/ directory"
 	else
 		bad "boot/${d}/ directory is missing"
 	fi
 done
-ovl_list="$(mdir -i "${FAT_IMG}" ::/overlays 2>/dev/null || true)"
-for o in vc4-kms-v3d.dtbo waveshare-3p5-dsi-h.dtbo; do
-	if printf '%s\n' "${ovl_list}" | grep -qi " ${o}$"; then
-		ok "boot/overlays/${o}"
+for o in overlays/vc4-kms-v3d.dtbo overlays/waveshare-3p5-dsi-h.dtbo \
+	 mnkybox/wpa_supplicant.conf mnkybox/authorized_keys; do
+	if fat_has "${o}"; then
+		ok "boot/${o}"
 	else
-		bad "boot/overlays/${o} is missing"
+		bad "boot/${o} is missing"
 	fi
 done
 

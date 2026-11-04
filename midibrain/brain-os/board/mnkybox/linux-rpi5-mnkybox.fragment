@@ -14,8 +14,6 @@
 CONFIG_PREEMPT=y
 # CONFIG_PREEMPT_NONE is not set
 # CONFIG_PREEMPT_VOLUNTARY is not set
-CONFIG_PREEMPT_BUILD=y
-CONFIG_PREEMPT_COUNT=y
 CONFIG_HZ_1000=y
 # CONFIG_HZ_250 is not set
 # CONFIG_HZ_300 is not set
@@ -37,7 +35,6 @@ CONFIG_DRM=y
 CONFIG_DRM_MIPI_DSI=y
 CONFIG_DRM_V3D=y
 CONFIG_BACKLIGHT_CLASS_DEVICE=y
-CONFIG_FB_SIMPLE=y
 
 # Audio: interfaces are USB class-compliant devices; DMA-buffer plumbing is
 # required by PipeWire's ALSA plugin.
