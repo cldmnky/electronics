@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include "../link/link.hpp"
 #include "../midi/clock.hpp"
@@ -67,14 +68,31 @@ class LinkClient {
   // USB mirror gates (session v2 clock.usb). Applied to the Pi-side UsbClock,
   // which then suppresses its own 0xF8 / START / CONTINUE / STOP bytes.
   void requestUsbClockGates(bool clock, bool transport);
+  // MIDI FX chain mirror for one TRS->TRS route: EV_MIDI_ROUTE (0x18) begins a
+  // fresh chain with the route's enable flag, then EV_MIDI_ROUTE_PIPE (0x19)
+  // chunks carry every pipe. Sent on every chain edit and after a project load;
+  // routed TRS bytes then use EV_MIDI_ROUTE_SEND (0x1A) so the Pico evaluates
+  // exactly this chain. Pairs touching USB are rejected (Pi-owned).
+  void requestMidiRoutePipes(midi::Port source, midi::Port destination,
+                             const std::vector<session::MidiPipe>& pipes,
+                             bool enabled);
 
  private:
   struct Command {
-    enum class Kind : std::uint8_t { Tempo, Transport, Leds, Manual, ClockRoute, UsbClockGates };
+    enum class Kind : std::uint8_t {
+      Tempo,
+      Transport,
+      Leds,
+      Manual,
+      ClockRoute,
+      UsbClockGates,
+      MidiRoutePipes
+    };
     Kind kind = Kind::Tempo;
     std::uint16_t value16 = 0;
     std::uint8_t value8 = 0;
     std::uint8_t extra8 = 0;
+    std::vector<session::MidiPipe> pipes;
   };
 
   void run();
@@ -100,6 +118,7 @@ class LinkClient {
   mutable std::mutex commandLock_;
   std::deque<Command> commands_;
   std::uint64_t lastReadyPollMs_ = 0;
+  bool loggedRouteSend_ = false;
 
   std::atomic<bool> exit_{false};
   std::thread thread_;

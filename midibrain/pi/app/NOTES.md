@@ -1,7 +1,7 @@
 # mnkybox app (`pi/app/`) — Qt 6 QML touchscreen DAW
 
 The wave-2 UI is now Qt 6 QML: `QGuiApplication` + `QQmlApplicationEngine`, a
-`QQuickWindow` shell and seven QML screens over C++ view models. The JUCE app
+`QQuickWindow` shell and ten QML screens over C++ view models. The JUCE app
 (`juce_add_gui_app`, `MainComponent`, the LookAndFeel/theme and the JUCE
 `AudioDeviceManager`) is gone. The core libs (`link midi audio clap session`,
 `firmware/`) are untouched and stay JUCE-free; this change is UI layer + audio
@@ -34,7 +34,7 @@ cmake --build ~/pi-build -j8
   emulator transport, so a desktop run still starts.
 * `--unittests` runs the C++ checks (`logic_tests.cpp`) and exits; no window,
   audio device, MIDI port or QML engine. Also registered as CTest
-  `mnkybox_app_logic` (161 checks, 0 failures).
+  `mnkybox_app_logic` (341 checks, 0 failures).
 * `--screenshots DIR` is the headless proof: forces the emulator backends, loads
   every QML screen and writes `30-qt-*.png` with `QQuickWindow::grabWindow()`,
   then exits 0. Run it with `QT_QPA_PLATFORM=offscreen`; no Xvfb is needed.
@@ -383,6 +383,74 @@ pactl list short sink-inputs                                                 # o
 * **Theme** - `Style.nodePink` (#f06292) is the selected EQ node and the freeze
   state; the accent stays the focus-ring/tab colour.
 
+## Wave 6: EDIT timeline + MIDI FX pipe chains (34-*)
+
+### EDIT timeline (10th tab, `TimelineScreen.qml`)
+
+* Time runs left to right in session beats, tracks top to bottom in six-track
+  pages (18 tracks, three pages). P< / P> move page and V< / V> the view window, Z- / Z+
+  zoom between 8 and 64 beats; the playhead comes from the link tick count and
+  the tempo.
+* Waveform thumbnails come only from the `.peaks` sidecar (`audio::readPeaks`).
+  A missing/stale sidecar draws the explicit dotted placeholder and one
+  background `PeakScanner` fills the cache later; the paint path never scans.
+  A lane with no active take says "NO ACTIVE TAKE" instead.
+* Region selection: touch drag on a lane sets IN/OUT, or the panel cursor + IN
+  and OUT buttons (`timeline.cursor/in/out`). The selection is drawn on the
+  selected lane; the loop brace (`takes.loop`) and the punch markers
+  (`punch.playFrom/in/out`) are displayed but remain owned by the Recorder and
+  Session screens.
+* OPS opens the shared ConfigPopup (`timelineops`) with TRIM/SPLIT/GAIN/FADES/
+  NORM/DELETE/CLEAR/RENDER, gain and fade drafts, a waveform preview and UNDO.
+  Edits are the frozen session v2 `takes.edit` region list: every op rewrites
+  that list, re-applies it through `AudioGlue::setTakeRegions` and marks the
+  project dirty. Undo is 16 levels per track and survives page/view changes but
+  not a project load.
+* RENDER is deliberately refused: `audio::TakePlayer` has no
+  render-to-new-take call; the popup and the status line name
+  `audio::TakePlayer::renderRegionsToTake()` and no take file is ever rewritten.
+* Region beats are mapped to take frames by the engine with the transport tempo
+  at apply time, so the timeline re-applies every edit after a tempo change
+  (`TimelineViewModel::refresh`).
+
+### Routing SHIFT: MIDI FX pipe chains (`PIPES` page)
+
+* One ordered chain per input->output pair (9 pairs). Add cycles all 16 session
+  pipe types, rows select/bypass/move/remove, and the parameter page shows two
+  positional parameters at a time (16 px steppers, toggles, choices, note names,
+  dB/%/ms text) with the normal value popup on panel EDIT. The tables come from
+  `pipe_params.hpp` and mirror the frozen `session::MidiPipe` parameter order.
+* `MidiGlue` owns the stored lists, keeps `Router::setPipes` in sync and is the
+  only writer; `project_io` captures them into `RouteState::pipes` and applies
+  them to a router snapshot on load (`session::apply()` ignores that field).
+* Engine split is shown, not hidden: a route touching USB is Pi-owned and runs
+  Wave 1 only. `midi::PipeChain::process()` rejects the clocked ids 12..16, so a
+  Wave-2 row on such a route says `PI: NO WAVE-2 ENGINE` and the header names
+  the rejecting call. A TRS->TRS chain is mirrored to the Pico with
+  `EV_MIDI_ROUTE`/`EV_MIDI_ROUTE_PIPE` (0x18/0x19) on every edit/project load,
+  and routed TRS bytes are sent with `EV_MIDI_ROUTE_SEND` (0x1A) so both waves
+  run on the firmware. The Pi applies the channel mask and its source
+  transpose before that send, so the TRS->TRS order is openly
+  mask -> transpose -> Pico chain (the USB route keeps mask -> pipes ->
+  transpose).
+* `MidiGlue::pump` calls `Router::tick` on the same millisecond time base as the
+  routed events, so NoteLength (type 10) pending offs are flushed even without
+  another input message. A rejected Pi-side chain logs one line per new
+  rejection (pipe index + static reason) instead of one per message.
+* Every configured pipe parameter is a MIDI-learn target
+  (`routing.pipe.<src>.<dst>.<pipe>.<param>`); the target list refreshes with
+  chain edits and an unset slot is a no-op, so a binding survives a chain change
+  until that pipe/param exists again.
+
+### Link 0x1A sender
+
+`link::PicoLink::sendMidiRoute(src,dst,data,n)` queues the documented
+`EV_MIDI_ROUTE_SEND` frame (`mb::pack_midi_route_send`); it is per-message and
+has no resend cache (the 0x18/0x19 chain config already has one). The link test
+decodes the wire frame and checks src/dst/size/bytes plus the 0/1 port and 1..3
+byte validation. `LinkClient` uses it only for a TRS->TRS delivery whose stored
+chain is non-empty; an unpiped TRS send and every USB->TRS send stay on 0x15.
+
 ## Panel interaction (docs/panel-interaction.md)
 
 Implemented in `AppController` with a focus ring per screen and IDs such as
@@ -434,7 +502,9 @@ Implemented in `AppController` with a focus ring per screen and IDs such as
 | Session apply | **works**; mixer/router/FX/tempo/click/midimap |
 | Click config | **works** (enable, level, 1-8 bars; session round-trip) |
 | MIDI-learn capture mode | **works** (target picker, arm, next CC binds, remove/clear; persisted in `midimap`) |
-| EQ grid: 4 nodes, response curve, corners, track+Main, fullscreen | **works** (UI + params + session); engine has no EQ insert, so no DSP claim |
+| EQ grid: 4 nodes, response curve, corners, track+Main, fullscreen | **works**; every edit is forwarded live to `Engine::setTrackEqBand`/`setMainEqBand`, and a loaded Q > 10 is normalized to 10 with a log note |
+| EDIT timeline: 18 tracks (6/page), `.peaks` thumbnails, IN/OUT, ops, undo, loop brace, punch markers | **works**; regions are session v2 `takes.edit` applied through `Engine::setTakeRegions`; RENDER is refused naming the missing core call |
+| Routing SHIFT pipe chains: 16 types, add/remove/reorder/bypass, params, MIDI learn | **works**; Pi-owned routes run Wave 1 on the Pi, TRS->TRS chains mirror to the Pico (0x18/0x19) and routed bytes go out 0x1A |
 | X/Y performance grids, multitouch, panel path, freeze | **works**; built-in delay/reverb run on the FX1/FX2 sends ahead of the CLAP slots; freeze is a parameter macro |
 
 ### Explicitly dropped / changed from the JUCE app

@@ -662,6 +662,54 @@ void AudioGlue::applyTakeLoops(const SessionSettings& settings) {
   }
 }
 
+void AudioGlue::applyEq(const session::EqState& state) {
+  for (int track = 0; track < audio::kMaxInputs; ++track) {
+    for (int band = 0; band < 4; ++band) {
+      const auto& source = state.tracks[static_cast<std::size_t>(track)]
+                                     [static_cast<std::size_t>(band)];
+      audio::EqBand value;
+      value.type = source.type;
+      value.gainDb = source.gainDb;
+      value.freqHz = source.freqHz;
+      value.q = source.q;
+      engine_.setTrackEqBand(track, band, value);
+    }
+  }
+  for (int band = 0; band < 4; ++band) {
+    const auto& source = state.main[static_cast<std::size_t>(band)];
+    audio::EqBand value;
+    value.type = source.type;
+    value.gainDb = source.gainDb;
+    value.freqHz = source.freqHz;
+    value.q = source.q;
+    engine_.setMainEqBand(band, value);
+  }
+}
+
+session::EqState AudioGlue::appliedEq() const {
+  session::EqState state;
+  for (int track = 0; track < audio::kMaxInputs; ++track) {
+    for (int band = 0; band < 4; ++band) {
+      const audio::EqBand value = engine_.trackEqBand(track, band);
+      auto& out = state.tracks[static_cast<std::size_t>(track)]
+                               [static_cast<std::size_t>(band)];
+      out.type = value.type;
+      out.gainDb = value.gainDb;
+      out.freqHz = value.freqHz;
+      out.q = value.q;
+    }
+  }
+  for (int band = 0; band < 4; ++band) {
+    const audio::EqBand value = engine_.mainEqBand(band);
+    auto& out = state.main[static_cast<std::size_t>(band)];
+    out.type = value.type;
+    out.gainDb = value.gainDb;
+    out.freqHz = value.freqHz;
+    out.q = value.q;
+  }
+  return state;
+}
+
 bool AudioGlue::setActiveTake(int track, const std::filesystem::path& path,
                               std::string* error) {
   if (error != nullptr) error->clear();
@@ -669,6 +717,11 @@ bool AudioGlue::setActiveTake(int track, const std::filesystem::path& path,
 }
 
 void AudioGlue::clearActiveTake(int track) { engine_.clearActiveTake(track); }
+
+bool AudioGlue::setTakeRegions(int track, const std::vector<audio::TakeRegion>& regions,
+                               std::string* error) {
+  return engine_.setTakeRegions(track, regions, error);
+}
 
 void AudioGlue::pushInput(const char* data, int frames, const QAudioFormat& format) {
   if (data == nullptr || frames <= 0) return;

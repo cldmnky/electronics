@@ -35,6 +35,7 @@ set(MNKY_APP_SOURCES
   mixer_model.cpp
   mixer_view_model.cpp
   performance_model.cpp
+  pipe_params.cpp
   project_io.cpp
   project_logic.cpp
   projects_view_model.cpp
@@ -43,6 +44,8 @@ set(MNKY_APP_SOURCES
   session_settings.cpp
   session_view_model.cpp
   system_view_model.cpp
+  timeline_model.cpp
+  timeline_view_model.cpp
   tools_view_model.cpp
   wav_info.cpp
   xy_view_model.cpp)
@@ -68,6 +71,7 @@ set(MNKY_APP_HEADERS
   mixer_model.hpp
   mixer_view_model.hpp
   performance_model.hpp
+  pipe_params.hpp
   project_io.hpp
   project_logic.hpp
   projects_view_model.hpp
@@ -78,6 +82,8 @@ set(MNKY_APP_HEADERS
   session_view_model.hpp
   system_view_model.hpp
   text_buffer.hpp
+  timeline_model.hpp
+  timeline_view_model.hpp
   tools_view_model.hpp
   wav_info.hpp
   xy_view_model.hpp)
@@ -124,6 +130,8 @@ qt_add_resources(mnkybox "qml"
     qml/components/FxSlotPanel.qml
     qml/components/TouchComboBox.qml
     qml/components/ValuePopup.qml
+    qml/components/TimelineWave.qml
+    qml/components/PipeParamEditor.qml
     qml/screens/MixerScreen.qml
     qml/screens/RoutingScreen.qml
     qml/screens/FxScreen.qml
@@ -138,6 +146,7 @@ qt_add_resources(mnkybox "qml"
     qml/screens/SystemShiftFace.qml
     qml/screens/EqScreen.qml
     qml/screens/XyScreen.qml
+    qml/screens/TimelineScreen.qml
     qml/overlays/ConfigPopup.qml
     qml/overlays/Keypad.qml
     qml/overlays/ConfirmDialog.qml)

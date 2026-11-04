@@ -484,6 +484,54 @@ void testMidiRouteEncoding() {
   std::cout << "PASS midi route encoding: 0x18/0x19 payloads and int16 LE params\n";
 }
 
+void testMidiRouteSend() {
+  EmulatorTransport pico;
+  RecordingTransport recorded(pico);
+  PicoLink link(recorded);
+  assert(pumpUntil(link, 200, [&] { return link.linkUp(); }));
+  pump(link, 20);
+  recorded.frames.clear();
+
+  // 0x1A carries src, dst, size and the bytes verbatim; the Pico evaluates the
+  // chain configured by 0x18/0x19 for that pair.
+  const std::uint8_t noteOn[3] = {0x90, 60, 100};
+  assert(link.sendMidiRoute(1, 0, noteOn, 3));
+  const std::uint8_t clockByte = 0xF8;
+  assert(link.sendMidiRoute(0, 1, &clockByte, 1));
+  pump(link, 20);
+
+  bool sawSend = false;
+  for (const auto& wire : recorded.frames) {
+    mb::Frame frame{};
+    assert(mb::decode(wire, frame));
+    if (frame.type != mb::Type::control_event ||
+        frame.payload[0] != mb::EV_MIDI_ROUTE_SEND)
+      continue;
+    std::uint8_t src = 0;
+    std::uint8_t dst = 0;
+    std::uint8_t size = 0;
+    std::uint8_t data[3]{};
+    assert(mb::unpack_midi_route_send(frame, src, dst, data, size));
+    if (!sawSend) {
+      assert(src == 1 && dst == 0 && size == 3);
+      assert(data[0] == 0x90 && data[1] == 60 && data[2] == 100);
+      sawSend = true;
+    } else {
+      assert(src == 0 && dst == 1 && size == 1 && data[0] == 0xF8);
+    }
+  }
+  assert(sawSend);
+
+  // Sender-side validation matches the wire: two physical TRS ports, 1..3
+  // bytes, and a valid message pointer.
+  assert(!link.sendMidiRoute(2, 0, noteOn, 3));
+  assert(!link.sendMidiRoute(0, 2, noteOn, 3));
+  assert(!link.sendMidiRoute(0, 0, noteOn, 0));
+  assert(!link.sendMidiRoute(0, 0, noteOn, 4));
+  assert(!link.sendMidiRoute(0, 0, nullptr, 1));
+  std::cout << "PASS midi route send: 0x1A carries src/dst/size/bytes\n";
+}
+
 void testStatusRequest() {
   EmulatorTransport pico;
   PicoLink link(pico);
@@ -687,6 +735,7 @@ int main() {
   testClockSourceSender();
   testMidiRouteSender();
   testMidiRouteEncoding();
+  testMidiRouteSend();
   testStatusRequest();
   testTxOverflowStatus();
   testRebootAndResetLink();

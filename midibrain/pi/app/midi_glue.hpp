@@ -15,8 +15,17 @@
 #include "../midi/learn.hpp"
 #include "../midi/router.hpp"
 #include "../midi/usb.hpp"
+#include "../session/session.hpp"
+#include "pipe_params.hpp"
 
 namespace mnky::app {
+
+// Applies one stored pipe list to a Router (used by project load on the router
+// snapshot before it is swapped in, because session::apply() ignores
+// RouteState::pipes). False when the pair or a pipe/limit is invalid.
+bool applyRoutePipesToRouter(midi::Router& router, midi::Port source,
+                             midi::Port destination,
+                             const std::vector<session::MidiPipe>& pipes);
 
 class MidiGlue {
  public:
@@ -43,6 +52,50 @@ class MidiGlue {
   std::uint16_t channelMask(midi::Port source) const;
   void setTranspose(midi::Port source, int semitones);
   int transpose(midi::Port source) const;
+
+  // --- MIDI FX pipe chains (Routing SHIFT) ---------------------------------
+  // The session stores one ordered chain per input->output pair
+  // (session::RouteState::pipes). MidiGlue owns that list, keeps the live
+  // Router's chain in sync (Router::setPipes) and is the only writer, so the
+  // UI, project capture and the LearnEngine param setters cannot disagree.
+  // A chain that Router refuses (invalid type/limits) leaves both the store and
+  // the Router unchanged. A route touching USB is evaluated by the Pi engine;
+  // a TRS->TRS chain is mirrored to the Pico through the pipeSync_ seam
+  // (0x18/0x19) and its routed bytes go out with EV_MIDI_ROUTE_SEND (0x1A), so
+  // each side evaluates a chain exactly once.
+  std::vector<session::MidiPipe> routePipes(midi::Port source,
+                                            midi::Port destination) const;
+  bool routeHasPipes(midi::Port source, midi::Port destination) const;
+  bool setRoutePipes(midi::Port source, midi::Port destination,
+                     const std::vector<session::MidiPipe>& pipes);
+  bool addRoutePipe(midi::Port source, midi::Port destination,
+                    session::MidiPipeType type);
+  bool removeRoutePipe(midi::Port source, midi::Port destination, int index);
+  bool moveRoutePipe(midi::Port source, midi::Port destination, int index,
+                     int delta);
+  bool setRoutePipeBypass(midi::Port source, midi::Port destination, int index,
+                          bool bypass);
+  bool setRoutePipeParam(midi::Port source, midi::Port destination, int index,
+                         int param, int value);
+  // Replaces the stored chains after a project load; the caller applies the same
+  // lists to the Router snapshot before swapping it in (session::apply() does
+  // not apply RouteState::pipes).
+  void setRoutePipeLists(const std::vector<session::RouteState>& routes);
+  // Dotted LearnEngine paths for every positional parameter of every stored
+  // chain, in route/pipe/param order.
+  std::vector<std::string> routePipeLearnTargets() const;
+
+  // Pico mirror seam: AppController installs a callback that queues the chain
+  // for LinkClient (0x18 begin + 0x19 pipe chunks) whenever a TRS->TRS chain or
+  // that route's enable state changes. Called with lock_ released, so the
+  // callback may enqueue link commands or read MidiGlue. Routes touching USB
+  // are never passed here; they stay Pi-owned.
+  using PipeSyncFn = std::function<void(midi::Port, midi::Port,
+                                        const std::vector<session::MidiPipe>&,
+                                        bool enabled)>;
+  void setPipeSync(PipeSyncFn fn);
+  // Re-push all four TRS->TRS chains (startup / project load / RESET).
+  void syncTrsPipes();
 
   // Session capture/apply seam: copy the guarded matrix, mutate the copy, and
   // replace it in one lock so the MIDI input thread never sees a half-applied
@@ -121,6 +174,8 @@ class MidiGlue {
  private:
   void recordMonitor(midi::Port port, bool outbound, const std::uint8_t* data,
                      std::uint8_t size);
+  // Queues one TRS->TRS chain through pipeSync_ (no-op for a Pi-owned pair).
+  void notifyPipeSync(midi::Port source, midi::Port destination);
   struct Delivery {
     midi::Port destination;
     midi::MidiEvent event;
@@ -128,10 +183,17 @@ class MidiGlue {
 
   mutable std::mutex lock_;
   midi::Router router_;
+  // Stored chains, indexed by input*3 + output. Kept in sync with router_ by
+  // setRoutePipes() and captured into session::RouteState::pipes by project_io.
+  std::array<std::vector<session::MidiPipe>, 9> routePipes_{};
   midi::UsbMidi usb_;
   std::deque<Delivery> outbox_;
   const bool virtualPorts_;
+  PipeSyncFn pipeSync_;
   std::uint64_t routed_ = 0;
+  // Last Router pipe-rejection count this glue logged, so the log gets one line
+  // per new rejection instead of one per routed message.
+  std::uint64_t loggedPipeRejections_ = 0;
   std::string description_;
   // Monitor ring + per-port counters, guarded by lock_ (same lock as the
   // matrix, so a snapshot can never straddle a half-updated event).

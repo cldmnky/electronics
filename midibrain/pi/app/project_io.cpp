@@ -14,6 +14,7 @@
 #include "eq_model.hpp"
 #include "fx_slot.hpp"
 #include "link_client.hpp"
+#include "logging.hpp"
 #include "logic.hpp"
 #include "midi_glue.hpp"
 #include "mixer_model.hpp"
@@ -138,6 +139,8 @@ session::Snapshot captureSnapshot(const AppContext& context) {
         context.settings.activeTake(channel);
     snapshot.takes.loop[static_cast<std::size_t>(channel)] =
         context.settings.takeLoop[static_cast<std::size_t>(channel)];
+    snapshot.takes.edit[static_cast<std::size_t>(channel)] =
+        context.settings.takeEdit[static_cast<std::size_t>(channel)];
     snapshot.mixer.channels[static_cast<std::size_t>(channel)].inCh =
         context.mixer.inCh(channel);
     snapshot.mixer.channels[static_cast<std::size_t>(channel)].inPair =
@@ -146,6 +149,35 @@ session::Snapshot captureSnapshot(const AppContext& context) {
         context.mixer.outDst(channel);
   }
   snapshot.clock = context.settings.clock;
+  // MIDI FX pipe chains are app-owned in MidiGlue. session::capture() only
+  // emits enabled routes and carries no pipe lists, so attach the stored chain
+  // to its route here and add an entry for a chain whose route is off (the
+  // session format can carry it; the matrix on/off stays authoritative).
+  for (int source = 0; source < midi::kPortCount; ++source) {
+    for (int destination = 0; destination < midi::kPortCount; ++destination) {
+      const auto from = static_cast<midi::Port>(source);
+      const auto to = static_cast<midi::Port>(destination);
+      if (!midi::isInput(from) || !midi::isOutput(to)) continue;
+      auto pipes = context.midi.routePipes(from, to);
+      if (pipes.empty()) continue;
+      session::RouteState* target = nullptr;
+      for (auto& route : snapshot.router.routes) {
+        if (route.src == source && route.dst == destination) {
+          target = &route;
+          break;
+        }
+      }
+      if (target == nullptr) {
+        session::RouteState route;
+        route.src = source;
+        route.dst = destination;
+        route.on = context.midi.routeEnabled(from, to);
+        snapshot.router.routes.push_back(std::move(route));
+        target = &snapshot.router.routes.back();
+      }
+      target->pipes = std::move(pipes);
+    }
+  }
   for (const auto& binding : context.midi.learnBindings()) {
     session::MidiMapEntry entry;
     entry.cc = binding.cc;
@@ -251,9 +283,30 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
   audio::Engine scratch;
   SlotTargets targets(context);
   session::apply(result.snapshot, router, scratch, targets.pointers);
+  // session::apply() copies routes/masks/transpose but not RouteState::pipes;
+  // apply the chains to the snapshot Router first, then hand the same lists to
+  // MidiGlue for capture and the Routing SHIFT pipe editor. setRoutePipeLists()
+  // re-pushes every TRS->TRS chain to the Pico (0x18/0x19), including an empty
+  // one, so a project load cannot leave a stale chain behind.
+  for (const auto& route : result.snapshot.router.routes) {
+    if (route.pipes.empty()) continue;
+    if (route.src < 0 || route.src >= midi::kPortCount || route.dst < 0 ||
+        route.dst >= midi::kPortCount) {
+      continue;
+    }
+    (void)applyRoutePipesToRouter(router, static_cast<midi::Port>(route.src),
+                                  static_cast<midi::Port>(route.dst), route.pipes);
+  }
   context.midi.replaceRouter(router);
+  context.midi.setRoutePipeLists(result.snapshot.router.routes);
   applyMixer(context, result.snapshot.mixer);
-  context.eq.apply(result.snapshot.fx.eq);
+  const int normalizedEqQ = context.eq.apply(result.snapshot.fx.eq);
+  if (normalizedEqQ > 0) {
+    // Session/engine Q can reach 24; the EQ screen and its CLAP effect stop at
+    // 10, so name the normalization instead of silently returning a lower Q.
+    log(std::string("eq: normalized ") + std::to_string(normalizedEqQ) +
+        " loaded band(s) with Q > 10.0 to 10.0 (UI/CLAP range; engine accepts 24)");
+  }
   context.performance.apply(result.snapshot.fx.xy);
 
   std::vector<midi::LearnBinding> bindings;
@@ -284,6 +337,8 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
         channel, result.snapshot.takes.active[static_cast<std::size_t>(channel)]);
     context.settings.takeLoop[static_cast<std::size_t>(channel)] =
         result.snapshot.takes.loop[static_cast<std::size_t>(channel)];
+    context.settings.takeEdit[static_cast<std::size_t>(channel)] =
+        result.snapshot.takes.edit[static_cast<std::size_t>(channel)];
   }
   context.settings.clock = result.snapshot.clock;
   context.audio.applyTakeLoops(context.settings);
@@ -304,6 +359,21 @@ std::string fingerprint(const AppContext& context) {
     }
     appendInt(out, "c", router.channelMask(static_cast<midi::Port>(source)));
     appendInt(out, "t", router.transpose(static_cast<midi::Port>(source)));
+  }
+
+  // MIDI FX pipe chains: type, bypass and every stored positional parameter.
+  for (int source = 0; source < midi::kPortCount; ++source) {
+    for (int destination = 0; destination < midi::kPortCount; ++destination) {
+      const auto from = static_cast<midi::Port>(source);
+      const auto to = static_cast<midi::Port>(destination);
+      if (!midi::isInput(from) || !midi::isOutput(to)) continue;
+      for (const auto& pipe : context.midi.routePipes(from, to)) {
+        appendInt(out, "pfx", (source * 3 + destination) * 100 +
+                                 static_cast<int>(pipe.type));
+        appendInt(out, "pfb", pipe.bypass ? 1 : 0);
+        for (const int param : pipe.params) appendInt(out, "pfp", param);
+      }
+    }
   }
 
   for (int index = 0; index < audio::kMaxInputs; ++index) {
@@ -371,6 +441,17 @@ std::string fingerprint(const AppContext& context) {
     appendInt(out, "le", loop.enabled ? 1 : 0);
     appendFloat(out, "ls", loop.startBeats);
     appendFloat(out, "lx", loop.endBeats);
+    // Non-destructive region edit (session v2 takes.edit): every field of every
+    // ordered region, so the dirty dot covers an op and a project round-trips it.
+    for (const auto& region : context.settings.takeEdit[static_cast<std::size_t>(index)]) {
+      out += "re=" + region.take + ";";
+      appendFloat(out, "ro", region.offsetBeats);
+      appendFloat(out, "rl", region.lengthBeats);
+      appendFloat(out, "rg", region.gainDb);
+      appendFloat(out, "rfi", region.fadeInBeats);
+      appendFloat(out, "rfo", region.fadeOutBeats);
+      appendInt(out, "rn", region.normalize ? 1 : 0);
+    }
   }
   appendInt(out, "ck1", context.settings.clock.trs[0].clock ? 1 : 0);
   appendInt(out, "ct1", context.settings.clock.trs[0].transport ? 1 : 0);

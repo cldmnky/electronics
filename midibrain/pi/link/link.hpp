@@ -248,6 +248,14 @@ class PicoLink {
   bool nextEvent(Event& out);
   // Immediate UART emit on the Pico. port 0/1, 1..3 bytes.
   bool sendMidi(std::uint8_t port, const std::uint8_t* data, std::uint8_t n);
+  // Routed UART emit (0x1A): the Pico runs the configured (src,dst) pipe chain
+  // and writes its output on dst. src/dst are 0 = TRS IN1/OUT1, 1 = TRS
+  // IN2/OUT2 and size is 1..3; a route whose 0x18 flags are off drops the
+  // message. This is the path for bytes that must be processed by the TRS
+  // chain; sendMidi() (0x15) stays the unprocessed immediate path. Per-message,
+  // so it has no resend cache (the chain config already has one).
+  bool sendMidiRoute(std::uint8_t src, std::uint8_t dst, const std::uint8_t* data,
+                     std::uint8_t n);
   bool setTempo(std::uint16_t bpm_x100);
   bool transport(std::uint8_t cmd);  // 0 stop, 1 start, 2 continue
   // Per-output TRS clock/transport gate (0x14): port 0 = OUT1 (uart0), 1 =

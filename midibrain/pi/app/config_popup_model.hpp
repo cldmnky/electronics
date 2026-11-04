@@ -5,6 +5,7 @@
 // readouts for the buttons that open each popup.
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include "app_state.hpp"
 #include "eq_model.hpp"
@@ -13,6 +14,8 @@
 #include "session_settings.hpp"
 
 namespace mnky::app {
+
+class TimelineViewModel;
 
 class ConfigPopupModel final : public QObject {
   Q_OBJECT
@@ -53,6 +56,16 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(double reverbPredelayMs READ reverbPredelayMs WRITE setReverbPredelayMs NOTIFY changed)
   Q_PROPERTY(double reverbDecay READ reverbDecay WRITE setReverbDecay NOTIFY changed)
   Q_PROPERTY(double reverbDamping READ reverbDamping WRITE setReverbDamping NOTIFY changed)
+  // EDIT timeline region ops (kind "timelineops"): op picker plus gain/fade
+  // drafts. OK runs the op through TimelineViewModel; RENDER stays blocked and
+  // shows the missing core call instead of closing on a fake success.
+  Q_PROPERTY(QStringList timelineOps READ timelineOps CONSTANT)
+  Q_PROPERTY(int timelineOp READ timelineOp WRITE setTimelineOp NOTIFY changed)
+  Q_PROPERTY(double timelineGainDb READ timelineGainDb WRITE setTimelineGainDb NOTIFY changed)
+  Q_PROPERTY(double timelineFadeInBeats READ timelineFadeInBeats WRITE setTimelineFadeInBeats NOTIFY changed)
+  Q_PROPERTY(double timelineFadeOutBeats READ timelineFadeOutBeats WRITE setTimelineFadeOutBeats NOTIFY changed)
+  Q_PROPERTY(QString timelineOpName READ timelineOpName NOTIFY changed)
+  Q_PROPERTY(QString timelineError READ timelineError NOTIFY changed)
 
  public:
   ConfigPopupModel(AppState& state, MixerModel& mixer, SessionSettings& settings,
@@ -96,6 +109,13 @@ class ConfigPopupModel final : public QObject {
   double reverbPredelayMs() const { return reverbPredelayMs_; }
   double reverbDecay() const { return reverbDecay_; }
   double reverbDamping() const { return reverbDamping_; }
+  QStringList timelineOps() const;
+  int timelineOp() const { return timelineOp_; }
+  double timelineGainDb() const { return timelineGainDb_; }
+  double timelineFadeInBeats() const { return timelineFadeInBeats_; }
+  double timelineFadeOutBeats() const { return timelineFadeOutBeats_; }
+  QString timelineOpName() const;
+  QString timelineError() const { return timelineError_; }
 
   void setClickMode(int value);
   void setClickOutput(int value);
@@ -126,6 +146,14 @@ class ConfigPopupModel final : public QObject {
   void setReverbPredelayMs(double value);
   void setReverbDecay(double value);
   void setReverbDamping(double value);
+  void setTimelineOp(int value);
+  void setTimelineGainDb(double value);
+  void setTimelineFadeInBeats(double value);
+  void setTimelineFadeOutBeats(double value);
+
+  // Set once by AppController after both objects exist; the ops popup delegates
+  // preview and the destructive-op refusal to the timeline model.
+  void setTimeline(TimelineViewModel* timeline) { timeline_ = timeline; }
 
   // AppController entry points.
   bool openKind(const QString& kind);
@@ -186,6 +214,12 @@ class ConfigPopupModel final : public QObject {
   double reverbPredelayMs_ = 20.0;
   double reverbDecay_ = 0.7;
   double reverbDamping_ = 0.5;
+  TimelineViewModel* timeline_ = nullptr;
+  int timelineOp_ = 0;
+  double timelineGainDb_ = 0.0;
+  double timelineFadeInBeats_ = 0.0;
+  double timelineFadeOutBeats_ = 0.0;
+  QString timelineError_;
 };
 
 }  // namespace mnky::app

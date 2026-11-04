@@ -242,6 +242,80 @@ class ScreenshotRunner final : public QObject {
                         controller_->showShiftFace(true);
                         controller_->setTab(7);
                       }});
+    steps_.push_back({"34-edit", [this] {
+                        controller_->configCancel();
+                        controller_->hideValuePopup();
+                        controller_->showShiftFace(false);
+                        // Adopt the first take of the sample tracks (the guest
+                        // take directory has ch00/ch01 files). Tracks without a
+                        // take keep the empty-lane placeholder.
+                        for (int track = 0; track < 6; ++track) {
+                          controller_->recorder()->setSelectedTrack(track);
+                          controller_->recorder()->selectRow(0);
+                          controller_->recorder()->activateSelected();
+                        }
+                        controller_->timeline()->refresh();
+                        // A real trim/split/gain chain so the lane shows ordered
+                        // region blocks and the undo stack has content.
+                        controller_->timeline()->setSelectedTrack(1);
+                        controller_->timeline()->beginSelection(1, 1.0);
+                        controller_->timeline()->updateSelection(17.0);
+                        controller_->timeline()->endSelection();
+                        (void)controller_->timeline()->applyOp(0, 0.0, 0.0, 0.0);
+                        controller_->timeline()->setCursorBeats(9.0);
+                        (void)controller_->timeline()->applyOp(1, 0.0, 0.0, 0.0);
+                        controller_->timeline()->beginSelection(1, 1.0);
+                        controller_->timeline()->updateSelection(5.0);
+                        controller_->timeline()->endSelection();
+                        (void)controller_->timeline()->applyOp(2, -3.0, 0.0, 0.0);
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->recorder()->setLoopEnabled(true);
+                        controller_->recorder()->setLoopStartBeats(1.0);
+                        controller_->recorder()->setLoopEndBeats(5.0);
+                        controller_->session()->setPunchInEnabled(true);
+                        controller_->session()->setPunchInMeasure(3);
+                        controller_->session()->setPunchOutEnabled(true);
+                        controller_->session()->setPunchOutMeasure(7);
+                        controller_->timeline()->preparePeaksForDemo();
+                        controller_->timeline()->setPage(0);
+                        controller_->timeline()->setSelectedTrack(1);
+                        controller_->timeline()->setCursorBeats(3.0);
+                        controller_->setTab(9);
+                      }});
+    steps_.push_back({"34-ops", [this] {
+                        controller_->hideValuePopup();
+                        controller_->setTab(9);
+                        controller_->openConfig(QStringLiteral("timelineops"));
+                      }});
+    steps_.push_back({"34-pipes", [this] {
+                        controller_->configCancel();
+                        controller_->hideValuePopup();
+                        controller_->showShiftFace(true);
+                        controller_->routing()->setShiftPage(1);
+                        // A TRS->TRS route is the one the Pico evaluates: the app
+                        // mirrors the chain with 0x18/0x19 and sends its bytes
+                        // with 0x1A. Both waves are live on this route.
+                        controller_->routing()->setPipeSource(0);       // TRS IN 1
+                        controller_->routing()->setPipeDestination(0);  // TRS OUT 1
+                        controller_->routing()->toggleRoute(0, 0);      // route ON
+                        controller_->routing()->setAddTypeIndex(0);     // Filter
+                        controller_->routing()->addPipe();
+                        controller_->routing()->selectPipe(0);
+                        controller_->routing()->setPipeParam(0, 2, 1);
+                        controller_->routing()->setAddTypeIndex(11);    // Arp (Wave 2)
+                        controller_->routing()->addPipe();
+                        controller_->routing()->selectPipe(0);
+                        controller_->setTab(1);
+                      }});
+    steps_.push_back({"34-route", [this] {
+                        // One TRS IN1 note through the piped TRS route; the link
+                        // thread must send it with 0x1A and the Monitor screen
+                        // records the TRS OUT send.
+                        controller_->injectDemoTrsMidi(0, 0x90, 60, 100);
+                      }});
+    steps_.push_back({"34-monitor", [this] {
+                        controller_->setTab(6);
+                      }});
   }
 
   // Scripted absolute EQ band values: type 0..5, frequency, gain, Q.
@@ -391,6 +465,7 @@ int main(int argc, char* argv[]) {
   engine.rootContext()->setContextProperty(QStringLiteral("config"), controller.config());
   engine.rootContext()->setContextProperty(QStringLiteral("eq"), controller.eq());
   engine.rootContext()->setContextProperty(QStringLiteral("xy"), controller.xy());
+  engine.rootContext()->setContextProperty(QStringLiteral("timeline"), controller.timeline());
 
   controller.start();
   engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));

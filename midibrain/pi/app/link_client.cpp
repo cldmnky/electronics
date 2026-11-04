@@ -1,6 +1,9 @@
 #include "link_client.hpp"
 
+#include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstddef>
 #include <exception>
 #include <utility>
 
@@ -17,6 +20,23 @@ std::uint64_t monotonicMs() {
   using namespace std::chrono;
   return static_cast<std::uint64_t>(
       duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
+
+// Physical TRS index used by the 0x18/0x19/0x1A wire: 0 = IN1/OUT1,
+// 1 = IN2/OUT2. USB and the merged Pi-side ports have no wire index.
+bool physicalTrs(midi::Port port, std::uint8_t& index) {
+  switch (port) {
+    case midi::Port::TrsIn1:
+    case midi::Port::TrsOut1:
+      index = 0;
+      return true;
+    case midi::Port::TrsIn2:
+    case midi::Port::TrsOut2:
+      index = 1;
+      return true;
+    default:
+      return false;
+  }
 }
 }  // namespace
 
@@ -128,14 +148,47 @@ void LinkClient::requestUsbClockGates(bool clock, bool transport) {
   commands_.push_back(command);
 }
 
+void LinkClient::requestMidiRoutePipes(
+    midi::Port source, midi::Port destination,
+    const std::vector<session::MidiPipe>& pipes, bool enabled) {
+  std::uint8_t src = 0;
+  std::uint8_t dst = 0;
+  if (!midi::isInput(source) || !midi::isOutput(destination) ||
+      !physicalTrs(source, src) || !physicalTrs(destination, dst)) {
+    return;  // USB-touching routes stay Pi-owned
+  }
+  Command command;
+  command.kind = Command::Kind::MidiRoutePipes;
+  command.value8 = src;
+  command.extra8 = dst;
+  command.value16 = enabled ? 1 : 0;
+  command.pipes = pipes;
+  const std::lock_guard<std::mutex> lock(commandLock_);
+  if (commands_.size() >= kMaxCommands) commands_.pop_front();
+  commands_.push_back(std::move(command));
+}
+
 void LinkClient::run() {
   const MidiGlue::TrsSink trsSink = [this](midi::Port destination,
                                            const midi::MidiEvent& event) {
-    const std::uint8_t port = destination == midi::Port::TrsOut1
-                                  ? 0
-                                  : (destination == midi::Port::TrsOut2 ? 1 : 0xFF);
-    if (port > 1) return false;
-    return link_->sendMidi(port, event.data, event.size);
+    std::uint8_t dst = 0;
+    std::uint8_t src = 0;
+    if (!midi::isOutput(destination) || !physicalTrs(destination, dst)) return false;
+    // A TRS->TRS route with a chain must go out as EV_MIDI_ROUTE_SEND (0x1A) so
+    // the Pico evaluates it. The Pi already applied the channel mask and its
+    // source transpose before queueing this delivery, so the effective order on
+    // that route is mask -> transpose -> Pico chain. Every other destination
+    // (USB in -> TRS out) uses the unprocessed 0x15 path: no Pico chain exists
+    // for a USB source, so 0x1A would drop it.
+    if (midi::isInput(event.source) && physicalTrs(event.source, src) &&
+        midi_.routeHasPipes(event.source, destination)) {
+      if (!loggedRouteSend_) {
+        loggedRouteSend_ = true;
+        log("link: TRS route sends use 0x1A (mask -> transpose -> Pico pipe chain)");
+      }
+      return link_->sendMidiRoute(src, dst, event.data, event.size);
+    }
+    return link_->sendMidi(dst, event.data, event.size);
   };
 
   while (!exit_.load(std::memory_order_relaxed)) {
@@ -225,6 +278,42 @@ void LinkClient::applyCommands() {
           clock_.setTransportEnabled((command.value8 & 2) != 0);
         }
         break;
+
+      case Command::Kind::MidiRoutePipes: {
+        // 0x18 begins a fresh chain (clears the Pico runtime state), then 0x19
+        // carries each pipe in order; parameters go in chunks of the wire limit.
+        if (!link_->midiRoute(command.value8, command.extra8, command.value16 != 0)) {
+          break;
+        }
+        const std::size_t count = std::min(command.pipes.size(), mb::route_pipe_count_max);
+        for (std::size_t index = 0; index < count; ++index) {
+          const auto& pipe = command.pipes[index];
+          std::array<std::int16_t, mb::route_pipe_param_max> params{};
+          const std::size_t paramCount =
+              std::min(pipe.params.size(), params.size());
+          for (std::size_t param = 0; param < paramCount; ++param) {
+            params[param] = static_cast<std::int16_t>(
+                std::clamp(pipe.params[param], -32768, 32767));
+          }
+          const auto type = static_cast<std::uint8_t>(pipe.type);
+          const auto pipeIndex = static_cast<std::uint8_t>(index);
+          if (paramCount == 0) {
+            (void)link_->midiRoutePipe(command.value8, command.extra8, pipeIndex, type,
+                                       pipe.bypass, 0, nullptr, 0);
+            continue;
+          }
+          for (std::size_t offset = 0; offset < paramCount;
+               offset += mb::route_pipe_param_frame_max) {
+            const std::size_t remaining = paramCount - offset;
+            const std::size_t chunk =
+                std::min(remaining, mb::route_pipe_param_frame_max);
+            (void)link_->midiRoutePipe(
+                command.value8, command.extra8, pipeIndex, type, pipe.bypass,
+                static_cast<std::uint8_t>(offset), &params[offset], chunk);
+          }
+        }
+        break;
+      }
     }
   }
 }

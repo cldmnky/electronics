@@ -115,6 +115,12 @@ class RecorderViewModel final : public QObject {
   Q_INVOKABLE void setSelectedTrack(int track);
   QString trackName() const;
   QString activeTake() const;
+  // Timeline seam: resolve one track's active take to a real file (empty when
+  // there is no pointer or the file is missing) and the default track name.
+  // The timeline never copies a take; it only reads the path and its sidecars.
+  QString activeTakePath(int track) const;
+  std::filesystem::path takePathForKey(int track, const std::string& key) const;
+  QString trackDisplayName(int track) const;
   // Per-track take loop (session v2 takes.loop) for the selected track. The
   // engine window is `[startBeats, endBeats)`; an end at or below the start
   // loops the whole active take, which is the UI copy on the Recorder SHIFT

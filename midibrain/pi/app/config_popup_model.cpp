@@ -4,6 +4,8 @@
 #include <cmath>
 
 #include "logic.hpp"
+#include "timeline_model.hpp"
+#include "timeline_view_model.hpp"
 
 namespace mnky::app {
 namespace {
@@ -43,17 +45,19 @@ bool ConfigPopupModel::openKind(const QString& kind) {
   if (kind != QStringLiteral("metronome") && kind != QStringLiteral("sends") &&
       kind != QStringLiteral("monitor") && kind != QStringLiteral("comp") &&
       kind != QStringLiteral("eqtype") && kind != QStringLiteral("delay") &&
-      kind != QStringLiteral("reverb")) {
+      kind != QStringLiteral("reverb") && kind != QStringLiteral("timelineops")) {
     return false;
   }
+  if (kind == QStringLiteral("timelineops") && timeline_ == nullptr) return false;
   kind_ = kind;
-  title_ = kind == QStringLiteral("metronome") ? QStringLiteral("METRONOME")
-           : kind == QStringLiteral("sends")   ? QStringLiteral("SEND SOURCE")
-           : kind == QStringLiteral("monitor") ? QStringLiteral("MONITOR")
-           : kind == QStringLiteral("eqtype")  ? QStringLiteral("EQ BAND TYPE")
-           : kind == QStringLiteral("delay")   ? QStringLiteral("DELAY")
-           : kind == QStringLiteral("reverb")  ? QStringLiteral("REVERB")
-                                               : QStringLiteral("MAIN COMP");
+  title_ = kind == QStringLiteral("metronome")   ? QStringLiteral("METRONOME")
+           : kind == QStringLiteral("sends")     ? QStringLiteral("SEND SOURCE")
+           : kind == QStringLiteral("monitor")   ? QStringLiteral("MONITOR")
+           : kind == QStringLiteral("eqtype")    ? QStringLiteral("EQ BAND TYPE")
+           : kind == QStringLiteral("delay")     ? QStringLiteral("DELAY")
+           : kind == QStringLiteral("reverb")    ? QStringLiteral("REVERB")
+           : kind == QStringLiteral("timelineops") ? QStringLiteral("REGION OPS")
+                                                 : QStringLiteral("MAIN COMP");
   loadDraft();
   open_ = true;
   emit openChanged();
@@ -97,10 +101,37 @@ void ConfigPopupModel::loadDraft() {
   reverbPredelayMs_ = performance_.param(reverbGrid, audio::fx::Reverb::kPredelayMs);
   reverbDecay_ = performance_.param(reverbGrid, audio::fx::Reverb::kDecay);
   reverbDamping_ = performance_.param(reverbGrid, audio::fx::Reverb::kDamping);
+  if (kind_ == QStringLiteral("timelineops")) {
+    timelineOp_ = 0;
+    timelineGainDb_ = 0.0;
+    timelineFadeInBeats_ = 0.0;
+    timelineFadeOutBeats_ = 0.0;
+    timelineError_.clear();
+    if (timeline_ != nullptr) {
+      timeline_->setPreviewDraft(timelineGainDb_, timelineFadeInBeats_,
+                                 timelineFadeOutBeats_);
+    }
+  }
 }
 
 void ConfigPopupModel::accept() {
   if (!open_) return;
+  if (kind_ == QStringLiteral("timelineops")) {
+    if (timeline_ == nullptr) return;
+    const QString error = timeline_->applyOp(timelineOp_, timelineGainDb_,
+                                             timelineFadeInBeats_,
+                                             timelineFadeOutBeats_);
+    if (!error.isEmpty()) {
+      timelineError_ = error;
+      emit changed();
+      return;
+    }
+    timelineError_.clear();
+    open_ = false;
+    emit openChanged();
+    refreshSummaries();
+    return;
+  }
   commitDraft();
   open_ = false;
   emit openChanged();
@@ -114,6 +145,7 @@ void ConfigPopupModel::cancel() {
 }
 
 void ConfigPopupModel::commitDraft() {
+  if (kind_ == QStringLiteral("timelineops")) return;
   state_.clickMode.store(clampChoice(clickMode_, 2));
   state_.clickEnabled.store(clickMode_ != 0);
   state_.clickOutput.store(clampChoice(clickOutput_, 2));
@@ -244,6 +276,58 @@ void ConfigPopupModel::setReverbDecay(double value) {
 }
 void ConfigPopupModel::setReverbDamping(double value) {
   reverbDamping_ = std::clamp(value, 0.0, 1.0);
+  emit changed();
+}
+
+QStringList ConfigPopupModel::timelineOps() const {
+  QStringList ops;
+  for (int op = 0; op < timeline::kTimelineOpCount; ++op) {
+    ops << QString::fromLatin1(
+        timeline::timelineOpName(static_cast<timeline::TimelineOp>(op)));
+  }
+  return ops;
+}
+
+QString ConfigPopupModel::timelineOpName() const {
+  if (timelineOp_ < 0 || timelineOp_ >= timeline::kTimelineOpCount) return {};
+  return QString::fromLatin1(
+      timeline::timelineOpName(static_cast<timeline::TimelineOp>(timelineOp_)));
+}
+
+void ConfigPopupModel::setTimelineOp(int value) {
+  timelineOp_ = std::clamp(value, 0, timeline::kTimelineOpCount - 1);
+  timelineError_.clear();
+  if (timeline_ != nullptr) {
+    timeline_->setPreviewDraft(timelineGainDb_, timelineFadeInBeats_,
+                               timelineFadeOutBeats_);
+  }
+  emit changed();
+}
+
+void ConfigPopupModel::setTimelineGainDb(double value) {
+  timelineGainDb_ = std::clamp(value, -96.0, 12.0);
+  if (timeline_ != nullptr) {
+    timeline_->setPreviewDraft(timelineGainDb_, timelineFadeInBeats_,
+                               timelineFadeOutBeats_);
+  }
+  emit changed();
+}
+
+void ConfigPopupModel::setTimelineFadeInBeats(double value) {
+  timelineFadeInBeats_ = std::clamp(value, 0.0, 64.0);
+  if (timeline_ != nullptr) {
+    timeline_->setPreviewDraft(timelineGainDb_, timelineFadeInBeats_,
+                               timelineFadeOutBeats_);
+  }
+  emit changed();
+}
+
+void ConfigPopupModel::setTimelineFadeOutBeats(double value) {
+  timelineFadeOutBeats_ = std::clamp(value, 0.0, 64.0);
+  if (timeline_ != nullptr) {
+    timeline_->setPreviewDraft(timelineGainDb_, timelineFadeInBeats_,
+                               timelineFadeOutBeats_);
+  }
   emit changed();
 }
 

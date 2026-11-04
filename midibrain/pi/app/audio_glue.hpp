@@ -102,12 +102,27 @@ class AudioGlue {
   // frames with the transport tempo of that moment, so the caller re-applies it
   // after a tempo change (AppController::timerTick) as the engine documents.
   void applyTakeLoops(const SessionSettings& settings);
+  // Control-thread EQ forwarding (session fx.eq -> Engine track/main inserts).
+  // Every band is written, so an all-None state bypasses the inserts; the
+  // engine clamps type 0..5, gain -24..+24 dB, freq 20..20000 Hz and Q
+  // 0.1..24. The UI model caps Q at 10.0 (the CLAP effect range), so a loaded
+  // q > 10 is normalized there and logged by the loader.
+  void applyEq(const session::EqState& state);
+  // Readback of the bands the engine currently applies (control thread; the
+  // EQ forwarding test and the dirty fingerprint use it).
+  session::EqState appliedEq() const;
 
   // Control-thread take playback selection (engine take player). Returns false
   // with `error` when the engine refuses the file (not 48 kHz WAV, missing).
   bool setActiveTake(int track, const std::filesystem::path& path,
                      std::string* error = nullptr);
   void clearActiveTake(int track);
+  // Control-thread non-destructive region edit (Engine::setTakeRegions, session
+  // v2 takes.edit). An empty list clears the edit and resumes the take stack;
+  // the caller resolves each region's take key to a path first. Re-apply after
+  // a tempo change, exactly like applyTakeLoops().
+  bool setTakeRegions(int track, const std::vector<audio::TakeRegion>& regions,
+                      std::string* error = nullptr);
 
   // Read-and-decay master peak for the meters (0 = left, 1 = right).
   float peak(int channel);

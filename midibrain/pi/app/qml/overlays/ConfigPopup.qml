@@ -263,6 +263,120 @@ Rectangle {
                 }
             }
 
+            // ---- EDIT TIMELINE REGION OPS --------------------------------
+            Column {
+                visible: config.kind === "timelineops"
+                width: parent.width
+                spacing: 2
+
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 3
+                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "TRIM"; textSize: Style.fontSmall; checked: config.timelineOp === 0; focusId: "config.timeline.op.0"; onClicked: config.timelineOp = 0 }
+                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "SPLIT"; textSize: Style.fontSmall; checked: config.timelineOp === 1; focusId: "config.timeline.op.1"; onClicked: config.timelineOp = 1 }
+                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "GAIN"; textSize: Style.fontSmall; checked: config.timelineOp === 2; focusId: "config.timeline.op.2"; onClicked: config.timelineOp = 2 }
+                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "FADES"; textSize: Style.fontSmall; checked: config.timelineOp === 3; focusId: "config.timeline.op.3"; onClicked: config.timelineOp = 3 }
+                }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 3
+                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "NORM"; textSize: Style.fontSmall; checked: config.timelineOp === 4; focusId: "config.timeline.op.4"; onClicked: config.timelineOp = 4 }
+                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "DELETE"; textSize: Style.fontSmall; checked: config.timelineOp === 5; focusId: "config.timeline.op.5"; onClicked: config.timelineOp = 5 }
+                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "CLEAR"; textSize: Style.fontSmall; checked: config.timelineOp === 6; focusId: "config.timeline.op.6"; onClicked: config.timelineOp = 6 }
+                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "RENDER"; textSize: 9; checked: config.timelineOp === 7; focusId: "config.timeline.op.7"; onClicked: config.timelineOp = 7 }
+                }
+                ConfigSlider {
+                    width: parent.width
+                    label: "GAIN"
+                    value: config.timelineGainDb
+                    minimumValue: -96
+                    maximumValue: 12
+                    suffix: " dB"
+                    popupKind: "db"
+                    focusId: "config.timeline.gain"
+                    onMoved: (value) => config.timelineGainDb = value
+                }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 2
+                    ConfigSlider {
+                        width: (parent.width - 2) / 2
+                        label: "FADE IN"
+                        value: config.timelineFadeInBeats
+                        minimumValue: 0
+                        maximumValue: 16
+                        suffix: " b"
+                        popupKind: "generic"
+                        focusId: "config.timeline.fadein"
+                        onMoved: (value) => config.timelineFadeInBeats = value
+                    }
+                    ConfigSlider {
+                        width: (parent.width - 2) / 2
+                        label: "FADE OUT"
+                        value: config.timelineFadeOutBeats
+                        minimumValue: 0
+                        maximumValue: 16
+                        suffix: " b"
+                        popupKind: "generic"
+                        focusId: "config.timeline.fadeout"
+                        onMoved: (value) => config.timelineFadeOutBeats = value
+                    }
+                }
+                Item {
+                    width: parent.width
+                    height: 64
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Style.panelDark
+                        radius: Style.corner
+                        border.width: Style.outlineWidth
+                        border.color: Style.outline
+                    }
+                    TimelineWave {
+                        anchors.fill: parent
+                        anchors.margins: 3
+                        values: timeline.previewWave
+                        showEnvelope: true
+                        gainDb: config.timelineGainDb
+                        fadeInRatio: timeline.previewLengthBeats > 0
+                                      ? config.timelineFadeInBeats / timeline.previewLengthBeats : 0
+                        fadeOutRatio: timeline.previewLengthBeats > 0
+                                      ? config.timelineFadeOutBeats / timeline.previewLengthBeats : 0
+                        placeholderText: "NO PEAKS - PREVIEW UNAVAILABLE"
+                    }
+                }
+                Text {
+                    width: parent.width
+                    height: 14
+                    text: timeline.previewText
+                    color: Style.textDim
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    height: visible ? 20 : 0
+                    visible: config.timelineError !== ""
+                    text: config.timelineError
+                    color: Style.record
+                    font.pixelSize: 9
+                    wrapMode: Text.Wrap
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: "TRIM/DELETE use IN..OUT. RENDER is explicit and refused: audio::TakePlayer::renderRegionsToTake() is missing."
+                    color: Style.textDim
+                    font.pixelSize: 9
+                    wrapMode: Text.Wrap
+                    elide: Text.ElideRight
+                }
+            }
+
             Item { width: 1; height: 2 }
 
             Row {

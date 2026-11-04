@@ -19,7 +19,7 @@ namespace mnky::app {
 
 class LearnViewModel final : public QObject {
   Q_OBJECT
-  Q_PROPERTY(QStringList targets READ targets CONSTANT)
+  Q_PROPERTY(QStringList targets READ targets NOTIFY targetsChanged)
   Q_PROPERTY(QStringList bindings READ bindings NOTIFY bindingsChanged)
   Q_PROPERTY(QString statusText READ statusText NOTIFY statusChanged)
   Q_PROPERTY(QString captureTarget READ captureTarget NOTIFY captureChanged)
@@ -47,6 +47,7 @@ class LearnViewModel final : public QObject {
   void refresh();
 
  signals:
+  void targetsChanged();
   void bindingsChanged();
   void statusChanged();
   void captureChanged();
@@ -54,8 +55,10 @@ class LearnViewModel final : public QObject {
 
  private:
   void refreshBindings();
+  void refreshTargets();
 
   MidiGlue& midi_;
+  QStringList baseTargets_;
   QStringList targets_;
   QStringList bindings_;
   std::vector<midi::LearnBinding> bindingRows_;

@@ -705,6 +705,14 @@ bool PicoLink::sendMidi(std::uint8_t port, const std::uint8_t* data, std::uint8_
   return queueFrame(f);
 }
 
+bool PicoLink::sendMidiRoute(std::uint8_t src, std::uint8_t dst,
+                             const std::uint8_t* data, std::uint8_t n) {
+  if (src > 1 || dst > 1 || n < 1 || n > 3 || !data) return false;
+  mb::Frame f{};
+  if (!mb::pack_midi_route_send(f, 0, 0, src, dst, data, n)) return false;
+  return queueFrame(f);
+}
+
 bool PicoLink::setTempo(std::uint16_t bpm_x100) {
   const std::uint16_t clamped = clampTempo(bpm_x100);
   mb::Frame f{};

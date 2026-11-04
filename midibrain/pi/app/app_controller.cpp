@@ -17,6 +17,7 @@ constexpr int kProjectsTabIndex = 5;
 constexpr int kMonitorTabIndex = 6;
 constexpr int kEqTabIndex = 7;
 constexpr int kXyTabIndex = 8;
+constexpr int kEditTabIndex = 9;
 
 std::uint64_t nowMs() {
   using namespace std::chrono;
@@ -44,6 +45,8 @@ AppController::AppController(bool emulator, QObject* parent)
   fxVm_ = std::make_unique<FxViewModel>(fx_, state_, mixer_, audio_.sampleRate());
   recorderVm_ =
       std::make_unique<RecorderViewModel>(state_, audio_, mixer_, link_, settings_);
+  timelineVm_ = std::make_unique<TimelineViewModel>(state_, audio_, *recorderVm_,
+                                                    link_, settings_);
   projectsVm_ = std::make_unique<ProjectsViewModel>(
       *context_, [this] { projectStateChanged(); });
   systemVm_ = std::make_unique<SystemViewModel>(link_, audio_, midi_, fx_, state_);
@@ -53,6 +56,7 @@ AppController::AppController(bool emulator, QObject* parent)
   toolsVm_ = std::make_unique<ToolsViewModel>(state_, link_);
   configVm_ =
       std::make_unique<ConfigPopupModel>(state_, mixer_, settings_, eqModel_, performance_);
+  configVm_->setTimeline(timelineVm_.get());
   eqVm_ = std::make_unique<EqViewModel>(eqModel_);
   xyVm_ = std::make_unique<XyViewModel>(performance_);
   // Every EQ/XY screen change shows one transient readout, the same single
@@ -65,6 +69,11 @@ AppController::AppController(bool emulator, QObject* parent)
           [this](const QString& label, const QString& text) {
             showTextPopup(label, text);
           });
+  // Live EQ forwarding: every grid/panel edit reaches the engine's per-strip
+  // and main inserts, not just the session. applyEq writes all 18x4 + 4 bands,
+  // so an all-None state is an explicit bypass.
+  connect(eqVm_.get(), &EqViewModel::changed, this,
+          [this] { audio_.applyEq(eqModel_.capture()); });
   connect(xyVm_.get(), &XyViewModel::textPopupRequested, this,
           [this](const QString& label, const QString& text) {
             showTextPopup(label, text);
@@ -74,6 +83,14 @@ AppController::AppController(bool emulator, QObject* parent)
 
   shiftActions_ = {QStringLiteral("Save"), QStringLiteral("Panic"), QStringLiteral("Tap"),
                    QStringLiteral("Click")};
+  // TRS->TRS pipe chains are mirrored to the Pico as 0x18/0x19 commands; the
+  // link thread applies them before it pumps routed messages, so a chain edit
+  // is live before the next 0x1A send. Pairs touching USB never take this path.
+  midi_.setPipeSync([this](midi::Port source, midi::Port destination,
+                           const std::vector<session::MidiPipe>& pipes,
+                           bool enabled) {
+    link_.requestMidiRoutePipes(source, destination, pipes, enabled);
+  });
   registerLearnTargets();
 
   timer_.setInterval(66);
@@ -109,6 +126,8 @@ void AppController::start() {
   fxVm_->loadDefaults();
   audio_.applyMonitorSettings(settings_);
   audio_.applyTakeLoops(settings_);
+  audio_.applyEq(eqModel_.capture());
+  timelineVm_->reloadFromSettings();
   sessionVm_->pushClockToLink();
 
   state_.clearDirty();
@@ -428,6 +447,17 @@ void AppController::showShiftFace(bool on) {
   rebuildFocusIds();
 }
 
+void AppController::injectDemoTrsMidi(int port, int status, int data1, int data2) {
+  midi::MidiEvent event;
+  event.source = port == 0 ? midi::Port::TrsIn1 : midi::Port::TrsIn2;
+  event.size = 3;
+  event.data[0] = static_cast<std::uint8_t>(status & 0xFF);
+  event.data[1] = static_cast<std::uint8_t>(data1 & 0x7F);
+  event.data[2] = static_cast<std::uint8_t>(data2 & 0x7F);
+  event.stampUs = midi::piNowUs();
+  midi_.handleInput(event);
+}
+
 void AppController::openConfig(const QString& kind) {
   if (!configVm_->openKind(kind)) return;
   panelMode_ = QStringLiteral("navigate");
@@ -468,9 +498,11 @@ void AppController::timerTick() {
   // to re-read them about once a second. FX params can be changed by the plugin
   // itself, so they refresh every tick.
   if (refreshTicks_ % 15 == 0) mixerVm_->refresh();
+  if (refreshTicks_ % 15 == 0) learnVm_->refresh();
   routingVm_->refresh();
   fxVm_->refresh();
   recorderVm_->refresh();
+  timelineVm_->refresh();
   projectsVm_->refresh();
   learnVm_->poll();
   midiMonitorVm_->refresh();
@@ -637,7 +669,39 @@ void AppController::performPanelFocus(const Intent& intent) {
       moveFocus(1);
       break;
     case Intent::Kind::NavPress:
-      if (panelMode_ == QStringLiteral("edit")) {
+      // EDIT timeline: PRESS on the cursor sets IN, then OUT; PRESS on an edge
+      // sets that edge to the cursor and enters EDIT for the bars:beats nudge.
+      if (focusId_ == QStringLiteral("timeline.in") ||
+          focusId_ == QStringLiteral("timeline.out") ||
+          focusId_ == QStringLiteral("timeline.cursor")) {
+        if (focusId_ == QStringLiteral("timeline.in")) {
+          timelineVm_->setInAtCursor();
+          showTextPopup(QStringLiteral("REGION IN"),
+                        timelineVm_->beatTextOf(timelineVm_->inBeats()));
+          setPanelMode(QStringLiteral("edit"));
+        } else if (focusId_ == QStringLiteral("timeline.out")) {
+          timelineVm_->setOutAtCursor();
+          showTextPopup(QStringLiteral("REGION OUT"),
+                        timelineVm_->beatTextOf(timelineVm_->outBeats()));
+          setPanelMode(QStringLiteral("edit"));
+        } else if (!timelineVm_->selectionActive()) {
+          timelineVm_->setInAtCursor();
+          showTextPopup(QStringLiteral("REGION IN"),
+                        timelineVm_->beatTextOf(timelineVm_->inBeats()));
+          setPanelMode(QStringLiteral("edit"));
+        } else if (timelineVm_->inBeats() == timelineVm_->outBeats()) {
+          timelineVm_->setOutAtCursor();
+          showTextPopup(QStringLiteral("REGION OUT"),
+                        timelineVm_->beatTextOf(timelineVm_->outBeats()));
+          setPanelMode(QStringLiteral("edit"));
+        } else {
+          timelineVm_->clearSelection();
+          timelineVm_->setInAtCursor();
+          showTextPopup(QStringLiteral("REGION IN"),
+                        timelineVm_->beatTextOf(timelineVm_->inBeats()));
+          setPanelMode(QStringLiteral("edit"));
+        }
+      } else if (panelMode_ == QStringLiteral("edit")) {
         setPanelMode(QStringLiteral("navigate"));
       } else if (isEditableFocus(focusId_)) {
         setPanelMode(QStringLiteral("edit"));
@@ -667,6 +731,25 @@ bool AppController::performGridEdit(const Intent& intent) {
   if (dx == 0 && dy == 0) return false;
   QString id = focusId_;
   if (id.startsWith(QStringLiteral("shift."))) id = id.mid(6);
+  if (id == QStringLiteral("timeline.cursor")) {
+    const double stepBeats = shiftHeld_ ? timeline::kCursorCoarseBeats
+                                        : timeline::kStepFineBeats;
+    timelineVm_->moveCursor(dx * stepBeats, dy);
+    showTextPopup(QStringLiteral("TIMELINE CURSOR"),
+                  timelineVm_->beatTextOf(timelineVm_->cursorBeats()));
+    return true;
+  }
+  if (id == QStringLiteral("timeline.in") || id == QStringLiteral("timeline.out")) {
+    const double stepBeats = shiftHeld_ ? timeline::kStepCoarseBeats
+                                        : timeline::kStepFineBeats;
+    const QString text = id == QStringLiteral("timeline.in")
+                             ? timelineVm_->nudgeIn(dx * stepBeats)
+                             : timelineVm_->nudgeOut(dx * stepBeats);
+    showTextPopup(id == QStringLiteral("timeline.in") ? QStringLiteral("REGION IN")
+                                                      : QStringLiteral("REGION OUT"),
+                  text);
+    return true;
+  }
   if (id == QStringLiteral("eq.band.select") || id.startsWith(QStringLiteral("eq.node."))) {
     eqVm_->nudgeSelected(dx, dy, shiftHeld_);
     return true;
@@ -747,7 +830,10 @@ bool AppController::isEditableFocus(const QString& focusId) const {
            id.startsWith(QStringLiteral("config.out34.")) ||
            id == QStringLiteral("config.thresh") || id == QStringLiteral("config.ratio") ||
            id == QStringLiteral("config.attack") || id == QStringLiteral("config.release") ||
-           id == QStringLiteral("config.makeup");
+           id == QStringLiteral("config.makeup") ||
+           id == QStringLiteral("config.timeline.gain") ||
+           id == QStringLiteral("config.timeline.fadein") ||
+           id == QStringLiteral("config.timeline.fadeout");
   }
   if (id.startsWith(QStringLiteral("mixer."))) {
     return id.contains(QStringLiteral("gain")) || id.contains(QStringLiteral("pan")) ||
@@ -767,6 +853,7 @@ bool AppController::isEditableFocus(const QString& focusId) const {
     return id == QStringLiteral("loop.start") || id == QStringLiteral("loop.end");
   }
   if (id.startsWith(QStringLiteral("routing.transpose."))) return true;
+  if (id.startsWith(QStringLiteral("routing.pipes.param."))) return true;
   if (id.startsWith(QStringLiteral("fx."))) {
     return id.endsWith(QStringLiteral(".return")) || id.contains(QStringLiteral(".param."));
   }
@@ -809,6 +896,10 @@ bool AppController::isEditableFocus(const QString& focusId) const {
   }
   if (id == QStringLiteral("tools.brightness")) return true;
   if (id == QStringLiteral("learn.target")) return true;
+  if (id == QStringLiteral("timeline.cursor") || id == QStringLiteral("timeline.in") ||
+      id == QStringLiteral("timeline.out")) {
+    return true;
+  }
   return false;
 }
 
@@ -854,6 +945,10 @@ void AppController::activateFocus() {
       } else if (parts[2] == QStringLiteral("rec")) {
         configVm_->setSendRec(source);
       }
+    } else if (parts[1] == QStringLiteral("timeline") && parts.size() >= 4) {
+      if (parts[2] == QStringLiteral("op")) {
+        configVm_->setTimelineOp(parts[3].toInt());
+      }
     } else if (parts[1] == QStringLiteral("eqtype") && parts.size() >= 3) {
       configVm_->setEqType(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("delay") && parts.size() >= 3) {
@@ -875,7 +970,11 @@ void AppController::activateFocus() {
     } else if (parts[1] == QStringLiteral("gain") || parts[1] == QStringLiteral("bars") ||
                parts[1] == QStringLiteral("thresh") || parts[1] == QStringLiteral("ratio") ||
                parts[1] == QStringLiteral("attack") || parts[1] == QStringLiteral("release") ||
-               parts[1] == QStringLiteral("makeup")) {
+               parts[1] == QStringLiteral("makeup") ||
+               (parts[1] == QStringLiteral("timeline") &&
+                (parts[2] == QStringLiteral("gain") ||
+                 parts[2] == QStringLiteral("fadein") ||
+                 parts[2] == QStringLiteral("fadeout")))) {
       setPanelMode(QStringLiteral("edit"));
     }
     return;
@@ -1095,7 +1194,52 @@ void AppController::activateFocus() {
   }
 
   if (parts.size() >= 2 && parts[0] == QStringLiteral("routing")) {
-    if (parts[1] == QStringLiteral("reset")) {
+    if (parts[1] == QStringLiteral("page") && parts.size() >= 3) {
+      routingVm_->setShiftPage(parts[2].toInt());
+      rebuildFocusIds();
+    } else if (parts[1] == QStringLiteral("pipes") && parts.size() >= 3) {
+      const QString what = parts[2];
+      if (what == QStringLiteral("src") && parts.size() >= 4) {
+        routingVm_->setPipeSource(parts[3].toInt());
+      } else if (what == QStringLiteral("dst") && parts.size() >= 4) {
+        routingVm_->setPipeDestination(parts[3].toInt());
+      } else if (what == QStringLiteral("type")) {
+        routingVm_->cycleAddType(parts.size() >= 4 && parts[3] == QStringLiteral("prev") ? -1 : 1);
+      } else if (what == QStringLiteral("add") && parts.size() >= 4 &&
+                 parts[3] == QStringLiteral("type")) {
+        routingVm_->cycleAddType(1);
+        showTextPopup(QStringLiteral("PIPE TYPE"), routingVm_->addTypeName());
+      } else if (what == QStringLiteral("add")) {
+        routingVm_->addPipe();
+        showTextPopup(QStringLiteral("PIPE ADDED"), routingVm_->addTypeName());
+      } else if (what == QStringLiteral("select") && parts.size() >= 4) {
+        routingVm_->selectPipe(parts[3].toInt());
+      } else if (what == QStringLiteral("bypass") && parts.size() >= 4) {
+        routingVm_->selectPipe(parts[3].toInt());
+        routingVm_->toggleSelectedPipeBypass();
+      } else if (what == QStringLiteral("up") && parts.size() >= 4) {
+        routingVm_->selectPipe(parts[3].toInt());
+        routingVm_->moveSelectedPipe(-1);
+      } else if (what == QStringLiteral("down") && parts.size() >= 4) {
+        routingVm_->selectPipe(parts[3].toInt());
+        routingVm_->moveSelectedPipe(1);
+      } else if (what == QStringLiteral("remove") && parts.size() >= 4) {
+        routingVm_->selectPipe(parts[3].toInt());
+        routingVm_->removeSelectedPipe();
+      } else if (what == QStringLiteral("param")) {
+        if (parts.size() >= 4 && parts[3] == QStringLiteral("page")) {
+          const int delta = parts.size() >= 5 && parts[4] == QStringLiteral("prev") ? -1 : 1;
+          routingVm_->setParamPage(routingVm_->paramPage() + delta);
+          showTextPopup(QStringLiteral("PIPE PARAMS"),
+                        QStringLiteral("page %1 / %2")
+                            .arg(routingVm_->paramPage() + 1)
+                            .arg(routingVm_->paramPageCount()));
+        } else {
+          setPanelMode(QStringLiteral("edit"));
+        }
+      }
+      rebuildFocusIds();
+    } else if (parts[1] == QStringLiteral("reset")) {
       routingVm_->reset();
     } else if (parts[1] == QStringLiteral("node") && parts.size() >= 4) {
       const int index = parts[3].toInt();
@@ -1270,6 +1414,43 @@ void AppController::activateFocus() {
     return;
   }
 
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("timeline")) {
+    if (parts[1] == QStringLiteral("page") && parts.size() >= 3) {
+      if (parts[2] == QStringLiteral("prev")) timelineVm_->prevPage();
+      else timelineVm_->nextPage();
+    } else if (parts[1] == QStringLiteral("view") && parts.size() >= 3) {
+      timelineVm_->scrollView(parts[2] == QStringLiteral("prev") ? -1 : 1);
+    } else if (parts[1] == QStringLiteral("zoom") && parts.size() >= 3) {
+      timelineVm_->zoom(parts[2] == QStringLiteral("in") ? 1 : -1);
+    } else if (parts[1] == QStringLiteral("lane") && parts.size() >= 3) {
+      timelineVm_->setSelectedTrack(parts[2].toInt());
+      timelineVm_->setCursorBeats(timelineVm_->cursorBeats());
+    } else if (parts[1] == QStringLiteral("cursor")) {
+      setPanelMode(QStringLiteral("edit"));
+      showTextPopup(QStringLiteral("TIMELINE CURSOR"),
+                    timelineVm_->beatTextOf(timelineVm_->cursorBeats()));
+    } else if (parts[1] == QStringLiteral("in")) {
+      timelineVm_->setInAtCursor();
+      setPanelMode(QStringLiteral("edit"));
+      showTextPopup(QStringLiteral("REGION IN"),
+                    timelineVm_->beatTextOf(timelineVm_->inBeats()));
+    } else if (parts[1] == QStringLiteral("out")) {
+      timelineVm_->setOutAtCursor();
+      setPanelMode(QStringLiteral("edit"));
+      showTextPopup(QStringLiteral("REGION OUT"),
+                    timelineVm_->beatTextOf(timelineVm_->outBeats()));
+    } else if (parts[1] == QStringLiteral("ops")) {
+      openConfig(QStringLiteral("timelineops"));
+    } else if (parts[1] == QStringLiteral("undo")) {
+      if (timelineVm_->undo()) {
+        showTextPopup(QStringLiteral("EDIT UNDO"), timelineVm_->undoText());
+      } else {
+        showTextPopup(QStringLiteral("EDIT UNDO"), QStringLiteral("nothing to undo"));
+      }
+    }
+    return;
+  }
+
   if (parts.size() >= 2 && parts[0] == QStringLiteral("learn")) {
     if (parts[1] == QStringLiteral("target")) setPanelMode(QStringLiteral("edit"));
   }
@@ -1326,6 +1507,25 @@ void AppController::adjustFocused(int detents, bool fine) {
       configVm_->setCompMakeupDb(configVm_->compMakeupDb() + step * (fine ? 0.1 : 0.5));
       showValuePopup(QStringLiteral("COMP MAKEUP"), QStringLiteral("db"),
                      configVm_->compMakeupDb());
+    } else if (parts[1] == QStringLiteral("timeline") && parts.size() >= 3) {
+      if (parts[2] == QStringLiteral("gain")) {
+        configVm_->setTimelineGainDb(configVm_->timelineGainDb() +
+                                     step * (fine ? 0.1 : 0.5));
+        showValuePopup(QStringLiteral("REGION GAIN"), QStringLiteral("db"),
+                       configVm_->timelineGainDb());
+      } else if (parts[2] == QStringLiteral("fadein")) {
+        configVm_->setTimelineFadeInBeats(configVm_->timelineFadeInBeats() +
+                                          step * (fine ? 0.1 : 0.25));
+        showTextPopup(QStringLiteral("FADE IN"),
+                      QString::number(configVm_->timelineFadeInBeats(), 'f', 2) +
+                          QStringLiteral(" beats"));
+      } else if (parts[2] == QStringLiteral("fadeout")) {
+        configVm_->setTimelineFadeOutBeats(configVm_->timelineFadeOutBeats() +
+                                           step * (fine ? 0.1 : 0.25));
+        showTextPopup(QStringLiteral("FADE OUT"),
+                      QString::number(configVm_->timelineFadeOutBeats(), 'f', 2) +
+                          QStringLiteral(" beats"));
+      }
     } else if (parts[1] == QStringLiteral("delay") && parts.size() >= 3) {
       if (parts[2] == QStringLiteral("feedback")) {
         configVm_->setDelayFeedback(configVm_->delayFeedback() +
@@ -1597,6 +1797,34 @@ void AppController::adjustFocused(int detents, bool fine) {
     return;
   }
 
+  if (parts.size() >= 5 && parts[0] == QStringLiteral("routing") &&
+      parts[1] == QStringLiteral("pipes") && parts[2] == QStringLiteral("param")) {
+    const int pipe = parts[3].toInt();
+    const int param = parts[4].toInt();
+    const auto params = routingVm_->pipeParams();
+    for (const auto& entry : params) {
+      const auto map = entry.toMap();
+      if (map.value(QStringLiteral("param")).toInt() != param) continue;
+      const int minimum = map.value(QStringLiteral("minimum")).toInt();
+      const int maximum = map.value(QStringLiteral("maximum")).toInt();
+      const int current = map.value(QStringLiteral("value")).toInt();
+      const int span = std::max(1, maximum - minimum);
+      const int stepSize = fine ? 1 : std::max(1, span / 100);
+      const int next = std::clamp(current + detents * stepSize, minimum, maximum);
+      routingVm_->setPipeParam(pipe, param, next);
+      const auto updated = routingVm_->pipeParams();
+      for (const auto& value : updated) {
+        const auto row = value.toMap();
+        if (row.value(QStringLiteral("param")).toInt() != param) continue;
+        showTextPopup(row.value(QStringLiteral("name")).toString(),
+                      row.value(QStringLiteral("valueText")).toString());
+        break;
+      }
+      break;
+    }
+    return;
+  }
+
   if (parts.size() >= 3 && parts[0] == QStringLiteral("routing") &&
       parts[1] == QStringLiteral("transpose")) {
     routingVm_->adjustTranspose(parts[2].toInt(), detents);
@@ -1664,6 +1892,24 @@ void AppController::adjustFocused(int detents, bool fine) {
     return;
   }
 
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("timeline")) {
+    if (parts[1] == QStringLiteral("cursor")) {
+      const double stepBeats = fine ? timeline::kStepFineBeats : 1.0;
+      timelineVm_->moveCursor(step * stepBeats, 0);
+      showTextPopup(QStringLiteral("TIMELINE CURSOR"),
+                    timelineVm_->beatTextOf(timelineVm_->cursorBeats()));
+    } else if (parts[1] == QStringLiteral("in")) {
+      const double stepBeats = fine ? timeline::kStepFineBeats : timeline::kStepCoarseBeats;
+      showTextPopup(QStringLiteral("REGION IN"),
+                    timelineVm_->nudgeIn(step * stepBeats));
+    } else if (parts[1] == QStringLiteral("out")) {
+      const double stepBeats = fine ? timeline::kStepFineBeats : timeline::kStepCoarseBeats;
+      showTextPopup(QStringLiteral("REGION OUT"),
+                    timelineVm_->nudgeOut(step * stepBeats));
+    }
+    return;
+  }
+
   if (parts.size() >= 2 && parts[0] == QStringLiteral("learn") &&
       parts[1] == QStringLiteral("target")) {
     const int count = learnVm_->targets().size();
@@ -1715,6 +1961,13 @@ void AppController::rebuildFocusIds() {
       ids.push_back(QStringLiteral("config.reverb.predelay"));
       ids.push_back(QStringLiteral("config.reverb.decay"));
       ids.push_back(QStringLiteral("config.reverb.damping"));
+    } else if (kind == QStringLiteral("timelineops")) {
+      for (int op = 0; op < timeline::kTimelineOpCount; ++op) {
+        ids.push_back(QStringLiteral("config.timeline.op.%1").arg(op));
+      }
+      ids.push_back(QStringLiteral("config.timeline.gain"));
+      ids.push_back(QStringLiteral("config.timeline.fadein"));
+      ids.push_back(QStringLiteral("config.timeline.fadeout"));
     } else {
       ids.push_back(QStringLiteral("config.on"));
       ids.push_back(QStringLiteral("config.mode.0"));
@@ -1761,17 +2014,49 @@ void AppController::rebuildFocusIds() {
         break;
       case 1:
         ids.push_back(QStringLiteral("shift.routing.reset"));
-        for (int source = 0; source < routing::kInputCount; ++source) {
-          for (int channel = 0; channel < 16; ++channel) {
-            ids.push_back(QStringLiteral("shift.routing.mask.%1.%2").arg(source).arg(channel));
+        ids.push_back(QStringLiteral("shift.routing.page.0"));
+        ids.push_back(QStringLiteral("shift.routing.page.1"));
+        if (routingVm_->shiftPage() == 0) {
+          for (int source = 0; source < routing::kInputCount; ++source) {
+            for (int channel = 0; channel < 16; ++channel) {
+              ids.push_back(QStringLiteral("shift.routing.mask.%1.%2").arg(source).arg(channel));
+            }
           }
-        }
-        for (int source = 0; source < routing::kInputCount; ++source) {
-          ids.push_back(QStringLiteral("shift.routing.transpose.%1").arg(source));
-        }
-        for (int output = 0; output < 3; ++output) {
-          ids.push_back(QStringLiteral("shift.clock.clock.%1").arg(output));
-          ids.push_back(QStringLiteral("shift.clock.transport.%1").arg(output));
+          for (int source = 0; source < routing::kInputCount; ++source) {
+            ids.push_back(QStringLiteral("shift.routing.transpose.%1").arg(source));
+          }
+          for (int output = 0; output < 3; ++output) {
+            ids.push_back(QStringLiteral("shift.clock.clock.%1").arg(output));
+            ids.push_back(QStringLiteral("shift.clock.transport.%1").arg(output));
+          }
+        } else {
+          for (int source = 0; source < routing::kInputCount; ++source) {
+            ids.push_back(QStringLiteral("shift.routing.pipes.src.%1").arg(source));
+          }
+          for (int destination = 0; destination < routing::kOutputCount; ++destination) {
+            ids.push_back(QStringLiteral("shift.routing.pipes.dst.%1").arg(destination));
+          }
+          ids.push_back(QStringLiteral("shift.routing.pipes.type.prev"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.add.type"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.type.next"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.add"));
+          const int pipes = routingVm_->pipeRows().size();
+          for (int pipe = 0; pipe < pipes; ++pipe) {
+            ids.push_back(QStringLiteral("shift.routing.pipes.select.%1").arg(pipe));
+            ids.push_back(QStringLiteral("shift.routing.pipes.bypass.%1").arg(pipe));
+            ids.push_back(QStringLiteral("shift.routing.pipes.up.%1").arg(pipe));
+            ids.push_back(QStringLiteral("shift.routing.pipes.down.%1").arg(pipe));
+            ids.push_back(QStringLiteral("shift.routing.pipes.remove.%1").arg(pipe));
+          }
+          ids.push_back(QStringLiteral("shift.routing.pipes.param.page.prev"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.param.page.next"));
+          const int selected = routingVm_->selectedPipe();
+          const auto params = routingVm_->pipeParams();
+          for (const auto& entry : params) {
+            ids.push_back(QStringLiteral("shift.routing.pipes.param.%1.%2")
+                              .arg(selected)
+                              .arg(entry.toMap().value(QStringLiteral("param")).toInt()));
+          }
         }
         break;
       case 2: {
@@ -1966,6 +2251,27 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("xy.reverb.params"));
         break;
       }
+      case kEditTabIndex: {
+        // EDIT timeline: page/view/zoom, the six visible lanes, the panel
+        // cursor and the two region edges, then the ConfigPopup ops and undo.
+        ids.push_back(QStringLiteral("timeline.page.prev"));
+        ids.push_back(QStringLiteral("timeline.page.next"));
+        ids.push_back(QStringLiteral("timeline.view.prev"));
+        ids.push_back(QStringLiteral("timeline.view.next"));
+        ids.push_back(QStringLiteral("timeline.zoom.out"));
+        ids.push_back(QStringLiteral("timeline.zoom.in"));
+        for (int offset = 0; offset < timeline::kTracksPerPage; ++offset) {
+          const int track = timelineVm_->page() * timeline::kTracksPerPage + offset;
+          if (track >= kNumStrips) break;
+          ids.push_back(QStringLiteral("timeline.lane.%1").arg(track));
+        }
+        ids.push_back(QStringLiteral("timeline.cursor"));
+        ids.push_back(QStringLiteral("timeline.in"));
+        ids.push_back(QStringLiteral("timeline.out"));
+        ids.push_back(QStringLiteral("timeline.ops"));
+        ids.push_back(QStringLiteral("timeline.undo"));
+        break;
+      }
       default:
         break;
     }
@@ -2108,8 +2414,10 @@ void AppController::projectStateChanged() {
   sessionVm_->refresh();
   recorderVm_->takeStateChanged();
   recorderVm_->resyncActiveTakes();
+  timelineVm_->reloadFromSettings();
   audio_.applyMonitorSettings(settings_);
   audio_.applyTakeLoops(settings_);
+  audio_.applyEq(eqModel_.capture());
   sessionVm_->pushClockToLink();
   toolsVm_->refresh();
   state_.clearDirty();
@@ -2165,6 +2473,34 @@ void AppController::registerLearnTargets() {
   midi_.registerLearnTarget("click.level", [this](double value) {
     state_.clickLevel.store(static_cast<float>(value));
   });
+  // MIDI FX pipe parameters. The path set is fixed (9 routes x 8 pipe slots x
+  // 10 positional parameters); a setter is a no-op until that pipe/param exists,
+  // so the LearnEngine can hold a binding across a chain edit. The value range
+  // comes from pipe_params.hpp at dispatch time, because a slot's pipe type can
+  // change after the binding was made.
+  for (int source = 0; source < routing::kInputCount; ++source) {
+    for (int destination = 0; destination < routing::kOutputCount; ++destination) {
+      for (int pipe = 0; pipe < static_cast<int>(midi::kMaxRoutePipes); ++pipe) {
+        for (int param = 0; param < static_cast<int>(midi::kMaxPipeParams); ++param) {
+          const auto path = pipeLearnTargetPath(source, destination, pipe, param);
+          midi_.registerLearnTarget(path, [this, source, destination, pipe,
+                                           param](double value) {
+            const auto input = routing::kInputs[static_cast<std::size_t>(source)];
+            const auto output = routing::kOutputs[static_cast<std::size_t>(destination)];
+            const auto pipes = midi_.routePipes(input, output);
+            if (pipe < 0 || pipe >= static_cast<int>(pipes.size())) return;
+            const auto specs = pipeParamSpecs(pipes[static_cast<std::size_t>(pipe)].type);
+            if (param < 0 || param >= static_cast<int>(specs.size())) return;
+            const auto& spec = specs[static_cast<std::size_t>(param)];
+            const int scaled = spec.minimum + static_cast<int>(std::lround(
+                                                   std::clamp(value, 0.0, 1.0) *
+                                                   (spec.maximum - spec.minimum)));
+            (void)midi_.setRoutePipeParam(input, output, pipe, param, scaled);
+          });
+        }
+      }
+    }
+  }
 }
 
 void AppController::setNotice(const QString& notice) {

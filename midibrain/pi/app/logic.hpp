@@ -15,8 +15,8 @@
 
 namespace mnky::app {
 
-inline constexpr int kScreenCount = 9;  // Mixer, Routing, FX, Recorder, System,
-                                        // Projects, Monitor, EQ, X/Y
+inline constexpr int kScreenCount = 10;  // Mixer, Routing, FX, Recorder, System,
+                                         // Projects, Monitor, EQ, X/Y, EDIT
 inline constexpr int kNumStrips = 18;   // audio::kMaxInputs
 
 // One thing the app does in response to a panel gesture or a screen control.

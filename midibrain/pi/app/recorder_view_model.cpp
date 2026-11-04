@@ -192,6 +192,25 @@ void RecorderViewModel::selectRow(int row) {
 
 QString RecorderViewModel::trackName() const { return displayTrackName(selectedTrack_); }
 
+QString RecorderViewModel::activeTakePath(int track) const {
+  if (track < 0 || track >= kNumStrips) return {};
+  const auto key = settings_.activeTake(track);
+  if (key.empty()) return {};
+  const auto path = resolveTakeKey(track, key);
+  return path.empty() ? QString() : QString::fromStdString(path.string());
+}
+
+std::filesystem::path RecorderViewModel::takePathForKey(int track,
+                                                        const std::string& key) const {
+  if (track < 0 || track >= kNumStrips || key.empty()) return {};
+  return resolveTakeKey(track, key);
+}
+
+QString RecorderViewModel::trackDisplayName(int track) const {
+  if (track < 0 || track >= kNumStrips) return {};
+  return QString::fromStdString(defaultTrackName(track));
+}
+
 QString RecorderViewModel::activeTake() const {
   const auto active = settings_.activeTake(selectedTrack_);
   return active.empty() ? QStringLiteral("LIVE INPUT")

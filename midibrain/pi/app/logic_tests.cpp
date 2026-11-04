@@ -15,6 +15,7 @@
 #include <map>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include "../../session/session.hpp"
@@ -33,6 +34,7 @@
 #include "mixer_model.hpp"
 #include "mixer_view_model.hpp"
 #include "performance_model.hpp"
+#include "pipe_params.hpp"
 #include "project_io.hpp"
 #include "project_logic.hpp"
 #include "recorder_view_model.hpp"
@@ -40,6 +42,7 @@
 #include "session_settings.hpp"
 #include "session_view_model.hpp"
 #include "text_buffer.hpp"
+#include "timeline_model.hpp"
 #include "wav_info.hpp"
 
 namespace mnky::app {
@@ -526,6 +529,23 @@ void projectRoundTripTests() {
   settings.mainComp.mode = 1;
   settings.setActiveTake(2, "02-drums-003.wav");
   settings.takeLoop[2] = session::LoopState{true, 1.5, 7.25};
+  settings.takeEdit[2].push_back(session::TakeRegion{
+      "02-drums-003.wav", 1.0, 4.0, -3.0f, 0.5, 0.25, true});
+  // One Wave-1 and one clocked Wave-2 pipe on a Pi-owned route: the pipe lists
+  // are app-owned in MidiGlue, so the round trip must carry them even though
+  // session::apply() ignores RouteState::pipes.
+  std::vector<session::MidiPipe> pipeChain;
+  session::MidiPipe filter;
+  filter.type = session::MidiPipeType::Filter;
+  filter.params = {1, 1, 1, 1, 1, 1, 1, 0};
+  pipeChain.push_back(filter);
+  session::MidiPipe arp;
+  arp.type = session::MidiPipeType::Arp;
+  arp.bypass = true;
+  arp.params = {1, 0, 2, 0, 20, 90};
+  pipeChain.push_back(arp);
+  check(midi.setRoutePipes(midi::Port::TrsIn1, midi::Port::UsbOut, pipeChain),
+        "project test stores a pipe chain");
   settings.clock.trs[0].clock = true;
   settings.clock.trs[0].transport = false;
   settings.clock.trs[1].clock = false;
@@ -1067,6 +1087,211 @@ void clockGateTests() {
         "pushClockToLink re-reads the session gates");
 }
 
+void timelineAndPipeTests() {
+  using namespace mnky::app::timeline;
+  check(measureBeat(1) == 0.0 && measureBeat(5) == 16.0,
+        "punch measure maps to session beats");
+  checkNear(takeLengthBeats(2.0, 12000), 4.0, 1e-9,
+            "take seconds map to beats at the transport tempo");
+  checkEqual(beatText(4.0), "002:1:00", "beat text is bar:beat:tick");
+
+  const TakeLengthFn length = [](const std::string&) { return 16.0; };
+  std::vector<session::TakeRegion> region{session::TakeRegion{
+      "take.wav", 0.0, 0.0, 0.0f, 0.0, 0.0, false}};
+  BeatRange range;
+  range.active = true;
+  range.in = 2.0;
+  range.out = 6.0;
+  auto trimmed = trimRegions(region, range, length);
+  check(trimmed.size() == 1 && std::abs(trimmed[0].offsetBeats - 2.0) < 1e-9 &&
+            std::abs(trimmed[0].lengthBeats - 4.0) < 1e-9,
+        "TRIM clips the region list to IN..OUT");
+  auto split = splitRegionsAt(trimmed, 4.0, length);
+  check(split.size() == 2 && std::abs(split[0].lengthBeats - 2.0) < 1e-9 &&
+            std::abs(split[1].offsetBeats - 4.0) < 1e-9,
+        "SPLIT cuts the region containing the cursor");
+  BeatRange firstHalf;
+  firstHalf.active = true;
+  firstHalf.in = 2.0;
+  firstHalf.out = 4.0;
+  auto gained = gainRegions(split, firstHalf, -3.0f, length);
+  checkNear(gained[0].gainDb, -3.0, 1e-9, "GAIN targets the overlapping region");
+  checkNear(gained[1].gainDb, 0.0, 1e-9, "GAIN leaves the other region alone");
+  auto faded = fadeRegions(gained, firstHalf, 0.5, 0.25, length);
+  checkNear(faded[0].fadeInBeats, 0.5, 1e-9, "FADES sets the region fade in");
+  auto normalized = normalizeRegions(faded, firstHalf, length);
+  check(normalized[0].normalize && !normalized[1].normalize,
+        "NORMALIZE flags the targeted region");
+  auto deleted = deleteRegions(normalized, firstHalf, length);
+  check(deleted.size() == 1 && std::abs(deleted[0].offsetBeats - 4.0) < 1e-9,
+        "DELETE removes overlapping regions");
+  BeatRange inactive;
+  check(trimRegions(region, inactive, length) == region,
+        "an inactive range is not a trim");
+
+  audio::PeakSummary summary;
+  summary.sourceFrames = 1024;
+  summary.bucketFrames = 256;
+  summary.buckets = {audio::PeakRange{0.0f, 0.25f}, audio::PeakRange{-0.5f, 0.5f},
+                     audio::PeakRange{-0.75f, 0.75f}, audio::PeakRange{0.0f, 1.0f}};
+  const auto wave = reducePeaks(summary, 0.0, 4.0, 4.0, 2);
+  check(wave.size() == 2 && std::abs(wave[0] - 0.5f) < 1e-6 &&
+            std::abs(wave[1] - 1.0f) < 1e-6,
+        "peaks reduce to the requested waveform columns");
+
+  check(pipeTypeSpecs().size() == 16, "all 16 MIDI pipe types have a descriptor");
+  check(pipeParamCount(session::MidiPipeType::Filter) == 8 &&
+            pipeParamCount(session::MidiPipeType::Arp) == 6,
+        "positional pipe parameter counts match the session table");
+  check(!isClockedPipeType(session::MidiPipeType::Transform) &&
+            isClockedPipeType(session::MidiPipeType::Arp) &&
+            isClockedPipeType(session::MidiPipeType::MidiDelay),
+        "Wave-2 clocked types are marked configured-but-engine-pending");
+  checkEqual(pipeParamText(pipeParamSpecs(session::MidiPipeType::Filter)[0], 1), "ON",
+             "toggle parameter formatting");
+  checkEqual(pipeNoteName(60), "C4", "MIDI note naming");
+  checkEqual(pipeLearnTargetPath(2, 1, 3, 4), "routing.pipe.2.1.3.4",
+             "pipe parameter dotted learn path");
+
+  MidiGlue midi(false);
+  std::vector<session::MidiPipe> chain;
+  session::MidiPipe filterPipe;
+  filterPipe.type = session::MidiPipeType::Filter;
+  filterPipe.params = {1, 1, 0, 1, 1, 1, 1, 0};
+  chain.push_back(filterPipe);
+  check(midi.setRoutePipes(midi::Port::TrsIn1, midi::Port::UsbOut, chain),
+        "MidiGlue stores a pipe chain");
+  check(midi.routePipes(midi::Port::TrsIn1, midi::Port::UsbOut).size() == 1,
+        "stored pipe chain reads back");
+  check(midi.setRoutePipeParam(midi::Port::TrsIn1, midi::Port::UsbOut, 0, 2, 0),
+        "pipe parameter write succeeds");
+  check(midi.routePipes(midi::Port::TrsIn1, midi::Port::UsbOut)[0].params[2] == 0,
+        "pipe parameter write is visible");
+  check(midi.routePipeLearnTargets().size() == 8,
+        "each configured pipe parameter is a MIDI-learn target");
+  check(midi.addRoutePipe(midi::Port::TrsIn1, midi::Port::UsbOut,
+                          session::MidiPipeType::Arp),
+        "pipe add succeeds");
+  check(midi.moveRoutePipe(midi::Port::TrsIn1, midi::Port::UsbOut, 1, -1),
+        "pipe reorder succeeds");
+  check(midi.routePipes(midi::Port::TrsIn1, midi::Port::UsbOut)[0].type ==
+            session::MidiPipeType::Arp,
+        "pipe reorder changes the ordered list");
+  check(midi.removeRoutePipe(midi::Port::TrsIn1, midi::Port::UsbOut, 0),
+        "pipe remove succeeds");
+}
+
+// The app half of the 0x1A split: only a TRS->TRS pair is mirrored to the Pico,
+// a Pi-owned pair never is, and Router::tick is pumped so NoteLength offs are
+// flushed without waiting for another input event.
+void pipeLinkTests() {
+  MidiGlue midi(false);
+  struct Sync {
+    midi::Port source{};
+    midi::Port destination{};
+    bool enabled = false;
+    std::size_t pipes = 0;
+  };
+  std::vector<Sync> syncs;
+  midi.setPipeSync([&syncs](midi::Port source, midi::Port destination,
+                            const std::vector<session::MidiPipe>& pipes,
+                            bool enabled) {
+    syncs.push_back(Sync{source, destination, enabled, pipes.size()});
+  });
+  session::MidiPipe filter;
+  filter.type = session::MidiPipeType::Filter;
+  filter.params = {1, 1, 1, 1, 1, 1, 1, 0};
+  check(midi.setRoutePipes(midi::Port::TrsIn1, midi::Port::UsbOut, {filter}),
+        "Pi-owned chain stores");
+  check(syncs.empty(), "a Pi-owned chain is never mirrored to the Pico");
+  check(midi.routeHasPipes(midi::Port::TrsIn1, midi::Port::UsbOut),
+        "routeHasPipes sees the Pi-owned chain");
+
+  check(midi.setRoutePipes(midi::Port::TrsIn1, midi::Port::TrsOut1, {filter}),
+        "TRS->TRS chain stores");
+  check(syncs.size() == 1 && syncs[0].source == midi::Port::TrsIn1 &&
+            syncs[0].destination == midi::Port::TrsOut1 && !syncs[0].enabled &&
+            syncs[0].pipes == 1,
+        "TRS->TRS chain is mirrored with the route enable flag");
+  midi.setRoute(midi::Port::TrsIn1, midi::Port::TrsOut1, true);
+  check(syncs.size() == 2 && syncs[1].enabled,
+        "enabling a TRS route re-sends its chain with flags on");
+
+  // Project load replaces every stored list; every TRS pair is re-pushed,
+  // including empty ones so a removed chain cannot stay live on the Pico.
+  syncs.clear();
+  midi.setRoutePipeLists({});
+  check(syncs.size() == 4, "project load mirrors all four TRS->TRS pairs");
+  bool cleared = true;
+  for (const auto& sync : syncs) cleared = cleared && sync.pipes == 0;
+  check(cleared, "an empty project chain clears the Pico mirror");
+
+  MidiGlue ticked(false);
+  ticked.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, true);
+  session::MidiPipe noteLength;
+  noteLength.type = session::MidiPipeType::NoteLength;
+  noteLength.params = {20};  // 20 ms fixed length
+  check(ticked.setRoutePipes(midi::Port::TrsIn1, midi::Port::UsbOut, {noteLength}),
+        "NoteLength chain stores on a Pi-owned route");
+  midi::MidiEvent noteOn;
+  noteOn.source = midi::Port::TrsIn1;
+  noteOn.size = 3;
+  noteOn.data[0] = 0x90;
+  noteOn.data[1] = 60;
+  noteOn.data[2] = 100;
+  noteOn.stampUs = midi::piNowUs();
+  ticked.handleInput(noteOn);
+  std::this_thread::sleep_for(std::chrono::milliseconds(40));
+  ticked.pump({});
+  const auto snapshot = ticked.monitorSnapshot();
+  bool sawOff = false;
+  for (std::size_t i = 0; i < snapshot.count; ++i) {
+    const auto& event = snapshot.events[i];
+    if (event.outbound && event.port == midi::Port::UsbOut && event.size == 3 &&
+        (event.data[0] & 0xF0u) == 0x80u) {
+      sawOff = true;
+    }
+  }
+  check(sawOff, "MidiGlue::pump drives Router::tick and flushes a due NoteLength off");
+}
+
+// EQ forwarding: the grid state reaches the engine's track/main inserts, and a
+// loaded session Q above the UI/CLAP cap is normalized with a counted report.
+void eqForwardingTests() {
+  AppState state;
+  MixerModel mixer;
+  FxManager fx;
+  PerformanceModel performance;
+  AudioGlue audio(mixer, fx, performance, state, true);
+
+  session::EqState eq;
+  eq.tracks[0][0] = session::EqBand{3, 6.0f, 1200.0f, 2.5f};
+  eq.tracks[17][3] = session::EqBand{1, 0.0f, 80.0f, 0.7f};
+  eq.main[2] = session::EqBand{2, -3.0f, 12000.0f, 0.9f};
+  audio.applyEq(eq);
+  const auto applied = audio.appliedEq();
+  check(applied.tracks[0][0].type == 3 &&
+            std::abs(applied.tracks[0][0].freqHz - 1200.0f) < 1e-3f &&
+            std::abs(applied.tracks[0][0].q - 2.5f) < 1e-4f,
+        "EQ forwarding writes a track band to Engine::setTrackEqBand");
+  check(applied.tracks[17][3].type == 1,
+        "EQ forwarding reaches the last track strip");
+  check(applied.main[2].type == 2 &&
+            std::abs(applied.main[2].gainDb + 3.0f) < 1e-4f,
+        "EQ forwarding writes the main bus through Engine::setMainEqBand");
+
+  EqModel model;
+  session::EqState loaded;
+  loaded.tracks[4][1] = session::EqBand{3, 0.0f, 800.0f, 18.0f};
+  loaded.main[0] = session::EqBand{1, 0.0f, 60.0f, 12.0f};
+  const int normalized = model.apply(loaded);
+  check(normalized == 2, "a loaded Q above 10 is counted so the loader can log it");
+  const auto capture = model.capture();
+  check(std::abs(capture.tracks[4][1].q - 10.0f) < 1e-4f &&
+            std::abs(capture.main[0].q - 10.0f) < 1e-4f,
+        "loaded Q above the UI/CLAP cap is normalized to 10");
+}
+
 void styleTests() {
   QFile file(QStringLiteral(":/qml/Style.qml"));
   check(file.open(QIODevice::ReadOnly | QIODevice::Text), "QML Style resource opens");
@@ -1129,6 +1354,9 @@ int runAll() {
   sendChainTests();
   midiMonitorTests();
   clockGateTests();
+  timelineAndPipeTests();
+  pipeLinkTests();
+  eqForwardingTests();
   styleTests();
   std::printf("%s mnkybox app logic: %d checks, %d failures\n",
               gFailures == 0 ? "PASS" : "FAIL", gChecks, gFailures);

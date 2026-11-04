@@ -34,6 +34,7 @@
 #include "session_settings.hpp"
 #include "session_view_model.hpp"
 #include "system_view_model.hpp"
+#include "timeline_view_model.hpp"
 #include "tools_view_model.hpp"
 #include "xy_view_model.hpp"
 
@@ -145,6 +146,7 @@ class AppController final : public QObject {
   ConfigPopupModel* config() { return configVm_.get(); }
   EqViewModel* eq() { return eqVm_.get(); }
   XyViewModel* xy() { return xyVm_.get(); }
+  TimelineViewModel* timeline() { return timelineVm_.get(); }
 
   // Transport / screen actions used by QML buttons.
   Q_INVOKABLE void play();
@@ -178,6 +180,10 @@ class AppController final : public QObject {
   // Screenshot runner helper: force the SHIFT face (the panel reaches it with a
   // 500 ms EXIT long-hold, which an offscreen grab cannot perform).
   Q_INVOKABLE void showShiftFace(bool on);
+  // Screenshot runner helper: inject one TRS input message through MidiGlue, so
+  // a piped TRS route's outgoing send is visible on the Monitor screen without
+  // a MIDI source. port 0/1 = TRS IN1/IN2; the message is always 3 bytes.
+  void injectDemoTrsMidi(int port, int status, int data1, int data2);
   Q_INVOKABLE void openConfig(const QString& kind);
   Q_INVOKABLE void configAccept();
   Q_INVOKABLE void configCancel();
@@ -252,6 +258,7 @@ class AppController final : public QObject {
   std::unique_ptr<ConfigPopupModel> configVm_;
   std::unique_ptr<EqViewModel> eqVm_;
   std::unique_ptr<XyViewModel> xyVm_;
+  std::unique_ptr<TimelineViewModel> timelineVm_;
 
   QTimer timer_;
   int tab_ = 0;

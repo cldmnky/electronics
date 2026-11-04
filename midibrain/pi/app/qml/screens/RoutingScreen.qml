@@ -9,8 +9,11 @@ Item {
     id: screen
 
     readonly property bool shiftFace: app.panelMode === "shift"
+    readonly property bool pipesPage: screen.shiftFace && routing.shiftPage === 1
     readonly property var inputNames: ["TRS IN 1", "TRS IN 2", "USB IN"]
+    readonly property var inputShort: ["TRS1", "TRS2", "USB"]
     readonly property var outputNames: ["TRS OUT 1", "TRS OUT 2", "USB OUT"]
+    readonly property var outputShort: ["TRS1", "TRS2", "USB"]
 
     Column {
         anchors.fill: parent
@@ -23,10 +26,12 @@ Item {
             spacing: 6
 
             Text {
-                width: parent.width - 118
+                width: parent.width - (screen.shiftFace ? 270 : 118)
                 height: parent.height
-                text: (screen.shiftFace ? "SHIFT  FILTER / TRANSPOSE / CLOCK OUT"
-                                        : "ROUTING - tap a wire, or an input then an output")
+                text: (screen.shiftFace
+                       ? (screen.pipesPage ? "SHIFT  MIDI FX PIPES - one ordered chain per route"
+                                           : "SHIFT  FILTER / TRANSPOSE / CLOCK OUT")
+                       : "ROUTING - tap a wire, or an input then an output")
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 font.bold: true
@@ -34,8 +39,29 @@ Item {
                 elide: Text.ElideRight
             }
             TouchButton {
+                width: screen.shiftFace ? 70 : 0
+                height: parent.height
+                visible: screen.shiftFace
+                text: "FILTER"
+                textSize: 9
+                checked: routing.shiftPage === 0
+                focusId: "shift.routing.page.0"
+                onClicked: routing.setShiftPage(0)
+            }
+            TouchButton {
+                width: screen.shiftFace ? 70 : 0
+                height: parent.height
+                visible: screen.shiftFace
+                text: "PIPES"
+                textSize: Style.fontSmall
+                checked: routing.shiftPage === 1
+                focusId: "shift.routing.page.1"
+                onClicked: routing.setShiftPage(1)
+            }
+            TouchButton {
                 width: 112
                 height: parent.height
+                visible: !screen.pipesPage
                 text: "RESET"
                 focusId: screen.shiftFace ? "shift.routing.reset" : "routing.reset"
                 onClicked: routing.reset()
@@ -45,6 +71,7 @@ Item {
         Item {
             id: patchbay
             width: parent.width
+            visible: !screen.pipesPage
             height: screen.shiftFace ? Math.max(88, screen.height - Style.margin * 2 - Style.touch * 6 - 16) : Math.max(120, screen.height - Style.margin * 2 - Style.touch - 4)
 
             Rectangle {
@@ -210,7 +237,7 @@ Item {
         }
 
         Item {
-            visible: screen.shiftFace
+            visible: screen.shiftFace && routing.shiftPage === 0
             width: parent.width
             height: Style.touch * 5
 
@@ -367,6 +394,286 @@ Item {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // MIDI FX pipe page (Routing SHIFT > PIPES): per-route ordered chain,
+        // add/remove/reorder/bypass, and the per-type parameter editors that
+        // PipeParamEditor generates from pipe_params.cpp.
+        Item {
+            visible: screen.pipesPage
+            width: parent.width
+            height: Math.max(280, parent.height - Style.touch - 4)
+
+            Column {
+                width: parent.width
+                height: parent.height
+                spacing: 2
+
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 3
+
+                    Text {
+                        width: 40
+                        height: parent.height
+                        text: "FROM"
+                        color: Style.textDim
+                        font.pixelSize: 9
+                        font.bold: true
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    Repeater {
+                        model: 3
+                        delegate: TouchButton {
+                            width: (parent.width - 40 - 24 - 8) / 6
+                            height: parent.height
+                            text: screen.inputShort[index]
+                            textSize: 10
+                            checked: routing.pipeSource === index
+                            focusId: "shift.routing.pipes.src." + index
+                            onClicked: routing.pipeSource = index
+                        }
+                    }
+                    Text {
+                        width: 24
+                        height: parent.height
+                        text: "TO"
+                        color: Style.textDim
+                        font.pixelSize: 9
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    Repeater {
+                        model: 3
+                        delegate: TouchButton {
+                            width: (parent.width - 40 - 24 - 8) / 6
+                            height: parent.height
+                            text: screen.outputShort[index]
+                            textSize: 10
+                            checked: routing.pipeDestination === index
+                            focusId: "shift.routing.pipes.dst." + index
+                            onClicked: routing.pipeDestination = index
+                        }
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    height: 14
+                    text: routing.pipeStatusText
+                    color: Style.textDim
+                    font.pixelSize: 9
+                    elide: Text.ElideRight
+                }
+
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 3
+
+                    Text {
+                        width: 40
+                        height: parent.height
+                        text: "ADD"
+                        color: Style.textDim
+                        font.pixelSize: 9
+                        font.bold: true
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TouchButton {
+                        width: Style.touch
+                        height: parent.height
+                        text: "<"
+                        textSize: 16
+                        focusId: "shift.routing.pipes.type.prev"
+                        onClicked: routing.cycleAddType(-1)
+                    }
+                    TouchButton {
+                        width: 220
+                        height: parent.height
+                        text: routing.addTypeName
+                        textSize: Style.fontSmall
+                        focusId: "shift.routing.pipes.add.type"
+                        onClicked: routing.cycleAddType(1)
+                    }
+                    TouchButton {
+                        width: Style.touch
+                        height: parent.height
+                        text: ">"
+                        textSize: 16
+                        focusId: "shift.routing.pipes.type.next"
+                        onClicked: routing.cycleAddType(1)
+                    }
+                    TouchButton {
+                        width: 110
+                        height: parent.height
+                        text: "ADD PIPE"
+                        textSize: Style.fontSmall
+                        checked: true
+                        focusId: "shift.routing.pipes.add"
+                        onClicked: routing.addPipe()
+                    }
+                    Text {
+                        width: parent.width - 40 - Style.touch * 2 - 220 - 110 - 15
+                        height: parent.height
+                        text: routing.pipeRows.length + " / 8 PIPES"
+                        color: Style.textDim
+                        font.pixelSize: 9
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
+                ListView {
+                    width: parent.width
+                    height: 88
+                    clip: true
+                    model: routing.pipeRows
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    delegate: Row {
+                        width: parent.width
+                        height: Style.touch
+                        spacing: 3
+
+                        TouchButton {
+                            width: 132
+                            height: parent.height
+                            text: (index + 1) + ". " + modelData.typeName
+                            textSize: 9
+                            checked: routing.selectedPipe === index
+                            focusId: "shift.routing.pipes.select." + index
+                            onClicked: routing.selectPipe(index)
+                        }
+                        Text {
+                            width: 158
+                            height: parent.height
+                            text: modelData.status
+                            color: modelData.clocked ? Style.soloOn : Style.textDim
+                            font.pixelSize: 9
+                            font.bold: modelData.clocked
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+                        TouchButton {
+                            width: 54
+                            height: parent.height
+                            text: "BYP"
+                            textSize: 9
+                            checked: modelData.bypass
+                            focusId: "shift.routing.pipes.bypass." + index
+                            onClicked: routing.setPipeBypass(index, !modelData.bypass)
+                        }
+                        TouchButton {
+                            width: Style.touch
+                            height: parent.height
+                            text: "^"
+                            textSize: 16
+                            focusId: "shift.routing.pipes.up." + index
+                            onClicked: {
+                                routing.selectPipe(index)
+                                routing.moveSelectedPipe(-1)
+                            }
+                        }
+                        TouchButton {
+                            width: Style.touch
+                            height: parent.height
+                            text: "v"
+                            textSize: 16
+                            focusId: "shift.routing.pipes.down." + index
+                            onClicked: {
+                                routing.selectPipe(index)
+                                routing.moveSelectedPipe(1)
+                            }
+                        }
+                        TouchButton {
+                            width: Style.touch
+                            height: parent.height
+                            text: "X"
+                            textSize: Style.fontSmall
+                            idleColor: "#5b2222"
+                            focusId: "shift.routing.pipes.remove." + index
+                            onClicked: {
+                                routing.selectPipe(index)
+                                routing.removeSelectedPipe()
+                            }
+                        }
+                        Text {
+                            width: parent.width - 132 - 158 - 54 - Style.touch * 3 - 18
+                            height: parent.height
+                            text: modelData.paramCount + " PARAMS"
+                            color: Style.textDim
+                            font.pixelSize: 9
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                }
+
+                Row {
+                    width: parent.width
+                    height: 22
+                    spacing: 3
+
+                    Text {
+                        width: 60
+                        height: parent.height
+                        text: "PARAM"
+                        color: Style.textDim
+                        font.pixelSize: 9
+                        font.bold: true
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TouchButton {
+                        width: 40
+                        height: parent.height
+                        text: "<"
+                        textSize: 12
+                        focusId: "shift.routing.pipes.param.page.prev"
+                        onClicked: routing.setParamPage(routing.paramPage - 1)
+                    }
+                    Text {
+                        width: 88
+                        height: parent.height
+                        text: (routing.paramPage + 1) + " / " + routing.paramPageCount
+                        color: Style.text
+                        font.pixelSize: 9
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TouchButton {
+                        width: 40
+                        height: parent.height
+                        text: ">"
+                        textSize: 12
+                        focusId: "shift.routing.pipes.param.page.next"
+                        onClicked: routing.setParamPage(routing.paramPage + 1)
+                    }
+                    Text {
+                        width: parent.width - 240
+                        height: parent.height
+                        text: routing.selectedPipe >= 0 && routing.pipeRows.length > 0
+                              ? "EDIT PARAMS OF PIPE " + (routing.selectedPipe + 1)
+                              : "ADD A PIPE TO EDIT PARAMS"
+                        color: Style.textDim
+                        font.pixelSize: 9
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
+
+                Repeater {
+                    model: routing.pipeParams
+                    delegate: PipeParamEditor {
+                        width: parent.width
+                        height: Style.touch
+                        pipeIndex: routing.selectedPipe
+                        param: modelData
                     }
                 }
             }

@@ -1,0 +1,400 @@
+import QtQuick
+import Mnkybox 1.0
+import "../components"
+
+// EDIT timeline (10th tab): six tracks per page, time left to right, waveform
+// thumbnails from the `.peaks` sidecars, the session loop brace and the punch
+// markers (display only). Touch-drag sets a region; the panel cursor path is
+// timeline.cursor / timeline.in / timeline.out and OPS opens the shared
+// ConfigPopup with the waveform preview.
+Item {
+    id: screen
+
+    readonly property int laneHeight: 44
+    readonly property int labelWidth: 62
+
+    Connections {
+        target: timeline
+        function onLanesChanged() { ruler.requestPaint(); overlay.requestPaint() }
+        function onSelectionChanged() { overlay.requestPaint() }
+        function onCursorChanged() { overlay.requestPaint() }
+        function onLoopChanged() { overlay.requestPaint() }
+        function onViewChanged() { ruler.requestPaint(); overlay.requestPaint() }
+        function onPlayheadChanged() { overlay.requestPaint() }
+    }
+
+    Column {
+        anchors.fill: parent
+        anchors.margins: Style.margin
+        spacing: 3
+
+        Row {
+            width: parent.width
+            height: 20
+            spacing: 6
+
+            Text {
+                width: parent.width * 0.34
+                height: parent.height
+                text: timeline.selectedTrackName
+                color: Style.text
+                font.pixelSize: Style.fontSmall
+                font.bold: true
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+            Text {
+                width: parent.width * 0.36
+                height: parent.height
+                text: timeline.selectionText
+                color: timeline.selectionActive ? Style.accent : Style.textDim
+                font.pixelSize: Style.fontSmall
+                font.bold: true
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+            Text {
+                width: parent.width - parent.width * 0.7 - 12
+                height: parent.height
+                text: timeline.opsText
+                color: Style.textDim
+                font.pixelSize: 10
+                horizontalAlignment: Text.AlignRight
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+        }
+
+        Row {
+            width: parent.width
+            height: Style.touch
+            spacing: 3
+
+            TouchButton {
+                width: (parent.width - 27) / 10
+                height: parent.height
+                text: "P<"
+                textSize: Style.fontSmall
+                focusId: "timeline.page.prev"
+                onClicked: timeline.prevPage()
+            }
+            TouchButton {
+                width: (parent.width - 27) / 10
+                height: parent.height
+                text: "P>"
+                textSize: Style.fontSmall
+                focusId: "timeline.page.next"
+                onClicked: timeline.nextPage()
+            }
+            TouchButton {
+                width: (parent.width - 27) / 10
+                height: parent.height
+                text: "V<"
+                textSize: Style.fontSmall
+                focusId: "timeline.view.prev"
+                onClicked: timeline.scrollView(-1)
+            }
+            TouchButton {
+                width: (parent.width - 27) / 10
+                height: parent.height
+                text: "V>"
+                textSize: Style.fontSmall
+                focusId: "timeline.view.next"
+                onClicked: timeline.scrollView(1)
+            }
+            TouchButton {
+                width: (parent.width - 27) / 10
+                height: parent.height
+                text: "Z-"
+                textSize: Style.fontSmall
+                focusId: "timeline.zoom.out"
+                onClicked: timeline.zoom(-1)
+            }
+            TouchButton {
+                width: (parent.width - 27) / 10
+                height: parent.height
+                text: "Z+"
+                textSize: Style.fontSmall
+                focusId: "timeline.zoom.in"
+                onClicked: timeline.zoom(1)
+            }
+            TouchButton {
+                width: (parent.width - 27) / 10
+                height: parent.height
+                text: "IN"
+                textSize: Style.fontSmall
+                checked: timeline.selectionActive
+                focusId: "timeline.in"
+                onClicked: {
+                    timeline.setInAtCursor()
+                    app.showTextPopup("REGION IN", timeline.beatTextOf(timeline.inBeats))
+                }
+            }
+            TouchButton {
+                width: (parent.width - 27) / 10
+                height: parent.height
+                text: "OUT"
+                textSize: Style.fontSmall
+                checked: timeline.selectionActive
+                focusId: "timeline.out"
+                onClicked: {
+                    timeline.setOutAtCursor()
+                    app.showTextPopup("REGION OUT", timeline.beatTextOf(timeline.outBeats))
+                }
+            }
+            TouchButton {
+                width: (parent.width - 27) / 10
+                height: parent.height
+                text: "OPS"
+                textSize: Style.fontSmall
+                focusId: "timeline.ops"
+                onClicked: app.openConfig("timelineops")
+            }
+            TouchButton {
+                width: (parent.width - 27) / 10
+                height: parent.height
+                text: "UNDO"
+                textSize: 9
+                active: timeline.canUndo
+                focusId: "timeline.undo"
+                onClicked: {
+                    if (timeline.undo()) app.showTextPopup("EDIT UNDO", timeline.undoText)
+                    else app.showTextPopup("EDIT UNDO", "nothing to undo")
+                }
+            }
+        }
+
+        Canvas {
+            id: ruler
+            width: parent.width
+            height: 16
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                ctx.fillStyle = Style.panelDark
+                ctx.fillRect(0, 0, width, height)
+                if (timeline.viewBeats <= 0) return
+                const firstBar = Math.floor(timeline.viewStartBeats / 4) * 4
+                ctx.strokeStyle = Style.outline
+                ctx.fillStyle = Style.textDim
+                ctx.font = "9px sans-serif"
+                for (let beat = firstBar; beat <= timeline.viewStartBeats + timeline.viewBeats; beat += 4) {
+                    const x = (beat - timeline.viewStartBeats) / timeline.viewBeats * width
+                    if (x < -1 || x > width + 1) continue
+                    ctx.beginPath()
+                    ctx.moveTo(x, 0)
+                    ctx.lineTo(x, height)
+                    ctx.stroke()
+                    ctx.fillText(String(beat / 4 + 1), x + 2, 10)
+                }
+                const punches = timeline.punchMarkers
+                for (let i = 0; i < punches.length; ++i) {
+                    const marker = punches[i]
+                    if (!marker.enabled) continue
+                    const x = (marker.beat - timeline.viewStartBeats) / timeline.viewBeats * width
+                    if (x < -1 || x > width + 1) continue
+                    ctx.fillStyle = marker.label === "IN" ? Style.record : Style.soloOn
+                    ctx.fillRect(x - 1, 0, 3, height)
+                    ctx.fillText(marker.label, x + 2, height - 2)
+                }
+            }
+        }
+
+        Item {
+            id: laneArea
+            width: parent.width
+            height: parent.height - 20 - Style.touch - 16 - 14 - 12
+
+            Column {
+                anchors.fill: parent
+                spacing: 0
+
+                Repeater {
+                    model: timeline.lanes
+                    delegate: Rectangle {
+                        width: laneArea.width
+                        height: screen.laneHeight
+                        color: modelData.selected ? Style.panel : Style.panelDark
+                        border.width: modelData.selected ? 2 : Style.outlineWidth
+                        border.color: modelData.selected ? Style.accent : Style.outline
+                        clip: true
+
+                        Text {
+                            width: screen.labelWidth
+                            height: parent.height
+                            text: modelData.label + "\n" + modelData.name
+                            color: modelData.selected ? Style.accent : Style.textDim
+                            font.pixelSize: 9
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            wrapMode: Text.NoWrap
+                            elide: Text.ElideRight
+                            lineHeight: 0.8
+                        }
+
+                        Item {
+                            id: waveArea
+                            x: screen.labelWidth
+                            width: parent.width - screen.labelWidth
+                            height: parent.height
+                            clip: true
+
+                            TimelineWave {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                values: modelData.wave
+                                placeholderText: modelData.hasTake ? "NO PEAKS" : "NO ACTIVE TAKE"
+                                waveColor: modelData.selected ? Style.accent : Style.textDim
+                            }
+
+                            Repeater {
+                                model: modelData.regions
+                                delegate: Rectangle {
+                                    readonly property real startBeat: Number(modelData.start)
+                                    readonly property real lengthBeats: Number(modelData.length)
+                                    x: (startBeat - timeline.viewStartBeats) /
+                                       timeline.viewBeats * waveArea.width
+                                    width: Math.max(2, lengthBeats / timeline.viewBeats * waveArea.width)
+                                    y: 2
+                                    height: parent.height - 4
+                                    visible: x + width > 0 && x < waveArea.width
+                                    color: Qt.rgba(0.31, 0.76, 0.97, 0.14)
+                                    border.width: 1
+                                    border.color: modelData.normalize ? Style.soloOn : Style.accent
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Canvas {
+                id: overlay
+                anchors.fill: parent
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    if (timeline.viewBeats <= 0) return
+                    const xOf = function(beat) {
+                        return screen.labelWidth +
+                               (beat - timeline.viewStartBeats) / timeline.viewBeats *
+                               (width - screen.labelWidth)
+                    }
+                    const selectedLane = timeline.selectedTrack - timeline.page * timeline.tracksPerPage
+                    const laneTop = selectedLane * screen.laneHeight
+                    const laneBottom = laneTop + screen.laneHeight
+                    // Loop brace for the selected track (takes.loop, display only).
+                    if (timeline.loopEnabled && selectedLane >= 0 &&
+                            selectedLane < timeline.tracksPerPage) {
+                        const start = timeline.loopEndBeats > timeline.loopStartBeats
+                                      ? timeline.loopStartBeats : 0
+                        const end = timeline.loopEndBeats > timeline.loopStartBeats
+                                    ? timeline.loopEndBeats : timeline.totalBeats
+                        const x0 = Math.max(screen.labelWidth, xOf(start))
+                        const x1 = Math.min(width, xOf(end))
+                        if (x1 > x0) {
+                            ctx.strokeStyle = Style.ok
+                            ctx.lineWidth = 2
+                            ctx.beginPath()
+                            ctx.moveTo(x0, laneTop + 2)
+                            ctx.lineTo(x1, laneTop + 2)
+                            ctx.moveTo(x0, laneTop + 2)
+                            ctx.lineTo(x0, laneTop + 9)
+                            ctx.moveTo(x1, laneTop + 2)
+                            ctx.lineTo(x1, laneTop + 9)
+                            ctx.stroke()
+                        }
+                    }
+                    // Punch windows (session punch markers; not editable here).
+                    const punches = timeline.punchMarkers
+                    let punchIn = null
+                    let punchOut = null
+                    for (let i = 0; i < punches.length; ++i) {
+                        const marker = punches[i]
+                        if (!marker.enabled) continue
+                        const x = xOf(marker.beat)
+                        ctx.strokeStyle = marker.label === "IN" ? Style.record : Style.soloOn
+                        ctx.lineWidth = 2
+                        ctx.beginPath()
+                        ctx.moveTo(x, 0)
+                        ctx.lineTo(x, height)
+                        ctx.stroke()
+                        if (marker.label === "IN") punchIn = x
+                        if (marker.label === "OUT") punchOut = x
+                    }
+                    if (punchIn !== null && punchOut !== null && punchOut > punchIn) {
+                        ctx.fillStyle = Qt.rgba(0.94, 0.33, 0.31, 0.08)
+                        ctx.fillRect(punchIn, 0, punchOut - punchIn, height)
+                    }
+                    // Region selection on the selected lane.
+                    if (timeline.selectionActive && selectedLane >= 0 &&
+                            selectedLane < timeline.tracksPerPage) {
+                        const x0 = Math.max(screen.labelWidth, xOf(timeline.inBeats))
+                        const x1 = Math.min(width, xOf(timeline.outBeats))
+                        if (x1 >= x0) {
+                            ctx.fillStyle = Qt.rgba(0.31, 0.76, 0.97, 0.20)
+                            ctx.fillRect(x0, laneTop, Math.max(1, x1 - x0),
+                                         screen.laneHeight)
+                            ctx.strokeStyle = Style.accent
+                            ctx.lineWidth = 2
+                            ctx.strokeRect(x0, laneTop, Math.max(1, x1 - x0),
+                                           screen.laneHeight)
+                        }
+                    }
+                    // Panel cursor: a dashed tick column.
+                    const cursorX = xOf(timeline.cursorBeats)
+                    if (cursorX >= screen.labelWidth && cursorX <= width) {
+                        ctx.strokeStyle = Style.text
+                        ctx.lineWidth = 1
+                        for (let y = 0; y < height; y += 8) {
+                            ctx.beginPath()
+                            ctx.moveTo(cursorX, y)
+                            ctx.lineTo(cursorX, y + 4)
+                            ctx.stroke()
+                        }
+                    }
+                    // Playhead.
+                    const playX = xOf(timeline.playheadBeats)
+                    if (playX >= screen.labelWidth && playX <= width) {
+                        ctx.strokeStyle = Style.record
+                        ctx.lineWidth = 2
+                        ctx.beginPath()
+                        ctx.moveTo(playX, 0)
+                        ctx.lineTo(playX, height)
+                        ctx.stroke()
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onPressed: (mouse) => {
+                    const track = timeline.page * timeline.tracksPerPage +
+                                  Math.floor(mouse.y / screen.laneHeight)
+                    const beat = timeline.viewStartBeats +
+                                 Math.max(0, mouse.x - screen.labelWidth) /
+                                 Math.max(1, width - screen.labelWidth) * timeline.viewBeats
+                    timeline.beginSelection(Math.min(17, Math.max(0, track)), beat)
+                }
+                onPositionChanged: (mouse) => {
+                    if (!pressed) return
+                    const beat = timeline.viewStartBeats +
+                                 Math.max(0, mouse.x - screen.labelWidth) /
+                                 Math.max(1, width - screen.labelWidth) * timeline.viewBeats
+                    timeline.updateSelection(beat)
+                }
+                onReleased: timeline.endSelection()
+            }
+        }
+
+        Text {
+            width: parent.width
+            height: 14
+            text: "DRAG A REGION  -  IN/OUT SET THE EDGE AT THE CURSOR  -  SHIFT = COARSE  -  OPS PREVIEWS BEFORE OK"
+            color: Style.textDim
+            font.pixelSize: 9
+            elide: Text.ElideRight
+        }
+    }
+}

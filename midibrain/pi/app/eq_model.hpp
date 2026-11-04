@@ -115,7 +115,11 @@ class EqModel {
   std::string qText(int index) const;
 
   session::EqState capture() const;
-  void apply(const session::EqState& state);
+  // Applies a loaded session EQ. The session/engine contract allows Q up to
+  // 24, but the UI and the CLAP effect cap it at kMaxQ (10). Returns how many
+  // loaded bands were above that cap and were normalized to kMaxQ, so the
+  // loader can log one explicit note instead of silently changing the Q.
+  int apply(const session::EqState& state);
 
  private:
   audio::fx::Eq& effect() const;

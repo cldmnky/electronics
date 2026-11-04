@@ -15,13 +15,14 @@ std::string targetPath(int strip, const char* parameter) {
 LearnViewModel::LearnViewModel(MidiGlue& midi, QObject* parent)
     : QObject(parent), midi_(midi) {
   for (int strip = 0; strip < kNumStrips; ++strip) {
-    targets_ << QString::fromStdString(targetPath(strip, "gain"));
-    targets_ << QString::fromStdString(targetPath(strip, "pan"));
-    targets_ << QString::fromStdString(targetPath(strip, "sendA"));
-    targets_ << QString::fromStdString(targetPath(strip, "sendB"));
+    baseTargets_ << QString::fromStdString(targetPath(strip, "gain"));
+    baseTargets_ << QString::fromStdString(targetPath(strip, "pan"));
+    baseTargets_ << QString::fromStdString(targetPath(strip, "sendA"));
+    baseTargets_ << QString::fromStdString(targetPath(strip, "sendB"));
   }
-  targets_ << QStringLiteral("mixer.master.gain");
-  targets_ << QStringLiteral("click.level");
+  baseTargets_ << QStringLiteral("mixer.master.gain");
+  baseTargets_ << QStringLiteral("click.level");
+  refreshTargets();
   refreshBindings();
 }
 
@@ -97,7 +98,26 @@ void LearnViewModel::poll() {
   emit statusChanged();
 }
 
-void LearnViewModel::refresh() { refreshBindings(); }
+void LearnViewModel::refresh() {
+  refreshTargets();
+  refreshBindings();
+}
+
+void LearnViewModel::refreshTargets() {
+  QStringList next = baseTargets_;
+  // MIDI FX pipe parameters join the same dotted-path table: one path per
+  // positional parameter of every configured pipe (routing.pipe.s.d.p.i).
+  for (const auto& target : midi_.routePipeLearnTargets()) {
+    next << QString::fromStdString(target);
+  }
+  if (next == targets_) return;
+  targets_ = next;
+  if (targetIndex_ >= targets_.size()) {
+    targetIndex_ = targets_.isEmpty() ? 0 : targets_.size() - 1;
+    emit targetChanged();
+  }
+  emit targetsChanged();
+}
 
 void LearnViewModel::refreshBindings() {
   bindingRows_ = midi_.learnBindings();

@@ -23,6 +23,12 @@ Works (host-tested, `PASS` lines from `test_link.cpp`):
   a new `midiRoute()` starts a fresh chain and clears the cached pipes, exactly
   like firmware `begin()`. `EmulatorTransport` records the applied chain for
   tests (`midiRoute(src,dst)`), and `reboot()` resets it as RAM would.
+- Routed UART emit: `sendMidiRoute(src,dst,data,n)` queues
+  `EV_MIDI_ROUTE_SEND` (0x1A) through `mb::pack_midi_route_send`, so the Pico
+  evaluates the (src,dst) chain configured by 0x18/0x19 before emitting on that
+  physical TRS output. src/dst are 0/1 and the message is 1..3 bytes; a disabled
+  route drops it on the firmware. Per-message, no resend cache. `sendMidi`
+  (0x15) stays the unprocessed immediate path.
 - Wire format never redefined: `link.hpp` includes the firmware
   `protocol.hpp`/`midi.hpp` and uses `mb::encode/decode` plus `EV_*`/`CTL_*`.
   The 0x18/0x19 payloads come from `mb::pack_midi_route*`, matched against the

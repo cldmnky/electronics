@@ -317,7 +317,8 @@ session::EqState EqModel::capture() const {
   return state;
 }
 
-void EqModel::apply(const session::EqState& state) {
+int EqModel::apply(const session::EqState& state) {
+  int normalizedQ = 0;
   for (int subject = 0; subject < kSubjectCount; ++subject) {
     auto& target = effects_[static_cast<std::size_t>(subject)];
     for (int band = 0; band < kBandCount; ++band) {
@@ -326,6 +327,7 @@ void EqModel::apply(const session::EqState& state) {
               ? state.main[static_cast<std::size_t>(band)]
               : state.tracks[static_cast<std::size_t>(subject)]
                             [static_cast<std::size_t>(band)];
+      if (std::isfinite(entry.q) && entry.q > kMaxQ) ++normalizedQ;
       target.setParam(audio::fx::Eq::bandParam(band, audio::fx::Eq::kType),
                       entry.type);
       target.setParam(audio::fx::Eq::bandParam(band, audio::fx::Eq::kGain),
@@ -337,6 +339,7 @@ void EqModel::apply(const session::EqState& state) {
     target.reset();
   }
   curveDirty_ = true;
+  return normalizedQ;
 }
 
 }  // namespace mnky::app
