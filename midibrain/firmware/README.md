@@ -42,8 +42,11 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
   with running status + realtime interleave; SysEx skipped in v1).
 - Debounced panel inputs (1 kHz scan), quadrature tempo encoder (SHIFT = fine),
   three LEDs (local mirror, Pi-overridable via LED_SET).
-- Local MIDI-clock scheduler (24 ppq, dynamic one-shot alarms, START/CONTINUE/
-  STOP bytes on both UARTs) driven by encoder tempo or Pi SET_TEMPO.
+- Always-on local MIDI clock (24 ppq from boot at the current tempo,
+  START/CONTINUE/STOP bytes on both UARTs) driven by encoder tempo or Pi
+  SET_TEMPO, plus timestamped tick frames per tick and transport-state
+  announcements so the Pi can mirror phase and rolling state to USB.
+  Panel PLAY/PLAY_START/STOP drive transport locally (no Pi round-trip).
 - SPI0 slave @1 MHz to the Pi: CSn-polled 32-byte exchanges, HELLO/ACK
   handshake with ROSC-derived session, sequence dedup, READY pin, 8 s watchdog.
 

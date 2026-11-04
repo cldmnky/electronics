@@ -16,6 +16,7 @@
 | TRS jack | XKB PJ-301M-3-B, C381127, vertical THT, same as Froemix | 3.5 mm stereo, 3-pin vertical; barrel origin at the panel hole. Hand-solder. Verify tip/ring/sleeve continuity on the sample. |
 | Encoder/buttons | Bourns PEC11R-4215F-S0024 C143790; Omron B3F-4055 C84931 | THT hand-solder. Confirm shaft/knob and cap/panel heights. |
 | Pi/Pico isolation | SN74LVC1G126 (C7834) for MISO/READY, B5819W (C8598) Pi 5 V→Pico VSYS, 2N7002 (C8545) reset | Owner approved; prevents Pico USB backfeeding an unpowered Pi while allowing programming with the ribbon connected. The buffers are powered from Pico 3.3 V and enabled only by Pi 3.3 V. |
+| Clock master | Pico for TRS + USB; Pi disciplines its USB clock off timestamped tick frames, never by naive mirroring | Owner decision; tick channel (`0x05`) implemented in firmware, Pi mirror pending. |
 | Pi↔Pico | SPI0 + independent READY, reset via safe circuit pending | [Pico SDK hardware APIs](https://www.raspberrypi.com/documentation/pico-sdk/hardware.html), [RP2350 datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf). Clock, SPI slave DMA timing, level/power sequencing and reset circuitry require implementation and physical verification. |
 | Front-panel concept | Five transport buttons (REC, OVER DUB, STOP, PLAY, PLAY START) under the 3.5-inch DSI display; LEDs above REC/OVER DUB/PLAY; TEMPO/NAV right | Source `tscircuit/lib/layout.ts` generates `assets/front-panel.svg`; `tscircuit/panel.circuit.tsx` is the bare FR-4 panel PCB. Both are design files, not proof of fit. |
 

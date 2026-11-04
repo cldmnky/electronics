@@ -60,6 +60,7 @@ Pico → Pi:
 | `0x01` MIDI | port, size, 3 data bytes, stamp_us LE32 | Timestamped MIDI IN message (length 10) |
 | `0x02` control | id, state/delta | Button press (1) / release (0); `0x10` ENCODER_TURN carries int8 delta (length 3) |
 | `0x04` tempo | bpm×100 LE16 | Local tempo after encoder or Pi change (length 3) |
+| `0x05` tick | tick LE32, Pico stamp_us LE32 | Clock tick notice + tick time, every tick while rolling (length 9) |
 
 Control ids: 1 NAV_UP, 2 NAV_DOWN, 3 NAV_LEFT, 4 NAV_RIGHT, 5 NAV_PRESS,
 6 ENCODER_SW, 10 REC, 11 OVER_DUB, 12 STOP, 13 PLAY, 14 PLAY_START,
@@ -71,14 +72,65 @@ Pi → Pico:
 |---|---|---|
 | `0x10` SET_TEMPO | bpm×100 LE16 | Clamped 20–300 bpm; Pico echoes EV_TEMPO |
 | `0x11` TRANSPORT | 0 stop, 1 start, 2 continue | START resets tick count; bytes always emitted on both UARTs |
-| `0x12` CLOCK_ENABLE | 0/1 | Gates 24 ppq tick generation (transport bytes unaffected) |
+| `0x12` CLOCK_ENABLE | 0/1 | Accepted but ignored: the clock is always on (deprecated) |
+| `0x06` state | rolling 0/1, tick LE32 | Transport state at the transition; sent on transitions, boot and Pi (re)connect (length 6) |
 | `0x13` LED_SET | mask, states | Bits 0/1/2 = REC/OVERDUB/PLAY; local buttons mirror by default |
 | `0x15` MIDI_SEND | port, size, bytes | Immediate UART emit (no scheduled timeline yet) |
+| `0x16` MODE | 0 local, 1 manual | Panel-transport authority; resets to local on boot/HELLO |
+
+## USB clock mirror (Pi side, pending implementation)
+
+The Pico is the single clock master for TRS and USB. The Pi must NOT mirror
+ticks naively (SPI + Linux scheduling latency would put millisecond jitter on
+the USB wire). Instead it disciplines its own USB clock generator:
+
+- **Offset mapping**: on each `0x05` tick, `offset = pi_now - stamp -
+  latency_est` (EMA over recent ticks; tempo from `0x04`/tick intervals).
+  Never mistake delivery time for tick time — the stamp is authoritative.
+- **USB output**: schedule clock bytes on Pi high-resolution timers at mapped
+  `tick_time + k·interval`; correct drift per tick frame. Transport bytes go
+  out on the same schedule. Sustained rate tops out at 120 ticks/s (300 bpm),
+  well inside the ≥1 ms master pacing budget.
+- **Recording alignment**: TRS stamps arrive in the Pico domain; add the
+  current offset to place them on the Pi timeline. This is the measured
+  mapping the link was designed around.
+- **Transport inference**: the tick stream never stops, so transport comes
+  from `0x06` state frames (rolling flag + count at the transition), not from
+  stream silence. Tick count reset + rolling ⇒ START; rolling flag clear ⇒
+  STOPPED (ticks still flow for timeline continuity); count continues ⇒
+  CONTINUE. USB mirror emits only while rolling.
+- **Overflow**: tick frames are redundant by construction — on queue overflow
+  the Pico drops newest and counts (`txov`); the Pi interpolates across gaps.
+
+## Panel transport authority (local default, Pi can take over)
+
+In local mode (default) PLAY, PLAY_START and STOP drive transport on press:
+PLAY starts when stopped (idempotent) and is ignored while rolling,
+PLAY_START always restarts from tick 0, STOP always stops. REC/OVER_DUB stay
+Pi policy (events only). The button EV_CONTROL still goes out for UI and
+record policy, so the Pi learns every press — and therefore **must not echo
+TRANSPORT for a state the Pico already announced**: hold off ~50 ms after a
+transport-button event and skip the command if a matching `0x06` state frame
+arrived. An echoed START would reset ticks and re-emit 0xFA milliseconds
+after the local start: an audible double-start downstream. EV_TRANSPORT
+remains the Pi's authoritative override (it always executes, even while
+rolling).
+
+`0x16` TRANSPORT_MODE switches authority: 0 local (default), 1 manual. In
+manual mode buttons send EV_CONTROL only and the Pico waits for EV_TRANSPORT
+— this is how the Pi implements count-ins and conditional starts, which are
+impossible when the Pico acts first. The mode resets to local on Pico boot
+and on Pi (re)connect (HELLO); the Pi re-sends MODE after HELLO when its
+policy needs manual. Local keeps buttons responsive (~10 ms, works headless);
+manual trades that for full Pi policy at ~15–30 ms plus Linux jitter.
 
 ## Pico clock and controls
 
-- Clock: dynamic one-shot alarms at 60e6/(bpm·24) us, so tempo changes apply
-  on the next tick; 0xF8 on both UARTs only while enabled + rolling.
+- Clock: always on from boot at the current tempo (default 120.00). Dynamic
+  one-shot alarms at 60e6/(bpm·24) us, so tempo changes apply on the next
+  tick; 0xF8 flows on both UARTs regardless of transport state. Transport
+  commands still emit their bytes (START resets the tick count) and announce
+  state; STOP no longer halts ticks.
 - Encoder detent = 4 quadrature edges (±1.00 bpm, ±0.10 with SHIFT held).
 - Buttons/nav active-low, 10 ms debounce, 1 kHz scan; UART RX is IRQ-driven
   into 128-deep stamped rings per port.
@@ -86,7 +138,7 @@ Pi → Pico:
 
 ## Prototype limitations (not yet implemented)
 
-SysEx forwarding (skipped), scheduled-output musical timeline (MIDI_SEND is
+SysEx forwarding (content skipped; running-status/system-common/realtime/undefined-byte handling is byte-exact per the midi.hpp comments, with EOX preserving running status), scheduled-output musical timeline (MIDI_SEND is
 immediate), ACK/retry/credit reliability, queue recovery, CS-abort recovery
 beyond the watchdog, SPI rates above 1 MHz, clock jitter measurement, and
 thermal/EMC behaviour. The framed loopback, debounce, parser and event tests

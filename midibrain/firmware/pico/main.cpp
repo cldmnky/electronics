@@ -3,7 +3,10 @@
 // Owns, in real time: both MIDI UARTs (31250 baud), debounced panel inputs,
 // quadrature tempo encoder, three LEDs, the local MIDI-clock scheduler, and
 // the SPI-slave side of the 32-byte framed link (protocol.hpp / midi.hpp).
-// The Pi owns recording, routing policy, the UI and tempo overrides.
+// The Pico is the single clock master: every tick also queues a timestamped
+// tick frame so the Pi can discipline its USB clock and map Pico timestamps
+// into its own timeline. The Pi owns recording, routing policy, the UI and
+// tempo overrides.
 //
 // Link contract (see docs/protocol.md): the Pi asserts CSn, waits >= 10 us,
 // clocks exactly 32 bytes, deasserts; idle fillers are repeats deduped by
@@ -41,24 +44,35 @@ constexpr int kQuartersPerDetent = 4;
 // ---------------------------------------------------------------------------
 // Outbound SPI frame queue (main loop only; CSn path only peeks)
 // ---------------------------------------------------------------------------
+// Push/pop mask IRQs: the clock alarm callback (IRQ context) enqueues tick
+// frames while the main loop pops. Head is main-only, tail is IRQ-or-main,
+// count is shared: every mutation runs masked. peek() only reads head, which
+// the callback never touches, so it stays lock-free.
 struct TxQueue {
   mb::Bytes buf[kTxDepth]{};
   uint32_t head = 0, tail = 0, count = 0, overflows = 0;
   bool push(const mb::Bytes& b) {
+    const uint32_t saved = save_and_disable_interrupts();
+    bool ok = false;
     if (count >= kTxDepth) {
       ++overflows;
-      return false;
+    } else {
+      buf[tail] = b;
+      tail = (tail + 1) % kTxDepth;
+      ++count;
+      ok = true;
     }
-    buf[tail] = b;
-    tail = (tail + 1) % kTxDepth;
-    ++count;
-    return true;
+    restore_interrupts(saved);
+    return ok;
   }
   const mb::Bytes& peek() const { return buf[head]; }
   void pop() {
-    if (!count) return;
-    head = (head + 1) % kTxDepth;
-    --count;
+    const uint32_t saved = save_and_disable_interrupts();
+    if (count) {
+      head = (head + 1) % kTxDepth;
+      --count;
+    }
+    restore_interrupts(saved);
   }
 };
 
@@ -106,8 +120,16 @@ bool hello_seen = false;
 uint32_t last_rx_session = 0;
 uint16_t last_rx_seq = 0;
 bool last_rx_valid = false;
+// The clock runs unconditionally from boot at the current tempo: downstream
+// gear always has clock, and transport commands only move the transport state.
 int32_t bpm_x100 = kTempoDefault;
-bool clock_enabled = false, transport_running = false;
+bool transport_running = false;
+// Local (default): panel PLAY/PLAY_START/STOP drive transport immediately so
+// buttons stay responsive and work headless. Manual: buttons send EV_CONTROL
+// only and the Pico waits for EV_TRANSPORT (count-ins, conditional starts).
+// Resets to local on boot and on Pi (re)connect; the Pi re-sends MODE after
+// HELLO when its policy needs manual.
+bool transport_local = true;
 uint32_t clock_ticks = 0;
 int clock_alarm = -1;
 uint8_t led_mask = 0;
@@ -137,6 +159,15 @@ uint32_t session_from_rosc() {
 // drive the pin.
 void ready_update() { gpio_put(MB_PIN_READY_IRQ, txq.count > 0 || !hello_seen); }
 
+// Single sequence space shared by main loop and tick callback: allocate
+// masked so concurrent allocators cannot hand out the same number twice.
+uint16_t alloc_seq() {
+  const uint32_t saved = save_and_disable_interrupts();
+  const uint16_t s = next_seq++;
+  restore_interrupts(saved);
+  return s;
+}
+
 bool queue_frame(const mb::Frame& f) {
   mb::Bytes b{};
   if (!mb::encode(f, b)) return false;
@@ -145,28 +176,31 @@ bool queue_frame(const mb::Frame& f) {
   return ok;
 }
 
+// Tick notification for the Pi USB-clock mirror. Called from the alarm
+// callback: stamp first (tick time), bytes out, frame queued. Delivery
+// delay is irrelevant — the Pi disciplines off the stamp, not arrival.
+void queue_tick(uint32_t tick, uint32_t stamp_us) {
+  mb::Frame f{};
+  if (!mb::pack_tick(f, alloc_seq(), pico_session, tick, stamp_us)) return;
+  queue_frame(f);  // drop-newest + counter on overflow (documented)
+}
+
 bool queue_midi(const mb::MidiMessage& m) {
   mb::Frame f{};
-  if (!mb::pack_midi(f, next_seq, pico_session, m)) return false;
-  if (!queue_frame(f)) return false;
-  ++next_seq;
-  return true;
+  if (!mb::pack_midi(f, alloc_seq(), pico_session, m)) return false;
+  return queue_frame(f);
 }
 
 bool queue_control(uint8_t id, uint8_t value) {
   mb::Frame f{};
-  if (!mb::pack_control(f, next_seq, pico_session, id, value)) return false;
-  if (!queue_frame(f)) return false;
-  ++next_seq;
-  return true;
+  if (!mb::pack_control(f, alloc_seq(), pico_session, id, value)) return false;
+  return queue_frame(f);
 }
 
 bool queue_tempo() {
   mb::Frame f{};
-  if (!mb::pack_tempo(f, next_seq, pico_session, static_cast<uint16_t>(bpm_x100))) return false;
-  if (!queue_frame(f)) return false;
-  ++next_seq;
-  return true;
+  if (!mb::pack_tempo(f, alloc_seq(), pico_session, static_cast<uint16_t>(bpm_x100))) return false;
+  return queue_frame(f);
 }
 
 void apply_leds() {
@@ -189,50 +223,47 @@ void midi_emit(uint8_t port, const uint8_t* data, uint32_t n) {
 }
 
 int64_t clock_tick(alarm_id_t, void*) {
-  if (!clock_enabled || !transport_running) {
-    clock_alarm = -1;  // defensive: stops re-arm if flags ever change mid-flight
-    return 0;
-  }
+  // Unconditional: the tick stream never stops (see transport_cmd for state).
+  const uint32_t stamp_us = time_us_32();
   const uint8_t tick = 0xF8;
   uart_putc(uart0, tick);
   uart_putc(uart1, tick);
   ++clock_ticks;
+  queue_tick(clock_ticks, stamp_us);  // Pi USB-mirror + timeline mapping
   const int64_t interval = (60'000'000LL * 100) / (static_cast<int64_t>(bpm_x100) * 24);
   return interval;
 }
 
 void clock_arm() {
-  if (clock_alarm < 0 && clock_enabled && transport_running) {
+  if (clock_alarm < 0) {
     const int64_t interval = (60'000'000LL * 100) / (static_cast<int64_t>(bpm_x100) * 24);
     clock_alarm = add_alarm_in_us(static_cast<uint64_t>(interval), clock_tick, nullptr, true);
   }
 }
 
-void clock_stop_alarm() {
-  if (clock_alarm >= 0) {
-    cancel_alarm(clock_alarm);
-    clock_alarm = -1;
-  }
+// Transport state for the Pi USB mirror (ticks flow regardless).
+void announce_state() {
+  mb::Frame f{};
+  if (!mb::pack_transport_state(f, alloc_seq(), pico_session, transport_running, clock_ticks)) return;
+  queue_frame(f);
 }
 
 void transport_cmd(uint8_t cmd) {
-  // Transport bytes always go out; clock ticks additionally need enable.
+  // Transport bytes always go out; the 0xF8 stream never stops.
   uint8_t b = 0xFC;
   if (cmd == 1) {
     b = 0xFA;
     clock_ticks = 0;
     transport_running = true;
-    clock_arm();
   } else if (cmd == 2) {
     b = 0xFB;
     transport_running = true;
-    clock_arm();
   } else {
     transport_running = false;
-    clock_stop_alarm();
   }
   midi_emit(0, &b, 1);
   midi_emit(1, &b, 1);
+  announce_state();
 }
 
 void set_tempo(int32_t v, bool echo) {
@@ -257,12 +288,15 @@ void handle_frame(const mb::Frame& f) {
       printf("[link] Pi HELLO session=%08lx\n", static_cast<unsigned long>(f.session));
     }
     hello_seen = true;
+    transport_local = true;  // reconnect = local default; Pi re-sends MODE if needed
     mb::Frame ack{};
     ack.type = mb::Type::ack;
-    ack.sequence = next_seq++;
+    ack.sequence = alloc_seq();
     ack.session = pico_session;
     ack.length = 0;
     queue_frame(ack);
+    announce_state();  // resync the Pi mirror after its (re)connect
+    queue_tempo();
     return;
   }
   if (f.type == mb::Type::ack) return;  // link liveness only in this revision
@@ -292,16 +326,14 @@ void handle_frame(const mb::Frame& f) {
       transport_cmd(f.payload[1]);
       break;
     case mb::EV_CLOCK_ENABLE:
+      // Deprecated: the clock is always on. Still validated + accepted so
+      // older Pi software keeps working; the state frame answers instead.
       if (f.length < 2 || f.payload[1] > 1) {
         ++bad_frames;
         break;
       }
-      clock_enabled = f.payload[1] != 0;
-      if (clock_enabled)
-        clock_arm();
-      else
-        clock_stop_alarm();
-      printf("[link] CLOCK %s\n", clock_enabled ? "on" : "off");
+      printf("[link] CLOCK_ENABLE ignored (clock always on)\n");
+      announce_state();
       break;
     case mb::EV_LED_SET:
       if (f.length < 3) {
@@ -310,6 +342,14 @@ void handle_frame(const mb::Frame& f) {
       }
       led_mask = (led_mask & ~f.payload[1]) | (f.payload[2] & f.payload[1]);
       apply_leds();
+      break;
+    case mb::EV_TRANSPORT_MODE:
+      if (f.length < 2 || f.payload[1] > 1) {
+        ++bad_frames;
+        break;
+      }
+      transport_local = f.payload[1] == 0;
+      printf("[link] transport mode %s\n", transport_local ? "local" : "manual");
       break;
     case mb::EV_MIDI_SEND:
       if (f.length < 3 || f.payload[1] > 1 || f.payload[2] < 1 || f.payload[2] > 3 ||
@@ -357,6 +397,14 @@ void scan_controls(uint32_t now_ms) {
     const bool pressed = !gpio_get(b.gpio);  // active-low against GND
     if (b.deb->update(pressed, now_ms)) {
       queue_control(b.id, pressed ? 1 : 0);
+      // Panel transport drives locally (no Pi round-trip); the Pi learns it
+      // from the state frame + tick stream and must not echo it back (see
+      // docs/protocol.md). EV_CONTROL still goes out for UI/record policy.
+      // In manual mode the mapping is suppressed: events only, Pi decides.
+      if (pressed && transport_local) {
+        const int cmd = mb::transport_for_press(b.id, transport_running);
+        if (cmd >= 0) transport_cmd(static_cast<uint8_t>(cmd));
+      }
       if (b.id == mb::CTL_SHIFT_EXIT) shift_held = pressed;
       if (b.led_bit) {
         if (pressed)
@@ -473,6 +521,8 @@ int main() {
   }
   next_seq = 1;
   ready_update();  // alive + HELLO pending
+  announce_state();  // boot state: stopped, tick 0 (ticks already flowing)
+  clock_arm();  // first tick one interval after boot
 
   watchdog_enable(8000, 1);
   uint32_t last_ms = to_ms_since_boot(get_absolute_time());
