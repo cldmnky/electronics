@@ -512,6 +512,12 @@ bool decodeMixer(const JsonValue& node, MixerState& out, std::string& error) {
       if (!readOptionalBool(item, "arm", channel.arm, path, error)) {
         return false;
       }
+      if (!readOptionalFloat(item, "cue", channel.cueSend, path, error)) {
+        return false;
+      }
+      if (!readOptionalFloat(item, "out34", channel.out34Send, path, error)) {
+        return false;
+      }
       if (const JsonValue* send = item.find("send")) {
         if (send->type != JsonValue::Type::Array) {
           error = "session: \"" + path + ".send\" is not an array";
@@ -535,6 +541,13 @@ bool decodeMixer(const JsonValue& node, MixerState& out, std::string& error) {
   if (!readOptionalFloat(node, "master", out.master, "mixer", error)) {
     return false;
   }
+  int out34Mode = out.out34Mode;
+  if (!readOptionalInt(node, "out34mode", out34Mode, "mixer", error)) {
+    return false;
+  }
+  if (out34Mode < 0) out34Mode = 0;
+  if (out34Mode > 1) out34Mode = 1;
+  out.out34Mode = out34Mode;
   return true;
 }
 
@@ -599,15 +612,187 @@ bool decodeTransport(const JsonValue& node, TransportState& out,
 }
 
 bool decodeClick(const JsonValue& node, ClickState& out, std::string& error) {
-  if (!readOptionalBool(node, "enabled", out.enabled, "click", error)) {
+  // v1 legacy first: enabled/level map onto mode/gainDb unless v2 wins.
+  bool legacyEnabled = out.enabled;
+  bool haveLegacyEnabled = node.find("enabled") != nullptr;
+  if (!readOptionalBool(node, "enabled", legacyEnabled, "click", error)) {
     return false;
   }
-  float level = out.level;
-  if (!readOptionalFloat(node, "level", level, "click", error)) return false;
-  if (level < 0.0f) level = 0.0f;
-  if (level > 1.0f) level = 1.0f;
-  out.level = level;
+  float legacyLevel = out.level;
+  bool haveLegacyLevel = node.find("level") != nullptr;
+  if (!readOptionalFloat(node, "level", legacyLevel, "click", error)) {
+    return false;
+  }
+  if (legacyLevel < 0.0f) legacyLevel = 0.0f;
+  if (legacyLevel > 1.0f) legacyLevel = 1.0f;
+  out.enabled = legacyEnabled;
+  out.level = legacyLevel;
+
+  bool haveV2 = node.find("mode") != nullptr ||
+                node.find("output") != nullptr ||
+                node.find("gainDb") != nullptr;
+  int mode = out.mode;
+  if (!readOptionalInt(node, "mode", mode, "click", error)) return false;
+  if (mode < 0) mode = 0;
+  if (mode > 2) mode = 2;
+  int output = out.output;
+  if (!readOptionalInt(node, "output", output, "click", error)) return false;
+  if (output < 0) output = 0;
+  if (output > 2) output = 2;
+  float gainDb = out.gainDb;
+  if (!readOptionalFloat(node, "gainDb", gainDb, "click", error)) {
+    return false;
+  }
+  if (gainDb < -96.0f) gainDb = -96.0f;
+  if (gainDb > 20.0f) gainDb = 20.0f;
+  if (haveV2) {
+    out.mode = mode;
+    out.output = output;
+    out.gainDb = gainDb;
+  } else if (haveLegacyEnabled || haveLegacyLevel) {
+    out.mode = legacyEnabled ? 2 : 0;
+    out.output = 0;
+    // Rough v1 level 0..1 to dB for continuity; silence stays silent.
+    out.gainDb = legacyLevel <= 0.0f ? -96.0f : 20.0f * (legacyLevel - 1.0f);
+  }
   return readOptionalInt(node, "bars", out.bars, "click", error);
+}
+
+bool decodePunchPoint(const JsonValue& node, const std::string& path,
+                      PunchPoint& out, std::string& error) {
+  if (!readOptionalBool(node, "enabled", out.enabled, path, error)) {
+    return false;
+  }
+  int measure = out.measure;
+  if (!readOptionalInt(node, "measure", measure, path, error)) return false;
+  if (measure < 1) measure = 1;
+  out.measure = measure;
+  return true;
+}
+
+bool decodePunch(const JsonValue& node, PunchState& out, std::string& error) {
+  if (const JsonValue* playFrom = node.find("playFrom")) {
+    if (playFrom->type != JsonValue::Type::Object) {
+      error = "session: \"punch.playFrom\" is not an object";
+      return false;
+    }
+    if (!decodePunchPoint(*playFrom, "punch.playFrom", out.playFrom, error)) {
+      return false;
+    }
+  }
+  if (const JsonValue* in = node.find("in")) {
+    if (in->type != JsonValue::Type::Object) {
+      error = "session: \"punch.in\" is not an object";
+      return false;
+    }
+    if (!decodePunchPoint(*in, "punch.in", out.in, error)) return false;
+  }
+  if (const JsonValue* punchOut = node.find("out")) {
+    if (punchOut->type != JsonValue::Type::Object) {
+      error = "session: \"punch.out\" is not an object";
+      return false;
+    }
+    if (!decodePunchPoint(*punchOut, "punch.out", out.out, error)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool decodeTakes(const JsonValue& node, TakesState& out, std::string& error) {
+  const JsonValue* active = node.find("active");
+  if (active == nullptr) return true;
+  if (active->type != JsonValue::Type::Object) {
+    error = "session: \"takes.active\" is not an object";
+    return false;
+  }
+  for (const auto& member : active->object) {
+    int track = -1;
+    try {
+      std::size_t pos = 0;
+      track = std::stoi(member.first, &pos);
+      if (pos != member.first.size()) track = -1;
+    } catch (...) {
+      track = -1;
+    }
+    if (track < 0 || track >= audio::kMaxInputs) continue;  // unknown track
+    if (member.second.type != JsonValue::Type::String) {
+      error = "session: \"takes.active." + member.first +
+              "\" is not a string";
+      return false;
+    }
+    out.active[static_cast<std::size_t>(track)] = member.second.string;
+  }
+  return true;
+}
+
+bool decodeCue(const JsonValue& node, CueState& out, std::string& error) {
+  int phonesSrc = out.phonesSrc;
+  if (!readOptionalInt(node, "phonesSrc", phonesSrc, "cue", error)) {
+    return false;
+  }
+  if (phonesSrc < 0) phonesSrc = 0;
+  if (phonesSrc > 1) phonesSrc = 1;
+  out.phonesSrc = phonesSrc;
+  int style = out.style;
+  if (!readOptionalInt(node, "style", style, "cue", error)) return false;
+  if (style < 0) style = 0;
+  if (style > 1) style = 1;
+  out.style = style;
+  return true;
+}
+
+bool decodeSends(const JsonValue& node, SendsState& out, std::string& error) {
+  const char* const keys[5] = {"cue", "fx1", "fx2", "out34", "rec"};
+  int* const fields[5] = {&out.cue, &out.fx1, &out.fx2, &out.out34, &out.rec};
+  for (int i = 0; i < 5; ++i) {
+    int value = *fields[i];
+    if (!readOptionalInt(node, keys[i], value, "sends", error)) return false;
+    if (value < 0) value = 0;
+    if (value > 1) value = 1;
+    *fields[i] = value;
+  }
+  return true;
+}
+
+bool decodeMainComp(const JsonValue& node, MainCompState& out,
+                    std::string& error) {
+  if (!readOptionalBool(node, "on", out.on, "mainComp", error)) return false;
+  float threshDb = out.threshDb;
+  if (!readOptionalFloat(node, "threshDb", threshDb, "mainComp", error)) {
+    return false;
+  }
+  if (threshDb < -48.0f) threshDb = -48.0f;
+  if (threshDb > 0.0f) threshDb = 0.0f;
+  out.threshDb = threshDb;
+  float ratio = out.ratio;
+  if (!readOptionalFloat(node, "ratio", ratio, "mainComp", error)) {
+    return false;
+  }
+  if (ratio < 1.0f) ratio = 1.0f;
+  if (ratio > 100.0f) ratio = 100.0f;
+  out.ratio = ratio;
+  if (!readOptionalFloat(node, "attackMs", out.attackMs, "mainComp", error)) {
+    return false;
+  }
+  if (out.attackMs < 0.0f) out.attackMs = 0.0f;
+  if (out.attackMs > 1000.0f) out.attackMs = 1000.0f;
+  if (!readOptionalFloat(node, "releaseMs", out.releaseMs, "mainComp", error)) {
+    return false;
+  }
+  if (out.releaseMs < 0.0f) out.releaseMs = 0.0f;
+  if (out.releaseMs > 1000.0f) out.releaseMs = 1000.0f;
+  if (!readOptionalFloat(node, "makeupDb", out.makeupDb, "mainComp", error)) {
+    return false;
+  }
+  if (out.makeupDb < -36.0f) out.makeupDb = -36.0f;
+  if (out.makeupDb > 36.0f) out.makeupDb = 36.0f;
+  int mode = out.mode;
+  if (!readOptionalInt(node, "mode", mode, "mainComp", error)) return false;
+  if (mode < 0) mode = 0;
+  if (mode > 1) mode = 1;
+  out.mode = mode;
+  return true;
 }
 
 bool decodeMidiMap(const JsonValue& node, std::vector<MidiMapEntry>& out,
@@ -693,10 +878,14 @@ bool decode(const JsonValue& root, Snapshot& out, std::string& error) {
     error = "session: \"session\" is not an integer";
     return false;
   }
-  if (versionNumber != kVersion) {
+  if (versionNumber != 1 && versionNumber != kVersion) {
     error = "session: unsupported session version " +
-            std::to_string(versionNumber) + " (this build reads " +
+            std::to_string(versionNumber) + " (this build reads 1.." +
             std::to_string(kVersion) + ")";
+    return false;
+  }
+
+  if (!readOptionalBool(root, "template", out.isTemplate, "session", error)) {
     return false;
   }
 
@@ -737,6 +926,41 @@ bool decode(const JsonValue& root, Snapshot& out, std::string& error) {
   }
   if (const JsonValue* midimap = root.find("midimap")) {
     if (!decodeMidiMap(*midimap, out.midimap, error)) return false;
+  }
+  if (const JsonValue* takes = root.find("takes")) {
+    if (takes->type != JsonValue::Type::Object) {
+      error = "session: \"takes\" is not an object";
+      return false;
+    }
+    if (!decodeTakes(*takes, out.takes, error)) return false;
+  }
+  if (const JsonValue* punch = root.find("punch")) {
+    if (punch->type != JsonValue::Type::Object) {
+      error = "session: \"punch\" is not an object";
+      return false;
+    }
+    if (!decodePunch(*punch, out.punch, error)) return false;
+  }
+  if (const JsonValue* cue = root.find("cue")) {
+    if (cue->type != JsonValue::Type::Object) {
+      error = "session: \"cue\" is not an object";
+      return false;
+    }
+    if (!decodeCue(*cue, out.cue, error)) return false;
+  }
+  if (const JsonValue* sends = root.find("sends")) {
+    if (sends->type != JsonValue::Type::Object) {
+      error = "session: \"sends\" is not an object";
+      return false;
+    }
+    if (!decodeSends(*sends, out.sends, error)) return false;
+  }
+  if (const JsonValue* mainComp = root.find("mainComp")) {
+    if (mainComp->type != JsonValue::Type::Object) {
+      error = "session: \"mainComp\" is not an object";
+      return false;
+    }
+    if (!decodeMainComp(*mainComp, out.mainComp, error)) return false;
   }
   return true;
 }
@@ -808,6 +1032,8 @@ std::string encode(const Snapshot& snapshot) {
   out += kAppId;
   out += "\",\"session\":";
   appendNumber(out, kVersion);
+  out += ",\"template\":";
+  appendBool(out, snapshot.isTemplate);
 
   out += ",\"router\":{\"routes\":[";
   for (std::size_t i = 0; i < snapshot.router.routes.size(); ++i) {
@@ -856,10 +1082,16 @@ std::string encode(const Snapshot& snapshot) {
     appendNumber(out, channel.send[0]);
     out.push_back(',');
     appendNumber(out, channel.send[1]);
-    out += "]}";
+    out += "],\"cue\":";
+    appendNumber(out, channel.cueSend);
+    out += ",\"out34\":";
+    appendNumber(out, channel.out34Send);
+    out += "}";
   }
   out += "],\"master\":";
   appendNumber(out, snapshot.mixer.master);
+  out += ",\"out34mode\":";
+  appendNumber(out, snapshot.mixer.out34Mode);
   out.push_back('}');
 
   out += ",\"fx\":{\"bus\":[";
@@ -883,10 +1115,12 @@ std::string encode(const Snapshot& snapshot) {
   appendNumber(out, snapshot.transport.bpmX100);
   out.push_back('}');
 
-  out += ",\"click\":{\"enabled\":";
-  appendBool(out, snapshot.click.enabled);
-  out += ",\"level\":";
-  appendNumber(out, snapshot.click.level);
+  out += ",\"click\":{\"mode\":";
+  appendNumber(out, snapshot.click.mode);
+  out += ",\"output\":";
+  appendNumber(out, snapshot.click.output);
+  out += ",\"gainDb\":";
+  appendNumber(out, snapshot.click.gainDb);
   out += ",\"bars\":";
   appendNumber(out, snapshot.click.bars);
   out.push_back('}');
@@ -905,7 +1139,59 @@ std::string encode(const Snapshot& snapshot) {
     appendNumber(out, entry.track);
     out.push_back('}');
   }
-  out += "]}\n";
+  out += "],\"takes\":{\"active\":{";
+  bool firstTake = true;
+  for (int track = 0; track < audio::kMaxInputs; ++track) {
+    const std::string& name =
+        snapshot.takes.active[static_cast<std::size_t>(track)];
+    if (name.empty()) continue;
+    if (!firstTake) out.push_back(',');
+    firstTake = false;
+    writeString(out, std::to_string(track));
+    out.push_back(':');
+    writeString(out, name);
+  }
+  out += "}},\"punch\":{\"playFrom\":{\"enabled\":";
+  appendBool(out, snapshot.punch.playFrom.enabled);
+  out += ",\"measure\":";
+  appendNumber(out, snapshot.punch.playFrom.measure);
+  out += "},\"in\":{\"enabled\":";
+  appendBool(out, snapshot.punch.in.enabled);
+  out += ",\"measure\":";
+  appendNumber(out, snapshot.punch.in.measure);
+  out += "},\"out\":{\"enabled\":";
+  appendBool(out, snapshot.punch.out.enabled);
+  out += ",\"measure\":";
+  appendNumber(out, snapshot.punch.out.measure);
+  out += "}},\"cue\":{\"phonesSrc\":";
+  appendNumber(out, snapshot.cue.phonesSrc);
+  out += ",\"style\":";
+  appendNumber(out, snapshot.cue.style);
+  out += "},\"sends\":{\"cue\":";
+  appendNumber(out, snapshot.sends.cue);
+  out += ",\"fx1\":";
+  appendNumber(out, snapshot.sends.fx1);
+  out += ",\"fx2\":";
+  appendNumber(out, snapshot.sends.fx2);
+  out += ",\"out34\":";
+  appendNumber(out, snapshot.sends.out34);
+  out += ",\"rec\":";
+  appendNumber(out, snapshot.sends.rec);
+  out += "},\"mainComp\":{\"on\":";
+  appendBool(out, snapshot.mainComp.on);
+  out += ",\"threshDb\":";
+  appendNumber(out, snapshot.mainComp.threshDb);
+  out += ",\"ratio\":";
+  appendNumber(out, snapshot.mainComp.ratio);
+  out += ",\"attackMs\":";
+  appendNumber(out, snapshot.mainComp.attackMs);
+  out += ",\"releaseMs\":";
+  appendNumber(out, snapshot.mainComp.releaseMs);
+  out += ",\"makeupDb\":";
+  appendNumber(out, snapshot.mainComp.makeupDb);
+  out += ",\"mode\":";
+  appendNumber(out, snapshot.mainComp.mode);
+  out += "}}\n";
   return out;
 }
 

@@ -120,13 +120,32 @@ void testRoundTrip() {
   original.fx.bus[1].params = {0.0, 1000.5};
 
   original.transport.bpmX100 = 13333;
-  original.click.enabled = true;
-  original.click.level = 0.65f;
+  original.click.mode = 2;
+  original.click.output = 1;
+  original.click.gainDb = -6.0f;
   original.click.bars = 4;
   original.midimap = {
       {74, 1, "mixer.ch3.gain", 3},
       {7, 16, "fx.0.mix", 0},
       {0, 1, "future.unknown.param", 17}};
+  original.isTemplate = true;
+  original.takes.active[1] = "02-drums-003.wav";
+  original.punch.playFrom.enabled = true;
+  original.punch.playFrom.measure = 5;
+  original.punch.in.enabled = true;
+  original.punch.in.measure = 9;
+  original.punch.out.enabled = true;
+  original.punch.out.measure = 13;
+  original.cue.phonesSrc = 1;
+  original.cue.style = 1;
+  original.sends.cue = 0;
+  original.sends.rec = 0;
+  original.mainComp.on = true;
+  original.mainComp.ratio = 4.0f;
+  original.mainComp.mode = 1;
+  original.mixer.channels[2].cueSend = 0.75f;
+  original.mixer.channels[2].out34Send = 0.5f;
+  original.mixer.out34Mode = 1;
 
   TempDir dir;
   CHECK(dir.ok());
@@ -137,13 +156,23 @@ void testRoundTrip() {
   const std::string text = readFile(path);
   CHECK(!text.empty());
   CHECK(text.find("\"app\":\"mnkybox\"") != std::string::npos);
-  CHECK(text.find("\"session\":1") != std::string::npos);
+  CHECK(text.find("\"session\":2") != std::string::npos);
+  CHECK(text.find("\"template\":true") != std::string::npos);
   CHECK(text.find("\"routes\":[") != std::string::npos);
   CHECK(text.find("\"channels\":{\"0\":") != std::string::npos);
   CHECK(text.find("\"transpose\":{\"0\":") != std::string::npos);
   CHECK(text.find("\"master\":") != std::string::npos);
   CHECK(text.find("\"bpm_x100\":13333") != std::string::npos);
-  CHECK(text.find("\"click\":{\"enabled\":true") != std::string::npos);
+  CHECK(text.find("\"click\":{\"mode\":2,\"output\":1") != std::string::npos);
+  CHECK(text.find("\"takes\":{\"active\":{\"1\":\"02-drums-003.wav\"}}") !=
+        std::string::npos);
+  CHECK(text.find("\"punch\":{\"playFrom\":{\"enabled\":true,\"measure\":5}") !=
+        std::string::npos);
+  CHECK(text.find("\"cue\":{\"phonesSrc\":1,\"style\":1}") != std::string::npos);
+  CHECK(text.find("\"sends\":{\"cue\":0") != std::string::npos);
+  CHECK(text.find("\"mainComp\":{\"on\":true") != std::string::npos);
+  CHECK(text.find("\"cue\":0.75") != std::string::npos);
+  CHECK(text.find("\"out34mode\":1") != std::string::npos);
   CHECK(text.find("\"midimap\":[") != std::string::npos);
   CHECK(text.find("\"target\":\"mixer.ch3.gain\"") != std::string::npos);
   CHECK(text.find("\\\"slap\\\"") != std::string::npos);
@@ -156,13 +185,38 @@ void testRoundTrip() {
 
 // ------------------------------------------------------------ version reject
 
+void testVersionOneLoads() {
+  // A v1 file (legacy click enabled/level, no v2 sections) loads with the
+  // click mapped onto v2 fields and v2 sections at defaults.
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("v1.json");
+  CHECK(writeFile(path, R"({"app":"mnkybox","session":1,"click":{"enabled":true,"level":0.65,"bars":4},"mixer":{"channels":[{"cue":0.5}],"master":0.8}})"));
+  LoadResult result = mnky::session::load(path);
+  if (!result.ok) std::printf("FAIL v1 load: %s\n", result.error.c_str());
+  CHECK(result.ok);
+  CHECK(result.snapshot.click.mode == 2);
+  CHECK(result.snapshot.click.output == 0);
+  CHECK(result.snapshot.click.gainDb < 0.0f);
+  CHECK(result.snapshot.click.bars == 4);
+  CHECK(result.snapshot.mixer.channels[0].cueSend == 0.5f);
+  CHECK(!result.snapshot.isTemplate);
+  CHECK(result.snapshot.punch.in.measure == 1);
+
+  CHECK(writeFile(path, R"({"app":"mnkybox","session":1,"click":{"enabled":false,"level":0.0}})"));
+  result = mnky::session::load(path);
+  CHECK(result.ok);
+  CHECK(result.snapshot.click.mode == 0);
+}
+
 void testVersionReject() {
   TempDir dir;
   CHECK(dir.ok());
   if (!dir.ok()) return;
   const std::string path = dir.file("version.json");
 
-  CHECK(writeFile(path, R"({"app":"mnkybox","session":2})"));
+  CHECK(writeFile(path, R"({"app":"mnkybox","session":3})"));
   LoadResult result = mnky::session::load(path);
   CHECK(!result.ok);
   CHECK(result.error.find("version") != std::string::npos);
@@ -534,6 +588,7 @@ int main() {
   std::printf("mnkybox session test (versioned JSON save/load)\n");
   run("round-trip save/load in mkdtemp", testRoundTrip);
   run("version reject", testVersionReject);
+  run("version 1 loads with click mapping", testVersionOneLoads);
   run("corrupt reject with reason", testCorruptReject);
   run("missing fields default", testMissingFields);
   run("unknown fields tolerated", testUnknownFields);

@@ -2,22 +2,33 @@
 // Versioned session state for the mnkybox Pi DAW (JUCE-free, portable C++20).
 //
 // One session is one UTF-8 JSON file:
-//   {"app":"mnkybox","session":1,
+//   {"app":"mnkybox","session":2,"template":false,
 //    "router":{"routes":[{"src":0,"dst":5,"on":true}],
 //              "channels":{"0":65535},"transpose":{"0":0}},
 //    "mixer":{"channels":[{"gain":1,"pan":0.5,"mute":false,"solo":false,
-//                          "arm":false,"send":[0,0]} x18],"master":1},
+//                          "arm":false,"send":[0,0],"cue":0,"out34":0} x18],
+//             "master":1,"out34mode":0},
 //    "fx":{"bus":[{"id":"com.example.gain","params":[0.5],"bypass":false} x2]},
 //    "transport":{"bpm_x100":12000},
-//    "click":{"enabled":false,"level":0.5,"bars":1},
-//    "midimap":[{"cc":74,"ch":1,"target":"mixer.ch3.gain","track":3}]}
+//    "click":{"mode":0,"output":0,"gainDb":0,"bars":1},
+//    "midimap":[{"cc":74,"ch":1,"target":"mixer.ch3.gain","track":3}],
+//    "takes":{"active":{"0":"","1":"02-drums-003.wav"}},
+//    "punch":{"playFrom":{"enabled":false,"measure":1},
+//               "in":{"enabled":false,"measure":1},
+//               "out":{"enabled":false,"measure":1}},
+//    "cue":{"phonesSrc":0,"style":0},
+//    "sends":{"cue":1,"fx1":1,"fx2":1,"out34":1,"rec":1},
+//    "mainComp":{"on":false,"threshDb":-12,"ratio":2,"attackMs":10,
+//                  "releaseMs":100,"makeupDb":0,"mode":0}}
 // Port ids are midi::Port's underlying integers. FX ids are CLAP plugin ids or
 // "builtin.<name>"; parameter indices are the effect's stable order (owned and
-// documented by the FX team). "click" and "midimap" are additive version-1
-// sections: capture() leaves them at their defaults and apply() does not touch
-// them, because the app owns the metronome and MIDI-learn tables. The reader
-// tolerates unknown fields, defaults missing ones and rejects corrupt input
-// with a reason string; it never throws across this API.
+// documented by the FX team). "click", "midimap", "takes", "punch", "cue",
+// "sends" and "mainComp" are additive version-2 sections: capture() leaves
+// them at their defaults and apply() does not touch them, because the app
+// owns the metronome, take registry, punch points, monitor and bus-comp
+// state. The reader accepts version 1 (mapping legacy click enabled/level)
+// and version 2; it tolerates unknown fields, defaults missing ones and
+// rejects corrupt input with a reason string; it never throws across this API.
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -31,7 +42,8 @@
 
 namespace mnky::session {
 
-inline constexpr int kVersion = 1;
+inline constexpr int kVersion = 2;
+// Lowest session version this build reads (v1 click maps to v2 fields).
 inline constexpr const char* kAppId = "mnkybox";
 // Two FX send buses, matching audio::kNumSends.
 inline constexpr int kFxBuses = audio::kNumSends;
@@ -61,12 +73,15 @@ struct MixerChannelState {
   bool solo = false;
   bool arm = false;
   std::array<float, audio::kNumSends> send{};
+  float cueSend = 0.0f;    // per-track CUE bus send level (v2)
+  float out34Send = 0.0f;  // per-track OUT3&4 send level (v2)
   friend bool operator==(const MixerChannelState&, const MixerChannelState&) = default;
 };
 
 struct MixerState {
   std::array<MixerChannelState, audio::kMaxInputs> channels{};
   float master = 1.0f;
+  int out34Mode = 0;  // v2: 0 = OUT3&4 stereo pair, 1 = two mono sends
   friend bool operator==(const MixerState&, const MixerState&) = default;
 };
 
@@ -87,13 +102,76 @@ struct TransportState {
   friend bool operator==(const TransportState&, const TransportState&) = default;
 };
 
-// Metronome configuration. `level` is a linear 0..1 click level; `bars` is the
-// count-in length in bars. Absence means click off with these neutral defaults.
+// Metronome configuration (v2). `mode`: 0 = off, 1 = record-only, 2 = on-play.
+// `output`: 0 = main 1&2, 1 = phones, 2 = out 3&4. `gainDb` is -96..+20.
+// `bars` is the count-in length in bars. `enabled`/`level` are v1 legacy:
+// the reader maps them (enabled -> mode, level 0..1 -> ~gainDb) and the
+// writer no longer emits them. Absence means click off, main out, 0 dB.
 struct ClickState {
   bool enabled = false;
   float level = 0.5f;
   int bars = 1;
+  int mode = 0;
+  int output = 0;
+  float gainDb = 0.0f;
   friend bool operator==(const ClickState&, const ClickState&) = default;
+};
+
+// One punch/transport marker: start or stop recording/playback at a measure
+// boundary when enabled. Measures are 1-based; the reader clamps below 1.
+struct PunchPoint {
+  bool enabled = false;
+  int measure = 1;
+  friend bool operator==(const PunchPoint&, const PunchPoint&) = default;
+};
+
+struct PunchState {
+  PunchPoint playFrom;
+  PunchPoint in;
+  PunchPoint out;
+  friend bool operator==(const PunchState&, const PunchState&) = default;
+};
+
+// Active take per track: empty string means the live input (no take
+// playback). Non-empty is the take file name stem the track plays back when
+// disarmed. Newest-wins on overlap is engine policy, not stored here.
+struct TakesState {
+  std::array<std::string, audio::kMaxInputs> active{};
+  friend bool operator==(const TakesState&, const TakesState&) = default;
+};
+
+// Monitor configuration. `phonesSrc`: 0 = CUE mix, 1 = Main duplicate.
+// `style`: 0 = per-track CUE fader levels, 1 = per-track CUE toggle.
+struct CueState {
+  int phonesSrc = 0;
+  int style = 0;
+  friend bool operator==(const CueState&, const CueState&) = default;
+};
+
+// Per-destination send source: 0 = pre-fader (gain applied, vol not),
+// 1 = post-fader. Gain is always applied upstream of both.
+struct SendsState {
+  int cue = 1;
+  int fx1 = 1;
+  int fx2 = 1;
+  int out34 = 1;
+  int rec = 1;
+  friend bool operator==(const SendsState&, const SendsState&) = default;
+};
+
+// Main-bus compressor (subset of the classic parameter set). Threshold in dB
+// (-48..0), ratio 1..100, attack/release in ms, makeup in dB (-36..+36),
+// `mode`: 0 = peak, 1 = RMS. Applied to Main 1&2 (+phones when phonesSrc
+// is Main); never to OUT3&4.
+struct MainCompState {
+  bool on = false;
+  float threshDb = -12.0f;
+  float ratio = 2.0f;
+  float attackMs = 10.0f;
+  float releaseMs = 100.0f;
+  float makeupDb = 0.0f;
+  int mode = 0;
+  friend bool operator==(const MainCompState&, const MainCompState&) = default;
 };
 
 // One MIDI-learn binding. `target` is a dotted app parameter path such as
@@ -114,6 +192,12 @@ struct Snapshot {
   TransportState transport;
   ClickState click;
   std::vector<MidiMapEntry> midimap;
+  bool isTemplate = false;  // v2: settings-only project, no take registry
+  TakesState takes;
+  PunchState punch;
+  CueState cue;
+  SendsState sends;
+  MainCompState mainComp;
   friend bool operator==(const Snapshot&, const Snapshot&) = default;
 };
 
@@ -137,15 +221,18 @@ class FxSlotTarget {
 
 // Reads the live Router/Engine (and optional FX slots) into a session snapshot.
 // Ports 0..kPortCount-1 and all 18 mixer strips are always captured, so the
-// result is canonical and save/load round-trips exactly. The click and midimap
-// sections stay at their defaults; the app fills them before save().
+// result is canonical and save/load round-trips exactly. The app-owned
+// sections (click, midimap, takes, punch, cue, sends, mainComp, isTemplate)
+// stay at their defaults; the app fills them before save().
 Snapshot capture(const midi::Router& router, const audio::Engine& engine,
                  std::span<FxSlotTarget*> fxSlots = {});
 
 // Applies a snapshot to the live objects. The router and mixer are replaced
 // wholesale (defaults for anything the snapshot omits); FX slots are updated
 // only when the effect id can be loaded. Invalid port/route ids are ignored.
-// Click and midimap are app-owned and are not applied here.
+// The app-owned sections (click, midimap, takes, punch, cue, sends,
+// mainComp, isTemplate, out34mode and the per-channel cue/out34 sends) are
+// not applied here; the app forwards them once the engine exposes them.
 void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine,
            std::span<FxSlotTarget*> fxSlots = {});
 
@@ -158,9 +245,10 @@ struct LoadResult {
   Snapshot snapshot;
 };
 
-// Reads and validates a session file. Version != 1 is rejected, as is any
-// malformed JSON or wrong-typed known field; missing fields take defaults and
-// unknown fields are ignored. Never throws.
+// Reads and validates a session file. Versions 1 and 2 are accepted (v1
+// click enabled/level map onto the v2 mode/output/gainDb fields); anything
+// else is rejected, as is any malformed JSON or wrong-typed known field;
+// missing fields take defaults and unknown fields are ignored. Never throws.
 LoadResult load(const std::string& path) noexcept;
 
 }  // namespace mnky::session
