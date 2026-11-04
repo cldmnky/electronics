@@ -35,9 +35,12 @@ pi/
   Protocol semantics: `docs/protocol.md` (SPI contract, READY, session/seq
   dedup, idle-fill repeats, registry, Pico-clock-master + USB mirror design).
 - Tests live next to code (`test_<mod>.cpp`), build with:
-  `c++ -std=c++20 -Wall -Wextra -Werror -I. -I../third_party[/rtmidi] <test>.cpp <sources...> -o /tmp/t_<mod> && /tmp/t_<mod>`
+  `clang++ -std=c++20 -Wall -Wextra -Werror -I. -I../third_party[/rtmidi] <test>.cpp <sources...> -o /tmp/t_<mod> && /tmp/t_<mod>`
   must print PASS lines and exit 0. RtMidi compiles into the midi test/user
   with `-D__MACOSX_CORE__` (mac) / `-D__LINUX_ALSA__` (Pi) + frameworks as needed.
+- Toolchain: on macOS ALWAYS Apple `clang++` (bare `c++` here is nix GCC,
+  which cannot see macOS frameworks — the midi build fails under it while
+  looking innocent). On Pi/Linux use system `c++`. Root CMake enforces this.
 
 ## Module contracts (exact names — implementations must match)
 
