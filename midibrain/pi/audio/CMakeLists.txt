@@ -16,7 +16,7 @@ endif()
 find_package(Threads REQUIRED)
 
 add_library(mnky_audio STATIC
-  engine.cpp recorder.cpp
+  engine.cpp recorder.cpp click.cpp
   fx/comp.cpp fx/delay.cpp fx/effect.cpp fx/eq.cpp fx/params.cpp fx/registry.cpp fx/reverb.cpp)
 target_include_directories(mnky_audio PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(mnky_audio PUBLIC cxx_std_20)
@@ -34,6 +34,19 @@ add_executable(test_fx test_fx.cpp)
 target_compile_options(test_fx PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_fx PRIVATE mnky_audio)
 add_test(NAME test_fx COMMAND test_fx)
+
+# Engine tap provenance / recorder master arming and the click source. Owned
+# here (like test_fx) so the standalone audio build runs them too; the root
+# build's mnky_module_tests() skips targets that already exist.
+add_executable(test_audio_features test_audio_features.cpp)
+target_compile_options(test_audio_features PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
+target_link_libraries(test_audio_features PRIVATE mnky_audio)
+add_test(NAME test_audio_features COMMAND test_audio_features)
+
+add_executable(test_click test_click.cpp)
+target_compile_options(test_click PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
+target_link_libraries(test_click PRIVATE mnky_audio)
+add_test(NAME test_click COMMAND test_click)
 
 # pi/CMakeLists.txt already builds test_audio from test_audio.cpp through
 # mnky_module_tests(), so only the standalone build creates the target here.

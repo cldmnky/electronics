@@ -57,7 +57,8 @@ public:
     struct Take {
         /// Take directory, `take-<utc>/` under the requested base directory.
         std::string path;
-        /// WAV files that closed cleanly: armed inputs plus master.
+        /// WAV files that closed cleanly: armed inputs plus master.wav when
+        /// master recording was armed.
         int files = 0;
         uint64_t frames = 0;
         uint64_t drops = 0;
@@ -69,10 +70,13 @@ public:
     Recorder& operator=(const Recorder&) = delete;
 
     /// Creates `dir/take-<utc>/` (`-N` suffix on a same-second collision) and
-    /// opens `chNN.wav` for every bit set in `armMask` plus `master.wav`.
+    /// opens `chNN.wav` for every bit set in `armMask`, plus `master.wav` when
+    /// `masterArm` is true (the default). With `masterArm == false` the master
+    /// bus is not recorded and the take reports only the channel files.
     /// Returns false when a take is already running, `armMask` is empty, or the
     /// directory/files cannot be created.
-    bool startTake(const std::string& dir, uint32_t armMask, uint32_t sampleRate = 48000);
+    bool startTake(const std::string& dir, uint32_t armMask, uint32_t sampleRate = 48000,
+                   bool masterArm = true);
     /// Queues one block (`n` <= kBlockSize) of channel taps and the master bus.
     /// Never blocks on disk and never allocates.
     void writeBlock(const float* const* taps, const float* masterL, const float* masterR, int n);
@@ -104,6 +108,7 @@ private:
     int mCount = 0;
     bool mStop = false;
     uint32_t mArmMask = 0;
+    bool mMasterArm = true;
     std::string mTakeDir;
     std::atomic<bool> mRunning{false};
     std::atomic<uint64_t> mDrops{0};

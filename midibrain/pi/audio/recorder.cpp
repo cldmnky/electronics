@@ -126,7 +126,8 @@ Recorder::~Recorder() {
     if (mThread.joinable()) mThread.join();
 }
 
-bool Recorder::startTake(const std::string& dir, uint32_t armMask, uint32_t sampleRate) {
+bool Recorder::startTake(const std::string& dir, uint32_t armMask, uint32_t sampleRate,
+                         bool masterArm) {
     std::lock_guard<std::mutex> lock(mMutex);
     if (mRunning.load(std::memory_order_acquire)) return false;
     if (dir.empty() || sampleRate == 0) return false;
@@ -155,7 +156,9 @@ bool Recorder::startTake(const std::string& dir, uint32_t armMask, uint32_t samp
         if (!armed(mask, c)) continue;
         opened = mChannelFile[c].open((std::filesystem::path(takeDir) / channelFileName(c)).string(), 1, sampleRate);
     }
-    opened = opened && mMasterFile.open((std::filesystem::path(takeDir) / "master.wav").string(), 2, sampleRate);
+    opened = opened &&
+             (!masterArm ||
+              mMasterFile.open((std::filesystem::path(takeDir) / "master.wav").string(), 2, sampleRate));
     if (!opened) {
         for (int c = 0; c < kMaxInputs; ++c) {
             if (armed(mask, c)) mChannelFile[c].close();
@@ -165,6 +168,7 @@ bool Recorder::startTake(const std::string& dir, uint32_t armMask, uint32_t samp
     }
 
     mArmMask = mask;
+    mMasterArm = masterArm;
     mTakeDir = takeDir;
     mHead = 0;
     mTail = 0;
@@ -220,7 +224,7 @@ Recorder::Take Recorder::stopTake() {
     for (int c = 0; c < kMaxInputs; ++c) {
         if (armed(mArmMask, c) && mChannelFile[c].close()) ++files;
     }
-    if (mMasterFile.close()) ++files;
+    if (mMasterArm && mMasterFile.close()) ++files;
 
     take.path = mTakeDir;
     take.files = files;
@@ -252,11 +256,15 @@ void Recorder::writeBlockToDisk(const Block& block) {
         (void)mChannelFile[c].writeFrames(block.ch[c], frames);
     }
     float interleaved[2 * kBlockSize];
-    for (int i = 0; i < frames; ++i) {
-        interleaved[2 * i] = block.master[0][i];
-        interleaved[2 * i + 1] = block.master[1][i];
+    bool wroteMaster = true;
+    if (mMasterArm) {
+        for (int i = 0; i < frames; ++i) {
+            interleaved[2 * i] = block.master[0][i];
+            interleaved[2 * i + 1] = block.master[1][i];
+        }
+        wroteMaster = mMasterFile.writeFrames(interleaved, frames);
     }
-    if (mMasterFile.writeFrames(interleaved, frames)) {
+    if (wroteMaster) {
         mFrames.fetch_add(static_cast<uint64_t>(frames), std::memory_order_relaxed);
     }
 }

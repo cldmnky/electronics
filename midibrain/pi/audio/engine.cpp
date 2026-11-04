@@ -51,8 +51,11 @@ void Engine::process(const float* const* in, int nch, int n, float* outL, float*
             for (int i = 0; i < frames; ++i) mTap[c][i] = 0.0f;
             continue;
         }
+        const bool preGain = ch.tapPoint == TapPoint::PreGain;
         if (!audible(ch, anySolo)) {
-            for (int i = 0; i < frames; ++i) mTap[c][i] = src[i] * ch.gain;
+            for (int i = 0; i < frames; ++i) {
+                mTap[c][i] = preGain ? src[i] : src[i] * ch.gain;
+            }
             continue;
         }
         float gainL = 0.0f;
@@ -60,7 +63,7 @@ void Engine::process(const float* const* in, int nch, int n, float* outL, float*
         constantPowerPan(ch.pan, gainL, gainR);
         for (int i = 0; i < frames; ++i) {
             const float x = src[i] * ch.gain;
-            mTap[c][i] = x;
+            mTap[c][i] = preGain ? src[i] : x;
             accL[i] += x * gainL;
             accR[i] += x * gainR;
             for (int s = 0; s < kNumSends; ++s) {

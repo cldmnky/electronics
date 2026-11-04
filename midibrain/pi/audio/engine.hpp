@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace mnky::audio {
 
 /// UMC1820 + ADA8200 capture width: 16 analog inputs plus 2 S/PDIF channels.
@@ -9,9 +11,14 @@ inline constexpr int kNumSends = 2;
 /// Fixed ALSA processing block.
 inline constexpr int kBlockSize = 128;
 
+/// Where Engine::tap() reads a strip. `PostGain` is the historical `in * gain`
+/// tap; `PreGain` is the raw device input and ignores the strip's gain.
+enum class TapPoint : uint8_t { PreGain, PostGain };
+
 /// Mixer strip for one input. `gain` is a linear pre-pan trim, `pan` runs from
 /// 0 (hard left) through 0.5 (centre) to 1 (hard right) with a constant-power
-/// law, and `send[s]` is a post-fader level into FX bus `s`.
+/// law, and `send[s]` is a post-fader level into FX bus `s`. `tapPoint` picks
+/// the recorder/monitor tap; the default keeps the post-gain behavior.
 struct Channel {
     float gain = 1.0f;
     float pan = 0.5f;
@@ -19,6 +26,7 @@ struct Channel {
     bool solo = false;
     bool arm = false;
     float send[kNumSends] = {0.0f, 0.0f};
+    TapPoint tapPoint = TapPoint::PostGain;
 };
 
 /// Stereo in-place FX unit hosted on a send bus. `ch` holds `nch` block pointers
@@ -41,9 +49,10 @@ public:
     /// master-bus result.
     void process(const float* const* in, int nch, int n, float* outL, float* outR);
 
-    /// Post-gain mono tap of one input, valid until the next process() call.
-    /// nullptr when `ch` is outside 0..kMaxInputs-1. Mute, solo, pan and master
-    /// do not affect the tap.
+    /// Mono tap of one input at its Channel::tapPoint, valid until the next
+    /// process() call: the raw input for PreGain, `in * gain` for the default
+    /// PostGain. nullptr when `ch` is outside 0..kMaxInputs-1. Mute, solo, pan
+    /// and master do not affect the tap.
     const float* tap(int ch) const;
 
     /// Out-of-range indices are ignored, so a UI can push all 18 strips blindly.
