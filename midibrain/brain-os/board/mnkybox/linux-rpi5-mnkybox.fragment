@@ -1,0 +1,53 @@
+# MNKYBOX Raspberry Pi 5 kernel fragment.
+#
+# Applied on top of the raspberrypi rpi-6.12.y bcm2712 defconfig
+# (BR2_LINUX_KERNEL_DEFCONFIG="bcm2712"). Every entry here is a deliberate
+# product decision; nothing is added "just in case".
+#
+# Real-time behaviour (approved decision):
+#   CONFIG_PREEMPT is full kernel preemption. PREEMPT_RT is NOT enabled: the
+#   RT patchset for 6.6/6.12 is out of tree for rpi-6.12.y in this tree, and
+#   the audio engine block budget is 2.67 ms with the Pico 2 as clock master,
+#   which full preemption covers. rpi-6.12.y-rt remains the documented
+#   upgrade path (README.md). `threadirqs` on the kernel command line forces
+#   the remaining interrupt handlers into threads.
+CONFIG_PREEMPT=y
+# CONFIG_PREEMPT_NONE is not set
+# CONFIG_PREEMPT_VOLUNTARY is not set
+CONFIG_PREEMPT_BUILD=y
+CONFIG_PREEMPT_COUNT=y
+CONFIG_HZ_1000=y
+# CONFIG_HZ_250 is not set
+# CONFIG_HZ_300 is not set
+CONFIG_NO_HZ_IDLE=y
+
+# 4 KiB pages: same choice as the upstream Pi 5 fragment (Buildroot
+# board/raspberrypi/linux-4k-page-size.fragment). 16 KiB pages gain nothing
+# here and break prebuilt userland assumptions.
+CONFIG_ARM64_4K_PAGES=y
+# CONFIG_ARM64_16K_PAGES is not set
+
+# Touch: Goodix GT911 on the DSI I2C bus of the Waveshare 3.5inch DSI LCD (H).
+CONFIG_TOUCHSCREEN_GOODIX=y
+CONFIG_I2C=y
+CONFIG_I2C_CHARDEV=y
+
+# Display path for the DSI panel (vc4-kms-v3d + the Pi 5 DSI host).
+CONFIG_DRM=y
+CONFIG_DRM_MIPI_DSI=y
+CONFIG_DRM_V3D=y
+CONFIG_BACKLIGHT_CLASS_DEVICE=y
+CONFIG_FB_SIMPLE=y
+
+# Audio: interfaces are USB class-compliant devices; DMA-buffer plumbing is
+# required by PipeWire's ALSA plugin.
+CONFIG_SND=y
+CONFIG_SND_USB_AUDIO=y
+CONFIG_SND_SOC=y
+CONFIG_SND_DMAENGINE_PCM=y
+CONFIG_DMA_SHARED_BUFFER=y
+
+# WiFi: BCM43455 over SDIO (brcmfmac) + regulatory enforcement.
+CONFIG_BRCMFMAC=y
+CONFIG_CFG80211=y
+CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y

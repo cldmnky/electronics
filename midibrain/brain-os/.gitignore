@@ -1,0 +1,5 @@
+# Buildroot downloads and build output (this tree is used out-of-tree from a
+# Buildroot 2025.02.x checkout; nothing here is generated in place)
+output/
+dl/
+*.o

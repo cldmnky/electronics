@@ -1,0 +1,7 @@
+# MNKYBOX external tree — no packages.
+#
+# The application is a rootfs overlay (prebuilt binaries + systemd units) and
+# the Waveshare panel overlay is compiled from vendored source by
+# board/mnkybox/post-build.sh, so this tree adds no Buildroot package.
+# Configuration and board files live under configs/ and board/mnkybox/.
+comment "MNKYBOX: application ships as a rootfs overlay, no packages here"

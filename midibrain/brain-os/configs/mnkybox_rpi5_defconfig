@@ -1,0 +1,126 @@
+# MNKYBOX — MIDI Brain instrument image for the Raspberry Pi 5.
+#
+# Derived from Buildroot 2025.02.x configs/raspberrypi5_defconfig (kernel
+# tarball, bcm2712 defconfig, DTS, rpi-firmware, genimage layout), then
+# changed for this product: systemd, PipeWire + WirePlumber + Weston with
+# XWayland, seatd, WiFi + Dropbear, and the app as a rootfs overlay.
+#
+# Differences from upstream, all deliberate (see README.md):
+#   * No U-Boot: U-Boot has no rpi_5/BCM2712 board (verified v2025.01..v2026.01),
+#     so the Pi 5 firmware loads the kernel directly.
+#   * Our own config.txt/cmdline.txt, genimage layout, kernel fragment,
+#     post-build/post-image scripts, users table and rootfs overlay.
+#   * linux-headers 6.12 to match the rpi-6.12.y kernel.
+
+# Architecture / toolchain
+BR2_aarch64=y
+BR2_cortex_a76=y
+BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_12=y
+BR2_TOOLCHAIN_BUILDROOT_CXX=y
+BR2_ENABLE_LOCALE=y
+
+# Board files (external tree)
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_MNKYBOX_PATH)/board/mnkybox/patches"
+BR2_DOWNLOAD_FORCE_CHECK_HASHES=y
+BR2_ROOTFS_USERS_TABLES="$(BR2_EXTERNAL_MNKYBOX_PATH)/board/mnkybox/users.txt"
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_MNKYBOX_PATH)/board/mnkybox/rootfs-overlay"
+BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_MNKYBOX_PATH)/board/mnkybox/post-build.sh"
+BR2_ROOTFS_POST_IMAGE_SCRIPT="$(BR2_EXTERNAL_MNKYBOX_PATH)/board/mnkybox/post-image.sh"
+
+# System
+BR2_TARGET_GENERIC_HOSTNAME="mnkybox"
+BR2_TARGET_GENERIC_ISSUE="MNKYBOX — MIDI Brain"
+# No getty: the display belongs to Weston and login is SSH-key only
+BR2_TARGET_GENERIC_GETTY_PORT=""
+BR2_SYSTEM_DHCP="eth0"
+BR2_INIT_SYSTEMD=y
+BR2_PACKAGE_SYSTEMD_NETWORKD=y
+# seatd, not systemd-logind, owns the DRM seat (see README.md)
+# BR2_PACKAGE_SYSTEMD_LOGIND is not set
+BR2_PACKAGE_DBUS=y
+BR2_PACKAGE_UTIL_LINUX_BINARIES=y
+BR2_PACKAGE_KMOD=y
+BR2_PACKAGE_KMOD_TOOLS=y
+BR2_PACKAGE_BUSYBOX_SHOW_OTHERS=y
+BR2_PACKAGE_XZ=y
+
+# Kernel: Raspberry Pi downstream rpi-6.12.y, bcm2712 defconfig + our fragment
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_CUSTOM_TARBALL=y
+BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION="$(call github,raspberrypi,linux,576cc10e1ed50a9eacffc7a05c796051d7343ea4)/linux-576cc10e1ed50a9eacffc7a05c796051d7343ea4.tar.gz"
+BR2_LINUX_KERNEL_DEFCONFIG="bcm2712"
+BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_MNKYBOX_PATH)/board/mnkybox/linux-rpi5-mnkybox.fragment"
+BR2_LINUX_KERNEL_DTS_SUPPORT=y
+BR2_LINUX_KERNEL_INTREE_DTS_NAME="broadcom/bcm2712-rpi-5-b"
+BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+
+# Pi 5 firmware (EEPROM bootloader; only the overlays and boot files are used)
+BR2_PACKAGE_RPI_FIRMWARE=y
+BR2_PACKAGE_RPI_FIRMWARE_CONFIG_FILE="$(BR2_EXTERNAL_MNKYBOX_PATH)/board/mnkybox/boot/config.txt"
+BR2_PACKAGE_RPI_FIRMWARE_CMDLINE_FILE="$(BR2_EXTERNAL_MNKYBOX_PATH)/board/mnkybox/boot/cmdline.txt"
+BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS=y
+
+# WiFi: BCM43455 (Pi 5 board file), regulatory database, wpa_supplicant
+BR2_PACKAGE_LINUX_FIRMWARE=y
+BR2_PACKAGE_LINUX_FIRMWARE_CYPRESS_CYW43XXX=y
+BR2_PACKAGE_WIRELESS_REGDB=y
+BR2_PACKAGE_WPA_SUPPLICANT=y
+BR2_PACKAGE_WPA_SUPPLICANT_NL80211=y
+BR2_PACKAGE_IW=y
+
+# Remote access: key-only Dropbear
+BR2_PACKAGE_DROPBEAR=y
+BR2_PACKAGE_DROPBEAR_DISABLE_REVERSEDNS=y
+
+# Audio: ALSA tools for diagnostics, PipeWire + WirePlumber as the sound server
+BR2_PACKAGE_ALSA_LIB=y
+BR2_PACKAGE_ALSA_UTILS=y
+BR2_PACKAGE_ALSA_UTILS_APLAY=y
+BR2_PACKAGE_ALSA_UTILS_AMIXER=y
+BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y
+BR2_PACKAGE_PIPEWIRE=y
+BR2_PACKAGE_WIREPLUMBER=y
+BR2_PACKAGE_LUA_5_4=y
+
+# Display: Weston 14 DRM backend, kiosk shell, XWayland for the JUCE app
+BR2_PACKAGE_MESA3D=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_V3D=y
+# kmsro: the Pi 5 display controller (RP1) has no dedicated Mesa driver;
+# V3D is render-only, so GBM/EGL on the display node goes through kmsro.
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_KMSRO=y
+BR2_PACKAGE_MESA3D_OPENGL_EGL=y
+BR2_PACKAGE_MESA3D_OPENGL_ES=y
+BR2_PACKAGE_XORG7=y
+BR2_PACKAGE_WESTON=y
+BR2_PACKAGE_WESTON_DEFAULT_DRM=y
+BR2_PACKAGE_WESTON_XWAYLAND=y
+BR2_PACKAGE_WESTON_SHELL_KIOSK=y
+# BR2_PACKAGE_WESTON_SHELL_DESKTOP is not set
+# BR2_PACKAGE_WESTON_SHELL_FULLSCREEN is not set
+# BR2_PACKAGE_WESTON_SHELL_IVI is not set
+BR2_PACKAGE_SEATD=y
+BR2_PACKAGE_SEATD_DAEMON=y
+
+# Application runtime libraries (X11/GL/fonts/ALSA; the app is prebuilt)
+BR2_PACKAGE_FREETYPE=y
+BR2_PACKAGE_FONTCONFIG=y
+BR2_PACKAGE_DEJAVU=y
+BR2_PACKAGE_XLIB_LIBX11=y
+BR2_PACKAGE_XLIB_LIBXEXT=y
+BR2_PACKAGE_XLIB_LIBXINERAMA=y
+BR2_PACKAGE_XLIB_LIBXRANDR=y
+BR2_PACKAGE_XLIB_LIBXCURSOR=y
+
+# Filesystem: 1 GiB ext4 root, 128 MiB FAT32 boot (genimage-mnkybox.cfg)
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE="1024M"
+BR2_TARGET_ROOTFS_EXT2_LABEL="mnkybox-root"
+# BR2_TARGET_ROOTFS_TAR is not set
+
+# Host tools for the image
+BR2_PACKAGE_HOST_GENIMAGE=y
+BR2_PACKAGE_HOST_DOSFSTOOLS=y
+BR2_PACKAGE_HOST_MTOOLS=y
+BR2_PACKAGE_HOST_DTC=y
+BR2_PACKAGE_HOST_KMOD_XZ=y
