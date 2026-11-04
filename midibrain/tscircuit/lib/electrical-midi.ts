@@ -194,7 +194,9 @@ export const gateOnVgs = (): number => {
  */
 export const gateOffVgs = (): number => {
   // Worst-case off state: strongest rail, largest pull-up and series
-  // resistors, weakest pull-down. A larger rail or pull-up raises |VGS|.
+  // resistors, strongest pull-down (minimum 36 kOhm: the lowest resistance
+  // pulls the gate hardest toward ground, which is the largest |VGS|).
+  // A larger rail or pull-up raises |VGS|; do not "fix" the minimum here.
   const pullup = MIDI_OUT_GATE_OHM.pullup * (1 + MIDI_OUT_GATE_TOLERANCE)
   const series = MIDI_OUT_GATE_OHM.series * (1 + MIDI_OUT_GATE_TOLERANCE)
   const pulldown = OUTPUT_GATE_DRIVE.gpioPullDownMinOhm

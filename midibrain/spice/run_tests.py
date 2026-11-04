@@ -11,6 +11,7 @@ current cannot reach makes the check fail.
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -60,6 +61,11 @@ def check(label: str, condition: bool, detail: str) -> None:
 
 
 def main() -> int:
+    if shutil.which("ngspice") is None:
+        print("FAIL: the `ngspice` executable is not on PATH, so no SPICE check can run. "
+              "Install the ngspice package (Debian/Ubuntu: `apt install ngspice`) "
+              "and re-run `make test`.", file=sys.stderr)
+        return 1
     # AO3401A high-side smoke model: gate network 100 ohm / 2.2 kOhm, 33 ohm
     # ring, 22 ohm tip, 220 ohm receiver, 1.9 V LED. Not the AOS model.
     out = run("midi_out")
