@@ -27,8 +27,8 @@ closed by a schematic change on this revision.
 
 | Item | Status | Where | One-line reason + the number that changed |
 | --- | --- | --- | --- |
-| R01 | **Fixed** | `sections/midi.tsx` (`REMOVED_REFS`: D2) | D2 was forward-parallel with the U15 LED; removed, D1 stays. MIDI IN current is now ~5.27 mA through the normal 220 Ω path instead of a 0.7 V shunt. |
-| R02 | **Fixed** | `sections/midi.tsx`, `lib/footprints.tsx` (`FP_jclpcb_R2512`) | MIDI OUT is a non-inverting **Type A** transmitter: `Q2` is an **MMBT3906 PNP** (`C53444`, base through `R58` 4.7k, pulled up by `R61` 10k to `P3V3_D`) that switches `P3V3_D` into `R59` **22 Ω 1 W 2512** (`C118189`) and out on the **ring** (DIN pin 4, source), while the **tip** returns through `R60` **33 Ω 1 W 2512** (`C53728`) to GND (DIN pin 5, sink) — so the MCU pin no longer sits on the cable **and** the polarity is right: idle (UART high) leaves the PNP off, i.e. no loop current, and the start bit turns it on. Faults: a ring shorted to GND with the driver on is 3.3/22 = 150 mA, inside Q2's 200 mA rating, and 0.50 W in R59's 1 W part; a tip shorted to 3.3 V is 0.33 W in R60's 1 W part; a tip shorted to GND is nothing. Worst-case loop current is still **4.48 mA (≈4.5 mA)** into a receiver at the TLP2362's 1.7 V maximum Vf (3.135 V − 1.7 V − 0.2 V over 22 Ω + 33 Ω + 220 Ω). |
+| R01 | **Fixed** | `sections/midi.tsx` (`REMOVED_REFS`: D2) | D2 was forward-parallel with the U15 LED; removed, D1 stays. MIDI IN current is now **5.34 mA worst case** through the normal 220 Ω path instead of a 0.7 V shunt (recomputed for the TLP2361, third round). |
+| R02 | **Fixed (third round)** | `sections/midi.tsx`, `lib/pins.ts`, `lib/footprints.tsx` | MIDI OUT is a non-inverting **Type A** transmitter, and the driver is now an **AO3401A P-channel MOSFET** (`C15127`, pins 1/2/3 = gate/source/drain) instead of the MMBT3906 PNP: the PNP's 3.437 mA legacy corner ran its 200 mA / 0.35 W SOT-23 case close to the limit on a grounded ring, and a FET switch has no base-current error. Gate network **R58 180 Ω** (`C22828`) + **R61 2.2 kΩ** (`C4190`): peak **19.44 mA** (inside the assumed 20 mA per-pin maximum), VGS(on) **−2.528 V** worst case, |VGS(off)| **0.370 V** (below the 0.5 V minimum threshold, so the FET is off at idle, reset and high-Z). The 1 W 2512 parts swapped: **R59 33 Ω** (`C53728`) in the MOSFET/ring path and **R60 22 Ω** (`C118189`) as the permanently grounded tip sink, which has no transistor in it and is set by the fault alone (0.551 W of a 1 W part, where 10 Ω would be 1.20 W). Ring fault **106 mA**, 0.368 W in R59 and 1.4 mW in the FET. Loop current **4.31 mA** worst case into a CA-033 receiver (55 Ω legs, 1.9 V, +1 % parts, RDS(on) 0.13 Ω) — 0.19 mA below what CA-033's own 43 Ω values give, see `doc/ELECTRICAL-VERIFICATION.md`. |
 | R03 | **Fixed** | `sections/cv.tsx`, `INTENTIONAL_PIN_MOVES` (U11.3/12, R31.1, R32.1) | The two spare TL074 channels are unity-gain followers on the DAC outputs, so the unbuffered DAC's 13 kΩ only drives an opamp input. Simulation: 1.5121 V/V with the 13 kΩ source (was 1.085 without the follower). **Firmware must disable the DAC buffer** (`buff_state = DISABLED`). |
 | R04 | **Fixed** | `sections/cv.tsx` (D5, C2128) | 1N4148WS across Q1 base-emitter, cathode on the base: a −10 V patch now clamps at about −0.6 V instead of driving −9.09 V into a 6 V-rated junction. |
 | R05 | **Fixed** | `doc/ASSEMBLY.md` (rewritten) | J2's key is documented on the lower long side (silk y ≈ −59.25…−60.56, same edge as the lower M3 holes), the Daisy USB is documented at the module's **−X** end (board x ≈ −25…−26.5, y ≈ 36.5…44.5), J1 is documented as a Type A/B jumper block needing **two shunts** (not board parts) with the corrected map — **Type A = shunts 3–5 and 4–6** (ring → opto anode, tip → opto cathode), **Type B = 4–2 and 3–1**, and a 2.54 mm shunt only bridges the 2.54 mm pairs (4–5 is a 3.59 mm diagonal, never a valid pair) — and the sequence is power-first with a dummy load on P5V before the module is fitted. |
@@ -86,6 +86,78 @@ the fixes rather than in the original design. What changed after it:
   every tscircuit-only part were unverified; step 4 now asserts each declared
   pin sits on its declared net, that no `REMOVED_REFS` survived and that all
   six `INTENTIONAL_PIN_MOVES` are applied. The gate is 15 steps.
+- **Two new checks cover what the gate does not (run by hand for now).**
+  `tools/check_elec.py` recomputes the MIDI currents, fault powers and gate
+  drive from the values in the built circuit and compares them with the
+  datasheet limits (`tools/test_elec.py` breaks the circuit on purpose to prove
+  the check fails). `tools/check_schematic.py` asserts that every sheet's notes
+  stay clear of the components, the net labels and each other, and reports the
+  auto-layout's own label collisions instead of hiding them.
+
+### Third review round — MIDI electrical (part and value level)
+
+A focused re-check of the MIDI sheet against the primary data sheets after the
+second round changed two parts and four values. Nothing else on the board moved,
+no pad, pin number or net changed, and the netlist is still the same **102 nets
+with 429 pads**.
+
+- **U15 TLP2362 → TLP2361** (`C107626`, MPN `TLP2361(TPL,E`). The TLP2362 needs
+  **IFHL ≤ 5.0 mA** with a recommended on-current from **7.5 mA**; this board's
+  own 3.3 V Type A transmitter delivers **5.34 mA worst case**, i.e. 1.07× the
+  replaced part's threshold and 0.71× its recommended current. The TLP2361 is a
+  Toshiba **SO6 11-4L1S** with the identical pin map (1 = anode, 3 = cathode,
+  4 = GND, 5 = VO, 6 = VCC) and **IFHL ≤ 1.6 mA at 125 °C** (1.3 mA at 105 °C)
+  with a recommended 2–6 mA, so the same loop has **3.34×** margin. Its output
+  is a **totem pole** and still inverting (input high = LED on = output low), so
+  the UART idle level and the firmware contract are unchanged; R48 2.2 kΩ is
+  kept as a fail-safe high level and costs 1.5 mA when VO is low, inside the
+  3.2 mA VOL rating. The C37658 EasyEDA 3D model was tied to the old part, so
+  **U15 is pad-only in 3D** (no verified model for C107626).
+- **Q2 MMBT3906 → AO3401A** (`C15127`, AOS Rev 3.1): P-channel enhancement
+  MOSFET, **−4.0 A / −30 V**, RDS(on) **≤ 85 mΩ at VGS = −2.5 V** (≤ 60 mΩ at
+  −4.5 V, 127.5 mΩ at 125 °C as the bound used here), VGS(max) ±12 V, Qg 7 nC and
+  Ciss 645 pF. Source on `P3V3_D`, drain through R59 to the ring, gate from
+  `USART1_TX`. The polarity is unchanged: idle/high-Z leaves the gate at the
+  source (R61) so the FET is off, and the start bit pulls the gate low.
+- **The `<mosfet>` element could not be used.** In the installed core
+  `mosfetProps` has no `pinLabels` field, so a pinLabels prop is stripped by the
+  zod schema and the element hard-wires the schematic symbol's order
+  pin1 = drain, pin2 = source, pin3 = gate — the opposite of the AO3401A's
+  SOT-23 pinout (**1 = gate, 2 = source, 3 = drain**). The tree therefore uses
+  `<transistor type="mosfet" symbolName="p_channel_e_mosfet_transistor_gate_left_drain_bottom">`
+  with explicit `pinLabels`, which keeps the pad numbering right **and** draws
+  the real P-channel MOSFET symbol. `check_extras` and the new
+  `tools/check_elec.py` assert the pin → net map on the built circuit.
+- **R58 4.7 kΩ → 180 Ω** (`C22828`). With a 4.7 kΩ gate resistor the FET would
+  never reach the −2.5 V RDS(on) point; with 100 Ω the charge peak is
+  3.465/(100 × 0.99) = **35.0 mA**, which nothing on this board proves the
+  STM32H750 can source. At **180 Ω** the bound is **19.44 mA**, VGS(on) is
+  **−2.528 V** (still the −2.5 V spec point) and the edge is 116 ns.
+- **R61 10 kΩ → 2.2 kΩ** (`C4190`). The gate pull-up is now the divider's upper
+  leg: it holds |VGS| at **0.370 V** when the UART drives high at VOH min, and
+  sinks 1.5 mA while the pin is low.
+- **R59/R60 swapped to 33 Ω / 22 Ω** (`C53728` / `C118189`). The resistor in the
+  MOSFET path takes the CA-033 3.3 V source value (33 Ω) and the permanently
+  grounded tip resistor takes the fault-driven value (22 Ω): a tip forced to
+  3.465 V dissipates **0.551 W** of its 1 W rating, where CA-033's 10 Ω would be
+  1.20 W and fail. Both are Uniroyal **2512, 1 W rated to 70 °C and derated
+  above it, F code = ±1 %** (Feb 2019 V.3 data sheet, sections 2.2–2.5 and 9).
+- **Body diode, recorded not fixed:** a mis-plugged second transmitter can hold
+  the ring above 3.3 V and the AO3401A's body diode then conducts into
+  `P3V3_D`; the external 220 Ω limits that to a few mA and VDS stays far inside
+  −30 V. The PNP it replaced had the same reverse path through its
+  collector-base junction.
+
+**What this round does not close** (all of it is in
+`doc/ELECTRICAL-VERIFICATION.md`): the STM32H750 per-pin limit is an
+**assumption** (20 mA, VOL 0.4 V, VOH ≥ VDD − 0.4 V) because st.com could not be
+reached from this host and no mirror with the primary text was found, so the
+gate drive is bounded rather than guaranteed; the loop current is **4.31 mA**
+against CA-033's 4.50 mA reference, because the 22 Ω tip is fault-driven; this
+board's own loop reaches **6.54 mA typical** against the TLP2361's 6 mA
+recommended on-current (inside the 10 mA absolute maximum); and a non-compliant
+5 V source using 33/10 Ω legs would drive **14.8 mA** into the receiver, above
+its absolute maximum — that corner waits for the physical gate.
 
 This is a review, not a redesign: no circuit, placement, BOM, or fabrication
 output was changed. P1 means resolve before ordering a patchable module; P2

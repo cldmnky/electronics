@@ -51,6 +51,7 @@ export const CvSection = () => (
     {/* C16 10nF - CC0603KRX7R9BB104 - LCSC C57112 - 0603B103K500NT - jclpcb:C0603 */}
     <capacitor
       name="C16"
+      schSectionName="cv"
       capacitance="10nF"
       footprint={FP_jclpcb_C0603}
       pcbX="1.74mm"
@@ -71,6 +72,7 @@ export const CvSection = () => (
     {/* C17 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C17"
+      schSectionName="cv"
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="9.96mm"
@@ -90,6 +92,7 @@ export const CvSection = () => (
     {/* C18 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C18"
+      schSectionName="cv"
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="9.96mm"
@@ -109,6 +112,7 @@ export const CvSection = () => (
     {/* C19 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C19"
+      schSectionName="cv"
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="10mm"
@@ -128,6 +132,7 @@ export const CvSection = () => (
     {/* C20 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C20"
+      schSectionName="cv"
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="8.18mm"
@@ -147,6 +152,7 @@ export const CvSection = () => (
     {/* C21 10nF - CC0603KRX7R9BB104 - LCSC C57112 - 0603B103K500NT - jclpcb:C0603 */}
     <capacitor
       name="C21"
+      schSectionName="cv"
       capacitance="10nF"
       footprint={FP_jclpcb_C0603}
       pcbX="11.12mm"
@@ -174,6 +180,7 @@ export const CvSection = () => (
         pole, and limits the CV-out bandwidth to ~16kHz (fine for CV). */}
     <capacitor
       name="C33"
+      schSectionName="cv"
       capacitance="100pF"
       footprint={FP_jclpcb_C0603}
       pcbX="18.5mm"
@@ -190,6 +197,7 @@ export const CvSection = () => (
         same 15.9kHz compensation zero as C33, see that comment. */}
     <capacitor
       name="C34"
+      schSectionName="cv"
       capacitance="100pF"
       footprint={FP_jclpcb_C0603}
       pcbX="0mm"
@@ -204,6 +212,7 @@ export const CvSection = () => (
     {/* Q1 MMBT3904 - MMBT3904_C181119 - LCSC C181119 - jclpcb:SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR */}
     <transistor
       name="Q1"
+      schSectionName="sync"
       type="npn"
       footprint={FP_jclpcb_SOT_23_3_L2_9_W1_6_P1_90_LS2_8_BR}
       pinLabels={{ pin1: "base", pin2: "emitter", pin3: "collector" }}
@@ -229,6 +238,7 @@ export const CvSection = () => (
         SOD-323 footprint is the cathode. */}
     <diode
       name="D5"
+      schSectionName="sync"
       footprint={FP_jclpcb_SOD_323_L1_8_W1_3_LS2_5_RD}
       pinLabels={{ pin1: "cathode", pin2: "anode" }}
       pcbX="13.8mm"
@@ -248,6 +258,7 @@ export const CvSection = () => (
     {/* R21 33K - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R21"
+      schSectionName="sync"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="20.5mm"
@@ -267,6 +278,7 @@ export const CvSection = () => (
     {/* R22 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R22"
+      schSectionName="sync"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="17.78mm"
@@ -286,6 +298,7 @@ export const CvSection = () => (
     {/* R23 1M - PA1206FRF470R001L - LCSC C17927 - 1206W4F1004T5E - jclpcb:R1206 */}
     <resistor
       name="R23"
+      schSectionName="sync"
       resistance="1M"
       footprint={FP_jclpcb_R1206}
       pcbX="4.66mm"
@@ -306,6 +319,7 @@ export const CvSection = () => (
     {/* R24 49.9k - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
     <resistor
       name="R24"
+      schSectionName="sync"
       resistance="49.9k"
       footprint={FP_jclpcb_R0603}
       pcbX="10.26mm"
@@ -325,6 +339,7 @@ export const CvSection = () => (
     {/* R25 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R25"
+      schSectionName="sync"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
       pcbX="14.94mm"
@@ -344,6 +359,7 @@ export const CvSection = () => (
     {/* R26 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R26"
+      schSectionName="sync"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="3.74mm"
@@ -363,6 +379,7 @@ export const CvSection = () => (
     {/* R27 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R27"
+      schSectionName="sync"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="1.74mm"
@@ -382,6 +399,7 @@ export const CvSection = () => (
     {/* R28 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R28"
+      schSectionName="sync"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="8.42mm"
@@ -401,6 +419,7 @@ export const CvSection = () => (
     {/* R29 1K - ERJP03F1000V - LCSC C21190 - 0603WAF1001T5E - jclpcb:R0603 */}
     <resistor
       name="R29"
+      schSectionName="sync"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="3.74mm"
@@ -421,6 +440,7 @@ export const CvSection = () => (
     {/* R30 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R30"
+      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="8.42mm"
@@ -442,6 +462,7 @@ export const CvSection = () => (
         see the U11 IN1P/OUT1 entry at the bottom of this sheet */}
     <resistor
       name="R31"
+      schSectionName="cv"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="6.42mm"
@@ -462,6 +483,7 @@ export const CvSection = () => (
         fed from the U11D follower output (DESIGN-REVIEW R03) */}
     <resistor
       name="R32"
+      schSectionName="cv"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="11.1mm"
@@ -482,6 +504,7 @@ export const CvSection = () => (
         CV-in summer ratio for 0.10..3.11 V headroom, DESIGN-REVIEW R10 */}
     <resistor
       name="R33"
+      schSectionName="cv"
       resistance="30.1k"
       footprint={FP_jclpcb_R0603}
       pcbX="6.44mm"
@@ -503,6 +526,7 @@ export const CvSection = () => (
         CV-in summer offset leg, DESIGN-REVIEW R10 */}
     <resistor
       name="R34"
+      schSectionName="cv"
       resistance="187k"
       footprint={FP_jclpcb_R0603}
       pcbX="13.1mm"
@@ -523,6 +547,7 @@ export const CvSection = () => (
     {/* R35 49.9K - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
     <resistor
       name="R35"
+      schSectionName="cv"
       resistance="49.9k"
       footprint={FP_jclpcb_R0603}
       pcbX="17.78mm"
@@ -542,6 +567,7 @@ export const CvSection = () => (
     {/* R36 49.9K - 0603WAF4992T5E - LCSC C23184 - jclpcb:R0603 */}
     <resistor
       name="R36"
+      schSectionName="cv"
       resistance="49.9k"
       footprint={FP_jclpcb_R0603}
       pcbX="3.74mm"
@@ -561,6 +587,7 @@ export const CvSection = () => (
     {/* R37 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R37"
+      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="8.42mm"
@@ -580,6 +607,7 @@ export const CvSection = () => (
     {/* R38 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R38"
+      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="13.1mm"
@@ -603,6 +631,7 @@ export const CvSection = () => (
         the load pole that the in-loop 1k/cable capacitance creates. */}
     <resistor
       name="R39"
+      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="17.78mm"
@@ -624,6 +653,7 @@ export const CvSection = () => (
         100pF across this resistor is the matching load-pole compensation. */}
     <resistor
       name="R40"
+      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="3.74mm"
@@ -643,6 +673,7 @@ export const CvSection = () => (
     {/* R41 2.2K - 0603WAF2201T5E - LCSC C4190 - jclpcb:R0603 */}
     <resistor
       name="R41"
+      schSectionName="cv"
       resistance="2.2k"
       footprint={FP_jclpcb_R0603}
       pcbX="8.42mm"
@@ -663,6 +694,7 @@ export const CvSection = () => (
         CV-in summer ratio, channel 2 (DESIGN-REVIEW R10) */}
     <resistor
       name="R42"
+      schSectionName="cv"
       resistance="30.1k"
       footprint={FP_jclpcb_R0603}
       pcbX="15.82mm"
@@ -684,6 +716,7 @@ export const CvSection = () => (
         CV-in summer offset leg, channel 2 (DESIGN-REVIEW R10) */}
     <resistor
       name="R43"
+      schSectionName="cv"
       resistance="187k"
       footprint={FP_jclpcb_R0603}
       pcbX="13.1mm"
@@ -704,6 +737,7 @@ export const CvSection = () => (
     {/* R44 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R44"
+      schSectionName="cv"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="13.1mm"
@@ -723,6 +757,7 @@ export const CvSection = () => (
     {/* R45 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R45"
+      schSectionName="cv"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="17.78mm"
@@ -742,6 +777,7 @@ export const CvSection = () => (
     {/* R46 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R46"
+      schSectionName="cv"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="3.74mm"
@@ -767,6 +803,7 @@ export const CvSection = () => (
         IN1P/IN4P take the DAC nets and R31/R32 hang off the follower outputs. */}
     <chip
       name="U11"
+      schSectionName="cv"
       footprint={FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL}
       pinLabels={TL074_PINS}
       pinAttributes={{
@@ -815,6 +852,7 @@ export const CvSection = () => (
     {/* U12 TL074 - LCSC C96507 - jclpcb:TSSOP-14_L5.0-W4.4-P0.65-LS6.4-BL */}
     <chip
       name="U12"
+      schSectionName="cv"
       footprint={FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL}
       pinLabels={TL074_PINS}
       pinAttributes={{
@@ -863,6 +901,7 @@ export const CvSection = () => (
     {/* U13 MCP6002T-I/SN - MCP6002T-I_SN - LCSC C7377 - jclpcb:SOIC-8_L4.9-W3.9-P1.27-LS6.0-BL */}
     <chip
       name="U13"
+      schSectionName="cv"
       footprint={FP_jclpcb_SOIC_8_L4_9_W3_9_P1_27_LS6_0_BL}
       pinLabels={MCP6002_PINS}
       pinAttributes={{
@@ -899,6 +938,7 @@ export const CvSection = () => (
     {/* U14 LM4040C10IDBZR - LCSC C201738 - jclpcb:SOT-23-3_L3.0-W1.7-P0.95-LS2.9-BR */}
     <chip
       name="U14"
+      schSectionName="cv"
       footprint={FP_jclpcb_SOT_23_3_L3_0_W1_7_P0_95_LS2_9_BR}
       pinLabels={LM4040_PINS}
       pinAttributes={{
@@ -919,5 +959,22 @@ export const CvSection = () => (
         "CATHODE": "net.GND",
         "ANODE": "net.N10V_REF",
       }} />
+    {/* Sheet notes: fixed positions in the free band above the auto-laid-out
+        components (y 11.1 down, x -15.6 left aligned). tools/check_schematic.py
+        asserts every note stays clear of the component and net-label boxes. */}
+    <schematictext schX={-15.6} schY={11.10} anchor="center_left" fontSize={0.17}
+      text="CV sheet: CV in (U13), DAC followers (U11A/D), CV out (U12), sync in/out (Q1), -10V reference (U14)." />
+    <schematictext schX={-15.6} schY={10.65} anchor="center_left" fontSize={0.17}
+      text="CV in: U13 MCP6002 on P3V3_A. V = 1.6096V - 0.3010 x V(J_CV_IN_n), so +/-5V maps to 0.1046..3.1146V. R33/R42 30.1k, R30/R44 100k, R34/R43 187k." />
+    <schematictext schX={-15.6} schY={10.20} anchor="center_left" fontSize={0.17}
+      text="HARD firmware: the STM32H750 DAC buffer must be DISABLED (libDaisy buff_state = DISABLED). U11A/U11D are unity followers on the DAC (pin 30/29)." />
+    <schematictext schX={-15.6} schY={9.75} anchor="center_left" fontSize={0.17}
+      text="CV out: U12A/U12C amplify 1.5121x. R45/R46 1k sit INSIDE the loop, so the output is load independent; feedback is taken at the jack (R39/R40 100k)." />
+    <schematictext schX={-15.6} schY={9.30} anchor="center_left" fontSize={0.17}
+      text="C33/C34 100pF across R39/R40 are load compensation (15.9kHz zero): the CV out cable/load capacitance limit is 10nF." />
+    <schematictext schX={-15.6} schY={8.85} anchor="center_left" fontSize={0.17}
+      text="Sync: Q1 MMBT3904 inverter from J_SYNC_IN (R22 100k), D5 1N4148 clamps the base-emitter; SYNC_OUT through R29 1k." />
+    <schematictext schX={-15.6} schY={8.40} anchor="center_left" fontSize={0.17}
+      text="Reference: U14 LM4040 -10V on N10V_REF, R41 2.2k from VEE. C20 100nF at U14, C19 100nF at U13, C14/C15 at U11, C17/C18 at U12." />
   </schematicsheet>
 )

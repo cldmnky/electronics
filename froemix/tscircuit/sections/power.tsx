@@ -13,6 +13,7 @@ export const PowerSection = () => (
     {/* C22 10uF - CL31A106KBHNNNE - LCSC C13585 - CL31A106KBHNNNE - jclpcb:C1206 */}
     <capacitor
       name="C22"
+      schSectionName="entry"
       capacitance="10uF"
       footprint={FP_jclpcb_C1206}
       pcbX="20.62mm"
@@ -33,6 +34,7 @@ export const PowerSection = () => (
     {/* C23 10uF - CL31A106KBHNNNE - LCSC C13585 - CL31A106KBHNNNE - jclpcb:C1206 */}
     <capacitor
       name="C23"
+      schSectionName="entry"
       capacitance="10uF"
       footprint={FP_jclpcb_C1206}
       pcbX="4.94mm"
@@ -53,6 +55,7 @@ export const PowerSection = () => (
     {/* C24 100uF - 50V100uF8X12 - LCSC C2749 - 50V 100uF 8X12 - jclpcb:CAP-TH_BD8.0-P3.50-D0.6-FD */}
     <capacitor
       name="C24"
+      schSectionName="entry"
       capacitance="100uF"
       footprint={FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD}
       polarized={true}
@@ -74,6 +77,7 @@ export const PowerSection = () => (
     {/* C25 100uF - 50V100uF8X12 - LCSC C2749 - 50V 100uF 8X12 - jclpcb:CAP-TH_BD8.0-P3.50-D0.6-FD */}
     <capacitor
       name="C25"
+      schSectionName="entry"
       capacitance="100uF"
       footprint={FP_jclpcb_CAP_TH_BD8_0_P3_50_D0_6_FD}
       polarized={true}
@@ -95,6 +99,7 @@ export const PowerSection = () => (
     {/* C26 10uF - CL31A106KBHNNNE - LCSC C13585 - CL31A106KBHNNNE - jclpcb:C1206 */}
     <capacitor
       name="C26"
+      schSectionName="entry"
       capacitance="10uF"
       footprint={FP_jclpcb_C1206}
       pcbX="20.5mm"
@@ -115,6 +120,7 @@ export const PowerSection = () => (
     {/* C27 10uF - CL31A106KBHNNNE - LCSC C13585 - CL31A106KBHNNNE - jclpcb:C1206 */}
     <capacitor
       name="C27"
+      schSectionName="p5v"
       capacitance="10uF"
       footprint={FP_jclpcb_C1206}
       pcbX="5.64mm"
@@ -135,6 +141,7 @@ export const PowerSection = () => (
     {/* D3 B5819W_C8598 - LCSC C8598 - B5819W - jclpcb:SOD-123_L2.7-W1.6-LS3.7-RD-1 */}
     <diode
       name="D3"
+      schSectionName="entry"
       footprint={FP_jclpcb_SOD_123_L2_7_W1_6_LS3_7_RD_1}
       pinLabels={{ pin1: "cathode", pin2: "anode" }}
       variant="schottky"
@@ -156,6 +163,7 @@ export const PowerSection = () => (
     {/* D4 B5819W_C8598 - LCSC C8598 - B5819W - jclpcb:SOD-123_L2.7-W1.6-LS3.7-RD-1 */}
     <diode
       name="D4"
+      schSectionName="entry"
       footprint={FP_jclpcb_SOD_123_L2_7_W1_6_LS3_7_RD_1}
       pinLabels={{ pin1: "cathode", pin2: "anode" }}
       variant="schottky"
@@ -177,6 +185,7 @@ export const PowerSection = () => (
     {/* J2 Eurorack Power 16 Pin IDC - Eurorack_Power_16pin_Shrouded - LCSC C3406 - LL1007-1 (2*8 HITEMP) - 4ms_Connector:Pins_2x08_2.54mm_TH_EurorackPower_Shrouded */}
     <connector
       name="J2"
+      schSectionName="entry"
       footprint={FP_4ms_Connector_Pins_2x08_2_54mm_TH_EurorackPower_Shrouded_R90}
       pinCount={16}
       pinLabels={{
@@ -218,6 +227,7 @@ export const PowerSection = () => (
     {/* L1 2.2uH - MLZ1608A2R2WT000 - LCSC C76797 - MLZ1608A2R2WT000 - jclpcb:L0603 */}
     <inductor
       name="L1"
+      schSectionName="p5v"
       inductance="2.2uH"
       footprint={FP_jclpcb_L0603}
       pcbX="19.7mm"
@@ -238,6 +248,7 @@ export const PowerSection = () => (
     {/* L2 2.2uH - MLZ1608A2R2WT000 - LCSC C76797 - MLZ1608A2R2WT000 - jclpcb:L0603 */}
     <inductor
       name="L2"
+      schSectionName="p5v"
       inductance="2.2uH"
       footprint={FP_jclpcb_L0603}
       pcbX="25.75mm"
@@ -258,6 +269,7 @@ export const PowerSection = () => (
     {/* U16 B2405S-2WR3 - LCSC C5369484 - YLPTEC B2405S-2WR3 - 2W/400mA isolated 24V->5V SIP module, 40mA minimum load, unregulated (doc/POWER-BUDGET.md). Leads 1/2/4/6 = Vin/GND/0V/+Vo on the B_S-2WR3 pin-out - jclpcb:PWRM-TH-4P-L19.65-W7.05-P2.54-B2405S-2W */}
     <chip
       name="U16"
+      schSectionName="p5v"
       footprint={FP_jclpcb_PWRM_TH_4P_L19_65_W7_05_P2_54_B2405S_2W}
       pinLabels={B2405S_2W_PINS}
       pinAttributes={{
@@ -287,6 +299,7 @@ export const PowerSection = () => (
     {/* C32 1uF - EXTRA_C32 - LCSC C559769 - CC0603KRX7R9BB105 - U16 input bypass across VIN_P (module pin 1) and VIN_N (module pin 2), YLPTEC B_S-2WR3 datasheet Table 1: 24 VDC input -> Cin 1uF/50V. Sits between the two input leads, on the far side of the lead row from the module body. C26 sits before L1/L2, so it is not the local post-inductor input cap (DESIGN-REVIEW R13) - jclpcb:C0603 */}
     <capacitor
       name="C32"
+      schSectionName="p5v"
       capacitance="1uF"
       footprint={FP_jclpcb_C0603}
       pcbX="13.58mm"
@@ -298,5 +311,20 @@ export const PowerSection = () => (
         "pin1": "net.U16_VIN_P",
         "pin2": "net.U16_VIN_N",
       }} />
+    {/* Sheet notes: fixed positions in the free band above the auto-laid-out
+        components (y 11.1 down, x -15.6 left aligned). tools/check_schematic.py
+        asserts every note stays clear of the component and net-label boxes. */}
+    <schematictext schX={-15.6} schY={11.10} anchor="center_left" fontSize={0.17}
+      text="Power sheet: Eurorack entry, +/-12V rails and the 5V converter. P3V3_A and P3V3_D come from the Seed, not from here." />
+    <schematictext schX={-15.6} schY={10.65} anchor="center_left" fontSize={0.17}
+      text="J2 = 2x8 IDC Eurorack header (P12V/N12V/GND). D3/D4 are the reverse-polarity Schottky diodes; C22/C23 10uF and C24/C25 100uF are the rail bulk." />
+    <schematictext schX={-15.6} schY={10.20} anchor="center_left" fontSize={0.17}
+      text="U16 B2405S-2WR3 (C5369484) is the 2W/400mA 5V module, 24V input across VCC-VEE (23.4V typical), C32 1uF at its input pins, L1/L2 ferrites." />
+    <schematictext schX={-15.6} schY={9.75} anchor="center_left" fontSize={0.17}
+      text="Worst-case P5V load: 194mA without the H1 module, 267mA with it = 67% of the rating. Bring-up PASS criterion <= 300mA (doc/POWER-BUDGET.md)." />
+    <schematictext schX={-15.6} schY={9.30} anchor="center_left" fontSize={0.17}
+      text="C26 10uF sits across VCC/VEE before the ferrites; C27 10uF is the P5V output capacitor." />
+    <schematictext schX={-15.6} schY={8.85} anchor="center_left" fontSize={0.17}
+      text="Rails are not load-bearing: the bottom GND pour is added after routing, so GND is routed copper plus the plane (AGENTS.md section 8)." />
   </schematicsheet>
 )

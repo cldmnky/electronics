@@ -58,12 +58,27 @@ export const LM4040_PINS = {
   pin3: "NC",
 } as const
 
-export const TLP2362_PINS = {
+// U15 is a Toshiba TLP2361 (C107626) since DESIGN-REVIEW R02 (third round);
+// the TLP2362 it replaced has the identical SO6 11-4L1S pin map, so no pin
+// number, pad or net changed. Both are 1 = anode, 3 = cathode, 4 = GND,
+// 5 = VO (inverting output), 6 = VCC. The TLP2361's output is totem pole and
+// its IFHL maximum is 1.6 mA at 125 C instead of the TLP2362's 5 mA.
+export const TLP2361_PINS = {
   pin1: "ANODE",
   pin3: "CATHODE",
   pin4: "GND",
   pin5: "VO",
   pin6: "VCC",
+} as const
+
+// Q2 is an AO3401A P-channel enhancement MOSFET (C15127) in SOT-23: pin 1 =
+// gate, pin 2 = source, pin 3 = drain. It replaced the MMBT3906 PNP, whose
+// SOT-23 pins were 1 = base, 2 = emitter, 3 = collector; the nets are the same
+// (gate/base net, P3V3_D, drain/collector net), only the terminals renamed.
+export const AO3401A_PINS = {
+  pin1: "gate",
+  pin2: "source",
+  pin3: "drain",
 } as const
 
 // U16 is a YLPTEC/MORNSUN B2405S-2WR3 (2 W, LCSC C5369484) in the 4-lead SIP

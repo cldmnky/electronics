@@ -13,6 +13,7 @@ export const AudioSection = () => (
     {/* C2 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C2"
+      schSectionName="audio-in"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-7.86mm"
@@ -32,6 +33,7 @@ export const AudioSection = () => (
     {/* C3 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C3"
+      schSectionName="audio-in"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-3.16mm"
@@ -51,6 +53,7 @@ export const AudioSection = () => (
     {/* C4 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C4"
+      schSectionName="audio-in"
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="-11.04mm"
@@ -70,6 +73,7 @@ export const AudioSection = () => (
     {/* C5 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C5"
+      schSectionName="audio-in"
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="-11.04mm"
@@ -89,6 +93,7 @@ export const AudioSection = () => (
     {/* C6 560pF - CL10C561JB8NNNC - LCSC C107054 - CC0603JRNPO9BN561 - jclpcb:C0603 */}
     <capacitor
       name="C6"
+      schSectionName="audio-in"
       capacitance="560pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-17.26mm"
@@ -109,6 +114,7 @@ export const AudioSection = () => (
     {/* C7 560pF - CL10C561JB8NNNC - LCSC C107054 - CC0603JRNPO9BN561 - jclpcb:C0603 */}
     <capacitor
       name="C7"
+      schSectionName="audio-in"
       capacitance="560pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-12.56mm"
@@ -129,6 +135,7 @@ export const AudioSection = () => (
     {/* C8 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C8"
+      schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-7.86mm"
@@ -148,6 +155,7 @@ export const AudioSection = () => (
     {/* C9 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C9"
+      schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-3.16mm"
@@ -167,6 +175,7 @@ export const AudioSection = () => (
     {/* C10 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C10"
+      schSectionName="audio-out"
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="-0.12mm"
@@ -186,6 +195,7 @@ export const AudioSection = () => (
     {/* C11 100nF - CC0603KRX7R9BB104 - LCSC C14663 - jclpcb:C0603 */}
     <capacitor
       name="C11"
+      schSectionName="audio-out"
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="-0.12mm"
@@ -205,6 +215,7 @@ export const AudioSection = () => (
     {/* C12 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C12"
+      schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-17.26mm"
@@ -224,6 +235,7 @@ export const AudioSection = () => (
     {/* C13 47pF - CL10C470JB8NNNC - LCSC C1671 - jclpcb:C0603 */}
     <capacitor
       name="C13"
+      schSectionName="audio-out"
       capacitance="47pF"
       footprint={FP_jclpcb_C0603}
       pcbX="-12.56mm"
@@ -243,6 +255,7 @@ export const AudioSection = () => (
     {/* R1 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R1"
+      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
@@ -262,6 +275,7 @@ export const AudioSection = () => (
     {/* R2 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R2"
+      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
@@ -281,6 +295,7 @@ export const AudioSection = () => (
     {/* R3 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R3"
+      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.9mm"
@@ -300,6 +315,7 @@ export const AudioSection = () => (
     {/* R4 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R4"
+      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-3.22mm"
@@ -319,6 +335,7 @@ export const AudioSection = () => (
     {/* R5 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R5"
+      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
@@ -338,6 +355,7 @@ export const AudioSection = () => (
     {/* R6 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R6"
+      schSectionName="audio-in"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
@@ -357,6 +375,7 @@ export const AudioSection = () => (
     {/* R7 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R7"
+      schSectionName="audio-in"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.9mm"
@@ -376,6 +395,7 @@ export const AudioSection = () => (
     {/* R8 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R8"
+      schSectionName="audio-in"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
       pcbX="-3.22mm"
@@ -395,6 +415,7 @@ export const AudioSection = () => (
     {/* R9 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R9"
+      schSectionName="audio-in"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="-3.22mm"
@@ -414,6 +435,7 @@ export const AudioSection = () => (
     {/* R10 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R10"
+      schSectionName="audio-in"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
@@ -433,6 +455,7 @@ export const AudioSection = () => (
     {/* R11 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R11"
+      schSectionName="audio-out"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.9mm"
@@ -452,6 +475,7 @@ export const AudioSection = () => (
     {/* R12 10K - 0603WAF1002T5E - LCSC C25804 - jclpcb:R0603 */}
     <resistor
       name="R12"
+      schSectionName="audio-out"
       resistance="10k"
       footprint={FP_jclpcb_R0603}
       pcbX="-3.22mm"
@@ -471,6 +495,7 @@ export const AudioSection = () => (
     {/* R13 33k - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R13"
+      schSectionName="audio-out"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
@@ -491,6 +516,7 @@ export const AudioSection = () => (
     {/* R14 33k - 0603WAF3302T5E - LCSC C4216 - jclpcb:R0603 */}
     <resistor
       name="R14"
+      schSectionName="audio-out"
       resistance="33k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
@@ -511,6 +537,7 @@ export const AudioSection = () => (
     {/* R15 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R15"
+      schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.9mm"
@@ -530,6 +557,7 @@ export const AudioSection = () => (
     {/* R16 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R16"
+      schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-3.22mm"
@@ -549,6 +577,7 @@ export const AudioSection = () => (
     {/* R17 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R17"
+      schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
@@ -568,6 +597,7 @@ export const AudioSection = () => (
     {/* R18 100K - 0603WAF1003T5E - LCSC C25803 - jclpcb:R0603 */}
     <resistor
       name="R18"
+      schSectionName="audio-out"
       resistance="100k"
       footprint={FP_jclpcb_R0603}
       pcbX="-12.58mm"
@@ -587,6 +617,7 @@ export const AudioSection = () => (
     {/* R19 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R19"
+      schSectionName="audio-out"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="-17.26mm"
@@ -606,6 +637,7 @@ export const AudioSection = () => (
     {/* R20 1K - 0603WAF1001T5E - LCSC C21190 - jclpcb:R0603 */}
     <resistor
       name="R20"
+      schSectionName="audio-out"
       resistance="1k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.9mm"
@@ -625,6 +657,7 @@ export const AudioSection = () => (
     {/* U2 TL074 - LCSC C96507 - jclpcb:TSSOP-14_L5.0-W4.4-P0.65-LS6.4-BL */}
     <chip
       name="U2"
+      schSectionName="audio-in"
       footprint={FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL}
       pinLabels={TL074_PINS}
       pinAttributes={{
@@ -673,6 +706,7 @@ export const AudioSection = () => (
     {/* U3 TL074 - LCSC C96507 - jclpcb:TSSOP-14_L5.0-W4.4-P0.65-LS6.4-BL */}
     <chip
       name="U3"
+      schSectionName="audio-out"
       footprint={FP_jclpcb_TSSOP_14_L5_0_W4_4_P0_65_LS6_4_BL}
       pinLabels={TL074_PINS}
       pinAttributes={{
@@ -718,5 +752,22 @@ export const AudioSection = () => (
         "IN4N": "net.U3D_IN_N",
         "OUT4": "net.NET_C13_2",
       }} />
+    {/* Sheet notes: fixed positions in the free band above the auto-laid-out
+        components (y 11.1 down, x -15.6 left aligned). tools/check_schematic.py
+        asserts every note stays clear of the component and net-label boxes. */}
+    <schematictext schX={-15.6} schY={11.10} anchor="center_left" fontSize={0.17}
+      text="Audio sheet: two TL074 stages, VCC / VEE rails, one 100nF pair per package (C4/C5 at U2, C10/C11 at U3)." />
+    <schematictext schX={-15.6} schY={10.65} anchor="center_left" fontSize={0.17}
+      text="Audio in (U2, A-D): 100k input and feedback, 0.1000 V/V simulated, -3 dB at 19.7kHz. R1/R2 100k, C2/C3 47pF, C6/C7 560pF feedback." />
+    <schematictext schX={-15.6} schY={10.20} anchor="center_left" fontSize={0.17}
+      text="Audio out (U3, A-D): gain 3.300 (10.37dB) from the Seed inputs AUDIO_OUT_L/R, -3 dB at 30.9kHz simulated (30.0kHz with the TL074 model)." />
+    <schematictext schX={-15.6} schY={9.75} anchor="center_left" fontSize={0.17}
+      text="R11/R12 10k input, R13/R14 33k feedback, R19/R20 1k series at the jack. 1Vrms full scale becomes 4.62V peak, inside the +/-11.7V rails." />
+    <schematictext schX={-15.6} schY={9.30} anchor="center_left" fontSize={0.17}
+      text="Both audio chains have TWO cascaded poles: quote the simulated 19.7kHz / 30.9kHz, not a single-pole estimate." />
+    <schematictext schX={-15.6} schY={8.85} anchor="center_left" fontSize={0.17}
+      text="R9/R10 1k feed the Seed's AUDIO_IN_L/R from U2B/U2D; the Seed input is 3.3V-only, so the in-stage gain stays below 1." />
+    <schematictext schX={-15.6} schY={8.40} anchor="center_left" fontSize={0.17}
+      text="All values in tools/sim/audio_in.cir and audio_out.cir; results in tools/sim/RESULTS.md (simulated, not measured)." />
   </schematicsheet>
 )

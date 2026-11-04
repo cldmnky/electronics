@@ -13,6 +13,7 @@ export const MainSection = () => (
     {/* C1 10uF - CL31A106KBHNNNE - LCSC C13585 - CL31A106KBHNNNE - jclpcb:C1206 */}
     <capacitor
       name="C1"
+      schSectionName="daisy"
       capacitance="10uF"
       footprint={FP_jclpcb_C1206}
       pcbX="-28mm"
@@ -33,6 +34,7 @@ export const MainSection = () => (
     {/* C29 100nF - EXTRA_C29 - LCSC C14663 - CC0603KRX7R9BB104 - P3V3_D decoupling at the Daisy/SD/OLED headers (added in tscircuit, mirror into KiCad) - jclpcb:C0603 */}
     <capacitor
       name="C29"
+      schSectionName="daisy"
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="-22.5mm"
@@ -53,6 +55,7 @@ export const MainSection = () => (
     {/* C30 10uF - EXTRA_C30 - LCSC C13585 - CL31A106KBHNNNE - P3V3_D bulk for SD/OLED spikes (added in tscircuit, mirror into KiCad) - jclpcb:C1206 */}
     <capacitor
       name="C30"
+      schSectionName="daisy"
       capacitance="10uF"
       footprint={FP_jclpcb_C1206}
       pcbX="-4mm"
@@ -76,6 +79,7 @@ export const MainSection = () => (
         Old 2mm-shoulder A2005WV CAD model removed: it misrepresents the height. */}
     <connector
       name="CN1"
+      schSectionName="headers"
       footprint={FP_jclpcb_HDR_TH_16P_P2_00_V_M}
       pinCount={16}
       schPinArrangement={{ leftSide: [1, 3, 5, 7, 9, 11, 13, 15], rightSide: [2, 4, 6, 8, 10, 12, 14, 16] }}
@@ -104,6 +108,7 @@ export const MainSection = () => (
     {/* CN2 same 6mm stacking header as CN1; C2883069, frozen pads/XY. */}
     <connector
       name="CN2"
+      schSectionName="headers"
       footprint={FP_jclpcb_HDR_TH_16P_P2_00_V_M}
       pinCount={16}
       schPinArrangement={{ leftSide: [1, 3, 5, 7, 9, 11, 13, 15], rightSide: [2, 4, 6, 8, 10, 12, 14, 16] }}
@@ -127,6 +132,7 @@ export const MainSection = () => (
     {/* CN3 Micro SD - A2005WV-8P - LCSC C22438291 - HX PZ2.0-1x8P ZZ - jclpcb:HDR-TH_8P-P2.00-V-M */}
     <connector
       name="CN3"
+      schSectionName="headers"
       footprint={FP_jclpcb_HDR_TH_8P_P2_00_V_M}
       pinCount={8}
       schPinArrangement={{ leftSide: [1, 3, 5, 7], rightSide: [2, 4, 6, 8] }}
@@ -156,6 +162,7 @@ export const MainSection = () => (
         The stocked 7-way E60 was absent from JLC's catalogue at selection. */}
     <connector
       name="CN4"
+      schSectionName="headers"
       footprint={FP_jclpcb_HDR_TH_7P_P2_00_V_M}
       pinCount={7}
       schPinArrangement={{ leftSide: [1, 3, 5, 7], rightSide: [2, 4, 6] }}
@@ -175,6 +182,7 @@ export const MainSection = () => (
     {/* DaisySeed1 Electrosmith_Daisy_Seed_Rev4 - fitted by hand (DNP for JLC assembly) - Module:Electrosmith_Daisy_Seed */}
     <chip
       name="DaisySeed1"
+      schSectionName="daisy"
       footprint={FP_Module_Electrosmith_Daisy_Seed_R90}
       pinLabels={DAISY_SEED_PINS}
       pinAttributes={{
@@ -238,6 +246,7 @@ export const MainSection = () => (
     {/* H1 PMOD - 2*6Pheader - LCSC C22373932 - HC-PM254-8.5H-2x6PW - jclpcb:HDR-TH_12P-P2.54-H-M-R2-C6-S2.54-W12.5 */}
     <connector
       name="H1"
+      schSectionName="headers"
       footprint={FP_jclpcb_HDR_TH_12P_P2_54_H_M_R2_C6_S2_54_W12_5_R90}
       pinCount={12}
       schPinArrangement={{ leftSide: [1, 3, 5, 7, 9, 11], rightSide: [2, 4, 6, 8, 10, 12] }}
@@ -263,6 +272,7 @@ export const MainSection = () => (
     {/* C31 100nF - EXTRA_C31 - LCSC C14663 - CC0603KRX7R9BB104 - U1 VDD bypass: the CD4051 had no local supply capacitor (DESIGN-REVIEW R06) - jclpcb:C0603 */}
     <capacitor
       name="C31"
+      schSectionName="daisy"
       capacitance="100nF"
       footprint={FP_jclpcb_C0603}
       pcbX="-7.70mm"
@@ -283,6 +293,7 @@ export const MainSection = () => (
     {/* R51 4.7k - EXTRA_R51 - LCSC C23162 - 0603WAF4701T5E - I2C SCL pull-up, cf. Patch R77 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
     <resistor
       name="R51"
+      schSectionName="daisy"
       resistance="4.7k"
       footprint={FP_jclpcb_R0603}
       pcbX="6.5mm"
@@ -303,6 +314,7 @@ export const MainSection = () => (
     {/* R52 4.7k - EXTRA_R52 - LCSC C23162 - 0603WAF4701T5E - I2C SDA pull-up, cf. Patch R89/R91 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
     <resistor
       name="R52"
+      schSectionName="daisy"
       resistance="4.7k"
       footprint={FP_jclpcb_R0603}
       pcbX="10mm"
@@ -323,6 +335,7 @@ export const MainSection = () => (
     {/* R53 47K - EXTRA_R53 - LCSC C25819 - 0603WAF4702T5E - SD DAT0 pull-up, cf. Patch R6 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
     <resistor
       name="R53"
+      schSectionName="daisy"
       resistance="47k"
       footprint={FP_jclpcb_R0603}
       pcbX="-7.5mm"
@@ -343,6 +356,7 @@ export const MainSection = () => (
     {/* R54 47K - EXTRA_R54 - LCSC C25819 - 0603WAF4702T5E - SD DAT1 pull-up, cf. Patch R7 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
     <resistor
       name="R54"
+      schSectionName="daisy"
       resistance="47k"
       footprint={FP_jclpcb_R0603}
       pcbX="-11mm"
@@ -363,6 +377,7 @@ export const MainSection = () => (
     {/* R55 47K - EXTRA_R55 - LCSC C25819 - 0603WAF4702T5E - SD DAT2 pull-up, cf. Patch R3 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
     <resistor
       name="R55"
+      schSectionName="daisy"
       resistance="47k"
       footprint={FP_jclpcb_R0603}
       pcbX="-14.5mm"
@@ -383,6 +398,7 @@ export const MainSection = () => (
     {/* R56 47K - EXTRA_R56 - LCSC C25819 - 0603WAF4702T5E - SD DAT3 pull-up, cf. Patch R4 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
     <resistor
       name="R56"
+      schSectionName="daisy"
       resistance="47k"
       footprint={FP_jclpcb_R0603}
       pcbX="-18mm"
@@ -403,6 +419,7 @@ export const MainSection = () => (
     {/* R57 47K - EXTRA_R57 - LCSC C25819 - 0603WAF4702T5E - SD CMD pull-up, cf. Patch R5 (added in tscircuit, mirror into KiCad) - jclpcb:R0603 */}
     <resistor
       name="R57"
+      schSectionName="daisy"
       resistance="47k"
       footprint={FP_jclpcb_R0603}
       pcbX="-4mm"
@@ -423,6 +440,7 @@ export const MainSection = () => (
     {/* U1 CD4051BM/TR - 4051 - LCSC C507163 - jclpcb:SOP-16_L9.9-W3.9-P1.27-LS6.1-BL */}
     <chip
       name="U1"
+      schSectionName="daisy"
       footprint={FP_jclpcb_SOP_16_L9_9_W3_9_P1_27_LS6_1_BL}
       pinLabels={CD4051_PINS}
       pinAttributes={{
@@ -463,5 +481,24 @@ export const MainSection = () => (
         "X2": "net.M_ADC_2",
         "VDD": "net.P3V3_A",
       }} />
+    {/* Sheet notes: fixed positions in the free band above the auto-laid-out
+        components (y 11.1 down, x -15.6 left aligned). tools/check_schematic.py
+        asserts every note stays clear of the component and net-label boxes. */}
+    <schematictext schX={-15.6} schY={11.10} anchor="center_left" fontSize={0.17}
+      text="Root sheet: Daisy Seed module, mating headers, muxed panel inputs and pull-ups. All 107 SMT placements are on the bottom side." />
+    <schematictext schX={-15.6} schY={10.65} anchor="center_left" fontSize={0.17}
+      text="Rails: U16 5V -> Seed VIN (pin 39, P5V); Seed V3V3_D (pin 38) -> P3V3_D; Seed V3V3_A (pin 21) -> P3V3_A. No 3.3V regulator on this board." />
+    <schematictext schX={-15.6} schY={10.20} anchor="center_left" fontSize={0.17}
+      text="CN1/CN2 are X4612WV-16I-C40D28-E60 (C2883069): 6mm shoulder and 4mm post across 11mm clear spacers. CN4 is the 8-way strip cut to 7 ways." />
+    <schematictext schX={-15.6} schY={9.75} anchor="center_left" fontSize={0.17}
+      text="CN1 = MIDI in/out, M_ADC_0..7, LED, P3V3_D, P3V3_A, GND. CN2 = jack bus. CN3 = SD card. CN4 = OLED. H1 = PMOD, right angle." />
+    <schematictext schX={-15.6} schY={9.30} anchor="center_left" fontSize={0.17}
+      text="INTERFACE RULE (doc/FRONTBOARD-INTERFACE.md): M_ADC_0..7 may only be driven by dividers powered from this board's P3V3_A and GND, 0..3.3V in every power order." />
+    <schematictext schX={-15.6} schY={8.85} anchor="center_left" fontSize={0.17}
+      text="U1 CD4051 (P3V3_A) multiplexes M_ADC_0..7 onto MULTIPLEX_ADC_1; C31 100nF is its local bypass (7.71mm rail leg)." />
+    <schematictext schX={-15.6} schY={8.40} anchor="center_left" fontSize={0.17}
+      text="R51/R52 4.7k pull up I2C SCL/SDA to P3V3_D; R53..R57 47k pull up SD DAT0..3 and CMD." />
+    <schematictext schX={-15.6} schY={7.95} anchor="center_left" fontSize={0.17}
+      text="C1 10uF on P5V, C29 100nF and C30 10uF on P3V3_D. Decoupling pairs move with their IC (AGENTS.md section 3)." />
   </schematicsheet>
 )
