@@ -18,6 +18,9 @@
 // boards and any 2.00mm socket family works. Bottom side: pin 1 at +X.
 // --------------------------------------------------------------------------
 
+// React list keys belong to a Fragment, not to tscircuit geometry props.
+import { Fragment } from "react"
+
 const socketPads = (pins: number, mirrored: boolean) =>
   Array.from({ length: pins }, (_, i) => {
     const pin = i + 1
@@ -30,8 +33,7 @@ export const FP_SOCKET_2P00_16 = (
   <footprint insertionDirection="from_above">
     {socketPads(16, true).map(({ pin, x }) =>
       pin === 1 ? (
-        <platedhole
-          key={pin}
+        <Fragment key={pin}><platedhole
           pcbX={`${x}mm`}
           pcbY="0mm"
           portHints={["pin1"]}
@@ -41,17 +43,16 @@ export const FP_SOCKET_2P00_16 = (
           rectPadHeight="1.52mm"
           holeOffsetX="0mm"
           holeOffsetY="0mm"
-        />
+        /></Fragment>
       ) : (
-        <platedhole
-          key={pin}
+        <Fragment key={pin}><platedhole
           pcbX={`${x}mm`}
           pcbY="0mm"
           portHints={[`pin${pin}`]}
           shape="circle"
           holeDiameter="1mm"
           outerDiameter="1.52mm"
-        />
+        /></Fragment>
       ),
     )}
     <silkscreenpath route={[{ x: 16.06, y: 1.01 }, { x: -16.07, y: 1.01 }]} />
@@ -67,8 +68,7 @@ export const FP_SOCKET_2P00_7 = (
   <footprint insertionDirection="from_above">
     {socketPads(7, true).map(({ pin, x }) =>
       pin === 1 ? (
-        <platedhole
-          key={pin}
+        <Fragment key={pin}><platedhole
           pcbX={`${x}mm`}
           pcbY="0mm"
           portHints={["pin1"]}
@@ -78,17 +78,16 @@ export const FP_SOCKET_2P00_7 = (
           rectPadHeight="1.52mm"
           holeOffsetX="0mm"
           holeOffsetY="0mm"
-        />
+        /></Fragment>
       ) : (
-        <platedhole
-          key={pin}
+        <Fragment key={pin}><platedhole
           pcbX={`${x}mm`}
           pcbY="0mm"
           portHints={[`pin${pin}`]}
           shape="circle"
           holeDiameter="1mm"
           outerDiameter="1.52mm"
-        />
+        /></Fragment>
       ),
     )}
     <silkscreenpath route={[{ x: 7.06, y: 1.01 }, { x: -7.07, y: 1.01 }]} />
@@ -113,8 +112,7 @@ export const FP_OLED_1P3 = (
       const pin = i + 1
       const x = -7.62 + i * 2.54
       return pin === 1 ? (
-        <platedhole
-          key={pin}
+        <Fragment key={pin}><platedhole
           pcbX={`${x}mm`}
           pcbY="0mm"
           portHints={["pin1"]}
@@ -124,17 +122,16 @@ export const FP_OLED_1P3 = (
           rectPadHeight="1.6mm"
           holeOffsetX="0mm"
           holeOffsetY="0mm"
-        />
+        /></Fragment>
       ) : (
-        <platedhole
-          key={pin}
+        <Fragment key={pin}><platedhole
           pcbX={`${x}mm`}
           pcbY="0mm"
           portHints={[`pin${pin}`]}
           shape="circle"
           holeDiameter="1mm"
           outerDiameter="1.6mm"
-        />
+        /></Fragment>
       )
     })}
     {/* Module: 35.4 x 33.5mm, header row 2.0mm from the connector-side edge
