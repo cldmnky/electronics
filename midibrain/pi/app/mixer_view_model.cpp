@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "logic.hpp"
+#include "project_logic.hpp"
 
 namespace mnky::app {
 namespace {
@@ -13,13 +14,37 @@ QString panText(double pan) {
   return QString(percent < 0 ? QStringLiteral("L") : QStringLiteral("R")) +
          QString::number(std::abs(percent));
 }
+
+double clampPan(double pan) { return std::clamp(pan, 0.0, 1.0); }
+double clampSend(double level) { return std::clamp(level, 0.0, 1.0); }
 }  // namespace
 
-MixerViewModel::MixerViewModel(MixerModel& model, QObject* parent)
-    : QAbstractListModel(parent), model_(model) {}
+MixerViewModel::MixerViewModel(MixerModel& model, SessionSettings& settings,
+                               QObject* parent)
+    : QAbstractListModel(parent), model_(model), settings_(settings) {}
 
 int MixerViewModel::rowCount(const QModelIndex& parent) const {
   return parent.isValid() ? 0 : kNumStrips;
+}
+
+double MixerViewModel::stripLevel(int index) const {
+  if (index < 0 || index >= kNumStrips) return 0.0;
+  return stripLevels_[static_cast<std::size_t>(index)];
+}
+
+bool MixerViewModel::stripClip(int index) const {
+  if (index < 0 || index >= kNumStrips) return false;
+  if (clipDemo_) return index < 6;
+  return clipHolds_[static_cast<std::size_t>(index)].clipped();
+}
+
+QString MixerViewModel::monitorMark(int index) const {
+  const int mode = model_.monitor(index);
+  if (mode == 0) return QStringLiteral("OFF");
+  if (mode == 2) return QStringLiteral("ON");
+  // Auto is the default; only show it when an active take makes Auto choose
+  // the take over the live input, i.e. when the mark carries information.
+  return settings_.hasActiveTake(index) ? QStringLiteral("A") : QString();
 }
 
 QVariant MixerViewModel::data(const QModelIndex& index, int role) const {
@@ -46,6 +71,14 @@ QVariant MixerViewModel::data(const QModelIndex& index, int role) const {
       return model_.solo(strip);
     case ArmRole:
       return model_.arm(strip);
+    case LevelRole:
+      return stripLevel(strip);
+    case ClipRole:
+      return stripClip(strip);
+    case MonitorRole:
+      return model_.monitor(strip);
+    case MonitorMarkRole:
+      return monitorMark(strip);
     case SelectedRole:
       return strip == selectedStrip_;
     default:
@@ -60,6 +93,8 @@ QHash<int, QByteArray> MixerViewModel::roleNames() const {
           {PanTextRole, "panText"},  {SendARole, "sendA"},
           {SendBRole, "sendB"},      {MuteRole, "mute"},
           {SoloRole, "solo"},        {ArmRole, "arm"},
+          {LevelRole, "level"},      {ClipRole, "clip"},
+          {MonitorRole, "monitor"},  {MonitorMarkRole, "monitorMark"},
           {SelectedRole, "selected"}};
 }
 
@@ -68,6 +103,20 @@ void MixerViewModel::setBank(int bank) {
   if (clamped == bank_) return;
   bank_ = clamped;
   emit bankChanged();
+}
+
+void MixerViewModel::setTrackMode(bool enabled) {
+  if (enabled == trackMode_) return;
+  trackMode_ = enabled;
+  emit trackModeChanged();
+}
+
+void MixerViewModel::setTrackIndex(int index) {
+  const int clamped = std::clamp(index, 0, kNumStrips - 1);
+  if (clamped == trackIndex_) return;
+  trackIndex_ = clamped;
+  emit trackChanged();
+  setSelectedStrip(clamped);
 }
 
 void MixerViewModel::setSelectedStrip(int index) {
@@ -84,6 +133,63 @@ void MixerViewModel::setSelectedStrip(int index) {
   setBank(selectedStrip_ / kStripsPerBank);
 }
 
+QString MixerViewModel::trackName() const {
+  return QStringLiteral("IN %1  %2")
+      .arg(trackIndex_ + 1, 2, 10, QLatin1Char('0'))
+      .arg(QString::fromStdString(defaultTrackName(trackIndex_)));
+}
+
+void MixerViewModel::setTrackGainDb(double db) { setGainDb(trackIndex_, db); }
+
+void MixerViewModel::setTrackTrimDb(double db) {
+  model_.setTrimDb(trackIndex_, static_cast<float>(std::clamp(db, -24.0, 24.0)));
+  emit dataChanged(index(trackIndex_, 0), index(trackIndex_, 0), {GainDbRole});
+  emit trackChanged();
+}
+
+void MixerViewModel::setTrackPan(double pan) { setPan(trackIndex_, pan); }
+
+QString MixerViewModel::trackPanText() const { return panText(model_.pan(trackIndex_)); }
+
+void MixerViewModel::setTrackSendA(double level) { setSend(trackIndex_, 0, level); }
+void MixerViewModel::setTrackSendB(double level) { setSend(trackIndex_, 1, level); }
+
+void MixerViewModel::setTrackCue(double level) { setCue(trackIndex_, level); }
+void MixerViewModel::setTrackOut34(double level) { setOut34(trackIndex_, level); }
+
+void MixerViewModel::setTrackMute(bool mute) {
+  model_.setMute(trackIndex_, mute);
+  emit dataChanged(index(trackIndex_, 0), index(trackIndex_, 0), {MuteRole});
+  emit trackChanged();
+}
+
+void MixerViewModel::setTrackSolo(bool solo) {
+  model_.setSolo(trackIndex_, solo);
+  emit dataChanged(index(trackIndex_, 0), index(trackIndex_, 0), {SoloRole});
+  emit trackChanged();
+}
+
+void MixerViewModel::setTrackArm(bool arm) {
+  model_.setArm(trackIndex_, arm);
+  emit dataChanged(index(trackIndex_, 0), index(trackIndex_, 0), {ArmRole});
+  emit trackChanged();
+}
+
+void MixerViewModel::setTrackMonitor(int mode) { setMonitor(trackIndex_, mode); }
+
+void MixerViewModel::setMonitor(int index, int mode) {
+  if (index < 0 || index >= kNumStrips) return;
+  model_.setMonitor(index, mode);
+  emit dataChanged(this->index(index, 0), this->index(index, 0),
+                   {MonitorRole, MonitorMarkRole});
+  if (index == trackIndex_) emit trackChanged();
+}
+
+void MixerViewModel::notifyActiveTakesChanged() {
+  if (rowCount() == 0) return;
+  emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {MonitorMarkRole});
+}
+
 void MixerViewModel::setMasterDb(double db) {
   const double clamped = std::clamp(db, static_cast<double>(kMinGainDb),
                                     static_cast<double>(kMaxGainDb));
@@ -97,38 +203,60 @@ void MixerViewModel::setGainDb(int index, double db) {
                                     static_cast<double>(kMaxGainDb));
   model_.setGainDb(index, static_cast<float>(clamped));
   emit dataChanged(this->index(index, 0), this->index(index, 0), {GainDbRole});
+  if (index == trackIndex_) emit trackChanged();
 }
 
 void MixerViewModel::setPan(int index, double pan) {
   if (index < 0 || index >= kNumStrips) return;
-  model_.setPan(index, static_cast<float>(std::clamp(pan, 0.0, 1.0)));
+  double value = clampPan(pan);
+  // Centre detent shared by touch and panel EDIT paths; the popup then reads
+  // "Center" instead of a near-centre L/R value.
+  if (std::abs(value - 0.5) <= 0.02) value = 0.5;
+  model_.setPan(index, static_cast<float>(value));
   emit dataChanged(this->index(index, 0), this->index(index, 0),
                    {PanRole, PanTextRole});
+  if (index == trackIndex_) emit trackChanged();
 }
 
 void MixerViewModel::setSend(int index, int send, double level) {
   if (index < 0 || index >= kNumStrips || send < 0 || send >= audio::kNumSends) return;
-  model_.setSend(index, send, static_cast<float>(std::clamp(level, 0.0, 1.0)));
+  model_.setSend(index, send, static_cast<float>(clampSend(level)));
   emit dataChanged(this->index(index, 0), this->index(index, 0),
                    {send == 0 ? SendARole : SendBRole});
+  if (index == trackIndex_) emit trackChanged();
+}
+
+void MixerViewModel::setCue(int index, double level) {
+  if (index < 0 || index >= kNumStrips) return;
+  model_.setCueSend(index, static_cast<float>(clampSend(level)));
+  if (index == trackIndex_) emit trackChanged();
+}
+
+void MixerViewModel::setOut34(int index, double level) {
+  if (index < 0 || index >= kNumStrips) return;
+  model_.setOut34Send(index, static_cast<float>(clampSend(level)));
+  if (index == trackIndex_) emit trackChanged();
 }
 
 void MixerViewModel::toggleMute(int index) {
   if (index < 0 || index >= kNumStrips) return;
   model_.setMute(index, !model_.mute(index));
   emit dataChanged(this->index(index, 0), this->index(index, 0), {MuteRole});
+  if (index == trackIndex_) emit trackChanged();
 }
 
 void MixerViewModel::toggleSolo(int index) {
   if (index < 0 || index >= kNumStrips) return;
   model_.setSolo(index, !model_.solo(index));
   emit dataChanged(this->index(index, 0), this->index(index, 0), {SoloRole});
+  if (index == trackIndex_) emit trackChanged();
 }
 
 void MixerViewModel::toggleArm(int index) {
   if (index < 0 || index >= kNumStrips) return;
   model_.setArm(index, !model_.arm(index));
   emit dataChanged(this->index(index, 0), this->index(index, 0), {ArmRole});
+  if (index == trackIndex_) emit trackChanged();
 }
 
 void MixerViewModel::adjust(int index, const QString& parameter, double delta) {
@@ -141,6 +269,10 @@ void MixerViewModel::adjust(int index, const QString& parameter, double delta) {
     setSend(index, 0, model_.send(index, 0) + delta);
   } else if (parameter == QStringLiteral("sendB")) {
     setSend(index, 1, model_.send(index, 1) + delta);
+  } else if (parameter == QStringLiteral("cue")) {
+    setCue(index, model_.cueSend(index) + delta);
+  } else if (parameter == QStringLiteral("out34")) {
+    setOut34(index, model_.out34Send(index) + delta);
   }
 }
 
@@ -151,12 +283,48 @@ void MixerViewModel::setMeters(double left, double right) {
   emit metersChanged();
 }
 
+void MixerViewModel::setStripMeters(const std::array<double, kNumStrips>& levels) {
+  bool changed = false;
+  for (int strip = 0; strip < kNumStrips; ++strip) {
+    auto& hold = clipHolds_[static_cast<std::size_t>(strip)];
+    (void)hold.tick();
+    const double level = clampSend(levels[static_cast<std::size_t>(strip)]);
+    (void)hold.update(static_cast<float>(level));
+    if (std::abs(level - stripLevels_[static_cast<std::size_t>(strip)]) >= 0.001) {
+      stripLevels_[static_cast<std::size_t>(strip)] = level;
+      changed = true;
+    }
+  }
+  if (changed) {
+    emit dataChanged(index(0, 0), index(kNumStrips - 1, 0), {LevelRole, ClipRole});
+    emit metersChanged();
+  }
+}
+
+void MixerViewModel::showClipDemo() {
+  clipDemo_ = true;
+  for (int strip = 0; strip < kNumStrips; ++strip) {
+    stripLevels_[static_cast<std::size_t>(strip)] =
+        strip < 6 ? 0.55 + 0.07 * static_cast<double>(strip % 3) : 0.12;
+  }
+  emit dataChanged(index(0, 0), index(kNumStrips - 1, 0), {LevelRole, ClipRole});
+  emit metersChanged();
+}
+
+void MixerViewModel::clearClipDemo() {
+  if (!clipDemo_) return;
+  clipDemo_ = false;
+  emit dataChanged(index(0, 0), index(kNumStrips - 1, 0), {ClipRole});
+  emit metersChanged();
+}
+
 void MixerViewModel::refresh() {
   if (rowCount() > 0) {
     emit dataChanged(index(0, 0), index(rowCount() - 1, 0));
   }
   emit masterChanged();
   emit selectedStripChanged();
+  emit trackChanged();
 }
 
 }  // namespace mnky::app

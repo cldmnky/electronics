@@ -14,6 +14,8 @@ Item {
     property bool active: true
     property bool dragging: false
     property string focusId: ""
+    property string popupLabel: ""
+    property string popupKind: "generic"
 
     signal moved(real value)
 
@@ -95,7 +97,15 @@ Item {
         } else {
             next = minimumValue + Math.max(0, Math.min(1, x / width)) * span
         }
+        // Pan centre detent: a 2 % snap makes a centred pan reachable by touch
+        // and the popup then confirms "Center".
+        if (popupKind === "pan" && Math.abs(next - 0.5) <= 0.02) {
+            next = 0.5
+        }
         value = next
+        if (popupLabel !== "" || focusId !== "") {
+            app.showValuePopup(popupLabel !== "" ? popupLabel : focusId, popupKind, next)
+        }
         moved(next)
     }
 }

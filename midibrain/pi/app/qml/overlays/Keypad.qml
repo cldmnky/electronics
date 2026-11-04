@@ -113,7 +113,7 @@ Rectangle {
             }
 
             Repeater {
-                model: ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm-_<>"]
+                model: ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm-_<>/."]
                 delegate: Row {
                     id: keyRow
                     width: parent.width

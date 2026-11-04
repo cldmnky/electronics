@@ -14,6 +14,7 @@
 
 #include "app_context.hpp"
 #include "app_state.hpp"
+#include "config_popup_model.hpp"
 #include "audio_glue.hpp"
 #include "fx_slot.hpp"
 #include "fx_view_model.hpp"
@@ -26,7 +27,10 @@
 #include "projects_view_model.hpp"
 #include "recorder_view_model.hpp"
 #include "routing_view_model.hpp"
+#include "session_settings.hpp"
+#include "session_view_model.hpp"
 #include "system_view_model.hpp"
+#include "tools_view_model.hpp"
 
 namespace mnky::app {
 
@@ -40,6 +44,8 @@ class AppController final : public QObject {
   Q_PROPERTY(bool clickEnabled READ clickEnabled WRITE setClickEnabled NOTIFY clickChanged)
   Q_PROPERTY(double clickLevel READ clickLevel WRITE setClickLevel NOTIFY clickChanged)
   Q_PROPERTY(int clickBars READ clickBars WRITE setClickBars NOTIFY clickChanged)
+  Q_PROPERTY(int toolsPage READ toolsPage WRITE setToolsPage NOTIFY toolsPageChanged)
+  Q_PROPERTY(int systemShiftPage READ systemShiftPage WRITE setSystemShiftPage NOTIFY systemShiftPageChanged)
   Q_PROPERTY(QString transportState READ transportState NOTIFY transportChanged)
   Q_PROPERTY(QString positionText READ positionText NOTIFY transportChanged)
   Q_PROPERTY(QString tempoText READ tempoText NOTIFY transportChanged)
@@ -58,6 +64,9 @@ class AppController final : public QObject {
   Q_PROPERTY(QString confirmTitle READ confirmTitle NOTIFY confirmChanged)
   Q_PROPERTY(QString confirmMessage READ confirmMessage NOTIFY confirmChanged)
   Q_PROPERTY(QString confirmLabel READ confirmLabel NOTIFY confirmChanged)
+  Q_PROPERTY(bool valuePopupVisible READ valuePopupVisible NOTIFY valuePopupChanged)
+  Q_PROPERTY(QString valuePopupLabel READ valuePopupLabel NOTIFY valuePopupChanged)
+  Q_PROPERTY(QString valuePopupText READ valuePopupText NOTIFY valuePopupChanged)
 
  public:
   explicit AppController(bool emulator, QObject* parent = nullptr);
@@ -78,6 +87,10 @@ class AppController final : public QObject {
   Q_INVOKABLE void setClickLevel(double level);
   int clickBars() const { return state_.clickBars.load(); }
   Q_INVOKABLE void setClickBars(int bars);
+  int toolsPage() const { return toolsPage_; }
+  Q_INVOKABLE void setToolsPage(int page);
+  int systemShiftPage() const { return systemShiftPage_; }
+  Q_INVOKABLE void setSystemShiftPage(int page);
   QString transportState() const { return transportState_; }
   QString positionText() const { return positionText_; }
   QString tempoText() const { return tempoText_; }
@@ -96,6 +109,18 @@ class AppController final : public QObject {
   QString confirmTitle() const { return confirmTitle_; }
   QString confirmMessage() const { return confirmMessage_; }
   QString confirmLabel() const { return confirmLabel_; }
+  bool valuePopupVisible() const { return valuePopupVisible_; }
+  QString valuePopupLabel() const { return valuePopupLabel_; }
+  QString valuePopupText() const { return valuePopupText_; }
+
+  // Transient control-value readout. `kind` selects the formatting (pan, db,
+  // percent, ratio, ms, bpm, int, generic). Called by every TouchSlider and by
+  // the panel EDIT-mode adjust path; the single-shot timer hides it 1.5 s after
+  // the last change.
+  Q_INVOKABLE void showValuePopup(const QString& label, const QString& kind,
+                                  double value);
+  Q_INVOKABLE void showTextPopup(const QString& label, const QString& text);
+  Q_INVOKABLE void hideValuePopup();
 
   MixerViewModel* mixer() { return mixerVm_.get(); }
   RoutingViewModel* routing() { return routingVm_.get(); }
@@ -104,6 +129,9 @@ class AppController final : public QObject {
   ProjectsViewModel* projects() { return projectsVm_.get(); }
   SystemViewModel* system() { return systemVm_.get(); }
   LearnViewModel* learn() { return learnVm_.get(); }
+  SessionViewModel* session() { return sessionVm_.get(); }
+  ToolsViewModel* tools() { return toolsVm_.get(); }
+  ConfigPopupModel* config() { return configVm_.get(); }
 
   // Transport / screen actions used by QML buttons.
   Q_INVOKABLE void play();
@@ -130,21 +158,28 @@ class AppController final : public QObject {
   Q_INVOKABLE void requestRenameProject();
   Q_INVOKABLE void requestRenameTake();
   Q_INVOKABLE void requestDeleteTake();
+  Q_INVOKABLE void requestImportTake();
 
   // Screenshot runner helper: force an overlay state for a deterministic grab.
   Q_INVOKABLE void openDemoKeypad();
+  Q_INVOKABLE void openConfig(const QString& kind);
+  Q_INVOKABLE void configAccept();
+  Q_INVOKABLE void configCancel();
 
  signals:
   void tabChanged();
   void dirtyChanged();
   void transportChanged();
   void clickChanged();
+  void toolsPageChanged();
+  void systemShiftPageChanged();
   void noticeChanged();
   void panelModeChanged();
   void focusChanged();
   void metersChanged();
   void keypadChanged();
   void confirmChanged();
+  void valuePopupChanged();
 
  private:
   void timerTick();
@@ -167,8 +202,13 @@ class AppController final : public QObject {
   void projectStateChanged();
   void registerLearnTargets();
   void setNotice(const QString& notice);
+  void popupGain(const QString& label, int strip);
+  void popupPan(const QString& label, int strip);
+  void popupSend(const QString& label, int strip, int send);
+  void popupTrackSend(const QString& label, int send);
 
   AppState state_;
+  SessionSettings settings_;
   MixerModel mixer_;
   FxManager fx_;
   MidiGlue midi_;
@@ -183,21 +223,28 @@ class AppController final : public QObject {
   std::unique_ptr<ProjectsViewModel> projectsVm_;
   std::unique_ptr<SystemViewModel> systemVm_;
   std::unique_ptr<LearnViewModel> learnVm_;
+  std::unique_ptr<SessionViewModel> sessionVm_;
+  std::unique_ptr<ToolsViewModel> toolsVm_;
+  std::unique_ptr<ConfigPopupModel> configVm_;
 
   QTimer timer_;
   int tab_ = 0;
+  int toolsPage_ = 0;
+  int systemShiftPage_ = 0;
   int refreshTicks_ = 0;
   int focusByScreen_[kScreenCount] = {};
   std::vector<QString> focusIds_;
   int focusIndex_ = 0;
   QString focusId_;
   QString panelMode_ = QStringLiteral("navigate");
+  bool shiftFace_ = false;
   QStringList shiftActions_;
 
   DirtyTracker dirtyTracker_;
   ChordDetector chord_;
   bool pendingRec_ = false;
   std::uint64_t pendingRecMs_ = 0;
+  std::uint32_t takeArmMask_ = 0;
 
   std::uint8_t lastLedMask_ = 0;
   std::uint8_t lastLedStates_ = 0;
@@ -209,6 +256,9 @@ class AppController final : public QObject {
   bool lastClickEnabled_ = false;
   double lastClickLevel_ = 0.5;
   int lastClickBars_ = 1;
+  int lastClickMode_ = 0;
+  int lastClickOutput_ = 0;
+  double lastClickGainDb_ = -6.0;
   double masterPeakLeft_ = 0.0;
   double masterPeakRight_ = 0.0;
 
@@ -229,6 +279,11 @@ class AppController final : public QObject {
   QString confirmLabel_;
   QString confirmAction_;
   int confirmIndex_ = -1;
+
+  QTimer valuePopupTimer_;
+  bool valuePopupVisible_ = false;
+  QString valuePopupLabel_;
+  QString valuePopupText_;
 
   bool started_ = false;
 };

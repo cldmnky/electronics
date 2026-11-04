@@ -2,33 +2,27 @@ import QtQuick
 import Mnkybox 1.0
 import "../components"
 
-// Projects: one directory per project under ~/Music/mnkybox-projects. Rows load
-// a project (after a dirty confirmation), and NEW/SAVE/RENAME/DELETE manage the
-// folder. The dirty dot appears on SAVE, on the Projects tab and in the
-// transport strip.
+// PROJECTS primary: project list plus save/load. SHIFT: new/rename/delete and
+// template operations (session v2 isTemplate).
 Item {
     id: screen
 
+    readonly property bool shiftFace: app.panelMode === "shift"
+
     Column {
+        visible: !screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
         spacing: 3
 
-        Item {
+        Row {
             width: parent.width
             height: Style.touch
+            spacing: 4
 
             TouchButton {
-                width: 88
-                height: parent.height
-                text: "NEW"
-                focusId: "projects.new"
-                onClicked: projects.newProject()
-            }
-            TouchButton {
                 id: saveButton
-                x: 94
-                width: 88
+                width: 100
                 height: parent.height
                 text: "SAVE"
                 focusId: "projects.save"
@@ -43,26 +37,23 @@ Item {
                 radius: 4
                 color: Style.accent
             }
-            TouchButton {
-                x: 188
-                width: 100
+            Text {
+                width: parent.width - 210
                 height: parent.height
-                text: "RENAME"
-                textSize: Style.fontSmall
-                active: projects.selectedRow >= 0
-                focusId: "projects.rename"
-                onClicked: app.requestRenameProject()
+                text: "SHIFT: manage + templates"
+                color: Style.textDim
+                font.pixelSize: Style.fontSmall
+                verticalAlignment: Text.AlignVCenter
             }
-            TouchButton {
-                x: 294
+            Text {
                 width: 100
                 height: parent.height
-                text: "DELETE"
-                textSize: Style.fontSmall
-                active: projects.selectedRow >= 0
-                idleColor: "#5b2222"
-                focusId: "projects.delete"
-                onClicked: app.requestDeleteProject(projects.selectedRow)
+                text: projects.isTemplate ? "TEMPLATE" : ""
+                color: Style.accent
+                font.pixelSize: Style.fontSmall
+                font.bold: true
+                horizontalAlignment: Text.AlignRight
+                verticalAlignment: Text.AlignVCenter
             }
         }
 
@@ -137,12 +128,111 @@ Item {
                 visible: projectList.count === 0
                 anchors.centerIn: parent
                 width: parent.width - 20
-                text: "no projects yet - NEW creates one in ~/Music/mnkybox-projects"
+                text: "no projects yet - SHIFT/NEW creates one in ~/Music/mnkybox-projects"
                 color: Style.textDim
                 font.pixelSize: Style.fontBody
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
             }
+        }
+    }
+
+    Column {
+        visible: screen.shiftFace
+        anchors.fill: parent
+        anchors.margins: Style.margin
+        spacing: 3
+
+        Text {
+            width: parent.width
+            height: 16
+            text: "SHIFT  PROJECT MANAGEMENT / TEMPLATES"
+            color: Style.accent
+            font.pixelSize: Style.fontSmall
+            font.bold: true
+        }
+
+        Row {
+            width: parent.width
+            height: Style.touch
+            spacing: 4
+
+            TouchButton {
+                width: 92
+                height: parent.height
+                text: "NEW"
+                focusId: "shift.projects.new"
+                onClicked: projects.newProject()
+            }
+            TouchButton {
+                width: 100
+                height: parent.height
+                text: "RENAME"
+                textSize: Style.fontSmall
+                active: projects.selectedRow >= 0
+                focusId: "shift.projects.rename"
+                onClicked: app.requestRenameProject()
+            }
+            TouchButton {
+                width: 100
+                height: parent.height
+                text: "DELETE"
+                textSize: Style.fontSmall
+                active: projects.selectedRow >= 0
+                idleColor: "#5b2222"
+                focusId: "shift.projects.delete"
+                onClicked: app.requestDeleteProject(projects.selectedRow)
+            }
+            Text {
+                width: parent.width - 300
+                height: parent.height
+                text: projects.isTemplate ? "current project is a template"
+                                          : "current project is a normal session"
+                color: Style.textDim
+                font.pixelSize: Style.fontSmall
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+
+        Row {
+            width: parent.width
+            height: Style.touch
+            spacing: 4
+
+            TouchButton {
+                width: 150
+                height: parent.height
+                text: "NEW TEMPLATE"
+                textSize: Style.fontSmall
+                focusId: "shift.projects.template.new"
+                onClicked: projects.newTemplate()
+            }
+            TouchButton {
+                width: 150
+                height: parent.height
+                text: "SAVE TEMPLATE"
+                textSize: Style.fontSmall
+                focusId: "shift.projects.template.save"
+                onClicked: projects.saveTemplate()
+            }
+            TouchButton {
+                width: 150
+                height: parent.height
+                text: "CLEAR FLAG"
+                textSize: Style.fontSmall
+                focusId: "shift.projects.template.clear"
+                onClicked: projects.clearTemplate()
+            }
+        }
+
+        Text {
+            width: parent.width
+            text: "Templates are settings-only session v2 files (isTemplate). " +
+                  "Loading a template keeps the current take registry unless the " +
+                  "template file carries one."
+            color: Style.textDim
+            font.pixelSize: 10
+            wrapMode: Text.Wrap
         }
     }
 }

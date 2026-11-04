@@ -1,7 +1,7 @@
 # mnkybox app (`pi/app/`) — Qt 6 QML touchscreen DAW
 
 The wave-2 UI is now Qt 6 QML: `QGuiApplication` + `QQmlApplicationEngine`, a
-`QQuickWindow` shell and six QML screens over C++ view models. The JUCE app
+`QQuickWindow` shell and seven QML screens over C++ view models. The JUCE app
 (`juce_add_gui_app`, `MainComponent`, the LookAndFeel/theme and the JUCE
 `AudioDeviceManager`) is gone. The core libs (`link midi audio clap session`,
 `firmware/`) are untouched and stay JUCE-free; this change is UI layer + audio
@@ -34,7 +34,7 @@ cmake --build ~/pi-build -j8
   emulator transport, so a desktop run still starts.
 * `--unittests` runs the C++ checks (`logic_tests.cpp`) and exits; no window,
   audio device, MIDI port or QML engine. Also registered as CTest
-  `mnkybox_app_logic` (115 checks, 0 failures).
+  `mnkybox_app_logic` (161 checks, 0 failures).
 * `--screenshots DIR` is the headless proof: forces the emulator backends, loads
   every QML screen and writes `30-qt-*.png` with `QQuickWindow::grabWindow()`,
   then exits 0. Run it with `QT_QPA_PLATFORM=offscreen`; no Xvfb is needed.
@@ -208,10 +208,69 @@ QT_QPA_PLATFORM=offscreen ./app/mnkybox                                      # s
 pactl list short sink-inputs                                                 # one PipeWire stream
 ```
 
+## Wave 3: TRACK / TAKE / PUNCH / MONITOR / TOOLS (31-*)
+
+* **MIXER vs TRACK** — the Mixer tab has a MIXER/TRACK switch. MIXER is one
+  setting across many tracks (banked strips, master); TRACK is one track with
+  many settings: VOL, GAIN, PAN, FX1, FX2, CUE, OUT34, REC/MUTE/SOLO and an
+  18-button track selector. VOL and GAIN are two app-side dB values summed into
+  the single `audio::Channel::gain` because session v2 has one `gain` field and
+  the recorder tap is post-gain; the engine's newer `vol` field is not used yet.
+* **TAKE screen** (Recorder tab) — one track at a time, its take list with an
+  ACTIVE flag (empty active = live input), set-active/clear-live, pointer import
+  (absolute path, no copy; the keypad accepts `/` and `.`), rename through the
+  shared keypad and delete after confirmation. The engine take player gets the
+  selected file; a rejected/missing pointer clears playback.
+* **Take naming** — after a core take stops, the app renames each recorded
+  `chNN.wav` to `<nn>-<trackname>-<take#>.wav` (for example
+  `02-ch02-003.wav`) and makes it that track's active take. Track names default
+  to `chNN`; they are not session-persisted. There is no recorder API for the
+  template yet, so the rename is app-side after `Recorder::stopTake()`.
+* **PUNCH** — PLAY FROM / PUNCH IN / PUNCH OUT enable+measure markers in the
+  session v2 `punch` section. The engine exposes `TransportPosition`; automatic
+  punch scheduling is not wired in this wave, so the markers persist and the UI
+  edits them without changing transport behaviour.
+* **MONITOR** — click mode (off/record/on-play), click output
+  (main/phones/out34), click gain, phones source, CUE style, OUT3&4 stereo/mono,
+  the cue/fx1/fx2/out34/rec pre-post matrix and the main-bus compressor are all
+  session v2 fields. The app pushes them into the engine atomics every UI tick;
+  the engine applies the send sources, cue/out34 buses, click and compressor.
+  The main-bus compressor is never applied to OUT3&4.
+* **TOOLS** — take-volume free space, low-space banner (<2 GiB or <5 %), screen
+  brightness (best-effort `/sys/class/backlight`; stored in `QSettings` when no
+  backlight exists) and app/firmware versions. The app version is the CMake
+  project version; the link status carries no firmware version field, so a
+  hardware link shows “not reported”.
+* **Clip LEDs** — every mixer strip has a post-gain meter and a clip-hold LED
+  (`ClipHold`, 30 UI ticks ≈ 2 s). `31-clip.png` uses the deterministic
+  `showClipDemo()` helper because the emulator never overloads by chance.
+* **Per-track input monitoring** — the TRACK strip has OFF / AUTO / ON and the
+  mixer strip carries a compact mark. Session v2 stores it as
+  `mixer.channels[].monitor` (0/1/2) and `MixerModel::applyTo()` feeds it to
+  `audio::Engine` through `Channel::monitor`. Behaviour: **Auto** = hear the live
+  input when the track is armed or no take is playing, and hear the take (no
+  doubling) when a take is active; **On** = always hear the live input, layering
+  it over a take; **Off** = takes only. Mixer strips show `OFF` and `ON` always
+  and `A` only when an active take makes Auto choose the take, so the default
+  Auto state does not add noise to every strip.
+* **Transient value popup** — one `qml/components/ValuePopup.qml` instance in
+  `Main.qml` shows a floating label + formatted value while a control changes,
+  then hides 1.5 s after the last change. `TouchSlider` triggers it on every
+  touch drag and `AppController::adjustFocused()` triggers it for the panel
+  EDIT-mode joystick, so both paths share one readout. Formatting is in
+  `logic.hpp`: pan = `Center` / `Lxx` / `Rxx`, gains/returns/comp threshold =
+  dB, sends/levels = %, ratio = `n:1`, attack/release = ms, tempo = BPM, FX
+  params = two decimals. Pan has a 2 % centre detent in `MixerModel` and
+  `TouchSlider`, so the popup confirms `Center`. The popup is disabled, has no
+  `MouseArea` and never takes focus; `31-value-popup.png` is a scripted
+  `setPan(1, 0.51)` + `showValuePopup` grab taken before the 1.5 s timeout
+  (no debug hold flag).
+
 ## Panel interaction (docs/panel-interaction.md)
 
 Implemented in `AppController` with a focus ring per screen and IDs such as
-`mixer.gain.N`, `routing.mask.S.C`, `fx.A.param.N`, `recorder.arm.N`,
+`mixer.gain.N`, `routing.mask.S.C`, `fx.A.param.N`, `recorder.track.N`,
+`track.select.N`, `punch.in.measure`, `monitor.comp.thresh`,
 `system.backend`, `projects.row.N`; the tab row itself is `tab.0..5`.
 
 * NAVIGATE: NAV moves the focus ring (wrap); NAV_PRESS toggles a toggle or enters
@@ -230,7 +289,15 @@ Implemented in `AppController` with a focus ring per screen and IDs such as
 
 | Feature | Status |
 |---|---|
-| Banked mixer (18 strips, 2 banks, master, meters) | **works** |
+| Banked mixer (18 strips, 2 banks, master, meters, clip LEDs) | **works** |
+| MIXER/TRACK mode + single-track strip | **works** |
+| TAKE screen: per-track list, ACTIVE, pointer import, rename/delete | **works**; engine take playback selected from the list |
+| Per-track input monitoring Off/Auto/On + mixer marks | **works**; persisted as `mixer.channels[].monitor` |
+| Transient value popup (touch + panel EDIT) with pan Center/dB/% formatting | **works**; 1.5 s auto-hide, centre detent |
+| Per-track take naming `<nn>-<trackname>-<take#>` | **works**; app-side rename after stop |
+| Punch marker UI + session v2 persistence | **works**; transport scheduling not wired |
+| Metronome / monitor / send matrix / main comp UI | **works**; persisted and pushed to the engine |
+| TOOLS disk banner, brightness, app/firmware versions | **works**; brightness needs a Linux backlight |
 | Routing patchbay: wire/node toggle, RESET, 16-channel masks, transpose | **works** |
 | FX params + state (two CLAP send slots) | **works**; state is saved/loaded at fixed `~/Music/fx-slot-A/B.state` |
 | Recorder arm / take start-stop / rename / delete | **works** |
@@ -275,13 +342,13 @@ macOS (Qt 6.12.0, AppleClang):
 
 * `cmake -S midibrain/pi -B /tmp/pi-build -DCMAKE_PREFIX_PATH=$(brew --prefix qt)`
   and `cmake --build /tmp/pi-build -j8`: **warning-free**, all targets.
-* `ctest --test-dir /tmp/pi-build --output-on-failure`: **11/11 passed**
-  (incl. `mnkybox_app_logic` = 115 checks, 0 failures).
+* `ctest --test-dir /tmp/pi-build --output-on-failure`: **12/12 passed**
+  (incl. `mnkybox_app_logic` = 161 checks, 0 failures).
 * `QT_QPA_PLATFORM=offscreen /tmp/pi-build/app/mnkybox --screenshots /tmp/mnky-shots`:
-  **11/11 PNGs**, 0 failures, every screen plus the scrolled MIDI-learn panel loaded.
+  **9/9 PNGs**, 0 failures: `31-{mixer,clip,track,takes,punch,monitor,tools,keypad,value-popup}.png`.
 * `QT_QPA_PLATFORM=offscreen /tmp/pi-build/app/mnkybox --screenshots-live` in the
-  guest against PipeWire: **11/11 PNGs**, sink active and `blocks > 0`; one
-  System grab is checked in as `30-qt-pipewire-system.png`.
+  guest against PipeWire: the earlier 30-* live run remains the PipeWire evidence
+  (`30-qt-pipewire-system.png`); this wave's 31-* set is the emulator screenshot run.
 * Hardware-path smoke (no `--emulator`, offscreen): the real QAudioSink opened
   `Qt Multimedia / MOMENTUM 4, 48000 Hz / 128 frames`; the link still fell back
   to the emulator transport because macOS has no spidev. This proves the sink
@@ -292,12 +359,13 @@ Linux guest (Debian bookworm arm64, Qt 6.4.2):
 * rsync of host `midibrain/{pi,firmware}` (excluding `qemu`, `build`,
   `node_modules`, `dist`, `fab`, `.git`) to `~/mb-src/`, ccache-warmed
   `cmake --build ~/pi-build2 -j8`: **green in 6.5 s**, no warnings.
-* `ctest --output-on-failure`: **11/11 passed**.
+* `ctest --output-on-failure`: **12/12 passed**.
 * `QT_QPA_PLATFORM=offscreen ./app/mnkybox --screenshots ~/qt-shots`:
-  **11/11 PNGs**, 0 failures. The set is checked in as
-  `qemu/screenshots/30-qt-{mixer,mixer-bank2,routing,routing-active,fx,recorder,system,system-learn,projects,keypad,confirm}.png`.
-  The live PipeWire evidence is `qemu/screenshots/30-qt-pipewire-system.png`.
+  **9/9 PNGs**, 0 failures. The wave-3 set is checked in as
+  `qemu/screenshots/31-{mixer,clip,track,takes,punch,monitor,tools,keypad,value-popup}.png`.
+  The earlier 30-* set and the live PipeWire evidence are kept alongside it.
 
 No hardware, touch-panel, audio-timing, measured metronome-level or JACK/PipeWire
 routing test is claimed. The screenshots are offscreen software-renderer grabs,
-not photographs of the panel.
+not photographs of the panel. Punch scheduling, independent VOL/GAIN session
+persistence and a firmware version readout remain explicitly unimplemented.

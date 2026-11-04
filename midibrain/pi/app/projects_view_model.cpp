@@ -11,6 +11,7 @@
 #include "logging.hpp"
 #include "project_io.hpp"
 #include "project_logic.hpp"
+#include "session_settings.hpp"
 
 namespace mnky::app {
 
@@ -99,6 +100,32 @@ void ProjectsViewModel::newProject() {
     }
   }
   refresh();
+}
+
+bool ProjectsViewModel::isTemplate() const {
+  return context_.settings.isTemplate;
+}
+
+void ProjectsViewModel::newTemplate() {
+  newProject();
+  context_.settings.isTemplate = true;
+  saveProject();
+  statusText_ = QStringLiteral("template created");
+  emit stateChanged();
+}
+
+void ProjectsViewModel::saveTemplate() {
+  context_.settings.isTemplate = true;
+  saveProject();
+  statusText_ = QStringLiteral("template saved");
+  emit stateChanged();
+}
+
+void ProjectsViewModel::clearTemplate() {
+  context_.settings.isTemplate = false;
+  saveProject();
+  statusText_ = QStringLiteral("template flag cleared");
+  emit stateChanged();
 }
 
 void ProjectsViewModel::saveProject() {

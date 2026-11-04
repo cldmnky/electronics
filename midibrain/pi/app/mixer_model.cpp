@@ -23,7 +23,9 @@ audio::Channel MixerModel::channel(int index) const {
   audio::Channel out;
   if (!valid(index)) return out;
   const auto& strip = strips_[index];
-  out.gain = dbToGain(strip.gainDb.load(std::memory_order_relaxed));
+  // Trim and fader are separate UI controls but one engine gain (dB sum).
+  out.gain = dbToGain(strip.gainDb.load(std::memory_order_relaxed) +
+                      strip.trimDb.load(std::memory_order_relaxed));
   out.pan = strip.pan.load(std::memory_order_relaxed);
   out.mute = strip.mute.load(std::memory_order_relaxed);
   out.solo = strip.solo.load(std::memory_order_relaxed);
@@ -31,6 +33,12 @@ audio::Channel MixerModel::channel(int index) const {
   for (int send = 0; send < audio::kNumSends; ++send) {
     out.send[send] = strip.send[send].load(std::memory_order_relaxed);
   }
+  out.cueSend = strip.cueSend.load(std::memory_order_relaxed);
+  out.out34Send = strip.out34Send.load(std::memory_order_relaxed);
+  const int monitor = strip.monitor.load(std::memory_order_relaxed);
+  out.monitor = monitor == 0 ? audio::MonitorMode::Off
+                              : (monitor == 2 ? audio::MonitorMode::On
+                                              : audio::MonitorMode::Auto);
   return out;
 }
 
@@ -42,6 +50,8 @@ void MixerModel::applyTo(audio::Engine& engine) const {
   for (int send = 0; send < audio::kNumSends; ++send) {
     engine.setFxReturn(send, dbToGain(fxReturnDb_[send].load(std::memory_order_relaxed)));
   }
+  engine.setOut34Mode(out34Mode() == 1 ? audio::Out34Mode::DualMono
+                                       : audio::Out34Mode::Stereo);
 }
 
 void MixerModel::setGainDb(int index, float db) {
@@ -55,8 +65,10 @@ float MixerModel::gainDb(int index) const {
 
 void MixerModel::setPan(int index, float pan) {
   if (!valid(index)) return;
-  strips_[index].pan.store(pan < 0.0f ? 0.0f : (pan > 1.0f ? 1.0f : pan),
-                           std::memory_order_relaxed);
+  float value = pan < 0.0f ? 0.0f : (pan > 1.0f ? 1.0f : pan);
+  // Centre detent shared by touch drag, panel EDIT and MIDI-learn writes.
+  if (std::abs(value - 0.5f) <= 0.02f) value = 0.5f;
+  strips_[index].pan.store(value, std::memory_order_relaxed);
 }
 
 float MixerModel::pan(int index) const {
@@ -96,6 +108,52 @@ void MixerModel::setSend(int index, int send, float level) {
 float MixerModel::send(int index, int send) const {
   if (!valid(index) || !validSend(send)) return 0.0f;
   return strips_[index].send[send].load(std::memory_order_relaxed);
+}
+
+void MixerModel::setTrimDb(int index, float db) {
+  if (valid(index)) strips_[index].trimDb.store(db, std::memory_order_relaxed);
+}
+
+float MixerModel::trimDb(int index) const {
+  return valid(index) ? strips_[index].trimDb.load(std::memory_order_relaxed) : 0.0f;
+}
+
+void MixerModel::setCueSend(int index, float level) {
+  if (!valid(index)) return;
+  strips_[index].cueSend.store(level < 0.0f ? 0.0f : (level > 1.0f ? 1.0f : level),
+                               std::memory_order_relaxed);
+}
+
+float MixerModel::cueSend(int index) const {
+  return valid(index) ? strips_[index].cueSend.load(std::memory_order_relaxed) : 0.0f;
+}
+
+void MixerModel::setOut34Send(int index, float level) {
+  if (!valid(index)) return;
+  strips_[index].out34Send.store(level < 0.0f ? 0.0f : (level > 1.0f ? 1.0f : level),
+                                 std::memory_order_relaxed);
+}
+
+float MixerModel::out34Send(int index) const {
+  return valid(index) ? strips_[index].out34Send.load(std::memory_order_relaxed) : 0.0f;
+}
+
+void MixerModel::setMonitor(int index, int mode) {
+  if (!valid(index)) return;
+  strips_[index].monitor.store(mode <= 0 ? 0 : (mode >= 2 ? 2 : 1),
+                              std::memory_order_relaxed);
+}
+
+int MixerModel::monitor(int index) const {
+  return valid(index) ? strips_[index].monitor.load(std::memory_order_relaxed) : 1;
+}
+
+void MixerModel::setOut34Mode(int mode) {
+  out34Mode_.store(mode == 1 ? 1 : 0, std::memory_order_relaxed);
+}
+
+int MixerModel::out34Mode() const {
+  return out34Mode_.load(std::memory_order_relaxed);
 }
 
 void MixerModel::setMasterDb(float db) {

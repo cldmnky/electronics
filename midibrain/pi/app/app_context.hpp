@@ -10,6 +10,7 @@ class FxManager;
 class LinkClient;
 class MidiGlue;
 class MixerModel;
+class SessionSettings;
 
 struct AppContext {
   AppState& state;
@@ -18,6 +19,7 @@ struct AppContext {
   MidiGlue& midi;
   AudioGlue& audio;
   LinkClient& link;
+  SessionSettings& settings;
 };
 
 }  // namespace mnky::app

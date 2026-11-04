@@ -8,7 +8,10 @@ import "../components"
 Item {
     id: screen
 
+    readonly property bool shiftFace: app.panelMode === "shift"
+
     Row {
+        visible: !screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
         spacing: 6
@@ -111,151 +114,6 @@ Item {
 
                 Text {
                     width: parent.width
-                    height: 16
-                    text: "METRONOME - click config"
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    font.bold: true
-                }
-
-                Row {
-                    width: parent.width
-                    height: Style.touch
-                    spacing: 4
-
-                    TouchButton {
-                        width: 84
-                        height: parent.height
-                        text: "CLICK"
-                        checked: app.clickEnabled
-                        focusId: "system.click"
-                        onClicked: app.setClickEnabled(!app.clickEnabled)
-                    }
-                    TouchSlider {
-                        id: clickLevel
-                        width: Math.max(60, parent.width - 232)
-                        height: Style.touch
-                        minimumValue: 0
-                        maximumValue: 1
-                        value: app.clickLevel
-                        focusId: "system.click.level"
-                        Binding on value { value: app.clickLevel; when: !clickLevel.dragging }
-                        onMoved: (value) => app.setClickLevel(value)
-                    }
-                    TouchButton {
-                        width: 44
-                        height: parent.height
-                        text: "-"
-                        textSize: 20
-                        focusId: "system.click.bars"
-                        onClicked: app.setClickBars(app.clickBars - 1)
-                    }
-                    Text {
-                        width: 44
-                        height: parent.height
-                        text: app.clickBars + " bar"
-                        color: Style.text
-                        font.pixelSize: Style.fontSmall
-                        verticalAlignment: Text.AlignVCenter
-                        horizontalAlignment: Text.AlignHCenter
-                    }
-                    TouchButton {
-                        width: 44
-                        height: parent.height
-                        text: "+"
-                        textSize: 20
-                        focusId: "system.click.bars"
-                        onClicked: app.setClickBars(app.clickBars + 1)
-                    }
-                }
-
-                Text {
-                    width: parent.width
-                    height: 16
-                    text: "MIDI LEARN - capture a control change"
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    font.bold: true
-                }
-
-                Row {
-                    width: parent.width
-                    height: Style.touch
-                    spacing: 4
-
-                    TouchComboBox {
-                        id: learnTarget
-                        width: parent.width - 148
-                        model: learn.targets
-                        focusId: "learn.target"
-                        onActivated: (index) => learn.targetIndex = index
-                        Binding on currentIndex { value: learn.targetIndex; when: !learnTarget.popup.visible }
-                    }
-                    TouchButton {
-                        width: 144
-                        height: parent.height
-                        text: learn.capturing ? "WAIT FOR CC" : "ARM CAPTURE"
-                        textSize: Style.fontSmall
-                        checked: learn.capturing
-                        focusId: "learn.arm"
-                        onClicked: learn.capturing ? learn.cancelCapture() : learn.startCapture()
-                    }
-                }
-
-                Row {
-                    width: parent.width
-                    height: Style.touch
-                    spacing: 4
-
-                    Text {
-                        width: parent.width - 88
-                        height: parent.height
-                        text: learn.statusText
-                        color: Style.textDim
-                        font.pixelSize: 10
-                        elide: Text.ElideRight
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    TouchButton {
-                        width: 84
-                        height: parent.height
-                        text: "CLEAR"
-                        textSize: 10
-                        focusId: "learn.clear"
-                        onClicked: learn.clearAll()
-                    }
-                }
-
-                Repeater {
-                    model: learn.bindings
-                    delegate: Row {
-                        width: leftColumn.width
-                        height: Style.touch
-                        spacing: 4
-
-                        Text {
-                            width: parent.width - 92
-                            height: parent.height
-                            text: modelData
-                            color: Style.text
-                            font.pixelSize: 10
-                            elide: Text.ElideRight
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        TouchButton {
-                            width: 88
-                            height: parent.height
-                            text: "REMOVE"
-                            textSize: 10
-                            checked: false
-                            focusId: "learn.binding." + index
-                            onClicked: learn.removeBinding(index)
-                        }
-                    }
-                }
-
-                Text {
-                    width: parent.width
                     text: system.backendHint
                     color: Style.textDim
                     font.pixelSize: 9
@@ -318,5 +176,9 @@ Item {
                 }
             }
         }
+    }
+    SystemShiftFace {
+        visible: screen.shiftFace
+        anchors.fill: parent
     }
 }

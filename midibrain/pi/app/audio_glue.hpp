@@ -27,6 +27,7 @@
 #include "emulator_synth.hpp"
 #include "fx_slot.hpp"
 #include "mixer_model.hpp"
+#include "session_settings.hpp"
 
 QT_BEGIN_NAMESPACE
 class QAudioSink;
@@ -89,8 +90,21 @@ class AudioGlue {
   std::uint64_t drops() const;
   audio::Recorder::Take lastTake() const;
 
+  // Control-thread monitor/compressor configuration. The audio callback copies
+  // these atomics into the engine every block.
+  void applyMonitorSettings(const SessionSettings& settings);
+
+  // Control-thread take playback selection (engine take player). Returns false
+  // with `error` when the engine refuses the file (not 48 kHz WAV, missing).
+  bool setActiveTake(int track, const std::filesystem::path& path,
+                     std::string* error = nullptr);
+  void clearActiveTake(int track);
+
   // Read-and-decay master peak for the meters (0 = left, 1 = right).
   float peak(int channel);
+  // Read-and-decay post-gain mono tap peak for one strip, for the mixer meters
+  // and clip-hold LEDs. Out-of-range channels read 0.
+  float stripPeak(int channel);
 
  private:
   class EmulatorDriver;
@@ -117,7 +131,6 @@ class AudioGlue {
   bool emulatorStartup_ = false;  // --emulator: start on the generator
   std::atomic<bool> emulated_{false};
   audio::Engine engine_;
-  audio::ClickSource click_;
   audio::Recorder recorder_;
   EmulatorSynth synth_;
   float synthBuffer_[audio::kMaxInputs][audio::kBlockSize] = {};
@@ -148,6 +161,21 @@ class AudioGlue {
   std::atomic<bool> running_{false};
   std::atomic<std::uint64_t> renderBlocks_{0};
   std::atomic<float> peaks_[2] = {};
+  std::atomic<float> stripPeaks_[audio::kMaxInputs] = {};
+
+  // Monitor configuration copied from SessionSettings on the GUI thread and
+  // read once per block by the audio callback.
+  std::atomic<int> monitorPhones_{0};
+  std::atomic<int> monitorCueStyle_{0};
+  std::atomic<int> monitorOut34Mode_{0};
+  std::atomic<int> monitorSend_[audio::kNumSendDestinations] = {};
+  std::atomic<bool> compOn_{false};
+  std::atomic<float> compThreshDb_{-12.0f};
+  std::atomic<float> compRatio_{2.0f};
+  std::atomic<float> compAttackMs_{10.0f};
+  std::atomic<float> compReleaseMs_{100.0f};
+  std::atomic<float> compMakeupDb_{0.0f};
+  std::atomic<int> compMode_{0};
 
   std::mutex inputLock_;
   std::vector<float> inputRingL_;

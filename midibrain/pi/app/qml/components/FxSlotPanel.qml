@@ -9,6 +9,8 @@ Rectangle {
 
     property var slot
     property string slotLetter: "A"
+    property string focusPrefix: "fx"
+    property bool showReturn: true
 
     color: Style.panel
     radius: Style.corner
@@ -40,7 +42,7 @@ Rectangle {
                 text: root.slot && root.slot.pluginName !== "" ? root.slot.pluginName
                                                               : "pick plugin"
                 textSize: Style.fontSmall
-                focusId: "fx." + root.slotLetter + ".plugin"
+                focusId: root.focusPrefix + "." + root.slotLetter + ".plugin"
                 onClicked: root.slot.loadDefault()
             }
             TouchButton {
@@ -48,7 +50,7 @@ Rectangle {
                 height: parent.height
                 text: "EJECT"
                 textSize: Style.fontSmall
-                focusId: "fx." + root.slotLetter + ".eject"
+                focusId: root.focusPrefix + "." + root.slotLetter + ".eject"
                 onClicked: root.slot.eject()
             }
             TouchButton {
@@ -56,7 +58,7 @@ Rectangle {
                 height: parent.height
                 text: "SAVE"
                 textSize: Style.fontSmall
-                focusId: "fx." + root.slotLetter + ".save"
+                focusId: root.focusPrefix + "." + root.slotLetter + ".save"
                 onClicked: root.slot.saveState()
             }
             TouchButton {
@@ -64,14 +66,15 @@ Rectangle {
                 height: parent.height
                 text: "LOAD"
                 textSize: Style.fontSmall
-                focusId: "fx." + root.slotLetter + ".load"
+                focusId: root.focusPrefix + "." + root.slotLetter + ".load"
                 onClicked: root.slot.loadState()
             }
         }
 
         Row {
+            visible: root.showReturn
             width: parent.width
-            height: Style.touch
+            height: visible ? Style.touch : 0
             spacing: 4
 
             Text {
@@ -90,9 +93,11 @@ Rectangle {
                 minimumValue: -60
                 maximumValue: 12
                 value: root.slot ? root.slot.returnDb : 0
-                focusId: "fx." + root.slotLetter + ".return"
+                focusId: root.focusPrefix + "." + root.slotLetter + ".return"
+                popupLabel: "SEND " + root.slotLetter + " RETURN"
+                popupKind: "db"
                 Binding on value { value: root.slot.returnDb; when: !returnSlider.dragging }
-                onMoved: (value) => root.slot.setReturnDb(value)
+                onMoved: (value) => root.slot.returnDb = value
             }
             TouchButton {
                 width: 84
@@ -101,7 +106,7 @@ Rectangle {
                 textSize: Style.fontSmall
                 checked: root.slot ? root.slot.bypassed : false
                 checkedColor: Style.soloOn
-                focusId: "fx." + root.slotLetter + ".bypass"
+                focusId: root.focusPrefix + "." + root.slotLetter + ".bypass"
                 onClicked: root.slot.toggleBypass()
             }
         }
@@ -117,7 +122,7 @@ Rectangle {
 
         ListView {
             width: parent.width
-            height: Math.max(0, parent.height - Style.touch * 2 - 3 * 3 - 15)
+            height: Math.max(0, parent.height - Style.touch - (root.showReturn ? Style.touch : 0) - 3 * 3 - 15)
             clip: true
             model: root.slot ? root.slot.params : null
             boundsBehavior: Flickable.StopAtBounds
@@ -150,7 +155,9 @@ Rectangle {
                     minimumValue: model.minimum
                     maximumValue: model.maximum
                     value: model.value
-                    focusId: "fx." + root.slotLetter + ".param." + index
+                    focusId: root.focusPrefix + "." + root.slotLetter + ".param." + index
+                    popupLabel: model.name
+                    popupKind: "generic"
                     Binding on value { value: model.value; when: !paramSlider.dragging }
                     onMoved: (value) => root.slot.setParam(index, value)
                 }

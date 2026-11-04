@@ -13,6 +13,10 @@ Rectangle {
     property string panText: "C"
     property real sendA: 0.0
     property real sendB: 0.0
+    property real level: 0.0
+    property bool clip: false
+    property int monitor: 1
+    property string monitorMark: ""
     property bool mute: false
     property bool solo: false
     property bool arm: false
@@ -27,12 +31,12 @@ Rectangle {
     Column {
         anchors.fill: parent
         anchors.margins: 3
-        spacing: 2
+        spacing: 0
         clip: true
 
         Item {
             width: parent.width
-            height: 16
+            height: 12
             Text {
                 anchors.left: parent.left
                 text: "IN " + String(root.stripIndex + 1).padStart(2, "0")
@@ -49,17 +53,74 @@ Rectangle {
             }
         }
 
-        TouchSlider {
-            id: gain
+        Row {
             width: parent.width
-            height: Math.max(Style.touch, root.height - 16 - 6 * Style.touch - 22)
-            vertical: true
-            minimumValue: -60
-            maximumValue: 12
-            value: root.gainDb
-            focusId: "mixer.gain." + root.stripIndex
-            Binding on value { value: root.gainDb; when: !gain.dragging }
-            onMoved: (value) => mixer.setGainDb(root.stripIndex, value)
+            height: Math.max(Style.touch, root.height - 12 - 4 * Style.touch)
+            spacing: 2
+
+            TouchSlider {
+                id: gain
+                width: parent.width - 16
+                height: parent.height
+                vertical: true
+                minimumValue: -60
+                maximumValue: 12
+                value: root.gainDb
+                focusId: "mixer.gain." + root.stripIndex
+                popupLabel: "IN " + String(root.stripIndex + 1).padStart(2, "0") + " GAIN"
+                popupKind: "db"
+                Binding on value { value: root.gainDb; when: !gain.dragging }
+                onMoved: (value) => mixer.setGainDb(root.stripIndex, value)
+            }
+
+            // Per-strip meter with a clip-hold LED. The level is the post-gain
+            // engine tap mapped to dB; the LED latches a full-scale block.
+            Item {
+                id: meter
+                width: 14
+                height: parent.height
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: Style.panelDark
+                    border.width: Style.outlineWidth
+                    border.color: Style.outline
+                }
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 1
+                    height: Math.max(0, (parent.height - 2) *
+                                     Math.max(0, Math.min(1, root.level)))
+                    color: root.level > 0.95 ? Style.record : Style.ok
+                }
+                Rectangle {
+                    id: clipLed
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.margins: 1
+                    width: 8
+                    height: 6
+                    radius: 1
+                    color: root.clip ? Style.record : Style.outline
+                    border.width: Style.outlineWidth
+                    border.color: Style.panelDark
+                }
+                // Per-track input monitoring: OFF/ON always, Auto only when an
+                // active take makes Auto choose the take over the live input.
+                Text {
+                    anchors.top: clipLed.bottom
+                    anchors.topMargin: 1
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: root.monitorMark
+                    color: root.monitor === 0 ? Style.record
+                           : (root.monitor === 2 ? Style.ok : Style.soloOn)
+                    font.pixelSize: 7
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
         }
 
         TouchSlider {
@@ -70,62 +131,10 @@ Rectangle {
             maximumValue: 1
             value: root.pan
             focusId: "mixer.pan." + root.stripIndex
+            popupLabel: "IN " + String(root.stripIndex + 1).padStart(2, "0") + " PAN"
+            popupKind: "pan"
             Binding on value { value: root.pan; when: !panSlider.dragging }
             onMoved: (value) => mixer.setPan(root.stripIndex, value)
-        }
-
-        Row {
-            width: parent.width
-            height: Style.touch
-            spacing: 2
-            Text {
-                width: 12
-                height: parent.height
-                text: "A"
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
-                font.bold: true
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: Text.AlignHCenter
-            }
-            TouchSlider {
-                id: sendA
-                width: parent.width - 14
-                height: Style.touch
-                minimumValue: 0
-                maximumValue: 1
-                value: root.sendA
-                focusId: "mixer.sendA." + root.stripIndex
-                Binding on value { value: root.sendA; when: !sendA.dragging }
-                onMoved: (value) => mixer.setSend(root.stripIndex, 0, value)
-            }
-        }
-
-        Row {
-            width: parent.width
-            height: Style.touch
-            spacing: 2
-            Text {
-                width: 12
-                height: parent.height
-                text: "B"
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
-                font.bold: true
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: Text.AlignHCenter
-            }
-            TouchSlider {
-                id: sendB
-                width: parent.width - 14
-                height: Style.touch
-                minimumValue: 0
-                maximumValue: 1
-                value: root.sendB
-                focusId: "mixer.sendB." + root.stripIndex
-                Binding on value { value: root.sendB; when: !sendB.dragging }
-                onMoved: (value) => mixer.setSend(root.stripIndex, 1, value)
-            }
         }
 
         TouchButton {

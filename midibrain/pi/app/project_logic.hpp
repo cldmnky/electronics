@@ -10,7 +10,9 @@ namespace mnky::app {
 
 // A project and a take both become directory names under the user's Music
 // folder, so the same conservative ASCII rules apply to both. A take keeps its
-// `take-` prefix because the recorder scans for that pattern.
+// `take-` prefix because the recorder scans for that pattern; the per-track
+// naming form `<nn>-<trackname>-<take#>.wav` is also accepted (session v2 take
+// registry).
 inline constexpr int kProjectNameMaxLength = 48;
 inline constexpr int kTakeNameMaxLength = 48;
 inline constexpr std::string_view kTakePrefix = "take-";
@@ -18,6 +20,21 @@ inline constexpr std::string_view kTakePrefix = "take-";
 // Empty reason = valid. The reason is a short ASCII message for the status line.
 std::string validateProjectName(std::string_view name);
 std::string validateTakeName(std::string_view name);
+
+// Per-track take naming: display track number is 1-based (`02`), the take
+// number is a 1-based three-digit counter (`003`).
+std::string defaultTrackName(int trackIndex);
+std::string sanitizeTrackName(std::string_view name);
+std::string takeFileName(int trackIndex, std::string_view trackName, int takeNumber);
+
+struct TakeNameParts {
+  bool valid = false;
+  int track = 0;  // 0-based track index
+  std::string name;
+  int number = 0;
+};
+// Parses `<nn>-<name>-<take#>`, with or without a trailing `.wav`.
+TakeNameParts parseTakeFileName(std::string_view file);
 
 // "Project-YYYYMMDD-HHMMSS" in UTC. `unixSeconds` is a time_t-compatible value;
 // the UTC form keeps generated names identical across the dev Mac and the Pi.

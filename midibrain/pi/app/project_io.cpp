@@ -16,6 +16,7 @@
 #include "logic.hpp"
 #include "midi_glue.hpp"
 #include "mixer_model.hpp"
+#include "session_settings.hpp"
 
 namespace mnky::app::project {
 namespace {
@@ -112,6 +113,23 @@ session::Snapshot captureSnapshot(const AppContext& context) {
   snapshot.click.enabled = context.state.clickEnabled.load();
   snapshot.click.level = context.state.clickLevel.load();
   snapshot.click.bars = context.state.clickBars.load();
+  snapshot.click.mode = context.state.clickMode.load();
+  snapshot.click.output = context.state.clickOutput.load();
+  snapshot.click.gainDb = context.state.clickGainDb.load();
+  snapshot.punch = context.settings.punch;
+  snapshot.cue = context.settings.cue;
+  snapshot.sends = context.settings.sends;
+  snapshot.mainComp = context.settings.mainComp;
+  snapshot.isTemplate = context.settings.isTemplate;
+  snapshot.mixer.out34Mode = context.mixer.out34Mode();
+  for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+    snapshot.mixer.channels[static_cast<std::size_t>(channel)].cueSend =
+        context.mixer.cueSend(channel);
+    snapshot.mixer.channels[static_cast<std::size_t>(channel)].out34Send =
+        context.mixer.out34Send(channel);
+    snapshot.takes.active[static_cast<std::size_t>(channel)] =
+        context.settings.activeTake(channel);
+  }
   for (const auto& binding : context.midi.learnBindings()) {
     session::MidiMapEntry entry;
     entry.cc = binding.cc;
@@ -127,6 +145,9 @@ void applyMixer(const AppContext& context, const session::MixerState& mixer) {
   for (int index = 0; index < audio::kMaxInputs; ++index) {
     const auto& channel = mixer.channels[static_cast<std::size_t>(index)];
     context.mixer.setGainDb(index, gainToDb(channel.gain));
+    // Session v2 has one gain field; the app-side trim is reset so the loaded
+    // combined gain is not applied twice.
+    context.mixer.setTrimDb(index, 0.0f);
     context.mixer.setPan(index, channel.pan);
     context.mixer.setMute(index, channel.mute);
     context.mixer.setSolo(index, channel.solo);
@@ -134,8 +155,12 @@ void applyMixer(const AppContext& context, const session::MixerState& mixer) {
     for (int send = 0; send < audio::kNumSends; ++send) {
       context.mixer.setSend(index, send, channel.send[static_cast<std::size_t>(send)]);
     }
+    context.mixer.setCueSend(index, channel.cueSend);
+    context.mixer.setOut34Send(index, channel.out34Send);
+    context.mixer.setMonitor(index, channel.monitor);
   }
   context.mixer.setMasterDb(gainToDb(mixer.master));
+  context.mixer.setOut34Mode(mixer.out34Mode);
 }
 
 }  // namespace
@@ -220,9 +245,23 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
   const int tempo = clampTempoX100(result.snapshot.transport.bpmX100);
   context.state.tempoX100.store(tempo);
   context.link.requestTempo(static_cast<std::uint16_t>(tempo));
-  context.state.clickEnabled.store(result.snapshot.click.enabled);
-  context.state.clickLevel.store(result.snapshot.click.level);
-  context.state.clickBars.store(result.snapshot.click.bars);
+  const auto& click = result.snapshot.click;
+  context.state.clickMode.store(std::clamp(click.mode, 0, 2));
+  context.state.clickEnabled.store(click.mode != 0);
+  context.state.clickOutput.store(std::clamp(click.output, 0, 2));
+  context.state.clickGainDb.store(std::clamp(click.gainDb, -96.0f, 20.0f));
+  context.state.clickLevel.store(
+      std::clamp(dbToGain(std::clamp(click.gainDb, -96.0f, 20.0f)), 0.0f, 1.0f));
+  context.state.clickBars.store(click.bars);
+  context.settings.punch = result.snapshot.punch;
+  context.settings.cue = result.snapshot.cue;
+  context.settings.sends = result.snapshot.sends;
+  context.settings.mainComp = result.snapshot.mainComp;
+  context.settings.isTemplate = result.snapshot.isTemplate;
+  for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+    context.settings.setActiveTake(
+        channel, result.snapshot.takes.active[static_cast<std::size_t>(channel)]);
+  }
   return true;
 }
 
@@ -244,6 +283,7 @@ std::string fingerprint(const AppContext& context) {
 
   for (int index = 0; index < audio::kMaxInputs; ++index) {
     appendFloat(out, "g", context.mixer.gainDb(index));
+    appendFloat(out, "tr", context.mixer.trimDb(index));
     appendFloat(out, "p", context.mixer.pan(index));
     appendInt(out, "m", context.mixer.mute(index) ? 1 : 0);
     appendInt(out, "s", context.mixer.solo(index) ? 1 : 0);
@@ -268,6 +308,36 @@ std::string fingerprint(const AppContext& context) {
   appendInt(out, "ce", context.state.clickEnabled.load() ? 1 : 0);
   appendFloat(out, "cl", context.state.clickLevel.load());
   appendInt(out, "cb", context.state.clickBars.load());
+  appendInt(out, "cm", context.state.clickMode.load());
+  appendInt(out, "co", context.state.clickOutput.load());
+  appendFloat(out, "cg", context.state.clickGainDb.load());
+  appendInt(out, "o34", context.mixer.out34Mode());
+  for (int index = 0; index < audio::kMaxInputs; ++index) {
+    appendFloat(out, "cue", context.mixer.cueSend(index));
+    appendFloat(out, "o34s", context.mixer.out34Send(index));
+    appendInt(out, "mon", context.mixer.monitor(index));
+    out += "ta=" + context.settings.activeTake(index) + ";";
+  }
+  for (const auto& point : {context.settings.punch.playFrom, context.settings.punch.in,
+                            context.settings.punch.out}) {
+    appendInt(out, "pe", point.enabled ? 1 : 0);
+    appendInt(out, "pm", point.measure);
+  }
+  appendInt(out, "ph", context.settings.cue.phonesSrc);
+  appendInt(out, "cs", context.settings.cue.style);
+  appendInt(out, "sc", context.settings.sends.cue);
+  appendInt(out, "sf1", context.settings.sends.fx1);
+  appendInt(out, "sf2", context.settings.sends.fx2);
+  appendInt(out, "so", context.settings.sends.out34);
+  appendInt(out, "sr", context.settings.sends.rec);
+  appendInt(out, "mcon", context.settings.mainComp.on ? 1 : 0);
+  appendFloat(out, "mct", context.settings.mainComp.threshDb);
+  appendFloat(out, "mcr", context.settings.mainComp.ratio);
+  appendFloat(out, "mca", context.settings.mainComp.attackMs);
+  appendFloat(out, "mcrl", context.settings.mainComp.releaseMs);
+  appendFloat(out, "mcm", context.settings.mainComp.makeupDb);
+  appendInt(out, "mcmd", context.settings.mainComp.mode);
+  appendInt(out, "tmpl", context.settings.isTemplate ? 1 : 0);
   for (const auto& binding : context.midi.learnBindings()) {
     appendInt(out, "lc", binding.cc);
     appendInt(out, "lh", binding.ch);

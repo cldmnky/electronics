@@ -136,6 +136,43 @@ inline float meterFraction(float peak) {
   return fraction > 1.0f ? 1.0f : fraction;
 }
 
+// One clip-hold indicator: a meter value at/above full scale latches the clip
+// flag for a fixed number of UI ticks (~2 s at 66 ms) so a short overload stays
+// visible. Pure and Qt-free so --unittests measures the hold behaviour.
+class ClipHold {
+ public:
+  static constexpr int kHoldTicks = 30;
+  static constexpr float kClipLevel = 1.0f;
+
+  // Returns true when this meter value clipped; latches the hold.
+  bool update(float peak) {
+    if (!(peak >= kClipLevel)) return false;
+    remaining_ = kHoldTicks;
+    return true;
+  }
+  // Advances one UI tick and clears an expired hold. Returns clipped().
+  bool tick() {
+    if (remaining_ > 0) --remaining_;
+    return clipped();
+  }
+  bool clipped() const { return remaining_ > 0; }
+  void clear() { remaining_ = 0; }
+
+ private:
+  int remaining_ = 0;
+};
+
+// Low-space rule for the TOOLS banner: below 2 GiB free or below 5 % of the
+// volume is low. A zero capacity (stat failed) is not low.
+inline constexpr std::uint64_t kLowSpaceBytes =
+    2ull * 1024ull * 1024ull * 1024ull;
+inline bool isLowDiskSpace(std::uint64_t available, std::uint64_t capacity) {
+  if (capacity == 0) return false;
+  if (available < kLowSpaceBytes) return true;
+  return static_cast<long double>(available) / static_cast<long double>(capacity) <
+         0.05L;
+}
+
 // --- readout formatting ----------------------------------------------------
 inline std::string formatTempo(int bpmX100) {
   const int bpm = clampTempoX100(bpmX100);
@@ -193,6 +230,56 @@ inline std::string formatDuration(double seconds) {
   std::snprintf(buffer, sizeof buffer, "%02llu:%02llu",
                 static_cast<unsigned long long>(total / 60),
                 static_cast<unsigned long long>(total % 60));
+  return buffer;
+}
+
+// --- transient value-popup formatting -------------------------------------
+// Pan reads as Center / Lxx / Rxx (the motivating case: a bare slider cannot
+// show centredness). Gains are dB, sends/levels are percent, ratios and times
+// carry their unit, and generic FX parameters keep two decimals.
+inline std::string formatPanValue(float pan) {
+  const int percent = static_cast<int>(std::lround((pan - 0.5f) * 200.0f));
+  if (percent == 0) return "Center";
+  char buffer[24] = {};
+  std::snprintf(buffer, sizeof buffer, "%c%d", percent < 0 ? 'L' : 'R',
+                std::abs(percent));
+  return buffer;
+}
+
+inline std::string formatDbValue(float db) {
+  char buffer[32] = {};
+  std::snprintf(buffer, sizeof buffer, "%+.1f dB", static_cast<double>(db));
+  return buffer;
+}
+
+inline std::string formatPercentValue(float level) {
+  const float percent = level * 100.0f;
+  char buffer[24] = {};
+  std::snprintf(buffer, sizeof buffer, "%.0f %%", static_cast<double>(percent));
+  return buffer;
+}
+
+inline std::string formatIntValue(double value) {
+  char buffer[24] = {};
+  std::snprintf(buffer, sizeof buffer, "%.0f", value);
+  return buffer;
+}
+
+inline std::string formatRatioValue(float ratio) {
+  char buffer[24] = {};
+  std::snprintf(buffer, sizeof buffer, "%.1f:1", static_cast<double>(ratio));
+  return buffer;
+}
+
+inline std::string formatMillisecondsValue(float ms) {
+  char buffer[24] = {};
+  std::snprintf(buffer, sizeof buffer, "%.0f ms", static_cast<double>(ms));
+  return buffer;
+}
+
+inline std::string formatGenericValue(double value) {
+  char buffer[32] = {};
+  std::snprintf(buffer, sizeof buffer, "%.2f", value);
   return buffer;
 }
 

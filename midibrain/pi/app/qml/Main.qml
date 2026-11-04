@@ -29,7 +29,7 @@ Window {
             color: Style.panelDark
 
             readonly property bool shiftMode: app.panelMode === "shift"
-            readonly property int tabCount: shiftMode ? 4 : 6
+            readonly property int tabCount: 6
 
             Row {
                 anchors.fill: parent
@@ -39,25 +39,17 @@ Window {
                     delegate: Rectangle {
                         width: tabBar.width / tabBar.tabCount
                         height: tabBar.height
-                        color: {
-                            if (tabBar.shiftMode) {
-                                return app.focusId === ("shift." + index)
-                                        ? Style.accent : Style.panelDark
-                            }
-                            return app.tab === index ? Style.accent : Style.panelDark
-                        }
-                        border.width: (app.focusId === (tabBar.shiftMode ? "shift." : "tab.") + index)
-                                      ? 2 : 0
-                        border.color: Style.text
+                        color: app.tab === index ? Style.accent : Style.panelDark
+                        border.width: tabBar.shiftMode
+                                      ? (app.tab === index ? 2 : 1) : 0
+                        border.color: tabBar.shiftMode ? Style.accent : Style.text
 
                         Text {
                             anchors.centerIn: parent
                             width: parent.width - 8
-                            text: tabBar.shiftMode ? app.shiftActions[index] : window.tabNames[index]
-                            color: (tabBar.shiftMode ? app.focusId === ("shift." + index)
-                                                     : app.tab === index)
-                                   ? Style.panelDark : Style.text
-                            font.pixelSize: tabBar.shiftMode ? 12 : 14
+                            text: window.tabNames[index]
+                            color: app.tab === index ? Style.panelDark : Style.text
+                            font.pixelSize: 14
                             font.bold: true
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
@@ -65,7 +57,16 @@ Window {
                         }
 
                         Rectangle {
-                            visible: !tabBar.shiftMode && index === 5 && app.dirty
+                            visible: tabBar.shiftMode
+                            anchors.top: parent.top
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            height: 3
+                            color: Style.accent
+                        }
+
+                        Rectangle {
+                            visible: index === 5 && app.dirty
                             x: parent.width - 14
                             y: 8
                             width: 7
@@ -75,13 +76,7 @@ Window {
                         }
 
                         TapHandler {
-                            onTapped: {
-                                if (tabBar.shiftMode) {
-                                    app.shiftAction(index)
-                                } else {
-                                    app.setTab(index)
-                                }
-                            }
+                            onTapped: app.setTab(index)
                         }
                     }
                 }
@@ -117,6 +112,19 @@ Window {
                 }
             }
         }
+    }
+
+    ValuePopup {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Style.transportHeight + 10
+        popupVisible: app.valuePopupVisible
+        popupLabel: app.valuePopupLabel
+        popupText: app.valuePopupText
+    }
+
+    ConfigPopup {
+        anchors.fill: parent
     }
 
     Keypad {

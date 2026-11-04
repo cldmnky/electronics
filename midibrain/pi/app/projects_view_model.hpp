@@ -53,6 +53,7 @@ class ProjectsViewModel final : public QObject {
   Q_PROPERTY(QString currentName READ currentName NOTIFY stateChanged)
   Q_PROPERTY(QString statusText READ statusText NOTIFY stateChanged)
   Q_PROPERTY(int selectedRow READ selectedRow NOTIFY selectionChanged)
+  Q_PROPERTY(bool isTemplate READ isTemplate NOTIFY stateChanged)
 
  public:
   explicit ProjectsViewModel(AppContext& context,
@@ -63,9 +64,13 @@ class ProjectsViewModel final : public QObject {
   QString currentName() const { return currentName_; }
   QString statusText() const { return statusText_; }
   int selectedRow() const { return selectedRow_; }
+  bool isTemplate() const;
 
   Q_INVOKABLE void newProject();
   Q_INVOKABLE void saveProject();
+  Q_INVOKABLE void newTemplate();
+  Q_INVOKABLE void saveTemplate();
+  Q_INVOKABLE void clearTemplate();
   Q_INVOKABLE void loadRow(int row);
   Q_INVOKABLE void selectRow(int row);
   Q_INVOKABLE QString renameSelected(const QString& name);

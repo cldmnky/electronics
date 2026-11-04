@@ -1,6 +1,7 @@
 #include "app_controller.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -33,16 +34,22 @@ AppController::AppController(bool emulator, QObject* parent)
       audio_(mixer_, fx_, state_, emulator),
       link_(midi_, state_, emulator) {
   context_ = std::make_unique<AppContext>(
-      AppContext{state_, mixer_, fx_, midi_, audio_, link_});
+      AppContext{state_, mixer_, fx_, midi_, audio_, link_, settings_});
 
-  mixerVm_ = std::make_unique<MixerViewModel>(mixer_);
+  mixerVm_ = std::make_unique<MixerViewModel>(mixer_, settings_);
   routingVm_ = std::make_unique<RoutingViewModel>(midi_);
   fxVm_ = std::make_unique<FxViewModel>(fx_, state_, mixer_, audio_.sampleRate());
-  recorderVm_ = std::make_unique<RecorderViewModel>(state_, audio_, mixer_, link_);
+  recorderVm_ =
+      std::make_unique<RecorderViewModel>(state_, audio_, mixer_, link_, settings_);
   projectsVm_ = std::make_unique<ProjectsViewModel>(
       *context_, [this] { projectStateChanged(); });
   systemVm_ = std::make_unique<SystemViewModel>(link_, audio_, midi_, fx_, state_);
   learnVm_ = std::make_unique<LearnViewModel>(midi_);
+  sessionVm_ = std::make_unique<SessionViewModel>(state_, mixer_, settings_);
+  toolsVm_ = std::make_unique<ToolsViewModel>(state_, link_);
+  configVm_ = std::make_unique<ConfigPopupModel>(state_, mixer_, settings_);
+  connect(recorderVm_.get(), &RecorderViewModel::activeTakeChanged, mixerVm_.get(),
+          &MixerViewModel::notifyActiveTakesChanged);
 
   shiftActions_ = {QStringLiteral("Save"), QStringLiteral("Panic"), QStringLiteral("Tap"),
                    QStringLiteral("Click")};
@@ -50,6 +57,10 @@ AppController::AppController(bool emulator, QObject* parent)
 
   timer_.setInterval(66);
   connect(&timer_, &QTimer::timeout, this, &AppController::timerTick);
+  valuePopupTimer_.setSingleShot(true);
+  valuePopupTimer_.setInterval(1500);
+  connect(&valuePopupTimer_, &QTimer::timeout, this,
+          [this] { hideValuePopup(); });
   rebuildFocusIds();
 }
 
@@ -75,6 +86,7 @@ void AppController::start() {
 
   link_.start();
   fxVm_->loadDefaults();
+  audio_.applyMonitorSettings(settings_);
 
   state_.clearDirty();
   dirtyTracker_.clear(project::fingerprint(*context_));
@@ -107,6 +119,7 @@ void AppController::setTab(int tab) {
 }
 
 void AppController::setClickEnabled(bool enabled) {
+  state_.clickMode.store(enabled ? 2 : 0);
   state_.clickEnabled.store(enabled);
   emit clickChanged();
 }
@@ -114,12 +127,28 @@ void AppController::setClickEnabled(bool enabled) {
 void AppController::setClickLevel(double level) {
   const double clamped = std::clamp(level, 0.0, 1.0);
   state_.clickLevel.store(static_cast<float>(clamped));
+  state_.clickGainDb.store(gainToDb(static_cast<float>(clamped)));
   emit clickChanged();
 }
 
 void AppController::setClickBars(int bars) {
   state_.clickBars.store(std::clamp(bars, 1, 8));
   emit clickChanged();
+}
+
+void AppController::setToolsPage(int page) {
+  const int clamped = std::clamp(page, 0, 2);
+  if (clamped == toolsPage_) return;
+  toolsPage_ = clamped;
+  emit toolsPageChanged();
+}
+
+void AppController::setSystemShiftPage(int page) {
+  const int clamped = std::clamp(page, 0, 2);
+  if (clamped == systemShiftPage_) return;
+  systemShiftPage_ = clamped;
+  emit systemShiftPageChanged();
+  rebuildFocusIds();
 }
 
 void AppController::play() {
@@ -216,6 +245,7 @@ void AppController::tapTempo() {
       clampTempoX100(static_cast<int>(std::lround(60000.0 * 100.0 / average)));
   state_.tempoX100.store(bpmX100);
   link_.requestTempo(static_cast<std::uint16_t>(bpmX100));
+  showValuePopup(QStringLiteral("TEMPO"), QStringLiteral("bpm"), bpmX100);
   setNotice(QStringLiteral("tap tempo: ") +
             QString::fromStdString(formatTempo(bpmX100)));
   updateTransport();
@@ -238,6 +268,8 @@ void AppController::keypadAccept(const QString& text) {
     error = projectsVm_->renameSelected(text);
   } else if (keypadAction_ == QStringLiteral("take-rename")) {
     error = recorderVm_->renameSelected(text);
+  } else if (keypadAction_ == QStringLiteral("take-import")) {
+    error = recorderVm_->importTake(text);
   }
   if (!error.isEmpty()) {
     keypadError_ = error;
@@ -325,7 +357,8 @@ void AppController::requestRenameTake() {
     setNotice(QStringLiteral("select a take to rename"));
     return;
   }
-  requestKeypad(QStringLiteral("RENAME TAKE"), entry->name,
+  requestKeypad(QStringLiteral("RENAME TAKE"),
+                QString::fromStdString(entry->path.filename().string()),
                 QStringLiteral("take-rename"), row);
 }
 
@@ -338,13 +371,41 @@ void AppController::requestDeleteTake() {
   }
   requestConfirm(QStringLiteral("DELETE TAKE"),
                  QStringLiteral("Delete ") + entry->name +
-                     QStringLiteral("? All WAV files in the take folder are removed."),
+                     QStringLiteral("? The WAV file is removed from the take folder. This "
+                                    "cannot be undone."),
                  QStringLiteral("DELETE"), QStringLiteral("take-delete"), row);
+}
+
+void AppController::requestImportTake() {
+  requestKeypad(QStringLiteral("IMPORT TAKE (WAV PATH)"),
+                QString::fromStdString(state_.takeDirectory().string()) +
+                    QLatin1Char('/'),
+                QStringLiteral("take-import"), -1);
 }
 
 void AppController::openDemoKeypad() {
   requestKeypad(QStringLiteral("RENAME PROJECT"), QStringLiteral("Project-demo"),
                 QStringLiteral("project-rename"), -1);
+}
+
+void AppController::openConfig(const QString& kind) {
+  if (!configVm_->openKind(kind)) return;
+  panelMode_ = QStringLiteral("navigate");
+  focusIndex_ = 0;
+  emit panelModeChanged();
+  rebuildFocusIds();
+}
+
+void AppController::configAccept() {
+  configVm_->accept();
+  emit clickChanged();
+  emit dirtyChanged();
+  rebuildFocusIds();
+}
+
+void AppController::configCancel() {
+  configVm_->cancel();
+  rebuildFocusIds();
 }
 
 void AppController::timerTick() {
@@ -369,6 +430,9 @@ void AppController::timerTick() {
   projectsVm_->refresh();
   learnVm_->poll();
   if (refreshTicks_ % 4 == 0) systemVm_->refresh();
+  if (refreshTicks_ % 15 == 0) toolsVm_->refresh();
+  configVm_->refreshSummaries();
+  audio_.applyMonitorSettings(settings_);
 
   updateDirtyState();
   updatePanelLeds();
@@ -388,19 +452,23 @@ void AppController::perform(const Intent& intent) {
       performPanelFocus(intent);
       break;
     case Intent::Kind::EncoderTurn:
-      if (panelMode_ == QStringLiteral("edit")) {
+      if (configVm_ && configVm_->open()) {
+        adjustFocused(intent.amount, shiftHeld_);
+      } else if (panelMode_ == QStringLiteral("edit")) {
         adjustFocused(intent.amount, shiftHeld_);
       } else {
         const int step = shiftHeld_ ? kTempoStepFineX100 : kTempoStepCoarseX100;
         const int tempo = clampTempoX100(state_.tempoX100.load() + intent.amount * step);
         state_.tempoX100.store(tempo);
         link_.requestTempo(static_cast<std::uint16_t>(tempo));
+        showValuePopup(QStringLiteral("TEMPO"), QStringLiteral("bpm"), tempo);
       }
       break;
     case Intent::Kind::TempoStep: {
       const int tempo = clampTempoX100(state_.tempoX100.load() + intent.amount);
       state_.tempoX100.store(tempo);
       link_.requestTempo(static_cast<std::uint16_t>(tempo));
+      showValuePopup(QStringLiteral("TEMPO"), QStringLiteral("bpm"), tempo);
       break;
     }
     case Intent::Kind::Play:
@@ -435,20 +503,70 @@ void AppController::perform(const Intent& intent) {
 }
 
 void AppController::performPanelFocus(const Intent& intent) {
-  if (panelMode_ == QStringLiteral("shift")) {
+  if (configVm_ && configVm_->open()) {
     switch (intent.kind) {
       case Intent::Kind::NavUp:
       case Intent::Kind::NavLeft:
-        focusIndex_ = moveIndex(focusIndex_, -1, static_cast<int>(shiftActions_.size()));
+        moveFocus(-1);
         break;
       case Intent::Kind::NavDown:
       case Intent::Kind::NavRight:
-        focusIndex_ = moveIndex(focusIndex_, 1, static_cast<int>(shiftActions_.size()));
+        moveFocus(1);
         break;
       case Intent::Kind::NavPress:
-        shiftAction(focusIndex_);
+        if (panelMode_ == QStringLiteral("edit")) {
+          setPanelMode(QStringLiteral("navigate"));
+        } else if (isEditableFocus(focusId_)) {
+          setPanelMode(QStringLiteral("edit"));
+        } else {
+          activateFocus();
+        }
         break;
       case Intent::Kind::EncoderSw:
+        if (panelMode_ == QStringLiteral("edit")) {
+          setPanelMode(QStringLiteral("navigate"));
+        } else {
+          activateFocus();
+        }
+        break;
+      default:
+        break;
+    }
+    rebuildFocusIds();
+    return;
+  }
+  if (shiftFace_) {
+    // SHIFT face: LEFT/RIGHT changes tab (still holding SHIFT), UP/DOWN moves
+    // the focus ring inside the face. The tab bar itself is not in the face
+    // ring, so a tab switch never loses the face.
+    switch (intent.kind) {
+      case Intent::Kind::NavLeft:
+        setTab(moveIndex(tab_, -1, kScreenCount));
+        break;
+      case Intent::Kind::NavRight:
+        setTab(moveIndex(tab_, 1, kScreenCount));
+        break;
+      case Intent::Kind::NavUp:
+        moveFocus(-1);
+        break;
+      case Intent::Kind::NavDown:
+        moveFocus(1);
+        break;
+      case Intent::Kind::NavPress:
+        if (panelMode_ == QStringLiteral("edit")) {
+          setPanelMode(QStringLiteral("navigate"));
+        } else if (isEditableFocus(focusId_)) {
+          setPanelMode(QStringLiteral("edit"));
+        } else {
+          activateFocus();
+        }
+        break;
+      case Intent::Kind::EncoderSw:
+        if (panelMode_ == QStringLiteral("edit")) {
+          setPanelMode(QStringLiteral("navigate"));
+        } else {
+          activateFocus();
+        }
         break;
       default:
         break;
@@ -501,7 +619,10 @@ void AppController::moveFocus(int delta) {
 void AppController::setPanelMode(const QString& mode) {
   if (mode == panelMode_) return;
   panelMode_ = mode;
-  if (mode == QStringLiteral("shift")) focusIndex_ = 0;
+  if (mode == QStringLiteral("shift")) {
+    shiftFace_ = true;
+    focusIndex_ = 0;
+  }
   emit panelModeChanged();
   rebuildFocusIds();
 }
@@ -513,18 +634,22 @@ void AppController::updateShiftState(const LinkStatus& status) {
     shiftHeld_ = true;
     shiftPressMs_ = now;
   }
-  if (held && shiftHeld_ && panelMode_ != QStringLiteral("shift") &&
-      now - shiftPressMs_ >= 500) {
+  if (held && shiftHeld_ && !shiftFace_ && now - shiftPressMs_ >= 500) {
     setPanelMode(QStringLiteral("shift"));
   }
   if (!held && shiftHeld_) {
     shiftHeld_ = false;
     const bool longHold = now - shiftPressMs_ >= 500;
-    if (panelMode_ == QStringLiteral("shift")) {
+    if (shiftFace_) {
+      // EXIT leaves the SHIFT face (including a shift-face EDIT).
+      shiftFace_ = false;
       setPanelMode(QStringLiteral("navigate"));
+      rebuildFocusIds();
     } else if (!longHold) {
       // EXIT short press: dismiss an open overlay, otherwise leave EDIT.
-      if (confirmOpen_) {
+      if (configVm_->open()) {
+        configCancel();
+      } else if (confirmOpen_) {
         confirmCancel();
       } else if (keypadOpen_) {
         keypadCancel();
@@ -535,11 +660,32 @@ void AppController::updateShiftState(const LinkStatus& status) {
   }
 }
 
-bool AppController::isEditableFocus(const QString& id) const {
+bool AppController::isEditableFocus(const QString& focusId) const {
+  QString id = focusId;
+  if (id.startsWith(QStringLiteral("shift."))) id = id.mid(6);
+  if (id.startsWith(QStringLiteral("config."))) {
+    return id == QStringLiteral("config.gain") || id == QStringLiteral("config.bars") ||
+           id.startsWith(QStringLiteral("config.mode.")) ||
+           id.startsWith(QStringLiteral("config.out.")) ||
+           id.startsWith(QStringLiteral("config.phones.")) ||
+           id.startsWith(QStringLiteral("config.cuestyle.")) ||
+           id.startsWith(QStringLiteral("config.out34.")) ||
+           id == QStringLiteral("config.thresh") || id == QStringLiteral("config.ratio") ||
+           id == QStringLiteral("config.attack") || id == QStringLiteral("config.release") ||
+           id == QStringLiteral("config.makeup");
+  }
   if (id.startsWith(QStringLiteral("mixer."))) {
     return id.contains(QStringLiteral("gain")) || id.contains(QStringLiteral("pan")) ||
            id.contains(QStringLiteral("sendA")) || id.contains(QStringLiteral("sendB")) ||
+           id.contains(QStringLiteral("fx1")) || id.contains(QStringLiteral("fx2")) ||
+           id.contains(QStringLiteral("cue")) || id.contains(QStringLiteral("out34")) ||
            id == QStringLiteral("mixer.master");
+  }
+  if (id.startsWith(QStringLiteral("track."))) {
+    return id == QStringLiteral("track.gain") || id == QStringLiteral("track.trim") ||
+           id == QStringLiteral("track.pan") || id == QStringLiteral("track.fx1") ||
+           id == QStringLiteral("track.fx2") || id == QStringLiteral("track.cue") ||
+           id == QStringLiteral("track.out34");
   }
   if (id.startsWith(QStringLiteral("routing.transpose."))) return true;
   if (id.startsWith(QStringLiteral("fx."))) {
@@ -551,20 +697,191 @@ bool AppController::isEditableFocus(const QString& id) const {
            id == QStringLiteral("system.click.level") ||
            id == QStringLiteral("system.click.bars");
   }
+  if (id.startsWith(QStringLiteral("punch."))) {
+    return id.endsWith(QStringLiteral(".measure"));
+  }
+  if (id.startsWith(QStringLiteral("monitor."))) {
+    return id == QStringLiteral("monitor.clickgain") ||
+           id == QStringLiteral("monitor.comp.thresh") ||
+           id == QStringLiteral("monitor.comp.ratio") ||
+           id == QStringLiteral("monitor.comp.attack") ||
+           id == QStringLiteral("monitor.comp.release") ||
+           id == QStringLiteral("monitor.comp.makeup") ||
+           id.startsWith(QStringLiteral("monitor.clickmode")) ||
+           id.startsWith(QStringLiteral("monitor.clickout")) ||
+           id.startsWith(QStringLiteral("monitor.phones")) ||
+           id.startsWith(QStringLiteral("monitor.cuestyle")) ||
+           id.startsWith(QStringLiteral("monitor.out34")) ||
+           id.startsWith(QStringLiteral("monitor.comp.mode"));
+  }
+  if (id == QStringLiteral("tools.brightness")) return true;
   if (id == QStringLiteral("learn.target")) return true;
   return false;
 }
 
 void AppController::activateFocus() {
-  if (focusId_.isEmpty()) return;
-  const auto parts = focusId_.split(QLatin1Char('.'));
+  QString focusId = focusId_;
+  if (focusId.startsWith(QStringLiteral("shift."))) focusId = focusId.mid(6);
+  if (focusId.isEmpty()) return;
+  const auto parts = focusId.split(QLatin1Char('.'));
+
+  if (configVm_ && configVm_->open() && parts.size() >= 2 &&
+      parts[0] == QStringLiteral("config")) {
+    const int index = parts.size() >= 3 ? parts[2].toInt() : 0;
+    if (parts[1] == QStringLiteral("ok")) {
+      configAccept();
+    } else if (parts[1] == QStringLiteral("cancel")) {
+      configCancel();
+    } else if (parts[1] == QStringLiteral("mode")) {
+      if (configVm_->kind() == QStringLiteral("metronome")) {
+        configVm_->setClickMode(index);
+      } else {
+        configVm_->setCompMode(index);
+      }
+    } else if (parts[1] == QStringLiteral("out")) {
+      configVm_->setClickOutput(index);
+    } else if (parts[1] == QStringLiteral("phones")) {
+      configVm_->setPhonesSrc(index);
+    } else if (parts[1] == QStringLiteral("cuestyle")) {
+      configVm_->setCueStyle(index);
+    } else if (parts[1] == QStringLiteral("out34")) {
+      configVm_->setOut34Mode(index);
+    } else if (parts[1] == QStringLiteral("on")) {
+      configVm_->setCompOn(!configVm_->compOn());
+    } else if (parts[1] == QStringLiteral("send") && parts.size() >= 4) {
+      const int source = parts[3] == QStringLiteral("post") ? 1 : 0;
+      if (parts[2] == QStringLiteral("cue")) {
+        configVm_->setSendCue(source);
+      } else if (parts[2] == QStringLiteral("fx1")) {
+        configVm_->setSendFx1(source);
+      } else if (parts[2] == QStringLiteral("fx2")) {
+        configVm_->setSendFx2(source);
+      } else if (parts[2] == QStringLiteral("out34")) {
+        configVm_->setSendOut34(source);
+      } else if (parts[2] == QStringLiteral("rec")) {
+        configVm_->setSendRec(source);
+      }
+    } else if (parts[1] == QStringLiteral("gain") || parts[1] == QStringLiteral("bars") ||
+               parts[1] == QStringLiteral("thresh") || parts[1] == QStringLiteral("ratio") ||
+               parts[1] == QStringLiteral("attack") || parts[1] == QStringLiteral("release") ||
+               parts[1] == QStringLiteral("makeup")) {
+      setPanelMode(QStringLiteral("edit"));
+    }
+    return;
+  }
 
   if (parts.size() == 2 && parts[0] == QStringLiteral("tab")) {
     setTab(parts[1].toInt());
     return;
   }
-  if (focusId_ == QStringLiteral("transport.click")) {
+  if (focusId == QStringLiteral("transport.click")) {
     setClickEnabled(!clickEnabled());
+    return;
+  }
+  if (focusId == QStringLiteral("mixer.mode.0")) {
+    mixerVm_->setTrackMode(false);
+    return;
+  }
+  if (focusId == QStringLiteral("mixer.mode.1")) {
+    mixerVm_->setTrackMode(true);
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("track")) {
+    if (parts[1] == QStringLiteral("select") && parts.size() >= 3) {
+      mixerVm_->setTrackIndex(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("rec")) {
+      mixerVm_->toggleArm(mixerVm_->trackIndex());
+    } else if (parts[1] == QStringLiteral("mute")) {
+      mixerVm_->toggleMute(mixerVm_->trackIndex());
+    } else if (parts[1] == QStringLiteral("solo")) {
+      mixerVm_->toggleSolo(mixerVm_->trackIndex());
+    } else if (parts[1] == QStringLiteral("monitor") && parts.size() >= 3) {
+      mixerVm_->setTrackMonitor(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("input")) {
+      showTextPopup(QStringLiteral("INPUT ASSIGN"),
+                    QStringLiteral("IN %1 (assignment spec pending)")
+                        .arg(mixerVm_->trackIndex() + 1, 2, 10, QLatin1Char('0')));
+    } else if (parts[1] == QStringLiteral("output")) {
+      showTextPopup(QStringLiteral("OUTPUT ASSIGN"),
+                    QStringLiteral("MAIN 1&2 (assignment spec pending)"));
+    } else if (parts[1] == QStringLiteral("gain") || parts[1] == QStringLiteral("trim") ||
+               parts[1] == QStringLiteral("pan") || parts[1] == QStringLiteral("fx1") ||
+               parts[1] == QStringLiteral("fx2") || parts[1] == QStringLiteral("cue") ||
+               parts[1] == QStringLiteral("out34")) {
+      setPanelMode(QStringLiteral("edit"));
+    }
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("tools") &&
+      parts[1] == QStringLiteral("page") && parts.size() >= 3) {
+    setToolsPage(parts[2].toInt());
+    return;
+  }
+  if (focusId == QStringLiteral("tools.brightness")) {
+    setPanelMode(QStringLiteral("edit"));
+    return;
+  }
+
+  if (parts.size() >= 3 && parts[0] == QStringLiteral("punch")) {
+    const QString point = parts[1];
+    if (parts[2] == QStringLiteral("enable")) {
+      if (point == QStringLiteral("playfrom")) {
+        sessionVm_->setPunchPlayFromEnabled(!sessionVm_->punchPlayFromEnabled());
+      } else if (point == QStringLiteral("in")) {
+        sessionVm_->setPunchInEnabled(!sessionVm_->punchInEnabled());
+      } else if (point == QStringLiteral("out")) {
+        sessionVm_->setPunchOutEnabled(!sessionVm_->punchOutEnabled());
+      }
+    } else if (parts[2] == QStringLiteral("measure")) {
+      setPanelMode(QStringLiteral("edit"));
+    }
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("monitor")) {
+    const int index = parts.size() >= 3 ? parts[2].toInt() : 0;
+    if (parts[1] == QStringLiteral("summary") && parts.size() >= 3) {
+      openConfig(parts[2]);
+    } else if (parts[1] == QStringLiteral("clickmode")) {
+      sessionVm_->setClickMode(index);
+    } else if (parts[1] == QStringLiteral("clickout")) {
+      sessionVm_->setClickOutput(index);
+    } else if (parts[1] == QStringLiteral("phones")) {
+      sessionVm_->setPhonesSrc(index);
+    } else if (parts[1] == QStringLiteral("cuestyle")) {
+      sessionVm_->setCueStyle(index);
+    } else if (parts[1] == QStringLiteral("out34")) {
+      sessionVm_->setOut34Mode(index);
+    } else if (parts[1] == QStringLiteral("send") && parts.size() >= 4) {
+      const int source = parts[3] == QStringLiteral("post") ? 1 : 0;
+      if (parts[2] == QStringLiteral("cue")) {
+        sessionVm_->setSendCue(source);
+      } else if (parts[2] == QStringLiteral("fx1")) {
+        sessionVm_->setSendFx1(source);
+      } else if (parts[2] == QStringLiteral("fx2")) {
+        sessionVm_->setSendFx2(source);
+      } else if (parts[2] == QStringLiteral("out34")) {
+        sessionVm_->setSendOut34(source);
+      } else if (parts[2] == QStringLiteral("rec")) {
+        sessionVm_->setSendRec(source);
+      }
+    } else if (parts[1] == QStringLiteral("comp")) {
+      if (parts[2] == QStringLiteral("on")) {
+        sessionVm_->setCompOn(!sessionVm_->compOn());
+      } else if (parts[2] == QStringLiteral("mode")) {
+        sessionVm_->setCompMode(parts.size() >= 4 ? parts[3].toInt() : 0);
+      } else if (parts[2] == QStringLiteral("thresh") ||
+                 parts[2] == QStringLiteral("ratio") ||
+                 parts[2] == QStringLiteral("attack") ||
+                 parts[2] == QStringLiteral("release") ||
+                 parts[2] == QStringLiteral("makeup")) {
+        setPanelMode(QStringLiteral("edit"));
+      }
+    } else if (parts[1] == QStringLiteral("clickgain")) {
+      setPanelMode(QStringLiteral("edit"));
+    }
     return;
   }
 
@@ -587,7 +904,9 @@ void AppController::activateFocus() {
     const int strip = parts[2].toInt();
     selectStrip(strip);
     if (what == QStringLiteral("gain") || what == QStringLiteral("pan") ||
-        what == QStringLiteral("sendA") || what == QStringLiteral("sendB")) {
+        what == QStringLiteral("sendA") || what == QStringLiteral("sendB") ||
+        what == QStringLiteral("fx1") || what == QStringLiteral("fx2") ||
+        what == QStringLiteral("cue") || what == QStringLiteral("out34")) {
       setPanelMode(QStringLiteral("edit"));
     } else if (what == QStringLiteral("mute")) {
       mixerVm_->toggleMute(strip);
@@ -595,6 +914,13 @@ void AppController::activateFocus() {
       mixerVm_->toggleSolo(strip);
     } else if (what == QStringLiteral("arm")) {
       mixerVm_->toggleArm(strip);
+    } else if (what == QStringLiteral("monitor")) {
+      const int next = (mixerVm_->data(mixerVm_->index(strip),
+                                      MixerViewModel::MonitorRole).toInt() + 1) % 3;
+      mixerVm_->setMonitor(strip, next);
+      showTextPopup(QStringLiteral("INPUT MON"),
+                    next == 0 ? QStringLiteral("Off")
+                    : (next == 1 ? QStringLiteral("Auto") : QStringLiteral("On")));
     }
     return;
   }
@@ -642,10 +968,18 @@ void AppController::activateFocus() {
   }
 
   if (parts.size() >= 2 && parts[0] == QStringLiteral("recorder")) {
-    if (parts[1] == QStringLiteral("arm") && parts.size() >= 3) {
-      mixerVm_->toggleArm(parts[2].toInt());
+    if (parts[1] == QStringLiteral("track") && parts.size() >= 3) {
+      recorderVm_->setSelectedTrack(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("arm")) {
+      mixerVm_->toggleArm(recorderVm_->selectedTrack());
     } else if (parts[1] == QStringLiteral("start")) {
       recorderVm_->startStop();
+    } else if (parts[1] == QStringLiteral("import")) {
+      requestImportTake();
+    } else if (parts[1] == QStringLiteral("live")) {
+      recorderVm_->clearActive();
+    } else if (parts[1] == QStringLiteral("activate")) {
+      recorderVm_->activateSelected();
     } else if (parts[1] == QStringLiteral("rename")) {
       requestRenameTake();
     } else if (parts[1] == QStringLiteral("delete")) {
@@ -657,7 +991,11 @@ void AppController::activateFocus() {
   }
 
   if (parts.size() >= 2 && parts[0] == QStringLiteral("system")) {
-    if (parts[1] == QStringLiteral("apply")) {
+    if (parts[1] == QStringLiteral("page") && parts.size() >= 3) {
+      setSystemShiftPage(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("panic")) {
+      shiftAction(1);
+    } else if (parts[1] == QStringLiteral("apply")) {
       systemVm_->apply();
     } else if (parts[1] == QStringLiteral("refresh")) {
       systemVm_->refreshDevices();
@@ -696,6 +1034,14 @@ void AppController::activateFocus() {
       if (row >= 0) requestDeleteProject(row);
     } else if (parts[1] == QStringLiteral("row") && parts.size() >= 3) {
       requestLoadProject(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("template") && parts.size() >= 3) {
+      if (parts[2] == QStringLiteral("new")) {
+        projectsVm_->newTemplate();
+      } else if (parts[2] == QStringLiteral("save")) {
+        projectsVm_->saveTemplate();
+      } else if (parts[2] == QStringLiteral("clear")) {
+        projectsVm_->clearTemplate();
+      }
     }
     return;
   }
@@ -706,14 +1052,66 @@ void AppController::activateFocus() {
 }
 
 void AppController::adjustFocused(int detents, bool fine) {
-  if (focusId_.isEmpty() || detents == 0) return;
-  const auto parts = focusId_.split(QLatin1Char('.'));
+  QString focusId = focusId_;
+  if (focusId.startsWith(QStringLiteral("shift."))) focusId = focusId.mid(6);
+  if (focusId.isEmpty() || detents == 0) return;
+  const auto parts = focusId.split(QLatin1Char('.'));
   const double step = static_cast<double>(detents);
+
+  if (configVm_ && configVm_->open() && parts.size() >= 2 &&
+      parts[0] == QStringLiteral("config")) {
+    if (parts[1] == QStringLiteral("gain")) {
+      configVm_->setClickGainDb(configVm_->clickGainDb() + step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("CLICK GAIN"), QStringLiteral("db"),
+                     configVm_->clickGainDb());
+    } else if (parts[1] == QStringLiteral("bars")) {
+      configVm_->setClickBars(configVm_->clickBars() + detents);
+      showValuePopup(QStringLiteral("CLICK BARS"), QStringLiteral("int"),
+                     configVm_->clickBars());
+    } else if (parts[1] == QStringLiteral("mode")) {
+      if (configVm_->kind() == QStringLiteral("metronome")) {
+        configVm_->setClickMode(moveIndex(configVm_->clickMode(), detents > 0 ? 1 : -1, 3));
+      } else {
+        configVm_->setCompMode(moveIndex(configVm_->compMode(), detents > 0 ? 1 : -1, 2));
+      }
+    } else if (parts[1] == QStringLiteral("out")) {
+      configVm_->setClickOutput(moveIndex(configVm_->clickOutput(), detents > 0 ? 1 : -1, 3));
+    } else if (parts[1] == QStringLiteral("phones")) {
+      configVm_->setPhonesSrc(moveIndex(configVm_->phonesSrc(), detents > 0 ? 1 : -1, 2));
+    } else if (parts[1] == QStringLiteral("cuestyle")) {
+      configVm_->setCueStyle(moveIndex(configVm_->cueStyle(), detents > 0 ? 1 : -1, 2));
+    } else if (parts[1] == QStringLiteral("out34")) {
+      configVm_->setOut34Mode(moveIndex(configVm_->out34Mode(), detents > 0 ? 1 : -1, 2));
+    } else if (parts[1] == QStringLiteral("thresh")) {
+      configVm_->setCompThreshDb(configVm_->compThreshDb() + step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("COMP THRESH"), QStringLiteral("db"),
+                     configVm_->compThreshDb());
+    } else if (parts[1] == QStringLiteral("ratio")) {
+      configVm_->setCompRatio(configVm_->compRatio() + step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("COMP RATIO"), QStringLiteral("ratio"),
+                     configVm_->compRatio());
+    } else if (parts[1] == QStringLiteral("attack")) {
+      configVm_->setCompAttackMs(configVm_->compAttackMs() + step * (fine ? 0.5 : 2.0));
+      showValuePopup(QStringLiteral("COMP ATTACK"), QStringLiteral("ms"),
+                     configVm_->compAttackMs());
+    } else if (parts[1] == QStringLiteral("release")) {
+      configVm_->setCompReleaseMs(configVm_->compReleaseMs() + step * (fine ? 1.0 : 5.0));
+      showValuePopup(QStringLiteral("COMP RELEASE"), QStringLiteral("ms"),
+                     configVm_->compReleaseMs());
+    } else if (parts[1] == QStringLiteral("makeup")) {
+      configVm_->setCompMakeupDb(configVm_->compMakeupDb() + step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("COMP MAKEUP"), QStringLiteral("db"),
+                     configVm_->compMakeupDb());
+    }
+    return;
+  }
 
   if (parts.size() >= 2 && parts[0] == QStringLiteral("mixer") &&
       parts[1] == QStringLiteral("master")) {
     const double delta = step * (fine ? 0.1 : 0.5);
     mixerVm_->setMasterDb(mixerVm_->masterDb() + delta);
+    showValuePopup(QStringLiteral("MASTER"), QStringLiteral("db"),
+                   mixerVm_->masterDb());
     return;
   }
 
@@ -724,24 +1122,180 @@ void AppController::adjustFocused(int detents, bool fine) {
     if (what == QStringLiteral("gain")) {
       mixerVm_->setGainDb(strip, mixerVm_->data(mixerVm_->index(strip), MixerViewModel::GainDbRole).toDouble() +
                                      step * (fine ? 0.1 : 0.5));
+      popupGain(QStringLiteral("IN %1 GAIN").arg(strip + 1, 2, 10, QLatin1Char('0')),
+                strip);
     } else if (what == QStringLiteral("pan")) {
       mixerVm_->setPan(strip, mixerVm_->data(mixerVm_->index(strip), MixerViewModel::PanRole).toDouble() +
                                   step * (fine ? 0.005 : 0.02));
+      popupPan(QStringLiteral("IN %1 PAN").arg(strip + 1, 2, 10, QLatin1Char('0')),
+               strip);
     } else if (what == QStringLiteral("sendA")) {
       mixerVm_->setSend(strip, 0,
                         mixerVm_->data(mixerVm_->index(strip), MixerViewModel::SendARole).toDouble() +
                             step * (fine ? 0.005 : 0.02));
+      popupSend(QStringLiteral("IN %1 FX1").arg(strip + 1, 2, 10, QLatin1Char('0')),
+                strip, 0);
     } else if (what == QStringLiteral("sendB")) {
       mixerVm_->setSend(strip, 1,
                         mixerVm_->data(mixerVm_->index(strip), MixerViewModel::SendBRole).toDouble() +
                             step * (fine ? 0.005 : 0.02));
+      popupSend(QStringLiteral("IN %1 FX2").arg(strip + 1, 2, 10, QLatin1Char('0')),
+                strip, 1);
+    } else if (what == QStringLiteral("fx1")) {
+      mixerVm_->setSend(strip, 0, mixerVm_->data(mixerVm_->index(strip), MixerViewModel::SendARole).toDouble() +
+                                          step * (fine ? 0.005 : 0.02));
+      popupSend(QStringLiteral("IN %1 FX1").arg(strip + 1, 2, 10, QLatin1Char('0')),
+                strip, 0);
+    } else if (what == QStringLiteral("fx2")) {
+      mixerVm_->setSend(strip, 1, mixerVm_->data(mixerVm_->index(strip), MixerViewModel::SendBRole).toDouble() +
+                                          step * (fine ? 0.005 : 0.02));
+      popupSend(QStringLiteral("IN %1 FX2").arg(strip + 1, 2, 10, QLatin1Char('0')),
+                strip, 1);
+    } else if (what == QStringLiteral("cue")) {
+      mixerVm_->setCue(strip, mixerVm_->cueSend(strip) + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("IN %1 CUE").arg(strip + 1, 2, 10, QLatin1Char('0')),
+                     QStringLiteral("percent"), mixerVm_->cueSend(strip));
+    } else if (what == QStringLiteral("out34")) {
+      mixerVm_->setOut34(strip, mixerVm_->out34Send(strip) + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("IN %1 OUT34").arg(strip + 1, 2, 10, QLatin1Char('0')),
+                     QStringLiteral("percent"), mixerVm_->out34Send(strip));
     }
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("track")) {
+    if (parts[1] == QStringLiteral("gain")) {
+      mixerVm_->setTrackGainDb(mixerVm_->trackGainDb() + step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("VOL"), QStringLiteral("db"),
+                     mixerVm_->trackGainDb());
+    } else if (parts[1] == QStringLiteral("trim")) {
+      mixerVm_->setTrackTrimDb(mixerVm_->trackTrimDb() + step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("GAIN"), QStringLiteral("db"),
+                     mixerVm_->trackTrimDb());
+    } else if (parts[1] == QStringLiteral("pan")) {
+      mixerVm_->setTrackPan(mixerVm_->trackPan() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("PAN"), QStringLiteral("pan"),
+                     mixerVm_->trackPan());
+    } else if (parts[1] == QStringLiteral("fx1")) {
+      mixerVm_->setTrackSendA(mixerVm_->trackSendA() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("FX1"), QStringLiteral("percent"),
+                     mixerVm_->trackSendA());
+    } else if (parts[1] == QStringLiteral("fx2")) {
+      mixerVm_->setTrackSendB(mixerVm_->trackSendB() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("FX2"), QStringLiteral("percent"),
+                     mixerVm_->trackSendB());
+    } else if (parts[1] == QStringLiteral("cue")) {
+      mixerVm_->setTrackCue(mixerVm_->trackCue() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("CUE"), QStringLiteral("percent"),
+                     mixerVm_->trackCue());
+    } else if (parts[1] == QStringLiteral("out34")) {
+      mixerVm_->setTrackOut34(mixerVm_->trackOut34() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("OUT34"), QStringLiteral("percent"),
+                     mixerVm_->trackOut34());
+    }
+    return;
+  }
+
+  if (parts.size() >= 3 && parts[0] == QStringLiteral("punch") &&
+      parts[2] == QStringLiteral("measure")) {
+    const QString point = parts[1];
+    const int delta = detents;
+    if (point == QStringLiteral("playfrom")) {
+      sessionVm_->setPunchPlayFromMeasure(sessionVm_->punchPlayFromMeasure() + delta);
+      showValuePopup(QStringLiteral("PLAY FROM"), QStringLiteral("int"),
+                     sessionVm_->punchPlayFromMeasure());
+    } else if (point == QStringLiteral("in")) {
+      sessionVm_->setPunchInMeasure(sessionVm_->punchInMeasure() + delta);
+      showValuePopup(QStringLiteral("PUNCH IN"), QStringLiteral("int"),
+                     sessionVm_->punchInMeasure());
+    } else if (point == QStringLiteral("out")) {
+      sessionVm_->setPunchOutMeasure(sessionVm_->punchOutMeasure() + delta);
+      showValuePopup(QStringLiteral("PUNCH OUT"), QStringLiteral("int"),
+                     sessionVm_->punchOutMeasure());
+    }
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("monitor")) {
+    if (parts[1] == QStringLiteral("clickmode")) {
+      sessionVm_->setClickMode(moveIndex(sessionVm_->clickMode(), detents > 0 ? 1 : -1, 3));
+      showTextPopup(QStringLiteral("CLICK MODE"),
+                    sessionVm_->clickMode() == 0 ? QStringLiteral("Off")
+                    : (sessionVm_->clickMode() == 1 ? QStringLiteral("Record")
+                                                    : QStringLiteral("On play")));
+    } else if (parts[1] == QStringLiteral("clickout")) {
+      sessionVm_->setClickOutput(moveIndex(sessionVm_->clickOutput(), detents > 0 ? 1 : -1, 3));
+      showTextPopup(QStringLiteral("CLICK OUT"),
+                    sessionVm_->clickOutput() == 0 ? QStringLiteral("Main")
+                    : (sessionVm_->clickOutput() == 1 ? QStringLiteral("Phones")
+                                                      : QStringLiteral("Out34")));
+    } else if (parts[1] == QStringLiteral("phones")) {
+      sessionVm_->setPhonesSrc(moveIndex(sessionVm_->phonesSrc(), detents > 0 ? 1 : -1, 2));
+      showTextPopup(QStringLiteral("PHONES"),
+                    sessionVm_->phonesSrc() == 0 ? QStringLiteral("CUE")
+                                                 : QStringLiteral("Main"));
+    } else if (parts[1] == QStringLiteral("cuestyle")) {
+      sessionVm_->setCueStyle(moveIndex(sessionVm_->cueStyle(), detents > 0 ? 1 : -1, 2));
+      showTextPopup(QStringLiteral("CUE STYLE"),
+                    sessionVm_->cueStyle() == 0 ? QStringLiteral("Fader")
+                                                : QStringLiteral("Toggle"));
+    } else if (parts[1] == QStringLiteral("out34")) {
+      sessionVm_->setOut34Mode(moveIndex(sessionVm_->out34Mode(), detents > 0 ? 1 : -1, 2));
+      showTextPopup(QStringLiteral("OUT3&4"),
+                    sessionVm_->out34Mode() == 0 ? QStringLiteral("Stereo")
+                                                 : QStringLiteral("Mono"));
+    } else if (parts[1] == QStringLiteral("clickgain")) {
+      sessionVm_->setClickGainDb(sessionVm_->clickGainDb() + step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("CLICK GAIN"), QStringLiteral("db"),
+                     sessionVm_->clickGainDb());
+    } else if (parts[1] == QStringLiteral("comp")) {
+      if (parts.size() < 3) return;
+      if (parts[2] == QStringLiteral("thresh")) {
+        sessionVm_->setCompThreshDb(sessionVm_->compThreshDb() + step * (fine ? 0.1 : 0.5));
+        showValuePopup(QStringLiteral("COMP THRESH"), QStringLiteral("db"),
+                       sessionVm_->compThreshDb());
+      } else if (parts[2] == QStringLiteral("ratio")) {
+        sessionVm_->setCompRatio(sessionVm_->compRatio() + step * (fine ? 0.1 : 0.5));
+        showValuePopup(QStringLiteral("COMP RATIO"), QStringLiteral("ratio"),
+                       sessionVm_->compRatio());
+      } else if (parts[2] == QStringLiteral("attack")) {
+        sessionVm_->setCompAttackMs(sessionVm_->compAttackMs() + step * (fine ? 0.5 : 2.0));
+        showValuePopup(QStringLiteral("COMP ATTACK"), QStringLiteral("ms"),
+                       sessionVm_->compAttackMs());
+      } else if (parts[2] == QStringLiteral("release")) {
+        sessionVm_->setCompReleaseMs(sessionVm_->compReleaseMs() + step * (fine ? 1.0 : 5.0));
+        showValuePopup(QStringLiteral("COMP RELEASE"), QStringLiteral("ms"),
+                       sessionVm_->compReleaseMs());
+      } else if (parts[2] == QStringLiteral("makeup")) {
+        sessionVm_->setCompMakeupDb(sessionVm_->compMakeupDb() + step * (fine ? 0.1 : 0.5));
+        showValuePopup(QStringLiteral("COMP MAKEUP"), QStringLiteral("db"),
+                       sessionVm_->compMakeupDb());
+      } else if (parts[2] == QStringLiteral("mode")) {
+        sessionVm_->setCompMode(moveIndex(sessionVm_->compMode(), detents > 0 ? 1 : -1, 2));
+        showTextPopup(QStringLiteral("COMP MODE"),
+                      sessionVm_->compMode() == 0 ? QStringLiteral("Peak")
+                                                  : QStringLiteral("RMS"));
+      }
+    }
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("tools") &&
+      parts[1] == QStringLiteral("brightness")) {
+    toolsVm_->setBrightness(toolsVm_->brightness() + detents * (fine ? 1 : 5));
+    showValuePopup(QStringLiteral("BRIGHTNESS"), QStringLiteral("percent"),
+                   toolsVm_->brightness() / 100.0);
     return;
   }
 
   if (parts.size() >= 3 && parts[0] == QStringLiteral("routing") &&
       parts[1] == QStringLiteral("transpose")) {
     routingVm_->adjustTranspose(parts[2].toInt(), detents);
+    const int index = parts[2].toInt();
+    const auto values = routingVm_->transposes();
+    showTextPopup(QStringLiteral("TRANSPOSE"),
+                  index >= 0 && index < values.size() ? values.value(index).toString()
+                                                      : QString());
     return;
   }
 
@@ -750,6 +1304,8 @@ void AppController::adjustFocused(int detents, bool fine) {
     auto* view = slot == 1 ? fxVm_->slotB() : fxVm_->slotA();
     if (parts[2] == QStringLiteral("return")) {
       view->setReturnDb(view->returnDb() + step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("SEND %1 RETURN").arg(slot == 1 ? "B" : "A"),
+                     QStringLiteral("db"), view->returnDb());
     } else if (parts[2] == QStringLiteral("param")) {
       const int index = parts[3].toInt();
       const auto params = fx_.slot(slot).params();
@@ -758,6 +1314,12 @@ void AppController::adjustFocused(int detents, bool fine) {
         const double range = std::max(0.0, param.max - param.min);
         const double paramStep = range / (fine ? 1000.0 : 100.0);
         view->adjustParam(index, step * paramStep);
+        const auto updated = fx_.slot(slot).params();
+        if (index < static_cast<int>(updated.size())) {
+          showValuePopup(QString::fromStdString(updated[static_cast<std::size_t>(index)].name),
+                         QStringLiteral("generic"),
+                         updated[static_cast<std::size_t>(index)].value);
+        }
       }
     }
     return;
@@ -767,17 +1329,27 @@ void AppController::adjustFocused(int detents, bool fine) {
     if (parts[1] == QStringLiteral("backend")) {
       const int count = systemVm_->backendLabels().size();
       systemVm_->setBackendIndex(moveIndex(systemVm_->backendIndex(), detents > 0 ? 1 : -1, count));
+      showTextPopup(QStringLiteral("AUDIO OUTPUT"),
+                    systemVm_->backendLabels().value(systemVm_->backendIndex()));
     } else if (parts[1] == QStringLiteral("input")) {
       const int count = systemVm_->inputLabels().size();
       systemVm_->setInputIndex(moveIndex(systemVm_->inputIndex(), detents > 0 ? 1 : -1, count));
+      showTextPopup(QStringLiteral("AUDIO INPUT"),
+                    systemVm_->inputLabels().value(systemVm_->inputIndex()));
     } else if (parts[1] == QStringLiteral("buffer")) {
       const int count = systemVm_->bufferLabels().size();
       systemVm_->setBufferIndex(moveIndex(systemVm_->bufferIndex(), detents > 0 ? 1 : -1, count));
+      showTextPopup(QStringLiteral("BUFFER"),
+                    systemVm_->bufferLabels().value(systemVm_->bufferIndex()));
     } else if (parts[1] == QStringLiteral("click")) {
       if (parts.size() >= 3 && parts[2] == QStringLiteral("level")) {
         setClickLevel(clickLevel() + step * (fine ? 0.01 : 0.05));
+        showValuePopup(QStringLiteral("CLICK LEVEL"), QStringLiteral("percent"),
+                       clickLevel());
       } else if (parts.size() >= 3 && parts[2] == QStringLiteral("bars")) {
         setClickBars(clickBars() + detents);
+        showValuePopup(QStringLiteral("CLICK BARS"), QStringLiteral("int"),
+                       clickBars());
       }
     }
     return;
@@ -787,14 +1359,144 @@ void AppController::adjustFocused(int detents, bool fine) {
       parts[1] == QStringLiteral("target")) {
     const int count = learnVm_->targets().size();
     learnVm_->setTargetIndex(moveIndex(learnVm_->targetIndex(), detents > 0 ? 1 : -1, count));
+    showTextPopup(QStringLiteral("LEARN TARGET"),
+                  learnVm_->targets().value(learnVm_->targetIndex()));
   }
 }
 
 void AppController::rebuildFocusIds() {
   std::vector<QString> ids;
-  if (panelMode_ == QStringLiteral("shift")) {
-    for (int i = 0; i < shiftActions_.size(); ++i) {
-      ids.push_back(QStringLiteral("shift.") + QString::number(i));
+  if (configVm_ && configVm_->open()) {
+    const QString kind = configVm_->kind();
+    if (kind == QStringLiteral("metronome")) {
+      for (int mode = 0; mode < 3; ++mode) {
+        ids.push_back(QStringLiteral("config.mode.%1").arg(mode));
+        ids.push_back(QStringLiteral("config.out.%1").arg(mode));
+      }
+      ids.push_back(QStringLiteral("config.gain"));
+      ids.push_back(QStringLiteral("config.bars"));
+    } else if (kind == QStringLiteral("sends")) {
+      for (const char* row : {"cue", "fx1", "fx2", "out34", "rec"}) {
+        ids.push_back(QStringLiteral("config.send.%1.pre").arg(QLatin1String(row)));
+        ids.push_back(QStringLiteral("config.send.%1.post").arg(QLatin1String(row)));
+      }
+    } else if (kind == QStringLiteral("monitor")) {
+      ids.push_back(QStringLiteral("config.phones.0"));
+      ids.push_back(QStringLiteral("config.phones.1"));
+      ids.push_back(QStringLiteral("config.cuestyle.0"));
+      ids.push_back(QStringLiteral("config.cuestyle.1"));
+      ids.push_back(QStringLiteral("config.out34.0"));
+      ids.push_back(QStringLiteral("config.out34.1"));
+    } else {
+      ids.push_back(QStringLiteral("config.on"));
+      ids.push_back(QStringLiteral("config.mode.0"));
+      ids.push_back(QStringLiteral("config.mode.1"));
+      ids.push_back(QStringLiteral("config.thresh"));
+      ids.push_back(QStringLiteral("config.ratio"));
+      ids.push_back(QStringLiteral("config.attack"));
+      ids.push_back(QStringLiteral("config.release"));
+      ids.push_back(QStringLiteral("config.makeup"));
+    }
+    ids.push_back(QStringLiteral("config.ok"));
+    ids.push_back(QStringLiteral("config.cancel"));
+  } else if (shiftFace_) {
+    switch (tab_) {
+      case 0:
+        if (mixerVm_->trackMode()) {
+          ids.push_back(QStringLiteral("shift.track.input"));
+          ids.push_back(QStringLiteral("shift.track.output"));
+          ids.push_back(QStringLiteral("shift.track.gain"));
+          ids.push_back(QStringLiteral("shift.track.fx1"));
+          ids.push_back(QStringLiteral("shift.track.fx2"));
+          ids.push_back(QStringLiteral("shift.track.cue"));
+          ids.push_back(QStringLiteral("shift.track.out34"));
+          for (const char* destination : {"cue", "fx1", "fx2", "out34", "rec"}) {
+            ids.push_back(QStringLiteral("shift.monitor.send.%1.pre").arg(QLatin1String(destination)));
+            ids.push_back(QStringLiteral("shift.monitor.send.%1.post").arg(QLatin1String(destination)));
+          }
+          ids.push_back(QStringLiteral("shift.track.monitor.0"));
+          ids.push_back(QStringLiteral("shift.track.monitor.1"));
+          ids.push_back(QStringLiteral("shift.track.monitor.2"));
+        } else {
+          const int first = mixerVm_->bank() * kStripsPerBank;
+          for (int i = 0; i < kStripsPerBank; ++i) {
+            const int strip = first + i;
+            ids.push_back(QStringLiteral("shift.mixer.gain.%1").arg(strip));
+            ids.push_back(QStringLiteral("shift.mixer.fx1.%1").arg(strip));
+            ids.push_back(QStringLiteral("shift.mixer.fx2.%1").arg(strip));
+            ids.push_back(QStringLiteral("shift.mixer.cue.%1").arg(strip));
+            ids.push_back(QStringLiteral("shift.mixer.out34.%1").arg(strip));
+            ids.push_back(QStringLiteral("shift.mixer.monitor.%1").arg(strip));
+          }
+        }
+        break;
+      case 1:
+        ids.push_back(QStringLiteral("shift.routing.reset"));
+        for (int source = 0; source < routing::kInputCount; ++source) {
+          for (int channel = 0; channel < 16; ++channel) {
+            ids.push_back(QStringLiteral("shift.routing.mask.%1.%2").arg(source).arg(channel));
+          }
+        }
+        for (int source = 0; source < routing::kInputCount; ++source) {
+          ids.push_back(QStringLiteral("shift.routing.transpose.%1").arg(source));
+        }
+        break;
+      case 2: {
+        ids.push_back(QStringLiteral("shift.fx.A.return"));
+        auto* view = fxVm_->slotB();
+        ids.push_back(QStringLiteral("shift.fx.B.plugin"));
+        ids.push_back(QStringLiteral("shift.fx.B.eject"));
+        ids.push_back(QStringLiteral("shift.fx.B.save"));
+        ids.push_back(QStringLiteral("shift.fx.B.load"));
+        ids.push_back(QStringLiteral("shift.fx.B.return"));
+        ids.push_back(QStringLiteral("shift.fx.B.bypass"));
+        for (int param = 0; param < view->params()->rowCount(); ++param) {
+          ids.push_back(QStringLiteral("shift.fx.B.param.%1").arg(param));
+        }
+        break;
+      }
+      case 3:
+        ids.push_back(QStringLiteral("shift.recorder.import"));
+        ids.push_back(QStringLiteral("shift.recorder.live"));
+        ids.push_back(QStringLiteral("shift.recorder.activate"));
+        ids.push_back(QStringLiteral("shift.recorder.rename"));
+        ids.push_back(QStringLiteral("shift.recorder.delete"));
+        for (const char* point : {"playfrom", "in", "out"}) {
+          ids.push_back(QStringLiteral("shift.punch.%1.enable").arg(QLatin1String(point)));
+          ids.push_back(QStringLiteral("shift.punch.%1.measure").arg(QLatin1String(point)));
+        }
+        break;
+      case 4:
+        ids.push_back(QStringLiteral("shift.system.panic"));
+        ids.push_back(QStringLiteral("shift.system.page.0"));
+        ids.push_back(QStringLiteral("shift.system.page.1"));
+        ids.push_back(QStringLiteral("shift.system.page.2"));
+        if (systemShiftPage_ == 0) {
+          ids.push_back(QStringLiteral("shift.monitor.summary.metronome"));
+          ids.push_back(QStringLiteral("shift.monitor.summary.sends"));
+          ids.push_back(QStringLiteral("shift.monitor.summary.monitor"));
+          ids.push_back(QStringLiteral("shift.monitor.summary.comp"));
+        } else if (systemShiftPage_ == 1) {
+          ids.push_back(QStringLiteral("shift.learn.target"));
+          ids.push_back(QStringLiteral("shift.learn.arm"));
+          ids.push_back(QStringLiteral("shift.learn.clear"));
+          for (int row = 0; row < learnVm_->bindings().size(); ++row) {
+            ids.push_back(QStringLiteral("shift.learn.binding.%1").arg(row));
+          }
+        } else {
+          ids.push_back(QStringLiteral("shift.tools.brightness"));
+        }
+        break;
+      case 5:
+        ids.push_back(QStringLiteral("shift.projects.new"));
+        ids.push_back(QStringLiteral("shift.projects.rename"));
+        ids.push_back(QStringLiteral("shift.projects.delete"));
+        ids.push_back(QStringLiteral("shift.projects.template.new"));
+        ids.push_back(QStringLiteral("shift.projects.template.save"));
+        ids.push_back(QStringLiteral("shift.projects.template.clear"));
+        break;
+      default:
+        break;
     }
   } else {
     for (int i = 0; i < kScreenCount; ++i) {
@@ -803,21 +1505,32 @@ void AppController::rebuildFocusIds() {
     ids.push_back(QStringLiteral("transport.click"));
     switch (tab_) {
       case 0: {
-        const int first = mixerVm_->bank() * kStripsPerBank;
-        for (int i = 0; i < kStripsPerBank; ++i) {
-          const int strip = first + i;
-          ids.push_back(QStringLiteral("mixer.select.%1").arg(strip));
-          ids.push_back(QStringLiteral("mixer.gain.%1").arg(strip));
-          ids.push_back(QStringLiteral("mixer.pan.%1").arg(strip));
-          ids.push_back(QStringLiteral("mixer.sendA.%1").arg(strip));
-          ids.push_back(QStringLiteral("mixer.sendB.%1").arg(strip));
-          ids.push_back(QStringLiteral("mixer.mute.%1").arg(strip));
-          ids.push_back(QStringLiteral("mixer.solo.%1").arg(strip));
-          ids.push_back(QStringLiteral("mixer.arm.%1").arg(strip));
+        ids.push_back(QStringLiteral("mixer.mode.0"));
+        ids.push_back(QStringLiteral("mixer.mode.1"));
+        if (mixerVm_->trackMode()) {
+          for (int track = 0; track < kNumStrips; ++track) {
+            ids.push_back(QStringLiteral("track.select.%1").arg(track));
+          }
+          ids.push_back(QStringLiteral("track.gain"));
+          ids.push_back(QStringLiteral("track.pan"));
+          ids.push_back(QStringLiteral("track.rec"));
+          ids.push_back(QStringLiteral("track.mute"));
+          ids.push_back(QStringLiteral("track.solo"));
+        } else {
+          const int first = mixerVm_->bank() * kStripsPerBank;
+          for (int i = 0; i < kStripsPerBank; ++i) {
+            const int strip = first + i;
+            ids.push_back(QStringLiteral("mixer.select.%1").arg(strip));
+            ids.push_back(QStringLiteral("mixer.gain.%1").arg(strip));
+            ids.push_back(QStringLiteral("mixer.pan.%1").arg(strip));
+            ids.push_back(QStringLiteral("mixer.mute.%1").arg(strip));
+            ids.push_back(QStringLiteral("mixer.solo.%1").arg(strip));
+            ids.push_back(QStringLiteral("mixer.arm.%1").arg(strip));
+          }
+          ids.push_back(QStringLiteral("mixer.master"));
+          ids.push_back(QStringLiteral("mixer.bank.0"));
+          ids.push_back(QStringLiteral("mixer.bank.1"));
         }
-        ids.push_back(QStringLiteral("mixer.master"));
-        ids.push_back(QStringLiteral("mixer.bank.0"));
-        ids.push_back(QStringLiteral("mixer.bank.1"));
         break;
       }
       case 1: {
@@ -828,39 +1541,26 @@ void AppController::rebuildFocusIds() {
         for (int destination = 0; destination < routing::kOutputCount; ++destination) {
           ids.push_back(QStringLiteral("routing.node.out.%1").arg(destination));
         }
-        for (int source = 0; source < routing::kInputCount; ++source) {
-          for (int channel = 0; channel < 16; ++channel) {
-            ids.push_back(QStringLiteral("routing.mask.%1.%2").arg(source).arg(channel));
-          }
-        }
-        for (int source = 0; source < routing::kInputCount; ++source) {
-          ids.push_back(QStringLiteral("routing.transpose.%1").arg(source));
-        }
         break;
       }
       case 2: {
-        for (int slot = 0; slot < 2; ++slot) {
-          const QString letter = slot == 1 ? QStringLiteral("B") : QStringLiteral("A");
-          ids.push_back(QStringLiteral("fx.%1.plugin").arg(letter));
-          ids.push_back(QStringLiteral("fx.%1.eject").arg(letter));
-          ids.push_back(QStringLiteral("fx.%1.save").arg(letter));
-          ids.push_back(QStringLiteral("fx.%1.load").arg(letter));
-          ids.push_back(QStringLiteral("fx.%1.return").arg(letter));
-          ids.push_back(QStringLiteral("fx.%1.bypass").arg(letter));
-          auto* view = slot == 1 ? fxVm_->slotB() : fxVm_->slotA();
-          for (int param = 0; param < view->params()->rowCount(); ++param) {
-            ids.push_back(QStringLiteral("fx.%1.param.%2").arg(letter).arg(param));
-          }
+        ids.push_back(QStringLiteral("fx.A.plugin"));
+        ids.push_back(QStringLiteral("fx.A.eject"));
+        ids.push_back(QStringLiteral("fx.A.save"));
+        ids.push_back(QStringLiteral("fx.A.load"));
+        ids.push_back(QStringLiteral("fx.A.return"));
+        ids.push_back(QStringLiteral("fx.A.bypass"));
+        for (int param = 0; param < fxVm_->slotA()->params()->rowCount(); ++param) {
+          ids.push_back(QStringLiteral("fx.A.param.%1").arg(param));
         }
         break;
       }
       case 3: {
-        for (int strip = 0; strip < kNumStrips; ++strip) {
-          ids.push_back(QStringLiteral("recorder.arm.%1").arg(strip));
+        for (int track = 0; track < kNumStrips; ++track) {
+          ids.push_back(QStringLiteral("recorder.track.%1").arg(track));
         }
+        ids.push_back(QStringLiteral("recorder.arm"));
         ids.push_back(QStringLiteral("recorder.start"));
-        ids.push_back(QStringLiteral("recorder.rename"));
-        ids.push_back(QStringLiteral("recorder.delete"));
         for (int row = 0; row < recorderVm_->takes()->rowCount(); ++row) {
           ids.push_back(QStringLiteral("recorder.take.%1").arg(row));
         }
@@ -872,24 +1572,50 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("system.buffer"));
         ids.push_back(QStringLiteral("system.apply"));
         ids.push_back(QStringLiteral("system.refresh"));
-        ids.push_back(QStringLiteral("system.click"));
-        ids.push_back(QStringLiteral("system.click.level"));
-        ids.push_back(QStringLiteral("system.click.bars"));
-        ids.push_back(QStringLiteral("learn.target"));
-        ids.push_back(QStringLiteral("learn.arm"));
-        ids.push_back(QStringLiteral("learn.clear"));
-        for (int row = 0; row < learnVm_->bindings().size(); ++row) {
-          ids.push_back(QStringLiteral("learn.binding.%1").arg(row));
-        }
         break;
       }
       case kProjectsTabIndex: {
-        ids.push_back(QStringLiteral("projects.new"));
         ids.push_back(QStringLiteral("projects.save"));
-        ids.push_back(QStringLiteral("projects.rename"));
-        ids.push_back(QStringLiteral("projects.delete"));
         for (int row = 0; row < projectsVm_->model()->rowCount(); ++row) {
           ids.push_back(QStringLiteral("projects.row.%1").arg(row));
+        }
+        break;
+      }
+      case 6: {
+        ids.push_back(QStringLiteral("tools.page.0"));
+        ids.push_back(QStringLiteral("tools.page.1"));
+        ids.push_back(QStringLiteral("tools.page.2"));
+        if (toolsPage_ == 0) {
+          for (const char* point : {"playfrom", "in", "out"}) {
+            ids.push_back(QStringLiteral("punch.%1.enable").arg(QLatin1String(point)));
+            ids.push_back(QStringLiteral("punch.%1.measure").arg(QLatin1String(point)));
+          }
+        } else if (toolsPage_ == 1) {
+          for (int mode = 0; mode < 3; ++mode) {
+            ids.push_back(QStringLiteral("monitor.clickmode.%1").arg(mode));
+            ids.push_back(QStringLiteral("monitor.clickout.%1").arg(mode));
+          }
+          ids.push_back(QStringLiteral("monitor.clickgain"));
+          ids.push_back(QStringLiteral("monitor.phones.0"));
+          ids.push_back(QStringLiteral("monitor.phones.1"));
+          ids.push_back(QStringLiteral("monitor.cuestyle.0"));
+          ids.push_back(QStringLiteral("monitor.cuestyle.1"));
+          ids.push_back(QStringLiteral("monitor.out34.0"));
+          ids.push_back(QStringLiteral("monitor.out34.1"));
+          for (const char* row : {"cue", "fx1", "fx2", "out34", "rec"}) {
+            ids.push_back(QStringLiteral("monitor.send.%1.pre").arg(QLatin1String(row)));
+            ids.push_back(QStringLiteral("monitor.send.%1.post").arg(QLatin1String(row)));
+          }
+          ids.push_back(QStringLiteral("monitor.comp.on"));
+          ids.push_back(QStringLiteral("monitor.comp.thresh"));
+          ids.push_back(QStringLiteral("monitor.comp.ratio"));
+          ids.push_back(QStringLiteral("monitor.comp.attack"));
+          ids.push_back(QStringLiteral("monitor.comp.release"));
+          ids.push_back(QStringLiteral("monitor.comp.makeup"));
+          ids.push_back(QStringLiteral("monitor.comp.mode.0"));
+          ids.push_back(QStringLiteral("monitor.comp.mode.1"));
+        } else {
+          ids.push_back(QStringLiteral("tools.brightness"));
         }
         break;
       }
@@ -929,6 +1655,7 @@ void AppController::toggleTake() {
     stopTake();
     return;
   }
+  takeArmMask_ = mixer_.armMask();
   if (!audio_.startTake(state_.takeDirectory())) {
     setNotice(QStringLiteral("take refused (arm at least one strip)"));
     return;
@@ -944,6 +1671,12 @@ void AppController::stopTake() {
   const auto take = audio_.stopTake();
   state_.recording.store(false);
   link_.requestTransport(0);
+  // Adopt the core recorder's chNN.wav files into the session-v2 per-track
+  // names before the take list rescans. This is the app-side name policy; a
+  // future Recorder API can take the template directly.
+  if (take.files > 0 && !take.path.empty()) {
+    recorderVm_->adoptRecordedTake(take.path, takeArmMask_);
+  }
   recorderVm_->takeStateChanged();
   if (take.files > 0) {
     log("recorder: take finished, " + std::to_string(take.files) + " files in " + take.path);
@@ -979,17 +1712,30 @@ void AppController::updateTransport() {
   const bool clickOn = state_.clickEnabled.load();
   const double level = state_.clickLevel.load();
   const int bars = state_.clickBars.load();
+  const int mode = state_.clickMode.load();
+  const int output = state_.clickOutput.load();
+  const double gain = state_.clickGainDb.load();
   if (clickOn != lastClickEnabled_ || std::abs(level - lastClickLevel_) > 0.0001 ||
-      bars != lastClickBars_) {
+      bars != lastClickBars_ || mode != lastClickMode_ || output != lastClickOutput_ ||
+      std::abs(gain - lastClickGainDb_) > 0.0001) {
     lastClickEnabled_ = clickOn;
     lastClickLevel_ = level;
     lastClickBars_ = bars;
+    lastClickMode_ = mode;
+    lastClickOutput_ = output;
+    lastClickGainDb_ = gain;
     emit clickChanged();
   }
 
   const double left = audio_.peak(0);
   const double right = audio_.peak(1);
   mixerVm_->setMeters(left, right);
+  std::array<double, kNumStrips> stripLevels{};
+  for (int strip = 0; strip < kNumStrips; ++strip) {
+    stripLevels[static_cast<std::size_t>(strip)] =
+        meterFraction(audio_.stripPeak(strip));
+  }
+  mixerVm_->setStripMeters(stripLevels);
   if (std::abs(left - masterPeakLeft_) > 0.001 ||
       std::abs(right - masterPeakRight_) > 0.001) {
     masterPeakLeft_ = left;
@@ -1012,6 +1758,11 @@ void AppController::projectStateChanged() {
   fxVm_->refresh();
   routingVm_->refresh();
   mixerVm_->refresh();
+  sessionVm_->refresh();
+  recorderVm_->takeStateChanged();
+  recorderVm_->resyncActiveTakes();
+  audio_.applyMonitorSettings(settings_);
+  toolsVm_->refresh();
   state_.clearDirty();
   dirtyTracker_.clear(project::fingerprint(*context_));
   emit dirtyChanged();
@@ -1070,6 +1821,71 @@ void AppController::registerLearnTargets() {
 void AppController::setNotice(const QString& notice) {
   noticeText_ = notice;
   emit noticeChanged();
+}
+
+void AppController::showValuePopup(const QString& label, const QString& kind,
+                                   double value) {
+  std::string text;
+  if (kind == QStringLiteral("pan")) {
+    text = formatPanValue(static_cast<float>(value));
+  } else if (kind == QStringLiteral("db")) {
+    text = formatDbValue(static_cast<float>(value));
+  } else if (kind == QStringLiteral("percent")) {
+    text = formatPercentValue(static_cast<float>(value));
+  } else if (kind == QStringLiteral("ratio")) {
+    text = formatRatioValue(static_cast<float>(value));
+  } else if (kind == QStringLiteral("ms")) {
+    text = formatMillisecondsValue(static_cast<float>(value));
+  } else if (kind == QStringLiteral("bpm")) {
+    text = formatTempo(static_cast<int>(std::lround(value)));
+  } else if (kind == QStringLiteral("int")) {
+    text = formatIntValue(value);
+  } else {
+    text = formatGenericValue(value);
+  }
+  showTextPopup(label, QString::fromStdString(text));
+}
+
+void AppController::showTextPopup(const QString& label, const QString& text) {
+  valuePopupLabel_ = label;
+  valuePopupText_ = text;
+  valuePopupVisible_ = true;
+  valuePopupTimer_.start();
+  emit valuePopupChanged();
+}
+
+void AppController::hideValuePopup() {
+  if (!valuePopupVisible_) return;
+  valuePopupVisible_ = false;
+  valuePopupTimer_.stop();
+  emit valuePopupChanged();
+}
+
+void AppController::popupGain(const QString& label, int strip) {
+  showValuePopup(label, QStringLiteral("db"),
+                 mixerVm_->data(mixerVm_->index(strip),
+                                MixerViewModel::GainDbRole)
+                     .toDouble());
+}
+
+void AppController::popupPan(const QString& label, int strip) {
+  showValuePopup(label, QStringLiteral("pan"),
+                 mixerVm_->data(mixerVm_->index(strip),
+                                MixerViewModel::PanRole)
+                     .toDouble());
+}
+
+void AppController::popupSend(const QString& label, int strip, int send) {
+  showValuePopup(label, QStringLiteral("percent"),
+                 mixerVm_->data(mixerVm_->index(strip),
+                                send == 0 ? MixerViewModel::SendARole
+                                          : MixerViewModel::SendBRole)
+                     .toDouble());
+}
+
+void AppController::popupTrackSend(const QString& label, int send) {
+  showValuePopup(label, QStringLiteral("percent"),
+                 send == 0 ? mixerVm_->trackSendA() : mixerVm_->trackSendB());
 }
 
 }  // namespace mnky::app

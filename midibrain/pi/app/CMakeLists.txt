@@ -19,6 +19,7 @@ set(MNKY_APP_SOURCES
   main.cpp
   app_controller.cpp
   app_state.cpp
+  config_popup_model.cpp
   audio_glue.cpp
   emulator_synth.cpp
   fx_slot.cpp
@@ -35,13 +36,17 @@ set(MNKY_APP_SOURCES
   projects_view_model.cpp
   recorder_view_model.cpp
   routing_view_model.cpp
+  session_settings.cpp
+  session_view_model.cpp
   system_view_model.cpp
+  tools_view_model.cpp
   wav_info.cpp)
 
 set(MNKY_APP_HEADERS
   app_context.hpp
   app_controller.hpp
   app_state.hpp
+  config_popup_model.hpp
   audio_backend.hpp
   audio_glue.hpp
   emulator_synth.hpp
@@ -60,12 +65,16 @@ set(MNKY_APP_HEADERS
   recorder_view_model.hpp
   routing_model.hpp
   routing_view_model.hpp
+  session_settings.hpp
+  session_view_model.hpp
   system_view_model.hpp
   text_buffer.hpp
+  tools_view_model.hpp
   wav_info.hpp)
 
 add_executable(mnkybox ${MNKY_APP_SOURCES} ${MNKY_APP_HEADERS})
 set_target_properties(mnkybox PROPERTIES AUTOMOC ON)
+target_compile_definitions(mnkybox PRIVATE MNKY_APP_VERSION="${PROJECT_VERSION}")
 target_include_directories(mnkybox PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/..")
@@ -100,14 +109,23 @@ qt_add_resources(mnkybox "qml"
     qml/components/TouchButton.qml
     qml/components/TouchSlider.qml
     qml/components/MixerStrip.qml
+    qml/components/MixerShiftStrip.qml
+    qml/components/LearnPanel.qml
     qml/components/FxSlotPanel.qml
     qml/components/TouchComboBox.qml
+    qml/components/ValuePopup.qml
     qml/screens/MixerScreen.qml
     qml/screens/RoutingScreen.qml
     qml/screens/FxScreen.qml
     qml/screens/RecorderScreen.qml
     qml/screens/SystemScreen.qml
     qml/screens/ProjectsScreen.qml
+    qml/screens/ToolsScreen.qml
+    qml/screens/PunchScreen.qml
+    qml/screens/MonitorScreen.qml
+    qml/screens/ToolsStatusScreen.qml
+    qml/screens/SystemShiftFace.qml
+    qml/overlays/ConfigPopup.qml
     qml/overlays/Keypad.qml
     qml/overlays/ConfirmDialog.qml)
 

@@ -31,7 +31,9 @@
 #include "mixer_model.hpp"
 #include "project_io.hpp"
 #include "project_logic.hpp"
+#include "recorder_view_model.hpp"
 #include "routing_model.hpp"
+#include "session_settings.hpp"
 #include "text_buffer.hpp"
 #include "wav_info.hpp"
 
@@ -242,9 +244,33 @@ void mixerTests() {
   checkNear(engine.channel(3).gain, dbToGain(-6.0f), 1e-6, "mixer snapshot gain");
   checkNear(engine.channel(3).pan, 0.25, 1e-6, "mixer snapshot pan");
   checkNear(engine.channel(3).send[1], 0.5, 1e-6, "mixer snapshot send");
+  model.setMonitor(3, 2);
+  model.applyTo(engine);
+  check(engine.channel(3).monitor == audio::MonitorMode::On,
+        "mixer snapshot carries per-track monitor mode");
+  model.setMonitor(3, 0);
+  model.applyTo(engine);
+  check(engine.channel(3).monitor == audio::MonitorMode::Off,
+        "per-track monitor mode off reaches the engine");
   check((model.armMask() & (1u << 3)) != 0, "arm mask carries the armed strip");
   model.setPan(3, 2.0f);
   checkNear(model.pan(3), 1.0, 1e-6, "pan clamps at the top");
+  model.setPan(3, 0.49f);
+  checkNear(model.pan(3), 0.5, 1e-9, "pan snaps to centre inside the detent");
+  model.setPan(3, 0.40f);
+  checkNear(model.pan(3), 0.40, 1e-6, "pan outside the detent is unchanged");
+}
+
+void valueFormatTests() {
+  checkEqual(formatPanValue(0.5f), "Center", "pan formatting centre");
+  checkEqual(formatPanValue(0.25f), "L50", "pan formatting left");
+  checkEqual(formatPanValue(0.75f), "R50", "pan formatting right");
+  checkEqual(formatDbValue(-6.0f), "-6.0 dB", "dB formatting");
+  checkEqual(formatDbValue(3.0f), "+3.0 dB", "positive dB formatting");
+  checkEqual(formatPercentValue(0.5f), "50 %", "percent formatting");
+  checkEqual(formatRatioValue(4.0f), "4.0:1", "ratio formatting");
+  checkEqual(formatMillisecondsValue(10.0f), "10 ms", "millisecond formatting");
+  checkEqual(formatGenericValue(-1.25), "-1.25", "generic FX parameter formatting");
 }
 
 void learnTests() {
@@ -306,10 +332,74 @@ void wavTests() {
   std::filesystem::remove(path, error);
 }
 
+void writeMinimalWav(const std::filesystem::path& path) {
+  constexpr std::uint32_t frames = 480;
+  constexpr std::uint16_t channels = 1;
+  std::vector<unsigned char> bytes;
+  appendTag(bytes, "RIFF");
+  appendLe32(bytes, 36 + frames * channels * 4);
+  appendTag(bytes, "WAVE");
+  appendTag(bytes, "fmt ");
+  appendLe32(bytes, 16);
+  appendLe16(bytes, 3);
+  appendLe16(bytes, channels);
+  appendLe32(bytes, 48000);
+  appendLe32(bytes, 48000 * channels * 4);
+  appendLe16(bytes, static_cast<std::uint16_t>(channels * 4));
+  appendLe16(bytes, 32);
+  appendTag(bytes, "data");
+  appendLe32(bytes, frames * channels * 4);
+  bytes.resize(bytes.size() + frames * channels * 4, 0);
+  std::error_code error;
+  std::filesystem::create_directories(path.parent_path(), error);
+  std::ofstream file(path, std::ios::binary);
+  file.write(reinterpret_cast<const char*>(bytes.data()),
+             static_cast<std::streamsize>(bytes.size()));
+}
+
+void takeAdoptionTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  FxManager fx;
+  MidiGlue midi(false);
+  AudioGlue audio(mixer, fx, state, true);
+  LinkClient link(midi, state, true);
+  const auto base = std::filesystem::temp_directory_path() /
+                    ("mnkybox-take-adopt-" +
+                     std::to_string(std::chrono::steady_clock::now()
+                                        .time_since_epoch()
+                                        .count()));
+  std::error_code error;
+  std::filesystem::create_directories(base, error);
+  state.setTakeDirectory(base);
+  RecorderViewModel recorder(state, audio, mixer, link, settings);
+  const auto first = base / "take-20260101T000000Z";
+  writeMinimalWav(first / "ch00.wav");
+  writeMinimalWav(first / "ch01.wav");
+  check(recorder.adoptRecordedTake(first.string(), 0x3u) == 2,
+        "recorded channel files are adopted");
+  check(std::filesystem::exists(first / "01-ch01-001.wav"),
+        "track 1 take uses nn-trackname-take#");
+  check(std::filesystem::exists(first / "02-ch02-001.wav"),
+        "track 2 take uses nn-trackname-take#");
+  check(settings.activeTake(0) == "01-ch01-001.wav",
+        "adopted take becomes the active pointer");
+
+  const auto second = base / "take-20260101T000001Z";
+  writeMinimalWav(second / "ch01.wav");
+  check(recorder.adoptRecordedTake(second.string(), 0x2u) == 1,
+        "second recorded take is adopted");
+  check(std::filesystem::exists(second / "02-ch02-002.wav"),
+        "take counter continues per track");
+  std::filesystem::remove_all(base, error);
+}
+
 void sessionClickTests() {
   session::Snapshot snapshot;
-  snapshot.click.enabled = true;
-  snapshot.click.level = 0.25f;
+  snapshot.click.mode = 2;
+  snapshot.click.output = 1;
+  snapshot.click.gainDb = -12.0f;
   snapshot.click.bars = 2;
   snapshot.transport.bpmX100 = 13300;
   const auto path = std::filesystem::temp_directory_path() /
@@ -321,12 +411,43 @@ void sessionClickTests() {
   check(session::save(path.string(), snapshot), "session file writes");
   const auto result = session::load(path.string());
   check(result.ok, "session file reads back");
-  check(result.snapshot.click.enabled, "click.enabled round-trips");
-  checkNear(result.snapshot.click.level, 0.25, 1e-6, "click.level round-trips");
+  check(result.snapshot.click.mode == 2, "click.mode round-trips");
+  check(result.snapshot.click.output == 1, "click.output round-trips");
+  checkNear(result.snapshot.click.gainDb, -12.0, 1e-6, "click.gainDb round-trips");
   check(result.snapshot.click.bars == 2, "click.bars round-trips");
   check(result.snapshot.transport.bpmX100 == 13300, "tempo round-trips");
   std::error_code error;
   std::filesystem::remove(path, error);
+}
+
+void takeNameTests() {
+  check(parseTakeFileName("02-drums-003.wav").valid, "per-track take name parses");
+  const auto parts = parseTakeFileName("02-drums-003");
+  check(parts.valid && parts.track == 1 && parts.name == "drums" && parts.number == 3,
+        "per-track take name fields");
+  checkEqual(takeFileName(1, "Drums", 3), "02-drums-003.wav",
+             "take file name uses nn-trackname-take#");
+  check(sanitizeTrackName("Drum Kit!") == "drum-kit", "track name sanitizes to ASCII");
+  check(validateTakeName("02-drums-003.wav").empty(), "per-track name is a valid take name");
+  check(validateTakeName("take-20260101T120000Z").empty(), "legacy take name stays valid");
+  check(!validateTakeName("session-1").empty(), "unprefixed take name is rejected");
+  check(parseTakeFileName("2-drums-3.wav").valid == false, "short take name is rejected");
+}
+
+void meterAndSpaceTests() {
+  ClipHold hold;
+  check(!hold.clipped(), "clip hold starts clear");
+  check(!hold.update(0.5f), "below full scale does not clip");
+  check(hold.update(1.0f), "full scale latches the clip");
+  for (int tick = 0; tick < ClipHold::kHoldTicks - 1; ++tick) (void)hold.tick();
+  check(hold.clipped(), "clip hold survives the hold window");
+  (void)hold.tick();
+  check(!hold.clipped(), "clip hold expires after the window");
+  check(isLowDiskSpace(1ull * 1024 * 1024 * 1024, 100ull * 1024 * 1024 * 1024),
+        "under 2 GiB is low space");
+  check(!isLowDiskSpace(20ull * 1024 * 1024 * 1024, 100ull * 1024 * 1024 * 1024),
+        "20 GiB free is not low space");
+  check(!isLowDiskSpace(0, 0), "unknown capacity is not low space");
 }
 
 
@@ -353,19 +474,46 @@ void learnCaptureTests() {
 
 void projectRoundTripTests() {
   AppState state;
+  SessionSettings settings;
   MixerModel mixer;
   FxManager fx;
   MidiGlue midi(false);
   AudioGlue audio(mixer, fx, state, true);
   LinkClient link(midi, state, true);
-  AppContext context{state, mixer, fx, midi, audio, link};
+  AppContext context{state, mixer, fx, midi, audio, link, settings};
 
   mixer.setGainDb(2, -6.0f);
   mixer.setPan(2, 0.25f);
   state.tempoX100.store(13300);
   state.clickEnabled.store(true);
+  state.clickMode.store(2);
   state.clickLevel.store(0.3f);
+  state.clickGainDb.store(-10.45f);
+  state.clickOutput.store(1);
   state.clickBars.store(2);
+  mixer.setCueSend(2, 0.4f);
+  mixer.setOut34Send(2, 0.75f);
+  mixer.setOut34Mode(1);
+  mixer.setMonitor(2, 0);
+  mixer.setMonitor(3, 2);
+  settings.punch.playFrom = session::PunchPoint{true, 1};
+  settings.punch.in = session::PunchPoint{true, 5};
+  settings.punch.out = session::PunchPoint{true, 9};
+  settings.cue.phonesSrc = 1;
+  settings.cue.style = 1;
+  settings.sends.cue = 0;
+  settings.sends.fx1 = 1;
+  settings.sends.fx2 = 0;
+  settings.sends.out34 = 1;
+  settings.sends.rec = 0;
+  settings.mainComp.on = true;
+  settings.mainComp.threshDb = -18.0f;
+  settings.mainComp.ratio = 4.0f;
+  settings.mainComp.attackMs = 12.0f;
+  settings.mainComp.releaseMs = 120.0f;
+  settings.mainComp.makeupDb = 3.0f;
+  settings.mainComp.mode = 1;
+  settings.setActiveTake(2, "02-drums-003.wav");
   midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, true);
   check(midi.addLearnBinding(74, 2, "mixer.ch03.gain", 0),
         "project test learn binding");
@@ -382,7 +530,14 @@ void projectRoundTripTests() {
   mixer.setPan(2, 0.5f);
   state.tempoX100.store(12000);
   state.clickEnabled.store(false);
+  state.clickMode.store(0);
   state.clickBars.store(1);
+  mixer.setCueSend(2, 0.0f);
+  mixer.setOut34Send(2, 0.0f);
+  mixer.setOut34Mode(0);
+  mixer.setMonitor(2, 1);
+  mixer.setMonitor(3, 1);
+  settings.reset();
   midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, false);
   midi.clearLearnBindings();
 
@@ -390,8 +545,28 @@ void projectRoundTripTests() {
   checkNear(mixer.gainDb(2), -6.0, 0.01, "project load restores strip gain");
   checkNear(mixer.pan(2), 0.25, 1e-6, "project load restores strip pan");
   check(state.tempoX100.load() == 13300, "project load restores tempo");
-  check(state.clickEnabled.load() && state.clickBars.load() == 2,
-        "project load restores click config");
+  check(state.clickMode.load() == 2 && state.clickOutput.load() == 1 &&
+            state.clickBars.load() == 2,
+        "project load restores the click mode/output/bars");
+  checkNear(state.clickGainDb.load(), -10.45, 1e-4,
+            "project load restores the click gain");
+  checkNear(mixer.cueSend(2), 0.4, 1e-6, "project load restores the cue send");
+  checkNear(mixer.out34Send(2), 0.75, 1e-6, "project load restores the OUT3&4 send");
+  check(mixer.out34Mode() == 1, "project load restores the OUT3&4 mode");
+  check(mixer.monitor(2) == 0 && mixer.monitor(3) == 2,
+        "project load restores per-track monitor modes");
+  check(settings.punch.in.enabled && settings.punch.in.measure == 5 &&
+            settings.punch.out.measure == 9,
+        "project load restores the punch section");
+  check(settings.cue.phonesSrc == 1 && settings.cue.style == 1,
+        "project load restores the cue monitor config");
+  check(settings.sends.cue == 0 && settings.sends.fx2 == 0 && settings.sends.rec == 0,
+        "project load restores the send source matrix");
+  check(settings.mainComp.on && settings.mainComp.mode == 1 &&
+            settings.mainComp.ratio == 4.0f,
+        "project load restores the main compressor");
+  check(settings.activeTake(2) == "02-drums-003.wav",
+        "project load restores the active take pointer");
   check(midi.routeEnabled(midi::Port::TrsIn1, midi::Port::UsbOut),
         "project load restores the routing matrix");
   check(midi.learnBindings().size() == 1 &&
@@ -450,9 +625,13 @@ int runAll() {
   audioBackendTests();
   routingTests();
   mixerTests();
+  valueFormatTests();
   learnTests();
   wavTests();
+  takeAdoptionTests();
   sessionClickTests();
+  takeNameTests();
+  meterAndSpaceTests();
   learnCaptureTests();
   projectRoundTripTests();
   styleTests();

@@ -36,6 +36,10 @@ namespace mnky::app {
 int runLogicUnitTests();
 }
 
+#ifndef MNKY_APP_VERSION
+#define MNKY_APP_VERSION "0.1.0"
+#endif
+
 namespace {
 
 constexpr const char* kInstanceLockName = "mnkybox-ui.lock";
@@ -54,52 +58,81 @@ class ScreenshotRunner final : public QObject {
         controller_(controller),
         window_(window),
         directory_(directory) {
-    steps_.push_back({"30-qt-mixer", [this] { controller_->setTab(0); }});
-    steps_.push_back({"30-qt-mixer-bank2", [this] {
-                        controller_->mixer()->setBank(1);
+    steps_.push_back({"31-mixer", [this] {
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->mixer()->clearClipDemo();
+                        controller_->mixer()->setMonitor(0, 0);
+                        controller_->mixer()->setMonitor(1, 1);
+                        controller_->mixer()->setMonitor(2, 2);
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->recorder()->selectRow(0);
+                        controller_->recorder()->activateSelected();
                         controller_->setTab(0);
                       }});
-    steps_.push_back({"30-qt-routing", [this] {
+    steps_.push_back({"31-clip", [this] {
+                        controller_->mixer()->setTrackMode(false);
                         controller_->mixer()->setBank(0);
-                        controller_->routing()->setSelectedInput(-1);
-                        controller_->setTab(1);
+                        controller_->mixer()->showClipDemo();
+                        controller_->setTab(0);
                       }});
-    steps_.push_back({"30-qt-routing-active", [this] {
-                        controller_->routing()->selectInput(0);
-                        controller_->setTab(1);
+    steps_.push_back({"31-track", [this] {
+                        controller_->mixer()->clearClipDemo();
+                        controller_->mixer()->setTrackMode(true);
+                        controller_->mixer()->setTrackIndex(2);
+                        controller_->setTab(0);
                       }});
-    steps_.push_back({"30-qt-fx", [this] {
-                        controller_->routing()->setSelectedInput(-1);
-                        controller_->setTab(2);
-                      }});
-    steps_.push_back({"30-qt-recorder", [this] {
+    steps_.push_back({"31-takes", [this] {
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->recorder()->selectRow(0);
+                        controller_->recorder()->activateSelected();
                         controller_->setTab(3);
                       }});
-    steps_.push_back({"30-qt-system", [this] {
-                        controller_->setTab(4);
+    steps_.push_back({"31-punch", [this] {
+                        controller_->session()->setPunchPlayFromEnabled(true);
+                        controller_->session()->setPunchPlayFromMeasure(1);
+                        controller_->session()->setPunchInEnabled(true);
+                        controller_->session()->setPunchInMeasure(5);
+                        controller_->session()->setPunchOutEnabled(true);
+                        controller_->session()->setPunchOutMeasure(9);
+                        controller_->setToolsPage(0);
+                        controller_->setTab(6);
                       }});
-    steps_.push_back({"30-qt-system-learn", [this] {
-                        controller_->setTab(4);
-                        if (auto* left = window_->findChild<QObject*>(QStringLiteral("systemLeft"))) {
-                          const qreal content = left->property("contentHeight").toReal();
-                          const qreal height = left->property("height").toReal();
-                          left->setProperty("contentY", qMax<qreal>(0.0, content - height));
-                        }
+    steps_.push_back({"31-monitor", [this] {
+                        controller_->session()->setClickMode(2);
+                        controller_->session()->setClickOutput(1);
+                        controller_->session()->setClickGainDb(-9.0);
+                        controller_->session()->setPhonesSrc(0);
+                        controller_->session()->setCueStyle(1);
+                        controller_->session()->setOut34Mode(0);
+                        controller_->session()->setCompOn(true);
+                        controller_->session()->setCompThreshDb(-18.0);
+                        controller_->session()->setCompRatio(4.0);
+                        controller_->session()->setCompAttackMs(10.0);
+                        controller_->session()->setCompReleaseMs(120.0);
+                        controller_->session()->setCompMakeupDb(3.0);
+                        controller_->session()->setCompMode(1);
+                        controller_->setToolsPage(1);
+                        controller_->setTab(6);
                       }});
-    steps_.push_back({"30-qt-projects", [this] {
-                        controller_->setTab(5);
+    steps_.push_back({"31-tools", [this] {
+                        controller_->setToolsPage(2);
+                        controller_->tools()->showLowSpaceDemo();
+                        controller_->setTab(6);
                       }});
-    steps_.push_back({"30-qt-keypad", [this] {
-                        controller_->setTab(5);
-                        controller_->openDemoKeypad();
+    steps_.push_back({"31-keypad", [this] {
+                        controller_->setTab(3);
+                        controller_->requestImportTake();
                       }});
-    steps_.push_back({"30-qt-confirm", [this] {
+    steps_.push_back({"31-value-popup", [this] {
                         controller_->keypadCancel();
-                        controller_->requestConfirm(
-                            QStringLiteral("DELETE PROJECT"),
-                            QStringLiteral("Delete Project-demo? The folder and its "
-                                           "project.mnkybox are removed."),
-                            QStringLiteral("DELETE"), QStringLiteral("project-delete"), -1);
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->mixer()->setPan(1, 0.51);
+                        controller_->showValuePopup(QStringLiteral("IN 02 PAN"),
+                                                    QStringLiteral("pan"), 0.5);
+                        controller_->setTab(0);
                       }});
   }
 
@@ -193,6 +226,7 @@ int main(int argc, char* argv[]) {
     qputenv("QT_QUICK_BACKEND", "software");
   }
   QGuiApplication app(argc, argv);
+  QCoreApplication::setApplicationVersion(QStringLiteral(MNKY_APP_VERSION));
 
   mnky::app::AppLogger::instance();
   const bool emulator = arguments.contains(QStringLiteral("--emulator")) ||
@@ -232,6 +266,9 @@ int main(int argc, char* argv[]) {
   engine.rootContext()->setContextProperty(QStringLiteral("projects"), controller.projects());
   engine.rootContext()->setContextProperty(QStringLiteral("system"), controller.system());
   engine.rootContext()->setContextProperty(QStringLiteral("learn"), controller.learn());
+  engine.rootContext()->setContextProperty(QStringLiteral("session"), controller.session());
+  engine.rootContext()->setContextProperty(QStringLiteral("tools"), controller.tools());
+  engine.rootContext()->setContextProperty(QStringLiteral("config"), controller.config());
 
   controller.start();
   engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));

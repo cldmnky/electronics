@@ -29,9 +29,15 @@ class AppState {
   std::atomic<bool> rolling{false};
   // Metronome settings live here so the UI, the audio callback and the session
   // save/load path all read one source. `tick` is refreshed by the link thread.
+  // Session v2: mode 0 = off, 1 = record-only, 2 = on-play; output 0 = main,
+  // 1 = phones, 2 = OUT3&4; gainDb -96..+20. clickEnabled/clickLevel are the
+  // legacy amplitude view kept for the audio callback and old controls.
   std::atomic<std::uint32_t> tick{0};
   std::atomic<bool> clickEnabled{false};
   std::atomic<float> clickLevel{0.5f};
+  std::atomic<int> clickMode{0};
+  std::atomic<int> clickOutput{0};
+  std::atomic<float> clickGainDb{-6.0f};
   std::atomic<int> clickBars{1};
   // Sticky project dirty flag: set by the controller's state fingerprint,
   // cleared only by save/load/new.

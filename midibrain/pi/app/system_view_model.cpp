@@ -170,8 +170,11 @@ void SystemViewModel::refresh() {
          << static_cast<qulonglong>(midi_.routedCount()) << "\n";
   stream << "FX        A " << QString::fromStdString(fx_.slot(0).pluginPath()) << "\n";
   stream << "          B " << QString::fromStdString(fx_.slot(1).pluginPath()) << "\n";
-  stream << "CLICK     " << (state_.clickEnabled.load() ? "on" : "off") << "   level "
-         << QString::number(state_.clickLevel.load(), 'f', 2) << "   bars "
+  stream << "CLICK     mode "
+         << (state_.clickMode.load() == 0 ? "off"
+                                           : (state_.clickMode.load() == 1 ? "record" : "play"))
+         << "   out " << state_.clickOutput.load() << "   gain "
+         << QString::number(state_.clickGainDb.load(), 'f', 1) << " dB   bars "
          << state_.clickBars.load() << "\n";
 
   QString live;

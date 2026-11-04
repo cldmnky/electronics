@@ -208,6 +208,8 @@ class AudioGlue::AudioInputConsumer final : public QIODevice {
 AudioGlue::AudioGlue(MixerModel& mixer, FxManager& fx, AppState& state, bool emulator)
     : mixer_(mixer), fx_(fx), state_(state), emulatorStartup_(emulator), emulated_(emulator) {
   for (auto& peak : peaks_) peak.store(0.0f);
+  for (auto& peak : stripPeaks_) peak.store(0.0f);
+  for (auto& source : monitorSend_) source.store(1);
   synth_.prepare(sampleRate());
   loadAudioChoice();
 }
@@ -606,6 +608,44 @@ float AudioGlue::peak(int channel) {
   return value;
 }
 
+float AudioGlue::stripPeak(int channel) {
+  if (channel < 0 || channel >= audio::kMaxInputs) return 0.0f;
+  const auto index = static_cast<std::size_t>(channel);
+  const float value = stripPeaks_[index].load(std::memory_order_relaxed);
+  stripPeaks_[index].store(value * 0.82f, std::memory_order_relaxed);
+  return value;
+}
+
+void AudioGlue::applyMonitorSettings(const SessionSettings& settings) {
+  monitorPhones_.store(settings.cue.phonesSrc);
+  monitorCueStyle_.store(settings.cue.style);
+  monitorSend_[static_cast<std::size_t>(audio::SendDestination::Cue)].store(
+      settings.sends.cue);
+  monitorSend_[static_cast<std::size_t>(audio::SendDestination::Fx1)].store(
+      settings.sends.fx1);
+  monitorSend_[static_cast<std::size_t>(audio::SendDestination::Fx2)].store(
+      settings.sends.fx2);
+  monitorSend_[static_cast<std::size_t>(audio::SendDestination::Out34)].store(
+      settings.sends.out34);
+  monitorSend_[static_cast<std::size_t>(audio::SendDestination::Rec)].store(
+      settings.sends.rec);
+  compOn_.store(settings.mainComp.on);
+  compThreshDb_.store(settings.mainComp.threshDb);
+  compRatio_.store(settings.mainComp.ratio);
+  compAttackMs_.store(settings.mainComp.attackMs);
+  compReleaseMs_.store(settings.mainComp.releaseMs);
+  compMakeupDb_.store(settings.mainComp.makeupDb);
+  compMode_.store(settings.mainComp.mode);
+}
+
+bool AudioGlue::setActiveTake(int track, const std::filesystem::path& path,
+                              std::string* error) {
+  if (error != nullptr) error->clear();
+  return engine_.setActiveTake(track, path.string(), error);
+}
+
+void AudioGlue::clearActiveTake(int track) { engine_.clearActiveTake(track); }
+
 void AudioGlue::pushInput(const char* data, int frames, const QAudioFormat& format) {
   if (data == nullptr || frames <= 0) return;
   const int channels = format.channelCount();
@@ -701,10 +741,48 @@ void AudioGlue::renderBlock(const float* const* inputChannelData, int numInputCh
     for (int send = 0; send < audio::kNumSends; ++send) {
       engine_.setFx(send, fx_.effect(send));
     }
+    engine_.setPhonesSource(monitorPhones_.load(std::memory_order_relaxed) == 1
+                                ? audio::PhonesSource::Main
+                                : audio::PhonesSource::Cue);
+    engine_.setCueStyle(monitorCueStyle_.load(std::memory_order_relaxed) == 1
+                            ? audio::CueStyle::Toggle
+                            : audio::CueStyle::Level);
+    for (int destination = 0; destination < audio::kNumSendDestinations; ++destination) {
+      engine_.setSendSource(
+          static_cast<audio::SendDestination>(destination),
+          monitorSend_[static_cast<std::size_t>(destination)].load(std::memory_order_relaxed) == 0
+              ? audio::SendSource::PreFader
+              : audio::SendSource::PostFader);
+    }
+    audio::MainCompSettings comp;
+    comp.on = compOn_.load(std::memory_order_relaxed);
+    comp.threshDb = compThreshDb_.load(std::memory_order_relaxed);
+    comp.ratio = compRatio_.load(std::memory_order_relaxed);
+    comp.attackMs = compAttackMs_.load(std::memory_order_relaxed);
+    comp.releaseMs = compReleaseMs_.load(std::memory_order_relaxed);
+    comp.makeupDb = compMakeupDb_.load(std::memory_order_relaxed);
+    comp.mode = compMode_.load(std::memory_order_relaxed) == 1
+                    ? audio::CompressorMode::Rms
+                    : audio::CompressorMode::Peak;
+    engine_.setMainComp(comp);
+    engine_.setClickMode(static_cast<audio::ClickMode>(
+        std::clamp(state_.clickMode.load(std::memory_order_relaxed), 0, 2)));
+    engine_.setClickOutput(static_cast<audio::ClickOutput>(
+        std::clamp(state_.clickOutput.load(std::memory_order_relaxed), 0, 2)));
+    engine_.setClickGainDb(state_.clickGainDb.load(std::memory_order_relaxed));
+    engine_.setRecording(recorder_.recording());
+    engine_.setTransport(state_.rolling.load(std::memory_order_relaxed),
+                         state_.tick.load(std::memory_order_relaxed),
+                         static_cast<std::uint32_t>(kTicksPerBeat),
+                         state_.tempoX100.load(std::memory_order_relaxed));
+
+    audio::OutputBuses outputs;
+    outputs.mainL = outL + offset;
+    outputs.mainR = outR + offset;
     engine_.process(inputs, generated ? audio::kMaxInputs : (inputChannelData != nullptr
                                                                 ? numInputChannels
                                                                 : 2),
-                    frames, outL + offset, outR + offset);
+                    frames, outputs);
 
     if (recorder_.recording()) {
       const float* taps[audio::kMaxInputs] = {};
@@ -712,23 +790,6 @@ void AudioGlue::renderBlock(const float* const* inputChannelData, int numInputCh
         taps[channel] = engine_.tap(channel);
       }
       recorder_.writeBlock(taps, outL + offset, outR + offset, frames);
-    }
-
-    // Metronome after the recorder tap: the click is monitoring, not take
-    // material.
-    if (state_.clickEnabled.load(std::memory_order_relaxed)) {
-      click_.setEnabled(true);
-      click_.setLevel(state_.clickLevel.load(std::memory_order_relaxed));
-      float clickBuffer[audio::kBlockSize] = {};
-      click_.render(clickBuffer, frames, state_.tick.load(std::memory_order_relaxed),
-                    static_cast<std::uint32_t>(kTicksPerBeat),
-                    state_.rolling.load(std::memory_order_relaxed));
-      for (int i = 0; i < frames; ++i) {
-        outL[offset + i] += clickBuffer[i];
-        outR[offset + i] += clickBuffer[i];
-      }
-    } else {
-      click_.setEnabled(false);
     }
 
     offset += frames;
@@ -748,6 +809,20 @@ void AudioGlue::updatePeaks(const float* outL, const float* outR, int numSamples
     const float blockPeak = channel == 0 ? left : right;
     const float previous = peaks_[channel].load(std::memory_order_relaxed);
     peaks_[channel].store(std::max(previous, blockPeak), std::memory_order_relaxed);
+  }
+  // Per-strip meter taps: post-gain mono, independent of mute/pan/master. The
+  // engine tap holds the last processed block (<= kBlockSize frames).
+  const int tapFrames = std::min(numSamples, audio::kBlockSize);
+  for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+    const float* tap = engine_.tap(channel);
+    if (tap == nullptr) continue;
+    float stripPeak = 0.0f;
+    for (int i = 0; i < tapFrames; ++i) {
+      stripPeak = std::max(stripPeak, std::abs(tap[i]));
+    }
+    auto& slot = stripPeaks_[channel];
+    const float previous = slot.load(std::memory_order_relaxed);
+    slot.store(std::max(previous, stripPeak), std::memory_order_relaxed);
   }
 }
 
