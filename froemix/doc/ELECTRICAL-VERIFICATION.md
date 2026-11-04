@@ -148,9 +148,9 @@ Both are computed, and the leg with no transistor is computed on its own.
 
 | Case | Result | Against |
 | --- | --- | --- |
-| This board's own transmitter (220 Ω R47, VF 1.65 V) | **5.34 mA worst**, 6.54 mA typical | IFHL ≤ 1.6 mA at 125 °C → **3.34× margin**; recommended 2…6 mA (typical point above it, absolute maximum 10 mA) |
-| A 5 V legacy transmitter with 2 × 220 Ω | **5.63 mA** | inside 6 mA recommended, inside 10 mA absolute |
-| A non-compliant 5 V transmitter with 33/10 Ω legs | **14.79 mA** | **above the 10 mA absolute maximum** — pending, see §7 |
+| This board's own transmitter (220 Ω R47, VF 1.65 V) | **5.34 mA worst**, 6.54 mA typical | IFHL ≤ 1.6 mA at 125 °C → **3.34× margin**; recommended 2…6 mA (typical point above it; 10 mA absolute maximum at 25 °C, 8.05 mA derated at 125 °C) |
+| A 5 V legacy transmitter with 2 × 220 Ω | **5.63 mA** | inside 6 mA recommended, inside the 8.05 mA derated absolute maximum at 125 °C |
+| A non-compliant 5 V transmitter with 33/10 Ω legs | **14.79 mA** | **above the 10 mA figure at 25 °C and the 8.05 mA derated figure at 125 °C** — pending, see §7 |
 | The replaced TLP2362 on the same loop | 5.34 mA | 1.07× its 5 mA IFHL and 0.71× its 7.5 mA recommended on-current → **not guaranteed**, which is why the part changed |
 
 The receiver's logic is unchanged: TLP2361 is inverting with a totem-pole
@@ -295,13 +295,15 @@ closed, and no further layout round was spent on them.
 
 ### 6.5 What is still not clean
 
-Three label/text overlaps remain (Audio 2, CV 1). Pin names drawn inside a symbol
-box are rendered by the symbol renderer and are not circuit JSON; the SVG tool
-does measure them (they are ordinary `<text>` elements), which is why the Root
-number is credible, but on the other sheets the remaining count is a lower bound
-for what a designer would still nudge by hand. **The drawing is not a finished
-production service schematic**; it is a measured, reproducible improvement with
-the remaining defects counted exactly.
+No label/label or label/text overlap remains on any sheet at the 12 % area
+threshold (§6.3–6.4). Pin names drawn inside a symbol box are rendered by the
+symbol renderer and are not circuit JSON; the SVG tool does measure them (they
+are ordinary `<text>` elements). At strict zero tolerance 1 label/label and
+4 label/text hairline contacts remain (box corners touching without covering
+text), reported on every run beside the policy count. **The drawing is not a
+finished production service schematic**; it is a measured, reproducible
+improvement with the remaining contacts and the unreproduced native box-pair
+notes counted exactly.
 
 ## 7. Open items (physical or pending)
 
@@ -312,11 +314,21 @@ the remaining defects counted exactly.
    receivers actually in use; if one needs more, the tip leg's fault strategy
    has to change (it is the only resistor that is not behind the FET).
 3. **Typical loop current 6.54 mA** into this board's own receiver is above the
-   TLP2361's 6 mA recommended on-current (inside the 10 mA absolute maximum).
-   It is inside spec but at the top of the window; measure IF on a real unit.
+   TLP2361's 6 mA recommended on-current but inside the 8.05 mA derated absolute
+   maximum at 125 °C. The strongest legal 3.3 V sender corner (8.1754 mA
+   measured, 8.1771 mA reference) is inside the 25 °C 10 mA figure and
+   **outside the 125 °C 8.05 mA derated figure**; the deck asserts both facts,
+   the second as a negative check. The 1.35 V VF in that corner is a 25 °C
+   datasheet number and −2 mV/°C is a typical coefficient, not a guaranteed
+   bound, so an illustrative hot VF (1.15 V → ≈8.95 mA) is also asserted outside
+   the derated figure. This is an explicit high-current/temperature **risk
+hold**: the model does not resolve it, no operating-temperature range is
+   declared, and no bench approval is implied. Measure IF on a real unit across
+   temperature before any high-current claim.
 4. **Non-compliant 5 V sources** using 33/10 Ω legs would drive 14.79 mA into
-   the receiver, above the 10 mA absolute maximum. Nothing on this board clamps
-   the input loop; a series resistor or clamp would be a board change.
+   the receiver, above both the 25 °C and the derated 125 °C absolute-maximum
+   figures. Nothing on this board clamps the input loop; a series resistor or
+   clamp would be a board change.
 5. **U15 is pad-only in 3D** (the C37658 EasyEDA model belonged to the old
    part, and no verified model for C107626 exists). Same policy as the other
    models without verified offsets (AGENTS.md §6).
@@ -339,14 +351,13 @@ bunx tsci build                                  # writes dist/index/circuit.jso
 python3 ../tools/check_elec.py                   # electrical model, 22 checks
 python3 ../tools/test_elec.py                    # negative tests for that model
 python3 ../tools/check_schematic.py              # note geometry (circuit JSON)
-bunx tsci export index.circuit.tsx -f schematic-svg -o /tmp/froemix-sch.svg
+bunx tsci export dist/index/circuit.json -f schematic-svg -o /tmp/froemix-sch.svg
 python3 ../tools/svg_overlaps.py --expect built-in /tmp/froemix-sch.svg   # rendered overlaps
 python3 ../tools/check_extras.py                 # pin/net map of the changed parts
 python3 ../tools/check_values.py                 # literals vs build and MPN
 python3 ../tools/check_footprints.py             # 429 pads, unchanged
 python3 ../tools/check_netlist.py --kicad-cli /path/to/kicad-cli   # 102 nets
 KICAD_CLI=/path/to/kicad-cli python3 ../tools/test_kicad_cli.py    # resolver tests
-bunx tsci export index.circuit.tsx -f schematic-svg -o /tmp/froemix-sch.svg
 ```
 
 To reproduce the before/after numbers of §6.1, build the frozen baseline in a

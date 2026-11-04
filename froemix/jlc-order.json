@@ -37,7 +37,7 @@
       "hand_parts_reference": "froemix-bom-hand.csv"
     },
     "expected_counts": {
-      "bom_unique_parts": 38,
+      "bom_unique_parts": 40,
       "bom_placements": 117,
       "cpl_smt_placements": 107,
       "through_hole_excluded": 10

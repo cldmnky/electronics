@@ -54,6 +54,7 @@ step() {
   fi
 }
 
+step "typecheck"      bun run typecheck
 step "build"          npx tsci build
 # Every later step reads the built JSON; a missing file must stop the gate here
 # instead of producing seven confusing failures.

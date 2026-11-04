@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tsci dev",
     "build": "tsci build",
+    "typecheck": "tsc --noEmit",
     "snapshot": "tsci snapshot",
     "gate": "bash scripts/gate.sh",
     "release": "bash scripts/release.sh",

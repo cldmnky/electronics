@@ -22,7 +22,7 @@ BOARD      := froemix base board (80.9 x 128.5 mm, 4 layers, 16HP x 3U) + euro b
 .DEFAULT_GOAL := help
 .PHONY: help install dev build gate test release snapshots erc netlist footprints \
         parts decoupling sim sim-clean clean fab-clean distclean order assembly \
-        check-all acceptance acceptance-check unit-tests mechanical
+        check-all acceptance acceptance-check unit-tests mechanical typecheck
 
 help: ## show this help
 	@printf '%s\n\n' "$(BOARD)"
@@ -39,6 +39,10 @@ install: ## install node dependencies for both boards (once)
 
 dev: ## base-board dev server (euro: `cd euro && bun run dev`)
 	cd $(TSCIRCUIT) && $(BUN) run dev
+
+typecheck: ## typecheck both designs without suppressing unsupported props
+	cd $(TSCIRCUIT) && $(BUN) run typecheck
+	cd $(EURO) && $(BUN) run typecheck
 
 build: ## compile both designs (base + euro board and panel)
 	cd $(TSCIRCUIT) && $(BUN) run build
@@ -76,6 +80,7 @@ test: ## prototype verification: gates, SPICE, mechanical, unit tests (NOT an ap
 # `dist/index/circuit.json` is absent; `make test` has already done that.
 unit-tests: ## offline unit tests: tool CLIs, ERC checker, acceptance machinery
 	python3 -m unittest discover -s tools -p 'test_*.py'
+	python3 -m unittest discover -s tools/sim -p 'test_*.py'
 	$(BUN) test tools/release
 
 mechanical: ## mechanical-stack and panel checks that write nothing (needs `make build`)
@@ -116,7 +121,7 @@ parts: ## JLCPCB part numbers vs schematic (needs network)
 decoupling: ## cap -> IC routed-copper distances (informational)
 	python3 tools/report_decoupling.py --circuit $(TSCIRCUIT)/dist/index/circuit.json
 
-sim: ## run the four ngspice analog decks (needs ngspice)
+sim: ## assert fresh source-linked analog and MIDI SPICE runs (needs ngspice)
 	cd tools/sim && bash run.sh
 
 sim-clean: ## delete simulated output

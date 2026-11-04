@@ -10,6 +10,17 @@
   "stock": 253099,
   "type": "Multilayer Ceramic Capacitors MLCC - SMD/SMT"
  },
+ "C107626": {
+  "assembly": false,
+  "brand": "TOSHIBA",
+  "code": "C107626",
+  "describe": "-40\u2103~+125\u2103 1 1.5V 1.6mA 10mA 10mA 15Mbps 2.7V~5.5V 20kV/us 20mW 3.75kV 5V 6V 80ns 80ns DC SO-5 Logic Output Optoisolators ROHS",
+  "erp": "DC\u8f93\u5165 1\u901a\u9053 \u9694\u79bb\u7535\u538b(rms):3750V",
+  "model": "TLP2361(TPL,E",
+  "package": "SO-5",
+  "stock": 32610,
+  "type": "Logic Output Optoisolators"
+ },
  "C118189": {
   "assembly": false,
   "brand": "UNI-ROYAL(Uniroyal Elec)",
@@ -53,6 +64,17 @@
   "package": "0603",
   "stock": 1663697,
   "type": "Multilayer Ceramic Capacitors MLCC - SMD/SMT"
+ },
+ "C15127": {
+  "assembly": false,
+  "brand": "Alpha & Omega Semicon",
+  "code": "C15127",
+  "describe": "1 P-Channel 14nC@10V 30V 47m\u03a9@10V\u300160m\u03a9@4.5V\u300185m\u03a9@2.5V 4A 55pF 645pF 80pF 900mV SOT-23 MOSFETs ROHS",
+  "erp": "AO3401A",
+  "model": "AO3401A",
+  "package": "SOT-23",
+  "stock": 1642199,
+  "type": "MOSFETs"
  },
  "C1671": {
   "assembly": false,
@@ -185,6 +207,17 @@
   "package": "Plugin,P=2mm",
   "stock": 715,
   "type": "Pin Headers"
+ },
+ "C22828": {
+  "assembly": false,
+  "brand": "UNI-ROYAL(Uniroyal Elec)",
+  "code": "C22828",
+  "describe": "-55\u2103~+155\u2103 100mW 180\u03a9 75V Thick Film Resistor \u00b11% \u00b1100ppm/\u2103 0603 Chip Resistor - Surface Mount ROHS",
+  "erp": "\u539a\u819c\u7535\u963b 180\u03a9 \u00b11% 100mW",
+  "model": "0603WAF1800T5E",
+  "package": "0603",
+  "stock": 2232417,
+  "type": "Chip Resistor - Surface Mount"
  },
  "C22896": {
   "assembly": false,

@@ -74,6 +74,9 @@ printf 'froemix gate - %s\n' "$PROJECT_DIR"
 # frozen project and exits 0 only when nothing is unexcluded (1 = findings,
 # 3 = could not verify: no tool, crash, no report). The gate re-counts the
 # report it wrote, so a future change that loosens the script still fails here.
+step "TypeScript - no unsupported schematic or geometry props"
+run typecheck bun run typecheck
+
 step "KiCad ERC - 0 unexcluded errors/warnings"
 if [ "${FROEMIX_SKIP_ERC:-0}" = "1" ]; then
   printf '    SKIPPED (FROEMIX_SKIP_ERC=1) - gate result is INCOMPLETE\n'
@@ -135,6 +138,14 @@ run parts bun run check:parts
 # anything, so this step re-reads the source and the build (DESIGN-REVIEW R07).
 step "Passive values - literals vs built circuit and MPNs"
 run values bun run check:values
+
+step "Electrical pin identity and MIDI margins"
+run electrical python3 ../tools/check_elec.py
+
+step "Rendered schematic - nonempty sheets, collision policy and page bounds"
+run schematic-export bun x tsci export dist/index/circuit.json -f schematic-svg -o "$LOG_DIR/schematic.svg"
+run schematic-geometry python3 ../tools/svg_overlaps.py --expect built-in "$LOG_DIR/schematic.svg"
+run schematic-notes python3 ../tools/check_schematic.py
 
 # 8. tscircuit source/connectivity diagnostics. `check source` and
 # `check pin_specification` are part of the skill's pre-export checklist; they
