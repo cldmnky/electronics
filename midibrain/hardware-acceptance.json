@@ -1,0 +1,112 @@
+{
+  "schema": "midibrain-hardware-acceptance/1",
+  "note": "Physical acceptance state for the MIDI Brain hardware. An item moves to \"accepted\" only with measured evidence in docs/evidence/ that names a reviewer, a date and the current hardware fingerprint. The fingerprint covers the canonical PCB/panel sources plus the mechanical TS-to-CAD bridge and its exported layout, so any hardware change makes old evidence stale. Refresh hardware_fingerprint with `bun run scripts/release_gate.ts --fingerprint` after a hardware change; a documentation-only commit does not change it. There is no override key: unknown keys are errors. See docs/acceptance.md.",
+  "hardware_fingerprint": "6946da4c811b5121f14529efcae1c9f4e498c925eb2b786b1bc3f5378f7ec4d5",
+  "items": [
+    {
+      "id": "zstack",
+      "state": "pending",
+      "note": "Measured board, standoff, display, Pi, HAT, cooler and panel thicknesses that add up to a stack, with the installed depth recorded."
+    },
+    {
+      "id": "control_actuator",
+      "state": "pending",
+      "note": "Knob, button caps and the 5-way nav actuator fitted and measured against the panel: shaft, detent, cap height and direction legends."
+    },
+    {
+      "id": "jack_retention",
+      "state": "pending",
+      "note": "TRS jack barrel, nut and panel-hole fit, tip/ring/sleeve continuity and pull-out retention measured on the sample."
+    },
+    {
+      "id": "light_pipes",
+      "state": "pending",
+      "note": "Fitted Bivar PLP2-400-C length and LED-to-pipe gap measured; LED visible through each of the three panel holes."
+    },
+    {
+      "id": "display_dsi",
+      "state": "pending",
+      "note": "Waveshare 3.5 inch DSI panel mounted on the front board with the 12 cm DSI cable routed, bend radius and latch verified."
+    },
+    {
+      "id": "pi_microsd",
+      "state": "pending",
+      "note": "microSD card inserted and removed with the Pi in the stack and the case closed; recorded clearance."
+    },
+    {
+      "id": "cooler_hat_ssd",
+      "state": "pending",
+      "note": "Active Cooler, M.2 HAT+ and NVMe SSD stacked and measured for height, airflow path and connector clearance."
+    },
+    {
+      "id": "case_fit",
+      "state": "pending",
+      "note": "26HP/3U panel, 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth."
+    },
+    {
+      "id": "usb_c_5a_path",
+      "state": "pending",
+      "note": "An exact 5 A rated panel feedthrough selected from a primary source (CAB-15455 is 3 A and rejected for this path) with the rating recorded."
+    },
+    {
+      "id": "usb_pd_droop_thermal",
+      "state": "pending",
+      "note": "Full-load PD negotiation, cable voltage droop and connector/feedthrough temperature measured in both orientations."
+    },
+    {
+      "id": "encoder_solder_process",
+      "state": "pending",
+      "note": "Bourns PEC11R process qualified: selective/wave soldering or a validated manual process with recorded profile and inspection."
+    },
+    {
+      "id": "midi_threshold",
+      "state": "pending",
+      "note": "Measured receiver threshold against the MIDI CA-033 <5 mA requirement at the recorded supply and temperature."
+    },
+    {
+      "id": "midi_receiver_high_current_thermal",
+      "state": "pending",
+      "note": "TLP2361 input current and junction temperature measured at worst-case high-rail/low-VF source corners (recommended 2-6 mA, absolute continuous 10 mA, derating above 110 C), with the 220 ohm choice justified by measurement."
+    },
+    {
+      "id": "midi_interop",
+      "state": "pending",
+      "note": "Two real MIDI devices (not loopback) exchange note, clock and sysex traffic in both directions with the recorded equipment."
+    },
+    {
+      "id": "midi_current_faults",
+      "state": "pending",
+      "note": "Short, open, reverse and over-current cases on both MIDI inputs and outputs measured against the protection parts."
+    },
+    {
+      "id": "scope_spi",
+      "state": "pending",
+      "note": "Logic-analyser or scope capture of SPI0 clock/data and READY at the target rate, including the Pico USB and Pi-off cases."
+    },
+    {
+      "id": "scope_power_sequences",
+      "state": "pending",
+      "note": "Power-up and power-down order for Pi, Pico, display and 3.3 V rails captured with no backfeed or latch-up."
+    },
+    {
+      "id": "scope_thermal",
+      "state": "pending",
+      "note": "Closed-rack thermal soak at the recorded ambient and load, with cooler noise and NVMe temperature recorded."
+    },
+    {
+      "id": "scope_dfm_cpl",
+      "state": "pending",
+      "note": "JLCPCB DFM/order-preview review of copper, mask, silkscreen, drill and CPL rotation on the engineering prototype material, with findings recorded."
+    },
+    {
+      "id": "autoroute_upstream_warning",
+      "state": "pending",
+      "note": "The tscircuit warning 'Could not save autorouting paths' resolved, or its effect on the routed copper reviewed and recorded."
+    },
+    {
+      "id": "first_article",
+      "state": "pending",
+      "note": "First-article boards built, inspected and tested against the acceptance list before any production order."
+    }
+  ]
+}

@@ -1,13 +1,17 @@
 # Design review: mechanical and electrical blockers
 
-Status: **prototype definition, not a fabrication release.** JLCPCB fabrication and SMD assembly are now the manufacturing route. Every SMD line must use an LCSC/JLCPCB C-number; through-hole parts may be hand-soldered. Stock figures below are snapshots from the JLCPCB parts API and must be rechecked at order time.
+Status: **prototype definition, not a fabrication release.** JLCPCB fabrication and SMD assembly are the manufacturing route. Every SMD line must use an LCSC/JLCPCB C-number; through-hole parts may be hand-soldered, except the encoder, whose hand soldering is not recommended and whose qualified process is pending. Stock figures are snapshots from the JLCPCB parts API and must be rechecked at order time. Physical acceptance is tracked in [acceptance.md](acceptance.md): every required item is still pending, and `make release` fails closed before any fabrication export.
 
-## Fixed in this pass
+## Design decisions already applied to the sources
 
-- 26HP panel retained; five transport buttons and three SMD LEDs added below the display; all four vertical TRS jacks are in the bottom row. The LCD is mounted on the front board; the panel is a separate bare FR-4 PCB.
-- Front board is 128 × 112 mm, with the 3.5-inch DSI LCD mounted on it and an 89.2 × 56.3 mm panel cutout. The USB feedthroughs stay panel-mounted.
+These are implemented in `tscircuit/` and checked by `make test`, but a routed
+prototype is not a validated board: the physical items below stay open.
+
+- 26HP panel retained; five transport buttons and three SMD LEDs below the display; all four vertical TRS jacks in the bottom row. The LCD mounts on the front board; the panel is a separate bare FR-4 PCB.
+- Front board 128 × 112 mm with an 89.2 × 56.3 mm panel cutout. The USB feedthroughs stay panel-mounted.
 - Encoder push assigned to Pico GP2/pin 4 (`ENCODER_SW`); both pin-map files updated.
-- JLCPCB/LCSC sourcing rule added to the project contract and requirements.
+- JLCPCB/LCSC sourcing rule in the project contract and requirements.
+- MIDI receiver changed from the TLP2362 (C37658) to the **TLP2361(TPL,E), C107626**; the electrical implementation of that change is in progress, and its threshold, high-current/temperature corners and interoperability are unmeasured.
 
 ## Proposed electrical architecture
 
@@ -37,7 +41,7 @@ Reuse the Froemix-proven topology, adapted to the selected TRS jack:
 
 | Function | Part | LCSC | Package | Assembly |
 |---|---|---|---|---|
-| MIDI input opto | TLP2362(TPL,E) | C37658 | SO-5 | JLCPCB SMD |
+| MIDI input opto | TLP2361(TPL,E) | C107626 | 11-4L1S | JLCPCB SMD (electrical merge in progress; threshold and current corners unmeasured) |
 | Input reverse protection | 1N4148WS | C2128 | SOD-323 | JLCPCB SMD |
 | MIDI output driver | MMBT3906LT1G | C53444 | SOT-23 | JLCPCB SMD |
 | Input series resistor | 220 Ω 1% | C22962 | 0603 | JLCPCB SMD |
@@ -49,7 +53,7 @@ Reuse the Froemix-proven topology, adapted to the selected TRS jack:
 | Opto bypass | 100 nF 50 V | C14663 | 0603 | JLCPCB SMD |
 | Bulk decoupling | 10 µF 50 V | C13585 | 1206 | JLCPCB SMD |
 
-MIDI input sleeve (jack pin 3) is **AC-coupled to ground through 100 nF**; there is no DC path to local ground. MIDI output sleeve is grounded. TRS Type A mapping: ring = DIN 4, tip = DIN 5, sleeve = DIN 2.
+MIDI input sleeve (jack pin 3) is **AC-coupled to ground through 100 nF**; there is no DC path to local ground. MIDI output sleeve is grounded. TRS Type A mapping: **tip = DIN 5, ring = DIN 4**, sleeve = DIN 2. The TLP2361 has an inverting totem-pole output, supply 2.7–5.5 V, threshold IF max 1.6 mA at 125 °C, recommended IF 2–6 mA and absolute continuous IF 10 mA with derating above 110 °C: the low-current threshold improves, but high-rail/low-VF source corners can exceed the recommended current, so the 220 Ω input resistor is not reduced without measurement.
 
 ### Selected connectors and controls
 
@@ -113,15 +117,25 @@ USB-C 5 A power, UMC audio USB-A, MIDI-hub USB-A, and display HDMI/USB-C cables 
 ## Electrical decisions still needed
 
 1. **Pico or Pico 2?** Decided: **Pico 2 (RP2350)** — same 40-pin module outline and pinout, so no PCB change; firmware builds with `PICO_BOARD=pico2`. On-target smoke test (console, MIDI loopback, SPI HELLO at 150 MHz sysclk) still outstanding.
-2. **Approve the SN74LVC1G126 + B5819W + 2N7002 isolation design?** It is implemented and covered by the simplified SPICE checks.
+2. **SN74LVC1G126 + B5819W + 2N7002 isolation design** — approved by the owner (see [decisions.md](decisions.md)) and implemented; covered only by simplified SPICE checks, so the scoped power-sequence tests stay open.
 3. **Approve the Froemix-derived PNP MIDI output and TLP2362 input?** This is the recommended low-risk path.
 4. **Approve PJ-301M-3-B vertical TRS jacks and SKRHABE010 nav switch?** The jack is the Froemix part; the panel holes, actuator cap and physical pin mapping need a sample check.
 5. **Approve the 2 × 13 IDC interconnect?** It carries 3.3 V, ground, four UART signals, five nav signals, three encoder signals, four buttons, LED and spares. A keyed ribbon is preferred over loose wires.
 
+## Verification status
+
+Done and repeatable: sources build and route; netlist, pin-specification,
+placement, shorts and PCB-style reports are parsed with pinned expectations;
+geometry is compared with the published JLCPCB limits; host code and simplified
+SPICE checks run. See [fab-check.md](fab-check.md) and [acceptance.md](acceptance.md).
+
+Not done: any physical measurement, the DFM/CPL review and every item in the
+acceptance list. A green `make test` is prototype verification only.
+
 ## Next actions
 
-1. Buy one display sample and measure the rear connectors, mounting bosses and bottom cable envelope.
-2. Choose the Pi mechanical option and build a cardboard/3D-printed stack mock-up.
-3. Freeze the front-board outline/cutout and the rear-board mounting.
-4. Implement the two schematics in tscircuit with the selected LCSC parts, then run netlist/ERC/placement checks.
-5. Route both boards, run DRC/short checks, review the JLCPCB BOM/CPL, and build a first article before any panel fabrication.
+1. Buy one display sample and measure the rear connectors, mounting bosses and bottom cable envelope; record it as `display_dsi` evidence.
+2. Build the Z-stack mock-up (Pi, HAT, cooler, SSD, boards, panel) and record the measured depth; this closes `zstack` and `case_fit` or proves a conflict.
+3. Select the knob, button caps and nav actuator; measure against the panel (`control_actuator`).
+4. Select an exact 5 A rated USB-C feedthrough (CAB-15455 is 3 A and rejected) and measure PD, droop and temperature.
+5. Record the encoder solder process, then get the DFM/CPL and first-article evidence under a reviewed engineering prototype (see [acceptance.md](acceptance.md)).

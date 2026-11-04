@@ -14,7 +14,7 @@ This is a **prototype BOM**, not an approved purchasing or manufacturing release
 
 | Function | MPN | LCSC | Package | Board/side |
 |---|---|---|---|---|
-| MIDI input opto | TLP2362(TPL,E) | C37658 | SO-5 | Front/front |
+| MIDI input opto | TLP2361(TPL,E) | C107626 | 11-4L1S (drop-in for the previous 5-pin SO footprint; electrical review in progress) | Front/front |
 | MIDI output PNP | MMBT3906LT1G | C53444 | SOT-23 | Front/front |
 | MIDI input protection | 1N4148WS | C2128 | SOD-323 | Front/front |
 | MISO/READY isolation | SN74LVC1G126DBVR | C7834 | SOT-23-5 | Rear/rear |
@@ -41,15 +41,15 @@ This is a **prototype BOM**, not an approved purchasing or manufacturing release
 |---|---|---|---|---|
 | J1–J4 | XKB PJ-301M-3-B vertical 3.5 mm stereo TRS (same as Froemix) | LCSC C381127 | THT vertical; 6 mm panel hole | Hand |
 | SW1–SW6 | Omron B3F-4055 (SW6 = SHIFT/EXIT) | C84931 | THT | Hand |
-| ENC1 | Bourns PEC11R-4215F-S0024 | C143790 | THT | Hand |
-| DISP1 | Waveshare 3.5inch DSI LCD (H), SKU 33087 | Waveshare | Module; 58 × 49 mm holes, 6.70 mm rear | Hand |
-| LP1–LP3 | Bivar PLP2-400-C clear light pipe | DigiKey/Mouser | 4.0 mm panel hole, 10.16 mm | Hand |
+| ENC1 (U6) | Bourns PEC11R-4215F-S0024 | C143790 | THT | **Qualified THT process required** — hand solder not recommended; selective/wave or a validated manual process with recorded profile and inspection. Stays out of the SMT CPL; acceptance item `encoder_solder_process` |
+| DISP1 | Waveshare 3.5inch DSI LCD (H), SKU 33087 | Waveshare | Module; 58 × 49 mm holes, 6.70 mm rear | Hand | Sample not bought; rear envelope and cable path unmeasured (`display_dsi`) |
+| LP1–LP3 | Bivar PLP2-400-C clear light pipe | DigiKey/Mouser | 4.0 mm panel hole, 10.16 mm | Hand | Length vs panel gap unmeasured (acceptance item `light_pipes`) |
 | PANEL1 | Bare FR-4 front panel, 1.6 mm, no solder mask, white silk, ENIG | JLCPCB | 26HP × 3U | PCB order |
 | J_PI | 2 × 20 2.54 mm pin header (PEC20DAAN) | — | THT | Hand |
 | J_STACK | 2 × 13 2.54 mm pin header (PEC13DAAN) | — | THT | Hand |
 | Pico sockets | 2 × 1 × 20 2.54 mm female | — | THT | Hand |
 | BR1 | USB feedthrough/strain-relief bracket, PETG | `mechanical/feedthrough-bracket.stl` | 3D printed | Print |
-| J_PWR | SparkFun CAB-15455, USB-C female panel to USB-C male, 1 ft/305 mm, USB 2.0, **3 A** | SparkFun CAB-15455 | Panel; 12.6 × 7.6 mm slot, two Ø3.2 on 18 mm (clamp) | Cable | **3 A, not 5 A.** Pi 5 5 A supply will be limited; test. Does not meet the earlier 5 A target by itself. |
+| J_PWR | SparkFun CAB-15455, USB-C female panel to USB-C male, 1 ft/305 mm, USB 2.0, **3 A** | SparkFun CAB-15455 | Panel; 12.6 × 7.6 mm slot, two Ø3.2 on 18 mm (clamp) | Cable | **REJECTED for the 5 A USB-C path: 3 A rated, no 5 A or thermal test recorded and no approved MPN.** An exact 5 A rated feedthrough is still to be selected (acceptance items `usb_c_5a_path`, `usb_pd_droop_thermal`). The Pi 5 5 A supply will be limited to 3 A by this cable; the old "test vcgencmd get_throttled" note was never run. |
 | J_AUDIO/J_HUB | 2 × Adafruit 908, USB-A female panel to USB-A male, 340 mm, USB 2.0 | Adafruit 908 | Panel; 14.65 × 7.10 opening, 2 × Ø3.5 on 30 mm | Cable |
 | BR1 hardware | 2 × M2.5 × 8 screws/nuts; 4 × 2.5 × 100 mm cable ties | — | — | Hand |
 | Panel↔front standoffs | 4 × M2.5 standoff, length TBD (~10 mm + panel gap); 8 × M2.5 screw/nut | — | Panel (±61, ±53) to front board | Hand, pending sample |
@@ -64,9 +64,20 @@ This is a **prototype BOM**, not an approved purchasing or manufacturing release
 
 ## Open items
 
-- Exact Pico socket, USB-C 5 A coupler MPN, light-pipe length after mock-up, panel finish acceptance, and all mechanical clearances.
-- The 2 × 20 Pi IDC pin numbering must be mapped to the physical Pi pinout and checked against the purchased ribbon.
-- No BOM/CPL or fabrication release has been generated.
+- Exact Pico socket, **5 A USB-C feedthrough** (CAB-15455 rejected for that use),
+  light-pipe length after mock-up, knob/button/nav actuator caps, panel finish
+  acceptance, and all mechanical clearances.
+- The 2 × 20 Pi IDC pin numbering must be mapped to the physical Pi pinout and
+  checked against the purchased ribbon.
+- The encoder needs a qualified solder process; its bench row says so instead of
+  claiming "hand".
+- No compressed BOM/CPL set is committed: `make release` builds `fab/` and is
+  blocked by the physical acceptance gate in
+  [acceptance.md](acceptance.md) until the items are accepted with evidence.
+- Rear SMT placement count expectation is **20** (C13/C14 added by the
+  electrical work; previously 18). `make release` verifies this against the
+  generated CPL and `jlc-order.json` and fails with the exact delta on a
+  mismatch.
 
 ## Cable BOM
 

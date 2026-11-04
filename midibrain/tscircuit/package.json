@@ -6,11 +6,13 @@
   "scripts": {
     "build": "tsci build",
     "dev": "tsci dev",
-    "test": "bun test lib/*.test.ts",
+    "test": "bun test lib scripts",
     "typecheck": "tsc --noEmit",
     "panel:preview": "bun run scripts/panel-preview.ts",
     "placement": "bun run scripts/check_placement.ts",
     "pins": "bun run scripts/gen-pins.ts",
+    "reports": "bun run scripts/check_reports.ts",
+    "gate": "bun run scripts/release_gate.ts",
     "release": "bash scripts/release.sh"
   },
   "dependencies": {

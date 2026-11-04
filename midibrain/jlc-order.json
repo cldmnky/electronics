@@ -1,9 +1,12 @@
 {
-  "_comment": "Canonical JLCPCB order settings for MIDI Brain. tscircuit has no prop for surface finish or assembly side, so these live here and are copied into fab/ by `make release`. Upload the artifacts listed in docs/JLC-ASSEMBLY.md and set these options on the order page. Prototype outputs, not a fabrication release: resolve docs/acceptance.md gates and recheck all LCSC stock before paying.",
+  "_comment": "Canonical JLCPCB order settings for MIDI Brain. tscircuit has no prop for surface finish or assembly side, so these live here and are copied into fab/ by `make release`. Upload the artifacts listed in docs/JLC-ASSEMBLY.md and set these options on the order page. Prototype outputs, not a fabrication release: `make release` runs the physical acceptance gate first and exports nothing while an item in hardware-acceptance.json is unresolved. expected_counts are verified against the generated BOM/CPL on every release; update them from the generated output, never by guessing.",
   "front": {
     "board": {
       "layers": 2,
-      "dimensions_mm": [128, 112],
+      "dimensions_mm": [
+        128,
+        112
+      ],
       "thickness_mm": 1.6,
       "outer_copper_oz": 1,
       "surface_finish": "Lead-free HASL",
@@ -15,7 +18,20 @@
       "sides": 1,
       "sides_reason": "All 31 SMT placements are on the top (panel side). The rear face carries only the J5 THT body and THT tails.",
       "through_hole": "hand solder",
-      "through_hole_parts": ["J1", "J2", "J3", "J4", "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "U6", "J5"],
+      "through_hole_parts": [
+        "J1",
+        "J2",
+        "J3",
+        "J4",
+        "SW1",
+        "SW2",
+        "SW3",
+        "SW4",
+        "SW5",
+        "SW6",
+        "U6",
+        "J5"
+      ],
       "files": {
         "gerbers": "fab/front/front-gerbers.zip",
         "bom": "fab/front/front-bom-jlc.csv",
@@ -27,13 +43,17 @@
         "cpl_smt_top": 31,
         "cpl_smt_bottom": 0,
         "tht_excluded": 12
-      }
+      },
+      "through_hole_note": "J1-J4 and SW1-SW6 are hand-solderable. U6 (Bourns PEC11R encoder) is not recommended for hand soldering: its row asks for a qualified THT process (selective/wave or validated manual) until acceptance item encoder_solder_process records the process. U6 stays out of the SMT CPL."
     }
   },
   "rear": {
     "board": {
       "layers": 2,
-      "dimensions_mm": [101.6, 112],
+      "dimensions_mm": [
+        101.6,
+        112
+      ],
       "thickness_mm": 1.6,
       "outer_copper_oz": 1,
       "surface_finish": "Lead-free HASL",
@@ -43,10 +63,15 @@
     "assembly": {
       "service": "JLCPCB SMT assembly",
       "sides": 1,
-      "sides_reason": "All 18 SMT placements are on the bottom; THT sockets/headers are hand-soldered after SMT.",
+      "sides_reason": "All 20 SMT placements are on the bottom (C13/C14 added by the electrical work: 18 -> 20); THT sockets/headers are hand-soldered after SMT.",
       "stencil": "bottom only, if separately required",
       "through_hole": "hand solder",
-      "through_hole_parts": ["J_PICO_L", "J_PICO_R", "J_PI", "J_FRONT"],
+      "through_hole_parts": [
+        "J_PICO_L",
+        "J_PICO_R",
+        "J_PI",
+        "J_FRONT"
+      ],
       "through_hole_note": "No LCSC numbers in the design (generic 2.54 mm parts); source for the bench. Kept out of the SMT CPL by design.",
       "files": {
         "gerbers": "fab/rear/rear-gerbers.zip",
@@ -54,17 +79,22 @@
         "cpl": "fab/rear/rear-cpl-jlc.csv"
       },
       "expected_counts": {
-        "bom_placements": 22,
-        "cpl_smt_placements": 18,
-        "cpl_smt_bottom": 18,
+        "bom_placements": 24,
+        "cpl_smt_placements": 20,
+        "cpl_smt_bottom": 20,
+        "cpl_smt_top": 0,
         "tht_excluded": 4
-      }
+      },
+      "counts_note": "C13/C14 are new rear SMT capacitors from the electrical work: bom 22 -> 24 placements, CPL 18 -> 20, all bottom. If the electrical implementation adds or removes a placement, this release fails with the exact delta until the numbers here are updated from the generated files."
     }
   },
   "panel": {
     "board": {
       "layers": 2,
-      "dimensions_mm": [132.08, 128.5],
+      "dimensions_mm": [
+        132.08,
+        128.5
+      ],
       "thickness_mm": 1.6,
       "surface_finish": "none required (no copper)",
       "solder_mask": "none, both sides",
