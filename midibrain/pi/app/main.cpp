@@ -1,4 +1,4 @@
-// mnkybox — JUCE touchscreen DAW application (Pi 5 + Pico link).
+// mnkybox - JUCE touchscreen DAW application (Pi 5 + Pico link).
 //
 // Flags:
 //   --emulator   use the emulator backends (scripted Pico SPI link, generated

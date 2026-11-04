@@ -8,7 +8,13 @@
 
 namespace mnky::app {
 namespace {
-constexpr int kStripWidth = style::kFaderWidth;
+// Value read-outs under the fader and the pan knob: wide enough for "-60.0 dB"
+// inside the 76 px strip a bank gets at the 800 px panel width.
+constexpr int kStripValueWidth = 58;
+constexpr int kBankCount = 2;
+
+static_assert(kNumStrips == kBankCount * kStripsPerBank,
+              "bank buttons and strip count must agree");
 }  // namespace
 
 MixerStrip::MixerStrip(MixerModel& model, int index) : model_(model), index_(index) {
@@ -19,7 +25,7 @@ MixerStrip::MixerStrip(MixerModel& model, int index) : model_(model), index_(ind
   addAndMakeVisible(name_);
 
   gain_.setSliderStyle(juce::Slider::LinearVertical);
-  gain_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, kStripWidth - 14, 15);
+  gain_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, kStripValueWidth, 15);
   gain_.setRange(static_cast<double>(kMinGainDb), static_cast<double>(kMaxGainDb), 0.1);
   gain_.setSkewFactorFromMidPoint(-12.0);
   gain_.setValue(model_.gainDb(index_), juce::dontSendNotification);
@@ -31,7 +37,7 @@ MixerStrip::MixerStrip(MixerModel& model, int index) : model_(model), index_(ind
   addAndMakeVisible(gain_);
 
   pan_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-  pan_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, kStripWidth - 14, 15);
+  pan_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, kStripValueWidth, 15);
   pan_.setRange(0.0, 1.0, 0.01);
   pan_.setValue(model_.pan(index_), juce::dontSendNotification);
   pan_.textFromValueFunction = [](double value) {
@@ -55,7 +61,10 @@ MixerStrip::MixerStrip(MixerModel& model, int index) : model_(model), index_(ind
     label.setText(juce::String::charToString(static_cast<juce::juce_wchar>('A' + send)),
                   juce::dontSendNotification);
     label.setJustificationType(juce::Justification::centred);
-    label.setFont(style::font(11.0f, true));
+    label.setFont(style::font(12.0f, true));
+    // A horizontally squashed letter renders as an unreadable blob on the
+    // target panel: refuse the squash so a too-narrow column fails visibly.
+    label.setMinimumHorizontalScale(1.0f);
     label.setColour(juce::Label::textColourId, style::textDim);
     addAndMakeVisible(label);
 
@@ -104,10 +113,12 @@ void MixerStrip::resized() {
   gain_.setBounds(area.removeFromTop(104));
   pan_.setBounds(area.removeFromTop(52).reduced(4, 0));
 
-  // Sends are touch targets too: one 44 px row each, with a 12 px letter.
+  // Sends are touch targets too: one 44 px row each, with a 20 px letter
+  // column. JUCE's fitted-text layout curtails a single letter to an ellipsis
+  // in a narrower Label, so the column is not made any tighter than this.
   for (int send = 0; send < audio::kNumSends; ++send) {
     auto row = area.removeFromTop(style::kTouch);
-    sendLabel_[send].setBounds(row.removeFromLeft(12));
+    sendLabel_[send].setBounds(row.removeFromLeft(20));
     send_[send].setBounds(row);
     area.removeFromTop(2);
   }
@@ -184,27 +195,76 @@ void MasterStrip::refresh() {
 
 MixerScreen::MixerScreen(AppContext& context)
     : Screen(context), master_(context.mixer, context.audio) {
-  viewport_.setScrollBarsShown(false, true, false, true);
-  viewport_.setViewedComponent(&stripHolder_, false);
-  viewport_.setScrollBarThickness(16);
-  addAndMakeVisible(viewport_);
+  addAndMakeVisible(stripHolder_);
   addAndMakeVisible(master_);
 
   for (int index = 0; index < kNumStrips; ++index) {
     auto* strip = strips_.add(new MixerStrip(context_.mixer, index));
     stripHolder_.addAndMakeVisible(strip);
   }
+
+  static const char* const kBankNames[kBankCount] = {"1-9", "10-18"};
+  for (int bank = 0; bank < kBankCount; ++bank) {
+    auto& button = bankButtons_[bank];
+    button.setButtonText(kBankNames[bank]);
+    button.onClick = [this, bank] { setBank(bank); };
+    addAndMakeVisible(button);
+  }
+
+  layoutStrips();
+  syncBankButtons();
 }
 
 void MixerScreen::resized() {
   auto area = getLocalBounds();
-  master_.setBounds(area.removeFromRight(style::kMasterWidth));
-  viewport_.setBounds(area);
 
-  const int availableHeight = juce::jmax(0, area.getHeight() - viewport_.getScrollBarThickness());
-  stripHolder_.setSize(kNumStrips * kStripWidth, availableHeight);
+  // Right column: the bank switch on top of the always-visible master. Each
+  // button keeps the full style::kTouch height and a 1 px gap to its neighbour.
+  auto column = area.removeFromRight(style::kMasterWidth);
+  auto bankRow = column.removeFromTop(style::kTouch);
+  auto leftButton = bankRow.removeFromLeft(bankRow.getWidth() / 2);
+  bankButtons_[0].setBounds(leftButton.withTrimmedRight(1));
+  bankButtons_[1].setBounds(bankRow.withTrimmedLeft(1));
+  master_.setBounds(column);
+
+  stripHolder_.setBounds(area);
+  layoutStrips();
+}
+
+void MixerScreen::layoutStrips() {
+  const int width = stripHolder_.getWidth();
+  const int height = stripHolder_.getHeight();
+
+  // Column edges are distributed over the full width so the bank fills it
+  // exactly; the odd pixels land on the left-hand strips instead of leaving a
+  // gap that reads as a clipped strip.
+  int edges[kStripsPerBank + 1] = {};
+  for (int column = 0; column <= kStripsPerBank; ++column) {
+    edges[column] = (width * column) / kStripsPerBank;
+  }
+
   for (int index = 0; index < strips_.size(); ++index) {
-    strips_[index]->setBounds(index * kStripWidth, 0, kStripWidth, availableHeight);
+    auto* strip = strips_[index];
+    const bool visible = index / kStripsPerBank == bank_;
+    strip->setVisible(visible);
+    if (!visible) continue;
+    const int column = index % kStripsPerBank;
+    strip->setBounds(edges[column], 0, edges[column + 1] - edges[column], height);
+  }
+}
+
+void MixerScreen::setBank(int bank) {
+  const int clamped = juce::jlimit(0, kBankCount - 1, bank);
+  if (clamped == bank_) return;
+  bank_ = clamped;
+  layoutStrips();
+  syncBankButtons();
+}
+
+void MixerScreen::syncBankButtons() {
+  for (int bank = 0; bank < kBankCount; ++bank) {
+    bankButtons_[bank].setColour(juce::TextButton::buttonColourId,
+                                 bank == bank_ ? style::accent.darker(0.5f) : style::panelDark);
   }
 }
 
@@ -216,10 +276,9 @@ void MixerScreen::setSelectedStrip(int index) {
   for (int i = 0; i < strips_.size(); ++i) {
     strips_[i]->setSelected(i == index);
   }
-  if (index >= 0 && index < strips_.size()) {
-    const int centre = index * kStripWidth - (viewport_.getMaximumVisibleWidth() - kStripWidth) / 2;
-    viewport_.setViewPosition(juce::jmax(0, centre), viewport_.getViewPositionY());
-  }
+  // Panel navigation can walk past the bank edge: follow the selection so the
+  // highlighted strip is always on screen.
+  if (index >= 0 && index < strips_.size()) setBank(index / kStripsPerBank);
 }
 
 }  // namespace mnky::app

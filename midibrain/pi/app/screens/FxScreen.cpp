@@ -23,7 +23,7 @@ FxSlotPanel::FxSlotPanel(AppContext& context, int slotIndex)
   title_.setColour(juce::Label::textColourId, style::text);
   addAndMakeVisible(title_);
 
-  plugin_.setButtonText("pick plugin…");
+  plugin_.setButtonText("pick plugin...");
   plugin_.onClick = [this] { choosePlugin(); };
   addAndMakeVisible(plugin_);
 
@@ -104,13 +104,13 @@ void FxSlotPanel::refresh() {
   const auto path = slot_.pluginPath();
   const auto error = slot_.lastError();
 
-  const auto pluginText = path.isEmpty() ? juce::String("no plugin — pick a .clap")
+  const auto pluginText = path.isEmpty() ? juce::String("no plugin -- pick a .clap")
                                          : juce::File(path).getFileName();
   if (plugin_.getButtonText() != pluginText) plugin_.setButtonText(pluginText);
 
   juce::String text = path.isEmpty() ? "send idle; return passes the bus through"
                                      : "loaded";
-  if (!error.isEmpty()) text << "  ·  " << error;
+  if (!error.isEmpty()) text << "  -  " << error;
   if (status_.getText() != text) status_.setText(text, juce::dontSendNotification);
 }
 

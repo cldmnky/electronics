@@ -1,7 +1,8 @@
 #pragma once
 // Mixer screen: 18 input strips (gain / pan / two FX sends / mute / solo / arm)
-// plus the master strip. 800 x 480 landscape-first: the strip row scrolls
-// horizontally, the master stays pinned on the right.
+// plus the master strip. 800 x 480 landscape-first: the strips are split into
+// two banks of nine so a bank always fits the panel without scrolling, and the
+// master stays pinned on the right in both banks.
 #include "Screen.hpp"
 
 #include "../audio/engine.hpp"
@@ -11,6 +12,10 @@ namespace mnky::app {
 
 class MixerModel;
 class AudioGlue;
+
+// 18 inputs over two banks. Nine strips plus the master column fill the 800 px
+// panel exactly, so a bank never clips a strip or a label.
+inline constexpr int kStripsPerBank = 9;
 
 class MixerStrip final : public juce::Component {
  public:
@@ -66,10 +71,15 @@ class MixerScreen final : public Screen {
   void setSelectedStrip(int index);
 
  private:
-  juce::Viewport viewport_;
+  void setBank(int bank);
+  void layoutStrips();
+  void syncBankButtons();
+
   juce::Component stripHolder_;
   juce::OwnedArray<MixerStrip> strips_;
   MasterStrip master_;
+  juce::TextButton bankButtons_[2];
+  int bank_ = 0;
 
   JUCE_DECLARE_NON_COPYABLE(MixerScreen)
 };

@@ -126,7 +126,7 @@ void RoutingScreen::applyTranspose(int source) {
 void RoutingScreen::paint(juce::Graphics& g) {
   g.fillAll(style::background);
   style::drawCaption(g, getLocalBounds().reduced(6).removeFromTop(18),
-                     "ROUTING  ·  source × destination, channel filter, transpose");
+                     "ROUTING  -  source x destination, channel filter, transpose");
 }
 
 void RoutingScreen::resized() {

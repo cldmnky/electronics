@@ -30,8 +30,8 @@ void RecorderScreen::TakeListModel::paintListBoxItem(int rowNumber, juce::Graphi
   g.drawText(entry.name, 8, 0, width / 2, height, juce::Justification::centredLeft, true);
   g.setColour(style::textDim);
   g.setFont(style::font(12.0f));
-  const auto detail = juce::String(entry.files) + " files  ·  " +
-                      juce::String(formatDuration(entry.seconds)) + "  ·  " +
+  const auto detail = juce::String(entry.files) + " files  -  " +
+                      juce::String(formatDuration(entry.seconds)) + "  -  " +
                       juce::String(formatBytes(entry.bytes));
   g.drawText(detail, width / 2, 0, width / 2 - 8, height, juce::Justification::centredRight,
              true);
@@ -67,7 +67,7 @@ RecorderScreen::RecorderScreen(AppContext& context) : Screen(context) {
   };
   addAndMakeVisible(startStop_);
 
-  directoryButton_.setButtonText("…");
+  directoryButton_.setButtonText("...");
   directoryButton_.onClick = [this] { chooseDirectory(); };
   addAndMakeVisible(directoryButton_);
 
@@ -154,9 +154,9 @@ void RecorderScreen::updateReadouts() {
       juce::String(formatBarBeatTick(status.tick));
   if (transport_.getText() != transportText) transport_.setText(transportText, juce::dontSendNotification);
 
-  auto clockText = juce::String(formatTempo(status.tempoX100)) + "  ·  tick " +
+  auto clockText = juce::String(formatTempo(status.tempoX100)) + "  -  tick " +
                    juce::String(static_cast<juce::int64>(status.tick));
-  if (!status.linkUp) clockText << "  ·  link down";
+  if (!status.linkUp) clockText << "  -  link down";
   if (clock_.getText() != clockText) clock_.setText(clockText, juce::dontSendNotification);
 
   const auto buttonText = recording ? "STOP TAKE" : "START TAKE";
@@ -165,14 +165,14 @@ void RecorderScreen::updateReadouts() {
   const auto take = context_.audio.lastTake();
   juce::String statusText;
   if (recording) {
-    statusText = "recording take  ·  " + context_.state.takeDirectory().getFullPathName();
+    statusText = "recording take  -  " + context_.state.takeDirectory().getFullPathName();
   } else if (take.files > 0) {
     const double seconds =
         context_.audio.sampleRate() > 0.0
             ? static_cast<double>(take.frames) / context_.audio.sampleRate()
             : 0.0;
-    statusText = "last take " + juce::File(take.path).getFileName() + "  ·  " +
-                 juce::String(take.files) + " files  ·  " + juce::String(formatDuration(seconds));
+    statusText = "last take " + juce::File(take.path).getFileName() + "  -  " +
+                 juce::String(take.files) + " files  -  " + juce::String(formatDuration(seconds));
   } else {
     statusText = "arm a channel, then START TAKE";
   }
@@ -182,7 +182,7 @@ void RecorderScreen::updateReadouts() {
   const auto freeBytes = directory.getBytesFreeOnVolume();
   const auto totalBytes = directory.getVolumeTotalSize();
   auto diskText = "disk " + juce::String(formatBytes(freeBytes)) + " free of " +
-                  juce::String(formatBytes(totalBytes)) + "  ·  drops " +
+                  juce::String(formatBytes(totalBytes)) + "  -  drops " +
                   juce::String(static_cast<juce::int64>(context_.audio.drops()));
   if (disk_.getText() != diskText) disk_.setText(diskText, juce::dontSendNotification);
 }
@@ -231,6 +231,11 @@ void RecorderScreen::scanTakes() {
 
   takeModel_.setEntries(std::move(entries));
   takeList_.updateContent();
+  // ListBox::updateContent() only re-lays-out the rows and repaints the ones
+  // whose bounds changed. A scan that keeps the row count (same take, new file
+  // sizes) would otherwise keep showing the sizes read while the WAVs were
+  // still open (0 B / 00:00), so repaint the rows explicitly.
+  takeList_.repaint();
 }
 
 }  // namespace mnky::app

@@ -7,7 +7,6 @@
 namespace mnky::app::style {
 
 inline constexpr int kTouch = 44;
-inline constexpr int kFaderWidth = 80;
 inline constexpr int kMasterWidth = 112;
 
 inline const juce::Colour background{0xff15171b};
