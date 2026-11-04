@@ -69,6 +69,11 @@
       "note": "TLP2361 input current and junction temperature measured at worst-case high-rail/low-VF source corners (recommended 2-6 mA, absolute continuous 10 mA, derating above 110 C), with the 220 ohm choice justified by measurement."
     },
     {
+      "id": "midi_out_legacy",
+      "state": "pending",
+      "note": "Measure low-rail transmitter current into legacy receiver loads, rise/fall below 2 us and sustained ring/tip fault temperatures. The output topology and any deviation from the CA-033 reference need independent review; receiver threshold analysis alone cannot close this item."
+    },
+    {
       "id": "midi_interop",
       "state": "pending",
       "note": "Two real MIDI devices (not loopback) exchange note, clock and sysex traffic in both directions with the recorded equipment."

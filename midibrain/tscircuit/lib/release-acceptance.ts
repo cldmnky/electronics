@@ -105,6 +105,11 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
     requirement: "TLP2361 input current and junction temperature measured at worst-case high-rail/low-VF source corners (recommended 2-6 mA, absolute continuous 10 mA, derating above 110 C), with the 220 ohm choice justified by measurement.",
   },
   {
+    id: "midi_out_legacy",
+    title: "MIDI OUT legacy headroom and fault ratings",
+    requirement: "Measure low-rail transmitter current into legacy receiver loads, rise/fall time below 2 us, and sustained ring/tip fault temperatures. Review the implemented topology and resistor values against CA-033; do not infer compliance from a receiver-only calculation.",
+  },
+  {
     id: "midi_interop",
     title: "MIDI interoperability",
     requirement: "Two real MIDI devices (not loopback) exchange note, clock and sysex traffic in both directions with the recorded equipment.",
@@ -156,7 +161,7 @@ const TOP_KEYS = new Set(["schema", "hardware_fingerprint", "items", "note"])
 const OVERRIDE_KEYS = /(override|force|skip|waive|bypass|unverified|exempt)/i
 const PLACEHOLDER = /^(tbd|todo|n\/?a|unknown|none|-+|\.+)$/i
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
-const MEASUREMENT = /\b\d+(?:[.,]\d+)?\s?(?:mm|cm|mA|mV|ms|min|MHz|kHz|Hz|kg|°C|degC|V|A|W|s|h|%|ohm|Ω|dB)\b/
+const MEASUREMENT = /\b\d+(?:[.,]\d+)?\s?(?:mm|cm|mA|mV|ms|µs|μs|us|ns|min|MHz|kHz|Hz|kg|°C|degC|V|A|W|s|h|%|ohm|kΩ|Ω|dB)(?![\p{L}\p{N}_])/u
 
 export const FINGERPRINT_RECIPE = "midibrain-hardware-1"
 
