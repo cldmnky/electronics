@@ -98,8 +98,22 @@ fasteners, NAV/MODE, jack/pot/rack/OLED fit, sockets/shunts, P5V load and
 thermal, CV calibration and cable load, mux/sync power orders, MIDI threshold
 and high-current corners including the 125 °C derated 8.05 mA risk hold,
 primary STM32H750 GPIO-limit verification, chassis tie, ESD, DFM/CPL and
-first article). Formal independent review cycle 2 covers this tree; its
-findings and the two-cycle disposition will be recorded here before handover.
+first article).
+
+Formal independent review closed in two cycles. Cycle 1 verified the
+rail-hole revision, mechanics, MIDI electrical basis, 172-check SPICE, ERC
+and the symlink fix, leaving snapshots and the stale fingerprint open. Cycle 2
+(HARDWARE-VERIFICATION `bb157c4`, green log `final-test2.log`) recomputed the
+TLP2361 derating (8.05 mA at 125 °C), all four sender corners, gate voltages
+and zero-RDS fault powers from primary PDFs, recounted every headline number
+from the log, confirmed the GPIO assumptions and the 0/0 schematic inventory,
+and confirmed froemix-only scope with no physical approval claimed anywhere.
+Verdict: **PASS as an engineering prototype, all 19 items pending, no
+must-fix item.** Findings: the earlier snapshot mismatch got its mechanism
+(the committed snap carried the live date; the gate pins 2024-08-10) and its
+fix (`b0168a0`); the suggested `make snapshots` date pin already exists; one
+LOW source-path correction (TLP2362 local copy named) applied. This closes
+the review; production still waits on first-article evidence.
 
 ## Mechanical primary reference
 

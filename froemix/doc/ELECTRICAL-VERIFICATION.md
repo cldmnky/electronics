@@ -48,7 +48,7 @@ Two element-level facts, both verified in the installed core:
 | Source | Used for |
 | --- | --- |
 | Toshiba **TLP2361** data sheet Rev 5.0 (2015-11-02), 16 pages, on disk | VF ≤ 1.65 V at IF = 2 mA; IFHL ≤ 1.3 mA (−40…105 °C) / ≤ 1.6 mA (−40…125 °C); recommended IF 2…6 mA, VF(OFF) 0…0.8 V, VCC 2.7…5.5 V; VOL ≤ 0.4 V at 3.2 mA, VOH ≥ 3.2 V at −20 µA; inverting totem-pole output; 0.1 µF between pins 6 and 4; package 11-4L1S with pins 1 = A, 3 = K, 4 = GND, 5 = VO, 6 = VCC; IF absolute maximum 10 mA (pulsed 40 mA) |
-| Toshiba **TLP2362** data sheet Rev 6.0, on disk | the replaced part's IFHL ≤ 5.0 mA and IF(ON) from 7.5 mA, and that its package and pin map are identical |
+| Toshiba **TLP2362** data sheet Rev 6.0 (local copy `review-c37658.pdf`; the old vendor link now serves a 404 page) | the replaced part's IFHL ≤ 5.0 mA and IF(ON) from 7.5 mA, and that its package and pin map are identical |
 | AOS **AO3401A** Rev 3.1 (December 2023), on disk | RDS(on) ≤ 85 mΩ at VGS = −2.5 V, ≤ 60 mΩ at −4.5 V, 50 mΩ at −10 V and 75 mΩ at 125 °C; VGS(th) −0.5…−1.3 V; VGS ±12 V; ID −4.0 A (25 °C) / −3.2 A (70 °C); IDSS −1 µA (25 °C) / −5 µA (125 °C) at VGS = 0; Qg(4.5 V) 7 nC; Ciss 645 pF; SOT-23 pinout G/S/D |
 | **Uniroyal** thick-film chip resistors, Feb 12 2019 V.3, on disk | `25121WF330JT4E` = 2512 body, 1 W (codes 5–6 "1W"), F = ±1 %, 330J = 33.0 Ω; 1 W is the rating up to 70 °C ambient, derated above it |
 | **MIDI CA-033** (MIDI 1.0 Electrical Specification Update, 2014), on disk | 3.3 V ±5 % signalling; RA 33 Ω / RC 10 Ω recommended; the receiver is an LED + 220 Ω with VF ≤ 1.9 V and "must require less than 5 mA to turn on"; the short-circuit guidance that produced the 0.5 W RA requirement |
