@@ -359,28 +359,126 @@ Item {
                 height: parent.height
                 spacing: 3
 
+                // Per-track I/O assignment (session v2 inCh/inPair/outDst). The
+                // left picker walks none / IN 01..18 with the PAIR toggle for a
+                // stereo pair (3/4, 5/6, ...); the right picker walks the four
+                // output destinations. Panel: NAV_PRESS enters EDIT, the encoder
+                // steps the focused picker.
                 Row {
                     width: parent.width
                     height: Style.touch
-                    spacing: 4
-                    TouchButton {
-                        width: (parent.width - 4) / 2
+                    spacing: 8
+
+                    Row {
+                        width: (parent.width - 8) / 2
                         height: parent.height
-                        text: "INPUT  IN " + String(mixer.trackIndex + 1).padStart(2, "0")
-                        textSize: Style.fontSmall
-                        focusId: "shift.track.input"
-                        onClicked: app.showTextPopup("INPUT ASSIGN",
-                                                     "IN " + String(mixer.trackIndex + 1).padStart(2, "0") +
-                                                     " (assignment spec pending)")
+                        spacing: 2
+
+                        Text {
+                            width: 40
+                            height: parent.height
+                            text: "INPUT"
+                            color: Style.textDim
+                            font.pixelSize: 9
+                            font.bold: true
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        TouchButton {
+                            width: Style.touch
+                            height: parent.height
+                            text: "<"
+                            textSize: 18
+                            focusId: "shift.track.input.dec"
+                            onClicked: {
+                                mixer.cycleTrackInCh(-1)
+                                app.showTextPopup("INPUT SOURCE", mixer.trackInputText)
+                            }
+                        }
+                        TouchButton {
+                            width: parent.width - 40 - Style.touch * 2 - 70 - 8
+                            height: parent.height
+                            text: mixer.trackInputText
+                            textSize: Style.fontSmall
+                            idleColor: Style.panelDark
+                            focusId: "shift.track.input"
+                            onClicked: {
+                                mixer.cycleTrackInCh(1)
+                                app.showTextPopup("INPUT SOURCE", mixer.trackInputText)
+                            }
+                        }
+                        TouchButton {
+                            width: Style.touch
+                            height: parent.height
+                            text: ">"
+                            textSize: 18
+                            focusId: "shift.track.input.inc"
+                            onClicked: {
+                                mixer.cycleTrackInCh(1)
+                                app.showTextPopup("INPUT SOURCE", mixer.trackInputText)
+                            }
+                        }
+                        TouchButton {
+                            width: 68
+                            height: parent.height
+                            text: mixer.trackInPair ? "PAIR" : "MONO"
+                            textSize: 9
+                            checked: mixer.trackInPair
+                            focusId: "shift.track.input.pair"
+                            onClicked: {
+                                mixer.trackInPair = !mixer.trackInPair
+                                app.showTextPopup("INPUT SOURCE", mixer.trackInputText)
+                            }
+                        }
                     }
-                    TouchButton {
-                        width: (parent.width - 4) / 2
+
+                    Row {
+                        width: (parent.width - 8) / 2
                         height: parent.height
-                        text: "OUTPUT  MAIN 1&2"
-                        textSize: Style.fontSmall
-                        focusId: "shift.track.output"
-                        onClicked: app.showTextPopup("OUTPUT ASSIGN",
-                                                     "MAIN 1&2 (assignment spec pending)")
+                        spacing: 2
+
+                        Text {
+                            width: 46
+                            height: parent.height
+                            text: "OUTPUT"
+                            color: Style.textDim
+                            font.pixelSize: 9
+                            font.bold: true
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        TouchButton {
+                            width: Style.touch
+                            height: parent.height
+                            text: "<"
+                            textSize: 18
+                            focusId: "shift.track.output.dec"
+                            onClicked: {
+                                mixer.cycleTrackOutDst(-1)
+                                app.showTextPopup("OUTPUT DEST", mixer.trackOutputText)
+                            }
+                        }
+                        TouchButton {
+                            width: parent.width - 46 - Style.touch * 2 - 6
+                            height: parent.height
+                            text: mixer.trackOutputText
+                            textSize: Style.fontSmall
+                            idleColor: Style.panelDark
+                            focusId: "shift.track.output"
+                            onClicked: {
+                                mixer.cycleTrackOutDst(1)
+                                app.showTextPopup("OUTPUT DEST", mixer.trackOutputText)
+                            }
+                        }
+                        TouchButton {
+                            width: Style.touch
+                            height: parent.height
+                            text: ">"
+                            textSize: 18
+                            focusId: "shift.track.output.inc"
+                            onClicked: {
+                                mixer.cycleTrackOutDst(1)
+                                app.showTextPopup("OUTPUT DEST", mixer.trackOutputText)
+                            }
+                        }
                     }
                 }
 

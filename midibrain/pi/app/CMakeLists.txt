@@ -29,6 +29,7 @@ set(MNKY_APP_SOURCES
   logging.cpp
   logic_tests.cpp
   midi_glue.cpp
+  midi_monitor_view_model.cpp
   mixer_model.cpp
   mixer_view_model.cpp
   project_io.cpp
@@ -57,6 +58,7 @@ set(MNKY_APP_HEADERS
   logging.hpp
   logic.hpp
   midi_glue.hpp
+  midi_monitor_view_model.hpp
   mixer_model.hpp
   mixer_view_model.hpp
   project_io.hpp
@@ -120,6 +122,7 @@ qt_add_resources(mnkybox "qml"
     qml/screens/RecorderScreen.qml
     qml/screens/SystemScreen.qml
     qml/screens/ProjectsScreen.qml
+    qml/screens/MidiMonitorScreen.qml
     qml/screens/ToolsScreen.qml
     qml/screens/PunchScreen.qml
     qml/screens/MonitorScreen.qml

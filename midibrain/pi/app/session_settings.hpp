@@ -1,7 +1,8 @@
 #pragma once
 // App-owned session-v2 settings: punch markers, monitor/cue configuration,
-// per-destination send sources, the main-bus compressor and the active take
-// per track. The session core deliberately leaves these sections alone
+// per-destination send sources, the main-bus compressor, the per-track take
+// loop and the per-output clock/transport routes. The session core deliberately
+// leaves these sections alone
 // (session.hpp: capture() leaves them at defaults, apply() does not touch
 // them), so the app is their single owner and project_io copies them in and
 // out of the snapshot. Mixer values that belong to a strip (cue/out34 sends,
@@ -32,6 +33,14 @@ class SessionSettings {
   session::CueState cue;
   session::SendsState sends;
   session::MainCompState mainComp;
+  // Per-track take loop in session beats (session v2 takes.loop). Written on
+  // the GUI thread only; the engine copy lives in AudioGlue.
+  std::array<session::LoopState, audio::kMaxInputs> takeLoop{};
+  // Per-output clock/transport gates (session v2 clock). Index 0/1 = TRS OUT1/
+  // OUT2 via ClockState::trs, usb covers the USB mirror; the tempo divider and
+  // sync delay in ClockRoute are session-only because EV_CLOCK_ROUTE carries
+  // only the two gate bits.
+  session::ClockState clock;
   // Settings-only project marker (session v2 snapshot.isTemplate).
   bool isTemplate = false;
 

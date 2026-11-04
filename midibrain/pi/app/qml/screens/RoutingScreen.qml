@@ -25,7 +25,7 @@ Item {
             Text {
                 width: parent.width - 118
                 height: parent.height
-                text: (screen.shiftFace ? "SHIFT  CHANNEL FILTER / TRANSPOSE"
+                text: (screen.shiftFace ? "SHIFT  FILTER / TRANSPOSE / CLOCK OUT"
                                         : "ROUTING - tap a wire, or an input then an output")
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
@@ -45,7 +45,7 @@ Item {
         Item {
             id: patchbay
             width: parent.width
-            height: screen.shiftFace ? Math.max(96, screen.height - Style.margin * 2 - Style.touch * 5 - 16) : Math.max(120, screen.height - Style.margin * 2 - Style.touch - 4)
+            height: screen.shiftFace ? Math.max(88, screen.height - Style.margin * 2 - Style.touch * 6 - 16) : Math.max(120, screen.height - Style.margin * 2 - Style.touch - 4)
 
             Rectangle {
                 anchors.fill: parent
@@ -212,7 +212,7 @@ Item {
         Item {
             visible: screen.shiftFace
             width: parent.width
-            height: Style.touch * 4
+            height: Style.touch * 5
 
             Column {
                 width: parent.width
@@ -304,6 +304,67 @@ Item {
                                 text: "+"
                                 textSize: 20
                                 onClicked: routing.adjustTranspose(index, 1)
+                            }
+                        }
+                    }
+                }
+
+                // Per-output clock/transport gates (session v2 clock). TRS OUT1/2
+                // go to the Pico as EV_CLOCK_ROUTE; USB OUT gates the Pi-side
+                // mirror in UsbClock. The open gate is the bright one.
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 4
+
+                    Repeater {
+                        model: 3
+                        delegate: Row {
+                            width: (parent.width - 8) / 3
+                            height: Style.touch
+                            spacing: 2
+
+                            Text {
+                                width: 74
+                                height: parent.height
+                                text: screen.outputNames[index]
+                                color: Style.textDim
+                                font.pixelSize: Style.fontSmall
+                                font.bold: true
+                                elide: Text.ElideRight
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            TouchButton {
+                                width: (parent.width - 80) / 2
+                                height: Style.touch
+                                text: "CLOCK"
+                                textSize: 9
+                                checked: index === 0 ? session.trs1Clock
+                                        : (index === 1 ? session.trs2Clock : session.usbClock)
+                                focusId: "shift.clock.clock." + index
+                                onClicked: {
+                                    if (index === 0) session.trs1Clock = !session.trs1Clock
+                                    else if (index === 1) session.trs2Clock = !session.trs2Clock
+                                    else session.usbClock = !session.usbClock
+                                    app.showTextPopup("CLOCK OUT " + screen.outputNames[index],
+                                                      session.clockText)
+                                }
+                            }
+                            TouchButton {
+                                width: (parent.width - 80) / 2
+                                height: Style.touch
+                                text: "TRANSP"
+                                textSize: 9
+                                checked: index === 0 ? session.trs1Transport
+                                        : (index === 1 ? session.trs2Transport : session.usbTransport)
+                                focusId: "shift.clock.transport." + index
+                                onClicked: {
+                                    if (index === 0) session.trs1Transport = !session.trs1Transport
+                                    else if (index === 1) session.trs2Transport = !session.trs2Transport
+                                    else session.usbTransport = !session.usbTransport
+                                    app.showTextPopup("TRANSPORT OUT " + screen.outputNames[index],
+                                                      session.clockText)
+                                }
                             }
                         }
                     }

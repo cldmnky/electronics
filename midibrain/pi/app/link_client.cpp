@@ -109,6 +109,25 @@ void LinkClient::requestManual(bool manual) {
   commands_.push_back(command);
 }
 
+void LinkClient::requestClockRoute(std::uint8_t output, std::uint8_t flags) {
+  Command command;
+  command.kind = Command::Kind::ClockRoute;
+  command.value8 = output;
+  command.extra8 = flags;
+  const std::lock_guard<std::mutex> lock(commandLock_);
+  if (commands_.size() >= kMaxCommands) commands_.pop_front();
+  commands_.push_back(command);
+}
+
+void LinkClient::requestUsbClockGates(bool clock, bool transport) {
+  Command command;
+  command.kind = Command::Kind::UsbClockGates;
+  command.value8 = static_cast<std::uint8_t>((clock ? 1 : 0) | (transport ? 2 : 0));
+  const std::lock_guard<std::mutex> lock(commandLock_);
+  if (commands_.size() >= kMaxCommands) commands_.pop_front();
+  commands_.push_back(command);
+}
+
 void LinkClient::run() {
   const MidiGlue::TrsSink trsSink = [this](midi::Port destination,
                                            const midi::MidiEvent& event) {
@@ -164,11 +183,12 @@ void LinkClient::applyCommands() {
         link_->transport(command.value8);
         // The USB clock mirror follows the transport: START/CONTINUE/STOP are
         // single bytes and must not wait for the next Pico tick to be mirrored.
+        // The transport gate closed for the USB output suppresses the mirror.
         if (command.value8 == 1) {
-          midi_.sendUsbClock(midi::kStartByte);
+          if (usbTransportGate()) midi_.sendUsbClock(midi::kStartByte);
         } else if (command.value8 == 2) {
-          midi_.sendUsbClock(midi::kContinueByte);
-        } else {
+          if (usbTransportGate()) midi_.sendUsbClock(midi::kContinueByte);
+        } else if (usbTransportGate()) {
           midi_.sendUsbClock(midi::kStopByte);
         }
         break;
@@ -182,6 +202,27 @@ void LinkClient::applyCommands() {
         {
           const std::lock_guard<std::mutex> lock(statusLock_);
           status_.manual = command.value8 != 0;
+        }
+        break;
+
+      case Command::Kind::ClockRoute:
+        // 0x14 EV_CLOCK_ROUTE: bit0 clock, bit1 transport for one TRS output.
+        link_->clockRoute(command.value8, command.extra8);
+        {
+          const std::lock_guard<std::mutex> lock(statusLock_);
+          if (command.value8 < 2) {
+            status_.clockRouteFlags[command.value8] = command.extra8;
+          }
+        }
+        break;
+
+      case Command::Kind::UsbClockGates:
+        // UsbClock::popDue already refuses clock bytes while the clock gate is
+        // closed; the transport gate is read by usbTransportGate().
+        {
+          const std::lock_guard<std::mutex> lock(statusLock_);
+          clock_.setClockEnabled((command.value8 & 1) != 0);
+          clock_.setTransportEnabled((command.value8 & 2) != 0);
         }
         break;
     }
@@ -315,6 +356,11 @@ void LinkClient::feedClock(std::uint32_t tick, std::uint32_t picoStampUs,
   status_.clockSkipped = clock_.skipped();
   status_.clockReordered = clock_.reordered();
   status_.lastClockTick = clock_.lastTick();
+}
+
+bool LinkClient::usbTransportGate() const {
+  const std::lock_guard<std::mutex> lock(statusLock_);
+  return clock_.transportEnabled();
 }
 
 void LinkClient::readReady() {

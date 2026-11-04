@@ -266,12 +266,54 @@ pactl list short sink-inputs                                                 # o
   `setPan(1, 0.51)` + `showValuePopup` grab taken before the 1.5 s timeout
   (no debug hold flag).
 
+## Wave 4: LOOP / I/O ASSIGN / CLOCK OUT / MIDI MONITOR (32-*)
+
+* **Take loop** (Recorder SHIFT face) — per-track `takes.loop`
+  (enabled + start/end beats, 0.25-beat grid). The app fills `AudioGlue`'s loop
+  copy and `AudioGlue::applyTakeLoops()` calls `audio::Engine::setTakeLoop()` for
+  all 18 tracks. Because the engine maps beats to take frames with the tempo at
+  apply time, `AppController::timerTick` re-applies the windows whenever the link
+  tempo changes. An end at or below the start loops the whole active take; the
+  face says so and shows the resolved window (`WHOLE TAKE` / `a - b b`).
+  Playback-only, as the engine contract states: an armed strip ignores the take.
+* **I/O assignment** (TRACK SHIFT face) — the two former "assignment pending"
+  stubs are now pickers bound to `mixer.channels[].inCh/inPair/outDst`: the input
+  stepper walks NONE + IN 01..18 with a MONO/PAIR toggle (a pair keeps the first
+  channel even and shows `IN 05/06`), the output stepper walks
+  MAIN 1&2 / OUT3&4 / PHONES / NONE. Values persist in session v2 and the dirty
+  fingerprint. **Missing engine API**: `audio::Channel` has no `inCh`/`inPair`/
+  `outDst` fields, so `MixerModel::applyTo()` cannot forward them; until the
+  audio side adds per-track source/destination routing the values are stored and
+  displayed only (no audio effect).
+* **Clock/transport gates** (Routing SHIFT face) — per-output CLOCK and TRANSP
+  toggles for TRS OUT1, TRS OUT2 and USB OUT, stored in the session v2 `clock`
+  section. TRS outputs go to the Pico as `EV_CLOCK_ROUTE` via
+  `LinkClient::requestClockRoute()` → `link::PicoLink::clockRoute()`; the USB row
+  drives the Pi-side mirror gates (`UsbClock::setClockEnabled()/
+  setTransportEnabled()` through `LinkClient::requestUsbClockGates()`), which
+  suppress the mirrored 0xF8 and START/CONTINUE/STOP bytes. `ClockRoute::
+  tempoDiv` and `syncDelayMs` cannot be sent: `EV_CLOCK_ROUTE` carries only the
+  two gate bits, so they stay session-only and the face's summary line says so.
+* **MIDI MONITOR** (7th tab) — live per-port counters (notes / CC / clock /
+  other) for TRS IN1, TRS IN2, USB IN, TRS OUT1, TRS OUT2 and USB OUT plus a
+  newest-first message log with ages and a CLK filter. The ring lives in
+  `MidiGlue` (128 events, bounded, same lock as the matrix) and records what the
+  Pi handles: inputs as they arrive, routed outputs when the link thread flushes
+  them, and the Pi-side USB clock mirror. The Pico generates clock/transport for
+  the TRS outputs itself and does not echo it back, so TRS OUT rows count routed
+  messages only — the screen footer says this rather than implying otherwise.
+* The tab row is now seven screens (`kScreenCount = 7`, Monitor last); the tab
+  bar shows seven equal cells at 800 px.
+
 ## Panel interaction (docs/panel-interaction.md)
 
 Implemented in `AppController` with a focus ring per screen and IDs such as
 `mixer.gain.N`, `routing.mask.S.C`, `fx.A.param.N`, `recorder.track.N`,
 `track.select.N`, `punch.in.measure`, `monitor.comp.thresh`,
-`system.backend`, `projects.row.N`; the tab row itself is `tab.0..5`.
+`system.backend`, `projects.row.N`, `loop.start`/`loop.end`/`loop.enable`,
+`track.input`/`track.input.pair`/`track.output`,
+`clock.clock.N`/`clock.transport.N` and `midimon.clock.filter`/`midimon.reset`/
+`midimon.port.N`; the tab row itself is `tab.0..6`.
 
 * NAVIGATE: NAV moves the focus ring (wrap); NAV_PRESS toggles a toggle or enters
   EDIT on a value; EncoderSw arms the selected strip; encoder turn changes tempo
@@ -298,6 +340,10 @@ Implemented in `AppController` with a focus ring per screen and IDs such as
 | Punch marker UI + session v2 persistence | **works**; transport scheduling not wired |
 | Metronome / monitor / send matrix / main comp UI | **works**; persisted and pushed to the engine |
 | TOOLS disk banner, brightness, app/firmware versions | **works**; brightness needs a Linux backlight |
+| Per-track take loop (beats, whole-take rule) | **works**; engine `setTakeLoop`, re-applied on tempo change |
+| Per-track input source / output destination pickers | **stored + displayed**; engine has no per-track source/destination yet |
+| Per-output clock/transport gates (TRS OUT1/2, USB) | **works**; `EV_CLOCK_ROUTE` + Pi-side USB mirror gates, divider/delay session-only |
+| MIDI MONITOR tab: per-port counters + event log | **works**; Pi-side view, Pico-generated TRS OUT clock not echoed |
 | Routing patchbay: wire/node toggle, RESET, 16-channel masks, transpose | **works** |
 | FX params + state (two CLAP send slots) | **works**; state is saved/loaded at fixed `~/Music/fx-slot-A/B.state` |
 | Recorder arm / take start-stop / rename / delete | **works** |

@@ -187,6 +187,58 @@ Item {
         }
     }
 
+    // Beat stepper for the take loop: -/+ in 0.25-beat steps, value readout
+    // with the panel focus ring. The panel EDIT path adjusts the same field.
+    component LoopBeatField: Row {
+        property string label: ""
+        property string valueText: "0.00"
+        property string focusId: ""
+        signal step(real delta)
+
+        height: Style.touch
+        spacing: 2
+
+        Text {
+            width: 50
+            height: parent.height
+            text: parent.label
+            color: Style.textDim
+            font.pixelSize: 9
+            font.bold: true
+            verticalAlignment: Text.AlignVCenter
+        }
+        TouchButton {
+            width: Style.touch
+            height: parent.height
+            text: "-"
+            textSize: 18
+            focusId: parent.focusId + ".dec"
+            onClicked: parent.step(-0.25)
+        }
+        Rectangle {
+            width: parent.width - 50 - Style.touch * 2 - 6
+            height: parent.height
+            color: Style.panelDark
+            border.width: app.focusId === parent.focusId ? 2 : Style.outlineWidth
+            border.color: app.focusId === parent.focusId ? Style.accent : Style.outline
+            Text {
+                anchors.centerIn: parent
+                text: parent.parent.valueText + " b"
+                color: Style.text
+                font.pixelSize: Style.fontBody
+                font.bold: true
+            }
+        }
+        TouchButton {
+            width: Style.touch
+            height: parent.height
+            text: "+"
+            textSize: 18
+            focusId: parent.focusId + ".inc"
+            onClicked: parent.step(0.25)
+        }
+    }
+
     // SHIFT: management + punch
     Column {
         visible: screen.shiftFace
@@ -255,9 +307,85 @@ Item {
             }
         }
 
+        // Take loop for the selected track (session v2 takes.loop). The engine
+        // loops the beat window; with an end at or below the start it loops the
+        // whole active take, which is what the hint line says.
+        Column {
+            width: parent.width
+            height: Style.touch * 2 + 3
+            spacing: 3
+
+            Row {
+                width: parent.width
+                height: Style.touch
+                spacing: 3
+
+                Text {
+                    width: 96
+                    height: parent.height
+                    text: "LOOP  " + String(recorder.selectedTrack + 1).padStart(2, "0")
+                    color: recorder.loopEnabled ? Style.accent : Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    font.bold: true
+                    verticalAlignment: Text.AlignVCenter
+                }
+                TouchButton {
+                    width: 76
+                    height: parent.height
+                    text: recorder.loopEnabled ? "ON" : "OFF"
+                    textSize: Style.fontSmall
+                    checked: recorder.loopEnabled
+                    focusId: "shift.loop.enable"
+                    onClicked: {
+                        recorder.setLoopEnabled(!recorder.loopEnabled)
+                        app.showTextPopup("LOOP", recorder.loopText)
+                    }
+                }
+                Text {
+                    width: parent.width - 96 - 76 - 6
+                    height: parent.height
+                    text: recorder.loopText + "   -   beats from the take start; " +
+                          "end <= start loops the whole take"
+                    color: Style.textDim
+                    font.pixelSize: 10
+                    wrapMode: Text.WordWrap
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            Row {
+                width: parent.width
+                height: Style.touch
+                spacing: 6
+
+                LoopBeatField {
+                    width: (parent.width - 6) / 2
+                    height: parent.height
+                    label: "START"
+                    valueText: recorder.loopStartText
+                    focusId: "shift.loop.start"
+                    onStep: (delta) => {
+                        recorder.setLoopStartBeats(recorder.loopStartBeats + delta)
+                        app.showValuePopup("LOOP START", "generic", recorder.loopStartBeats)
+                    }
+                }
+                LoopBeatField {
+                    width: (parent.width - 6) / 2
+                    height: parent.height
+                    label: "END"
+                    valueText: recorder.loopEndText
+                    focusId: "shift.loop.end"
+                    onStep: (delta) => {
+                        recorder.setLoopEndBeats(recorder.loopEndBeats + delta)
+                        app.showValuePopup("LOOP END", "generic", recorder.loopEndBeats)
+                    }
+                }
+            }
+        }
+
         PunchScreen {
             width: parent.width
-            height: parent.height - Style.touch - 3
+            height: parent.height - Style.touch * 3 - 9
             focusPrefix: "shift.punch"
             compact: true
         }

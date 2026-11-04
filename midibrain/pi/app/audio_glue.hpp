@@ -93,6 +93,11 @@ class AudioGlue {
   // Control-thread monitor/compressor configuration. The audio callback copies
   // these atomics into the engine every block.
   void applyMonitorSettings(const SessionSettings& settings);
+  // Control-thread take-loop configuration (session v2 takes.loop). Calls
+  // Engine::setTakeLoop for all 18 tracks, which maps the beat window to take
+  // frames with the transport tempo of that moment, so the caller re-applies it
+  // after a tempo change (AppController::timerTick) as the engine documents.
+  void applyTakeLoops(const SessionSettings& settings);
 
   // Control-thread take playback selection (engine take player). Returns false
   // with `error` when the engine refuses the file (not 48 kHz WAV, missing).

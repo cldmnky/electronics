@@ -3,6 +3,7 @@
 // on the Pico link thread, so the matrix, the MIDI-learn table and the
 // pending-delivery queue are guarded. Deliveries are flushed by the link
 // thread, which owns the SPI transport and therefore the TRS outputs.
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <deque>
@@ -85,7 +86,41 @@ class MidiGlue {
   // deliveries so only the link thread touches the transport.
   void panic();
 
+  // --- MIDI monitor (Monitor screen) ---------------------------------------
+  // Every message this glue sees is appended to a bounded ring: inputs as they
+  // arrive on the RtMidi/Pico threads, routed outputs when the link thread
+  // flushes them, and the Pi-side USB clock mirror when it emits a byte. The
+  // Pico generates clock/transport for the TRS outputs itself and does not
+  // echo it back, so TRS OUT rows show routed messages only.
+  static constexpr std::size_t kMonitorEvents = 128;
+  struct MonitorEvent {
+    midi::Port port = midi::Port::TrsIn1;
+    bool outbound = false;
+    std::uint8_t size = 0;
+    std::uint8_t data[3] = {};
+    std::uint64_t stampUs = 0;
+  };
+  struct MonitorCounts {
+    std::uint64_t notes = 0;
+    std::uint64_t cc = 0;
+    std::uint64_t clock = 0;
+    std::uint64_t other = 0;
+    friend bool operator==(const MonitorCounts&, const MonitorCounts&) = default;
+  };
+  struct MonitorSnapshot {
+    // Newest last. `events` is only the first `count` entries.
+    std::array<MonitorEvent, kMonitorEvents> events{};
+    std::size_t count = 0;
+    std::array<MonitorCounts, midi::kPortCount> counts{};
+    std::uint64_t total = 0;
+  };
+  MonitorSnapshot monitorSnapshot() const;
+  // Drops the ring and zeroes the per-port counters (Monitor screen RESET).
+  void clearMonitor();
+
  private:
+  void recordMonitor(midi::Port port, bool outbound, const std::uint8_t* data,
+                     std::uint8_t size);
   struct Delivery {
     midi::Port destination;
     midi::MidiEvent event;
@@ -98,6 +133,13 @@ class MidiGlue {
   const bool virtualPorts_;
   std::uint64_t routed_ = 0;
   std::string description_;
+  // Monitor ring + per-port counters, guarded by lock_ (same lock as the
+  // matrix, so a snapshot can never straddle a half-updated event).
+  std::array<MonitorEvent, kMonitorEvents> monitorEvents_{};
+  std::size_t monitorNext_ = 0;
+  std::size_t monitorCount_ = 0;
+  std::array<MonitorCounts, midi::kPortCount> monitorCounts_{};
+  std::uint64_t monitorTotal_ = 0;
 
   mutable std::mutex learnLock_;
   midi::LearnEngine learn_;

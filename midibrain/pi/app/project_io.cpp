@@ -129,7 +129,16 @@ session::Snapshot captureSnapshot(const AppContext& context) {
         context.mixer.out34Send(channel);
     snapshot.takes.active[static_cast<std::size_t>(channel)] =
         context.settings.activeTake(channel);
+    snapshot.takes.loop[static_cast<std::size_t>(channel)] =
+        context.settings.takeLoop[static_cast<std::size_t>(channel)];
+    snapshot.mixer.channels[static_cast<std::size_t>(channel)].inCh =
+        context.mixer.inCh(channel);
+    snapshot.mixer.channels[static_cast<std::size_t>(channel)].inPair =
+        context.mixer.inPair(channel);
+    snapshot.mixer.channels[static_cast<std::size_t>(channel)].outDst =
+        context.mixer.outDst(channel);
   }
+  snapshot.clock = context.settings.clock;
   for (const auto& binding : context.midi.learnBindings()) {
     session::MidiMapEntry entry;
     entry.cc = binding.cc;
@@ -158,6 +167,9 @@ void applyMixer(const AppContext& context, const session::MixerState& mixer) {
     context.mixer.setCueSend(index, channel.cueSend);
     context.mixer.setOut34Send(index, channel.out34Send);
     context.mixer.setMonitor(index, channel.monitor);
+    context.mixer.setInCh(index, channel.inCh);
+    context.mixer.setInPair(index, channel.inPair);
+    context.mixer.setOutDst(index, channel.outDst);
   }
   context.mixer.setMasterDb(gainToDb(mixer.master));
   context.mixer.setOut34Mode(mixer.out34Mode);
@@ -261,7 +273,11 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
   for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
     context.settings.setActiveTake(
         channel, result.snapshot.takes.active[static_cast<std::size_t>(channel)]);
+    context.settings.takeLoop[static_cast<std::size_t>(channel)] =
+        result.snapshot.takes.loop[static_cast<std::size_t>(channel)];
   }
+  context.settings.clock = result.snapshot.clock;
+  context.audio.applyTakeLoops(context.settings);
   return true;
 }
 
@@ -317,7 +333,20 @@ std::string fingerprint(const AppContext& context) {
     appendFloat(out, "o34s", context.mixer.out34Send(index));
     appendInt(out, "mon", context.mixer.monitor(index));
     out += "ta=" + context.settings.activeTake(index) + ";";
+    appendInt(out, "in", context.mixer.inCh(index));
+    appendInt(out, "ip", context.mixer.inPair(index) ? 1 : 0);
+    appendInt(out, "od", context.mixer.outDst(index));
+    const auto& loop = context.settings.takeLoop[static_cast<std::size_t>(index)];
+    appendInt(out, "le", loop.enabled ? 1 : 0);
+    appendFloat(out, "ls", loop.startBeats);
+    appendFloat(out, "lx", loop.endBeats);
   }
+  appendInt(out, "ck1", context.settings.clock.trs[0].clock ? 1 : 0);
+  appendInt(out, "ct1", context.settings.clock.trs[0].transport ? 1 : 0);
+  appendInt(out, "ck2", context.settings.clock.trs[1].clock ? 1 : 0);
+  appendInt(out, "ct2", context.settings.clock.trs[1].transport ? 1 : 0);
+  appendInt(out, "cku", context.settings.clock.usb.clock ? 1 : 0);
+  appendInt(out, "ctu", context.settings.clock.usb.transport ? 1 : 0);
   for (const auto& point : {context.settings.punch.playFrom, context.settings.punch.in,
                             context.settings.punch.out}) {
     appendInt(out, "pe", point.enabled ? 1 : 0);

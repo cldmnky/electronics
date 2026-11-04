@@ -185,6 +185,65 @@ void MixerViewModel::setMonitor(int index, int mode) {
   if (index == trackIndex_) emit trackChanged();
 }
 
+QString MixerViewModel::inputText(int channel, bool pair) {
+  if (channel < 0) return QStringLiteral("NONE");
+  const int first = clampInCh(channel);
+  const QString left = QStringLiteral("IN %1").arg(first + 1, 2, 10, QLatin1Char('0'));
+  if (!pair) return left;
+  const int second = std::min(first + 1, kNumStrips - 1);
+  return left + QStringLiteral("/%1").arg(second + 1, 2, 10, QLatin1Char('0'));
+}
+
+QString MixerViewModel::outputText(int destination) {
+  switch (clampOutDst(destination)) {
+    case 1: return QStringLiteral("OUT3&4");
+    case 2: return QStringLiteral("PHONES");
+    case 3: return QStringLiteral("NONE");
+    default: return QStringLiteral("MAIN 1&2");
+  }
+}
+
+void MixerViewModel::setTrackInCh(int channel) {
+  model_.setInCh(trackIndex_, channel);
+  emit trackChanged();
+}
+
+void MixerViewModel::setTrackInPair(bool pair) {
+  model_.setInPair(trackIndex_, pair);
+  emit trackChanged();
+}
+
+void MixerViewModel::setTrackOutDst(int destination) {
+  model_.setOutDst(trackIndex_, destination);
+  emit trackChanged();
+}
+
+void MixerViewModel::cycleTrackInCh(int delta) {
+  // -1 = none, then mono channels 0..17; both directions wrap.
+  const int current = model_.inCh(trackIndex_);
+  const int steps = kNumStrips + 1;
+  int index = current + 1;  // 0 = none, 1..18 = channel 0..17
+  if (delta > 0) {
+    index = (index + 1) % steps;
+  } else if (delta < 0) {
+    index = (index + steps - 1) % steps;
+  }
+  model_.setInCh(trackIndex_, index - 1);
+  emit trackChanged();
+}
+
+void MixerViewModel::cycleTrackOutDst(int delta) {
+  const int current = model_.outDst(trackIndex_);
+  int next = current;
+  if (delta > 0) {
+    next = (current + 1) % kOutDstCount;
+  } else if (delta < 0) {
+    next = (current + kOutDstCount - 1) % kOutDstCount;
+  }
+  model_.setOutDst(trackIndex_, next);
+  emit trackChanged();
+}
+
 void MixerViewModel::notifyActiveTakesChanged() {
   if (rowCount() == 0) return;
   emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {MonitorMarkRole});

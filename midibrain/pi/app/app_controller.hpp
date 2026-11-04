@@ -21,6 +21,7 @@
 #include "learn_view_model.hpp"
 #include "link_client.hpp"
 #include "midi_glue.hpp"
+#include "midi_monitor_view_model.hpp"
 #include "mixer_model.hpp"
 #include "mixer_view_model.hpp"
 #include "project_logic.hpp"
@@ -130,6 +131,7 @@ class AppController final : public QObject {
   SystemViewModel* system() { return systemVm_.get(); }
   LearnViewModel* learn() { return learnVm_.get(); }
   SessionViewModel* session() { return sessionVm_.get(); }
+  MidiMonitorViewModel* midiMonitor() { return midiMonitorVm_.get(); }
   ToolsViewModel* tools() { return toolsVm_.get(); }
   ConfigPopupModel* config() { return configVm_.get(); }
 
@@ -162,6 +164,9 @@ class AppController final : public QObject {
 
   // Screenshot runner helper: force an overlay state for a deterministic grab.
   Q_INVOKABLE void openDemoKeypad();
+  // Screenshot runner helper: force the SHIFT face (the panel reaches it with a
+  // 500 ms EXIT long-hold, which an offscreen grab cannot perform).
+  Q_INVOKABLE void showShiftFace(bool on);
   Q_INVOKABLE void openConfig(const QString& kind);
   Q_INVOKABLE void configAccept();
   Q_INVOKABLE void configCancel();
@@ -224,6 +229,7 @@ class AppController final : public QObject {
   std::unique_ptr<SystemViewModel> systemVm_;
   std::unique_ptr<LearnViewModel> learnVm_;
   std::unique_ptr<SessionViewModel> sessionVm_;
+  std::unique_ptr<MidiMonitorViewModel> midiMonitorVm_;
   std::unique_ptr<ToolsViewModel> toolsVm_;
   std::unique_ptr<ConfigPopupModel> configVm_;
 
@@ -253,6 +259,9 @@ class AppController final : public QObject {
   QString positionText_ = QStringLiteral("001:1:00 / 00:00");
   QString tempoText_ = QStringLiteral("120.00 BPM");
   QString noticeText_;
+  // Engine take loops are mapped with the transport tempo at apply time, so a
+  // tempo change re-applies them (Engine::setTakeLoop contract).
+  int loopTempoX100_ = 0;
   bool lastClickEnabled_ = false;
   double lastClickLevel_ = 0.5;
   int lastClickBars_ = 1;

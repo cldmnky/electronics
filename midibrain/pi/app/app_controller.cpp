@@ -14,6 +14,7 @@
 namespace mnky::app {
 namespace {
 constexpr int kProjectsTabIndex = 5;
+constexpr int kMonitorTabIndex = 6;
 
 std::uint64_t nowMs() {
   using namespace std::chrono;
@@ -45,7 +46,8 @@ AppController::AppController(bool emulator, QObject* parent)
       *context_, [this] { projectStateChanged(); });
   systemVm_ = std::make_unique<SystemViewModel>(link_, audio_, midi_, fx_, state_);
   learnVm_ = std::make_unique<LearnViewModel>(midi_);
-  sessionVm_ = std::make_unique<SessionViewModel>(state_, mixer_, settings_);
+  sessionVm_ = std::make_unique<SessionViewModel>(state_, mixer_, link_, settings_);
+  midiMonitorVm_ = std::make_unique<MidiMonitorViewModel>(midi_);
   toolsVm_ = std::make_unique<ToolsViewModel>(state_, link_);
   configVm_ = std::make_unique<ConfigPopupModel>(state_, mixer_, settings_);
   connect(recorderVm_.get(), &RecorderViewModel::activeTakeChanged, mixerVm_.get(),
@@ -87,6 +89,8 @@ void AppController::start() {
   link_.start();
   fxVm_->loadDefaults();
   audio_.applyMonitorSettings(settings_);
+  audio_.applyTakeLoops(settings_);
+  sessionVm_->pushClockToLink();
 
   state_.clearDirty();
   dirtyTracker_.clear(project::fingerprint(*context_));
@@ -388,6 +392,12 @@ void AppController::openDemoKeypad() {
                 QStringLiteral("project-rename"), -1);
 }
 
+void AppController::showShiftFace(bool on) {
+  shiftFace_ = on;
+  setPanelMode(on ? QStringLiteral("shift") : QStringLiteral("navigate"));
+  rebuildFocusIds();
+}
+
 void AppController::openConfig(const QString& kind) {
   if (!configVm_->openKind(kind)) return;
   panelMode_ = QStringLiteral("navigate");
@@ -416,6 +426,10 @@ void AppController::timerTick() {
   const auto status = link_.status();
   state_.rolling.store(status.rolling);
   state_.tempoX100.store(status.tempoX100);
+  if (status.tempoX100 != loopTempoX100_) {
+    loopTempoX100_ = status.tempoX100;
+    audio_.applyTakeLoops(settings_);
+  }
   updateShiftState(status);
   updateTransport();
 
@@ -429,6 +443,7 @@ void AppController::timerTick() {
   recorderVm_->refresh();
   projectsVm_->refresh();
   learnVm_->poll();
+  midiMonitorVm_->refresh();
   if (refreshTicks_ % 4 == 0) systemVm_->refresh();
   if (refreshTicks_ % 15 == 0) toolsVm_->refresh();
   configVm_->refreshSummaries();
@@ -685,7 +700,11 @@ bool AppController::isEditableFocus(const QString& focusId) const {
     return id == QStringLiteral("track.gain") || id == QStringLiteral("track.trim") ||
            id == QStringLiteral("track.pan") || id == QStringLiteral("track.fx1") ||
            id == QStringLiteral("track.fx2") || id == QStringLiteral("track.cue") ||
-           id == QStringLiteral("track.out34");
+           id == QStringLiteral("track.out34") || id == QStringLiteral("track.input") ||
+           id == QStringLiteral("track.output");
+  }
+  if (id.startsWith(QStringLiteral("loop."))) {
+    return id == QStringLiteral("loop.start") || id == QStringLiteral("loop.end");
   }
   if (id.startsWith(QStringLiteral("routing.transpose."))) return true;
   if (id.startsWith(QStringLiteral("fx."))) {
@@ -799,12 +818,17 @@ void AppController::activateFocus() {
     } else if (parts[1] == QStringLiteral("monitor") && parts.size() >= 3) {
       mixerVm_->setTrackMonitor(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("input")) {
-      showTextPopup(QStringLiteral("INPUT ASSIGN"),
-                    QStringLiteral("IN %1 (assignment spec pending)")
-                        .arg(mixerVm_->trackIndex() + 1, 2, 10, QLatin1Char('0')));
+      if (parts.size() >= 3 && parts[2] == QStringLiteral("pair")) {
+        mixerVm_->setTrackInPair(!mixerVm_->trackInPair());
+        showTextPopup(QStringLiteral("INPUT SOURCE"), mixerVm_->trackInputText());
+      } else {
+        // Picker: EDIT turns the encoder into the source stepper.
+        setPanelMode(QStringLiteral("edit"));
+        showTextPopup(QStringLiteral("INPUT SOURCE"), mixerVm_->trackInputText());
+      }
     } else if (parts[1] == QStringLiteral("output")) {
-      showTextPopup(QStringLiteral("OUTPUT ASSIGN"),
-                    QStringLiteral("MAIN 1&2 (assignment spec pending)"));
+      setPanelMode(QStringLiteral("edit"));
+      showTextPopup(QStringLiteral("OUTPUT DEST"), mixerVm_->trackOutputText());
     } else if (parts[1] == QStringLiteral("gain") || parts[1] == QStringLiteral("trim") ||
                parts[1] == QStringLiteral("pan") || parts[1] == QStringLiteral("fx1") ||
                parts[1] == QStringLiteral("fx2") || parts[1] == QStringLiteral("cue") ||
@@ -821,6 +845,59 @@ void AppController::activateFocus() {
   }
   if (focusId == QStringLiteral("tools.brightness")) {
     setPanelMode(QStringLiteral("edit"));
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("loop")) {
+    if (parts[1] == QStringLiteral("enable")) {
+      recorderVm_->setLoopEnabled(!recorderVm_->loopEnabled());
+      showTextPopup(QStringLiteral("LOOP"),
+                    recorderVm_->loopEnabled() ? recorderVm_->loopText()
+                                               : QStringLiteral("OFF"));
+    } else if (parts[1] == QStringLiteral("start") || parts[1] == QStringLiteral("end")) {
+      setPanelMode(QStringLiteral("edit"));
+    }
+    return;
+  }
+
+  if (parts.size() >= 3 && parts[0] == QStringLiteral("clock")) {
+    // Per-output clock/transport gates: index 2 is the output (0/1 TRS, 2 USB).
+    const int output = parts[2].toInt();
+    const bool clock = parts[1] == QStringLiteral("clock");
+    if (!clock && parts[1] != QStringLiteral("transport")) return;
+    if (output == 0) {
+      clock ? sessionVm_->setTrs1Clock(!sessionVm_->trs1Clock())
+            : sessionVm_->setTrs1Transport(!sessionVm_->trs1Transport());
+    } else if (output == 1) {
+      clock ? sessionVm_->setTrs2Clock(!sessionVm_->trs2Clock())
+            : sessionVm_->setTrs2Transport(!sessionVm_->trs2Transport());
+    } else if (output == 2) {
+      clock ? sessionVm_->setUsbClock(!sessionVm_->usbClock())
+            : sessionVm_->setUsbTransport(!sessionVm_->usbTransport());
+    }
+    const QStringList names = {QStringLiteral("TRS OUT1"), QStringLiteral("TRS OUT2"),
+                               QStringLiteral("USB OUT")};
+    showTextPopup(names.value(output) + QStringLiteral(" ") +
+                      (clock ? QStringLiteral("CLOCK") : QStringLiteral("TRANSPORT")),
+                  QStringLiteral("session v2 clock gate toggled"));
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("midimon")) {
+    if (parts[1] == QStringLiteral("clock") && parts.size() >= 3 &&
+        parts[2] == QStringLiteral("filter")) {
+      midiMonitorVm_->setHideClock(!midiMonitorVm_->hideClock());
+      showTextPopup(QStringLiteral("MIDI MONITOR"),
+                    midiMonitorVm_->hideClock() ? QStringLiteral("clock bytes hidden")
+                                                : QStringLiteral("clock bytes shown"));
+    } else if (parts[1] == QStringLiteral("reset")) {
+      midiMonitorVm_->reset();
+      showTextPopup(QStringLiteral("MIDI MONITOR"), QStringLiteral("counters cleared"));
+    } else if (parts[1] == QStringLiteral("port") && parts.size() >= 3) {
+      const int port = parts[2].toInt();
+      showTextPopup(QStringLiteral("MIDI ") + midiPortName(port),
+                    midiMonitorVm_->portSummary(port));
+    }
     return;
   }
 
@@ -1192,6 +1269,27 @@ void AppController::adjustFocused(int detents, bool fine) {
       mixerVm_->setTrackOut34(mixerVm_->trackOut34() + step * (fine ? 0.005 : 0.02));
       showValuePopup(QStringLiteral("OUT34"), QStringLiteral("percent"),
                      mixerVm_->trackOut34());
+    } else if (parts[1] == QStringLiteral("input")) {
+      // Source picker: none, then IN 01..18 (the PAIR toggle is a NAV_PRESS).
+      mixerVm_->cycleTrackInCh(detents > 0 ? 1 : -1);
+      showTextPopup(QStringLiteral("INPUT SOURCE"), mixerVm_->trackInputText());
+    } else if (parts[1] == QStringLiteral("output")) {
+      mixerVm_->cycleTrackOutDst(detents > 0 ? 1 : -1);
+      showTextPopup(QStringLiteral("OUTPUT DEST"), mixerVm_->trackOutputText());
+    }
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("loop")) {
+    const double step = fine ? kLoopBeatsPerStep : 1.0;
+    if (parts[1] == QStringLiteral("start")) {
+      recorderVm_->setLoopStartBeats(recorderVm_->loopStartBeats() + step * detents);
+      showValuePopup(QStringLiteral("LOOP START"), QStringLiteral("generic"),
+                     recorderVm_->loopStartBeats());
+    } else if (parts[1] == QStringLiteral("end")) {
+      recorderVm_->setLoopEndBeats(recorderVm_->loopEndBeats() + step * detents);
+      showValuePopup(QStringLiteral("LOOP END"), QStringLiteral("generic"),
+                     recorderVm_->loopEndBeats());
     }
     return;
   }
@@ -1404,6 +1502,7 @@ void AppController::rebuildFocusIds() {
       case 0:
         if (mixerVm_->trackMode()) {
           ids.push_back(QStringLiteral("shift.track.input"));
+          ids.push_back(QStringLiteral("shift.track.input.pair"));
           ids.push_back(QStringLiteral("shift.track.output"));
           ids.push_back(QStringLiteral("shift.track.gain"));
           ids.push_back(QStringLiteral("shift.track.fx1"));
@@ -1440,6 +1539,10 @@ void AppController::rebuildFocusIds() {
         for (int source = 0; source < routing::kInputCount; ++source) {
           ids.push_back(QStringLiteral("shift.routing.transpose.%1").arg(source));
         }
+        for (int output = 0; output < 3; ++output) {
+          ids.push_back(QStringLiteral("shift.clock.clock.%1").arg(output));
+          ids.push_back(QStringLiteral("shift.clock.transport.%1").arg(output));
+        }
         break;
       case 2: {
         ids.push_back(QStringLiteral("shift.fx.A.return"));
@@ -1461,6 +1564,9 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("shift.recorder.activate"));
         ids.push_back(QStringLiteral("shift.recorder.rename"));
         ids.push_back(QStringLiteral("shift.recorder.delete"));
+        ids.push_back(QStringLiteral("shift.loop.enable"));
+        ids.push_back(QStringLiteral("shift.loop.start"));
+        ids.push_back(QStringLiteral("shift.loop.end"));
         for (const char* point : {"playfrom", "in", "out"}) {
           ids.push_back(QStringLiteral("shift.punch.%1.enable").arg(QLatin1String(point)));
           ids.push_back(QStringLiteral("shift.punch.%1.measure").arg(QLatin1String(point)));
@@ -1581,41 +1687,13 @@ void AppController::rebuildFocusIds() {
         }
         break;
       }
-      case 6: {
-        ids.push_back(QStringLiteral("tools.page.0"));
-        ids.push_back(QStringLiteral("tools.page.1"));
-        ids.push_back(QStringLiteral("tools.page.2"));
-        if (toolsPage_ == 0) {
-          for (const char* point : {"playfrom", "in", "out"}) {
-            ids.push_back(QStringLiteral("punch.%1.enable").arg(QLatin1String(point)));
-            ids.push_back(QStringLiteral("punch.%1.measure").arg(QLatin1String(point)));
-          }
-        } else if (toolsPage_ == 1) {
-          for (int mode = 0; mode < 3; ++mode) {
-            ids.push_back(QStringLiteral("monitor.clickmode.%1").arg(mode));
-            ids.push_back(QStringLiteral("monitor.clickout.%1").arg(mode));
-          }
-          ids.push_back(QStringLiteral("monitor.clickgain"));
-          ids.push_back(QStringLiteral("monitor.phones.0"));
-          ids.push_back(QStringLiteral("monitor.phones.1"));
-          ids.push_back(QStringLiteral("monitor.cuestyle.0"));
-          ids.push_back(QStringLiteral("monitor.cuestyle.1"));
-          ids.push_back(QStringLiteral("monitor.out34.0"));
-          ids.push_back(QStringLiteral("monitor.out34.1"));
-          for (const char* row : {"cue", "fx1", "fx2", "out34", "rec"}) {
-            ids.push_back(QStringLiteral("monitor.send.%1.pre").arg(QLatin1String(row)));
-            ids.push_back(QStringLiteral("monitor.send.%1.post").arg(QLatin1String(row)));
-          }
-          ids.push_back(QStringLiteral("monitor.comp.on"));
-          ids.push_back(QStringLiteral("monitor.comp.thresh"));
-          ids.push_back(QStringLiteral("monitor.comp.ratio"));
-          ids.push_back(QStringLiteral("monitor.comp.attack"));
-          ids.push_back(QStringLiteral("monitor.comp.release"));
-          ids.push_back(QStringLiteral("monitor.comp.makeup"));
-          ids.push_back(QStringLiteral("monitor.comp.mode.0"));
-          ids.push_back(QStringLiteral("monitor.comp.mode.1"));
-        } else {
-          ids.push_back(QStringLiteral("tools.brightness"));
+      case kMonitorTabIndex: {
+        // MIDI MONITOR: one focus stop per port row plus RESET. Activating a
+        // port reads its counters out in the value popup.
+        ids.push_back(QStringLiteral("midimon.clock.filter"));
+        ids.push_back(QStringLiteral("midimon.reset"));
+        for (int port = 0; port < midi::kPortCount; ++port) {
+          ids.push_back(QStringLiteral("midimon.port.%1").arg(port));
         }
         break;
       }
@@ -1762,6 +1840,8 @@ void AppController::projectStateChanged() {
   recorderVm_->takeStateChanged();
   recorderVm_->resyncActiveTakes();
   audio_.applyMonitorSettings(settings_);
+  audio_.applyTakeLoops(settings_);
+  sessionVm_->pushClockToLink();
   toolsVm_->refresh();
   state_.clearDirty();
   dirtyTracker_.clear(project::fingerprint(*context_));

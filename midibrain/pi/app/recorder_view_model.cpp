@@ -179,6 +179,7 @@ void RecorderViewModel::setSelectedTrack(int track) {
   scanTakes();
   updateReadouts();
   emit trackChanged();
+  emit loopChanged();
   emit selectionChanged();
 }
 
@@ -195,6 +196,62 @@ QString RecorderViewModel::activeTake() const {
   const auto active = settings_.activeTake(selectedTrack_);
   return active.empty() ? QStringLiteral("LIVE INPUT")
                         : QString::fromStdString(active);
+}
+
+session::LoopState RecorderViewModel::selectedLoop() const {
+  return settings_.takeLoop[static_cast<std::size_t>(selectedTrack_)];
+}
+
+void RecorderViewModel::writeLoop(const session::LoopState& loop) {
+  settings_.takeLoop[static_cast<std::size_t>(selectedTrack_)] = loop;
+  audio_.applyTakeLoops(settings_);
+  emit loopChanged();
+}
+
+bool RecorderViewModel::loopEnabled() const { return selectedLoop().enabled; }
+
+void RecorderViewModel::setLoopEnabled(bool enabled) {
+  auto loop = selectedLoop();
+  if (loop.enabled == enabled) return;
+  loop.enabled = enabled;
+  writeLoop(loop);
+}
+
+double RecorderViewModel::loopStartBeats() const { return selectedLoop().startBeats; }
+
+void RecorderViewModel::setLoopStartBeats(double beats) {
+  auto loop = selectedLoop();
+  const double value = loopBeats(beats);
+  if (std::abs(loop.startBeats - value) < 1e-9) return;
+  loop.startBeats = value;
+  writeLoop(loop);
+}
+
+double RecorderViewModel::loopEndBeats() const { return selectedLoop().endBeats; }
+
+void RecorderViewModel::setLoopEndBeats(double beats) {
+  auto loop = selectedLoop();
+  const double value = loopBeats(beats);
+  if (std::abs(loop.endBeats - value) < 1e-9) return;
+  loop.endBeats = value;
+  writeLoop(loop);
+}
+
+QString RecorderViewModel::loopStartText() const {
+  return QString::number(selectedLoop().startBeats, 'f', 2);
+}
+
+QString RecorderViewModel::loopEndText() const {
+  return QString::number(selectedLoop().endBeats, 'f', 2);
+}
+
+QString RecorderViewModel::loopText() const {
+  const auto loop = selectedLoop();
+  if (!loop.enabled) return QStringLiteral("OFF");
+  if (loop.endBeats <= loop.startBeats) return QStringLiteral("WHOLE TAKE");
+  return QStringLiteral("%1 - %2 b")
+      .arg(loop.startBeats, 0, 'f', 2)
+      .arg(loop.endBeats, 0, 'f', 2);
 }
 
 void RecorderViewModel::activateSelected() {
@@ -353,6 +410,7 @@ int RecorderViewModel::adoptRecordedTake(const std::string& takeDirectoryPath,
 void RecorderViewModel::refresh() {
   arms_.refresh();
   updateReadouts();
+  emit loopChanged();
   // Directory scanning hits the filesystem, so only every ~1.3 s.
   if (++refreshCounter_ % 20 == 0) scanTakes();
 }

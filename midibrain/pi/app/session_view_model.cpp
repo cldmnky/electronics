@@ -3,19 +3,27 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../../firmware/pico/midi.hpp"
 #include "logic.hpp"
 
 namespace mnky::app {
 namespace {
+std::uint8_t clockFlags(bool clock, bool transport) {
+  std::uint8_t flags = 0;
+  if (clock) flags |= mb::CLOCK_ROUTE_CLOCK;
+  if (transport) flags |= mb::CLOCK_ROUTE_TRANSPORT;
+  return flags;
+}
+
 int clampMeasure(int measure) { return std::max(1, measure); }
 int clampSource(int source) { return source == 1 ? 1 : 0; }
 int clampChoice(int value, int maximum) { return std::clamp(value, 0, maximum); }
 double clampDb(double db, double low, double high) { return std::clamp(db, low, high); }
 }  // namespace
 
-SessionViewModel::SessionViewModel(AppState& state, MixerModel& mixer,
+SessionViewModel::SessionViewModel(AppState& state, MixerModel& mixer, LinkClient& link,
                                    SessionSettings& settings, QObject* parent)
-    : QObject(parent), state_(state), mixer_(mixer), settings_(settings) {}
+    : QObject(parent), state_(state), mixer_(mixer), link_(link), settings_(settings) {}
 
 void SessionViewModel::setPunchPlayFromEnabled(bool enabled) {
   if (settings_.punch.playFrom.enabled == enabled) return;
@@ -157,12 +165,71 @@ void SessionViewModel::setCompMode(int mode) {
   emit compChanged();
 }
 
+void SessionViewModel::setTrsRoute(int output, bool clock, bool transport) {
+  if (output < 0 || output > 1) return;
+  auto& route = settings_.clock.trs[static_cast<std::size_t>(output)];
+  if (route.clock == clock && route.transport == transport) return;
+  route.clock = clock;
+  route.transport = transport;
+  link_.requestClockRoute(static_cast<std::uint8_t>(output), clockFlags(clock, transport));
+  emit clockChanged();
+}
+
+void SessionViewModel::setTrs1Clock(bool on) {
+  setTrsRoute(0, on, settings_.clock.trs[0].transport);
+}
+void SessionViewModel::setTrs1Transport(bool on) {
+  setTrsRoute(0, settings_.clock.trs[0].clock, on);
+}
+void SessionViewModel::setTrs2Clock(bool on) {
+  setTrsRoute(1, on, settings_.clock.trs[1].transport);
+}
+void SessionViewModel::setTrs2Transport(bool on) {
+  setTrsRoute(1, settings_.clock.trs[1].clock, on);
+}
+
+void SessionViewModel::setUsbClock(bool on) {
+  if (settings_.clock.usb.clock == on) return;
+  settings_.clock.usb.clock = on;
+  link_.requestUsbClockGates(settings_.clock.usb.clock, settings_.clock.usb.transport);
+  emit clockChanged();
+}
+
+void SessionViewModel::setUsbTransport(bool on) {
+  if (settings_.clock.usb.transport == on) return;
+  settings_.clock.usb.transport = on;
+  link_.requestUsbClockGates(settings_.clock.usb.clock, settings_.clock.usb.transport);
+  emit clockChanged();
+}
+
+QString SessionViewModel::clockText() const {
+  const auto gate = [](bool on) { return on ? QStringLiteral("on") : QStringLiteral("off"); };
+  const auto& trs1 = settings_.clock.trs[0];
+  const auto& trs2 = settings_.clock.trs[1];
+  return QStringLiteral("GATES clock/transport  TRS1 %1/%2  TRS2 %3/%4  USB %5/%6")
+      .arg(gate(trs1.clock), gate(trs1.transport), gate(trs2.clock), gate(trs2.transport))
+      .arg(gate(settings_.clock.usb.clock), gate(settings_.clock.usb.transport))
+      .arg(trs1.tempoDiv)
+      .arg(trs1.syncDelayMs);
+}
+
+void SessionViewModel::pushClockToLink() {
+  for (int output = 0; output < 2; ++output) {
+    const auto& route = settings_.clock.trs[static_cast<std::size_t>(output)];
+    link_.requestClockRoute(static_cast<std::uint8_t>(output),
+                            clockFlags(route.clock, route.transport));
+  }
+  link_.requestUsbClockGates(settings_.clock.usb.clock, settings_.clock.usb.transport);
+  emit clockChanged();
+}
+
 void SessionViewModel::refresh() {
   emit punchChanged();
   emit clickChanged();
   emit monitorChanged();
   emit sendsChanged();
   emit compChanged();
+  emit clockChanged();
 }
 
 }  // namespace mnky::app

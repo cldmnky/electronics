@@ -4,7 +4,7 @@ import Mnkybox 1.0
 import "components"
 import "overlays"
 
-// mnkybox shell: tab row, persistent transport strip, one of six screens, and
+// mnkybox shell: tab row, persistent transport strip, one of seven screens, and
 // the keypad/confirmation overlays. 800 x 480 landscape-first, resizable.
 Window {
     id: window
@@ -17,7 +17,8 @@ Window {
     title: "mnkybox"
     color: Style.background
 
-    readonly property var tabNames: ["Mixer", "Routing", "FX", "Recorder", "System", "Projects"]
+    readonly property var tabNames: ["Mixer", "Routing", "FX", "Recorder", "System",
+                                     "Projects", "Monitor"]
 
     Column {
         anchors.fill: parent
@@ -29,7 +30,7 @@ Window {
             color: Style.panelDark
 
             readonly property bool shiftMode: app.panelMode === "shift"
-            readonly property int tabCount: 6
+            readonly property int tabCount: 7
 
             Row {
                 anchors.fill: parent
@@ -108,6 +109,7 @@ Window {
                 case 3: return "screens/RecorderScreen.qml"
                 case 4: return "screens/SystemScreen.qml"
                 case 5: return "screens/ProjectsScreen.qml"
+                case 6: return "screens/MidiMonitorScreen.qml"
                 default: return ""
                 }
             }

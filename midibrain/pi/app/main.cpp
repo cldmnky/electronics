@@ -134,6 +134,49 @@ class ScreenshotRunner final : public QObject {
                                                     QStringLiteral("pan"), 0.5);
                         controller_->setTab(0);
                       }});
+    steps_.push_back({"32-loop", [this] {
+                        controller_->keypadCancel();
+                        controller_->confirmCancel();
+                        controller_->hideValuePopup();
+                        controller_->showShiftFace(true);
+                        controller_->recorder()->setSelectedTrack(2);
+                        controller_->recorder()->setLoopEnabled(true);
+                        controller_->recorder()->setLoopStartBeats(1.0);
+                        controller_->recorder()->setLoopEndBeats(5.0);
+                        controller_->setTab(3);
+                      }});
+    steps_.push_back({"32-io", [this] {
+                        controller_->hideValuePopup();
+                        controller_->showShiftFace(true);
+                        controller_->mixer()->setTrackMode(true);
+                        controller_->mixer()->setTrackIndex(2);
+                        controller_->mixer()->setTrackInCh(4);
+                        controller_->mixer()->setTrackInPair(true);
+                        controller_->mixer()->setTrackOutDst(1);
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"32-clock", [this] {
+                        controller_->hideValuePopup();
+                        controller_->showShiftFace(true);
+                        controller_->session()->setTrs1Clock(true);
+                        controller_->session()->setTrs1Transport(false);
+                        controller_->session()->setTrs2Clock(false);
+                        controller_->session()->setTrs2Transport(true);
+                        controller_->session()->setUsbClock(true);
+                        controller_->session()->setUsbTransport(true);
+                        controller_->setTab(1);
+                      }});
+    steps_.push_back({"32-monitor", [this] {
+                        controller_->hideValuePopup();
+                        controller_->showShiftFace(false);
+                        // Real events through the live path: PLAY mirrors a USB
+                        // START/clock bytes, PANIC emits CC123 on every output.
+                        controller_->play();
+                        controller_->shiftAction(1);
+                        controller_->midiMonitor()->setSelectedPort(3);
+                        controller_->midiMonitor()->setHideClock(true);
+                        controller_->setTab(6);
+                      }});
   }
 
   void start() {
@@ -267,6 +310,7 @@ int main(int argc, char* argv[]) {
   engine.rootContext()->setContextProperty(QStringLiteral("system"), controller.system());
   engine.rootContext()->setContextProperty(QStringLiteral("learn"), controller.learn());
   engine.rootContext()->setContextProperty(QStringLiteral("session"), controller.session());
+  engine.rootContext()->setContextProperty(QStringLiteral("midimon"), controller.midiMonitor());
   engine.rootContext()->setContextProperty(QStringLiteral("tools"), controller.tools());
   engine.rootContext()->setContextProperty(QStringLiteral("config"), controller.config());
 

@@ -47,6 +47,19 @@ class MixerModel {
   // live input over a take). Clamped to 0..2.
   void setMonitor(int index, int mode);
   int monitor(int index) const;
+  // Per-track I/O assignment (session v2 mixer.channels[].inCh/inPair/outDst):
+  // `inCh` is the mono device channel 0..17 or -1 for none, `inPair` binds the
+  // next channel as a stereo pair (inCh is forced even), `outDst` is
+  // 0 = Main 1&2, 1 = OUT3&4, 2 = phones, 3 = none. The engine has no per-track
+  // source/destination fields yet (audio::Channel carries gain/pan/monitor
+  // only), so applyTo() cannot forward them and the values live here until the
+  // audio worker adds them.
+  void setInCh(int index, int channel);
+  int inCh(int index) const;
+  void setInPair(int index, bool pair);
+  bool inPair(int index) const;
+  void setOutDst(int index, int destination);
+  int outDst(int index) const;
 
   // 0 = OUT3&4 stereo pair, 1 = two mono sends (session v2 mixer.out34mode).
   void setOut34Mode(int mode);
@@ -75,6 +88,9 @@ class MixerModel {
     std::atomic<float> cueSend{0.0f};
     std::atomic<float> out34Send{0.0f};
     std::atomic<int> monitor{1};
+    std::atomic<int> inCh{0};
+    std::atomic<bool> inPair{false};
+    std::atomic<int> outDst{0};
   };
 
   Strip strips_[audio::kMaxInputs];

@@ -15,7 +15,8 @@
 
 namespace mnky::app {
 
-inline constexpr int kScreenCount = 6;  // Mixer, Routing, FX, Recorder, System, Projects
+inline constexpr int kScreenCount = 7;  // Mixer, Routing, FX, Recorder, System,
+                                        // Projects, Monitor
 inline constexpr int kNumStrips = 18;   // audio::kMaxInputs
 
 // One thing the app does in response to a panel gesture or a screen control.
@@ -110,6 +111,45 @@ inline Intent intentForControl(std::uint8_t id, std::uint8_t value, bool shift,
     return Intent{Intent::Kind::EncoderTurn, detents};
   }
   return intentForAction(midi::mapControl(id, value, shift), state);
+}
+
+// --- take loop / I/O assignment value mapping -------------------------------
+// Take-loop beat fields move on a 0.25-beat grid between 0 and kLoopMaxBeats.
+// The whole-take rule (end <= start) is a session::LoopState property, so the
+// field values themselves are only clamped to that range.
+inline constexpr double kLoopBeatsPerStep = 0.25;
+inline constexpr double kLoopMaxBeats = 1024.0;
+
+inline double loopBeats(double beats) {
+  if (!std::isfinite(beats) || beats <= 0.0) return 0.0;
+  const double snapped =
+      std::round(beats / kLoopBeatsPerStep) * kLoopBeatsPerStep;
+  if (snapped > kLoopMaxBeats) return kLoopMaxBeats;
+  return snapped;
+}
+
+// Per-track input source choices: -1 (none) then mono channels 0..17. A stereo
+// pair keeps the chosen channel even and uses the next one as the right side.
+inline int clampInCh(int channel) {
+  if (channel < 0) return -1;
+  if (channel >= kNumStrips) return kNumStrips - 1;
+  return channel;
+}
+
+inline int evenInCh(int channel) {
+  const int clamped = clampInCh(channel);
+  if (clamped < 0) return clamped;
+  return clamped % 2 == 0 ? clamped : clamped - 1;
+}
+
+// Per-track output destination: 0 = Main 1&2, 1 = OUT3&4, 2 = phones, 3 = none
+// (session::MixerChannelState::outDst).
+inline constexpr int kOutDstCount = 4;
+
+inline int clampOutDst(int destination) {
+  if (destination < 0) return 0;
+  if (destination >= kOutDstCount) return kOutDstCount - 1;
+  return destination;
 }
 
 // --- mixer / meter value mapping -------------------------------------------

@@ -40,6 +40,9 @@ class MixerViewModel final : public QAbstractListModel {
   Q_PROPERTY(double trackLevel READ trackLevel NOTIFY metersChanged)
   Q_PROPERTY(bool trackClip READ trackClip NOTIFY metersChanged)
   Q_PROPERTY(int trackMonitor READ trackMonitor WRITE setTrackMonitor NOTIFY trackChanged)
+  Q_PROPERTY(QString trackInputText READ trackInputText NOTIFY trackChanged)
+  Q_PROPERTY(QString trackOutputText READ trackOutputText NOTIFY trackChanged)
+  Q_PROPERTY(bool trackInPair READ trackInPair WRITE setTrackInPair NOTIFY trackChanged)
   Q_PROPERTY(int selectedStrip READ selectedStrip WRITE setSelectedStrip NOTIFY selectedStripChanged)
   Q_PROPERTY(double masterDb READ masterDb WRITE setMasterDb NOTIFY masterChanged)
   Q_PROPERTY(double meterLeft READ meterLeft NOTIFY metersChanged)
@@ -112,6 +115,23 @@ class MixerViewModel final : public QAbstractListModel {
   int trackMonitor() const { return model_.monitor(trackIndex_); }
   Q_INVOKABLE void setTrackMonitor(int mode);
   Q_INVOKABLE void setMonitor(int index, int mode);
+  // Per-track I/O assignment (session v2 inCh/inPair/outDst). The engine has no
+  // source/destination fields yet, so these values live in MixerModel and the
+  // session; the pickers on the TRACK SHIFT face are the only writer.
+  int trackInCh() const { return model_.inCh(trackIndex_); }
+  bool trackInPair() const { return model_.inPair(trackIndex_); }
+  int trackOutDst() const { return model_.outDst(trackIndex_); }
+  QString trackInputText() const { return inputText(trackInCh(), trackInPair()); }
+  QString trackOutputText() const { return outputText(trackOutDst()); }
+  Q_INVOKABLE void setTrackInCh(int channel);
+  Q_INVOKABLE void setTrackInPair(bool pair);
+  Q_INVOKABLE void setTrackOutDst(int destination);
+  // Panel/touch steppers: -1/+1 through "none, IN 01..18" and the four output
+  // destinations. Both wrap.
+  Q_INVOKABLE void cycleTrackInCh(int delta);
+  Q_INVOKABLE void cycleTrackOutDst(int delta);
+  static QString inputText(int channel, bool pair);
+  static QString outputText(int destination);
   // Re-evaluate the Auto marker after an active-take change (Auto shows only
   // when a take makes it choose the take over the live input).
   void notifyActiveTakesChanged();

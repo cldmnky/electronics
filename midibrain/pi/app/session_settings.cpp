@@ -25,6 +25,8 @@ void SessionSettings::reset() {
   cue = session::CueState{};
   sends = session::SendsState{};
   mainComp = session::MainCompState{};
+  takeLoop.fill(session::LoopState{});
+  clock = session::ClockState{};
   isTemplate = false;
   const std::lock_guard<std::mutex> lock(takeLock_);
   for (auto& take : activeTakes_) take.clear();

@@ -48,6 +48,7 @@ std::string MidiGlue::describe() const {
 void MidiGlue::handleInput(const midi::MidiEvent& event) {
   {
     const std::lock_guard<std::mutex> lock(lock_);
+    recordMonitor(event.source, false, event.data, event.size);
     router_.route(event, [this](midi::Port destination, const midi::MidiEvent& routed) {
       if (outbox_.size() >= kMaxPendingDeliveries) outbox_.pop_front();
       outbox_.push_back(Delivery{destination, routed});
@@ -78,11 +79,16 @@ void MidiGlue::pump(const TrsSink& trsSink) {
     pending.swap(outbox_);
   }
   for (const auto& delivery : pending) {
+    bool sent = false;
     if (delivery.destination == midi::Port::UsbOut) {
       usb_.send(delivery.event);
+      sent = true;
     } else if (trsSink) {
-      trsSink(delivery.destination, delivery.event);
+      sent = trsSink(delivery.destination, delivery.event);
     }
+    if (!sent) continue;
+    const std::lock_guard<std::mutex> lock(lock_);
+    recordMonitor(delivery.destination, true, delivery.event.data, delivery.event.size);
   }
 }
 
@@ -93,6 +99,61 @@ void MidiGlue::sendUsbClock(std::uint8_t byte) {
   event.data[0] = byte;
   event.stampUs = midi::piNowUs();
   usb_.send(event);
+  const std::lock_guard<std::mutex> lock(lock_);
+  recordMonitor(midi::Port::UsbOut, true, event.data, event.size);
+}
+
+void MidiGlue::recordMonitor(midi::Port port, bool outbound, const std::uint8_t* data,
+                             std::uint8_t size) {
+  const auto portIndex = static_cast<std::size_t>(port);
+  if (portIndex >= static_cast<std::size_t>(midi::kPortCount)) return;
+  MonitorEvent event;
+  event.port = port;
+  event.outbound = outbound;
+  event.size = size > 3 ? 3 : size;
+  for (std::uint8_t i = 0; i < event.size; ++i) event.data[i] = data[i];
+  event.stampUs = midi::piNowUs();
+  monitorEvents_[monitorNext_] = event;
+  monitorNext_ = (monitorNext_ + 1) % kMonitorEvents;
+  if (monitorCount_ < kMonitorEvents) ++monitorCount_;
+  ++monitorTotal_;
+
+  auto& counts = monitorCounts_[portIndex];
+  if (event.size == 0) {
+    ++counts.other;
+  } else if (event.size == 1 && (event.data[0] == 0xF8)) {
+    ++counts.clock;
+  } else if ((event.data[0] & 0xF0u) == 0x90u ||
+             (event.data[0] & 0xF0u) == 0x80u) {
+    ++counts.notes;
+  } else if ((event.data[0] & 0xF0u) == 0xB0u) {
+    ++counts.cc;
+  } else {
+    ++counts.other;
+  }
+}
+
+void MidiGlue::clearMonitor() {
+  const std::lock_guard<std::mutex> lock(lock_);
+  monitorNext_ = 0;
+  monitorCount_ = 0;
+  monitorTotal_ = 0;
+  monitorCounts_ = {};
+}
+
+MidiGlue::MonitorSnapshot MidiGlue::monitorSnapshot() const {
+  MonitorSnapshot snapshot;
+  const std::lock_guard<std::mutex> lock(lock_);
+  snapshot.count = monitorCount_;
+  snapshot.counts = monitorCounts_;
+  snapshot.total = monitorTotal_;
+  for (std::size_t i = 0; i < monitorCount_; ++i) {
+    // Oldest first: the ring writes at monitorNext_ and wraps.
+    const std::size_t index =
+        (monitorNext_ + kMonitorEvents - monitorCount_ + i) % kMonitorEvents;
+    snapshot.events[i] = monitorEvents_[index];
+  }
+  return snapshot;
 }
 
 void MidiGlue::setRoute(midi::Port source, midi::Port destination, bool enabled) {

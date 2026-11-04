@@ -28,12 +28,15 @@
 #include "logic.hpp"
 #include "midi/learn.hpp"
 #include "midi_glue.hpp"
+#include "midi_monitor_view_model.hpp"
 #include "mixer_model.hpp"
+#include "mixer_view_model.hpp"
 #include "project_io.hpp"
 #include "project_logic.hpp"
 #include "recorder_view_model.hpp"
 #include "routing_model.hpp"
 #include "session_settings.hpp"
+#include "session_view_model.hpp"
 #include "text_buffer.hpp"
 #include "wav_info.hpp"
 
@@ -514,6 +517,18 @@ void projectRoundTripTests() {
   settings.mainComp.makeupDb = 3.0f;
   settings.mainComp.mode = 1;
   settings.setActiveTake(2, "02-drums-003.wav");
+  settings.takeLoop[2] = session::LoopState{true, 1.5, 7.25};
+  settings.clock.trs[0].clock = true;
+  settings.clock.trs[0].transport = false;
+  settings.clock.trs[1].clock = false;
+  settings.clock.trs[1].transport = true;
+  settings.clock.usb.clock = true;
+  settings.clock.usb.transport = false;
+  mixer.setInCh(2, 4);
+  mixer.setInPair(2, true);
+  mixer.setOutDst(2, 1);
+  mixer.setInCh(3, -1);
+  mixer.setOutDst(3, 3);
   midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, true);
   check(midi.addLearnBinding(74, 2, "mixer.ch03.gain", 0),
         "project test learn binding");
@@ -567,6 +582,18 @@ void projectRoundTripTests() {
         "project load restores the main compressor");
   check(settings.activeTake(2) == "02-drums-003.wav",
         "project load restores the active take pointer");
+  check(settings.takeLoop[2].enabled &&
+            std::abs(settings.takeLoop[2].startBeats - 1.5) < 1e-9 &&
+            std::abs(settings.takeLoop[2].endBeats - 7.25) < 1e-9,
+        "project load restores the per-track take loop");
+  check(settings.clock.trs[0].clock && !settings.clock.trs[0].transport &&
+            !settings.clock.trs[1].clock && settings.clock.trs[1].transport &&
+            settings.clock.usb.clock && !settings.clock.usb.transport,
+        "project load restores the per-output clock gates");
+  check(mixer.inCh(2) == 4 && mixer.inPair(2) && mixer.outDst(2) == 1,
+        "project load restores the per-track input source and output destination");
+  check(mixer.inCh(3) == -1 && mixer.outDst(3) == 3,
+        "project load restores a disabled input source and the NONE destination");
   check(midi.routeEnabled(midi::Port::TrsIn1, midi::Port::UsbOut),
         "project load restores the routing matrix");
   check(midi.learnBindings().size() == 1 &&
@@ -575,6 +602,130 @@ void projectRoundTripTests() {
 
   std::error_code removeError;
   std::filesystem::remove_all(directory, removeError);
+}
+
+// Take-loop beat field, I/O assignment and clock-gate value rules: the pure
+// mapping the Recorder/Routing/Mixer SHIFT faces and the session sections share.
+void loopAndIoTests() {
+  check(loopBeats(-1.0) == 0.0 && loopBeats(0.0) == 0.0, "loop beats floor at 0");
+  checkNear(loopBeats(0.1), 0.0, 1e-9, "loop beats snap down to the 0.25 grid");
+  checkNear(loopBeats(1.24), 1.25, 1e-9, "loop beats snap to the nearest 0.25");
+  checkNear(loopBeats(1.1), 1.0, 1e-9, "loop beats snap to the nearest step");
+  check(loopBeats(1.0e9) == kLoopMaxBeats, "loop beats clamp at kLoopMaxBeats");
+  check(loopBeats(std::nan("")) == 0.0, "a NaN loop field reads as 0");
+
+  check(clampInCh(-5) == -1 && clampInCh(0) == 0 && clampInCh(17) == 17 &&
+            clampInCh(99) == kNumStrips - 1,
+        "input source clamps to none or a real channel");
+  check(evenInCh(4) == 4 && evenInCh(5) == 4 && evenInCh(-1) == -1,
+        "a stereo pair keeps the first channel even");
+  check(clampOutDst(-1) == 0 && clampOutDst(1) == 1 && clampOutDst(9) == 3,
+        "output destination clamps to Main/OUT3&4/phones/none");
+
+  MixerModel mixer;
+  mixer.setInCh(0, 5);
+  check(mixer.inCh(0) == 5 && !mixer.inPair(0), "a mono input keeps its channel");
+  mixer.setInPair(0, true);
+  check(mixer.inCh(0) == 4 && mixer.inPair(0),
+        "enabling a pair clamps an odd channel down to even");
+  mixer.setInCh(0, 7);
+  check(mixer.inCh(0) == 6, "an odd channel cannot be selected while pairing");
+  mixer.setInPair(0, false);
+  mixer.setInCh(0, 7);
+  check(mixer.inCh(0) == 7, "odd channels are selectable again in mono");
+  mixer.setInCh(0, -1);
+  check(mixer.inCh(0) == -1, "input source NONE is stored as -1");
+  mixer.setInPair(0, true);
+  check(mixer.inCh(0) == 0, "a pair cannot be NONE; it falls back to channel 1");
+  mixer.setOutDst(0, 2);
+  check(mixer.outDst(0) == 2, "output destination stores phones");
+  mixer.setOutDst(0, 9);
+  check(mixer.outDst(0) == 3, "output destination clamps to NONE");
+
+  check(MixerViewModel::inputText(-1, false) == "NONE", "input text for NONE");
+  check(MixerViewModel::inputText(2, false) == "IN 03", "input text for one channel");
+  check(MixerViewModel::inputText(4, true) == "IN 05/06", "input text for a stereo pair");
+  check(MixerViewModel::outputText(0) == "MAIN 1&2" && MixerViewModel::outputText(1) == "OUT3&4" &&
+            MixerViewModel::outputText(2) == "PHONES" && MixerViewModel::outputText(3) == "NONE",
+        "output destination labels");
+}
+
+// MIDI monitor: the ring records every message the Pi handles, classifies the
+// counters and renders the log line; the screen is a pure view of that.
+void midiMonitorTests() {
+  std::uint8_t noteOn[3] = {0x90, 60, 100};
+  std::uint8_t cc[3] = {0xB3, 74, 64};
+  std::uint8_t clock[1] = {midi::kClockByte};
+  check(midiMessageText(3, noteOn) == "N ON 01 3C v100", "monitor renders a note on");
+  std::uint8_t noteOff[3] = {0x90, 60, 0};
+  check(midiMessageText(3, noteOff) == "N OFF 01 3C", "a zero-velocity note on is an off");
+  check(midiMessageText(3, cc) == "CC 04 74 64", "monitor renders a control change");
+  check(midiMessageText(1, clock) == "CLOCK", "monitor renders a clock byte");
+  std::uint8_t start[1] = {midi::kStartByte};
+  check(midiMessageText(1, start) == "START", "monitor renders a transport byte");
+  check(midiMessageText(0, nullptr) == "-", "an empty message renders as a dash");
+  check(midiPortName(0) == "TRS IN1" && midiPortName(5) == "USB OUT",
+        "monitor port names match the router port order");
+  check(midiAgeText(500) == "500 us" && midiAgeText(2500) == "2.5 ms",
+        "monitor age text switches units");
+
+  MidiGlue midi(false);
+  midi::MidiEvent event;
+  event.source = midi::Port::TrsIn1;
+  event.size = 3;
+  for (int i = 0; i < 3; ++i) event.data[i] = noteOn[i];
+  midi.handleInput(event);
+  event.data[0] = 0xB0;
+  midi.handleInput(event);
+  event.source = midi::Port::TrsIn2;
+  event.size = 1;
+  event.data[0] = midi::kClockByte;
+  midi.handleInput(event);
+
+  auto snapshot = midi.monitorSnapshot();
+  check(snapshot.total == 3 && snapshot.count == 3, "the monitor ring records every event");
+  check(snapshot.counts[0].notes == 1 && snapshot.counts[0].cc == 1,
+        "note and CC counters are per port");
+  check(snapshot.counts[1].clock == 1 && snapshot.counts[0].clock == 0,
+        "clock bytes are counted on their own port");
+  check(snapshot.events[0].size == 3 && snapshot.events[2].size == 1,
+        "the ring keeps arrival order");
+
+  midi.clearMonitor();
+  snapshot = midi.monitorSnapshot();
+  check(snapshot.total == 0 && snapshot.count == 0 && snapshot.counts[0].notes == 0,
+        "clearing the monitor drops the ring and the counters");
+}
+
+// Clock gates: the SessionViewModel writes the session clock section and asks
+// the link for the matching wire action. LinkClient queues the command; the
+// wire behaviour itself is covered by link/midi CTest.
+void clockGateTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  MidiGlue midi(false);
+  LinkClient link(midi, state, true);
+  SessionViewModel session(state, mixer, link, settings);
+
+  check(session.trs1Clock() && session.trs1Transport() && session.usbClock() &&
+            session.usbTransport(),
+        "clock gates default on, as the Pico boot state");
+  session.setTrs1Clock(false);
+  check(!settings.clock.trs[0].clock && settings.clock.trs[0].transport,
+        "a TRS gate edit writes the session clock section");
+  session.setTrs2Transport(false);
+  session.setUsbClock(false);
+  check(!settings.clock.trs[1].transport && !settings.clock.usb.clock,
+        "TRS OUT2 and USB gates write their own fields");
+  check(session.clockText().contains("TRS1 off/on"),
+        "the clock summary reports the current gates");
+
+  settings.clock.trs[0].clock = true;
+  settings.clock.trs[0].transport = true;
+  session.pushClockToLink();
+  check(session.trs1Clock() && session.trs1Transport(),
+        "pushClockToLink re-reads the session gates");
 }
 
 void styleTests() {
@@ -634,6 +785,9 @@ int runAll() {
   meterAndSpaceTests();
   learnCaptureTests();
   projectRoundTripTests();
+  loopAndIoTests();
+  midiMonitorTests();
+  clockGateTests();
   styleTests();
   std::printf("%s mnkybox app logic: %d checks, %d failures\n",
               gFailures == 0 ? "PASS" : "FAIL", gChecks, gFailures);

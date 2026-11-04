@@ -36,6 +36,10 @@ struct LinkStatus {
   std::uint64_t clockSkipped = 0;
   std::uint64_t clockReordered = 0;
   std::uint32_t lastClockTick = 0;
+  // Last EV_CLOCK_ROUTE flags the link queued per TRS output (index 0 = OUT1,
+  // 1 = OUT2). Bit0 = clock, bit1 = transport (mb::CLOCK_ROUTE_*).
+  std::uint8_t clockRouteFlags[2] = {mb::CLOCK_ROUTE_DEFAULT,
+                                     mb::CLOCK_ROUTE_DEFAULT};
   link::PicoLink::Stats stats{};
 };
 
@@ -56,10 +60,17 @@ class LinkClient {
   void requestTransport(std::uint8_t command);  // 0 stop, 1 start, 2 continue
   void requestLeds(std::uint8_t mask, std::uint8_t states);
   void requestManual(bool manual);
+  // Per-output clock/transport gate (session v2 clock.trs[]). output 0/1 =
+  // TRS OUT1/OUT2, flags bit0 = clock, bit1 = transport; delivered to the Pico
+  // as EV_CLOCK_ROUTE (PicoLink::clockRoute).
+  void requestClockRoute(std::uint8_t output, std::uint8_t flags);
+  // USB mirror gates (session v2 clock.usb). Applied to the Pi-side UsbClock,
+  // which then suppresses its own 0xF8 / START / CONTINUE / STOP bytes.
+  void requestUsbClockGates(bool clock, bool transport);
 
  private:
   struct Command {
-    enum class Kind : std::uint8_t { Tempo, Transport, Leds, Manual };
+    enum class Kind : std::uint8_t { Tempo, Transport, Leds, Manual, ClockRoute, UsbClockGates };
     Kind kind = Kind::Tempo;
     std::uint16_t value16 = 0;
     std::uint8_t value8 = 0;
@@ -71,6 +82,7 @@ class LinkClient {
   void drainEvents();
   void pumpClock();
   void readReady();
+  bool usbTransportGate() const;
   void feedClock(std::uint32_t tick, std::uint32_t picoStampUs, std::uint64_t piNowUs);
 
   MidiGlue& midi_;

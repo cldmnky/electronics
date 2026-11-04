@@ -6,6 +6,7 @@
 #include <QObject>
 
 #include "app_state.hpp"
+#include "link_client.hpp"
 #include "mixer_model.hpp"
 #include "session_settings.hpp"
 
@@ -37,10 +38,17 @@ class SessionViewModel final : public QObject {
   Q_PROPERTY(double compReleaseMs READ compReleaseMs WRITE setCompReleaseMs NOTIFY compChanged)
   Q_PROPERTY(double compMakeupDb READ compMakeupDb WRITE setCompMakeupDb NOTIFY compChanged)
   Q_PROPERTY(int compMode READ compMode WRITE setCompMode NOTIFY compChanged)
+  Q_PROPERTY(bool trs1Clock READ trs1Clock WRITE setTrs1Clock NOTIFY clockChanged)
+  Q_PROPERTY(bool trs1Transport READ trs1Transport WRITE setTrs1Transport NOTIFY clockChanged)
+  Q_PROPERTY(bool trs2Clock READ trs2Clock WRITE setTrs2Clock NOTIFY clockChanged)
+  Q_PROPERTY(bool trs2Transport READ trs2Transport WRITE setTrs2Transport NOTIFY clockChanged)
+  Q_PROPERTY(bool usbClock READ usbClock WRITE setUsbClock NOTIFY clockChanged)
+  Q_PROPERTY(bool usbTransport READ usbTransport WRITE setUsbTransport NOTIFY clockChanged)
+  Q_PROPERTY(QString clockText READ clockText NOTIFY clockChanged)
 
  public:
-  SessionViewModel(AppState& state, MixerModel& mixer, SessionSettings& settings,
-                   QObject* parent = nullptr);
+  SessionViewModel(AppState& state, MixerModel& mixer, LinkClient& link,
+                   SessionSettings& settings, QObject* parent = nullptr);
 
   bool punchPlayFromEnabled() const { return settings_.punch.playFrom.enabled; }
   int punchPlayFromMeasure() const { return settings_.punch.playFrom.measure; }
@@ -66,6 +74,15 @@ class SessionViewModel final : public QObject {
   double compReleaseMs() const { return settings_.mainComp.releaseMs; }
   double compMakeupDb() const { return settings_.mainComp.makeupDb; }
   int compMode() const { return settings_.mainComp.mode; }
+  bool trs1Clock() const { return settings_.clock.trs[0].clock; }
+  bool trs1Transport() const { return settings_.clock.trs[0].transport; }
+  bool trs2Clock() const { return settings_.clock.trs[1].clock; }
+  bool trs2Transport() const { return settings_.clock.trs[1].transport; }
+  bool usbClock() const { return settings_.clock.usb.clock; }
+  bool usbTransport() const { return settings_.clock.usb.transport; }
+  // One-line summary of what the gates do and what cannot be sent: the wire's
+  // EV_CLOCK_ROUTE carries only the clock and transport bits.
+  QString clockText() const;
 
   void setPunchPlayFromEnabled(bool enabled);
   void setPunchPlayFromMeasure(int measure);
@@ -91,9 +108,17 @@ class SessionViewModel final : public QObject {
   void setCompReleaseMs(double ms);
   void setCompMakeupDb(double db);
   void setCompMode(int mode);
+  void setTrs1Clock(bool on);
+  void setTrs1Transport(bool on);
+  void setTrs2Clock(bool on);
+  void setTrs2Transport(bool on);
+  void setUsbClock(bool on);
+  void setUsbTransport(bool on);
 
   // Project load replaced the settings object wholesale.
   Q_INVOKABLE void refresh();
+  // Push the session clock gates to the link again (project load, startup).
+  void pushClockToLink();
 
  signals:
   void punchChanged();
@@ -101,10 +126,14 @@ class SessionViewModel final : public QObject {
   void monitorChanged();
   void sendsChanged();
   void compChanged();
+  void clockChanged();
 
  private:
+  void setTrsRoute(int output, bool clock, bool transport);
+
   AppState& state_;
   MixerModel& mixer_;
+  LinkClient& link_;
   SessionSettings& settings_;
 };
 

@@ -148,6 +148,49 @@ int MixerModel::monitor(int index) const {
   return valid(index) ? strips_[index].monitor.load(std::memory_order_relaxed) : 1;
 }
 
+void MixerModel::setInCh(int index, int channel) {
+  if (!valid(index)) return;
+  int value = channel < 0 ? -1 : (channel >= audio::kMaxInputs ? audio::kMaxInputs - 1 : channel);
+  // A stereo pair needs an even first channel (session contract: odd clamps
+  // down), and "none" cannot be a pair.
+  if (strips_[index].inPair.load(std::memory_order_relaxed) && value >= 0 &&
+      value % 2 != 0) {
+    --value;
+  }
+  strips_[index].inCh.store(value, std::memory_order_relaxed);
+}
+
+int MixerModel::inCh(int index) const {
+  return valid(index) ? strips_[index].inCh.load(std::memory_order_relaxed) : 0;
+}
+
+void MixerModel::setInPair(int index, bool pair) {
+  if (!valid(index)) return;
+  strips_[index].inPair.store(pair, std::memory_order_relaxed);
+  if (!pair) return;
+  int value = strips_[index].inCh.load(std::memory_order_relaxed);
+  if (value < 0) {
+    value = 0;
+  } else if (value % 2 != 0) {
+    --value;
+  }
+  strips_[index].inCh.store(value, std::memory_order_relaxed);
+}
+
+bool MixerModel::inPair(int index) const {
+  return valid(index) && strips_[index].inPair.load(std::memory_order_relaxed);
+}
+
+void MixerModel::setOutDst(int index, int destination) {
+  if (!valid(index)) return;
+  strips_[index].outDst.store(destination < 0 ? 0 : (destination > 3 ? 3 : destination),
+                              std::memory_order_relaxed);
+}
+
+int MixerModel::outDst(int index) const {
+  return valid(index) ? strips_[index].outDst.load(std::memory_order_relaxed) : 0;
+}
+
 void MixerModel::setOut34Mode(int mode) {
   out34Mode_.store(mode == 1 ? 1 : 0, std::memory_order_relaxed);
 }

@@ -90,6 +90,12 @@ class RecorderViewModel final : public QObject {
   Q_PROPERTY(int selectedTrack READ selectedTrack WRITE setSelectedTrack NOTIFY trackChanged)
   Q_PROPERTY(QString trackName READ trackName NOTIFY trackChanged)
   Q_PROPERTY(QString activeTake READ activeTake NOTIFY trackChanged)
+  Q_PROPERTY(bool loopEnabled READ loopEnabled WRITE setLoopEnabled NOTIFY loopChanged)
+  Q_PROPERTY(double loopStartBeats READ loopStartBeats WRITE setLoopStartBeats NOTIFY loopChanged)
+  Q_PROPERTY(double loopEndBeats READ loopEndBeats WRITE setLoopEndBeats NOTIFY loopChanged)
+  Q_PROPERTY(QString loopStartText READ loopStartText NOTIFY loopChanged)
+  Q_PROPERTY(QString loopEndText READ loopEndText NOTIFY loopChanged)
+  Q_PROPERTY(QString loopText READ loopText NOTIFY loopChanged)
   Q_PROPERTY(RecorderArmModel* arms READ arms CONSTANT)
   Q_PROPERTY(RecorderTakeModel* takes READ takes CONSTANT)
 
@@ -109,6 +115,19 @@ class RecorderViewModel final : public QObject {
   Q_INVOKABLE void setSelectedTrack(int track);
   QString trackName() const;
   QString activeTake() const;
+  // Per-track take loop (session v2 takes.loop) for the selected track. The
+  // engine window is `[startBeats, endBeats)`; an end at or below the start
+  // loops the whole active take, which is the UI copy on the Recorder SHIFT
+  // face. Values are 0.25-beat steps from 0 to kLoopMaxBeats.
+  bool loopEnabled() const;
+  Q_INVOKABLE void setLoopEnabled(bool enabled);
+  double loopStartBeats() const;
+  Q_INVOKABLE void setLoopStartBeats(double beats);
+  double loopEndBeats() const;
+  Q_INVOKABLE void setLoopEndBeats(double beats);
+  QString loopStartText() const;
+  QString loopEndText() const;
+  QString loopText() const;
   RecorderArmModel* arms() { return &arms_; }
   RecorderTakeModel* takes() { return &takes_; }
 
@@ -135,6 +154,7 @@ class RecorderViewModel final : public QObject {
   void selectionChanged();
   void trackChanged();
   void activeTakeChanged();
+  void loopChanged();
 
  private:
   void scanTakes();
@@ -143,6 +163,10 @@ class RecorderViewModel final : public QObject {
   std::string selectedTakeKey() const;
   std::filesystem::path resolveTakeKey(int track, const std::string& key) const;
   void syncActiveTake(int track);
+  // Whole-take rule: an enabled loop whose end is at or below the start loops
+  // the whole active take (session::LoopState contract).
+  session::LoopState selectedLoop() const;
+  void writeLoop(const session::LoopState& loop);
 
   AppState& state_;
   AudioGlue& audio_;

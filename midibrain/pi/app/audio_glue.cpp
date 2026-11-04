@@ -638,6 +638,17 @@ void AudioGlue::applyMonitorSettings(const SessionSettings& settings) {
   compMode_.store(settings.mainComp.mode);
 }
 
+void AudioGlue::applyTakeLoops(const SessionSettings& settings) {
+  for (int track = 0; track < audio::kMaxInputs; ++track) {
+    const auto& loop = settings.takeLoop[static_cast<std::size_t>(track)];
+    audio::TakeLoop window;
+    window.enabled = loop.enabled;
+    window.startBeats = loop.startBeats;
+    window.endBeats = loop.endBeats;
+    engine_.setTakeLoop(track, window);
+  }
+}
+
 bool AudioGlue::setActiveTake(int track, const std::filesystem::path& path,
                               std::string* error) {
   if (error != nullptr) error->clear();
