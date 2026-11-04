@@ -94,14 +94,20 @@ never enters `fab/` through a release.
 
 | Field | Requirement |
 |---|---|
-| `evidence` | a Markdown file directly in `doc/evidence/` (relative path, no `..`, no absolute path, no symlink, not a directory, at least 200 bytes) |
+| `evidence` | a Markdown file directly in `doc/evidence/` (relative path, no `..`, no absolute path, not a directory, at least 200 bytes, and no symlink anywhere on the path below the project root) |
 | `reviewer` | a named person, not `TBD`/`n/a`/`-` |
 | `reviewed_at` | a real date `YYYY-MM-DD`, not in the future |
 | `source_fingerprint` | equal to the record's `hardware_fingerprint`, which must equal the current fingerprint |
 | `evidence_sha256` | optional; when present the file content must match |
 
 The evidence file must name its item and contain at least one recorded value
-with a unit. Format and template: [evidence/README.md](evidence/README.md).
+with a unit. The path check resolves the real project root first, then walks
+`doc/` and `doc/evidence/` and refuses a symlink on the way, so a symlinked
+directory cannot put evidence outside the project while the `.md` file itself
+looks regular; the resolved file must also stay inside the real evidence
+directory and the real project root. A symlink ABOVE the project root is fine
+(macOS `/tmp` often is one), and an evidence directory supplied by a caller must
+itself resolve inside the project - it cannot become an allowed jail. Format and template: [evidence/README.md](evidence/README.md).
 The fingerprint covers both boards' sources, the panel/CAD algorithms, the
 packages and lock files, the JLCPCB order settings and the curated
 sourcing/part maps; a hardware change makes old evidence stale, a

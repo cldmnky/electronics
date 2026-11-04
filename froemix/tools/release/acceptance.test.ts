@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import {
@@ -239,12 +239,102 @@ describe("validator", () => {
     expect(failureText(stateWith({ esd: { evidence: absolute } }))).toContain("must be relative")
   })
 
-  test("a symlink escape fails", () => {
+  test("a symlinked evidence file fails", () => {
     const outside = join(root, "outside.md")
     writeFileSync(outside, evidenceText("esd"))
     rmSync(join(root, "doc/evidence/esd.md"))
     symlinkSync(outside, join(root, "doc/evidence/esd.md"))
     expect(failureText(stateWith())).toContain("symlink")
+  })
+
+  test("ordinary regular evidence resolves", () => {
+    const resolved = resolveEvidence(root, join(root, "doc/evidence"), "doc/evidence/esd.md")
+    expect(resolved.error).toBeUndefined()
+    expect(realpathSync(resolved.abs!)).toBe(realpathSync(join(root, "doc/evidence/esd.md")))
+  })
+
+  test("a symlinked doc/ directory fails even though the file is regular", () => {
+    // The review case: doc/ points outside the project; the final .md is a
+    // regular file inside the outside directory, so the old lstat-only check
+    // passed it while the evidence lived outside the project.
+    const outside = join(root, "outside-land")
+    mkdirSync(join(outside, "evidence"), { recursive: true })
+    writeFileSync(join(outside, "evidence", "esd.md"), evidenceText("esd"))
+    for (const id of REQUIRED_IDS) writeFileSync(join(outside, "evidence", `${id}.md`), evidenceText(id))
+    rmSync(join(root, "doc"), { recursive: true, force: true })
+    symlinkSync(outside, join(root, "doc"))
+    expect(failureText(stateWith())).toContain("symlinked directory")
+  })
+
+  test("a symlinked doc/evidence directory fails", () => {
+    const outside = join(root, "outside-evidence")
+    mkdirSync(outside, { recursive: true })
+    for (const id of REQUIRED_IDS) writeFileSync(join(outside, `${id}.md`), evidenceText(id))
+    rmSync(join(root, "doc/evidence"), { recursive: true, force: true })
+    symlinkSync(outside, join(root, "doc/evidence"))
+    expect(failureText(stateWith())).toContain("symlinked directory")
+  })
+
+  test("a symlinked doc/ pointing inside the project is still rejected", () => {
+    // The no-symlink rule below the project root is unconditional: evidence is
+    // a file a reviewer wrote, not a link someone can repoint later.
+    const inside = join(root, "doc-real")
+    mkdirSync(join(inside, "evidence"), { recursive: true })
+    for (const id of REQUIRED_IDS) writeFileSync(join(inside, "evidence", `${id}.md`), evidenceText(id))
+    rmSync(join(root, "doc"), { recursive: true, force: true })
+    symlinkSync(inside, join(root, "doc"))
+    expect(failureText(stateWith())).toContain("symlinked directory")
+  })
+
+  test("a caller-supplied evidenceDir outside the project is not a jail", () => {
+    // A directory that is genuinely outside the project tree: passing it as the
+    // evidence directory must not legitimise a file there.
+    const outside = mkdtempSync(join(tmpdir(), "froemix-external-evidence-"))
+    writeFileSync(join(outside, "esd.md"), evidenceText("esd"))
+    try {
+      const resolved = resolveEvidence(root, outside, "doc/evidence/esd.md")
+      expect(resolved.error).toContain("evidence directory must be inside the project")
+
+      const result = validateAcceptance(stateWith(), {
+        rootDir: root,
+        evidenceDir: outside,
+        fingerprint,
+        today: "2026-06-01",
+      })
+      expect(result.failures.join(" ")).toContain("evidence directory must be inside the project")
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test("a caller-supplied evidenceDir that is a symlink to outside is rejected", () => {
+    const outside = mkdtempSync(join(tmpdir(), "froemix-external-link-"))
+    writeFileSync(join(outside, "esd.md"), evidenceText("esd"))
+    const link = join(root, "evidence-link")
+    symlinkSync(outside, link)
+    try {
+      expect(resolveEvidence(root, link, "doc/evidence/esd.md").error)
+        .toContain("evidence directory must be inside the project")
+    } finally {
+      rmSync(link, { force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test("a symlink above the project root is allowed", () => {
+    // macOS /tmp is a symlink; a project reached through one is legitimate.
+    const link = join(root, "root-link")
+    symlinkSync(root, link)
+    const evidenceDir = join(link, "doc/evidence")
+    const resolved = resolveEvidence(link, evidenceDir, "doc/evidence/esd.md")
+    expect(resolved.error).toBeUndefined()
+    const result = validateAcceptance(stateWith(), {
+      rootDir: link,
+      evidenceDir,
+      fingerprint,
+      today: "2026-06-01",
+    })
+    expect(result.failures).toEqual([])
   })
 
   test("a directory is not evidence", () => {

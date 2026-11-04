@@ -34,7 +34,7 @@
 // reviewed in the same commit as the acceptance claim.
 
 import { createHash } from "node:crypto"
-import { lstatSync, readFileSync, readdirSync, existsSync, statSync } from "node:fs"
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
 
 export const SCHEMA = "froemix-hardware-acceptance/1"
@@ -317,6 +317,33 @@ export interface ValidationResult {
 
 type EvidenceResult = { abs: string; error?: undefined } | { abs?: undefined; error: string }
 
+/** True when `child` is `parent` or lies below it, after realpath resolution. */
+function isInsideReal(parent: string, child: string): boolean {
+  return child === parent || child.startsWith(parent + sep)
+}
+
+function realOrNull(path: string): string | null {
+  try {
+    return realpathSync(path)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolve one evidence path, refusing anything that leaves the project.
+ *
+ * The lexical checks alone are not enough: `doc/` or `doc/evidence/` can be a
+ * symlink to a directory outside the project, while the final `.md` file looks
+ * like an ordinary regular file. So this walks every component BELOW the real
+ * project root, rejects a symlink anywhere on that path, and then proves the
+ * real file is still inside the real evidence directory and the real project
+ * root. A symlink ABOVE the project root is fine - macOS `/tmp` is one - because
+ * the walk starts at the real root, not at its lexical spelling.
+ *
+ * A caller-supplied `evidenceDir` cannot widen the jail: it must itself resolve
+ * inside the project root.
+ */
 export function resolveEvidence(rootDir: string, evidenceDir: string, rel: unknown): EvidenceResult {
   if (typeof rel !== "string" || rel.trim() === "") {
     return { error: "evidence path missing" }
@@ -330,21 +357,80 @@ export function resolveEvidence(rootDir: string, evidenceDir: string, rel: unkno
   if (!/^doc\/evidence\/[A-Za-z0-9._-]+\.md$/.test(rel)) {
     return { error: `evidence must be a .md file directly inside doc/evidence/: ${rel}` }
   }
-  const abs = resolve(rootDir, rel)
-  const dir = resolve(evidenceDir)
-  if (abs !== dir && !abs.startsWith(dir + sep)) {
+
+  const projectRootAbs = resolve(rootDir)
+  const projectRootReal = realOrNull(projectRootAbs)
+  if (projectRootReal === null) {
+    return { error: `project root does not exist: ${rootDir}` }
+  }
+
+  // The evidence directory must live inside the project. This is what stops a
+  // caller-supplied directory from becoming an allowed jail for an external
+  // file, and it also covers a symlinked doc/ that points outside.
+  const evidenceDirAbs = resolve(evidenceDir)
+  const evidenceDirReal = realOrNull(evidenceDirAbs)
+  if (evidenceDirReal === null) {
+    return { error: `evidence directory does not exist: ${evidenceDir}` }
+  }
+  if (!isInsideReal(projectRootReal, evidenceDirReal)) {
+    return { error: `evidence directory must be inside the project: ${evidenceDir}` }
+  }
+
+  const abs = resolve(projectRootAbs, rel)
+  if (abs !== evidenceDirAbs && !abs.startsWith(evidenceDirAbs + sep)) {
     return { error: `evidence path escapes the evidence directory: ${rel}` }
   }
-  let stat
-  try {
-    stat = lstatSync(abs)
-  } catch {
+
+
+  // Walk the components BELOW the real project root: `doc`, `doc/evidence`, and
+  // never follow a symlink on the way.
+  const segments = rel.split("/")
+  const fileName = segments[segments.length - 1]!
+  let current = projectRootReal
+  for (const segment of segments.slice(0, -1)) {
+    current = join(current, segment)
+    const component = lstatOrNull(current)
+    if (component === null) {
+      return { error: `evidence path component does not exist: ${rel}` }
+    }
+    if (component.isSymbolicLink()) {
+      return { error: `evidence path must not contain a symlinked directory: ${rel}` }
+    }
+    if (!component.isDirectory()) {
+      return { error: `evidence path component is not a directory: ${rel}` }
+    }
+  }
+  const filePath = join(current, fileName)
+
+  const fileStat = lstatOrNull(filePath)
+  if (fileStat === null) {
     return { error: `evidence file does not exist: ${rel}` }
   }
-  if (stat.isSymbolicLink()) return { error: `evidence must not be a symlink: ${rel}` }
-  if (!stat.isFile()) return { error: `evidence must be a regular file: ${rel}` }
-  if (stat.size === 0) return { error: `evidence file is empty: ${rel}` }
-  return { abs }
+  if (fileStat.isSymbolicLink()) return { error: `evidence must not be a symlink: ${rel}` }
+  if (!fileStat.isFile()) return { error: `evidence must be a regular file: ${rel}` }
+  if (fileStat.size === 0) return { error: `evidence file is empty: ${rel}` }
+
+  // Defence in depth: the resolved file must still be inside the real evidence
+  // directory and the real project root.
+  const fileReal = realOrNull(filePath)
+  if (fileReal === null) {
+    return { error: `evidence file does not resolve: ${rel}` }
+  }
+  if (!isInsideReal(evidenceDirReal, fileReal)) {
+    return { error: `evidence path escapes the evidence directory: ${rel}` }
+  }
+  if (!isInsideReal(projectRootReal, fileReal)) {
+    return { error: `evidence must resolve inside the project: ${rel}` }
+  }
+  return { abs: filePath }
+}
+
+function lstatOrNull(path: string) {
+  try {
+    return lstatSync(path)
+  } catch {
+    return null
+  }
 }
 
 function validDate(value: unknown, today: string): boolean {

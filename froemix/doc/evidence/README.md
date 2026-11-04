@@ -18,7 +18,10 @@ file must:
 1. name the item id in its text;
 2. contain at least one recorded value with a unit (`12.4 mm`, `118 mA`,
    `41.2 °C`, `0.8 V`, `3.1 N`, …);
-3. be a regular, non-empty file of at least 200 bytes inside this directory;
+3. be a regular, non-empty file of at least 200 bytes inside this directory,
+   with no symlink anywhere on the path below the project root (`doc/` and
+   `doc/evidence/` must be real directories, and the file itself must not be a
+   link); the resolved file must stay inside the real project root;
 4. be referenced by `"evidence"` in the acceptance record, together with
    `"reviewer"`, `"reviewed_at"` (`YYYY-MM-DD`, not in the future) and
    `"source_fingerprint"` equal to the record's `hardware_fingerprint`.
@@ -26,8 +29,10 @@ file must:
 The validator also accepts an optional `"evidence_sha256"` per item; when it is
 present, the file content must match it.
 
-Rejected on purpose: an absolute path, a path containing `..`, a symlink, a
-directory, an empty file, a file outside `doc/evidence/`, a placeholder reviewer
+Rejected on purpose: an absolute path, a path containing `..`, a symlink (the
+file, or a directory on the way), a directory, an empty file, a file outside
+`doc/evidence/`, an evidence directory that resolves outside the project, a
+placeholder reviewer
 (`TBD`, `n/a`, `-`), a future or impossible date, and an evidence file that
 records no value with a unit. A prose opinion is not evidence, and a
 requirement copied into an evidence file is not evidence either.
