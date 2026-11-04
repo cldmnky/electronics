@@ -1,0 +1,11 @@
+# WLAN (systemd-networkd).
+#
+# DHCP is configured but the interface stays unassociated, and therefore off the
+# air, until the first-boot unit installs a wpa_supplicant configuration with a
+# country set and enables wpa_supplicant@wlan0.service.
+[Match]
+Name=wlan0
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes

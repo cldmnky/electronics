@@ -1,0 +1,8 @@
+# Wired Ethernet (systemd-networkd). DHCP on the single on-board port; this is
+# also the fallback management path when no WiFi is configured.
+[Match]
+Name=eth0
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes

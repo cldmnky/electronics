@@ -1,0 +1,19 @@
+[Unit]
+Description=MNKYBOX first-boot provisioning (WiFi credentials, SSH keys)
+Documentation=file:/opt/mnkybox/CONTRACT.md
+# Reads /boot/mnkybox/ on the FAT boot partition, installs what the operator
+# put there, then renames the consumed files to *.applied. Runs before sshd so
+# the first boot is reachable with the operator's key.
+After=boot.mount systemd-tmpfiles-setup.service
+Before=dropbear.service wpa_supplicant@wlan0.service
+Wants=boot.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/mnkybox/firstboot.sh
+# A missing or malformed file leaves WiFi off; the script exits 0 in that
+# case and says so in the journal. Real errors fail this unit visibly.
+
+[Install]
+WantedBy=multi-user.target

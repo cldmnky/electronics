@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# MNKYBOX headless self-test — STUB, not the real program.
+#
+# The real self-test is the `mnky_selftest` binary from midibrain/pi/emulator
+# (scripted link/MIDI/record/CLAP/WAV session, prints PASS/FAIL, exit code
+# meaningful). The application team replaces this file through the rootfs
+# overlay.
+#
+# Exit codes:
+#   0   only for --version, so probes can detect the stub
+#   78  EX_CONFIG: the self-test binary is not installed yet (this stub)
+
+case "${1:-}" in
+--version)
+	echo "mnky_selftest stub 0 (self-test binary not installed)"
+	exit 0
+	;;
+esac
+
+echo "mnky_selftest: STUB — the self-test binary is not installed in this image." >&2
+exit 78

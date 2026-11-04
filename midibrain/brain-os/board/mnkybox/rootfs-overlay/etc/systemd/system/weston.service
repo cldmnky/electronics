@@ -1,0 +1,26 @@
+[Unit]
+Description=Weston Wayland compositor (MNKYBOX)
+Documentation=man:weston(1)
+# seatd owns the DRM seat; weston takes DRM master through libseat as the
+# mnkybox user. No logind, no weston-launch, no getty on the panel.
+Requires=seatd.service
+After=seatd.service systemd-udevd.service systemd-tmpfiles-setup.service
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+
+[Service]
+Type=simple
+User=mnkybox
+Group=mnkybox
+Environment=XDG_RUNTIME_DIR=/run/mnkybox
+Environment=LIBSEAT_BACKEND=seatd
+Environment=SEATD_SOCK=/run/seatd.sock
+Environment=XDG_SEAT=seat0
+# --xwayland: the application is a JUCE X11 client, so Weston runs XWayland.
+# Output rotation, shell and idle behaviour live in /etc/weston.ini.
+ExecStart=/usr/bin/weston --backend=drm --xwayland --idle-time=0
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

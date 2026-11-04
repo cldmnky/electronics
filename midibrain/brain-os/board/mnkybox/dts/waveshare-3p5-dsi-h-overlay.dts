@@ -1,0 +1,129 @@
+/*
+ * waveshare-3p5-dsi-h-overlay.dts — Waveshare 3.5inch DSI LCD (H) on a
+ * Raspberry Pi 5. Compiled to overlays/waveshare-3p5-dsi-h.dtbo at build time
+ * (post-build.sh, `dtc -@`); no vendor .dtbo is committed or shipped.
+ *
+ * Structure follows the Raspberry Pi downstream kernel's own
+ * arch/arm/boot/dts/overlays/vc4-kms-dsi-generic-overlay.dts (rpi-6.12.y),
+ * which supplies the generic MIPI-DSI panel binding used here (compatible
+ * "Generic,panel-dsi"). Only the values that belong to this panel differ.
+ *
+ * Panel data — source: Waveshare wiki "3.5inch DSI LCD (H)"
+ *   https://www.waveshare.com/wiki/3.5inch_DSI_LCD_(H)   retrieved 2026-11-04
+ * Values taken from the vendor overlay blob it publishes
+ *   https://files.waveshare.com/wiki/common/Waveshare_35DSI.dtbo
+ *   sha256 ae09deaccceb80ced72519977fedc6d7becbd548a3043538c147ad40633b4611
+ *   (4747 bytes), 35H variant: clock-frequency 33600000, hactive 480,
+ *   hfront-porch 48, hsync-len 32, hback-porch 80, vactive 800,
+ *   vfront-porch 3, vsync-len 10, vback-porch 62, width-mm 70, height-mm 50,
+ *   RGB888. The panel is 480x800 portrait (800x480 landscape after rotation)
+ *   and carries a goodix,gt911 touch controller on the DSI I2C bus, which
+ *   answers at 0x14 or 0x5d depending on the module strap; both nodes are
+ *   declared exactly as the vendor does, without inventing GPIO wiring.
+ *
+ * Parameters (positional or name=value):
+ *   dtoverlay=waveshare-3p5-dsi-h,dsi1   DSI1, Pi 5 connector DISP1 (default)
+ *   dtoverlay=waveshare-3p5-dsi-h,dsi0   DSI0, Pi 5 connector DISP0
+ *   dtoverlay=waveshare-3p5-dsi-h,dsi1,one-lane   (and two/three/four-lane)
+ *   clock-frequency, hactive, hfp, hsync, hbp, vactive, vfp, vsync, vbp,
+ *   width-mm, height-mm: timing overrides for a different panel batch.
+ *
+ * Data lanes default to 2. The vendor blob leaves its one-lane fragment
+ * dormant, i.e. its own default is 1 lane; a 480x800 RGB888 panel at
+ * 33.6 MHz does not fit in one lane with margin, so 2 lanes is our
+ * documented assumption and must be confirmed on hardware (README.md,
+ * "DSI bring-up").
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2835";
+
+	dsi_frag: fragment@0 {
+		target = <&dsi1>;
+		__overlay__ {
+			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port {
+				panel_dsi_out: endpoint {
+					remote-endpoint = <&panel_dsi_in>;
+				};
+			};
+
+			panel: panel-dsi-generic@0 {
+				compatible = "Generic,panel-dsi", "panel-dsi";
+				reg = <0>;
+				power-supply = <0>;
+				backlight = <0>;
+				dsi-color-format = "RGB888";
+				mode = "MODE_VIDEO";
+				width-mm = <70>;
+				height-mm = <50>;
+
+				port {
+					panel_dsi_in: endpoint {
+						data-lanes = <1 2>;
+						remote-endpoint = <&panel_dsi_out>;
+					};
+				};
+
+				timing: panel-timing {
+					clock-frequency = <33600000>;
+					hactive = <480>;
+					hfront-porch = <48>;
+					hsync-len = <32>;
+					hback-porch = <80>;
+					vactive = <800>;
+					vfront-porch = <3>;
+					vsync-len = <10>;
+					vback-porch = <62>;
+				};
+			};
+		};
+	};
+
+	i2c_frag: fragment@1 {
+		target = <&i2c_csi_dsi1>;
+		__overlay__ {
+			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			touch1: goodix@14 {
+				compatible = "goodix,gt911";
+				reg = <0x14>;
+			};
+
+			touch2: goodix@5d {
+				compatible = "goodix,gt911";
+				reg = <0x5d>;
+			};
+		};
+	};
+
+	__overrides__ {
+		dsi1 = <&dsi_frag>, "target:0=", <&dsi1>,
+		       <&i2c_frag>, "target:0=", <&i2c_csi_dsi1>;
+		dsi0 = <&dsi_frag>, "target:0=", <&dsi0>,
+		       <&i2c_frag>, "target:0=", <&i2c_csi_dsi0>;
+		one-lane = <&panel_dsi_in>, "data-lanes:0=", <1>;
+		two-lane = <&panel_dsi_in>, "data-lanes:0=", <2>;
+		three-lane = <&panel_dsi_in>, "data-lanes:0=", <3>;
+		four-lane = <&panel_dsi_in>, "data-lanes:0=", <4>;
+		clock-frequency = <&timing>, "clock-frequency:0";
+		hactive = <&timing>, "hactive:0";
+		hfp = <&timing>, "hfront-porch:0";
+		hsync = <&timing>, "hsync-len:0";
+		hbp = <&timing>, "hback-porch:0";
+		vactive = <&timing>, "vactive:0";
+		vfp = <&timing>, "vfront-porch:0";
+		vsync = <&timing>, "vsync-len:0";
+		vbp = <&timing>, "vback-porch:0";
+		width-mm = <&panel>, "width-mm:0";
+		height-mm = <&panel>, "height-mm:0";
+	};
+};

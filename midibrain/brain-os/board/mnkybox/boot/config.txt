@@ -1,0 +1,23 @@
+# MNKYBOX boot configuration — Raspberry Pi 5, Waveshare 3.5inch DSI LCD (H).
+# Installed to the FAT boot partition as config.txt.
+
+# Kernel image produced by Buildroot (rpi-6.12.y Image, copied to this name).
+kernel=kernel_2712.img
+arm_64bit=1
+disable_overscan=1
+
+# Display: KMS driver plus our own overlay for the Waveshare 3.5inch DSI LCD
+# (H) on DSI1. The overlay source is vendored in
+# board/mnkybox/dts/waveshare-3p5-dsi-h-overlay.dts and compiled at build time.
+dtoverlay=vc4-kms-v3d
+dtoverlay=waveshare-3p5-dsi-h,dsi1
+
+# The firmware must not claim the panel itself, and it must not auto-detect a
+# display: the panel above is the only display. display_auto_detect is
+# deliberately NOT set.
+ignore_lcd=1
+
+# SPI0 to the Pico 2 link (SPI0 MOSI/MISO/SCK/CE0 + READY, see
+# midibrain/docs/pin-map.md). UART0 and UART1 are reserved for MIDI, so no
+# serial console and no Bluetooth-over-UART is enabled anywhere.
+dtparam=spi=on
