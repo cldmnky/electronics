@@ -116,10 +116,16 @@ Two macOS dev-machine facts are baked into the root build:
 ## Status
 
 Working today: root configure/build on macOS arm64, RtMidi compiled once, the
-core module libraries and their CTest suites, the example CLAP gain plugin,
+core module libraries and their CTest suites (link, MIDI incl. learn table,
+audio incl. built-in FX suite, CLAP host + example plugin, versioned sessions),
 the JUCE touchscreen application (`mnkybox`, `--emulator` backends verified
 running with link up and real CLAP load), and the headless `mnky_selftest`
-(link/MIDI/record/CLAP/WAV, exit 0).
+(link/MIDI/record/CLAP/WAV, exit 0). UI: dark theme with measured contrast,
+banked mixer, patchbay routing, Projects tab (save/load/rename/delete, dirty
+tracking, touch keyboard), transport strip, metronome toggle, take rename —
+all screenshot-verified at 800x480 in a Linux guest. Audio backends: ALSA
+default + JACK selectable, proven streaming in-guest.
 
-Not yet: any Pi hardware run, visual UI review on the 800x480 touch display,
-and any audio/MIDI timing or latency measurement.
+Not yet: any Pi hardware run, real touch input, audio/MIDI timing or latency
+measurement, EQ grid + X/Y performance screens, MIDI-learn capture mode UI,
+external-clock follow, take audition, CUE bus.
