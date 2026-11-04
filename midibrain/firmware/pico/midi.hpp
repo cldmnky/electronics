@@ -157,13 +157,26 @@ struct LinkStatus {
   std::uint8_t flags{};
 };
 
-// Control ids for EV_CONTROL payload[1]; payload[2] is state (1/0), except
-// ENCODER_TURN which carries a signed int8 delta.
+// Control ids for EV_CONTROL payload[1]; payload[2] is a state (see below),
+// except ENCODER_TURN which carries a signed int8 delta.
 constexpr std::uint8_t CTL_NAV_UP = 1, CTL_NAV_DOWN = 2, CTL_NAV_LEFT = 3;
 constexpr std::uint8_t CTL_NAV_RIGHT = 4, CTL_NAV_PRESS = 5, CTL_ENCODER_SW = 6;
 constexpr std::uint8_t CTL_REC = 10, CTL_OVER_DUB = 11, CTL_STOP = 12;
 constexpr std::uint8_t CTL_PLAY = 13, CTL_PLAY_START = 14, CTL_SHIFT_EXIT = 15;
 constexpr std::uint8_t CTL_ENCODER_TURN = 16;
+
+// EV_CONTROL payload[2] states. Button edges report PRESSED then RELEASED;
+// a held NAV direction re-sends PRESSED on auto-repeat; SHIFT_EXIT adds one
+// LONG_HOLD once it stays pressed past kShiftLongMs (release always follows).
+constexpr std::uint8_t CTL_STATE_RELEASED = 0;
+constexpr std::uint8_t CTL_STATE_PRESSED = 1;
+constexpr std::uint8_t CTL_STATE_LONG_HOLD = 2;
+
+// NAV directions auto-repeat while held; NAV_PRESS and the other controls do
+// not (a click is a single action, not a repeating one).
+inline bool is_nav_direction(std::uint8_t id) {
+  return id == CTL_NAV_UP || id == CTL_NAV_DOWN || id == CTL_NAV_LEFT || id == CTL_NAV_RIGHT;
+}
 
 // LED mask bits for EV_LED_SET (payload[1] mask, payload[2] states).
 constexpr std::uint8_t LED_REC = 0x01, LED_OVERDUB = 0x02, LED_PLAY = 0x04;
@@ -207,11 +220,11 @@ inline LedCommand interpret_led_set(std::uint8_t mask, std::uint8_t states) {
   return r;
 }
 
-// EV_CONTROL state 2 (long-press-hold), currently emitted only for SHIFT_EXIT:
-// the holder crosses its threshold while still pressed so the Pi can enter
-// shift mode live; release always reports 0 afterwards.
-constexpr std::uint8_t CTL_LONG_HOLD = 2;
+// Panel timing: EXIT long-hold threshold, and NAV direction auto-repeat:
+// first repeat kNavRepeatInitialMs after the press, then every kNavRepeatMs.
 constexpr std::uint32_t kShiftLongMs = 500;
+constexpr std::uint32_t kNavRepeatInitialMs = 400;
+constexpr std::uint32_t kNavRepeatMs = 80;
 
 // Hold-to-long-press detector. Feed the DEBOUNCED level every scan; returns
 // +1 on the press edge, 0 on the release edge, 2 exactly once when the hold
@@ -225,15 +238,15 @@ class ShiftHold {
       held_ = true;
       press_ = now;
       sent_ = false;
-      return 1;
+      return CTL_STATE_PRESSED;
     }
     if (!held && held_) {
       held_ = false;
-      return 0;
+      return CTL_STATE_RELEASED;
     }
     if (held && held_ && !sent_ && static_cast<std::uint32_t>(now - press_) >= long_ms_) {
       sent_ = true;
-      return 2;
+      return CTL_STATE_LONG_HOLD;
     }
     return -1;
   }
@@ -241,6 +254,38 @@ class ShiftHold {
  private:
   std::uint32_t long_ms_, press_ = 0;
   bool held_ = false, sent_ = false;
+};
+
+// Auto-repeat detector for a held NAV direction. Feed the DEBOUNCED level
+// every scan; returns true on the press edge, then after kNavRepeatInitialMs
+// and every kNavRepeatMs while held. A release resets the timing, so the
+// next press gets a full initial delay. A starved scan produces at most one
+// repeat (catching up never bursts frames).
+class NavRepeat {
+ public:
+  explicit NavRepeat(std::uint32_t initial_ms = kNavRepeatInitialMs,
+                     std::uint32_t repeat_ms = kNavRepeatMs)
+      : initial_ms_(initial_ms), repeat_ms_(repeat_ms) {}
+  bool update(bool held, std::uint32_t now) {
+    if (!held) {
+      held_ = false;
+      return false;
+    }
+    if (!held_) {
+      held_ = true;
+      next_ = now + initial_ms_;
+      return true;
+    }
+    if (static_cast<std::int32_t>(now - next_) >= 0) {
+      next_ = now + repeat_ms_;
+      return true;
+    }
+    return false;
+  }
+
+ private:
+  std::uint32_t initial_ms_, repeat_ms_, next_ = 0;
+  bool held_ = false;
 };
 
 // Panel buttons that drive local transport on press, mirroring EV_TRANSPORT

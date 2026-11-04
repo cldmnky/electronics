@@ -26,6 +26,7 @@
 #include "pico/stdlib.h"
 
 #include "midi.hpp"
+#include "panel_input.hpp"
 #include "pins.h"
 
 namespace {
@@ -34,7 +35,6 @@ namespace {
 // ---------------------------------------------------------------------------
 constexpr uint32_t kSpiBaud = 1000 * 1000;
 constexpr uint32_t kMidiBaud = 31250;
-constexpr uint32_t kDebounceMs = 10;
 constexpr uint32_t kTxDepth = 16;     // outbound SPI frames
 constexpr uint32_t kRxDepth = 128;    // stamped UART bytes per port
 constexpr int32_t kTempoDefault = 12000;  // bpm * 100
@@ -143,11 +143,6 @@ bool led_override = false;
 uint64_t bad_frames = 0, ignored_kinds = 0, dup_frames = 0;
 bool shift_held = false;
 
-mb::Debouncer deb_nav_up(kDebounceMs), deb_nav_down(kDebounceMs), deb_nav_left(kDebounceMs),
-    deb_nav_right(kDebounceMs), deb_nav_press(kDebounceMs), deb_enc_sw(kDebounceMs),
-    deb_rec(kDebounceMs), deb_overdub(kDebounceMs), deb_stop(kDebounceMs), deb_play(kDebounceMs),
-    deb_play_start(kDebounceMs), deb_shift(kDebounceMs);
-mb::ShiftHold shift_hold;
 mb::MidiParser midi_parse[2] = {mb::MidiParser(0), mb::MidiParser(1)};
 
 uint32_t session_from_rosc() {
@@ -482,23 +477,22 @@ void handle_frame(const mb::Frame& f) {
 
 struct Button {
   uint gpio;
-  mb::Debouncer* deb;
-  uint8_t id;
+  mb::PanelControl control;
 };
 
 Button buttons[] = {
-    {MB_PIN_NAV_UP, &deb_nav_up, mb::CTL_NAV_UP},
-    {MB_PIN_NAV_DOWN, &deb_nav_down, mb::CTL_NAV_DOWN},
-    {MB_PIN_NAV_LEFT, &deb_nav_left, mb::CTL_NAV_LEFT},
-    {MB_PIN_NAV_RIGHT, &deb_nav_right, mb::CTL_NAV_RIGHT},
-    {MB_PIN_NAV_PRESS, &deb_nav_press, mb::CTL_NAV_PRESS},
-    {MB_PIN_ENCODER_SW, &deb_enc_sw, mb::CTL_ENCODER_SW},
-    {MB_PIN_REC, &deb_rec, mb::CTL_REC},
-    {MB_PIN_OVER_DUB, &deb_overdub, mb::CTL_OVER_DUB},
-    {MB_PIN_STOP, &deb_stop, mb::CTL_STOP},
-    {MB_PIN_PLAY, &deb_play, mb::CTL_PLAY},
-    {MB_PIN_PLAY_START, &deb_play_start, mb::CTL_PLAY_START},
-    {MB_PIN_SHIFT_EXIT, &deb_shift, mb::CTL_SHIFT_EXIT},
+    {MB_PIN_NAV_UP, mb::PanelControl(mb::CTL_NAV_UP)},
+    {MB_PIN_NAV_DOWN, mb::PanelControl(mb::CTL_NAV_DOWN)},
+    {MB_PIN_NAV_LEFT, mb::PanelControl(mb::CTL_NAV_LEFT)},
+    {MB_PIN_NAV_RIGHT, mb::PanelControl(mb::CTL_NAV_RIGHT)},
+    {MB_PIN_NAV_PRESS, mb::PanelControl(mb::CTL_NAV_PRESS)},
+    {MB_PIN_ENCODER_SW, mb::PanelControl(mb::CTL_ENCODER_SW)},
+    {MB_PIN_REC, mb::PanelControl(mb::CTL_REC)},
+    {MB_PIN_OVER_DUB, mb::PanelControl(mb::CTL_OVER_DUB)},
+    {MB_PIN_STOP, mb::PanelControl(mb::CTL_STOP)},
+    {MB_PIN_PLAY, mb::PanelControl(mb::CTL_PLAY)},
+    {MB_PIN_PLAY_START, mb::PanelControl(mb::CTL_PLAY_START)},
+    {MB_PIN_SHIFT_EXIT, mb::PanelControl(mb::CTL_SHIFT_EXIT)},
 };
 
 // Quadrature edges per poll; 4 edges make one detent (adjust if the fitted
@@ -507,27 +501,26 @@ int8_t quad_table[16] = {0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0};
 int quad_prev = 0, quad_acc = 0;
 
 void scan_controls(uint32_t now_ms) {
-  for (const auto& b : buttons) {
-    const bool pressed = !gpio_get(b.gpio);  // active-low against GND
-    if (b.id == mb::CTL_SHIFT_EXIT) {
-      // SHIFT/EXIT gets hold timing on top of debounce: press (1) and
-      // release (0) edges plus a single long-hold event (2) while held.
-      // The app enters shift mode live on 2; short-press exit and mode
-      // policy live on the Pi (see docs/protocol.md).
-      b.deb->update(pressed, now_ms);
-      shift_held = b.deb->state();
-      const int sev = shift_hold.update(shift_held, now_ms);
-      if (sev >= 0) queue_control(b.id, static_cast<std::uint8_t>(sev));
-      continue;
+  for (auto& b : buttons) {
+    const bool raw_pressed = !gpio_get(b.gpio);  // active-low against GND
+    const mb::PanelControl::Result r = b.control.update(raw_pressed, now_ms);
+    const uint8_t id = b.control.id();
+    const bool pressed = b.control.pressed();
+    if (id == mb::CTL_SHIFT_EXIT) {
+      // SHIFT/EXIT state feeds the encoder's fine-tempo step; the event
+      // stream carries press/release plus the single long-hold (2) that
+      // enters shift mode live. Short-press exit and mode policy live on
+      // the Pi (see docs/protocol.md).
+      shift_held = pressed;
     }
-    if (b.deb->update(pressed, now_ms)) {
-      queue_control(b.id, pressed ? 1 : 0);
+    if (r.event) queue_control(id, r.value);
+    if (r.changed) {
       // Panel transport drives locally (no Pi round-trip); the Pi learns it
       // from the state frame + tick stream and must not echo it back (see
       // docs/protocol.md). EV_CONTROL still goes out for UI/record policy.
       // In manual mode the mapping is suppressed: events only, Pi decides.
       if (pressed && transport_local) {
-        const int cmd = mb::transport_for_press(b.id, transport_running);
+        const int cmd = mb::transport_for_press(id, transport_running);
         if (cmd >= 0) {
           transport_cmd(static_cast<uint8_t>(cmd));
           led_override = false;
@@ -537,8 +530,8 @@ void scan_controls(uint32_t now_ms) {
       // REC/OVERDUB presses toggle record arming (a rule the Pi shares:
       // both sides toggle on the same deduped press edge). Announcing here
       // keeps the Pi's mirror in step without waiting for a transition.
-      if (pressed && (b.id == mb::CTL_REC || b.id == mb::CTL_OVER_DUB)) {
-        if (b.id == mb::CTL_REC)
+      if (pressed && (id == mb::CTL_REC || id == mb::CTL_OVER_DUB)) {
+        if (id == mb::CTL_REC)
           rec_armed = !rec_armed;
         else
           overdub_armed = !overdub_armed;

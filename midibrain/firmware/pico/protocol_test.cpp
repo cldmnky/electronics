@@ -1,11 +1,140 @@
 #include "protocol.hpp"
 #include "midi.hpp"
+#include "panel_input.hpp"
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <vector>
 
-int main() {
+namespace {
+struct Feed {
+  std::uint32_t at_ms;
+  bool pressed;
+};
+
+struct Emitted {
+  std::uint32_t at_ms;
+  std::uint8_t id;
+  std::uint8_t value;
+};
+
+// Drive one PanelControl through a level timeline at the firmware's 1 kHz
+// scan rate and collect the EV_CONTROL events it emits.
+std::vector<Emitted> drive(mb::PanelControl& control, const std::vector<Feed>& feeds,
+                           std::uint32_t until_ms) {
+  std::vector<Emitted> events;
+  std::size_t next = 0;
+  bool level = false;
+  for (std::uint32_t t = 0; t <= until_ms; ++t) {
+    while (next < feeds.size() && feeds[next].at_ms == t) level = feeds[next++].pressed;
+    const mb::PanelControl::Result r = control.update(level, t);
+    if (r.event) events.push_back({t, control.id(), r.value});
+  }
+  return events;
+}
+
+// Encode one EV_CONTROL exactly as the Pico would (fixed session and sequence
+// make the log reproducible; payload bytes are the contract).
+void print_control_event(std::uint32_t at_ms, std::uint8_t id, std::uint8_t value) {
+  mb::Frame frame{};
+  assert(mb::pack_control(frame, 1, 0x12345678u, id, value));
+  mb::Bytes wire{};
+  assert(mb::encode(frame, wire));
+  char hex[2 * mb::frame_size + 1] = {};
+  for (std::size_t i = 0; i < wire.size(); ++i)
+    std::snprintf(hex + 2 * i, 3, "%02x", static_cast<unsigned>(wire[i]));
+  std::printf("t=%4u ms  id=%2u  value=%u  payload=%02x %02x %02x  frame=%s\n",
+              static_cast<unsigned>(at_ms), static_cast<unsigned>(id),
+              static_cast<unsigned>(value), static_cast<unsigned>(wire[12]),
+              static_cast<unsigned>(wire[13]), static_cast<unsigned>(wire[14]), hex);
+}
+
+void print_gesture(const char* name, std::uint8_t id, const std::vector<Feed>& feeds,
+                   std::uint32_t until_ms) {
+  mb::PanelControl control(id);
+  const std::vector<Emitted> events = drive(control, feeds, until_ms);
+  std::printf("%s\n", name);
+  if (events.empty()) std::printf("  (no events)\n");
+  for (const auto& e : events) print_control_event(e.at_ms, e.id, e.value);
+}
+
+void check_events(const char* name, std::uint8_t id,
+                  const std::vector<Feed>& feeds, std::uint32_t until_ms,
+                  const std::vector<Emitted>& expected) {
+  mb::PanelControl control(id);
+  const std::vector<Emitted> got = drive(control, feeds, until_ms);
+  assert(got.size() == expected.size());
+  for (std::size_t i = 0; i < expected.size(); ++i) {
+    assert(got[i].at_ms == expected[i].at_ms);
+    assert(got[i].id == expected[i].id);
+    assert(got[i].value == expected[i].value);
+  }
+  (void)name;
+}
+
+void run_panel_tests() {
+  // NAV direction press+release: debounced edge pair, no repeat.
+  check_events("nav press+release", mb::CTL_NAV_UP, {{100, true}, {300, false}},
+               400, {{{110, mb::CTL_NAV_UP, mb::CTL_STATE_PRESSED},
+                       {310, mb::CTL_NAV_UP, mb::CTL_STATE_RELEASED}}});
+  // NAV direction held 0.8 s: press edge, first repeat 400 ms later, then
+  // every 80 ms, single release on let-go.
+  check_events("nav hold repeat", mb::CTL_NAV_UP, {{100, true}, {900, false}},
+               1000, {{{110, mb::CTL_NAV_UP, mb::CTL_STATE_PRESSED},
+                        {510, mb::CTL_NAV_UP, mb::CTL_STATE_PRESSED},
+                        {590, mb::CTL_NAV_UP, mb::CTL_STATE_PRESSED},
+                        {670, mb::CTL_NAV_UP, mb::CTL_STATE_PRESSED},
+                        {750, mb::CTL_NAV_UP, mb::CTL_STATE_PRESSED},
+                        {830, mb::CTL_NAV_UP, mb::CTL_STATE_PRESSED},
+                        {910, mb::CTL_NAV_UP, mb::CTL_STATE_RELEASED}}});
+  // NAV_PRESS held 1.4 s: exactly press + release, never repeats.
+  check_events("nav press no repeat", mb::CTL_NAV_PRESS,
+               {{100, true}, {1500, false}}, 1600,
+               {{{110, mb::CTL_NAV_PRESS, mb::CTL_STATE_PRESSED},
+                 {1510, mb::CTL_NAV_PRESS, mb::CTL_STATE_RELEASED}}});
+  // SHIFT short press: 1 -> 0 with no long-hold state 2.
+  check_events("shift short", mb::CTL_SHIFT_EXIT, {{100, true}, {400, false}},
+               500, {{{110, mb::CTL_SHIFT_EXIT, mb::CTL_STATE_PRESSED},
+                       {410, mb::CTL_SHIFT_EXIT, mb::CTL_STATE_RELEASED}}});
+  // SHIFT long hold: state 2 exactly once past 500 ms, then release.
+  check_events("shift long", mb::CTL_SHIFT_EXIT, {{100, true}, {1200, false}},
+               1300, {{{110, mb::CTL_SHIFT_EXIT, mb::CTL_STATE_PRESSED},
+                        {610, mb::CTL_SHIFT_EXIT, mb::CTL_STATE_LONG_HOLD},
+                        {1210, mb::CTL_SHIFT_EXIT, mb::CTL_STATE_RELEASED}}});
+  // Bouncy edges inside the 10 ms window collapse to one press + release.
+  check_events("bouncy nav", mb::CTL_NAV_DOWN,
+               {{100, true}, {103, false}, {105, true}, {300, false}}, 400,
+               {{{115, mb::CTL_NAV_DOWN, mb::CTL_STATE_PRESSED},
+                 {310, mb::CTL_NAV_DOWN, mb::CTL_STATE_RELEASED}}});
+}
+
+void run_evidence() {
+  std::printf("EV_CONTROL evidence from PanelControl + pack_control + encode\n");
+  std::printf("scan 1 kHz, debounce 10 ms, NAV repeat 400 ms then 80 ms, SHIFT long 500 ms\n");
+  std::printf("session=0x12345678 sequence=1 (fixed for reproducibility)\n\n");
+  print_gesture("NAV_UP press+release", mb::CTL_NAV_UP, {{100, true}, {300, false}}, 400);
+  print_gesture("NAV_DOWN press+release", mb::CTL_NAV_DOWN, {{100, true}, {300, false}}, 400);
+  print_gesture("NAV_LEFT press+release", mb::CTL_NAV_LEFT, {{100, true}, {300, false}}, 400);
+  print_gesture("NAV_RIGHT press+release", mb::CTL_NAV_RIGHT, {{100, true}, {300, false}}, 400);
+  print_gesture("NAV_PRESS held 1.4 s (no repeat)", mb::CTL_NAV_PRESS,
+                {{100, true}, {1500, false}}, 1600);
+  print_gesture("SHIFT_EXIT short press (no state 2)", mb::CTL_SHIFT_EXIT,
+                {{100, true}, {400, false}}, 500);
+  print_gesture("SHIFT_EXIT long hold (state 2)", mb::CTL_SHIFT_EXIT,
+                {{100, true}, {1200, false}}, 1300);
+  print_gesture("NAV_UP held 0.8 s (auto-repeat)", mb::CTL_NAV_UP,
+                {{100, true}, {900, false}}, 1000);
+}
+}  // namespace
+
+int main(int argc, char** argv) {
+  if (argc == 2 && std::strcmp(argv[1], "--evidence") == 0) {
+    run_evidence();
+    return 0;
+  }
   using namespace mb;
   const auto* sample = reinterpret_cast<const std::uint8_t*>("123456789");
   assert(crc16(sample, 9) == 0x29b1);
@@ -36,6 +165,7 @@ int main() {
   assert(!nav.update(true, 105)); assert(!nav.update(true, 114));
   assert(nav.update(true, 115) && nav.state());
   assert(!nav.update(false, 120)); assert(nav.update(false, 130) && !nav.state());
+  run_panel_tests();
   Debouncer wrap(10); assert(!wrap.update(true, 0xfffffffau)); assert(wrap.update(true, 4));
   Frame event{Type::control_event, 124, hello.session, 2, {}};
   event.payload[0] = 1; event.payload[1] = 1; // NAV_UP pressed, simulated
@@ -205,6 +335,92 @@ int main() {
   assert(shwrap.update(true, 0xFFFFFF00u + 499) == -1);
   assert(shwrap.update(true, 0xFFFFFF00u + 500) == 2);  // wraparound-safe
   assert(shwrap.update(false, 10) == 0);
+  // EV_CONTROL vocabulary and repeat eligibility are frozen in midi.hpp.
+  assert(CTL_STATE_RELEASED == 0 && CTL_STATE_PRESSED == 1 && CTL_STATE_LONG_HOLD == 2);
+  assert(kNavRepeatInitialMs == 400 && kNavRepeatMs == 80 && kShiftLongMs == 500);
+  assert(is_nav_direction(CTL_NAV_UP) && is_nav_direction(CTL_NAV_DOWN));
+  assert(is_nav_direction(CTL_NAV_LEFT) && is_nav_direction(CTL_NAV_RIGHT));
+  assert(!is_nav_direction(CTL_NAV_PRESS) && !is_nav_direction(CTL_ENCODER_SW));
+  assert(!is_nav_direction(CTL_SHIFT_EXIT) && !is_nav_direction(CTL_REC));
+
+  // Debounce: a bouncy NAV_UP press still emits exactly one press event.
+  PanelControl up(CTL_NAV_UP);
+  const auto bouncy = drive(up, {{100, true}, {103, false}, {105, true}, {114, false},
+                                 {115, true}, {300, false}}, 400);
+  assert(bouncy.size() == 2);
+  assert(bouncy[0].at_ms == 125 && bouncy[0].id == CTL_NAV_UP &&
+         bouncy[0].value == CTL_STATE_PRESSED);
+  assert(bouncy[1].at_ms == 310 && bouncy[1].value == CTL_STATE_RELEASED);
+
+  // Direction hold: press at 110, repeat 400 ms later, then every 80 ms.
+  PanelControl held_up(CTL_NAV_UP);
+  const auto repeats = drive(held_up, {{100, true}, {900, false}}, 1000);
+  assert(repeats.size() == 7);
+  const std::uint32_t repeat_times[] = {110, 510, 590, 670, 750, 830, 910};
+  for (std::size_t i = 0; i < repeats.size(); ++i) {
+    assert(repeats[i].at_ms == repeat_times[i] && repeats[i].id == CTL_NAV_UP);
+    assert(repeats[i].value ==
+           (i + 1 < repeats.size() ? CTL_STATE_PRESSED : CTL_STATE_RELEASED));
+  }
+  // Release resets the repeat clock: the next press gets a full 400 ms.
+  const auto repressed = drive(held_up, {{2000, true}, {2450, false}}, 2500);
+  assert(repressed.size() == 3);
+  assert(repressed[0].at_ms == 2010 && repressed[0].value == CTL_STATE_PRESSED);
+  assert(repressed[1].at_ms == 2410 && repressed[1].value == CTL_STATE_PRESSED);
+  assert(repressed[2].at_ms == 2460 && repressed[2].value == CTL_STATE_RELEASED);
+
+  // A starved scan emits at most one repeat: no catch-up burst.
+  PanelControl starved(CTL_NAV_DOWN);
+  assert(!starved.update(true, 100).event);  // debounce not elapsed
+  assert(starved.update(true, 110).event);   // press
+  const auto gap = starved.update(true, 2000);
+  assert(gap.event && gap.value == CTL_STATE_PRESSED);
+  assert(!starved.update(true, 2001).event);
+  assert(!starved.update(false, 2010).event);
+  const auto gap_release = starved.update(false, 2020);
+  assert(gap_release.event && gap_release.value == CTL_STATE_RELEASED);
+
+  // Repeat timing stays correct across 32-bit millisecond wraparound.
+  NavRepeat wrap_repeat;
+  assert(wrap_repeat.update(true, 0xFFFFFF00u));
+  assert(!wrap_repeat.update(true, 0xFFFFFF00u + 399));
+  assert(wrap_repeat.update(true, 0xFFFFFF00u + 400));
+  assert(!wrap_repeat.update(true, 0xFFFFFF00u + 479));
+  assert(wrap_repeat.update(true, 0xFFFFFF00u + 480));
+  assert(!wrap_repeat.update(false, 10));
+
+  // NAV_PRESS is a single press edge: held 1.4 s, no repeat.
+  PanelControl press(CTL_NAV_PRESS);
+  const auto click = drive(press, {{100, true}, {1500, false}}, 1600);
+  assert(click.size() == 2);
+  assert(click[0].at_ms == 110 && click[0].value == CTL_STATE_PRESSED);
+  assert(click[1].at_ms == 1510 && click[1].value == CTL_STATE_RELEASED);
+
+  // SHIFT/EXIT: short press never reports 2; long hold reports it once.
+  PanelControl exit_short(CTL_SHIFT_EXIT);
+  const auto short_press = drive(exit_short, {{100, true}, {400, false}}, 500);
+  assert(short_press.size() == 2);
+  assert(short_press[0].at_ms == 110 && short_press[0].value == CTL_STATE_PRESSED);
+  assert(short_press[1].at_ms == 410 && short_press[1].value == CTL_STATE_RELEASED);
+  PanelControl exit_long(CTL_SHIFT_EXIT);
+  const auto long_hold = drive(exit_long, {{100, true}, {1200, false}}, 1300);
+  assert(long_hold.size() == 3);
+  assert(long_hold[0].at_ms == 110 && long_hold[0].value == CTL_STATE_PRESSED);
+  assert(long_hold[1].at_ms == 610 && long_hold[1].value == CTL_STATE_LONG_HOLD);
+  assert(long_hold[2].at_ms == 1210 && long_hold[2].value == CTL_STATE_RELEASED);
+
+  // Every emitted state encodes to the documented EV_CONTROL frame.
+  for (const auto* events : {&repeats, &click, &short_press, &long_hold}) {
+    for (const auto& e : *events) {
+      Frame cf{};
+      Bytes cb{};
+      assert(pack_control(cf, 1, 0x12345678u, e.id, e.value));
+      assert(encode(cf, cb) && decode(cb, decoded));
+      assert(decoded.type == Type::control_event && decoded.length == 3);
+      assert(decoded.payload[0] == EV_CONTROL && decoded.payload[1] == e.id);
+      assert(decoded.payload[2] == e.value);
+    }
+  }
   std::cout << "PASS: framed loopback + simulated debounced control event (no SPI hardware)\n";
   std::cout << "PASS: MIDI parser (running status, realtime, SysEx skip) + event codecs\n";
 }

@@ -64,17 +64,21 @@ Pico → Pi:
 | Kind | Bytes | Meaning |
 |---|---|---|
 | `0x01` MIDI | port, size, 3 data bytes, stamp_us LE32 | Timestamped MIDI IN message (length 10) |
-| `0x02` control | id, state/delta | Button press (1) / release (0); `0x10` ENCODER_TURN carries int8 delta (length 3) |
+| `0x02` control | id, state/delta | Button press (1) / release (0), NAV direction auto-repeat re-sends 1, SHIFT_EXIT long-hold reports 2; `0x10` ENCODER_TURN carries int8 delta (length 3) |
 | `0x04` tempo | bpm×100 LE16 | Local tempo after encoder or Pi change (length 3) |
 | `0x05` tick | tick LE32, Pico stamp_us LE32 | Clock tick notice + tick time, every tick while rolling (length 9) |
 | `0x21` STATUS_RESP | uptime_s LE32, ticks LE32, txq depth, txov LE16, rxov LE16, flags | Answer to `0x20` (length 15). Flag bit 0 = Pi HELLO seen (link up), bit 1 = rolling, bits 2–7 zero. `txov` counts outbound-frame queue overflows; `rxov` is the sum of both UART RX ring overruns (both saturate at 65535). |
 
 Control ids: 1 NAV_UP, 2 NAV_DOWN, 3 NAV_LEFT, 4 NAV_RIGHT, 5 NAV_PRESS,
 6 ENCODER_SW, 10 REC, 11 OVER_DUB, 12 STOP, 13 PLAY, 14 PLAY_START,
-15 SHIFT_EXIT. Payload[2] is 1 pressed / 0 released, except ENCODER_TURN
-(signed delta) and SHIFT_EXIT, which additionally reports 2 while a hold
-is past 500 ms (long-press). The app enters shift mode live on the 2;
-a short press (1 then 0, no 2) means exit. Release always reports 0.
+15 SHIFT_EXIT. Payload[2] is 0 released / 1 pressed (the `CTL_STATE_*`
+constants in `firmware/pico/midi.hpp`), except ENCODER_TURN, which carries a
+signed delta. A held NAV_UP/DOWN/LEFT/RIGHT auto-repeats: state 1 goes out
+on the debounced press edge, then state 1 is re-sent 400 ms after the press
+and every 80 ms while held; NAV_PRESS and the other buttons never repeat.
+SHIFT_EXIT additionally reports 2 once when a hold passes 500 ms
+(long-press). The app enters shift mode live on the 2; a short press
+(1 then 0, with no 2) means exit. Release always reports 0.
 
 Pi → Pico:
 
