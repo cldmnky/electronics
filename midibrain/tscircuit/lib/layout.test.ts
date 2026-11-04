@@ -1,7 +1,30 @@
 import { expect, test } from "bun:test"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
+import { renderMechanical, run } from "../scripts/export-mechanical"
 import {
+  BRACKET_ALLOWANCE,
+  DEPTH_TARGET,
   DISPLAY_CONCEPT,
+  DISPLAY_ACTIVE_OFFSET_X,
+  DISPLAY_DATUM,
   DISPLAY_STANDOFFS,
+  DISPLAY_STANDOFF,
+  DISPLAY_STACK,
+  DISPLAY_VENDOR,
+  DISPLAY_UNDERSIDE_GAP,
+  FRONT_TOP_SMD_MAX_HEIGHT,
+  LCD_CUTOUT_ALLOWANCE,
+  LIGHT_PIPE,
+  LIGHT_PIPE_REACH,
+  MOUNT_HOLE_DIAMETER,
+  NOTCH_BOUNDS,
+  PANEL_TO_FRONT_BOARD_GAP,
+  PROVISIONAL_Z,
+  mechanicalExport,
+  provisionalInstalledDepth,
+  roundedRectOutline,
   FEEDTHROUGH_BRACKET,
   FRONT_BOARD_HOLES,
   FRONT_COLUMNS,
@@ -17,6 +40,7 @@ import {
   LED_ID,
   LED_Y,
   PANEL,
+  PANEL_CUTOUTS,
   PANEL_LCD_CUTOUT,
   PANEL_TITLES,
   PI_HOLES,
@@ -70,8 +94,13 @@ test("display, window, cutout and mounting holes share one coordinate source", (
   expect(PANEL_LCD_CUTOUT.y).toBe(d.y)
   expect(PANEL_LCD_CUTOUT.width).toBeGreaterThan(d.width)
   expect(PANEL_LCD_CUTOUT.height).toBeGreaterThan(d.height)
-  // Active-area window keeps its 2.935 mm left offset and 0.5 mm/side clearance.
-  expect(LCD_WINDOW.x).toBeCloseTo(d.x - 2.935, 6)
+  // Active area: borders 3.63/9.44 give -2.905 mm in the RAW model frame; after
+  // the 180 degree layout rotation the offset is +2.905 mm (to the RIGHT). The
+  // window is SILKSCREEN only, and first article still has to confirm it.
+  expect(DISPLAY_ACTIVE_OFFSET_X).toBeCloseTo(2.905, 6)
+  expect(DISPLAY_DATUM.rotationDeg).toBe(180)
+  expect(LCD_WINDOW.x).toBeCloseTo(d.x + DISPLAY_ACTIVE_OFFSET_X, 6)
+  expect(LCD_WINDOW.x).toBeCloseTo(d.x + 2.905, 6)
   expect(LCD_WINDOW.y).toBe(d.y)
   expect(LCD_WINDOW.width).toBeCloseTo(d.innerWidth + 1, 6)
   expect(LCD_WINDOW.height).toBeCloseTo(d.innerHeight + 1, 6)
@@ -248,4 +277,345 @@ test("allocated GPIO and physical pins are unique", () => {
   expect(PICO_GPIO.find(p => p.signal === "SHIFT_EXIT")?.gpio).toBe(28)
   expect(USB_FEEDTHROUGHS).toHaveLength(3)
   expect(new Set(USB_FEEDTHROUGHS.map(f => f.id)).size).toBe(3)
+})
+// ---- Pure geometry: LCD aperture -----------------------------------------
+// The relief radius is fixed by the fabricator, not by the module.
+const AUTOPROVISIONAL_CORNER = LCD_CUTOUT_ALLOWANCE.cornerRadius
+const segDist = (p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) => {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len2 = dx * dx + dy * dy
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+const polyDist = (p: { x: number; y: number }, points: readonly { x: number; y: number }[]) =>
+  Math.min(...points.map((q, i) => segDist(p, q, points[(i + 1) % points.length]!)))
+
+test("LCD aperture is expanded over the lens, with an explicit corner relief", () => {
+  const cut = PANEL_LCD_CUTOUT
+  const lens = DISPLAY_VENDOR.lens
+  // 0.9 mm per side: 0.2 mm fabrication tolerance + 0.2 mm vendor LENS OD
+  // tolerance (all on one side, worst case) + 0.5 mm unverified registration
+  // and assembly allowance. The withdrawn 89.2 x 56.3 mm aperture left only
+  // 0.165/0.15 mm per side, inside the +-0.2 mm fabrication tolerance.
+  expect(LCD_CUTOUT_ALLOWANCE.perSide).toBe(0.9)
+  expect(lens.tolerance).toBe(0.2)
+  expect(cut.width).toBeCloseTo(lens.width + 2 * LCD_CUTOUT_ALLOWANCE.perSide, 6)
+  expect(cut.height).toBeCloseTo(lens.height + 2 * LCD_CUTOUT_ALLOWANCE.perSide, 6)
+  // The primary drawing sizes the GLASS aperture from the lens outline
+  // (88.87 x 52.56), never from the 86.5 x 56.0 module PCB.
+  expect(cut.height).toBeLessThan(DISPLAY_VENDOR.pcb.height)
+  expect(cut.width).toBeGreaterThan(DISPLAY_VENDOR.pcb.width)
+  // A routed inside corner cannot be sharp; the relief is explicit and is not
+  // allowed to round the aperture back inside the 0.5 mm minimum.
+  expect(cut.cornerRadius).toBeGreaterThanOrEqual(0.5)
+  expect(cut.cornerRadius).toBe(AUTOPROVISIONAL_CORNER)
+})
+
+test("actual segment clearance at every module corner is at least 0.5 mm", () => {
+  const outline = roundedRectOutline(PANEL_LCD_CUTOUT)
+  expect(outline).toHaveLength(4 * (6 + 1))
+  // Counter-clockwise closed loop with the exact outer bounds.
+  const xs = outline.map(p => p.x)
+  const ys = outline.map(p => p.y)
+  expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(PANEL_LCD_CUTOUT.width, 6)
+  expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(PANEL_LCD_CUTOUT.height, 6)
+  // The chords lie INSIDE the true corner arc, so the polygon is never larger
+  // than the exact rounded rectangle. Measure the polygon, not the formula.
+  const exact = LCD_CUTOUT_ALLOWANCE.cornerRadius -
+    Math.abs(LCD_CUTOUT_ALLOWANCE.cornerRadius - LCD_CUTOUT_ALLOWANCE.perSide) * Math.SQRT2
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      const corner = {
+        x: DISPLAY_CONCEPT.x + sx * DISPLAY_CONCEPT.width / 2,
+        y: DISPLAY_CONCEPT.y + sy * DISPLAY_CONCEPT.height / 2,
+      }
+      const measured = polyDist(corner, outline)
+      expect(measured).toBeGreaterThanOrEqual(0.5)
+      expect(measured).toBeLessThanOrEqual(exact + 1e-9)
+    }
+  }
+})
+
+test("LCD aperture stays clear of the panel edge and the control openings", () => {
+  const cut = PANEL_LCD_CUTOUT
+  expect(Math.abs(cut.x) + cut.width / 2).toBeLessThan(PANEL.width / 2 - 1)
+  expect(Math.abs(cut.y) + cut.height / 2).toBeLessThan(PANEL.height / 2 - 1)
+  // The aperture may not reach the LED, transport or control rows.
+  expect(cut.y - cut.height / 2).toBeGreaterThan(LED_Y + PANEL_CUTOUTS.led / 2)
+  expect(cut.y + cut.height / 2).toBeLessThan(USB_FEEDTHROUGHS[0]!.y - USB_FEEDTHROUGHS[0]!.cutoutHeight / 2)
+  for (const c of [RIGHT_CONTROLS.TEMPO, RIGHT_CONTROLS.NAV, RIGHT_CONTROLS.SHIFT_EXIT]) {
+    expect(c.x - PANEL_CUTOUTS.control / 2).toBeGreaterThan(cut.x + cut.width / 2)
+  }
+})
+
+// ---- Pure geometry: bracket ----------------------------------------------
+const ligament = (x: number) => Math.min(
+  x - MOUNT_HOLE_DIAMETER / 2 - FEEDTHROUGH_BRACKET.outline.x1,
+  FEEDTHROUGH_BRACKET.outline.x2 - x - MOUNT_HOLE_DIAMETER / 2,
+)
+
+test("bracket stock spans both mounts with a nut wall around them", () => {
+  const b = FEEDTHROUGH_BRACKET
+  expect(b.mountX).toEqual([-60, 55])
+  // 3.0 mm from each mount centre to the outline: 1.65 mm of material outside a
+  // D2.7 hole, which leaves 0.5 mm around an M2.5 nut (circumradius 2.5 mm).
+  for (const x of b.mountX) expect(ligament(x)).toBeCloseTo(1.65, 6)
+  expect(b.outline.width).toBeCloseTo(121, 6)
+  expect(b.outline.height).toBeCloseTo(14.5, 6)
+  expect(b.outline.x1).toBeGreaterThan(-PANEL.width / 2)
+  expect(b.outline.x2).toBeLessThan(PANEL.width / 2)
+  // Backed by the front board, and clear of the display below it.
+  expect(b.outline.x1).toBeGreaterThan(-FRONT_PCB.width / 2)
+  expect(b.outline.x2).toBeLessThan(FRONT_PCB.width / 2)
+  expect(b.outline.y2).toBeLessThanOrEqual(FRONT_PCB.height / 2)
+  // Referenced to the display PCB outline, the taller of the two envelopes.
+  const pcbTop = DISPLAY_CONCEPT.y + DISPLAY_VENDOR.pcb.height / 2
+  expect(pcbTop).toBeGreaterThan(DISPLAY_CONCEPT.y + DISPLAY_VENDOR.lens.height / 2)
+  expect(b.outline.y1).toBeGreaterThan(pcbTop)
+})
+
+test("bracket slots follow the feedthrough cutouts and keep a printable web", () => {
+  const b = FEEDTHROUGH_BRACKET
+  expect(b.slots).toHaveLength(USB_FEEDTHROUGHS.length)
+  b.slots.forEach((slot, i) => {
+    const f = USB_FEEDTHROUGHS[i]!
+    expect(slot.id).toBe(f.id)
+    expect(slot.x).toBe(f.x)
+    expect(slot.width).toBeCloseTo(f.cutoutWidth + 2 * BRACKET_ALLOWANCE.slotClearancePerSide, 6)
+    // Inside the board notch in X: outside it the board is solid, so a slot
+    // there could not pass a cable.
+    expect(slot.x - slot.width / 2).toBeGreaterThanOrEqual(NOTCH_BOUNDS.left)
+    expect(slot.x + slot.width / 2).toBeLessThanOrEqual(NOTCH_BOUNDS.right)
+    // Open to the top edge.
+    expect(slot.yTop).toBeCloseTo(b.outline.y2, 6)
+    // Height clearance, not only width: the floor must clear the whole declared
+    // panel opening plus the same per-side clearance. A fixed floor at y = 50
+    // cut into even the declared openings (USB-C 49.7, USB-A 49.85).
+    const openingBottom = f.y - f.cutoutHeight / 2
+    expect(slot.yBottom).toBeLessThanOrEqual(openingBottom)
+    expect(slot.yBottom).toBeCloseTo(openingBottom - BRACKET_ALLOWANCE.slotClearancePerSide, 6)
+    // ... and it must stay inside the board notch: below it the board is solid.
+    expect(slot.yBottom).toBeGreaterThanOrEqual(NOTCH_BOUNDS.bottom)
+  })
+  // The reviewed defect: 40 mm slots at x = -5 and +35 touched, giving a 0 mm
+  // web. Slots may never touch, and the webs must be printable.
+  const webs = b.slots.slice(1).map((s, i) => {
+    const prev = b.slots[i]!
+    return (s.x - s.width / 2) - (prev.x + prev.width / 2)
+  })
+  expect(webs).toHaveLength(2)
+  for (const w of webs) {
+    expect(w).toBeGreaterThan(BRACKET_ALLOWANCE.materialToCuts)
+    expect(w).toBeGreaterThan(10)
+  }
+})
+
+test("bracket slot floors stay above the notch bottom for every feedthrough", () => {
+  // A future feedthrough that needs a deeper slot must fail here rather than be
+  // silently clamped: the notch bottom is solid board.
+  for (const f of USB_FEEDTHROUGHS) {
+    const floor = f.y - f.cutoutHeight / 2 - BRACKET_ALLOWANCE.slotClearancePerSide
+    expect(floor).toBeGreaterThan(NOTCH_BOUNDS.bottom)
+  }
+})
+
+test("bracket clears the top front-rear spacer hardware and carries tie holes", () => {
+  const b = FEEDTHROUGH_BRACKET
+  const topPair = FRONT_REAR_MOUNT.filter(h => h.y > 0)
+  expect(b.mountHeadClearance).toHaveLength(topPair.length)
+  b.mountHeadClearance.forEach((head, i) => {
+    expect(head.x).toBe(topPair[i]!.x)
+    expect(head.y).toBe(topPair[i]!.y)
+    // PROVISIONAL envelope: bigger than the D2.7 clearance hole, and off both
+    // bracket mounts so the bar keeps its nut material. The real head is a gate.
+    expect(head.diameter).toBeGreaterThan(MOUNT_HOLE_DIAMETER)
+    for (const x of b.mountX) {
+      expect(Math.hypot(head.x - x, head.y - b.mountY)).toBeGreaterThan(
+        head.diameter / 2 + MOUNT_HOLE_DIAMETER / 2)
+    }
+  })
+  // One tie hole per web: between the slots and outside the end slots.
+  expect(b.tieHoles).toHaveLength(b.slots.length + 1)
+  for (const tie of b.tieHoles) {
+    for (const slot of b.slots) {
+      const dx = Math.max(slot.x - slot.width / 2 - tie.x, 0, tie.x - (slot.x + slot.width / 2))
+      expect(dx).toBeGreaterThan(0)
+    }
+    expect(tie.x - tie.diameter / 2).toBeGreaterThan(b.outline.x1)
+    expect(tie.x + tie.diameter / 2).toBeLessThan(b.outline.x2)
+  }
+})
+
+test("mechanical/layout.json matches the canonical export", () => {
+  // The CAD script reads this file and must never restate a coordinate. If the
+  // layout changed without regenerating it, this fails: run
+  //   cd tscircuit && bun run scripts/export-mechanical.ts
+  const text = readFileSync(new URL("../../mechanical/layout.json", import.meta.url), "utf8")
+  expect(JSON.parse(text)).toEqual(mechanicalExport())
+})
+
+// ---- Provisional stack ----------------------------------------------------
+test("provisional Z stack follows the vendor side view, with a stated datum", () => {
+  const v = DISPLAY_VENDOR
+  expect(PROVISIONAL_Z.panelFront).toBe(0)
+  expect(PROVISIONAL_Z.panelRear).toBe(PANEL.thickness)
+  // Assumption A: the lens front sits flush with the panel front face.
+  expect(PROVISIONAL_Z.displayGlassFront).toBe(0)
+  // Vendor: 6.7 mm lens front -> display PCB REAR face, then 4.0 mm to the
+  // BOSS ENDS, which are the rear-most feature (not just a connector); overall
+  // 10.7 mm. The earlier labels had these two swapped, so they are gone.
+  expect(v.lensFrontToPcbRear).toBe(6.7)
+  expect(v.pcbRearToBossEnd).toBe(4.0)
+  expect(v.overallDepth).toBeCloseTo(6.7 + 4.0, 6)
+  expect(PROVISIONAL_Z.displayPcbRear).toBeCloseTo(6.7, 6)
+  expect(PROVISIONAL_Z.displayRearMost).toBeCloseTo(10.7, 6)
+  expect("rearEnvelopeDepth" in DISPLAY_STACK).toBe(false)
+  // Plane separation and spacer length are separate quantities: the spacer
+  // screws onto the boss ends, 4.0 mm behind the PCB rear face.
+  expect(DISPLAY_STANDOFF.planeSeparation).toBe(9)
+  expect(DISPLAY_STANDOFF.spacerLength).toBeCloseTo(5, 6)
+  expect(DISPLAY_STANDOFF.spacerLength).toBeCloseTo(
+    DISPLAY_STANDOFF.planeSeparation - v.pcbRearToBossEnd, 6)
+  expect(DISPLAY_STACK.bossProjection).toBe(4)
+  expect(PROVISIONAL_Z.frontBoardTop).toBeCloseTo(v.lensFrontToPcbRear + DISPLAY_STANDOFF.planeSeparation, 6)
+  expect(PROVISIONAL_Z.frontBoardTop).toBeCloseTo(15.7, 6)
+  expect(PROVISIONAL_Z.frontBoardRear).toBeCloseTo(17.3, 6)
+  expect(PANEL_TO_FRONT_BOARD_GAP).toBeCloseTo(14.1, 6)
+  expect(PANEL_TO_FRONT_BOARD_GAP).toBeCloseTo(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear, 6)
+})
+
+test("display underside gap and light-pipe reach stay pending, not claimed", () => {
+  // The corrected stack leaves 5.0 mm from the front-board top face to the
+  // connector rear-most point: 2.8 mm over the tallest part with a stated
+  // height (MIDI receiver in the Toshiba 11-4L1S body, 2.2 mm max installed).
+  // That still does NOT prove the display underside, whose component map, FPC
+  // latch and module tolerance are unmapped.
+  expect(DISPLAY_UNDERSIDE_GAP).toBeCloseTo(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost, 6)
+  expect(DISPLAY_UNDERSIDE_GAP).toBeCloseTo(5.0, 6)
+  expect(FRONT_TOP_SMD_MAX_HEIGHT.height).toBe(2.2)
+  expect(DISPLAY_UNDERSIDE_GAP - FRONT_TOP_SMD_MAX_HEIGHT.height).toBeCloseTo(2.8, 6)
+  // Light-pipe reach is unproven and now looks inadequate: a 10.16 mm pipe
+  // against a 14.1 mm gap leaves 3.94 mm unexplained. No LED height and no seat
+  // allowance is stored, and a longer pipe is the likely outcome.
+  expect(LIGHT_PIPE.length).toBe(10.16)
+  expect(LIGHT_PIPE_REACH.unaccounted).toBeCloseTo(PANEL_TO_FRONT_BOARD_GAP - LIGHT_PIPE.length, 6)
+  expect(LIGHT_PIPE_REACH.unaccounted).toBeCloseTo(3.94, 6)
+  expect("seatAllowance" in LIGHT_PIPE).toBe(false)
+})
+
+test("provisional depth chain stays inside the owner target", () => {
+  expect(DEPTH_TARGET).toBe(110)
+  expect(provisionalInstalledDepth()).toBeLessThanOrEqual(DEPTH_TARGET)
+  // Rear board overhang is 13.2 mm per side when both boards share a centre.
+  expect((FRONT_PCB.width - REAR_PCB.width) / 2).toBeCloseTo(13.2, 6)
+})
+
+// ---- Export script: generation and non-writing --check --------------------
+const tempJson = () => {
+  const dir = mkdtempSync(join(tmpdir(), "midibrain-layout-"))
+  return join(dir, "layout.json")
+}
+
+test("export --check accepts fresh JSON and writes nothing", () => {
+  const path = tempJson()
+  try {
+    writeFileSync(path, renderMechanical())
+    const before = readFileSync(path, "utf8")
+    const result = run(["--check"], path)
+    expect(result.code).toBe(0)
+    expect(result.wrote).toBe(false)
+    expect(readFileSync(path, "utf8")).toBe(before)
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
+})
+
+test("export --check rejects stale JSON and leaves it unchanged", () => {
+  const path = tempJson()
+  try {
+    const stale = `${JSON.stringify({ stale: true }, null, 2)}\n`
+    writeFileSync(path, stale)
+    const result = run(["--check"], path)
+    expect(result.code).toBe(1)
+    expect(result.wrote).toBe(false)
+    expect(result.message).toContain("stale")
+    // The gate must not silently repair the tracked file.
+    expect(readFileSync(path, "utf8")).toBe(stale)
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
+})
+
+test("export --check fails when the JSON is missing", () => {
+  const path = tempJson()
+  try {
+    const result = run(["--check"], path)
+    expect(result.code).toBe(1)
+    expect(result.wrote).toBe(false)
+    expect(existsSync(path)).toBe(false)
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
+})
+
+test("export --check rejects unknown arguments without writing", () => {
+  const path = tempJson()
+  try {
+    writeFileSync(path, "unchanged\n")
+    for (const args of [["--write"], ["--check", "--force"], ["--fix"], ["check"]]) {
+      const result = run(args, path)
+      expect(result.code).toBe(2)
+      expect(result.wrote).toBe(false)
+      expect(readFileSync(path, "utf8")).toBe("unchanged\n")
+    }
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
+})
+
+test("export with no argument writes the canonical JSON", () => {
+  const path = tempJson()
+  try {
+    const result = run([], path)
+    expect(result.code).toBe(0)
+    expect(result.wrote).toBe(true)
+    expect(readFileSync(path, "utf8")).toBe(renderMechanical())
+    // And that render is what the tracked file holds.
+    expect(readFileSync(new URL("../../mechanical/layout.json", import.meta.url), "utf8"))
+      .toBe(renderMechanical())
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
+})
+
+test("mounting holes follow the 3D model bosses after the 180 degree rotation", () => {
+  // STEP model, raw frame: bosses at x -39.880 / +18.120, y +-24.500, z -6.7..-10.7.
+  // Rotated 180 degrees for the layout: x -18.12 / +39.88.
+  expect(DISPLAY_STANDOFFS.map(h => h.x)).toEqual([-18.12, 39.88, -18.12, 39.88])
+  expect(DISPLAY_STANDOFFS.map(h => h.y)).toEqual([-24.5, -24.5, 24.5, 24.5])
+  expect(DISPLAY_DATUM.rotationDeg).toBe(180)
+  // The PCB is NOT concentric with the lens; it sits 0.13 mm east in this frame.
+  expect(DISPLAY_DATUM.pcbCentreOffsetX).toBe(0.13)
+  const pcbLeft = DISPLAY_CONCEPT.x + DISPLAY_DATUM.pcbCentreOffsetX - DISPLAY_VENDOR.pcb.width / 2
+  const pcbRight = DISPLAY_CONCEPT.x + DISPLAY_DATUM.pcbCentreOffsetX + DISPLAY_VENDOR.pcb.width / 2
+  // The 25.00 mm margin lands on the LEFT and 3.50 mm on the right, as the
+  // orientation intends. The earlier -18.25 / +39.75 omitted the 0.13 offset.
+  expect((DISPLAY_CONCEPT.x + DISPLAY_STANDOFFS[0]!.x) - pcbLeft).toBeCloseTo(25, 6)
+  expect(pcbRight - (DISPLAY_CONCEPT.x + DISPLAY_STANDOFFS[1]!.x)).toBeCloseTo(3.5, 6)
+  for (const h of LCD_MOUNT_HOLES) {
+    expect(Math.abs(h.x)).toBeLessThan(FRONT_PCB.width / 2 - 2)
+    expect(Math.abs(h.y)).toBeLessThan(FRONT_PCB.height / 2 - 2)
+  }
+  // Physical first article is still pending.
+  expect(DISPLAY_DATUM.firstArticlePending).toBe(true)
+})
+
+test("aperture clearance also covers the model shell step past the lens OD", () => {
+  // The 3D model reaches x 44.635, i.e. 0.200 mm past the 88.87 mm lens OD, in
+  // the panel thickness zone (z -0.26..-3.95). The 0.9 mm per-side allowance
+  // still leaves more than the 0.5 mm target at that step.
+  const step = DISPLAY_DATUM.rawModelMaxX - DISPLAY_VENDOR.lens.width / 2
+  expect(step).toBeCloseTo(0.2, 3) // 44.635 - 44.435 = 0.200
+  expect(LCD_CUTOUT_ALLOWANCE.perSide - step).toBeGreaterThan(0.5)
 })

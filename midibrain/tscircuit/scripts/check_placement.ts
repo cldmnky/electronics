@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import {
   DISPLAY_ANNOTATIONS,
+  DISPLAY_CONCEPT,
   FEEDTHROUGH_BRACKET,
   FRONT_BOARD_HOLES,
   FRONT_COLUMNS,
@@ -26,6 +27,7 @@ import {
   transportButtonX,
   USB_FEEDTHROUGHS,
   displayAnnotationXY,
+  roundedRectOutline,
 } from "../lib/layout"
 import { brandArtPaths } from "../lib/panel-art"
 
@@ -56,10 +58,41 @@ const rear = read("dist/index/circuit.json")
 const cutouts = byType(panel, "pcb_cutout")
 const circles = (radius: number) => cutouts.filter(c => c.shape === "circle" && close(c.radius, radius))
 
-// LCD glass cutout, centred on the display with the shared size.
-const lcd = cutouts.find(c => c.shape === "rect" && close(c.center.x, PANEL_LCD_CUTOUT.x) && close(c.center.y, PANEL_LCD_CUTOUT.y))
-ok(`panel: LCD cutout ${PANEL_LCD_CUTOUT.width} x ${PANEL_LCD_CUTOUT.height} at (${PANEL_LCD_CUTOUT.x}, ${PANEL_LCD_CUTOUT.y})`,
-  !!lcd && close(lcd.width, PANEL_LCD_CUTOUT.width) && close(lcd.height, PANEL_LCD_CUTOUT.height))
+// LCD glass aperture. tscircuit has no rounded-rect cutout, so the panel emits
+// a rounded-rect polygon (see lib/layout.ts); this check proves the BUILT
+// outline matches the shared size, sits on the display centre and still leaves
+// the documented minimum clearance to a square-corner module at its rounded
+// corners - the case the old 89.2 x 56.3 mm rect could not survive.
+const MIN_LCD_CLEARANCE = 0.5
+const segDist = (p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) => {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len2 = dx * dx + dy * dy
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+const polyDist = (p: { x: number; y: number }, points: { x: number; y: number }[]) =>
+  Math.min(...points.map((q, i) => segDist(p, q, points[(i + 1) % points.length]!)))
+
+const lcd = cutouts.find(c => c.shape === "polygon")
+const lcdPoints: { x: number; y: number }[] = lcd?.points ?? []
+const lcdBox = lcdPoints.reduce(
+  (a, p) => ({ x1: Math.min(a.x1, p.x), y1: Math.min(a.y1, p.y), x2: Math.max(a.x2, p.x), y2: Math.max(a.y2, p.y) }),
+  { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity },
+)
+ok(`panel: LCD aperture is the rounded-rect polygon (${roundedRectOutline(PANEL_LCD_CUTOUT).length} points)`,
+  lcdPoints.length === roundedRectOutline(PANEL_LCD_CUTOUT).length)
+ok(`panel: LCD aperture ${PANEL_LCD_CUTOUT.width} x ${PANEL_LCD_CUTOUT.height} (bbox)`,
+  lcdPoints.length > 0 && close(lcdBox.x2 - lcdBox.x1, PANEL_LCD_CUTOUT.width, 1e-6) && close(lcdBox.y2 - lcdBox.y1, PANEL_LCD_CUTOUT.height, 1e-6))
+ok(`panel: LCD aperture centred on the display (${PANEL_LCD_CUTOUT.x}, ${PANEL_LCD_CUTOUT.y})`,
+  lcdPoints.length > 0 && close((lcdBox.x1 + lcdBox.x2) / 2, PANEL_LCD_CUTOUT.x, 1e-6) && close((lcdBox.y1 + lcdBox.y2) / 2, PANEL_LCD_CUTOUT.y, 1e-6))
+ok("panel: LCD aperture inside the panel outline",
+  lcdPoints.length > 0 && lcdBox.x1 > -PANEL.width / 2 && lcdBox.x2 < PANEL.width / 2 && lcdBox.y1 > -PANEL.height / 2 && lcdBox.y2 < PANEL.height / 2)
+for (const [sx, sy] of [[-1, -1], [-1, 1], [1, -1], [1, 1]] as const) {
+  const corner = { x: DISPLAY_CONCEPT.x + sx * DISPLAY_CONCEPT.width / 2, y: DISPLAY_CONCEPT.y + sy * DISPLAY_CONCEPT.height / 2 }
+  const d = lcdPoints.length > 0 ? polyDist(corner, lcdPoints) : 0
+  ok(`panel: LCD corner clearance ${d.toFixed(3)} mm >= ${MIN_LCD_CLEARANCE} at module corner (${corner.x}, ${corner.y})`, d >= MIN_LCD_CLEARANCE)
+}
 
 // USB feedthrough cutouts and mounting holes.
 for (const f of USB_FEEDTHROUGHS) {
@@ -217,6 +250,27 @@ for (const h of PI_HOLES) {
 }
 for (const x of FEEDTHROUGH_BRACKET.mountX) {
   at("front: bracket mount hole", holes.find(hh => close(hh.x, x) && close(hh.y, FEEDTHROUGH_BRACKET.mountY)), { x, y: FEEDTHROUGH_BRACKET.mountY })
+}
+// Bracket consistency against the BUILT front board: both mounts sit on board
+// material outside the top relief notch and inside the bracket outline, and
+// the bracket outline is fully backed by the board outline. The top
+// front-to-rear spacer holes then necessarily fall inside the bracket, which
+// is why the printed part carries the head-clearance slots from lib/layout.ts.
+const notchLeft = FRONT_TOP_NOTCH.x - FRONT_TOP_NOTCH.width / 2
+const notchRight = FRONT_TOP_NOTCH.x + FRONT_TOP_NOTCH.width / 2
+const notchBottom = FRONT_TOP_NOTCH.y - FRONT_TOP_NOTCH.height / 2
+const b = FEEDTHROUGH_BRACKET.outline
+for (const x of FEEDTHROUGH_BRACKET.mountX) {
+  const onBoard = holes.some(hh => close(hh.x, x) && close(hh.y, FEEDTHROUGH_BRACKET.mountY))
+  ok(`front: bracket mount (${x}, ${FEEDTHROUGH_BRACKET.mountY}) on board, outside the notch`,
+    onBoard && (x < notchLeft || x > notchRight) && FEEDTHROUGH_BRACKET.mountY < notchBottom &&
+    x > b.x1 && x < b.x2 && FEEDTHROUGH_BRACKET.mountY > b.y1 && FEEDTHROUGH_BRACKET.mountY < b.y2)
+}
+ok(`front: bracket outline ${b.width} x ${b.height} at (${b.x1}..${b.x2}, ${b.y1}..${b.y2}) inside the front board`,
+  b.x1 > -128 / 2 && b.x2 < 128 / 2 && b.y1 > -112 / 2 && b.y2 <= 112 / 2)
+for (const h of FRONT_REAR_MOUNT.filter(hh => hh.y > 0)) {
+  ok(`front: top spacer (${h.x}, ${h.y}) inside the bracket envelope, head clearance required`,
+    h.x > b.x1 && h.x < b.x2 && h.y > b.y1 && h.y < b.y2)
 }
 
 // Top relief notch and display annotations.

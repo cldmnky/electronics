@@ -1,97 +1,109 @@
-# Candidate components, assembly and feeders
+# Candidate components and assembly
 
-This is a **prototype BOM**, not an approved purchasing or manufacturing release. JLCPCB is the PCB fabricator and SMD assembler; LCSC/JLCPCB part numbers are candidates and must be rechecked for stock/package before ordering. Through-hole parts are hand-soldered unless explicitly stated.
+**Prototype instructions, not a purchasing or production release.** Use the
+canonical tscircuit source, `jlc-order.json`, the strict
+`tscircuit/scripts/sourcing-extras.csv`, and the reviewed BOM/CPL together.
+Recheck exact MPN, package, supplier and stock before ordering. All physical
+acceptance items remain pending.
 
-## Board split
+## Board split and assembly sides
 
 | Board | Contents | Assembly |
-|---|---|---|
-| Front/UI, 128 × 112 mm | 5 transport buttons, 3 SMD LEDs, 4 vertical TRS jacks, 5-way nav, encoder, MIDI SMD circuitry, 2 × 13 interconnect | Single-sided top SMD by JLCPCB; THT controls/jacks/interconnect hand-soldered |
-| Rear/base, 20HP 101.6 × 112 mm | Pico sockets, Pi ribbon, SPI buffers, reset FET, 5 V→VSYS diode, decoupling, 2 × 13 interconnect | SMD by JLCPCB; THT headers hand-soldered |
-| Front panel, 26HP 132.08 × 128.5 × 1.6 mm | Bare FR-4, no solder mask, white silkscreen, ENIG; LCD/control/USB/jack cutouts, three 4 mm LED light-pipe holes | JLCPCB PCB only; no copper/components |
+| --- | --- | --- |
+| Front/UI, 128 × 112 mm | MIDI inputs/outputs, six transport/shift switches, three LEDs, NAV, encoder and J5 | SMT on top/panel side. J5 THT body faces rearward; other THT controls face the panel. |
+| Rear/base, 101.6 × 112 mm | Pico sockets, Pi/front ribbons, SPI buffers, reset and power branch | SMT on bottom/rear side; THT headers/sockets fitted separately. |
+| Panel, 26HP/3U | FR-4 1.6 mm, white legends, cutouts/light-pipe holes | No components or copper; no copper finish is required. Confirm no-solder-mask fabrication with JLCPCB. |
 
-## Selected SMD parts
+The encoder is **not** an unconditional hand-solder line item: see its process
+requirement below. All THT parts stay out of the SMT CPL.
 
-| Function | MPN | LCSC | Package | Board/side |
-|---|---|---|---|---|
-| MIDI input opto | TLP2362(TPL,E) | C37658 | SO-5 | Front/front |
-| MIDI output PNP | MMBT3906LT1G | C53444 | SOT-23 | Front/front |
-| MIDI input protection | 1N4148WS | C2128 | SOD-323 | Front/front |
-| MISO/READY isolation | SN74LVC1G126DBVR | C7834 | SOT-23-5 | Rear/rear |
-| Reset FET | 2N7002 | C8545 | SOT-23 | Rear/rear |
-| Pi 5 V→VSYS Schottky | B5819W | C8598 | SOD-123 | Rear/rear |
-| 100 Ω SPI series | 0603WAF1000T5E | C22775 | 0603 | Rear/rear |
-| 220 Ω MIDI input | 0603WAF2200T5E | C22962 | 0603 | Front/front |
-| 2.2 kΩ opto pull-up | 0603WAF2201T5E | C4190 | 0603 | Front/front |
-| 4.7 kΩ output base | 0603WAF4701T5E | C23162 | 0603 | Front/front |
-| 10 kΩ pull-up/gate | 0603WAF1002T5E | C25804 | 0603 | Front/front + Rear/rear |
-| 100 kΩ pull-down | 0603WAF1003T5E | C25803 | 0603 | Rear/rear |
-| 330 Ω LED | 0603WAF3300T5E | C23138 | 0603 | Front/front |
-| 22 Ω 1 W output source | 25121WF220JT4E | C118189 | 2512 | Front/front |
-| 33 Ω 1 W output sink | 25121WF330JT4E | C53728 | 2512 | Front/front |
-| 100 nF bypass | CC0603KRX7R9BB104 | C14663 | 0603 | Front/front + Rear/rear |
-| 10 µF bulk | CL31A106KBHNNNE | C13585 | 1206 | Front/front + Rear/rear |
-| REC/OVER DUB LED | KT-0805R red | C2295 | 0805 | Front/front |
-| PLAY LED | KT-0805G green | C2297 | 0805 | Front/front |
-| 5-way nav | Alps SKRHABE010 | C139794 | SMD 8-pad | Front/front |
+## SMD candidates
 
-## THT, modules and panel parts
+| Function | MPN / value | LCSC | Package |
+| --- | --- | --- | --- |
+| MIDI receiver | Toshiba TLP2361(TPL,E) | C107626 | 11-4L1S |
+| MIDI output PNP | MMBT3906LT1G | C53444 | SOT-23 |
+| MIDI LED reverse diode | 1N4148WS | C2128 | SOD-323 |
+| MISO/READY buffer | SN74LVC1G126DBVR | C7834 | SOT-23-5 |
+| Reset FET | JCET 2N7002 | C8545 | SOT-23; pins 1/2/3 = G/S/D |
+| Pi 5 V → Pico VSYS diode | B5819W | C8598 | SOD-123 |
+| SPI series | 100 Ω, 0603WAF1000T5E | C22775 | 0603 |
+| MIDI input | 220 Ω, 0603WAF2200T5E | C22962 | 0603 |
+| RX pull-up | 2.2 kΩ, 0603WAF2201T5E | C4190 | 0603 |
+| PNP base | 4.7 kΩ, 0603WAF4701T5E | C23162 | 0603 |
+| Pull-up/gate | 10 kΩ, 0603WAF1002T5E | C25804 | 0603 |
+| Pull-down | 100 kΩ, 0603WAF1003T5E | C25803 | 0603 |
+| Indicator series | 330 Ω, 0603WAF3300T5E | C23138 | 0603 |
+| MIDI ring / tip | 22 Ω / 33 Ω, 1 W | C118189 / C53728 | 2512 |
+| Bypass | 100 nF, CC0603KRX7R9BB104 | C14663 | 0603 |
+| Bulk | 10 µF, CL31A106KBHNNNE | C13585 | 1206 |
+| REC / OVER DUB LEDs | KT-0805R | C2295 | 0805 |
+| PLAY LED | KT-0805G | C2297 | 0805 |
+| NAV | Alps SKRHABE010 | C139794 | SMD 8-pad |
 
-| Ref | Part | LCSC / source | Mounting | Assembly |
-|---|---|---|---|---|
-| J1–J4 | XKB PJ-301M-3-B vertical 3.5 mm stereo TRS (same as Froemix) | LCSC C381127 | THT vertical; 6 mm panel hole | Hand |
-| SW1–SW6 | Omron B3F-4055 (SW6 = SHIFT/EXIT) | C84931 | THT | Hand |
-| ENC1 | Bourns PEC11R-4215F-S0024 | C143790 | THT | Hand |
-| DISP1 | Waveshare 3.5inch DSI LCD (H), SKU 33087 | Waveshare | Module; 58 × 49 mm holes, 6.70 mm rear | Hand |
-| LP1–LP3 | Bivar PLP2-400-C clear light pipe | DigiKey/Mouser | 4.0 mm panel hole, 10.16 mm | Hand |
-| PANEL1 | Bare FR-4 front panel, 1.6 mm, no solder mask, white silk, ENIG | JLCPCB | 26HP × 3U | PCB order |
-| J_PI | 2 × 20 2.54 mm pin header (PEC20DAAN) | — | THT | Hand |
-| J_STACK | 2 × 13 2.54 mm pin header (PEC13DAAN) | — | THT | Hand |
-| Pico sockets | 2 × 1 × 20 2.54 mm female | — | THT | Hand |
-| BR1 | USB feedthrough/strain-relief bracket, PETG | `mechanical/feedthrough-bracket.stl` | 3D printed | Print |
-| J_PWR | SparkFun CAB-15455, USB-C female panel to USB-C male, 1 ft/305 mm, USB 2.0, **3 A** | SparkFun CAB-15455 | Panel; 12.6 × 7.6 mm slot, two Ø3.2 on 18 mm (clamp) | Cable | **3 A, not 5 A.** Pi 5 5 A supply will be limited; test. Does not meet the earlier 5 A target by itself. |
-| J_AUDIO/J_HUB | 2 × Adafruit 908, USB-A female panel to USB-A male, 340 mm, USB 2.0 | Adafruit 908 | Panel; 14.65 × 7.10 opening, 2 × Ø3.5 on 30 mm | Cable |
-| BR1 hardware | 2 × M2.5 × 8 screws/nuts; 4 × 2.5 × 100 mm cable ties | — | — | Hand |
-| Panel↔front standoffs | 4 × M2.5 standoff, length TBD (~10 mm + panel gap); 8 × M2.5 screw/nut | — | Panel (±61, ±53) to front board | Hand, pending sample |
-| Front↔rear spacers | 4 × M2.5 spacer, length TBD (~18–20 mm); 8 × M2.5 screw/nut, top-left low-profile head | — | Front/rear (±44, +43/−52) | Hand, pending J5 bend mockup |
+TLP2361 is inverting **totem-pole**, unlike the old TLP2362 open-collector
+receiver. The retained pull-up and 100 nF local bypass are intentional. Its
+2–6 mA recommended input-current range and high-current/temperature corners
+still need qualification; do not reduce the 220 Ω input resistor casually.
 
-## LED / panel scheme
+## THT, modules and loose hardware
 
-- The three 0805 LEDs are assembled on the **front board** by JLCPCB: red above REC and OVER DUB, green above PLAY.
-- The FR-4 front panel has **no solder mask** and white silkscreen. Bare FR-4 is opaque, so the panel has three **4 mm openings** with Bivar PLP2-400-C light pipes; do not expect light to pass through masked or unmasked FR-4.
-- Keep the LED-to-pipe gap small and centered; the 10.16 mm pipe assumes roughly an 8 mm panel-to-front-board gap.
-- The FR-4 panel needs an ENIG/HASL finish and no copper; confirm JLCPCB accepts “no solder mask both sides” in the order notes.
+| Item | Candidate / requirement |
+| --- | --- |
+| J1–J4 | XKB PJ-301M-3-B, C381127. Vertical TRS; 6.2 mm panel holes. Verify actual tip/ring/sleeve and bushing/nut retention. |
+| SW1–SW6 | Omron B3F-4055, C84931. SW5 is PLAY START; SW6 is SHIFT/EXIT. Through-panel actuators and reach are pending. |
+| U6 / encoder | Bourns PEC11R-4215F-S0024, C143790. **Qualified THT process required:** hand soldering is not recommended. Record a selective/wave or validated manual profile and inspection (`encoder_solder_process`). |
+| J_PI / J_FRONT / J5 | XFCN BH254V-40P / BH254V-26P. Use alternating IDC numbering and the exact body/keying represented by the selected imports; continuity-test the purchased ribbons. |
+| Pico sockets | Two removable 1×20, 2.54 mm sockets. Exact procurement and installed height must match the module and first article. |
+| Display | Waveshare 3.5inch DSI LCD (H), SKU 33087, with the included 12 cm 15-pin-to-Pi-5-22-pin DSI cable. |
+| Display spacers | Provisional **5 mm beyond the 4 mm boss ends**, giving 9 mm PCB-plane separation. Do not buy a 9 mm spacer from the plane-gap number. Exact parts and fit remain pending. |
+| Panel/front spacers | Length/MPN pending. The current flush-glass target gives a 14.1 mm panel-rear-to-front-PCB-top gap, not a measured assembly. |
+| Front/rear spacers | Length/MPN pending the keyed 2×13 plug and bend mock-up; provisional 18–22 mm range. |
+| Pi spacers | Candidate 2.5 or 5 mm; actual microSD/SMT clearance and service access determine the choice. |
+| Light pipes | **Part selection pending.** PLP2-400-C is a 10.16 mm reference, not approved for the provisional 14.1 mm gap; reach, seating and the LED envelope must be established before purchase. Three 4 mm panel holes remain. |
+| Knob / button / NAV caps | Exact parts or printed actuators pending shaft, detent, travel and reach checks. |
+| Bracket | PETG model generated from `mechanical/layout.json`: 121 × 14.5 × 3 mm, with slots 15.6/17.9/17.9 mm. CAD checks pass; printed fit, fasteners and cable retention do not yet have physical acceptance. |
+| Bracket fasteners | Two M2.5 screw/nut sets and four cable ties; verify length, head/washer envelope and printed-hole fit. |
+| Rack screws | Four M3 screws for the selected case/rail profile. |
 
-## Open items
+See [MECHANICAL-VERIFICATION.md](MECHANICAL-VERIFICATION.md) for the primary
+lens/PCB/boss datums and [mechanical-stack.md](mechanical-stack.md) for the
+remaining physical checks. The panel aperture is 90.67 × 54.36 mm with explicit
+corner relief; it is still a provisional tolerance design.
 
-- Exact Pico socket, USB-C 5 A coupler MPN, light-pipe length after mock-up, panel finish acceptance, and all mechanical clearances.
-- The 2 × 20 Pi IDC pin numbering must be mapped to the physical Pi pinout and checked against the purchased ribbon.
-- No BOM/CPL or fabrication release has been generated.
+## Cable and power sourcing
 
-## Cable BOM
+The complete itemized cable list is the strict sourcing CSV, including DSI,
+Pi GPIO and front ribbons, Pico USB, audio/hub USB feedthroughs, ADAT, S/PDIF,
+Type A MIDI leads and the supplies. It is the release generator's input; do not
+maintain another divergent shopping list here.
 
-### Internal / module cables
+- **USB-C power:** SparkFun CAB-15455 is 305 mm, USB 2.0 and **3 A**. It is
+  rejected for the product's 5 A path. Its flange/cutout is an inherited
+  reference, not approval for a new power part. Select an exact suitably rated
+  feedthrough/cable chain; do not assume a 5 A PSU upgrades a 3 A cable.
+- The official Raspberry Pi 27 W, 5.1 V/5 A PSU remains a supply candidate.
+  PD/current advertisement, both USB-C orientations, voltage drop, temperature
+  and retention need measurement with the actual complete chain.
+- Audio/hub feedthroughs are Adafruit 908, USB 2.0, 340 mm. Check flange/body
+  overlap, cable bend, strain relief and Pi-port assignments on the mock-up.
+- Display video/touch use DSI, not display HDMI or touch USB. DSI and internal
+  cables must not support the Pi mechanically.
+- MIDI cables are Type A: tip = DIN 5, ring = DIN 4, sleeve = DIN 2. Test the
+  exact jacks/adapters. Input sleeves have no direct DC path to local ground.
 
-| Ref | Cable | Connectors / length | Qty | Notes |
-|---|---|---|---:|---|
-| CAB_DSI | Waveshare 12 cm DSI cable / 15-pin FPC | 15-pin display FPC to 22-pin Pi 5 DSI1 | 1 | Included with DISP1 |
-| CAB_GPIO | 40-pin 2 × 20 GPIO ribbon, female-to-female | 2.54 mm, ~150 mm (Adafruit 1988 or equivalent) | 1 | Pi 40-pin header to J_PI |
-| CAB_FRONT | 26-way 2 × 13 IDC ribbon, female-to-female | 2.54 mm, 100–150 mm | 1 | Front J5 to rear J_FRONT; exact MPN TBD |
-| CAB_PICO_USB | Micro-USB to USB-A programming cable | ~0.3 m | 1 | Pico USB; isolate Pi/control power during programming |
-| CAB_USBC_PANEL | SparkFun CAB-15455 USB-C F panel → USB-C M | 305 mm, USB 2.0, 3 A | 1 | Panel feedthrough; 3 A limit |
-| CAB_USBA_AUDIO | Adafruit 908 USB-A F panel → USB-A M | 340 mm, USB 2.0 | 1 | UMC/audio panel port |
-| CAB_USBA_HUB | Adafruit 908 USB-A F panel → USB-A M | 340 mm, USB 2.0 | 1 | MIDI hub panel port |
+## Assembly and release sequence
 
-### External / system cables
+1. Pass `make test` and inspect its notes. This is prototype verification only.
+2. Obtain explicit owner approval for an engineering prototype and follow the
+   process in [acceptance.md](acceptance.md); it is not a production approval.
+3. Review actual Gerbers, drill, mask, assembly side, polarity and CPL rotation;
+   verify exact purchased parts and qualified encoder soldering process.
+4. Assemble current-limited first articles. Record power, MIDI, SPI, thermal,
+   mechanical and retention evidence against the hardware fingerprint.
+5. Resolve every required item in `hardware-acceptance.json`. Only then can
+   `make release` create a production packet.
 
-| Ref | Cable | Connectors / length | Qty | Notes |
-|---|---|---|---:|---|
-| CAB_PSU | Official Raspberry Pi 27 W USB-C PSU, 5.1 V / 5 A | USB-C, ~1.2 m | 1 | Plugs into CAB-15455; feedthrough is only 3 A |
-| CAB_UMC_USB | USB-A male → USB-B male | 1 m | 1 | UMC1820 to front USB-A audio port |
-| CAB_HUB_USB | USB-A male → USB-B male (or hub-specific upstream) | 0.5–1 m | 1 | Powered MIDI hub to front USB-A hub port; verify hub connector |
-| CAB_ADAT | Optical ADAT cable | 0.5–1 m | 2 | UMC1820 ↔ ADA8200; one direction for 8 preamps, second for clock if needed |
-| CAB_SPDIF | Coaxial or optical S/PDIF cable | 0.5–1 m | 1 | Stereo source to UMC1820 S/PDIF input; connector type TBD |
-| CAB_MIDI_TRS | 3.5 mm TRS Type A → DIN 5 MIDI cable | 1 m | 4 | Two inputs, two outputs |
-| CAB_HUB_PSU | Powered hub supply | Manufacturer-specific | 1 | Exact hub/PSU TBD |
-
-**Important:** the SparkFun CAB-15455 is rated **3 A**, not the Pi 5’s 5 A. The official 5 A supply may negotiate only 3 A through it, causing USB current limiting/throttling. This is a documented deviation from the earlier 5 A requirement; test with `vcgencmd get_throttled` under load, or use a verified 5 A panel feedthrough.
+Expected counts in `jlc-order.json` are checked against generated BOM/CPL, not
+used as evidence by themselves. Bare panel no-mask fabrication and final DFM
+remain pending; a successful export is not fabricator acceptance.

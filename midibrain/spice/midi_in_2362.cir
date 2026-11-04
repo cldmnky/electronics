@@ -1,0 +1,7 @@
+* Same weakest 5 V sender as midi_in_weak, with the replaced TLP2362 threshold
+* current (5.0 mA max). The receiver must NOT switch here: that is the defect
+* this part change removes.
+.param vsrc = 4.75
+.param ifhl = 5.0m
+.param is_led = 1.4e-17
+.include midi_in_common.inc

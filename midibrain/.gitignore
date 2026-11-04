@@ -7,7 +7,7 @@ build/
 fab/
 .DS_Store
 # Generated CAD binaries (reproducible from generator scripts; the current
-# bracket STL/STEP are stale vs layout — do not commit binaries)
+# bracket STL/STEP are generated from mechanical/layout.json — do not commit binaries)
 *.stl
 *.step
 # CWD droppings from `tsci export` runs (release keeps canonical copies in fab/)

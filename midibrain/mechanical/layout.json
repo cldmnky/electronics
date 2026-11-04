@@ -1,0 +1,359 @@
+{
+  "units": "mm",
+  "note": "Generated from tscircuit/lib/layout.ts. Provisional planning data; not a verified clearance.",
+  "panel": {
+    "width": 132.08,
+    "height": 128.5,
+    "thickness": 1.6
+  },
+  "frontPcb": {
+    "width": 128,
+    "height": 112,
+    "thickness": 1.6
+  },
+  "rearPcb": {
+    "width": 101.6,
+    "height": 112,
+    "thickness": 1.6
+  },
+  "display": {
+    "x": -17,
+    "y": 11,
+    "width": 88.87,
+    "height": 52.56,
+    "innerWidth": 75.8,
+    "innerHeight": 45.36,
+    "pcb": {
+      "width": 86.5,
+      "height": 56
+    },
+    "stack": {
+      "lensWidth": 88.87,
+      "lensHeight": 52.56,
+      "pcbWidth": 86.5,
+      "pcbHeight": 56,
+      "overallDepth": 10.7,
+      "lensFrontToPcbRear": 6.7,
+      "bossProjection": 4,
+      "planeSeparation": 9,
+      "spacerLength": 5,
+      "standoffDiameter": 3,
+      "piWidth": 85,
+      "piHeight": 56,
+      "piMountPitchLong": 58,
+      "piMountPitchShort": 49
+    }
+  },
+  "displayDatum": {
+    "source2d": "3.5_inch_DSI_LCD_H-2D-PDF.pdf",
+    "source3d": "3.5_inch_DSI_LCD_H_3D-STP.zip -> 3.5 inch DSI LCD (H)_3d-20251129.stp",
+    "rotationDeg": 180,
+    "rawPcbCentreOffsetX": -0.13,
+    "pcbCentreOffsetX": 0.13,
+    "rawModelMaxX": 44.635,
+    "firstArticlePending": true
+  },
+  "displayStandoff": {
+    "planeSeparation": 9,
+    "spacerLength": 5
+  },
+  "provisionalZ": {
+    "panelFront": 0,
+    "panelRear": 1.6,
+    "displayGlassFront": 0,
+    "displayPcbRear": 6.7,
+    "displayRearMost": 10.7,
+    "frontBoardTop": 15.7,
+    "frontBoardRear": 17.3
+  },
+  "displayUndersideGap": 5,
+  "frontTopSmdMaxHeight": {
+    "part": "MIDI receiver, Toshiba 11-4L1S body",
+    "height": 2.2,
+    "source": "manufacturer drawing p.15, max installed height 2.1 +-0.1 mm"
+  },
+  "lightPipe": {
+    "part": "Bivar PLP2-400-C",
+    "length": 10.16
+  },
+  "lightPipeReach": {
+    "gap": 14.1,
+    "pipeLength": 10.16,
+    "unaccounted": 3.94
+  },
+  "panelToFrontBoardGap": 14.1,
+  "depthTarget": 110,
+  "provisionalDepth": {
+    "frontToRearGap": 20,
+    "piStandoffAndPcb": 4,
+    "piStackRearward": 30
+  },
+  "lcdCutout": {
+    "x": -17,
+    "y": 11,
+    "width": 90.67,
+    "height": 54.36,
+    "cornerRadius": 1,
+    "allowances": {
+      "perSide": 0.9,
+      "cornerRadius": 1
+    }
+  },
+  "lcdCutoutOutline": [
+    {
+      "x": 28.335,
+      "y": 37.18
+    },
+    {
+      "x": 28.30092582628907,
+      "y": 37.43881904510252
+    },
+    {
+      "x": 28.20102540378444,
+      "y": 37.68
+    },
+    {
+      "x": 28.042106781186547,
+      "y": 37.887106781186546
+    },
+    {
+      "x": 27.835,
+      "y": 38.04602540378444
+    },
+    {
+      "x": 27.59381904510252,
+      "y": 38.145925826289066
+    },
+    {
+      "x": 27.335,
+      "y": 38.18
+    },
+    {
+      "x": -61.335,
+      "y": 38.18
+    },
+    {
+      "x": -61.59381904510252,
+      "y": 38.145925826289066
+    },
+    {
+      "x": -61.835,
+      "y": 38.04602540378444
+    },
+    {
+      "x": -62.04210678118655,
+      "y": 37.887106781186546
+    },
+    {
+      "x": -62.20102540378444,
+      "y": 37.68
+    },
+    {
+      "x": -62.30092582628907,
+      "y": 37.43881904510252
+    },
+    {
+      "x": -62.335,
+      "y": 37.18
+    },
+    {
+      "x": -62.335,
+      "y": -15.18
+    },
+    {
+      "x": -62.30092582628907,
+      "y": -15.438819045102521
+    },
+    {
+      "x": -62.20102540378444,
+      "y": -15.68
+    },
+    {
+      "x": -62.04210678118655,
+      "y": -15.887106781186548
+    },
+    {
+      "x": -61.835,
+      "y": -16.046025403784437
+    },
+    {
+      "x": -61.59381904510252,
+      "y": -16.14592582628907
+    },
+    {
+      "x": -61.335,
+      "y": -16.18
+    },
+    {
+      "x": 27.335,
+      "y": -16.18
+    },
+    {
+      "x": 27.59381904510252,
+      "y": -16.14592582628907
+    },
+    {
+      "x": 27.835,
+      "y": -16.046025403784437
+    },
+    {
+      "x": 28.042106781186547,
+      "y": -15.887106781186548
+    },
+    {
+      "x": 28.20102540378444,
+      "y": -15.68
+    },
+    {
+      "x": 28.30092582628907,
+      "y": -15.43881904510252
+    },
+    {
+      "x": 28.335,
+      "y": -15.18
+    }
+  ],
+  "frontTopNotch": {
+    "x": -2.5,
+    "y": 52,
+    "width": 105,
+    "height": 8
+  },
+  "notchBounds": {
+    "left": -55,
+    "right": 50,
+    "bottom": 48,
+    "top": 56
+  },
+  "bracketAllowance": {
+    "thickness": 3,
+    "mountEdgeWall": 3,
+    "mountHeadClearance": 6.5,
+    "slotClearancePerSide": 1.5,
+    "displayClearance": 2.5,
+    "tieHoleDiameter": 3.2,
+    "materialToCuts": 1
+  },
+  "bracket": {
+    "mountX": [
+      -60,
+      55
+    ],
+    "mountY": 46.5,
+    "mountHoleDiameter": 2.7,
+    "thickness": 3,
+    "outline": {
+      "x1": -63,
+      "x2": 58,
+      "y1": 41.5,
+      "y2": 56,
+      "width": 121,
+      "height": 14.5
+    },
+    "slots": [
+      {
+        "id": "USB-C POWER",
+        "x": -38,
+        "width": 15.6,
+        "yBottom": 48.2,
+        "yTop": 56
+      },
+      {
+        "id": "UMC AUDIO USB",
+        "x": -5,
+        "width": 17.9,
+        "yBottom": 48.35,
+        "yTop": 56
+      },
+      {
+        "id": "MIDI HUB USB",
+        "x": 35,
+        "width": 17.9,
+        "yBottom": 48.35,
+        "yTop": 56
+      }
+    ],
+    "mountHeadClearance": [
+      {
+        "x": -44,
+        "y": 43,
+        "diameter": 6.5
+      },
+      {
+        "x": 44,
+        "y": 43,
+        "diameter": 6.5
+      }
+    ],
+    "tieHoles": [
+      {
+        "x": -52.225,
+        "y": 52.1,
+        "diameter": 3.2
+      },
+      {
+        "x": -22.075,
+        "y": 52.1,
+        "diameter": 3.2
+      },
+      {
+        "x": 15,
+        "y": 52.1,
+        "diameter": 3.2
+      },
+      {
+        "x": 48.8,
+        "y": 52.1,
+        "diameter": 3.2
+      }
+    ]
+  },
+  "frontRearMount": [
+    {
+      "x": -44,
+      "y": -52
+    },
+    {
+      "x": 44,
+      "y": -52
+    },
+    {
+      "x": -44,
+      "y": 43
+    },
+    {
+      "x": 44,
+      "y": 43
+    }
+  ],
+  "mountHoleDiameter": 2.7,
+  "feedthroughs": [
+    {
+      "id": "USB-C POWER",
+      "x": -38,
+      "y": 53.5,
+      "cutoutWidth": 12.6,
+      "cutoutHeight": 7.6,
+      "holeSpacing": 18,
+      "holeDiameter": 3.2
+    },
+    {
+      "id": "UMC AUDIO USB",
+      "x": -5,
+      "y": 53.5,
+      "cutoutWidth": 14.9,
+      "cutoutHeight": 7.3,
+      "holeSpacing": 30,
+      "holeDiameter": 3.5
+    },
+    {
+      "id": "MIDI HUB USB",
+      "x": 35,
+      "y": 53.5,
+      "cutoutWidth": 14.9,
+      "cutoutHeight": 7.3,
+      "holeSpacing": 30,
+      "holeDiameter": 3.5
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import {
   RIGHT_CONTROLS,
   TRANSPORT_Y,
   USB_FEEDTHROUGHS,
+  roundedRectOutline,
 } from "./lib/layout"
 
 // 26HP x 3U FR-4 front panel. Fabricate as a bare board:
@@ -26,6 +27,14 @@ import {
 // No copper, no components. LED openings take 4.0 mm light pipes (Bivar
 // PLP2-400-C); the SMD LEDs remain on the front board behind them.
 // Every opening and label position imports from lib/layout.ts.
+
+// The LCD aperture is a rounded rectangle, not a sharp rect: a routed inside
+// corner cannot be sharp. The explicit 1.0 mm relief is emitted as a polygon,
+// and its chords lie inside the true arc, which makes the aperture marginally
+// smaller than the exact rounded rectangle. Measured segment clearance at a
+// square module corner: 0.571 mm (scripts/check_placement.ts), above the
+// 0.5 mm target. tscircuit has no rounded-rect cutout, so this is a polygon.
+const lcdCutoutRoute = roundedRectOutline(PANEL_LCD_CUTOUT).map(p => ({ x: `${p.x}mm`, y: `${p.y}mm` }))
 
 // Transport columns plus PLAY START and SHIFT/EXIT take button openings.
 const buttonCutouts = [
@@ -39,9 +48,9 @@ const ledCutouts = FRONT_COLUMNS.filter(c => c.button in LED_ID).map(c => ({ x: 
 const jackCutouts = FRONT_COLUMNS.map(c => ({ x: c.x, y: JACK_Y }))
 
 export default () => (
-  <board width={`${PANEL.width}mm`} height={`${PANEL.height}mm`} thickness="1.6mm" layers={2}>
-    {/* LCD glass cutout */}
-    <cutout shape="rect" width={`${PANEL_LCD_CUTOUT.width}mm`} height={`${PANEL_LCD_CUTOUT.height}mm`} pcbX={`${PANEL_LCD_CUTOUT.x}mm`} pcbY={`${PANEL_LCD_CUTOUT.y}mm`} />
+  <board width={`${PANEL.width}mm`} height={`${PANEL.height}mm`} thickness={`${PANEL.thickness}mm`} layers={2}>
+    {/* LCD glass cutout: rounded-rect aperture with explicit corner relief */}
+    <cutout shape="polygon" name="LCD_APERTURE" points={lcdCutoutRoute} />
     {/* USB panel-feedthrough cutouts */}
     {USB_FEEDTHROUGHS.map((f, i) => (
       <Fragment key={`usb-${i}`}>
