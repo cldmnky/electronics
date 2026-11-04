@@ -139,7 +139,8 @@ constexpr std::uint8_t EV_CLOCK_ROUTE = 0x14;   // Pi->Pico port, flags: per-out
 // 1 = TRS OUT2/uart1); payload[2] bit0 = clock on/off, bit1 = transport
 // start/stop/continue on/off. Both default on (legacy always-on behavior);
 // RAM state, reset at boot, Pi re-sends after HELLO. USB outputs are gated
-// Pi-side in the UsbClock mirror with the same semantics.
+// Pi-side in the UsbClock mirror with the same semantics. tempoDiv and
+// syncDelayMs use the separate EV_CLOCK_ROUTE_EXT (0x1B, protocol.hpp).
 constexpr std::uint8_t EV_CLOCK_SOURCE = 0x17;  // Pi->Pico external clock
 // follow. payload[1] = source (0 = internal, 1 = TRS IN1, 2 = TRS IN2;
 // 3+ rejected); payload[2] = transport-follow mask bit0 = TRS IN1,
@@ -159,13 +160,16 @@ constexpr std::uint8_t EV_STATUS_RESP = 0x21;  // Pico->Pi link status snapshot
 constexpr std::uint8_t EV_REBOOT = 0x22;       // Pi->Pico 0 firmware reboot, 1 USB boot
 constexpr std::uint8_t EV_RESET_LINK = 0x23;   // Pi->Pico fresh session, no reboot
 
-// Per-output TRS clock/transport gates applied from EV_CLOCK_ROUTE. Index 0 =
-// OUT1 (uart0), 1 = OUT2 (uart1); both default on so a Pico that has not seen
-// the Pi behaves exactly like the legacy always-on firmware. Pure RAM state:
-// main.cpp owns the UART writes, this type owns validation and the decisions.
+// Per-output TRS clock/transport gates and clock extras applied from
+// EV_CLOCK_ROUTE / EV_CLOCK_ROUTE_EXT. Index 0 = OUT1 (uart0), 1 = OUT2
+// (uart1); both default on so a Pico that has not seen the Pi behaves exactly
+// like the legacy always-on firmware. Pure RAM state: main.cpp owns the UART
+// writes and the delay line, this type owns validation and the decisions.
 struct ClockGate {
   bool clock = true;
   bool transport = true;
+  std::uint8_t tempoDiv = 1;      // 1, 2 or 4; 24 PPQN divider
+  std::uint16_t syncDelayMs = 0;  // 0..500 ms, clock bytes only
 };
 class ClockGates {
  public:
@@ -177,8 +181,27 @@ class ClockGates {
     gates_[port].transport = (flags & CLOCK_ROUTE_TRANSPORT) != 0;
     return true;
   }
+  // Applies one EV_CLOCK_ROUTE_EXT frame's port/divider/delay. An unknown
+  // port is rejected; an invalid divider clamps to 1 and the delay to
+  // 0..500 ms, mirroring the session reader so corrupt data never silences
+  // an output. Returns false only for an unknown port.
+  bool applyExtras(std::uint8_t port, std::uint8_t tempo_div,
+                   std::uint16_t sync_delay_ms) {
+    if (port > 1) return false;
+    gates_[port].tempoDiv =
+        (tempo_div == 2 || tempo_div == 4) ? tempo_div : 1;
+    gates_[port].syncDelayMs =
+        sync_delay_ms > 500 ? 500 : sync_delay_ms;
+    return true;
+  }
   bool clockOn(std::uint8_t port) const { return gates_[port].clock; }
   bool transportOn(std::uint8_t port) const { return gates_[port].transport; }
+  std::uint8_t tempoDiv(std::uint8_t port) const {
+    return gates_[port].tempoDiv;
+  }
+  std::uint16_t syncDelayMs(std::uint8_t port) const {
+    return gates_[port].syncDelayMs;
+  }
 
  private:
   ClockGate gates_[2];

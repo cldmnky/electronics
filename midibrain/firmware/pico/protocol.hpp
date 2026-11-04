@@ -55,6 +55,181 @@ inline bool decode(const Bytes& in, Frame& f) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// MIDI FX route pipes and per-output clock extras (Pi->Pico). These are the
+// wire contract for the session MidiPipeType/ClockRoute fields; the Pico
+// evaluates a chain in route order where the routed bytes already flow. Only
+// physical TRS ports exist here (src/dst 0 = TRS IN1/OUT1, 1 = TRS IN2/OUT2);
+// routes touching USB or the merged Pi-side ports stay on the Pi and are not
+// represented by these frames.
+// ---------------------------------------------------------------------------
+constexpr std::uint8_t EV_MIDI_ROUTE = 0x18;       // begin/clear one route chain
+constexpr std::uint8_t EV_MIDI_ROUTE_PIPE = 0x19;  // set one pipe (chunked params)
+constexpr std::uint8_t EV_MIDI_ROUTE_SEND = 0x1A;  // routed MIDI through the chain
+constexpr std::uint8_t EV_CLOCK_ROUTE_EXT = 0x1B;  // tempoDiv + syncDelayMs
+
+// EV_MIDI_ROUTE payload[3] flag bits; reserved bits must be zero.
+constexpr std::uint8_t ROUTE_FLAG_ON = 0x01;
+constexpr std::uint8_t ROUTE_FLAG_MASK = ROUTE_FLAG_ON;
+
+// Pipe chain limits, shared by the wire codec and midi_pipe.hpp. A param is a
+// signed 16-bit positional integer; the largest Wave-1 pipe (Filter) has 8,
+// and the frame carries at most 5 per chunk (offset selects the next chunk).
+constexpr std::size_t route_pipe_count_max = 8;
+constexpr std::size_t route_pipe_param_max = 10;
+constexpr std::size_t route_pipe_param_frame_max = 5;
+
+// EV_MIDI_ROUTE layout: [1]=src, [2]=dst, [3]=flags. Length 4. Starts a fresh
+// chain and clears its runtime state (dispatcher rotation, sustain latch and
+// pending note lengths); flags bit 0 enables the route.
+inline bool pack_midi_route(Frame& f, std::uint16_t seq, std::uint32_t session,
+                            std::uint8_t src, std::uint8_t dst, std::uint8_t flags) {
+  if (src > 1 || dst > 1 || (flags & ~ROUTE_FLAG_MASK) != 0) return false;
+  f = Frame{};
+  f.type = Type::control_event;
+  f.sequence = seq;
+  f.session = session;
+  f.length = 4;
+  f.payload[0] = EV_MIDI_ROUTE;
+  f.payload[1] = src;
+  f.payload[2] = dst;
+  f.payload[3] = flags;
+  return true;
+}
+inline bool unpack_midi_route(const Frame& f, std::uint8_t& src, std::uint8_t& dst,
+                              std::uint8_t& flags) {
+  if (f.type != Type::control_event || f.length != 4 || f.payload[0] != EV_MIDI_ROUTE ||
+      f.payload[1] > 1 || f.payload[2] > 1 || (f.payload[3] & ~ROUTE_FLAG_MASK) != 0)
+    return false;
+  src = f.payload[1];
+  dst = f.payload[2];
+  flags = f.payload[3];
+  return true;
+}
+
+// EV_MIDI_ROUTE_PIPE layout: [1]=src, [2]=dst, [3]=pipe index, [4]=type,
+// [5]=bypass, [6]=param offset, [7]=param count, then count signed int16 LE
+// params. Length 8 + 2*count. type 1..16 is accepted (Wave-2 ids are stored
+// but pass through on this firmware); param offset+count <= 10 and count <= 5.
+inline bool pack_midi_route_pipe(Frame& f, std::uint16_t seq, std::uint32_t session,
+                                 std::uint8_t src, std::uint8_t dst,
+                                 std::uint8_t index, std::uint8_t type, bool bypass,
+                                 std::uint8_t param_offset, const std::int16_t* params,
+                                 std::size_t count) {
+  if (src > 1 || dst > 1 || index >= route_pipe_count_max || type < 1 || type > 16 ||
+      count > route_pipe_param_frame_max ||
+      param_offset + count > route_pipe_param_max || (count != 0 && params == nullptr))
+    return false;
+  f = Frame{};
+  f.type = Type::control_event;
+  f.sequence = seq;
+  f.session = session;
+  f.length = static_cast<std::uint8_t>(8 + 2 * count);
+  f.payload[0] = EV_MIDI_ROUTE_PIPE;
+  f.payload[1] = src;
+  f.payload[2] = dst;
+  f.payload[3] = index;
+  f.payload[4] = type;
+  f.payload[5] = bypass ? 1 : 0;
+  f.payload[6] = param_offset;
+  f.payload[7] = static_cast<std::uint8_t>(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto bits = static_cast<std::uint16_t>(params[i]);
+    f.payload[8 + 2 * i] = static_cast<std::uint8_t>(bits);
+    f.payload[9 + 2 * i] = static_cast<std::uint8_t>(bits >> 8);
+  }
+  return true;
+}
+inline bool unpack_midi_route_pipe(const Frame& f, std::uint8_t& src, std::uint8_t& dst,
+                                   std::uint8_t& index, std::uint8_t& type, bool& bypass,
+                                   std::uint8_t& param_offset, std::int16_t* params,
+                                   std::size_t capacity, std::size_t& count) {
+  if (f.type != Type::control_event || f.length < 8 ||
+      f.payload[0] != EV_MIDI_ROUTE_PIPE || f.payload[1] > 1 || f.payload[2] > 1 ||
+      f.payload[3] >= route_pipe_count_max || f.payload[4] < 1 || f.payload[4] > 16 ||
+      f.payload[5] > 1 || f.payload[7] > route_pipe_param_frame_max ||
+      f.payload[6] + f.payload[7] > route_pipe_param_max)
+    return false;
+  count = f.payload[7];
+  if (f.length != 8 + 2 * count || capacity < count || (count != 0 && params == nullptr))
+    return false;
+  src = f.payload[1];
+  dst = f.payload[2];
+  index = f.payload[3];
+  type = f.payload[4];
+  bypass = f.payload[5] != 0;
+  param_offset = f.payload[6];
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto bits = static_cast<std::uint16_t>(f.payload[8 + 2 * i] |
+                                                 (f.payload[9 + 2 * i] << 8));
+    params[i] = static_cast<std::int16_t>(bits);
+  }
+  return true;
+}
+
+// EV_MIDI_ROUTE_SEND layout: [1]=src, [2]=dst, [3]=size, [4..]=bytes. Length
+// 4 + size (size 1..3). The Pico runs the configured chain for that route and
+// emits the result on dst; a route that is not enabled drops the message.
+inline bool pack_midi_route_send(Frame& f, std::uint16_t seq, std::uint32_t session,
+                                 std::uint8_t src, std::uint8_t dst,
+                                 const std::uint8_t* data, std::uint8_t size) {
+  if (src > 1 || dst > 1 || size < 1 || size > 3 || data == nullptr) return false;
+  f = Frame{};
+  f.type = Type::control_event;
+  f.sequence = seq;
+  f.session = session;
+  f.length = static_cast<std::uint8_t>(4 + size);
+  f.payload[0] = EV_MIDI_ROUTE_SEND;
+  f.payload[1] = src;
+  f.payload[2] = dst;
+  f.payload[3] = size;
+  for (std::uint8_t i = 0; i < size; ++i) f.payload[4 + i] = data[i];
+  return true;
+}
+inline bool unpack_midi_route_send(const Frame& f, std::uint8_t& src, std::uint8_t& dst,
+                                   std::uint8_t* data, std::uint8_t& size) {
+  if (f.type != Type::control_event || f.length < 5 ||
+      f.payload[0] != EV_MIDI_ROUTE_SEND || f.payload[1] > 1 || f.payload[2] > 1 ||
+      f.payload[3] < 1 || f.payload[3] > 3 || f.length != 4 + f.payload[3] || data == nullptr)
+    return false;
+  src = f.payload[1];
+  dst = f.payload[2];
+  size = f.payload[3];
+  for (std::uint8_t i = 0; i < size; ++i) data[i] = f.payload[4 + i];
+  return true;
+}
+
+// EV_CLOCK_ROUTE_EXT layout: [1]=port (0 = OUT1/uart0, 1 = OUT2/uart1),
+// [2]=tempoDiv (1, 2 or 4), [3..4]=syncDelayMs LE16. Length 5. The firmware
+// clamps an invalid divider to 1 and the delay to 0..500 ms (the session reader
+// applies the same clamp), so a stale/corrupt value cannot silence an output.
+inline bool pack_clock_route_ext(Frame& f, std::uint16_t seq, std::uint32_t session,
+                                 std::uint8_t port, std::uint8_t tempo_div,
+                                 std::uint16_t sync_delay_ms) {
+  if (port > 1 || (tempo_div != 1 && tempo_div != 2 && tempo_div != 4)) return false;
+  f = Frame{};
+  f.type = Type::control_event;
+  f.sequence = seq;
+  f.session = session;
+  f.length = 5;
+  f.payload[0] = EV_CLOCK_ROUTE_EXT;
+  f.payload[1] = port;
+  f.payload[2] = tempo_div;
+  f.payload[3] = static_cast<std::uint8_t>(sync_delay_ms);
+  f.payload[4] = static_cast<std::uint8_t>(sync_delay_ms >> 8);
+  return true;
+}
+inline bool unpack_clock_route_ext(const Frame& f, std::uint8_t& port,
+                                   std::uint8_t& tempo_div, std::uint16_t& sync_delay_ms) {
+  if (f.type != Type::control_event || f.length != 5 ||
+      f.payload[0] != EV_CLOCK_ROUTE_EXT || f.payload[1] > 1)
+    return false;
+  port = f.payload[1];
+  tempo_div = f.payload[2];
+  sync_delay_ms = static_cast<std::uint16_t>(f.payload[3] | (f.payload[4] << 8));
+  return true;
+}
+
 // Switch must remain unchanged for threshold milliseconds. Caller supplies
 // monotonic time; unsigned subtraction also handles 32-bit timer wraparound.
 class Debouncer {

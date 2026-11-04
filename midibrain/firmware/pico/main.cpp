@@ -13,6 +13,7 @@
 // Link contract (see docs/protocol.md): the Pi asserts CSn, waits >= 10 us,
 // clocks exactly 32 bytes, deasserts; idle fillers are repeats deduped by
 // (session, sequence). SPI rate is 1 MHz nominal on both ends.
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 
@@ -28,7 +29,9 @@
 #include "pico/stdlib.h"
 
 #include "clock_follow.hpp"
+#include "clock_output.hpp"
 #include "midi.hpp"
+#include "midi_pipe.hpp"
 #include "panel_input.hpp"
 #include "pins.h"
 
@@ -148,6 +151,14 @@ bool transport_local = true;
 // OUT2/uart1. Defaults preserve the legacy always-on stream; the Pi re-sends
 // its last-known route after HELLO, so only boot state lives here.
 mb::ClockGates clock_gates;
+// Per-output clock delay line (EV_CLOCK_ROUTE_EXT): only 0xF8 bytes enter it,
+// transport bytes are emitted directly. The alarm pushes, the main loop pops.
+mb::ClockDelayLine clock_delay[2];
+volatile uint32_t clock_delay_drops = 0;
+// Wave-1 MIDI FX chains for the four physical TRS routes, indexed [src][dst]
+// (0 = IN1/OUT1, 1 = IN2/OUT2). Configured by EV_MIDI_ROUTE* and evaluated for
+// EV_MIDI_ROUTE_SEND; plain EV_MIDI_SEND stays the unprocessed immediate path.
+mb::MidiPipeChain route_pipes[2][2];
 // External clock follow (RAM only). Default: internal generator, no transport
 // follow; the Pi re-sends its last-known config after HELLO. The generator
 // always runs from clock_interval_us; follow only retunes that period.
@@ -262,13 +273,60 @@ void midi_emit(uint8_t port, const uint8_t* data, uint32_t n) {
   uart_write_guarded(uart, data, n);
 }
 
+// Emits the ordered result of one route evaluation to the physical output.
+void emit_pipe_output(uint8_t dst, const mb::PipeOutput& out) {
+  for (std::size_t i = 0; i < out.count; ++i) {
+    if (out.events[i].size < 1 || out.events[i].size > 3) continue;
+    midi_emit(dst, out.events[i].data, out.events[i].size);
+  }
+}
+
+// Fixed-length note-offs are generated in the main loop, never in the clock
+// IRQ: the route engines are not IRQ-safe and emit to a UART through the same
+// guarded path as any other routed message.
+void drain_route_note_offs() {
+  const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+  for (uint8_t src = 0; src < 2; ++src) {
+    for (uint8_t dst = 0; dst < 2; ++dst) {
+      const mb::PipeOutput out = route_pipes[src][dst].tick(now_ms);
+      if (out.count != 0) emit_pipe_output(dst, out);
+    }
+  }
+}
+
+// Main-loop half of the clock delay line. The alarm callback pushes; each pop
+// masks interrupts so a push cannot race the FIFO cursor update.
+void clock_delay_service() {
+  const uint32_t now_us = time_us_32();
+  const uint8_t tick = 0xF8;
+  for (uint8_t port = 0; port < 2; ++port) {
+    if (!clock_gates.clockOn(port)) continue;
+    for (;;) {
+      const uint32_t saved = save_and_disable_interrupts();
+      const bool due = clock_delay[port].popDue(now_us);
+      restore_interrupts(saved);
+      if (!due) break;
+      midi_emit(port, &tick, 1);
+    }
+  }
+}
+
 int64_t clock_tick(alarm_id_t, void*) {
-  // Clock bytes are per-output gated; the tick count and Pi tick frame stay
-  // unconditional because they also drive the Pi timeline and USB mirror.
+  // Clock bytes are per-output gated and divided; the tick count and Pi tick
+  // frame stay unconditional because they also drive the Pi timeline and USB
+  // mirror. Only the clock byte enters the delay line; transport bytes are
+  // emitted directly by transport_cmd.
   const uint32_t stamp_us = time_us_32();
   const uint8_t tick = 0xF8;
-  if (clock_gates.clockOn(0)) uart_putc(uart0, tick);
-  if (clock_gates.clockOn(1)) uart_putc(uart1, tick);
+  for (uint8_t port = 0; port < 2; ++port) {
+    if (!clock_gates.clockOn(port)) continue;
+    if (!mb::clock_div_due(clock_ticks, clock_gates.tempoDiv(port))) continue;
+    if (clock_gates.syncDelayMs(port) == 0) {
+      uart_putc(port == 0 ? uart0 : uart1, tick);
+    } else if (!clock_delay[port].push(stamp_us)) {
+      clock_delay_drops = clock_delay_drops + 1u;
+    }
+  }
   ++clock_ticks;
   queue_tick(clock_ticks, stamp_us);  // Pi USB-mirror + timeline mapping
   return static_cast<int64_t>(clock_interval_us);
@@ -453,10 +511,83 @@ void handle_frame(const mb::Frame& f) {
         ++bad_frames;
         break;
       }
+      if (!clock_gates.clockOn(f.payload[1])) {
+        const uint32_t saved = save_and_disable_interrupts();
+        clock_delay[f.payload[1]].clear();
+        restore_interrupts(saved);
+      }
       printf("[link] CLOCK_ROUTE out%u clock=%d transport=%d\n",
              static_cast<unsigned>(f.payload[1]), clock_gates.clockOn(f.payload[1]) ? 1 : 0,
              clock_gates.transportOn(f.payload[1]) ? 1 : 0);
       break;
+    case mb::EV_CLOCK_ROUTE_EXT: {
+      std::uint8_t port = 0, tempo_div = 1;
+      std::uint16_t sync_delay_ms = 0;
+      if (!mb::unpack_clock_route_ext(f, port, tempo_div, sync_delay_ms)) {
+        ++bad_frames;
+        break;
+      }
+      const uint32_t saved = save_and_disable_interrupts();
+      const bool ok = clock_gates.applyExtras(port, tempo_div, sync_delay_ms);
+      if (ok) clock_delay[port].setDelayMs(clock_gates.syncDelayMs(port));
+      restore_interrupts(saved);
+      if (!ok) {
+        ++bad_frames;
+        break;
+      }
+      printf("[link] CLOCK_ROUTE_EXT out%u div=%u delay=%ums\n",
+             static_cast<unsigned>(port), static_cast<unsigned>(clock_gates.tempoDiv(port)),
+             static_cast<unsigned>(clock_gates.syncDelayMs(port)));
+      break;
+    }
+    case mb::EV_MIDI_ROUTE: {
+      std::uint8_t src = 0, dst = 0, flags = 0;
+      if (!mb::unpack_midi_route(f, src, dst, flags)) {
+        ++bad_frames;
+        break;
+      }
+      route_pipes[src][dst].begin((flags & mb::ROUTE_FLAG_ON) != 0);
+      printf("[link] MIDI_ROUTE in%u -> out%u %s\n", static_cast<unsigned>(src),
+             static_cast<unsigned>(dst), (flags & mb::ROUTE_FLAG_ON) ? "on" : "off");
+      break;
+    }
+    case mb::EV_MIDI_ROUTE_PIPE: {
+      std::uint8_t src = 0, dst = 0, index = 0, type = 0, offset = 0;
+      bool bypass = false;
+      std::int16_t raw[mb::route_pipe_param_frame_max]{};
+      std::size_t count = 0;
+      if (!mb::unpack_midi_route_pipe(f, src, dst, index, type, bypass, offset, raw,
+                                      mb::route_pipe_param_frame_max, count)) {
+        ++bad_frames;
+        break;
+      }
+      std::int32_t params[mb::route_pipe_param_frame_max]{};
+      for (std::size_t i = 0; i < count; ++i) params[i] = raw[i];
+      if (!route_pipes[src][dst].setPipeChunk(index, type, bypass, offset, params, count)) {
+        ++bad_frames;
+        break;
+      }
+      printf("[link] MIDI_ROUTE_PIPE in%u -> out%u [%u] type=%u bypass=%d params=%u+%u\n",
+             static_cast<unsigned>(src), static_cast<unsigned>(dst),
+             static_cast<unsigned>(index), static_cast<unsigned>(type), bypass ? 1 : 0,
+             static_cast<unsigned>(offset), static_cast<unsigned>(count));
+      break;
+    }
+    case mb::EV_MIDI_ROUTE_SEND: {
+      std::uint8_t src = 0, dst = 0, size = 0;
+      std::uint8_t data[3]{};
+      if (!mb::unpack_midi_route_send(f, src, dst, data, size)) {
+        ++bad_frames;
+        break;
+      }
+      mb::MidiMessage m{};
+      m.size = size;
+      for (std::uint8_t i = 0; i < size; ++i) m.data[i] = data[i];
+      const mb::PipeOutput out =
+          route_pipes[src][dst].process(m, to_ms_since_boot(get_absolute_time()));
+      emit_pipe_output(dst, out);
+      break;
+    }
     case mb::EV_CLOCK_SOURCE:
       if (f.length < 3 || !clock_follow.apply(f.payload[1], f.payload[2])) {
         ++bad_frames;
@@ -671,6 +802,15 @@ int main() {
   printf("\n[mnkybox] Pico firmware " __DATE__
          " " __TIME__ " session=%08lx\n",
          static_cast<unsigned long>(pico_session));
+  // Seed the FX RNGs from the session/time so Chance and VelocityRandom do not
+  // repeat the same sequence after every boot. The route config stays off until
+  // the Pi sends EV_MIDI_ROUTE.
+  for (uint8_t src = 0; src < 2; ++src) {
+    for (uint8_t dst = 0; dst < 2; ++dst) {
+      const uint32_t route = static_cast<uint32_t>(src * 2 + dst + 1);
+      route_pipes[src][dst].setSeed(pico_session ^ (route * 0x9e3779b9u) ^ time_us_32());
+    }
+  }
 
   // Panel inputs: active-low with pull-ups. Encoder/nav/transport alike.
   for (const auto& b : buttons) {
@@ -771,6 +911,8 @@ int main() {
       ready_update();
     }
     drain_midi();
+    clock_delay_service();
+    drain_route_note_offs();
     const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
     if (now_ms - last_ms >= 1) {
       last_ms = now_ms;

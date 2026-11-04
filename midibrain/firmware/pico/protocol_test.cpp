@@ -1,6 +1,8 @@
 #include "protocol.hpp"
 #include "clock_follow.hpp"
+#include "clock_output.hpp"
 #include "midi.hpp"
+#include "midi_pipe.hpp"
 #include "panel_input.hpp"
 #include <cassert>
 #include <cmath>
@@ -111,6 +113,478 @@ void run_panel_tests() {
                {{100, true}, {103, false}, {105, true}, {300, false}}, 400,
                {{{115, mb::CTL_NAV_DOWN, mb::CTL_STATE_PRESSED},
                  {310, mb::CTL_NAV_DOWN, mb::CTL_STATE_RELEASED}}});
+}
+
+mb::MidiMessage test_message(std::uint8_t status, std::uint8_t data1 = 0,
+                             std::uint8_t data2 = 0, std::uint8_t size = 3) {
+  mb::MidiMessage m{};
+  m.size = size;
+  m.data[0] = status;
+  m.data[1] = data1;
+  m.data[2] = data2;
+  return m;
+}
+
+mb::Pipe test_pipe(mb::MidiPipeType type, std::initializer_list<int> params,
+                   bool bypass = false) {
+  mb::Pipe p;
+  p.type = type;
+  p.bypass = bypass;
+  p.param_count = static_cast<std::uint8_t>(params.size());
+  std::size_t i = 0;
+  for (int value : params) {
+    p.params[i++] = value;
+  }
+  return p;
+}
+
+mb::MidiPipeChain test_chain(mb::MidiPipeType type,
+                             std::initializer_list<int> params,
+                             bool bypass = false) {
+  mb::MidiPipeChain chain;
+  chain.begin(true);
+  chain.setSeed(0x12345678u);
+  assert(chain.append(test_pipe(type, params, bypass)));
+  return chain;
+}
+
+bool output_has(const mb::PipeOutput& out, std::uint8_t status, std::uint8_t data1,
+                std::uint8_t data2, std::uint8_t size = 3) {
+  for (std::size_t i = 0; i < out.count; ++i) {
+    if (out.events[i].size != size) continue;
+    if (out.events[i].data[0] != status || out.events[i].data[1] != data1) continue;
+    if (size == 1 || out.events[i].data[2] == data2) return true;
+  }
+  return false;
+}
+
+void run_pipe_tests() {
+  using namespace mb;
+
+  // Filter: every one of the eight mask positions independently. A zero mask
+  // is drop for that kind; missing params default to pass.
+  const MidiMessage filter_inputs[8] = {
+      test_message(0x90, 60, 100),  // note on
+      test_message(0x80, 60, 0),    // note off
+      test_message(0xB0, 7, 100),   // cc
+      test_message(0xC0, 12, 0, 2), // pc
+      test_message(0xD0, 90, 0, 2), // channel pressure
+      test_message(0xE0, 0, 64),    // bend
+      test_message(0xF8, 0, 0, 1),  // realtime
+      test_message(0xF0, 0, 0, 1),  // sysex
+  };
+  for (std::size_t pass = 0; pass < 8; ++pass) {
+    std::array<int, 8> mask{};
+    mask[pass] = 1;
+    Pipe filter;
+    filter.type = MidiPipeType::Filter;
+    filter.param_count = 8;
+    for (std::size_t i = 0; i < mask.size(); ++i) filter.params[i] = mask[i];
+    MidiPipeChain chain;
+    chain.begin(true);
+    chain.setSeed(1);
+    assert(chain.append(filter));
+    for (std::size_t kind = 0; kind < 8; ++kind) {
+      const PipeOutput out = chain.process(filter_inputs[kind], 0);
+      assert(out.count == (kind == pass ? 1u : 0u));
+    }
+  }
+  {
+    // All params missing -> every kind passes (no silent mute).
+    MidiPipeChain chain = test_chain(MidiPipeType::Filter, {});
+    for (const auto& m : filter_inputs) assert(chain.process(m, 0).count == 1);
+  }
+  {
+    // A system-common message outside the mask registry passes.
+    MidiPipeChain chain = test_chain(MidiPipeType::Filter, {0, 0, 0, 0, 0, 0, 0, 0});
+    const PipeOutput out = chain.process(test_message(0xF1, 0, 0, 2), 0);
+    assert(out.count == 1 && out.events[0].size == 2);
+  }
+
+  // NoteRange: inclusive note edges and an inclusive note-on velocity window.
+  // Release velocity is deliberately not filtered (a high floor must not
+  // strand a held note).
+  {
+    MidiPipeChain chain = test_chain(MidiPipeType::NoteRange, {60, 64, 64, 127});
+    assert(chain.process(test_message(0x90, 59, 100), 0).count == 0);
+    assert(chain.process(test_message(0x90, 60, 64), 0).count == 1);
+    assert(chain.process(test_message(0x90, 60, 63), 0).count == 0);
+    assert(chain.process(test_message(0x90, 64, 127), 0).count == 1);
+    assert(chain.process(test_message(0x90, 65, 100), 0).count == 0);
+    assert(chain.process(test_message(0x80, 60, 0), 0).count == 1);
+    assert(chain.process(test_message(0xB0, 60, 100), 0).count == 1);
+    // Reversed lo/hi is normalised instead of dropping everything.
+    MidiPipeChain reversed = test_chain(MidiPipeType::NoteRange, {64, 60, 0, 127});
+    assert(reversed.process(test_message(0x90, 62, 100), 0).count == 1);
+  }
+
+  // CcRemap: endpoints, a middle value, and out-of-range pass-through.
+  {
+    MidiPipeChain chain = test_chain(MidiPipeType::CcRemap, {10, 20, 100, 110});
+    assert(output_has(chain.process(test_message(0xB0, 10, 1), 0), 0xB0, 100, 1));
+    assert(output_has(chain.process(test_message(0xB0, 15, 1), 0), 0xB0, 105, 1));
+    assert(output_has(chain.process(test_message(0xB0, 20, 1), 0), 0xB0, 110, 1));
+    assert(output_has(chain.process(test_message(0xB0, 9, 1), 0), 0xB0, 9, 1));
+    assert(output_has(chain.process(test_message(0xB0, 21, 1), 0), 0xB0, 21, 1));
+    // Reverse output range and a one-to-one input range.
+    MidiPipeChain reverse = test_chain(MidiPipeType::CcRemap, {0, 2, 127, 0});
+    assert(output_has(reverse.process(test_message(0xB0, 0, 1), 0), 0xB0, 127, 1));
+    assert(output_has(reverse.process(test_message(0xB0, 2, 1), 0), 0xB0, 0, 1));
+    MidiPipeChain single = test_chain(MidiPipeType::CcRemap, {7, 7, 70, 70});
+    assert(output_has(single.process(test_message(0xB0, 7, 1), 0), 0xB0, 70, 1));
+  }
+
+  // ChannelRemap: 0 = any input channel, output channel 1..16.
+  {
+    MidiPipeChain any = test_chain(MidiPipeType::ChannelRemap, {0, 5});
+    const PipeOutput out = any.process(test_message(0x93, 60, 100), 0);
+    assert(out.count == 1 && out.events[0].data[0] == 0x94);  // channel 5
+    MidiPipeChain specific = test_chain(MidiPipeType::ChannelRemap, {2, 16});
+    const PipeOutput nonmatch = specific.process(test_message(0x90, 60, 100), 0);
+    assert(nonmatch.count == 1 && nonmatch.events[0].data[0] == 0x90);
+    const PipeOutput moved = specific.process(test_message(0x91, 60, 100), 0);
+    assert(moved.count == 1 && moved.events[0].data[0] == 0x9F);
+    const PipeOutput non_channel = specific.process(test_message(0xF8, 0, 0, 1), 0);
+    assert(non_channel.count == 1 && non_channel.events[0].data[0] == 0xF8);
+  }
+
+  // ScaleQuantize: six scales, root transposition and the absolute user mask.
+  {
+    // C major: 61 -> 60 (tie resolves down), 63 -> 62 (nearest down).
+    MidiPipeChain major = test_chain(MidiPipeType::ScaleQuantize, {1, 0, 0});
+    assert(output_has(major.process(test_message(0x90, 61, 100), 0), 0x90, 60, 100));
+    assert(output_has(major.process(test_message(0x90, 63, 100), 0), 0x90, 62, 100));
+    assert(output_has(major.process(test_message(0x90, 60, 100), 0), 0x90, 60, 100));
+    // D minor (root 2): C#3 (61) -> C3 (60), F#3 (66) -> F3 (65).
+    MidiPipeChain minor = test_chain(MidiPipeType::ScaleQuantize, {2, 2, 0});
+    assert(output_has(minor.process(test_message(0x90, 61, 100), 0), 0x90, 60, 100));
+    assert(output_has(minor.process(test_message(0x90, 66, 100), 0), 0x90, 65, 100));
+    // Major pentatonic on C leaves E and drops nothing; F# snaps to G.
+    MidiPipeChain penta_major =
+        test_chain(MidiPipeType::ScaleQuantize, {3, 0, 0});
+    assert(output_has(penta_major.process(test_message(0x90, 64, 100), 0), 0x90, 64, 100));
+    assert(output_has(penta_major.process(test_message(0x90, 66, 100), 0), 0x90, 67, 100));
+    // Minor pentatonic on C: Eb stays, E snaps down to Eb.
+    MidiPipeChain penta_minor =
+        test_chain(MidiPipeType::ScaleQuantize, {4, 0, 0});
+    assert(output_has(penta_minor.process(test_message(0x90, 63, 100), 0), 0x90, 63, 100));
+    assert(output_has(penta_minor.process(test_message(0x90, 64, 100), 0), 0x90, 63, 100));
+    // Dorian on C: Eb and Bb are in, E and B snap down.
+    MidiPipeChain dorian = test_chain(MidiPipeType::ScaleQuantize, {5, 0, 0});
+    assert(output_has(dorian.process(test_message(0x90, 63, 100), 0), 0x90, 63, 100));
+    assert(output_has(dorian.process(test_message(0x90, 64, 100), 0), 0x90, 63, 100));
+    assert(output_has(dorian.process(test_message(0x90, 71, 100), 0), 0x90, 70, 100));
+    // User mask 0xAAA = pitch classes 1,3,5,7,9,11; C snaps down to B.
+    MidiPipeChain user = test_chain(MidiPipeType::ScaleQuantize, {6, 0, 0xAAA});
+    assert(output_has(user.process(test_message(0x90, 61, 100), 0), 0x90, 61, 100));
+    assert(output_has(user.process(test_message(0x90, 60, 100), 0), 0x90, 59, 100));
+    // mask12 boundary: 0 = no allowed class (pass unchanged), 0xFFF = all pass.
+    MidiPipeChain empty_mask = test_chain(MidiPipeType::ScaleQuantize, {6, 0, 0});
+    assert(output_has(empty_mask.process(test_message(0x90, 60, 100), 0), 0x90, 60, 100));
+    MidiPipeChain full_mask =
+        test_chain(MidiPipeType::ScaleQuantize, {6, 0, 0xFFF});
+    assert(output_has(full_mask.process(test_message(0x90, 61, 100), 0), 0x90, 61, 100));
+    // Low/high MIDI note edges stay in range after octave wrapping.
+    assert(output_has(major.process(test_message(0x90, 0, 100), 0), 0x90, 0, 100));
+    assert(output_has(major.process(test_message(0x90, 127, 100), 0), 0x90, 127, 100));
+    // Scale 0 (and an out-of-range scale id) is off and passes untouched.
+    MidiPipeChain off = test_chain(MidiPipeType::ScaleQuantize, {0, 0, 0});
+    assert(output_has(off.process(test_message(0x90, 61, 100), 0), 0x90, 61, 100));
+    MidiPipeChain bad_scale = test_chain(MidiPipeType::ScaleQuantize, {99, 0, 0});
+    assert(output_has(bad_scale.process(test_message(0x90, 61, 100), 0), 0x90, 61, 100));
+  }
+
+  // Chance: 0 % passes, 100 % drops note-ons only; note-offs keep flowing so
+  // a dropped note cannot stick.
+  {
+    MidiPipeChain never = test_chain(MidiPipeType::Chance, {0});
+    assert(never.process(test_message(0x90, 60, 100), 0).count == 1);
+    MidiPipeChain always = test_chain(MidiPipeType::Chance, {100});
+    assert(always.process(test_message(0x90, 60, 100), 0).count == 0);
+    assert(always.process(test_message(0x80, 60, 0), 0).count == 1);
+    assert(always.process(test_message(0xB0, 7, 100), 0).count == 1);
+  }
+
+  // VelocityRandom: amount bounds, the floor, and amount 0 still applies the
+  // floor to note-on velocity; note-off release velocity is untouched.
+  {
+    MidiPipeChain humanize = test_chain(MidiPipeType::VelocityRandom, {5, 40});
+    for (int i = 0; i < 200; ++i) {
+      const PipeOutput out = humanize.process(test_message(0x90, 60, 64), 0);
+      assert(out.count == 1 && out.events[0].data[2] >= 40);
+      assert(out.events[0].data[2] <= 69);
+    }
+    MidiPipeChain floor_only = test_chain(MidiPipeType::VelocityRandom, {0, 100});
+    assert(output_has(floor_only.process(test_message(0x90, 60, 20), 0), 0x90, 60, 100));
+    assert(output_has(floor_only.process(test_message(0x90, 60, 127), 0), 0x90, 60, 127));
+    assert(output_has(floor_only.process(test_message(0x80, 60, 5), 0), 0x80, 60, 5));
+  }
+
+  // Dispatcher: rotation across the configured window, wrapping past ch 16,
+  // and note-off pairing back to the channel the note-on used.
+  {
+    MidiPipeChain dispatch = test_chain(MidiPipeType::Dispatcher, {4, 15});
+    const std::uint8_t expected[6] = {15, 16, 1, 2, 15, 16};
+    for (int i = 0; i < 6; ++i) {
+      const PipeOutput on =
+          dispatch.process(test_message(0x90, static_cast<std::uint8_t>(60 + i), 100), 0);
+      assert(on.count == 1);
+      assert((on.events[0].data[0] & 0x0F) == expected[i] - 1);
+      const PipeOutput off =
+          dispatch.process(test_message(0x80, static_cast<std::uint8_t>(60 + i), 0), 0);
+      assert(off.count == 1);
+      assert((off.events[0].data[0] & 0x0F) == expected[i] - 1);
+    }
+  }
+
+  // Sustain: CC64 down latches note-offs, CC64 up releases them as note-offs;
+  // after release a normal note-off passes again.
+  {
+    MidiPipeChain sustain = test_chain(MidiPipeType::Sustain, {1});
+    assert(sustain.process(test_message(0xB0, 64, 127), 0).count == 1);
+    assert(sustain.process(test_message(0x90, 60, 100), 0).count == 1);
+    assert(sustain.process(test_message(0x80, 60, 0), 0).count == 0);
+    assert(sustain.process(test_message(0x90, 64, 100), 0).count == 1);
+    assert(sustain.process(test_message(0x80, 64, 0), 0).count == 0);
+    const PipeOutput release = sustain.process(test_message(0xB0, 64, 0), 0);
+    assert(release.count == 3);  // two note-offs, then CC64
+    assert(output_has(release, 0x80, 60, 0) && output_has(release, 0x80, 64, 0));
+    assert(output_has(release, 0xB0, 64, 0));
+    assert(sustain.process(test_message(0x80, 60, 0), 0).count == 1);
+    // latch 0 is a pass-through pipe.
+    MidiPipeChain off = test_chain(MidiPipeType::Sustain, {0});
+    assert(off.process(test_message(0xB0, 64, 127), 0).count == 1);
+    assert(off.process(test_message(0x80, 60, 0), 0).count == 1);
+  }
+
+  // NoteLength: fixed length schedules one off and ignores an early note-off;
+  // length 0 leaves the stream alone. The generated off re-enters the chain
+  // after the pipe (a later ChannelRemap still sees it).
+  {
+    MidiPipeChain length = test_chain(MidiPipeType::NoteLength, {100});
+    assert(length.process(test_message(0x90, 60, 100), 1000).count == 1);
+    assert(length.process(test_message(0x80, 60, 0), 1050).count == 0);
+    assert(length.tick(1099).count == 0);
+    const PipeOutput due = length.tick(1100);
+    assert(due.count == 1 && due.events[0].data[0] == 0x80 && due.events[0].data[1] == 60);
+    assert(length.tick(1200).count == 0);
+    MidiPipeChain staged;
+    staged.begin(true);
+    assert(staged.append(test_pipe(MidiPipeType::NoteLength, {50})));
+    assert(staged.append(test_pipe(MidiPipeType::ChannelRemap, {0, 5})));
+    assert(staged.process(test_message(0x90, 60, 100), 0).count == 1);
+    const PipeOutput remapped = staged.tick(50);
+    assert(remapped.count == 1 && remapped.events[0].data[0] == 0x84 &&
+           remapped.events[0].data[1] == 60);
+    MidiPipeChain off = test_chain(MidiPipeType::NoteLength, {0});
+    assert(off.process(test_message(0x80, 60, 0), 1000).count == 1);
+    assert(off.tick(2000).count == 0);
+  }
+
+  // Transform: kind conversion, match range, non-match pass-through, bend
+  // 14-bit output and invalid out-kind safety.
+  {
+    MidiPipeChain cc_to_note = test_chain(MidiPipeType::Transform, {1, 7, 7, 0, 60});
+    assert(output_has(cc_to_note.process(test_message(0xB0, 7, 100), 0), 0x90, 60, 100));
+    assert(output_has(cc_to_note.process(test_message(0xB0, 8, 100), 0), 0xB0, 8, 100));
+    MidiPipeChain note_to_cc = test_chain(MidiPipeType::Transform, {0, 60, 60, 1, 74});
+    assert(output_has(note_to_cc.process(test_message(0x90, 60, 100), 0), 0xB0, 74, 100));
+    assert(output_has(note_to_cc.process(test_message(0x90, 61, 100), 0), 0x90, 61, 100));
+    MidiPipeChain to_bend = test_chain(MidiPipeType::Transform, {0, 60, 60, 3, 8192});
+    const PipeOutput bend = to_bend.process(test_message(0x90, 60, 100), 0);
+    assert(bend.count == 1 && bend.events[0].data[0] == 0xE0 &&
+           bend.events[0].data[1] == 0 && bend.events[0].data[2] == 64);
+    MidiPipeChain to_pc = test_chain(MidiPipeType::Transform, {1, 10, 20, 2, 42});
+    const PipeOutput pc = to_pc.process(test_message(0xB0, 10, 9), 0);
+    assert(pc.count == 1 && pc.events[0].size == 2 && pc.events[0].data[0] == 0xC0 &&
+           pc.events[0].data[1] == 42);
+    MidiPipeChain to_pressure =
+        test_chain(MidiPipeType::Transform, {1, 10, 20, 4, 77});
+    const PipeOutput pressure = to_pressure.process(test_message(0xB0, 10, 9), 0);
+    assert(pressure.count == 1 && pressure.events[0].size == 2 &&
+           pressure.events[0].data[0] == 0xD0 && pressure.events[0].data[1] == 77);
+    MidiPipeChain partial = test_chain(MidiPipeType::Transform, {});
+    assert(output_has(partial.process(test_message(0x90, 60, 100), 0), 0x90, 60, 100));
+  }
+
+  // Bypass is honoured for every Wave-1 type: the configured transform never
+  // runs, and an empty chain/unknown Wave-2 id passes bytes untouched.
+  for (std::uint8_t type = 1; type <= 11; ++type) {
+    MidiPipeChain bypassed;
+    bypassed.begin(true);
+    bypassed.setSeed(7);
+    Pipe p;
+    p.type = static_cast<MidiPipeType>(type);
+    p.bypass = true;
+    p.param_count = 5;
+    p.params[0] = 0;
+    p.params[1] = 0;
+    p.params[2] = 127;
+    p.params[3] = 1;
+    p.params[4] = 1;
+    assert(bypassed.append(p));
+    const PipeOutput out = bypassed.process(test_message(0x90, 60, 100), 0);
+    assert(out.count == 1 && out.events[0].data[0] == 0x90 &&
+           out.events[0].data[1] == 60 && out.events[0].data[2] == 100);
+  }
+  {
+    // Chunked wire-style configuration: a Filter has 8 positional params, so
+    // it arrives as a 5-param chunk followed by a 3-param chunk at offset 5.
+    MidiPipeChain chunked;
+    chunked.begin(true);
+    const std::int32_t first[5] = {1, 0, 0, 0, 0};
+    const std::int32_t rest[3] = {0, 0, 0};
+    assert(chunked.setPipeChunk(0, 1, false, 0, first, 5));
+    assert(chunked.setPipeChunk(0, 1, false, 5, rest, 3));
+    assert(chunked.process(test_message(0x90, 60, 100), 0).count == 1);
+    assert(chunked.process(test_message(0x80, 60, 0), 0).count == 0);
+    assert(!chunked.setPipeChunk(1, 1, false, 5, rest, 3));  // no pipe 1 yet
+    assert(!chunked.setPipeChunk(0, 2, false, 5, rest, 3));  // type mismatch
+    assert(!chunked.setPipeChunk(8, 1, false, 0, first, 5));  // index out of range
+  }
+  {
+    MidiPipeChain unknown;
+    unknown.begin(true);
+    Pipe p;
+    p.type = static_cast<MidiPipeType>(12);
+    p.param_count = 0;
+    assert(unknown.append(p));
+    const PipeOutput out = unknown.process(test_message(0x90, 60, 100), 0);
+    assert(out.count == 1 && out.events[0].data[1] == 60);
+    // Out-of-range/unknown params never crash a pipe access: the missing
+    // inHi/outLo/outHi fall back to their documented defaults.
+    MidiPipeChain sparse = test_chain(MidiPipeType::CcRemap, {3});
+    assert(output_has(sparse.process(test_message(0xB0, 3, 1), 0), 0xB0, 0, 1));
+  }
+
+  // Wire config round trips: route begin, a chunked pipe, a route send and
+  // the clock-extras frame.
+  {
+    Frame f{};
+    Bytes wire{};
+    Frame decoded{};
+    assert(pack_midi_route(f, 30, 0x12345678, 1, 0, ROUTE_FLAG_ON));
+    assert(encode(f, wire) && decode(wire, decoded));
+    std::uint8_t src = 9, dst = 9, flags = 0;
+    assert(unpack_midi_route(decoded, src, dst, flags));
+    assert(src == 1 && dst == 0 && flags == ROUTE_FLAG_ON);
+    assert(!pack_midi_route(f, 31, 0x12345678, 2, 0, 0));
+    assert(!pack_midi_route(f, 31, 0x12345678, 0, 0, 0x80));
+
+    const std::int16_t params[5] = {60, 64, 64, 127, -7};
+    assert(pack_midi_route_pipe(f, 32, 0x12345678, 0, 1, 2, 2, false, 0, params, 5));
+    assert(encode(f, wire) && decode(wire, decoded));
+    std::uint8_t index = 0, type = 0, offset = 0;
+    bool bypass = true;
+    std::int16_t out_params[5]{};
+    std::size_t count = 0;
+    assert(unpack_midi_route_pipe(decoded, src, dst, index, type, bypass, offset,
+                                  out_params, 5, count));
+    assert(src == 0 && dst == 1 && index == 2 && type == 2 && !bypass);
+    assert(offset == 0 && count == 5 && out_params[0] == 60 && out_params[4] == -7);
+    assert(!pack_midi_route_pipe(f, 33, 0x12345678, 0, 1, 0, 2, false, 6, params, 5));
+    assert(!pack_midi_route_pipe(f, 33, 0x12345678, 0, 1, 0, 0, false, 0, params, 5));
+
+    const std::uint8_t bytes[3] = {0x90, 60, 100};
+    assert(pack_midi_route_send(f, 34, 0x12345678, 1, 0, bytes, 3));
+    assert(encode(f, wire) && decode(wire, decoded));
+    std::uint8_t size = 0;
+    std::uint8_t out_bytes[3]{};
+    assert(unpack_midi_route_send(decoded, src, dst, out_bytes, size));
+    assert(src == 1 && dst == 0 && size == 3 && out_bytes[2] == 100);
+    assert(!pack_midi_route_send(f, 35, 0x12345678, 0, 0, bytes, 4));
+
+    assert(pack_clock_route_ext(f, 36, 0x12345678, 1, 4, 500));
+    assert(encode(f, wire) && decode(wire, decoded));
+    std::uint8_t port = 9, div = 0;
+    std::uint16_t delay = 0;
+    assert(unpack_clock_route_ext(decoded, port, div, delay));
+    assert(port == 1 && div == 4 && delay == 500);
+    // A corrupt/out-of-contract divider still reaches applyExtras, which
+    // clamps it to 1 and the delay to 500 instead of silencing the output.
+    decoded.payload[2] = 3;
+    decoded.payload[3] = 0x58;
+    decoded.payload[4] = 0x02;  // 600 ms
+    assert(unpack_clock_route_ext(decoded, port, div, delay));
+    ClockGates clamped;
+    assert(clamped.applyExtras(port, div, delay));
+    assert(clamped.tempoDiv(1) == 1 && clamped.syncDelayMs(1) == 500);
+    assert(!pack_clock_route_ext(f, 37, 0x12345678, 0, 3, 0));
+    assert(!pack_clock_route_ext(f, 37, 0x12345678, 2, 1, 0));
+  }
+
+  std::printf("PASS: Wave-1 MIDI pipes (filter/range/remap/scale/chance/velocity/"
+              "dispatch/sustain/length/transform, bypass, wire config)\n");
+}
+
+void run_clock_extras_tests() {
+  using namespace mb;
+
+  // Divider pattern: every tick at 1, every second at 2, every fourth at 4.
+  assert(clock_div_due(0, 1) && clock_div_due(1, 1) && clock_div_due(2, 1));
+  for (std::uint32_t tick = 0; tick < 8; ++tick) {
+    assert(clock_div_due(tick, 2) == (tick % 2 == 0));
+    assert(clock_div_due(tick, 4) == (tick % 4 == 0));
+  }
+  assert(clock_div_due(1, 3));  // invalid value never silences clock
+
+  // Gate defaults, divider/delay clamping, and per-output isolation.
+  ClockGates gates;
+  assert(gates.tempoDiv(0) == 1 && gates.tempoDiv(1) == 1);
+  assert(gates.syncDelayMs(0) == 0 && gates.syncDelayMs(1) == 0);
+  assert(gates.applyExtras(0, 2, 600));
+  assert(gates.tempoDiv(0) == 2 && gates.syncDelayMs(0) == 500);
+  assert(gates.tempoDiv(1) == 1 && gates.syncDelayMs(1) == 0);
+  assert(gates.applyExtras(0, 3, 12));
+  assert(gates.tempoDiv(0) == 1 && gates.syncDelayMs(0) == 12);
+  assert(gates.applyExtras(1, 4, 0));
+  assert(gates.tempoDiv(1) == 4);
+  assert(!gates.applyExtras(2, 1, 0));
+  assert(gates.tempoDiv(0) == 1 && gates.tempoDiv(1) == 4);
+
+  // Delay line: exact 500 ms boundary, FIFO order, clamp and overflow drop.
+  {
+    ClockDelayLine line;
+    line.setDelayMs(500);
+    assert(line.delayMs() == 500 && line.pending() == 0);
+    assert(line.push(1000));
+    assert(!line.popDue(500999));
+    assert(line.popDue(501000));
+    assert(!line.popDue(501001));
+    assert(line.push(0));
+    assert(line.push(1000));
+    assert(!line.popDue(499999));
+    assert(line.popDue(500000));
+    assert(line.pending() == 1);
+    assert(!line.popDue(500999));
+    assert(line.popDue(501000));
+    line.setDelayMs(600);  // clamp
+    assert(line.delayMs() == 500);
+    line.setDelayMs(0);
+    assert(line.delayMs() == 0);
+    // A config change starts a fresh line (no stale delayed ticks).
+    line.setDelayMs(500);
+    assert(line.push(10));
+    assert(line.pending() == 1);
+    line.setDelayMs(5);
+    assert(line.pending() == 0 && line.delayMs() == 5);
+    assert(line.push(1234));
+    assert(!line.popDue(6233));
+    assert(line.popDue(6234));
+    line.clear();
+    for (std::uint32_t i = 0; i < kClockDelayDepth; ++i) assert(line.push(0));
+    assert(!line.push(0));
+    assert(line.drops() == 1 && line.pending() == kClockDelayDepth);
+    line.clear();
+    assert(line.pending() == 0);
+    // 32-bit timer wraparound stays ordered: due = 0xFFFFF000 + 500 ms.
+    line.setDelayMs(500);
+    assert(line.push(0xFFFFF000u));
+    assert(!line.popDue(0x00000000u));
+    assert(line.popDue(0x00079120u));
+  }
+
+  std::printf("PASS: clock extras (divider, 500 ms clamp, delay line, wraparound)\n");
 }
 
 void run_clock_follow_tests() {
@@ -326,6 +800,8 @@ int main(int argc, char** argv) {
   assert(nav.update(true, 115) && nav.state());
   assert(!nav.update(false, 120)); assert(nav.update(false, 130) && !nav.state());
   run_panel_tests();
+  run_pipe_tests();
+  run_clock_extras_tests();
   run_clock_follow_tests();
   Debouncer wrap(10); assert(!wrap.update(true, 0xfffffffau)); assert(wrap.update(true, 4));
   Frame event{Type::control_event, 124, hello.session, 2, {}};
