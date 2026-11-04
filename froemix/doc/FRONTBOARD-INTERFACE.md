@@ -106,9 +106,11 @@ through** (tip → tip, ring → ring on both the IN and the OUT socket).
   `R59` **33 Ω 1 W**; the gate comes from `USART1_TX` through `R58` 180 Ω and is
   held at the source by `R61` 2.2 kΩ), and the **tip** is the sink (`R60`
   **22 Ω** 1 W to GND, nothing else in that leg). Worst-case loop current into a
-  CA-033 receiver (LED + 220 Ω, VF 1.9 V) is **4.31 mA**; CA-033's own 43 Ω
-  values give 4.50 mA, and the 0.19 mA difference is the fault-driven 22 Ω on
-  the tip (`doc/ELECTRICAL-VERIFICATION.md` §3–§4). `Q2` is a high-side switch,
+  CA-033 receiver (LED + 220 Ω, VF 1.9 V) is **4.31 mA**. For scale: the CA-033
+  nominal loop is 5 mA, its PC900V benchmark is 4 mA, and its own 33/10 Ω
+  reference calculation gives 4.472 mA under ±5 % resistor assumptions. The
+  22 Ω tip is fault-driven and costs about 0.2 mA against that calculation
+  (`doc/ELECTRICAL-VERIFICATION.md` §3–§4). `Q2` is a high-side switch,
   so it is **off at idle** (UART high or high-Z, |VGS| ≤ 0.370 V) and a start
   bit turns it on — the loop current is present only while data is being sent,
   as MIDI requires. Do not cross tip/ring on the panel: a crossover would turn

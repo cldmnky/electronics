@@ -201,6 +201,7 @@ def numbers(values):
     out["ca033_example"] = (vtx_min - V_RX_MAX) / (43.0 * (1 + CA033_R_TOL) + R_RX * (1 + CA033_R_TOL))
     out["out_ca033_assumptions"] = (vtx_min - V_RX_MAX) / (legs_max_ca033 + R_RX * (1 + CA033_R_TOL))
     out["pc900v_worst"] = 4.0e-3   # CA-033: "worst-case forward current requirement of 4 mA"
+    out["ca033_nominal"] = 5.0e-3  # CA-033: "The MIDI circuit is a 5mA current loop"
 
     # the same transmitter into THIS board's receiver (TLP2361 + R47 220R 1%)
     r47 = values["R47"]
@@ -225,13 +226,19 @@ def numbers(values):
     out["i_tip_fault"] = vtx_max / (r60 * (1 - R_TOL))
     out["p_r60_tip_fault"] = vtx_max ** 2 / (r60 * (1 - R_TOL))
 
-    # gate drive (ASSUMPTION-based where marked)
-    out["i_gate_peak"] = vtx_max / (r58 * (1 - R_TOL))
-    out["v_gate_on"] = (ASSUMED_GPIO_VOL / r58 + vtx_min / r61) / (1 / r58 + 1 / r61)
+    # gate drive (ASSUMPTION-based where marked). The divider is evaluated at the
+    # resistor tolerance corners, not at nominal values: the ON case wants the
+    # LARGEST series resistor and the SMALLEST pull-up (gate highest), the OFF
+    # case the other way round. With 180/2.2k and VOL 0.4 V that is 2.5243 V
+    # (an earlier revision quoted the nominal 2.528 V, which is not a corner).
+    r58_hi, r58_lo = r58 * (1 + R_TOL), r58 * (1 - R_TOL)
+    r61_hi, r61_lo = r61 * (1 + R_TOL), r61 * (1 - R_TOL)
+    out["i_gate_peak"] = vtx_max / r58_lo
+    out["v_gate_on"] = (ASSUMED_GPIO_VOL / r58_hi + vtx_min / r61_lo) / (1 / r58_hi + 1 / r61_lo)
     out["vgs_on"] = vtx_min - out["v_gate_on"]
-    out["v_gate_off"] = ((vtx_min - ASSUMED_GPIO_VOH_DROP) / r58 + vtx_min / r61) / (1 / r58 + 1 / r61)
+    out["v_gate_off"] = ((vtx_min - ASSUMED_GPIO_VOH_DROP) / r58_lo + vtx_min / r61_hi) / (1 / r58_lo + 1 / r61_hi)
     out["vgs_off"] = abs(out["v_gate_off"] - vtx_min)
-    out["i_r61_dc"] = vtx_min / r61
+    out["i_r61_dc"] = vtx_min / r61_lo
     out["t_gate"] = r58 * FET_CISS
     return out
 
@@ -260,13 +267,17 @@ def evaluate(values, out):
           f"OUT worst-case loop {out['i_out_worst'] * 1e3:.2f} mA is below the 4.2 mA "
           "design floor")
     check(None,
-          f"OUT worst-case loop {out['i_out_worst'] * 1e3:.2f} mA (1 % parts) / "
-          f"{out['out_ca033_assumptions'] * 1e3:.2f} mA (CA-033's own +-5 % resistor "
-          f"assumption). CA-033 sets no minimum loop current: its recommended 33/10 R "
-          f"values would give {out['ca033_example'] * 1e3:.2f} mA under those "
-          f"assumptions, so this design is {(out['ca033_example'] - out['out_ca033_assumptions']) * 1e3:.2f} mA "
-          f"below that example and {(out['out_ca033_assumptions'] - out['pc900v_worst']) * 1e3:.2f} mA above "
-          "the PC900V 4 mA worst-case figure - documented limitation, not a clean margin")
+          f"OUT loop: {out['i_out_worst'] * 1e3:.2f} mA worst (1 % parts) / "
+          f"{out['out_ca033_assumptions'] * 1e3:.2f} mA under CA-033's +-5 % resistor "
+          f"assumption. Three different CA-033 figures, kept apart: the specified "
+          f"nominal loop is {out['ca033_nominal'] * 1e3:.1f} mA; the PC900V benchmark is "
+          f"{out['pc900v_worst'] * 1e3:.1f} mA worst-case forward current; and the 43 ohm "
+          f"reference calculation (its recommended 33/10 R values) gives "
+          f"{out['ca033_example'] * 1e3:.2f} mA. This design sits "
+          f"{(out['out_ca033_assumptions'] - out['pc900v_worst']) * 1e3:.2f} mA above the "
+          f"PC900V benchmark and "
+          f"{(out['ca033_example'] - out['out_ca033_assumptions']) * 1e3:.2f} mA below the "
+          "43 ohm reference calculation - a documented limitation, not a clean margin")
 
     # this board's own receiver on the same loop
     check(out["ifhl_margin"] >= 2.0,
@@ -365,8 +376,8 @@ def main() -> int:
     if not args.quiet:
         print("MIDI OUT - Type A transmitter, AO3401A high side, 3.3 V +-5 %")
         print(f"  loop into a CA-033 receiver : {out['i_out_worst'] * 1e3:6.2f} mA worst, "
-              f"{out['i_out_typ'] * 1e3:6.2f} mA typical; CA-033 33/10 ohm example "
-              f"{out['ca033_example'] * 1e3:.2f} mA, PC900V worst case 4.00 mA")
+              f"{out['i_out_typ'] * 1e3:6.2f} mA typical; CA-033 nominal 5.0 mA, "
+              f"PC900V 4.0 mA benchmark, 33/10 ohm calculation {out['ca033_example'] * 1e3:.2f} mA")
         print(f"  RDS(on) at 125 C (bound)    : {out['rds_hot'] * 1e3:6.1f} mOhm")
         print("MIDI IN - TLP2361 receiver, R47 220 R")
         print(f"  IF from this board          : {out['i_in_worst'] * 1e3:6.2f} mA worst, "

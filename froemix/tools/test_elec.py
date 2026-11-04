@@ -102,8 +102,10 @@ class ElectricalCheckTests(unittest.TestCase):
             if "i_fet_ring_fault" in out else None
         self.assertAlmostEqual(out["p_fet_ring_fault"] * 1e3, 1.42, places=2)
         self.assertAlmostEqual(out["i_gate_peak"] * 1e3, 19.44, places=2)
-        self.assertAlmostEqual(out["vgs_on"], 2.528, places=3)
-        self.assertAlmostEqual(out["vgs_off"], 0.370, places=3)
+        # resistor tolerance corners, not nominal: 180*(1+1%) against 2.2k*(1-1%)
+        self.assertAlmostEqual(out["vgs_on"], 2.5243, places=4)
+        self.assertAlmostEqual(out["vgs_off"], 0.3703, places=4)
+        self.assertAlmostEqual(out["i_r61_dc"] * 1e3, 1.44, places=2)
 
     # --- parts -------------------------------------------------------------
     def test_old_optocoupler_is_rejected(self):

@@ -86,28 +86,33 @@ tolerance ±5 % (CA-033), resistors ±1 %, RDS(on) at 125 °C = 85 mΩ × 1.5 =
 | Same, with 1.65 V typical VF and no tolerances | (3.3 − 1.65) / (55 + 220 + 0.085) | 6.00 mA |
 | CA-033's own 43 Ω legs, same receiver | (3.135 − 1.9) / (43 × 1.01 + 231) | 4.50 mA |
 | Gate charge peak | 3.465 / (180 × 0.99) | **19.44 mA** |
-| Gate voltage, pin low at VOL 0.4 V | divider 180 Ω / 2.2 kΩ | 0.607 V → **VGS = −2.528 V** |
-| Gate voltage, pin high at VOH min | (2.735/180 + 3.135/2200) / (1/180 + 1/2200) | 2.764 V → **\|VGS\| = 0.370 V** |
+| Gate voltage, pin low at VOL 0.4 V | divider at the tolerance corners: 180 Ω +1 % against 2.2 kΩ −1 % | 0.6107 V → **VGS = −2.5243 V** |
+| Gate voltage, pin high at VOH min | 180 Ω −1 % against 2.2 kΩ +1 % | 2.7647 V → **\|VGS\| = 0.3703 V** |
 | R61 current while the pin is low | 3.135 / 2200 | 1.42 mA (1.5 mA at 3.3 V) |
 | Gate edge | 180 Ω × 645 pF | 116 ns (one bit is 32 µs) |
 
 Two consequences worth stating plainly:
 
-- **4.31 mA against CA-033's own example, read correctly.** CA-033 states a
-  5 mA current loop and requires the receiver to turn on with **less than
-  5 mA**; it sets **no minimum transmitter current**. Its recommended 3.3 V
-  values (RA 33 Ω source, RC 10 Ω sink) would give **4.47 mA** worst case under
-  its own ±5 % resistor assumption — that is an example computed from those
-  values, not a normative 4.47/4.50 mA floor. Under the same assumptions this
-  board's 55 Ω legs give **4.28 mA** (4.31 mA with its 1 % parts), i.e.
-  **0.19 mA below that example** and **0.28 mA above the 4 mA worst-case
-  current** CA-033 quotes for the PC900V. The 22 Ω tip resistor is the
-  fault-driven choice (§4), so the legs are 55 Ω, not 43 Ω. Consequence: a
-  receiver whose turn-on threshold sits above about 4.3 mA at 3.3 V can be
-  marginal with this transmitter. That is a **documented limitation of the
-  transmitter, not a clean margin and not a measured result**; recovering it
-  needs a different fault strategy on the tip leg.
-- **VGS(on) = −2.528 V** is just inside the −2.5 V RDS(on) spec point, so the
+- **4.31 mA against CA-033 — three different figures, kept apart.**
+  1. **Specified nominal loop: 5 mA.** CA-033: "The MIDI circuit is a 5 mA
+     current loop", and the receiver "must require less than 5 mA to turn on".
+  2. **PC900V benchmark: 4 mA.** CA-033 quotes a PC900V worst-case forward
+     current requirement of 4 mA at RD = 280 Ω in a 5 V receiver.
+  3. **43 Ω reference calculation: 4.472 mA.** That is what CA-033's own
+     recommended 3.3 V values (RA 33 Ω source, RC 10 Ω sink) produce under its
+     stated assumptions (3.135 V, +5 % resistors, 1.9 V VF). It is a figure
+     CA-033 calculates from its recommendation, not a stated minimum.
+  Under the same ±5 % assumptions this board's 55 Ω legs give **4.277 mA**
+  (4.31 mA with its 1 % parts): **0.277 mA above the PC900V benchmark**,
+  **0.195 mA below the 43 Ω reference calculation**, and **below the 5 mA
+  nominal**. The 22 Ω tip resistor is the fault-driven choice (§4), so the legs
+  are 55 Ω rather than 43 Ω. Consequence: a receiver whose turn-on threshold
+  sits above about 4.3 mA at 3.3 V can be marginal with this transmitter. That
+  is a **documented limitation of the transmitter, not a clean margin and not a
+  measured result**; recovering it needs a different fault strategy on the tip
+  leg.
+- **VGS(on) = −2.5243 V** at the divisor's tolerance corner (180 Ω +1 % against
+  2.2 kΩ −1 %, VOL 0.4 V) is just inside the −2.5 V RDS(on) spec point, so the
   85 mΩ figure applies. If the MCU's VOL were worse than 0.4 V the FET would be
   less enhanced — the assumption is what protects this number, which is why it
   must be measured.
@@ -153,84 +158,120 @@ output, so loop current off (UART idle) gives VO high, and a start bit pulls VO
 low. VOH is ≥ 3.2 V at −20 µA (the MCU input draws microamps), VOL is ≤ 0.4 V
 into the 3.2 mA rating, and R48's 1.5 mA flows only when VO is low.
 
-## 6. Schematic: what was changed, and the before/after numbers
+## 6. Schematic: supported layout, measured on the rendered SVG
 
-The rendered schematic comes from the installed core's auto-layout; on this
-version there is no supported way to pin a component to an exact `schX`/`schY`
-inside `<schematicsheet>` (`_getSchematicLayoutMode` falls back to
-`match-adapt`, and a section's members are packed again inside the section). All
-changes therefore use elements the installed core supports, and every number
-below was measured twice with the **same** tool on **two** trees: the frozen
-baseline `e0606da` (read-only worktree, built the same way) and this tree.
+The laid-out sheets are a drawing, not a connectivity artefact: every number in
+this section comes from the exported SVG, not from a text-width estimate.
 
-1. **Component orientation.** `tsci check schematic-placement` flags every
-   two-pin part whose power-connected pin does not face up and prints the exact
-   `deltaSchRotation`. Applying those deltas as the supported `schRotation` prop
-   (24 on the CV sheet, 28 on Audio, 2 on Power) removes **54 of 54** such
-   findings. This is a layout fix in the schematic, not a PCB change: no pad,
-   no net and no placement moves.
-2. **Functional grouping.** `schSectionName` groups the sheets that have two
-   natural halves (audio in/out, CV/sync, 5 V entry/converter, MIDI in/out). The
-   core lays each group out and then arranges the groups, which is what
-   separates the MIDI receiver from the transmitter. The Root sheet keeps a
-   single group on purpose: two groups there **added three** label collisions
-   (18 → 21), so the grouping was removed there and the Root sheet matches the
-   baseline again.
-3. **Sheet notes.** 6…10 `<schematictext>` lines per sheet (rails, direction,
-   values and part numbers, decoupling, interface warnings), placed in the free
-   band at the top of the A4 frame.
-4. **`<schematicsection>` titles were tried and removed.** With more than two
-   groups the section bounds overlap, so the titles were drawn on top of each
-   other and over the parts. `schSectionName` without the title element keeps
-   the grouping and loses the collision.
+### 6.1 Probe first: does an explicit position survive?
 
-### 6.1 Identical checks, baseline `e0606da` → this tree
+Before touching the board, a throwaway probe on the **pinned core** asked the one
+question the layout depends on — `<schematicsheet><group schRelative>`, three
+parts with explicit `schX`/`schY`/`pcbX`/`pcbY`, one explicit `<netlabel>`:
 
-`tsci check schematic-placement`, same tool, same input (`dist/index/circuit.json`
-from each tree):
+| Given | Came back in `dist/probe/circuit.json` |
+| --- | --- |
+| R1 `schX=-4 schY=2` | schematic centre `(-4, 2)` |
+| R2 `schX=2 schY=2` | `(2, 2)` |
+| C1 `schX=2 schY=-3` | `(2, -3)` |
+| R1 `pcbX=-5 pcbY=3` | PCB centre `(-5, 3)`, `pcb_group_0` (the board group) |
+| C1 `pcbX=4 pcbY=0` | `(4, 0)`, `pcb_group_0` |
+| `<netlabel schX=-8 schY=2 anchorSide="left">` | `anchor_position (-8, 2)`, `anchor_side left` |
+| nets | `A, B, C, GND` — global, no scope of their own |
+
+Conclusions, all from that run: explicit schematic coordinates **are** honoured
+inside a relative group; a group inside a sheet is **not** a subcircuit
+(`source_group g1` has `is_subcircuit` unset; only the board group is a
+subcircuit), so net names stay global; and `pcbX`/`pcbY` are passed through
+untouched, so the group cannot move a part on the board.
+
+### 6.2 The Root sheet: explicit placement
+
+`schSectionName` is gone from every manually controlled sheet. The Root sheet is
+one non-subcircuit `<group name="root-layout" schRelative>` with all 18 parts at
+explicit coordinates (schematic units; the A4 drawing area is ±16.78 × ±11.87):
+
+| Part | schX, schY | Part | schX, schY |
+| --- | --- | --- | --- |
+| R53 | −12.0, 5.5 | CN2 | −11.5, 1.8 |
+| R55 | −9.8, 5.5 | DaisySeed1 | −5.5, 0.5 (box 2.6 × 6.0) |
+| R57 | −7.6, 5.5 | CN1 | 2.5, 1.8 |
+| R52 | −5.4, 5.5 | CN3 | 8.0, 1.0 |
+| R51 | −3.2, 5.5 | CN4 | 8.0, −2.2 |
+| R54 | −1.0, 5.5 | C31 | −13.0, −2.5 |
+| R56 | 1.2, 5.5 | U1 | −10.5, −6.5 |
+| C1 | 0.5, −5.0 | H1 | −4.0, −6.5 |
+| C29 | 3.5, −5.0 | C30 | 6.5, −5.0 |
+
+The layout reserves each part's label fan-out (labels grow away from a pin by up
+to ~1.9 units), the seven pull-ups sit in one row at `schRotation={90}` so their
+`P3V3_D` pin faces up (the placement checker's own suggestion, which is why it
+now reports **0** `TwoPinComponentShouldBeVertical`), and the Daisy's box was
+widened to 2.6 × 6.0 so its 21 left rows get 0.286 units of pitch instead of the
+default 0.2.
+
+**The exported page follows the content, not the origin.** Moving the drawing
+to the page edges was measured, not assumed: with a `<schematictext>` at
+`schX=-15.6` the exported A4 frame sits at −23.49 … +8.67, and the same sheet
+without that text at −17.08 … +15.08. Page placement is therefore a property of
+the content, so the layout is kept compact (labels x −14.08 … +9.67, y −7.63 …
++6.18; notes at x −12.1, y 11.1 … 7.95) and `tools/svg_overlaps.py` checks that
+every label tag lies inside the frame of its own sheet — it does, with 1.6 units
+of margin on the tight side.
+
+**The board did not move.** `bunx tsci snapshot --test --3d` still reports
+`index.circuit-pcb.snap.svg` ✅ and `index.circuit-3d.snap.png` ✅ while only the
+schematic differs, i.e. the PCB is byte-identical; `check:footprints` still
+finds 429 pads and `check:netlist` still 102 nets.
+
+### 6.3 Measured before/after (identical tools on both trees)
+
+`bunx tsci check schematic-placement`, frozen baseline `e0606da` (read-only
+worktree, same build command) versus this tree:
 
 | Finding | `e0606da` | this tree |
 | --- | --- | --- |
-| `TwoPinComponentShouldBeVertical` | **54** | **0** |
-| `ComponentNetLabelCollision` groups | 4 | 3 |
-| `SchematicTextCollision` | 3 | 1 |
+| `TwoPinComponentShouldBeVertical` | 54 | **0** |
+| `ComponentNetLabelCollision` | 4 | **2** (Audio, MIDI) |
+| `SchematicTextCollision` | 3 | **1** (Audio) |
 | `DiodeResistorNotAligned` | 3 | 4 |
 
-`tools/check_schematic.py`, same tool, same input:
+`tools/svg_overlaps.py` on both **exported SVGs** — it reads the rendered label
+tag polygons, so these are the overlap counts a reader would see:
 
-| Sheet | label/label before | label/label after | notes added |
-| --- | --- | --- | --- |
-| main | 18 | 18 | 8 |
-| midi | 0 | 0 | 10 |
-| audio | 0 | 0 | 7 |
-| cv | 1 | 1 | 7 |
-| power | 0 | 0 | 6 |
-| **total** | **19** | **19** | 38 |
-
-Rendered SVG, same estimator on both exports (every `<text>` box, 0.55 ×
-font-size width model; the baseline export and this tree's export were produced
-by the same command):
-
-| Sheet | overlapping text pairs before | after |
+| Sheet | label/label before → after | label/text before → after |
 | --- | --- | --- |
-| Root | 178 | 178 |
-| MIDI | 21 | 12 |
-| Audio | 47 | 34 |
-| CV | 58 | 40 |
-| Power | 5 | 5 |
-| **total** | **309** | **269 (−40, −12.9 %)** |
+| Root | **18 → 0** | **13 → 0** |
+| MIDI | 0 → 0 | 0 → 0 |
+| Audio | 0 → 0 | 4 → 2 |
+| CV | 0 → 0 | 1 → 1 |
+| Power | 0 → 0 | 0 → 0 |
+| **total** | **18 → 0** | **18 → 3** |
 
-So: the render improves by 40 overlapping text pairs, the placement checker
-loses all 54 orientation findings, and the label/label count is **unchanged, not
-improved**. Nineteen label/label collisions remain, 18 of them in the packed
-Daisy/header cluster on the Root sheet. **This schematic is not a clean
-production service drawing and is not claimed to be one**; what it is, is a
-measured improvement over the baseline with the remaining defects counted.
+The residual three are two value texts on the Audio sheet and one on the CV
+sheet (not pin names, not labels on labels). They are recorded, not hidden:
+`tools/svg_overlaps.py --expect built-in` fails if **any** sheet exceeds the
+demonstrated count (`Root=0/0, MIDI=0/0, Audio=0/2, CV=0/1, Power=0/0`) — exact
+numbers, no headroom and no tolerance.
 
-**What cannot be measured here:** pin names drawn *inside* a symbol box are
-rendered by the schematic-symbol renderer and are not circuit JSON, so a
-programmatic "label over pin name" count only covers port labels. Those
-collisions stay a human/visual check.
+### 6.4 Other sheets
+
+Audio, CV, Power and MIDI keep their `schSectionName` grouping and carry the
+`schRotation` deltas the placement checker asks for (24 CV, 28 Audio, 2 Power):
+that is what took those sheets from 54 orientation findings to 0 and their
+label/text overlaps from 4 to 2 (Audio) and 1 to 1 (CV). The Root sheet cannot
+use section grouping — it added three collisions — so it is the explicit layout
+above instead.
+
+### 6.5 What is still not clean
+
+Three label/text overlaps remain (Audio 2, CV 1). Pin names drawn inside a symbol
+box are rendered by the symbol renderer and are not circuit JSON; the SVG tool
+does measure them (they are ordinary `<text>` elements), which is why the Root
+number is credible, but on the other sheets the remaining count is a lower bound
+for what a designer would still nudge by hand. **The drawing is not a finished
+production service schematic**; it is a measured, reproducible improvement with
+the remaining defects counted exactly.
 
 ## 7. Open items (physical or pending)
 
@@ -249,13 +290,15 @@ collisions stay a human/visual check.
 5. **U15 is pad-only in 3D** (the C37658 EasyEDA model belonged to the old
    part, and no verified model for C107626 exists). Same policy as the other
    models without verified offsets (AGENTS.md §6).
-6. **Schematic label collisions are reduced, not closed.** 19 label/label
-   collisions remain (18 on the Root sheet), and the pin-name collisions inside
-   the symbol boxes cannot be counted at all (§6.1). The drawing is **not**
-   production-ready as a service schematic. The next real improvements are chip
-   splitting for the Daisy and the TL074s with `<schematicbox>` (one box per
-   unit, so a 39-pin box stops sharing a row with the headers), and per-sheet
-   `sheetWidth`/`sheetHeight` if upstream stops warning about non-default sizes.
+6. **Schematic label collisions: Root closed, three left elsewhere.** The Root
+   sheet is 0 label/label and 0 label/text in the rendered SVG (§6.3). The
+   Audio sheet keeps two label/value-text overlaps and the CV sheet one; all
+   three are recorded in `tools/svg_overlaps.py --expect built-in`, which fails
+   on any new overlap. The drawing is **not** a finished production service
+   schematic. Next: explicit placement for Audio/CV (the same `<group
+   schRelative>` pattern), chip splitting for the TL074s with
+   `<schematicbox>`, and per-sheet `sheetWidth`/`sheetHeight` if upstream stops
+   warning about non-default sizes.
 
 ## 8. Reproduce
 
@@ -264,7 +307,9 @@ cd froemix/tscircuit
 bunx tsci build                                  # writes dist/index/circuit.json
 python3 ../tools/check_elec.py                   # electrical model, 22 checks
 python3 ../tools/test_elec.py                    # negative tests for that model
-python3 ../tools/check_schematic.py              # note/label diagnostics
+python3 ../tools/check_schematic.py              # note geometry (circuit JSON)
+bunx tsci export index.circuit.tsx -f schematic-svg -o /tmp/froemix-sch.svg
+python3 ../tools/svg_overlaps.py --expect built-in /tmp/froemix-sch.svg   # rendered overlaps
 python3 ../tools/check_extras.py                 # pin/net map of the changed parts
 python3 ../tools/check_values.py                 # literals vs build and MPN
 python3 ../tools/check_footprints.py             # 429 pads, unchanged
