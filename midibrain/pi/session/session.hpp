@@ -146,9 +146,25 @@ struct LoopState {
   double endBeats = 0.0;
   friend bool operator==(const LoopState&, const LoopState&) = default;
 };
+// One non-destructive region edit: play `lengthBeats` of `take` starting at
+// `offsetBeats` (length 0 = to end of take), with gain/fades applied at
+// render. `normalize` peak-normalizes the region in one pass. Files are
+// never rewritten by edits; an explicit render-to-new-take op (not stored
+// here) is the only destructive path.
+struct TakeRegion {
+  std::string take;
+  double offsetBeats = 0.0;
+  double lengthBeats = 0.0;
+  float gainDb = 0.0f;  // -96..+12
+  double fadeInBeats = 0.0;
+  double fadeOutBeats = 0.0;
+  bool normalize = false;
+  friend bool operator==(const TakeRegion&, const TakeRegion&) = default;
+};
 struct TakesState {
   std::array<std::string, audio::kMaxInputs> active{};
   std::array<LoopState, audio::kMaxInputs> loop{};
+  std::array<std::vector<TakeRegion>, audio::kMaxInputs> edit{};
   friend bool operator==(const TakesState&, const TakesState&) = default;
 };
 

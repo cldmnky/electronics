@@ -742,7 +742,7 @@ bool decodeTakes(const JsonValue& node, TakesState& out, std::string& error) {
     out.active[static_cast<std::size_t>(track)] = member.second.string;
   }
   const JsonValue* loop = node.find("loop");
-  if (loop == nullptr) return true;
+  if (loop != nullptr) {
   if (loop->type != JsonValue::Type::Object) {
     error = "session: \"takes.loop\" is not an object";
     return false;
@@ -778,6 +778,78 @@ bool decodeTakes(const JsonValue& node, TakesState& out, std::string& error) {
     }
     if (state.startBeats < 0.0) state.startBeats = 0.0;
     if (state.endBeats < 0.0) state.endBeats = 0.0;
+  }
+  }
+  const JsonValue* edit = node.find("edit");
+  if (edit == nullptr) return true;
+  if (edit->type != JsonValue::Type::Object) {
+    error = "session: \"takes.edit\" is not an object";
+    return false;
+  }
+  for (const auto& member : edit->object) {
+    int track = -1;
+    try {
+      std::size_t pos = 0;
+      track = std::stoi(member.first, &pos);
+      if (pos != member.first.size()) track = -1;
+    } catch (...) {
+      track = -1;
+    }
+    if (track < 0 || track >= audio::kMaxInputs) continue;
+    if (member.second.type != JsonValue::Type::Array) {
+      error = "session: \"takes.edit." + member.first +
+              "\" is not an array";
+      return false;
+    }
+    std::vector<TakeRegion>& regions =
+        out.edit[static_cast<std::size_t>(track)];
+    std::size_t regionIndex = 0;
+    for (const JsonValue& item : member.second.array) {
+      const std::string path = "takes.edit." + member.first + "[" +
+                               std::to_string(regionIndex++) + "]";
+      if (item.type != JsonValue::Type::Object) {
+        error = "session: \"" + path + "\" is not an object";
+        return false;
+      }
+      TakeRegion region;
+      const JsonValue* take = item.find("take");
+      if (take == nullptr || !readString(*take, region.take)) {
+        error = "session: \"" + path + ".take\" is not a string";
+        return false;
+      }
+      if (!readOptionalDouble(item, "offset", region.offsetBeats, path,
+                               error)) {
+        return false;
+      }
+      if (!readOptionalDouble(item, "length", region.lengthBeats, path,
+                               error)) {
+        return false;
+      }
+      float gainDb = region.gainDb;
+      if (!readOptionalFloat(item, "gainDb", gainDb, path, error)) {
+        return false;
+      }
+      if (gainDb < -96.0f) gainDb = -96.0f;
+      if (gainDb > 12.0f) gainDb = 12.0f;
+      region.gainDb = gainDb;
+      if (!readOptionalDouble(item, "fadeIn", region.fadeInBeats, path,
+                               error)) {
+        return false;
+      }
+      if (!readOptionalDouble(item, "fadeOut", region.fadeOutBeats, path,
+                               error)) {
+        return false;
+      }
+      if (region.offsetBeats < 0.0) region.offsetBeats = 0.0;
+      if (region.lengthBeats < 0.0) region.lengthBeats = 0.0;
+      if (region.fadeInBeats < 0.0) region.fadeInBeats = 0.0;
+      if (region.fadeOutBeats < 0.0) region.fadeOutBeats = 0.0;
+      if (!readOptionalBool(item, "normalize", region.normalize, path,
+                             error)) {
+        return false;
+      }
+      regions.push_back(std::move(region));
+    }
   }
   return true;
 }
@@ -1223,6 +1295,38 @@ std::string encode(const Snapshot& snapshot) {
     out += ",\"end\":";
     appendNumber(out, state.endBeats);
     out.push_back('}');
+  }
+  out += "},\"edit\":{";
+  bool firstEdit = true;
+  for (int track = 0; track < audio::kMaxInputs; ++track) {
+    const std::vector<TakeRegion>& regions =
+        snapshot.takes.edit[static_cast<std::size_t>(track)];
+    if (regions.empty()) continue;
+    if (!firstEdit) out.push_back(',');
+    firstEdit = false;
+    writeString(out, std::to_string(track));
+    out.push_back(':');
+    out.push_back('[');
+    for (std::size_t i = 0; i < regions.size(); ++i) {
+      if (i != 0) out.push_back(',');
+      const TakeRegion& region = regions[i];
+      out += "{\"take\":";
+      writeString(out, region.take);
+      out += ",\"offset\":";
+      appendNumber(out, region.offsetBeats);
+      out += ",\"length\":";
+      appendNumber(out, region.lengthBeats);
+      out += ",\"gainDb\":";
+      appendNumber(out, region.gainDb);
+      out += ",\"fadeIn\":";
+      appendNumber(out, region.fadeInBeats);
+      out += ",\"fadeOut\":";
+      appendNumber(out, region.fadeOutBeats);
+      out += ",\"normalize\":";
+      appendBool(out, region.normalize);
+      out.push_back('}');
+    }
+    out.push_back(']');
   }
   out += "}},\"punch\":{\"playFrom\":{\"enabled\":";
   appendBool(out, snapshot.punch.playFrom.enabled);

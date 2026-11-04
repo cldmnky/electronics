@@ -133,6 +133,15 @@ void testRoundTrip() {
   original.takes.loop[1].enabled = true;
   original.takes.loop[1].startBeats = 8.0;
   original.takes.loop[1].endBeats = 16.0;
+  mnky::session::TakeRegion region;
+  region.take = "02-drums-003.wav";
+  region.offsetBeats = 4.0;
+  region.lengthBeats = 8.0;
+  region.gainDb = -3.0f;
+  region.fadeInBeats = 0.5;
+  region.fadeOutBeats = 1.0;
+  region.normalize = true;
+  original.takes.edit[1].push_back(region);
   original.punch.playFrom.enabled = true;
   original.punch.playFrom.measure = 5;
   original.punch.in.enabled = true;
@@ -170,7 +179,9 @@ void testRoundTrip() {
   CHECK(text.find("\"bpm_x100\":13333") != std::string::npos);
   CHECK(text.find("\"click\":{\"mode\":2,\"output\":1") != std::string::npos);
   CHECK(text.find("\"takes\":{\"active\":{\"1\":\"02-drums-003.wav\"},\"loop\":{"
-                "\"1\":{\"enabled\":true,\"start\":8,\"end\":16}}}") !=
+                "\"1\":{\"enabled\":true,\"start\":8,\"end\":16}},\"edit\":{"
+                "\"1\":[{\"take\":\"02-drums-003.wav\",\"offset\":4,\"length\":8,"
+                "\"gainDb\":-3,\"fadeIn\":0.5,\"fadeOut\":1,\"normalize\":true}]}}") !=
         std::string::npos);
   CHECK(text.find("\"punch\":{\"playFrom\":{\"enabled\":true,\"measure\":5}") !=
         std::string::npos);
