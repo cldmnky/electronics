@@ -20,8 +20,19 @@ export const BOARD_H = PANEL_H
 export type Pt = { x: number; y: number }
 export type Side = "top" | "bottom"
 
-/** Doepfer 3U: rail screws 7.5mm in from each side, 3.0mm from top and bottom. */
-export const RAIL_HOLE_X = PANEL_W / 2 - 7.5 // +/-43.3
+/**
+ * Doepfer 3U: rail screws **7.62mm** in from each side, 3.0mm from top and
+ * bottom. The horizontal pair therefore sits on a whole 5.08mm multiple:
+ * 2 x 43.18 = 86.36 = 17 x 5.08mm.
+ *
+ * OWNER-APPROVED MECHANICAL REVISION (rail mounting holes only): the pair was
+ * +/-43.30mm (86.60mm apart), i.e. 0.24mm off the 5.08mm grid, which two
+ * O3.2mm holes on nominal O3.0mm screws (0.20mm total take-up) cannot absorb.
+ * Each hole moved 0.12mm inward to +/-43.18mm. No control, connector, standoff,
+ * hole diameter or outline changed, and the 101.6mm width is untouched.
+ * Reason and pending rack acceptance: doc/MECHANICAL-STACK.md §6.
+ */
+export const RAIL_HOLE_X = PANEL_W / 2 - 7.62 // +/-43.18 = 17 x 5.08 / 2
 export const RAIL_HOLE_Y = PANEL_H / 2 - 3.0 // +/-61.25
 export const RAIL_HOLES: Pt[] = [
   { x: -RAIL_HOLE_X, y: RAIL_HOLE_Y },

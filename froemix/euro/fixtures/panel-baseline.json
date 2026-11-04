@@ -1,5 +1,5 @@
 {
-  "note": "Pre-artwork geometry with two audited mechanical revisions below. Original source hashes remain historical provenance, NOT hashes of this revised fixture. The remaining 27 centres, 26 diameters and the outline stay frozen. OLED corners remain R0.5 within the original bounds.",
+  "note": "Pre-artwork geometry with three audited mechanical revisions below. Original source hashes remain historical provenance, NOT hashes of this revised fixture. The 23 unchanged circular hole centres, the 26 unrevised diameters and the outline stay frozen. OLED corners remain R0.5 within the original bounds.",
   "mechanicalRevisions": [
     {
       "hole": {
@@ -34,6 +34,51 @@
         }
       ],
       "reason": "Remove the four audio activity-LED holes with their LEDs. The direct diode/LED branch was a nonlinear load outside the audio output feedback loop (and on the input source), causing clipping and several percent THD. CV-output LEDs remain; no other hole moved."
+    },
+    {
+      "movedHoles": [
+        {
+          "from": {
+            "x": -43.3,
+            "y": -61.25
+          },
+          "to": {
+            "x": -43.18,
+            "y": -61.25
+          }
+        },
+        {
+          "from": {
+            "x": 43.3,
+            "y": -61.25
+          },
+          "to": {
+            "x": 43.18,
+            "y": -61.25
+          }
+        },
+        {
+          "from": {
+            "x": -43.3,
+            "y": 61.25
+          },
+          "to": {
+            "x": -43.18,
+            "y": 61.25
+          }
+        },
+        {
+          "from": {
+            "x": 43.3,
+            "y": 61.25
+          },
+          "to": {
+            "x": 43.18,
+            "y": 61.25
+          }
+        }
+      ],
+      "reason": "Rail mounting holes only, owner-approved: the pair was 86.60mm apart, 0.24mm off the 5.08mm Doepfer grid, while two 3.2mm holes on nominal 3.0mm M3 screws take up only 0.20mm. Each hole moved 0.12mm inward to 86.36mm = 17 x 5.08mm, a nominal 7.62mm edge offset. No control, connector, standoff, hole diameter or outline changed; the 101.6mm width is untouched. doc/MECHANICAL-STACK.md section 6."
     }
   ],
   "source": {
@@ -53,12 +98,12 @@
   },
   "holes": [
     {
-      "x": -43.3,
+      "x": -43.18,
       "y": -61.25,
       "diameter": 3.2
     },
     {
-      "x": 43.3,
+      "x": 43.18,
       "y": -61.25,
       "diameter": 3.2
     },
@@ -178,12 +223,12 @@
       "diameter": 3.2
     },
     {
-      "x": -43.3,
+      "x": -43.18,
       "y": 61.25,
       "diameter": 3.2
     },
     {
-      "x": 43.3,
+      "x": 43.18,
       "y": 61.25,
       "diameter": 3.2
     }

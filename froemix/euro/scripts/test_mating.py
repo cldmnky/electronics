@@ -28,18 +28,18 @@ def port(cj, name, pin):
 
 
 class MatingMutations(unittest.TestCase):
-    def run_check(self, base=None, front=None):
+    def run_check(self, base=None, front=None, panel=None):
         with tempfile.TemporaryDirectory(prefix="froemix-mating-test-") as temp:
             args = [sys.executable, str(ROOT / "scripts/check_mating.py")]
-            for flag, data in (("base", base), ("board", front)):
+            for flag, data in (("base", base), ("board", front), ("panel", panel)):
                 if data is not None:
                     path = Path(temp) / f"{flag}.json"
                     path.write_text(json.dumps(data))
                     args += [f"--{flag}", str(path)]
             return subprocess.run(args, capture_output=True, text=True)
 
-    def assert_rejected(self, *, base=None, front=None, message):
-        result = self.run_check(base, front)
+    def assert_rejected(self, *, base=None, front=None, panel=None, message):
+        result = self.run_check(base, front, panel)
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn(message, result.stdout + result.stderr)
 
@@ -80,6 +80,43 @@ class MatingMutations(unittest.TestCase):
         front = copy.deepcopy(FRONT)
         next(e for e in front if e["type"] == "pcb_hole")["hole_diameter"] = 2.5
         self.assert_rejected(front=front, message="missing 3.2mm standoff")
+
+    def test_mated_pad_count_is_a_contract_number(self):
+        front = copy.deepcopy(FRONT)
+        dropped = port(front, "CN2", "pin9")
+        front.remove(dropped)
+        front.remove(next(e for e in front if e["type"] == "pcb_port"
+                          and e["source_port_id"] == dropped["source_port_id"]))
+        self.assert_rejected(front=front, message="mated pads")
+
+    def test_panel_hole_removed(self):
+        panel = json.loads((ROOT / "dist/panel/circuit.json").read_text())
+        hole = next(e for e in panel if e["type"] == "pcb_hole" and abs(e["x"] + 28) < 0.01)
+        panel.remove(hole)
+        self.assert_rejected(panel=panel, message="frozen panel hole")
+
+    def test_panel_hole_diameter_changed(self):
+        panel = json.loads((ROOT / "dist/panel/circuit.json").read_text())
+        next(e for e in panel if e["type"] == "pcb_hole" and abs(e["x"] + 28) < 0.01)["hole_diameter"] = 7.0
+        self.assert_rejected(panel=panel, message="missing or moved")
+
+    def test_old_86_60_rail_holes_are_rejected(self):
+        # The approved revision moved the rail pair onto the 5.08mm grid
+        # (86.36mm). The old 86.60mm pair must fail, not pass as a variant.
+        panel = json.loads((ROOT / "dist/panel/circuit.json").read_text())
+        moved = 0
+        for e in panel:
+            if (e["type"] == "pcb_hole" and abs(abs(e["y"]) - 61.25) < 0.01
+                    and abs(abs(e["x"]) - 43.18) < 0.01):
+                e["x"] = -43.3 if e["x"] < 0 else 43.3
+                moved += 1
+        self.assertEqual(moved, 4)
+        self.assert_rejected(panel=panel, message="frozen panel hole")
+
+    def test_panel_extra_hole(self):
+        panel = json.loads((ROOT / "dist/panel/circuit.json").read_text())
+        panel.append({"type": "pcb_hole", "hole_shape": "circle", "hole_diameter": 3.2, "x": 0.0, "y": -55.0})
+        self.assert_rejected(panel=panel, message="unaudited hole")
 
     def test_visible_led_drift(self):
         front = copy.deepcopy(FRONT)

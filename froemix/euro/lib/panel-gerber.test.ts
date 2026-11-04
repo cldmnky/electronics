@@ -173,8 +173,9 @@ describe("release mutations", () => {
   })
 
   test("a moved drill hole is rejected", () => {
+    // the rail hole sits on the 5.08mm grid at x = -43.18 (owner-approved move)
     const files = replace(base(), "drill_npth.drl", (t) =>
-      t.replace("X-43.3000Y61.2500", "X-43.3000Y61.3500"),
+      t.replace("X-43.1800Y61.2500", "X-43.1800Y61.3500"),
     )
     expect(has(verify(files).problems, "drill", /no NPTH hole at/)).toBe(true)
   })

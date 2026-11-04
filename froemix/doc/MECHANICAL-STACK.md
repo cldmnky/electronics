@@ -1,15 +1,19 @@
 # Froemix mechanical stack — corrected assembly contract
 
 This supersedes the old 12mm-spacer / “8.5mm socket” description. Coordinates,
-connector sides, electrical nets and both PCB outlines are unchanged. Panel
-machining changes: **NAV Ø7.0 → Ø8.0mm at (−28, 25)** for the extended
-actuator's swept envelope, and **removal of the four audio activity-LED holes**
-at y = −3 with their LEDs (the direct LED load distorted the audio jacks). The
-other 26 diameters and the OLED opening (30.5 × 16mm, R0.5, at 0, 42.8) stay
-unchanged.
+connector sides, electrical nets and both PCB outlines are unchanged except for
+the **four rail mounting holes**, which moved 0.12mm inward each (86.60 →
+86.36mm, owner-approved; §6). Panel machining changes: the **NAV Ø7.0 → Ø8.0mm**
+opening at (−28, 25) for the extended actuator's swept envelope, and **removal of
+the four audio activity-LED holes** at y = −3 with their LEDs (the direct LED
+load distorted the audio jacks). The other diameters and the OLED opening
+(30.5 × 16mm, R0.5, at 0, 42.8) are unchanged.
 
 **Status: dimensioned design and printable prototypes, not physical approval.**
 No parts were measured and no rack/CAM order was approved by the software gate.
+The gate now measures the fastener envelopes from the BUILT boards and prints
+every item it cannot close (`lib/mechanical.ts`: `UNRESOLVED`,
+`PENDING_ACCEPTANCE`). A gate PASS is not a physical approval.
 
 ## 1. Findings rechecked against the selected parts
 
@@ -22,7 +26,10 @@ No parts were measured and no rack/CAM order was approved by the software gate.
 | Bare MODE cap too short | Confirmed: 7.3 ±0.2mm above the PCB. Supplied a captive translucent plunger, **5.8mm added height**, rather than lifting a switch on leads that are too short for a riser. |
 | Bare NAV stem/cap unspecified | Current XUNPU drawing gives 10mm overall height and 3.15mm square stem, not the old Alps assumption. Added a dimensioned cap/neck and enlarged only its panel hole. |
 | J1 inaccessible after stacking | Expected service constraint, not an XY mistake. Select/test Type A/B before stacking; separate the boards to change it. No extra front-board MIDI selector or new electrical path was introduced. |
-| Rack width, OLED support, knobs/thread engagement | Part/rack-dependent acceptance items, not proven defects to “fix” by guessing. Explicit limits and first-article checks below. |
+| Standoff/hardware limit was quoted two ways (5mm in the purchase list, 5.5mm here) | Real inconsistency. The limit is now **derived**: 2 × (nearest component envelope − 0.45mm budget), measured on both built boards at every hole and face. The tightest face is the **base board bottom at (36.95, −60.75)**, where C25's courtyard is **2.95mm** away, so the limit is **OD5.00mm** for the spacer body AND for any head/washer. An ordinary **ISO 4762 M3 socket head is 5.5mm** (0.20mm left, below the 0.45mm budget) and an **ISO 7089 M3 washer is 7.0mm** (−0.55mm, a collision). No head/washer is approved; the selection stays pending. |
+| NAV radial margin was only 0.004mm above the 0.2mm requirement | Real finding at the old 5.8mm cup under the ±8° test envelope. The cup is now **5.4mm** with the same pocket, roof and neck: radial clearance rises from 0.204 to **0.406mm** and no electronic part, hole or outline moves. |
+| Selected jack body is taller than the minimum panel gap | Real: the XKB drawing gives an **8.8mm body** against an **8.5mm** `panelGapMin`, so at the minimum gap the panel would rest on a jack body. The panel is the seating jig; a first article must confirm no bowing. Recorded as a pending item, not fixed by guessing a taller stack. |
+| Rack width and mounting-hole pitch | **Hole pitch fixed by owner approval:** the pair was **86.60mm**, 0.24mm off the Doepfer 5.08mm grid, while two Ø3.2 holes give only 0.20mm of take-up. Each hole moved 0.12mm inward to **±43.18 = 86.36mm = 17 × 5.08mm**; no control, connector, standoff, diameter or outline changed and the width stays 101.6mm. **Width still open:** 101.60mm against Doepfer's **101.30mm** is 0.30mm oversize and awaits a rack test. See §6. |
 
 ## 2. Parts and board-to-board Z dimensions
 
@@ -35,7 +42,8 @@ against it from **both built boards**, rather than trusting a comment.
 | Base CN4 | XKB `X4612WV-08I-C40D28-E60`, **C2883061**, one | Buy the stocked 8-way strip. **Remove the LAST pin and its cell in BOTH mouldings**, dress the cut, retain the original pin-1 end. Fit the resulting seven-way strip to the existing seven holes. Do not leave an eighth metal stub or plastic overhang. |
 | Front CN1, CN2 | Hong Cheng `HC-PM200-4.3H-1x16PZ`, C22373851 | Existing 4.3 ±0.15mm socket body, 2.8mm solder tails. |
 | Front CN4 | Hanxia `HX PM2.0-1x7P ZC`, C22438139 | Existing seven-way 4.3 ±0.15mm socket. |
-| Board spacers ×4 | **11.0 ±0.1mm clear length**, M3 female/female | ≤5mm OD insulating columns preferred, at (±36.95, ±60.75). Screw heads/washers ≤5.5mm OD at the tight board holes. Source from RS, Electrokit or DigiKey with EU sales; confirm dimensions. |
+| Board spacers ×4 | **11.0 ±0.1mm clear length**, M3 female/female | **≤5.0mm OD** insulating columns preferred, at (±36.95, ±60.75). The 5.0mm figure is derived from the measured 2.95mm nearest envelope plus the 0.45mm budget (§4). Source from RS, Electrokit or DigiKey with EU sales; confirm dimensions. |
+| Board screws ×8 | M3, head/washer **≤5.0mm OD** | **Not selected.** A 5.5mm ISO 4762 head and a 7.0mm ISO 7089 washer do not meet the limit; see §4. Use only a measured part at or below the printed limit. |
 
 C2883060 is a seven-way member of the same family, but did not resolve in the
 JLC catalogue when selected. The BOM deliberately buys the stocked eight-way
@@ -79,10 +87,13 @@ insulator face clearance   = gap − 6 − 4.3         = 0.7mm
 ```
 
 With E ±0.3, post ±0.2, socket ±0.15 and spacer ±0.1mm, arithmetic insertion is
-**2.55…4.05mm** and minimum insulator separation is **0.15mm**. The gate's
+**2.55…4.05mm** and minimum insulator separation is **0.15mm**, both reproduced
+from the **64 generated tolerance corners** rather than quoted by hand. The gate's
 2.5…4.1mm insertion interval is an **engineering acceptance policy**, not a
-supplier-certified contact/retention/bottoming specification. A dry first-article
-mate must establish those properties; never draw the boards together by screws
+supplier-certified contact/retention/bottoming specification: the policy margin
+is only **0.05mm at each end**, so nothing else may be added to this stack
+without widening the policy or reducing a tolerance. A dry first-article mate
+must establish those properties; never draw the boards together by screws
 against a hard stop or a pin that has bottomed out.
 
 ### Opposed parts, solder tails and J1
@@ -110,7 +121,7 @@ against a hard stop or a pin that has bottomed out.
   finish the barrel to ≤11.5mm. It slides in the unchanged 12.2mm opening.
   The flange prevents it falling out; no adhesive, pin extensions or raised
   switch is required. Check free return, no preload and reliable full travel.
-- `nav-cap.stl` — mm units, **3.4mm square ×2mm blind pocket**, 5.8mm cup,
+- `nav-cap.stl` — mm units, **3.4mm square ×2mm blind pocket**, **5.4mm cup**,
   4mm neck, 6.8mm head; 7mm overall height, **5mm added above the bare stem**.
   Print in tough resin. Dry fit the actual square stem; use a tiny removable
   silicone dab for retention, never force the cap down or wick glue into the
@@ -136,13 +147,78 @@ PCB and measure the resulting gap.
 
 At the highest/thickest panel the supplied MODE plunger is ≥1.0mm proud and NAV
 ≥2.8mm proud; the MODE lip keeps ≥0.5mm to the panel at the worst-case gap, so
-the measured switch travel must stay below 0.5mm or the lip will preload it. The NAV swept-envelope check uses **±8° as a design/test envelope**,
-not a XUNPU datasheet rating: minimum radial clearance is about 0.20mm including
-those allowances. Test full operation of all four directions and centre press
-with the real switch. If its required travel exceeds that envelope, this design
-is not qualified merely because its tests pass.
+the measured switch travel must stay below 0.5mm or the lip will preload it. The
+K6-1212A drawing gives no travel figure, so that limit is **pending**, not
+approved, and the flange geometry is unchanged. The NAV swept-envelope check uses
+**±8° as a design/test envelope**, not a XUNPU datasheet rating, and now reports
+**0.406mm** minimum radial clearance against a 0.2mm requirement. Reducing the cup
+from 5.8 to 5.4mm bought that margin without touching the pocket, the roof, the
+panel hole or any electronic part:
+
+| NAV cap dimension | Value | Limit |
+| --- | --- | --- |
+| cup diameter | 5.4mm | ≥ pocket + 2 × 0.25mm wall |
+| pocket side wall | 1.00mm | 0.25mm (print assumption) |
+| pocket **corner** wall (thinnest) | 0.296mm | 0.25mm |
+| pocket roof | 0.60mm | 0.25mm |
+| pocket vs 3.15 ±0.05mm stem | 0.10mm total | > 0 (silicone retention) |
+| cup through the 8.00mm hole, untilted | 1.15mm radial | > 0 |
+
+The 0.25mm minimum wall is a **resin/slicer assumption, not a supplier figure**;
+the first article must show the corner does not split. A smaller cup would thin
+that corner before it bought another 0.25mm of clearance, so 5.4mm is the end of
+this trade. Test full operation of all four directions and centre press with the
+real switch: if its required travel or tilt exceeds these envelopes, the design
+is not qualified merely because the software tests pass.
 
 ## 4. Hardware and optical limits
+
+### Board-to-board hardware: the limit is measured, not assumed
+
+`scripts/mechanical_check.ts` reads the BUILT circuit JSON of **both** boards and
+finds, for every one of the four standoff holes and for each face, the closest
+component envelope that the hardware on that face can hit. A component's own
+courtyard is its envelope; a component without one (fiducials, test points) uses
+the union of its pads on that face, which can only over-state it. Layers are
+respected: a part on the bottom face is not an obstacle for a head on the top
+face, while a through-hole pad is on both.
+
+The spacer column stands between the boards, so its ends bear on **base top** and
+**front bottom**; each board takes its own screw head on its free face.
+
+| Board | Hole (x, y) | Face | Hardware | Nearest envelope | Distance | OD5.0 clearance | Derived OD limit |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| base | (−36.95, 60.75) | top | spacer end | CN1 courtyard | 3.05mm | 0.55mm | 5.20mm |
+| base | (36.95, 60.75) | top | spacer end | CN4 courtyard | 5.50mm | 3.00mm | 10.10mm |
+| base | (−36.95, −60.75) | top | spacer end | J2 pads | 9.10mm | 6.60mm | 17.30mm |
+| base | (36.95, −60.75) | top | spacer end | C25 pads | 6.51mm | 4.01mm | 12.12mm |
+| **base** | **(36.95, −60.75)** | **bottom** | **screw head** | **C25 courtyard** | **2.95mm** | **0.45mm** | **5.00mm** |
+| base | (−36.95, 60.75) | bottom | screw head | CN1 pads | 3.63mm | 1.13mm | 6.35mm |
+| base | (36.95, 60.75) | bottom | screw head | FID2 pads | 3.87mm | 1.37mm | 6.84mm |
+| base | (−36.95, −60.75) | bottom | screw head | FID3 pads | 3.87mm | 1.37mm | 6.84mm |
+| front | (−36.95, 60.75) | bottom | spacer end | CN1 courtyard | 3.06mm | 0.56mm | 5.21mm |
+| front | (36.95, 60.75) | bottom | spacer end | CN4 courtyard | 5.14mm | 2.64mm | 9.37mm |
+| front | (−36.95, −60.75) | bottom | spacer end | J9 pads | 7.96mm | 5.46mm | 15.01mm |
+| front | (36.95, −60.75) | bottom | spacer end | J14 pads | 6.58mm | 4.08mm | 12.26mm |
+| front | (−36.95, 60.75) | top | screw head | CN1 pads | 3.63mm | 1.13mm | 6.35mm |
+| front | (36.95, 60.75) | top | screw head | CN4 pads | 5.70mm | 3.20mm | 10.50mm |
+| front | (−36.95, −60.75) | top | screw head | J9 courtyard | 7.25mm | 4.75mm | 13.60mm |
+| front | (36.95, −60.75) | top | screw head | J14 courtyard | 6.17mm | 3.67mm | 11.44mm |
+
+Consequences, which the gate prints and which are **not** approvals:
+
+- The purchase limit is **OD5.0mm** for the spacer body and for every head or
+  washer, because 5.0mm leaves exactly the 0.45mm budget at the tightest face.
+- The `C25` and `CN1` distances set that limit, not a general rule: the next
+  tightest face allows 5.20mm and most allow much more.
+- An ordinary **ISO 4762 M3 socket head (5.5mm)** fits with **0.20mm** and so
+  misses the budget; an **ISO 7089 M3 plain washer (7.0mm)** *collides* with C25
+  at **−0.55mm**. The gate reports both as pending parts that may not be used as
+  selected. Select a measured head, or re-open the 0.45mm budget as a documented
+  decision (it is a policy margin, not a supplier number).
+- If a part later moves closer to a standoff hole, the derived limit drops below
+  5.0mm and the gate fails: the limit cannot silently become a tighter fit.
+- A courtyard drawn over a standoff hole is caught as a collision at every OD.
 
 - **Knobs:** 6mm knurled shaft for the selected ALPS pot, **≤12.5mm diameter**.
   Pots are on 15mm centres, leaving ≥2.5mm between these knob envelopes. A
@@ -162,22 +238,32 @@ is not qualified merely because its tests pass.
   per edge in the 30.5 ×16mm opening. Confirm the module/bezel and support it
   without stressing glass or hanging the panel on its pins. Actual Z/bezel and
   viewing-angle approval cannot be extracted from a seven-pad footprint.
-- **Rack:** 101.6mm is the 20HP pitch. The unchanged 101.6mm finished panel AND
-  control PCB need a real adjacent-module/rail test at routing tolerance. The
-  128.5mm PCB heights also need rail-lip clearance. Do not assume these outlines
-  fit every rack, or shrink one PCB and move frozen mounting holes to hide a
-  failure. A failed rack test requires a separate outline/mechanical revision.
+- **Rack:** 101.6mm is the 20HP pitch, and the mounting-hole pitch must be a
+  whole multiple of 5.08mm — the pair is now **86.36mm** (17 × 5.08) after the
+  approved 0.12mm move. The **101.60mm width against Doepfer's 101.30mm is still
+  open** (§6). Do not shrink a PCB or move another frozen hole to hide that; it
+  would need its own owner revision.
 
 ## 5. Verification and first-article acceptance
 
 `make gate` builds both boards in order. Euro's gate now checks all **39 pads**
 (not just the end pads), all 34 connected pin-net assignments and five reserved
 positions, actual top/bottom faces, four matching Ø3.2mm standoffs, all panel
-control origins/faces and D1. Negative tests move an **interior** pad, alter a
-net, flip a face, change a hole and shift the indicator. Part-ID/Z tests reject
-short headers, old 12mm spacers, over-height J1 and untrimmed leads. Printable
-meshes are validated as closed solids; geometry tests do not inspect material
-strength, finish or printed-part shrinkage.
+control origins/faces and D1. It reads the **27 frozen panel holes** (count,
+position and diameter) from `fixtures/panel-baseline.json`, so the count comes
+from the audited fixture and not from a stale document figure; the OLED window
+is a separate cutout. `mechanical_check.ts` adds the generated numbers:
+**64 stack tolerance corners** (insertion 2.55…4.05mm, body gap ≥0.15mm, J1
+clearance ≥0.40mm), **32 actuator corners**, the **measured fastener envelopes
+of both boards** (§4), the OLED aperture border and the rack numbers (§6).
+Negative tests move an **interior** pad, drop a mated pad, remove or resize a
+frozen panel hole, add an unaudited hole, alter a net, flip a face, change a
+standoff and shift the indicator, and the unit tests feed NaN/Infinity into
+every measured input to prove it is rejected rather than compared. Part-ID/Z
+tests reject short headers, old 12mm spacers, over-height J1 and untrimmed
+leads. Printable meshes are validated as closed solids, and a probe through the
+printed NAV corner proves the wall exists; geometry tests do not inspect
+material strength, finish or printed-part shrinkage.
 
 Before paying for a batch:
 
@@ -198,6 +284,69 @@ Before paying for a batch:
    new Ø8mm NAV opening, 2mm material and empty copper.
 
 None of these physical checkboxes is marked done by this software change.
+
+## 6. Rack interface — hole pitch fixed, width and rail profile open
+
+Reference: Doepfer's A-100 construction details (`doepfer.de/a100_man/a100m_e.htm`):
+**128.5mm** panel height, **2mm** panel material, **M3 DIN 7985 pan head**
+screws, and mounting holes on a **whole multiple of 5.08mm**. The gate prints
+these numbers from the frozen outline (`rackFit` in `lib/mechanical.ts`):
+
+| Quantity | Design | Rack reference | Result |
+| --- | --- | --- | --- |
+| panel / PCB width | 101.60mm (20 × 5.08) | 101.30mm finished for 20HP | **0.30mm oversize — OPEN** |
+| horizontal mounting holes | **86.36mm** apart (±43.18) | 17 × 5.08 = 86.36mm | **on the grid, 7.62mm edge offset** |
+| hole take-up | two Ø3.2mm holes on nominal Ø3.0mm M3 | 0.10mm radial each | 0.20mm total, **now entirely spare** |
+| vertical hole spacing | 122.50mm (3.0mm from each end) | 3U 128.5mm outline | unchanged |
+| rail lip depth behind the panel | front PCB is 128.5mm high at a 9mm panel gap | not published | **unknown: no clearance may be claimed** |
+
+### Approved mechanical revision: rail mounting holes
+
+The pair was **86.60mm** (±43.30, a 7.50mm edge offset), i.e. **0.24mm off the
+5.08mm grid**, while two Ø3.2mm holes on nominal Ø3.0mm M3 screws take up only
+**0.20mm** — a 0.04mm shortfall that fixed threaded strips may not absorb. The
+owner approved a **rail-hole-only** change: each hole moved **0.12mm inward** to
+**±43.18mm = 17 × 5.08mm = 86.36mm**, a nominal **7.62mm** edge offset.
+
+- `lib/layout.ts` `RAIL_HOLE_X` derives it (`PANEL_W / 2 - 7.62`) and records the
+  approval; `fixtures/panel-baseline.json` holds a third `mechanicalRevisions`
+  entry with all four `from`/`to` positions and the reason.
+- Preserved: the 23 other circular holes and their diameters, the OLED window
+  (30.5 × 16mm, R0.5), every control and connector position, the four standoff
+  holes (±36.95, ±60.75) on both boards, and the 101.6mm width and 128.5mm height.
+- The gate now fails if the pair leaves the grid (`rackGridErrors`), and a unit
+  test feeds the old ±43.30mm pair in and expects a failure.
+
+The width is **not** changed: 101.60mm against Doepfer's 101.30mm remains a
+pending rack item, together with the rail profile. Moving a hole or trimming the
+outline changes the frozen panel geometry and artwork, so each needs its own
+owner revision with a fixture update — not a mechanical-check change.
+
+Rack and adjacent-module acceptance (named, per item, in `PENDING_ACCEPTANCE`):
+
+1. `rack-pitch` — fit the panel to a real rack with **both** sliding nuts and a
+   fixed threaded strip; grid and take-up are now correct, but head clearance in
+   the rail slot is still unmeasured.
+2. `rack-width` — place the finished panel and both PCBs beside a real adjacent
+   module at routing tolerance (0.30mm oversize against the Doepfer figure).
+3. `rack-rail` — measure the actual rail profile and lip depth against the
+   128.5mm front PCB at the 9mm panel gap.
+
+The 2mm panel material and the M3 DIN 7985 screws are reference dimensions only;
+this change touches no mains, frame or power wiring.
+
+## 7. Unresolved supplier identities
+
+Kept structured, without a part number, in `lib/mechanical.ts` (`UNRESOLVED`) so
+a guessed part cannot pass as approved hardware. EU hand-part sources only (RS
+Components, Electrokit, DigiKey with EU sales, `froemix/AGENTS.md` §9):
+
+| Item | Status |
+| --- | --- |
+| M3 spacers, 8 screws, head/washer | limit OD5.0mm; no verified head/washer at or below it (§4) |
+| 2× 1×20 socket strips for the Daisy Seed | no verified part; height, tails and total depth unmeasured |
+| 2× 2.54mm J1 shunts | no verified low-profile closed shunt; J1+shunts ≤9.5mm |
+| jack nuts, pot nuts/washers, pot knobs, rail washers | envelope limits only, no part selected |
 
 ## Drawing references
 
