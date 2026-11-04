@@ -33,8 +33,13 @@ cmake --build /tmp/pi-build --target mnkybox -j
   1600 x 960): Mixer, Routing, FX, Recorder, System.
 * Mixer: 18 strips (gain, pan, sends A/B, mute/solo/arm) with >= 44 px controls,
   pinned master strip with stereo peak meters, horizontal scrolling.
-* Routing: 3x3 source/destination matrix, 16-channel mask per source, per-source
-  transpose, all writing straight into `midi::Router` through a guarded glue.
+* Routing: node-wire patchbay (TRS IN 1/2 + USB IN left, TRS OUT 1/2 + USB OUT
+  right) over the 3x3 route matrix. Tap a wire or an input then an output to
+  toggle; the selected input keeps its routes bright and dims the rest; RESET
+  restores the documented default matrix (both TRS inputs -> USB OUT). The USB
+  nodes show the live open device/port counts. Below it: the 16-channel mask
+  per source and per-source transpose, all writing straight into `midi::Router`
+  through a guarded glue.
 * FX: two CLAP send slots. Default plugin is the in-tree `mnkygain` build
   (`MNKY_DEFAULT_PLUGIN` compile definition), parameter sliders come from
   `clap::Host::params()`, state save/load through the plugin's state extension,

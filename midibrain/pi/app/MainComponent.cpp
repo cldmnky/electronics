@@ -7,6 +7,7 @@
 #include "screens/RecorderScreen.hpp"
 #include "screens/RoutingScreen.hpp"
 #include "screens/SystemScreen.hpp"
+#include "screens/routing_model.hpp"
 #include "ui_style.hpp"
 
 namespace mnky::app {
@@ -20,11 +21,16 @@ MainComponent::MainComponent(bool forceEmulator)
 
   audio_.start();
   midi_.open();
-  // MIDI-hub default: both TRS inputs reach the USB outputs. Everything else is
-  // off until the user enables it on the Routing screen (a default-on USB input
-  // would echo our own virtual port straight back out).
-  midi_.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, true);
-  midi_.setRoute(midi::Port::TrsIn2, midi::Port::UsbOut, true);
+  // MIDI-hub default: the one documented matrix in routing_model.hpp (also what
+  // the Routing screen's RESET restores) sends both TRS inputs to USB and turns
+  // every other pair off. A default-on USB input would echo our own virtual port
+  // straight back out.
+  for (int source = 0; source < routing::kInputCount; ++source) {
+    for (int destination = 0; destination < routing::kOutputCount; ++destination) {
+      if (!routing::kDefaultRoutes[source][destination]) continue;
+      midi_.setRoute(routing::kInputs[source], routing::kOutputs[destination], true);
+    }
+  }
 
   tabs_.setTabBarDepth(style::kTabDepth);
   tabs_.setOutline(0);

@@ -1,10 +1,46 @@
 #pragma once
-// Routing screen: source x destination matrix, per-source MIDI channel mask and
-// transpose. Mirrors mnky::midi::Router exactly; all writes go through MidiGlue,
-// which guards the matrix against the MIDI input thread.
+// Routing screen: a node-wire patchbay (three inputs on the left, three outputs
+// on the right) over the per-source MIDI channel filters and transpose. Every
+// write goes through MidiGlue, which guards the matrix against the MIDI input
+// thread.
+//
+// Patchbay gestures: tap a wire to toggle that route, or tap an input and then
+// an output. The selected input is the one whose routes stay bright; every
+// other route dims. RESET restores routing::kDefaultRoutes.
 #include "Screen.hpp"
 
+#include "routing_model.hpp"
+
 namespace mnky::app {
+
+class RoutingPatchbay final : public juce::Component {
+ public:
+  explicit RoutingPatchbay(AppContext& context);
+
+  void paint(juce::Graphics& g) override;
+  void resized() override;
+  void mouseUp(const juce::MouseEvent& event) override;
+
+  // Re-reads the live USB device counts and repaints only when they changed.
+  void refresh();
+  void clearSelection();
+
+ private:
+  void toggleRoute(int source, int destination);
+  void paintWire(juce::Graphics& g, int source, int destination, bool enabled,
+                 bool selected);
+  void paintNode(juce::Graphics& g, juce::Rectangle<float> area, const juce::String& name,
+                 const juce::String& detail, bool selected, bool active, bool highlight,
+                 bool showIndicator);
+
+  AppContext& context_;
+  routing::Layout layout_;
+  int selectedInput_ = -1;
+  int usbInputs_ = -1;
+  int usbOutputs_ = -1;
+
+  JUCE_DECLARE_NON_COPYABLE(RoutingPatchbay)
+};
 
 class RoutingScreen final : public Screen {
  public:
@@ -12,24 +48,23 @@ class RoutingScreen final : public Screen {
 
   void paint(juce::Graphics& g) override;
   void resized() override;
+  void refresh() override;
 
  private:
-  static constexpr int kSourceCount = 3;
   static constexpr int kChannelCount = 16;
 
-  void applyRoute(int source, int destination);
-  void syncRoute(int source, int destination);
+  void resetRoutes();
   void applyMask(int source);
   void syncMask(int source);
   void applyTranspose(int source);
 
-  juce::Label sourceLabel_[kSourceCount];
-  juce::Label destLabel_[kSourceCount];
-  juce::Label maskLabel_[kSourceCount];
-  juce::Label transposeLabel_[kSourceCount];
-  juce::TextButton route_[kSourceCount][kSourceCount];
-  juce::TextButton mask_[kSourceCount][kChannelCount];
-  juce::Slider transpose_[kSourceCount];
+  RoutingPatchbay patchbay_;
+  juce::TextButton resetButton_;
+  juce::Label maskLabel_[routing::kInputCount];
+  juce::Label transposeLabel_[routing::kInputCount];
+  juce::TextButton mask_[routing::kInputCount][kChannelCount];
+  juce::Slider transpose_[routing::kInputCount];
+  juce::Rectangle<int> captionArea_;
 
   JUCE_DECLARE_NON_COPYABLE(RoutingScreen)
 };

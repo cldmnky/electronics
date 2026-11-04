@@ -62,6 +62,7 @@ set(MNKY_APP_HEADERS
   screens/Screen.hpp
   screens/MixerScreen.hpp
   screens/RoutingScreen.hpp
+  screens/routing_model.hpp
   screens/FxScreen.hpp
   screens/RecorderScreen.hpp
   screens/SystemScreen.hpp)

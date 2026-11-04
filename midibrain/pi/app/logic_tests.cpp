@@ -1,8 +1,9 @@
-// JUCE unit tests for the app's non-visual logic (logic.hpp) and for the flat
-// theme's colour/contrast contract (theme.hpp, ui_style.hpp). Registered with
-// the JUCE test framework and run by `mnkybox --unittests`, which is also the
-// CTest entry `mnkybox_app_logic`. No audio, MIDI or link access; the theme
-// checks draw into an offscreen image only.
+// JUCE unit tests for the app's non-visual logic (logic.hpp), the routing
+// patchbay model (screens/routing_model.hpp) and for the flat theme's
+// colour/contrast contract (theme.hpp, ui_style.hpp). Registered with the JUCE
+// test framework and run by `mnkybox --unittests`, which is also the CTest
+// entry `mnkybox_app_logic`. No audio, MIDI or link access; the theme checks
+// draw into an offscreen image only.
 
 #include <cmath>
 #include <iostream>
@@ -11,6 +12,7 @@
 
 #include "fx_slot.hpp"
 #include "logic.hpp"
+#include "screens/routing_model.hpp"
 #include "theme.hpp"
 #include "ui_style.hpp"
 
@@ -446,7 +448,124 @@ class ThemeTests final : public juce::UnitTest {
   }
 };
 
+// The patchbay geometry is a pure function of its bounds: the checks below pin
+// the 800 x 480 numbers and prove the layout scales instead of carrying pixel
+// constants.
+class RoutingModelTests final : public juce::UnitTest {
+ public:
+  RoutingModelTests() : juce::UnitTest("mnkybox routing patchbay", "mnkybox") {}
+
+  void runTest() override {
+    testDefaultMatrix();
+    testGeometry();
+    testWireHitAreas();
+  }
+
+ private:
+  void testDefaultMatrix() {
+    beginTest("documented default route matrix");
+
+    int enabled = 0;
+    for (int source = 0; source < routing::kInputCount; ++source) {
+      for (int destination = 0; destination < routing::kOutputCount; ++destination) {
+        const bool expected = source < 2 && destination == 2;
+        expect(routing::kDefaultRoutes[source][destination] == expected,
+               "the default routes are exactly TRS IN 1+2 -> USB OUT");
+        if (expected) ++enabled;
+      }
+    }
+    expectEquals(enabled, 2);
+
+    expect(routing::kInputs[0] == midi::Port::TrsIn1);
+    expect(routing::kInputs[1] == midi::Port::TrsIn2);
+    expect(routing::kInputs[2] == midi::Port::UsbIn);
+    expect(routing::kOutputs[0] == midi::Port::TrsOut1);
+    expect(routing::kOutputs[1] == midi::Port::TrsOut2);
+    expect(routing::kOutputs[2] == midi::Port::UsbOut);
+  }
+
+  void testGeometry() {
+    beginTest("resolution-independent patchbay geometry");
+
+    // The graph the routing screen gets at 800 x 480: 788 x 420 content minus a
+    // 44 px RESET header, two 4 px gaps and the 180 px filter/transpose block.
+    const juce::Rectangle<float> panel{0.0f, 0.0f, 788.0f, 188.0f};
+    const auto layout = routing::layoutFor(panel);
+
+    expect(layout.nodeHeight >= static_cast<float>(style::kTouch),
+           "each node keeps the 44 px touch height at 800 x 480");
+    expect(layout.hitSlop >= 18.0f && layout.hitSlop <= 22.0f,
+           "the wire tap slop is about 20 px");
+
+    for (int index = 0; index < routing::kInputCount; ++index) {
+      expect(panel.contains(layout.inputs[index]), "input nodes stay inside the graph");
+      expect(panel.contains(layout.outputs[index]), "output nodes stay inside the graph");
+      expect(layout.inputs[index].getHeight() == layout.nodeHeight,
+             "all nodes share one height");
+    }
+    expect(layout.inputs[0].getRight() < layout.outputs[0].getX(),
+           "the input and output columns never overlap");
+
+    for (int source = 0; source < routing::kInputCount; ++source) {
+      for (int destination = 0; destination < routing::kOutputCount; ++destination) {
+        const auto& wire = layout.wires[source][destination];
+        expect(!wire.path.isEmpty(), "every routable pair gets a wire");
+        expectWithinAbsoluteError(wire.start.x, layout.inputs[source].getRight(), 0.01f);
+        expectWithinAbsoluteError(wire.start.y, layout.inputs[source].getCentreY(), 0.01f);
+        expectWithinAbsoluteError(wire.end.x, layout.outputs[destination].getX(), 0.01f);
+        expectWithinAbsoluteError(wire.end.y, layout.outputs[destination].getCentreY(),
+                                  0.01f);
+      }
+    }
+
+    // Twice the bounds is twice the node, not twice the node plus a constant:
+    // no fixed pixel geometry hides in layoutFor().
+    const auto doubled =
+        routing::layoutFor(panel.withSize(panel.getWidth() * 2.0f, panel.getHeight() * 2.0f));
+    expectWithinAbsoluteError(doubled.nodeWidth, layout.nodeWidth * 2.0f, 0.01f);
+    expectWithinAbsoluteError(doubled.nodeHeight, layout.nodeHeight * 2.0f, 0.01f);
+
+    // A taller content area (a window grown to 1024 x 600) still keeps the
+    // touch minimum and the same relative node size.
+    const auto grown = routing::layoutFor({0.0f, 0.0f, 1012.0f, 308.0f});
+    expect(grown.nodeHeight >= static_cast<float>(style::kTouch),
+           "nodes stay touch-sized on a larger window");
+    expectWithinAbsoluteError(grown.nodeHeight / 308.0f, layout.nodeHeight / 188.0f,
+                              1.0e-5f);
+  }
+
+  void testWireHitAreas() {
+    beginTest("wire taps hit the intended route");
+
+    const auto layout = routing::layoutFor({0.0f, 0.0f, 788.0f, 188.0f});
+    for (int source = 0; source < routing::kInputCount; ++source) {
+      for (int destination = 0; destination < routing::kOutputCount; ++destination) {
+        const auto& path = layout.wires[source][destination].path;
+        const float length = path.getLength();
+        bool found = false;
+        // Sampling away from the ends and the exact crossing point: at a
+        // crossing two wires legitimately overlap, so the nearest one wins.
+        for (int step = 2; step <= 8 && !found; ++step) {
+          const auto point =
+              path.getPointAlongPath(length * static_cast<float>(step) / 10.0f);
+          int hitSource = -1;
+          int hitDestination = -1;
+          found = routing::hitWire(layout, point, hitSource, hitDestination) &&
+                  hitSource == source && hitDestination == destination;
+        }
+        expect(found, "somewhere along every wire a tap resolves to that wire");
+      }
+    }
+
+    int source = -1;
+    int destination = -1;
+    expect(!routing::hitWire(layout, {4.0f, 4.0f}, source, destination),
+           "a tap away from every wire hits nothing");
+  }
+};
+
 ThemeTests themeTests;
+RoutingModelTests routingModelTests;
 
 }  // namespace
 
