@@ -140,12 +140,49 @@ constexpr std::uint8_t EV_CLOCK_ROUTE = 0x14;   // Pi->Pico port, flags: per-out
 // start/stop/continue on/off. Both default on (legacy always-on behavior);
 // RAM state, reset at boot, Pi re-sends after HELLO. USB outputs are gated
 // Pi-side in the UsbClock mirror with the same semantics.
+constexpr std::uint8_t EV_CLOCK_SOURCE = 0x17;  // Pi->Pico external clock
+// follow. payload[1] = source (0 = internal, 1 = TRS IN1, 2 = TRS IN2;
+// 3+ rejected); payload[2] = transport-follow mask bit0 = TRS IN1,
+// bit1 = TRS IN2 (USB follow is Pi-side via EV_TRANSPORT). RAM state,
+// reset to internal/no-follow at boot, Pi re-sends after HELLO.
+// EV_CLOCK_ROUTE payload[2] flag bits. Reserved bits must be zero; a frame
+// with any other bit set is rejected as a bad frame, not applied partially.
+constexpr std::uint8_t CLOCK_ROUTE_CLOCK = 0x01;
+constexpr std::uint8_t CLOCK_ROUTE_TRANSPORT = 0x02;
+constexpr std::uint8_t CLOCK_ROUTE_DEFAULT =
+    CLOCK_ROUTE_CLOCK | CLOCK_ROUTE_TRANSPORT;
+constexpr std::uint8_t CLOCK_ROUTE_MASK = CLOCK_ROUTE_DEFAULT;
 constexpr std::uint8_t EV_MIDI_SEND = 0x15;    // Pi->Pico port, size, bytes
 constexpr std::uint8_t EV_TRANSPORT_MODE = 0x16;  // Pi->Pico 0 local, 1 manual
 constexpr std::uint8_t EV_STATUS_REQ = 0x20;   // Pi->Pico liveness/status request
 constexpr std::uint8_t EV_STATUS_RESP = 0x21;  // Pico->Pi link status snapshot
 constexpr std::uint8_t EV_REBOOT = 0x22;       // Pi->Pico 0 firmware reboot, 1 USB boot
 constexpr std::uint8_t EV_RESET_LINK = 0x23;   // Pi->Pico fresh session, no reboot
+
+// Per-output TRS clock/transport gates applied from EV_CLOCK_ROUTE. Index 0 =
+// OUT1 (uart0), 1 = OUT2 (uart1); both default on so a Pico that has not seen
+// the Pi behaves exactly like the legacy always-on firmware. Pure RAM state:
+// main.cpp owns the UART writes, this type owns validation and the decisions.
+struct ClockGate {
+  bool clock = true;
+  bool transport = true;
+};
+class ClockGates {
+ public:
+  // Applies one EV_CLOCK_ROUTE frame's port/flags. Returns false (and leaves
+  // every gate unchanged) for an unknown port or a reserved flag bit.
+  bool apply(std::uint8_t port, std::uint8_t flags) {
+    if (port > 1 || (flags & ~CLOCK_ROUTE_MASK) != 0) return false;
+    gates_[port].clock = (flags & CLOCK_ROUTE_CLOCK) != 0;
+    gates_[port].transport = (flags & CLOCK_ROUTE_TRANSPORT) != 0;
+    return true;
+  }
+  bool clockOn(std::uint8_t port) const { return gates_[port].clock; }
+  bool transportOn(std::uint8_t port) const { return gates_[port].transport; }
+
+ private:
+  ClockGate gates_[2];
+};
 
 // EV_STATUS_RESP flags (payload[14]); other bits stay zero.
 constexpr std::uint8_t STATUS_LINK_UP = 0x01;  // Pi HELLO seen
@@ -465,6 +502,21 @@ inline bool pack_reset_link(Frame& f, std::uint16_t seq, std::uint32_t session) 
   f.session = session;
   f.length = 1;
   f.payload[0] = EV_RESET_LINK;
+  return true;
+}
+// EV_CLOCK_ROUTE layout: [1]=port (0 = OUT1/uart0, 1 = OUT2/uart1),
+// [2]=flags (bit0 clock, bit1 transport; reserved bits zero). Length 3.
+inline bool pack_clock_route(Frame& f, std::uint16_t seq, std::uint32_t session,
+                             std::uint8_t port, std::uint8_t flags) {
+  if (port > 1 || (flags & ~CLOCK_ROUTE_MASK) != 0) return false;
+  f = Frame{};
+  f.type = Type::control_event;
+  f.sequence = seq;
+  f.session = session;
+  f.length = 3;
+  f.payload[0] = EV_CLOCK_ROUTE;
+  f.payload[1] = port;
+  f.payload[2] = flags;
   return true;
 }
 }  // namespace mb

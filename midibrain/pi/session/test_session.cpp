@@ -163,6 +163,9 @@ void testRoundTrip() {
   original.clock.trs[0].clock = false;
   original.clock.trs[1].transport = false;
   original.clock.usb.clock = false;
+  original.clock.source = 1;
+  original.clock.transportFollow[0] = true;
+  original.clock.transportFollow[2] = true;
 
   TempDir dir;
   CHECK(dir.ok());

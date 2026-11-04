@@ -113,9 +113,22 @@ struct ClockRoute {
   bool transport = true;
   friend bool operator==(const ClockRoute&, const ClockRoute&) = default;
 };
+// External clock follow. `source`: 0 = internal generator (legacy behavior),
+// 1 = TRS IN1, 2 = TRS IN2. (USB as a clock source is planned: the Pico has
+// no USB-device view, so Pi-forwarded 24ppq ticks would reintroduce the
+// jitter this removes; the reader clamps 3+ back to internal.)
+// INVARIANT: the Pico always sends clock. Follow disciplines the generator
+// (tempo + phase); it never gates, mutes or stops it. Loss of the external
+// source coasts at the last estimate — downstream gear never sees the clock
+// disappear. The per-output clock toggles gate wires, never the generator.
+// `transportFollow` gates whose transport bytes drive us: index 0 = TRS IN1,
+// 1 = TRS IN2, 2 = USB (Pi-side: forwarded as EV_TRANSPORT when enabled).
+// All default off — the Pico stays master until configured otherwise.
 struct ClockState {
   std::array<ClockRoute, 2> trs{};
   ClockRoute usb;
+  int source = 0;
+  std::array<bool, 3> transportFollow{false, false, false};
   friend bool operator==(const ClockState&, const ClockState&) = default;
 };
 

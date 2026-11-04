@@ -920,6 +920,27 @@ bool decodeClock(const JsonValue& node, ClockState& out, std::string& error) {
     }
     if (!decodeClockRoute(*usb, "clock.usb", out.usb, error)) return false;
   }
+  int source = out.source;
+  if (!readOptionalInt(node, "source", source, "clock", error)) return false;
+  if (source < 0 || source > 2) source = 0;  // USB source planned, not read
+  out.source = source;
+  if (const JsonValue* follow = node.find("transportFollow")) {
+    if (follow->type != JsonValue::Type::Array) {
+      error = "session: \"clock.transportFollow\" is not an array";
+      return false;
+    }
+    std::size_t index = 0;
+    for (const JsonValue& value : follow->array) {
+      if (index >= out.transportFollow.size()) break;
+      if (value.type != JsonValue::Type::Bool) {
+        error = "session: \"clock.transportFollow[" +
+                std::to_string(index) + "]\" is not a boolean";
+        return false;
+      }
+      out.transportFollow[index] = value.boolean;
+      ++index;
+    }
+  }
   return true;
 }
 
@@ -1414,7 +1435,14 @@ std::string encode(const Snapshot& snapshot) {
   appendBool(out, snapshot.clock.usb.clock);
   out += ",\"transport\":";
   appendBool(out, snapshot.clock.usb.transport);
-  out += "}},\"mainComp\":{\"on\":";
+  out += "},\"source\":";
+  appendNumber(out, snapshot.clock.source);
+  out += ",\"transportFollow\":[";
+  for (std::size_t i = 0; i < snapshot.clock.transportFollow.size(); ++i) {
+    if (i != 0) out.push_back(',');
+    appendBool(out, snapshot.clock.transportFollow[i]);
+  }
+  out += "]},\"mainComp\":{\"on\":";
   appendBool(out, snapshot.mainComp.on);
   out += ",\"threshDb\":";
   appendNumber(out, snapshot.mainComp.threshDb);
