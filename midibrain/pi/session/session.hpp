@@ -105,6 +105,20 @@ struct TransportState {
   friend bool operator==(const TransportState&, const TransportState&) = default;
 };
 
+// Per-output clock/transport routing. `trs` has one entry per TRS output
+// (index 0 = TRS OUT1, 1 = TRS OUT2); `usb` covers the USB mirror output.
+// Defaults preserve the legacy always-on behavior.
+struct ClockRoute {
+  bool clock = true;
+  bool transport = true;
+  friend bool operator==(const ClockRoute&, const ClockRoute&) = default;
+};
+struct ClockState {
+  std::array<ClockRoute, 2> trs{};
+  ClockRoute usb;
+  friend bool operator==(const ClockState&, const ClockState&) = default;
+};
+
 // Metronome configuration (v2). `mode`: 0 = off, 1 = record-only, 2 = on-play.
 // `output`: 0 = main 1&2, 1 = phones, 2 = out 3&4. `gainDb` is -96..+20.
 // `bars` is the count-in length in bars. `enabled`/`level` are v1 legacy:
@@ -218,6 +232,7 @@ struct Snapshot {
   MixerState mixer;
   FxState fx;
   TransportState transport;
+  ClockState clock;
   ClickState click;
   std::vector<MidiMapEntry> midimap;
   bool isTemplate = false;  // v2: settings-only project, no take registry

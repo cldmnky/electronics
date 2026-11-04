@@ -134,6 +134,12 @@ constexpr std::uint8_t EV_TRANSPORT = 0x11;    // Pi->Pico 0 stop, 1 start, 2 co
 constexpr std::uint8_t EV_CLOCK_ENABLE = 0x12;// Pi->Pico, accepted but ignored: clock is always on
 constexpr std::uint8_t EV_TRANSPORT_STATE = 0x06;  // Pico->Pi rolling flag + tick (USB mirror)
 constexpr std::uint8_t EV_LED_SET = 0x13;      // Pi->Pico mask, states
+constexpr std::uint8_t EV_CLOCK_ROUTE = 0x14;   // Pi->Pico port, flags: per-output
+// clock/transport enable. payload[1] = port (0 = TRS OUT1/uart0,
+// 1 = TRS OUT2/uart1); payload[2] bit0 = clock on/off, bit1 = transport
+// start/stop/continue on/off. Both default on (legacy always-on behavior);
+// RAM state, reset at boot, Pi re-sends after HELLO. USB outputs are gated
+// Pi-side in the UsbClock mirror with the same semantics.
 constexpr std::uint8_t EV_MIDI_SEND = 0x15;    // Pi->Pico port, size, bytes
 constexpr std::uint8_t EV_TRANSPORT_MODE = 0x16;  // Pi->Pico 0 local, 1 manual
 constexpr std::uint8_t EV_STATUS_REQ = 0x20;   // Pi->Pico liveness/status request

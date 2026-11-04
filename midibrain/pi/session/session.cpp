@@ -883,6 +883,46 @@ bool decodeSends(const JsonValue& node, SendsState& out, std::string& error) {
   return true;
 }
 
+bool decodeClockRoute(const JsonValue& node, const std::string& path,
+                      ClockRoute& out, std::string& error) {
+  if (!readOptionalBool(node, "clock", out.clock, path, error)) return false;
+  if (!readOptionalBool(node, "transport", out.transport, path, error)) {
+    return false;
+  }
+  return true;
+}
+
+bool decodeClock(const JsonValue& node, ClockState& out, std::string& error) {
+  if (const JsonValue* trs = node.find("trs")) {
+    if (trs->type != JsonValue::Type::Array) {
+      error = "session: \"clock.trs\" is not an array";
+      return false;
+    }
+    std::size_t index = 0;
+    for (const JsonValue& item : trs->array) {
+      if (index >= out.trs.size()) break;
+      if (item.type != JsonValue::Type::Object) {
+        error = "session: \"clock.trs[" + std::to_string(index) +
+                "]\" is not an object";
+        return false;
+      }
+      if (!decodeClockRoute(item, "clock.trs[" + std::to_string(index) + "]",
+                             out.trs[index], error)) {
+        return false;
+      }
+      ++index;
+    }
+  }
+  if (const JsonValue* usb = node.find("usb")) {
+    if (usb->type != JsonValue::Type::Object) {
+      error = "session: \"clock.usb\" is not an object";
+      return false;
+    }
+    if (!decodeClockRoute(*usb, "clock.usb", out.usb, error)) return false;
+  }
+  return true;
+}
+
 bool decodeMainComp(const JsonValue& node, MainCompState& out,
                     std::string& error) {
   if (!readOptionalBool(node, "on", out.on, "mainComp", error)) return false;
@@ -1089,6 +1129,13 @@ bool decode(const JsonValue& root, Snapshot& out, std::string& error) {
       return false;
     }
     if (!decodeMainComp(*mainComp, out.mainComp, error)) return false;
+  }
+  if (const JsonValue* clock = root.find("clock")) {
+    if (clock->type != JsonValue::Type::Object) {
+      error = "session: \"clock\" is not an object";
+      return false;
+    }
+    if (!decodeClock(*clock, out.clock, error)) return false;
   }
   return true;
 }
@@ -1354,7 +1401,20 @@ std::string encode(const Snapshot& snapshot) {
   appendNumber(out, snapshot.sends.out34);
   out += ",\"rec\":";
   appendNumber(out, snapshot.sends.rec);
-  out += "},\"mainComp\":{\"on\":";
+  out += "},\"clock\":{\"trs\":[";
+  for (std::size_t i = 0; i < snapshot.clock.trs.size(); ++i) {
+    if (i != 0) out.push_back(',');
+    out += "{\"clock\":";
+    appendBool(out, snapshot.clock.trs[i].clock);
+    out += ",\"transport\":";
+    appendBool(out, snapshot.clock.trs[i].transport);
+    out.push_back('}');
+  }
+  out += "],\"usb\":{\"clock\":";
+  appendBool(out, snapshot.clock.usb.clock);
+  out += ",\"transport\":";
+  appendBool(out, snapshot.clock.usb.transport);
+  out += "}},\"mainComp\":{\"on\":";
   appendBool(out, snapshot.mainComp.on);
   out += ",\"threshDb\":";
   appendNumber(out, snapshot.mainComp.threshDb);
