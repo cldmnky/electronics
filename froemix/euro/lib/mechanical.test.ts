@@ -6,7 +6,7 @@ import {
   ACTUATORS, CONNECTOR_Z, FASTENERS, FIT_LIMITS, HEADERS, MATED_PADS, OLED_MODULE, PANEL_PARTS,
   PENDING_ACCEPTANCE, RACK, RACK_GRID_TOLERANCE, SOCKETS, STACK, STANDOFF_FACES, STANDOFF_HOLE_XY, UNRESOLVED,
   actuatorCornerLimits, actuatorCorners, actuatorFit, checkStack, fastenerOdLimit, hardwareFit,
-  measureStack, nominalFit, nominalStack, nonFinite, rackFit, rackGridErrors, stackCornerLimits, stackCorners,
+  measureStack, nominalFit, nominalStack, nonFinite, printedNavWalls, rackFit, rackGridErrors, stackCornerLimits, stackCorners,
 } from "./mechanical"
 import { mechanicalParts, modePlunger, navCap, partMeasurements } from "./mechanical-parts"
 import { HOLE, OLED, PANEL_H, PANEL_W, RAIL_HOLE_X, RAIL_HOLE_Y } from "./layout"
@@ -127,14 +127,16 @@ test("actuator corners keep every fit limit, with the small margins reported", (
   expect(corners).toBe(32)
   for (const limit of FIT_LIMITS) expect(worst[limit.key]).toBeGreaterThanOrEqual(limit.min)
   // The NAV radial margin was 0.004mm above the old requirement at a 5.8mm cup;
-  // the 5.4mm cup must leave a real margin, not a rounding one.
-  expect(worst.joystickRadialClearance).toBeGreaterThan(ACTUATORS.minRadialClearance + 0.2)
-  expect(worst.joystickRadialClearance).toBeCloseTo(0.406, 3)
-  // The thinnest printed wall of the NAV cap is the pocket corner, at 0.296mm.
-  expect(worst.joystickPocketCornerWall).toBeGreaterThanOrEqual(ACTUATORS.minWall)
-  expect(worst.joystickPocketCornerWall).toBeLessThan(0.35)
-  expect(worst.joystickPocketWall).toBeCloseTo(1.0, 9)
-  expect(worst.joystickRoofThickness).toBeCloseTo(ACTUATORS.joystick.cupRoof, 9)
+  // the 5.6mm cup must leave a real margin, not a rounding one.
+  expect(worst.joystickRadialClearance).toBeGreaterThan(ACTUATORS.minRadialClearance + 0.1)
+  expect(worst.joystickRadialClearance).toBeCloseTo(0.305, 3)
+  // The walls are judged at the worst of the INDEPENDENT cup/pocket/roof print
+  // errors, so the corner is 0.275mm and not the nominal 0.396mm.
+  expect(worst.joystickPocketCornerWallWorst).toBeGreaterThanOrEqual(ACTUATORS.minWall)
+  expect(worst.joystickPocketCornerWallWorst).toBeCloseTo(0.275, 3)
+  expect(worst.joystickPocketCornerWall).toBeCloseTo(0.396, 3)
+  expect(worst.joystickPocketWallWorst).toBeCloseTo(1.0, 9)
+  expect(worst.joystickRoofThicknessWorst).toBeCloseTo(ACTUATORS.joystick.cupRoof - ACTUATORS.printTolerance, 9)
 })
 
 // ---------------------------------------------------------------------------
@@ -226,6 +228,13 @@ test("the old 86.60mm rail pair fails the grid rule", () => {
   const errors = rackGridErrors(old)
   expect(errors).toHaveLength(1)
   expect(errors[0]).toContain("off the 5.08mm grid")
+  expect(fit.pitchError).toBeCloseTo(0.24, 9) // too wide
+  // a too-NARROW pair is just as far off the grid and must not gain margin
+  const narrow = rackFit({ ...old, holeX: 43.05 }) // 86.10mm
+  expect(narrow.pitchX).toBeCloseTo(86.1, 9)
+  expect(narrow.pitchError).toBeCloseTo(-0.26, 9)
+  expect(narrow.pitchMargin).toBeCloseTo(-0.06, 9)
+  expect(rackGridErrors({ ...old, holeX: 43.05 })).toHaveLength(1)
   // a vertical-end mistake and an asymmetric pair are caught too
   expect(rackGridErrors({ ...old, holeX: RAIL_HOLE_X, holeY: 61.0 })).toHaveLength(1)
 })
@@ -315,14 +324,29 @@ test("bare actuators are too short; supplied extensions clear the thick panel", 
   expect(fit.joystickRadialClearance - (ACTUATORS.joystick.holeDiameter - 7) / 2).toBeLessThan(0)
 })
 
-test("the smaller NAV cup keeps a printable stem pocket", () => {
+test("the NAV cup keeps a printable stem pocket after the worst print error", () => {
   const p = ACTUATORS.joystick
-  expect(p.cupDiameter).toBe(5.4)
-  // Lowering the cup any further would break the corner wall before it bought
-  // more than 0.25mm of panel clearance.
+  expect(p.cupDiameter).toBe(5.6)
   expect(p.cupDiameter - p.pocketWidth).toBeGreaterThan(2 * ACTUATORS.minWall)
   expect(p.cupDiameter - ACTUATORS.printTolerance).toBeGreaterThan(p.pocketWidth)
   expect(p.pocketDepth).toBeGreaterThan(p.cupRoof)
+})
+
+test("the 5.4mm cup FAILS the real corner wall, which is why it is not selected", () => {
+  const p = ACTUATORS.joystick
+  const rejected = printedNavWalls(5.4, p.pocketWidth, p.cupRoof, ACTUATORS.printTolerance)
+  // (5.4 - 0.1 - (3.4 + 0.1) x sqrt2) / 2 = 0.175mm, below the 0.25mm policy
+  expect(rejected.corner).toBeCloseTo(0.175, 3)
+  expect(rejected.corner).toBeLessThan(ACTUATORS.minWall)
+  // The nominal wall of that cup still LOOKED printable: the adverse errors are
+  // what make the difference, so a nominal-only check would have passed it.
+  expect((5.4 - p.pocketWidth) / 2).toBeGreaterThan(ACTUATORS.minWall)
+  const selected = printedNavWalls(p.cupDiameter, p.pocketWidth, p.cupRoof, ACTUATORS.printTolerance)
+  expect(selected.corner).toBeGreaterThanOrEqual(ACTUATORS.minWall)
+  // The gate must judge the worst-case keys, never the nominal ones alone.
+  expect(FIT_LIMITS.map((l) => l.key)).toEqual(expect.arrayContaining([
+    "joystickPocketCornerWallWorst", "joystickPocketWallWorst", "joystickRoofThicknessWorst",
+  ]))
 })
 
 test("printable models are valid solids and serialise to non-empty STL", () => {

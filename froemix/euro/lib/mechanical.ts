@@ -155,7 +155,7 @@ export const STANDOFF_HOLE_DIAMETER = 3.2
  */
 export const RACK = {
   hpPitch: 5.08,
-  widthNominal20hp: 101.6, // 20 x 5.08, the panel and both PCBs as drawn
+  widthNominal20hp: 101.6, // 20 x 5.08: the panel and the FRONT board (the base board is 80.9mm)
   widthActual20hp: 101.30, // finished width on the Doepfer page
   panelHeight: 128.5,
   panelThickness: 2.0,
@@ -197,8 +197,12 @@ export const rackFit = (input: RackInput) => {
     pitchNearestGrid: Number(nearest.toFixed(2)),
     pitchMismatch: Number((pitchX - nearest).toFixed(3)),
     holeSlackPair: Number(holeSlackPair.toFixed(3)),
-    // negative means the hole slack cannot absorb the grid mismatch
-    pitchMargin: Number((holeSlackPair - (pitchX - nearest)).toFixed(3)),
+    // Signed grid error: positive = too wide, negative = too narrow.
+    pitchError: Number((pitchX - nearest).toFixed(3)),
+    // Symmetric: a too-NARROW pair is just as far off the grid, so the take-up
+    // must absorb |error| and never gain margin from a negative difference.
+    // Negative means the hole slack cannot absorb the grid error.
+    pitchMargin: Number((holeSlackPair - Math.abs(pitchX - nearest)).toFixed(3)),
   }
 }
 
@@ -223,10 +227,13 @@ export const ACTUATORS = {
     stemTolerance: 0.05, // XUNPU drawing: 3.15 +/-0.05mm square actuator
     pocketWidth: 3.4,
     pocketDepth: 2.0,
-    // 5.4mm, not 5.8mm: the smaller cup keeps the same stem pocket, roof and
-    // neck while the swept envelope gains 0.202mm of radial clearance in the
-    // unchanged, frozen 8.00mm panel opening. No electronic part moves.
-    cupDiameter: 5.4,
+    // 5.6mm: the swept envelope gains radial clearance in the unchanged, frozen
+    // 8.00mm panel opening without moving any electronic part, while the printed
+    // wall to the 3.4mm pocket still survives INDEPENDENT adverse manufacturing
+    // errors on cup, pocket and roof (see printedNavWalls). A 5.8mm cup left the
+    // radial margin at 0.204mm; a 5.4mm cup left the corner wall at 0.175mm,
+    // below the 0.25mm policy, so 5.6mm is the compromise, not an optimum.
+    cupDiameter: 5.6,
     cupRoof: 0.6,
     neckDiameter: 4.0,
     extension: 5.0,
@@ -470,6 +477,26 @@ export const hardwareFit = (
   return { od, clearance, limit, verdict }
 }
 
+/**
+ * Thinnest printed walls of the NAV cap, allowing INDEPENDENT adverse
+ * manufacturing errors: the outside of the cup and the pocket roof come out
+ * `error` smaller, and the internal pocket comes out `error` larger. The nominal
+ * wall is not a safe number - at 5.4mm the cup the corner wall falls to 0.175mm,
+ * which is why the cup is 5.6mm.
+ */
+export const printedNavWalls = (cupDiameter: number, pocketWidth: number, cupRoof: number, error: number) => {
+  requireFinite("printedNavWalls", { cupDiameter, pocketWidth, cupRoof, error })
+  const cupWorst = cupDiameter - error
+  const pocketWorst = pocketWidth + error
+  return {
+    // side wall of the square pocket
+    side: (cupWorst - pocketWorst) / 2,
+    // thinnest wall, at the pocket corners where the square reaches furthest
+    corner: (cupWorst - pocketWorst * Math.SQRT2) / 2,
+    roof: cupRoof - error,
+  }
+}
+
 /** Panel gap / thickness / print-quality inputs of the actuator fit. */
 export type FitInput = {
   panelGapMin: number
@@ -502,10 +529,14 @@ export type FitResult = {
   joystickHeadClearance: number
   joystickCupHoleClearance: number
   joystickPocketFit: number
-  /** printed wall thicknesses of the NAV cap */
+  /** printed walls of the NAV cap at nominal dimensions */
   joystickPocketWall: number
   joystickPocketCornerWall: number
   joystickRoofThickness: number
+  /** the same walls with independent adverse cup/pocket/roof printing errors */
+  joystickPocketWallWorst: number
+  joystickPocketCornerWallWorst: number
+  joystickRoofThicknessWorst: number
 }
 
 /** Throws on a non-finite input (see requireFinite). */
@@ -521,6 +552,7 @@ export const actuatorFit = (f: FitInput = nominalFit()): FitResult => {
     + (a.joystick.neckDiameter + f.printTolerance) / (2 * Math.cos(angle))
   const holeRadius = (a.joystick.holeDiameter - f.holeUndersize) / 2
   const cupRadius = a.joystick.cupDiameter / 2
+  const walls = printedNavWalls(a.joystick.cupDiameter, a.joystick.pocketWidth, a.joystick.cupRoof, f.printTolerance)
   return {
     buttonProud: a.button.bareHeight - a.button.heightTolerance + a.button.extension - f.printTolerance - panelTop,
     buttonFlangeClearance: f.panelGapMin - (a.button.bareHeight + a.button.heightTolerance + a.button.flangeHeight + f.printTolerance),
@@ -531,7 +563,7 @@ export const actuatorFit = (f: FitInput = nominalFit()): FitResult => {
     joystickHeadClearance: a.joystick.bareHeight - a.joystick.heightTolerance
       + a.joystick.extension - a.joystick.headHeight - f.printTolerance
       - a.joystick.headDiameter / 2 * Math.sin(angle) - panelTop,
-    // Straight (untilted) drop-in of the finished cup through the panel hole.
+    // Straight (untilted) drop-in of the finished, oversize cup.
     joystickCupHoleClearance: holeRadius - (a.joystick.cupDiameter + f.printTolerance) / 2,
     // Printed pocket vs the real stem: a negative value is an interference fit.
     joystickPocketFit: (a.joystick.pocketWidth - f.printTolerance)
@@ -541,6 +573,11 @@ export const actuatorFit = (f: FitInput = nominalFit()): FitResult => {
     // pocket reaches furthest from the axis.
     joystickPocketCornerWall: cupRadius - a.joystick.pocketWidth * Math.SQRT2 / 2,
     joystickRoofThickness: a.joystick.cupRoof,
+    // What the printer can actually deliver: walls are limited by the WORST of
+    // the independent cup, pocket and roof errors, not by the nominal number.
+    joystickPocketWallWorst: walls.side,
+    joystickPocketCornerWallWorst: walls.corner,
+    joystickRoofThicknessWorst: walls.roof,
   }
 }
 
@@ -556,9 +593,12 @@ export const FIT_LIMITS: readonly FitLimit[] = [
   { key: "joystickHeadClearance", min: 0, description: "tilted NAV head must not touch the panel top" },
   { key: "joystickCupHoleClearance", min: 0, description: "NAV cup must pass the panel hole" },
   { key: "joystickPocketFit", min: 0, description: "NAV stem pocket must not be an interference fit" },
-  { key: "joystickPocketWall", min: ACTUATORS.minWall, description: "NAV pocket side wall must be printable" },
-  { key: "joystickPocketCornerWall", min: ACTUATORS.minWall, description: "NAV pocket corner wall must be printable" },
-  { key: "joystickRoofThickness", min: ACTUATORS.minWall, description: "NAV pocket roof must be printable" },
+  { key: "joystickPocketWallWorst", min: ACTUATORS.minWall, description: "NAV pocket side wall must be printable after the worst printing error" },
+  { key: "joystickPocketCornerWallWorst", min: ACTUATORS.minWall, description: "NAV pocket corner wall must be printable after the worst printing error" },
+  { key: "joystickRoofThicknessWorst", min: ACTUATORS.minWall, description: "NAV pocket roof must be printable after the worst printing error" },
+  { key: "joystickPocketWall", min: ACTUATORS.minWall, description: "NAV pocket side wall at nominal dimensions" },
+  { key: "joystickPocketCornerWall", min: ACTUATORS.minWall, description: "NAV pocket corner wall at nominal dimensions" },
+  { key: "joystickRoofThickness", min: ACTUATORS.minWall, description: "NAV pocket roof at nominal dimensions" },
 ] as const
 
 /**

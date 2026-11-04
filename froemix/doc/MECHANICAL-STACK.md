@@ -27,7 +27,7 @@ every item it cannot close (`lib/mechanical.ts`: `UNRESOLVED`,
 | Bare NAV stem/cap unspecified | Current XUNPU drawing gives 10mm overall height and 3.15mm square stem, not the old Alps assumption. Added a dimensioned cap/neck and enlarged only its panel hole. |
 | J1 inaccessible after stacking | Expected service constraint, not an XY mistake. Select/test Type A/B before stacking; separate the boards to change it. No extra front-board MIDI selector or new electrical path was introduced. |
 | Standoff/hardware limit was quoted two ways (5mm in the purchase list, 5.5mm here) | Real inconsistency. The limit is now **derived**: 2 × (nearest component envelope − 0.45mm budget), measured on both built boards at every hole and face. The tightest face is the **base board bottom at (36.95, −60.75)**, where C25's courtyard is **2.95mm** away, so the limit is **OD5.00mm** for the spacer body AND for any head/washer. An ordinary **ISO 4762 M3 socket head is 5.5mm** (0.20mm left, below the 0.45mm budget) and an **ISO 7089 M3 washer is 7.0mm** (−0.55mm, a collision). No head/washer is approved; the selection stays pending. |
-| NAV radial margin was only 0.004mm above the 0.2mm requirement | Real finding at the old 5.8mm cup under the ±8° test envelope. The cup is now **5.4mm** with the same pocket, roof and neck: radial clearance rises from 0.204 to **0.406mm** and no electronic part, hole or outline moves. |
+| NAV radial margin was only 0.004mm above the 0.2mm requirement | Real finding at the old 5.8mm cup under the ±8° test envelope. The cup is now **5.6mm** with the same pocket, roof and neck: radial clearance rises from 0.204 to **0.305mm**, and the printed corner wall stays at **0.275mm** after independent adverse cup/pocket/roof errors. A 5.4mm cup was rejected: its corner wall falls to **0.175mm**, below the 0.25mm policy. No electronic part, hole or outline moves. |
 | Selected jack body is taller than the minimum panel gap | Real: the XKB drawing gives an **8.8mm body** against an **8.5mm** `panelGapMin`, so at the minimum gap the panel would rest on a jack body. The panel is the seating jig; a first article must confirm no bowing. Recorded as a pending item, not fixed by guessing a taller stack. |
 | Rack width and mounting-hole pitch | **Hole pitch fixed by owner approval:** the pair was **86.60mm**, 0.24mm off the Doepfer 5.08mm grid, while two Ø3.2 holes give only 0.20mm of take-up. Each hole moved 0.12mm inward to **±43.18 = 86.36mm = 17 × 5.08mm**; no control, connector, standoff, diameter or outline changed and the width stays 101.6mm. **Width still open:** 101.60mm against Doepfer's **101.30mm** is 0.30mm oversize and awaits a rack test. See §6. |
 
@@ -121,7 +121,7 @@ against a hard stop or a pin that has bottomed out.
   finish the barrel to ≤11.5mm. It slides in the unchanged 12.2mm opening.
   The flange prevents it falling out; no adhesive, pin extensions or raised
   switch is required. Check free return, no preload and reliable full travel.
-- `nav-cap.stl` — mm units, **3.4mm square ×2mm blind pocket**, **5.4mm cup**,
+- `nav-cap.stl` — mm units, **3.4mm square ×2mm blind pocket**, **5.6mm cup**,
   4mm neck, 6.8mm head; 7mm overall height, **5mm added above the bare stem**.
   Print in tough resin. Dry fit the actual square stem; use a tiny removable
   silicone dab for retention, never force the cap down or wick glue into the
@@ -151,23 +151,33 @@ the measured switch travel must stay below 0.5mm or the lip will preload it. The
 K6-1212A drawing gives no travel figure, so that limit is **pending**, not
 approved, and the flange geometry is unchanged. The NAV swept-envelope check uses
 **±8° as a design/test envelope**, not a XUNPU datasheet rating, and now reports
-**0.406mm** minimum radial clearance against a 0.2mm requirement. Reducing the cup
-from 5.8 to 5.4mm bought that margin without touching the pocket, the roof, the
+**0.305mm** minimum radial clearance against a 0.2mm requirement. Reducing the cup
+from 5.8 to 5.6mm bought that margin without touching the pocket, the roof, the
 panel hole or any electronic part:
 
-| NAV cap dimension | Value | Limit |
-| --- | --- | --- |
-| cup diameter | 5.4mm | ≥ pocket + 2 × 0.25mm wall |
-| pocket side wall | 1.00mm | 0.25mm (print assumption) |
-| pocket **corner** wall (thinnest) | 0.296mm | 0.25mm |
-| pocket roof | 0.60mm | 0.25mm |
-| pocket vs 3.15 ±0.05mm stem | 0.10mm total | > 0 (silicone retention) |
-| cup through the 8.00mm hole, untilted | 1.15mm radial | > 0 |
+| NAV cap dimension | Nominal | After independent adverse printing errors | Limit |
+| --- | --- | --- | --- |
+| cup diameter | 5.60mm | 5.50mm (−0.10) | ≥ pocket + 2 × 0.25mm wall |
+| pocket width | 3.40mm | 3.50mm (+0.10) | 3.4mm nominal, stem 3.15 ±0.05 |
+| pocket side wall | 1.10mm | **1.00mm** | 0.25mm (print assumption) |
+| pocket **corner** wall (thinnest) | 0.396mm | **0.275mm** | 0.25mm |
+| pocket roof | 0.60mm | **0.50mm** | 0.25mm |
+| pocket vs 3.15 ±0.05mm stem | 0.10mm total | — | > 0 (silicone retention) |
+| cup through the 8.00mm hole, untilted | 1.05mm radial | — | > 0 |
 
-The 0.25mm minimum wall is a **resin/slicer assumption, not a supplier figure**;
-the first article must show the corner does not split. A smaller cup would thin
-that corner before it bought another 0.25mm of clearance, so 5.4mm is the end of
-this trade. Test full operation of all four directions and centre press with the
+The wall is judged only after those errors: the cup and roof come out 0.10mm
+smaller and the pocket 0.10mm larger, which is the adverse case. A **5.4mm cup**
+was tried and **rejected**: its corner wall falls to
+(5.4 − 0.1 − (3.4 + 0.1) × √2) / 2 = **0.175mm**, below the policy, even though
+its nominal 1.00mm/0.396mm walls looked printable. A unit test feeds that cup in
+and requires the failure. So 5.6mm is a **compromise between the 0.2mm radial
+requirement and the 0.25mm wall policy, not an optimum**, and its corner margin
+is only 0.025mm.
+
+The 0.25mm minimum wall is a **resin/slicer assumption, not a supplier figure**,
+and the **strength of the printed resin is still unproven**: the first article
+must show the corner does not split or creep when the cap is dry-fitted and
+operated. Test full operation of all four directions and centre press with the
 real switch: if its required travel or tilt exceeds these envelopes, the design
 is not qualified merely because the software tests pass.
 
@@ -314,13 +324,18 @@ owner approved a **rail-hole-only** change: each hole moved **0.12mm inward** to
 - Preserved: the 23 other circular holes and their diameters, the OLED window
   (30.5 × 16mm, R0.5), every control and connector position, the four standoff
   holes (±36.95, ±60.75) on both boards, and the 101.6mm width and 128.5mm height.
-- The gate now fails if the pair leaves the grid (`rackGridErrors`), and a unit
-  test feeds the old ±43.30mm pair in and expects a failure.
+- The gate now fails if the pair leaves the grid (`rackGridErrors`). The margin is
+  computed from the **absolute** grid error, so a too-narrow pair loses margin
+  exactly as a too-wide one does; unit tests feed the old ±43.30mm pair (0.24mm
+  too wide) and a 86.10mm pair (0.26mm too narrow) in and require both to fail.
 
 The width is **not** changed: 101.60mm against Doepfer's 101.30mm remains a
 pending rack item, together with the rail profile. Moving a hole or trimming the
 outline changes the frozen panel geometry and artwork, so each needs its own
 owner revision with a fixture update — not a mechanical-check change.
+
+The width figures apply to the **panel and the front board (both 101.6mm)**; the
+base board is 80.9mm wide and is not part of this width question.
 
 Rack and adjacent-module acceptance (named, per item, in `PENDING_ACCEPTANCE`):
 
