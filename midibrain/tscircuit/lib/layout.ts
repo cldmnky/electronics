@@ -8,7 +8,7 @@
 // All positions stay tentative pending the physical checks listed in
 // docs/mechanical-stack.md.
 
-export const PANEL = { width: 132.08, height: 128.5 } as const // 26HP x 3U
+export const PANEL = { width: 132.08, height: 128.5, thickness: 1.6 } as const // 26HP x 3U
 // Preliminary board bounding boxes only. Positions/Z, cutouts, spacers and the
 // actual stack remain unresolved; see docs/mechanical-stack.md.
 export const FRONT_PCB = { width: 128, height: 112, thickness: 1.6 } as const
@@ -18,6 +18,9 @@ export const REAR_PCB = { width: 20 * 5.08, height: 112, thickness: 1.6 } as con
 
 // M2.5 screw clearance for board and panel standoff holes; M3 for the rails.
 export const MOUNT_HOLE_DIAMETER = 2.7 as const
+// Keep derived millimetre values free of floating-point noise, so the exported
+// mechanical/layout.json and the tests compare exactly.
+const mm3 = (v: number) => Math.round(v * 1000) / 1000
 export const RAIL_HOLE_DIAMETER = 3.2 as const
 
 // Panel-to-front-board standoffs (M2.5); the panel repeats these holes.
@@ -84,18 +87,29 @@ export const DISPLAY_STANDOFFS = [
   { x: 39.75, y: 24.5 },
 ] as const
 
+// PROVISIONAL display interface, ONE definition only. The earlier 3.5 mm value
+// in this file and the 8-10 mm figure in docs/ described two different
+// quantities at the same time; they cannot both hold, so 3.5 mm is withdrawn.
+// standoffHeight = front-board top face to the display mounting PCB. 9.0 mm is
+// the middle of the earlier 8-10 mm candidate range and is bounded below by
+// the vendor's 6.7 mm rear envelope plus the unreleased FPC-latch height. It
+// is a planning value with a stated Z datum (see PROVISIONAL_Z), not a
+// measured clearance. The old separate 3 mm "additionalClearanceSpacer" is
+// gone: it would double-count the same gap.
 export const DISPLAY_STACK = {
   glass: 88.87,
   overallDepth: 10.7,
   rearEnvelopeDepth: 6.7,
-  standoffHeight: 3.5,
+  standoffHeight: 9.0,
   standoffDiameter: 3.0,
-  additionalClearanceSpacer: 3,
   piWidth: 85,
   piHeight: 56,
   piMountPitchLong: 58,
   piMountPitchShort: 49,
 } as const
+// Bezel and glass in front of the display mounting PCB.
+export const DISPLAY_FORWARD_ENVELOPE =
+  DISPLAY_STACK.overallDepth - DISPLAY_STACK.rearEnvelopeDepth // 4.0
 
 // Front-board LCD standoff holes derive from the display centre plus the
 // fixed display-local offsets above. Do not re-state their positions.
@@ -117,8 +131,62 @@ export const LCD_WINDOW = {
 }
 
 // Panel cutout for the LCD glass; centred on the display, sized over the
-// 88.87 x 56.00 mm module. The LCD itself mounts on the front board.
-export const PANEL_LCD_CUTOUT = { x: DISPLAY_CONCEPT.x, y: DISPLAY_CONCEPT.y, width: 89.2, height: 56.3 } as const
+// 88.87 x 56.00 mm module with a PROVISIONAL allowance. The LCD itself mounts
+// on the front board.
+//
+// Clearance per side: JLCPCB profile/cutout tolerance is +-0.2 mm; the
+// module's own tolerance and the panel-to-module registration are NOT
+// measured. 0.7 mm = 0.2 fab tolerance + 0.5 unverified registration and
+// assembly allowance. Planning value, not a fit approval.
+//
+// Corners: a routed inside corner cannot be sharp, so the aperture is emitted
+// as a rounded rectangle with an explicit relief radius. For per-side
+// allowance c and corner radius r the clearance at a square module corner is
+// r - |r - c| * sqrt(2). With c = 0.7 and r = 1.0 that is 0.576 mm, so no
+// corner is tighter than the 0.5 mm target: the aperture is expanded, never
+// rounded inward of the minimum. r = 1.0 mm is the PROVISIONAL router radius;
+// confirm it with the fabricator. Do not shrink this aperture to the old
+// 89.2 x 56.3 mm (0.165/0.15 mm per side) - that was inside fab tolerance.
+export const LCD_CUTOUT_ALLOWANCE = { perSide: 0.7, cornerRadius: 1.0 } as const
+export const PANEL_LCD_CUTOUT = {
+  x: DISPLAY_CONCEPT.x,
+  y: DISPLAY_CONCEPT.y,
+  width: mm3(DISPLAY_CONCEPT.width + 2 * LCD_CUTOUT_ALLOWANCE.perSide), // 90.27
+  height: mm3(DISPLAY_CONCEPT.height + 2 * LCD_CUTOUT_ALLOWANCE.perSide), // 57.40
+  cornerRadius: LCD_CUTOUT_ALLOWANCE.cornerRadius,
+} as const
+
+// Rounded-rectangle outline in absolute panel coordinates, counter-clockwise.
+// tscircuit has no rounded-rect cutout, so the panel emits this polygon. The
+// straight chords lie INSIDE the true corner arc, i.e. toward the module, so
+// the polygon is slightly SMALLER than the exact rounded rectangle: the
+// approximation can only reduce the aperture, never enlarge it. The measured
+// worst case with 6 segments per corner is 0.571 mm clearance at a square
+// module corner (scripts/check_placement.ts recomputes it from the built
+// panel), which stays above the 0.5 mm target. More segments narrow the gap
+// further; fewer would eat into it.
+export const roundedRectOutline = (
+  rect: { x: number; y: number; width: number; height: number; cornerRadius: number },
+  segmentsPerCorner = 6,
+): { x: number; y: number }[] => {
+  const hw = rect.width / 2
+  const hh = rect.height / 2
+  const r = Math.min(rect.cornerRadius, hw, hh)
+  const corners = [
+    { cx: rect.x + hw - r, cy: rect.y + hh - r, start: 0 },           // top right
+    { cx: rect.x - hw + r, cy: rect.y + hh - r, start: Math.PI / 2 }, // top left
+    { cx: rect.x - hw + r, cy: rect.y - hh + r, start: Math.PI },     // bottom left
+    { cx: rect.x + hw - r, cy: rect.y - hh + r, start: 3 * Math.PI / 2 }, // bottom right
+  ]
+  const points: { x: number; y: number }[] = []
+  for (const c of corners) {
+    for (let i = 0; i <= segmentsPerCorner; i++) {
+      const a = c.start + (Math.PI / 2) * (i / segmentsPerCorner)
+      points.push({ x: c.cx + r * Math.cos(a), y: c.cy + r * Math.sin(a) })
+    }
+  }
+  return points
+}
 
 // Front-board top-silkscreen engineering notes. Offsets are display-local, so
 // the text follows the display; do not place these by absolute coordinates.
@@ -133,21 +201,76 @@ export const displayAnnotationXY = (a: { dx: number; dy: number }) => ({
   y: DISPLAY_CONCEPT.y + a.dy,
 })
 
+// ---- PROVISIONAL Z stack ----
+// Z datum: Z = 0 at the front (operator-side) face of the panel; +Z is
+// rearward, into the rack cavity. Millimetres.
+// NOT a verified clearance. The chain below rests on TWO explicit provisional
+// design assumptions and one candidate part dimension. No value here is a
+// measurement, and none of them certifies a gap.
+//
+// Assumption A: the display glass front sits flush with the panel front face.
+// Assumption B: the display standoff is DISPLAY_STACK.standoffHeight (9.0 mm).
+// Part dimension: the display is 10.7 mm overall with a 6.7 mm rear envelope
+// (vendor). Bezel plus glass forward of the display PCB is therefore 4.0 mm.
+//
+export const DISPLAY_GLASS_FRONT_Z = 0 as const // Assumption A, not a measurement
+
+export const PROVISIONAL_Z = {
+  panelFront: 0,
+  panelRear: PANEL.thickness,                                                                // 1.60
+  displayFront: DISPLAY_GLASS_FRONT_Z,                                                       // 0.00 (assumed)
+  displayPcb: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_FORWARD_ENVELOPE),                          // 4.00
+  displayRearMost: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_FORWARD_ENVELOPE + DISPLAY_STACK.rearEnvelopeDepth), // 10.70
+  frontBoardTop: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_FORWARD_ENVELOPE + DISPLAY_STACK.standoffHeight),      // 13.00
+  frontBoardRear: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_FORWARD_ENVELOPE + DISPLAY_STACK.standoffHeight + FRONT_PCB.thickness), // 14.60
+} as const
+// The panel-to-board gap FALLS OUT of assumptions A and B. It is a
+// consequence of a design target, not evidence for it, and it is not certified.
+export const PANEL_TO_FRONT_BOARD_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear) // 11.40
+
+// Light-pipe reach is NOT proven. The Bivar PLP2-400-C is 10.16 mm long, so it
+// covers 10.16 mm of the 11.4 mm gap and the remainder must come from the 0805
+// LED body plus how the pipe seats in a 1.6 mm panel. No LED height and no
+// seating allowance is recorded here: both are unmeasured, and inventing them
+// would fake a reach check. Pending: the Bivar drawing and the actual LED.
+export const LIGHT_PIPE = { part: "Bivar PLP2-400-C", length: 10.16 } as const
+export const LIGHT_PIPE_REACH = {
+  gap: PANEL_TO_FRONT_BOARD_GAP,                            // 11.40
+  pipeLength: LIGHT_PIPE.length,                            // 10.16
+  unaccounted: mm3(PANEL_TO_FRONT_BOARD_GAP - LIGHT_PIPE.length), // 1.24, PENDING
+} as const
+
+// Tallest front-board top-side part with a manufacturer-stated height: the
+// MIDI receiver in the Toshiba 11-4L1S body, maximum installed height
+// 2.1 +-0.1 mm (drawing p.15). It does NOT prove the display underside: the
+// display's own underside component map, its FPC latch and the module
+// tolerance are unmapped. The provisional stack leaves only 0.1 mm to this
+// part, so NO assembled clearance is claimed here. Named physical gate.
+export const FRONT_TOP_SMD_MAX_HEIGHT = {
+  part: "MIDI receiver, Toshiba 11-4L1S body",
+  height: 2.2,
+  source: "manufacturer drawing p.15, max installed height 2.1 +-0.1 mm",
+} as const
+export const DISPLAY_UNDERSIDE_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost) // 2.30
+
+// Installed-depth target from the owner. Unchanged; every depth figure below
+// is provisional and none of them releases the target.
+export const DEPTH_TARGET = 110 as const
+
+// Provisional rear chain, panel front face to the rear-most point. Candidates,
+// not measurements.
+export const PROVISIONAL_DEPTH = {
+  frontToRearGap: 20,   // J5 IDC plug plus cable bend; candidate range 18-22
+  piStandoffAndPcb: 4,  // Pi spacer plus Pi PCB
+  piStackRearward: 30,  // Active Cooler + M.2 HAT+ + SSD; candidate range 20-30
+} as const
+export const provisionalInstalledDepth = (d = PROVISIONAL_DEPTH): number =>
+  mm3(PROVISIONAL_Z.frontBoardRear + d.frontToRearGap + REAR_PCB.thickness + d.piStandoffAndPcb + d.piStackRearward)
+
 // Front-board top opening for the panel-feedthrough bodies. The LCD is mounted
 // on the front board; only the USB feedthroughs need this top-edge relief notch.
 // The 3D-printed bracket spans the opening and mounts at these holes.
 export const FRONT_TOP_NOTCH = { x: -2.5, y: 52, width: 105, height: 8 } as const
-export const FEEDTHROUGH_BRACKET = {
-  mountX: [-60, 55],
-  mountY: 46.5,
-  width: 100,
-  height: 10,
-  slots: [
-    { x: -38, width: 20 },
-    { x: -5, width: 40 },
-    { x: 35, width: 40 },
-  ],
-} as const
 
 // Panel feedthroughs: exact vendor cutouts and mounting-hole spacing.
 export const USB_FEEDTHROUGHS = [
@@ -157,6 +280,141 @@ export const USB_FEEDTHROUGHS = [
   { id: "UMC AUDIO USB", x: -5, y: 53.5, cutoutWidth: 14.9, cutoutHeight: 7.3, holeSpacing: 30, holeDiameter: 3.5 },
   { id: "MIDI HUB USB", x: 35, y: 53.5, cutoutWidth: 14.9, cutoutHeight: 7.3, holeSpacing: 30, holeDiameter: 3.5 },
 ] as const
+
+// ---- Feedthrough / strain-relief bracket (3D-printed PETG) ----
+// PROVISIONAL geometry. Every position is DERIVED from the canonical panel,
+// notch, feedthrough and mount data above; nothing here restates a coordinate.
+// mechanical/layout.json is generated from this file by
+// `bun run scripts/export-mechanical.ts`, and
+// mechanical/feedthrough_bracket.py builds and self-checks the CAD model from
+// that file, so the printed part cannot drift from the board data.
+//
+// The bracket is a 3 mm bar on the REAR side of the front board, spanning the
+// top relief notch, carrying the feedthrough cable tails. The feedthrough
+// flanges stay forward of it, between the panel and the board.
+const NOTCH_LEFT = FRONT_TOP_NOTCH.x - FRONT_TOP_NOTCH.width / 2 // -55.0
+export const NOTCH_RIGHT = FRONT_TOP_NOTCH.x + FRONT_TOP_NOTCH.width / 2 // 50.0
+export const NOTCH_TOP = FRONT_TOP_NOTCH.y + FRONT_TOP_NOTCH.height / 2 // 56.0 = board top edge
+export const NOTCH_BOTTOM = FRONT_TOP_NOTCH.y - FRONT_TOP_NOTCH.height / 2 // 48.0
+export const NOTCH_BOUNDS = { left: NOTCH_LEFT, right: NOTCH_RIGHT, bottom: NOTCH_BOTTOM, top: NOTCH_TOP } as const
+
+// Planning allowances with their reason. Change them here only.
+export const BRACKET_ALLOWANCE = {
+  thickness: 3.0,            // printed bar thickness (unchanged from the first draft)
+  mountEdgeWall: 3.0,        // M2.5 nut circumradius ~2.5 mm + 0.5 mm material around it
+  mountHeadClearance: 6.5,   // PROVISIONAL M2.5 head/washer envelope; measure the real hardware
+  slotClearancePerSide: 1.5, // PROVISIONAL body, cable-bundle and screwdriver access
+  displayClearance: 2.5,     // bracket bottom above the display top edge
+  tieHoleDiameter: 3.2,      // 2.5 mm cable tie
+  materialToCuts: 1.0,       // minimum remaining web between two cuts
+} as const
+
+// Bracket mounting holes: the front board carries the same two holes
+// (`front.circuit.tsx`), 1.65 mm edge ligament to the 8 mm notch mouths.
+const BRACKET_MOUNT_X = [-60, 55] as const
+const BRACKET_MOUNT_Y = 46.5
+
+const bracketOutline = {
+  x1: mm3(Math.min(...BRACKET_MOUNT_X) - BRACKET_ALLOWANCE.mountEdgeWall), // -63.0
+  x2: mm3(Math.max(...BRACKET_MOUNT_X) + BRACKET_ALLOWANCE.mountEdgeWall), // 58.0
+  y1: mm3(DISPLAY_CONCEPT.y + DISPLAY_CONCEPT.height / 2 + BRACKET_ALLOWANCE.displayClearance), // 41.5
+  y2: NOTCH_TOP, // 56.0
+}
+
+// Open-top cable slots, derived per feedthrough in BOTH directions. Width is
+// the VENDOR PANEL CUTOUT plus access clearance; the previous 20/40/40 mm slots
+// were flange-sized and touched each other, leaving a 0 mm web between two
+// 40 mm slots at x = -5 and +35.
+//
+// Height: the slot floor is derived from each feedthrough's declared vertical
+// opening plus the same per-side clearance, NOT from a fixed y. A fixed floor
+// at y = 50 cut into even the declared panel openings (USB-C reaches
+// 53.5 - 3.8 = 49.7, USB-A 53.5 - 3.65 = 49.85). The floor must also stay
+// above the notch bottom (48.0), because below that the board is solid.
+// All slots must satisfy slotFloorY(f) >= NOTCH_BOTTOM; layout.test.ts and
+// mechanical/bracket_geometry.py both enforce it, so a future feedthrough that
+// needs a deeper slot fails the checks instead of being silently clamped.
+//
+// This is still only the PANEL OPENING plus clearance. The rear body, flange
+// and cable-bundle envelopes are unmeasured, and a panel opening does not prove
+// them: that remains a named physical gate.
+const bracketSlotFloorY = (f: { y: number; cutoutHeight: number }) =>
+  mm3(f.y - f.cutoutHeight / 2 - BRACKET_ALLOWANCE.slotClearancePerSide)
+
+const bracketSlots = USB_FEEDTHROUGHS.map(f => ({
+  id: f.id,
+  x: f.x,
+  width: mm3(f.cutoutWidth + 2 * BRACKET_ALLOWANCE.slotClearancePerSide), // 15.6 / 17.9 / 17.9
+  yBottom: bracketSlotFloorY(f), // 48.20 / 48.35 / 48.35
+  yTop: bracketOutline.y2, // open to the top edge, so a cable can be laid in
+}))
+const bracketSlotEdges = bracketSlots.map(s => ({ left: s.x - s.width / 2, right: s.x + s.width / 2 }))
+
+// The top front/rear spacer hardware (`FRONT_REAR_MOUNT`) sits in the same
+// 3 mm layer behind the front board, so the bracket must clear it. The head
+// envelope itself is unmeasured: a named physical gate.
+const bracketHeadClearance = FRONT_REAR_MOUNT.filter(h => h.y > 0).map(h => ({
+  x: h.x,
+  y: h.y,
+  diameter: BRACKET_ALLOWANCE.mountHeadClearance,
+}))
+
+// Cable ties sit in the webs between the slots (and between the end slots and
+// the mount holes), never in a slot or in a mount ligament.
+const bracketTieY = (bracketSlots[0]!.yBottom + bracketOutline.y2) / 2
+const bracketTieHoles = [
+  (BRACKET_MOUNT_X[0] + MOUNT_HOLE_DIAMETER / 2 + bracketSlotEdges[0]!.left) / 2,
+  ...bracketSlotEdges.slice(1).map((e, i) => (bracketSlotEdges[i]!.right + e.left) / 2),
+  (BRACKET_MOUNT_X[1] - MOUNT_HOLE_DIAMETER / 2 + bracketSlotEdges.at(-1)!.right) / 2,
+].map(x => ({ x: mm3(x), y: mm3(bracketTieY), diameter: BRACKET_ALLOWANCE.tieHoleDiameter }))
+
+export const FEEDTHROUGH_BRACKET = {
+  mountX: BRACKET_MOUNT_X,
+  mountY: BRACKET_MOUNT_Y,
+  mountHoleDiameter: MOUNT_HOLE_DIAMETER,
+  thickness: BRACKET_ALLOWANCE.thickness,
+  outline: {
+    ...bracketOutline,
+    width: mm3(bracketOutline.x2 - bracketOutline.x1),   // 121.0
+    height: mm3(bracketOutline.y2 - bracketOutline.y1),  // 14.5
+  },
+  slots: bracketSlots,
+  mountHeadClearance: bracketHeadClearance,
+  tieHoles: bracketTieHoles,
+} as const
+
+// ---- Shared mechanical export ----
+// The single bridge to the CAD script. `bun run scripts/export-mechanical.ts`
+// writes this object to mechanical/layout.json; layout.test.ts fails if that
+// file is stale. Never read layout.ts from Python and never restate a
+// coordinate in Python.
+export const mechanicalExport = () => ({
+  units: "mm" as const,
+  note: "Generated from tscircuit/lib/layout.ts. Provisional planning data; not a verified clearance.",
+  panel: PANEL,
+  frontPcb: FRONT_PCB,
+  rearPcb: REAR_PCB,
+  display: { ...DISPLAY_CONCEPT, stack: DISPLAY_STACK },
+  provisionalZ: PROVISIONAL_Z,
+  displayUndersideGap: DISPLAY_UNDERSIDE_GAP,
+  frontTopSmdMaxHeight: FRONT_TOP_SMD_MAX_HEIGHT,
+  lightPipe: LIGHT_PIPE,
+  lightPipeReach: LIGHT_PIPE_REACH,
+  panelToFrontBoardGap: PANEL_TO_FRONT_BOARD_GAP,
+  depthTarget: DEPTH_TARGET,
+  provisionalDepth: PROVISIONAL_DEPTH,
+  lcdCutout: { ...PANEL_LCD_CUTOUT, allowances: LCD_CUTOUT_ALLOWANCE },
+  // The actual aperture polygon, so Python can re-measure the corner clearance
+  // from the same geometry the panel emits.
+  lcdCutoutOutline: roundedRectOutline(PANEL_LCD_CUTOUT),
+  frontTopNotch: FRONT_TOP_NOTCH,
+  notchBounds: NOTCH_BOUNDS,
+  bracketAllowance: BRACKET_ALLOWANCE,
+  bracket: FEEDTHROUGH_BRACKET,
+  frontRearMount: FRONT_REAR_MOUNT,
+  mountHoleDiameter: MOUNT_HOLE_DIAMETER,
+  feedthroughs: USB_FEEDTHROUGHS,
+})
 
 // ---- Right-hand control column ----
 // TEMPO, NAV and SHIFT/EXIT share one vertical centreline, right of the
