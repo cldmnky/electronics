@@ -162,6 +162,9 @@ void testRoundTrip() {
   original.mixer.channels[2].out34Send = 0.5f;
   original.mixer.channels[2].monitor = 2;
   original.mixer.channels[3].monitor = 0;
+  original.mixer.channels[2].inCh = 5;
+  original.mixer.channels[2].inPair = true;
+  original.mixer.channels[2].outDst = 1;
   original.mixer.out34Mode = 1;
   original.clock.trs[0].clock = false;
   original.clock.trs[1].transport = false;

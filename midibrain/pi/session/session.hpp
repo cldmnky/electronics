@@ -110,6 +110,12 @@ struct MixerChannelState {
   // Input monitoring (MPC-style): 0 = off (never pass live input),
   // 1 = auto (live input iff armed, or no active take playing), 2 = on.
   int monitor = 1;
+  // Input source: mono device channel 0..17, or -1 = none. `inPair` binds
+  // the next channel as a stereo pair (inCh must be even; odd clamps down).
+  // Output destination: 0 = Main 1&2, 1 = OUT3&4, 2 = phones, 3 = none.
+  int inCh = 0;
+  bool inPair = false;
+  int outDst = 0;
   friend bool operator==(const MixerChannelState&, const MixerChannelState&) = default;
 };
 

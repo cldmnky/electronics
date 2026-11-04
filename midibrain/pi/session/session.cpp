@@ -582,6 +582,23 @@ bool decodeMixer(const JsonValue& node, MixerState& out, std::string& error) {
       if (monitor < 0) monitor = 0;
       if (monitor > 2) monitor = 2;
       channel.monitor = monitor;
+      if (item.find("inCh") == nullptr) {
+        channel.inCh = static_cast<int>(index);  // legacy: identity mapping
+      } else {
+        int inCh = channel.inCh;
+        if (!readOptionalInt(item, "inCh", inCh, path, error)) return false;
+        if (inCh < -1) inCh = -1;
+        if (inCh > 17) inCh = 17;
+        channel.inCh = inCh;
+      }
+      if (!readOptionalBool(item, "inPair", channel.inPair, path, error)) {
+        return false;
+      }
+      int outDst = channel.outDst;
+      if (!readOptionalInt(item, "outDst", outDst, path, error)) return false;
+      if (outDst < 0) outDst = 0;
+      if (outDst > 3) outDst = 3;
+      channel.outDst = outDst;
       if (const JsonValue* send = item.find("send")) {
         if (send->type != JsonValue::Type::Array) {
           error = "session: \"" + path + ".send\" is not an array";
@@ -1356,6 +1373,12 @@ std::string encode(const Snapshot& snapshot) {
     appendNumber(out, channel.out34Send);
     out += ",\"monitor\":";
     appendNumber(out, channel.monitor);
+    out += ",\"inCh\":";
+    appendNumber(out, channel.inCh);
+    out += ",\"inPair\":";
+    appendBool(out, channel.inPair);
+    out += ",\"outDst\":";
+    appendNumber(out, channel.outDst);
     out += "}";
   }
   out += "],\"master\":";
