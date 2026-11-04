@@ -21,6 +21,23 @@
  *   answers at 0x14 or 0x5d depending on the module strap; both nodes are
  *   declared exactly as the vendor does, without inventing GPIO wiring.
  *
+ * Touch, multitouch and the missing interrupt line:
+ *   The GT911 reports up to 5 simultaneous contact points. The in-kernel
+ *   goodix driver publishes them as Linux input protocol B MT slots
+ *   (ABS_MT_SLOT / ABS_MT_POSITION_X/Y / ABS_MT_TRACKING_ID), so libinput,
+ *   Weston and Qt's Wayland client all see every finger.
+ *   The vendor overlay declares no interrupt and no reset GPIO for this panel,
+ *   and no primary source we have documents those pins. That is not fatal:
+ *   goodix_request_irq() (drivers/input/touchscreen/goodix.c) falls back to a
+ *   polling timer when client->irq is 0, which is what the vendor relies on.
+ *   Polling costs latency and CPU. If a schematic confirms the pins, add
+ *   interrupt-parent/interrupts and reset-gpios/irq-gpios here (and expose them
+ *   as overlay parameters) instead of guessing them.
+ *   touchscreen-size-x/y describe the coordinate space Weston presents after
+ *   the 90 degree rotation (800x480). If touch axes come out swapped or
+ *   clipped, change them to 480x800 or calibrate with
+ *   weston-touch-calibrator (README.md, "Touch calibration").
+ *
  * Parameters (positional or name=value):
  *   dtoverlay=waveshare-3p5-dsi-h,dsi1   DSI1, Pi 5 connector DISP1 (default)
  *   dtoverlay=waveshare-3p5-dsi-h,dsi0   DSI0, Pi 5 connector DISP0
@@ -96,11 +113,15 @@
 			touch1: goodix@14 {
 				compatible = "goodix,gt911";
 				reg = <0x14>;
+				touchscreen-size-x = <800>;
+				touchscreen-size-y = <480>;
 			};
 
 			touch2: goodix@5d {
 				compatible = "goodix,gt911";
 				reg = <0x5d>;
+				touchscreen-size-x = <800>;
+				touchscreen-size-y = <480>;
 			};
 		};
 	};

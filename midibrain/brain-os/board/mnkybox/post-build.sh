@@ -97,22 +97,43 @@ enable_unit() {
 	mkdir -p "${TARGET_DIR}/etc/systemd/system/${wants}.wants"
 	ln -sfn "${unit_path}" "${TARGET_DIR}/etc/systemd/system/${wants}.wants/${unit}"
 }
+# System units.
 enable_unit systemd-networkd.service multi-user.target
 enable_unit dropbear.service multi-user.target
 enable_unit seatd.service multi-user.target
-enable_unit pipewire.service multi-user.target
-enable_unit wireplumber.service multi-user.target
-enable_unit weston.service multi-user.target
-enable_unit mnkybox-app.service multi-user.target
 enable_unit mnkybox-firstboot.service multi-user.target
+
+# Session units are *user* units of user mnkybox. They are enabled through the
+# user manager's default.target, and the manager itself starts at boot because
+# lingering is enabled for that user (below). This is what the application team
+# asked for: PipeWire, pipewire-pulse and WirePlumber live in the user session,
+# with the XDG_RUNTIME_DIR the user manager provides (/run/user/1000).
+# Our own copies live in /etc/systemd/user; link to them explicitly.
+enable_user_unit_local() {
+	unit="$1"
+	[ -f "${TARGET_DIR}/etc/systemd/user/${unit}" ] || \
+		die "user unit ${unit} is missing from the overlay"
+	mkdir -p "${TARGET_DIR}/etc/systemd/user/default.target.wants"
+	ln -sfn "/etc/systemd/user/${unit}" \
+		"${TARGET_DIR}/etc/systemd/user/default.target.wants/${unit}"
+}
+enable_user_unit_local pipewire.service
+enable_user_unit_local pipewire-pulse.service
+enable_user_unit_local wireplumber.service
+enable_user_unit_local weston.service
+enable_user_unit_local mnkybox-app.service
+
+# Lingering: systemd-logind starts user@1000.service at boot for this user, so
+# the session units run without anybody logging in.
+mkdir -p "${TARGET_DIR}/var/lib/systemd/linger"
+: > "${TARGET_DIR}/var/lib/systemd/linger/mnkybox"
 
 # /etc/systemd/system/*.service overrides must win over /usr/lib ones: our
 # pipewire/wireplumber/weston/app units live in the overlay and are complete
 # replacements, not drop-ins, so nothing else is needed here.
 
-# Mount point for the FAT boot partition (fstab mounts p1 here) and runtime
-# directory for the session.
-mkdir -p "${TARGET_DIR}/boot" "${TARGET_DIR}/run"
+# Mount point for the FAT boot partition (fstab mounts p1 here).
+mkdir -p "${TARGET_DIR}/boot"
 install -d -m 0755 "${TARGET_DIR}/var/lib/mnkybox"
 
 # Empty machine-id: systemd generates a stable one on first boot.

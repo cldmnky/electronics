@@ -198,24 +198,98 @@ else
 	fs_has /usr/lib/systemd/systemd && ok "systemd is the init (/usr/lib/systemd/systemd)" || \
 		bad "systemd is missing from the root filesystem"
 
+	# System units
 	wants=/etc/systemd/system/multi-user.target.wants
 	wants_ls="$(fs_ls "${wants}")"
-	for u in dropbear.service systemd-networkd.service pipewire.service \
-		 wireplumber.service weston.service mnkybox-app.service \
+	for u in dropbear.service systemd-networkd.service seatd.service \
 		 mnkybox-firstboot.service; do
 		if printf '%s\n' "${wants_ls}" | grep -q -- "${u}"; then
-			ok "enabled unit: ${u}"
+			ok "enabled system unit: ${u}"
 		else
-			bad "unit is not enabled: ${u}"
+			bad "system unit is not enabled: ${u}"
 		fi
 	done
+
+	# Session units: user units of user mnkybox, started by its user manager
+	# because lingering is enabled.
+	uwants=/etc/systemd/user/default.target.wants
+	uwants_ls="$(fs_ls "${uwants}")"
+	for u in pipewire.service pipewire-pulse.service wireplumber.service \
+		 weston.service mnkybox-app.service; do
+		if printf '%s\n' "${uwants_ls}" | grep -q -- "${u}"; then
+			ok "enabled user unit: ${u}"
+		else
+			bad "user unit is not enabled: ${u}"
+		fi
+	done
+	fs_has /var/lib/systemd/linger/mnkybox && ok "lingering enabled for user mnkybox" || \
+		bad "lingering is not enabled (/var/lib/systemd/linger/mnkybox missing)"
+
+	# Audio contract: Qt Multimedia -> PulseAudio backend -> pipewire-pulse.
+	for f in /usr/bin/pipewire-pulse /usr/bin/pw-link /usr/bin/wpctl \
+		 /etc/pipewire/pipewire.conf.d/50-mnkybox.conf \
+		 /etc/wireplumber/wireplumber.conf.d/50-mnkybox.conf \
+		 /etc/systemd/system/user@1000.service.d/limits.conf; do
+		fs_has "${f}" && ok "audio: ${f}" || bad "audio: ${f} is missing"
+	done
+	if fs_has /usr/bin/pulseaudio; then
+		bad "the PulseAudio daemon is in the image; only pipewire-pulse may serve Pulse clients"
+	else
+		ok "no PulseAudio daemon in the image (pipewire-pulse serves Pulse clients)"
+	fi
 
 	for f in /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/weston \
 		 /usr/bin/seatd /usr/bin/wpa_supplicant /usr/sbin/dropbear \
 		 /opt/mnkybox/bin/mnkybox /etc/security/limits.d/audio.conf \
-		 /etc/weston.ini /etc/wpa_supplicant/wpa_supplicant.conf; do
+		 /etc/weston.ini /etc/wpa_supplicant/wpa_supplicant.conf \
+		 /usr/bin/evtest /usr/bin/libinput /usr/bin/weston-touch-calibrator; do
 		fs_has "${f}" && ok "present: ${f}" || bad "missing: ${f}"
 	done
+
+	# Qt 6 QML on the Wayland QPA: the Qt libraries and the Wayland platform
+	# plugin must be in the image, and no XWayland may be shipped.
+	qt_ls="$(fs_ls /usr/lib)"
+	for lib in libQt6Core.so libQt6Gui.so libQt6Qml.so libQt6Quick.so \
+		   libQt6WaylandClient.so libQt6Svg.so libQt6VirtualKeyboard.so; do
+		if printf '%s\n' "${qt_ls}" | grep -qF -- "${lib}"; then
+			ok "Qt 6 library: ${lib}"
+		else
+			bad "Qt 6 library is missing: ${lib}"
+		fi
+	done
+	# Buildroot configures Qt with -DINSTALL_ARCHDATADIR=lib/qt6, so plugins
+	# live in /usr/lib/qt6/plugins (older layouts used /usr/lib/qt/plugins).
+	qt_plugins=
+	for d in /usr/lib/qt6/plugins /usr/lib/qt/plugins; do
+		qt_plugins="${qt_plugins}$(fs_ls "${d}/platforms" 2>/dev/null || true)
+$(fs_ls "${d}/platforminputcontexts" 2>/dev/null || true)
+"
+	done
+	if printf '%s\n' "${qt_plugins}" | grep -q 'libqwayland'; then
+		ok "Qt Wayland platform plugin present"
+	else
+		bad "Qt Wayland platform plugin (libqwayland-*.so) is missing"
+	fi
+	if printf '%s\n' "${qt_plugins}" | grep -q 'qtvirtualkeyboard'; then
+		ok "Qt virtual keyboard plugin present"
+	else
+		bad "Qt virtual keyboard platforminputcontext plugin is missing"
+	fi
+	qt_audio_plugins=
+	for d in /usr/lib/qt6/plugins /usr/lib/qt/plugins; do
+		qt_audio_plugins="${qt_audio_plugins}$(fs_ls "${d}/multimedia" 2>/dev/null || true)
+"
+	done
+	if printf '%s\n' "${qt_audio_plugins}" | grep -qi 'pulse'; then
+		ok "Qt Multimedia PulseAudio backend plugin present"
+	else
+		bad "Qt Multimedia PulseAudio backend plugin (plugins/multimedia/*pulse*) is missing"
+	fi
+	if fs_has /usr/bin/Xwayland; then
+		bad "Xwayland is in the image, but this product uses native Wayland only"
+	else
+		ok "no Xwayland in the image (Qt 6 native Wayland)"
+	fi
 
 	jack_ls="$(fs_ls /usr/lib/pipewire-0.3/jack)"
 	if printf '%s\n' "${jack_ls}" | grep -q 'libjack\.so\.0'; then

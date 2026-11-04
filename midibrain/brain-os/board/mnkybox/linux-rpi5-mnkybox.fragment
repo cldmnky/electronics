@@ -1,17 +1,25 @@
 # MNKYBOX Raspberry Pi 5 kernel fragment.
 #
-# Applied on top of the raspberrypi rpi-6.12.y bcm2712 defconfig
+# Applied on top of the raspberrypi rpi-6.12.y (6.12.61) bcm2712 defconfig
 # (BR2_LINUX_KERNEL_DEFCONFIG="bcm2712"). Every entry here is a deliberate
 # product decision; nothing is added "just in case".
 #
-# Real-time behaviour (approved decision):
-#   CONFIG_PREEMPT is full kernel preemption. PREEMPT_RT is NOT enabled: the
-#   RT patchset for 6.6/6.12 is out of tree for rpi-6.12.y in this tree, and
-#   the audio engine block budget is 2.67 ms with the Pico 2 as clock master,
-#   which full preemption covers. rpi-6.12.y-rt remains the documented
-#   upgrade path (README.md). `threadirqs` on the kernel command line forces
-#   the remaining interrupt handlers into threads.
-CONFIG_PREEMPT=y
+# Real-time behaviour — PREEMPT_RT is enabled, from the kernel tree itself:
+#   Linux 6.12 merged PREEMPT_RT upstream and this tree's arm64 port selects
+#   ARCH_SUPPORTS_RT (arch/arm64/Kconfig:105), so CONFIG_PREEMPT_RT needs no
+#   out-of-tree patch stack and no separate rpi-6.12.y-rt branch. It is chosen
+#   over plain PREEMPT because the audio engine's block budget is 2.67 ms with
+#   the Pico 2 as clock master, and RT removes the remaining non-preemptible
+#   sections (spinlocks become sleeping, priority-inheriting locks). The cost
+#   is throughput, which this appliance does not need.
+#   `threadirqs` stays on the kernel command line: RT threads interrupt
+#   handlers anyway, and the flag keeps the behaviour explicit for anyone
+#   reading cmdline.txt. If RT ever has to be dropped, the fallback is
+#   CONFIG_PREEMPT + threadirqs + SCHED_FIFO for the audio threads
+#   (LimitRTPRIO=95 in the units), and that fallback must be recorded here.
+CONFIG_EXPERT=y
+CONFIG_PREEMPT_RT=y
+# CONFIG_PREEMPT is not set
 # CONFIG_PREEMPT_NONE is not set
 # CONFIG_PREEMPT_VOLUNTARY is not set
 CONFIG_HZ_1000=y
@@ -26,6 +34,9 @@ CONFIG_ARM64_4K_PAGES=y
 # CONFIG_ARM64_16K_PAGES is not set
 
 # Touch: Goodix GT911 on the DSI I2C bus of the Waveshare 3.5inch DSI LCD (H).
+# The controller reports up to 5 contact points; the driver publishes them as
+# Linux input protocol B MT slots, which libinput, Weston and Qt Wayland all
+# consume.
 CONFIG_TOUCHSCREEN_GOODIX=y
 CONFIG_I2C=y
 CONFIG_I2C_CHARDEV=y
