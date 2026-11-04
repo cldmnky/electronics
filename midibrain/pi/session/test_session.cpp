@@ -130,6 +130,9 @@ void testRoundTrip() {
       {0, 1, "future.unknown.param", 17}};
   original.isTemplate = true;
   original.takes.active[1] = "02-drums-003.wav";
+  original.takes.loop[1].enabled = true;
+  original.takes.loop[1].startBeats = 8.0;
+  original.takes.loop[1].endBeats = 16.0;
   original.punch.playFrom.enabled = true;
   original.punch.playFrom.measure = 5;
   original.punch.in.enabled = true;
@@ -166,7 +169,8 @@ void testRoundTrip() {
   CHECK(text.find("\"master\":") != std::string::npos);
   CHECK(text.find("\"bpm_x100\":13333") != std::string::npos);
   CHECK(text.find("\"click\":{\"mode\":2,\"output\":1") != std::string::npos);
-  CHECK(text.find("\"takes\":{\"active\":{\"1\":\"02-drums-003.wav\"}}") !=
+  CHECK(text.find("\"takes\":{\"active\":{\"1\":\"02-drums-003.wav\"},\"loop\":{"
+                "\"1\":{\"enabled\":true,\"start\":8,\"end\":16}}}") !=
         std::string::npos);
   CHECK(text.find("\"punch\":{\"playFrom\":{\"enabled\":true,\"measure\":5}") !=
         std::string::npos);

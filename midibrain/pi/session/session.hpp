@@ -138,8 +138,17 @@ struct PunchState {
 // Active take per track: empty string means the live input (no take
 // playback). Non-empty is the take file name stem the track plays back when
 // disarmed. Newest-wins on overlap is engine policy, not stored here.
+// LoopState is per-track take looping in beats (fractional allowed):
+// enabled with end <= start loops the whole active take.
+struct LoopState {
+  bool enabled = false;
+  double startBeats = 0.0;
+  double endBeats = 0.0;
+  friend bool operator==(const LoopState&, const LoopState&) = default;
+};
 struct TakesState {
   std::array<std::string, audio::kMaxInputs> active{};
+  std::array<LoopState, audio::kMaxInputs> loop{};
   friend bool operator==(const TakesState&, const TakesState&) = default;
 };
 

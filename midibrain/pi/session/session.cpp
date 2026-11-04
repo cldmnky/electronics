@@ -365,6 +365,17 @@ bool readBool(const JsonValue& value, bool& out) {
   return true;
 }
 
+bool readOptionalDouble(const JsonValue& object, const char* key, double& out,
+                        const std::string& path, std::string& error) {
+  const JsonValue* value = object.find(key);
+  if (value == nullptr) return true;
+  if (!readDouble(*value, out)) {
+    error = "session: \"" + path + "." + key + "\" is not a number";
+    return false;
+  }
+  return true;
+}
+
 bool readString(const JsonValue& value, std::string& out) {
   if (value.type != JsonValue::Type::String) return false;
   out = value.string;
@@ -729,6 +740,44 @@ bool decodeTakes(const JsonValue& node, TakesState& out, std::string& error) {
       return false;
     }
     out.active[static_cast<std::size_t>(track)] = member.second.string;
+  }
+  const JsonValue* loop = node.find("loop");
+  if (loop == nullptr) return true;
+  if (loop->type != JsonValue::Type::Object) {
+    error = "session: \"takes.loop\" is not an object";
+    return false;
+  }
+  for (const auto& member : loop->object) {
+    int track = -1;
+    try {
+      std::size_t pos = 0;
+      track = std::stoi(member.first, &pos);
+      if (pos != member.first.size()) track = -1;
+    } catch (...) {
+      track = -1;
+    }
+    if (track < 0 || track >= audio::kMaxInputs) continue;
+    if (member.second.type != JsonValue::Type::Object) {
+      error = "session: \"takes.loop." + member.first +
+              "\" is not an object";
+      return false;
+    }
+    LoopState& state = out.loop[static_cast<std::size_t>(track)];
+    const std::string path = "takes.loop." + member.first;
+    if (!readOptionalBool(member.second, "enabled", state.enabled, path,
+                           error)) {
+      return false;
+    }
+    if (!readOptionalDouble(member.second, "start", state.startBeats, path,
+                             error)) {
+      return false;
+    }
+    if (!readOptionalDouble(member.second, "end", state.endBeats, path,
+                             error)) {
+      return false;
+    }
+    if (state.startBeats < 0.0) state.startBeats = 0.0;
+    if (state.endBeats < 0.0) state.endBeats = 0.0;
   }
   return true;
 }
@@ -1159,6 +1208,21 @@ std::string encode(const Snapshot& snapshot) {
     writeString(out, std::to_string(track));
     out.push_back(':');
     writeString(out, name);
+  }
+  out += "},\"loop\":{";
+  bool firstLoop = true;
+  for (int track = 0; track < audio::kMaxInputs; ++track) {
+    const LoopState& state =
+        snapshot.takes.loop[static_cast<std::size_t>(track)];
+    if (!state.enabled) continue;
+    if (!firstLoop) out.push_back(',');
+    firstLoop = false;
+    writeString(out, std::to_string(track));
+    out += ":{\"enabled\":true,\"start\":";
+    appendNumber(out, state.startBeats);
+    out += ",\"end\":";
+    appendNumber(out, state.endBeats);
+    out.push_back('}');
   }
   out += "}},\"punch\":{\"playFrom\":{\"enabled\":";
   appendBool(out, snapshot.punch.playFrom.enabled);
