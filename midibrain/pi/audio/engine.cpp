@@ -113,4 +113,10 @@ void Engine::setFxReturn(int send, float gain) {
     mFxReturn[send] = gain;
 }
 
+void Engine::setSampleRate(double sampleRate) {
+    for (auto* fx : mFx) {
+        if (fx != nullptr) fx->setSampleRate(sampleRate);
+    }
+}
+
 }  // namespace mnky::audio

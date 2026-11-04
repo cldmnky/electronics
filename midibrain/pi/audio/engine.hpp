@@ -27,6 +27,9 @@ struct IEffect {
     virtual ~IEffect() = default;
     virtual void process(float* const* ch, int nch, int n) = 0;
     virtual const char* name() const = 0;
+    /// Control-thread sample-rate notice; default ignores (stateless effects).
+    /// Time-based effects re-allocate here. Engine forwards on setSampleRate.
+    virtual void setSampleRate(double) {}
 };
 
 /// Mixer core: gain/pan, mute/solo, post-fader sends, FX returns and master.
@@ -45,10 +48,19 @@ public:
 
     /// Out-of-range indices are ignored, so a UI can push all 18 strips blindly.
     void setChannel(int index, Channel ch);
+    /// Live strip state (session capture); out-of-range returns a default strip.
+    Channel channel(int index) const {
+        return index >= 0 && index < kMaxInputs ? mChannels[index] : Channel{};
+    }
     /// Linear master gain; negative and NaN values are clamped to 0.
     void setMaster(float gain);
+    /// Live master gain (session capture).
+    float masterGain() const { return mMaster; }
     /// `send` is 0..kNumSends-1; nullptr detaches and passes the bus through.
     void setFx(int send, IEffect* fx);
+    /// Control thread only. Forwards to attached FX (see IEffect); engine
+    /// processing itself is rate-agnostic.
+    void setSampleRate(double sampleRate);
     /// Linear return level applied to the FX bus after process().
     void setFxReturn(int send, float gain);
 

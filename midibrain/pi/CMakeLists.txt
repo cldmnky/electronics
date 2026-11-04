@@ -177,6 +177,7 @@ mnky_core_module(mnky_link  link)
 mnky_core_module(mnky_midi  midi)
 mnky_core_module(mnky_audio audio)
 mnky_core_module(mnky_clap  clap)
+mnky_core_module(mnky_session session)
 
 if(TARGET mnky_midi)
   target_link_libraries(mnky_midi PUBLIC mnky_rtmidi)
@@ -236,6 +237,7 @@ mnky_module_tests(mnky_link  link)
 mnky_module_tests(mnky_midi  midi)
 mnky_module_tests(mnky_audio audio)
 mnky_module_tests(mnky_clap  clap)
+mnky_module_tests(mnky_session session)
 
 # --- JUCE compile smoke -------------------------------------------------------
 # The wave-2 app/ team owns the real juce_add_gui_app target. Until it lands this
