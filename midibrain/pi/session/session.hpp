@@ -48,10 +48,42 @@ inline constexpr const char* kAppId = "mnkybox";
 // Two FX send buses, matching audio::kNumSends.
 inline constexpr int kFxBuses = audio::kNumSends;
 
+// MIDI FX pipe types (stable ids; positional int params documented below).
+// Wave 1 (stateless): Filter..Transform. Wave 2 (clocked): Arp..MidiDelay.
+enum class MidiPipeType : std::uint8_t {
+  Filter = 1,        // [noteOn,noteOff,cc,pc,press,bend,realtime,sysex] 1 = pass
+  NoteRange = 2,     // [lo,hi,velLo,velHi] note + velocity window
+  CcRemap = 3,       // [inLo,inHi,outLo,outHi] linear range map
+  ChannelRemap = 4,  // [inCh 0 = any, outCh 1..16]
+  ScaleQuantize = 5, // [scale 0 = off,1 major,2 minor,3 pentaMaj,4 pentaMin,
+                       //  5 dorian,6 user; root 0..11; mask12 pitch classes]
+  Chance = 6,        // [percent 0..100] drop notes by chance
+  VelocityRandom = 7,// [amount 0..127 humanize +/-, minVel 0..127 floor]
+  Dispatcher = 8,    // [numCh 2..16, startCh 1..16] round-robin note spread
+  Sustain = 9,       // [latch 0/1] drop note-offs while latched
+  NoteLength = 10,   // [lengthMs 0 = off, else fixed note length]
+  Transform = 11,    // [matchKind,matchLo,matchHi,outKind,outVal] kinds:
+                       //  0 note,1 cc,2 pc,3 bend,4 pressure
+  Arp = 12,          // [div 0=1/4,1=1/8,2=1/16,3=1/32; type 0 up,1 down,
+                       //  2 updown,3 random,4 chord; octaves 1..4;
+                       //  swing 0..100; accent 0..100; gatePct 1..100]
+  Repeater = 13,     // [div 0..3 as Arp; repeats 1..8; falloff 0..100]
+  CcLfo = 14,        // [cc 0..127; wave 0 sine,1 tri,2 square,3 saw;
+                       //  div 0..3; depth 0..127; center 0..127]
+  Harmonizer = 15,   // [n 0..4 voices; i1..i4 semitone offsets -48..48]
+  MidiDelay = 16,    // [delayMs 0..2000; repeats 0..8; falloff 0..100]
+};
+struct MidiPipe {
+  MidiPipeType type = MidiPipeType::Filter;
+  bool bypass = false;
+  std::vector<int> params;
+  friend bool operator==(const MidiPipe&, const MidiPipe&) = default;
+};
 struct RouteState {
   int src = 0;
   int dst = 0;
   bool on = false;
+  std::vector<MidiPipe> pipes;  // evaluated in order where bytes flow
   friend bool operator==(const RouteState&, const RouteState&) = default;
 };
 
@@ -111,6 +143,8 @@ struct TransportState {
 struct ClockRoute {
   bool clock = true;
   bool transport = true;
+  int tempoDiv = 1;    // clock divider: 1, 2 or 4 (drop multiples)
+  int syncDelayMs = 0;  // clock delay 0..500 ms to align late hardware
   friend bool operator==(const ClockRoute&, const ClockRoute&) = default;
 };
 // External clock follow. `source`: 0 = internal generator (legacy behavior),

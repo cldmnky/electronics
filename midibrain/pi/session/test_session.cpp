@@ -30,6 +30,9 @@ using mnky::midi::Port;
 using mnky::midi::Router;
 using mnky::session::FxSlotTarget;
 using mnky::session::LoadResult;
+using mnky::session::MidiPipe;
+using mnky::session::MidiPipeType;
+using mnky::session::RouteState;
 using mnky::session::Snapshot;
 
 int gFailures = 0;
@@ -93,9 +96,9 @@ std::string readFile(const std::string& path) {
 void testRoundTrip() {
   Snapshot original;
   original.router.routes = {
-      {static_cast<int>(Port::TrsIn1), static_cast<int>(Port::UsbOut), true},
-      {static_cast<int>(Port::UsbIn), static_cast<int>(Port::TrsOut2), true},
-      {static_cast<int>(Port::TrsIn2), static_cast<int>(Port::TrsOut1), false}};
+      {static_cast<int>(Port::TrsIn1), static_cast<int>(Port::UsbOut), true, {}},
+      {static_cast<int>(Port::UsbIn), static_cast<int>(Port::TrsOut2), true, {}},
+      {static_cast<int>(Port::TrsIn2), static_cast<int>(Port::TrsOut1), false, {}}};
   original.router.channels[0] = 0x0003;
   original.router.channels[2] = 0xFFFF;
   original.router.channels[5] = 0x00F0;
@@ -166,6 +169,22 @@ void testRoundTrip() {
   original.clock.source = 1;
   original.clock.transportFollow[0] = true;
   original.clock.transportFollow[2] = true;
+  original.clock.trs[0].tempoDiv = 2;
+  original.clock.trs[0].syncDelayMs = 12;
+  RouteState split;
+  split.src = 2;
+  split.dst = 3;
+  split.on = true;
+  MidiPipe range;
+  range.type = MidiPipeType::NoteRange;
+  range.params = {36, 72, 1, 127};
+  split.pipes.push_back(range);
+  MidiPipe chance;
+  chance.type = MidiPipeType::Chance;
+  chance.bypass = true;
+  chance.params = {25};
+  split.pipes.push_back(chance);
+  original.router.routes.push_back(std::move(split));
 
   TempDir dir;
   CHECK(dir.ok());
@@ -437,8 +456,8 @@ void testApplyAndCapture() {
 
   Snapshot snapshot;
   snapshot.router.routes = {
-      {static_cast<int>(Port::TrsIn1), static_cast<int>(Port::UsbOut), true},
-      {static_cast<int>(Port::UsbIn), static_cast<int>(Port::TrsOut2), true}};
+      {static_cast<int>(Port::TrsIn1), static_cast<int>(Port::UsbOut), true, {}},
+      {static_cast<int>(Port::UsbIn), static_cast<int>(Port::TrsOut2), true, {}}};
   snapshot.router.channels[0] = 0x0003;
   snapshot.router.channels[1] = Router::kAllChannels;
   snapshot.router.transpose[0] = -12;

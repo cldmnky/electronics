@@ -448,7 +448,53 @@ bool decodeRouter(const JsonValue& node, RouterState& out, std::string& error) {
       if (!readOptionalInt(item, "src", route.src, path, error)) return false;
       if (!readOptionalInt(item, "dst", route.dst, path, error)) return false;
       if (!readOptionalBool(item, "on", route.on, path, error)) return false;
-      out.routes.push_back(route);
+      if (const JsonValue* pipes = item.find("pipes")) {
+        if (pipes->type != JsonValue::Type::Array) {
+          error = "session: \"" + path + ".pipes\" is not an array";
+          return false;
+        }
+        std::size_t pipeIndex = 0;
+        for (const JsonValue& pipeItem : pipes->array) {
+          const std::string pipePath = path + ".pipes[" +
+                                       std::to_string(pipeIndex++) + "]";
+          if (pipeItem.type != JsonValue::Type::Object) {
+            error = "session: \"" + pipePath + "\" is not an object";
+            return false;
+          }
+          MidiPipe pipe;
+          int type = 0;
+          if (!readOptionalInt(pipeItem, "t", type, pipePath, error)) {
+            return false;
+          }
+          if (type < 1 || type > 16) {
+            error = "session: \"" + pipePath + ".t\" is not a pipe type";
+            return false;
+          }
+          pipe.type = static_cast<MidiPipeType>(type);
+          if (!readOptionalBool(pipeItem, "bypass", pipe.bypass, pipePath,
+                                 error)) {
+            return false;
+          }
+          if (const JsonValue* params = pipeItem.find("params")) {
+            if (params->type != JsonValue::Type::Array) {
+              error = "session: \"" + pipePath +
+                      ".params\" is not an array";
+              return false;
+            }
+            for (const JsonValue& value : params->array) {
+              int param = 0;
+              if (!readInt(value, param)) {
+                error = "session: \"" + pipePath +
+                        ".params\" holds a non-integer";
+                return false;
+              }
+              pipe.params.push_back(param);
+            }
+          }
+          route.pipes.push_back(std::move(pipe));
+        }
+      }
+      out.routes.push_back(std::move(route));
     }
   }
 
@@ -889,6 +935,17 @@ bool decodeClockRoute(const JsonValue& node, const std::string& path,
   if (!readOptionalBool(node, "transport", out.transport, path, error)) {
     return false;
   }
+  int tempoDiv = out.tempoDiv;
+  if (!readOptionalInt(node, "tempoDiv", tempoDiv, path, error)) return false;
+  if (tempoDiv != 1 && tempoDiv != 2 && tempoDiv != 4) tempoDiv = 1;
+  out.tempoDiv = tempoDiv;
+  int syncDelayMs = out.syncDelayMs;
+  if (!readOptionalInt(node, "syncDelayMs", syncDelayMs, path, error)) {
+    return false;
+  }
+  if (syncDelayMs < 0) syncDelayMs = 0;
+  if (syncDelayMs > 500) syncDelayMs = 500;
+  out.syncDelayMs = syncDelayMs;
   return true;
 }
 
@@ -1241,7 +1298,22 @@ std::string encode(const Snapshot& snapshot) {
     appendNumber(out, route.dst);
     out += ",\"on\":";
     appendBool(out, route.on);
-    out.push_back('}');
+    out += ",\"pipes\":[";
+    for (std::size_t p = 0; p < route.pipes.size(); ++p) {
+      if (p != 0) out.push_back(',');
+      const MidiPipe& pipe = route.pipes[p];
+      out += "{\"t\":";
+      appendNumber(out, static_cast<int>(pipe.type));
+      out += ",\"bypass\":";
+      appendBool(out, pipe.bypass);
+      out += ",\"params\":[";
+      for (std::size_t q = 0; q < pipe.params.size(); ++q) {
+        if (q != 0) out.push_back(',');
+        appendNumber(out, pipe.params[q]);
+      }
+      out += "]}";
+    }
+    out += "]}";
   }
   out += "],\"channels\":{";
   for (int port = 0; port < midi::kPortCount; ++port) {
@@ -1429,12 +1501,20 @@ std::string encode(const Snapshot& snapshot) {
     appendBool(out, snapshot.clock.trs[i].clock);
     out += ",\"transport\":";
     appendBool(out, snapshot.clock.trs[i].transport);
+    out += ",\"tempoDiv\":";
+    appendNumber(out, snapshot.clock.trs[i].tempoDiv);
+    out += ",\"syncDelayMs\":";
+    appendNumber(out, snapshot.clock.trs[i].syncDelayMs);
     out.push_back('}');
   }
   out += "],\"usb\":{\"clock\":";
   appendBool(out, snapshot.clock.usb.clock);
   out += ",\"transport\":";
   appendBool(out, snapshot.clock.usb.transport);
+  out += ",\"tempoDiv\":";
+  appendNumber(out, snapshot.clock.usb.tempoDiv);
+  out += ",\"syncDelayMs\":";
+  appendNumber(out, snapshot.clock.usb.syncDelayMs);
   out += "},\"source\":";
   appendNumber(out, snapshot.clock.source);
   out += ",\"transportFollow\":[";
@@ -1475,7 +1555,7 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
       const auto destination = static_cast<midi::Port>(dst);
       if (!midi::isOutput(destination)) continue;
       if (router.routeEnabled(source, destination)) {
-        snapshot.router.routes.push_back(RouteState{src, dst, true});
+        snapshot.router.routes.push_back(RouteState{src, dst, true, {}});
       }
     }
   }
