@@ -140,33 +140,62 @@ holds what has actually been recorded, which is nothing yet.
 
 - it resolves `kicad-cli` portably — `--kicad-cli PATH`, then `KICAD_CLI`, then
   `PATH`, then the macOS bundle — and prints the tool version;
+- it asks for **all three severities**: `--severity-error`,
+  `--severity-warning` and `--severity-exclusions`. Asking only for
+  `--severity-exclusions` reports the excluded findings and nothing else, so a
+  report with real errors looks empty. That flag combination was a false pass
+  and is now a regression test (`test_the_checker_requests_all_three_severities`);
 - it runs ERC in a **private per-run scratch copy** of `tmp/`, so the frozen
   project is never modified, two runs cannot share a report, and a report from
   an earlier schematic can never be read as the current result;
-- in that copy it repairs library-table *locations only*: paths into this
-  repository's own `tmp/library` become `${KIPRJMOD}`, and external libraries
-  are rebased from `--libs`/`FROEMIX_KICAD_LIBS`. Every library this host does
-  not have is printed as `unresolved` — the 4ms design libraries are not part of
-  this repository, so on a host without them the table entries are dropped and
-  listed, not hidden;
-- it honours the project's ERC exclusions and reports how many findings were
-  excluded, so a stale exclusion shows up as an unexcluded finding;
-- it exits 0 only for **0 unexcluded findings**, 1 when findings remain, and 3
-  when ERC could not be verified (no tool, crash, missing or empty report).
-  There is no skip flag and no stale-report fallback.
+- it **validates the report before believing it**: the `ERC report (...)` header,
+  the `Report includes:` line (all three severities), at least one
+  `***** Sheet` section, the closing
+  `** ERC messages: N  Errors E  Warnings W` line, and counts that agree with
+  the findings. A truncated, foreign or empty file is "cannot verify", never
+  "0 findings";
+- the process exit code is checked **independently** of the report: only 0 and 5
+  (5 = `--exit-code-violations` found violations) are accepted, and no message
+  text such as "Found 0 violations" can excuse another code;
+- it repairs library-table **locations only, in the scratch copy**: entries that
+  point into this repository's own `tmp/library` become `${KIPRJMOD}`, and the
+  libraries the schematic references are looked up in the KiCad installation's
+  own `symbols/` and `footprints/` (auto-detected, or `--kicad-share` /
+  `FROEMIX_KICAD_SHARE`) and in `--libs` / `FROEMIX_KICAD_LIBS` (the conventional
+  place is `~/.local/share/froemix/kicad-libs/`). Found libraries are appended to
+  the private copy of the table; schematic bytes are never touched. Every
+  library that cannot be found is printed with its URI and stays visible in the
+  ERC report as an unexcluded finding — an unresolved environment is not hidden;
+- it honours the project's ERC exclusions, reports the excluded count, and prints
+  the unexcluded findings with their check name and position. A stale exclusion
+  therefore shows up as an unexcluded finding.
 
-Verified with genuine KiCad 10.0.7 (`kicad-cli version` = `10.0.7`) on Linux:
-`froemix/tmp` ERC gives 0 unexcluded findings and 7 excluded ones. The two
-Daisy Seed `pin_not_driven` exclusions still match on KiCad 10 when ERC runs
-with `--severity-exclusions`; with `--severity-all` two additional pin-level
-entries appear unexcluded, because that flag overrides the project's severity
-configuration. This gate therefore uses `--severity-exclusions` — the same
-"0 unexcluded" contract as before — and does not need a new exclusion identity.
-The netlist comparison uses the same portable resolver.
+Measured with genuine KiCad 10.0.7 (`kicad-cli version` = `10.0.7`, Debian sid
+build) on Linux, with the official KiCad libraries and the genuine 4ms Eurorack
+library available: **0 unexcluded findings, 9 excluded**. The two excluded
+`pin_not_driven` entries are the approved Daisy Seed `AUDIO_IN_1`/`AUDIO_IN_2`
+pins (driven through R9/R10, which ERC cannot trace through passives). KiCad 10
+reports those pins with a per-pin marker identity, so `tmp/froemix.kicad_pro`
+carries the exact identity:
+
+```
+pin_not_driven|1320800|469900|<pin UUID>|00000000-0000-0000-0000-000000000000|/root-sheet-UUID|/root-sheet-UUID|
+```
+
+No other exclusions were added, and no blanket filter exists: the identity needs
+the pin UUID, the nil aux UUID and both sheet paths, and any other combination
+leaves the finding unexcluded (verified by probing 20+ variants). With the older
+symbol-UUID identity the two pins stayed unexcluded, which is how the false pass
+went unnoticed.
 
 `make gate` still accepts `FROEMIX_SKIP_ERC=1` (prototype machines without
 KiCad) and prints that the result is INCOMPLETE. Every production entry point
 refuses that variable.
+
+The frozen KiCad reference is not the design; it is the port baseline. ERC on it
+proves that the ported schematics still pass their own rules, not that the
+tscircuit board is correct — that is what the netlist, footprints, extras,
+values, DRC and silkscreen steps are for.
 
 ## How evidence gets produced
 
