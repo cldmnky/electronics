@@ -8,9 +8,9 @@ allocates and clamps `nch`/`n` to `kMaxInputs`/`kBlockSize`; out-of-range
 Tap semantics: each strip has `Channel::tapPoint` (default `TapPoint::PostGain`,
 which is the historical `in * gain`); `TapPoint::PreGain` taps the raw device
 input so a gain change is reflected only in the post-gain tap. Both are pre-pan
-and independent of mute/solo/master, zeroed for channels not supplied, valid
-only for the block just processed and for 0..17 (else nullptr). Sends and dry
-path follow mute/solo.
+and independent of mute/solo/master/monitor; the tap is always live input and
+never take playback, zeroed for channels not supplied, valid only for the block
+just processed and for 0..17 (else nullptr). Sends and dry path follow mute/solo.
 Works: `Recorder::writeBlock()` copies into a 128-block mutex queue and never
 touches disk; a background thread drains it. Full queue = counted drop.
 Each take is `<dir>/take-<utc>/` with `chNN.wav` per armed input plus stereo
@@ -23,6 +23,90 @@ Not implemented (Pi follow-ups): ALSA/UMC1820 device capture, S/PDIF, Pi pinning
 48000 resample from 44100, disk-full policy (writes are best-effort), >4 GiB/file
 (2 h master is ~2.8 GB, inside the RIFF limit but unverified), and true lock-free
 queueing. Queue-overflow drops are counted but not deterministically tested.
+
+## Engine wave 3: take playback, main comp, metronome, monitor buses
+
+Works: `Channel` now has `vol` (post-gain fader), `cueSend`, `out34Send` and
+`monitor` (off/auto/on). `gain` is always applied; pre-fader sends use `gain`
+only and are pre-pan/mono, post-fader sends use `gain * vol` and follow pan.
+Mute/solo still gate every send, preserving the historical FX-bus behaviour.
+Monitor controls only the live input contribution to Main/sends: `Off` never
+passes live input (the take voice keeps playing), `Auto` passes live input when
+the track is armed or when no take is currently playing, and `On` always passes
+live input (intentional take+live layering). A disarmed `Auto` track with a
+rolling take therefore hears the take only, with no live doubling; if the
+transport stops or the take ends, live input returns. Recorder taps are
+unchanged: `tap()` always carries the live device input at its `tapPoint` and
+never the take voice. Mute/solo overrides all monitor modes.
+`SendDestination` selects a
+source for `cue`, `fx1`, `fx2`, `out34` and the stored `rec` selector; process()
+routes the first four (rec stays recorder-tap metadata in this wave).
+`Out34Mode::Stereo` follows pan; `DualMono` writes the unpanned OUT3&4 send to
+both jacks. OUT3&4 is never compressed.
+
+`process(..., const OutputBuses&)` adds Phones and OUT3&4 to the historical
+Main-only call. Phones is the CUE bus or a compressed Main duplicate
+(`PhonesSource`), CUE send level/toggle is selected by `CueStyle`. FX returns
+still land only on Main. Main runs `master` -> main compressor -> click;
+OUT3&4 and CUE do not run the compressor.
+
+Main compressor (`MainCompSettings`, peak/RMS, stereo-linked) clamps
+threshold -48..0 dB, ratio 1..100, attack/release 0..1000 ms, makeup -36..+36 dB.
+Peak is the instantaneous linked absolute peak; RMS is sqrt of a 10 ms one-pole
+mean square. Gain reduction is smoothed per sample in dB with the attack/release
+coefficients and makeup is applied after it. Off is a bit-exact bypass. A click
+routed to Main is added after this stage so the metronome does not pump.
+
+Metronome: `ClickMode` off/record-only/on-play, `ClickOutput` main/phones/out34,
+`setClickGainDb` -96..+20, driven by the existing `ClickSource`. On-play needs a rolling
+transport; record-only additionally needs `Engine::setRecording(true)`. The
+click is rendered at unity and the dB gain is applied afterwards, so +20 dB is
+not clamped to unity. Count-in bars, tempo/meter changes and sample-rate-aware
+click pitch remain app follow-ups. Main routing injects after the compressor;
+phones/main duplicate and OUT3&4 are written only to their selected bus.
+
+Take playback (`TakePlayer`): a control thread opens a RIFF/WAVE take, requires
+48 kHz and 32-bit IEEE float (format 3) or 16-bit PCM (format 1), mono or
+stereo (stereo is downmixed `0.5*(L+R)`), then a reader thread streams the file
+through a 8192-frame ring (about 171 ms at 48 kHz). Non-48 kHz, empty,
+unsupported or unreadable files are refused with a reason string and a stderr
+log line; files are never resampled. Selection is per track and ordered oldest
+first: the last path is the newest, wins sample-for-sample on overlap, and older
+takes resume where the newer file ends. Selection is a control-thread hand-off
+(render pauses for the swap), starts at the engine's current transport frame,
+and never falls back to live input. A disarmed strip with a selected take is
+fed by the take (silence when stopped/ended); an armed strip ignores the take.
+Monitor `Auto`/`Off`/`On` decides only whether the live input is summed into
+that take path; `tap()` remains live-only for the recorder.
+The reader thread keeps disk I/O out of `process()`; ring underruns and
+selection swaps are counted/reported as silence, not as a resample or live leak.
+Take playback assumes the file starts at session frame 0 and does not support a
+locate after selection or a per-take offset (the session has no take-offset
+field yet); re-select after a locate. Engine sample rates other than 48 kHz
+refuse take selection and leave selected take strips silent.
+
+Transport/punch source: `Engine::setTransport(rolling, tick, ticksPerBeat,
+bpmX100)` publishes `TransportPosition` (valid, rolling, frame, tick, beat,
+measure, tickInBeat). `frame = tick * sampleRate * 60 / (bpm * ticksPerBeat)`.
+Punch state stays app-owned and the engine does not record punch boundaries.
+Honest timing: an app polling in its audio callback first sees a measure at the
+next block start, so a boundary is detected 0..128 frames late (0..2.67 ms at
+48 kHz/128), plus the app's own dispatch latency; this is block-accurate, not
+sample-accurate. Poll from the audio thread, not the UI timer, for the smallest
+slop.
+
+Session forwarding: `session::capture()` now reads the engine's cue/out34 send
+levels, monitor mode, out34 mode, click mode/output/gain, main-comp settings,
+phones source, cue style and the five send-source selectors; `apply()` writes
+them back. The session JSON format/parser/emitter is unchanged (the v2 fields
+already existed).
+`Channel::vol` has no session v2 field yet and defaults to unity when a session
+is applied.
+
+Verified with: `c++ -std=c++20 -Wall -Wextra -Werror -I. test_audio_playback.cpp
+engine.cpp take_player.cpp recorder.cpp click.cpp -o /tmp/t_play -pthread &&
+/tmp/t_play`; the same build pattern for `test_audio_features.cpp` and
+`test_click.cpp`. CTest owns the targets in `audio/CMakeLists.txt`.
 
 ## ClickSource (`click.hpp`, JUCE-free)
 
@@ -38,12 +122,15 @@ signature carries no sample-accurate tick phase. The 4/4 accent assumption
 matches `app/logic.hpp` (`kBeatsPerBar = 4`).
 
 Pi follow-ups: an explicit bar length and a sample-rate setter would let the app
-change meter/rate without rebuilding the source; the click is not yet mixed into
-`AudioGlue::renderBlock` (app team wires it).
+change meter/rate without rebuilding the source. The wave-3 engine hosts a
+ClickSource internally (modes/output/gain), but `AudioGlue::renderBlock` still
+renders its own click, so the app-team wiring to the engine-side metronome is
+pending.
 
-Verified with: `c++ -std=c++20 -Wall -Wextra -Werror -I. test_audio.cpp engine.cpp recorder.cpp -o /tmp/t_audio -pthread && /tmp/t_audio`,
-`test_audio_features.cpp` + `test_click.cpp` (same flags; click needs only
-`click.cpp`), all exit 0 (macOS clang).
+Verified with: CTest targets `test_audio_playback`, `test_audio_features`,
+`test_click` and the root build's `test_audio` (all exit 0, macOS clang). The
+old direct `test_audio.cpp` command now also needs `engine.cpp take_player.cpp
+click.cpp` because Engine owns those members.
 
 ## FX suite (`fx/`, wave 2)
 

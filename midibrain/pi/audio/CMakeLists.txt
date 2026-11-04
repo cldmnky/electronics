@@ -16,7 +16,7 @@ endif()
 find_package(Threads REQUIRED)
 
 add_library(mnky_audio STATIC
-  engine.cpp recorder.cpp click.cpp
+  engine.cpp recorder.cpp click.cpp take_player.cpp
   fx/comp.cpp fx/delay.cpp fx/effect.cpp fx/eq.cpp fx/params.cpp fx/registry.cpp fx/reverb.cpp)
 target_include_directories(mnky_audio PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(mnky_audio PUBLIC cxx_std_20)
@@ -47,6 +47,12 @@ add_executable(test_click test_click.cpp)
 target_compile_options(test_click PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_click PRIVATE mnky_audio)
 add_test(NAME test_click COMMAND test_click)
+
+# Take playback: selection, newest-wins layering and the 48 kHz refusal path.
+add_executable(test_audio_playback test_audio_playback.cpp)
+target_compile_options(test_audio_playback PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
+target_link_libraries(test_audio_playback PRIVATE mnky_audio)
+add_test(NAME test_audio_playback COMMAND test_audio_playback)
 
 # pi/CMakeLists.txt already builds test_audio from test_audio.cpp through
 # mnky_module_tests(), so only the standalone build creates the target here.

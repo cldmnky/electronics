@@ -1,5 +1,6 @@
 // Assert-style acceptance tests for mnky::audio::ClickSource (no framework).
-// Build: clang++ -std=c++20 -Wall -Wextra -Werror -I. test_click.cpp click.cpp -o /tmp/t_click && /tmp/t_click
+// Build: clang++ -std=c++20 -Wall -Wextra -Werror -I. test_click.cpp
+//        click.cpp engine.cpp take_player.cpp -o /tmp/t_click -pthread
 
 #include <algorithm>
 #include <cmath>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "click.hpp"
+#include "engine.hpp"
 
 namespace {
 
@@ -228,12 +230,193 @@ void testLevelScaling() {
     std::printf("PASS click: level scaling and clamping\n");
 }
 
+// ------------------------------------------------- engine metronome routing
+
+bool anyNonZero(const float* samples, int frames) {
+    for (int i = 0; i < frames; ++i) {
+        if (samples[i] != 0.0f) return true;
+    }
+    return false;
+}
+
+struct EngineClickBlock {
+    float mainL[mnky::audio::kBlockSize] = {};
+    float mainR[mnky::audio::kBlockSize] = {};
+    float phonesL[mnky::audio::kBlockSize] = {};
+    float phonesR[mnky::audio::kBlockSize] = {};
+    float out34L[mnky::audio::kBlockSize] = {};
+    float out34R[mnky::audio::kBlockSize] = {};
+};
+
+void renderEngineClick(mnky::audio::Engine& engine, EngineClickBlock& block) {
+    mnky::audio::OutputBuses outputs;
+    outputs.mainL = block.mainL;
+    outputs.mainR = block.mainR;
+    outputs.phonesL = block.phonesL;
+    outputs.phonesR = block.phonesR;
+    outputs.out34L = block.out34L;
+    outputs.out34R = block.out34R;
+    const float* inputs[mnky::audio::kMaxInputs] = {};
+    engine.process(inputs, 0, mnky::audio::kBlockSize, outputs);
+}
+
+void testEngineMetronomeRouting() {
+    using namespace mnky::audio;
+
+    // Off is silent even while rolling.
+    {
+        Engine engine;
+        engine.setTransport(true, 0, 24, 12000);
+        engine.setClickMode(ClickMode::Off);
+        EngineClickBlock block;
+        renderEngineClick(engine, block);
+        CHECK(!anyNonZero(block.mainL, kBlockSize));
+    }
+
+    // On-play needs a rolling transport; once rolling the click lands on Main.
+    {
+        Engine engine;
+        engine.setClickMode(ClickMode::OnPlay);
+        engine.setClickOutput(ClickOutput::Main);
+        engine.setClickGainDb(0.0f);
+        engine.setTransport(false, 0, 24, 12000);
+        EngineClickBlock stopped;
+        renderEngineClick(engine, stopped);
+        CHECK(!anyNonZero(stopped.mainL, kBlockSize));
+
+        engine.setTransport(true, 0, 24, 12000);
+        EngineClickBlock rolling;
+        renderEngineClick(engine, rolling);
+        CHECK(rolling.mainL[0] == 0.0f);  // sine starts at phase 0
+        CHECK(anyNonZero(rolling.mainL, kBlockSize));
+        for (int i = 0; i < kBlockSize; ++i) {
+            CHECK(rolling.mainL[i] == rolling.mainR[i]);
+        }
+    }
+
+    // Record-only is gated on both rolling and the engine's record flag.
+    {
+        Engine engine;
+        engine.setClickMode(ClickMode::RecordOnly);
+        engine.setTransport(true, 0, 24, 12000);
+        EngineClickBlock idle;
+        renderEngineClick(engine, idle);
+        CHECK(!anyNonZero(idle.mainL, kBlockSize));
+
+        engine.setRecording(true);
+        EngineClickBlock recording;
+        renderEngineClick(engine, recording);
+        CHECK(anyNonZero(recording.mainL, kBlockSize));
+
+        engine.setRecording(false);
+        EngineClickBlock stoppedRecording;
+        renderEngineClick(engine, stoppedRecording);
+        CHECK(!anyNonZero(stoppedRecording.mainL, kBlockSize));
+    }
+
+    // Output selection routes the click to exactly one physical destination.
+    {
+        Engine engine;
+        engine.setClickMode(ClickMode::OnPlay);
+        engine.setTransport(true, 0, 24, 12000);
+        engine.setClickGainDb(0.0f);
+
+        engine.setClickOutput(ClickOutput::Phones);
+        EngineClickBlock phones;
+        renderEngineClick(engine, phones);
+        CHECK(!anyNonZero(phones.mainL, kBlockSize));
+        CHECK(anyNonZero(phones.phonesL, kBlockSize));
+        CHECK(!anyNonZero(phones.out34L, kBlockSize));
+
+        engine.setClickOutput(ClickOutput::Out34);
+        EngineClickBlock out34;
+        renderEngineClick(engine, out34);
+        CHECK(!anyNonZero(out34.mainL, kBlockSize));
+        CHECK(!anyNonZero(out34.phonesL, kBlockSize));
+        CHECK(anyNonZero(out34.out34L, kBlockSize));
+        CHECK(anyNonZero(out34.out34R, kBlockSize));
+    }
+
+    // gainDb is a post-render linear gain, so +20 dB is not clamped to unity.
+    {
+        Engine unity;
+        unity.setClickMode(ClickMode::OnPlay);
+        unity.setTransport(true, 0, 24, 12000);
+        EngineClickBlock loud;
+        renderEngineClick(unity, loud);
+
+        Engine quiet;
+        quiet.setClickMode(ClickMode::OnPlay);
+        quiet.setTransport(true, 0, 24, 12000);
+        quiet.setClickGainDb(-6.0f);
+        EngineClickBlock soft;
+        renderEngineClick(quiet, soft);
+
+        const float factor = std::pow(10.0f, -6.0f / 20.0f);
+        int compared = 0;
+        for (int i = 0; i < kBlockSize; ++i) {
+            if (loud.mainL[i] == 0.0f) continue;
+            checkNear("click gainDb scales the pip", soft.mainL[i],
+                      loud.mainL[i] * factor, 1e-7f);
+            ++compared;
+        }
+        CHECK(compared > 0);
+
+        unity.setClickGainDb(100.0f);
+        CHECK(unity.clickGainDb() == 20.0f);
+        unity.setClickGainDb(-200.0f);
+        CHECK(unity.clickGainDb() == -96.0f);
+        unity.setClickGainDb(std::numeric_limits<float>::quiet_NaN());
+        CHECK(unity.clickGainDb() == 0.0f);
+    }
+
+    // Click is injected after the main compressor: a compressor clamping
+    // silence must not change the pip level.
+    {
+        Engine plain;
+        plain.setClickMode(ClickMode::OnPlay);
+        plain.setTransport(true, 0, 24, 12000);
+        EngineClickBlock plainBlock;
+        renderEngineClick(plain, plainBlock);
+
+        Engine compressed;
+        compressed.setClickMode(ClickMode::OnPlay);
+        compressed.setTransport(true, 0, 24, 12000);
+        MainCompSettings comp;
+        comp.on = true;
+        comp.threshDb = -48.0f;
+        comp.ratio = 100.0f;
+        comp.attackMs = 0.0f;
+        comp.releaseMs = 0.0f;
+        compressed.setMainComp(comp);
+        EngineClickBlock compressedBlock;
+        renderEngineClick(compressed, compressedBlock);
+        for (int i = 0; i < kBlockSize; ++i) {
+            checkNear("click is post main compressor", compressedBlock.mainL[i],
+                      plainBlock.mainL[i], 1e-6f);
+        }
+    }
+
+    // No beat grid means no pip even when the mode says on-play.
+    {
+        Engine engine;
+        engine.setClickMode(ClickMode::OnPlay);
+        engine.setTransport(true, 0, 0, 12000);
+        EngineClickBlock block;
+        renderEngineClick(engine, block);
+        CHECK(!anyNonZero(block.mainL, kBlockSize));
+    }
+
+    std::printf("PASS click: engine modes, outputs, gain and post-comp injection\n");
+}
+
 }  // namespace
 
 int main() {
     testAccentAndDownbeatPlacement();
     testSilenceCases();
     testLevelScaling();
+    testEngineMetronomeRouting();
 
     if (gFailures != 0) {
         std::printf("FAIL click: %d check(s) failed\n", gFailures);

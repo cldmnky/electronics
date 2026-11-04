@@ -1,6 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
+
+#include "click.hpp"
+#include "take_player.hpp"
 
 namespace mnky::audio {
 
@@ -11,21 +16,118 @@ inline constexpr int kNumSends = 2;
 /// Fixed ALSA processing block.
 inline constexpr int kBlockSize = 128;
 
-/// Where Engine::tap() reads a strip. `PostGain` is the historical `in * gain`
-/// tap; `PreGain` is the raw device input and ignores the strip's gain.
+/// Where Engine::tap() reads a strip. `PostGain` is the historical
+/// `in * gain` tap; `PreGain` is the raw device input and ignores the strip's
+/// gain.
 enum class TapPoint : uint8_t { PreGain, PostGain };
 
-/// Mixer strip for one input. `gain` is a linear pre-pan trim, `pan` runs from
-/// 0 (hard left) through 0.5 (centre) to 1 (hard right) with a constant-power
-/// law, and `send[s]` is a post-fader level into FX bus `s`. `tapPoint` picks
-/// the recorder/monitor tap; the default keeps the post-gain behavior.
+/// Per-track input monitoring. `Off` never passes live input to Main/sends
+/// (take playback is unaffected); `Auto` passes live input when the track is
+/// armed or no take is currently playing; `On` always passes live input so a
+/// take and the live source can be layered intentionally. Mute/solo always win.
+enum class MonitorMode : uint8_t { Off = 0, Auto = 1, On = 2 };
+
+/// Send-source stage for a destination. `PreFader` applies Channel::gain but
+/// not Channel::vol and is pre-pan (mono-centred); `PostFader` applies both and
+/// follows pan. Mute/solo still gate every send, matching the historical
+/// behaviour of the FX buses.
+enum class SendSource : uint8_t { PreFader = 0, PostFader = 1 };
+
+/// Per-destination source selectors. `Rec` is stored for the recorder tap; the
+/// recorder itself still uses Channel::tapPoint in this wave.
+enum class SendDestination : uint8_t {
+    Cue = 0,
+    Fx1 = 1,
+    Fx2 = 2,
+    Out34 = 3,
+    Rec = 4,
+};
+inline constexpr int kNumSendDestinations = 5;
+
+/// OUT3&4 output format. `Stereo` follows each track's pan; `DualMono` sums
+/// each OUT3&4 send before pan and writes the same mono mix to both outputs.
+enum class Out34Mode : uint8_t { Stereo = 0, DualMono = 1 };
+
+/// Phones monitor source: the CUE bus or a duplicate of Main 1&2 (including
+/// the main compressor). OUT3&4 is never compressed.
+enum class PhonesSource : uint8_t { Cue = 0, Main = 1 };
+
+/// CUE send interpretation: per-track send level or a >0/0 toggle at unity.
+enum class CueStyle : uint8_t { Level = 0, Toggle = 1 };
+
+/// Main-bus detector. `Peak` is the instantaneous stereo-linked absolute peak;
+/// `Rms` is sqrt of a 10 ms one-pole mean square (also stereo-linked).
+enum class CompressorMode : uint8_t { Peak = 0, Rms = 1 };
+
+/// Metronome gating. `RecordOnly` needs both a rolling transport and
+/// Engine::setRecording(true); `OnPlay` needs a rolling transport.
+enum class ClickMode : uint8_t { Off = 0, RecordOnly = 1, OnPlay = 2 };
+
+/// Where the click is injected. Main click is added after the main compressor
+/// so the metronome does not pump; OUT3&4 is never compressed.
+enum class ClickOutput : uint8_t { Main = 0, Phones = 1, Out34 = 2 };
+
+/// Main-bus compressor settings. Ranges match session v2:
+/// threshDb -48..0, ratio 1..100, attackMs/releaseMs 0..1000,
+/// makeupDb -36..+36.
+struct MainCompSettings {
+    bool on = false;
+    float threshDb = -12.0f;
+    float ratio = 2.0f;
+    float attackMs = 10.0f;
+    float releaseMs = 100.0f;
+    float makeupDb = 0.0f;
+    CompressorMode mode = CompressorMode::Peak;
+    friend bool operator==(const MainCompSettings&,
+                           const MainCompSettings&) = default;
+};
+
+/// Musical transport position exposed for punch-in/out decisions. `frame` is
+/// the session sample frame derived from `tick`, the app tempo and the engine
+/// sample rate. Measures and beats are 1-based; `beat` is the beat within the
+/// 4/4 bar. `valid` is false when ticksPerBeat is 0.
+struct TransportPosition {
+    bool valid = false;
+    bool rolling = false;
+    std::uint64_t frame = 0;
+    std::uint32_t tick = 0;
+    std::uint32_t ticksPerBeat = 0;
+    std::uint32_t tickInBeat = 0;
+    std::uint32_t beat = 1;
+    std::uint32_t measure = 1;
+    int bpmX100 = 12000;
+};
+
+/// Optional output buses for the extended process() call. A null pointer
+/// leaves that side unwritten; Main is always the historical outL/outR pair.
+struct OutputBuses {
+    float* mainL = nullptr;
+    float* mainR = nullptr;
+    float* phonesL = nullptr;
+    float* phonesR = nullptr;
+    float* out34L = nullptr;
+    float* out34R = nullptr;
+};
+
+/// Mixer strip for one input. `gain` is a linear pre-pan gain, `vol` is the
+/// channel fader applied after `gain`; pre-fader sends use `gain` only and
+/// post-fader sends use both. `pan` runs from 0 (hard left) through 0.5
+/// (centre) to 1 (hard right) with a constant-power law. `send[s]` is an FX
+/// bus level, `cueSend` feeds the CUE/phones bus and `out34Send` feeds OUT3&4.
+/// `tapPoint` picks the recorder/monitor tap; the default keeps the post-gain
+/// behavior. `monitor` controls only the live input contribution to Main/sends;
+/// the take voice and recorder tap are independent of it.
 struct Channel {
     float gain = 1.0f;
+    float vol = 1.0f;
     float pan = 0.5f;
     bool mute = false;
     bool solo = false;
     bool arm = false;
+    MonitorMode monitor = MonitorMode::Auto;
     float send[kNumSends] = {0.0f, 0.0f};
+    float cueSend = 0.0f;
+    float out34Send = 0.0f;
     TapPoint tapPoint = TapPoint::PostGain;
 };
 
@@ -40,19 +142,31 @@ struct IEffect {
     virtual void setSampleRate(double) {}
 };
 
-/// Mixer core: gain/pan, mute/solo, post-fader sends, FX returns and master.
+/// Mixer core: gain/vol/pan, mute/solo, pre/post sends, FX returns, main
+/// compressor, click and monitor outputs.
 /// Everything runs in the caller's (audio) thread and never allocates.
 class Engine {
 public:
+    Engine();
+
     /// `n` must be <= kBlockSize. `in` holds `nch` (<= kMaxInputs) channel
     /// pointers; missing or null channels are silent. `outL`/`outR` receive the
-    /// master-bus result.
-    void process(const float* const* in, int nch, int n, float* outL, float* outR);
+    /// main-bus result. This historical call writes only Main 1&2; the
+    /// extended overload below also produces Phones and OUT3&4.
+    void process(const float* const* in, int nch, int n, float* outL,
+                 float* outR);
+    /// Extended output routing. Each non-null pair is written; Main receives
+    /// the compressor and a Main-routed click, Phones is either the CUE bus or
+    /// a compressed Main duplicate, and OUT3&4 is the uncompressed per-track
+    /// OUT3&4 bus.
+    void process(const float* const* in, int nch, int n,
+                 const OutputBuses& outputs);
 
     /// Mono tap of one input at its Channel::tapPoint, valid until the next
     /// process() call: the raw input for PreGain, `in * gain` for the default
-    /// PostGain. nullptr when `ch` is outside 0..kMaxInputs-1. Mute, solo, pan
-    /// and master do not affect the tap.
+    /// PostGain. The tap is always the live device input and is never fed by
+    /// take playback. nullptr when `ch` is outside 0..kMaxInputs-1. Mute, solo,
+    /// pan, vol, monitor and master do not affect the tap.
     const float* tap(int ch) const;
 
     /// Out-of-range indices are ignored, so a UI can push all 18 strips blindly.
@@ -61,6 +175,16 @@ public:
     Channel channel(int index) const {
         return index >= 0 && index < kMaxInputs ? mChannels[index] : Channel{};
     }
+    /// Per-track CUE send level, clamped to 0..1 (NaN -> 0).
+    void setCueSend(int index, float level);
+    float cueSend(int index) const;
+    /// Per-track OUT3&4 send level, clamped to 0..1 (NaN -> 0).
+    void setOut34Send(int index, float level);
+    float out34Send(int index) const;
+    /// Per-track live-input monitoring mode; out-of-range values map to Auto.
+    void setMonitorMode(int index, MonitorMode mode);
+    MonitorMode monitorMode(int index) const;
+
     /// Linear master gain; negative and NaN values are clamped to 0.
     void setMaster(float gain);
     /// Live master gain (session capture).
@@ -68,12 +192,75 @@ public:
     /// `send` is 0..kNumSends-1; nullptr detaches and passes the bus through.
     void setFx(int send, IEffect* fx);
     /// Control thread only. Forwards to attached FX (see IEffect); engine
-    /// processing itself is rate-agnostic.
+    /// processing itself is rate-agnostic except for the main compressor,
+    /// click and 48 kHz-only take playback.
     void setSampleRate(double sampleRate);
     /// Linear return level applied to the FX bus after process().
     void setFxReturn(int send, float gain);
 
+    // --- routing / monitor configuration ----------------------------------
+    void setSendSource(SendDestination destination, SendSource source);
+    SendSource sendSource(SendDestination destination) const;
+    void setOut34Mode(Out34Mode mode);
+    Out34Mode out34Mode() const { return mOut34Mode; }
+    void setPhonesSource(PhonesSource source);
+    PhonesSource phonesSource() const { return mPhonesSource; }
+    void setCueStyle(CueStyle style);
+    CueStyle cueStyle() const { return mCueStyle; }
+
+    // --- main-bus compressor ----------------------------------------------
+    /// Values are clamped to the documented ranges; NaN falls back to the
+    /// corresponding default.
+    void setMainComp(const MainCompSettings& settings);
+    const MainCompSettings& mainComp() const { return mMainComp; }
+
+    // --- metronome --------------------------------------------------------
+    void setClickMode(ClickMode mode);
+    ClickMode clickMode() const { return mClickMode; }
+    void setClickOutput(ClickOutput output);
+    ClickOutput clickOutput() const { return mClickOutput; }
+    /// -96..+20 dB; NaN falls back to 0 dB. The click is rendered at unity and
+    /// this gain is applied afterwards, so positive gains are not clamped away.
+    void setClickGainDb(float gainDb);
+    float clickGainDb() const { return mClickGainDb; }
+    /// Record transport state for ClickMode::RecordOnly. The app owns the
+    /// recorder and must push this once per record start/stop.
+    void setRecording(bool recording) { mRecording = recording; }
+    bool recording() const { return mRecording; }
+
+    // --- transport / punch position source --------------------------------
+    /// `tick` is the app's absolute tick at the start of the next block.
+    /// `frame` in the resulting position is derived from bpmX100, sample rate
+    /// and ticksPerBeat. Punch decisions should be made in the audio callback:
+    /// a measure boundary is observed at the next block start, i.e. up to one
+    /// kBlockSize late (2.67 ms at 48 kHz).
+    void setTransport(bool rolling, std::uint32_t tick,
+                      std::uint32_t ticksPerBeat, int bpmX100 = 12000);
+    const TransportPosition& transportPosition() const { return mTransport; }
+
+    // --- take playback ----------------------------------------------------
+    /// Control-thread take selection. Files must be 48 kHz WAV; a refusal
+    /// leaves the previous selection untouched and writes a logged reason to
+    /// `error`. Takes are ordered oldest-first in `paths`; the last one wins
+    /// where ranges overlap. Playback starts at the current transport frame.
+    bool setActiveTakes(int track, const std::vector<std::string>& paths,
+                        std::string* error = nullptr);
+    bool setActiveTake(int track, const std::string& path,
+                       std::string* error = nullptr);
+    void clearActiveTake(int track);
+    int activeTakeCount(int track) const;
+    /// Newest (highest-priority) take path, empty when the track has none.
+    std::string activeTake(int track) const;
+    /// Ring samples that were not ready in time and rendered as silence.
+    std::uint64_t takeUnderruns() const { return mTakePlayer.underruns(); }
+
 private:
+    void processBlock(const float* const* in, int nch, int n,
+                      const OutputBuses& outputs);
+    void applyMainComp(float* left, float* right, int n);
+    void updateCompressor();
+    void renderClick(int n);
+
     Channel mChannels[kMaxInputs];
     IEffect* mFx[kNumSends] = {nullptr, nullptr};
     float mFxReturn[kNumSends] = {1.0f, 1.0f};
@@ -81,6 +268,39 @@ private:
     float mTap[kMaxInputs][kBlockSize] = {};
     float mSendL[kNumSends][kBlockSize] = {};
     float mSendR[kNumSends][kBlockSize] = {};
+
+    TakePlayer mTakePlayer;
+    float mTakeBuffer[kMaxInputs][kBlockSize] = {};
+    bool mTakeActive[kMaxInputs] = {};
+    bool mTakePlaying[kMaxInputs] = {};
+    float mCueL[kBlockSize] = {};
+    float mCueR[kBlockSize] = {};
+    float mOut34L[kBlockSize] = {};
+    float mOut34R[kBlockSize] = {};
+    float mOut34Mono[kBlockSize] = {};
+    float mClickBuffer[kBlockSize] = {};
+    ClickSource mClick;
+
+    SendSource mSendSource[kNumSendDestinations] = {
+        SendSource::PostFader, SendSource::PostFader, SendSource::PostFader,
+        SendSource::PostFader, SendSource::PostFader};
+    Out34Mode mOut34Mode = Out34Mode::Stereo;
+    PhonesSource mPhonesSource = PhonesSource::Cue;
+    CueStyle mCueStyle = CueStyle::Level;
+    MainCompSettings mMainComp;
+    double mCompressorGainDb = 0.0;  // positive attenuation in dB
+    double mCompressorRmsSq = 0.0;
+    double mCompressorAttackCoeff = 0.0;
+    double mCompressorReleaseCoeff = 0.0;
+    double mCompressorRmsCoeff = 0.0;
+
+    ClickMode mClickMode = ClickMode::Off;
+    ClickOutput mClickOutput = ClickOutput::Main;
+    float mClickGainDb = 0.0f;
+    bool mRecording = false;
+
+    TransportPosition mTransport;
+    double mSampleRate = 48000.0;
 };
 
 }  // namespace mnky::audio

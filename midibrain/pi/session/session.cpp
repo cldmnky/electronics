@@ -1243,8 +1243,39 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
     for (int send = 0; send < audio::kNumSends; ++send) {
       channel.send[static_cast<std::size_t>(send)] = live.send[send];
     }
+    channel.cueSend = live.cueSend;
+    channel.out34Send = live.out34Send;
+    channel.monitor = static_cast<int>(live.monitor);
   }
   snapshot.mixer.master = engine.masterGain();
+  snapshot.mixer.out34Mode = static_cast<int>(engine.out34Mode());
+
+  snapshot.click.mode = static_cast<int>(engine.clickMode());
+  snapshot.click.output = static_cast<int>(engine.clickOutput());
+  snapshot.click.gainDb = engine.clickGainDb();
+
+  const audio::MainCompSettings comp = engine.mainComp();
+  snapshot.mainComp.on = comp.on;
+  snapshot.mainComp.threshDb = comp.threshDb;
+  snapshot.mainComp.ratio = comp.ratio;
+  snapshot.mainComp.attackMs = comp.attackMs;
+  snapshot.mainComp.releaseMs = comp.releaseMs;
+  snapshot.mainComp.makeupDb = comp.makeupDb;
+  snapshot.mainComp.mode = static_cast<int>(comp.mode);
+
+  snapshot.cue.phonesSrc = static_cast<int>(engine.phonesSource());
+  snapshot.cue.style = static_cast<int>(engine.cueStyle());
+
+  snapshot.sends.cue = static_cast<int>(
+      engine.sendSource(audio::SendDestination::Cue));
+  snapshot.sends.fx1 = static_cast<int>(
+      engine.sendSource(audio::SendDestination::Fx1));
+  snapshot.sends.fx2 = static_cast<int>(
+      engine.sendSource(audio::SendDestination::Fx2));
+  snapshot.sends.out34 = static_cast<int>(
+      engine.sendSource(audio::SendDestination::Out34));
+  snapshot.sends.rec = static_cast<int>(
+      engine.sendSource(audio::SendDestination::Rec));
 
   for (int index = 0;
        index < kFxBuses && index < static_cast<int>(fxSlots.size()); ++index) {
@@ -1303,9 +1334,46 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
       channel.send[static_cast<std::size_t>(send)] =
           state.send[static_cast<std::size_t>(send)];
     }
+    channel.cueSend = state.cueSend;
+    channel.out34Send = state.out34Send;
+    channel.monitor = static_cast<audio::MonitorMode>(state.monitor);
     engine.setChannel(index, channel);
   }
   engine.setMaster(snapshot.mixer.master);
+  engine.setOut34Mode(
+      static_cast<audio::Out34Mode>(snapshot.mixer.out34Mode));
+
+  audio::MainCompSettings comp;
+  comp.on = snapshot.mainComp.on;
+  comp.threshDb = snapshot.mainComp.threshDb;
+  comp.ratio = snapshot.mainComp.ratio;
+  comp.attackMs = snapshot.mainComp.attackMs;
+  comp.releaseMs = snapshot.mainComp.releaseMs;
+  comp.makeupDb = snapshot.mainComp.makeupDb;
+  comp.mode = static_cast<audio::CompressorMode>(snapshot.mainComp.mode);
+  engine.setMainComp(comp);
+
+  engine.setClickMode(static_cast<audio::ClickMode>(snapshot.click.mode));
+  engine.setClickOutput(
+      static_cast<audio::ClickOutput>(snapshot.click.output));
+  engine.setClickGainDb(snapshot.click.gainDb);
+  engine.setPhonesSource(
+      static_cast<audio::PhonesSource>(snapshot.cue.phonesSrc));
+  engine.setCueStyle(static_cast<audio::CueStyle>(snapshot.cue.style));
+
+  const int sendValues[audio::kNumSendDestinations] = {
+      snapshot.sends.cue, snapshot.sends.fx1, snapshot.sends.fx2,
+      snapshot.sends.out34, snapshot.sends.rec};
+  const audio::SendDestination destinations[audio::kNumSendDestinations] = {
+      audio::SendDestination::Cue, audio::SendDestination::Fx1,
+      audio::SendDestination::Fx2, audio::SendDestination::Out34,
+      audio::SendDestination::Rec};
+  for (int index = 0; index < audio::kNumSendDestinations; ++index) {
+    engine.setSendSource(
+        destinations[index],
+        sendValues[index] == 0 ? audio::SendSource::PreFader
+                               : audio::SendSource::PostFader);
+  }
 
   for (int index = 0;
        index < kFxBuses && index < static_cast<int>(fxSlots.size()); ++index) {

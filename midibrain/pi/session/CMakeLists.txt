@@ -33,7 +33,10 @@ target_compile_options(mnky_session PRIVATE ${MNKY_WARNINGS})
 if(TARGET mnky_audio)
   set(MNKY_SESSION_AUDIO mnky_audio)
 else()
-  add_library(mnky_session_audio STATIC ../audio/engine.cpp)
+  # engine.cpp references TakePlayer/ClickSource: keep every audio TU the
+  # engine links against in this fallback list.
+  add_library(mnky_session_audio STATIC ../audio/engine.cpp
+                  ../audio/take_player.cpp ../audio/click.cpp)
   target_include_directories(mnky_session_audio PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../audio)
   target_compile_features(mnky_session_audio PUBLIC cxx_std_20)
