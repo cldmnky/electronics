@@ -286,6 +286,7 @@ def current_model_cases() -> int:
     def run_case(name: str, mutate, expect_fail_substring: str) -> int:
         saved_senders = copy.deepcopy(CE.SENDERS)
         saved_tlp = copy.deepcopy(CE.TLP2361)
+        saved_vf = CE.VF_ASSUMED_HIGH
         try:
             mutate()
             with contextlib.redirect_stdout(io.StringIO()):
@@ -304,6 +305,7 @@ def current_model_cases() -> int:
             CE.SENDERS.update(saved_senders)
             CE.TLP2361.clear()
             CE.TLP2361.update(saved_tlp)
+            CE.VF_ASSUMED_HIGH = saved_vf
 
     baseline = 0
     with contextlib.redirect_stdout(io.StringIO()):
@@ -334,6 +336,17 @@ def current_model_cases() -> int:
         for sender in CE.SENDERS.values():
             sender["drop_max"] = 0.0
 
+    def raise_driver_min() -> None:
+        # A minimum sender drop is not guaranteed; claiming 0.1 V understates
+        # the maximum-current corner.
+        for sender in CE.SENDERS.values():
+            sender["drop_min"] = 0.1
+
+    def use_vf_at_2ma() -> None:
+        # The 1.65 V datasheet maximum applies at 2 mA only; using it as the
+        # high-current bound moves the minimum corner.
+        CE.VF_ASSUMED_HIGH = CE.VF_MAX_AT_2MA
+
     failures += run_case("a 5 % instead of 10 % supply tolerance",
                          loosen_supply, "model matches the independent reference case")
     failures += run_case("a 1 % instead of 5 % sender resistor tolerance",
@@ -344,6 +357,10 @@ def current_model_cases() -> int:
                          lower_threshold, "threshold used is the full-temperature")
     failures += run_case("a dropped sender driver-drop bound",
                          drop_driver_loss, "model matches the independent reference case")
+    failures += run_case("a claimed 0.1 V minimum sender drop",
+                         raise_driver_min, "model matches the independent reference case")
+    failures += run_case("the 2 mA VF maximum as a high-current bound",
+                         use_vf_at_2ma, "model matches the independent reference case")
     return baseline + failures
 
 
@@ -399,7 +416,7 @@ def main() -> int:
             print("FAIL negative: perimeter numbering was not isolated to the coordinate check")
             print(output[-2500:])
 
-    total = len(cases()) + 2 + 6
+    total = len(cases()) + 2 + 8
     print(f"\n{total - failures} passed, {failures} failed")
     return 1 if failures else 0
 

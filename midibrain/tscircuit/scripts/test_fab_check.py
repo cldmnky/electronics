@@ -172,6 +172,39 @@ class PublishedLimitsTest(unittest.TestCase):
         self.assertFalse(r.ok)
         self.assertIn("unsupported shape", failures(r))
 
+    def test_rotated_pin1_square_hole_is_measured(self):
+        # Pin-1 marker of an exact box-header footprint: 1.1 mm square hole
+        # rotated 180 deg in a 1.7 mm square pad. Drill and ring are inside
+        # the published limits, so the board passes.
+        pin1 = {"type": "pcb_plated_hole", "pcb_plated_hole_id": "ph4",
+                "shape": "rotated_pill_hole_with_rect_pad",
+                "hole_width": 1.1, "hole_height": 1.1,
+                "hole_ccw_rotation": 180,
+                "rect_pad_width": 1.7, "rect_pad_height": 1.7,
+                "rect_ccw_rotation": 180}
+        r = fab_check.check_board("t", good_board(pth=pin1))
+        self.assertTrue(r.ok, failures(r))
+
+    def test_rotated_hole_with_missing_pad_size_fails(self):
+        pin1 = {"type": "pcb_plated_hole", "pcb_plated_hole_id": "ph4",
+                "shape": "rotated_pill_hole_with_rect_pad",
+                "hole_width": 1.1, "hole_height": 1.1,
+                "hole_ccw_rotation": 180}
+        r = fab_check.check_board("t", good_board(pth=pin1))
+        self.assertFalse(r.ok)
+        self.assertIn("missing hole/rect pad size", failures(r))
+
+    def test_rotated_hole_with_odd_angle_fails_closed(self):
+        pin1 = {"type": "pcb_plated_hole", "pcb_plated_hole_id": "ph4",
+                "shape": "rotated_pill_hole_with_rect_pad",
+                "hole_width": 1.1, "hole_height": 1.1,
+                "hole_ccw_rotation": 45,
+                "rect_pad_width": 1.7, "rect_pad_height": 1.7,
+                "rect_ccw_rotation": 45}
+        r = fab_check.check_board("t", good_board(pth=pin1))
+        self.assertFalse(r.ok)
+        self.assertIn("non-quarter-turn", failures(r))
+
 
 class MissingDataTest(unittest.TestCase):
     def test_no_board_element_fails(self):

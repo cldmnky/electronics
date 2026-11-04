@@ -58,8 +58,8 @@ electrical:
 	  echo "PENDING: tscircuit/scripts/check_electrical.py is not in this tree (electrical work item)"; exit 1; }
 	@[ -f tscircuit/scripts/test_electrical.py ] || { \
 	  echo "PENDING: tscircuit/scripts/test_electrical.py is not in this tree (electrical work item)"; exit 1; }
-	$(PYTHON) tscircuit/scripts/check_electrical.py
-	$(PYTHON) tscircuit/scripts/test_electrical.py
+	cd tscircuit && $(PYTHON) scripts/check_electrical.py
+	cd tscircuit && $(PYTHON) scripts/test_electrical.py
 
 # The canonical TS-to-CAD bridge (mechanical work item). `--check` writes
 # nothing and fails when mechanical/layout.json is stale against

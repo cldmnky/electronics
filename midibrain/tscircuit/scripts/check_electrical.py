@@ -146,15 +146,22 @@ TLP2362 = {
 #   +3.3 V +-5 %: RA 33 ohm 5 %,  RC 10 ohm 5 %  (RA and RC are not equal)
 RECEIVER_OHM = 220
 RECEIVER_TOLERANCE = 0.01        # this design's 1 % part
-VF_ASSUMED_HIGH = 1.85           # above the 2 mA datasheet bound; an assumption
+# Two forward-voltage numbers, kept apart:
+#   VF_MAX_AT_2MA is the TLP2361 datasheet maximum, specified at IF = 2 mA only.
+#   VF_ASSUMED_HIGH is the assumed upper bound at the ~3.7 mA this loop runs
+#   at, used for the minimum-current corner. It is an assumption, not a limit.
+VF_MAX_AT_2MA = 1.65
+VF_ASSUMED_HIGH = 1.85
+# drop_min is 0 V: no minimum sender loss is guaranteed (a low-loss sender can
+# drop almost nothing), so the maximum-current bound assumes zero loss.
 SENDERS = {
     "CA-033 +5 V sender (RA/RC 220 ohm 5%)": {
         "v": 5.0, "tol": 0.10, "ra": 220, "rc": 220, "rtol": 0.05,
-        "drop_min": 0.1, "drop_max": 0.3,
+        "drop_min": 0.0, "drop_max": 0.3,
     },
     "CA-033 +3.3 V sender (RA 33 / RC 10 ohm 5%)": {
         "v": 3.3, "tol": 0.05, "ra": 33, "rc": 10, "rtol": 0.05,
-        "drop_min": 0.1, "drop_max": 0.3,
+        "drop_min": 0.0, "drop_max": 0.3,
     },
 }
 
@@ -162,8 +169,8 @@ SENDERS = {
 # reproduce them: a loosened tolerance, a lower threshold or a dropped driver
 # loss changes a value and is reported as a failure.
 REFERENCE_LOOP_A = {
-    "CA-033 +5 V sender (RA/RC 220 ohm 5%)": (3.4347e-3, 6.3699e-3),
-    "CA-033 +3.3 V sender (RA 33 / RC 10 ohm 5%)": (3.6843e-3, 7.7905e-3),
+    "CA-033 +5 V sender (RA/RC 220 ohm 5%)": (3.4347e-3, 6.5272e-3),
+    "CA-033 +3.3 V sender (RA 33 / RC 10 ohm 5%)": (3.6843e-3, 8.1771e-3),
 }
 REFERENCE_LOOP_TOL = 0.002
 # Minimum-current margin against the 125 C threshold: 3.4347/1.6 and 3.6843/1.6.
@@ -195,21 +202,24 @@ AO3401A = {
     "vgs_threshold_min_v": -0.5,
     "vgs_max_v": 12,
 }
-# 2512 output resistors (5 % "J" parts), 0603 gate network (1 %).
-OUT_SERIES = {"ring": 33, "tip": 22, "tolerance": 0.05, "rated_w": 1.0}
+# 2512 output resistors 25121WF330JT4E/25121WF220JT4E: 7th code F = +-1 % per
+# the Uniroyal thick-film datasheet (Feb 12 2019 V.3, section 2). 0603 gate
+# network is 1 %. GATE_DRIVE carries both rails: weakest for drive-on,
+# strongest for the off-state worst case.
+OUT_SERIES = {"ring": 33, "tip": 22, "tolerance": 0.01, "rated_w": 1.0}
 GATE_NETWORK = {"series": 100, "pullup": 2200, "tolerance": 0.01}
-GATE_DRIVE = {"rail_min_v": 3.135, "gpio_vol_max_v": 0.5, "pull_down_min_ohm": 36000}
+GATE_DRIVE = {"rail_min_v": 3.135, "rail_max_v": 3.465, "gpio_vol_max_v": 0.5, "pull_down_min_ohm": 36000}
 
 # Hand-calculated reference values for the output stage.
 REFERENCE_GATE_ON_V = 2.5182
-REFERENCE_GATE_OFF_V = 0.1867
-REFERENCE_LEGACY_NEW_A = 4.2758e-3
-REFERENCE_LEGACY_OLD_A = 3.4113e-3
+REFERENCE_GATE_OFF_V = 0.2100
+REFERENCE_LEGACY_NEW_A = 4.3086e-3
+REFERENCE_LEGACY_OLD_A = 3.4374e-3
 REFERENCE_FAULT_W = {
-    "ring_to_ground": 0.3809,
-    "tip_to_ground": 0.5701,
-    "ring_tip_ring": 0.1375,
-    "ring_tip_tip": 0.0916,
+    "ring_to_ground": 0.3656,
+    "tip_to_ground": 0.5470,
+    "ring_tip_ring": 0.1319,
+    "ring_tip_tip": 0.0879,
 }
 REFERENCE_CA033_TIP_FAULT_W = 1.2638
 
@@ -823,9 +833,11 @@ def check_midi_out(checker: Checker, front: BoardModel, channel: int) -> None:
 
 def check_output_stage(checker: Checker) -> None:
     """Analytical checks of the AO3401A high-side output stage."""
-    pullup = GATE_NETWORK["pullup"] * (1 - GATE_NETWORK["tolerance"])
+    pullup_on = GATE_NETWORK["pullup"] * (1 - GATE_NETWORK["tolerance"])
+    pullup_off = GATE_NETWORK["pullup"] * (1 + GATE_NETWORK["tolerance"])
     series = GATE_NETWORK["series"] * (1 + GATE_NETWORK["tolerance"])
     rail = GATE_DRIVE["rail_min_v"]
+    pullup = pullup_on
 
     gate_on = rail - (GATE_DRIVE["gpio_vol_max_v"] +
                       (rail - GATE_DRIVE["gpio_vol_max_v"]) * series / (pullup + series))
@@ -839,8 +851,9 @@ def check_output_stage(checker: Checker) -> None:
     checker.check("MIDI OUT: gate drive stays inside the +-12 V gate rating",
                   gate_on < AO3401A["vgs_max_v"], f"|VGS| {gate_on:.3f} V")
 
-    gate_off = rail - rail * GATE_DRIVE["pull_down_min_ohm"] / (
-        GATE_DRIVE["pull_down_min_ohm"] + pullup + series)
+    rail_off = GATE_DRIVE["rail_max_v"]
+    gate_off = rail_off - rail_off * GATE_DRIVE["pull_down_min_ohm"] / (
+        GATE_DRIVE["pull_down_min_ohm"] + pullup_off + series)
     checker.check("MIDI OUT: off-state gate voltage matches the reference case",
                   abs(gate_off - REFERENCE_GATE_OFF_V) <= 0.005 * REFERENCE_GATE_OFF_V,
                   f"|VGS| {gate_off:.4f} V, reference {REFERENCE_GATE_OFF_V:.4f} V")

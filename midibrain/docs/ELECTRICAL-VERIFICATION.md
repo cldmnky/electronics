@@ -114,16 +114,17 @@ CA-033 (2014) page 2, figure 1, is the reference for both sender cases:
 **+5 V ±10 % with RA 220 Ω 5 % and RC 220 Ω 5 %**, and **+3.3 V ±5 % with
 RA 33 Ω 5 % and RC 10 Ω 5 %**. RA and RC are not equal in the 3.3 V case. The
 receiver resistor is this design's 1 % part. CA-033 does not specify the sender
-driver saturation, so 0.1 V (maximum-current corner) and 0.3 V
-(minimum-current corner) are stated assumptions about the external device; the
-model includes both.
+driver saturation. The minimum-current corner assumes 0.3 V of sender loss;
+the maximum-current corner assumes 0 V because no minimum loss is guaranteed
+(a low-loss sender can drop almost nothing). Both are stated assumptions
+about the external device; the model includes both.
 
 | Corner | Loop current | Against the 125 °C TLP2361 threshold (1.6 mA) | Against TLP2362 |
 |---|---|---|---|
 | 5 V sender, minimum | **3.435 mA** | 2.15× | **0.69× — not guaranteed** |
-| 5 V sender, maximum | **6.370 mA** | above the 6 mA recommended maximum, 64 % of the 10 mA absolute max | — |
+| 5 V sender, maximum | **6.527 mA** | above the 6 mA recommended maximum, 65 % of the 10 mA absolute max | — |
 | 3.3 V sender, minimum | **3.684 mA** | 2.30× | 0.74× |
-| 3.3 V sender, maximum | **7.791 mA** | above the 6 mA recommended maximum, 78 % of the 10 mA absolute max | — |
+| 3.3 V sender, maximum | **8.177 mA** | above the 6 mA recommended maximum, 82 % of the 10 mA absolute max | — |
 
 The minimum corner uses VF = 1.85 V because the datasheet 1.65 V maximum is
 specified at 2 mA only and the loop runs near 3.7 mA; the maximum corner uses
@@ -158,8 +159,8 @@ The output stage is now a **high-side P-channel switch**:
 | Switch | Alpha & Omega **AO3401A**, SOT-23, pin 1 gate, 2 source, 3 drain | **C15127** |
 | Gate series | 100 Ω 0603 1 % | C22775 |
 | Gate pull-up (gate to 3.3 V) | 2.2 kΩ 0603 1 % | C4190 |
-| Ring resistor RA | **33 Ω** 2512 1 W 5 % | C53728 |
-| Tip resistor RC | **22 Ω** 2512 1 W 5 % | C118189 |
+| Ring resistor RA | **33 Ω** 2512 1 W 1 % | C53728 |
+| Tip resistor RC | **22 Ω** 2512 1 W 1 % | C118189 |
 
 The receiver resistor stays at 220 Ω and TRS Type A polarity is unchanged:
 ring (DIN 4) is sourced from the switch drain through RA, tip (DIN 5) is sunk
@@ -167,9 +168,9 @@ to ground through RC.
 
 | Case | Current into a legacy receiver |
 |---|---|
-| Worst case: 3.135 V rail, 1.9 V LED, 5 % resistors at +tolerance, RDS(ON) 85 mΩ | **4.276 mA** |
-| Same with a 150 mΩ hot RDS(ON) assumption | 4.275 mA |
-| Replaced PNP stage (22 Ω ring, 33 Ω tip, 0.25 V VCE(sat)) | 3.411 mA |
+| Worst case: 3.135 V rail, 1.9 V LED, 1 % resistors at +tolerance, RDS(ON) 85 mΩ | **4.309 mA** |
+| Same with a 150 mΩ hot RDS(ON) assumption | 4.308 mA |
+| Replaced PNP stage (22 Ω ring, 33 Ω tip, 0.25 V VCE(sat)) | 3.437 mA |
 
 The new stage therefore **meets the 4 mA PC900V worst case** at 25 °C, at
 107 % of the requirement, and the conclusion is insensitive to RDS(ON). The
@@ -184,7 +185,7 @@ any real device.
 | Gate low (UART pin low at VOL 0.5 V, pull-up 2178 Ω, series 101 Ω) | \|VGS\| = **2.518 V** |
 | RDS(ON) test point in the datasheet | \|VGS\| = 2.5 V, so 85 mΩ applies |
 | Gate rating | ±12 V, so 2.518 V is far inside |
-| Gate with the UART pin high-Z (RP2350 pull-down 36 kΩ) | \|VGS\| = **0.187 V** |
+| Gate with the UART pin high-Z (3.465 V rail, pull-up 2222 Ω, series 101 Ω, RP2350 pull-down 36 kΩ) | \|VGS\| = **0.210 V** |
 | Gate threshold magnitude, minimum | 0.5 V at 25 °C |
 
 The off state is below the threshold **at 25 °C only**. The datasheet gives no
@@ -194,18 +195,19 @@ switching-edge claim is made**. Both stay pending bench work.
 
 ### Fault dissipation and the deliberate CA-033 deviation
 
-At the strongest rail (3.465 V) and with the resistors at −5 %:
+At the strongest rail (3.465 V) and with the 1 % resistors at −1 %:
 
 | Fault | Dissipation |
 |---|---|
-| Ring to ground, RA only (31.35 Ω) | **0.381 W** |
-| Tip to ground, RC only (20.90 Ω) | **0.570 W** |
-| Ring-to-tip short, both in series at low resistance (52.25 Ω) | 0.137 W (RA) + 0.092 W (RC) |
+| Ring to ground, RA only (32.67 Ω) | **0.366 W** |
+| Tip to ground, RC only (21.78 Ω) | **0.547 W** |
+| Ring-to-tip short, both in series at low resistance (54.45 Ω) | 0.132 W (RA) + 0.088 W (RC) |
 
-Both parts are 2512 1 W resistors, so the worst single-part fault uses 57 % of
-the rating at 25 °C. **The 1 W derating above 70 °C was not read from a primary
-resistor datasheet in this pass; the research agent verifies it** and the
-numbers stay provisional until then.
+Both parts are 2512 1 W resistors, so the worst single-part fault uses 55 % of
+the rating at 25 °C. The Uniroyal datasheet (Feb 12 2019 V.3, section 9,
+figure 1) rates 2512 1 W continuous only to 70 °C ambient with derating above
+it, so **sustained-fault behaviour above 70 °C stays pending bench work** and
+the numbers stay provisional until then.
 
 CA-033 asks for RA 33 Ω and **RC 10 Ω** at 3.3 V. This design uses 33 Ω and
 **22 Ω**. That is a deliberate deviation: RC is permanently grounded, so a
@@ -338,7 +340,7 @@ built output. It derives each pad's physical pin number and net from
 - ground pour layer and net, SMT side, 2 layers, board rules, trace widths, via
   drill and pad, minimum pad gap, and zero emitted errors;
 - the analytical loop current of section 4 against hand-calculated reference
-  values (3.435/6.370 mA and 3.684/7.791 mA), the 125 °C threshold, the
+  values (3.435/6.527 mA and 3.684/8.177 mA), the 125 °C threshold, the
   the output stage (gate drive, off state, legacy current, both fault cases and
   the CA-033 deviation) and the RP2350 input margins.
 
@@ -451,7 +453,7 @@ fixed:
 ## 11. Unresolved items — do not treat this board as release-ready
 
 1. **TLP2361 high-current corner.** Both sender corners exceed the 6 mA
-   recommended on-state current at their maximum (6.37 mA and 7.79 mA, both
+   recommended on-state current at their maximum (6.53 mA and 8.18 mA, both
    below the 10 mA absolute maximum). High-current and high-temperature
    behaviour is not qualified; measure on first article.
 1a. **Output stage pending items.** The AO3401A stage meets the 4 mA legacy

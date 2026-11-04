@@ -29,6 +29,7 @@ import {
   TLP2362,
   transmitterLoopCurrent,
   VF_ASSUMED_HIGH_V,
+  VF_MAX_AT_2MA_V,
   type SenderCorner,
 } from "./electrical-midi"
 
@@ -43,26 +44,30 @@ import {
 //                  receiver 220 ohm at 1 %. rLow = 440*0.95 + 220*0.99 = 635.8,
 //                  rHigh = 440*1.05 + 220*1.01 = 684.2.
 //                  min = (4.50 - 0.30 - 1.85) / 684.2 = 3.4347 mA
-//                  max = (5.50 - 0.10 - 1.35) / 635.8 = 6.3699 mA
+//                  max = (5.50 - 0.00 - 1.35) / 635.8 = 6.5272 mA (no minimum
+//                  driver loss is guaranteed, so the max bound uses 0 V)
 //   3.3 V sender:  VTX 3.135/3.465 V (3.3 V +-5 %), RA 33 + RC 10 ohm at 5 %,
 //                  receiver 220 ohm at 1 %. rLow = 43*0.95 + 217.8 = 258.65,
 //                  rHigh = 43*1.05 + 222.2 = 267.35.
 //                  min = (3.135 - 0.30 - 1.85) / 267.35 = 3.6843 mA
-//                  max = (3.465 - 0.10 - 1.35) / 258.65 = 7.7905 mA
+//                  max = (3.465 - 0.00 - 1.35) / 258.65 = 8.1771 mA
 const five = loopCurrent(SENDER_5V, TLP2361)
 const three = loopCurrent(SENDER_3V3, TLP2361)
 
 describe("MIDI input current loop, worst case", () => {
   test("5 V CA-033 sender corners", () => {
     expect(five.minA).toBeCloseTo(3.4347e-3, 6)
-    expect(five.maxA).toBeCloseTo(6.3699e-3, 6)
+    expect(five.maxA).toBeCloseTo(6.5272e-3, 6)
+    // No sender drop is guaranteed, so the maximum-current corner uses 0 V.
+    expect(SENDER_5V.driverDropMinV).toBe(0)
   })
 
   test("3.3 V CA-033 sender corners use RA 33 ohm and RC 10 ohm", () => {
     expect(SENDER_3V3.raOhm).toBe(33)
     expect(SENDER_3V3.rcOhm).toBe(10)
     expect(three.minA).toBeCloseTo(3.6843e-3, 6)
-    expect(three.maxA).toBeCloseTo(7.7905e-3, 6)
+    expect(three.maxA).toBeCloseTo(8.1771e-3, 6)
+    expect(SENDER_3V3.driverDropMinV).toBe(0)
   })
 
   test("TLP2361 is guaranteed to switch on the full-temperature threshold", () => {
@@ -83,9 +88,9 @@ describe("MIDI input current loop, worst case", () => {
   })
 
   test("maximum current against the absolute rating, and the known deviations", () => {
-    // 6.3699 / 10 = 0.637 and 7.7905 / 10 = 0.779: inside the absolute maximum.
-    expect(absoluteCurrentUse(five.maxA, TLP2361)).toBeCloseTo(0.637, 3)
-    expect(absoluteCurrentUse(three.maxA, TLP2361)).toBeCloseTo(0.779, 3)
+    // 6.5272 / 10 = 0.653 and 8.1771 / 10 = 0.818: inside the absolute maximum.
+    expect(absoluteCurrentUse(five.maxA, TLP2361)).toBeCloseTo(0.653, 3)
+    expect(absoluteCurrentUse(three.maxA, TLP2361)).toBeCloseTo(0.818, 3)
     expect(five.maxA).toBeLessThan(TLP2361.ifAbsMaxA)
     expect(three.maxA).toBeLessThan(TLP2361.ifAbsMaxA)
     // Both corners sit above the 6 mA recommended on-state maximum. Recorded
@@ -94,10 +99,18 @@ describe("MIDI input current loop, worst case", () => {
     expect(three.maxA).toBeGreaterThan(TLP2361.ifOnMaxA)
   })
 
-  test("the VF bound is an assumption, not a datasheet guarantee", () => {
-    expect(VF_ASSUMED_HIGH_V).toBeGreaterThan(TLP2361.vfMax)
-    const optimistic = loopCurrent(SENDER_5V, TLP2361, TLP2361.vfMax)
+  test("the two VF numbers stay apart: 1.65 V is only the 2 mA maximum", () => {
+    // VF_MAX_AT_2MA_V is the datasheet maximum at IF = 2 mA, Ta = 25 C. It is
+    // not a bound at the ~3.7 mA this loop runs at, so the minimum corner uses
+    // the larger assumed 1.85 V.
+    expect(VF_MAX_AT_2MA_V).toBe(1.65)
+    expect(TLP2361.vfMax).toBe(VF_MAX_AT_2MA_V)
+    expect(VF_ASSUMED_HIGH_V).toBeGreaterThan(VF_MAX_AT_2MA_V)
+    const optimistic = loopCurrent(SENDER_5V, TLP2361, VF_MAX_AT_2MA_V)
     expect(optimistic.minA).toBeGreaterThan(five.minA)
+    // (4.50 - 0.30 - 1.65) / 684.2 = 3.7270 mA if the 2 mA maximum were
+    // misused as a high-current bound here.
+    expect(optimistic.minA).toBeCloseTo(3.7270e-3, 6)
   })
 })
 
@@ -126,6 +139,15 @@ describe("current model catches loosened inputs", () => {
     expect(loopCurrent(noDrop, TLP2361).minA).not.toBeCloseTo(five.minA, 6)
     // The minimum corner must use the upper driver-drop bound, not the lower.
     expect(SENDER_5V.driverDropMaxV).toBeGreaterThan(SENDER_5V.driverDropMinV)
+    // and the upper bound is an assumption, not a CA-033 guarantee.
+    expect(SENDER_5V.driverDropMaxV).toBe(0.3)
+  })
+
+  test("assuming a 0.1 V minimum sender drop would understate the maximum current", () => {
+    const optimistic: SenderCorner = { ...SENDER_5V, driverDropMinV: 0.1 }
+    // (5.50 - 0.10 - 1.35) / 635.8 = 6.3699 mA instead of 6.5272 mA.
+    expect(loopCurrent(optimistic, TLP2361).maxA).toBeCloseTo(6.3699e-3, 6)
+    expect(loopCurrent(optimistic, TLP2361).maxA).toBeLessThan(five.maxA)
   })
 
   test("the 105 C threshold would overstate the margin", () => {
@@ -154,9 +176,10 @@ describe("MIDI output: AO3401A high-side stage", () => {
   })
 
   test("off state stays below the gate threshold magnitude at 25 C only", () => {
-    // 3.135 * 36000 / (36000 + 2178 + 101) = 2.9484 V at the gate,
-    // |VGS| = 0.1867 V against a -0.5 V minimum threshold magnitude.
-    expect(gateOffVgs()).toBeCloseTo(0.1867, 3)
+    // Worst case: 3.465 V rail, pull-up 2200*1.01 = 2222, series 100*1.01 =
+    // 101, pull-down 36 k: gate = 3.465*36000/38323 = 3.2550 V,
+    // |VGS| = 0.2100 V against a -0.5 V minimum threshold magnitude.
+    expect(gateOffVgs()).toBeCloseTo(0.2100, 3)
     expect(gateOffVgs()).toBeLessThan(Math.abs(AO3401A.vgsThresholdMinV))
     // No full-temperature off guarantee is claimed: the threshold magnitude
     // falls with temperature and the datasheet gives no -40..125 C limit here.
@@ -164,34 +187,35 @@ describe("MIDI output: AO3401A high-side stage", () => {
   })
 
   test("legacy receiver current now exceeds the PC900V requirement", () => {
-    // (3.135 - 1.90) / (55*1.05 + 220*1.05 + 0.085) = 4.2758 mA
-    expect(legacyReceiverWorstCurrent()).toBeCloseTo(4.2758e-3, 6)
+    // 2512 parts are +-1 % (Uniroyal 7th code F):
+    // (3.135 - 1.90) / (55*1.01 + 220*1.05 + 0.085) = 4.3086 mA
+    expect(legacyReceiverWorstCurrent()).toBeCloseTo(4.3086e-3, 6)
     expect(legacyReceiverWorstCurrent()).toBeGreaterThan(CA033.pc900vWorstCaseCurrentA)
-    // Robust to a hot RDS(ON) assumption: 0.15 ohm still gives 4.2748 mA.
-    const hot = (3.135 - 1.9) / ((55 * 1.05) + (220 * 1.05) + 0.15)
-    expect(hot).toBeCloseTo(4.2748e-3, 6)
+    // Robust to a hot RDS(ON) assumption: 0.15 ohm still gives 4.3076 mA.
+    const hot = (3.135 - 1.9) / ((55 * 1.01) + (220 * 1.05) + 0.15)
+    expect(hot).toBeCloseTo(4.3076e-3, 6)
     expect(hot).toBeGreaterThan(CA033.pc900vWorstCaseCurrentA)
   })
 
   test("the replaced PNP stage falls short of the same requirement", () => {
-    // (3.135 - 0.25 - 1.90) / (55*1.05 + 220*1.05) = 3.4113 mA with the 5 %
-    // 2512 parts; the model uses the same 5 % tolerance for both stages.
-    expect(legacyReceiverCurrentOldPnp()).toBeCloseTo(3.4113e-3, 6)
+    // (3.135 - 0.25 - 1.90) / (55*1.01 + 220*1.05) = 3.4374 mA with the 1 %
+    // 2512 parts; the model uses the same 1 % tolerance for both stages.
+    expect(legacyReceiverCurrentOldPnp()).toBeCloseTo(3.4374e-3, 6)
     expect(legacyReceiverCurrentOldPnp()).toBeLessThan(CA033.pc900vWorstCaseCurrentA)
   })
 
   test("fault dissipation per resistor stays inside the 1 W 2512 rating", () => {
     const fault = outputFaultPower()
-    // ring 33 ohm 5 % -> 31.35: 3.465 / (31.35 + 0.085) = 110.22 mA,
-    // P = 0.3809 W
-    expect(fault.ringToGroundW).toBeCloseTo(0.3809, 3)
-    // tip 22 ohm 5 % -> 20.90: 3.465 / (20.90 + 0.085) = 165.14 mA,
-    // P = 0.5701 W
-    expect(fault.tipToGroundW).toBeCloseTo(0.5701, 3)
-    // ring-tip short uses the LOW total resistance 52.25: 63.54 mA through the
-    // pair, so the per-part dissipation falls to 0.1375 W and 0.0916 W
-    expect(fault.ringTipShortRingW).toBeCloseTo(0.1375, 3)
-    expect(fault.ringTipShortTipW).toBeCloseTo(0.0916, 3)
+    // ring 33 ohm 1 % -> 32.67: 3.465 / (32.67 + 0.085) = 105.79 mA,
+    // P = 0.3656 W
+    expect(fault.ringToGroundW).toBeCloseTo(0.3656, 3)
+    // tip 22 ohm 1 % -> 21.78: 3.465 / (21.78 + 0.085) = 158.47 mA,
+    // P = 0.5470 W
+    expect(fault.tipToGroundW).toBeCloseTo(0.5470, 3)
+    // ring-tip short uses the LOW total resistance 54.45: 63.54 mA through the
+    // pair, so the per-part dissipation falls to 0.1319 W and 0.0879 W
+    expect(fault.ringTipShortRingW).toBeCloseTo(0.1319, 3)
+    expect(fault.ringTipShortTipW).toBeCloseTo(0.0879, 3)
     for (const watts of Object.values(fault)) {
       expect(watts).toBeLessThan(OUTPUT_STAGE_DEVIATION.resistorRatedW)
     }

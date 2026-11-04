@@ -130,10 +130,11 @@ export const MIDI_RECEIVER_TOLERANCE = 0.01
 // the tip for a 3.3 V transmitter; this design deliberately uses 33 ohm on the
 // ring and 22 ohm on the tip. See OUTPUT_STAGE_DEVIATION for the reason.
 export const MIDI_OUT_SERIES_OHM = { ring: 33, tip: 22 } as const
-// The 2512 output resistors are the "J" (5 %) parts 25121WF330JT4E and
-// 25121WF220JT4E, so the output stage uses a 5 % resistor tolerance, unlike the
-// 1 % 0603 gate network.
-export const MIDI_OUT_SERIES_TOLERANCE = 0.05
+// The 2512 output resistors are 25121WF330JT4E (33 ohm) and 25121WF220JT4E
+// (22 ohm). Per the Uniroyal thick-film datasheet (Feb 12 2019 V.3, section 2:
+// 14-code system, 5th-6th "1W" = 1 W, 7th code F = +-1 %, 8th-11th "330J" =
+// 330 x 10^-1) the tolerance is +-1 %, so the output stage uses 0.01.
+export const MIDI_OUT_SERIES_TOLERANCE = 0.01
 // Gate network of the P-channel switch: 100 ohm series from the UART pin and
 // a 2.2 kOhm pull-up from gate to source (the 3.3 V rail).
 export const MIDI_OUT_GATE_OHM = { series: 100, pullup: 2200 } as const
@@ -165,6 +166,7 @@ export const AO3401A = {
 // (table 1683), RPD its minimum internal pull-down at 3.3 V.
 export const OUTPUT_GATE_DRIVE = {
   railMinV: 3.135,
+  railMaxV: 3.465,
   gpioVolMaxV: 0.5,
   gpioPullDownMinOhm: 36000,
   rp2350VolMaxV: 0.5,
@@ -191,11 +193,14 @@ export const gateOnVgs = (): number => {
  * off-state leakage risk: it must stay below the gate threshold magnitude.
  */
 export const gateOffVgs = (): number => {
-  const pullup = MIDI_OUT_GATE_OHM.pullup * (1 - MIDI_OUT_GATE_TOLERANCE)
+  // Worst-case off state: strongest rail, largest pull-up and series
+  // resistors, weakest pull-down. A larger rail or pull-up raises |VGS|.
+  const pullup = MIDI_OUT_GATE_OHM.pullup * (1 + MIDI_OUT_GATE_TOLERANCE)
   const series = MIDI_OUT_GATE_OHM.series * (1 + MIDI_OUT_GATE_TOLERANCE)
   const pulldown = OUTPUT_GATE_DRIVE.gpioPullDownMinOhm
-  const gateV = OUTPUT_GATE_DRIVE.railMinV * pulldown / (pulldown + pullup + series)
-  return OUTPUT_GATE_DRIVE.railMinV - gateV
+  const rail = OUTPUT_GATE_DRIVE.railMaxV
+  const gateV = rail * pulldown / (pulldown + pullup + series)
+  return rail - gateV
 }
 
 // CA-033 asks for RA 33 ohm and RC 10 ohm at 3.3 V. The tip resistor is
@@ -261,8 +266,8 @@ export const CA033 = {
 
 /**
  * Current this design's MIDI output can push through a legacy receiver
- * (LED plus 220 ohm). The PNP sources through the 22 ohm ring resistor and
- * the receiver returns through the 33 ohm tip resistor.
+ * (LED plus 220 ohm). The P-channel switch sources through the 33 ohm ring
+ * resistor and the receiver returns through the 22 ohm tip resistor.
  */
 export const transmitterLoopCurrent = (opts: {
   /** Supply at the switch source, in V. */
@@ -332,7 +337,9 @@ export type SenderCorner = {
   /**
    * Sender output driver saturation drop, low and high bounds, in V. CA-033
    * does not specify this; the range is an explicit assumption about the
-   * external device and must be measured on real senders.
+   * external device and must be measured on real senders. The low bound is
+   * 0 V because no minimum loss is guaranteed: a low-loss or P-channel
+   * sender can drop almost nothing, so the maximum-current bound assumes it.
    */
   readonly driverDropMinV: number
   readonly driverDropMaxV: number
@@ -348,7 +355,7 @@ export const SENDER_5V: SenderCorner = {
   raOhm: 220,
   rcOhm: 220,
   resistorTolerance: 0.05,
-  driverDropMinV: 0.1,
+  driverDropMinV: 0,
   driverDropMaxV: 0.3,
   source: "MIDI 1.0 CA-033 (2014) page 2, figure 1: +5 V +-10%, RA and RC 220 ohm 5%",
 }
@@ -362,18 +369,21 @@ export const SENDER_3V3: SenderCorner = {
   raOhm: 33,
   rcOhm: 10,
   resistorTolerance: 0.05,
-  driverDropMinV: 0.1,
+  driverDropMinV: 0,
   driverDropMaxV: 0.3,
   source: "MIDI 1.0 CA-033 (2014) pages 2 and 4: +3.3 V +-5%, RA 33 ohm 5%, RC 10 ohm 5%",
 }
 
-// Forward-voltage bounds used by the calculation.
-//   * Min-current corner: the datasheet VF maximum (1.65 V) is specified at
-//     IF = 2 mA only. At the ~4 mA this loop actually runs at, VF is higher,
-//     so the calculation uses VF_ASSUMED_HIGH (1.85 V) and treats it as an
-//     assumption to confirm, not as a guaranteed limit.
-//   * Max-current corner: the datasheet VF minimum (1.35 V at 2 mA) is used,
-//     which is conservative because VF rises with current.
+// Forward-voltage bounds used by the calculation. Two different numbers,
+// kept apart on purpose:
+//   * VF_MAX_AT_2MA_V = 1.65 V is the datasheet TLP2361 maximum, specified at
+//     IF = 2 mA, Ta = 25 C. It is NOT a bound at the ~3.7 mA this loop runs at.
+//   * VF_ASSUMED_HIGH_V = 1.85 V is the assumed upper bound at that higher
+//     current, used for the minimum-current corner. It is an assumption to
+//     confirm, not a guaranteed limit.
+// The maximum-current corner uses the datasheet VF minimum (1.35 V at 2 mA),
+// which is conservative because VF rises with current.
+export const VF_MAX_AT_2MA_V = 1.65
 export const VF_ASSUMED_HIGH_V = 1.85
 
 export type LoopResult = {

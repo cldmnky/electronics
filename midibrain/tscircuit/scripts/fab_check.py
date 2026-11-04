@@ -116,6 +116,24 @@ def _num(value) -> float | None:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
+def _rotated_rect_dims(w: float | None, h: float | None,
+                      rotation_deg: float | None) -> tuple[float | None, float | None, bool]:
+    """Axis-aligned extent of a w x h rect rotated CCW by rotation_deg.
+
+    Returns (width, height, measurable). Multiples of 90 deg are exact (sides
+    swap for 90/270). Any other angle is NOT measurable here: a bounding box
+    would overstate both the drill and the copper, so the caller must fail
+    closed instead of guessing."""
+    if w is None or h is None or rotation_deg is None:
+        return None, None, False
+    quarters = round(rotation_deg / 90)
+    if abs(rotation_deg - quarters * 90) > 1e-6:
+        return None, None, False
+    if quarters % 2:
+        return h, w, True
+    return w, h, True
+
+
 def collect(data: list) -> dict:
     """Pull the geometry the checks need, keeping 'missing' distinct from 0."""
     board = next((e for e in data if e.get("type") == "pcb_board"), None)
@@ -210,6 +228,29 @@ def check_board(name: str, data: list, strict_targets: bool = False) -> Result:
                 r.fail(f"plated slot {pid} ({shape}) missing hole/pad size")
                 continue
             plated_slot.append((hw, hh, ow, oh))
+        elif shape == "rotated_pill_hole_with_rect_pad":
+            # Exact-connector footprints mark pin 1 with a (possibly rotated)
+            # pill/square hole in a rect pad, e.g. the BH254V box headers.
+            # Only quarter-turn rotations are measurable; anything else fails
+            # closed rather than guessing from a bounding box.
+            raw = (_num(p.get("hole_width")), _num(p.get("hole_height")),
+                   _num(p.get("hole_ccw_rotation")),
+                   _num(p.get("rect_pad_width")),
+                   _num(p.get("rect_pad_height")),
+                   _num(p.get("rect_ccw_rotation")))
+            if any(v is None for v in raw):
+                r.fail(f"plated hole {pid} ({shape}) missing hole/rect pad size")
+                continue
+            hw, hh, hole_ok = _rotated_rect_dims(raw[0], raw[1], raw[2])
+            ow, oh, pad_ok = _rotated_rect_dims(raw[3], raw[4], raw[5])
+            if not (hole_ok and pad_ok):
+                r.fail(f"plated hole {pid} ({shape}) has a non-quarter-turn "
+                       f"rotation, limits cannot be checked")
+                continue
+            if hw == hh and ow == oh:
+                plated_round.append((hw, hh, ow, oh))
+            else:
+                plated_slot.append((hw, hh, ow, oh))
         else:
             r.fail(f"plated hole {pid}: unsupported shape {shape!r}, "
                    f"limits cannot be checked")
