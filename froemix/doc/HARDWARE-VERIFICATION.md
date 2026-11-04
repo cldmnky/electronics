@@ -8,7 +8,10 @@ approve production hardware or replace first-article measurements.
 
 - Base PCB: 80.9 × 128.5 mm, 4 layers. Front PCB and panel: 101.6 × 128.5 mm.
 - Preserve all frozen connector/control centres, board sides, mating-pin maps,
-  the panel outline, 27 current circular holes and OLED opening. Do not restore
+  the panel outline, current circular-hole diameters and OLED opening. The owner
+  approved one exception in this review: correct the 4 rail-mount hole X centres
+  from ±43.30 to ±43.18 mm (17×5.08 mm separation). Keep their Y centres unchanged
+  at ±61.25 mm and all other 23 circular-hole centres unchanged. Do not restore
   the 4 removed audio-LED holes: that removal addressed nonlinear audio loading.
 - Keep Type A MIDI polarity: ring = DIN 4/source; tip = DIN 5/return.
 - Preserve the 0.25 mm base copper floor, bottom-only SMT and existing netlist,
@@ -30,6 +33,7 @@ review must use the merged source and actual tool output, not agent summaries.
 | Fasteners | Clearance limits and 5.0/5.5 mm screw-head statements disagree | Measure generated both-board courtyard/hole distances; distinguish spacer, head and washer envelopes; no assumed M3 head approval |
 | Procurement | Daisy 1×20 sockets and J1 shunts lack approved exact identities | Record unresolved identities and block production; never invent compatible MPNs |
 | Panel/control fit | Jack body 8.8 mm vs provisional minimum gap 8.5 mm; full-height rack and OLED support unverified | Record and test assumptions; require actual bushing/thread, PCB-bow, rack-lip and display-support evidence |
+| Rack grid/width | Original panel holes at x=±43.3 have 86.60 mm separation, versus 17×5.08=86.36 mm on a fixed threaded strip; nominal 101.60 mm width has no neighbour-fit allowance | Owner approved correcting only the 4 rail-hole X centres to ±43.18 mm, retaining Y and every control centre. Record the explicit fixture revision and test the grid; actual rail-profile and adjacent-module fit remain pending |
 | MIDI IN | TLP2362 guaranteed maximum threshold 5 mA exceeds the conservative loop minimum | Primary-backed replacement, physical pin/net checks, source-linked weak/high-current simulations; keep high-current qualification pending |
 | MIDI OUT | PNP drop reduces legacy-receiver current below the 4 mA PC900 case | Primary-backed low-loss stage and fault analysis; use STM32H750 GPIO data, not RP2350 values |
 | Schematics | Broad sheets and dense generic IC drawings hide functional paths | Functional sections, meaningful visible labels/values and actual rendered inspection without PCB moves |
@@ -44,6 +48,12 @@ review must use the merged source and actual tool output, not agent summaries.
 - The old `make gate` stopped at the hardcoded macOS `kicad-cli` path; setting
   `FROEMIX_SKIP_ERC=1` does not repair this second dependency. This was not a
   successful full gate.
+- The unmodified euro gate passed: 86 traces, 53 vias, approximately 2351 mm
+  copper, 0 unconnected ports and 0 trace errors. Base extras (20 parts,
+  41 declared pins), footprints (429 pads), and values (95 passives) passed.
+- The old `make sim` failed after its first deck under native ngspice: the
+  control block wrote data, but the process returned nonzero. New verification
+  must fix this failure and assert real fresh outputs, not read committed data.
 - A genuine native KiCad 10.0.7 CLI was installed separately under `/tmp` from
   official Debian packages (not a stub or handwritten exporter). Running
   `check:netlist --kicad-cli <native-wrapper>` independently matched 102 nets,
@@ -57,6 +67,16 @@ review must use the merged source and actual tool output, not agent summaries.
 Implementation and the merged verification run are in progress. Exact commands,
 counts, independent-review findings and unresolved limitations will be added
 before the PR is handed over.
+
+## Mechanical primary reference
+
+[Doepfer A-100 construction details](https://doepfer.de/a100_man/a100m_e.htm)
+states a 5.08 mm HP grid, mounting-hole separation in multiples of that grid,
+128.5 mm panel height and 101.30 mm actual width for a nominal 101.60 mm 20HP
+panel. The owner explicitly approved the limited 4-hole HP-grid correction
+above after the mismatch was reported. No width change was approved. A
+successful fit with sliding nuts does not prove fit with a fixed threaded
+strip or a different rail profile.
 
 ## Physical acceptance
 
