@@ -1,7 +1,7 @@
 {
   "schema": "froemix-hardware-acceptance/1",
   "note": "Physical acceptance state for the Froemix base board, euro board and panel. An item moves to \"accepted\" only with measured evidence in doc/evidence/ that names a reviewer, a date, at least one value with a unit, and the current hardware fingerprint. The fingerprint covers both boards' entry files, sections/ and lib/ trees, the panel and CAD algorithms, the packages and lock files, the JLCPCB order settings and the curated sourcing/part maps, so any hardware, algorithm, order-setting or part-selection change makes old evidence stale. Refresh hardware_fingerprint with `bun tools/release/gate.ts --fingerprint` after such a change; a documentation-only commit does not change it. There is no override, force, skip or waive key: unknown keys are errors. Every item is pending because no bench measurement has been recorded. See doc/acceptance.md.",
-  "hardware_fingerprint": "073a9dbdc3e4f7359a8ffd4eef3347f480108fc9025324fbff6bc5cd30839669",
+  "hardware_fingerprint": "36f8a0e806977221357389808078e1c2d0e0a137f8ec2088efef37c95536dd17",
   "items": [
     {
       "id": "stack_11mm",
