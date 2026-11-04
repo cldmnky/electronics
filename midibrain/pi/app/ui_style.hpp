@@ -16,6 +16,7 @@
 namespace mnky::app::style {
 
 inline constexpr int kTouch = 44;
+inline constexpr int kTransportHeight = 28;
 inline constexpr int kMasterWidth = 112;
 
 // Flat theme metrics: no gradients or bevels, one 1 px outline, small radii and

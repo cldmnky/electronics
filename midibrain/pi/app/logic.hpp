@@ -14,7 +14,7 @@
 
 namespace mnky::app {
 
-inline constexpr int kScreenCount = 5;  // Mixer, Routing, FX, Recorder, System
+inline constexpr int kScreenCount = 6;  // Mixer, Routing, FX, Recorder, System, Projects
 inline constexpr int kNumStrips = 18;   // audio::kMaxInputs
 
 // One thing the app does in response to a panel gesture or a screen control.
@@ -28,7 +28,7 @@ struct Intent {
     Play,            // start unless already rolling
     PlayStart,       // restart from tick 0
     Stop,
-    RecToggle,
+    RecToggle,       // amount 0 = panel REC (300 ms chord window), 1 = immediate
     OverdubToggle,
     TempoStep,       // amount = bpm x100 delta
   };
@@ -56,7 +56,7 @@ inline constexpr Intent::Kind kActionIntent[] = {
     Intent::Kind::Play,           // Play
     Intent::Kind::PlayStart,      // PlayStart
     Intent::Kind::Stop,           // Stop
-    Intent::Kind::RecToggle,      // RecToggle
+    Intent::Kind::RecToggle,      // RecToggle (amount filled by the caller)
     Intent::Kind::OverdubToggle,  // OverdubToggle
     Intent::Kind::TempoStep,      // TempoCoarse
     Intent::Kind::TempoStep,      // TempoFine

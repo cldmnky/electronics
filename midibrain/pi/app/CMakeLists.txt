@@ -7,7 +7,7 @@
 # root build's pinned JUCE, the pinned CLAP headers and the mnky_* core libs.
 cmake_minimum_required(VERSION 3.24)
 
-foreach(mnky_required_target juce::juce_gui_basics mnky_link mnky_midi mnky_audio mnky_clap)
+foreach(mnky_required_target juce::juce_gui_basics mnky_link mnky_midi mnky_audio mnky_clap mnky_session)
   if(NOT TARGET ${mnky_required_target})
     message(FATAL_ERROR
       "pi/app/CMakeLists.txt needs the root build (pi/CMakeLists.txt): "
@@ -36,17 +36,29 @@ set(MNKY_APP_SOURCES
   midi_glue.cpp
   link_client.cpp
   logic_tests.cpp
+  project_logic.cpp
+  project_io.cpp
+  keypad.cpp
+  confirm_panel.cpp
+  transport_strip.cpp
   screens/MixerScreen.cpp
   screens/RoutingScreen.cpp
   screens/FxScreen.cpp
   screens/RecorderScreen.cpp
-  screens/SystemScreen.cpp)
+  screens/SystemScreen.cpp
+  screens/ProjectsScreen.cpp)
 target_sources(mnkybox PRIVATE ${MNKY_APP_SOURCES})
 
 # Headers are listed for IDE/index completeness only; JUCE's unity build picks
 # the sources up regardless.
 set(MNKY_APP_HEADERS
   logic.hpp
+  text_buffer.hpp
+  project_logic.hpp
+  project_io.hpp
+  keypad.hpp
+  confirm_panel.hpp
+  transport_strip.hpp
   logging.hpp
   app_state.hpp
   app_context.hpp
@@ -66,7 +78,8 @@ set(MNKY_APP_HEADERS
   screens/routing_model.hpp
   screens/FxScreen.hpp
   screens/RecorderScreen.hpp
-  screens/SystemScreen.hpp)
+  screens/SystemScreen.hpp
+  screens/ProjectsScreen.hpp)
 target_sources(mnkybox PRIVATE ${MNKY_APP_HEADERS})
 source_group("app" FILES ${MNKY_APP_HEADERS})
 
@@ -96,6 +109,7 @@ target_link_libraries(mnkybox PRIVATE
   mnky_midi
   mnky_audio
   mnky_clap
+  mnky_session
   juce::juce_gui_basics
   juce::juce_audio_devices
   juce::juce_audio_formats

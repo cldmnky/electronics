@@ -7,6 +7,8 @@
 // Patchbay gestures: tap a wire to toggle that route, or tap an input and then
 // an output. The selected input is the one whose routes stay bright; every
 // other route dims. RESET restores routing::kDefaultRoutes.
+#include <cstdint>
+
 #include "Screen.hpp"
 
 #include "routing_model.hpp"
@@ -38,6 +40,7 @@ class RoutingPatchbay final : public juce::Component {
   int selectedInput_ = -1;
   int usbInputs_ = -1;
   int usbOutputs_ = -1;
+  std::uint32_t routeSignature_ = 0;
 
   JUCE_DECLARE_NON_COPYABLE(RoutingPatchbay)
 };

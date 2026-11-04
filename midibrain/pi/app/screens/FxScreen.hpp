@@ -21,6 +21,9 @@ class FxSlotPanel final : public juce::Component {
   void resized() override;
   void refresh();
   void loadDefaultIfEmpty();
+  // Rebuilds the parameter sliders after a project load changed the plugin
+  // and/or its parameter values behind the panel's back.
+  void projectStateChanged();
 
  private:
   void choosePlugin();
@@ -63,6 +66,8 @@ class FxScreen final : public Screen {
 
   // Loads the default plugin into the first send when nothing is loaded yet.
   void loadDefaults();
+  // Re-reads both slots after a project load (plugin id, params, bypass).
+  void projectStateChanged();
 
  private:
   juce::OwnedArray<FxSlotPanel> slots_;

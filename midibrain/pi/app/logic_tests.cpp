@@ -12,10 +12,13 @@
 
 #include <juce_core/juce_core.h>
 
+#include "../session/session.hpp"
 #include "audio_backend.hpp"
 #include "fx_slot.hpp"
 #include "logic.hpp"
+#include "project_logic.hpp"
 #include "screens/routing_model.hpp"
+#include "text_buffer.hpp"
 #include "theme.hpp"
 #include "ui_style.hpp"
 
@@ -712,8 +715,173 @@ class RoutingModelTests final : public juce::UnitTest {
   }
 };
 
+class TouchKeyboardModelTests final : public juce::UnitTest {
+ public:
+  TouchKeyboardModelTests()
+      : juce::UnitTest("mnkybox touch keyboard model", "mnkybox") {}
+
+  void runTest() override {
+    beginTest("insert, cursor and delete");
+
+    TextBuffer buffer(8);
+    expect(buffer.empty());
+    expect(buffer.insert("abc"), "insert accepts printable ASCII");
+    expect(buffer.text() == "abc");
+    expectEquals(buffer.cursor(), 3);
+    expect(buffer.insert(' '), "space is a normal character");
+    expect(buffer.text() == "abc ");
+    expect(buffer.backspace());
+    expect(buffer.text() == "abc");
+    buffer.home();
+    expectEquals(buffer.cursor(), 0);
+    buffer.moveLeft();
+    expectEquals(buffer.cursor(), 0, "cursor clamps at the start");
+    expect(buffer.insert('X'));
+    expect(buffer.text() == "Xabc");
+    expectEquals(buffer.cursor(), 1);
+    expect(buffer.deleteForward());
+    expect(buffer.text() == "Xbc");
+    buffer.end();
+    expectEquals(buffer.cursor(), 3);
+    buffer.moveRight();
+    expectEquals(buffer.cursor(), 3, "cursor clamps at the end");
+
+    beginTest("max length and ASCII filtering");
+
+    TextBuffer limited(4);
+    expect(limited.insert("abcdef"));
+    expect(limited.text() == "abcd");
+    expectEquals(limited.cursor(), 4);
+    expect(!limited.insert('e'), "a full buffer rejects further input");
+    expect(limited.text() == "abcd");
+    expect(!limited.insert(static_cast<char>(0x01)), "control characters are rejected");
+    expect(!limited.insert(static_cast<char>(0xe9)), "non-ASCII is rejected");
+    limited.setText("xy\x01z\xff");
+    expect(limited.text() == "xyz", "setText drops non-ASCII instead of failing");
+    expectEquals(limited.cursor(), 3);
+    expect(limited.clear());
+    expect(limited.empty());
+    expectEquals(limited.cursor(), 0);
+
+    TextBuffer negative(-3);
+    expect(!negative.insert('a'), "negative max length is clamped to zero");
+  }
+};
+
+class ProjectLogicTests final : public juce::UnitTest {
+ public:
+  ProjectLogicTests() : juce::UnitTest("mnkybox project logic", "mnkybox") {}
+
+  void runTest() override {
+    testNames();
+    testDirtyTracker();
+    testChordDetector();
+  }
+
+ private:
+  void testNames() {
+    beginTest("project and take name validation");
+
+    expect(validateProjectName("My Song").empty());
+    expect(validateProjectName("Project-20261104-034401").empty());
+    expect(!validateProjectName("").empty(), "empty project name is rejected");
+    expect(!validateProjectName("a/b").empty(), "path separator is rejected");
+    expect(!validateProjectName("a\\b").empty(), "backslash is rejected");
+    expect(!validateProjectName(" leading").empty(), "leading space is rejected");
+    expect(!validateProjectName("trailing ").empty(), "trailing space is rejected");
+    expect(!validateProjectName(".").empty(), "dot is reserved");
+    expect(!validateProjectName("..").empty(), "dot-dot is reserved");
+    expect(!validateProjectName(std::string(49, 'a')).empty(), "long names are rejected");
+    expect(!validateProjectName("caf\xc3\xa9").empty(), "non-ASCII names are rejected");
+
+    expect(validateTakeName("take-20261104-034401").empty());
+    expect(validateTakeName("take-drums").empty());
+    expect(!validateTakeName("drums").empty(), "a take keeps the take- prefix");
+    expect(!validateTakeName("take-a/b").empty(), "take separator is rejected");
+    expect(!validateTakeName(std::string("take-") + std::string(50, 'a')).empty(),
+           "long take names are rejected");
+
+    expect(juce::String(defaultProjectName(1700000000)) == "Project-20231114-221320");
+  }
+
+  void testDirtyTracker() {
+    beginTest("dirty transitions");
+
+    DirtyTracker tracker;
+    expect(!tracker.poll("a"), "the first poll only establishes the baseline");
+    expect(!tracker.dirty());
+    expect(!tracker.poll("a"), "an unchanged state stays clean");
+    expect(tracker.poll("b"), "a changed fingerprint sets the dirty flag");
+    expect(tracker.dirty());
+    expect(tracker.poll("a"), "dirty is sticky until an explicit clear");
+    expect(tracker.dirty());
+    tracker.clear("a");
+    expect(!tracker.dirty(), "save/load/new clears the flag");
+    expect(!tracker.poll("a"));
+    expect(!tracker.dirty());
+  }
+
+  void testChordDetector() {
+    beginTest("REC+PLAY chord detector");
+
+    ChordDetector detector;
+    expect(!detector.onPress(ChordDetector::Button::Rec, 1000));
+    expect(detector.onPress(ChordDetector::Button::Play, 1300),
+           "exactly 300 ms still counts");
+    expect(!detector.onPress(ChordDetector::Button::Play, 1301),
+           "the completed pair consumes both edges");
+
+    detector.reset();
+    expect(!detector.onPress(ChordDetector::Button::Play, 10));
+    expect(detector.onPress(ChordDetector::Button::Rec, 309), "either press order works");
+    expect(!detector.onPress(ChordDetector::Button::Rec, 310),
+           "a consumed pair does not fire twice");
+
+    detector.reset();
+    expect(!detector.onPress(ChordDetector::Button::Rec, 100));
+    expect(!detector.onPress(ChordDetector::Button::Play, 401),
+           "301 ms is outside the 300 ms window");
+
+    detector.reset();
+    expect(!detector.onPress(ChordDetector::Button::Play, 0));
+    expect(!detector.onPress(ChordDetector::Button::Play, 100),
+           "a second PLAY edge replaces the first");
+    expect(detector.onPress(ChordDetector::Button::Rec, 200),
+           "the latest PLAY edge still pairs");
+  }
+};
+
+class ClickSessionTests final : public juce::UnitTest {
+ public:
+  ClickSessionTests() : juce::UnitTest("mnkybox click session field", "mnkybox") {}
+
+  void runTest() override {
+    beginTest("click.enabled round-trips through the session format");
+
+    session::Snapshot snapshot;
+    snapshot.click.enabled = true;
+    snapshot.click.level = 0.25f;
+    snapshot.click.bars = 2;
+
+    const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                          .getChildFile("mnkybox-click-test-" +
+                                        juce::String(juce::Time::currentTimeMillis()) +
+                                        ".mnkybox");
+    expect(session::save(file.getFullPathName().toStdString(), snapshot));
+    const auto result = session::load(file.getFullPathName().toStdString());
+    expect(result.ok, "the written session reads back");
+    expect(result.snapshot.click.enabled, "click.enabled survives save/load");
+    expectWithinAbsoluteError(result.snapshot.click.level, 0.25f, 1e-6f);
+    expectEquals(result.snapshot.click.bars, 2);
+    file.deleteFile();
+  }
+};
+
 ThemeTests themeTests;
 RoutingModelTests routingModelTests;
+TouchKeyboardModelTests touchKeyboardModelTests;
+ProjectLogicTests projectLogicTests;
+ClickSessionTests clickSessionTests;
 
 }  // namespace
 

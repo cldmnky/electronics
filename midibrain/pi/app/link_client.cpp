@@ -239,6 +239,7 @@ void LinkClient::drainEvents() {
       case link::PicoLink::Event::Tick: {
         const juce::ScopedLock lock(statusLock_);
         status_.tick = event.u32a;
+        state_.tick.store(event.u32a);
         break;
       }
 
@@ -250,6 +251,7 @@ void LinkClient::drainEvents() {
           status_.tick = event.u32a;
         }
         state_.rolling.store(rolling);
+        state_.tick.store(event.u32a);
         break;
       }
 
@@ -300,6 +302,7 @@ void LinkClient::feedClock(std::uint32_t tick, std::uint32_t picoStampUs,
   clock_.addTick(tick, picoStampUs, piNowUs);
   clock_.setRolling(status_.rolling);
   status_.tick = tick;
+  state_.tick.store(tick);
   status_.clockPrimed = clock_.primed();
   status_.offsetUs = clock_.offsetUs();
   status_.latencyUs = clock_.latencyUs();

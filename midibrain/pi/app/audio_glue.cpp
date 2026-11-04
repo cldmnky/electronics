@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "app_state.hpp"
 #include "logic.hpp"
 #include "logging.hpp"
 
@@ -62,8 +63,8 @@ class AudioGlue::EmulatorDriver final : private juce::Thread {
   AudioGlue& owner_;
 };
 
-AudioGlue::AudioGlue(MixerModel& mixer, FxManager& fx, bool emulator)
-    : mixer_(mixer), fx_(fx), emulatorStartup_(emulator), emulated_(emulator) {
+AudioGlue::AudioGlue(MixerModel& mixer, FxManager& fx, AppState& state, bool emulator)
+    : mixer_(mixer), fx_(fx), state_(state), emulatorStartup_(emulator), emulated_(emulator) {
   for (auto& peak : peaks_) peak.store(0.0f);
   synth_.prepare(sampleRate());
   loadAudioChoice();
@@ -493,6 +494,24 @@ void AudioGlue::renderBlock(const float* const* inputChannelData, int numInputCh
         taps[channel] = engine_.tap(channel);
       }
       recorder_.writeBlock(taps, outL + offset, outR + offset, frames);
+    }
+
+    // Metronome after the recorder tap: the click is monitoring, not take
+    // material. The shim renders silence until audio::ClickSource lands; the
+    // enabled/level/tick/rolling wiring is the real contract.
+    if (state_.clickEnabled.load(std::memory_order_relaxed)) {
+      click_.setEnabled(true);
+      click_.setLevel(state_.clickLevel.load(std::memory_order_relaxed));
+      float clickBuffer[audio::kBlockSize] = {};
+      click_.render(clickBuffer, frames, state_.tick.load(std::memory_order_relaxed),
+                    static_cast<std::uint32_t>(kTicksPerBeat),
+                    state_.rolling.load(std::memory_order_relaxed));
+      for (int i = 0; i < frames; ++i) {
+        outL[offset + i] += clickBuffer[i];
+        outR[offset + i] += clickBuffer[i];
+      }
+    } else {
+      click_.setEnabled(false);
     }
 
     offset += frames;

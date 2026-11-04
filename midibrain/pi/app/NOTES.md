@@ -29,10 +29,11 @@ cmake --build /tmp/pi-build --target mnkybox -j
 
 ## What works
 
-* Five screens behind a 48 px tab bar (800 x 480 landscape-first, resizable up to
-  1600 x 960): Mixer, Routing, FX, Recorder, System.
-* Mixer: 18 strips (gain, pan, sends A/B, mute/solo/arm) with >= 44 px controls,
-  pinned master strip with stereo peak meters, horizontal scrolling.
+* Six screens behind a 48 px tab bar plus the persistent 28 px transport strip
+  (800 x 480 landscape-first, resizable up to 1600 x 960): Mixer, Routing, FX,
+  Recorder, System, Projects.
+* Mixer: 18 strips (gain, pan, sends A/B, mute/solo/arm) in two banks of nine,
+  with >= 44 px controls and a pinned master strip with stereo peak meters.
 * Routing: node-wire patchbay (TRS IN 1/2 + USB IN left, TRS OUT 1/2 + USB OUT
   right) over the 3x3 route matrix. Tap a wire or an input then an output to
   toggle; the selected input keeps its routes bright and dims the rest; RESET
@@ -145,3 +146,89 @@ because jackd's dummy driver reports `JackTimedDriver::Process XRun` under QEMU
   TRS sends and the delivery queue flush. Audio thread reads atomics from
   `MixerModel` and the emulated/generated flag once per block and never locks,
   allocates or logs.
+
+## Projects, touch keyboard, take management, transport strip, metronome
+
+### Projects tab (6th screen)
+
+* One project is one directory under `~/Music/mnkybox-projects/<Name>/` with a
+  `project.mnkybox` file in the existing `mnky::session` version-1 format. The
+  app does not autoload anything at startup: it still comes up untitled.
+* `NEW` creates the default `Project-YYYYMMDD-HHMMSS` name (UTC; `-2`, `-3` on
+  a same-second collision) and writes the **current** app state into it, so NEW
+  is "save the current state as a new project". `SAVE` overwrites the current
+  project (and falls back to NEW when untitled). The list is sorted by the
+  session file mtime, newest first; the current project is accent-coloured.
+* Tapping a row loads it. A dirty app shows a `DISCARD + LOAD` confirmation
+  first. `DELETE` removes the project folder after a confirmation and clears
+  the current-project marker when it was the open one. `RENAME` opens the
+  keyboard and refuses unsafe/duplicate names; renaming the open project keeps
+  it current.
+* Dirty flag: MainComponent fingerprints the route matrix, all 18 mixer strips,
+  FX plugin/params/bypass, tempo and click state at 15 Hz. Any change latches
+  the flag; save/load/new clear it. The dot is drawn three times: on the
+  Projects tab, next to SAVE, and at the right of the transport strip.
+* Capture/apply goes through `mnky_session` (`session::capture` / `apply`):
+  the mixer is captured through a scratch `audio::Engine` filled from the UI
+  atomics, the router is copied under the MidiGlue lock and replaced wholesale,
+  and FX slots use a `session::FxSlotTarget` adapter. This never reads or writes
+  the live Engine from the message thread.
+* Not in the version-1 session schema, therefore not persisted by a project:
+  FX return levels and the overdub flag. They are also excluded from the dirty
+  fingerprint so a SAVE never silently claims to have stored them.
+
+### Touch keyboard and take management
+
+* `keypad.hpp/.cpp` is reusable: digits + QWERTY + `-`/`_` + space, cursor
+  left/right, BACK, CLEAR, CANCEL, OK. Keys are at least 44 px at 800 x 480.
+  The text model (`text_buffer.hpp`) accepts printable ASCII only, enforces the
+  48-character limit and is unit-tested for insert/delete/cursor/max-length.
+* Recorder takes stay global in `~/Music/mnkybox-takes`; projects never own
+  them. The Recorder screen gained RENAME (keyboard) and DELETE (confirmation).
+  Take names must keep the `take-` prefix because the scanner uses `take-*`;
+  rename/delete are disabled while a take is running.
+
+### Persistent transport strip + metronome
+
+* `transport_strip.hpp/.cpp` is a 28 px sibling of the tab component, directly
+  under the 48 px tab bar. It shows rolling/REC state, `bar:beat:tick / time`,
+  BPM, the CLICK toggle and the dirty dot. `ContentTabbedComponent` reserves the
+  same 28 px top inset in every screen's content area, so no screen is covered.
+* CLICK writes `AppState::clickEnabled`; the session save/load carries it in the
+  `click.enabled/level/bars` section (an app-owned additive version-1 section).
+  AudioGlue calls the metronome for every block after the recorder tap, so the
+  click is monitoring and never lands in `master.wav`.
+* **ClickSource handoff:** the audio worker's real `audio::ClickSource`
+  (`../audio/click.hpp/.cpp`) landed in the shared tree with exactly the
+  contract `setEnabled/setLevel/render(mono,n,tick,ticksPerBeat,rolling)`.
+  `audio_glue.hpp` now includes it directly and the temporary
+  `app/click_shim.hpp` was deleted; no call-site changes were needed. The app
+  feeds it the live `AppState` tick/tempo/rolling values once per audio block.
+
+### REC+PLAY chord
+
+* The panel REC button (intent amount 0) now opens a 300 ms window while the
+  transport is stopped. A PLAY press inside it starts the take with the current
+  arm mask; if no PLAY arrives, the take starts when the window expires. The
+  Recorder screen's START TAKE button posts amount 1 and stays immediate.
+* `ChordDetector` (project_logic.hpp) is pure and unit-tested for both press
+  orders, the exact 300 ms boundary and edge replacement. The panel path uses
+  the REC-then-PLAY order; REC alone still starts a take after the window.
+
+### Verification
+
+* `mnkybox --unittests`: 365 checks, 0 failures (new keyboard model, project
+  naming/dirty/chord logic, click.enabled session round-trip).
+* macOS root CMake build and Linux guest rebuild both pass; no app-source
+  warnings. Screenshots (800 x 480, guest `--emulator`) are
+  `qemu/screenshots/25-proj-empty.jpg`, `25-proj-populated.jpg`,
+  `25-proj-dirty.jpg`, `25-proj-mixer-strip.jpg`,
+  `25-proj-recorder-strip.jpg` and `26-keypad.jpg`.
+* Layout note: with the strip taking 28 px, the Routing patchbay nodes measure
+  ~37 px high at 800 x 480 (below the 44 px touch guideline) and the Mixer
+  gain fader now takes the flexible remainder. No clipping was visible; the
+  Routing node size is a known consequence of the persistent strip.
+* No hardware, touch-panel (XTEST clicks only), audio-timing or measured
+  metronome-level claim is made. The click source itself is covered by the
+  audio module's `test_click`; the app only proves it compiles, is called with
+  the live tick and is silenced when the toggle is off.

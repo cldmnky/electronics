@@ -1,5 +1,5 @@
 #pragma once
-// Base class for the five mnkybox screens. The tab bar owns them; MainComponent
+// Base class for the six mnkybox screens. The tab bar owns them; MainComponent
 // drives refresh() from its timer so no screen needs its own timer.
 #include <juce_gui_basics/juce_gui_basics.h>
 

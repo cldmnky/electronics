@@ -12,7 +12,10 @@ class FxSlot::Adapter final : public audio::IEffect {
     // Host is activated for exactly one main stereo port and kBlockSize frames.
     if (ch == nullptr || nch != 2 || n <= 0) return;
     const juce::SpinLock::ScopedTryLockType lock(slot_.lock_);
-    if (!lock.isLocked() || !slot_.host_.loaded() || !slot_.host_.isActive()) return;
+    if (!lock.isLocked() || !slot_.host_.loaded() || !slot_.host_.isActive() ||
+        slot_.bypassed()) {
+      return;
+    }
     slot_.host_.process(ch, 2, ch, 2, static_cast<std::uint32_t>(n));
   }
 
@@ -90,6 +93,30 @@ std::vector<clap::Param> FxSlot::params() const {
 bool FxSlot::setParam(clap_id id, double value) {
   const juce::SpinLock::ScopedLockType lock(lock_);
   return host_.setParam(id, value);
+}
+
+std::size_t FxSlot::paramCount() const {
+  const juce::SpinLock::ScopedLockType lock(lock_);
+  return host_.loaded() ? host_.params().size() : 0;
+}
+
+double FxSlot::paramValue(std::size_t index) const {
+  const juce::SpinLock::ScopedLockType lock(lock_);
+  const auto list = host_.params();
+  if (index >= list.size()) return 0.0;
+  return host_.getParam(list[index].id);
+}
+
+bool FxSlot::setParamValue(std::size_t index, double value) {
+  const juce::SpinLock::ScopedLockType lock(lock_);
+  const auto list = host_.params();
+  if (index >= list.size()) return false;
+  return host_.setParam(list[index].id, value);
+}
+
+juce::String FxSlot::pluginId() const {
+  const juce::SpinLock::ScopedLockType lock(lock_);
+  return juce::String(host_.id());
 }
 
 bool FxSlot::saveState(const juce::File& file) {

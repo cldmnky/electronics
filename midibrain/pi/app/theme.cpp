@@ -346,7 +346,7 @@ juce::Font MnkyLookAndFeel::getTabButtonFont(juce::TabBarButton& button, float h
 }
 
 int MnkyLookAndFeel::getTabButtonBestWidth(juce::TabBarButton& button, int tabDepth) {
-  // Big tabs: five of them still fit the 800 px panel, and each one is a
+  // Big tabs: six of them still fit the 800 px panel, and each one is a
   // comfortable touch target.
   return juce::jmax(128, juce::LookAndFeel_V2::getTabButtonBestWidth(button, tabDepth));
 }

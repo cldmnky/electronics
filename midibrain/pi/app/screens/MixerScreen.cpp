@@ -106,8 +106,14 @@ void MixerStrip::paint(juce::Graphics& g) {
 
 void MixerStrip::resized() {
   auto area = getLocalBounds().reduced(4, 3);
+  // The strip fills whatever height the content area has (the transport strip
+  // removes 28 px from every screen). Gain takes the flexible remainder so the
+  // MUTE/SOLO/ARM row is never clipped at 800 x 480.
+  const int fixed = 16 + 52 + (style::kTouch + 2) * audio::kNumSends + 4 +
+                    style::kTouch * 3;
+  const int gainHeight = juce::jmax(64, area.getHeight() - fixed);
   name_.setBounds(area.removeFromTop(16));
-  gain_.setBounds(area.removeFromTop(104));
+  gain_.setBounds(area.removeFromTop(gainHeight));
   pan_.setBounds(area.removeFromTop(52).reduced(4, 0));
 
   // Sends are touch targets too: one 44 px row each, with a 20 px letter
@@ -124,6 +130,18 @@ void MixerStrip::resized() {
   mute_.setBounds(area.removeFromTop(style::kTouch));
   solo_.setBounds(area.removeFromTop(style::kTouch));
   arm_.setBounds(area.removeFromTop(style::kTouch));
+}
+
+void MixerStrip::refresh() {
+  gain_.setValue(static_cast<double>(model_.gainDb(index_)), juce::dontSendNotification);
+  pan_.setValue(static_cast<double>(model_.pan(index_)), juce::dontSendNotification);
+  for (int send = 0; send < audio::kNumSends; ++send) {
+    send_[send].setValue(static_cast<double>(model_.send(index_, send)),
+                         juce::dontSendNotification);
+  }
+  mute_.setToggleState(model_.mute(index_), juce::dontSendNotification);
+  solo_.setToggleState(model_.solo(index_), juce::dontSendNotification);
+  arm_.setToggleState(model_.arm(index_), juce::dontSendNotification);
 }
 
 void MixerStrip::setSelected(bool selected) {
@@ -184,6 +202,7 @@ void MasterStrip::resized() {
 }
 
 void MasterStrip::refresh() {
+  gain_.setValue(static_cast<double>(model_.masterDb()), juce::dontSendNotification);
   meter_[0] = audio_.peak(0);
   meter_[1] = audio_.peak(1);
   if (!meterArea_.isEmpty()) repaint(meterArea_);
@@ -266,6 +285,7 @@ void MixerScreen::syncBankButtons() {
 }
 
 void MixerScreen::refresh() {
+  for (auto* strip : strips_) strip->refresh();
   master_.refresh();
 }
 

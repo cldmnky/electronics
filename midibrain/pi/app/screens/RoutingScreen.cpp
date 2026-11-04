@@ -33,9 +33,20 @@ void RoutingPatchbay::clearSelection() {
 void RoutingPatchbay::refresh() {
   const int inputs = static_cast<int>(context_.midi.inputCount());
   const int outputs = static_cast<int>(context_.midi.outputCount());
-  if (inputs == usbInputs_ && outputs == usbOutputs_) return;
+  std::uint32_t signature = 0;
+  for (int source = 0; source < routing::kInputCount; ++source) {
+    for (int destination = 0; destination < routing::kOutputCount; ++destination) {
+      if (context_.midi.routeEnabled(routing::kInputs[source],
+                                     routing::kOutputs[destination])) {
+        signature |= 1u << static_cast<unsigned>(source * routing::kOutputCount +
+                                                 destination);
+      }
+    }
+  }
+  if (inputs == usbInputs_ && outputs == usbOutputs_ && signature == routeSignature_) return;
   usbInputs_ = inputs;
   usbOutputs_ = outputs;
+  routeSignature_ = signature;
   repaint();
 }
 
@@ -317,6 +328,13 @@ void RoutingScreen::applyTranspose(int source) {
 
 void RoutingScreen::refresh() {
   patchbay_.refresh();
+  // A project load replaces the whole router behind these editors, so mirror
+  // the live masks/transpose back into the widgets (notifications stay off).
+  for (int source = 0; source < routing::kInputCount; ++source) {
+    syncMask(source);
+    transpose_[source].setValue(context_.midi.transpose(routing::kInputs[source]),
+                                juce::dontSendNotification);
+  }
 }
 
 void RoutingScreen::paint(juce::Graphics& g) {

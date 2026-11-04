@@ -5,6 +5,7 @@
 #include "../link_client.hpp"
 #include "../logic.hpp"
 #include "../mixer_model.hpp"
+#include "../project_logic.hpp"
 #include "../ui_style.hpp"
 
 namespace mnky::app {
@@ -37,6 +38,16 @@ void RecorderScreen::TakeListModel::paintListBoxItem(int rowNumber, juce::Graphi
              true);
 }
 
+void RecorderScreen::TakeListModel::selectedRowsChanged(int lastRowSelected) {
+  if (onRowSelected) onRowSelected(lastRowSelected);
+}
+
+const RecorderScreen::TakeListModel::Entry* RecorderScreen::TakeListModel::entry(
+    int row) const {
+  if (row < 0 || row >= static_cast<int>(entries_.size())) return nullptr;
+  return &entries_[static_cast<std::size_t>(row)];
+}
+
 RecorderScreen::RecorderScreen(AppContext& context) : Screen(context) {
   formats_.registerBasicFormats();
 
@@ -63,7 +74,9 @@ RecorderScreen::RecorderScreen(AppContext& context) : Screen(context) {
   startStop_.setButtonText("START TAKE");
   startStop_.setColour(juce::TextButton::buttonColourId, style::record.darker(0.3f));
   startStop_.onClick = [this] {
-    context_.state.postIntent(Intent{Intent::Kind::RecToggle, 0});
+    // Amount 1 = immediate start/stop; the panel REC button uses 0 so it can
+    // pair with PLAY inside the 300 ms chord window.
+    context_.state.postIntent(Intent{Intent::Kind::RecToggle, 1});
   };
   addAndMakeVisible(startStop_);
 
@@ -83,7 +96,21 @@ RecorderScreen::RecorderScreen(AppContext& context) : Screen(context) {
   takeList_.setModel(&takeModel_);
   takeList_.setRowHeight(26);
   takeList_.setOutlineThickness(1);
+  takeModel_.onRowSelected = [this](int) { syncTakeButtons(); };
   addAndMakeVisible(takeList_);
+
+  renameTake_.setButtonText("RENAME");
+  renameTake_.onClick = [this] { requestRenameTake(); };
+  addAndMakeVisible(renameTake_);
+  deleteTake_.setButtonText("DELETE");
+  deleteTake_.setColour(juce::TextButton::buttonColourId, style::record.darker(0.3f));
+  deleteTake_.onClick = [this] { requestDeleteTake(); };
+  addAndMakeVisible(deleteTake_);
+
+  // Overlays stay hidden until a rename/delete is requested; addChildComponent
+  // keeps addAndMakeVisible from showing them at startup.
+  addChildComponent(keypad_);
+  addChildComponent(confirm_);
 
   syncArmButtons();
   scanTakes();
@@ -113,10 +140,14 @@ void RecorderScreen::resized() {
   auto controlsRow = area.removeFromTop(style::kTouch);
   startStop_.setBounds(controlsRow.removeFromLeft(150).reduced(2));
   directoryButton_.setBounds(controlsRow.removeFromLeft(style::kTouch).reduced(2));
+  renameTake_.setBounds(controlsRow.removeFromLeft(90).reduced(2));
+  deleteTake_.setBounds(controlsRow.removeFromLeft(90).reduced(2));
   status_.setBounds(controlsRow.reduced(6, 0));
 
   disk_.setBounds(area.removeFromTop(20));
   takeList_.setBounds(area);
+  keypad_.setBounds(getLocalBounds());
+  confirm_.setBounds(getLocalBounds());
 }
 
 void RecorderScreen::refresh() {
@@ -197,6 +228,10 @@ void RecorderScreen::chooseDirectory() {
 }
 
 void RecorderScreen::scanTakes() {
+  juce::String selected;
+  if (const auto* entry = takeModel_.entry(takeList_.getSelectedRow())) {
+    selected = entry->name;
+  }
   std::vector<TakeListModel::Entry> entries;
   juce::Array<juce::File> children;
   context_.state.takeDirectory().findChildFiles(children, juce::File::findDirectories, false,
@@ -227,11 +262,75 @@ void RecorderScreen::scanTakes() {
 
   takeModel_.setEntries(std::move(entries));
   takeList_.updateContent();
+
+  int selection = -1;
+  for (int row = 0; row < takeModel_.getNumRows(); ++row) {
+    if (const auto* entry = takeModel_.entry(row); entry && entry->name == selected) {
+      selection = row;
+      break;
+    }
+  }
+  if (selection < 0 && takeModel_.getNumRows() > 0) selection = 0;
+  if (selection >= 0) takeList_.selectRow(selection, true);
+
   // ListBox::updateContent() only re-lays-out the rows and repaints the ones
   // whose bounds changed. A scan that keeps the row count (same take, new file
   // sizes) would otherwise keep showing the sizes read while the WAVs were
   // still open (0 B / 00:00), so repaint the rows explicitly.
   takeList_.repaint();
+  syncTakeButtons();
+}
+
+juce::File RecorderScreen::selectedTakeDirectory() const {
+  const auto* entry = takeModel_.entry(takeList_.getSelectedRow());
+  if (entry == nullptr) return {};
+  return context_.state.takeDirectory().getChildFile(entry->name);
+}
+
+void RecorderScreen::syncTakeButtons() {
+  const bool ready = !context_.audio.recording() && selectedTakeDirectory() != juce::File();
+  renameTake_.setEnabled(ready);
+  deleteTake_.setEnabled(ready);
+}
+
+void RecorderScreen::requestRenameTake() {
+  const auto directory = selectedTakeDirectory();
+  if (directory == juce::File() || context_.audio.recording()) return;
+  keypad_.onAccept = [this, directory](const juce::String& name) -> juce::String {
+    if (context_.audio.recording()) return "stop the take before renaming";
+    const auto error = validateTakeName(name.toStdString());
+    if (!error.empty()) return juce::String(error);
+    if (name == directory.getFileName()) return {};
+    const auto target = directory.getParentDirectory().getChildFile(name);
+    if (target.exists()) return "a take with that name already exists";
+    if (!directory.moveFileTo(target)) return "rename failed (is the take open?)";
+    takeStateChanged();
+    for (int row = 0; row < takeModel_.getNumRows(); ++row) {
+      if (const auto* entry = takeModel_.entry(row); entry && entry->name == name) {
+        takeList_.selectRow(row, true);
+        break;
+      }
+    }
+    return {};
+  };
+  keypad_.onCancel = {};
+  keypad_.open("RENAME TAKE", directory.getFileName());
+}
+
+void RecorderScreen::requestDeleteTake() {
+  const auto directory = selectedTakeDirectory();
+  if (directory == juce::File() || context_.audio.recording()) return;
+  const auto name = directory.getFileName();
+  confirm_.open("DELETE TAKE",
+                "Delete " + name + "? All WAV files in the take folder are removed.",
+                "DELETE");
+  confirm_.onConfirm = [this, directory, name] {
+    if (!directory.deleteRecursively()) {
+      status_.setText("delete failed: " + name, juce::dontSendNotification);
+      return;
+    }
+    takeStateChanged();
+  };
 }
 
 }  // namespace mnky::app

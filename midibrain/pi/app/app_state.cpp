@@ -49,4 +49,18 @@ void AppState::setTakeDirectory(const juce::File& directory) {
   log("takes: " + directory.getFullPathName());
 }
 
+juce::File AppState::currentProject() const {
+  const juce::ScopedLock lock(dirLock_);
+  return currentProject_;
+}
+
+void AppState::setCurrentProject(const juce::File& directory) {
+  {
+    const juce::ScopedLock lock(dirLock_);
+    currentProject_ = directory;
+  }
+  log("project: " + (directory == juce::File() ? juce::String("none")
+                                                : directory.getFullPathName()));
+}
+
 }  // namespace mnky::app

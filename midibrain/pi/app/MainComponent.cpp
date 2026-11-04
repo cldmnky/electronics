@@ -2,8 +2,10 @@
 
 #include "app_context.hpp"
 #include "logging.hpp"
+#include "project_io.hpp"
 #include "screens/FxScreen.hpp"
 #include "screens/MixerScreen.hpp"
+#include "screens/ProjectsScreen.hpp"
 #include "screens/RecorderScreen.hpp"
 #include "screens/RoutingScreen.hpp"
 #include "screens/SystemScreen.hpp"
@@ -11,11 +13,34 @@
 #include "ui_style.hpp"
 
 namespace mnky::app {
+namespace {
+constexpr int kProjectsTabIndex = 5;
+
+std::uint32_t nowMs() {
+  return static_cast<std::uint32_t>(juce::Time::getMillisecondCounter());
+}
+}  // namespace
+
+void ContentTabbedComponent::resized() {
+  TabbedComponent::resized();
+  if (contentTopInset_ <= 0) return;
+  for (int index = 0; index < getNumTabs(); ++index) {
+    if (auto* content = getTabContentComponent(index)) {
+      content->setBounds(content->getBounds().withTrimmedTop(contentTopInset_));
+    }
+  }
+}
+
+void MainComponent::Dot::paint(juce::Graphics& g) {
+  g.setColour(style::accent);
+  g.fillEllipse(getLocalBounds().toFloat());
+}
 
 MainComponent::MainComponent(bool forceEmulator)
     : midi_(forceEmulator),
-      audio_(mixer_, fx_, forceEmulator),
-      link_(midi_, state_, forceEmulator) {
+      audio_(mixer_, fx_, state_, forceEmulator),
+      link_(midi_, state_, forceEmulator),
+      transport_(state_, link_) {
   context_ =
       std::make_unique<AppContext>(AppContext{state_, mixer_, fx_, midi_, audio_, link_});
 
@@ -34,6 +59,7 @@ MainComponent::MainComponent(bool forceEmulator)
 
   tabs_.setTabBarDepth(style::kTabDepth);
   tabs_.setOutline(0);
+  tabs_.setContentTopInset(style::kTransportHeight);
   addAndMakeVisible(tabs_);
 
   mixerScreen_ = new MixerScreen(*context_);
@@ -41,18 +67,28 @@ MainComponent::MainComponent(bool forceEmulator)
   fxScreen_ = new FxScreen(*context_);
   recorderScreen_ = new RecorderScreen(*context_);
   systemScreen_ = new SystemScreen(*context_);
+  projectsScreen_ = new ProjectsScreen(*context_, [this] { projectStateChanged(); });
 
   tabs_.addTab("Mixer", style::background, mixerScreen_, true);
   tabs_.addTab("Routing", style::background, routingScreen_, true);
   tabs_.addTab("FX", style::background, fxScreen_, true);
   tabs_.addTab("Recorder", style::background, recorderScreen_, true);
   tabs_.addTab("System", style::background, systemScreen_, true);
+  tabs_.addTab("Projects", style::background, projectsScreen_, true);
+
+  // Added after the tab component so the strip and its dirty dot paint above
+  // every screen. The strip sits in the content inset reserved above.
+  addAndMakeVisible(transport_);
+  tabDot_.setInterceptsMouseClicks(false, false);
+  addChildComponent(tabDot_);
 
   mixerScreen_->setSelectedStrip(state_.selectedStrip.load());
   fxScreen_->loadDefaults();
 
   link_.start();
   startTimerHz(15);
+  state_.clearDirty();
+  dirtyTracker_.clear(project::fingerprint(*context_));
   log("app: started with " +
       juce::String(forceEmulator ? "emulator backends" : "hardware backends"));
 }
@@ -70,11 +106,15 @@ void MainComponent::paint(juce::Graphics& g) {
 
 void MainComponent::resized() {
   tabs_.setBounds(getLocalBounds());
+  transport_.setBounds(0, style::kTabDepth, getWidth(), style::kTransportHeight);
+  updateDirtyIndicators();
 }
 
 void MainComponent::timerCallback() {
   Intent intent;
   while (state_.nextIntent(intent)) perform(intent);
+
+  expirePendingRec();
 
   const auto status = link_.status();
   state_.rolling.store(status.rolling);
@@ -87,10 +127,29 @@ void MainComponent::timerCallback() {
   routingScreen_->refresh();
   fxScreen_->refresh();
   recorderScreen_->refresh();
+  projectsScreen_->refresh();
   // The System readout rebuilds a text block and the log tail scans the ring,
   // so it runs at a quarter of the meter/transport rate.
   if (++refreshTicks_ % 4 == 0) systemScreen_->refresh();
+
+  updateDirtyState();
+  transport_.refresh();
+  updateDirtyIndicators();
   updatePanelLeds();
+}
+
+void MainComponent::expirePendingRec() {
+  if (!pendingRec_) return;
+  if (nowMs() - pendingRecMs_ < ChordDetector::kWindowMs) return;
+  pendingRec_ = false;
+  chord_.reset();
+  if (!audio_.recording()) toggleTake();
+}
+
+void MainComponent::startTakeNow() {
+  pendingRec_ = false;
+  chord_.reset();
+  toggleTake();
 }
 
 void MainComponent::perform(const Intent& intent) {
@@ -120,8 +179,15 @@ void MainComponent::perform(const Intent& intent) {
 
     case Intent::Kind::Play:
       // Play only starts from a stopped transport (idempotent, mirrors the Pico
-      // transport_for_press() policy).
-      if (!link_.status().rolling) link_.requestTransport(1);
+      // transport_for_press() policy). A REC press within the chord window
+      // upgrades this start into a take.
+      if (!link_.status().rolling) {
+        if (chord_.onPress(ChordDetector::Button::Play, nowMs())) {
+          startTakeNow();
+        } else {
+          link_.requestTransport(1);
+        }
+      }
       break;
 
     case Intent::Kind::PlayStart:
@@ -130,12 +196,35 @@ void MainComponent::perform(const Intent& intent) {
       break;
 
     case Intent::Kind::Stop:
+      pendingRec_ = false;
+      chord_.reset();
       link_.requestTransport(0);
       if (audio_.recording()) stopTake();
       break;
 
     case Intent::Kind::RecToggle:
-      toggleTake();
+      // Screen START TAKE posts amount 1 for an immediate toggle. The panel REC
+      // button (amount 0) waits up to 300 ms for a PLAY press while stopped, so
+      // the documented REC+PLAY chord can start the take; REC alone still
+      // starts it when the window expires.
+      if (intent.amount >= 1) {
+        startTakeNow();
+        break;
+      }
+      if (audio_.recording()) {
+        stopTake();
+        break;
+      }
+      if (link_.status().rolling) {
+        startTakeNow();
+        break;
+      }
+      if (chord_.onPress(ChordDetector::Button::Rec, nowMs())) {
+        startTakeNow();
+      } else {
+        pendingRec_ = true;
+        pendingRecMs_ = nowMs();
+      }
       break;
 
     case Intent::Kind::OverdubToggle:
@@ -177,6 +266,42 @@ void MainComponent::stopTake() {
         juce::String(take.path));
   }
   updatePanelLeds();
+}
+
+void MainComponent::updateDirtyState() {
+  const auto fingerprint = project::fingerprint(*context_);
+  if (dirtyTracker_.poll(fingerprint)) state_.markDirty();
+}
+
+void MainComponent::updateDirtyIndicators() {
+  const bool dirty = state_.dirty.load();
+  if (!dirty) {
+    tabDot_.setVisible(false);
+    return;
+  }
+  auto& bar = tabs_.getTabbedButtonBar();
+  const auto* button = bar.getTabButton(kProjectsTabIndex);
+  if (button == nullptr) {
+    tabDot_.setVisible(false);
+    return;
+  }
+  const auto barBounds = bar.getBounds();
+  const auto buttonBounds = button->getBounds();
+  tabDot_.setBounds(tabs_.getX() + barBounds.getX() + buttonBounds.getRight() - 12,
+                    tabs_.getY() + barBounds.getY() + 8, 7, 7);
+  tabDot_.setVisible(true);
+  tabDot_.toFront(false);
+}
+
+void MainComponent::projectStateChanged() {
+  // A project save/load/new resets the dirty baseline; FX params may have been
+  // replaced behind the FX screen, so rebuild its sliders before sampling the
+  // new fingerprint.
+  if (fxScreen_ != nullptr) fxScreen_->projectStateChanged();
+  state_.clearDirty();
+  dirtyTracker_.clear(project::fingerprint(*context_));
+  transport_.refresh();
+  updateDirtyIndicators();
 }
 
 void MainComponent::updatePanelLeds() {

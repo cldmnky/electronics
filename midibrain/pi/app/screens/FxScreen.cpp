@@ -107,6 +107,8 @@ void FxSlotPanel::refresh() {
                                          : juce::File(path).getFileName();
   if (plugin_.getButtonText() != pluginText) plugin_.setButtonText(pluginText);
 
+  return_.setValue(static_cast<double>(context_.mixer.fxReturnDb(slotIndex_)),
+                   juce::dontSendNotification);
   juce::String text = path.isEmpty() ? "send idle; return passes the bus through"
                                      : "loaded";
   if (!error.isEmpty()) text << "  -  " << error;
@@ -122,6 +124,13 @@ void FxSlotPanel::loadDefaultIfEmpty() {
     return;
   }
   loadPlugin(juce::File(candidate));
+}
+
+void FxSlotPanel::projectStateChanged() {
+  rebuildParams();
+  resized();
+  refresh();
+  repaint();
 }
 
 void FxSlotPanel::choosePlugin() {
@@ -248,6 +257,10 @@ void FxScreen::refresh() {
 
 void FxScreen::loadDefaults() {
   slots_[0]->loadDefaultIfEmpty();
+}
+
+void FxScreen::projectStateChanged() {
+  for (auto* slot : slots_) slot->projectStateChanged();
 }
 
 }  // namespace mnky::app

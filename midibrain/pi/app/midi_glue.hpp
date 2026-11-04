@@ -40,6 +40,18 @@ class MidiGlue {
   void setTranspose(midi::Port source, int semitones);
   int transpose(midi::Port source) const;
 
+  // Session capture/apply seam: copy the guarded matrix, mutate the copy, and
+  // replace it in one lock so the MIDI input thread never sees a half-applied
+  // project.
+  midi::Router routerSnapshot() const {
+    const juce::ScopedLock lock(lock_);
+    return router_;
+  }
+  void replaceRouter(const midi::Router& router) {
+    const juce::ScopedLock lock(lock_);
+    router_ = router;
+  }
+
   std::size_t inputCount() const;
   std::size_t outputCount() const;
   std::uint64_t routedCount() const;

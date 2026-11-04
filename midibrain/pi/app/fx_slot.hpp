@@ -4,6 +4,7 @@
 // calls Host::process() behind a try-lock: while the UI is mid-load the send
 // passes audio through dry instead of racing a half-built plugin.
 #include <atomic>
+#include <cstddef>
 #include <memory>
 #include <vector>
 
@@ -34,6 +35,16 @@ class FxSlot {
 
   std::vector<clap::Param> params() const;
   bool setParam(clap_id id, double value);
+  // Stable parameter order used by the session format; values include pending
+  // UI writes. Out-of-range indices are ignored / return 0.
+  std::size_t paramCount() const;
+  double paramValue(std::size_t index) const;
+  bool setParamValue(std::size_t index, double value);
+
+  // CLAP plugin id of the loaded module (empty when no plugin).
+  juce::String pluginId() const;
+  bool bypassed() const { return bypassed_.load(); }
+  void setBypassed(bool bypassed) { bypassed_.store(bypassed); }
 
   bool saveState(const juce::File& file);
   bool loadState(const juce::File& file);
@@ -47,6 +58,7 @@ class FxSlot {
   class Adapter;
 
   mutable juce::SpinLock lock_;
+  std::atomic<bool> bypassed_{false};
   clap::Host host_;
   std::unique_ptr<Adapter> adapter_;
   const int index_;

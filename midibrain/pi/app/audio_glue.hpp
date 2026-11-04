@@ -15,6 +15,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_data_structures/juce_data_structures.h>
 
+#include "../audio/click.hpp"
 #include "../audio/engine.hpp"
 #include "../audio/recorder.hpp"
 #include "audio_backend.hpp"
@@ -23,6 +24,8 @@
 #include "mixer_model.hpp"
 
 namespace mnky::app {
+
+class AppState;
 
 // What the System screen shows: the persisted request, the backend it resolves
 // to on this machine, the live device numbers and the xrun counter.
@@ -40,7 +43,7 @@ struct AudioBackendState {
 
 class AudioGlue final : private juce::AudioIODeviceCallback {
  public:
-  AudioGlue(MixerModel& mixer, FxManager& fx, bool emulator);
+  AudioGlue(MixerModel& mixer, FxManager& fx, AppState& state, bool emulator);
   ~AudioGlue() override;
   AudioGlue(const AudioGlue&) = delete;
   AudioGlue& operator=(const AudioGlue&) = delete;
@@ -106,9 +109,11 @@ class AudioGlue final : private juce::AudioIODeviceCallback {
 
   MixerModel& mixer_;
   FxManager& fx_;
+  AppState& state_;
   bool emulatorStartup_ = false;  // --emulator: start on the generator
   std::atomic<bool> emulated_{false};
   audio::Engine engine_;
+  audio::ClickSource click_;
   audio::Recorder recorder_;
   EmulatorSynth synth_;
   float synthBuffer_[audio::kMaxInputs][audio::kBlockSize] = {};
