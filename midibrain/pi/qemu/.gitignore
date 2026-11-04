@@ -1,0 +1,10 @@
+# Local VM artifacts: disk image, seed ISO, serial console log, pidfile.
+# The scripts and cloud-init sources next to them are meant to be tracked;
+# these are reproducible/throwaway and must not be committed.
+debian.qcow2
+*.qcow2
+*.qcow2.part
+seed.iso
+vm.log
+vm.pid
+curl.log

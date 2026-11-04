@@ -1,0 +1,9 @@
+#cloud-config
+hostname: mnkybox
+manage_etc_hosts: true
+users:
+  - name: mnky
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINEtDkjb8aIOtBCA6KWxhHnxxso9f9gxq9mOO8EcqDg7 mbengtss@mbengtss-mac
