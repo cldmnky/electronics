@@ -1,4 +1,5 @@
-# mnkybox midi core (JUCE-free): router, USB MIDI, clock discipline, buttons.
+# mnkybox midi core (JUCE-free): router, USB MIDI, clock discipline, buttons,
+# MIDI learn.
 #
 # Two supported uses:
 #  * root build (pi/CMakeLists.txt, setup team): its mnky_core_module() adds this
@@ -50,6 +51,7 @@ add_library(mnky_midi STATIC
   router.cpp
   clock.cpp
   usb.cpp
+  learn.cpp
 )
 target_include_directories(mnky_midi PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
@@ -67,4 +69,9 @@ if(MB_MIDI_STANDALONE)
   target_link_libraries(test_midi PRIVATE mnky_midi)
   target_compile_options(test_midi PRIVATE -Wall -Wextra -Werror)
   add_test(NAME test_midi COMMAND test_midi)
+
+  add_executable(test_learn test_learn.cpp)
+  target_link_libraries(test_learn PRIVATE mnky_midi)
+  target_compile_options(test_learn PRIVATE -Wall -Wextra -Werror)
+  add_test(NAME test_learn COMMAND test_learn)
 endif()
