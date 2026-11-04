@@ -21,7 +21,7 @@
     "check:all": "bun run check:netlist && bun run check:extras && bun run check:footprints && bun run check:parts && bun run check:values",
     "regen": "python3 ../tools/kicad2tscircuit.py",
     "regen:check": "python3 ../tools/kicad2tscircuit.py --out /tmp/froemix-regen-check && diff -r -x dist -x __snapshots__ -x node_modules -x .tscircuit -x package.json -x tsconfig.json -x bun.lock -x .gitignore -x .parts-cache.json -x checks /tmp/froemix-regen-check .",
-    "check:erc": "export PATH=\"/Applications/KiCad/KiCad.app/Contents/MacOS:$PATH\"; kicad-cli sch erc --severity-exclusions -o /tmp/froemix-erc.rpt ../tmp/froemix.kicad_sch >/dev/null 2>&1; echo \"unexcluded errors/warnings:\"; grep -cE '^\\s+; (error|warning)$' /tmp/froemix-erc.rpt || echo 0"
+    "check:erc": "python3 ../tools/check_erc.py"
   },
   "dependencies": {
     "tscircuit": "^0.0.3044"

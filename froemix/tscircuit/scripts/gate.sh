@@ -4,8 +4,12 @@
 # "CI / regression").
 #
 # Two checks in this list cannot fail by exit code alone, so the gate asserts
-# their numbers: KiCad ERC (check:erc only prints a count) and the placement
-# DRC (the one known H1 warning must stay a warning, not an error).
+# their numbers: KiCad ERC (tools/check_erc.py exits 0/1/3 but this gate also
+# re-counts the report it wrote) and the placement DRC (the one known H1
+# warning must stay a warning, not an error). A step whose log is empty fails
+# even when it exited 0: a checker that printed nothing did not check anything.
+# This gate is prototype verification, not a physical approval: `make release`
+# additionally requires hardware-acceptance.json to be fully accepted.
 set -euo pipefail
 export FROEMIX_BUILD_DATE="${FROEMIX_BUILD_DATE:-$(date -u +%F)}"
 
@@ -43,6 +47,12 @@ run() {
     printf '\nfull log: %s\n' "$log" >&2
     exit 1
   fi
+  if [ ! -s "$log" ]; then
+    printf '\n!!! GATE FAILED at step %d (%s): `%s` exited 0 but printed nothing\n' \
+      "$STEP" "$STEP_NAME" "$*" >&2
+    printf '    an empty report is not a pass; see %s\n' "$log" >&2
+    exit 1
+  fi
   printf '    ok in %ds\n' "$((SECONDS - STEP_START))"
   tail -3 "$log" | sed 's/^/    /'
 }
@@ -59,20 +69,23 @@ assert_zero() { # assert_zero <label> <file> <grep-pattern>
 
 printf 'froemix gate - %s\n' "$PROJECT_DIR"
 
-# 1. KiCad ERC. check:erc always exits 0, so the gate asserts the report.
+# 1. KiCad ERC. tools/check_erc.py resolves kicad-cli portably (--kicad-cli,
+# KICAD_CLI, PATH, macOS bundle), runs ERC in a private scratch copy of the
+# frozen project and exits 0 only when nothing is unexcluded (1 = findings,
+# 3 = could not verify: no tool, crash, no report). The gate re-counts the
+# report it wrote, so a future change that loosens the script still fails here.
 step "KiCad ERC - 0 unexcluded errors/warnings"
 if [ "${FROEMIX_SKIP_ERC:-0}" = "1" ]; then
   printf '    SKIPPED (FROEMIX_SKIP_ERC=1) - gate result is INCOMPLETE\n'
+  printf '    a production release refuses FROEMIX_SKIP_ERC=1 (scripts/release.sh)\n'
   INCOMPLETE="ERC skipped"
 else
-  # must match the report path in package.json's check:erc
-  ERC_REPORT=/tmp/froemix-erc.rpt
+  ERC_REPORT="$LOG_DIR/froemix-erc.rpt"
   rm -f "$ERC_REPORT"
-  run erc bun run check:erc
-  if [ ! -f "$ERC_REPORT" ]; then
-    printf '\n!!! GATE FAILED at step %d (%s): %s was not written - kicad-cli missing?\n' \
+  run erc python3 ../tools/check_erc.py --report "$ERC_REPORT"
+  if [ ! -s "$ERC_REPORT" ]; then
+    printf '\n!!! GATE FAILED at step %d (%s): no ERC report at %s\n' \
       "$STEP" "$STEP_NAME" "$ERC_REPORT" >&2
-    printf '    check:erc looks for kicad-cli under /Applications/KiCad/KiCad.app/Contents/MacOS\n' >&2
     exit 1
   fi
   assert_zero "unexcluded ERC entries in $ERC_REPORT:" "$ERC_REPORT" '^\s+; (error|warning)$'
@@ -83,6 +96,13 @@ fi
 # (dist/index/circuit.json), so a clean checkout has nothing to compare yet.
 step "tsci build"
 run build bun run build
+# The comparisons below read the built circuit: an empty or missing file must
+# stop the gate here, not produce six confusing failures further down.
+if [ ! -s dist/index/circuit.json ]; then
+  printf '\n!!! GATE FAILED at step %d (%s): dist/index/circuit.json was not written\n' \
+    "$STEP" "$STEP_NAME" >&2
+  exit 1
+fi
 
 # Machine placement must remain bottom-only; through-hole mating headers are
 # intentionally still on top. Exercise the checker against negative mutations.
