@@ -1445,6 +1445,16 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
   snapshot.sends.rec = static_cast<int>(
       engine.sendSource(audio::SendDestination::Rec));
 
+  // TakesState.active stays app-owned (the engine only exposes the newest take
+  // path), but per-track take looping is engine state, so it captures here.
+  for (int index = 0; index < audio::kMaxInputs; ++index) {
+    const audio::TakeLoop live = engine.takeLoop(index);
+    LoopState& loop = snapshot.takes.loop[static_cast<std::size_t>(index)];
+    loop.enabled = live.enabled;
+    loop.startBeats = live.startBeats;
+    loop.endBeats = live.endBeats;
+  }
+
   for (int index = 0;
        index < kFxBuses && index < static_cast<int>(fxSlots.size()); ++index) {
     FxSlotTarget* slot = fxSlots[static_cast<std::size_t>(index)];
@@ -1541,6 +1551,18 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
         destinations[index],
         sendValues[index] == 0 ? audio::SendSource::PreFader
                                : audio::SendSource::PostFader);
+  }
+
+  // Per-track take looping is engine state; like the other forwards it is
+  // playback-only and does not select takes (that stays app-owned).
+  for (int index = 0; index < audio::kMaxInputs; ++index) {
+    const LoopState& state =
+        snapshot.takes.loop[static_cast<std::size_t>(index)];
+    audio::TakeLoop loop;
+    loop.enabled = state.enabled;
+    loop.startBeats = state.startBeats;
+    loop.endBeats = state.endBeats;
+    engine.setTakeLoop(index, loop);
   }
 
   for (int index = 0;

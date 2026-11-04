@@ -3,7 +3,9 @@
 //        engine.cpp take_player.cpp recorder.cpp click.cpp -o /tmp/t_play -pthread
 //
 // Covers per-track selection, the newest-wins overlap rule with synthetic
-// float32 WAVs, the disarmed/armed input-path rule and the 48 kHz refusal.
+// float32 WAVs, the disarmed/armed input-path rule, the 48 kHz refusal, and
+// per-track take looping (beat-mapped range loops, the end<=start whole-take
+// rule, the seam-declick timing, loop+overlap and loop+monitor behaviour).
 
 #include <cmath>
 #include <cstdint>
@@ -66,6 +68,62 @@ void processLive(Engine& engine, const float* live, float* outL, float* outR) {
         channels = 1;
     }
     engine.process(inputs, channels, kBlockSize, outL, outR);
+}
+
+// Renders `frames` (a multiple of kBlockSize) of Main L into `out`.
+void renderMain(Engine& engine, const float* live, int frames,
+                std::vector<float>& out) {
+    std::vector<float> left(static_cast<std::size_t>(kBlockSize));
+    std::vector<float> right(static_cast<std::size_t>(kBlockSize));
+    out.clear();
+    out.reserve(static_cast<std::size_t>(frames));
+    for (int done = 0; done < frames; done += kBlockSize) {
+        const float* inputs[kMaxInputs] = {};
+        int channels = 0;
+        if (live != nullptr) {
+            inputs[0] = live;
+            channels = 1;
+        }
+        engine.process(inputs, channels, kBlockSize, left.data(), right.data());
+        out.insert(out.end(), left.begin(), left.end());
+    }
+}
+
+// Ramp take: every frame has a distinct value, so a wrong wrap position or a
+// wrong loop length shows up immediately.
+std::vector<float> ramp(int frames, float step) {
+    std::vector<float> data(static_cast<std::size_t>(frames));
+    for (int i = 0; i < frames; ++i) {
+        data[static_cast<std::size_t>(i)] = step * static_cast<float>(i);
+    }
+    return data;
+}
+
+// The seam ramp TakePlayer documents: loopSeamFade() frames fade in from zero
+// at the loop start and out to zero at the loop end.
+float seamGain(std::uint64_t offset, std::uint64_t loopFrames) {
+    const std::uint64_t fade = TakePlayer::loopSeamFade(loopFrames);
+    if (offset < fade) {
+        return static_cast<float>(offset) / static_cast<float>(fade);
+    }
+    if (offset + fade >= loopFrames) {
+        return static_cast<float>(loopFrames - 1 - offset) /
+               static_cast<float>(fade);
+    }
+    return 1.0f;
+}
+
+// Full-scale strip 0 on one take path: gain/vol unity, hard left, so Main L is
+// the take sample itself. `bpmX100` sets the beat -> frame mapping the loop
+// points are expressed in.
+void selectLoopTake(Engine& engine, const std::string& take, int bpmX100) {
+    Channel strip;
+    strip.gain = 1.0f;
+    strip.vol = 1.0f;
+    strip.pan = 0.0f;  // hard left makes the take level directly readable
+    engine.setChannel(0, strip);
+    engine.setTransport(true, 0, 24, bpmX100);
+    CHECK(engine.setActiveTake(0, take, nullptr));
 }
 
 // ------------------------------------------------------- selection / disarming
@@ -365,6 +423,365 @@ void testMonitorModes() {
     std::printf("PASS take playback: monitor off/auto/on policy\n");
 }
 
+// ------------------------------------------------------ range loop timing
+
+void testRangeLoopWrapTiming() {
+    const std::filesystem::path root = testRoot();
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root, ec);
+    CHECK(!ec);
+
+    const int frames = 1024;
+    const int loopStart = 256;
+    const int loopFrames = 512;
+    const std::vector<float> material = ramp(frames, 0.0005f);
+    const std::string take = (root / "ramp.wav").string();
+    CHECK(writeWav(take, 48000, 1, material));
+
+    Engine engine;
+    // 120 bpm at 48 kHz is 24000 frames per beat, so these beats map onto
+    // exactly the take frames 256..767.
+    selectLoopTake(engine, take, 12000);
+
+    TakeLoop loop;
+    loop.enabled = true;
+    loop.startBeats = static_cast<double>(loopStart) / 24000.0;
+    loop.endBeats = static_cast<double>(loopStart + loopFrames) / 24000.0;
+    engine.setTakeLoop(0, loop);
+    CHECK(engine.takeLoop(0) == loop);
+
+    // Three passes; the whole loop is primed before the first block, so the
+    // sample-for-sample expectation is not a timing race.
+    const int rendered = 3 * loopFrames;
+    std::vector<float> out;
+    renderMain(engine, nullptr, rendered, out);
+    CHECK(out.size() == static_cast<std::size_t>(rendered));
+    CHECK(engine.takeUnderruns() == 0);
+    for (int i = 0; i < rendered; ++i) {
+        const std::uint64_t offset =
+            static_cast<std::uint64_t>(i) % static_cast<std::uint64_t>(loopFrames);
+        const float expected =
+            material[static_cast<std::size_t>(loopStart + offset)] *
+            seamGain(offset, static_cast<std::uint64_t>(loopFrames));
+        if (std::fabs(out[static_cast<std::size_t>(i)] - expected) > 1e-6f) {
+            std::printf("FAIL range loop wrap: frame %d actual %.9g expected %.9g\n",
+                        i, out[static_cast<std::size_t>(i)], expected);
+            ++gFailures;
+            break;
+        }
+    }
+    // The seam is exactly silent on both sides of the wrap: that is the declick
+    // and it also pins the wrap to take frame loopStart + loopFrames.
+    checkNear("loop pass fades out to the seam",
+              out[static_cast<std::size_t>(loopFrames - 1)], 0.0f, 1e-9f);
+    checkNear("next pass fades in from the seam",
+              out[static_cast<std::size_t>(loopFrames)], 0.0f, 1e-9f);
+    // Unity-gain loop material starts at the mapped frame, not at take frame 0.
+    checkNear("loop starts at the beat-mapped take frame",
+              out[static_cast<std::size_t>(TakePlayer::kLoopFadeFrames)],
+              material[static_cast<std::size_t>(loopStart +
+                                                TakePlayer::kLoopFadeFrames)],
+              1e-6f);
+    checkNear("mid-loop frame is untouched loop material",
+              out[static_cast<std::size_t>(loopFrames / 2)],
+              material[static_cast<std::size_t>(loopStart + loopFrames / 2)],
+              1e-6f);
+
+    std::filesystem::remove_all(root, ec);
+    std::printf("PASS take looping: beat-mapped range loop wrap timing\n");
+}
+
+// ------------------------------------------------------ whole-take (end<=start)
+
+void testWholeTakeLoop() {
+    const std::filesystem::path root = testRoot();
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root, ec);
+    CHECK(!ec);
+
+    const int frames = 320;
+    const std::vector<float> material = ramp(frames, 0.001f);
+    const std::string take = (root / "whole.wav").string();
+    CHECK(writeWav(take, 48000, 1, material));
+
+    Engine engine;
+    // end < start is the whole-take rule, and the loop state survives being set
+    // before the take is selected.
+    TakeLoop loop;
+    loop.enabled = true;
+    loop.startBeats = 4.0;
+    loop.endBeats = 1.0;
+    engine.setTakeLoop(0, loop);
+    selectLoopTake(engine, take, 12000);
+    CHECK(engine.takeLoop(0) == loop);
+
+    const int rendered = 1024;  // 3.2 passes of the 320-frame take
+    std::vector<float> out;
+    renderMain(engine, nullptr, rendered, out);
+    CHECK(engine.takeUnderruns() == 0);
+    for (int i = 0; i < rendered; ++i) {
+        const std::uint64_t offset =
+            static_cast<std::uint64_t>(i) % static_cast<std::uint64_t>(frames);
+        const float expected =
+            material[static_cast<std::size_t>(offset)] *
+            seamGain(offset, static_cast<std::uint64_t>(frames));
+        if (std::fabs(out[static_cast<std::size_t>(i)] - expected) > 1e-6f) {
+            std::printf("FAIL whole-take loop: frame %d actual %.9g expected %.9g\n",
+                        i, out[static_cast<std::size_t>(i)], expected);
+            ++gFailures;
+            break;
+        }
+    }
+
+    // start == end is the same rule.
+    TakeLoop equal;
+    equal.enabled = true;
+    equal.startBeats = 2.0;
+    equal.endBeats = 2.0;
+    engine.setTakeLoop(0, equal);
+    CHECK(engine.takeLoop(0) == equal);
+    renderMain(engine, nullptr, 2 * kBlockSize, out);
+    for (int i = 0; i < 2 * kBlockSize; ++i) {
+        const std::uint64_t offset =
+            static_cast<std::uint64_t>(i) % static_cast<std::uint64_t>(frames);
+        const float expected =
+            material[static_cast<std::size_t>(offset)] *
+            seamGain(offset, static_cast<std::uint64_t>(frames));
+        if (std::fabs(out[static_cast<std::size_t>(i)] - expected) > 1e-6f) {
+            std::printf("FAIL whole-take loop (start==end): frame %d actual %.9g "
+                        "expected %.9g\n",
+                        i, out[static_cast<std::size_t>(i)], expected);
+            ++gFailures;
+            break;
+        }
+    }
+
+    std::filesystem::remove_all(root, ec);
+    std::printf("PASS take looping: whole take when end <= start\n");
+}
+
+// -------------------------------------------------------- disabled = linear
+
+void testDisabledLoopIsLinear() {
+    const std::filesystem::path root = testRoot();
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root, ec);
+    CHECK(!ec);
+
+    const int frames = 384;
+    const std::vector<float> material = ramp(frames, 0.001f);
+    const std::string take = (root / "linear.wav").string();
+    CHECK(writeWav(take, 48000, 1, material));
+
+    Engine engine;
+    TakeLoop loop;
+    loop.enabled = false;  // points are kept but must not loop
+    loop.startBeats = 0.5;
+    loop.endBeats = 2.0;
+    engine.setTakeLoop(0, loop);
+    selectLoopTake(engine, take, 12000);
+    CHECK(engine.takeLoop(0) == loop);
+
+    std::vector<float> out;
+    renderMain(engine, nullptr, 4 * kBlockSize, out);
+    CHECK(engine.takeUnderruns() == 0);
+    for (int i = 0; i < frames; ++i) {
+        checkNear("disabled loop plays the take linearly",
+                  out[static_cast<std::size_t>(i)],
+                  material[static_cast<std::size_t>(i)], 1e-6f);
+        if (gFailures != 0) break;
+    }
+    checkNear("disabled loop ends with the take", out[frames], 0.0f, 1e-9f);
+
+    // An enabled range that lies past the take degrades to linear playback: the
+    // state is stored, but clamping never invents audio.
+    TakeLoop past;
+    past.enabled = true;
+    past.startBeats = 8.0;   // 192000 frames at 120 bpm, far past the take
+    past.endBeats = 16.0;
+    engine.setTakeLoop(0, past);
+    CHECK(engine.takeLoop(0) == past);
+    renderMain(engine, nullptr, 4 * kBlockSize, out);
+    for (int i = 0; i < frames; ++i) {
+        checkNear("out-of-range loop falls back to linear playback",
+                  out[static_cast<std::size_t>(i)],
+                  material[static_cast<std::size_t>(i)], 1e-6f);
+        if (gFailures != 0) break;
+    }
+    checkNear("out-of-range loop still ends with the take", out[frames], 0.0f,
+              1e-9f);
+
+    // Out-of-range tracks are ignored, and the getter stays at its default.
+    engine.setTakeLoop(-1, past);
+    CHECK(engine.takeLoop(-1) == TakeLoop{});
+    CHECK(engine.takeLoop(kMaxInputs) == TakeLoop{});
+
+    std::filesystem::remove_all(root, ec);
+    std::printf("PASS take looping: disabled and out-of-range loops are linear\n");
+}
+
+// ---------------------------------------------------- loop + newest-wins overlap
+
+void testLoopKeepsNewestWins() {
+    const std::filesystem::path root = testRoot();
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root, ec);
+    CHECK(!ec);
+
+    const std::string older = (root / "older-loop.wav").string();
+    const std::string newer = (root / "newer-loop.wav").string();
+    CHECK(writeWav(older, 48000, 1, constant(2 * kBlockSize, 0.25f)));
+    CHECK(writeWav(newer, 48000, 1, constant(kBlockSize, 0.75f)));
+
+    Engine engine;
+    Channel strip;
+    strip.gain = 1.0f;
+    strip.vol = 1.0f;
+    strip.pan = 0.0f;
+    engine.setChannel(0, strip);
+    engine.setTransport(true, 0, 24, 12000);
+    CHECK(engine.setActiveTakes(0, {older, newer}, nullptr));
+
+    TakeLoop loop;
+    loop.enabled = true;  // end <= start: each layer loops its whole stream
+    engine.setTakeLoop(0, loop);
+
+    std::vector<float> out;
+    renderMain(engine, nullptr, 3 * kBlockSize, out);
+    CHECK(engine.takeUnderruns() == 0);
+    for (int i = 0; i < 3 * kBlockSize; ++i) {
+        if (!(out[static_cast<std::size_t>(i)] <= 0.75f + 1e-6f)) {
+            std::printf("FAIL looped newest-wins: frame %d is %.9g\n", i,
+                        out[static_cast<std::size_t>(i)]);
+            ++gFailures;
+            break;
+        }
+    }
+    // The newer layer's loop seam is silent, and the older layer would still
+    // have frames there: a leak would show up as exactly 0.25.
+    checkNear("older layer stays muted at the newer layer's loop seam", out[0],
+              0.0f, 1e-9f);
+    // The newest layer is the one that wraps (128-frame take, 32-frame seam
+    // ramp) and it keeps winning on the next pass.
+    checkNear("the winning take is the looped one",
+              out[static_cast<std::size_t>(kBlockSize + 64)], 0.75f, 1e-6f);
+    checkNear("the winning take still wins on its second pass",
+              out[static_cast<std::size_t>(2 * kBlockSize + 64)], 0.75f, 1e-6f);
+
+    // Loop off returns to linear newest-wins (today's behaviour, unchanged).
+    engine.setTakeLoop(0, TakeLoop{});
+    renderMain(engine, nullptr, 4 * kBlockSize, out);
+    checkNear("loop off: newest take plays first", out[0], 0.75f, 1e-6f);
+    checkNear("loop off: older take resumes after the newer file ends",
+              out[static_cast<std::size_t>(kBlockSize)], 0.25f, 1e-6f);
+    checkNear("loop off: both layers end",
+              out[static_cast<std::size_t>(2 * kBlockSize)], 0.0f, 1e-9f);
+
+    std::filesystem::remove_all(root, ec);
+    std::printf("PASS take looping: newest-wins overlap still applies\n");
+}
+
+// ------------------------------------------------- loop + input monitoring
+
+void testLoopWithMonitorModes() {
+    const std::filesystem::path root = testRoot();
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root, ec);
+    CHECK(!ec);
+
+    const int frames = 256;
+    const std::string take = (root / "loop-monitor.wav").string();
+    CHECK(writeWav(take, 48000, 1, constant(frames, 0.5f)));
+
+    const auto prepare = [&](Engine& engine) {
+        Channel strip;
+        strip.gain = 1.0f;
+        strip.vol = 1.0f;
+        strip.pan = 0.0f;
+        engine.setChannel(0, strip);
+        engine.setTransport(true, 0, 24, 12000);
+        CHECK(engine.setActiveTake(0, take, nullptr));
+        TakeLoop loop;
+        loop.enabled = true;  // whole take
+        engine.setTakeLoop(0, loop);
+    };
+
+    std::vector<float> live(static_cast<std::size_t>(kBlockSize), 0.9f);
+    std::vector<float> out;
+
+    // Auto + disarmed: the loop keeps the take "playing", so live input never
+    // doubles it, not even on later passes.
+    {
+        Engine engine;
+        prepare(engine);
+        CHECK(engine.monitorMode(0) == MonitorMode::Auto);
+        renderMain(engine, live.data(), 4 * kBlockSize, out);
+        CHECK(engine.takeUnderruns() == 0);
+        checkNear("looping take with Auto is not doubled by live input", out[64],
+                  0.5f, 1e-6f);
+        checkNear("Auto stays take-only after the loop wraps",
+                  out[static_cast<std::size_t>(frames + 64)], 0.5f, 1e-6f);
+        const float* tap = engine.tap(0);
+        CHECK(tap != nullptr);
+        if (tap != nullptr) {
+            checkNear("looping take does not change the live tap", tap[0], 0.9f,
+                      1e-6f);
+        }
+    }
+
+    // Off: live input never reaches Main, the looping take stays audible.
+    {
+        Engine engine;
+        prepare(engine);
+        engine.setMonitorMode(0, MonitorMode::Off);
+        renderMain(engine, live.data(), 4 * kBlockSize, out);
+        checkNear("off keeps the looping take voice", out[64], 0.5f, 1e-6f);
+        checkNear("off keeps the looping take voice after the wrap",
+                  out[static_cast<std::size_t>(frames + 64)], 0.5f, 1e-6f);
+    }
+
+    // On: live input still layers on top of the looping take.
+    {
+        Engine engine;
+        prepare(engine);
+        engine.setMonitorMode(0, MonitorMode::On);
+        renderMain(engine, live.data(), 4 * kBlockSize, out);
+        checkNear("on layers live input over the looping take", out[64], 1.4f,
+                  1e-6f);
+        checkNear("on layers live input over the second pass",
+                  out[static_cast<std::size_t>(frames + 64)], 1.4f, 1e-6f);
+    }
+
+    // Armed: the take and its loop are ignored, live input passes.
+    {
+        Engine engine;
+        prepare(engine);
+        Channel strip = engine.channel(0);
+        strip.arm = true;
+        engine.setChannel(0, strip);
+        renderMain(engine, live.data(), kBlockSize, out);
+        checkNear("armed track ignores a looping take", out[0], 0.9f, 1e-6f);
+    }
+
+    // Stopped transport: a loop never keeps a stopped take "playing".
+    {
+        Engine engine;
+        prepare(engine);
+        engine.setTransport(false, 0, 24, 12000);
+        renderMain(engine, live.data(), kBlockSize, out);
+        checkNear("stopped loop transport monitors live input", out[0], 0.9f,
+                  1e-6f);
+    }
+
+    std::filesystem::remove_all(root, ec);
+    std::printf("PASS take looping: monitor off/auto/on unchanged\n");
+}
+
 }  // namespace
 
 int main() {
@@ -373,6 +790,11 @@ int main() {
     testNon48kRefused();
     testStereoDownmix();
     testMonitorModes();
+    testRangeLoopWrapTiming();
+    testWholeTakeLoop();
+    testDisabledLoopIsLinear();
+    testLoopKeepsNewestWins();
+    testLoopWithMonitorModes();
 
     if (gFailures != 0) {
         std::printf("FAIL take playback: %d check(s) failed\n", gFailures);

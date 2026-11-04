@@ -251,10 +251,23 @@ public:
     int activeTakeCount(int track) const;
     /// Newest (highest-priority) take path, empty when the track has none.
     std::string activeTake(int track) const;
+    /// Per-track take loop in session beats (control thread). Playback-only:
+    /// an armed strip ignores the take, `tap()` stays live and punch-in is not
+    /// coupled to looping. `endBeats <= startBeats` loops the whole active
+    /// take. The window is mapped to take frames with the current transport
+    /// tempo, so re-apply it after a tempo change; a loop that does not fit
+    /// the take plays linearly. Out-of-range tracks are ignored.
+    void setTakeLoop(int track, const TakeLoop& loop);
+    TakeLoop takeLoop(int track) const {
+        return trackInRange(track) ? mTakeLoop[track] : TakeLoop{};
+    }
     /// Ring samples that were not ready in time and rendered as silence.
     std::uint64_t takeUnderruns() const { return mTakePlayer.underruns(); }
 
 private:
+    static bool trackInRange(int track) {
+        return track >= 0 && track < kMaxInputs;
+    }
     void processBlock(const float* const* in, int nch, int n,
                       const OutputBuses& outputs);
     void applyMainComp(float* left, float* right, int n);
@@ -270,6 +283,7 @@ private:
     float mSendR[kNumSends][kBlockSize] = {};
 
     TakePlayer mTakePlayer;
+    TakeLoop mTakeLoop[kMaxInputs]{};
     float mTakeBuffer[kMaxInputs][kBlockSize] = {};
     bool mTakeActive[kMaxInputs] = {};
     bool mTakePlaying[kMaxInputs] = {};

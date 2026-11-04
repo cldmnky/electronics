@@ -48,7 +48,8 @@ target_compile_options(test_click PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_click PRIVATE mnky_audio)
 add_test(NAME test_click COMMAND test_click)
 
-# Take playback: selection, newest-wins layering and the 48 kHz refusal path.
+# Take playback: selection, newest-wins layering, the 48 kHz refusal path and
+# per-track take looping (beat-mapped range and whole-take loops).
 add_executable(test_audio_playback test_audio_playback.cpp)
 target_compile_options(test_audio_playback PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_audio_playback PRIVATE mnky_audio)

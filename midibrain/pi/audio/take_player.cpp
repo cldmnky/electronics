@@ -13,6 +13,8 @@ constexpr std::uint16_t kFormatPcm = 1;
 constexpr std::uint16_t kFormatFloat = 3;
 constexpr std::uint32_t kRequiredSampleRate = 48000;
 constexpr int kReadChunkFrames = 256;
+// Shortest loop that still gets a seam ramp: below this a wrap is not audible.
+constexpr std::uint64_t kMinLoopFrames = 4;
 
 std::uint16_t le16(const unsigned char* bytes) {
     return static_cast<std::uint16_t>(bytes[0]) |
@@ -45,6 +47,11 @@ TakePlayer::TakePlayer() {
 }
 
 TakePlayer::~TakePlayer() { clearAll(); }
+
+std::uint64_t TakePlayer::loopSeamFade(std::uint64_t loopFrames) {
+    const std::uint64_t fade = std::min(loopFrames / 4, kLoopFadeFrames);
+    return fade > 0 ? fade : 1;
+}
 
 void TakePlayer::enterControl() {
     mControlBusy.store(true, std::memory_order_seq_cst);
@@ -172,7 +179,7 @@ bool TakePlayer::inspectWav(const std::string& path, WavInfo& info,
     return true;
 }
 
-bool TakePlayer::startLayer(Layer& layer, const std::string& path,
+bool TakePlayer::startLayer(int track, Layer& layer, const std::string& path,
                             const WavInfo& info, std::uint64_t startFrame,
                             std::string* error) {
     const std::uint64_t frameBytes =
@@ -182,6 +189,12 @@ bool TakePlayer::startLayer(Layer& layer, const std::string& path,
         refuse(quoted(path) + " has no audio frames", error);
         return false;
     }
+    const std::uint64_t lengthFrames =
+        startFrame < totalFrames ? totalFrames - startFrame : 0;
+    const LoopWindow window =
+        loopWindowFor(track, mTracks[track], lengthFrames);
+    const std::uint64_t streamStart =
+        window.looping ? window.startFrames : 0;
 
     std::FILE* file = std::fopen(path.c_str(), "rb");
     if (file == nullptr) {
@@ -193,22 +206,25 @@ bool TakePlayer::startLayer(Layer& layer, const std::string& path,
     layer.channels = info.channels;
     layer.bytesPerSample = info.bits / 8u;
     layer.floatSamples = info.format == kFormatFloat;
-    layer.lengthFrames =
-        startFrame < totalFrames ? totalFrames - startFrame : 0;
-    layer.remainingFrames = layer.lengthFrames;
+    layer.lengthFrames = lengthFrames;
+    layer.remainingFrames = lengthFrames - streamStart;
+    layer.loopStartFrames = window.startFrames;
+    layer.loopEndFrames = window.endFrames;
+    layer.dataOffset = info.dataOffset;
+    layer.originFrame = startFrame;
+    layer.frameBytes = frameBytes;
     layer.writeFrame.store(0, std::memory_order_relaxed);
     layer.readFrame.store(0, std::memory_order_relaxed);
     layer.eof.store(false, std::memory_order_relaxed);
     layer.stop.store(false, std::memory_order_relaxed);
+    layer.looping.store(window.looping, std::memory_order_relaxed);
 
-    if (layer.lengthFrames > 0) {
+    if (streamStart < lengthFrames) {
         const std::uint64_t byteOffset =
-            info.dataOffset + startFrame * frameBytes;
+            info.dataOffset + (startFrame + streamStart) * frameBytes;
         if (byteOffset > static_cast<std::uint64_t>(LONG_MAX) ||
             std::fseek(file, static_cast<long>(byteOffset), SEEK_SET) != 0) {
-            std::fclose(file);
-            layer.file = nullptr;
-            layer.path.clear();
+            stopLayer(layer);
             refuse("cannot seek " + quoted(path), error);
             return false;
         }
@@ -216,25 +232,73 @@ bool TakePlayer::startLayer(Layer& layer, const std::string& path,
 
     // Prime the ring before publishing the layer so a normal first block does
     // not start with an avoidable dropout. The reader thread streams the rest.
-    std::uint64_t primed = 0;
+    // A looped stream never ends, so the whole half ring is worth priming.
+    const std::uint64_t half = static_cast<std::uint64_t>(kRingFrames) / 2;
     const std::uint64_t target =
-        std::min<std::uint64_t>(layer.lengthFrames, kRingFrames / 2);
+        window.looping ? half
+                       : std::min<std::uint64_t>(layer.remainingFrames, half);
+    std::uint64_t primed = 0;
     while (primed < target) {
         const int want = static_cast<int>(
             std::min<std::uint64_t>(kReadChunkFrames, target - primed));
-        const int got = readFrames(layer, layer.ring.data() + primed, want);
+        const int got = produceFrames(layer, layer.ring.data() + primed, want);
         if (got <= 0) break;
         primed += static_cast<std::uint64_t>(got);
     }
     layer.writeFrame.store(primed, std::memory_order_release);
 
     layer.active.store(true, std::memory_order_release);
-    if (layer.lengthFrames > 0) {
+    // A looped layer wraps instead of ending, so it keeps streaming even when
+    // priming stopped exactly on the loop end (remainingFrames == 0).
+    if (window.looping || layer.remainingFrames > 0) {
         layer.thread = std::thread(&TakePlayer::readLoop, this, &layer);
     } else {
         layer.eof.store(true, std::memory_order_relaxed);
     }
     return true;
+}
+
+TakePlayer::LoopWindow TakePlayer::loopWindowFor(int track, const Track& slot,
+                                                 std::uint64_t lengthFrames) const {
+    LoopWindow window;  // linear by default
+    if (!slot.loop.enabled) return window;
+    if (!(slot.loop.endBeats > slot.loop.startBeats)) {
+        // end <= start (or NaN) is the whole-take rule: wrap at the layer end.
+        if (lengthFrames < kMinLoopFrames) return window;
+        window.looping = true;
+        window.startFrames = 0;
+        window.endFrames = lengthFrames;
+        return window;
+    }
+    if (!(slot.framesPerBeat > 0.0)) return window;  // no tempo: cannot map
+
+    // Session beats -> take frames, clamped into this layer's stream. Anything
+    // past the layer clamps to the end, so a range outside the take degrades to
+    // linear playback instead of inventing audio.
+    const double limit = static_cast<double>(lengthFrames) + 1.0;
+    const auto beatsToFrames = [&](double beats) {
+        double frames = std::floor(beats * slot.framesPerBeat + 0.5);
+        if (!(frames > 0.0)) frames = 0.0;
+        if (frames > limit) frames = limit;
+        return static_cast<std::int64_t>(frames);
+    };
+    const std::int64_t origin = static_cast<std::int64_t>(slot.startFrame);
+    const std::int64_t lastFrame = static_cast<std::int64_t>(lengthFrames);
+    const std::int64_t start = std::clamp<std::int64_t>(
+        beatsToFrames(slot.loop.startBeats) - origin, 0, lastFrame);
+    const std::int64_t end = std::clamp<std::int64_t>(
+        beatsToFrames(slot.loop.endBeats) - origin, 0, lastFrame);
+    if (end - start < static_cast<std::int64_t>(kMinLoopFrames)) {
+        std::fprintf(stderr,
+                     "mnky audio: take loop on track %d does not fit the take "
+                     "(%llu frames); playing linearly\n",
+                     track, static_cast<unsigned long long>(lengthFrames));
+        return window;
+    }
+    window.looping = true;
+    window.startFrames = static_cast<std::uint64_t>(start);
+    window.endFrames = static_cast<std::uint64_t>(end);
+    return window;
 }
 
 void TakePlayer::stopLayer(Layer& layer) {
@@ -248,6 +312,11 @@ void TakePlayer::stopLayer(Layer& layer) {
     layer.path.clear();
     layer.remainingFrames = 0;
     layer.lengthFrames = 0;
+    layer.loopStartFrames = 0;
+    layer.loopEndFrames = 0;
+    layer.dataOffset = 0;
+    layer.originFrame = 0;
+    layer.frameBytes = 0;
     layer.channels = 0;
     layer.bytesPerSample = 0;
     layer.floatSamples = false;
@@ -255,6 +324,7 @@ void TakePlayer::stopLayer(Layer& layer) {
     layer.readFrame.store(0, std::memory_order_relaxed);
     layer.eof.store(false, std::memory_order_relaxed);
     layer.stop.store(false, std::memory_order_relaxed);
+    layer.looping.store(false, std::memory_order_relaxed);
 }
 
 bool TakePlayer::setTakes(int track, const std::vector<std::string>& paths,
@@ -286,20 +356,21 @@ bool TakePlayer::setTakes(int track, const std::vector<std::string>& paths,
     }
 
     enterControl();
-    clearTrackLocked(track);
     Track& slot = mTracks[track];
-    // Keep the track marked as take-fed while the new stack is being opened,
-    // so a concurrent render silences it instead of leaking live input.
-    slot.count.store(static_cast<int>(paths.size()), std::memory_order_release);
+    stopTrackLocked(track);
+    slot.pathCount = static_cast<int>(paths.size());
     for (std::size_t i = 0; i < paths.size(); ++i) {
-        if (!startLayer(slot.layers[i], paths[i], info[i], startFrame, error)) {
-            clearTrackLocked(track);
-            leaveControl();
-            return false;
-        }
+        slot.paths[i] = paths[i];
+        slot.infos[i] = info[i];
+    }
+    slot.startFrame = startFrame;
+    const bool ok = startTrackLocked(track, error);
+    if (!ok) {
+        slot.pathCount = 0;
+        for (std::string& path : slot.paths) path.clear();
     }
     leaveControl();
-    return true;
+    return ok;
 }
 
 bool TakePlayer::setTake(int track, const std::string& path,
@@ -319,8 +390,62 @@ bool TakePlayer::setTake(int track, const std::string& path,
 void TakePlayer::clearTrackLocked(int track) {
     if (track < 0 || track >= kMaxTracks) return;
     Track& slot = mTracks[track];
+    stopTrackLocked(track);
+    slot.pathCount = 0;
+    for (std::string& path : slot.paths) path.clear();
+}
+
+void TakePlayer::stopTrackLocked(int track) {
+    Track& slot = mTracks[track];
     slot.count.store(0, std::memory_order_release);
     for (Layer& layer : slot.layers) stopLayer(layer);
+}
+
+bool TakePlayer::startTrackLocked(int track, std::string* error) {
+    Track& slot = mTracks[track];
+    if (slot.pathCount == 0) {
+        slot.count.store(0, std::memory_order_release);
+        return true;
+    }
+    // Keep the track marked as take-fed while the stack is being opened, so a
+    // concurrent render silences it instead of leaking live input.
+    slot.count.store(slot.pathCount, std::memory_order_release);
+    for (int i = 0; i < slot.pathCount; ++i) {
+        if (!startLayer(track, slot.layers[i], slot.paths[i], slot.infos[i],
+                        slot.startFrame, error)) {
+            stopTrackLocked(track);
+            return false;
+        }
+    }
+    return true;
+}
+
+bool TakePlayer::restartTrackLocked(int track, std::string* error) {
+    stopTrackLocked(track);
+    return startTrackLocked(track, error);
+}
+
+bool TakePlayer::setLoop(int track, const TakeLoop& loop, double framesPerBeat,
+                         std::string* error) {
+    if (track < 0 || track >= kMaxTracks) {
+        refuse("track " + std::to_string(track) + " is out of range", error);
+        return false;
+    }
+    Track& slot = mTracks[track];
+    const double perBeat = std::isfinite(framesPerBeat) && framesPerBeat > 0.0
+                               ? framesPerBeat
+                               : 0.0;
+    // An unchanged state (and a cleared loop at an unchanged tempo) needs no
+    // restart: restarting would audibly reposition the take for nothing.
+    if (slot.loop == loop && (!loop.enabled || slot.framesPerBeat == perBeat)) {
+        return true;
+    }
+    enterControl();
+    slot.loop = loop;
+    slot.framesPerBeat = perBeat;
+    const bool ok = restartTrackLocked(track, error);
+    leaveControl();
+    return ok;
 }
 
 void TakePlayer::clearTrack(int track) {
@@ -403,7 +528,7 @@ void TakePlayer::readLoop(Layer* layer) {
         const int space =
             kRingFrames - static_cast<int>(used);
         const int want = std::min(kReadChunkFrames, space);
-        const int got = readFrames(*layer, scratch, want);
+        const int got = produceFrames(*layer, scratch, want);
         if (got <= 0) {
             layer->eof.store(true, std::memory_order_relaxed);
             break;
@@ -416,6 +541,60 @@ void TakePlayer::readLoop(Layer* layer) {
         layer->writeFrame.store(write + static_cast<std::uint64_t>(got),
                                 std::memory_order_release);
     }
+}
+
+bool TakePlayer::seekStream(Layer& layer, std::uint64_t position) {
+    if (layer.file == nullptr || position > layer.lengthFrames) return false;
+    const std::uint64_t byteOffset =
+        layer.dataOffset + (layer.originFrame + position) * layer.frameBytes;
+    if (byteOffset > static_cast<std::uint64_t>(LONG_MAX) ||
+        std::fseek(layer.file, static_cast<long>(byteOffset), SEEK_SET) != 0) {
+        refuse("cannot loop-seek \"" + layer.path + "\"", nullptr);
+        return false;
+    }
+    layer.remainingFrames = layer.lengthFrames - position;
+    return true;
+}
+
+void TakePlayer::applyLoopFade(const Layer& layer, std::uint64_t position,
+                               int frames, float* mono) {
+    const std::uint64_t loopFrames =
+        layer.loopEndFrames - layer.loopStartFrames;
+    const std::uint64_t fade = loopSeamFade(loopFrames);
+    for (int i = 0; i < frames; ++i) {
+        const std::uint64_t offset = position +
+                                     static_cast<std::uint64_t>(i) -
+                                     layer.loopStartFrames;
+        float gain = 1.0f;
+        if (offset < fade) {
+            gain = static_cast<float>(offset) / static_cast<float>(fade);
+        } else if (offset + fade >= loopFrames) {
+            gain = static_cast<float>(loopFrames - 1 - offset) /
+                   static_cast<float>(fade);
+        }
+        mono[i] *= gain;
+    }
+}
+
+int TakePlayer::produceFrames(Layer& layer, float* mono, int frames) {
+    if (mono == nullptr || frames <= 0 || layer.file == nullptr) return 0;
+    const bool looping = layer.looping.load(std::memory_order_relaxed);
+    if (!looping) return readFrames(layer, mono, frames);
+
+    // Wrap inside the take buffer: the stream is continuous, so the audio
+    // thread never sees the seam as a gap, only as the seam ramp.
+    std::uint64_t position = layer.lengthFrames - layer.remainingFrames;
+    if (position >= layer.loopEndFrames &&
+        !seekStream(layer, layer.loopStartFrames)) {
+        return 0;
+    }
+    position = layer.lengthFrames - layer.remainingFrames;
+    frames = static_cast<int>(std::min<std::uint64_t>(
+        static_cast<std::uint64_t>(frames), layer.loopEndFrames - position));
+    const int got = readFrames(layer, mono, frames);
+    if (got <= 0) return 0;
+    applyLoopFade(layer, position, got, mono);
+    return got;
 }
 
 void TakePlayer::render(bool rolling, int n, float* const* monoOut,
@@ -446,6 +625,14 @@ void TakePlayer::render(bool rolling, int n, float* const* monoOut,
         for (int index = 0; index < count; ++index) {
             const Layer& layer = slot.layers[index];
             if (!layer.active.load(std::memory_order_acquire)) continue;
+            if (layer.looping.load(std::memory_order_acquire)) {
+                // A looped stream only stops when the take cannot be read.
+                if (!layer.eof.load(std::memory_order_acquire)) {
+                    anyPlaying = true;
+                    break;
+                }
+                continue;
+            }
             if (layer.readFrame.load(std::memory_order_relaxed) <
                 layer.lengthFrames) {
                 anyPlaying = true;
@@ -463,12 +650,17 @@ void TakePlayer::render(bool rolling, int n, float* const* monoOut,
         for (int index = count - 1; index >= 0; --index) {
             Layer& layer = slot.layers[index];
             if (!layer.active.load(std::memory_order_acquire)) continue;
+            const bool looping = layer.looping.load(std::memory_order_acquire);
             const std::uint64_t position =
                 layer.readFrame.load(std::memory_order_relaxed);
-            if (position >= layer.lengthFrames) continue;
-            const int want = static_cast<int>(
-                std::min<std::uint64_t>(static_cast<std::uint64_t>(frames),
-                                        layer.lengthFrames - position));
+            if (!looping && position >= layer.lengthFrames) continue;
+            // A looping layer covers the whole block: it never runs out, so a
+            // newer looping take keeps winning over older layers.
+            const int want = looping
+                                 ? frames
+                                 : static_cast<int>(std::min<std::uint64_t>(
+                                       static_cast<std::uint64_t>(frames),
+                                       layer.lengthFrames - position));
             const std::uint64_t write =
                 layer.writeFrame.load(std::memory_order_acquire);
             const std::uint64_t available =

@@ -536,6 +536,14 @@ void Engine::clearActiveTake(int track) {
     mTakePlayer.clearTrack(track);
 }
 
+void Engine::setTakeLoop(int track, const TakeLoop& loop) {
+    if (track < 0 || track >= kMaxInputs) return;
+    const double bpm = static_cast<double>(mTransport.bpmX100) / 100.0;
+    const double framesPerBeat = bpm > 0.0 ? mSampleRate * 60.0 / bpm : 0.0;
+    mTakeLoop[track] = loop;
+    mTakePlayer.setLoop(track, loop, framesPerBeat);
+}
+
 int Engine::activeTakeCount(int track) const {
     return mTakePlayer.takeCount(track);
 }

@@ -108,6 +108,67 @@ engine.cpp take_player.cpp recorder.cpp click.cpp -o /tmp/t_play -pthread &&
 /tmp/t_play`; the same build pattern for `test_audio_features.cpp` and
 `test_click.cpp`. CTest owns the targets in `audio/CMakeLists.txt`.
 
+## Engine wave 4: per-track take looping
+
+Works: `TakeLoop {enabled, startBeats, endBeats}` per track, carried by the
+session's `takes.loop` and exposed as `Engine::setTakeLoop()` /
+`Engine::takeLoop()` (and `TakePlayer::setLoop()` / `loop()` underneath). Loop
+points are session beats; the engine maps them to take frames with the current
+transport tempo (`framesPerBeat = sampleRate * 60 / bpm`, e.g. 24000 frames per
+beat at 120 bpm / 48 kHz, rounded to the nearest frame) and clamps them into the
+selected stream (`startFrame` .. EOF). An enabled range shorter than 4 frames or
+one that falls outside the take logs a reason and plays linearly instead of
+inventing audio. `enabled` with `endBeats <= startBeats` is the whole-take rule:
+each layer wraps at the end of its own selected stream. Changing the loop state
+is a control-thread hand-off like take selection: it restarts that track's stack
+at the loop start, and an unchanged state (and a cleared loop at an unchanged
+tempo) is a no-op. `setTakes()`/`setActiveTake()` inherit the stored loop, so
+loop-before-select works, and `clearTrack()` keeps the loop for the next
+selection. The loop period is `round((endBeats - startBeats) * framesPerBeat)`
+frames and is *not* re-anchored to the transport beat phase on each wrap: a
+tempo change needs a re-apply (which restarts at the loop start), and the phase
+is +/- 1 frame per restarted pass, i.e. accurate in length but not
+sample-accurate beat sync. Honest limit: this is beat-mapped playback, not a
+tempo-following loop.
+
+Wrap method: **seam fade**. The reader thread wraps *inside* the take buffer
+(`fseek` back to the loop start, `produceFrames()`), so the ring always carries
+one continuous stream and the audio thread never seeks, never allocates and
+never sees a gap or a silent block at the seam. The last and the first
+`loopSeamFade(loopFrames)` frames of every pass (64 frames = 1.33 ms at 48 kHz,
+capped at a quarter of the loop) fade linearly to exactly zero, so both sides of
+the seam are silent and the wrap cannot click whatever the material is. Stated
+tradeoff: a ~2.7 ms level dip per wrap on sustained material, and the loop's
+first/last frames are attenuated. Rejected alternatives: a *hard wrap* is
+beat-exact and the simplest but clicks whenever the material is discontinuous
+there; a *zero-crossing nudge* avoids that click but moves the wrap off the beat
+grid, so the loop length drifts against the transport; a *true crossfade* needs
+material outside the loop range to fade against, which a whole-take loop does
+not have (and the head-replay variant shortens the period by the fade length).
+
+Looping composes with the existing rules instead of forking them. It applies to
+every layer of the track; a looping newest layer never runs out of frames, so it
+keeps winning sample-for-sample and older layers stay muted while the loop runs
+(loop-off returns to today's linear newest-wins playback). Monitor modes are
+untouched: a looping take reports "playing" while the transport rolls, so
+`Auto` stays take-only with no live doubling across wraps, `Off` keeps the take
+voice without live input, `On` still layers live input, an armed strip still
+ignores the take, and a stopped transport still falls back to live monitoring.
+`tap()` stays the live input. Looping is playback-only and deliberately **not
+coupled to punch-in recording**: it never starts or stops the recorder, never
+changes the recorder source and does not read or write `PunchState`/punch
+points; an armed strip ignores the take and its loop exactly as before.
+
+Session forwarding: `session::capture()` reads the per-track loop into
+`snapshot.takes.loop` and `session::apply()` pushes it back through
+`Engine::setTakeLoop()`; the JSON format/parser/emitter is unchanged (2636ecc
+already emitted `takes.loop`) and `takes.active` stays app-owned.
+Verified with: CTest target `test_audio_playback` (new cases: beat-mapped range
+loop wrap timing against a known-length ramp take, whole-take loop including
+`start == end`, disabled and out-of-range loops staying linear, loop +
+newest-wins overlap, loop + monitor off/auto/on), plus the existing
+test_audio_features/test_click/test_audio/test_fx targets and the root build.
+
 ## ClickSource (`click.hpp`, JUCE-free)
 
 Works: `setEnabled`, `setLevel` (clamped 0..1, NaN/negative = 0) and
