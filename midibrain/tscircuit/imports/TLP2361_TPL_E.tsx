@@ -59,6 +59,9 @@ export const TLP2361_TPL_E = (props: ChipProps<typeof pinLabels>) => {
           <schematicpath points={[{"x":0.34,"y":-0.34},{"x":0.34,"y":-0.42},{"x":0.8,"y":-0.42}]} strokeColor="#880000" />
           <schematicpath points={[{"x":0.8,"y":0.4},{"x":0.34,"y":0.4},{"x":0.34,"y":-0.04}]} strokeColor="#880000" />
           <schematictext schX={0} schY={0.8} text="{NAME}" fontSize={0.2} anchor="bottom_center" />
+          {/* Part identity is printed literally: this symbol belongs to the
+              TLP2361 only, so the sheet cannot hide which opto is fitted. */}
+          <schematictext schX={0} schY={-0.95} text="TLP2361" fontSize={0.16} anchor="top_center" />
         </symbol>
       }
       supplierPartNumbers={{

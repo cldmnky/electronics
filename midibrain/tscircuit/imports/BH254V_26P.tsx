@@ -1,4 +1,4 @@
-import type { ChipProps } from "@tscircuit/props"
+import type { ConnectorProps } from "@tscircuit/props"
 
 const pinLabels = {
   pin1: ["pin1"],
@@ -29,9 +29,10 @@ const pinLabels = {
   pin26: ["pin26"]
 } as const
 
-export const BH254V_26P = (props: ChipProps<typeof pinLabels>) => {
+export const BH254V_26P = (props: ConnectorProps) => {
   return (
-    <chip
+    <connector
+      pinCount={26}
       pinLabels={pinLabels}
       supplierPartNumbers={{
   "jlcpcb": [
@@ -39,7 +40,7 @@ export const BH254V_26P = (props: ChipProps<typeof pinLabels>) => {
   ]
 }}
       manufacturerPartNumber="BH254V-26P"
-      footprint={<footprint insertionDirection="from_below">
+      footprint={<footprint insertionDirection="from_above">
         <platedhole  portHints={["pin1"]} pcbX="-15.24mm" pcbY="-1.27mm" outerDiameter="1.5999968mm" holeDiameter="1.0200132mm" shape="circle" />
 <platedhole  portHints={["pin2"]} pcbX="-15.24mm" pcbY="1.27mm" outerDiameter="1.5999968mm" holeDiameter="1.0200132mm" shape="circle" />
 <platedhole  portHints={["pin3"]} pcbX="-12.7mm" pcbY="-1.27mm" outerDiameter="1.5999968mm" holeDiameter="1.0200132mm" shape="circle" />

@@ -46,8 +46,10 @@ type RProps = {
   footprint?: string
   rot?: string
   sec: string
+  schX?: string
+  schY?: string
 }
-const R = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot, sec }: RProps) => (
+const R = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot, sec, schX, schY }: RProps) => (
   <resistor
     name={name}
     resistance={value}
@@ -58,6 +60,8 @@ const R = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot, sec 
     layer="top"
     schSheetName="front"
     schSectionName={sec}
+    schX={schX}
+    schY={schY}
     supplierPartNumbers={{ jlcpcb: [lcsc] }}
     manufacturerPartNumber={mpn}
     connections={{ pin1: p1, pin2: p2 }}
@@ -134,7 +138,7 @@ const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: n
         schSectionName="midi_in"
         connections={{ cathode: anode, anode: tip }}
       />
-      <R name={`R${ch}`} value={`${MIDI_RECEIVER_OHM}`} sec="midi_in" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
+      <R name={`R${ch}`} value={`${MIDI_RECEIVER_OHM}`} sec="midi_in" schX={ch === 1 ? "-21.5" : undefined} schY={ch === 1 ? "-1.3" : undefined} x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
       <R name={`R${ch + 2}`} value="2.2k" sec="midi_in" x={`${x + 8}mm`} y={`${y - 4}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={rxNet} p2="net.P3V3" />
       <C name={`C${ch}`} value="100nF" sec="midi_in" x={`${jackX - 7}mm`} y={`${jackY + 5.5}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
       <C name={`C${ch + 2}`} value="100nF" sec="midi_in" x={`${x + 4}mm`} y={`${y + 3}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
@@ -212,6 +216,8 @@ export default () => (
     thickness={`${FRONT_PCB.thickness}mm`}
     layers={2}
     {...BOARD_POLICY}
+    schGridColumnGap="4mm"
+    schGridRowGap="3mm"
   >
     {/* Functional schematic blocks. One sheet per board, sections per block. */}
     <schematicsheet name="front" displayName="MIDI Brain front/UI board" sheetSize="ANSI_B">

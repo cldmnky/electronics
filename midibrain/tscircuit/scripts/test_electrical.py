@@ -14,6 +14,11 @@ sample defects they model are detected:
   * a trace thinner than the board rule, a via pad below the drill rule, a
     missing ground pour, and the old TLP2362 put back on the BOM.
 
+A second group guards the analytical current model. It loosens one input at a
+time in the checker's own reference cases (supply tolerance, resistor
+tolerance, receiver tolerance, threshold current, driver-drop bound) and
+requires the independent hand-calculated reference values to reject it.
+
 Run from tscircuit/ after `bun run build`:
     python3 scripts/test_electrical.py
 """
@@ -204,6 +209,92 @@ def cases() -> list[tuple[str, str, callable]]:
     ]
 
 
+def _capture_model(check_mod) -> list[str]:
+    """Run the analytical MIDI checks against the checker module as imported."""
+    checker = check_mod.Checker(DIST, quiet=True)
+    messages: list[str] = []
+    original = checker.check
+
+    def record(label: str, ok: bool, detail: str = "") -> bool:
+        messages.append(("PASS " if ok else "FAIL ") + label + (f": {detail}" if detail else ""))
+        return original(label, ok, detail)
+
+    checker.check = record  # type: ignore[assignment]
+    check_mod.check_midi_current(checker)
+    return messages
+
+
+def current_model_cases() -> int:
+    """Loosening one input must be rejected by the reference cases."""
+    import contextlib
+    import io
+
+    failures = 0
+
+    def run_case(name: str, mutate, expect_fail_substring: str) -> int:
+        saved_senders = copy.deepcopy(CE.SENDERS)
+        saved_tlp = copy.deepcopy(CE.TLP2361)
+        try:
+            mutate()
+            with contextlib.redirect_stdout(io.StringIO()):
+                messages = _capture_model(CE)
+            failures = [m for m in messages if m.startswith("FAIL")]
+            hit = any(expect_fail_substring in m for m in failures)
+            if hit:
+                print(f"PASS current model: {name} is rejected")
+                return 0
+            print(f"FAIL current model: {name} was not rejected by '{expect_fail_substring}'")
+            for message in failures[:4]:
+                print(f"     {message}")
+            return 1
+        finally:
+            CE.SENDERS.clear()
+            CE.SENDERS.update(saved_senders)
+            CE.TLP2361.clear()
+            CE.TLP2361.update(saved_tlp)
+
+    baseline = 0
+    with contextlib.redirect_stdout(io.StringIO()):
+        messages = _capture_model(CE)
+    if any(m.startswith("FAIL") for m in messages):
+        print("FAIL current model: the unmodified model does not pass its reference cases")
+        for message in [m for m in messages if m.startswith("FAIL")][:4]:
+            print(f"     {message}")
+        baseline = 1
+    else:
+        print("PASS current model: unmodified model reproduces the reference values")
+
+    def loosen_supply() -> None:
+        for sender in CE.SENDERS.values():
+            sender["tol"] = 0.05
+
+    def loosen_resistors() -> None:
+        for sender in CE.SENDERS.values():
+            sender["rtol"] = 0.01
+
+    def loosen_receiver() -> None:
+        CE.RECEIVER_TOLERANCE = 0.0
+
+    def lower_threshold() -> None:
+        CE.TLP2361["ifhl_guaranteed_a"] = 1.3e-3
+
+    def drop_driver_loss() -> None:
+        for sender in CE.SENDERS.values():
+            sender["drop_max"] = 0.0
+
+    failures += run_case("a 5 % instead of 10 % supply tolerance",
+                         loosen_supply, "model matches the independent reference case")
+    failures += run_case("a 1 % instead of 5 % sender resistor tolerance",
+                         loosen_resistors, "model matches the independent reference case")
+    failures += run_case("a 0 % receiver resistor tolerance",
+                         loosen_receiver, "model matches the independent reference case")
+    failures += run_case("the 105 C threshold instead of the 125 C threshold",
+                         lower_threshold, "threshold used is the full-temperature")
+    failures += run_case("a dropped sender driver-drop bound",
+                         drop_driver_loss, "model matches the independent reference case")
+    return baseline + failures
+
+
 def main() -> int:
     if not (DIST / "index" / "circuit.json").is_file() or not (DIST / "front" / "circuit.json").is_file():
         print("FAIL: dist/ is missing; run `bun run build` in tscircuit/ first", file=sys.stderr)
@@ -233,6 +324,8 @@ def main() -> int:
                 print(f"FAIL negative: {name} was not rejected by '{expected}'")
                 print(output[-2500:])
 
+    failures += current_model_cases()
+
     # The point of the header mutation: net names alone cannot see it, so the
     # pad-to-net table of the mutated build still passes while the geometry
     # check fails. Prove both halves of that statement.
@@ -254,7 +347,7 @@ def main() -> int:
             print("FAIL negative: perimeter numbering was not isolated to the coordinate check")
             print(output[-2500:])
 
-    total = len(cases()) + 2
+    total = len(cases()) + 2 + 6
     print(f"\n{total - failures} passed, {failures} failed")
     return 1 if failures else 0
 

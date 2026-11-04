@@ -44,8 +44,13 @@ Fix: both connectors now use the exact parts already selected in
 | `J_FRONT` | XFCN BH254V-26P | C48687629 | 2 × 13, 2.54 mm, 1.02 mm drill |
 | `J5` (front board) | XFCN BH254V-26P | C48687629 | unchanged, same part |
 
-The imported footprints carry their own body silkscreen and courtyard; the
-pads are numbered conventionally. Measured from `dist/index/circuit.json`:
+The imports are `<connector>` elements, not generic chips, and both footprints
+declare `insertionDirection="from_above"` in their unrotated local orientation.
+That is the real part semantics: a vertical through-hole box header. It removes
+the `pcb_connector_not_in_accessible_orientation_warning` that an undeclared
+direction produced, and it removes the three `pin_specification` warnings a
+generic chip emitted per connector. The imported footprints carry their own
+body silkscreen and courtyard; the pads are numbered conventionally. Measured from `dist/index/circuit.json`:
 `J_PI` pin 1 at (24.13, 47.89), pin 2 at (24.13, 50.43), pin 3 at (21.59,
 47.89) — alternating rows, 2.54 mm column pitch. `J_FRONT` and `J5` behave the
 same way.
@@ -62,9 +67,10 @@ LCSC C8545, whose SOT-23 pins are **1 = GATE, 2 = SOURCE, 3 = DRAIN**
 (primary: “SOT-23 Plastic-Encapsulate MOSFETS 2N7002”, J,Sep,2016, page 1 pin
 list and page 4 package drawing, e1 = 1.800–2.000 mm).
 
-`imports/C8545_2N7002.tsx` declares the part explicitly with
-`pinLabels = { pin1: "gate", pin2: "source", pin3: "drain" }` and the existing
-SOT-23 land pattern (1.325 × 0.600 mm pads, 1.900 mm lead pair, 2.275 mm rows).
+`imports/C8545_2N7002.tsx` declares the part explicitly as a `<transistor
+type="mosfet">` with `pinLabels = { pin1: "gate", pin2: "source", pin3:
+"drain" }` — the element type and the terminal names cannot be overridden by
+the caller — on the existing SOT-23 land pattern (1.325 × 0.600 mm pads, 1.900 mm lead pair, 2.275 mm rows).
 Pad coordinates are unchanged, so the physical placement did not move; only
 the net on each pad changed:
 
@@ -78,9 +84,9 @@ the net on each pad changed:
 
 ### Why
 
-The input loop can deliver about 4.4 mA at its worst-case minimum. The
+The input loop can deliver 3.435 mA at its worst-case minimum (section 4). The
 TLP2362 guarantees a threshold input current of 5.0 mA maximum and recommends
-7.5–14 mA on-state; that loop is below both, so nothing was guaranteed.
+7.5–14 mA on-state; the loop is below both, so nothing was guaranteed.
 
 ### Replacement
 
@@ -101,23 +107,28 @@ TLP2362 model cannot follow the new part.
 
 ### Worst-case loop current
 
-Loop: sender supply → sender 2 × R → ring (DIN 4) → this design's 220 Ω (R1/R2)
-→ LED → tip (DIN 5) → sender switch. Supply ±5 %, resistors ±1 %.
+Loop: sender supply → sender RA → ring (DIN 4) → this design's 220 Ω (R1/R2)
+→ LED → tip (DIN 5) → sender RC → sender driver → ground.
 
-| Corner | Loop current | Against TLP2361 | Against TLP2362 |
+CA-033 (2014) page 2, figure 1, is the reference for both sender cases:
+**+5 V ±10 % with RA 220 Ω 5 % and RC 220 Ω 5 %**, and **+3.3 V ±5 % with
+RA 33 Ω 5 % and RC 10 Ω 5 %**. RA and RC are not equal in the 3.3 V case. The
+receiver resistor is this design's 1 % part. CA-033 does not specify the sender
+driver saturation, so 0.1 V (maximum-current corner) and 0.3 V
+(minimum-current corner) are stated assumptions about the external device; the
+model includes both.
+
+| Corner | Loop current | Against the 125 °C TLP2361 threshold (1.6 mA) | Against TLP2362 |
 |---|---|---|---|
-| 5 V sender, minimum | **4.35 mA** | 3.35× the 1.3 mA threshold | **0.87× — not guaranteed** |
-| 5 V sender, maximum | 5.97 mA | inside 2–6 mA recommended, 60 % of the 10 mA absolute max | — |
-| 3.3 V CA-033 sender, minimum | 4.45 mA | 3.42× the threshold | — |
-| 3.3 V CA-033 sender, maximum | **7.47 mA** | **above the 6 mA recommended maximum**, 75 % of the 10 mA absolute max | — |
+| 5 V sender, minimum | **3.435 mA** | 2.15× | **0.69× — not guaranteed** |
+| 5 V sender, maximum | **6.370 mA** | above the 6 mA recommended maximum, 64 % of the 10 mA absolute max | — |
+| 3.3 V sender, minimum | **3.684 mA** | 2.30× | 0.74× |
+| 3.3 V sender, maximum | **7.791 mA** | above the 6 mA recommended maximum, 78 % of the 10 mA absolute max | — |
 
-Assumptions, stated as such: the minimum corner uses VF = 1.85 V because the
-datasheet 1.65 V maximum is specified at 2 mA only and the loop runs near
-4.4 mA; the maximum corner uses the 1.35 V minimum at 2 mA. Sender
-saturation and cable drop are ignored in the minimum corner, which makes the
-4.35 mA figure optimistic in the safe direction only if the real VF stays below
-1.85 V. **That VF assumption and the 3.3 V high-current corner are unresolved
-until measured.**
+The minimum corner uses VF = 1.85 V because the datasheet 1.65 V maximum is
+specified at 2 mA only and the loop runs near 3.7 mA; the maximum corner uses
+the 1.35 V minimum at 2 mA. **The VF assumption and both high-current corners
+are unresolved until measured.**
 
 ### Output level and loading
 
@@ -131,6 +142,51 @@ until measured.**
 - **Pending:** compare `VOH ≥ 3.2 V` with the RP2350 input threshold from the
   RP2350 datasheet. The design assumption is VIH ≤ 0.7 × IOVDD = 2.31 V; that
   value was not read from a primary source in this pass.
+
+### Legacy receiver compatibility: a real deficit (topology under review)
+
+CA-033 page 4 models a legacy receiver as an LED of up to 1.9 V in series with
+220 Ω, and gives the PC900V a worst-case forward current of 4 mA at
+RD = 280 Ω, VRX = 5 V. The transmitter must satisfy
+VTX ≥ 0.005 × 220 + 1.9 = 3.0 V and (RA + RC) = (VTX − 3.0) / 0.005, which is
+27 Ω at 3.135 V.
+
+This design's output is a PNP with 22 Ω on the ring and 33 Ω on the tip:
+55 Ω in total, about twice the 27 Ω CA-033 asks for.
+
+| Case | Current into a legacy receiver |
+|---|---|
+| Worst case: 3.135 V rail, VCE(sat) 0.25 V, 1.9 V LED, all resistors at +tolerance | **3.437 mA** |
+| Nominal 3.3 V rail, 0.25 V, 1.9 V LED | 4.013 mA |
+| Nominal 3.3 V rail, 0.25 V, 1.7 V LED (6N138 class) | 4.711 mA |
+
+The worst case is **86 % of the 4 mA PC900V requirement, about 0.56 mA short**.
+A legacy receiver with a worst-case LED therefore has **no guaranteed
+compatibility** with this output stage. The VCE(sat) 0.25 V is an assumption
+(the MMBT3906 datasheet was not read in this pass) and is flagged as such.
+
+The architect is assessing a low-loss transmitter (reported direction: PMOS).
+The topology is **not** changed here: an open question about the fault rating
+of a permanently grounded 10 Ω return leg must be answered first, together
+with an exact part number. `lib/electrical-midi.ts` and the checker keep
+measuring the present 22/33 Ω stage.
+
+### Receiver output against the RP2350 input
+
+Primary source: RP2350 datasheet table 1683, pdf page 1337 (printed page
+1336), IOVDD = 3.3 V: **VIH minimum 2.0 V, VIL maximum 0.8 V, input leakage
+1 µA maximum**.
+
+| Margin | Value |
+|---|---|
+| TLP2361 VOH 3.2 V (at 20 µA) vs VIH 2.0 V | **1.2 V** |
+| TLP2361 VOL 0.4 V (at 3.2 mA sink) vs VIL 0.8 V | **0.4 V** |
+| 1 µA leakage through the 2.2 kΩ pull-up | 2.2 mV |
+
+The pull-up ties to the same 3.3 V rail, so it can only raise the high level.
+RP2350 errata E9A2 (an undefined-level input leakage case) was raised by the
+reviewer; the totem-pole drive and the 2.2 kΩ pull-up dominate any such
+leakage. **The errata document itself was not read in this pass.**
 
 ### Timing
 
@@ -182,13 +238,17 @@ board on the **bottom** layer (parts are on the top). No blind or buried vias.
 | Vias | 207 → **163** | 88 → **81** |
 | Routed traces | 83 → 87 | 91 → 91 |
 | Routed length | not measured before → **4058 mm** | not measured before → **2307 mm** |
-| Unconnected pads (emitted warnings) | 26 → **3** | 12 → 12 |
+| Unconnected pads (emitted warnings) | 26 → 26, all deliberate unused pins | 12 → 12, unused switch contacts |
 | Routing / DRC errors | 0 → **0** | 0 → **0** |
 | Ground pours | none → **1 (top, GND)** | none → **1 (bottom, GND)** |
 
-The three remaining unconnected rear pads are `J_PICO_R` pins 15, 17 and 20
-(unused Pico GPIO) and are allow-listed in the checker. The twelve on the front
-board are the second contact pair of each B3F-4055 tact switch.
+The 26 rear pads are the 23 Pi-header pins this design does not use plus
+`J_PICO_R` pins 15, 17 and 20 (unused Pico GPIO). The twelve front pads are the
+second contact pair of each B3F-4055 tact switch. The checker no longer keeps a
+flat allowlist: it derives the open set from the connectivity tables, so a pin
+that *should* be connected and is not fails the check. The earlier "26 → 3"
+figure came from the `<chip>` element suppressing the warnings and was not a
+connectivity improvement.
 
 The rear board still needs 163 vias: about 49 SMT pads on a board whose other
 layer is the ground plane need one layer change each, and the rest are signal
@@ -233,8 +293,9 @@ built output. It derives each pad's physical pin number and net from
 - bypass presence, part number, and pad distances;
 - ground pour layer and net, SMT side, 2 layers, board rules, trace widths, via
   drill and pad, minimum pad gap, and zero emitted errors;
-- the analytical loop-current margins of section 4, including that the replaced
-  TLP2362 would fail.
+- the analytical loop current of section 4 against hand-calculated reference
+  values (3.435/6.370 mA and 3.684/7.791 mA), the 125 °C threshold, the
+  transmitter deficit and the RP2350 input margins.
 
 `scripts/test_electrical.py` proves the checker can fail. Each case copies
 `dist/`, breaks one thing, and requires a rejection:
@@ -249,6 +310,11 @@ built output. It derives each pad's physical pin number and net from
 | a via pad set to 0.30 mm | the via-pad check |
 | the ground pour removed | the pour check |
 | TLP2362 put back on the BOM | the receiver check |
+| supply tolerance loosened to 5 % | the reference-case comparison |
+| sender resistor tolerance loosened to 1 % | the reference-case comparison |
+| receiver resistor tolerance removed | the reference-case comparison |
+| the 105 °C threshold used instead of 125 °C | the threshold check |
+| the sender driver-drop bound dropped | the reference-case comparison |
 
 ## 8. SPICE: what it now does and does not show
 
@@ -259,9 +325,13 @@ voltage output, matching the TLP2361.
 
 | Deck | Sender | Threshold | Measured loop current | Output |
 |---|---|---|---|---|
-| `midi_in.cir` | 5.00 V | 1.3 mA | 4.906 mA | low |
-| `midi_in_weak.cir` | 4.75 V, high VF | 1.3 mA | 4.248 mA | low |
-| `midi_in_2362.cir` | 4.75 V, high VF | 5.0 mA | 4.248 mA | **stays high** |
+| `midi_in.cir` | 5.00 V, RA/RC 220 Ω | 1.3 mA | 4.906 mA | low |
+| `midi_in_weak.cir` | 4.75 V, RA/RC 220 Ω, high VF | 1.3 mA | 4.248 mA | low |
+| `midi_in_2362.cir` | 4.75 V, RA/RC 220 Ω, high VF | 5.0 mA | 4.248 mA | **stays high** |
+
+The decks model the nominal 5 V CA-033 sender; the analytical corners in
+section 4 also cover ±10 % supply, 5 % resistors, the 3.3 V sender and the
+driver drop, which the SPICE decks do not.
 
 The third deck is the point: the same current that switches a TLP2361 fails to
 switch a TLP2362. `spice/run_tests.py` now writes its ngspice logs into a
@@ -295,15 +365,25 @@ R19/R20, Q3 with R16–R18, and the power parts. Connectivity is unchanged.
 Known residual readability problems, seen in the rendered SVG and **not**
 fixed:
 
-- On the front board the automatic layout puts `R1`/`R2` on top of `J1`/`J2`,
-  so the refdes and “220Ω” text overlap the jack net labels.
-- `U1`/`U2` show the opto symbol but no visible value or part-number text; the
-  opto pin numbers 1/3/4/5/6 are not drawn on the symbol.
+- `U1`/`U2` now print `TLP2361` as a literal label under the symbol, so the
+  fitted part is visible on the sheet. The opto pin numbers 1/3/4/5/6 are still
+  not drawn on the symbol.
+- `R1` sits at a manual schematic position (schematic only, no PCB part moved)
+  and no longer overlaps `J1`'s pin labels; this is verified in the rendered
+  sheet.
+- Still overlapping in the rendered sheet: one net label box in the controls
+  block sits over the `U5`/`U6` pin area. It is **not** fixed.
 - The front sheet needs `ANSI_B` because an A4 sheet left 25 components outside
   the drawing area; the builder then warns that a non-default sheet size is in
   use. That warning is accepted, not hidden.
-- Section boxes are not drawn, only titles; parts of one section can still sit
-  far from each other (the rear power parts are split across the sheet).
+- Section boxes are not drawn, only titles and dashed boundaries; parts of one
+  section can still sit far from each other (the rear power parts are split
+  across the sheet).
+- The sheet still needs `ANSI_B` for the front board, which the builder warns
+  about. A4 left 25 components outside the drawing area.
+- `R1`'s manual position reorders the MIDI IN block (J2 now sits at the bottom
+  of the section). Connectivity is unchanged and the checker confirms every
+  pad and net.
 
 ## 10. Primary sources
 
@@ -318,15 +398,19 @@ fixed:
 
 ## 11. Unresolved items — do not treat this board as release-ready
 
-1. **TLP2361 high-current corner.** A 3.3 V CA-033 sender with low VF can push
-   7.47 mA, above the 6 mA recommended on-state current (still below the 10 mA
-   absolute maximum). High-current and high-temperature behaviour is not
-   qualified; measure on first article.
+1. **TLP2361 high-current corner.** Both sender corners exceed the 6 mA
+   recommended on-state current at their maximum (6.37 mA and 7.79 mA, both
+   below the 10 mA absolute maximum). High-current and high-temperature
+   behaviour is not qualified; measure on first article.
+1a. **Legacy receiver compatibility is not guaranteed.** The output stage
+   delivers 3.437 mA worst case against the 4 mA PC900V requirement. A low-loss
+   transmitter is under architectural review; the topology is frozen until an
+   exact part and a fault plan for the grounded return leg exist.
 2. **VF assumption.** The 1.85 V bound used for the minimum-current corner is an
-   assumption above the 2 mA datasheet limit. Measure VF at 4.4 mA over
+   assumption above the 2 mA datasheet limit. Measure VF at about 3.7 mA over
    temperature.
-3. **RP2350 input threshold** not read from a primary source in this pass; the
-   `VOH ≥ 3.2 V` comparison uses the 0.7 × IOVDD design assumption only.
+3. **RP2350 input thresholds** now come from table 1683 (VIH 2.0 V, VIL 0.8 V,
+   leakage 1 µA at IOVDD 3.3 V). RP2350 errata E9A2 was not read directly.
 4. **Stock** for C107626 was a snapshot (33005 pieces at research time);
    recheck at order.
 5. **Autoroute cache warning** is upstream and unresolved (section 6).

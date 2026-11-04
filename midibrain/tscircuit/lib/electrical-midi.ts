@@ -4,16 +4,21 @@
 // qualification.
 //
 // Primary sources (files and hashes recorded in docs/ELECTRICAL-VERIFICATION.md):
-//   * MIDI 1.0 Electrical Specification Update (CA-033), 2014: 31.25 kbaud
-//     8N1, opto-isolated input, receiver must accept a 5 mA sender, 3.3 V and
-//     5 V output cases.
+//   * MIDI 1.0 Electrical Specification Update (CA-033), 2014, pages 2-4:
+//     31.25 kbaud 8N1, 5 mA loop, receiver must turn on below 5 mA,
+//     transmitter resistors VTX +5 V +-10% with RA 220 ohm 5% / RC 220 ohm 5%,
+//     VTX +3.3 V +-5% with RA 33 ohm 5% / RC 10 ohm 5%, and the legacy
+//     receiver model (LED VF up to 1.9 V plus 220 ohm; PC900V needs 4 mA worst
+//     case at RD = 280 ohm, VRX = 5 V).
 //   * MIDI TRS adapters, Type A: tip = DIN 5, ring = DIN 4, sleeve = DIN 2.
 //   * Toshiba TLP2361 datasheet Rev.5.0 (2015-11-02).
 //   * Toshiba TLP2362 datasheet Rev.6.0 (2016-01-19): the part this replaces.
 //
 // The receiver load is this design's own 220 ohm on the ring (DIN 4) side plus
-// the external sender's two 220 ohm (5 V) resistors. The loop current comes
-// from the sender supply, all three resistors and the opto LED forward drop.
+// the external sender's two series resistors (RA on the DIN 4 side, RC on the
+// DIN 5 return side). The loop current comes from the sender supply, the
+// sender driver saturation drop, all three resistors and the opto LED forward
+// drop.
 
 export type OptoSpec = {
   readonly mpn: string
@@ -21,6 +26,11 @@ export type OptoSpec = {
   /** Threshold input current, guaranteed maximum, in A. */
   readonly ifhlMaxA105: number
   readonly ifhlMaxA125: number
+  /**
+   * Threshold used for design checks: the full-temperature (125 C) guaranteed
+   * maximum, which is the binding number for a product that may run hot.
+   */
+  readonly ifhlGuaranteedA: number
   /** Recommended on-state input current range, in A. */
   readonly ifOnMinA: number
   readonly ifOnMaxA: number
@@ -52,6 +62,7 @@ export const TLP2361: OptoSpec = {
   lcsc: "C107626",
   ifhlMaxA105: 1.3e-3,
   ifhlMaxA125: 1.6e-3,
+  ifhlGuaranteedA: 1.6e-3,
   ifOnMinA: 2e-3,
   ifOnMaxA: 6e-3,
   ifAbsMaxA: 10e-3,
@@ -76,6 +87,7 @@ export const TLP2362: OptoSpec = {
   lcsc: "C37658",
   ifhlMaxA105: 5.0e-3,
   ifhlMaxA125: 5.0e-3,
+  ifhlGuaranteedA: 5.0e-3,
   // Recommended on-state input current 7.5-14 mA (page 3): the ~4.4 mA this
   // loop can deliver is outside the recommended range, not just below the
   // threshold.
@@ -110,39 +122,106 @@ export const MIDI_TYPE_A = {
   sleeve: 2,
 } as const
 
-// This design's receiver resistor (front board R1/R2) and the output resistors.
+// This design's receiver resistor (front board R1/R2, a 1 % part) and the
+// output resistors.
 export const MIDI_RECEIVER_OHM = 220
+export const MIDI_RECEIVER_TOLERANCE = 0.01
 export const MIDI_OUT_SERIES_OHM = { source: 22, sink: 33 } as const
+export const MIDI_OUT_SERIES_TOLERANCE = 0.01
+
+// CA-033 limits used by the transmitter (output) analysis.
+export const CA033 = {
+  nominalLoopA: 5e-3,
+  /** The receiver must turn on below this current. */
+  receiverMustTurnOnBelowA: 5e-3,
+  /** LED maximum forward drop in a legacy receiver, in V. */
+  legacyReceiverLedMaxVf: 1.9,
+  /** Receiver resistor seen by the transmitter, in ohm. */
+  legacyReceiverOhm: 220,
+  legacyReceiverOhmTolerance: 0.05,
+  /** PC900V worst-case forward current at RD = 280 ohm, VRX = 5 V, in A. */
+  pc900vWorstCaseCurrentA: 4e-3,
+  /** Minimum transmitter voltage for a 5 mA loop: 0.005 * 220 + 1.9, in V. */
+  minimumTransmitterV: 3.0,
+  source: "MIDI 1.0 CA-033 (2014) page 4",
+} as const
+
+/**
+ * Current this design's MIDI output can push through a legacy receiver
+ * (LED plus 220 ohm). The PNP sources through the 22 ohm ring resistor and
+ * the receiver returns through the 33 ohm tip resistor.
+ */
+export const transmitterLoopCurrent = (opts: {
+  /** Supply at the PNP emitter, in V. */
+  readonly railV: number
+  /** PNP collector-emitter saturation drop, in V (assumption, see docs). */
+  readonly vceSatV: number
+  /** Receiver LED forward voltage, in V. */
+  readonly vfReceiverV: number
+  readonly receiverTolerance?: number
+}): number => {
+  const seriesOhm = (MIDI_OUT_SERIES_OHM.source + MIDI_OUT_SERIES_OHM.sink) *
+    (1 + MIDI_OUT_SERIES_TOLERANCE)
+  const receiverOhm = CA033.legacyReceiverOhm *
+    (1 + (opts.receiverTolerance ?? CA033.legacyReceiverOhmTolerance))
+  return (opts.railV - opts.vceSatV - opts.vfReceiverV) / (seriesOhm + receiverOhm)
+}
+
+// RP2350 digital input limits, IOVDD = 3.3 V. Primary source: RP2350
+// datasheet table 1683 (pdf page 1337, printed page 1336).
+export const RP2350_INPUT = {
+  vihMinV: 2.0,
+  vilMaxV: 0.8,
+  leakageMaxA: 1e-6,
+  source: "RP2350 datasheet table 1683, IOVDD = 3.3 V: VIH min 2.0 V, VIL max 0.8 V, input leakage 1 uA",
+} as const
 
 export type SenderCorner = {
   readonly name: string
   /** Open-circuit sender supply, before tolerance. */
   readonly supplyV: number
   readonly supplyTolerance: number
-  /** Each of the two sender series resistors, in ohm. */
-  readonly seriesOhm: number
+  /** Sender series resistor on the DIN 4 (ring) side, in ohm. */
+  readonly raOhm: number
+  /** Sender series resistor on the DIN 5 (tip) return side, in ohm. */
+  readonly rcOhm: number
   readonly resistorTolerance: number
+  /**
+   * Sender output driver saturation drop, low and high bounds, in V. CA-033
+   * does not specify this; the range is an explicit assumption about the
+   * external device and must be measured on real senders.
+   */
+  readonly driverDropMinV: number
+  readonly driverDropMaxV: number
   readonly source: string
 }
 
-// MIDI 1.0 5 V sender: 5 V nominal with two 220 ohm resistors.
+// CA-033 figure 1, 5 V column: VTX +5 V +-10%, RA 220 ohm 5% 0.25 W,
+// RC 220 ohm 5% 0.25 W.
 export const SENDER_5V: SenderCorner = {
-  name: "MIDI 1.0 5 V sender",
+  name: "CA-033 +5 V sender",
   supplyV: 5.0,
-  supplyTolerance: 0.05,
-  seriesOhm: 220,
-  resistorTolerance: 0.01,
-  source: "MIDI 1.0 CA-033 output circuit, 2 x 220 ohm",
+  supplyTolerance: 0.10,
+  raOhm: 220,
+  rcOhm: 220,
+  resistorTolerance: 0.05,
+  driverDropMinV: 0.1,
+  driverDropMaxV: 0.3,
+  source: "MIDI 1.0 CA-033 (2014) page 2, figure 1: +5 V +-10%, RA and RC 220 ohm 5%",
 }
 
-// MIDI CA-033 3.3 V sender: 3.3 V with 33 ohm series resistors.
+// CA-033 figure 1 and page 4, 3.3 V column: VTX +3.3 V +-5%, RA 33 ohm 5%
+// 0.5 W, RC 10 ohm 5% 0.25 W. RA and RC are not equal.
 export const SENDER_3V3: SenderCorner = {
-  name: "MIDI CA-033 3.3 V sender",
+  name: "CA-033 +3.3 V sender",
   supplyV: 3.3,
   supplyTolerance: 0.05,
-  seriesOhm: 33,
-  resistorTolerance: 0.01,
-  source: "MIDI 1.0 CA-033 3.3 V output circuit, 2 x 33 ohm",
+  raOhm: 33,
+  rcOhm: 10,
+  resistorTolerance: 0.05,
+  driverDropMinV: 0.1,
+  driverDropMaxV: 0.3,
+  source: "MIDI 1.0 CA-033 (2014) pages 2 and 4: +3.3 V +-5%, RA 33 ohm 5%, RC 10 ohm 5%",
 }
 
 // Forward-voltage bounds used by the calculation.
@@ -161,7 +240,15 @@ export type LoopResult = {
   readonly maxA: number
 }
 
-/** Worst-case current-loop bounds for one sender corner and one opto LED. */
+/**
+ * Worst-case current-loop bounds for one sender corner and one opto LED.
+ *
+ * Minimum: weakest supply, highest sender driver drop, highest assumed LED
+ * drop, all resistors at +tolerance. Maximum: strongest supply, lowest driver
+ * drop, lowest datasheet LED drop, all resistors at -tolerance. The receiver
+ * resistor is this design's 1 % part, the sender resistors are the 5 % parts
+ * CA-033 specifies.
+ */
 export const loopCurrent = (
   sender: SenderCorner,
   opto: OptoSpec,
@@ -169,13 +256,14 @@ export const loopCurrent = (
 ): LoopResult => {
   const vLow = sender.supplyV * (1 - sender.supplyTolerance)
   const vHigh = sender.supplyV * (1 + sender.supplyTolerance)
-  const rLow = sender.seriesOhm * (1 - sender.resistorTolerance) * 2 +
-    MIDI_RECEIVER_OHM * (1 - sender.resistorTolerance)
-  const rHigh = sender.seriesOhm * (1 + sender.resistorTolerance) * 2 +
-    MIDI_RECEIVER_OHM * (1 + sender.resistorTolerance)
+  const senderOhm = sender.raOhm + sender.rcOhm
+  const rLow = senderOhm * (1 - sender.resistorTolerance) +
+    MIDI_RECEIVER_OHM * (1 - MIDI_RECEIVER_TOLERANCE)
+  const rHigh = senderOhm * (1 + sender.resistorTolerance) +
+    MIDI_RECEIVER_OHM * (1 + MIDI_RECEIVER_TOLERANCE)
   return {
-    minA: (vLow - vfMinCurrentCorner) / rHigh,
-    maxA: (vHigh - opto.vfMin) / rLow,
+    minA: (vLow - sender.driverDropMaxV - vfMinCurrentCorner) / rHigh,
+    maxA: (vHigh - sender.driverDropMinV - opto.vfMin) / rLow,
   }
 }
 

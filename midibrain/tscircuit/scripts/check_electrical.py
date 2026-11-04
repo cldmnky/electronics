@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -45,7 +46,7 @@ from pathlib import Path
 # uses are listed; every other pin must stay unconnected.
 PI_HEADER = {
     1: "PI_3V3",      # Pi 3.3 V, used only as an OE/control reference
-    2: "P5V",         # 5 V from the Pi: bulk-capped only, never a Pico supply
+    2: "P5V",         # 5 V from the Pi, through D3 into Pico VSYS
     4: "P5V",
     6: "GND",
     9: "GND",
@@ -95,21 +96,32 @@ INTERCONNECT = {
 # footprint places pin 1 = tip, pin 2 = ring, pin 3 = sleeve.
 TRS_CONTACT = {1: "tip", 2: "ring", 3: "sleeve"}
 
-# Pads that are deliberately open in this prototype (unused Pico GPIO and the
-# second contact pair of each 4-pin tact switch).
-ALLOWED_OPEN = {
-    ("index", "J_PICO_R", 15),
-    ("index", "J_PICO_R", 17),
-    ("index", "J_PICO_R", 20),
+# Pins that may be open, derived from the connectivity tables above: every
+# header pin that no table entry uses, plus the second contact pair of each
+# 4-pin tactile switch. A pin that SHOULD be connected is therefore never
+# allowed to be open, which is how a lost net is caught.
+OPEN_BY_DESIGN: dict[str, dict[str, set[int]]] = {
+    "index": {
+        "J_PI": set(range(1, 41)) - set(PI_HEADER),
+        "J_FRONT": set(range(1, 27)) - set(INTERCONNECT),
+        "J_PICO_L": set(range(1, 21)) - set(PICO_LEFT),
+        "J_PICO_R": set(range(1, 21)) - set(PICO_RIGHT),
+    },
+    "front": {
+        "J5": set(range(1, 27)) - set(INTERCONNECT),
+        **{sw: {2, 4} for sw in ("SW1", "SW2", "SW3", "SW4", "SW5", "SW6")},
+    },
 }
-for _sw in ("SW1", "SW2", "SW3", "SW4", "SW5", "SW6"):
-    ALLOWED_OPEN.add(("front", _sw, 2))
-    ALLOWED_OPEN.add(("front", _sw, 4))
+
+# Kept for callers that only need the flat list.
+ALLOWED_OPEN = {(board, comp, pin) for board, comps in OPEN_BY_DESIGN.items()
+                for comp, pins in comps.items() for pin in pins}
 
 # Toshiba TLP2361 datasheet Rev.5.0 (2015-11-02).
 TLP2361 = {
     "lcsc": "C107626",
     "ifhl_max_a": 1.3e-3,        # guaranteed maximum, Ta <= 105 C
+    "ifhl_guaranteed_a": 1.6e-3,  # guaranteed maximum over -40..125 C (used here)
     "if_on_min_a": 2e-3,         # recommended on-state current
     "if_on_max_a": 6e-3,
     "if_abs_max_a": 10e-3,
@@ -117,28 +129,72 @@ TLP2361 = {
     "vf_max_at_2ma": 1.65,
     "height_max_mm": 2.2,        # package drawing: 2.1 +-0.1 mm
     "voh_min_at_20ua": 3.2,
+    "vol_max_at_3.2ma": 0.4,     # VOL <= 0.4 V at IO = 3.2 mA sink
 }
 # Toshiba TLP2362 Rev.6.0 (2016-01-19): the replaced part.
 TLP2362 = {
     "lcsc": "C37658",
     "ifhl_max_a": 5.0e-3,
+    "ifhl_guaranteed_a": 5.0e-3,
     "if_on_min_a": 7.5e-3,
     "if_on_max_a": 14e-3,
 }
 
-# MIDI loop constants: this design's receiver resistor and the sender corners.
+# MIDI loop constants: this design's receiver resistor and the sender corners
+# from MIDI 1.0 CA-033 (2014) figure 1, page 2.
+#   +5 V  +-10 %: RA 220 ohm 5 %, RC 220 ohm 5 %
+#   +3.3 V +-5 %: RA 33 ohm 5 %,  RC 10 ohm 5 %  (RA and RC are not equal)
 RECEIVER_OHM = 220
-VF_ASSUMED_HIGH = 1.85   # above the 2 mA datasheet bound; an assumption
+RECEIVER_TOLERANCE = 0.01        # this design's 1 % part
+VF_ASSUMED_HIGH = 1.85           # above the 2 mA datasheet bound; an assumption
 SENDERS = {
-    "5 V sender, 2 x 220 ohm": {"v": 5.0, "tol": 0.05, "r": 220, "rtol": 0.01},
-    "3.3 V sender, 2 x 33 ohm": {"v": 3.3, "tol": 0.05, "r": 33, "rtol": 0.01},
+    "CA-033 +5 V sender (RA/RC 220 ohm 5%)": {
+        "v": 5.0, "tol": 0.10, "ra": 220, "rc": 220, "rtol": 0.05,
+        "drop_min": 0.1, "drop_max": 0.3,
+    },
+    "CA-033 +3.3 V sender (RA 33 / RC 10 ohm 5%)": {
+        "v": 3.3, "tol": 0.05, "ra": 33, "rc": 10, "rtol": 0.05,
+        "drop_min": 0.1, "drop_max": 0.3,
+    },
 }
+
+# Reference values, worked out by hand from the limits above. The model must
+# reproduce them: a loosened tolerance, a lower threshold or a dropped driver
+# loss changes a value and is reported as a failure.
+REFERENCE_LOOP_A = {
+    "CA-033 +5 V sender (RA/RC 220 ohm 5%)": (3.4347e-3, 6.3699e-3),
+    "CA-033 +3.3 V sender (RA 33 / RC 10 ohm 5%)": (3.6843e-3, 7.7905e-3),
+}
+REFERENCE_LOOP_TOL = 0.002
+# Minimum-current margin against the 125 C threshold: 3.4347/1.6 and 3.6843/1.6.
+REFERENCE_MARGIN = {
+    "CA-033 +5 V sender (RA/RC 220 ohm 5%)": 2.1467,
+    "CA-033 +3.3 V sender (RA 33 / RC 10 ohm 5%)": 2.3027,
+}
+
+# CA-033 page 4 transmitter requirements and this design's output stage.
+CA033 = {
+    "nominal_loop_a": 5e-3,
+    "receiver_turn_on_below_a": 5e-3,
+    "legacy_led_max_vf": 1.9,
+    "legacy_receiver_ohm": 220,
+    "legacy_receiver_tolerance": 0.05,
+    "pc900v_worst_case_a": 4e-3,
+    "minimum_transmitter_v": 3.0,
+}
+OUT_SERIES = {"source": 22, "sink": 33, "tolerance": 0.01}
+REFERENCE_TX_WORST_A = 3.4374e-3
+
+# RP2350 digital input limits at IOVDD = 3.3 V: datasheet table 1683,
+# pdf page 1337 (printed 1336).
+RP2350 = {"vih_min_v": 2.0, "vil_max_v": 0.8, "leak_max_a": 1e-6}
 
 # Fabrication and design policy, checked against the emitted copper.
 MIN_TRACE_MM = 0.20
 MIN_VIA_DRILL_MM = 0.20
 MIN_VIA_PAD_MM = 0.45
 MIN_PAD_GAP_MM = 0.15
+UNCONNECTED = re.compile(r"^Port pin(\d+) on (\S+) is missing a trace$")
 RAIL_PAD_TO_PIN_MAX_MM = 3.0
 GROUND_STRAIGHT_MAX_MM = 5.0
 IDC_PITCH_MM = 2.54
@@ -147,8 +203,10 @@ IDC_PITCH_MM = 2.54
 # the top, ground plane on the bottom.
 EXPECTED_POUR = {"index": "top", "front": "bottom"}
 EXPECTED_SMT_SIDE = {"index": "bottom", "front": "top"}
+# Through-hole parts: the box headers, the Pico sockets, the TRS jacks, the
+# tactile switches and the encoder. U5 (SKRHABE010) is an SMD part.
 THT_PARTS = {"J5", "J_PI", "J_FRONT", "J_PICO_L", "J_PICO_R", "J1", "J2", "J3", "J4",
-             "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "U5", "U6"}
+             "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "U6"}
 
 
 # ---------------------------------------------------------------------------
@@ -397,8 +455,11 @@ def check_pad_table(checker: Checker, model: BoardModel, component: str, table: 
             problems.append(f"pin {pin} missing")
             continue
         if want is None:
+            allowed = OPEN_BY_DESIGN.get(model.board, {}).get(component, set())
             if pad["net"] is not None:
                 problems.append(f"pin {pin} carries {pad['net']!r} but must stay open")
+            elif pin not in allowed:
+                problems.append(f"pin {pin} is open but not declared open by design")
             continue
         if pad["net"] != want:
             problems.append(f"pin {pin} on {pad['net']!r}, expected {want!r}")
@@ -410,22 +471,65 @@ def check_pad_table(checker: Checker, model: BoardModel, component: str, table: 
 # ---------------------------------------------------------------------------
 
 def loop_bounds(sender: dict) -> tuple[float, float]:
+    """Worst-case loop current: weak corner down, strong corner up.
+
+    The sender driver drop is included at both corners; CA-033 does not
+    specify it, so the bounds are stated assumptions.
+    """
     v_low = sender["v"] * (1 - sender["tol"])
     v_high = sender["v"] * (1 + sender["tol"])
-    r_low = sender["r"] * (1 - sender["rtol"]) * 2 + RECEIVER_OHM * (1 - sender["rtol"])
-    r_high = sender["r"] * (1 + sender["rtol"]) * 2 + RECEIVER_OHM * (1 + sender["rtol"])
-    return (v_low - VF_ASSUMED_HIGH) / r_high, (v_high - TLP2361["vf_min_at_2ma"]) / r_low
+    series = sender["ra"] + sender["rc"]
+    r_low = series * (1 - sender["rtol"]) + RECEIVER_OHM * (1 - RECEIVER_TOLERANCE)
+    r_high = series * (1 + sender["rtol"]) + RECEIVER_OHM * (1 + RECEIVER_TOLERANCE)
+    low = (v_low - sender["drop_max"] - VF_ASSUMED_HIGH) / r_high
+    high = (v_high - sender["drop_min"] - TLP2361["vf_min_at_2ma"]) / r_low
+    return low, high
+
+
+def transmitter_worst_case() -> float:
+    """Current this design's output can push into a legacy receiver."""
+    series = (OUT_SERIES["source"] + OUT_SERIES["sink"]) * (1 + OUT_SERIES["tolerance"])
+    receiver = CA033["legacy_receiver_ohm"] * (1 + CA033["legacy_receiver_tolerance"])
+    return (3.135 - 0.25 - CA033["legacy_led_max_vf"]) / (series + receiver)
 
 
 def check_midi_current(checker: Checker) -> None:
+    # The design point is the full-temperature guarantee, not the 105 C figure.
+    checker.check(
+        "MIDI loop: the threshold used is the full-temperature guarantee",
+        abs(TLP2361["ifhl_guaranteed_a"] - 1.6e-3) < 1e-9
+        and TLP2361["ifhl_guaranteed_a"] >= TLP2361["ifhl_max_a"],
+        f"{TLP2361['ifhl_guaranteed_a'] * 1e3:.1f} mA over -40..125 C; "
+        f"the 105 C figure is {TLP2361['ifhl_max_a'] * 1e3:.1f} mA",
+    )
     lows = {}
     for name, sender in SENDERS.items():
         low, high = loop_bounds(sender)
         lows[name] = low
+        reference_low, reference_high = REFERENCE_LOOP_A[name]
+        # Cross-entry reference case: the model must reproduce the hand
+        # calculation. A loosened tolerance, a lower threshold or a dropped
+        # driver loss moves the number and fails here.
+        matches = (abs(low - reference_low) <= REFERENCE_LOOP_TOL * reference_low
+                   and abs(high - reference_high) <= REFERENCE_LOOP_TOL * reference_high)
         checker.check(
-            f"MIDI loop, {name}: worst-case low current is twice the TLP2361 threshold",
-            low > 2 * TLP2361["ifhl_max_a"],
-            f"{low * 1e3:.2f} mA vs {TLP2361['ifhl_max_a'] * 1e3:.1f} mA, margin {low / TLP2361['ifhl_max_a']:.2f}x",
+            f"MIDI loop, {name}: model matches the independent reference case",
+            matches,
+            f"model {low * 1e3:.3f}/{high * 1e3:.3f} mA, reference "
+            f"{reference_low * 1e3:.3f}/{reference_high * 1e3:.3f} mA",
+        )
+        threshold = TLP2361["ifhl_guaranteed_a"]
+        margin = low / threshold
+        reference_margin = REFERENCE_MARGIN[name]
+        checker.check(
+            f"MIDI loop, {name}: worst-case low current is twice the 125 C TLP2361 threshold",
+            low > 2 * threshold,
+            f"{low * 1e3:.2f} mA vs {threshold * 1e3:.1f} mA, margin {margin:.2f}x",
+        )
+        checker.check(
+            f"MIDI loop, {name}: margin matches the independent reference case",
+            abs(margin - reference_margin) <= REFERENCE_LOOP_TOL * reference_margin,
+            f"model {margin:.4f}x, reference {reference_margin:.4f}x",
         )
         checker.check(
             f"MIDI loop, {name}: worst-case high current stays below the TLP2361 absolute maximum",
@@ -440,9 +544,43 @@ def check_midi_current(checker: Checker) -> None:
     worst = min(lows.values())
     checker.check(
         "MIDI loop: the replaced TLP2362 would not be guaranteed to switch at this current",
-        worst < TLP2362["ifhl_max_a"],
-        f"{worst * 1e3:.2f} mA is below its {TLP2362['ifhl_max_a'] * 1e3:.1f} mA threshold "
+        worst < TLP2362["ifhl_guaranteed_a"],
+        f"{worst * 1e3:.2f} mA is below its {TLP2362['ifhl_guaranteed_a'] * 1e3:.1f} mA threshold "
         f"and its {TLP2362['if_on_min_a'] * 1e3:.1f} mA recommended minimum",
+    )
+
+    # Transmitter: our own 22/33 ohm PNP stage into a legacy receiver.
+    tx = transmitter_worst_case()
+    checker.check(
+        "MIDI OUT: transmitter model matches the independent reference case",
+        abs(tx - REFERENCE_TX_WORST_A) <= REFERENCE_LOOP_TOL * REFERENCE_TX_WORST_A,
+        f"model {tx * 1e3:.4f} mA, reference {REFERENCE_TX_WORST_A * 1e3:.4f} mA",
+    )
+    checker.check(
+        "MIDI OUT: legacy-receiver worst case is short of the CA-033 PC900V current",
+        tx < CA033["pc900v_worst_case_a"],
+        f"{tx * 1e3:.2f} mA against {CA033['pc900v_worst_case_a'] * 1e3:.1f} mA "
+        f"({tx / CA033['pc900v_worst_case_a'] * 100:.0f} % of the requirement). "
+        "No guaranteed compatibility with legacy receivers is claimed.",
+    )
+
+    # Receiver output levels against the RP2350 input limits.
+    checker.check(
+        "opto to RP2350: VOH clears VIH with margin",
+        TLP2361["voh_min_at_20ua"] - RP2350["vih_min_v"] >= 1.0,
+        f"VOH {TLP2361['voh_min_at_20ua']:.1f} V vs VIH {RP2350['vih_min_v']:.1f} V, "
+        f"margin {TLP2361['voh_min_at_20ua'] - RP2350['vih_min_v']:.1f} V",
+    )
+    checker.check(
+        "opto to RP2350: VOL clears VIL with margin",
+        RP2350["vil_max_v"] - TLP2361["vol_max_at_3.2ma"] >= 0.3,
+        f"VOL {TLP2361['vol_max_at_3.2ma']:.1f} V vs VIL {RP2350['vil_max_v']:.1f} V, "
+        f"margin {RP2350['vil_max_v'] - TLP2361['vol_max_at_3.2ma']:.1f} V",
+    )
+    checker.check(
+        "opto to RP2350: input leakage is negligible against the 2.2 k pull-up",
+        RP2350["leak_max_a"] * 2200 <= 5e-3,
+        f"{RP2350['leak_max_a'] * 1e6:.0f} uA x 2.2 k = {RP2350['leak_max_a'] * 2200 * 1e3:.1f} mV",
     )
 
 
@@ -715,14 +853,23 @@ def check_copper(checker: Checker, model: BoardModel) -> None:
                   ", ".join(sorted({e["type"] for e in errors})))
 
     unexpected = []
+    open_count = 0
+    expected_open = OPEN_BY_DESIGN.get(model.board, {})
     for warning in model.elements.get("source_pin_missing_trace_warning", []):
         message = warning.get("message") or ""
-        allowed = any(message == f"Port pin{pin} on {comp} is missing a trace"
-                      for (board, comp, pin) in ALLOWED_OPEN if board == model.board)
-        if not allowed:
+        match = UNCONNECTED.match(message)
+        if not match:
             unexpected.append(message)
-    checker.check(f"{model.board}: only allow-listed pins are unconnected", not unexpected,
-                  "; ".join(sorted(set(unexpected))[:4]))
+            continue
+        pin, component = int(match.group(1)), match.group(2)
+        if pin in expected_open.get(component, set()):
+            open_count += 1
+        else:
+            unexpected.append(message)
+    checker.check(f"{model.board}: no pin that must be connected is unconnected",
+                  not unexpected,
+                  "; ".join(sorted(set(unexpected))[:4])
+                  or f"{open_count} pins open by design")
 
     pours = model.elements.get("pcb_copper_pour", [])
     pour_nets = {p.get("source_net_id") for p in pours}

@@ -1,4 +1,4 @@
-import type { ChipProps } from "@tscircuit/props"
+import type { TransistorProps } from "@tscircuit/props"
 
 // JCET / Jiangsu Changjiang 2N7002, SOT-23 N-channel enhancement MOSFET,
 // LCSC/JLCPCB C8545. Primary source: "SOT-23 Plastic-Encapsulate MOSFETS
@@ -13,14 +13,19 @@ import type { ChipProps } from "@tscircuit/props"
 // package. This exact part therefore declares the numbering explicitly, so a
 // pad labelled pin1 is the gate copper.
 const pinLabels = {
-  pin1: ["gate"],
-  pin2: ["source"],
-  pin3: ["drain"],
+  pin1: "gate",
+  pin2: "source",
+  pin3: "drain",
 } as const
 
-export const C8545_2N7002 = (props: ChipProps<typeof pinLabels>) => {
+// The element type and the terminal labels are fixed by this part, so callers
+// cannot override them; only placement and connections are passed in.
+type Props = Omit<TransistorProps<string>, "type" | "pinLabels">
+
+export const C8545_2N7002 = (props: Props) => {
   return (
-    <chip
+    <transistor
+      type="mosfet"
       pinLabels={pinLabels}
       manufacturerPartNumber="2N7002"
       supplierPartNumbers={{
