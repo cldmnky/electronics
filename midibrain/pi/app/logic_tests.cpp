@@ -7,9 +7,12 @@
 
 #include <cmath>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include <juce_core/juce_core.h>
 
+#include "audio_backend.hpp"
 #include "fx_slot.hpp"
 #include "logic.hpp"
 #include "screens/routing_model.hpp"
@@ -161,6 +164,151 @@ class PanelLogicTests final : public juce::UnitTest {
 };
 
 PanelLogicTests panelLogicTests;
+
+// The System screen's audio backend selector is a pure model: the same functions
+// decide what the selector offers, which backend the one device manager is asked
+// for, and what happens when the request cannot be honoured. No JUCE device is
+// touched, so the checks run on a machine with no JACK and no audio server.
+class AudioBackendTests final : public juce::UnitTest {
+ public:
+  AudioBackendTests() : juce::UnitTest("mnkybox audio backend selection", "mnkybox") {}
+
+  void runTest() override {
+    testKeysAndLabels();
+    testAvailabilityAndFallback();
+    testBufferSizes();
+    testDeviceFallback();
+  }
+
+ private:
+  void testKeysAndLabels() {
+    beginTest("backend keys, device type names and menu labels");
+
+    expect(audioBackendKey(AudioBackend::Default) == "default");
+    expect(audioBackendKey(AudioBackend::Alsa) == "alsa");
+    expect(audioBackendKey(AudioBackend::Jack) == "jack");
+    for (const auto backend : kAudioBackends) {
+      expect(audioBackendFromKey(audioBackendKey(backend)) == backend,
+             "the persisted key round-trips");
+    }
+    expect(audioBackendFromKey("") == kDefaultAudioBackend, "empty key -> default");
+    expect(audioBackendFromKey("pipewire") == kDefaultAudioBackend,
+           "an unknown key never selects a different backend");
+    expect(kDefaultAudioBackend == AudioBackend::Default, "ALSA stays the default backend");
+
+    // An empty device type name means "leave JUCE's platform default alone".
+    expect(audioDeviceTypeName(AudioBackend::Default).empty());
+    expect(audioDeviceTypeName(AudioBackend::Alsa) == "ALSA");
+    expect(audioDeviceTypeName(AudioBackend::Jack) == "JACK");
+
+    expect(juce::String(audioBackendLabel(AudioBackend::Default)) == "Default");
+    expect(juce::String(audioBackendLabel(AudioBackend::Alsa, true)) == "ALSA");
+    expect(juce::String(audioBackendLabel(AudioBackend::Jack, true)) == "JACK");
+    expect(juce::String(audioBackendLabel(AudioBackend::Jack, false)) ==
+               "JACK (unavailable)",
+           "an unavailable JACK entry says so instead of vanishing");
+    expect(juce::String(audioBackendLabel(AudioBackend::Alsa, false)) ==
+           "ALSA (unavailable)");
+  }
+
+  void testAvailabilityAndFallback() {
+    beginTest("availability and the JACK fallback");
+
+    const AudioBackendAvailability none;
+    expect(!audioBackendAvailable(AudioBackend::Alsa, none), "macOS has no ALSA type");
+    expect(!audioBackendAvailable(AudioBackend::Jack, none), "no JACK type in this build");
+    expect(audioBackendAvailable(AudioBackend::Default, none),
+           "Default is always offered");
+
+    AudioBackendAvailability linuxAlsaOnly;
+    linuxAlsaOnly.alsa = true;
+    expect(audioBackendAvailable(AudioBackend::Alsa, linuxAlsaOnly));
+    expect(!audioBackendAvailable(AudioBackend::Jack, linuxAlsaOnly));
+
+    AudioBackendAvailability both;
+    both.alsa = true;
+    both.jack = true;
+    expect(audioBackendAvailable(AudioBackend::Jack, both));
+
+    auto selection = resolveAudioBackend(AudioBackend::Default, none);
+    expect(selection.effective == AudioBackend::Default);
+    expect(!selection.fellBack);
+    expect(selection.note.empty());
+
+    selection = resolveAudioBackend(AudioBackend::Alsa, linuxAlsaOnly);
+    expect(selection.effective == AudioBackend::Alsa);
+    expect(!selection.fellBack);
+    expect(selection.note.empty());
+
+    selection = resolveAudioBackend(AudioBackend::Jack, both);
+    expect(selection.effective == AudioBackend::Jack);
+    expect(!selection.fellBack);
+    expect(selection.note.empty());
+
+    // JACK unavailable: the device manager is asked for the default backend
+    // (ALSA on Linux) and the note names the missing JACK server.
+    selection = resolveAudioBackend(AudioBackend::Jack, linuxAlsaOnly);
+    expect(selection.requested == AudioBackend::Jack);
+    expect(selection.effective == AudioBackend::Default);
+    expect(selection.fellBack);
+    expect(juce::String(selection.note).contains("JACK"));
+    expect(juce::String(selection.note).contains("jackd"));
+
+    // ALSA requested where the type does not exist (the macOS dev machine).
+    selection = resolveAudioBackend(AudioBackend::Alsa, none);
+    expect(selection.effective == AudioBackend::Default);
+    expect(selection.fellBack);
+    expect(juce::String(selection.note).contains("ALSA"));
+  }
+
+  void testBufferSizes() {
+    beginTest("buffer size options");
+
+    expect(isAudioBufferSize(128));
+    expect(isAudioBufferSize(1024));
+    expect(!isAudioBufferSize(0));
+    expect(!isAudioBufferSize(100));
+
+    expectEquals(clampAudioBufferSize(128), 128);
+    expectEquals(clampAudioBufferSize(0), 64);
+    expectEquals(clampAudioBufferSize(96), 64);  // a tie goes to the shorter period
+    expectEquals(clampAudioBufferSize(100), 128);
+    expectEquals(clampAudioBufferSize(4096), 1024);
+    expectEquals(clampAudioBufferSize(-8), 64);
+
+    expect(juce::String(audioBufferSizeLabel(128)) == "128 frames");
+    expect(juce::String(audioBufferSizeLabel(300)) == "256 frames");
+    expectEquals(kDefaultAudioBufferSize, 128);
+    expectEquals(kAudioBufferSizeCount,
+                 static_cast<int>(sizeof(kAudioBufferSizes) / sizeof(kAudioBufferSizes[0])));
+  }
+
+  void testDeviceFallback() {
+    beginTest("persisted choice and stored device fallback");
+
+    const std::vector<std::string> devices{"Loopback"};
+    expect(resolveAudioDeviceName("Loopback", devices) == "Loopback");
+    expect(resolveAudioDeviceName("", devices).empty(),
+           "an empty request keeps the device type's default");
+    expect(resolveAudioDeviceName("UMC1820", devices).empty(),
+           "a device that is no longer listed falls back to the type default");
+    expect(resolveAudioDeviceName("Loopback", {}).empty(),
+           "no listed devices -> type default");
+
+    const AudioBackendChoice initial;
+    expect(initial.backend == AudioBackend::Default);
+    expect(initial.deviceName.empty());
+    expectEquals(initial.bufferSize, kDefaultAudioBufferSize);
+
+    AudioBackendChoice jack;
+    jack.backend = AudioBackend::Jack;
+    jack.deviceName = "system";
+    expect(initial != jack);
+    expect(jack == AudioBackendChoice{AudioBackend::Jack, "system", 128});
+  }
+};
+
+AudioBackendTests audioBackendTests;
 
 // The FX screen's default plugin is the in-tree mnkygain build. Loading,
 // parameter exposure, audio and state save/load are all message-thread work, so

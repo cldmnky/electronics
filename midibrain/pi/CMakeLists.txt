@@ -143,6 +143,39 @@ else()
   message(STATUS "mnkybox: RtMidi has no configured backend on ${CMAKE_SYSTEM_NAME}; midi targets will not link")
 endif()
 
+# --- JACK: the Pi's routable audio path --------------------------------------
+# Raspberry Pi OS runs PipeWire by default (jackd during bring-up) and both are
+# reached through the JACK API, which JUCE exposes as its "JACK" device type.
+# JUCE dlopen()s libjack at runtime but compiles juce_JackAudio.cpp against
+# <jack/jack.h>, so the headers are a build dependency on Linux only. macOS has
+# no JACK here: detection is skipped silently and the app keeps its
+# ALSA/CoreAudio-only path (JUCE_JACK stays 0).
+set(MNKY_JACK_FOUND FALSE)
+if(UNIX AND NOT APPLE)
+  find_package(PkgConfig QUIET)
+  if(NOT PkgConfig_FOUND)
+    message(FATAL_ERROR
+      "mnkybox: the Linux/Pi build needs pkg-config to locate the JACK headers.\n"
+      "Install both with: sudo apt-get install -y pkg-config libjack-jackd2-dev")
+  endif()
+
+  pkg_check_modules(MNKY_JACK IMPORTED_TARGET jack)
+  if(NOT MNKY_JACK_FOUND)
+    message(FATAL_ERROR
+      "mnkybox: the Linux/Pi build needs the JACK headers (pkg-config module 'jack'),\n"
+      "because JUCE's JACK device type is compiled in for the routable audio path.\n"
+      "Install them with: sudo apt-get install -y libjack-jackd2-dev\n"
+      "macOS builds skip JACK detection silently; no override flag is provided.")
+  endif()
+
+  # One interface target carries include dirs, libs and the two defines, so
+  # pi/app/CMakeLists.txt only has to link it when it exists.
+  add_library(mnky_jack INTERFACE)
+  target_link_libraries(mnky_jack INTERFACE PkgConfig::MNKY_JACK)
+  target_compile_definitions(mnky_jack INTERFACE MNKY_HAVE_JACK=1 JUCE_JACK=1)
+  message(STATUS "mnkybox: JACK headers found (pkg-config jack) -> mnky_jack for the app target")
+endif()
+
 # --- Core module libraries ----------------------------------------------------
 # Each module is JUCE-free and owned by one team. If the team also ships a
 # CMakeLists.txt in its directory, that file defines the target; otherwise the

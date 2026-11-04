@@ -52,6 +52,7 @@ set(MNKY_APP_HEADERS
   app_context.hpp
   mixer_model.hpp
   emulator_synth.hpp
+  audio_backend.hpp
   audio_glue.hpp
   fx_slot.hpp
   midi_glue.hpp
@@ -99,6 +100,19 @@ target_link_libraries(mnkybox PRIVATE
   juce::juce_audio_devices
   juce::juce_audio_formats
   juce::juce_recommended_config_flags)
+
+# The root build (pi/CMakeLists.txt) defines mnky_jack when the Linux/Pi JACK
+# headers are present. The interface target carries JUCE_JACK=1 plus the include
+# and link flags, so this target compiles JUCE's JACK device type; without it the
+# app offers the ALSA/CoreAudio device types only (macOS). The client name is what
+# jack_lsp/patchbays show for the app, so it names the product, not JUCEJack.
+if(TARGET mnky_jack)
+  target_link_libraries(mnkybox PRIVATE mnky_jack)
+  target_compile_definitions(mnkybox PRIVATE JUCE_JACK_CLIENT_NAME="mnkybox")
+  message(STATUS "mnkybox app: JACK backend compiled in (JUCE_JACK=1)")
+else()
+  message(STATUS "mnkybox app: no JACK backend (no mnky_jack target; ALSA/CoreAudio only)")
+endif()
 
 if(APPLE)
   target_link_options(mnkybox PRIVATE "-Wl,-no_warn_duplicate_libraries")
