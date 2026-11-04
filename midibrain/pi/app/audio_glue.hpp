@@ -1,19 +1,24 @@
 #pragma once
-// Audio glue: the Engine + Recorder run behind one juce::AudioIODeviceCallback,
-// fed either by a real audio device (Pi/ALSA or JACK, desktop/CoreAudio) or, in
-// --emulator mode, by a clocked generator thread that uses the app's own
-// EmulatorSynth. No emulator-team dependency.
+// Audio glue: the Engine + Recorder run behind one Qt Multimedia audio path,
+// fed either by a real QAudioSink (ALSA/PulseAudio on Linux, CoreAudio on
+// macOS) or, in --emulator mode, by a clocked generator thread that uses the
+// app's own EmulatorSynth. A selected QAudioSource feeds the first two engine
+// inputs through a small lock-protected ring buffer.
 //
-// Backend selection (System screen): there is exactly one AudioDeviceManager and
-// one audio callback. Switching ALSA/JACK/Default restarts that one device
-// manager with another device type; the emulator generator is the documented
-// fallback when no device opens. The choice is persisted in the app's own
-// PropertiesFile (never in a session file).
+// Backend selection (System screen): one QAudioSink at a time. Switching
+// default/device/emulator restarts that one sink; QSettings stores the request
+// (never a session file). JACK is not offered: Qt Multimedia exposes devices,
+// and PipeWire's Pulse compatibility layer already provides inter-app routing.
 #include <atomic>
+#include <cstdint>
+#include <filesystem>
 #include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
 
-#include <juce_audio_devices/juce_audio_devices.h>
-#include <juce_data_structures/juce_data_structures.h>
+#include <QtMultimedia/QAudioFormat>
 
 #include "../audio/click.hpp"
 #include "../audio/engine.hpp"
@@ -23,55 +28,62 @@
 #include "fx_slot.hpp"
 #include "mixer_model.hpp"
 
+QT_BEGIN_NAMESPACE
+class QAudioSink;
+class QAudioSource;
+class QIODevice;
+QT_END_NAMESPACE
+
 namespace mnky::app {
 
 class AppState;
 
+struct AudioDeviceOption {
+  std::string id;  // stable base64 of QAudioDevice::id()
+  std::string name;
+  bool isDefault = false;
+};
+
 // What the System screen shows: the persisted request, the backend it resolves
-// to on this machine, the live device numbers and the xrun counter.
+// to on this machine, the live device numbers and the fallback note.
 struct AudioBackendState {
   AudioBackendChoice choice;
   AudioBackend effective = kDefaultAudioBackend;
   AudioBackendAvailability availability;
-  juce::String liveType;    // device type in use ("ALSA"/"JACK"), or "emulator"/"none"
-  juce::String liveDevice;  // output device name in use
+  std::string liveType;    // "Qt Multimedia", "emulator" or "none"
+  std::string liveDevice;  // output device name in use
   double sampleRate = 0.0;
   int blockSize = 0;
-  int xruns = 0;
-  juce::String note;  // fallback/apply note; empty when the request was honoured
+  std::uint64_t callbackBlocks = 0;  // rendered engine blocks (audio callback proof)
+  std::string note;  // fallback/apply note; empty when the request was honoured
 };
 
-class AudioGlue final : private juce::AudioIODeviceCallback {
+class AudioGlue {
  public:
   AudioGlue(MixerModel& mixer, FxManager& fx, AppState& state, bool emulator);
-  ~AudioGlue() override;
+  ~AudioGlue();
   AudioGlue(const AudioGlue&) = delete;
   AudioGlue& operator=(const AudioGlue&) = delete;
 
   bool start();
   void stop();
   bool emulated() const { return emulated_.load(); }
-  juce::String backendDescription() const;
-  double sampleRate() const;
-  int blockSize() const;
+  std::string backendDescription() const;
+  double sampleRate() const { return sampleRate_.load(); }
+  int blockSize() const { return blockSize_.load(); }
 
   // --- backend selection (System screen) ------------------------------------
-  // The persisted request, loaded from the app's PropertiesFile at construction.
-  AudioBackendChoice audioChoice() const;
-  // Cached device-type availability. The JACK probe opens and closes a JACK
-  // client, so it runs on demand (startup, REFRESH, Apply) and never on a timer.
+  AudioBackendChoice audioChoice() const { return choice_; }
   AudioBackendAvailability backendAvailability() const;
   void rescanBackends();
-  // Output device names of a backend's device type; empty when the type is
-  // absent or has no devices.
-  juce::StringArray outputDeviceNames(AudioBackend backend);
-  // Restarts audio through the one AudioDeviceManager, or with the emulator
-  // generator when the resolved backend is Default in --emulator mode. Persists
-  // the request and returns an error string (empty on success).
-  juce::String applyAudioChoice(const AudioBackendChoice& choice);
+  std::vector<AudioDeviceOption> outputDevices() const;
+  std::vector<AudioDeviceOption> inputDevices() const;
+  // Persists the request and restarts the sink/emulator. Returns an error
+  // string (empty on success).
+  std::string applyAudioChoice(const AudioBackendChoice& choice);
   AudioBackendState backendState() const;
 
-  bool startTake(const juce::File& directory);
+  bool startTake(const std::filesystem::path& directory);
   audio::Recorder::Take stopTake();
   bool recording() const;
   std::uint64_t drops() const;
@@ -82,30 +94,22 @@ class AudioGlue final : private juce::AudioIODeviceCallback {
 
  private:
   class EmulatorDriver;
-
-  void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
-                                        int numInputChannels,
-                                        float* const* outputChannelData,
-                                        int numOutputChannels,
-                                        int numSamples,
-                                        const juce::AudioIODeviceCallbackContext& context) override;
-  void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
-  void audioDeviceStopped() override;
+  class AudioRenderDevice;
+  class AudioInputConsumer;
 
   void renderBlock(const float* const* inputChannelData, int numInputChannels,
                    float* outL, float* outR, int numSamples);
   void updatePeaks(const float* outL, const float* outR, int numSamples);
+  void pushInput(const char* data, int frames, const QAudioFormat& format);
+  void copyInput(float* left, float* right, int frames);
 
   void loadAudioChoice();
   void saveAudioChoice();
-  void startEmulator(const juce::String& reason);
+  void startEmulator(const std::string& reason);
   void stopEmulator();
-  void closeDevice();
-  juce::String openDevice(AudioBackend backend, const juce::String& outputDevice,
-                          int bufferSize);
-  juce::String platformDefaultDeviceType();
-  juce::String resolveDeviceName(AudioBackend backend, const std::string& stored);
-  juce::String describeChoice() const;
+  void closeAudio();
+  std::string openDevice(const std::string& outputDeviceId, int bufferSize);
+  bool openInput(const std::string& inputDeviceId);
 
   MixerModel& mixer_;
   FxManager& fx_;
@@ -117,22 +121,41 @@ class AudioGlue final : private juce::AudioIODeviceCallback {
   audio::Recorder recorder_;
   EmulatorSynth synth_;
   float synthBuffer_[audio::kMaxInputs][audio::kBlockSize] = {};
+  float inputL_[audio::kBlockSize] = {};
+  float inputR_[audio::kBlockSize] = {};
 
-  juce::AudioDeviceManager deviceManager_;
+  // Qt device handles are GUI-thread objects; the render device is read from
+  // Qt's audio thread and only touches the engine.
+  std::unique_ptr<QAudioSink> sink_;
+  std::unique_ptr<QAudioSource> source_;
+  std::unique_ptr<AudioRenderDevice> renderDevice_;
+  std::unique_ptr<AudioInputConsumer> inputConsumer_;
+  QAudioFormat outputFormat_;
+  int outputBytesPerFrame_ = 8;
+  int deviceBufferFrames_ = 0;
+
   std::unique_ptr<EmulatorDriver> driver_;
-  juce::String backend_;
+  std::string backend_;
+  std::string deviceName_;
+  std::string inputName_;
 
   AudioBackendChoice choice_;
   AudioBackendAvailability availability_;
-  juce::String note_;  // fallback/apply note shown on the System screen
-  std::unique_ptr<juce::PropertiesFile> properties_;
+  std::string note_;
 
   std::atomic<double> sampleRate_{48000.0};
   std::atomic<int> blockSize_{audio::kBlockSize};
   std::atomic<bool> running_{false};
+  std::atomic<std::uint64_t> renderBlocks_{0};
   std::atomic<float> peaks_[2] = {};
 
-  mutable juce::CriticalSection takeLock_;
+  std::mutex inputLock_;
+  std::vector<float> inputRingL_;
+  std::vector<float> inputRingR_;
+  std::uint64_t inputWritten_ = 0;
+  int inputRingFrames_ = 0;
+
+  mutable std::mutex takeLock_;
   audio::Recorder::Take lastTake_;
 };
 

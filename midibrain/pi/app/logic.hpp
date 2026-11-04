@@ -1,8 +1,9 @@
 #pragma once
-// Non-visual mnkybox app logic: Pico panel control -> app intent dispatch,
+// Non-visual mnkybox app logic: panel control -> app intent mapping,
 // mixer/transport value mapping and readout formatting. Deliberately free of
-// JUCE so the same code runs in the app and under `mnkybox --unittests`
-// (logic_tests.cpp); the UI layer only performs the intents decided here.
+// Qt and JUCE so the same code runs in the app and under `mnkybox --unittests`
+// (logic_tests.cpp); the QML layer only presents the state and performs the
+// intents decided here.
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -18,19 +19,28 @@ inline constexpr int kScreenCount = 6;  // Mixer, Routing, FX, Recorder, System,
 inline constexpr int kNumStrips = 18;   // audio::kMaxInputs
 
 // One thing the app does in response to a panel gesture or a screen control.
-// Screens post intents; MainComponent performs them on the message thread.
+// Screens post intents; the Qt controller performs them on the GUI thread.
+//
+// NAVIGATE/EDIT/SHIFT (docs/panel-interaction.md) is expressed with the Nav*,
+// Encoder* and Shift kinds: the controller owns the mode/focus ring, while the
+// pure mapping here only turns one EV_CONTROL frame into one intent.
 struct Intent {
   enum class Kind : std::uint8_t {
     None,
-    MoveTab,         // amount = -1 previous screen, +1 next screen
-    MoveStrip,       // amount = -1 previous strip, +1 next strip
-    ArmToggle,       // amount = strip index
-    Play,            // start unless already rolling
-    PlayStart,       // restart from tick 0
+    Play,          // start unless already rolling
+    PlayStart,     // restart from tick 0
     Stop,
-    RecToggle,       // amount 0 = panel REC (300 ms chord window), 1 = immediate
+    RecToggle,     // amount 0 = panel REC (300 ms chord window), 1 = immediate
     OverdubToggle,
-    TempoStep,       // amount = bpm x100 delta
+    TempoStep,     // amount = bpm x100 delta
+    NavUp,         // focus ring up
+    NavDown,       // focus ring down
+    NavLeft,       // focus ring left
+    NavRight,      // focus ring right
+    NavPress,      // activate the focused element
+    EncoderSw,     // arm the selected strip / confirm an edit
+    EncoderTurn,   // amount = signed detent delta (tempo or focused value)
+    Shift,         // amount = 1 while CTL_SHIFT_EXIT is held, 0 on release
   };
 
   Kind kind = Kind::None;
@@ -42,7 +52,7 @@ inline constexpr bool operator==(const Intent& a, const Intent& b) {
 }
 
 // Screen/selection context the dispatcher needs. Plain value so the mapping is
-// testable without a UI; the app fills it from its atomics.
+// testable without a UI; the controller fills it from its state.
 struct PanelState {
   int tab = 0;
   int strip = 0;
@@ -60,12 +70,12 @@ inline constexpr Intent::Kind kActionIntent[] = {
     Intent::Kind::OverdubToggle,  // OverdubToggle
     Intent::Kind::TempoStep,      // TempoCoarse
     Intent::Kind::TempoStep,      // TempoFine
-    Intent::Kind::MoveTab,        // NavUp
-    Intent::Kind::MoveTab,        // NavDown
-    Intent::Kind::MoveStrip,      // NavLeft
-    Intent::Kind::MoveStrip,      // NavRight
-    Intent::Kind::PlayStart,      // NavPress: confirm/restart from the top
-    Intent::Kind::ArmToggle,      // EncoderSw: arm the selected strip
+    Intent::Kind::NavUp,          // NavUp
+    Intent::Kind::NavDown,        // NavDown
+    Intent::Kind::NavLeft,        // NavLeft
+    Intent::Kind::NavRight,       // NavRight
+    Intent::Kind::NavPress,       // NavPress: activate the focused element
+    Intent::Kind::EncoderSw,      // EncoderSw: arm the selected strip
 };
 
 // One encoder detent changes the tempo by 1.00 bpm, or 0.10 bpm while SHIFT is
@@ -81,25 +91,11 @@ inline int clampTempoX100(int bpmX100) {
 
 // Pure mapping from one midi::Action. Releases never reach here (mapControl
 // returns None for them).
-inline Intent intentForAction(midi::Action action, const PanelState& state) {
+inline Intent intentForAction(midi::Action action, const PanelState&) {
   Intent out{};
   const auto index = static_cast<std::size_t>(action);
   if (index >= std::size(kActionIntent)) return out;
-
   out.kind = kActionIntent[index];
-  switch (out.kind) {
-    case Intent::Kind::MoveTab:
-      out.amount = action == midi::Action::NavUp ? -1 : 1;
-      break;
-    case Intent::Kind::MoveStrip:
-      out.amount = action == midi::Action::NavLeft ? -1 : 1;
-      break;
-    case Intent::Kind::ArmToggle:
-      out.amount = state.strip;
-      break;
-    default:
-      break;
-  }
   return out;
 }
 
@@ -111,10 +107,7 @@ inline Intent intentForControl(std::uint8_t id, std::uint8_t value, bool shift,
   if (id == mb::CTL_ENCODER_TURN) {
     const int detents = static_cast<int>(static_cast<std::int8_t>(value));
     if (detents == 0) return {};
-    Intent out{};
-    out.kind = Intent::Kind::TempoStep;
-    out.amount = detents * (shift ? kTempoStepFineX100 : kTempoStepCoarseX100);
-    return out;
+    return Intent{Intent::Kind::EncoderTurn, detents};
   }
   return intentForAction(midi::mapControl(id, value, shift), state);
 }

@@ -1,914 +1,470 @@
-// JUCE unit tests for the app's non-visual logic (logic.hpp), the routing
-// patchbay model (screens/routing_model.hpp) and for the flat theme's
-// colour/contrast contract (theme.hpp, ui_style.hpp). Registered with the JUCE
-// test framework and run by `mnkybox --unittests`, which is also the CTest
-// entry `mnkybox_app_logic`. No audio, MIDI or link access; the theme checks
-// draw into an offscreen image only.
+// Non-visual checks for the Qt app. Run by `mnkybox --unittests` and CTest
+// `mnkybox_app_logic`; no window, audio device, MIDI port or QML engine needed.
+// The QML Style singleton is read from the compiled resource so its contrast
+// floors stay a measured property of the shipped theme.
+#include <QColor>
+#include <QFile>
+#include <QRegularExpression>
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
-#include <iostream>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <map>
 #include <string>
+#include <system_error>
 #include <vector>
 
-#include <juce_core/juce_core.h>
-
-#include "../session/session.hpp"
+#include "../../session/session.hpp"
+#include "app_context.hpp"
+#include "app_state.hpp"
+#include "audio/engine.hpp"
 #include "audio_backend.hpp"
-#include "fx_slot.hpp"
+#include "audio_glue.hpp"
+#include "learn_view_model.hpp"
+#include "link_client.hpp"
 #include "logic.hpp"
+#include "midi/learn.hpp"
+#include "midi_glue.hpp"
+#include "mixer_model.hpp"
+#include "project_io.hpp"
 #include "project_logic.hpp"
-#include "screens/routing_model.hpp"
+#include "routing_model.hpp"
 #include "text_buffer.hpp"
-#include "theme.hpp"
-#include "ui_style.hpp"
+#include "wav_info.hpp"
 
 namespace mnky::app {
 namespace {
 
-// Offscreen drawing is anti-aliased and colour-managed, so compare with a
-// small per-channel tolerance instead of exact equality.
-bool colourNear(juce::Colour actual, juce::Colour expected, int tolerance = 2) {
-  return std::abs(actual.getRed() - expected.getRed()) <= tolerance &&
-         std::abs(actual.getGreen() - expected.getGreen()) <= tolerance &&
-         std::abs(actual.getBlue() - expected.getBlue()) <= tolerance;
+int gChecks = 0;
+int gFailures = 0;
+
+void check(bool condition, const std::string& name) {
+  ++gChecks;
+  if (condition) return;
+  ++gFailures;
+  std::printf("FAIL %s\n", name.c_str());
 }
 
-// Owner contrast floors, measured with style::contrastRatio (WCAG 2.x).
-constexpr float kPrimaryTextContrast = 7.0f;    // body text, AAA
-constexpr float kSecondaryTextContrast = 4.5f;  // micro-labels and dim text, AA
-constexpr float kAccentContrast = 4.5f;         // the accent as essential UI colour
-constexpr float kStateContrast = 3.0f;          // selected vs idle, non-text UI
+void checkNear(double actual, double expected, double tolerance, const std::string& name) {
+  check(std::abs(actual - expected) <= tolerance, name);
+}
 
-class PanelLogicTests final : public juce::UnitTest {
- public:
-  PanelLogicTests() : juce::UnitTest("mnkybox app panel and value logic", "mnkybox") {}
+void checkEqual(const std::string& actual, const std::string& expected,
+                const std::string& name) {
+  check(actual == expected, name + " (got '" + actual + "', wanted '" + expected + "')");
+}
 
-  void runTest() override {
-    testActionTable();
-    testControlDispatch();
-    testTempo();
-    testValueMapping();
-    testFormatting();
+void appendLe16(std::vector<unsigned char>& out, std::uint16_t value) {
+  out.push_back(static_cast<unsigned char>(value & 0xFFu));
+  out.push_back(static_cast<unsigned char>((value >> 8) & 0xFFu));
+}
+
+void appendLe32(std::vector<unsigned char>& out, std::uint32_t value) {
+  out.push_back(static_cast<unsigned char>(value & 0xFFu));
+  out.push_back(static_cast<unsigned char>((value >> 8) & 0xFFu));
+  out.push_back(static_cast<unsigned char>((value >> 16) & 0xFFu));
+  out.push_back(static_cast<unsigned char>((value >> 24) & 0xFFu));
+}
+
+void appendTag(std::vector<unsigned char>& out, const char* tag) {
+  for (int i = 0; i < 4; ++i) out.push_back(static_cast<unsigned char>(tag[i]));
+}
+
+// WCAG 2.x relative luminance and contrast ratio.
+double luminance(const QColor& colour) {
+  const auto channel = [](int value) {
+    const double c = static_cast<double>(value) / 255.0;
+    return c <= 0.03928 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(colour.red()) + 0.7152 * channel(colour.green()) +
+         0.0722 * channel(colour.blue());
+}
+
+double contrast(const QColor& a, const QColor& b) {
+  const double first = luminance(a);
+  const double second = luminance(b);
+  return (std::max(first, second) + 0.05) / (std::min(first, second) + 0.05);
+}
+
+void logicTests() {
+  check(intentForAction(midi::Action::Play, {}).kind == Intent::Kind::Play,
+        "Play action maps to Play intent");
+  check(intentForAction(midi::Action::Stop, {}).kind == Intent::Kind::Stop,
+        "Stop action maps to Stop intent");
+  check(intentForAction(midi::Action::NavUp, {}).kind == Intent::Kind::NavUp,
+        "NavUp maps to the focus ring");
+  check(intentForAction(midi::Action::NavPress, {}).kind == Intent::Kind::NavPress,
+        "NavPress maps to focus activation");
+
+  const auto encoder = intentForControl(mb::CTL_ENCODER_TURN, static_cast<std::uint8_t>(2),
+                                        false, {});
+  check(encoder.kind == Intent::Kind::EncoderTurn && encoder.amount == 2,
+        "encoder turn carries a signed detent delta");
+  const auto release = intentForControl(mb::CTL_NAV_UP, 0, false, {});
+  check(release.kind == Intent::Kind::None, "button release never produces an intent");
+  const auto shift = intentForControl(mb::CTL_SHIFT_EXIT, 1, true, {});
+  check(shift.kind == Intent::Kind::None, "SHIFT/EXIT is a modifier, not an action");
+
+  checkNear(clampTempoX100(1), 2000, 0, "tempo clamps to the firmware minimum");
+  checkNear(clampTempoX100(99999), 30000, 0, "tempo clamps to the firmware maximum");
+  checkEqual(formatTempo(12000), "120.00 BPM", "tempo formatting");
+  checkEqual(formatBarBeatTick(0), "001:1:00", "bar:beat:tick at the start");
+  checkEqual(formatBarBeatTick(kTicksPerBar + kTicksPerBeat), "002:2:00",
+             "bar:beat:tick after one bar and one beat");
+  checkNear(tickSeconds(kTicksPerBar, 12000), 2.0, 1e-9, "one 4/4 bar at 120 BPM is 2 s");
+  checkNear(meterFraction(0.0f), 0.0, 1e-6, "meter floor is silence");
+  checkNear(meterFraction(1.0f), 1.0, 1e-6, "meter full scale");
+  check(moveIndex(0, -1, 6) == 5, "moveIndex wraps backwards");
+  check(moveIndex(5, 2, 6) == 1, "moveIndex wraps forwards");
+  checkEqual(formatDuration(65.4), "01:05", "duration formatting");
+  checkEqual(formatBytes(2048), "2.0 KiB", "byte formatting");
+}
+
+void textBufferTests() {
+  TextBuffer buffer;
+  check(buffer.insert("hello world"), "text buffer inserts text");
+  checkEqual(buffer.text(), "hello world", "text buffer text");
+  check(buffer.backspace(), "text buffer backspace");
+  checkEqual(buffer.text(), "hello worl", "text buffer after backspace");
+  buffer.moveLeft();
+  buffer.moveLeft();
+  check(buffer.insert('X'), "text buffer inserts at the cursor");
+  checkEqual(buffer.text(), "hello woXrl", "cursor insert position");
+  buffer.setCursor(0);
+  check(buffer.deleteForward(), "text buffer deletes forward");
+  checkEqual(buffer.text(), "ello woXrl", "forward delete position");
+  buffer.clear();
+  check(buffer.empty(), "text buffer clears");
+  buffer.setText("caf\u00e9");
+  checkEqual(buffer.text(), "caf", "non-ASCII input is dropped");
+  std::string overLong(60, 'a');
+  buffer.setText(overLong);
+  check(static_cast<int>(buffer.text().size()) == TextBuffer::kDefaultMaxLength,
+        "text buffer enforces max length");
+  check(!buffer.insert('b'), "insert at max length is refused");
+}
+
+void projectTests() {
+  check(validateProjectName("Project-20260101-120000").empty(), "valid project name");
+  check(!validateProjectName("").empty(), "empty project name rejected");
+  check(!validateProjectName("bad/name").empty(), "path separator rejected");
+  check(!validateProjectName(" leading").empty(), "leading space rejected");
+  check(!validateTakeName("session-1").empty(), "take name keeps the take- prefix");
+  check(validateTakeName("take-20260101T120000Z").empty(), "valid take name");
+  checkEqual(defaultProjectName(0), "Project-19700101-000000",
+             "default project name is UTC");
+
+  DirtyTracker tracker;
+  check(!tracker.poll("a"), "first dirty poll establishes the baseline");
+  check(!tracker.poll("a"), "unchanged fingerprint stays clean");
+  check(tracker.poll("b"), "changed fingerprint becomes dirty");
+  check(tracker.poll("a"), "manual undo stays dirty until clear");
+  tracker.clear("a");
+  check(!tracker.poll("a"), "clear resets the dirty baseline");
+
+  ChordDetector chord;
+  check(!chord.onPress(ChordDetector::Button::Rec, 100), "REC alone does not complete");
+  check(chord.onPress(ChordDetector::Button::Play, 250), "REC then PLAY inside 300 ms");
+  chord.reset();
+  check(!chord.onPress(ChordDetector::Button::Play, 100), "PLAY alone does not complete");
+  check(!chord.onPress(ChordDetector::Button::Rec, 401), "the 300 ms window is strict");
+  check(chord.onPress(ChordDetector::Button::Play, 402), "a later edge can still pair");
+}
+
+void audioBackendTests() {
+  check(audioBackendFromKey("default") == AudioBackend::Default, "default backend key");
+  check(audioBackendFromKey("device") == AudioBackend::Device, "device backend key");
+  check(audioBackendFromKey("emulator") == AudioBackend::Emulator, "emulator backend key");
+  check(audioBackendFromKey("jack") == AudioBackend::Default,
+        "the dropped JACK key resolves to the default backend");
+
+  AudioBackendAvailability availability;
+  availability.defaultOutput = true;
+  availability.outputDeviceIds = {"a", "b"};
+  auto selection = resolveAudioBackend(AudioBackend::Device, "b", availability);
+  check(selection.effective == AudioBackend::Device && !selection.fellBack,
+        "a listed device is used as requested");
+  selection = resolveAudioBackend(AudioBackend::Device, "gone", availability);
+  check(selection.effective == AudioBackend::Default && selection.fellBack,
+        "a missing device falls back to the default output");
+  selection = resolveAudioBackend(AudioBackend::Default, "", availability);
+  check(selection.effective == AudioBackend::Default && !selection.fellBack,
+        "the default output is used when present");
+  availability.defaultOutput = false;
+  selection = resolveAudioBackend(AudioBackend::Default, "", availability);
+  check(selection.effective == AudioBackend::Emulator && selection.fellBack,
+        "no output at all falls back to the emulator generator");
+  selection = resolveAudioBackend(AudioBackend::Emulator, "", {});
+  check(selection.effective == AudioBackend::Emulator && !selection.fellBack,
+        "the emulator backend is always available");
+
+  check(clampAudioBufferSize(100) == 128, "buffer size rounds to the nearest");
+  check(clampAudioBufferSize(200) == 256, "buffer size rounds up when nearer");
+  check(audioBufferSizeLabel(64) == "64 frames", "buffer size label");
+  check(resolveAudioDeviceName("b", {"a", "b"}) == "b", "stored device still listed");
+  check(resolveAudioDeviceName("x", {"a", "b"}).empty(),
+        "unplugged device resolves to the type default");
+}
+
+void routingTests() {
+  const auto layout = routing::layoutFor(788.0f, 140.0f);
+  check(layout.nodeHeight > 0.0f, "patchbay layout has nodes");
+  check(routing::hitInputNode(layout, {10.0f, layout.inputs[1].centreY()}) == 1,
+        "input node hit test");
+  check(routing::hitOutputNode(layout, {780.0f, layout.outputs[2].centreY()}) == 2,
+        "output node hit test");
+  check(routing::distanceToCubic(layout.wires[2][1].start, layout.wires[2][1]) < 1.0f,
+        "a wire contains its own start point");
+  int source = -1;
+  int destination = -1;
+  check(routing::hitWire(layout, layout.wires[2][1].end, source, destination),
+        "a wire endpoint is within the touch slop");
+  check(routing::kDefaultRoutes[0][2] && routing::kDefaultRoutes[1][2] &&
+            !routing::kDefaultRoutes[2][2],
+        "documented default routes: TRS IN 1+2 -> USB OUT only");
+  check(routing::kInputs[2] == midi::Port::UsbIn &&
+            routing::kOutputs[2] == midi::Port::UsbOut,
+        "USB ports keep their documented patchbay position");
+}
+
+void mixerTests() {
+  MixerModel model;
+  model.setGainDb(3, -6.0f);
+  model.setPan(3, 0.25f);
+  model.setSend(3, 1, 0.5f);
+  model.setArm(3, true);
+  checkNear(gainToDb(dbToGain(-6.0f)), -6.0, 1e-4, "dB/gain round trip");
+  audio::Engine engine;
+  model.applyTo(engine);
+  checkNear(engine.channel(3).gain, dbToGain(-6.0f), 1e-6, "mixer snapshot gain");
+  checkNear(engine.channel(3).pan, 0.25, 1e-6, "mixer snapshot pan");
+  checkNear(engine.channel(3).send[1], 0.5, 1e-6, "mixer snapshot send");
+  check((model.armMask() & (1u << 3)) != 0, "arm mask carries the armed strip");
+  model.setPan(3, 2.0f);
+  checkNear(model.pan(3), 1.0, 1e-6, "pan clamps at the top");
+}
+
+void learnTests() {
+  midi::LearnEngine engine;
+  check(engine.addBinding(74, 1, "mixer.ch01.gain", 0), "learn binding added");
+  check(!engine.addBinding(74, 1, "mixer.ch02.gain", 0),
+        "one binding per (cc, channel)");
+  double value = -1.0;
+  engine.registerTarget("mixer.ch01.gain",
+                        [&value](double next) { value = next; });
+  midi::MidiEvent event;
+  event.size = 3;
+  event.data[0] = 0xB0;
+  event.data[1] = 74;
+  event.data[2] = 64;
+  check(engine.dispatch(event), "learn dispatch finds the binding");
+  checkNear(value, 64.0 / 127.0, 1e-6, "learn value is scaled to 0..1");
+  event.data[1] = 75;
+  check(!engine.dispatch(event), "unbound control is ignored");
+  check(engine.removeBinding(74, 1), "learn binding removed");
+}
+
+void wavTests() {
+  const auto path = std::filesystem::temp_directory_path() /
+                    ("mnkybox-wav-test-" +
+                     std::to_string(std::chrono::steady_clock::now()
+                                        .time_since_epoch()
+                                        .count()) +
+                     ".wav");
+  constexpr std::uint32_t frames = 480;
+  constexpr std::uint16_t channels = 2;
+  std::vector<unsigned char> bytes;
+  appendTag(bytes, "RIFF");
+  appendLe32(bytes, 36 + frames * channels * 4);
+  appendTag(bytes, "WAVE");
+  appendTag(bytes, "fmt ");
+  appendLe32(bytes, 16);
+  appendLe16(bytes, 3);  // IEEE float
+  appendLe16(bytes, channels);
+  appendLe32(bytes, 48000);
+  appendLe32(bytes, 48000 * channels * 4);
+  appendLe16(bytes, static_cast<std::uint16_t>(channels * 4));
+  appendLe16(bytes, 32);
+  appendTag(bytes, "data");
+  appendLe32(bytes, frames * channels * 4);
+  bytes.resize(bytes.size() + frames * channels * 4, 0);
+  {
+    std::ofstream file(path, std::ios::binary);
+    file.write(reinterpret_cast<const char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
   }
+  const auto info = readWavInfo(path);
+  check(info.ok, "WAV header parses");
+  check(info.channels == channels && info.sampleRate == 48000 && info.format == 3,
+        "WAV format fields");
+  check(info.frames == frames, "WAV frame count");
+  checkNear(wavDurationSeconds(path), 0.01, 1e-9, "WAV duration");
+  std::error_code error;
+  std::filesystem::remove(path, error);
+}
 
- private:
-  static Intent control(std::uint8_t id, std::uint8_t value, bool shift = false,
-                        int strip = 3) {
-    return intentForControl(id, value, shift, PanelState{1, strip});
+void sessionClickTests() {
+  session::Snapshot snapshot;
+  snapshot.click.enabled = true;
+  snapshot.click.level = 0.25f;
+  snapshot.click.bars = 2;
+  snapshot.transport.bpmX100 = 13300;
+  const auto path = std::filesystem::temp_directory_path() /
+                    ("mnkybox-click-" +
+                     std::to_string(std::chrono::steady_clock::now()
+                                        .time_since_epoch()
+                                        .count()) +
+                     ".mnkybox");
+  check(session::save(path.string(), snapshot), "session file writes");
+  const auto result = session::load(path.string());
+  check(result.ok, "session file reads back");
+  check(result.snapshot.click.enabled, "click.enabled round-trips");
+  checkNear(result.snapshot.click.level, 0.25, 1e-6, "click.level round-trips");
+  check(result.snapshot.click.bars == 2, "click.bars round-trips");
+  check(result.snapshot.transport.bpmX100 == 13300, "tempo round-trips");
+  std::error_code error;
+  std::filesystem::remove(path, error);
+}
+
+
+void learnCaptureTests() {
+  MidiGlue midi(false);
+  LearnViewModel learn(midi);
+  learn.setTargetIndex(0);
+  learn.startCapture();
+  check(learn.capturing(), "learn capture mode is armed");
+  midi::MidiEvent event;
+  event.size = 3;
+  event.data[0] = 0xB2;
+  event.data[1] = 74;
+  event.data[2] = 100;
+  midi.handleInput(event);
+  learn.poll();
+  check(!learn.capturing(), "one control change completes the capture");
+  check(learn.bindings().size() == 1, "captured CC creates one learn binding");
+  check(learn.bindings().value(0).contains(QStringLiteral("mixer.ch01.gain")),
+        "captured CC binds the selected target");
+  learn.removeBinding(0);
+  check(learn.bindings().isEmpty(), "learn binding removal");
+}
+
+void projectRoundTripTests() {
+  AppState state;
+  MixerModel mixer;
+  FxManager fx;
+  MidiGlue midi(false);
+  AudioGlue audio(mixer, fx, state, true);
+  LinkClient link(midi, state, true);
+  AppContext context{state, mixer, fx, midi, audio, link};
+
+  mixer.setGainDb(2, -6.0f);
+  mixer.setPan(2, 0.25f);
+  state.tempoX100.store(13300);
+  state.clickEnabled.store(true);
+  state.clickLevel.store(0.3f);
+  state.clickBars.store(2);
+  midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, true);
+  check(midi.addLearnBinding(74, 2, "mixer.ch03.gain", 0),
+        "project test learn binding");
+
+  const auto directory = std::filesystem::temp_directory_path() /
+                         ("mnkybox-project-test-" +
+                          std::to_string(std::chrono::steady_clock::now()
+                                             .time_since_epoch()
+                                             .count()));
+  std::string error;
+  check(project::save(context, directory, error), "project save writes a session file");
+
+  mixer.setGainDb(2, 0.0f);
+  mixer.setPan(2, 0.5f);
+  state.tempoX100.store(12000);
+  state.clickEnabled.store(false);
+  state.clickBars.store(1);
+  midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, false);
+  midi.clearLearnBindings();
+
+  check(project::load(context, directory, error), "project load applies the session file");
+  checkNear(mixer.gainDb(2), -6.0, 0.01, "project load restores strip gain");
+  checkNear(mixer.pan(2), 0.25, 1e-6, "project load restores strip pan");
+  check(state.tempoX100.load() == 13300, "project load restores tempo");
+  check(state.clickEnabled.load() && state.clickBars.load() == 2,
+        "project load restores click config");
+  check(midi.routeEnabled(midi::Port::TrsIn1, midi::Port::UsbOut),
+        "project load restores the routing matrix");
+  check(midi.learnBindings().size() == 1 &&
+            midi.learnBindings().front().target == "mixer.ch03.gain",
+        "project load restores the MIDI-learn map");
+
+  std::error_code removeError;
+  std::filesystem::remove_all(directory, removeError);
+}
+
+void styleTests() {
+  QFile file(QStringLiteral(":/qml/Style.qml"));
+  check(file.open(QIODevice::ReadOnly | QIODevice::Text), "QML Style resource opens");
+  const QString qml = QString::fromUtf8(file.readAll());
+
+  std::map<QString, QColor> colours;
+  QRegularExpression colourPattern(
+      QStringLiteral("readonly\\s+property\\s+color\\s+(\\w+)\\s*:\\s*\"(#[0-9a-fA-F]{6})\""));
+  auto matches = colourPattern.globalMatch(qml);
+  while (matches.hasNext()) {
+    const auto match = matches.next();
+    colours.insert_or_assign(match.captured(1), QColor(match.captured(2)));
   }
-
-  void testActionTable() {
-    beginTest("action -> intent table");
-
-    for (int i = 0; i <= static_cast<int>(midi::Action::EncoderSw); ++i) {
-      const auto intent = intentForAction(static_cast<midi::Action>(i), PanelState{});
-      if (i == static_cast<int>(midi::Action::None)) {
-        expect(intent.kind == Intent::Kind::None, "None maps to None");
-      } else {
-        expect(intent.kind != Intent::Kind::None, "every action maps to work");
-      }
-    }
-
-    const PanelState panel{2, 7};
-    expect(intentForAction(midi::Action::Play, panel) == Intent{Intent::Kind::Play, 0});
-    expect(intentForAction(midi::Action::PlayStart, panel) ==
-           Intent{Intent::Kind::PlayStart, 0});
-    expect(intentForAction(midi::Action::Stop, panel) == Intent{Intent::Kind::Stop, 0});
-    expect(intentForAction(midi::Action::RecToggle, panel) ==
-           Intent{Intent::Kind::RecToggle, 0});
-    expect(intentForAction(midi::Action::OverdubToggle, panel) ==
-           Intent{Intent::Kind::OverdubToggle, 0});
-    expect(intentForAction(midi::Action::NavUp, panel) ==
-           Intent{Intent::Kind::MoveTab, -1});
-    expect(intentForAction(midi::Action::NavDown, panel) ==
-           Intent{Intent::Kind::MoveTab, 1});
-    expect(intentForAction(midi::Action::NavLeft, panel) ==
-           Intent{Intent::Kind::MoveStrip, -1});
-    expect(intentForAction(midi::Action::NavRight, panel) ==
-           Intent{Intent::Kind::MoveStrip, 1});
-    expect(intentForAction(midi::Action::EncoderSw, panel) ==
-           Intent{Intent::Kind::ArmToggle, 7});
-    expect(intentForAction(midi::Action::NavPress, panel) ==
-           Intent{Intent::Kind::PlayStart, 0});
-  }
-
-  void testControlDispatch() {
-    beginTest("control id dispatch");
-
-    expect(control(mb::CTL_PLAY, 1).kind == Intent::Kind::Play);
-    expect(control(mb::CTL_PLAY, 0).kind == Intent::Kind::None, "release is ignored");
-    expect(control(mb::CTL_STOP, 1).kind == Intent::Kind::Stop);
-    expect(control(mb::CTL_REC, 1).kind == Intent::Kind::RecToggle);
-    expect(control(mb::CTL_OVER_DUB, 1).kind == Intent::Kind::OverdubToggle);
-    expect(control(mb::CTL_NAV_UP, 1).kind == Intent::Kind::MoveTab);
-    expect(control(mb::CTL_NAV_RIGHT, 1).amount == 1);
-    expect(control(mb::CTL_ENCODER_SW, 1).kind == Intent::Kind::ArmToggle);
-    expect(control(mb::CTL_SHIFT_EXIT, 1).kind == Intent::Kind::None,
-           "SHIFT is a modifier, not an action");
-    expect(control(99, 1).kind == Intent::Kind::None, "unknown id is ignored");
-
-    // Encoder detents: the signed payload is the magnitude, SHIFT scales it.
-    expect(control(mb::CTL_ENCODER_TURN, 3) ==
-           Intent{Intent::Kind::TempoStep, 3 * kTempoStepCoarseX100});
-    expect(control(mb::CTL_ENCODER_TURN, 2, true) ==
-           Intent{Intent::Kind::TempoStep, 2 * kTempoStepFineX100});
-    expect(control(mb::CTL_ENCODER_TURN, static_cast<std::uint8_t>(-1)) ==
-           Intent{Intent::Kind::TempoStep, -kTempoStepCoarseX100});
-    expect(control(mb::CTL_ENCODER_TURN, 0).kind == Intent::Kind::None);
-  }
-
-  void testTempo() {
-    beginTest("tempo clamping and steps");
-
-    expectEquals(clampTempoX100(12000), 12000);
-    expectEquals(clampTempoX100(0), static_cast<int>(midi::UsbClock::kMinBpmX100));
-    expectEquals(clampTempoX100(90000), static_cast<int>(midi::UsbClock::kMaxBpmX100));
-    // 12.30 bpm is below the 20 bpm floor; a steady step from 120 bpm is not.
-    expectEquals(clampTempoX100(1230), static_cast<int>(midi::UsbClock::kMinBpmX100));
-    expectEquals(clampTempoX100(12000 + 12 * kTempoStepCoarseX100), 13200);
-    expectWithinAbsoluteError(tickSeconds(48, 12000), 1.0, 1e-9);
-    expectWithinAbsoluteError(tickSeconds(24, 6000), 1.0, 1e-9);
-  }
-
-  void testValueMapping() {
-    beginTest("gain and meter mapping");
-
-    expectWithinAbsoluteError(dbToGain(0.0f), 1.0f, 1e-6f);
-    expectWithinAbsoluteError(dbToGain(-6.0f), 0.5011872f, 1e-4f);
-    expectEquals(dbToGain(kMinGainDb), 0.0f);
-    expectEquals(dbToGain(-200.0f), 0.0f);
-    expectEquals(gainToDb(0.0f), kMinGainDb);
-
-    expectWithinAbsoluteError(gainToDb(dbToGain(-12.0f)), -12.0f, 1e-4f);
-    expectEquals(meterFraction(0.0f), 0.0f);
-    expectEquals(meterFraction(1.0f), 1.0f);
-    expect(meterFraction(0.01f) > 0.0f && meterFraction(0.01f) < 1.0f);
-  }
-
-  void testFormatting() {
-    beginTest("readout formatting");
-
-    expect(juce::String(formatTempo(12000)) == "120.00 BPM");
-    expect(juce::String(formatTempo(2000)) == "20.00 BPM");
-    expect(juce::String(formatBarBeatTick(0)) == "001:1:00");
-    expect(juce::String(formatBarBeatTick(kTicksPerBar)) == "002:1:00");
-    expect(juce::String(formatBarBeatTick(kTicksPerBar + kTicksPerBeat + 4)) == "002:2:04");
-
-    expectEquals(moveIndex(0, -1, 5), 4);
-    expectEquals(moveIndex(4, 1, 5), 0);
-    expectEquals(moveIndex(2, 3, 5), 0);
-    expectEquals(moveIndex(2, 0, 0), 0);
-
-    expect(juce::String(formatBytes(512)) == "512 B");
-    expect(juce::String(formatBytes(1536)) == "1.5 KiB");
-    expect(juce::String(formatDuration(0.0)) == "00:00");
-    expect(juce::String(formatDuration(61.0)) == "01:01");
-  }
-};
-
-PanelLogicTests panelLogicTests;
-
-// The System screen's audio backend selector is a pure model: the same functions
-// decide what the selector offers, which backend the one device manager is asked
-// for, and what happens when the request cannot be honoured. No JUCE device is
-// touched, so the checks run on a machine with no JACK and no audio server.
-class AudioBackendTests final : public juce::UnitTest {
- public:
-  AudioBackendTests() : juce::UnitTest("mnkybox audio backend selection", "mnkybox") {}
-
-  void runTest() override {
-    testKeysAndLabels();
-    testAvailabilityAndFallback();
-    testBufferSizes();
-    testDeviceFallback();
-  }
-
- private:
-  void testKeysAndLabels() {
-    beginTest("backend keys, device type names and menu labels");
-
-    expect(audioBackendKey(AudioBackend::Default) == "default");
-    expect(audioBackendKey(AudioBackend::Alsa) == "alsa");
-    expect(audioBackendKey(AudioBackend::Jack) == "jack");
-    for (const auto backend : kAudioBackends) {
-      expect(audioBackendFromKey(audioBackendKey(backend)) == backend,
-             "the persisted key round-trips");
-    }
-    expect(audioBackendFromKey("") == kDefaultAudioBackend, "empty key -> default");
-    expect(audioBackendFromKey("pipewire") == kDefaultAudioBackend,
-           "an unknown key never selects a different backend");
-    expect(kDefaultAudioBackend == AudioBackend::Default, "ALSA stays the default backend");
-
-    // An empty device type name means "leave JUCE's platform default alone".
-    expect(audioDeviceTypeName(AudioBackend::Default).empty());
-    expect(audioDeviceTypeName(AudioBackend::Alsa) == "ALSA");
-    expect(audioDeviceTypeName(AudioBackend::Jack) == "JACK");
-
-    expect(juce::String(audioBackendLabel(AudioBackend::Default)) == "Default");
-    expect(juce::String(audioBackendLabel(AudioBackend::Alsa, true)) == "ALSA");
-    expect(juce::String(audioBackendLabel(AudioBackend::Jack, true)) == "JACK");
-    expect(juce::String(audioBackendLabel(AudioBackend::Jack, false)) ==
-               "JACK (unavailable)",
-           "an unavailable JACK entry says so instead of vanishing");
-    expect(juce::String(audioBackendLabel(AudioBackend::Alsa, false)) ==
-           "ALSA (unavailable)");
-  }
-
-  void testAvailabilityAndFallback() {
-    beginTest("availability and the JACK fallback");
-
-    const AudioBackendAvailability none;
-    expect(!audioBackendAvailable(AudioBackend::Alsa, none), "macOS has no ALSA type");
-    expect(!audioBackendAvailable(AudioBackend::Jack, none), "no JACK type in this build");
-    expect(audioBackendAvailable(AudioBackend::Default, none),
-           "Default is always offered");
-
-    AudioBackendAvailability linuxAlsaOnly;
-    linuxAlsaOnly.alsa = true;
-    expect(audioBackendAvailable(AudioBackend::Alsa, linuxAlsaOnly));
-    expect(!audioBackendAvailable(AudioBackend::Jack, linuxAlsaOnly));
-
-    AudioBackendAvailability both;
-    both.alsa = true;
-    both.jack = true;
-    expect(audioBackendAvailable(AudioBackend::Jack, both));
-
-    auto selection = resolveAudioBackend(AudioBackend::Default, none);
-    expect(selection.effective == AudioBackend::Default);
-    expect(!selection.fellBack);
-    expect(selection.note.empty());
-
-    selection = resolveAudioBackend(AudioBackend::Alsa, linuxAlsaOnly);
-    expect(selection.effective == AudioBackend::Alsa);
-    expect(!selection.fellBack);
-    expect(selection.note.empty());
-
-    selection = resolveAudioBackend(AudioBackend::Jack, both);
-    expect(selection.effective == AudioBackend::Jack);
-    expect(!selection.fellBack);
-    expect(selection.note.empty());
-
-    // JACK unavailable: the device manager is asked for the default backend
-    // (ALSA on Linux) and the note names the missing JACK server.
-    selection = resolveAudioBackend(AudioBackend::Jack, linuxAlsaOnly);
-    expect(selection.requested == AudioBackend::Jack);
-    expect(selection.effective == AudioBackend::Default);
-    expect(selection.fellBack);
-    expect(juce::String(selection.note).contains("JACK"));
-    expect(juce::String(selection.note).contains("jackd"));
-
-    // ALSA requested where the type does not exist (the macOS dev machine).
-    selection = resolveAudioBackend(AudioBackend::Alsa, none);
-    expect(selection.effective == AudioBackend::Default);
-    expect(selection.fellBack);
-    expect(juce::String(selection.note).contains("ALSA"));
-  }
-
-  void testBufferSizes() {
-    beginTest("buffer size options");
-
-    expect(isAudioBufferSize(128));
-    expect(isAudioBufferSize(1024));
-    expect(!isAudioBufferSize(0));
-    expect(!isAudioBufferSize(100));
-
-    expectEquals(clampAudioBufferSize(128), 128);
-    expectEquals(clampAudioBufferSize(0), 64);
-    expectEquals(clampAudioBufferSize(96), 64);  // a tie goes to the shorter period
-    expectEquals(clampAudioBufferSize(100), 128);
-    expectEquals(clampAudioBufferSize(4096), 1024);
-    expectEquals(clampAudioBufferSize(-8), 64);
-
-    expect(juce::String(audioBufferSizeLabel(128)) == "128 frames");
-    expect(juce::String(audioBufferSizeLabel(300)) == "256 frames");
-    expectEquals(kDefaultAudioBufferSize, 128);
-    expectEquals(kAudioBufferSizeCount,
-                 static_cast<int>(sizeof(kAudioBufferSizes) / sizeof(kAudioBufferSizes[0])));
-  }
-
-  void testDeviceFallback() {
-    beginTest("persisted choice and stored device fallback");
-
-    const std::vector<std::string> devices{"Loopback"};
-    expect(resolveAudioDeviceName("Loopback", devices) == "Loopback");
-    expect(resolveAudioDeviceName("", devices).empty(),
-           "an empty request keeps the device type's default");
-    expect(resolveAudioDeviceName("UMC1820", devices).empty(),
-           "a device that is no longer listed falls back to the type default");
-    expect(resolveAudioDeviceName("Loopback", {}).empty(),
-           "no listed devices -> type default");
-
-    const AudioBackendChoice initial;
-    expect(initial.backend == AudioBackend::Default);
-    expect(initial.deviceName.empty());
-    expectEquals(initial.bufferSize, kDefaultAudioBufferSize);
-
-    AudioBackendChoice jack;
-    jack.backend = AudioBackend::Jack;
-    jack.deviceName = "system";
-    expect(initial != jack);
-    expect(jack == AudioBackendChoice{AudioBackend::Jack, "system", 128});
-  }
-};
-
-AudioBackendTests audioBackendTests;
-
-// The FX screen's default plugin is the in-tree mnkygain build. Loading,
-// parameter exposure, audio and state save/load are all message-thread work, so
-// they are testable here without a display or an audio device.
-class FxSlotTests final : public juce::UnitTest {
- public:
-  FxSlotTests() : juce::UnitTest("mnkybox app fx slot", "mnkybox") {}
-
-  void runTest() override {
-#if defined(MNKY_DEFAULT_PLUGIN)
-    beginTest("load in-tree mnkygain, params, process, state");
-    const juce::File plugin(juce::String::fromUTF8(MNKY_DEFAULT_PLUGIN));
-    if (!plugin.exists()) {
-      logMessage("skipped: " + plugin.getFullPathName() + " has not been built");
-      return;
-    }
-
-    FxSlot slot(0);
-    expect(slot.load(plugin.getFullPathName(), 48000.0, audio::kBlockSize),
-           "in-tree plugin loads: " + slot.lastError());
-    if (!slot.loaded()) return;
-
-    const auto params = slot.params();
-    expectEquals(static_cast<int>(params.size()), 4);
-
-    float left[audio::kBlockSize] = {};
-    float right[audio::kBlockSize] = {};
-    for (int i = 0; i < audio::kBlockSize; ++i) left[i] = right[i] = 0.25f;
-    float* channels[2] = {left, right};
-    slot.effect().process(channels, 2, audio::kBlockSize);
-    expect(std::abs(left[static_cast<int>(audio::kBlockSize) - 1]) > 0.01f,
-           "adapter passes the send bus through host.process()");
-
-    if (!params.empty()) {
-      expect(slot.setParam(params.front().id, params.front().min), "parameter write accepted");
-    }
-
-    const auto stateFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                               .getChildFile("mnkybox-fx-slot-test.state");
-    stateFile.deleteFile();
-    expect(slot.saveState(stateFile), "state saved: " + slot.lastError());
-    expect(stateFile.existsAsFile());
-    expect(slot.loadState(stateFile), "state loaded: " + slot.lastError());
-    stateFile.deleteFile();
-
-    slot.unload();
-    expect(!slot.loaded());
-#else
-    beginTest("default plugin unavailable");
-    logMessage("MNKY_DEFAULT_PLUGIN is not defined for this build");
-#endif
-  }
-};
-
-FxSlotTests fxSlotTests;
-
-// The theme is the single palette: these checks keep MnkyLookAndFeel's colour
-// IDs tied to ui_style.hpp and prove the flat controls draw with those tokens.
-class ThemeTests final : public juce::UnitTest {
- public:
-  ThemeTests() : juce::UnitTest("mnkybox app theme", "mnkybox") {}
-
-  void runTest() override {
-    testMetrics();
-    testColourIds();
-    testContrast();
-    testFlatControlDrawing();
-  }
-
- private:
-  void testMetrics() {
-    beginTest("touch and flat-theme metrics");
-    expect(style::kTouch >= 44, "every touch target is at least 44 px");
-    expect(style::kTabDepth >= style::kTouch, "the tab bar keeps the touch height");
-    expect(style::kThumbRadius >= 10, "slider thumbs are fat");
-    expect(style::kTrackThickness >= 4 && style::kTrackThickness < style::kTouch,
-           "the track is a thin line, not a block");
-    expect(style::kCornerRadius > 0.0f && style::kCornerRadius <= 6.0f,
-           "corner radii stay small");
-    expect(style::kOutlineWidth <= 1.5f, "outlines stay thin");
-  }
-
-  void expectToken(const MnkyLookAndFeel& look, int colourId, juce::Colour expected,
-                   const char* what) {
-    expect(look.findColour(colourId) == expected, what);
-  }
-
-  void testColourIds() {
-    beginTest("registered colour ids match ui_style tokens");
-    MnkyLookAndFeel look;
-
-    expectToken(look, juce::ResizableWindow::backgroundColourId, style::background,
-                "window background");
-    expectToken(look, juce::DocumentWindow::textColourId, style::text, "window text");
-    expectToken(look, juce::Label::textColourId, style::text, "label text");
-
-    expectToken(look, juce::Slider::backgroundColourId, style::panelDark,
-                "slider empty track");
-    expectToken(look, juce::Slider::trackColourId, style::accent, "slider filled track");
-    expectToken(look, juce::Slider::thumbColourId, style::text, "slider thumb");
-    expectToken(look, juce::Slider::rotarySliderFillColourId, style::accent, "rotary arc");
-    expectToken(look, juce::Slider::rotarySliderOutlineColourId, style::outline,
-                "rotary arc background");
-    expectToken(look, juce::Slider::textBoxTextColourId, style::text, "slider value text");
-
-    expectToken(look, juce::TextButton::buttonColourId, style::panel, "idle button fill");
-    expectToken(look, juce::TextButton::buttonOnColourId, style::accent,
-                "selected button fill");
-    expectToken(look, juce::TextButton::textColourOffId, style::text, "idle button text");
-    expectToken(look, juce::TextButton::textColourOnId, style::panelDark,
-                "selected button text");
-
-    expectToken(look, juce::ToggleButton::textColourId, style::text, "toggle text");
-    expectToken(look, juce::ToggleButton::tickColourId, style::accent, "toggle on fill");
-    expectToken(look, juce::ToggleButton::tickDisabledColourId, style::outline,
-                "toggle outline");
-
-    expectToken(look, juce::TabbedButtonBar::tabOutlineColourId, style::outline,
-                "tab outline");
-    expectToken(look, juce::TabbedButtonBar::frontOutlineColourId, style::accent,
-                "selected tab underline");
-    expectToken(look, juce::TabbedButtonBar::tabTextColourId, style::textDim,
-                "idle tab text");
-    expectToken(look, juce::TabbedButtonBar::frontTextColourId, style::text,
-                "selected tab text");
-    expectToken(look, juce::TabbedComponent::backgroundColourId, style::background,
-                "tab content background");
-
-    expectToken(look, juce::ListBox::backgroundColourId, style::panelDark, "list background");
-    expectToken(look, juce::ListBox::outlineColourId, style::outline, "list outline");
-    expectToken(look, juce::TextEditor::backgroundColourId, style::panelDark,
-                "text editor background");
-    expectToken(look, juce::TextEditor::outlineColourId, style::outline,
-                "text editor outline");
-
-    // The font stack is the platform sans: no font file is shipped, but the
-    // system typeface must resolve.
-    expect(look.getTypefaceForFont(style::font(12.0f)) != nullptr,
-           "system sans resolves for the default font");
-  }
-
-  void testContrast() {
-    beginTest("measured contrast floors and state cues");
-    MnkyLookAndFeel look;
-
-    // Near-black surfaces and light text: the owner constraint in numbers.
-    expect(style::relativeLuminance(style::background) <= 0.02f,
-           "window background is near-black");
-    expect(style::relativeLuminance(style::panel) <= 0.03f, "panels are near-black");
-    expect(style::relativeLuminance(style::text) >= 0.7f, "primary text is light");
-
-    // Primary text clears AAA on every dark surface.
-    expect(style::contrastRatio(style::text, style::background) >= kPrimaryTextContrast,
-           "primary text on the window background");
-    expect(style::contrastRatio(style::text, style::panel) >= kPrimaryTextContrast,
-           "primary text on a panel");
-    expect(style::contrastRatio(style::text, style::panelDark) >= kPrimaryTextContrast,
-           "primary text on a dark panel");
-
-    // Secondary micro-labels clear AA: no mid-grey-on-black essential text.
-    expect(style::contrastRatio(style::textDim, style::background) >=
-               kSecondaryTextContrast,
-           "dim text on the window background");
-    expect(style::contrastRatio(style::textDim, style::panel) >= kSecondaryTextContrast,
-           "dim micro-labels on a panel");
-    expect(style::contrastRatio(style::textDim, style::panelDark) >= kSecondaryTextContrast,
-           "dim text on a dark panel");
-
-    // The single accent on the dark surfaces.
-    expect(style::contrastRatio(style::accent, style::background) >= kAccentContrast,
-           "the accent is readable on the window background");
-    expect(style::contrastRatio(style::accent, style::panel) >= kAccentContrast,
-           "the accent is readable on a panel");
-
-    // Selected vs idle is a luminance flip, not a hue change: the bright fill
-    // and its dark text keep the state visible in a monochrome view.
-    const auto idleButton = look.findColour(juce::TextButton::buttonColourId);
-    const auto selectedButton = look.findColour(juce::TextButton::buttonOnColourId);
-    expect(style::contrastRatio(selectedButton, idleButton) >= kStateContrast,
-           "selected button fill differs from idle");
-    expect(style::relativeLuminance(selectedButton) >
-               5.0f * style::relativeLuminance(idleButton),
-           "selected button fill is brighter, so the state is not colour-only");
-    expect(style::contrastRatio(style::text, idleButton) >= kPrimaryTextContrast,
-           "idle button text is light on the dark fill");
-    expect(style::contrastRatio(style::panelDark, selectedButton) >=
-               kSecondaryTextContrast,
-           "selected button text is dark on the bright fill");
-
-    const auto idleToggle = look.findColour(juce::ToggleButton::tickDisabledColourId);
-    const auto onToggle = look.findColour(juce::ToggleButton::tickColourId);
-    expect(style::contrastRatio(onToggle, idleToggle) >= kStateContrast,
-           "toggle on fill differs from the idle outline");
-    expect(style::relativeLuminance(onToggle) >
-               5.0f * style::relativeLuminance(style::panelDark),
-           "toggle on fill is brighter than the idle fill");
-
-    // The tab carries a shape marker (underline) as well as brighter text.
-    expect(style::contrastRatio(look.findColour(juce::TabbedButtonBar::frontOutlineColourId),
-                                look.findColour(juce::TabbedButtonBar::tabOutlineColourId)) >=
-               kStateContrast,
-           "selected tab underline differs from the idle outline");
-    expect(style::contrastRatio(look.findColour(juce::TabbedButtonBar::frontTextColourId),
-                                look.findColour(juce::TabbedButtonBar::tabTextColourId)) >=
-               2.0f,
-           "selected tab text is brighter than idle tab text");
-
-    // Armed / solo / muted / ok: the same rule for the semantic fills, plus the
-    // on-marker bar the toggle draws (shape cue).
-    const auto expectStatusFill = [this](juce::Colour fill, const char* name) {
-      const juce::String label(name);
-      expect(style::contrastRatio(fill, style::panelDark) >= kSecondaryTextContrast,
-             label + " fill separates from the dark idle fill and carries dark text");
-      expect(style::relativeLuminance(fill) >
-                 5.0f * style::relativeLuminance(style::panelDark),
-             label + " fill is a brightness change, not only a hue change");
-    };
-    expectStatusFill(style::record, "record");
-    expectStatusFill(style::soloOn, "solo");
-    expectStatusFill(style::muteOn, "mute");
-    expectStatusFill(style::ok, "ok");
-  }
-
-  void testFlatControlDrawing() {
-    beginTest("flat controls draw the theme tokens");
-    MnkyLookAndFeel look;
-    // Components resolve their colour IDs through the default look and feel, so
-    // install this instance for the draw calls and restore the previous one.
-    auto* previous = &juce::Desktop::getInstance().getDefaultLookAndFeel();
-    juce::LookAndFeel::setDefaultLookAndFeel(&look);
-
-    juce::Image image(juce::Image::ARGB, 240, 100, true);
-    juce::Graphics g(image);
-    g.fillAll(style::background);
-
-    juce::Slider slider;
-    slider.setSliderStyle(juce::Slider::LinearHorizontal);
-    slider.setBounds(0, 0, 120, 40);
-    slider.setRange(0.0, 1.0);
-    slider.setValue(0.5, juce::dontSendNotification);
-    look.drawLinearSlider(g, 0, 0, 120, 40, 60.0f, 0.0f, 120.0f,
-                          juce::Slider::LinearHorizontal, slider);
-    expect(colourNear(image.getPixelAt(10, 20), style::accent),
-           "the filled track is the accent token");
-    expect(colourNear(image.getPixelAt(110, 20), style::panelDark),
-           "the empty track is the dark token");
-    expect(colourNear(image.getPixelAt(60, 20), style::text),
-           "the round thumb is the light token");
-
-    juce::Slider rotary;
-    rotary.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    rotary.setBounds(120, 0, 60, 60);
-    rotary.setRange(0.0, 1.0);
-    rotary.setValue(0.5, juce::dontSendNotification);
-    look.drawRotarySlider(g, 120, 0, 60, 60, 0.5f, -2.356194f, 2.356194f, rotary);
-    expect(colourNear(image.getPixelAt(150, 18), style::text),
-           "the rotary needle is the light token");
-
-    juce::ToggleButton toggle("MUTE");
-    toggle.setBounds(0, 50, 100, 44);
-    toggle.setToggleState(true, juce::dontSendNotification);
-    // Draw methods paint in the component's local coordinates.
-    look.drawToggleButton(g, toggle, false, false);
-    expect(colourNear(image.getPixelAt(20, 22), style::accent),
-           "a selected toggle is filled with the accent");
-    expect(colourNear(image.getPixelAt(10, 22), style::panelDark),
-           "a selected toggle carries the dark on-marker bar (shape cue)");
-
-    juce::TabbedButtonBar bar(juce::TabbedButtonBar::TabsAtTop);
-    bar.setBounds(0, 0, 300, style::kTabDepth);
-    bar.addTab("MIXER", style::background, -1);
-    bar.addTab("ROUTING", style::background, -1);
-    bar.setCurrentTabIndex(0);
-    if (auto* tab = bar.getTabButton(0)) {
-      look.drawTabButton(*tab, g, false, false);
-      const auto area = tab->getActiveArea();
-      expect(colourNear(image.getPixelAt(area.getCentreX(), area.getBottom() - 3),
-                        style::accent),
-             "the selected tab has an accent underline");
-    } else {
-      expect(false, "the tab bar exposes its first button");
-    }
-
-    juce::LookAndFeel::setDefaultLookAndFeel(previous);
-  }
-};
-
-// The patchbay geometry is a pure function of its bounds: the checks below pin
-// the 800 x 480 numbers and prove the layout scales instead of carrying pixel
-// constants.
-class RoutingModelTests final : public juce::UnitTest {
- public:
-  RoutingModelTests() : juce::UnitTest("mnkybox routing patchbay", "mnkybox") {}
-
-  void runTest() override {
-    testDefaultMatrix();
-    testGeometry();
-    testWireHitAreas();
-  }
-
- private:
-  void testDefaultMatrix() {
-    beginTest("documented default route matrix");
-
-    int enabled = 0;
-    for (int source = 0; source < routing::kInputCount; ++source) {
-      for (int destination = 0; destination < routing::kOutputCount; ++destination) {
-        const bool expected = source < 2 && destination == 2;
-        expect(routing::kDefaultRoutes[source][destination] == expected,
-               "the default routes are exactly TRS IN 1+2 -> USB OUT");
-        if (expected) ++enabled;
-      }
-    }
-    expectEquals(enabled, 2);
-
-    expect(routing::kInputs[0] == midi::Port::TrsIn1);
-    expect(routing::kInputs[1] == midi::Port::TrsIn2);
-    expect(routing::kInputs[2] == midi::Port::UsbIn);
-    expect(routing::kOutputs[0] == midi::Port::TrsOut1);
-    expect(routing::kOutputs[1] == midi::Port::TrsOut2);
-    expect(routing::kOutputs[2] == midi::Port::UsbOut);
-  }
-
-  void testGeometry() {
-    beginTest("resolution-independent patchbay geometry");
-
-    // The graph the routing screen gets at 800 x 480: 788 x 420 content minus a
-    // 44 px RESET header, two 4 px gaps and the 180 px filter/transpose block.
-    const juce::Rectangle<float> panel{0.0f, 0.0f, 788.0f, 188.0f};
-    const auto layout = routing::layoutFor(panel);
-
-    expect(layout.nodeHeight >= static_cast<float>(style::kTouch),
-           "each node keeps the 44 px touch height at 800 x 480");
-    expect(layout.hitSlop >= 18.0f && layout.hitSlop <= 22.0f,
-           "the wire tap slop is about 20 px");
-
-    for (int index = 0; index < routing::kInputCount; ++index) {
-      expect(panel.contains(layout.inputs[index]), "input nodes stay inside the graph");
-      expect(panel.contains(layout.outputs[index]), "output nodes stay inside the graph");
-      expect(layout.inputs[index].getHeight() == layout.nodeHeight,
-             "all nodes share one height");
-    }
-    expect(layout.inputs[0].getRight() < layout.outputs[0].getX(),
-           "the input and output columns never overlap");
-
-    for (int source = 0; source < routing::kInputCount; ++source) {
-      for (int destination = 0; destination < routing::kOutputCount; ++destination) {
-        const auto& wire = layout.wires[source][destination];
-        expect(!wire.path.isEmpty(), "every routable pair gets a wire");
-        expectWithinAbsoluteError(wire.start.x, layout.inputs[source].getRight(), 0.01f);
-        expectWithinAbsoluteError(wire.start.y, layout.inputs[source].getCentreY(), 0.01f);
-        expectWithinAbsoluteError(wire.end.x, layout.outputs[destination].getX(), 0.01f);
-        expectWithinAbsoluteError(wire.end.y, layout.outputs[destination].getCentreY(),
-                                  0.01f);
-      }
-    }
-
-    // Twice the bounds is twice the node, not twice the node plus a constant:
-    // no fixed pixel geometry hides in layoutFor().
-    const auto doubled =
-        routing::layoutFor(panel.withSize(panel.getWidth() * 2.0f, panel.getHeight() * 2.0f));
-    expectWithinAbsoluteError(doubled.nodeWidth, layout.nodeWidth * 2.0f, 0.01f);
-    expectWithinAbsoluteError(doubled.nodeHeight, layout.nodeHeight * 2.0f, 0.01f);
-
-    // A taller content area (a window grown to 1024 x 600) still keeps the
-    // touch minimum and the same relative node size.
-    const auto grown = routing::layoutFor({0.0f, 0.0f, 1012.0f, 308.0f});
-    expect(grown.nodeHeight >= static_cast<float>(style::kTouch),
-           "nodes stay touch-sized on a larger window");
-    expectWithinAbsoluteError(grown.nodeHeight / 308.0f, layout.nodeHeight / 188.0f,
-                              1.0e-5f);
-  }
-
-  void testWireHitAreas() {
-    beginTest("wire taps hit the intended route");
-
-    const auto layout = routing::layoutFor({0.0f, 0.0f, 788.0f, 188.0f});
-    for (int source = 0; source < routing::kInputCount; ++source) {
-      for (int destination = 0; destination < routing::kOutputCount; ++destination) {
-        const auto& path = layout.wires[source][destination].path;
-        const float length = path.getLength();
-        bool found = false;
-        // Sampling away from the ends and the exact crossing point: at a
-        // crossing two wires legitimately overlap, so the nearest one wins.
-        for (int step = 2; step <= 8 && !found; ++step) {
-          const auto point =
-              path.getPointAlongPath(length * static_cast<float>(step) / 10.0f);
-          int hitSource = -1;
-          int hitDestination = -1;
-          found = routing::hitWire(layout, point, hitSource, hitDestination) &&
-                  hitSource == source && hitDestination == destination;
-        }
-        expect(found, "somewhere along every wire a tap resolves to that wire");
-      }
-    }
-
-    int source = -1;
-    int destination = -1;
-    expect(!routing::hitWire(layout, {4.0f, 4.0f}, source, destination),
-           "a tap away from every wire hits nothing");
-  }
-};
-
-class TouchKeyboardModelTests final : public juce::UnitTest {
- public:
-  TouchKeyboardModelTests()
-      : juce::UnitTest("mnkybox touch keyboard model", "mnkybox") {}
-
-  void runTest() override {
-    beginTest("insert, cursor and delete");
-
-    TextBuffer buffer(8);
-    expect(buffer.empty());
-    expect(buffer.insert("abc"), "insert accepts printable ASCII");
-    expect(buffer.text() == "abc");
-    expectEquals(buffer.cursor(), 3);
-    expect(buffer.insert(' '), "space is a normal character");
-    expect(buffer.text() == "abc ");
-    expect(buffer.backspace());
-    expect(buffer.text() == "abc");
-    buffer.home();
-    expectEquals(buffer.cursor(), 0);
-    buffer.moveLeft();
-    expectEquals(buffer.cursor(), 0, "cursor clamps at the start");
-    expect(buffer.insert('X'));
-    expect(buffer.text() == "Xabc");
-    expectEquals(buffer.cursor(), 1);
-    expect(buffer.deleteForward());
-    expect(buffer.text() == "Xbc");
-    buffer.end();
-    expectEquals(buffer.cursor(), 3);
-    buffer.moveRight();
-    expectEquals(buffer.cursor(), 3, "cursor clamps at the end");
-
-    beginTest("max length and ASCII filtering");
-
-    TextBuffer limited(4);
-    expect(limited.insert("abcdef"));
-    expect(limited.text() == "abcd");
-    expectEquals(limited.cursor(), 4);
-    expect(!limited.insert('e'), "a full buffer rejects further input");
-    expect(limited.text() == "abcd");
-    expect(!limited.insert(static_cast<char>(0x01)), "control characters are rejected");
-    expect(!limited.insert(static_cast<char>(0xe9)), "non-ASCII is rejected");
-    limited.setText("xy\x01z\xff");
-    expect(limited.text() == "xyz", "setText drops non-ASCII instead of failing");
-    expectEquals(limited.cursor(), 3);
-    expect(limited.clear());
-    expect(limited.empty());
-    expectEquals(limited.cursor(), 0);
-
-    TextBuffer negative(-3);
-    expect(!negative.insert('a'), "negative max length is clamped to zero");
-  }
-};
-
-class ProjectLogicTests final : public juce::UnitTest {
- public:
-  ProjectLogicTests() : juce::UnitTest("mnkybox project logic", "mnkybox") {}
-
-  void runTest() override {
-    testNames();
-    testDirtyTracker();
-    testChordDetector();
-  }
-
- private:
-  void testNames() {
-    beginTest("project and take name validation");
-
-    expect(validateProjectName("My Song").empty());
-    expect(validateProjectName("Project-20261104-034401").empty());
-    expect(!validateProjectName("").empty(), "empty project name is rejected");
-    expect(!validateProjectName("a/b").empty(), "path separator is rejected");
-    expect(!validateProjectName("a\\b").empty(), "backslash is rejected");
-    expect(!validateProjectName(" leading").empty(), "leading space is rejected");
-    expect(!validateProjectName("trailing ").empty(), "trailing space is rejected");
-    expect(!validateProjectName(".").empty(), "dot is reserved");
-    expect(!validateProjectName("..").empty(), "dot-dot is reserved");
-    expect(!validateProjectName(std::string(49, 'a')).empty(), "long names are rejected");
-    expect(!validateProjectName("caf\xc3\xa9").empty(), "non-ASCII names are rejected");
-
-    expect(validateTakeName("take-20261104-034401").empty());
-    expect(validateTakeName("take-drums").empty());
-    expect(!validateTakeName("drums").empty(), "a take keeps the take- prefix");
-    expect(!validateTakeName("take-a/b").empty(), "take separator is rejected");
-    expect(!validateTakeName(std::string("take-") + std::string(50, 'a')).empty(),
-           "long take names are rejected");
-
-    expect(juce::String(defaultProjectName(1700000000)) == "Project-20231114-221320");
-  }
-
-  void testDirtyTracker() {
-    beginTest("dirty transitions");
-
-    DirtyTracker tracker;
-    expect(!tracker.poll("a"), "the first poll only establishes the baseline");
-    expect(!tracker.dirty());
-    expect(!tracker.poll("a"), "an unchanged state stays clean");
-    expect(tracker.poll("b"), "a changed fingerprint sets the dirty flag");
-    expect(tracker.dirty());
-    expect(tracker.poll("a"), "dirty is sticky until an explicit clear");
-    expect(tracker.dirty());
-    tracker.clear("a");
-    expect(!tracker.dirty(), "save/load/new clears the flag");
-    expect(!tracker.poll("a"));
-    expect(!tracker.dirty());
-  }
-
-  void testChordDetector() {
-    beginTest("REC+PLAY chord detector");
-
-    ChordDetector detector;
-    expect(!detector.onPress(ChordDetector::Button::Rec, 1000));
-    expect(detector.onPress(ChordDetector::Button::Play, 1300),
-           "exactly 300 ms still counts");
-    expect(!detector.onPress(ChordDetector::Button::Play, 1301),
-           "the completed pair consumes both edges");
-
-    detector.reset();
-    expect(!detector.onPress(ChordDetector::Button::Play, 10));
-    expect(detector.onPress(ChordDetector::Button::Rec, 309), "either press order works");
-    expect(!detector.onPress(ChordDetector::Button::Rec, 310),
-           "a consumed pair does not fire twice");
-
-    detector.reset();
-    expect(!detector.onPress(ChordDetector::Button::Rec, 100));
-    expect(!detector.onPress(ChordDetector::Button::Play, 401),
-           "301 ms is outside the 300 ms window");
-
-    detector.reset();
-    expect(!detector.onPress(ChordDetector::Button::Play, 0));
-    expect(!detector.onPress(ChordDetector::Button::Play, 100),
-           "a second PLAY edge replaces the first");
-    expect(detector.onPress(ChordDetector::Button::Rec, 200),
-           "the latest PLAY edge still pairs");
-  }
-};
-
-class ClickSessionTests final : public juce::UnitTest {
- public:
-  ClickSessionTests() : juce::UnitTest("mnkybox click session field", "mnkybox") {}
-
-  void runTest() override {
-    beginTest("click.enabled round-trips through the session format");
-
-    session::Snapshot snapshot;
-    snapshot.click.enabled = true;
-    snapshot.click.level = 0.25f;
-    snapshot.click.bars = 2;
-
-    const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                          .getChildFile("mnkybox-click-test-" +
-                                        juce::String(juce::Time::currentTimeMillis()) +
-                                        ".mnkybox");
-    expect(session::save(file.getFullPathName().toStdString(), snapshot));
-    const auto result = session::load(file.getFullPathName().toStdString());
-    expect(result.ok, "the written session reads back");
-    expect(result.snapshot.click.enabled, "click.enabled survives save/load");
-    expectWithinAbsoluteError(result.snapshot.click.level, 0.25f, 1e-6f);
-    expectEquals(result.snapshot.click.bars, 2);
-    file.deleteFile();
-  }
-};
-
-ThemeTests themeTests;
-RoutingModelTests routingModelTests;
-TouchKeyboardModelTests touchKeyboardModelTests;
-ProjectLogicTests projectLogicTests;
-ClickSessionTests clickSessionTests;
+  check(colours.count("background") == 1 && colours.count("panel") == 1 &&
+            colours.count("text") == 1 && colours.count("textDim") == 1 &&
+            colours.count("accent") == 1,
+        "Style.qml defines the measured colour tokens");
+
+  const auto background = colours["background"];
+  const auto panel = colours["panel"];
+  const auto text = colours["text"];
+  const auto textDim = colours["textDim"];
+  const auto accent = colours["accent"];
+  check(luminance(background) <= 0.03, "surfaces stay near-black (luminance <= 0.03)");
+  check(luminance(panel) <= 0.03, "panel surface stays near-black");
+  check(contrast(text, background) >= 7.0, "primary text contrast >= 7:1");
+  check(contrast(textDim, background) >= 4.5, "dim text contrast >= 4.5:1");
+  check(contrast(accent, background) >= 4.5, "accent contrast >= 4.5:1");
+  check(contrast(accent, panel) >= 3.0, "selected accent vs idle panel >= 3:1");
+
+  QRegularExpression touchPattern(QStringLiteral("property\\s+int\\s+touch\\s*:\\s*(\\d+)"));
+  const auto touch = touchPattern.match(qml);
+  check(touch.hasMatch() && touch.captured(1).toInt() >= 44,
+        "Style.touch keeps the 44 px minimum");
+  QRegularExpression transportPattern(
+      QStringLiteral("property\\s+int\\s+transportHeight\\s*:\\s*(\\d+)"));
+  const auto transport = transportPattern.match(qml);
+  check(transport.hasMatch() && transport.captured(1).toInt() >= 44,
+        "the transport strip is a 44 px touch row");
+}
+
+int runAll() {
+  logicTests();
+  textBufferTests();
+  projectTests();
+  audioBackendTests();
+  routingTests();
+  mixerTests();
+  learnTests();
+  wavTests();
+  sessionClickTests();
+  learnCaptureTests();
+  projectRoundTripTests();
+  styleTests();
+  std::printf("%s mnkybox app logic: %d checks, %d failures\n",
+              gFailures == 0 ? "PASS" : "FAIL", gChecks, gFailures);
+  return gFailures == 0 ? 0 : 1;
+}
 
 }  // namespace
 
-// Runs only this app's tests (category "mnkybox") and reports to stdout, so the
-// result is visible in a terminal and in CTest output.
 int runLogicUnitTests() {
-  juce::UnitTestRunner runner;
-  runner.setAssertOnFailure(false);
-  runner.setPassesAreLogged(false);
-  runner.runTestsInCategory("mnkybox");
-
-  int passes = 0;
-  int failures = 0;
-  for (int i = 0; i < runner.getNumResults(); ++i) {
-    if (const auto* result = runner.getResult(i)) {
-      passes += result->passes;
-      failures += result->failures;
-      for (const auto& message : result->messages) {
-        std::cout << "FAIL " << result->unitTestName << " / "
-                  << result->subcategoryName << ": " << message << std::endl;
-      }
-    }
-  }
-
-  std::cout << (failures == 0 ? "PASS " : "FAIL ") << "mnkybox app logic: " << passes
-            << " checks, " << failures << " failures" << std::endl;
-  return failures == 0 ? 0 : 1;
+  return runAll();
 }
 
 }  // namespace mnky::app

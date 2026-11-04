@@ -111,10 +111,15 @@ pi/
 
 ## Wave 2 (after core lands + parent integrates)
 
-- `app/`: JUCE (`juce_add_gui_app mnkybox`, modules per third_party/README)
-  with tabs Mixer / Routing / FX / Recorder / System, ≥44 px touch targets,
-  `--emulator` backend switch, panel-button → Action wiring, tempo/clock/link
-  status. Owns `pi/CMakeLists.txt` app target (setup provides root + JUCE).
+- `app/`: Qt 6 QML (`mnkybox`: QGuiApplication + QQmlApplicationEngine,
+  C++ view-models bridging the JUCE-free core libs, Qt Multimedia
+  QAudioSource/QAudioSink for I/O). JUCE was removed: its Linux multitouch
+  story does not hold on our Wayland touch target, and Qt Quick handles
+  touch natively. Tabs Mixer / Routing / FX / Recorder / System / Projects,
+  ≥44 px touch targets, `--emulator` backend switch, panel-button wiring,
+  tempo/clock/link status. Code to the Qt 6.4-compatible QML subset
+  (unversioned imports) so newest-macOS and Debian-bookworm Qt both build.
+  Owns `pi/CMakeLists.txt` app target.
 - `emulator/`: `EmulatorLink/Audio/Midi` backends implementing core interfaces
   (synth note generator, oscillator/noise channel banks) + headless `selftest`
   binary: scripted 5 s session (link handshake, MIDI loopback, record take,

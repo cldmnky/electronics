@@ -12,11 +12,11 @@
 
 cmake_minimum_required(VERSION 3.24)
 
-# macOS dev-machine toolchain: JUCE 9.0.5 compiles its graphics/audio code against
-# the macOS SDK frameworks (ApplicationServices, CoreMIDI, ...), which a non-Apple
-# g++ on PATH does not have. So on Darwin default to Apple's clang unless the
-# caller (or the CC/CXX environment) already picked a compiler explicitly. The
-# Pi target keeps its normal system compiler.
+# macOS dev-machine toolchain: the app uses Qt 6 (Quick/Quick Controls) and the
+# core still links CoreMIDI/CoreAudio frameworks, which a non-Apple g++ on PATH
+# does not have. So on Darwin default to Apple's clang unless the caller (or the
+# CC/CXX environment) already picked a compiler explicitly. The Pi target keeps
+# its normal system compiler.
 if(APPLE AND NOT CMAKE_C_COMPILER AND NOT CMAKE_CXX_COMPILER
    AND NOT DEFINED ENV{CC} AND NOT DEFINED ENV{CXX})
   find_program(MNKY_DARWIN_C_COMPILER clang PATHS /usr/bin NO_DEFAULT_PATH)
@@ -29,23 +29,10 @@ endif()
 
 project(mnkybox VERSION 0.1.0 LANGUAGES CXX)
 
-# JUCE refuses to configure unless the top-level project also enables C (its
-# bundled third-party code is C). The DAW's own code stays C++20-only.
-enable_language(C)
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-# Upstream JUCE 9.0.5 only includes <cstring> in juce_StandardHeader.h for
-# Linux/BSD, Android and MSVC; with current libc++ (and libstdc++) nothing pulls
-# it in transitively, so juce_core's memset/memmove calls fail to compile.
-# Force-include the header for C++/ObjC++ everywhere rather than patching the
-# pinned third-party tree. Harmless for the JUCE-free core modules.
-if(APPLE)
-  add_compile_options("$<$<COMPILE_LANGUAGE:CXX,OBJCXX>:SHELL:-include cstring>")
-endif()
 
 # Default to a release-ish build; the DAW is a real-time audio app, but plain
 # -On defaults are fine for the prototype. Override with -DCMAKE_BUILD_TYPE=...
@@ -54,7 +41,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # Core modules are held to the ARCHITECTURE.md standard: zero warnings, -Werror.
-# Third-party code (RtMidi, JUCE, CLAP) is never compiled with these flags.
+# Third-party code (RtMidi, Qt, CLAP) is never compiled with these flags.
 set(MNKY_WARNINGS -Wall -Wextra -Werror)
 
 # Defines BUILD_TESTING (default ON) before any module subdirectory is added, so
@@ -65,15 +52,9 @@ include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
 
 # --- Pinned third-party dependencies (see third_party/README.md) --------------
-# Never float on a branch: both tags are pinned exactly and fetched shallow.
-set(MNKY_JUCE_VERSION 9.0.5)
+# CLAP stays pinned exactly and fetched shallow. The UI is Qt 6, supplied by the
+# host toolchain (Homebrew on macOS, Debian packages on the Pi guest).
 set(MNKY_CLAP_VERSION 1.2.10)
-
-FetchContent_Declare(JUCE
-  GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-  GIT_TAG        ${MNKY_JUCE_VERSION}
-  GIT_SHALLOW    ON
-  GIT_PROGRESS   ON)
 
 # CLAP is consumed as headers only (`#include <clap/clap.h>`), so the upstream
 # CMake project is deliberately not added: SOURCE_SUBDIR points at a directory
@@ -85,32 +66,12 @@ FetchContent_Declare(clap
   GIT_PROGRESS   ON
   SOURCE_SUBDIR  cmake/clap-headers-only)
 
-# JUCE bootstraps its juceaide host tool with a nested CMake configure during the
-# first configure of this project. That nested build inherits the environment but
-# not our cache, so export the resolved compiler and the <cstring> workaround for
-# its duration, then restore the caller's environment.
-set(MNKY_SAVED_ENV_CC "$ENV{CC}")
-set(MNKY_SAVED_ENV_CXX "$ENV{CXX}")
-set(MNKY_SAVED_ENV_CXXFLAGS "$ENV{CXXFLAGS}")
-set(MNKY_SAVED_ENV_OBJCXXFLAGS "$ENV{OBJCXXFLAGS}")
+FetchContent_MakeAvailable(clap)
 
-set(ENV{CC} "${CMAKE_C_COMPILER}")
-set(ENV{CXX} "${CMAKE_CXX_COMPILER}")
-if(APPLE)
-  set(ENV{CXXFLAGS} "$ENV{CXXFLAGS} -include cstring")
-  set(ENV{OBJCXXFLAGS} "$ENV{OBJCXXFLAGS} -include cstring")
-endif()
-
-FetchContent_MakeAvailable(JUCE clap)
-
-set(ENV{CC} "${MNKY_SAVED_ENV_CC}")
-set(ENV{CXX} "${MNKY_SAVED_ENV_CXX}")
-set(ENV{CXXFLAGS} "${MNKY_SAVED_ENV_CXXFLAGS}")
-set(ENV{OBJCXXFLAGS} "${MNKY_SAVED_ENV_OBJCXXFLAGS}")
-unset(MNKY_SAVED_ENV_CC)
-unset(MNKY_SAVED_ENV_CXX)
-unset(MNKY_SAVED_ENV_CXXFLAGS)
-unset(MNKY_SAVED_ENV_OBJCXXFLAGS)
+# Qt 6 is the UI toolkit: QGuiApplication + QQmlApplicationEngine, Quick Controls
+# and Multimedia (QAudioSource/QAudioSink). 6.4 is the floor so the macOS
+# Homebrew Qt and Debian bookworm's Qt build the same sources.
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Qml Quick Multimedia)
 
 add_library(mnky_clap_headers INTERFACE)
 target_include_directories(mnky_clap_headers INTERFACE "${clap_SOURCE_DIR}/include")
@@ -143,41 +104,8 @@ else()
   message(STATUS "mnkybox: RtMidi has no configured backend on ${CMAKE_SYSTEM_NAME}; midi targets will not link")
 endif()
 
-# --- JACK: the Pi's routable audio path --------------------------------------
-# Raspberry Pi OS runs PipeWire by default (jackd during bring-up) and both are
-# reached through the JACK API, which JUCE exposes as its "JACK" device type.
-# JUCE dlopen()s libjack at runtime but compiles juce_JackAudio.cpp against
-# <jack/jack.h>, so the headers are a build dependency on Linux only. macOS has
-# no JACK here: detection is skipped silently and the app keeps its
-# ALSA/CoreAudio-only path (JUCE_JACK stays 0).
-set(MNKY_JACK_FOUND FALSE)
-if(UNIX AND NOT APPLE)
-  find_package(PkgConfig QUIET)
-  if(NOT PkgConfig_FOUND)
-    message(FATAL_ERROR
-      "mnkybox: the Linux/Pi build needs pkg-config to locate the JACK headers.\n"
-      "Install both with: sudo apt-get install -y pkg-config libjack-jackd2-dev")
-  endif()
-
-  pkg_check_modules(MNKY_JACK IMPORTED_TARGET jack)
-  if(NOT MNKY_JACK_FOUND)
-    message(FATAL_ERROR
-      "mnkybox: the Linux/Pi build needs the JACK headers (pkg-config module 'jack'),\n"
-      "because JUCE's JACK device type is compiled in for the routable audio path.\n"
-      "Install them with: sudo apt-get install -y libjack-jackd2-dev\n"
-      "macOS builds skip JACK detection silently; no override flag is provided.")
-  endif()
-
-  # One interface target carries include dirs, libs and the two defines, so
-  # pi/app/CMakeLists.txt only has to link it when it exists.
-  add_library(mnky_jack INTERFACE)
-  target_link_libraries(mnky_jack INTERFACE PkgConfig::MNKY_JACK)
-  target_compile_definitions(mnky_jack INTERFACE MNKY_HAVE_JACK=1 JUCE_JACK=1)
-  message(STATUS "mnkybox: JACK headers found (pkg-config jack) -> mnky_jack for the app target")
-endif()
-
 # --- Core module libraries ----------------------------------------------------
-# Each module is JUCE-free and owned by one team. If the team also ships a
+# Each module is Qt-free/JUCE-free core code owned by one team. If the team also ships a
 # CMakeLists.txt in its directory, that file defines the target; otherwise the
 # root globs <dir>/*.cpp (excluding test_*.cpp) into the static library named
 # here. Either way the target name is fixed by ARCHITECTURE.md.
@@ -272,26 +200,9 @@ mnky_module_tests(mnky_audio audio)
 mnky_module_tests(mnky_clap  clap)
 mnky_module_tests(mnky_session session)
 
-# --- JUCE compile smoke -------------------------------------------------------
-# The wave-2 app/ team owns the real juce_add_gui_app target. Until it lands this
-# static library proves the pinned JUCE modules (gui_basics pulls graphics/
-# events/audio_basics; audio_devices provides the Pi ALSA/CoreAudio backends)
-# compile with this toolchain. It deliberately does not link or run.
-add_library(mnky_juce_smoke STATIC cmake/juce_compile_smoke.cpp)
-target_link_libraries(mnky_juce_smoke PRIVATE
-  juce::juce_gui_basics
-  juce::juce_audio_devices
-  juce::juce_recommended_config_flags
-  juce::juce_recommended_warning_flags)
-target_compile_definitions(mnky_juce_smoke PRIVATE
-  JUCE_WEB_BROWSER=0
-  JUCE_USE_CURL=0
-  JUCE_APPLICATION_NAME_STRING="mnkybox"
-  JUCE_APPLICATION_VERSION_STRING="${PROJECT_VERSION}")
-
 # --- Optional wave-2 targets --------------------------------------------------
-# app/ (JUCE touchscreen UI) and emulator/ (backends + headless selftest) own
-# their own CMakeLists.txt so the GUI/emulator teams can extend the build
+# app/ (Qt 6 QML touchscreen UI) and emulator/ (backends + headless selftest)
+# own their own CMakeLists.txt so the UI/emulator teams can extend the build
 # without editing this file.
 foreach(wave2_dir app emulator)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${wave2_dir}/CMakeLists.txt")
@@ -301,4 +212,4 @@ foreach(wave2_dir app emulator)
   endif()
 endforeach()
 
-message(STATUS "mnkybox: JUCE ${MNKY_JUCE_VERSION} (${juce_SOURCE_DIR}), CLAP ${MNKY_CLAP_VERSION} (headers) configured for ${CMAKE_SYSTEM_NAME} with ${CMAKE_CXX_COMPILER_ID}")
+message(STATUS "mnkybox: Qt ${Qt6_VERSION} (Qt6::Quick/Qt6::Multimedia), CLAP ${MNKY_CLAP_VERSION} (headers) configured for ${CMAKE_SYSTEM_NAME} with ${CMAKE_CXX_COMPILER_ID}")

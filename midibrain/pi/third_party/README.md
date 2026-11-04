@@ -2,12 +2,13 @@
 
 | Dep | Version | Form | License |
 |---|---|---|---|
-| JUCE | 9.0.5 | CMake FetchContent (`juce-framework/JUCE`, `GIT_TAG 9.0.5`, `GIT_SHALLOW ON`) | GPLv3 / commercial (see JUCE licensing; this project has no license decision yet — do not ship binaries until that is resolved) |
+| Qt | 6 (code to the 6.4-compatible QML subset; verified 6.12 macOS / 6.4.2 Debian) | System packages (`brew install qt`; `qt6-base-dev qt6-declarative-dev qt6-multimedia-dev qml6-module-qtquick-controls qt6-wayland`) + `find_package(Qt6 ...Quick Multimedia)` | LGPLv3 / commercial (no license decision yet — do not ship binaries until that is resolved; replaces JUCE, removed for multitouch reasons, see decisions log) |
 | CLAP | 1.2.10 | CMake FetchContent (`free-audio/clap`, `GIT_TAG 1.2.10`) — headers only (`include/clap/clap.h`) | MIT |
 | RtMidi | 6.1.0 | Vendored `rtmidi/RtMidi.{h,cpp}` from `thestk/rtmidi` tag 6.1.0 | MIT (see header comments in the files) |
 
 Rules: pin exact versions here and in CMake; never float on a branch.
 Compile RtMidi with `__MACOSX_CORE__` on macOS, `__LINUX_ALSA__` on Linux.
-JUCE modules used by the app: `juce_core juce_events juce_data_structures
-juce_graphics juce_gui_basics juce_audio_basics juce_audio_devices
-juce_audio_formats` — nothing else without a written reason.
+Qt Multimedia connects to PipeWire through its PulseAudio backend
+(`pipewire-pulse` on the image) — no JACK-API code anywhere; see
+`pi/BUILDROOT-AUDIO.md` for the image-side contract and the Qt
+Pulse-plugin build-order requirement.

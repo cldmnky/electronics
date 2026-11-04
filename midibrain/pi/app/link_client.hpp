@@ -1,13 +1,14 @@
 #pragma once
 // Pico link glue: owns the SPI transport, PicoLink and the single thread that
-// touches them. Every other thread (UI, RtMidi input) talks to the link through
-// the command queue here, because PicoLink is single-threaded by contract.
+// touches them. Every other thread (GUI, RtMidi input) talks to the link
+// through the command queue here, because PicoLink is single-threaded by
+// contract.
 #include <atomic>
 #include <cstdint>
 #include <deque>
 #include <memory>
-
-#include <juce_core/juce_core.h>
+#include <mutex>
+#include <thread>
 
 #include "../link/link.hpp"
 #include "../midi/clock.hpp"
@@ -38,10 +39,10 @@ struct LinkStatus {
   link::PicoLink::Stats stats{};
 };
 
-class LinkClient final : private juce::Thread {
+class LinkClient {
  public:
   LinkClient(MidiGlue& midi, AppState& state, bool emulated);
-  ~LinkClient() override;
+  ~LinkClient();
   LinkClient(const LinkClient&) = delete;
   LinkClient& operator=(const LinkClient&) = delete;
 
@@ -50,7 +51,7 @@ class LinkClient final : private juce::Thread {
   bool emulated() const { return emulated_; }
   LinkStatus status() const;
 
-  // Queued to the link thread; safe from the message thread.
+  // Queued to the link thread; safe from the GUI thread.
   void requestTempo(std::uint16_t bpmX100);
   void requestTransport(std::uint8_t command);  // 0 stop, 1 start, 2 continue
   void requestLeds(std::uint8_t mask, std::uint8_t states);
@@ -65,7 +66,7 @@ class LinkClient final : private juce::Thread {
     std::uint8_t extra8 = 0;
   };
 
-  void run() override;
+  void run();
   void applyCommands();
   void drainEvents();
   void pumpClock();
@@ -79,14 +80,17 @@ class LinkClient final : private juce::Thread {
   std::unique_ptr<link::PicoLink> link_;
   std::unique_ptr<link::ReadyGpio> ready_;
 
-  mutable juce::CriticalSection statusLock_;
+  mutable std::mutex statusLock_;
   LinkStatus status_;
   midi::UsbClock clock_;
   bool shiftHeld_ = false;
 
-  mutable juce::CriticalSection commandLock_;
+  mutable std::mutex commandLock_;
   std::deque<Command> commands_;
   std::uint64_t lastReadyPollMs_ = 0;
+
+  std::atomic<bool> exit_{false};
+  std::thread thread_;
 };
 
 }  // namespace mnky::app

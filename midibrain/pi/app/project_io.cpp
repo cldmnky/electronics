@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
+#include <system_error>
 
 #include "../../session/session.hpp"
 #include "app_state.hpp"
@@ -29,6 +32,30 @@ void appendFloat(std::string& out, const char* tag, double value) {
   out += buffer;
 }
 
+std::filesystem::path musicDirectory() {
+  std::filesystem::path home;
+  if (const char* env = std::getenv("HOME")) home = env;
+  if (home.empty()) return std::filesystem::temp_directory_path();
+  return home / "Music";
+}
+
+std::int64_t modifiedMs(const std::filesystem::path& file) {
+  std::error_code error;
+  const auto time = std::filesystem::last_write_time(file, error);
+  if (error) return 0;
+  // file_clock is not convertible to system_clock by a standard C++20 cast in
+  // every libc++/libstdc++ version, so anchor it to "now" instead. The value is
+  // used for ordering and display only.
+  const auto fileNow = decltype(time)::clock::now();
+  const auto systemNow = std::chrono::system_clock::now();
+  const auto delta = time - fileNow;
+  const auto systemTime =
+      systemNow + std::chrono::duration_cast<std::chrono::system_clock::duration>(delta);
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             systemTime.time_since_epoch())
+      .count();
+}
+
 // Session FxSlotTarget over the app's CLAP slot. Only plugins that are already
 // loaded or resolvable through the default plugin path can be restored; an
 // unavailable plugin leaves the slot untouched (the session core's tolerant
@@ -38,14 +65,14 @@ class SlotTarget final : public session::FxSlotTarget {
   SlotTarget(const AppContext& context, int index)
       : context_(context), slot_(context.fx.slot(index)) {}
 
-  std::string effectId() const override { return slot_.pluginId().toStdString(); }
+  std::string effectId() const override { return slot_.pluginId(); }
 
   bool loadEffect(const std::string& id) override {
-    if (slot_.pluginId().toStdString() == id) return true;
+    if (slot_.pluginId() == id) return true;
     const auto candidate = FxSlot::defaultPluginPath();
-    if (candidate.isEmpty()) return false;
+    if (candidate.empty()) return false;
     if (!slot_.load(candidate, context_.audio.sampleRate(), audio::kBlockSize)) return false;
-    if (slot_.pluginId().toStdString() == id) return true;
+    if (slot_.pluginId() == id) return true;
     slot_.unload();
     return false;
   }
@@ -76,7 +103,7 @@ struct SlotTargets {
 
 session::Snapshot captureSnapshot(const AppContext& context) {
   // Capture the mixer through a scratch Engine filled from the atomics the UI
-  // writes, so the audio thread's Engine is never read from the message thread.
+  // writes, so the audio thread's Engine is never read from the GUI thread.
   audio::Engine scratch;
   context.mixer.applyTo(scratch);
   SlotTargets targets(context);
@@ -85,6 +112,14 @@ session::Snapshot captureSnapshot(const AppContext& context) {
   snapshot.click.enabled = context.state.clickEnabled.load();
   snapshot.click.level = context.state.clickLevel.load();
   snapshot.click.bars = context.state.clickBars.load();
+  for (const auto& binding : context.midi.learnBindings()) {
+    session::MidiMapEntry entry;
+    entry.cc = binding.cc;
+    entry.ch = binding.ch;
+    entry.target = binding.target;
+    entry.track = binding.track;
+    snapshot.midimap.push_back(entry);
+  }
   return snapshot;
 }
 
@@ -105,25 +140,29 @@ void applyMixer(const AppContext& context, const session::MixerState& mixer) {
 
 }  // namespace
 
-juce::File root() {
-  auto directory =
-      juce::File::getSpecialLocation(juce::File::userMusicDirectory)
-          .getChildFile("mnkybox-projects");
-  directory.createDirectory();
+std::filesystem::path root() {
+  auto directory = musicDirectory() / "mnkybox-projects";
+  std::error_code error;
+  std::filesystem::create_directories(directory, error);
   return directory;
 }
 
 std::vector<Entry> list() {
   std::vector<Entry> entries;
-  juce::Array<juce::File> children;
-  root().findChildFiles(children, juce::File::findDirectories, false);
-  for (const auto& directory : children) {
-    const auto file = directory.getChildFile(kProjectFileName);
-    if (!file.existsAsFile()) continue;
+  std::error_code error;
+  const auto rootDirectory = root();
+  for (std::filesystem::directory_iterator it(rootDirectory, error), end; it != end;
+       it.increment(error)) {
+    if (error) break;
+    std::error_code typeError;
+    if (!it->is_directory(typeError)) continue;
+    const auto file = it->path() / kProjectFileName;
+    std::error_code fileError;
+    if (!std::filesystem::is_regular_file(file, fileError)) continue;
     Entry entry;
-    entry.name = directory.getFileName();
-    entry.directory = directory;
-    entry.modifiedMs = file.getLastModificationTime().toMilliseconds();
+    entry.name = it->path().filename().string();
+    entry.directory = it->path();
+    entry.modifiedMs = modifiedMs(file);
     entries.push_back(entry);
   }
   std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
@@ -133,25 +172,29 @@ std::vector<Entry> list() {
   return entries;
 }
 
-bool save(const AppContext& context, const juce::File& directory, std::string& error) {
+bool save(const AppContext& context, const std::filesystem::path& directory,
+          std::string& error) {
   error.clear();
-  if (!directory.createDirectory().wasOk()) {
-    error = "cannot create " + directory.getFullPathName().toStdString();
+  std::error_code createError;
+  std::filesystem::create_directories(directory, createError);
+  if (createError) {
+    error = "cannot create " + directory.string();
     return false;
   }
-  const auto file = directory.getChildFile(kProjectFileName);
+  const auto file = directory / kProjectFileName;
   const auto snapshot = captureSnapshot(context);
-  if (!session::save(file.getFullPathName().toStdString(), snapshot)) {
-    error = "cannot write " + file.getFullPathName().toStdString();
+  if (!session::save(file.string(), snapshot)) {
+    error = "cannot write " + file.string();
     return false;
   }
   return true;
 }
 
-bool load(const AppContext& context, const juce::File& directory, std::string& error) {
+bool load(const AppContext& context, const std::filesystem::path& directory,
+          std::string& error) {
   error.clear();
-  const auto file = directory.getChildFile(kProjectFileName);
-  const auto result = session::load(file.getFullPathName().toStdString());
+  const auto file = directory / kProjectFileName;
+  const auto result = session::load(file.string());
   if (!result.ok) {
     error = result.error;
     return false;
@@ -166,6 +209,13 @@ bool load(const AppContext& context, const juce::File& directory, std::string& e
   session::apply(result.snapshot, router, scratch, targets.pointers);
   context.midi.replaceRouter(router);
   applyMixer(context, result.snapshot.mixer);
+
+  std::vector<midi::LearnBinding> bindings;
+  for (const auto& entry : result.snapshot.midimap) {
+    bindings.push_back(
+        midi::LearnBinding{entry.cc, entry.ch, entry.target, entry.track});
+  }
+  context.midi.setLearnBindings(bindings);
 
   const int tempo = clampTempoX100(result.snapshot.transport.bpmX100);
   context.state.tempoX100.store(tempo);
@@ -206,7 +256,7 @@ std::string fingerprint(const AppContext& context) {
   for (int slot = 0; slot < session::kFxBuses; ++slot) {
     auto& fx = context.fx.slot(slot);
     out += "fx=";
-    out += fx.pluginPath().toStdString();
+    out += fx.pluginPath();
     appendInt(out, "by", fx.bypassed() ? 1 : 0);
     const auto count = fx.paramCount();
     for (std::size_t param = 0; param < count; ++param) {
@@ -218,6 +268,11 @@ std::string fingerprint(const AppContext& context) {
   appendInt(out, "ce", context.state.clickEnabled.load() ? 1 : 0);
   appendFloat(out, "cl", context.state.clickLevel.load());
   appendInt(out, "cb", context.state.clickBars.load());
+  for (const auto& binding : context.midi.learnBindings()) {
+    appendInt(out, "lc", binding.cc);
+    appendInt(out, "lh", binding.ch);
+    out += "lt=" + binding.target + ";";
+  }
   return out;
 }
 

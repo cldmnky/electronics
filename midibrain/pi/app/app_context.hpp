@@ -1,6 +1,6 @@
 #pragma once
-// Service bundle handed to every screen. The app owns these objects for its
-// whole lifetime (MainComponent), so screens hold plain references.
+// Service bundle handed to the project/session glue. The Qt controller owns
+// these objects for the app's whole lifetime, so the glue holds references.
 
 namespace mnky::app {
 

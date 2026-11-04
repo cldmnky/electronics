@@ -1,11 +1,12 @@
 #pragma once
-// UI-side app state and the intent queue. Screens and the link thread post
-// intents; MainComponent performs them in order on the message thread, which
+// UI-side app state and the intent queue. QML controls and the link thread post
+// intents; the Qt controller performs them in order on the GUI thread, which
 // keeps every engine/link side effect on one thread.
 #include <atomic>
+#include <cstdint>
 #include <deque>
-
-#include <juce_core/juce_core.h>
+#include <filesystem>
+#include <mutex>
 
 #include "logic.hpp"
 
@@ -16,7 +17,7 @@ class AppState {
   AppState();
 
   void postIntent(const Intent& intent);  // any thread
-  bool nextIntent(Intent& out);           // message thread
+  bool nextIntent(Intent& out);           // GUI thread
 
   // Readable from any thread; the link thread needs the panel selection when it
   // translates EV_CONTROL frames.
@@ -32,29 +33,27 @@ class AppState {
   std::atomic<bool> clickEnabled{false};
   std::atomic<float> clickLevel{0.5f};
   std::atomic<int> clickBars{1};
-  // Sticky project dirty flag: set by MainComponent's state fingerprint, cleared
-  // only by save/load/new.
+  // Sticky project dirty flag: set by the controller's state fingerprint,
+  // cleared only by save/load/new.
   std::atomic<bool> dirty{false};
 
-  juce::File takeDirectory() const;
-  void setTakeDirectory(const juce::File& directory);
+  std::filesystem::path takeDirectory() const;
+  void setTakeDirectory(const std::filesystem::path& directory);
 
-  // The project directory currently saved/loaded, or an invalid File when the
-  // app is running untitled. UI thread only; guarded for consistency with the
-  // take directory.
-  juce::File currentProject() const;
-  void setCurrentProject(const juce::File& directory);
+  // The project directory currently saved/loaded, or empty when untitled.
+  std::filesystem::path currentProject() const;
+  void setCurrentProject(const std::filesystem::path& directory);
 
   void markDirty() { dirty.store(true); }
   void clearDirty() { dirty.store(false); }
 
  private:
-  mutable juce::CriticalSection intentLock_;
+  mutable std::mutex intentLock_;
   std::deque<Intent> intents_;
 
-  mutable juce::CriticalSection dirLock_;
-  juce::File takeDirectory_;
-  juce::File currentProject_;
+  mutable std::mutex dirLock_;
+  std::filesystem::path takeDirectory_;
+  std::filesystem::path currentProject_;
 };
 
 }  // namespace mnky::app

@@ -1,14 +1,14 @@
 #pragma once
 // CLAP send slots for the app. mnky::clap::Host is single-threaded by contract,
-// so the message thread owns loading/params/state and the audio thread only
-// calls Host::process() behind a try-lock: while the UI is mid-load the send
-// passes audio through dry instead of racing a half-built plugin.
+// so the GUI thread owns loading/params/state and the audio thread only calls
+// Host::process() behind a try-lock: while the UI is mid-load the send passes
+// audio through dry instead of racing a half-built plugin.
 #include <atomic>
 #include <cstddef>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <vector>
-
-#include <juce_core/juce_core.h>
 
 #include "../audio/engine.hpp"
 #include "../clap/host.hpp"
@@ -26,12 +26,13 @@ class FxSlot {
   // which case process() is a no-op (the send bus passes through untouched).
   audio::IEffect& effect();
 
-  bool load(const juce::String& path, double sampleRate, int maxFrames);
+  bool load(const std::string& path, double sampleRate, int maxFrames);
   void unload();
 
   bool loaded() const;
-  juce::String pluginPath() const;
-  juce::String lastError() const;
+  std::string pluginPath() const;
+  std::string pluginName() const;
+  std::string lastError() const;
 
   std::vector<clap::Param> params() const;
   bool setParam(clap_id id, double value);
@@ -42,28 +43,28 @@ class FxSlot {
   bool setParamValue(std::size_t index, double value);
 
   // CLAP plugin id of the loaded module (empty when no plugin).
-  juce::String pluginId() const;
+  std::string pluginId() const;
   bool bypassed() const { return bypassed_.load(); }
   void setBypassed(bool bypassed) { bypassed_.store(bypassed); }
 
-  bool saveState(const juce::File& file);
-  bool loadState(const juce::File& file);
+  bool saveState(const std::string& path);
+  bool loadState(const std::string& path);
 
   // First existing default plugin: the in-tree mnkygain target compiled into
   // MNKY_DEFAULT_PLUGIN, an MNKY_PLUGIN_PATH override, or a conventional
-  // install location. Empty when nothing exists (the UI then offers a picker).
-  static juce::String defaultPluginPath();
+  // install location. Empty when nothing exists (the UI then says so).
+  static std::string defaultPluginPath();
 
  private:
   class Adapter;
 
-  mutable juce::SpinLock lock_;
+  mutable std::mutex lock_;
   std::atomic<bool> bypassed_{false};
   clap::Host host_;
   std::unique_ptr<Adapter> adapter_;
   const int index_;
-  juce::String path_;
-  juce::String lastError_;
+  std::string path_;
+  std::string lastError_;
 };
 
 class FxManager {

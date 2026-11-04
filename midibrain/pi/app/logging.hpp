@@ -1,39 +1,33 @@
 #pragma once
-// Bounded in-memory log tail for the System screen plus the juce::Logger sink.
-// The app is expected to run without a terminal on the Pi, so everything that
-// matters is also visible on screen.
+// Bounded in-memory log tail for the System screen. The app is expected to run
+// without a terminal on the Pi, so everything that matters is also visible on
+// screen. Thread-safe and Qt-free so it can be used from the link/audio/MIDI
+// threads before the GUI exists.
 #include <deque>
-
-#include <juce_core/juce_core.h>
+#include <mutex>
+#include <string>
 
 namespace mnky::app {
 
-class AppLogger final : private juce::Logger {
+class AppLogger final {
  public:
   static AppLogger& instance();
 
   // Timestamped line into the ring (and stderr). Safe from any thread.
-  void write(const juce::String& message);
+  void write(const std::string& message);
 
   // Last `maxLines` lines, oldest first.
-  juce::String tail(int maxLines) const;
-
-  // Routes juce::Logger traffic (JUCE itself, the CLAP host) into the ring.
-  void install();
+  std::string tail(int maxLines) const;
 
  private:
   AppLogger() = default;
-  ~AppLogger() override;
 
-  void logMessage(const juce::String& message) override;
-
-  mutable juce::CriticalSection lock_;
-  std::deque<juce::String> lines_;
+  mutable std::mutex lock_;
+  std::deque<std::string> lines_;
   int capacity_ = 400;
-  bool installed_ = false;
 };
 
 // Convenience: AppLogger::instance().write(...).
-void log(const juce::String& message);
+void log(const std::string& message);
 
 }  // namespace mnky::app
