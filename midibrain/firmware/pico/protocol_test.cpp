@@ -83,11 +83,30 @@ int main() {
   assert((decoded.payload[1] | (decoded.payload[2] << 8) | (decoded.payload[3] << 16) | (decoded.payload[4] << 24)) == 0x3039);
   assert((decoded.payload[5] | (decoded.payload[6] << 8) | (decoded.payload[7] << 16) | (decoded.payload[8] << 24)) == 0x00ABCDEF);
   Frame sf{};
-  assert(pack_transport_state(sf, 11, 0x12345678, true, 0x00000048));
+  assert(pack_transport_state(sf, 11, 0x12345678, true, 0x00000048, true, false));
   assert(encode(sf, wire) && decode(wire, decoded));
-  assert(decoded.payload[0] == EV_TRANSPORT_STATE && decoded.length == 6);
+  assert(decoded.payload[0] == EV_TRANSPORT_STATE && decoded.length == 8);
   assert(decoded.payload[1] == 1);
   assert((decoded.payload[2] | (decoded.payload[3] << 8) | (decoded.payload[4] << 16) | (decoded.payload[5] << 24)) == 0x48);
+  assert(decoded.payload[6] == LED_REC && decoded.payload[7] == 0);
+  // Indicator matrix: solid armed+rolling, blinking armed+stopped, play on roll.
+  const IndicatorState off{}, rec{true, false, false, true}, recBlink{true, false, false, false};
+  const IndicatorState recRoll{true, false, true, false}, od{false, true, false, true};
+  const IndicatorState run{false, false, true, false}, both{true, true, true, true};
+  assert(indicator_mask(off) == 0);
+  assert(indicator_mask(rec) == LED_REC);
+  assert(indicator_mask(recBlink) == 0);
+  assert(indicator_mask(recRoll) == (LED_REC | LED_PLAY));
+  assert(indicator_mask(od) == LED_OVERDUB);
+  assert(indicator_mask(run) == LED_PLAY);
+  assert(indicator_mask(both) == (LED_REC | LED_OVERDUB | LED_PLAY));
+  // LED_SET interpreter: plain partial overwrite vs arm sync on bit 7.
+  LedCommand plain = interpret_led_set(LED_PLAY, LED_PLAY);
+  assert(!plain.sync_arms);
+  LedCommand sync = interpret_led_set(LED_ARM_SYNC, LED_REC | LED_OVERDUB);
+  assert(sync.sync_arms && sync.rec_arm && sync.overdub_arm);
+  LedCommand syncOff = interpret_led_set(LED_ARM_SYNC, 0);
+  assert(syncOff.sync_arms && !syncOff.rec_arm && !syncOff.overdub_arm);
   // Control plane: STATUS_REQ/STATUS_RESP, REBOOT and RESET_LINK round trips.
   Frame sq{};
   assert(pack_status_req(sq, 12, 0x12345678));
@@ -170,6 +189,22 @@ int main() {
   assert(transport_for_press(CTL_OVER_DUB, true) == -1);
   assert(transport_for_press(CTL_SHIFT_EXIT, false) == -1);
   assert(transport_for_press(CTL_NAV_PRESS, false) == -1);
+  // SHIFT hold detector: edges pass through, long fires once while held.
+  ShiftHold sh;
+  assert(sh.update(false, 0) == -1);
+  assert(sh.update(true, 100) == 1);
+  assert(sh.update(true, 599) == -1);
+  assert(sh.update(true, 600) == 2);  // exact threshold
+  assert(sh.update(true, 601) == -1);  // once only
+  assert(sh.update(false, 602) == 0);
+  assert(sh.update(false, 603) == -1);
+  assert(sh.update(true, 700) == 1);  // re-press works
+  assert(sh.update(false, 750) == 0);  // short press: no long event
+  ShiftHold shwrap;
+  assert(shwrap.update(true, 0xFFFFFF00u) == 1);
+  assert(shwrap.update(true, 0xFFFFFF00u + 499) == -1);
+  assert(shwrap.update(true, 0xFFFFFF00u + 500) == 2);  // wraparound-safe
+  assert(shwrap.update(false, 10) == 0);
   std::cout << "PASS: framed loopback + simulated debounced control event (no SPI hardware)\n";
   std::cout << "PASS: MIDI parser (running status, realtime, SysEx skip) + event codecs\n";
 }

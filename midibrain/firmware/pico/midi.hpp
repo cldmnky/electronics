@@ -167,6 +167,81 @@ constexpr std::uint8_t CTL_ENCODER_TURN = 16;
 
 // LED mask bits for EV_LED_SET (payload[1] mask, payload[2] states).
 constexpr std::uint8_t LED_REC = 0x01, LED_OVERDUB = 0x02, LED_PLAY = 0x04;
+// EV_LED_SET with this bit in the mask syncs arm state instead of driving
+// LEDs: payload[2] bits 0/1 become rec/overdub armed (backward compatible —
+// previous senders never set bit 7).
+constexpr std::uint8_t LED_ARM_SYNC = 0x80;
+
+// Indicator semantics (classic transport/record lights, unit-tested here,
+// executed in main.cpp): REC/OVERDUB are solid while armed+rolling
+// (recording), blink while armed but stopped (record-ready), off when
+// disarmed; PLAY follows transport rolling. blink_on is caller timebase
+// (~2 Hz); the Pi override path lives in main.cpp, not here.
+struct IndicatorState {
+  bool rec_armed = false;
+  bool overdub_armed = false;
+  bool rolling = false;
+  bool blink_on = false;
+};
+inline std::uint8_t indicator_mask(const IndicatorState& s) {
+  std::uint8_t m = 0;
+  if (s.rec_armed && (s.rolling || s.blink_on)) m |= LED_REC;
+  if (s.overdub_armed && (s.rolling || s.blink_on)) m |= LED_OVERDUB;
+  if (s.rolling) m |= LED_PLAY;
+  return m;
+}
+
+// Pure interpretation of an EV_LED_SET mask/states pair: either an arm sync
+// (mask has LED_ARM_SYNC) or a partial display overwrite. Keeps the
+// protocol rule host-testable; main.cpp owns the hardware write.
+struct LedCommand {
+  bool sync_arms = false;
+  bool rec_arm = false;
+  bool overdub_arm = false;
+};
+inline LedCommand interpret_led_set(std::uint8_t mask, std::uint8_t states) {
+  LedCommand r{};
+  r.sync_arms = (mask & LED_ARM_SYNC) != 0;
+  r.rec_arm = (states & LED_REC) != 0;
+  r.overdub_arm = (states & LED_OVERDUB) != 0;
+  return r;
+}
+
+// EV_CONTROL state 2 (long-press-hold), currently emitted only for SHIFT_EXIT:
+// the holder crosses its threshold while still pressed so the Pi can enter
+// shift mode live; release always reports 0 afterwards.
+constexpr std::uint8_t CTL_LONG_HOLD = 2;
+constexpr std::uint32_t kShiftLongMs = 500;
+
+// Hold-to-long-press detector. Feed the DEBOUNCED level every scan; returns
+// +1 on the press edge, 0 on the release edge, 2 exactly once when the hold
+// crosses the threshold, -1 otherwise. Unsigned arithmetic stays correct
+// across 32-bit timer wraparound.
+class ShiftHold {
+ public:
+  explicit ShiftHold(std::uint32_t long_ms = kShiftLongMs) : long_ms_(long_ms) {}
+  int update(bool held, std::uint32_t now) {
+    if (held && !held_) {
+      held_ = true;
+      press_ = now;
+      sent_ = false;
+      return 1;
+    }
+    if (!held && held_) {
+      held_ = false;
+      return 0;
+    }
+    if (held && held_ && !sent_ && static_cast<std::uint32_t>(now - press_) >= long_ms_) {
+      sent_ = true;
+      return 2;
+    }
+    return -1;
+  }
+
+ private:
+  std::uint32_t long_ms_, press_ = 0;
+  bool held_ = false, sent_ = false;
+};
 
 // Panel buttons that drive local transport on press, mirroring EV_TRANSPORT
 // commands (1 start, 0 stop; there is no continue button). PLAY starts only
@@ -257,15 +332,18 @@ inline bool pack_tick(Frame& f, std::uint16_t seq, std::uint32_t session,
 // transport transition, at boot, and when the Pi (re)connects, so the USB
 // mirror always knows whether ticks mean "roll" or "idle".
 inline bool pack_transport_state(Frame& f, std::uint16_t seq, std::uint32_t session,
-                                 bool rolling, std::uint32_t tick) {
+                                 bool rolling, std::uint32_t tick,
+                                 bool rec_armed = false, bool overdub_armed = false) {
   f = Frame{};
   f.type = Type::control_event;
   f.sequence = seq;
   f.session = session;
-  f.length = 6;
+  f.length = 8;
   f.payload[0] = EV_TRANSPORT_STATE;
   f.payload[1] = rolling ? 1 : 0;
   for (int i = 0; i < 4; ++i) f.payload[2 + i] = static_cast<std::uint8_t>(tick >> (8 * i));
+  f.payload[6] = static_cast<std::uint8_t>((rec_armed ? LED_REC : 0) | (overdub_armed ? LED_OVERDUB : 0));
+  f.payload[7] = 0;  // reserved
   return true;
 }
 // EV_STATUS_REQ layout: kind only. Length 1. The Pico answers with a

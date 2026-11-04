@@ -134,6 +134,12 @@ bool transport_local = true;
 uint32_t clock_ticks = 0;
 int clock_alarm = -1;
 uint8_t led_mask = 0;
+// Record-arm state, toggled by REC/OVERDUB press edges (a rule the Pi shares:
+// both sides toggle on the same deduped press edge).
+bool rec_armed = false, overdub_armed = false;
+// Pi LED_SET writes luminous state directly and suppresses the local semantic
+// refresh until the next panel-driven change (arm toggle or panel transport).
+bool led_override = false;
 uint64_t bad_frames = 0, ignored_kinds = 0, dup_frames = 0;
 bool shift_held = false;
 
@@ -141,6 +147,7 @@ mb::Debouncer deb_nav_up(kDebounceMs), deb_nav_down(kDebounceMs), deb_nav_left(k
     deb_nav_right(kDebounceMs), deb_nav_press(kDebounceMs), deb_enc_sw(kDebounceMs),
     deb_rec(kDebounceMs), deb_overdub(kDebounceMs), deb_stop(kDebounceMs), deb_play(kDebounceMs),
     deb_play_start(kDebounceMs), deb_shift(kDebounceMs);
+mb::ShiftHold shift_hold;
 mb::MidiParser midi_parse[2] = {mb::MidiParser(0), mb::MidiParser(1)};
 
 uint32_t session_from_rosc() {
@@ -210,6 +217,21 @@ void apply_leds() {
   gpio_put(MB_PIN_PLAY_LED, (led_mask & mb::LED_PLAY) != 0);
 }
 
+// Recompute the semantic indicator mask (solid armed+rolling, blinking
+// armed+stopped at ~1 Hz, play follows transport) and write on change.
+// Skipped while a Pi LED_SET override is latched.
+void refresh_indicators() {
+  if (led_override) return;
+  const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+  const mb::IndicatorState s{rec_armed, overdub_armed, transport_running,
+                             (now_ms / 500) % 2 == 0};
+  const uint8_t m = mb::indicator_mask(s);
+  if (m != led_mask) {
+    led_mask = m;
+    apply_leds();
+  }
+}
+
 // UART TX from the main loop runs opposite the clock alarm: guard multi-byte
 // writes so clock bytes cannot interleave a MIDI_SEND.
 void uart_write_guarded(uart_inst_t* uart, const uint8_t* data, uint32_t n) {
@@ -245,7 +267,9 @@ void clock_arm() {
 // Transport state for the Pi USB mirror (ticks flow regardless).
 void announce_state() {
   mb::Frame f{};
-  if (!mb::pack_transport_state(f, alloc_seq(), pico_session, transport_running, clock_ticks)) return;
+  if (!mb::pack_transport_state(f, alloc_seq(), pico_session, transport_running, clock_ticks, rec_armed,
+                                overdub_armed))
+    return;
   queue_frame(f);
 }
 
@@ -376,6 +400,7 @@ void handle_frame(const mb::Frame& f) {
         break;
       }
       transport_cmd(f.payload[1]);
+      if (!led_override) refresh_indicators();
       break;
     case mb::EV_CLOCK_ENABLE:
       // Deprecated: the clock is always on. Still validated + accepted so
@@ -391,9 +416,19 @@ void handle_frame(const mb::Frame& f) {
       if (f.length < 3) {
         ++bad_frames;
         break;
+      } {
+        const mb::LedCommand lc = mb::interpret_led_set(f.payload[1], f.payload[2]);
+        if (lc.sync_arms) {
+          rec_armed = lc.rec_arm;
+          overdub_armed = lc.overdub_arm;
+          led_override = false;
+          refresh_indicators();
+        } else {
+          led_override = true;
+          led_mask = (led_mask & ~f.payload[1]) | (f.payload[2] & f.payload[1]);
+          apply_leds();
+        }
       }
-      led_mask = (led_mask & ~f.payload[1]) | (f.payload[2] & f.payload[1]);
-      apply_leds();
       break;
     case mb::EV_TRANSPORT_MODE:
       if (f.length < 2 || f.payload[1] > 1) {
@@ -449,22 +484,21 @@ struct Button {
   uint gpio;
   mb::Debouncer* deb;
   uint8_t id;
-  uint8_t led_bit;  // 0 = no LED follows this control
 };
 
 Button buttons[] = {
-    {MB_PIN_NAV_UP, &deb_nav_up, mb::CTL_NAV_UP, 0},
-    {MB_PIN_NAV_DOWN, &deb_nav_down, mb::CTL_NAV_DOWN, 0},
-    {MB_PIN_NAV_LEFT, &deb_nav_left, mb::CTL_NAV_LEFT, 0},
-    {MB_PIN_NAV_RIGHT, &deb_nav_right, mb::CTL_NAV_RIGHT, 0},
-    {MB_PIN_NAV_PRESS, &deb_nav_press, mb::CTL_NAV_PRESS, 0},
-    {MB_PIN_ENCODER_SW, &deb_enc_sw, mb::CTL_ENCODER_SW, 0},
-    {MB_PIN_REC, &deb_rec, mb::CTL_REC, mb::LED_REC},
-    {MB_PIN_OVER_DUB, &deb_overdub, mb::CTL_OVER_DUB, mb::LED_OVERDUB},
-    {MB_PIN_STOP, &deb_stop, mb::CTL_STOP, 0},
-    {MB_PIN_PLAY, &deb_play, mb::CTL_PLAY, mb::LED_PLAY},
-    {MB_PIN_PLAY_START, &deb_play_start, mb::CTL_PLAY_START, 0},
-    {MB_PIN_SHIFT_EXIT, &deb_shift, mb::CTL_SHIFT_EXIT, 0},
+    {MB_PIN_NAV_UP, &deb_nav_up, mb::CTL_NAV_UP},
+    {MB_PIN_NAV_DOWN, &deb_nav_down, mb::CTL_NAV_DOWN},
+    {MB_PIN_NAV_LEFT, &deb_nav_left, mb::CTL_NAV_LEFT},
+    {MB_PIN_NAV_RIGHT, &deb_nav_right, mb::CTL_NAV_RIGHT},
+    {MB_PIN_NAV_PRESS, &deb_nav_press, mb::CTL_NAV_PRESS},
+    {MB_PIN_ENCODER_SW, &deb_enc_sw, mb::CTL_ENCODER_SW},
+    {MB_PIN_REC, &deb_rec, mb::CTL_REC},
+    {MB_PIN_OVER_DUB, &deb_overdub, mb::CTL_OVER_DUB},
+    {MB_PIN_STOP, &deb_stop, mb::CTL_STOP},
+    {MB_PIN_PLAY, &deb_play, mb::CTL_PLAY},
+    {MB_PIN_PLAY_START, &deb_play_start, mb::CTL_PLAY_START},
+    {MB_PIN_SHIFT_EXIT, &deb_shift, mb::CTL_SHIFT_EXIT},
 };
 
 // Quadrature edges per poll; 4 edges make one detent (adjust if the fitted
@@ -475,6 +509,17 @@ int quad_prev = 0, quad_acc = 0;
 void scan_controls(uint32_t now_ms) {
   for (const auto& b : buttons) {
     const bool pressed = !gpio_get(b.gpio);  // active-low against GND
+    if (b.id == mb::CTL_SHIFT_EXIT) {
+      // SHIFT/EXIT gets hold timing on top of debounce: press (1) and
+      // release (0) edges plus a single long-hold event (2) while held.
+      // The app enters shift mode live on 2; short-press exit and mode
+      // policy live on the Pi (see docs/protocol.md).
+      b.deb->update(pressed, now_ms);
+      shift_held = b.deb->state();
+      const int sev = shift_hold.update(shift_held, now_ms);
+      if (sev >= 0) queue_control(b.id, static_cast<std::uint8_t>(sev));
+      continue;
+    }
     if (b.deb->update(pressed, now_ms)) {
       queue_control(b.id, pressed ? 1 : 0);
       // Panel transport drives locally (no Pi round-trip); the Pi learns it
@@ -483,15 +528,23 @@ void scan_controls(uint32_t now_ms) {
       // In manual mode the mapping is suppressed: events only, Pi decides.
       if (pressed && transport_local) {
         const int cmd = mb::transport_for_press(b.id, transport_running);
-        if (cmd >= 0) transport_cmd(static_cast<uint8_t>(cmd));
+        if (cmd >= 0) {
+          transport_cmd(static_cast<uint8_t>(cmd));
+          led_override = false;
+          refresh_indicators();
+        }
       }
-      if (b.id == mb::CTL_SHIFT_EXIT) shift_held = pressed;
-      if (b.led_bit) {
-        if (pressed)
-          led_mask |= b.led_bit;
+      // REC/OVERDUB presses toggle record arming (a rule the Pi shares:
+      // both sides toggle on the same deduped press edge). Announcing here
+      // keeps the Pi's mirror in step without waiting for a transition.
+      if (pressed && (b.id == mb::CTL_REC || b.id == mb::CTL_OVER_DUB)) {
+        if (b.id == mb::CTL_REC)
+          rec_armed = !rec_armed;
         else
-          led_mask &= ~b.led_bit;
-        apply_leds();
+          overdub_armed = !overdub_armed;
+        led_override = false;
+        refresh_indicators();
+        announce_state();
       }
     }
   }
@@ -643,6 +696,7 @@ int main() {
     if (now_ms - last_ms >= 1) {
       last_ms = now_ms;
       scan_controls(now_ms);
+      refresh_indicators();  // blink phase + any missed edge
       ready_update();
     }
     if (now_ms - last_stats >= 1000) {

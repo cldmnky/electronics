@@ -41,7 +41,8 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
 - Both MIDI UARTs at 31250 baud (IRQ rings with per-byte timestamps, parser
   with running status + realtime interleave; SysEx skipped in v1).
 - Debounced panel inputs (1 kHz scan), quadrature tempo encoder (SHIFT = fine),
-  three LEDs (local mirror, Pi-overridable via LED_SET).
+  three semantic LEDs (armed-blink / recording-solid / play-on-roll, Pi-overridable
+  via LED_SET with arm sync on mask bit 7).
 - Always-on local MIDI clock (24 ppq from boot at the current tempo,
   START/CONTINUE/STOP bytes on both UARTs) driven by encoder tempo or Pi
   SET_TEMPO, plus timestamped tick frames per tick and transport-state

@@ -71,7 +71,10 @@ Pico → Pi:
 
 Control ids: 1 NAV_UP, 2 NAV_DOWN, 3 NAV_LEFT, 4 NAV_RIGHT, 5 NAV_PRESS,
 6 ENCODER_SW, 10 REC, 11 OVER_DUB, 12 STOP, 13 PLAY, 14 PLAY_START,
-15 SHIFT_EXIT.
+15 SHIFT_EXIT. Payload[2] is 1 pressed / 0 released, except ENCODER_TURN
+(signed delta) and SHIFT_EXIT, which additionally reports 2 while a hold
+is past 500 ms (long-press). The app enters shift mode live on the 2;
+a short press (1 then 0, no 2) means exit. Release always reports 0.
 
 Pi → Pico:
 
@@ -81,7 +84,7 @@ Pi → Pico:
 | `0x11` TRANSPORT | 0 stop, 1 start, 2 continue | START resets tick count; bytes always emitted on both UARTs |
 | `0x12` CLOCK_ENABLE | 0/1 | Accepted but ignored: the clock is always on (deprecated) |
 | `0x06` state | rolling 0/1, tick LE32 | Transport state at the transition; sent on transitions, boot and Pi (re)connect (length 6) |
-| `0x13` LED_SET | mask, states | Bits 0/1/2 = REC/OVERDUB/PLAY; local buttons mirror by default |
+| `0x13` LED_SET | mask, states | Bits 0/1/2 = REC/OVERDUB/PLAY partial overwrite (latches an override); mask bit 7 = sync arm state from states bits 0/1 instead |
 | `0x15` MIDI_SEND | port, size, bytes | Immediate UART emit (no scheduled timeline yet) |
 | `0x16` MODE | 0 local, 1 manual | Panel-transport authority; resets to local on boot/HELLO |
 | `0x20` STATUS_REQ | none | Liveness/status probe; the Pico answers with `0x21` (length 1) |
@@ -146,6 +149,18 @@ impossible when the Pico acts first. The mode resets to local on Pico boot
 and on Pi (re)connect (HELLO); the Pi re-sends MODE after HELLO when its
 policy needs manual. Local keeps buttons responsive (~10 ms, works headless);
 manual trades that for full Pi policy at ~15–30 ms plus Linux jitter.
+
+## Indicator semantics (front-panel LEDs)
+
+REC/OVERDUB are solid while armed+rolling (recording), blink at ~1 Hz while
+armed but stopped (record-ready), off when disarmed; PLAY follows transport
+rolling. Arming toggles on REC/OVERDUB press edges — a rule the Pi shares,
+so both sides toggle on the same deduped press edge and stay in step.
+`EV_LED_SET` without bit 7 partially overwrites the luminous mask and latches
+an override (local refresh pauses until the next panel-driven change);
+with bit 7 it syncs arm state instead. State frames carry arm bits
+(`0x06[6]`, valid when length ≥ 7) on every transition, boot, hello and
+arm toggle, so the Pi mirror converges without polling.
 
 ## Pico clock and controls
 
