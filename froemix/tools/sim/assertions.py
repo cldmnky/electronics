@@ -564,7 +564,9 @@ def midi_out(run: DeckRun) -> list[Check]:
 
 MIDI_RX = {
     "r47": 220.0, "r47_tol": 222.2, "r47_ca": 231.0, "ith": 1.6e-3,
-    "if_recommended_max": 6e-3, "if_abs_max": 10e-3,
+    "if_recommended_max": 6e-3,
+    # 10 mA at 25 C only; the 125 C figure is models.tlp2361_if_abs_max(125)
+    "if_abs_max_25c": 10e-3,
     "tlp2362_ith": 5e-3, "tlp2362_recommended": 7.5e-3,
 }
 
@@ -585,10 +587,12 @@ def midi_in(run: DeckRun) -> list[Check]:
     checks.append(band(deck, "typical loop at the high rail", typical, 6.42, 6.85, " mA",
                        "doc §5: 6.54 mA, inside the 6 mA recommended point",
                        fmt="{:.4f}"))
-    checks.append(band(deck, "typical loop vs the 10 mA absolute maximum", typical, 0.0,
-                       rx["if_abs_max"] * 1e3, " mA",
-                       "TLP2361 absolute maximum; the 6 mA recommended point is exceeded "
-                       "and is a pending bench item (doc §7.3)", fmt="{:.4f}"))
+    derated = models.tlp2361_if_abs_max(125.0) * 1e3
+    checks.append(band(deck, "typical loop vs the 125 C derated maximum", typical, 0.0,
+                       derated, " mA", "datasheet page 3 absolute maximum derated to "
+                       "125 C = 8.05 mA; the 2...6 mA recommended point is a separate, "
+                       "softer limit and is exceeded -- pending bench item (doc §7.3)",
+                       fmt="{:.4f}"))
     ca033 = (run.measure("ca_ring") - run.measure("ca_anode")) / rx["r47_ca"] * 1e3
     checks.append(band(deck, "CA-033 receiver corner", ca033, 4.19, 4.39, " mA",
                        "doc §5: 4.31 mA, the same number midi_out.cir delivers",
@@ -598,12 +602,14 @@ def midi_in(run: DeckRun) -> list[Check]:
                        "doc §5: 5.63 mA at 5.25 V and 418 ohm", fmt="{:.4f}"))
     noncompliant = (run.measure("leg_ring") - run.measure("leg_anode")) / rx["r47"] * 1e3
     checks.append(band(deck, "non-compliant 5 V transmitter (33/10 legs)", noncompliant,
-                       14.3, 15.2, " mA", "doc §5/§7.4: 14.8 mA -- above the 10 mA "
-                       "absolute maximum; nothing on this board clamps it", fmt="{:.4f}"))
-    checks.append(band(deck, "non-compliant source exceeds the absolute maximum",
-                       noncompliant, rx["if_abs_max"] * 1e3, 30.0, " mA",
+                       14.3, 15.2, " mA", "doc §5/§7.4: 14.8 mA -- above the 25 C 10 mA "
+                       "absolute maximum and above the 125 C 8.05 mA figure; nothing on "
+                       "this board clamps it", fmt="{:.4f}"))
+    checks.append(band(deck, "non-compliant source exceeds the 25 C absolute maximum",
+                       noncompliant, rx["if_abs_max_25c"] * 1e3, 30.0, " mA",
                        "negative case: this deck must show the pending overstress, not "
-                       "hide it", fmt="{:.4f}"))
+                       "hide it (it also exceeds the derated 125 C figure)",
+                       fmt="{:.4f}"))
 
     reverse = run.measure("rev_anode") - run.measure("rev_cathode")
     checks.append(band(deck, "reverse polarity: LED reverse voltage", abs(reverse), 0.30,
@@ -654,13 +660,55 @@ def midi_in(run: DeckRun) -> list[Check]:
                                  "(negative)", weak[corner], 0.0, rx["tlp2362_ith"], " A",
                            "the replaced part needs <= 5 mA; the weakest legal loop is "
                            "below it -- the guaranteed-margin defect", fmt="{:.6f}"))
+    strong = {}
     for corner in ("ca5v_hi", "ca33_hi"):
         params = models.midi_sender_case_parameters(corner)
         prefix = prefixes[corner]
-        strong = (run.measure(f"{prefix}_ring") - run.measure(f"{prefix}_anode")) / params["R47"]
-        checks.append(band(deck, f"sender {corner}: inside the TLP2361 absolute maximum",
-                           strong, 0.0, rx["if_abs_max"], " A",
-                           "the strongest legal loop must stay under 10 mA", fmt="{:.6f}"))
+        strong[corner] = (run.measure(f"{prefix}_ring")
+                          - run.measure(f"{prefix}_anode")) / params["R47"]
+
+    # TWO limits with primary provenance: 10 mA at 25 C (datasheet page 3) and
+    # 8.05 mA at 125 C from the manufacturer's own -0.13 mA/C derating above
+    # 110 C. The recommended 2...6 mA window is a third, separate limit.
+    checks.append(band(deck, "sender ca5v_hi: inside the 125 C derated maximum",
+                       strong["ca5v_hi"], 0.0, derated * 1e-3, " A",
+                       "6.53 mA is inside 8.05 mA (models.tlp2361_if_abs_max(125))",
+                       fmt="{:.6f}"))
+    checks.append(band(deck, "sender ca33_hi: inside the 25 C absolute maximum",
+                       strong["ca33_hi"], 0.0, models.TLP2361_IF_ABS_MAX_25C_A, " A",
+                       "8.18 mA is inside the 10 mA 25 C figure", fmt="{:.6f}"))
+    checks.append(band(deck, "sender ca33_hi: EXCEEDS the 125 C derated maximum "
+                             "(negative, open risk)",
+                       strong["ca33_hi"], derated * 1e-3, 0.020, " A",
+                       "8.18 mA is outside 8.05 mA: an unresolved high-current/"
+                       "temperature risk, not a pass -- models.tlp2361_if_abs_max(125)",
+                       fmt="{:.6f}"))
+    checks.append(band(deck, "sender ca5v_hi: above the 6 mA recommended current "
+                             "(open item)",
+                       strong["ca5v_hi"], 6.0e-3, 0.020, " A",
+                       "recommended 2...6 mA is separate from the absolute maximum; the "
+                       "strong legal loops exceed it (bench item, doc §7.3)",
+                       fmt="{:.6f}"))
+
+    # ILLUSTRATION ONLY: VF 1.15 V = the 25 C minimum plus the TYPICAL -2 mV/C
+    # coefficient over 100 C. The datasheet gives no hot VF bound, so this shows
+    # the trend and is not a guaranteed corner.
+    params = models.midi_sender_case_parameters("ca33_hi")
+    hot = (run.measure("hot_ring") - run.measure("hot_anode")) / params["R47"]
+    hot_reference = models.midi_sender_current("ca033_33", "hi", 0.0,
+                                               models.tlp2361_vf_illustrative(125.0))
+    checks.append(band(deck, "illustrative hot VF 1.15 V: loop current", hot,
+                       hot_reference * 0.997, hot_reference * 1.003, " A",
+                       "typical-coefficient ASSUMPTION, not a guaranteed corner: 8.95 mA",
+                       fmt="{:.6f}"))
+    checks.append(band(deck, "illustrative hot VF: outside the 125 C derated maximum",
+                       hot, derated * 1e-3, 0.020, " A",
+                       "the trend moves further outside the derated limit; this proves "
+                       "nothing about LED safety over temperature", fmt="{:.6f}"))
+    checks.append(band(deck, "illustrative hot VF: inside the 25 C absolute maximum",
+                       hot, 0.0, models.TLP2361_IF_ABS_MAX_25C_A, " A",
+                       "still inside the 25 C figure, which is why one limit is not "
+                       "enough", fmt="{:.6f}"))
     return checks
 
 

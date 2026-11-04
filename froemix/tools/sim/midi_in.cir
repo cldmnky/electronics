@@ -24,11 +24,24 @@
 *   a NON-COMPLIANT 5 V transmitter (33/10 legs): 14.8 mA -- above the
 *       TLP2361 10 mA absolute maximum and nothing on this board clamps it
 *       (pending item, doc §7.4)
+*
+* TWO LIMITS, NOT ONE. The datasheet page 3 absolute maximum is 10 mA AT 25 C
+* and derates by 0.13 mA/C above 110 C, i.e. 8.05 mA at 125 C. The strongest
+* LEGAL loop (3.3 V +5 %, 33/10 legs, VF 1.35 V) reaches 8.18 mA: inside the
+* 25 C figure and OUTSIDE the 125 C derated figure. That is an open
+* high-current/temperature risk (models.tlp2361_if_abs_max), not something this
+* model resolves. The 2...6 mA recommended current is a separate, softer limit.
+* The 1.35 V VF used there is a 25 C datasheet number; the -2 mV/C coefficient
+* is TYPICAL only, so the 1.15 V / 8.95 mA hot case below is an ILLUSTRATION of
+* the trend, not a guaranteed corner, and no temperature range is claimed.
+* The output is a TOTEM-POLE INVERTER (datasheet page 1), not an open collector:
+* it drives USART1_RX both ways, and R48 is a fail-safe pull-up, not a load.
 *   reverse polarity: D1 conducts, the LED sees < 0.8 V reverse
 *   VO is inverting: current flows -> USART1_RX low; no current -> high (R48)
 *
-* Threshold: TLP2361 IFHL <= 1.6 mA at 125 C, recommended 2...6 mA, absolute
-* maximum 10 mA. The replaced TLP2362 needed <= 5 mA with a 7.5 mA recommended
+* Threshold: TLP2361 IFHL <= 1.6 mA at 125 C; recommended on-current 2...6 mA.
+* The absolute maximum IF is 10 mA at 25 C and derates to 8.05 mA at 125 C, so
+* the two limits are kept apart below. The replaced TLP2362 needed <= 5 mA with a 7.5 mA recommended
 * on-current, which this loop does not guarantee; that is the negative case.
 *
 * ASSUMPTIONS (declared in models.py MIDI_ASSUMPTIONS, NOT primary verified):
@@ -102,8 +115,13 @@ XR_CA5V_HI N_R9 RXCHAIN PARAMS: VSRC=5.5 RSRC=418 R47=217.8 VF=1.35
 * 3.135 - 0.3 - 1.85 over (43 x 1.05) + 222.2 = 3.6843 mA
 XR_CA33_LO N_R10 RXCHAIN PARAMS: VSRC=2.835 RSRC=45.15 R47=222.2 VF=1.85
 * the same legs, STRONGEST loop: 3.465 - 0 - 1.35 over (43 x 0.95) + 217.8
-* = 8.1771 mA
+* = 8.1771 mA -- inside the 25 C 10 mA absolute maximum, OUTSIDE the 125 C
+* 8.05 mA derated maximum
 XR_CA33_HI N_R11 RXCHAIN PARAMS: VSRC=3.465 RSRC=40.85 R47=217.8 VF=1.35
+* ILLUSTRATION, not a guaranteed corner: VF 1.15 V = the 25 C minimum plus the
+* TYPICAL -2 mV/C coefficient over 100 C. Gives about 8.95 mA, still inside the
+* 25 C 10 mA figure and further outside the 125 C derated figure.
+XR_CA33_HOT N_R12 RXCHAIN PARAMS: VSRC=3.465 RSRC=40.85 R47=217.8 VF=1.15
 * a NON-COMPLIANT 5 V transmitter (33/10 legs at -5 %): 14.8 mA
 XR_5VLEG N_R5  RXCHAIN PARAMS: VSRC=5.5   RSRC=40.85 R47=220   VF=1.65
 * reverse polarity: D1 conducts, the LED must not see a reverse voltage
@@ -140,6 +158,8 @@ meas dc ca5hi_anode FIND v(XR_CA5V_HI.AN) AT=1
 meas dc ca33lo_ring FIND v(N_R10) AT=1
 meas dc ca33lo_anode FIND v(XR_CA33_LO.AN) AT=1
 meas dc ca33hi_ring FIND v(N_R11) AT=1
+meas dc hot_ring FIND v(N_R12) AT=1
+meas dc hot_anode FIND v(XR_CA33_HOT.AN) AT=1
 meas dc ca33hi_anode FIND v(XR_CA33_HI.AN) AT=1
 meas dc leg_anode FIND v(XR_5VLEG.AN) AT=1
 meas dc rev_ring FIND v(N_R6) AT=1

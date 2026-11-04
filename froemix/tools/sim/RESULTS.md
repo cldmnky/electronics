@@ -323,11 +323,12 @@ it is the worst case for R59 and the best case for Q2 (doc §4).
 | Own transmitter, every tolerance | 5.20…5.45 mA | **5.3130 mA** |
 | Threshold margin over IFHL 1.6 mA | 3.0…4.0× | 3.32× |
 | Typical loop at the 3.465 V rail | 6.42…6.85 mA | 6.5614 mA |
-| Typical loop vs the 10 mA absolute maximum | ≤10 mA | 6.5614 mA (passes; the 6 mA recommended point is exceeded — open item) |
+| Typical loop vs the 125 °C derated absolute maximum | ≤8.05 mA | 6.5614 mA |
+| Typical loop vs the 2…6 mA recommended current (open item) | >6 mA | 6.5614 mA — exceeds the recommended point |
 | CA-033 receiver corner | 4.19…4.39 mA | 4.2812 mA |
 | 5 V legacy sender (2 × 220 Ω) | 5.50…5.77 mA | 5.6275 mA |
 | Non-compliant 5 V sender (33/10 legs) | 14.3…15.2 mA | 14.6868 mA |
-| Non-compliant sender vs the 10 mA absolute maximum (**negative**) | >10 mA | 14.6868 mA |
+| Non-compliant sender vs the 25 °C absolute maximum (**negative**) | >10 mA | 14.6868 mA (also above the 125 °C figure) |
 | Reverse polarity: LED reverse voltage | 0.30…0.80 V | 0.6829 V |
 | Reverse polarity: D1 current | ≤12 mA | 8.829 mA |
 | Idle loop: VO high (fail-safe through R48) | ≥3.2 V | 3.3000 V |
@@ -344,8 +345,25 @@ U15) is the fitted board and is source-linked.
 | --- | --- | --- | --- | --- |
 | 5 V ±10 %, RA/RC 220+220 ±5 %, 0.3 V driver loss, VF 1.85 V | 3.4347 mA | 3.4341 mA | **2.15× passes** | **fails** (below 5 mA) |
 | 3.3 V ±5 %, RA 33 / RC 10 ±5 %, 0.3 V driver loss, VF 1.85 V | 3.6843 mA | 3.6828 mA | **2.30× passes** | **fails** |
-| 5 V ±10 %, 0 V driver loss, VF 1.35 V | 6.5272 mA | 6.5266 mA | 4.08× passes, inside 10 mA | n/a |
-| 3.3 V ±5 %, 0 V driver loss, VF 1.35 V | 8.1771 mA | 8.1754 mA | 5.11× passes, inside 10 mA | n/a |
+| 5 V ±10 %, 0 V driver loss, VF 1.35 V | 6.5272 mA | 6.5266 mA | 4.08× passes, inside 8.05 mA | n/a |
+| 3.3 V ±5 %, 0 V driver loss, VF 1.35 V | 8.1771 mA | 8.1754 mA | 5.11× passes; **outside the 125 °C 8.05 mA limit** | n/a |
+
+**Two limits, not one.** The datasheet page 3 gives the IF absolute maximum as
+**10 mA at 25 °C**, derated by **0.13 mA/°C above 110 °C**, i.e.
+`models.tlp2361_if_abs_max(125) = 8.05 mA`. The strongest legal loop
+(8.1771 mA) is inside the 25 °C figure and **outside the 125 °C figure**; the
+deck asserts both facts, the second as a negative check. That is an explicit
+high-current/temperature **risk hold**: this model does not resolve it, no
+operating-temperature range is declared, and no bench approval is implied. The
+**2…6 mA recommended current is a separate, softer limit** and the strong legal
+loops exceed it as well (open item, doc §7.3).
+
+The 1.35 V VF in that corner is a 25 °C datasheet number. Page 4 gives VF min
+1.35 V / max 1.65 V at 25 °C and **−2 mV/°C as a TYPICAL coefficient, not a
+guaranteed bound**, so the deck also runs an **illustration** only:
+VF 1.15 V (= 1.35 − 0.002 × 100) gives 8.949 mA — still inside the 25 °C figure
+and further outside the 125 °C figure. It shows the trend; it proves nothing
+about LED forward voltage or current safety over temperature.
 
 R47 is taken at its fitted 1 % tolerance in every corner. The 0.2 % assertion
 band is deliberate: the reference currents come from
@@ -371,14 +389,21 @@ numbers is changed on only one side.
 
 Still open (not asserted as passing):
 
-* the TLP2361 input **high-current** qualification: the non-compliant 5 V case
-  reaches 14.76 mA, above the 10 mA absolute maximum, and nothing on the board
-  clamps it. The strongest *legal* loop reaches 8.18 mA, inside the absolute
-  maximum but above the 6 mA recommended point;
+* the TLP2361 input **high-current** qualification, now stated against both
+  limits: the non-compliant 5 V case reaches 14.76 mA (above 10 mA at 25 °C and
+  above 8.05 mA at 125 °C); the strongest *legal* loop reaches 8.18 mA, inside
+  the 25 °C figure and **outside the 125 °C derated 8.05 mA figure**; and both
+  strong legal loops exceed the 2…6 mA recommended current. Nothing on the board
+  clamps the loop, so this stays an open, source-qualified risk;
 * the LED model is a **fixed behavioural voltage**, so these cases prove the
   loop current and the threshold margin at the declared corners only. They
   prove nothing about LED forward voltage or current safety over temperature,
-  nor about a real receiver LED's dynamic behaviour;
+  nor about a real receiver LED's dynamic behaviour. The hot-VF case uses the
+  **typical** −2 mV/°C coefficient as an illustration and is not a guaranteed
+  corner;
+* the receiver output is a **totem-pole inverter** (datasheet page 1), not an
+  open collector: it drives `USART1_RX` both ways, and R48 2.2 kΩ is a fail-safe
+  pull-up (physically unchanged), not a required load;
 * the 6.58 mA typical loop is above the TLP2361 6 mA recommended on-current
   (inside the absolute maximum) — measure IF on a real unit;
 * VOL/VOH/reset state and the 20 mA limit need a measurement on a real Seed;

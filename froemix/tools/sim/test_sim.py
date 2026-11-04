@@ -308,6 +308,35 @@ class MidiReferenceTests(unittest.TestCase):
                 self.assertGreater(abs(worse - reference), reference * 0.002,
                                    "a 50 mV VF change must leave the band")
 
+    def test_tlp2361_absolute_maximum_derates_from_25c(self):
+        self.assertAlmostEqual(models.tlp2361_if_abs_max(25.0), 10e-3, delta=1e-12)
+        self.assertAlmostEqual(models.tlp2361_if_abs_max(110.0), 10e-3, delta=1e-12)
+        self.assertAlmostEqual(models.tlp2361_if_abs_max(125.0), 8.05e-3, delta=1e-12)
+        self.assertAlmostEqual(models.TLP2361_IF_DERATE_A_PER_C, 0.13e-3, delta=1e-15)
+
+    def test_strongest_legal_loop_is_outside_the_derated_maximum(self):
+        """8.1771 mA is inside the 25 C figure and outside the 125 C figure."""
+        strong = models.midi_sender_current("ca033_33", "hi", 0.0, 1.35)
+        self.assertLess(strong, models.TLP2361_IF_ABS_MAX_25C_A)
+        self.assertGreater(strong, models.tlp2361_if_abs_max(125.0))
+        self.assertGreater(strong, models.TLP2361_IF_RECOMMENDED_A[1],
+                           "the strong legal loop also exceeds the 6 mA recommended point")
+
+    def test_hot_vf_case_is_illustrative(self):
+        """The -2 mV/C coefficient is typical: pin the illustration, not a claim."""
+        self.assertAlmostEqual(models.tlp2361_vf_illustrative(125.0), 1.15, delta=1e-9)
+        hot = models.midi_sender_current("ca033_33", "hi", 0.0,
+                                         models.tlp2361_vf_illustrative(125.0))
+        self.assertAlmostEqual(hot * 1e3, 8.9503, delta=0.001)
+        self.assertGreater(hot, models.tlp2361_if_abs_max(125.0))
+        self.assertLess(hot, models.TLP2361_IF_ABS_MAX_25C_A)
+
+    def test_derating_numbers_are_carried_by_the_deck(self):
+        deck = copy_deck("midi_in.cir", self.tmp,
+                         edit=lambda t: t.replace("VF=1.15", "VF=1.20"))
+        problems = models.check_midi_assumptions(deck)
+        self.assertTrue(any("TLP2361_VF_TYPCO_V_PER_C" in p for p in problems), problems)
+
     def test_deck_case_parameter_drift_is_detected(self):
         deck = copy_deck("midi_in.cir", self.tmp,
                          edit=lambda t: t.replace(

@@ -98,9 +98,46 @@ _add("subckt", "OPTOLED", {"VF": 1.9},
      "receiver LED drop corner from CA-033: the receiver LED is specified at VF <= 1.9 V.")
 _add("subckt", "TLP2361", {"VF": 1.65, "ITH": 1.6e-3},
      "TLP2361(TPL,E on-disk datasheet: VF maximum 1.65 V at 2 mA, IFHL maximum 1.6 mA "
-     "at 125 C. Inverting totem-pole output modelled as a threshold switch, not as the "
-     "Toshiba model; the 10 mA absolute maximum and 2...6 mA recommended window are "
-     "limits in MIDI_ASSUMPTIONS, not model parameters.")
+     "at 125 C. The output is an inverting TOTEM-POLE driver (page 1), not the open "
+     "collector of the TLP2362 it replaced, and it is modelled as a threshold switch -- "
+     "not as the Toshiba model. The absolute maximum IF is 10 mA at 25 C and DERATES to "
+     "8.05 mA at 125 C (page 3, tlp2361_if_abs_max); the 2...6 mA recommended current is "
+     "a separate limit. All of them live in MIDI_ASSUMPTIONS, not as model parameters.")
+
+# --- TLP2361 primary limits (read from the datasheet PDF: page 3 absolute
+# --- maximum ratings, page 4 electrical characteristics). These are NOT
+# --- assumptions: they are the manufacturer's numbers, and the derating is the
+# --- manufacturer's own curve. Temperature behaviour of VF is a TYPICAL
+# --- coefficient, not a guaranteed bound.
+TLP2361_IF_ABS_MAX_25C_A = 10e-3      # page 3, IF absolute maximum at 25 C
+TLP2361_IF_DERATE_A_PER_C = 0.13e-3   # page 3, above 110 C
+TLP2361_IF_DERATE_ABOVE_C = 110.0
+TLP2361_VF_MIN_25C_V = 1.35           # page 4, 25 C
+TLP2361_VF_MAX_25C_V = 1.65           # page 4, 25 C
+TLP2361_VF_TYPCO_V_PER_C = -2e-3      # TYPICAL coefficient only, NOT a bound
+TLP2361_IF_RECOMMENDED_A = (2e-3, 6e-3)   # recommended operating current
+
+
+def tlp2361_if_abs_max(temp_c: float = 25.0) -> float:
+    """TLP2361 absolute maximum IF at ``temp_c``, from the datasheet page 3.
+
+    10 mA at 25 C, derated by 0.13 mA per degree above 110 C:
+    8.05 mA at 125 C. This is a PRIMARY figure, not an assumption.
+    """
+    if temp_c <= TLP2361_IF_DERATE_ABOVE_C:
+        return TLP2361_IF_ABS_MAX_25C_A
+    return TLP2361_IF_ABS_MAX_25C_A - TLP2361_IF_DERATE_A_PER_C * (
+        temp_c - TLP2361_IF_DERATE_ABOVE_C)
+
+
+def tlp2361_vf_illustrative(temp_c: float = 125.0) -> float:
+    """VF from the 25 C minimum plus the TYPICAL -2 mV/C coefficient.
+
+    This is an ILLUSTRATION of the temperature trend, not a guaranteed corner:
+    the datasheet gives no hot VF bound. 1.15 V at 125 C.
+    """
+    return TLP2361_VF_MIN_25C_V + TLP2361_VF_TYPCO_V_PER_C * (temp_c - 25.0)
+
 
 # MIDI assumptions that are NOT primary-verified. The decks must carry the same
 # numbers; check_midi_assumptions() fails when one side changes alone.
@@ -115,10 +152,18 @@ MIDI_ASSUMPTIONS: dict[str, tuple[str, str]] = {
     "AO3401A_CISS_F": ("645p", "AO3401A Ciss for the gate-edge current: datasheet value, "
                        "used only for the charge-peak case"),
     "TLP2361_IFHL_MAX_A": ("1.6m", "TLP2361 IFHL maximum at 125 C (datasheet limit)"),
-    "TLP2361_IF_ABS_MAX_A": ("10e-3", "TLP2361 absolute maximum IF (datasheet)"),
-    "TLP2361_IF_RECOMMENDED_A": ("2...6e-3", "TLP2361 recommended on-current (datasheet); "
-                                 "the typical loop of 6.5 mA is at the top of it -- "
-                                 "pending bench item (doc §7.3)"),
+    "TLP2361_IF_ABS_MAX_A": ("10e-3", "PRIMARY: datasheet page 3, IF absolute maximum at "
+                             "25 C. It DERATES by 0.13 mA/C above 110 C -> 8.05 mA at "
+                             "125 C (models.tlp2361_if_abs_max)"),
+    "TLP2361_IF_RECOMMENDED_A": ("2...6e-3", "PRIMARY: recommended on-current, distinct "
+                                 "from the absolute maximum; the strong legal loops "
+                                 "exceed 6 mA -- pending bench item (doc §7.3)"),
+    "TLP2361_IF_DERATING_A_PER_C": ("0.13e-3", "PRIMARY: datasheet page 3 derating above "
+                                    "110 C; the 125 C absolute maximum is 8.05 mA"),
+    "TLP2361_VF_TYPCO_V_PER_C": ("2e-3", "PRIMARY: datasheet page 4 gives VF min 1.35 / "
+                                 "max 1.65 at 25 C and -2 mV/C as a TYPICAL coefficient "
+                                 "only; the hot-VF case (1.15 V at 125 C) is an "
+                                 "ILLUSTRATION, not a guaranteed bound"),
     "TLP2362_IFHL_MAX_A": ("5e-3", "replaced TLP2362 IFHL maximum: the negative case"),
     "SENDER_DRIVER_LOSS_LOW_V": ("0.3", "the weakest legal sender's driver loss: "
                                  "ASSUMPTION for the low-current corner, NOT a datasheet "
@@ -213,7 +258,7 @@ def check_midi_sender_cases(deck_path: Path) -> list[str]:
 MIDI_DECK_TOKENS: dict[str, list[tuple[str, str]]] = {
     "midi_out.cir": [("VOL 0.4 V", "MCU_VOL_V"), ("2.735", "MCU_VOH_MIN_V"),
                      ("645p", "AO3401A_CISS_F")],
-    "midi_in.cir": [("1.6m", "TLP2361_IFHL_MAX_A"),
+    "midi_in.cir": [("1.6m", "TLP2361_IFHL_MAX_A"), ("VF=1.15", "TLP2361_VF_TYPCO_V_PER_C"),
                      ("VF=1.85", "SENDER_VF_LOW_V"), ("VF=1.35", "SENDER_VF_HIGH_V"),
                      ("VSRC=4.2", "SENDER_DRIVER_LOSS_LOW_V")],
 }
