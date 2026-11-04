@@ -1,0 +1,7 @@
+* MIDI IN at the weakest 5 V sender (4.75 V) and the highest datasheet VF
+* (is_led = 1.4e-17 gives VF ~ 1.75 V at 4.5 mA, above the 1.65 V limit
+* specified at 2 mA). The TLP2361 must still switch.
+.param vsrc = 4.75
+.param ifhl = 1.3m
+.param is_led = 1.4e-17
+.include midi_in_common.inc

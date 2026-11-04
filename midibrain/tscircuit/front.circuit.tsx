@@ -3,9 +3,11 @@ import { A_1N4148WS } from "./imports/A_1N4148WS"
 import { B3F_4055 } from "./imports/B3F_4055"
 import { BH254V_26P } from "./imports/BH254V_26P"
 import { PEC11R_4215F_S0024 } from "./imports/PEC11R_4215F_S0024"
+import { BOARD_POLICY } from "./lib/electrical"
+import { MIDI_OUT_SERIES_OHM, MIDI_RECEIVER_OHM } from "./lib/electrical-midi"
 import { FP_JACK_TRS } from "./lib/jack"
 import { SKRHABE010 } from "./imports/SKRHABE010"
-import { TLP2362_TPL_E } from "./imports/TLP2362_TPL_E"
+import { TLP2361_TPL_E } from "./imports/TLP2361_TPL_E"
 import {
   DISPLAY_ANNOTATIONS,
   FEEDTHROUGH_BRACKET,
@@ -43,8 +45,9 @@ type RProps = {
   p2: string
   footprint?: string
   rot?: string
+  sec: string
 }
-const R = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot }: RProps) => (
+const R = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot, sec }: RProps) => (
   <resistor
     name={name}
     resistance={value}
@@ -53,14 +56,16 @@ const R = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot }: RP
     pcbY={y}
     pcbRotation={rot}
     layer="top"
+    schSheetName="front"
+    schSectionName={sec}
     supplierPartNumbers={{ jlcpcb: [lcsc] }}
     manufacturerPartNumber={mpn}
     connections={{ pin1: p1, pin2: p2 }}
   />
 )
 
-type CProps = { name: string; value: string; x: string; y: string; lcsc: string; mpn: string; p1: string; p2: string; footprint?: string }
-const C = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603" }: CProps) => (
+type CProps = { name: string; value: string; x: string; y: string; lcsc: string; mpn: string; p1: string; p2: string; footprint?: string; sec: string }
+const C = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", sec }: CProps) => (
   <capacitor
     name={name}
     capacitance={value}
@@ -68,6 +73,8 @@ const C = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603" }: CProps)
     pcbX={x}
     pcbY={y}
     layer="top"
+    schSheetName="front"
+    schSectionName={sec}
     supplierPartNumbers={{ jlcpcb: [lcsc] }}
     manufacturerPartNumber={mpn}
     connections={{ pin1: p1, pin2: p2 }}
@@ -96,13 +103,19 @@ const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: n
         pcbX={`${jackX}mm`}
         pcbY={`${jackY}mm`}
         layer="top"
+        schSheetName="front"
+        schSectionName="midi_in"
         connections={{ tip, ring, sleeve: `net.MIDI_IN_${ch}_SLEEVE` }}
       />
-      <TLP2362_TPL_E
+      {/* Toshiba TLP2361(TPL,E, C107626: inverting totem-pole output, IFHL
+          1.3 mA max to 105 C. Pin 1 anode, 3 cathode, 4 GND, 5 VO, 6 VCC. */}
+      <TLP2361_TPL_E
         name={u}
         pcbX={rx}
         pcbY={ry}
         layer="top"
+        schSheetName="front"
+        schSectionName="midi_in"
         pinAttributes={{ pin1: { isPassive: true }, pin3: { isPassive: true }, pin4: { requiresGround: true }, pin5: { isPassive: true }, pin6: { requiresPower: true } }}
         connections={{
           pin1: anode,
@@ -117,12 +130,14 @@ const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: n
         pcbX={`${x + 8}mm`}
         pcbY={`${y + 2}mm`}
         layer="top"
+        schSheetName="front"
+        schSectionName="midi_in"
         connections={{ cathode: anode, anode: tip }}
       />
-      <R name={`R${ch}`} value="220" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
-      <R name={`R${ch + 2}`} value="2.2k" x={`${x + 8}mm`} y={`${y - 4}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={rxNet} p2="net.P3V3" />
-      <C name={`C${ch}`} value="100nF" x={`${jackX - 7}mm`} y={`${jackY + 5.5}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
-      <C name={`C${ch + 2}`} value="100nF" x={`${x + 4}mm`} y={`${y + 3}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+      <R name={`R${ch}`} value={`${MIDI_RECEIVER_OHM}`} sec="midi_in" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
+      <R name={`R${ch + 2}`} value="2.2k" sec="midi_in" x={`${x + 8}mm`} y={`${y - 4}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={rxNet} p2="net.P3V3" />
+      <C name={`C${ch}`} value="100nF" sec="midi_in" x={`${jackX - 7}mm`} y={`${jackY + 5.5}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
+      <C name={`C${ch + 2}`} value="100nF" sec="midi_in" x={`${x + 4}mm`} y={`${y + 3}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
     </>
   )
 }
@@ -146,6 +161,8 @@ const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: 
         pcbX={`${jackX}mm`}
         pcbY={`${jackY}mm`}
         layer="top"
+        schSheetName="front"
+        schSectionName="midi_out"
         connections={{ tip, ring, sleeve: "net.GND" }}
       />
       <transistor
@@ -155,15 +172,17 @@ const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: 
         pcbX={`${x}mm`}
         pcbY={`${y}mm`}
         layer="top"
+        schSheetName="front"
+        schSectionName="midi_out"
         pinLabels={{ pin1: "base", pin2: "emitter", pin3: "collector" }}
         supplierPartNumbers={{ jlcpcb: ["C53444"] }}
         manufacturerPartNumber="MMBT3906LT1G"
         connections={{ base, emitter: "net.P3V3", collector: col }}
       />
-      <R name={`R${ch + 4}`} value="4.7k" x={`${x - 2}mm`} y={`${y + 6}mm`} lcsc="C23162" mpn="0603WAF4701T5E" p1={tx} p2={base} />
-      <R name={`R${ch + 6}`} value="10k" x={`${x + 6}mm`} y={`${y + 6}mm`} lcsc="C25804" mpn="0603WAF1002T5E" p1={base} p2="net.P3V3" />
-      <R name={`R${ch + 8}`} value="22" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C118189" mpn="25121WF220JT4E" footprint="2512" rot="90deg" p1={col} p2={ring} />
-      <R name={`R${ch + 10}`} value="33" x={`${x + 4.5}mm`} y={`${y - 6}mm`} lcsc="C53728" mpn="25121WF330JT4E" footprint="2512" p1={tip} p2="net.GND" />
+      <R name={`R${ch + 4}`} value="4.7k" sec="midi_out" x={`${x - 2}mm`} y={`${y + 6}mm`} lcsc="C23162" mpn="0603WAF4701T5E" p1={tx} p2={base} />
+      <R name={`R${ch + 6}`} value="10k" sec="midi_out" x={`${x + 6}mm`} y={`${y + 6}mm`} lcsc="C25804" mpn="0603WAF1002T5E" p1={base} p2="net.P3V3" />
+      <R name={`R${ch + 8}`} value={`${MIDI_OUT_SERIES_OHM.source}`} sec="midi_out" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C118189" mpn="25121WF220JT4E" footprint="2512" rot="90deg" p1={col} p2={ring} />
+      <R name={`R${ch + 10}`} value={`${MIDI_OUT_SERIES_OHM.sink}`} sec="midi_out" x={`${x + 4.5}mm`} y={`${y - 6}mm`} lcsc="C53728" mpn="25121WF330JT4E" footprint="2512" p1={tip} p2="net.GND" />
     </>
   )
 }
@@ -187,7 +206,21 @@ const FRONT_LED_PARTS = [
 ] as const
 
 export default () => (
-  <board width={`${FRONT_PCB.width}mm`} height={`${FRONT_PCB.height}mm`} thickness={`${FRONT_PCB.thickness}mm`} layers={2} minBoardEdgeClearance="0.2mm">
+  <board
+    width={`${FRONT_PCB.width}mm`}
+    height={`${FRONT_PCB.height}mm`}
+    thickness={`${FRONT_PCB.thickness}mm`}
+    layers={2}
+    {...BOARD_POLICY}
+  >
+    {/* Functional schematic blocks. One sheet per board, sections per block. */}
+    <schematicsheet name="front" displayName="MIDI Brain front/UI board" sheetSize="ANSI_B">
+      <schematicsection name="midi_in" displayName="MIDI IN 1/2 (TRS Type A, opto)" />
+      <schematicsection name="midi_out" displayName="MIDI OUT 1/2 (TRS Type A, PNP)" />
+      <schematicsection name="controls" displayName="Controls and status LEDs" />
+      <schematicsection name="power" displayName="Rail decoupling" />
+      <schematicsection name="headers" displayName="Rear interconnect" />
+    </schematicsheet>
     <cutout shape="rect" width={`${FRONT_TOP_NOTCH.width}mm`} height={`${FRONT_TOP_NOTCH.height}mm`} pcbX={`${FRONT_TOP_NOTCH.x}mm`} pcbY={`${FRONT_TOP_NOTCH.y}mm`} />
     {FRONT_BOARD_HOLES.map((h, i) => (
       <Fragment key={`board-hole-${i}`}><hole name={`BOARD_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
@@ -230,6 +263,8 @@ export default () => (
       pcbX={`${RIGHT_CONTROLS.NAV.x}mm`}
       pcbY={`${RIGHT_CONTROLS.NAV.y}mm`}
       layer="top"
+      schSheetName="front"
+      schSectionName="controls"
       connections={{ COM: "net.GND", A: "net.NAV_UP", B: "net.NAV_DOWN", C: "net.NAV_LEFT", D: "net.NAV_RIGHT", CEN: "net.NAV_PRESS", pin7: "net.GND", pin8: "net.GND" }}
     />
     <PEC11R_4215F_S0024
@@ -237,6 +272,8 @@ export default () => (
       pcbX={`${RIGHT_CONTROLS.TEMPO.x}mm`}
       pcbY={`${RIGHT_CONTROLS.TEMPO.y}mm`}
       layer="top"
+      schSheetName="front"
+      schSectionName="controls"
       connections={{ A: "net.ENC_A", B: "net.ENC_B", C: "net.GND", pin4: "net.GND", pin5: "net.ENC_SW", pin7: "net.GND", pin8: "net.GND" }}
     />
     {TRANSPORT_SWITCHES.map(sw => (
@@ -246,28 +283,32 @@ export default () => (
         pcbX={`${transportButtonX(sw.button)}mm`}
         pcbY={`${TRANSPORT_Y}mm`}
         layer="top"
+        schSheetName="front"
+        schSectionName="controls"
         connections={{ pin1: "net.GND", pin3: sw.net }}
       />
     ))}
-    <B3F_4055 name="SW6" pcbX={`${RIGHT_CONTROLS.SHIFT_EXIT.x}mm`} pcbY={`${RIGHT_CONTROLS.SHIFT_EXIT.y}mm`} layer="top" connections={{ pin1: "net.GND", pin3: "net.SHIFT_EXIT" }} />
+    <B3F_4055 name="SW6" pcbX={`${RIGHT_CONTROLS.SHIFT_EXIT.x}mm`} pcbY={`${RIGHT_CONTROLS.SHIFT_EXIT.y}mm`} layer="top" schSheetName="front" schSectionName="controls" connections={{ pin1: "net.GND", pin3: "net.SHIFT_EXIT" }} />
 
     {FRONT_LED_PARTS.map((led, i) => (
       <Fragment key={led.name}>
-        <R name={`R${13 + i}`} value="330" x={`${transportButtonX(led.button) - 4}mm`} y={`${LED_Y}mm`} lcsc="C23138" mpn="0603WAF3300T5E" p1={led.drive} p2={led.anode} />
+        <R name={`R${13 + i}`} value="330" sec="controls" x={`${transportButtonX(led.button) - 4}mm`} y={`${LED_Y}mm`} lcsc="C23138" mpn="0603WAF3300T5E" p1={led.drive} p2={led.anode} />
         <led
           name={led.name}
           pcbX={`${transportButtonX(led.button)}mm`}
           pcbY={`${LED_Y}mm`}
           layer="top"
           footprint="0805"
+          schSheetName="front"
+          schSectionName="controls"
           supplierPartNumbers={{ jlcpcb: [led.lcsc] }}
           manufacturerPartNumber={led.mpn}
           connections={{ anode: led.anode, cathode: "net.GND" }}
         />
       </Fragment>
     ))}
-    <C name="C5" value="10uF" x="50mm" y="46mm" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
-    <C name="C6" value="100nF" x="60mm" y="-12mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+    <C name="C5" value="10uF" sec="power" x="50mm" y="46mm" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
+    <C name="C6" value="100nF" sec="power" x="60mm" y="-12mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
 
     <BH254V_26P
       name="J5"
@@ -275,6 +316,8 @@ export default () => (
       pcbY={`${FRONT_INTERCONNECT.y}mm`}
       pcbRotation={`${FRONT_INTERCONNECT.rotation}deg`}
       layer="bottom"
+      schSheetName="front"
+      schSectionName="headers"
       connections={{
         pin1: "net.P3V3",
         pin2: "net.GND",
@@ -304,5 +347,9 @@ export default () => (
         pin26: "net.SHIFT_EXIT",
       }}
     />
+
+    {/* Panel-side ground pour. Every SMD part is on the top layer and J5 (THT)
+        is on the bottom, so the free bottom copper is the ground plane. */}
+    <copperpour name="GND_POUR_BOTTOM" layer="bottom" connectsTo="net.GND" boardEdgeMargin="0.3mm" />
   </board>
 )
