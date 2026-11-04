@@ -23,7 +23,7 @@ juce_add_gui_app(mnkybox
   NEEDS_CURL      FALSE
   NEEDS_WEB_BROWSER FALSE)
 
-target_sources(mnkybox PRIVATE
+set(MNKY_APP_SOURCES
   main.cpp
   MainComponent.cpp
   app_state.cpp
@@ -40,6 +40,7 @@ target_sources(mnkybox PRIVATE
   screens/FxScreen.cpp
   screens/RecorderScreen.cpp
   screens/SystemScreen.cpp)
+target_sources(mnkybox PRIVATE ${MNKY_APP_SOURCES})
 
 # Headers are listed for IDE/index completeness only; JUCE's unity build picks
 # the sources up regardless.
@@ -71,10 +72,11 @@ target_include_directories(mnkybox PRIVATE
 
 target_compile_features(mnkybox PRIVATE cxx_std_20)
 
-# The ARCHITECTURE.md acceptance standard: zero warnings. JUCE's module headers
-# are consumed as system headers by the juce:: targets, so this only judges the
-# app's own sources.
-target_compile_options(mnkybox PRIVATE -Wall -Wextra -Werror)
+# The ARCHITECTURE.md acceptance standard: zero warnings on our sources. JUCE
+# compiles its module implementation (incl. vendored Opus/HarfBuzz, which trip
+# GCC -Werror) inside this target, so the warning set is scoped per-source
+# instead of target-wide.
+set_source_files_properties(${MNKY_APP_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
 
 target_compile_definitions(mnkybox PRIVATE
   JUCE_WEB_BROWSER=0
