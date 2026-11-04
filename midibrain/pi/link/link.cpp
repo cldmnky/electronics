@@ -1,6 +1,8 @@
 // Implementation of the Pico <-> Pi link core (see link.hpp for the contract).
 #include "link.hpp"
 
+#include "../../firmware/pico/clock_follow.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <stdexcept>
@@ -176,6 +178,23 @@ void EmulatorTransport::handle(const mb::Frame& f) {
       if (f.length < 2) return;
       clock_enable_seen_ = true;
       break;
+    case mb::EV_CLOCK_ROUTE: {
+      if (f.length < 3) return;
+      const std::uint8_t port = f.payload[1];
+      const std::uint8_t flags = f.payload[2];
+      if (port > 1 || (flags & ~mb::CLOCK_ROUTE_MASK) != 0) return;
+      clock_route_flags_[port] = flags;
+      break;
+    }
+    case mb::EV_CLOCK_SOURCE: {
+      if (f.length < 3) return;
+      const std::uint8_t source = f.payload[1];
+      const std::uint8_t mask = f.payload[2];
+      if (source > mb::CLOCK_SOURCE_TRS2 || (mask & ~mb::CLOCK_FOLLOW_MASK) != 0) return;
+      clock_source_ = source;
+      transport_follow_mask_ = mask;
+      break;
+    }
     case mb::EV_LED_SET:
       if (f.length < 3) return;
       led_mask_ = f.payload[1];
@@ -288,6 +307,10 @@ void EmulatorTransport::reboot() {
   rolling_ = false;
   manual_ = false;
   clock_enable_seen_ = false;
+  clock_route_flags_[0] = mb::CLOCK_ROUTE_DEFAULT;
+  clock_route_flags_[1] = mb::CLOCK_ROUTE_DEFAULT;
+  clock_source_ = mb::CLOCK_SOURCE_INTERNAL;
+  transport_follow_mask_ = 0;
   led_mask_ = 0;
   led_states_ = 0;
   sent_midi_.clear();
@@ -528,6 +551,10 @@ void PicoLink::handle(const mb::Frame& f, std::uint64_t now_us) {
         up.kind = Event::Linked;
         up.u32a = pico_session_;
         push(up);
+        // The Pico reset its RAM gates at boot; re-assert the last-known
+        // per-output route now that the session is confirmed.
+        resendClockRoutes();
+        resendClockSource();
       }
       break;
     case mb::Type::control_event:
@@ -655,6 +682,43 @@ bool PicoLink::transport(std::uint8_t cmd) {
   f.payload[0] = mb::EV_TRANSPORT;
   f.payload[1] = cmd;
   return queueFrame(f);
+}
+
+bool PicoLink::clockRoute(std::uint8_t port, std::uint8_t flags) {
+  mb::Frame f{};
+  if (!mb::pack_clock_route(f, 0, 0, port, flags)) return false;
+  if (!queueFrame(f)) return false;
+  // Remember only what actually went out: the cache is the last-known route
+  // that a reconnect must re-assert, not an unqueued caller intent.
+  clock_route_flags_[port] = flags;
+  clock_route_known_[port] = true;
+  return true;
+}
+
+void PicoLink::resendClockRoutes() {
+  for (std::uint8_t port = 0; port < 2; ++port) {
+    if (!clock_route_known_[port]) continue;
+    mb::Frame f{};
+    if (!mb::pack_clock_route(f, 0, 0, port, clock_route_flags_[port])) continue;
+    queueFrame(f);
+  }
+}
+
+bool PicoLink::clockSource(std::uint8_t source, std::uint8_t transport_mask) {
+  mb::Frame f{};
+  if (!mb::pack_clock_source(f, 0, 0, source, transport_mask)) return false;
+  if (!queueFrame(f)) return false;
+  clock_source_ = source;
+  clock_source_mask_ = transport_mask;
+  clock_source_known_ = true;
+  return true;
+}
+
+void PicoLink::resendClockSource() {
+  if (!clock_source_known_) return;
+  mb::Frame f{};
+  if (!mb::pack_clock_source(f, 0, 0, clock_source_, clock_source_mask_)) return;
+  queueFrame(f);
 }
 
 bool PicoLink::clockEnable(bool on) {

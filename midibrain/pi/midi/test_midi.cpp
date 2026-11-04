@@ -10,6 +10,7 @@
 #include "buttons.hpp"
 #include "clock.hpp"
 #include "router.hpp"
+#include "transport_follow.hpp"
 #include "usb.hpp"
 
 namespace {
@@ -33,6 +34,7 @@ using mnky::midi::Port;
 using mnky::midi::Router;
 using mnky::midi::UsbClock;
 using mnky::midi::UsbMidi;
+using mnky::midi::UsbTransportFollow;
 
 struct Delivery {
   Port dst;
@@ -491,6 +493,118 @@ void usbWrapper() {
   pass("usb wrapper");
 }
 
+// ---------------------------------------------------------------------------
+// clock: per-output mirror gates (EV_CLOCK_ROUTE semantics)
+// ---------------------------------------------------------------------------
+void clockRoutingGates() {
+  UsbClock c;
+  CHECK(c.clockEnabled());
+  CHECK(c.transportEnabled());
+  CHECK(c.mirrorAllows(mnky::midi::kClockByte));
+  CHECK(c.mirrorAllows(mnky::midi::kStartByte));
+  CHECK(c.mirrorAllows(mnky::midi::kContinueByte));
+  CHECK(c.mirrorAllows(mnky::midi::kStopByte));
+  CHECK(c.mirrorAllows(0x90));  // ordinary MIDI is not mirror-generated
+
+  c.setTempo(12000);
+  c.setRolling(true);
+  c.addTick(0, 1000, 5000);  // offset 4000, first byte due at 5000
+  const auto first_due = c.nextDueUs(5000);
+  CHECK(first_due.has_value() && *first_due == 5000);
+  CHECK(c.popDue(5000));
+  const std::uint64_t skipped_before = c.skipped();
+
+  // Clock gate off: no scheduled bytes, but the phase and the transport gate
+  // keep their state, so a transport byte is still allowed.
+  c.setClockEnabled(false);
+  CHECK(!c.clockEnabled());
+  CHECK(!c.nextDueUs(5000 + 20834).has_value());
+  CHECK(!c.popDue(5000 + 20834));
+  CHECK(!c.popDue(5000 + 2 * 20834));
+  CHECK(c.skipped() == skipped_before);
+  CHECK(c.mirrorAllows(mnky::midi::kStartByte));
+  CHECK(!c.mirrorAllows(mnky::midi::kClockByte));
+
+  // Transport gate off: START/CONTINUE/STOP are suppressed independently.
+  c.setTransportEnabled(false);
+  CHECK(!c.transportEnabled());
+  CHECK(!c.mirrorAllows(mnky::midi::kStartByte));
+  CHECK(!c.mirrorAllows(mnky::midi::kContinueByte));
+  CHECK(!c.mirrorAllows(mnky::midi::kStopByte));
+  CHECK(c.mirrorAllows(0x90));
+
+  // Re-opening the clock gate emits one byte immediately and counts the
+  // gated intervals as skipped instead of bursting them back to back.
+  c.setClockEnabled(true);
+  CHECK(c.clockEnabled());
+  const std::uint64_t reopened = 5000 + 3 * 20834;
+  const auto reopened_due = c.nextDueUs(reopened);
+  CHECK(reopened_due.has_value() && *reopened_due == reopened);
+  CHECK(c.popDue(reopened));
+  CHECK(c.skipped() > skipped_before);
+  CHECK(c.mirrorAllows(mnky::midi::kClockByte));
+  CHECK(!c.popDue(reopened));  // phase advanced one interval past `reopened`
+
+  c.setTransportEnabled(true);
+  CHECK(c.transportEnabled());
+  CHECK(c.mirrorAllows(mnky::midi::kStartByte));
+  CHECK(c.mirrorAllows(mnky::midi::kContinueByte));
+  CHECK(c.mirrorAllows(mnky::midi::kStopByte));
+  pass("clock routing gates");
+}
+
+// ---------------------------------------------------------------------------
+// USB transport follow (Pi-side EV_TRANSPORT forwarding policy)
+// ---------------------------------------------------------------------------
+void usbTransportFollow() {
+  UsbTransportFollow follow;
+  CHECK(!follow.enabled());  // the Pico stays transport master by default
+
+  MidiEvent ev;
+  ev.source = Port::UsbIn;
+  ev.size = 1;
+  ev.data[0] = mnky::midi::kStartByte;
+  CHECK(follow.commandFor(ev) == -1);  // disabled: nothing forwarded
+  CHECK(!follow.forwards(ev));
+
+  follow.setEnabled(true);
+  CHECK(follow.enabled());
+  CHECK(follow.commandFor(ev) == 1);
+  CHECK(follow.forwards(ev));
+  std::vector<std::uint8_t> sent;
+  CHECK(follow.forward(ev, [&sent](std::uint8_t command) { sent.push_back(command); }));
+  CHECK(sent.size() == 1 && sent[0] == 1);  // existing EV_TRANSPORT path
+  ev.data[0] = mnky::midi::kContinueByte;
+  CHECK(follow.commandFor(ev) == 2);
+  ev.data[0] = mnky::midi::kStopByte;
+  CHECK(follow.commandFor(ev) == 0);
+
+  // USB is never a clock source: 0xF8 is not a transport command.
+  ev.data[0] = mnky::midi::kClockByte;
+  CHECK(follow.commandFor(ev) == -1);
+  CHECK(!follow.forwards(ev));
+  sent.clear();
+  CHECK(!follow.forward(ev, [&sent](std::uint8_t command) { sent.push_back(command); }));
+  CHECK(sent.empty());
+
+  // Only 1-byte USB transport messages qualify; TRS input is Pico-side.
+  ev.data[0] = mnky::midi::kStartByte;
+  ev.size = 3;
+  ev.data[1] = 60;
+  ev.data[2] = 100;
+  CHECK(follow.commandFor(ev) == -1);
+  ev.size = 1;
+  ev.source = Port::TrsIn1;
+  CHECK(follow.commandFor(ev) == -1);
+  ev.source = Port::UsbOut;
+  CHECK(follow.commandFor(ev) == -1);
+
+  follow.setEnabled(false);
+  ev.source = Port::UsbIn;
+  CHECK(follow.commandFor(ev) == -1);
+  pass("usb transport follow");
+}
+
 }  // namespace
 
 int main() {
@@ -501,6 +615,8 @@ int main() {
   clockTempoAndTransport();
   clockOffsetUnderJitter();
   clockPhaseScheduling();
+  clockRoutingGates();
+  usbTransportFollow();
   buttonMap();
   usbWrapper();
 

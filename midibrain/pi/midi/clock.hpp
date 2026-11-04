@@ -12,6 +12,10 @@
 // then advances a local phase by one tick interval per emitted byte, slewing a
 // fraction of the observed error per tick so a dropped tick costs continuity,
 // not phase.
+//
+// Per-output gates mirror EV_CLOCK_ROUTE (docs/protocol.md): clock bytes are
+// emitted only while the clock gate is on, and the mirror's START/CONTINUE/
+// STOP bytes only while the transport gate is on. Both default on.
 #include <cstdint>
 #include <optional>
 
@@ -34,6 +38,18 @@ class UsbClock {
   void setTempo(std::uint16_t bpmX100);
   std::uint16_t tempo() const { return bpmX100_; }
   double intervalUs() const;
+
+  // Per-output mirror gates (EV_CLOCK_ROUTE semantics). Both default on. A
+  // closed clock gate suppresses scheduled clock bytes without discarding the
+  // phase; intervals skipped while gated are counted when the gate re-opens.
+  void setClockEnabled(bool enabled);
+  bool clockEnabled() const { return clockEnabled_; }
+  void setTransportEnabled(bool enabled);
+  bool transportEnabled() const { return transportEnabled_; }
+  // True when the USB mirror may emit `byte` under the current gates: 0xF8
+  // needs the clock gate, START/CONTINUE/STOP need the transport gate, and
+  // every other byte is not mirror-generated and passes unchanged.
+  bool mirrorAllows(std::uint8_t byte) const;
 
   // USB mirror emits clock bytes only while rolling. Ticks keep arriving while
   // stopped and keep the offset warm; entering roll re-pegs the phase one
@@ -77,6 +93,8 @@ class UsbClock {
 
   std::uint16_t bpmX100_ = kDefaultBpmX100;
   bool rolling_ = false;
+  bool clockEnabled_ = true;
+  bool transportEnabled_ = true;
   bool haveTick_ = false;
   std::uint32_t lastTick_ = 0;
   double mappedUs_ = 0.0;   // Pi time of the last accepted tick

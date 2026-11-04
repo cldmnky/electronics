@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "link.hpp"
+#include "../../firmware/pico/clock_follow.hpp"
 
 namespace {
 
@@ -227,6 +228,96 @@ void testTempoTransportManual() {
   std::cout << "PASS tempo/transport/mode: echo + state frames, clamp, panel mode, LEDs\n";
 }
 
+void testClockRouteSender() {
+  EmulatorTransport pico;
+  PicoLink link(pico);
+  assert(pumpUntil(link, 200, [&] { return link.linkUp(); }));
+  pump(link, 25);  // flush the boot announcement batch
+  drain(link);
+
+  // Boot default: both outputs on (legacy behavior).
+  assert(pico.clockRouteFlags(0) == mb::CLOCK_ROUTE_DEFAULT);
+  assert(pico.clockRouteFlags(1) == mb::CLOCK_ROUTE_DEFAULT);
+
+  assert(link.clockRoute(0, mb::CLOCK_ROUTE_TRANSPORT));  // OUT1: clock off
+  pump(link, 20);
+  assert(pico.clockRouteFlags(0) == mb::CLOCK_ROUTE_TRANSPORT);
+  assert(pico.clockRouteFlags(1) == mb::CLOCK_ROUTE_DEFAULT);
+
+  // The sender validates before queueing: no such port, no reserved bits.
+  assert(!link.clockRoute(2, mb::CLOCK_ROUTE_DEFAULT));
+  assert(!link.clockRoute(0, 0x80));
+  pump(link, 20);
+  assert(pico.clockRouteFlags(0) == mb::CLOCK_ROUTE_TRANSPORT);
+  assert(pico.clockRouteFlags(1) == mb::CLOCK_ROUTE_DEFAULT);
+
+  // A Pico power cycle resets RAM gates to defaults; after the re-handshake
+  // the link re-sends the last-known route for the output the Pi had set.
+  pico.reboot();
+  assert(pumpUntil(link, 300, [&] { return link.linkUp(); }));
+  pump(link, 30);
+  assert(pico.clockRouteFlags(0) == mb::CLOCK_ROUTE_TRANSPORT);
+  assert(pico.clockRouteFlags(1) == mb::CLOCK_ROUTE_DEFAULT);
+
+  // RESET_LINK keeps the Pico gates (RAM survives) and the Pi re-asserts the
+  // cached route for both outputs anyway.
+  assert(link.clockRoute(1, mb::CLOCK_ROUTE_CLOCK));
+  pump(link, 20);
+  assert(pico.clockRouteFlags(1) == mb::CLOCK_ROUTE_CLOCK);
+  const std::uint32_t reset_from = link.session();
+  assert(link.resetLink());
+  assert(pumpUntil(link, 300, [&] { return link.session() != reset_from && link.linkUp(); }));
+  pump(link, 30);
+  assert(pico.clockRouteFlags(0) == mb::CLOCK_ROUTE_TRANSPORT);
+  assert(pico.clockRouteFlags(1) == mb::CLOCK_ROUTE_CLOCK);
+  std::cout << "PASS clock route: per-output flags validated, applied and resent after HELLO\n";
+}
+
+void testClockSourceSender() {
+  EmulatorTransport pico;
+  PicoLink link(pico);
+  assert(pumpUntil(link, 200, [&] { return link.linkUp(); }));
+  pump(link, 25);
+  drain(link);
+
+  // Boot default: internal generator, no transport follow.
+  assert(pico.clockSource() == mb::CLOCK_SOURCE_INTERNAL);
+  assert(pico.transportFollowMask() == 0);
+
+  assert(link.clockSource(mb::CLOCK_SOURCE_TRS1,
+                          mb::CLOCK_FOLLOW_TRS1 | mb::CLOCK_FOLLOW_TRS2));
+  pump(link, 20);
+  assert(pico.clockSource() == mb::CLOCK_SOURCE_TRS1);
+  assert(pico.transportFollowMask() == (mb::CLOCK_FOLLOW_TRS1 | mb::CLOCK_FOLLOW_TRS2));
+
+  // Validation happens before queueing: source 3+ and the Pi-side USB bit are
+  // rejected and change nothing.
+  assert(!link.clockSource(3, 0));
+  assert(!link.clockSource(mb::CLOCK_SOURCE_TRS2, 0x04));
+  pump(link, 20);
+  assert(pico.clockSource() == mb::CLOCK_SOURCE_TRS1);
+  assert(pico.transportFollowMask() == (mb::CLOCK_FOLLOW_TRS1 | mb::CLOCK_FOLLOW_TRS2));
+
+  // A Pico power cycle resets RAM follow state to internal/no-follow; the
+  // reconnect re-sends the last-known config.
+  pico.reboot();
+  assert(pumpUntil(link, 300, [&] { return link.linkUp(); }));
+  pump(link, 30);
+  assert(pico.clockSource() == mb::CLOCK_SOURCE_TRS1);
+  assert(pico.transportFollowMask() == (mb::CLOCK_FOLLOW_TRS1 | mb::CLOCK_FOLLOW_TRS2));
+
+  // RESET_LINK keeps the Pico RAM state and the Pi re-asserts it too.
+  assert(link.clockSource(mb::CLOCK_SOURCE_TRS2, mb::CLOCK_FOLLOW_TRS2));
+  pump(link, 20);
+  const std::uint32_t reset_from = link.session();
+  assert(link.resetLink());
+  assert(pumpUntil(link, 300, [&] { return link.session() != reset_from && link.linkUp(); }));
+  pump(link, 30);
+  assert(pico.clockSource() == mb::CLOCK_SOURCE_TRS2);
+  assert(pico.transportFollowMask() == mb::CLOCK_FOLLOW_TRS2);
+  std::cout << "PASS clock source: source/mask validated, applied and resent after HELLO\n";
+}
+
 void testStatusRequest() {
   EmulatorTransport pico;
   PicoLink link(pico);
@@ -426,6 +517,8 @@ int main() {
   testButtons();
   testSendMidiCapture();
   testTempoTransportManual();
+  testClockRouteSender();
+  testClockSourceSender();
   testStatusRequest();
   testTxOverflowStatus();
   testRebootAndResetLink();

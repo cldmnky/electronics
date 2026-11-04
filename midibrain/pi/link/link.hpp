@@ -82,6 +82,16 @@ class EmulatorTransport : public ISpiTransport {
   bool rolling() const { return rolling_; }
   bool manual() const { return manual_; }
   bool clockEnableSeen() const { return clock_enable_seen_; }
+  // Last EV_CLOCK_SOURCE applied (0 internal, 1 TRS IN1, 2 TRS IN2) and the
+  // transport-follow mask (bits 0/1). Both default off, as at Pico boot;
+  // reboot() resets them, resetLink() keeps them.
+  std::uint8_t clockSource() const { return clock_source_; }
+  std::uint8_t transportFollowMask() const { return transport_follow_mask_; }
+  // Last EV_CLOCK_ROUTE flags applied for output 0/1 (defaults on, as the
+  // firmware's boot state; reboot() resets them, resetLink() keeps them).
+  std::uint8_t clockRouteFlags(std::uint8_t port) const {
+    return clock_route_flags_[port];
+  }
   std::uint8_t ledMask() const { return led_mask_; }
   std::uint8_t ledStates() const { return led_states_; }
   std::uint32_t ticks() const { return tick_; }
@@ -111,7 +121,11 @@ class EmulatorTransport : public ISpiTransport {
   bool rolling_ = false;
   bool manual_ = false;
   bool clock_enable_seen_ = false;
+  std::uint8_t clock_source_ = 0;          // 0 internal, 1 TRS IN1, 2 TRS IN2
+  std::uint8_t transport_follow_mask_ = 0; // bit0 TRS IN1, bit1 TRS IN2
   std::uint16_t bpm_x100_ = kTempoDefaultX100;
+  std::uint8_t clock_route_flags_[2] = {mb::CLOCK_ROUTE_DEFAULT,
+                                        mb::CLOCK_ROUTE_DEFAULT};
   std::uint8_t led_mask_ = 0;
   std::uint8_t led_states_ = 0;
   std::uint16_t tx_overflow_ = 0;
@@ -216,6 +230,17 @@ class PicoLink {
   bool sendMidi(std::uint8_t port, const std::uint8_t* data, std::uint8_t n);
   bool setTempo(std::uint16_t bpm_x100);
   bool transport(std::uint8_t cmd);  // 0 stop, 1 start, 2 continue
+  // Per-output TRS clock/transport gate (0x14): port 0 = OUT1 (uart0), 1 =
+  // OUT2 (uart1); flags bit0 = clock, bit1 = transport. The last successfully
+  // queued route per output is re-sent after HELLO so a Pico reboot cannot
+  // silently revert an output to the boot default while the Pi is connected.
+  bool clockRoute(std::uint8_t port, std::uint8_t flags);
+  // External clock follow (0x17): source 0 internal, 1 TRS IN1, 2 TRS IN2;
+  // transport_mask bit0 TRS IN1, bit1 TRS IN2 (bit2 USB is Pi-side only and
+  // rejected on the wire). Source 3+ or reserved mask bits are rejected. The
+  // last successfully queued config is re-sent after HELLO; the Pico resets to
+  // internal/no-follow at boot.
+  bool clockSource(std::uint8_t source, std::uint8_t transport_mask);
   // Deprecated in the firmware (clock is always on); sent for compatibility.
   bool clockEnable(bool on);
   bool ledSet(std::uint8_t mask, std::uint8_t states);
@@ -239,6 +264,8 @@ class PicoLink {
   void handleControl(const mb::Frame& f, std::uint64_t now_us);
   bool queueFrame(mb::Frame f);
   bool enqueueHello();
+  void resendClockRoutes();
+  void resendClockSource();
   void push(const Event& e);
 
   ISpiTransport& transport_;
@@ -254,6 +281,15 @@ class PicoLink {
   std::deque<Event> events_;
   mb::LinkStatus status_{};
   bool have_status_ = false;
+  // Last-known EV_CLOCK_ROUTE flags per output (index 0 = OUT1, 1 = OUT2);
+  // only known entries are re-sent after HELLO.
+  std::uint8_t clock_route_flags_[2] = {mb::CLOCK_ROUTE_DEFAULT,
+                                        mb::CLOCK_ROUTE_DEFAULT};
+  bool clock_route_known_[2] = {};
+  // Last-known EV_CLOCK_SOURCE config; re-sent after HELLO when known.
+  std::uint8_t clock_source_ = 0;
+  std::uint8_t clock_source_mask_ = 0;
+  bool clock_source_known_ = false;
   TickFn tick_fn_;
   Stats stats_;
 };

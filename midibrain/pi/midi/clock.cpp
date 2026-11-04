@@ -14,6 +14,23 @@ double UsbClock::intervalUs() const {
   return 6.0e9 / (static_cast<double>(bpmX100_) * kTicksPerQuarter);
 }
 
+void UsbClock::setClockEnabled(bool enabled) { clockEnabled_ = enabled; }
+
+void UsbClock::setTransportEnabled(bool enabled) { transportEnabled_ = enabled; }
+
+bool UsbClock::mirrorAllows(std::uint8_t byte) const {
+  switch (byte) {
+    case kClockByte:
+      return clockEnabled_;
+    case kStartByte:
+    case kContinueByte:
+    case kStopByte:
+      return transportEnabled_;
+    default:
+      return true;
+  }
+}
+
 void UsbClock::setRolling(bool rolling) {
   if (rolling_ == rolling) return;
   rolling_ = rolling;
@@ -56,7 +73,7 @@ void UsbClock::addTick(std::uint32_t tick, std::uint32_t picoStampUs, std::uint6
 }
 
 std::optional<std::uint64_t> UsbClock::nextDueUs(std::uint64_t piNowUs) const {
-  if (!rolling_ || !haveTick_) return std::nullopt;
+  if (!rolling_ || !haveTick_ || !clockEnabled_) return std::nullopt;
   const double now = static_cast<double>(piNowUs);
   if (nextDueUs_ + intervalUs() <= now) return piNowUs;  // stale phase: due now
   if (nextDueUs_ <= now) return piNowUs;                 // due now
@@ -64,7 +81,7 @@ std::optional<std::uint64_t> UsbClock::nextDueUs(std::uint64_t piNowUs) const {
 }
 
 bool UsbClock::popDue(std::uint64_t piNowUs) {
-  if (!rolling_ || !haveTick_) return false;
+  if (!rolling_ || !haveTick_ || !clockEnabled_) return false;
   const double now = static_cast<double>(piNowUs);
   if (nextDueUs_ > now) return false;
   const double interval = intervalUs();

@@ -1,12 +1,14 @@
 // mnkybox Pico firmware (RP2350 / Pico 2): MIDI UARTs, panel controls, SPI link to Pi.
 //
 // Owns, in real time: both MIDI UARTs (31250 baud), debounced panel inputs,
-// quadrature tempo encoder, three LEDs, the local MIDI-clock scheduler, and
-// the SPI-slave side of the 32-byte framed link (protocol.hpp / midi.hpp).
-// The Pico is the single clock master: every tick also queues a timestamped
-// tick frame so the Pi can discipline its USB clock and map Pico timestamps
-// into its own timeline. The Pi owns recording, routing policy, the UI and
-// tempo overrides.
+// quadrature tempo encoder, three LEDs, the local MIDI-clock scheduler, the
+// external-clock follower, and the SPI-slave side of the 32-byte framed link
+// (protocol.hpp / midi.hpp / clock_follow.hpp). The Pico is the single clock
+// master: every tick also queues a timestamped tick frame so the Pi can
+// discipline its USB clock and map Pico timestamps into its own timeline. The
+// Pi owns recording, routing policy, the UI and tempo overrides. External
+// clock follow only retunes the local generator (tempo); the clock stream
+// never stops, and a lost source coasts at the last estimate.
 //
 // Link contract (see docs/protocol.md): the Pi asserts CSn, waits >= 10 us,
 // clocks exactly 32 bytes, deasserts; idle fillers are repeats deduped by
@@ -25,6 +27,7 @@
 #include "pico/bootrom.h"
 #include "pico/stdlib.h"
 
+#include "clock_follow.hpp"
 #include "midi.hpp"
 #include "panel_input.hpp"
 #include "pins.h"
@@ -41,6 +44,15 @@ constexpr int32_t kTempoDefault = 12000;  // bpm * 100
 constexpr int32_t kTempoMin = 2000, kTempoMax = 30000;
 constexpr int32_t kTempoStep = 100, kTempoFineStep = 10;
 constexpr int kQuartersPerDetent = 4;
+// EV_TEMPO announcements while following use a 0.1 bpm deadband so residual
+// jitter on the interval estimate does not flood the link; the generator
+// itself always runs at the unquantized estimate.
+constexpr int32_t kFollowTempoAnnounceX100 = 10;
+
+constexpr uint32_t tempo_interval_us(int32_t bpm_x100) {
+  return static_cast<uint32_t>((60'000'000LL * 100) /
+                               (static_cast<int64_t>(bpm_x100) * 24));
+}
 
 // ---------------------------------------------------------------------------
 // Outbound SPI frame queue (main loop only; CSn path only peeks)
@@ -121,8 +133,9 @@ bool hello_seen = false;
 uint32_t last_rx_session = 0;
 uint16_t last_rx_seq = 0;
 bool last_rx_valid = false;
-// The clock runs unconditionally from boot at the current tempo: downstream
-// gear always has clock, and transport commands only move the transport state.
+// The clock runs from boot at the current tempo on every output whose 0x14
+// clock gate is on (default on): downstream gear always has clock, and
+// transport commands only move the transport state.
 int32_t bpm_x100 = kTempoDefault;
 bool transport_running = false;
 // Local (default): panel PLAY/PLAY_START/STOP drive transport immediately so
@@ -131,6 +144,15 @@ bool transport_running = false;
 // Resets to local on boot and on Pi (re)connect; the Pi re-sends MODE after
 // HELLO when its policy needs manual.
 bool transport_local = true;
+// Per-output EV_CLOCK_ROUTE gates (RAM only): index 0 = OUT1/uart0, 1 =
+// OUT2/uart1. Defaults preserve the legacy always-on stream; the Pi re-sends
+// its last-known route after HELLO, so only boot state lives here.
+mb::ClockGates clock_gates;
+// External clock follow (RAM only). Default: internal generator, no transport
+// follow; the Pi re-sends its last-known config after HELLO. The generator
+// always runs from clock_interval_us; follow only retunes that period.
+mb::ClockFollow clock_follow;
+volatile uint32_t clock_interval_us = tempo_interval_us(kTempoDefault);
 uint32_t clock_ticks = 0;
 int clock_alarm = -1;
 uint8_t led_mask = 0;
@@ -241,21 +263,39 @@ void midi_emit(uint8_t port, const uint8_t* data, uint32_t n) {
 }
 
 int64_t clock_tick(alarm_id_t, void*) {
-  // Unconditional: the tick stream never stops (see transport_cmd for state).
+  // Clock bytes are per-output gated; the tick count and Pi tick frame stay
+  // unconditional because they also drive the Pi timeline and USB mirror.
   const uint32_t stamp_us = time_us_32();
   const uint8_t tick = 0xF8;
-  uart_putc(uart0, tick);
-  uart_putc(uart1, tick);
+  if (clock_gates.clockOn(0)) uart_putc(uart0, tick);
+  if (clock_gates.clockOn(1)) uart_putc(uart1, tick);
   ++clock_ticks;
   queue_tick(clock_ticks, stamp_us);  // Pi USB-mirror + timeline mapping
-  const int64_t interval = (60'000'000LL * 100) / (static_cast<int64_t>(bpm_x100) * 24);
-  return interval;
+  return static_cast<int64_t>(clock_interval_us);
+}
+
+// Recompute the generator period: the smoothed follow estimate when one exists
+// (including while coasting), otherwise the internal tempo. `announce` queues
+// EV_TEMPO when the followed tempo moves past the deadband; the main loop owns
+// all of this state, and clock_tick only reads the single volatile word.
+void clock_interval_refresh(bool announce) {
+  if (!clock_follow.hasEstimate()) {
+    clock_interval_us = tempo_interval_us(bpm_x100);
+    return;
+  }
+  clock_interval_us = clock_follow.intervalUsRounded();
+  const int32_t followed = clock_follow.bpmX100();
+  if (followed >= bpm_x100 + kFollowTempoAnnounceX100 ||
+      followed <= bpm_x100 - kFollowTempoAnnounceX100) {
+    bpm_x100 = followed;
+    if (announce) queue_tempo();
+  }
 }
 
 void clock_arm() {
   if (clock_alarm < 0) {
-    const int64_t interval = (60'000'000LL * 100) / (static_cast<int64_t>(bpm_x100) * 24);
-    clock_alarm = add_alarm_in_us(static_cast<uint64_t>(interval), clock_tick, nullptr, true);
+    clock_alarm = add_alarm_in_us(static_cast<uint64_t>(clock_interval_us), clock_tick, nullptr,
+                                  true);
   }
 }
 
@@ -320,7 +360,7 @@ void reset_link_session() {
 }
 
 void transport_cmd(uint8_t cmd) {
-  // Transport bytes always go out; the 0xF8 stream never stops.
+  // Transport state is global; only the emitted bytes are per-output gated.
   uint8_t b = 0xFC;
   if (cmd == 1) {
     b = 0xFA;
@@ -332,8 +372,8 @@ void transport_cmd(uint8_t cmd) {
   } else {
     transport_running = false;
   }
-  midi_emit(0, &b, 1);
-  midi_emit(1, &b, 1);
+  if (clock_gates.transportOn(0)) midi_emit(0, &b, 1);
+  if (clock_gates.transportOn(1)) midi_emit(1, &b, 1);
   announce_state();
 }
 
@@ -341,6 +381,7 @@ void set_tempo(int32_t v, bool echo) {
   if (v < kTempoMin) v = kTempoMin;
   if (v > kTempoMax) v = kTempoMax;
   bpm_x100 = v;
+  clock_interval_refresh(false);  // a followed source wins over local tempo
   if (echo) queue_tempo();
 }
 
@@ -406,6 +447,27 @@ void handle_frame(const mb::Frame& f) {
       }
       printf("[link] CLOCK_ENABLE ignored (clock always on)\n");
       announce_state();
+      break;
+    case mb::EV_CLOCK_ROUTE:
+      if (f.length < 3 || !clock_gates.apply(f.payload[1], f.payload[2])) {
+        ++bad_frames;
+        break;
+      }
+      printf("[link] CLOCK_ROUTE out%u clock=%d transport=%d\n",
+             static_cast<unsigned>(f.payload[1]), clock_gates.clockOn(f.payload[1]) ? 1 : 0,
+             clock_gates.transportOn(f.payload[1]) ? 1 : 0);
+      break;
+    case mb::EV_CLOCK_SOURCE:
+      if (f.length < 3 || !clock_follow.apply(f.payload[1], f.payload[2])) {
+        ++bad_frames;
+        break;
+      }
+      clock_interval_refresh(false);  // source change restarts acquisition
+      printf("[link] CLOCK_SOURCE %s transport=%02x\n",
+             clock_follow.source() == mb::CLOCK_SOURCE_INTERNAL
+                 ? "internal"
+                 : (clock_follow.source() == mb::CLOCK_SOURCE_TRS1 ? "TRS IN1" : "TRS IN2"),
+             static_cast<unsigned>(clock_follow.transportMask()));
       break;
     case mb::EV_LED_SET:
       if (f.length < 3) {
@@ -556,7 +618,31 @@ void drain_midi() {
   for (uint8_t port = 0; port < 2; ++port) {
     RxRing::Entry e{};
     while (rxring[port].pop(e)) {
-      if (midi_parse[port].feed(e.byte, e.stamp)) queue_midi(midi_parse[port].last());
+      if (!midi_parse[port].feed(e.byte, e.stamp)) continue;
+      const mb::MidiMessage& m = midi_parse[port].last();
+      if (m.size == 1 && m.data[0] == 0xF8) {
+        // The selected source's ticks drive the generator estimate; they are
+        // consumed instead of routed so the Pico regenerates rather than
+        // mirrors them. Other ports' clock stays ordinary MIDI input.
+        if (clock_follow.following() && clock_follow.source() == port + 1) {
+          clock_follow.onTick(m.stamp_us);
+          clock_interval_refresh(true);
+        } else {
+          queue_midi(m);
+        }
+        continue;
+      }
+      const int transport = mb::transport_command_for_byte(m.size == 1 ? m.data[0] : 0);
+      if (transport >= 0) {
+        // FA/FB/FC are consumed on every TRS input and never enter the MIDI
+        // stream; only a transport-followed input drives local transport.
+        if (clock_follow.followsTransport(port)) {
+          transport_cmd(static_cast<uint8_t>(transport));
+          if (!led_override) refresh_indicators();
+        }
+        continue;
+      }
+      queue_midi(m);
     }
   }
 }

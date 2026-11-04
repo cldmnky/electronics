@@ -1,7 +1,9 @@
 #include "protocol.hpp"
+#include "clock_follow.hpp"
 #include "midi.hpp"
 #include "panel_input.hpp"
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -111,6 +113,164 @@ void run_panel_tests() {
                  {310, mb::CTL_NAV_DOWN, mb::CTL_STATE_RELEASED}}});
 }
 
+void run_clock_follow_tests() {
+  using namespace mb;
+  ClockFollow f;
+  assert(f.source() == CLOCK_SOURCE_INTERNAL && !f.following());
+  assert(f.transportMask() == 0);
+  assert(!f.followsTransport(0) && !f.followsTransport(1));
+  assert(!f.hasEstimate());
+  assert(f.bpmX100() == 0 && f.intervalUsRounded() == 0);
+  assert(!f.onTick(500'000));  // internal generator: external ticks are ignored
+
+  // EV validation: source 3+ and reserved/USB mask bits are rejected without
+  // touching the current follow state.
+  assert(!f.apply(CLOCK_SOURCE_TRS2 + 1, 0));
+  assert(!f.apply(CLOCK_SOURCE_TRS1, CLOCK_FOLLOW_MASK | 0x04));
+  assert(f.source() == CLOCK_SOURCE_INTERNAL && f.transportMask() == 0);
+  assert(f.apply(CLOCK_SOURCE_TRS1, CLOCK_FOLLOW_TRS1 | CLOCK_FOLLOW_TRS2));
+  assert(f.source() == CLOCK_SOURCE_TRS1 && f.following());
+  assert(f.followsTransport(0) && f.followsTransport(1));
+  assert(!f.followsTransport(2));  // USB follow is Pi-side only
+
+  // First tick arms; the second seeds the interval estimate.
+  assert(!f.onTick(1'000'000));
+  assert(!f.hasEstimate());
+  assert(f.onTick(1'000'000 + 20'833));
+  assert(f.hasEstimate());
+  assert(std::fabs(f.intervalUs() - 20'833.0) < 0.001);
+  assert(f.bpmX100() == 12000);
+  assert(f.intervalUsRounded() == 20'833);
+
+  // 120 bpm synthetic train with deterministic zero-mean arrival jitter: the
+  // EMA converges on the true interval and a jitter-free local period.
+  std::uint32_t stamp = 1'000'000 + 20'833;
+  const int jitter[7] = {400, -500, 0, 300, -200, 600, -600};
+  for (int i = 0; i < 400; ++i) {
+    stamp += static_cast<std::uint32_t>(20'833 + jitter[i % 7]);
+    assert(f.onTick(stamp));
+  }
+  assert(std::fabs(f.intervalUs() - 20'833.0) < 100.0);
+  assert(f.bpmX100() >= 11950 && f.bpmX100() <= 12050);
+  assert(f.intervalUsRounded() >= 20'800 && f.intervalUsRounded() <= 20'870);
+
+  // One 2.5x interval is an outlier: ignored for the estimate (rejection);
+  // the next normal interval is accepted again.
+  const double before_outlier = f.intervalUs();
+  const std::uint64_t outliers_before = f.outliers();
+  stamp += 2 * 20'833 + 10'000;
+  assert(!f.onTick(stamp));
+  assert(f.outliers() == outliers_before + 1);
+  assert(f.intervalUs() == before_outlier);
+  stamp += 20'833;
+  assert(f.onTick(stamp));
+  assert(std::fabs(f.intervalUs() - before_outlier) < 10.0);
+
+  // Loss: no tick for >3 expected intervals coasts on the last estimate; the
+  // first real interval after the gap re-seeds (resume adapt).
+  const std::uint32_t last = stamp;
+  assert(!f.coasting(last + 3 * 20'833));
+  const std::uint32_t coast_after =
+      last + static_cast<std::uint32_t>(3.0 * f.intervalUs()) + 1;
+  assert(f.coasting(coast_after));
+  const std::uint64_t losses_before = f.losses();
+  const double before_loss = f.intervalUs();
+  stamp = last + 4 * 20'833;
+  assert(!f.onTick(stamp));  // loss gap, not a tick interval
+  assert(f.losses() == losses_before + 1);
+  assert(f.intervalUs() == before_loss);  // coast
+  assert(f.onTick(stamp + 20'833));
+  assert(std::fabs(f.intervalUs() - 20'833.0) < 1.0);
+  stamp += 20'833;
+
+  // A tempo change during the outage is followed (the post-loss interval seeds
+  // instead of being rejected against the stale estimate).
+  stamp += 4 * 20'833;
+  assert(!f.onTick(stamp));  // another loss
+  stamp += 50'000;           // 50 bpm, 2.4x the stale estimate
+  assert(f.onTick(stamp));
+  assert(std::fabs(f.intervalUs() - 50'000.0) < 0.001);
+  assert(f.bpmX100() == 5000);
+
+  // A source that resumes more than 3x slower is still acquired: the first
+  // post-loss interval is the gap, the second is the new tick spacing.
+  ClockFollow slow_resume;
+  assert(slow_resume.apply(CLOCK_SOURCE_TRS1, 0));
+  assert(!slow_resume.onTick(0));
+  assert(slow_resume.onTick(20'833));  // 120 bpm before the outage
+  std::uint32_t slow_stamp = 20'833 + 4 * 20'833;  // >3x gap => loss
+  assert(!slow_resume.onTick(slow_stamp));
+  slow_stamp += 83'333;  // 30 bpm, >3x slower than the stale estimate
+  assert(slow_resume.onTick(slow_stamp));
+  assert(std::fabs(slow_resume.intervalUs() - 83'333.0) < 0.001);
+  assert(slow_resume.bpmX100() == 3000);
+
+  // Out-of-window intervals keep being rejected for the estimate; only a
+  // detected loss gap re-seeds (no silent re-acquisition).
+  ClockFollow reject;
+  assert(reject.apply(CLOCK_SOURCE_TRS1, 0));
+  assert(!reject.onTick(0));
+  assert(reject.onTick(50'000));
+  assert(reject.bpmX100() == 5000);
+  std::uint32_t t = 50'000;
+  for (int i = 0; i < 4; ++i) {
+    t += 125'000;  // 2.5x: outside the window every time
+    assert(!reject.onTick(t));
+  }
+  assert(std::fabs(reject.intervalUs() - 50'000.0) < 0.001);
+  assert(reject.outliers() == 4);
+
+  // The generator period and announced tempo stay inside the firmware window.
+  ClockFollow fast;
+  assert(fast.apply(CLOCK_SOURCE_TRS1, 0));
+  assert(!fast.onTick(0));
+  assert(fast.onTick(500));  // 2000 bpm raw
+  assert(fast.bpmX100() == 30000);
+  assert(fast.intervalUsRounded() == 8333);
+  ClockFollow slow;
+  assert(slow.apply(CLOCK_SOURCE_TRS2, 0));
+  assert(!slow.onTick(0));
+  assert(slow.onTick(200'000));  // 12.5 bpm raw
+  assert(slow.bpmX100() == 2000);
+  assert(slow.intervalUsRounded() == 125000);
+
+  // Interval measurement is 32-bit wraparound safe.
+  ClockFollow wrap;
+  assert(wrap.apply(CLOCK_SOURCE_TRS2, 0));
+  assert(!wrap.onTick(0xFFFFF000u));
+  assert(wrap.onTick(0xFFFFF000u + 20'833u));
+  assert(std::fabs(wrap.intervalUs() - 20'833.0) < 0.001);
+
+  // A source change restarts acquisition (stamps from different inputs are
+  // never mixed); changing only the mask keeps the estimate.
+  assert(f.apply(CLOCK_SOURCE_TRS2, CLOCK_FOLLOW_TRS1));
+  assert(!f.hasEstimate());
+  assert(f.source() == CLOCK_SOURCE_TRS2);
+  assert(f.followsTransport(0) && !f.followsTransport(1));
+
+  // Transport-byte mapping: FA start, FB continue, FC stop, everything else
+  // (including clock) is not a transport command.
+  assert(transport_command_for_byte(0xFA) == 1);
+  assert(transport_command_for_byte(0xFB) == 2);
+  assert(transport_command_for_byte(0xFC) == 0);
+  assert(transport_command_for_byte(0xF8) == -1);
+  assert(transport_command_for_byte(0x90) == -1);
+
+  // EV_CLOCK_SOURCE frame validation and round trip.
+  Frame cf{};
+  Bytes wire{};
+  Frame decoded{};
+  assert(pack_clock_source(cf, 20, 0x12345678, CLOCK_SOURCE_TRS2,
+                           CLOCK_FOLLOW_TRS1 | CLOCK_FOLLOW_TRS2));
+  assert(encode(cf, wire) && decode(wire, decoded));
+  assert(decoded.payload[0] == EV_CLOCK_SOURCE && decoded.length == 3);
+  assert(decoded.payload[1] == CLOCK_SOURCE_TRS2);
+  assert(decoded.payload[2] == (CLOCK_FOLLOW_TRS1 | CLOCK_FOLLOW_TRS2));
+  assert(!pack_clock_source(cf, 21, 0x12345678, 3, 0));
+  assert(!pack_clock_source(cf, 22, 0x12345678, CLOCK_SOURCE_TRS1, 0x04));
+  std::printf("PASS: external clock follow (jittered convergence, outlier, coast/resume, mask, EV)\n");
+}
+
 void run_evidence() {
   std::printf("EV_CONTROL evidence from PanelControl + pack_control + encode\n");
   std::printf("scan 1 kHz, debounce 10 ms, NAV repeat 400 ms then 80 ms, SHIFT long 500 ms\n");
@@ -166,6 +326,7 @@ int main(int argc, char** argv) {
   assert(nav.update(true, 115) && nav.state());
   assert(!nav.update(false, 120)); assert(nav.update(false, 130) && !nav.state());
   run_panel_tests();
+  run_clock_follow_tests();
   Debouncer wrap(10); assert(!wrap.update(true, 0xfffffffau)); assert(wrap.update(true, 4));
   Frame event{Type::control_event, 124, hello.session, 2, {}};
   event.payload[0] = 1; event.payload[1] = 1; // NAV_UP pressed, simulated
@@ -268,6 +429,33 @@ int main(int argc, char** argv) {
   assert(pack_reset_link(rl, 16, 0x12345678));
   assert(encode(rl, wire) && decode(wire, decoded));
   assert(decoded.payload[0] == EV_RESET_LINK && decoded.length == 1);
+  // EV_CLOCK_ROUTE: per-output gates default on, bit0/bit1 apply, and a bad
+  // port or reserved flag bit is rejected without changing any gate.
+  assert(EV_CLOCK_ROUTE == 0x14);
+  assert(CLOCK_ROUTE_CLOCK == 0x01 && CLOCK_ROUTE_TRANSPORT == 0x02);
+  assert(CLOCK_ROUTE_DEFAULT == (CLOCK_ROUTE_CLOCK | CLOCK_ROUTE_TRANSPORT));
+  ClockGates gates;
+  assert(gates.clockOn(0) && gates.transportOn(0));
+  assert(gates.clockOn(1) && gates.transportOn(1));  // legacy always-on default
+  assert(gates.apply(0, CLOCK_ROUTE_TRANSPORT));
+  assert(!gates.clockOn(0) && gates.transportOn(0));
+  assert(gates.clockOn(1) && gates.transportOn(1));  // other output untouched
+  assert(gates.apply(1, 0));
+  assert(!gates.clockOn(1) && !gates.transportOn(1));
+  assert(gates.apply(0, CLOCK_ROUTE_DEFAULT));
+  assert(gates.clockOn(0) && gates.transportOn(0));
+  assert(!gates.apply(2, CLOCK_ROUTE_DEFAULT));  // only OUT1/OUT2 exist
+  assert(gates.clockOn(0) && gates.transportOn(0));  // rejected: unchanged
+  assert(!gates.apply(0, 0x04));  // reserved flag bit
+  assert(!gates.apply(0, 0x80));
+  assert(gates.clockOn(0) && gates.transportOn(0));
+  Frame cr{};
+  assert(pack_clock_route(cr, 17, 0x12345678, 1, CLOCK_ROUTE_TRANSPORT));
+  assert(encode(cr, wire) && decode(wire, decoded));
+  assert(decoded.payload[0] == EV_CLOCK_ROUTE && decoded.length == 3);
+  assert(decoded.payload[1] == 1 && decoded.payload[2] == CLOCK_ROUTE_TRANSPORT);
+  assert(!pack_clock_route(cr, 18, 0x12345678, 2, CLOCK_ROUTE_DEFAULT));
+  assert(!pack_clock_route(cr, 19, 0x12345678, 0, 0x04));
   // Message-length table, exact for every channel status.
   for (int st = 0x80; st <= 0xEF; ++st) {
     const int hi = st & 0xF0;

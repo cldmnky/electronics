@@ -63,10 +63,10 @@ Pico → Pi:
 
 | Kind | Bytes | Meaning |
 |---|---|---|
-| `0x01` MIDI | port, size, 3 data bytes, stamp_us LE32 | Timestamped MIDI IN message (length 10) |
+| `0x01` MIDI | port, size, 3 data bytes, stamp_us LE32 | Timestamped MIDI IN message (length 10). FA/FB/FC on a TRS input are consumed for transport follow and never forwarded; 0xF8 from the selected follow source drives the generator and is not forwarded |
 | `0x02` control | id, state/delta | Button press (1) / release (0), NAV direction auto-repeat re-sends 1, SHIFT_EXIT long-hold reports 2; `0x10` ENCODER_TURN carries int8 delta (length 3) |
-| `0x04` tempo | bpm×100 LE16 | Local tempo after encoder or Pi change (length 3) |
-| `0x05` tick | tick LE32, Pico stamp_us LE32 | Clock tick notice + tick time, every tick while rolling (length 9) |
+| `0x04` tempo | bpm×100 LE16 | Tempo after an encoder/Pi change or external clock follow (length 3) |
+| `0x05` tick | tick LE32, Pico stamp_us LE32 | Clock tick notice + tick time, every tick (the Pico always sends clock) (length 9) |
 | `0x21` STATUS_RESP | uptime_s LE32, ticks LE32, txq depth, txov LE16, rxov LE16, flags | Answer to `0x20` (length 15). Flag bit 0 = Pi HELLO seen (link up), bit 1 = rolling, bits 2–7 zero. `txov` counts outbound-frame queue overflows; `rxov` is the sum of both UART RX ring overruns (both saturate at 65535). |
 
 Control ids: 1 NAV_UP, 2 NAV_DOWN, 3 NAV_LEFT, 4 NAV_RIGHT, 5 NAV_PRESS,
@@ -85,12 +85,14 @@ Pi → Pico:
 | Kind | Bytes | Meaning |
 |---|---|---|
 | `0x10` SET_TEMPO | bpm×100 LE16 | Clamped 20–300 bpm; Pico echoes EV_TEMPO |
-| `0x11` TRANSPORT | 0 stop, 1 start, 2 continue | START resets tick count; bytes always emitted on both UARTs |
+| `0x11` TRANSPORT | 0 stop, 1 start, 2 continue | START resets tick count; each output's byte is gated by its `0x14` transport flag (default on). Pi forwards USB FA/FB/FC here when USB transport follow is enabled |
 | `0x12` CLOCK_ENABLE | 0/1 | Accepted but ignored: the clock is always on (deprecated) |
 | `0x06` state | rolling 0/1, tick LE32 | Transport state at the transition; sent on transitions, boot and Pi (re)connect (length 6) |
 | `0x13` LED_SET | mask, states | Bits 0/1/2 = REC/OVERDUB/PLAY partial overwrite (latches an override); mask bit 7 = sync arm state from states bits 0/1 instead |
+| `0x14` CLOCK_ROUTE | port, flags | Per-output TRS clock/transport gate. port 0 = OUT1 (uart0), 1 = OUT2 (uart1); flags bit 0 = clock on/off, bit 1 = transport on/off, reserved bits must be zero (length 3). Both default on (legacy behavior); RAM state resets at boot, so the Pi re-sends after HELLO. USB is gated Pi-side with the same semantics |
 | `0x15` MIDI_SEND | port, size, bytes | Immediate UART emit (no scheduled timeline yet) |
 | `0x16` MODE | 0 local, 1 manual | Panel-transport authority; resets to local on boot/HELLO |
+| `0x17` CLOCK_SOURCE | source, follow mask | External clock follow. source 0 = internal, 1 = TRS IN1, 2 = TRS IN2 (3+ rejected); mask bit 0 = TRS IN1 transport follow, bit 1 = TRS IN2, reserved bits (including USB bit 2, Pi-side only) rejected (length 3). RAM state resets to internal/no-follow at boot, so the Pi re-sends after HELLO. The Pico always sends clock; follow retunes tempo only and coasts at the last estimate on source loss |
 | `0x20` STATUS_REQ | none | Liveness/status probe; the Pico answers with `0x21` (length 1) |
 | `0x22` REBOOT | mode: 0 normal firmware reboot, 1 USB boot | 0 restarts the application from flash via the watchdog; 1 enters BOOTSEL for the firmware-update flow (length 2). No ACK: mode 0 shows up as a session change, mode 1 as link silence. |
 | `0x23` RESET_LINK | none | Mint a fresh Pico session and re-announce state/tempo without rebooting; the Pi re-handshakes (length 1) |
