@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
+import { renderMechanical, run } from "../scripts/export-mechanical"
 import {
   BRACKET_ALLOWANCE,
   DEPTH_TARGET,
@@ -468,4 +471,82 @@ test("provisional depth chain stays inside the owner target", () => {
   expect(provisionalInstalledDepth()).toBeLessThanOrEqual(DEPTH_TARGET)
   // Rear board overhang is 13.2 mm per side when both boards share a centre.
   expect((FRONT_PCB.width - REAR_PCB.width) / 2).toBeCloseTo(13.2, 6)
+})
+
+// ---- Export script: generation and non-writing --check --------------------
+const tempJson = () => {
+  const dir = mkdtempSync(join(tmpdir(), "midibrain-layout-"))
+  return join(dir, "layout.json")
+}
+
+test("export --check accepts fresh JSON and writes nothing", () => {
+  const path = tempJson()
+  try {
+    writeFileSync(path, renderMechanical())
+    const before = readFileSync(path, "utf8")
+    const result = run(["--check"], path)
+    expect(result.code).toBe(0)
+    expect(result.wrote).toBe(false)
+    expect(readFileSync(path, "utf8")).toBe(before)
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
+})
+
+test("export --check rejects stale JSON and leaves it unchanged", () => {
+  const path = tempJson()
+  try {
+    const stale = `${JSON.stringify({ stale: true }, null, 2)}\n`
+    writeFileSync(path, stale)
+    const result = run(["--check"], path)
+    expect(result.code).toBe(1)
+    expect(result.wrote).toBe(false)
+    expect(result.message).toContain("stale")
+    // The gate must not silently repair the tracked file.
+    expect(readFileSync(path, "utf8")).toBe(stale)
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
+})
+
+test("export --check fails when the JSON is missing", () => {
+  const path = tempJson()
+  try {
+    const result = run(["--check"], path)
+    expect(result.code).toBe(1)
+    expect(result.wrote).toBe(false)
+    expect(existsSync(path)).toBe(false)
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
+})
+
+test("export --check rejects unknown arguments without writing", () => {
+  const path = tempJson()
+  try {
+    writeFileSync(path, "unchanged\n")
+    for (const args of [["--write"], ["--check", "--force"], ["--fix"], ["check"]]) {
+      const result = run(args, path)
+      expect(result.code).toBe(2)
+      expect(result.wrote).toBe(false)
+      expect(readFileSync(path, "utf8")).toBe("unchanged\n")
+    }
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
+})
+
+test("export with no argument writes the canonical JSON", () => {
+  const path = tempJson()
+  try {
+    const result = run([], path)
+    expect(result.code).toBe(0)
+    expect(result.wrote).toBe(true)
+    expect(readFileSync(path, "utf8")).toBe(renderMechanical())
+    // And that render is what the tracked file holds.
+    expect(readFileSync(new URL("../../mechanical/layout.json", import.meta.url), "utf8"))
+      .toBe(renderMechanical())
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
 })

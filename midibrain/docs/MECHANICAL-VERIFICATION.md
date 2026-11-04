@@ -15,7 +15,8 @@ Run from `midibrain/` unless stated. `PATH=/workspace/home/.bun/bin:$PATH` for B
 |---|---|---|
 | `cd tscircuit && bun run typecheck` | clean (`tsc --noEmit`) | Types of the layout, panel circuit, placement check and export script. |
 | `cd tscircuit && bun run scripts/export-mechanical.ts` | writes `mechanical/layout.json` | The CAD bridge is generated from the canonical layout; the script writes no other file. |
-| `cd tscircuit && bun test lib/layout.test.ts lib/panel-art.test.ts` | 24 pass, 0 fail | Geometry rules, JSON staleness, provisional-stack invariants. |
+| `cd tscircuit && bun run scripts/export-mechanical.ts --check` | "is up to date", exit 0, file hash unchanged | The tracked JSON matches the layout and `--check` writes nothing. A stale or missing file exits 1; an unknown argument exits 2. |
+| `cd tscircuit && bun test lib/layout.test.ts lib/panel-art.test.ts` | 25 pass, 0 fail | Geometry rules, JSON staleness, `--check` modes, provisional-stack invariants. |
 | `cd tscircuit && bun run build` | 3 circuits built | Panel/front/rear build with the new rounded-polygon aperture. |
 | `cd tscircuit && bun run placement` | 230 pass, 0 fail | Built circuit JSON matches the shared coordinates, including the measured aperture-corner clearance. |
 | `python3 -m unittest discover -s mechanical -p 'test_*.py'` | 43 tests, OK | Pure bracket/aperture geometry, plus regression tests that reject the reviewed defects. |
@@ -44,8 +45,8 @@ STL/STEP are generated, reproducible and stay untracked (`.gitignore`: `*.stl`, 
 The gate should call these four in order. Each is cheap and none needs CadQuery except the last:
 
 ```
-cd midibrain/tscircuit && bun run scripts/export-mechanical.ts   # generate; refuses nothing, writes layout.json only
-cd midibrain/tscircuit && bun test lib/layout.test.ts            # staleness + geometry rules
+cd midibrain/tscircuit && bun run scripts/export-mechanical.ts --check   # verify only; writes nothing
+cd midibrain/tscircuit && bun test lib/layout.test.ts                   # staleness + geometry rules
 cd midibrain && python3 -m unittest discover -s mechanical -p 'test_*.py'
 cd midibrain/tscircuit && bun run build && bun run placement     # built panel: aperture and placement
 ```
@@ -55,6 +56,11 @@ Optional, needs CadQuery: `cd midibrain && python3 mechanical/feedthrough_bracke
 `mechanical/layout.json` is generated output. `layout.test.ts` compares it with `mechanicalExport()` and fails when it
 is stale, so the data cannot drift in one direction only: the generated file is never used to overwrite a layout
 source.
+
+The gate must use `--check`, not the generator. The generator (no argument) writes the file, so a gate that runs it
+would repair a stale tracked file and then pass with an uncommitted change. `--check` never writes: it exits 1 for a
+stale or missing file and exits 2 for an unknown argument. Tests for all four cases (fresh, stale, missing, unknown
+argument) are in `lib/layout.test.ts`, and each one proves the file content is unchanged afterwards.
 
 ## 2. LCD aperture
 
@@ -135,8 +141,8 @@ Each item needs a measurement or a sample, not an estimate. None of them is clos
 Not edited here, by instruction. Requested by the mechanical pass:
 
 1. `Makefile` — add the mechanical checks to `make test`:
-   `cd midibrain && python3 -m unittest discover -s mechanical -p 'test_*.py'`, and (if Bun is present) the
-   `export-mechanical.ts` staleness check is already covered by `bun test`.
+   `cd midibrain && python3 -m unittest discover -s mechanical -p 'test_*.py'`, and, before the Bun tests,
+   `cd midibrain/tscircuit && bun run scripts/export-mechanical.ts --check` (verify only, never generate).
 2. `.gitignore` — the comment "the current bracket STL/STEP are stale vs layout" is no longer true: the binaries are
    reproducible from `mechanical/layout.json` and the CAD self-check gates them. Suggest rewording to "generated;
    reproducible; not committed".
