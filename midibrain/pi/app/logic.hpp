@@ -1,0 +1,206 @@
+#pragma once
+// Non-visual mnkybox app logic: Pico panel control -> app intent dispatch,
+// mixer/transport value mapping and readout formatting. Deliberately free of
+// JUCE so the same code runs in the app and under `mnkybox --unittests`
+// (logic_tests.cpp); the UI layer only performs the intents decided here.
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <iterator>
+#include <string>
+
+#include "../midi/buttons.hpp"
+#include "../midi/clock.hpp"
+
+namespace mnky::app {
+
+inline constexpr int kScreenCount = 5;  // Mixer, Routing, FX, Recorder, System
+inline constexpr int kNumStrips = 18;   // audio::kMaxInputs
+
+// One thing the app does in response to a panel gesture or a screen control.
+// Screens post intents; MainComponent performs them on the message thread.
+struct Intent {
+  enum class Kind : std::uint8_t {
+    None,
+    MoveTab,         // amount = -1 previous screen, +1 next screen
+    MoveStrip,       // amount = -1 previous strip, +1 next strip
+    ArmToggle,       // amount = strip index
+    Play,            // start unless already rolling
+    PlayStart,       // restart from tick 0
+    Stop,
+    RecToggle,
+    OverdubToggle,
+    TempoStep,       // amount = bpm x100 delta
+  };
+
+  Kind kind = Kind::None;
+  int amount = 0;
+};
+
+inline constexpr bool operator==(const Intent& a, const Intent& b) {
+  return a.kind == b.kind && a.amount == b.amount;
+}
+
+// Screen/selection context the dispatcher needs. Plain value so the mapping is
+// testable without a UI; the app fills it from its atomics.
+struct PanelState {
+  int tab = 0;
+  int strip = 0;
+};
+
+// Action -> intent table (indexed by midi::Action). Encoder detents are the one
+// case whose magnitude lives in the control payload instead of the Action, so
+// intentForControl() computes those amounts.
+inline constexpr Intent::Kind kActionIntent[] = {
+    Intent::Kind::None,           // None
+    Intent::Kind::Play,           // Play
+    Intent::Kind::PlayStart,      // PlayStart
+    Intent::Kind::Stop,           // Stop
+    Intent::Kind::RecToggle,      // RecToggle
+    Intent::Kind::OverdubToggle,  // OverdubToggle
+    Intent::Kind::TempoStep,      // TempoCoarse
+    Intent::Kind::TempoStep,      // TempoFine
+    Intent::Kind::MoveTab,        // NavUp
+    Intent::Kind::MoveTab,        // NavDown
+    Intent::Kind::MoveStrip,      // NavLeft
+    Intent::Kind::MoveStrip,      // NavRight
+    Intent::Kind::PlayStart,      // NavPress: confirm/restart from the top
+    Intent::Kind::ArmToggle,      // EncoderSw: arm the selected strip
+};
+
+// One encoder detent changes the tempo by 1.00 bpm, or 0.10 bpm while SHIFT is
+// held (the protocol's bpm unit is 0.01 bpm).
+inline constexpr int kTempoStepCoarseX100 = 100;
+inline constexpr int kTempoStepFineX100 = 10;
+
+inline int clampTempoX100(int bpmX100) {
+  if (bpmX100 < midi::UsbClock::kMinBpmX100) return midi::UsbClock::kMinBpmX100;
+  if (bpmX100 > midi::UsbClock::kMaxBpmX100) return midi::UsbClock::kMaxBpmX100;
+  return bpmX100;
+}
+
+// Pure mapping from one midi::Action. Releases never reach here (mapControl
+// returns None for them).
+inline Intent intentForAction(midi::Action action, const PanelState& state) {
+  Intent out{};
+  const auto index = static_cast<std::size_t>(action);
+  if (index >= std::size(kActionIntent)) return out;
+
+  out.kind = kActionIntent[index];
+  switch (out.kind) {
+    case Intent::Kind::MoveTab:
+      out.amount = action == midi::Action::NavUp ? -1 : 1;
+      break;
+    case Intent::Kind::MoveStrip:
+      out.amount = action == midi::Action::NavLeft ? -1 : 1;
+      break;
+    case Intent::Kind::ArmToggle:
+      out.amount = state.strip;
+      break;
+    default:
+      break;
+  }
+  return out;
+}
+
+// Full EV_CONTROL path: CTL_SHIFT_EXIT is a modifier and is handled by the
+// caller (it updates the `shift` flag); CTL_ENCODER_TURN carries a signed
+// detent delta in `value`, everything else goes through midi::mapControl.
+inline Intent intentForControl(std::uint8_t id, std::uint8_t value, bool shift,
+                               const PanelState& state) {
+  if (id == mb::CTL_ENCODER_TURN) {
+    const int detents = static_cast<int>(static_cast<std::int8_t>(value));
+    if (detents == 0) return {};
+    Intent out{};
+    out.kind = Intent::Kind::TempoStep;
+    out.amount = detents * (shift ? kTempoStepFineX100 : kTempoStepCoarseX100);
+    return out;
+  }
+  return intentForAction(midi::mapControl(id, value, shift), state);
+}
+
+// --- mixer / meter value mapping -------------------------------------------
+inline constexpr float kMinGainDb = -60.0f;  // strip fader bottom (= silence)
+inline constexpr float kMaxGainDb = 12.0f;   // strip fader top
+inline constexpr float kMeterFloorDb = -48.0f;
+
+// Fader dB -> linear gain. The floor and NaN both land on exact silence.
+inline float dbToGain(float db) {
+  if (!(db > kMinGainDb)) return 0.0f;
+  return std::pow(10.0f, db / 20.0f);
+}
+
+inline float gainToDb(float gain) {
+  if (!(gain > 0.0f)) return kMinGainDb;
+  return 20.0f * std::log10(gain);
+}
+
+// Meter bar fill (0..1) for a linear peak value, floored at kMeterFloorDb.
+inline float meterFraction(float peak) {
+  const float db = gainToDb(peak);
+  if (db <= kMeterFloorDb) return 0.0f;
+  const float fraction = (db - kMeterFloorDb) / (0.0f - kMeterFloorDb);
+  return fraction > 1.0f ? 1.0f : fraction;
+}
+
+// --- readout formatting ----------------------------------------------------
+inline std::string formatTempo(int bpmX100) {
+  const int bpm = clampTempoX100(bpmX100);
+  char buffer[24] = {};
+  std::snprintf(buffer, sizeof buffer, "%d.%02d BPM", bpm / 100, bpm % 100);
+  return buffer;
+}
+
+inline constexpr int kTicksPerBeat = midi::kTicksPerQuarter;  // 24
+inline constexpr int kBeatsPerBar = 4;                       // 4/4 display
+inline constexpr int kTicksPerBar = kTicksPerBeat * kBeatsPerBar;
+
+// "bar:beat:tick" with 1-based bar/beat and the sub-beat tick count, 4/4.
+inline std::string formatBarBeatTick(std::uint32_t tick) {
+  const std::uint32_t bar = tick / kTicksPerBar + 1;
+  const std::uint32_t beat = (tick % kTicksPerBar) / kTicksPerBeat + 1;
+  const std::uint32_t sub = tick % kTicksPerBeat;
+  char buffer[32] = {};
+  std::snprintf(buffer, sizeof buffer, "%03u:%u:%02u", bar, beat, sub);
+  return buffer;
+}
+
+// Seconds of musical time for a tick count at a given tempo (display only).
+inline double tickSeconds(std::uint32_t tick, int bpmX100) {
+  const double bpm = clampTempoX100(bpmX100) / 100.0;
+  return static_cast<double>(tick) * 60.0 / (kTicksPerBeat * bpm);
+}
+
+// Wraps a selection index; a non-positive count collapses to 0.
+inline int moveIndex(int index, int delta, int count) {
+  if (count <= 0) return 0;
+  int next = (index + delta) % count;
+  if (next < 0) next += count;
+  return next;
+}
+
+inline std::string formatBytes(std::int64_t bytes) {
+  static const char* const units[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+  double value = bytes > 0 ? static_cast<double>(bytes) : 0.0;
+  int unit = 0;
+  while (value >= 1024.0 && unit < 4) {
+    value /= 1024.0;
+    ++unit;
+  }
+  char buffer[32] = {};
+  std::snprintf(buffer, sizeof buffer, unit == 0 ? "%.0f %s" : "%.1f %s", value,
+                units[unit]);
+  return buffer;
+}
+
+inline std::string formatDuration(double seconds) {
+  if (!(seconds > 0.0)) seconds = 0.0;
+  const auto total = static_cast<std::uint64_t>(seconds + 0.5);
+  char buffer[32] = {};
+  std::snprintf(buffer, sizeof buffer, "%02llu:%02llu",
+                static_cast<unsigned long long>(total / 60),
+                static_cast<unsigned long long>(total % 60));
+  return buffer;
+}
+
+}  // namespace mnky::app
