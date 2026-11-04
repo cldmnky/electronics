@@ -19,7 +19,8 @@ make test
 
 `make release` is the **production** path. It first runs the physical acceptance
 gate (`midibrain/hardware-acceptance.json` + `docs/evidence/`, bound to a hash of
-the PCB/panel sources) and **stops before deleting or exporting anything** while
+the PCB/panel sources, the CAD algorithm, the order settings and the cable/hardware
+selection) and **stops before deleting or exporting anything** while
 a required item is pending — which is every item today. There is no override
 flag. Only after the gate passes does it export per-board Gerbers/STEP/SVG plus
 JLCPCB BOM/CPL sets into `fab/` (wiped on every run, never hand-edit), verify the

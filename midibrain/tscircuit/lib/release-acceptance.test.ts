@@ -288,6 +288,29 @@ describe("hardware fingerprint", () => {
     expect(computeHardwareFingerprint(root)).not.toBe(fingerprint)
   })
 
+  // A CAD-algorithm, order-setting or sourcing-selection change can invalidate
+  // physical/DFM evidence even when the TS layout is identical.
+  for (const [label, rel] of [
+    ["the feedthrough bracket generator", "mechanical/feedthrough_bracket.py"],
+    ["the bracket geometry module", "mechanical/bracket_geometry.py"],
+    ["the JLCPCB order settings", "jlc-order.json"],
+    ["the curated sourcing selection", "tscircuit/scripts/sourcing-extras.csv"],
+  ] as const) {
+    test(`changes when ${label} changes`, () => {
+      expect(FINGERPRINT_FILES).toContain(rel)
+      expect(computeHardwareFingerprint(root)).toBe(fingerprint)
+      appendFileSync(join(root, rel), "\n# mutation\n")
+      expect(computeHardwareFingerprint(root)).not.toBe(fingerprint)
+    })
+
+    test(`reports a missing ${label}`, () => {
+      rmSync(join(root, rel))
+      const report = hardwareFingerprintReport(root)
+      expect(report.missing).toContain(rel)
+      expect(() => computeHardwareFingerprint(root)).toThrow(rel)
+    })
+  }
+
   test("a missing hardware source fails loudly", () => {
     rmSync(join(root, "tscircuit/panel.circuit.tsx"))
     expect(() => computeHardwareFingerprint(root)).toThrow()

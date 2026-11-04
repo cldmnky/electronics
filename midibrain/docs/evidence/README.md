@@ -27,7 +27,10 @@ a SHA-256 over the canonical PCB and panel sources (`tscircuit/*.circuit.tsx`,
 `tscircuit/lib/layout.ts`, `pin-map.ts`, `jack.tsx`, `panel-art.ts`,
 `tscircuit/imports/*.tsx`, `tscircuit/package.json`, `tscircuit/bun.lock`) and
 the mechanical TS-to-CAD bridge (`tscircuit/scripts/export-mechanical.ts`,
-`mechanical/layout.json`).
+`mechanical/layout.json`), the CAD algorithm (`mechanical/feedthrough_bracket.py`,
+`mechanical/bracket_geometry.py`), the fabrication order settings
+(`jlc-order.json`) and the curated cable/hardware selection
+(`tscircuit/scripts/sourcing-extras.csv`).
 A change to any of those makes old evidence stale, so a stale report cannot
 approve changed hardware. A documentation-only commit (including an acceptance
 record) does not change the fingerprint.

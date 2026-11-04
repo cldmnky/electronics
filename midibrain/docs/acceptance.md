@@ -64,11 +64,15 @@ release stops there.
 
 The **hardware fingerprint** is a SHA-256 over the canonical PCB/panel sources
 (`tscircuit/*.circuit.tsx`, `lib/layout.ts`, `lib/pin-map.ts`, `lib/jack.tsx`,
-`lib/panel-art.ts`, `imports/*.tsx`, `package.json`, `bun.lock`) **and** the
+`lib/panel-art.ts`, `imports/*.tsx`, `package.json`, `bun.lock`), the
 mechanical TS-to-CAD bridge (`tscircuit/scripts/export-mechanical.ts`,
-`mechanical/layout.json`). A PCB, panel or mechanical-layout change makes old
+`mechanical/layout.json`), the CAD algorithm (`mechanical/feedthrough_bracket.py`,
+`mechanical/bracket_geometry.py`), the fabrication order settings
+(`jlc-order.json`) and the curated cable/hardware selection
+(`tscircuit/scripts/sourcing-extras.csv`). A change to any of those makes old
 evidence stale, so a report from a previous revision cannot approve changed
-hardware. A documentation-only commit — including the acceptance record itself —
+hardware: a CAD-algorithm, order-setting or part-selection change can move a
+physical or DFM result even when `lib/layout.ts` is identical. A documentation-only commit — including the acceptance record itself —
 does not change the fingerprint. A missing hardware source fails the gate
 instead of being skipped. Print it with
 `bun run scripts/release_gate.ts --fingerprint`. Format and template:

@@ -175,6 +175,13 @@ export const FINGERPRINT_FILES = [
   // definition too: a change to either must invalidate an old acceptance.
   "tscircuit/scripts/export-mechanical.ts",
   "mechanical/layout.json",
+  // The CAD algorithm, the fabrication order settings and the curated
+  // cable/actuator selection are physical evidence too: changing them can
+  // invalidate a DFM/CPL or fit result even when lib/layout.ts is unchanged.
+  "mechanical/feedthrough_bracket.py",
+  "mechanical/bracket_geometry.py",
+  "jlc-order.json",
+  "tscircuit/scripts/sourcing-extras.csv",
 ]
 
 /** imports/*.tsx are footprints; a new import must change the fingerprint. */
