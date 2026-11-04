@@ -237,7 +237,10 @@ worktree, same build command) versus this tree:
 | `DiodeResistorNotAligned` | 3 | 4 |
 
 `tools/svg_overlaps.py` on both **exported SVGs** — it reads the rendered label
-tag polygons, so these are the overlap counts a reader would see:
+tag polygons, so these are the overlap counts a reader would see. Its policy is
+an overlap of **more than 12 % of the smaller box**; boxes that only share an
+edge do not count, and the tool prints the strict (threshold 0) count next to it
+so a hairline contact is never hidden:
 
 | Sheet | label/label before → after | label/text before → after |
 | --- | --- | --- |
@@ -250,13 +253,22 @@ tag polygons, so these are the overlap counts a reader would see:
 
 No label tag sits on a component body on any sheet either (measured the same
 way: 0 of 135 tags). `tools/svg_overlaps.py --expect built-in` records all five
-sheets at `0/0`, so the check has no headroom and no tolerance: any new overlap
-on any sheet fails. The tool prints a second line with the **strict** threshold
+sheets at `0/0`, so the check has no headroom on that number: any overlap above
+the 12 % area allowance on any sheet fails. The tool prints a second line with
+the **strict** threshold
 (any intersection at all, no area allowance): this tree has **1 label/label and
 4 label/text hairline contacts** left (Root 1/1, MIDI 0/1, Audio 0/2) against
 21/28 on the baseline. Those five are box corners that touch without covering
 text; they are recorded here rather than argued away, and the two-round budget
-did not include chasing them.
+did not include chasing them. A 0/0 report is only accepted when the file passes
+the tool's structure gate: well-formed SVG, all five expected sheets, and at
+least one net label, one component and one text on each of them, so a frame-only
+or empty export cannot report a clean sheet.
+
+`tools/test_svg_overlaps.py` proves that gate with synthetic files: truncated
+XML, an empty document, a frame-only export, a missing sheet, a real
+label-on-label collision, a label over a value text, a hairline contact that only
+the strict line reports, and a label outside the page frame.
 
 ### 6.4 Audio and CV: frozen positions, then one nudge
 

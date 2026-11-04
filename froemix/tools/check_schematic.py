@@ -19,8 +19,11 @@ drawn from) and checks the things a reader would notice:
   * the ESTIMATED label boxes from the circuit JSON are still printed, but they
     are only a cross-check: the authoritative overlap count is measured on the
     rendered SVG by tools/svg_overlaps.py, which reads the actual label tag
-    polygons. Do not gate on the estimate here (an earlier version did, with a
-    30-overlap ceiling - that number was headroom, not a defect).
+    polygons. This script does NOT gate on a note count and does NOT gate on an
+    overlap ceiling any more: an earlier version required four notes per sheet
+    and a 30-overlap ceiling, and both numbers were arbitrary headroom rather
+    than a defect count. The only failure paths left here are a note that
+    overlaps something and a note that leaves the page.
 
 Bounding boxes: the core computes a net label's width as
 len(text) * 0.12 * (font_size / 0.18) + 0.12 * (font_size / 0.18) and its
@@ -28,8 +31,8 @@ height as font_size (lib/utils/schematic/computeSchematicNetLabelCenter.ts);
 `<schematictext>` uses the same font metrics. A 5 % overlap tolerance keeps
 box-edge touches from counting.
 
-Exits non-zero on a note collision, a missing note, a note outside the frame,
-or more net-label overlaps than the ceiling.
+Exits non-zero when a note overlaps a component, a net label or another note,
+or when a note leaves the A4 frame. Nothing else - see the module docstring.
 """
 
 from __future__ import annotations
