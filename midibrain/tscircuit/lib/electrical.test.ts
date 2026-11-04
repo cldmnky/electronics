@@ -9,8 +9,16 @@ import {
 } from "./electrical"
 import {
   absoluteCurrentUse,
+  AO3401A,
   CA033,
+  gateOffVgs,
+  gateOnVgs,
+  legacyReceiverCurrentOldPnp,
+  legacyReceiverWorstCurrent,
   loopCurrent,
+  outputFaultPower,
+  OUTPUT_STAGE_DEVIATION,
+  MIDI_OUT_GATE_OHM,
   MIDI_OUT_SERIES_OHM,
   MIDI_RECEIVER_OHM,
   RP2350_INPUT,
@@ -128,37 +136,74 @@ describe("current model catches loosened inputs", () => {
   })
 })
 
-describe("MIDI output transmitter into a legacy receiver", () => {
-  // CA-033 page 4: a legacy receiver looks like an LED of up to 1.9 V in
-  // series with 220 ohm, and the PC900V needs 4 mA worst case.
-  const worst = transmitterLoopCurrent({ railV: 3.135, vceSatV: 0.25, vfReceiverV: 1.9 })
-  test("worst-case output current is below the legacy requirement", () => {
-    // rSeries = 55*1.01 = 55.55, rReceiver = 220*1.05 = 231,
-    // (3.135 - 0.25 - 1.90) / 286.55 = 3.4374 mA
-    expect(worst).toBeCloseTo(3.4374e-3, 6)
-    expect(worst / CA033.pc900vWorstCaseCurrentA).toBeCloseTo(0.8594, 4)
-    expect(worst).toBeLessThan(CA033.pc900vWorstCaseCurrentA)
-    expect(CA033.pc900vWorstCaseCurrentA).toBe(4e-3)
+describe("MIDI output: AO3401A high-side stage", () => {
+  test("the switch is the AO3401A with gate 1, source 2, drain 3", () => {
+    expect(AO3401A.lcsc).toBe("C15127")
+    expect(AO3401A.pinout).toEqual({ gate: 1, source: 2, drain: 3 })
+    // The 85 mOhm maximum is specified at VGS = -2.5 V, TJ = 25 C only.
+    expect(AO3401A.rdsOnMaxOhm).toBe(0.085)
+    expect(AO3401A.rdsOnTestVgsV).toBe(-2.5)
   })
 
-  test("nominal rail and a 6N138-class 1.7 V LED do reach the loop current", () => {
-    // (3.30 - 0.25 - 1.70) / 286.55 = 4.7112 mA
-    expect(transmitterLoopCurrent({ railV: 3.3, vceSatV: 0.25, vfReceiverV: 1.7 }))
-      .toBeCloseTo(4.7112e-3, 6)
-    // A worst-case 1.9 V LED at the nominal rail is marginal: 4.0133 mA.
-    expect(transmitterLoopCurrent({ railV: 3.3, vceSatV: 0.25, vfReceiverV: 1.9 }))
-      .toBeCloseTo(4.0133e-3, 6)
+  test("gate drive reaches the RDS(ON) test point at the weakest rail", () => {
+    // pull-up 2200*0.99 = 2178, series 100*1.01 = 101,
+    // gate = 0.5 + (3.135-0.5)*101/2279 = 0.6168, |VGS| = 2.5182 V
+    expect(gateOnVgs()).toBeCloseTo(2.5182, 4)
+    expect(gateOnVgs()).toBeGreaterThan(Math.abs(AO3401A.rdsOnTestVgsV))
+    expect(gateOnVgs()).toBeLessThan(AO3401A.vgsMaxV)
   })
 
-  test("the series resistors are this design's 22 and 33 ohm parts", () => {
-    expect(MIDI_OUT_SERIES_OHM.source).toBe(22)
-    expect(MIDI_OUT_SERIES_OHM.sink).toBe(33)
-    // CA-033 wants RA + RC = (VTX - 3.0) / 0.005 = 27 ohm at 3.135 V. This
-    // design has 55 ohm, about twice that, which is the structural reason the
-    // transmitter current falls short; the topology is under review.
-    const requiredSeriesOhm = (3.135 - CA033.minimumTransmitterV) / CA033.nominalLoopA
-    expect(requiredSeriesOhm).toBeCloseTo(27, 6)
-    expect(MIDI_OUT_SERIES_OHM.source + MIDI_OUT_SERIES_OHM.sink).toBe(55)
+  test("off state stays below the gate threshold magnitude at 25 C only", () => {
+    // 3.135 * 36000 / (36000 + 2178 + 101) = 2.9484 V at the gate,
+    // |VGS| = 0.1867 V against a -0.5 V minimum threshold magnitude.
+    expect(gateOffVgs()).toBeCloseTo(0.1867, 3)
+    expect(gateOffVgs()).toBeLessThan(Math.abs(AO3401A.vgsThresholdMinV))
+    // No full-temperature off guarantee is claimed: the threshold magnitude
+    // falls with temperature and the datasheet gives no -40..125 C limit here.
+    expect(Math.abs(AO3401A.vgsThresholdMinV)).toBe(0.5)
+  })
+
+  test("legacy receiver current now exceeds the PC900V requirement", () => {
+    // (3.135 - 1.90) / (55*1.05 + 220*1.05 + 0.085) = 4.2758 mA
+    expect(legacyReceiverWorstCurrent()).toBeCloseTo(4.2758e-3, 6)
+    expect(legacyReceiverWorstCurrent()).toBeGreaterThan(CA033.pc900vWorstCaseCurrentA)
+    // Robust to a hot RDS(ON) assumption: 0.15 ohm still gives 4.2748 mA.
+    const hot = (3.135 - 1.9) / ((55 * 1.05) + (220 * 1.05) + 0.15)
+    expect(hot).toBeCloseTo(4.2748e-3, 6)
+    expect(hot).toBeGreaterThan(CA033.pc900vWorstCaseCurrentA)
+  })
+
+  test("the replaced PNP stage falls short of the same requirement", () => {
+    // (3.135 - 0.25 - 1.90) / (55*1.05 + 220*1.05) = 3.4113 mA with the 5 %
+    // 2512 parts; the model uses the same 5 % tolerance for both stages.
+    expect(legacyReceiverCurrentOldPnp()).toBeCloseTo(3.4113e-3, 6)
+    expect(legacyReceiverCurrentOldPnp()).toBeLessThan(CA033.pc900vWorstCaseCurrentA)
+  })
+
+  test("fault dissipation per resistor stays inside the 1 W 2512 rating", () => {
+    const fault = outputFaultPower()
+    // ring 33 ohm 5 % -> 31.35: 3.465 / (31.35 + 0.085) = 110.22 mA,
+    // P = 0.3809 W
+    expect(fault.ringToGroundW).toBeCloseTo(0.3809, 3)
+    // tip 22 ohm 5 % -> 20.90: 3.465 / (20.90 + 0.085) = 165.14 mA,
+    // P = 0.5701 W
+    expect(fault.tipToGroundW).toBeCloseTo(0.5701, 3)
+    // ring-tip short uses the LOW total resistance 52.25: 63.54 mA through the
+    // pair, so the per-part dissipation falls to 0.1375 W and 0.0916 W
+    expect(fault.ringTipShortRingW).toBeCloseTo(0.1375, 3)
+    expect(fault.ringTipShortTipW).toBeCloseTo(0.0916, 3)
+    for (const watts of Object.values(fault)) {
+      expect(watts).toBeLessThan(OUTPUT_STAGE_DEVIATION.resistorRatedW)
+    }
+  })
+
+  test("a 10 ohm CA-033 tip resistor would be unsafe, which justifies the deviation", () => {
+    // CA-033 RC = 10 ohm: 3.465^2 / 9.5 = 1.2638 W in a tip fault.
+    const ca033TipFault = Math.pow(3.465, 2) / (OUTPUT_STAGE_DEVIATION.ca033TipOhm * 0.95)
+    expect(ca033TipFault).toBeCloseTo(1.2638, 3)
+    expect(ca033TipFault).toBeGreaterThan(OUTPUT_STAGE_DEVIATION.ca033ResistorRatedW)
+    expect(OUTPUT_STAGE_DEVIATION.implementedTipOhm).toBe(22)
+    expect(OUTPUT_STAGE_DEVIATION.implementedRingOhm).toBe(33)
   })
 })
 
@@ -177,12 +222,15 @@ describe("RP2350 digital input levels", () => {
 describe("MIDI Type A contact assignment", () => {
   test("the receiver resistor is on the ring side and the output sink on the tip", () => {
     // Constants that the boards and the checker both rely on: a 220 ohm
-    // receiver and 22/33 ohm output resistors. The electrical meaning of the
-    // TRS to DIN mapping is verified on the built circuit by
+    // receiver, the 33 ohm ring resistor and the 22 ohm tip resistor, plus the
+    // 100 ohm / 2.2 kOhm gate network. The electrical meaning of the TRS to
+    // DIN mapping is verified on the built circuit by
     // scripts/check_electrical.py, which walks the net graph.
     expect(MIDI_RECEIVER_OHM).toBe(220)
-    expect(MIDI_OUT_SERIES_OHM.source).toBe(22)
-    expect(MIDI_OUT_SERIES_OHM.sink).toBe(33)
+    expect(MIDI_OUT_SERIES_OHM.ring).toBe(33)
+    expect(MIDI_OUT_SERIES_OHM.tip).toBe(22)
+    expect(MIDI_OUT_GATE_OHM.series).toBe(100)
+    expect(MIDI_OUT_GATE_OHM.pullup).toBe(2200)
   })
 })
 

@@ -60,10 +60,19 @@ def check(label: str, condition: bool, detail: str) -> None:
 
 
 def main() -> int:
+    # AO3401A high-side smoke model: gate network 100 ohm / 2.2 kOhm, 33 ohm
+    # ring, 22 ohm tip, 220 ohm receiver, 1.9 V LED. Not the AOS model.
     out = run("midi_out")
-    check("MIDI OUT idle current", abs(out["i_idle"]) < 100e-6, f"{out['i_idle']*1e3:.3f} mA")
-    check("MIDI OUT active current", 4e-3 <= out["i_active"] <= 7e-3, f"{out['i_active']*1e3:.3f} mA")
+    check("MIDI OUT idle loop current", abs(out["i_loop_idle"]) < 100e-6,
+          f"{abs(out['i_loop_idle'])*1e3:.4f} mA")
+    check("MIDI OUT active loop current", 4e-3 <= abs(out["i_loop_active"]) <= 7e-3,
+          f"{abs(out['i_loop_active'])*1e3:.3f} mA")
     check("MIDI OUT active ring voltage", out["v_ring_active"] > 2.5, f"{out['v_ring_active']:.3f} V")
+    check("MIDI OUT gate held at the rail while idle (switch off)",
+          out["v_gate_idle"] > 3.2, f"{out['v_gate_idle']:.3f} V")
+    check("MIDI OUT gate pulled low while active (switch on)",
+          out["v_gate_active"] < 0.5,
+          f"{out['v_gate_active']:.3f} V, |VGS| {3.3 - out['v_gate_active']:.2f} V")
 
     # Nominal 5 V Type A sender, TLP2361 threshold (1.3 mA max).
     inn = run("midi_in")

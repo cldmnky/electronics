@@ -126,8 +126,121 @@ export const MIDI_TYPE_A = {
 // output resistors.
 export const MIDI_RECEIVER_OHM = 220
 export const MIDI_RECEIVER_TOLERANCE = 0.01
-export const MIDI_OUT_SERIES_OHM = { source: 22, sink: 33 } as const
-export const MIDI_OUT_SERIES_TOLERANCE = 0.01
+// Output resistors. CA-033 asks for RA 33 ohm on the ring and RC 10 ohm on
+// the tip for a 3.3 V transmitter; this design deliberately uses 33 ohm on the
+// ring and 22 ohm on the tip. See OUTPUT_STAGE_DEVIATION for the reason.
+export const MIDI_OUT_SERIES_OHM = { ring: 33, tip: 22 } as const
+// The 2512 output resistors are the "J" (5 %) parts 25121WF330JT4E and
+// 25121WF220JT4E, so the output stage uses a 5 % resistor tolerance, unlike the
+// 1 % 0603 gate network.
+export const MIDI_OUT_SERIES_TOLERANCE = 0.05
+// Gate network of the P-channel switch: 100 ohm series from the UART pin and
+// a 2.2 kOhm pull-up from gate to source (the 3.3 V rail).
+export const MIDI_OUT_GATE_OHM = { series: 100, pullup: 2200 } as const
+export const MIDI_OUT_GATE_TOLERANCE = 0.01
+
+// Alpha & Omega AO3401A, LCSC C15127. Primary source: AOS datasheet Rev 3.1
+// (December 2023), page 1 pinout and page 2 static parameters.
+export const AO3401A = {
+  mpn: "AO3401A",
+  lcsc: "C15127",
+  package: "SOT-23",
+  pinout: { gate: 1, source: 2, drain: 3 },
+  vdsMaxV: -30,
+  vgsMaxV: 12,
+  idMaxA: -4.0,
+  rdsOnMaxOhm: 0.085,      // at VGS = -2.5 V, ID = -2.5 A, TJ = 25 C
+  rdsOnTypOhm: 0.060,
+  rdsOnTestVgsV: -2.5,
+  vgsThresholdMinV: -0.5,
+  vgsThresholdTypV: -0.9,
+  vgsThresholdMaxV: -1.3,
+  cissF: 645e-12,
+  qg4v5C: 7e-9,
+  source: "AOS AO3401A datasheet Rev 3.1 (December 2023)",
+} as const
+
+// Board rail and the RP2350 limits the gate network works against. The rail is
+// the Pico 3V3 output at -5 %; VOL is the RP2350 VOL maximum at IOVDD 3.3 V
+// (table 1683), RPD its minimum internal pull-down at 3.3 V.
+export const OUTPUT_GATE_DRIVE = {
+  railMinV: 3.135,
+  gpioVolMaxV: 0.5,
+  gpioPullDownMinOhm: 36000,
+  rp2350VolMaxV: 0.5,
+  rp2350PullDownMinOhm: 36000,
+  source: "RP2350 datasheet table 1683: VOL max 0.5 V, RPD 36-113 kOhm at IOVDD 3.3 V",
+} as const
+
+/**
+ * Gate-source voltage magnitude of the high-side switch while the UART pin
+ * drives the gate low. Series 100 ohm and pull-up 2.2 kOhm at +-1 %, the
+ * weakest rail and the highest GPIO low level.
+ */
+export const gateOnVgs = (): number => {
+  const pullup = MIDI_OUT_GATE_OHM.pullup * (1 - MIDI_OUT_GATE_TOLERANCE)
+  const series = MIDI_OUT_GATE_OHM.series * (1 + MIDI_OUT_GATE_TOLERANCE)
+  const { railMinV, gpioVolMaxV } = OUTPUT_GATE_DRIVE
+  const gateV = gpioVolMaxV + (railMinV - gpioVolMaxV) * series / (pullup + series)
+  return railMinV - gateV
+}
+
+/**
+ * Gate-source voltage magnitude with the UART pin high-impedance and only the
+ * RP2350 internal pull-down holding the gate away from the source. This is the
+ * off-state leakage risk: it must stay below the gate threshold magnitude.
+ */
+export const gateOffVgs = (): number => {
+  const pullup = MIDI_OUT_GATE_OHM.pullup * (1 - MIDI_OUT_GATE_TOLERANCE)
+  const series = MIDI_OUT_GATE_OHM.series * (1 + MIDI_OUT_GATE_TOLERANCE)
+  const pulldown = OUTPUT_GATE_DRIVE.gpioPullDownMinOhm
+  const gateV = OUTPUT_GATE_DRIVE.railMinV * pulldown / (pulldown + pullup + series)
+  return OUTPUT_GATE_DRIVE.railMinV - gateV
+}
+
+// CA-033 asks for RA 33 ohm and RC 10 ohm at 3.3 V. The tip resistor is
+// permanently grounded, so a 10 ohm part would carry 3.465^2 / 9.5 = 1.24 W in
+// a tip-to-ground fault, far above the 0.25 W CA-033 assumes for RC. This
+// design deliberately uses 22 ohm there with a 1 W 2512 part.
+export const OUTPUT_STAGE_DEVIATION = {
+  ca033RingOhm: 33,
+  ca033TipOhm: 10,
+  implementedRingOhm: MIDI_OUT_SERIES_OHM.ring,
+  implementedTipOhm: MIDI_OUT_SERIES_OHM.tip,
+  resistorRatedW: 1.0,
+  ca033ResistorRatedW: 0.25,
+  reason: "RC is permanently grounded: 10 ohm would dissipate about 1.26 W in a tip fault",
+} as const
+
+/** Worst-case dissipation in one output resistor, in W. */
+export type FaultPower = {
+  readonly ringToGroundW: number
+  readonly tipToGroundW: number
+  readonly ringTipShortRingW: number
+  readonly ringTipShortTipW: number
+}
+
+/**
+ * Fault dissipation at the strongest rail. A ring-to-ground fault sees only the
+ * ring resistor, a tip-to-ground fault only the tip resistor, and a ring-tip
+ * short sees both in series at -tolerance, which is the largest current.
+ */
+export const outputFaultPower = (
+  railV: number = 3.465,
+  rdsOnOhm: number = AO3401A.rdsOnMaxOhm,
+): FaultPower => {
+  const ring = MIDI_OUT_SERIES_OHM.ring * (1 - MIDI_OUT_SERIES_TOLERANCE)
+  const tip = MIDI_OUT_SERIES_OHM.tip * (1 - MIDI_OUT_SERIES_TOLERANCE)
+  const ringCurrent = railV / (ring + rdsOnOhm)
+  const tipCurrent = railV / (tip + rdsOnOhm)
+  const loopCurrent = railV / (ring + tip + rdsOnOhm)
+  return {
+    ringToGroundW: ringCurrent * ringCurrent * ring,
+    tipToGroundW: tipCurrent * tipCurrent * tip,
+    ringTipShortRingW: loopCurrent * loopCurrent * ring,
+    ringTipShortTipW: loopCurrent * loopCurrent * tip,
+  }
+}
 
 // CA-033 limits used by the transmitter (output) analysis.
 export const CA033 = {
@@ -152,20 +265,50 @@ export const CA033 = {
  * the receiver returns through the 33 ohm tip resistor.
  */
 export const transmitterLoopCurrent = (opts: {
-  /** Supply at the PNP emitter, in V. */
+  /** Supply at the switch source, in V. */
   readonly railV: number
-  /** PNP collector-emitter saturation drop, in V (assumption, see docs). */
-  readonly vceSatV: number
+  /** Switch series drop, in V: RDS(ON) times current, or a PNP VCE(sat). */
+  readonly dropV: number
   /** Receiver LED forward voltage, in V. */
   readonly vfReceiverV: number
   readonly receiverTolerance?: number
+  /** Ring and tip resistor values, defaulting to this design's stage. */
+  readonly ringOhm?: number
+  readonly tipOhm?: number
 }): number => {
-  const seriesOhm = (MIDI_OUT_SERIES_OHM.source + MIDI_OUT_SERIES_OHM.sink) *
-    (1 + MIDI_OUT_SERIES_TOLERANCE)
+  const ring = opts.ringOhm ?? MIDI_OUT_SERIES_OHM.ring
+  const tip = opts.tipOhm ?? MIDI_OUT_SERIES_OHM.tip
+  const seriesOhm = (ring + tip) * (1 + MIDI_OUT_SERIES_TOLERANCE)
   const receiverOhm = CA033.legacyReceiverOhm *
     (1 + (opts.receiverTolerance ?? CA033.legacyReceiverOhmTolerance))
-  return (opts.railV - opts.vceSatV - opts.vfReceiverV) / (seriesOhm + receiverOhm)
+  return (opts.railV - opts.dropV - opts.vfReceiverV) / (seriesOhm + receiverOhm)
 }
+
+/**
+ * Worst-case legacy-receiver current of this stage: weakest rail, highest LED
+ * forward drop, every resistor at +tolerance, RDS(ON) at its 85 mOhm limit.
+ * The voltage drop across RDS(ON) is included through the small extra term.
+ */
+export const legacyReceiverWorstCurrent = (): number => {
+  const seriesOhm = (MIDI_OUT_SERIES_OHM.ring + MIDI_OUT_SERIES_OHM.tip) *
+    (1 + MIDI_OUT_SERIES_TOLERANCE)
+  const receiverOhm = CA033.legacyReceiverOhm * (1 + CA033.legacyReceiverOhmTolerance)
+  return (OUTPUT_GATE_DRIVE.railMinV - CA033.legacyReceiverLedMaxVf) /
+    (seriesOhm + receiverOhm + AO3401A.rdsOnMaxOhm)
+}
+
+/**
+ * Current the replaced PNP stage (22 ohm ring, 33 ohm tip) delivered into the
+ * same receiver. Kept for the negative test that records the old deficit.
+ */
+export const legacyReceiverCurrentOldPnp = (): number =>
+  transmitterLoopCurrent({
+    railV: OUTPUT_GATE_DRIVE.railMinV,
+    dropV: 0.25,
+    vfReceiverV: CA033.legacyReceiverLedMaxVf,
+    ringOhm: 22,
+    tipOhm: 33,
+  })
 
 // RP2350 digital input limits, IOVDD = 3.3 V. Primary source: RP2350
 // datasheet table 1683 (pdf page 1337, printed page 1336).

@@ -13,6 +13,9 @@ sample defects they model are detected:
   * MIDI Type A ring/tip swapped on an input jack;
   * a trace thinner than the board rule, a via pad below the drill rule, a
     missing ground pour, and the old TLP2362 put back on the BOM.
+  * the output stage: the old PNP resistor pair, a missing gate pull-up, a
+    gate series resistor that collapses the drive, and a 10 ohm tip resistor
+    that fails the fault-rating check.
 
 A second group guards the analytical current model. It loosens one input at a
 time in the checker's own reference cases (supply tolerance, resistor
@@ -189,6 +192,51 @@ def cases() -> list[tuple[str, str, callable]]:
         circuit = [e for e in circuit if e["type"] != "pcb_copper_pour"]
         save(dist, "front", circuit)
 
+    def old_pnp_resistors(dist: Path) -> None:
+        # Put the replaced PNP stage back: 22 ohm on the ring, 33 ohm on the tip.
+        circuit = load(dist, "front")
+        for element in circuit:
+            if element["type"] != "source_component":
+                continue
+            if element.get("name") in ("R9", "R10"):
+                element["resistance"] = 22
+            elif element.get("name") in ("R11", "R12"):
+                element["resistance"] = 33
+        save(dist, "front", circuit)
+
+    def gate_pullup_missing(dist: Path) -> None:
+        # Remove the 2.2 kOhm gate-to-source pull-up of channel 1 entirely.
+        circuit = load(dist, "front")
+        components = {c["source_component_id"]: c for c in circuit if c["type"] == "source_component"}
+        pcb = {c["pcb_component_id"]: c for c in circuit if c["type"] == "pcb_component"}
+        keep = []
+        for element in circuit:
+            if element["type"] == "source_component" and element.get("name") == "R7":
+                continue
+            if element["type"] in ("pcb_smtpad", "pcb_solder_paste"):
+                comp = components.get(pcb.get(element.get("pcb_component_id"), {}).get("source_component_id"), {})
+                if comp.get("name") == "R7":
+                    continue
+            keep.append(element)
+        save(dist, "front", keep)
+
+    def gate_series_too_big(dist: Path) -> None:
+        # 1 kOhm series resistor: the divider no longer pulls the gate to the
+        # RDS(ON) test point.
+        circuit = load(dist, "front")
+        for element in circuit:
+            if element["type"] == "source_component" and element.get("name") in ("R5", "R6"):
+                element["resistance"] = 1000
+        save(dist, "front", circuit)
+
+    def ca033_tip_resistor(dist: Path) -> None:
+        # CA-033's own RC = 10 ohm: unsafe in a permanently grounded leg.
+        circuit = load(dist, "front")
+        for element in circuit:
+            if element["type"] == "source_component" and element.get("name") in ("R11", "R12"):
+                element["resistance"] = 10
+        save(dist, "front", circuit)
+
     def old_opto(dist: Path) -> None:
         circuit = load(dist, "front")
         for element in circuit:
@@ -206,6 +254,10 @@ def cases() -> list[tuple[str, str, callable]]:
         ("via pad below the drill rule", "via pad is at least 0.45 mm", small_via_pad),
         ("ground pour removed", "GND pour on the bottom layer", pour_missing),
         ("TLP2362 put back on the BOM", "TLP2361", old_opto),
+        ("old PNP output resistor pair", "legacy-receiver current", old_pnp_resistors),
+        ("gate pull-up missing", "gate network", gate_pullup_missing),
+        ("gate series resistor too large", "gate drive reaches the RDS(ON) test point", gate_series_too_big),
+        ("CA-033 10 ohm tip resistor", "10 ohm tip resistor would be unsafe", ca033_tip_resistor),
     ]
 
 

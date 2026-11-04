@@ -143,7 +143,7 @@ are unresolved until measured.**
   RP2350 datasheet. The design assumption is VIH ≤ 0.7 × IOVDD = 2.31 V; that
   value was not read from a primary source in this pass.
 
-### Legacy receiver compatibility: a real deficit (topology under review)
+### Legacy receiver compatibility: the AO3401A stage now meets it
 
 CA-033 page 4 models a legacy receiver as an LED of up to 1.9 V in series with
 220 Ω, and gives the PC900V a worst-case forward current of 4 mA at
@@ -151,25 +151,68 @@ RD = 280 Ω, VRX = 5 V. The transmitter must satisfy
 VTX ≥ 0.005 × 220 + 1.9 = 3.0 V and (RA + RC) = (VTX − 3.0) / 0.005, which is
 27 Ω at 3.135 V.
 
-This design's output is a PNP with 22 Ω on the ring and 33 Ω on the tip:
-55 Ω in total, about twice the 27 Ω CA-033 asks for.
+The output stage is now a **high-side P-channel switch**:
+
+| Item | Part | LCSC |
+|---|---|---|
+| Switch | Alpha & Omega **AO3401A**, SOT-23, pin 1 gate, 2 source, 3 drain | **C15127** |
+| Gate series | 100 Ω 0603 1 % | C22775 |
+| Gate pull-up (gate to 3.3 V) | 2.2 kΩ 0603 1 % | C4190 |
+| Ring resistor RA | **33 Ω** 2512 1 W 5 % | C53728 |
+| Tip resistor RC | **22 Ω** 2512 1 W 5 % | C118189 |
+
+The receiver resistor stays at 220 Ω and TRS Type A polarity is unchanged:
+ring (DIN 4) is sourced from the switch drain through RA, tip (DIN 5) is sunk
+to ground through RC.
 
 | Case | Current into a legacy receiver |
 |---|---|
-| Worst case: 3.135 V rail, VCE(sat) 0.25 V, 1.9 V LED, all resistors at +tolerance | **3.437 mA** |
-| Nominal 3.3 V rail, 0.25 V, 1.9 V LED | 4.013 mA |
-| Nominal 3.3 V rail, 0.25 V, 1.7 V LED (6N138 class) | 4.711 mA |
+| Worst case: 3.135 V rail, 1.9 V LED, 5 % resistors at +tolerance, RDS(ON) 85 mΩ | **4.276 mA** |
+| Same with a 150 mΩ hot RDS(ON) assumption | 4.275 mA |
+| Replaced PNP stage (22 Ω ring, 33 Ω tip, 0.25 V VCE(sat)) | 3.411 mA |
 
-The worst case is **86 % of the 4 mA PC900V requirement, about 0.56 mA short**.
-A legacy receiver with a worst-case LED therefore has **no guaranteed
-compatibility** with this output stage. The VCE(sat) 0.25 V is an assumption
-(the MMBT3906 datasheet was not read in this pass) and is flagged as such.
+The new stage therefore **meets the 4 mA PC900V worst case** at 25 °C, at
+107 % of the requirement, and the conclusion is insensitive to RDS(ON). The
+old PNP stage did not: the checker keeps that calculation as a negative
+reference. The 4 mA figure is the receiver's worst case, not a measurement of
+any real device.
 
-The architect is assessing a low-loss transmitter (reported direction: PMOS).
-The topology is **not** changed here: an open question about the fault rating
-of a permanently grounded 10 Ω return leg must be answered first, together
-with an exact part number. `lib/electrical-midi.ts` and the checker keep
-measuring the present 22/33 Ω stage.
+### Gate drive and off state (25 °C calculations)
+
+| Check | Value |
+|---|---|
+| Gate low (UART pin low at VOL 0.5 V, pull-up 2178 Ω, series 101 Ω) | \|VGS\| = **2.518 V** |
+| RDS(ON) test point in the datasheet | \|VGS\| = 2.5 V, so 85 mΩ applies |
+| Gate rating | ±12 V, so 2.518 V is far inside |
+| Gate with the UART pin high-Z (RP2350 pull-down 36 kΩ) | \|VGS\| = **0.187 V** |
+| Gate threshold magnitude, minimum | 0.5 V at 25 °C |
+
+The off state is below the threshold **at 25 °C only**. The datasheet gives no
+guaranteed threshold over −40..125 °C, and the gate charge figure (Qg 7 nC at
+4.5 V) is a typical value, so **no full-temperature off guarantee and no
+switching-edge claim is made**. Both stay pending bench work.
+
+### Fault dissipation and the deliberate CA-033 deviation
+
+At the strongest rail (3.465 V) and with the resistors at −5 %:
+
+| Fault | Dissipation |
+|---|---|
+| Ring to ground, RA only (31.35 Ω) | **0.381 W** |
+| Tip to ground, RC only (20.90 Ω) | **0.570 W** |
+| Ring-to-tip short, both in series at low resistance (52.25 Ω) | 0.137 W (RA) + 0.092 W (RC) |
+
+Both parts are 2512 1 W resistors, so the worst single-part fault uses 57 % of
+the rating at 25 °C. **The 1 W derating above 70 °C was not read from a primary
+resistor datasheet in this pass; the research agent verifies it** and the
+numbers stay provisional until then.
+
+CA-033 asks for RA 33 Ω and **RC 10 Ω** at 3.3 V. This design uses 33 Ω and
+**22 Ω**. That is a deliberate deviation: RC is permanently grounded, so a
+10 Ω part would carry 3.465² / 9.5 = **1.264 W** in a tip-to-ground fault,
+far above the 0.25 W that CA-033 assumes for RC. The 22 Ω 1 W part is the
+smallest standard value that keeps that fault inside one 1 W 2512 part. The
+checker asserts both halves of this argument.
 
 ### Receiver output against the RP2350 input
 
@@ -289,13 +332,15 @@ built output. It derives each pad's physical pin number and net from
   number that still names the TLP2362;
 - MIDI Type A polarity through the net graph: ring (DIN 4) → 220 Ω → opto
   anode, opto cathode → tip (DIN 5) for the inputs; ring sourced through 22 Ω
-  from the PNP collector, tip sunk through 33 Ω to ground for the outputs;
+  from the AO3401A drain via 33 Ω, tip sunk through 22 Ω to ground for the
+  outputs, gate driven through 100 Ω with a 2.2 kΩ pull-up to 3.3 V;
 - bypass presence, part number, and pad distances;
 - ground pour layer and net, SMT side, 2 layers, board rules, trace widths, via
   drill and pad, minimum pad gap, and zero emitted errors;
 - the analytical loop current of section 4 against hand-calculated reference
   values (3.435/6.370 mA and 3.684/7.791 mA), the 125 °C threshold, the
-  transmitter deficit and the RP2350 input margins.
+  the output stage (gate drive, off state, legacy current, both fault cases and
+  the CA-033 deviation) and the RP2350 input margins.
 
 `scripts/test_electrical.py` proves the checker can fail. Each case copies
 `dist/`, breaks one thing, and requires a rejection:
@@ -329,7 +374,13 @@ voltage output, matching the TLP2361.
 | `midi_in_weak.cir` | 4.75 V, RA/RC 220 Ω, high VF | 1.3 mA | 4.248 mA | low |
 | `midi_in_2362.cir` | 4.75 V, RA/RC 220 Ω, high VF | 5.0 mA | 4.248 mA | **stays high** |
 
-The decks model the nominal 5 V CA-033 sender; the analytical corners in
+`midi_out.cir` is now a P-channel smoke model: level-1 MOSFET fitted to the
+datasheet DC numbers, 100 Ω / 2.2 kΩ gate network, 33 Ω ring, 22 Ω tip. It
+measures 0 mA loop current while idle, 5.087 mA while active and 3.131 V on
+the ring. It is **not** the AOS model and it does not model gate charge,
+switching edges or temperature.
+
+The MIDI IN decks model the nominal 5 V CA-033 sender; the analytical corners in
 section 4 also cover ±10 % supply, 5 % resistors, the 3.3 V sender and the
 driver drop, which the SPICE decks do not.
 
@@ -391,6 +442,7 @@ fixed:
 |---|---|---|
 | JCET 2N7002 SOT-23 | `/tmp/review-c8545.pdf` (J,Sep,2016) | `7941fb423af7c6c6c8979063a7e8819bb19217ece275efcce18948950a41d9f6` |
 | Toshiba TLP2361 | https://datasheet.lcsc.com/datasheet/pdf/ecf1cd8277534c97a26aa40e285f7e10.pdf?productCode=C107626 , `/tmp/midi-recv-research/TLP2361_lcsc.pdf` (Rev.5.0, 2015-11-02) | `97b3fc235c385f0b928aca2f52293b4a06ea41edaaad2fb4abe20532a2d84236` |
+| AOS AO3401A | `/tmp/midibrain-AO3401A.pdf` (Rev 3.1, December 2023) | — |
 | Toshiba TLP2362 (replaced) | `/tmp/review-c37658.pdf` (Rev.6.0, 2016-01-19) | `0686005de511e3987d3eac309f840a44d3475358eaf5567d66a646ef63d2c6e6` |
 | TI SN74LVC1G126 (unchanged part) | `/tmp/review-sn74lvc1g126.pdf` | `c73611ec7322b956154ca042b1b96c362d2c3a9e79aeae1e545467071289cadf` |
 | MIDI CA-033 electrical update | `/tmp/CA-033-MIDI-1-0-Electrical-Specification-Update-2014-English.pdf` | — |
@@ -402,10 +454,10 @@ fixed:
    recommended on-state current at their maximum (6.37 mA and 7.79 mA, both
    below the 10 mA absolute maximum). High-current and high-temperature
    behaviour is not qualified; measure on first article.
-1a. **Legacy receiver compatibility is not guaranteed.** The output stage
-   delivers 3.437 mA worst case against the 4 mA PC900V requirement. A low-loss
-   transmitter is under architectural review; the topology is frozen until an
-   exact part and a fault plan for the grounded return leg exist.
+1a. **Output stage pending items.** The AO3401A stage meets the 4 mA legacy
+   worst case on paper (4.276 mA at 25 °C). The full-temperature off state, the
+   switching edges and the 1 W 2512 derating above 70 °C are **not** qualified,
+   and the parent adds a pending acceptance item `midi_out_legacy`.
 2. **VF assumption.** The 1.85 V bound used for the minimum-current corner is an
    assumption above the 2 mA datasheet limit. Measure VF at about 3.7 mA over
    temperature.

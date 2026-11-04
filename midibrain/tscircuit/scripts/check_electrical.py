@@ -181,9 +181,37 @@ CA033 = {
     "legacy_receiver_tolerance": 0.05,
     "pc900v_worst_case_a": 4e-3,
     "minimum_transmitter_v": 3.0,
+    "ca033_ring_ohm": 33,
+    "ca033_tip_ohm": 10,
+    "ca033_resistor_w": 0.25,
 }
-OUT_SERIES = {"source": 22, "sink": 33, "tolerance": 0.01}
-REFERENCE_TX_WORST_A = 3.4374e-3
+
+# Output stage: AO3401A high-side P-channel switch. AOS datasheet Rev 3.1.
+AO3401A = {
+    "mpn": "AO3401A",
+    "lcsc": "C15127",
+    "rds_on_max_ohm": 0.085,     # VGS = -2.5 V, ID = -2.5 A, TJ = 25 C
+    "rds_on_test_vgs_v": -2.5,
+    "vgs_threshold_min_v": -0.5,
+    "vgs_max_v": 12,
+}
+# 2512 output resistors (5 % "J" parts), 0603 gate network (1 %).
+OUT_SERIES = {"ring": 33, "tip": 22, "tolerance": 0.05, "rated_w": 1.0}
+GATE_NETWORK = {"series": 100, "pullup": 2200, "tolerance": 0.01}
+GATE_DRIVE = {"rail_min_v": 3.135, "gpio_vol_max_v": 0.5, "pull_down_min_ohm": 36000}
+
+# Hand-calculated reference values for the output stage.
+REFERENCE_GATE_ON_V = 2.5182
+REFERENCE_GATE_OFF_V = 0.1867
+REFERENCE_LEGACY_NEW_A = 4.2758e-3
+REFERENCE_LEGACY_OLD_A = 3.4113e-3
+REFERENCE_FAULT_W = {
+    "ring_to_ground": 0.3809,
+    "tip_to_ground": 0.5701,
+    "ring_tip_ring": 0.1375,
+    "ring_tip_tip": 0.0916,
+}
+REFERENCE_CA033_TIP_FAULT_W = 1.2638
 
 # RP2350 digital input limits at IOVDD = 3.3 V: datasheet table 1683,
 # pdf page 1337 (printed 1336).
@@ -486,13 +514,6 @@ def loop_bounds(sender: dict) -> tuple[float, float]:
     return low, high
 
 
-def transmitter_worst_case() -> float:
-    """Current this design's output can push into a legacy receiver."""
-    series = (OUT_SERIES["source"] + OUT_SERIES["sink"]) * (1 + OUT_SERIES["tolerance"])
-    receiver = CA033["legacy_receiver_ohm"] * (1 + CA033["legacy_receiver_tolerance"])
-    return (3.135 - 0.25 - CA033["legacy_led_max_vf"]) / (series + receiver)
-
-
 def check_midi_current(checker: Checker) -> None:
     # The design point is the full-temperature guarantee, not the 105 C figure.
     checker.check(
@@ -549,39 +570,6 @@ def check_midi_current(checker: Checker) -> None:
         f"and its {TLP2362['if_on_min_a'] * 1e3:.1f} mA recommended minimum",
     )
 
-    # Transmitter: our own 22/33 ohm PNP stage into a legacy receiver.
-    tx = transmitter_worst_case()
-    checker.check(
-        "MIDI OUT: transmitter model matches the independent reference case",
-        abs(tx - REFERENCE_TX_WORST_A) <= REFERENCE_LOOP_TOL * REFERENCE_TX_WORST_A,
-        f"model {tx * 1e3:.4f} mA, reference {REFERENCE_TX_WORST_A * 1e3:.4f} mA",
-    )
-    checker.check(
-        "MIDI OUT: legacy-receiver worst case is short of the CA-033 PC900V current",
-        tx < CA033["pc900v_worst_case_a"],
-        f"{tx * 1e3:.2f} mA against {CA033['pc900v_worst_case_a'] * 1e3:.1f} mA "
-        f"({tx / CA033['pc900v_worst_case_a'] * 100:.0f} % of the requirement). "
-        "No guaranteed compatibility with legacy receivers is claimed.",
-    )
-
-    # Receiver output levels against the RP2350 input limits.
-    checker.check(
-        "opto to RP2350: VOH clears VIH with margin",
-        TLP2361["voh_min_at_20ua"] - RP2350["vih_min_v"] >= 1.0,
-        f"VOH {TLP2361['voh_min_at_20ua']:.1f} V vs VIH {RP2350['vih_min_v']:.1f} V, "
-        f"margin {TLP2361['voh_min_at_20ua'] - RP2350['vih_min_v']:.1f} V",
-    )
-    checker.check(
-        "opto to RP2350: VOL clears VIL with margin",
-        RP2350["vil_max_v"] - TLP2361["vol_max_at_3.2ma"] >= 0.3,
-        f"VOL {TLP2361['vol_max_at_3.2ma']:.1f} V vs VIL {RP2350['vil_max_v']:.1f} V, "
-        f"margin {RP2350['vil_max_v'] - TLP2361['vol_max_at_3.2ma']:.1f} V",
-    )
-    checker.check(
-        "opto to RP2350: input leakage is negligible against the 2.2 k pull-up",
-        RP2350["leak_max_a"] * 2200 <= 5e-3,
-        f"{RP2350['leak_max_a'] * 1e6:.0f} uA x 2.2 k = {RP2350['leak_max_a'] * 2200 * 1e3:.1f} mV",
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -712,7 +700,9 @@ def check_front(checker: Checker, front: BoardModel) -> None:
         check_midi_in(checker, front, channel)
         check_midi_out(checker, front, channel)
 
-    for name, want in (("R1", 220), ("R2", 220), ("R9", 22), ("R10", 22), ("R11", 33), ("R12", 33)):
+    # Output stage: 33 ohm ring and 22 ohm tip (R9/R11, R10/R12); the receiver
+    # stays at 220 ohm on both inputs.
+    for name, want in (("R1", 220), ("R2", 220), ("R9", 33), ("R10", 33), ("R11", 22), ("R12", 22)):
         got = (front.components_by_name.get(name) or {}).get("resistance")
         checker.check(f"front: {name} is {want} ohm", got is not None and abs(got - want) < 1e-6, f"{got} ohm")
 
@@ -770,39 +760,153 @@ def check_midi_in(checker: Checker, front: BoardModel, channel: int) -> None:
 
 
 def check_midi_out(checker: Checker, front: BoardModel, channel: int) -> None:
-    jack, transistor = f"J{channel + 2}", f"Q{channel}"
-    source_res, sink_res = f"R{channel + 8}", f"R{channel + 10}"
+    jack, switch = f"J{channel + 2}", f"Q{channel}"
+    gate_res, pullup_res = f"R{channel + 4}", f"R{channel + 6}"
+    ring_res, tip_res = f"R{channel + 8}", f"R{channel + 10}"
     ring, tip = front.pad(jack, 2), front.pad(jack, 1)
     problems: list[str] = []
     if not ring or not tip or ring["net"] is None or tip["net"] is None:
         checker.check(f"front: MIDI OUT {channel} Type A polarity", False, "jack pads are unconnected")
         return
 
-    src_pads = front.component_pins(source_res)
-    if ring["net"] not in {p["net"] for p in src_pads.values()}:
-        problems.append(f"{source_res} is not on the ring (DIN 4) net {ring['net']!r}")
-    else:
-        collector_net = next((p["net"] for p in src_pads.values() if p["net"] != ring["net"]), None)
-        if (transistor, 3) not in front.pins_on_net(collector_net):
-            problems.append(f"PNP collector (pad 3) is not on {collector_net!r}")
-        if ring["net"] == tip["net"]:
-            problems.append("ring and tip are shorted")
-
-    sink_pads = front.component_pins(sink_res)
-    if tip["net"] not in {p["net"] for p in sink_pads.values()}:
-        problems.append(f"{sink_res} is not on the tip (DIN 5) net {tip['net']!r}")
-    else:
-        return_net = next((p["net"] for p in sink_pads.values() if p["net"] != tip["net"]), None)
-        if return_net != "GND":
-            problems.append(f"{sink_res} returns to {return_net!r}, expected GND")
-
-    emitter = front.pad(transistor, 2)
-    if not emitter or emitter["net"] != "P3V3":
-        problems.append(f"PNP emitter (pad 2) on {(emitter or {}).get('net')!r}, expected P3V3")
+    comp = front.components_by_name.get(switch, {})
     checker.check(
-        f"front: MIDI OUT {channel} Type A polarity (ring/DIN 4 sourced via {source_res} 22 ohm, "
-        f"tip/DIN 5 sunk via {sink_res} 33 ohm)",
-        not problems, "; ".join(problems[:4]))
+        f"front: MIDI OUT {channel} switch is the AO3401A (LCSC C15127)",
+        (comp.get("supplier_part_numbers") or {}).get("jlcpcb") == [AO3401A["lcsc"]]
+        and comp.get("manufacturer_part_number") == AO3401A["mpn"],
+        f"{comp.get('manufacturer_part_number')} {comp.get('supplier_part_numbers')}",
+    )
+    pads = front.component_pins(switch)
+    gate_net = (pads.get(1) or {}).get("net")
+    drain_net = (pads.get(3) or {}).get("net")
+    if (pads.get(2) or {}).get("net") != "P3V3":
+        problems.append(f"pad 2 (source) on {(pads.get(2) or {}).get('net')!r}, expected P3V3")
+    if not gate_net:
+        problems.append("pad 1 (gate) is unconnected")
+    if not drain_net:
+        problems.append("pad 3 (drain) is unconnected")
+    checker.check(f"front: MIDI OUT {channel} pad 1 = gate, pad 2 = source (3.3 V), pad 3 = drain",
+                  not problems, "; ".join(problems))
+
+    # Gate network: 100 ohm in series from the UART pin, 2.2 kOhm to the rail.
+    tx_net = f"MIDI_OUT_{channel}_TX"
+    series = front.component_pins(gate_res)
+    series_nets = {p["net"] for p in series.values()}
+    if series_nets != {tx_net, gate_net}:
+        problems.append(f"{gate_res} sits between {sorted(n for n in series_nets if n)}, "
+                        f"expected {tx_net} and {gate_net}")
+    pullup = front.component_pins(pullup_res)
+    if {p["net"] for p in pullup.values()} != {gate_net, "P3V3"}:
+        problems.append(f"{pullup_res} does not connect the gate to P3V3")
+    checker.check(f"front: MIDI OUT {channel} gate network (100 ohm series, 2.2 kOhm to 3.3 V)",
+                  not problems, "; ".join(problems[:3]))
+
+    # Output resistors: 33 ohm on the ring from the drain, 22 ohm on the tip.
+    problems = []
+    ring_pads = front.component_pins(ring_res)
+    if {p["net"] for p in ring_pads.values()} != {drain_net, ring["net"]}:
+        problems.append(f"{ring_res} is not between the drain and the ring")
+    tip_pads = front.component_pins(tip_res)
+    if {p["net"] for p in tip_pads.values()} != {tip["net"], "GND"}:
+        problems.append(f"{tip_res} is not between the tip and GND")
+    if ring["net"] == tip["net"]:
+        problems.append("ring and tip are shorted")
+    checker.check(
+        f"front: MIDI OUT {channel} Type A polarity (ring/DIN 4 from the switch drain via "
+        f"{ring_res}, tip/DIN 5 to GND via {tip_res})",
+        not problems, "; ".join(problems[:3]))
+
+    for name, want in ((gate_res, 100), (pullup_res, 2200), (ring_res, 33), (tip_res, 22)):
+        got = (front.components_by_name.get(name) or {}).get("resistance")
+        checker.check(f"front: {name} is {want} ohm", got is not None and abs(got - want) < 1e-6, f"{got} ohm")
+
+
+def check_output_stage(checker: Checker) -> None:
+    """Analytical checks of the AO3401A high-side output stage."""
+    pullup = GATE_NETWORK["pullup"] * (1 - GATE_NETWORK["tolerance"])
+    series = GATE_NETWORK["series"] * (1 + GATE_NETWORK["tolerance"])
+    rail = GATE_DRIVE["rail_min_v"]
+
+    gate_on = rail - (GATE_DRIVE["gpio_vol_max_v"] +
+                      (rail - GATE_DRIVE["gpio_vol_max_v"]) * series / (pullup + series))
+    checker.check("MIDI OUT: gate drive matches the reference case",
+                  abs(gate_on - REFERENCE_GATE_ON_V) <= 0.002 * REFERENCE_GATE_ON_V,
+                  f"|VGS| {gate_on:.4f} V, reference {REFERENCE_GATE_ON_V:.4f} V")
+    checker.check("MIDI OUT: gate drive reaches the RDS(ON) test point (-2.5 V)",
+                  gate_on >= abs(AO3401A["rds_on_test_vgs_v"]),
+                  f"|VGS| {gate_on:.3f} V vs {abs(AO3401A['rds_on_test_vgs_v']):.1f} V, "
+                  "so the 85 mOhm maximum applies at 25 C")
+    checker.check("MIDI OUT: gate drive stays inside the +-12 V gate rating",
+                  gate_on < AO3401A["vgs_max_v"], f"|VGS| {gate_on:.3f} V")
+
+    gate_off = rail - rail * GATE_DRIVE["pull_down_min_ohm"] / (
+        GATE_DRIVE["pull_down_min_ohm"] + pullup + series)
+    checker.check("MIDI OUT: off-state gate voltage matches the reference case",
+                  abs(gate_off - REFERENCE_GATE_OFF_V) <= 0.005 * REFERENCE_GATE_OFF_V,
+                  f"|VGS| {gate_off:.4f} V, reference {REFERENCE_GATE_OFF_V:.4f} V")
+    checker.check("MIDI OUT: off state stays below the threshold magnitude (25 C only)",
+                  gate_off < abs(AO3401A["vgs_threshold_min_v"]),
+                  f"|VGS| {gate_off:.3f} V vs {abs(AO3401A['vgs_threshold_min_v']):.1f} V minimum "
+                  "threshold magnitude. No full-temperature off guarantee.")
+    checker.note("MIDI OUT: off-state and gate-drive behaviour is a 25 C calculation from the "
+                 "datasheet limits. Full-temperature off state and switching edges from Qg typical "
+                 "data alone are pending bench work")
+
+    # Legacy receiver current, new stage and the replaced PNP stage.
+    series_ohm = (OUT_SERIES["ring"] + OUT_SERIES["tip"]) * (1 + OUT_SERIES["tolerance"])
+    receiver_ohm = CA033["legacy_receiver_ohm"] * (1 + CA033["legacy_receiver_tolerance"])
+    new_a = (rail - CA033["legacy_led_max_vf"]) / (
+        series_ohm + receiver_ohm + AO3401A["rds_on_max_ohm"])
+    old_series = (22 + 33) * (1 + OUT_SERIES["tolerance"])
+    old_a = (rail - 0.25 - CA033["legacy_led_max_vf"]) / (old_series + receiver_ohm)
+    checker.check("MIDI OUT: legacy-receiver current matches the reference case",
+                  abs(new_a - REFERENCE_LEGACY_NEW_A) <= 0.002 * REFERENCE_LEGACY_NEW_A,
+                  f"{new_a * 1e3:.4f} mA, reference {REFERENCE_LEGACY_NEW_A * 1e3:.4f} mA")
+    checker.check("MIDI OUT: legacy-receiver worst case now meets the CA-033 PC900V current",
+                  new_a >= CA033["pc900v_worst_case_a"],
+                  f"{new_a * 1e3:.2f} mA vs {CA033['pc900v_worst_case_a'] * 1e3:.1f} mA "
+                  f"({new_a / CA033['pc900v_worst_case_a'] * 100:.0f} %), RDS(ON) at 85 mOhm, 25 C")
+    checker.check("MIDI OUT: the replaced PNP stage would still fall short (negative reference)",
+                  abs(old_a - REFERENCE_LEGACY_OLD_A) <= 0.002 * REFERENCE_LEGACY_OLD_A
+                  and old_a < CA033["pc900v_worst_case_a"],
+                  f"{old_a * 1e3:.4f} mA, reference {REFERENCE_LEGACY_OLD_A * 1e3:.4f} mA, "
+                  f"below {CA033['pc900v_worst_case_a'] * 1e3:.1f} mA")
+    # A hot RDS(ON) does not change the conclusion.
+    hot_a = (rail - CA033["legacy_led_max_vf"]) / (series_ohm + receiver_ohm + 0.15)
+    checker.check("MIDI OUT: the conclusion holds with a 150 mOhm hot RDS(ON) assumption",
+                  hot_a >= CA033["pc900v_worst_case_a"], f"{hot_a * 1e3:.2f} mA")
+
+    # Fault dissipation per resistor at the strongest rail.
+    rail_max = 3.465
+    ring_min = OUT_SERIES["ring"] * (1 - OUT_SERIES["tolerance"])
+    tip_min = OUT_SERIES["tip"] * (1 - OUT_SERIES["tolerance"])
+    rds = AO3401A["rds_on_max_ohm"]
+    i_ring = rail_max / (ring_min + rds)
+    i_tip = rail_max / (tip_min + rds)
+    i_loop = rail_max / (ring_min + tip_min + rds)
+    fault = {
+        "ring_to_ground": i_ring * i_ring * ring_min,
+        "tip_to_ground": i_tip * i_tip * tip_min,
+        "ring_tip_ring": i_loop * i_loop * ring_min,
+        "ring_tip_tip": i_loop * i_loop * tip_min,
+    }
+    for key, watts in fault.items():
+        checker.check(f"MIDI OUT: fault power {key.replace('_', ' ')} matches the reference case",
+                      abs(watts - REFERENCE_FAULT_W[key]) <= 0.01 * REFERENCE_FAULT_W[key],
+                      f"{watts:.4f} W, reference {REFERENCE_FAULT_W[key]:.4f} W")
+        checker.check(f"MIDI OUT: fault power {key.replace('_', ' ')} inside the 1 W 2512 rating",
+                      watts < OUT_SERIES["rated_w"], f"{watts:.3f} W of {OUT_SERIES['rated_w']:.0f} W")
+    checker.note("MIDI OUT: 1 W 2512 derating above 70 C is not read from a primary resistor "
+                 "datasheet in this pass; the research agent verifies it")
+
+    # Deviation from CA-033: the reference wants RC = 10 ohm.
+    ca033_tip_fault = rail_max * rail_max / (CA033["ca033_tip_ohm"] * 0.95)
+    checker.check("MIDI OUT: a CA-033 10 ohm tip resistor would be unsafe (deviation justified)",
+                  abs(ca033_tip_fault - REFERENCE_CA033_TIP_FAULT_W) <= 0.01 * REFERENCE_CA033_TIP_FAULT_W
+                  and ca033_tip_fault > OUT_SERIES["rated_w"],
+                  f"{ca033_tip_fault:.4f} W in a tip fault against a "
+                  f"{CA033['ca033_resistor_w']:.2f} W CA-033 part; this design uses "
+                  f"{OUT_SERIES['tip']} ohm 1 W instead of {CA033['ca033_tip_ohm']} ohm")
 
 
 def check_copper(checker: Checker, model: BoardModel) -> None:
@@ -924,6 +1028,7 @@ def main() -> int:
                   "; ".join(problems[:4]))
 
     check_midi_current(checker)
+    check_output_stage(checker)
 
     print(f"\n{checker.passed} checks passed, {len(checker.failed)} failed")
     if checker.failed:

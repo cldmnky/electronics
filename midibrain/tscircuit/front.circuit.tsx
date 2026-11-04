@@ -1,10 +1,11 @@
 import { Fragment } from "react"
 import { A_1N4148WS } from "./imports/A_1N4148WS"
+import { C15127_AO3401A } from "./imports/C15127_AO3401A"
 import { B3F_4055 } from "./imports/B3F_4055"
 import { BH254V_26P } from "./imports/BH254V_26P"
 import { PEC11R_4215F_S0024 } from "./imports/PEC11R_4215F_S0024"
 import { BOARD_POLICY } from "./lib/electrical"
-import { MIDI_OUT_SERIES_OHM, MIDI_RECEIVER_OHM } from "./lib/electrical-midi"
+import { MIDI_OUT_SERIES_OHM, MIDI_OUT_GATE_OHM, MIDI_RECEIVER_OHM } from "./lib/electrical-midi"
 import { FP_JACK_TRS } from "./lib/jack"
 import { SKRHABE010 } from "./imports/SKRHABE010"
 import { TLP2361_TPL_E } from "./imports/TLP2361_TPL_E"
@@ -150,8 +151,8 @@ const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: 
   const j = `J${ch + 2}`, q = `Q${ch}`
   const ring = `net.MIDI_OUT_${ch}_RING`
   const tip = `net.MIDI_OUT_${ch}_TIP`
-  const base = `net.MIDI_OUT_${ch}_BASE`
-  const col = `net.MIDI_OUT_${ch}_COLLECTOR`
+  const gate = `net.MIDI_OUT_${ch}_GATE`
+  const drain = `net.MIDI_OUT_${ch}_DRAIN`
   const tx = `net.MIDI_OUT_${ch}_TX`
   return (
     <>
@@ -169,24 +170,23 @@ const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: 
         schSectionName="midi_out"
         connections={{ tip, ring, sleeve: "net.GND" }}
       />
-      <transistor
+      {/* High-side P-channel switch: AO3401A (C15127), pad 1 gate, 2 source,
+          3 drain. The gate is pulled to the 3.3 V rail by 2.2 kOhm so the
+          output is off while the UART pin is high or high-Z, and is driven low
+          through 100 Ohm when the UART pin goes low. */}
+      <C15127_AO3401A
         name={q}
-        type="pnp"
-        footprint="sot23"
         pcbX={`${x}mm`}
         pcbY={`${y}mm`}
         layer="top"
         schSheetName="front"
         schSectionName="midi_out"
-        pinLabels={{ pin1: "base", pin2: "emitter", pin3: "collector" }}
-        supplierPartNumbers={{ jlcpcb: ["C53444"] }}
-        manufacturerPartNumber="MMBT3906LT1G"
-        connections={{ base, emitter: "net.P3V3", collector: col }}
+        connections={{ gate, source: "net.P3V3", drain }}
       />
-      <R name={`R${ch + 4}`} value="4.7k" sec="midi_out" x={`${x - 2}mm`} y={`${y + 6}mm`} lcsc="C23162" mpn="0603WAF4701T5E" p1={tx} p2={base} />
-      <R name={`R${ch + 6}`} value="10k" sec="midi_out" x={`${x + 6}mm`} y={`${y + 6}mm`} lcsc="C25804" mpn="0603WAF1002T5E" p1={base} p2="net.P3V3" />
-      <R name={`R${ch + 8}`} value={`${MIDI_OUT_SERIES_OHM.source}`} sec="midi_out" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C118189" mpn="25121WF220JT4E" footprint="2512" rot="90deg" p1={col} p2={ring} />
-      <R name={`R${ch + 10}`} value={`${MIDI_OUT_SERIES_OHM.sink}`} sec="midi_out" x={`${x + 4.5}mm`} y={`${y - 6}mm`} lcsc="C53728" mpn="25121WF330JT4E" footprint="2512" p1={tip} p2="net.GND" />
+      <R name={`R${ch + 4}`} value={`${MIDI_OUT_GATE_OHM.series}`} sec="midi_out" x={`${x - 2}mm`} y={`${y + 6}mm`} lcsc="C22775" mpn="0603WAF1000T5E" p1={tx} p2={gate} />
+      <R name={`R${ch + 6}`} value={`${MIDI_OUT_GATE_OHM.pullup}`} sec="midi_out" x={`${x + 6}mm`} y={`${y + 6}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={gate} p2="net.P3V3" />
+      <R name={`R${ch + 8}`} value={`${MIDI_OUT_SERIES_OHM.ring}`} sec="midi_out" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C53728" mpn="25121WF330JT4E" footprint="2512" rot="90deg" p1={drain} p2={ring} />
+      <R name={`R${ch + 10}`} value={`${MIDI_OUT_SERIES_OHM.tip}`} sec="midi_out" x={`${x + 4.5}mm`} y={`${y - 6}mm`} lcsc="C118189" mpn="25121WF220JT4E" footprint="2512" p1={tip} p2="net.GND" />
     </>
   )
 }
@@ -222,7 +222,7 @@ export default () => (
     {/* Functional schematic blocks. One sheet per board, sections per block. */}
     <schematicsheet name="front" displayName="MIDI Brain front/UI board" sheetSize="ANSI_B">
       <schematicsection name="midi_in" displayName="MIDI IN 1/2 (TRS Type A, opto)" />
-      <schematicsection name="midi_out" displayName="MIDI OUT 1/2 (TRS Type A, PNP)" />
+      <schematicsection name="midi_out" displayName="MIDI OUT 1/2 (TRS Type A, P-channel high side)" />
       <schematicsection name="controls" displayName="Controls and status LEDs" />
       <schematicsection name="power" displayName="Rail decoupling" />
       <schematicsection name="headers" displayName="Rear interconnect" />

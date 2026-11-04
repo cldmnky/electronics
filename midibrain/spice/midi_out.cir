@@ -1,18 +1,28 @@
-* MIDI OUT current-loop check. Simplified 3.3 V PNP source, 22R/33R, 220R receiver and 1.7 V LED.
+* MIDI OUT: AO3401A high-side P-channel switch into a legacy receiver.
+*
+* Smoke model only. The MOSFET is a level-1 SPICE model fitted to the AOS
+* datasheet DC numbers (VTO -0.9 V typical, RDS(ON) about 85 mOhm in the linear
+* region); it is NOT the AOS model and it does not model gate charge, switching
+* edges, temperature or the body diode. Nothing here is a hardware measurement.
+*
+* Nodes: tx = UART pin, g = gate, d = drain, ring/tip = TRS contacts.
+* Gate network: 100 ohm series from the UART pin, 2.2 kOhm pull-up to 3.3 V.
+* Output resistors: 33 ohm on the ring (DIN 4), 22 ohm on the tip (DIN 5).
 V3V3 3v3 0 3.3
 Vtx tx 0 PWL(0 3.3 1m 3.3 1.001m 0 2m 0)
-Rbase tx b 4.7k
-Rpull b 3v3 10k
-Q1 c b e QPNP
-Re e 3v3 0.1
-Rring c ring 22
+Rser tx g 100
+Rpu 3v3 g 2.2k
+M1 d g 3v3 3v3 PMOS
+Rring d ring 33
 Rrecv ring nled 220
-Vled nled tip 1.7
-Rtip tip 0 33
-.model QPNP PNP(Is=1e-14 Bf=100 Vaf=50)
+Vled nled tip 1.9
+Rtip tip 0 22
+.model PMOS PMOS(VTO=-0.9 KP=20 RD=0.085 RS=0.085)
 .tran 1u 2m
-.meas tran i_idle FIND I(Vled) AT=0.5m
-.meas tran i_active FIND I(Vled) AT=1.5m
+.meas tran i_loop_idle FIND I(Vled) AT=0.5m
+.meas tran i_loop_active FIND I(Vled) AT=1.5m
 .meas tran v_ring_idle FIND V(ring) AT=0.5m
 .meas tran v_ring_active FIND V(ring) AT=1.5m
+.meas tran v_gate_idle FIND V(g) AT=0.5m
+.meas tran v_gate_active FIND V(g) AT=1.5m
 .end
