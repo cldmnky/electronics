@@ -64,9 +64,42 @@ review must use the merged source and actual tool output, not agent summaries.
 
 ## Final verification
 
-Implementation and the merged verification run are in progress. Exact commands,
-counts, independent-review findings and unresolved limitations will be added
-before the PR is handed over.
+Full merged `make test` passes with exit 0 (log:
+`/tmp/froemix-hardware-checks/final-test2.log`). Environment: pinned Bun
+dependencies, genuine KiCad 10.0.7 CLI, genuine 4ms library, native ngspice.
+
+- Base gate, 18/18 steps: typecheck clean; native ERC 0 unexcluded (0 errors,
+  0 warnings, 9 preapproved exclusions, all three severity flags, report
+  validated); build 107 bottom SMT placements; 102/102 nets; 20 extras with
+  41 pins; 429 pads; 40 unique JLCPCB codes; 95 passive literals vs build and
+  MPN; 22 electrical pin/margin checks; rendered schematic five sheets 0/0
+  label collisions with page-bounds and note checks; source/pin/netlist,
+  placement (only the known H1 warning), shorts and pcb-style clean;
+  silkscreen inside the outline; schematic/PCB/3D snapshots match.
+- Euro gate: PASS — typecheck, build, netlist, placement, shorts, pcb-style,
+  mating and mux contracts, mechanical stack, panel artwork, regression
+  tests and snapshot diff; 86 traces, 53 vias, 2351 mm copper, 0 unconnected.
+- Release report: 0/19 accepted, 19 pending, fingerprint `36f8a0e8…` current;
+  PHYSICAL ACCEPTANCE NOT APPROVED, correctly blocking production.
+- Mechanical: 64 stack corners (insertion 2.55–4.05 mm), 32 actuator corners
+  (NAV 5.6 mm cup, worst corner wall 0.275 mm, radial 0.305 mm), 16-row
+  fastener/courtyard report; rack fit explicitly NOT certified.
+- Unit tests: Python tools 93 OK, sim 49 OK, release bun 94 pass / 0 fail.
+- SPICE: 177 checks over 11 decks, all pass (behavioural, not hardware).
+
+One transient base-PCB snapshot mismatch occurred in an earlier merged run
+and did not reproduce in three subsequent runs (standalone gate plus two
+full `make test` passes). The committed snapshots were verified element-wise:
+the base snap differs from its predecessor only in the pinned-date silkscreen
+text, the euro snap only in float re-serialization with identical coordinates.
+
+Unresolved by design: all 19 physical acceptance items (stack retention,
+fasteners, NAV/MODE, jack/pot/rack/OLED fit, sockets/shunts, P5V load and
+thermal, CV calibration and cable load, mux/sync power orders, MIDI threshold
+and high-current corners including the 125 °C derated 8.05 mA risk hold,
+primary STM32H750 GPIO-limit verification, chassis tie, ESD, DFM/CPL and
+first article). Formal independent review cycle 2 covers this tree; its
+findings and the two-cycle disposition will be recorded here before handover.
 
 ## Mechanical primary reference
 
