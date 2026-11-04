@@ -25,6 +25,18 @@ void constantPowerPan(float pan, float& gainL, float& gainR) {
     gainR = std::sin(angle);
 }
 
+// Stereo balance for a paired strip. Both sides stay at unity in the centre, so
+// a centred pair passes through unchanged, and the side turned away from is
+// attenuated to silence at the extreme. Unlike the constant-power pan it never
+// boosts a side and it does not narrow the pair.
+void balancePan(float pan, float& gainL, float& gainR) {
+    float p = pan;
+    if (!(p >= 0.0f)) p = 0.0f;
+    if (p > 1.0f) p = 1.0f;
+    gainL = std::min(2.0f * (1.0f - p), 1.0f);
+    gainR = std::min(2.0f * p, 1.0f);
+}
+
 // Mute always wins; any active solo narrows the mix to soloed strips.
 bool audible(const Channel& ch, bool anySolo) {
     if (ch.mute) return false;
@@ -60,6 +72,8 @@ MonitorMode sanitizeMonitor(MonitorMode mode) {
 }  // namespace
 
 Engine::Engine() {
+    // Identity input mapping: strip N listens to device N until reconfigured.
+    for (int c = 0; c < kMaxInputs; ++c) mInputSource[c] = c;
     updateCompressor();
     mClick = ClickSource(mSampleRate);
 }
@@ -114,22 +128,64 @@ void Engine::processBlock(const float* const* in, int nch, int n,
         mOut34Mono[i] = 0.0f;
     }
 
+    // Resolve each strip's live source for this block. A pair is always
+    // (even, even+1): an odd selection clamps down and the top channel pairs
+    // with the one below it, so the render never reads past kMaxInputs and the
+    // stored selection stays exactly what the session applied.
+    int sourceDevice[kMaxInputs] = {};
+    bool sourcePaired[kMaxInputs] = {};
+    for (int c = 0; c < kMaxInputs; ++c) {
+        int device = mInputSource[c];
+        const bool paired = mInputPair[c] && device >= 0;
+        if (paired) device = std::min(device & ~1, kMaxInputs - 2);
+        sourceDevice[c] = device;  // kNoInputSource stays -1: a silent strip
+        sourcePaired[c] = paired;
+    }
+
     bool anySolo = false;
     for (int c = 0; c < kMaxInputs; ++c) anySolo = anySolo || mChannels[c].solo;
 
+    // The per-destination send stages are block state, not per-sample state.
+    bool sendPre[kNumSends] = {};
+    for (int s = 0; s < kNumSends; ++s) {
+        sendPre[s] =
+            mSendSource[static_cast<int>(SendDestination::Fx1) + s] ==
+            SendSource::PreFader;
+    }
+    const bool cuePre =
+        mSendSource[static_cast<int>(SendDestination::Cue)] ==
+        SendSource::PreFader;
+    const bool out34Pre =
+        mSendSource[static_cast<int>(SendDestination::Out34)] ==
+        SendSource::PreFader;
+    const bool dualMono = mOut34Mode == Out34Mode::DualMono;
+
     for (int c = 0; c < kMaxInputs; ++c) {
         const Channel& ch = mChannels[c];
-        const float* live =
-            (in != nullptr && c < inputs) ? in[c] : nullptr;
+        const int device = sourceDevice[c];
+        const bool paired = sourcePaired[c];
+        const float* liveL =
+            (in != nullptr && device >= 0 && device < inputs) ? in[device]
+                                                             : nullptr;
+        const float* liveR =
+            (in != nullptr && paired && device + 1 < inputs) ? in[device + 1]
+                                                            : nullptr;
         const float* take =
             (!ch.arm && mTakeActive[c]) ? mTakeBuffer[c] : nullptr;
         const bool preGain = ch.tapPoint == TapPoint::PreGain;
 
-        // The recorder/monitor tap always sees the live input at its
-        // tapPoint. Monitor mode and take playback never change it.
+        // The recorder/monitor tap always sees the strip's selected live source
+        // at its tapPoint; a pair is averaged to mono. Monitor mode, the take
+        // voice and the output destination never change it.
         for (int i = 0; i < frames; ++i) {
-            mTap[c][i] =
-                live == nullptr ? 0.0f : (preGain ? live[i] : live[i] * ch.gain);
+            float mono = 0.0f;
+            if (paired) {
+                if (liveL != nullptr) mono += 0.5f * liveL[i];
+                if (liveR != nullptr) mono += 0.5f * liveR[i];
+            } else if (liveL != nullptr) {
+                mono = liveL[i];
+            }
+            mTap[c][i] = preGain ? mono : mono * ch.gain;
         }
 
         if (!audible(ch, anySolo)) continue;
@@ -151,42 +207,77 @@ void Engine::processBlock(const float* const* in, int nch, int n,
 
         float gainL = 0.0f;
         float gainR = 0.0f;
-        constantPowerPan(ch.pan, gainL, gainR);
+        if (paired) {
+            balancePan(ch.pan, gainL, gainR);
+        } else {
+            constantPowerPan(ch.pan, gainL, gainR);
+        }
         const float cueLevel =
             mCueStyle == CueStyle::Toggle ? (ch.cueSend > 0.0f ? 1.0f : 0.0f)
                                           : ch.cueSend;
+        const OutputDestination destination = mOutputDestination[c];
         for (int i = 0; i < frames; ++i) {
-            float input = 0.0f;
-            if (liveAllowed && live != nullptr) input += live[i];
-            if (take != nullptr) input += take[i];
-            const float g = input * ch.gain;
-            const float x = g * ch.vol;
-            accL[i] += x * gainL;
-            accR[i] += x * gainR;
+            float left = 0.0f;
+            float right = 0.0f;
+            if (liveAllowed) {
+                if (liveL != nullptr) left += liveL[i];
+                if (paired) {
+                    if (liveR != nullptr) right += liveR[i];
+                } else {
+                    right = left;  // a mono source feeds both sides
+                }
+            }
+            if (take != nullptr) {
+                // The take voice is mono, so it joins the strip in the centre
+                // of a pair and is positioned by the same pan law.
+                left += take[i];
+                right += take[i];
+            }
+            // Unpanned pre-fader stage (mono sum: the pair average plus the
+            // take voice once) and the post-fader sides that follow pan.
+            const float mono = 0.5f * (left + right);
+            const float preFader = mono * ch.gain;
+            const float postL = left * ch.gain * ch.vol;
+            const float postR = right * ch.gain * ch.vol;
+            const float postMono = mono * ch.gain * ch.vol;
 
-            for (int s = 0; s < kNumSends; ++s) {
-                const bool pre =
-                    mSendSource[static_cast<int>(SendDestination::Fx1) + s] ==
-                    SendSource::PreFader;
-                const float level = ch.send[s];
-                mSendL[s][i] += (pre ? g : x * gainL) * level;
-                mSendR[s][i] += (pre ? g : x * gainR) * level;
+            switch (destination) {
+                case OutputDestination::Main:
+                    accL[i] += postL * gainL;
+                    accR[i] += postR * gainR;
+                    break;
+                case OutputDestination::Out34:
+                    if (dualMono) {
+                        mOut34Mono[i] += postMono;
+                    } else {
+                        mOut34L[i] += postL * gainL;
+                        mOut34R[i] += postR * gainR;
+                    }
+                    break;
+                case OutputDestination::Phones:
+                    mCueL[i] += postL * gainL;
+                    mCueR[i] += postR * gainR;
+                    break;
+                case OutputDestination::None:
+                    break;
             }
 
-            const bool cuePre =
-                mSendSource[static_cast<int>(SendDestination::Cue)] ==
-                SendSource::PreFader;
-            mCueL[i] += (cuePre ? g : x * gainL) * cueLevel;
-            mCueR[i] += (cuePre ? g : x * gainR) * cueLevel;
+            for (int s = 0; s < kNumSends; ++s) {
+                const float level = ch.send[s];
+                mSendL[s][i] += (sendPre[s] ? preFader : postL * gainL) * level;
+                mSendR[s][i] += (sendPre[s] ? preFader : postR * gainR) * level;
+            }
 
-            const bool out34Pre =
-                mSendSource[static_cast<int>(SendDestination::Out34)] ==
-                SendSource::PreFader;
-            if (mOut34Mode == Out34Mode::DualMono) {
-                mOut34Mono[i] += (out34Pre ? g : x) * ch.out34Send;
+            mCueL[i] += (cuePre ? preFader : postL * gainL) * cueLevel;
+            mCueR[i] += (cuePre ? preFader : postR * gainR) * cueLevel;
+
+            if (dualMono) {
+                mOut34Mono[i] += (out34Pre ? preFader : postMono) * ch.out34Send;
             } else {
-                mOut34L[i] += (out34Pre ? g : x * gainL) * ch.out34Send;
-                mOut34R[i] += (out34Pre ? g : x * gainR) * ch.out34Send;
+                mOut34L[i] +=
+                    (out34Pre ? preFader : postL * gainL) * ch.out34Send;
+                mOut34R[i] +=
+                    (out34Pre ? preFader : postR * gainR) * ch.out34Send;
             }
         }
     }
@@ -374,6 +465,45 @@ void Engine::setMonitorMode(int index, MonitorMode mode) {
 MonitorMode Engine::monitorMode(int index) const {
     if (index < 0 || index >= kMaxInputs) return MonitorMode::Auto;
     return mChannels[index].monitor;
+}
+
+void Engine::setInputSource(int index, int deviceChannel) {
+    if (index < 0 || index >= kMaxInputs) return;
+    if (deviceChannel < 0) {
+        mInputSource[index] = kNoInputSource;
+        return;
+    }
+    mInputSource[index] =
+        deviceChannel < kMaxInputs ? deviceChannel : kMaxInputs - 1;
+}
+
+int Engine::inputSource(int index) const {
+    if (index < 0 || index >= kMaxInputs) return kNoInputSource;
+    return mInputSource[index];
+}
+
+void Engine::setInputPair(int index, bool paired) {
+    if (index < 0 || index >= kMaxInputs) return;
+    mInputPair[index] = paired;
+}
+
+bool Engine::inputPair(int index) const {
+    if (index < 0 || index >= kMaxInputs) return false;
+    return mInputPair[index];
+}
+
+void Engine::setOutputDestination(int index,
+                                  OutputDestination destination) {
+    if (index < 0 || index >= kMaxInputs) return;
+    const int value = static_cast<int>(destination);
+    mOutputDestination[index] = value >= 0 && value < kNumOutputDestinations
+                                    ? destination
+                                    : OutputDestination::Main;
+}
+
+OutputDestination Engine::outputDestination(int index) const {
+    if (index < 0 || index >= kMaxInputs) return OutputDestination::Main;
+    return mOutputDestination[index];
 }
 
 void Engine::setMaster(float gain) {

@@ -48,6 +48,24 @@ inline constexpr int kNumSendDestinations = 5;
 /// each OUT3&4 send before pan and writes the same mono mix to both outputs.
 enum class Out34Mode : uint8_t { Stereo = 0, DualMono = 1 };
 
+/// Per-strip output destination: where the strip's dry (post-fader, post-pan)
+/// signal lands. Sends (FX1/FX2, CUE, OUT3&4) and the recorder tap are
+/// independent of it; mute/solo and monitor mode still gate everything.
+/// `Phones` is the CUE bus: the engine has no separate phones bus, the jack
+/// plays CUE or a Main duplicate (`PhonesSource`), so a Phones-routed strip is
+/// heard at the jack only while the phones source is CUE.
+enum class OutputDestination : uint8_t {
+    Main = 0,    // Main 1&2: master gain, main compressor and a Main click
+    Out34 = 1,   // OUT3&4: uncompressed, follows Out34Mode
+    Phones = 2,  // the CUE bus (phones plays it while PhonesSource is Cue)
+    None = 3,    // no dry destination; sends and taps keep working
+};
+inline constexpr int kNumOutputDestinations = 4;
+
+/// `setInputSource(index, kNoInputSource)` selects silence: the strip has no
+/// live input at all, while its take voice and destination routing stay live.
+inline constexpr int kNoInputSource = -1;
+
 /// Phones monitor source: the CUE bus or a duplicate of Main 1&2 (including
 /// the main compressor). OUT3&4 is never compressed.
 enum class PhonesSource : uint8_t { Cue = 0, Main = 1 };
@@ -162,14 +180,20 @@ public:
     void process(const float* const* in, int nch, int n,
                  const OutputBuses& outputs);
 
-    /// Mono tap of one input at its Channel::tapPoint, valid until the next
+    /// Mono tap of one strip at its Channel::tapPoint, valid until the next
     /// process() call: the raw input for PreGain, `in * gain` for the default
-    /// PostGain. The tap is always the live device input and is never fed by
-    /// take playback. nullptr when `ch` is outside 0..kMaxInputs-1. Mute, solo,
-    /// pan, vol, monitor and master do not affect the tap.
+    /// PostGain. The tap is the strip's *selected* live source and never take
+    /// playback; a stereo pair is averaged to mono (`0.5 * (L + R)`), because
+    /// the recorder writes one mono file per armed strip. nullptr when `ch` is
+    /// outside 0..kMaxInputs-1. Mute, solo, pan, vol, monitor, the output
+    /// destination and master do not affect the tap.
     const float* tap(int ch) const;
 
     /// Out-of-range indices are ignored, so a UI can push all 18 strips blindly.
+    /// Strip state only: the input source, the pair flag and the output
+    /// destination are separate routing state (setInputSource/setInputPair/
+    /// setOutputDestination) and a setChannel call leaves them untouched, so a
+    /// blind strip refresh cannot remap inputs.
     void setChannel(int index, Channel ch);
     /// Live strip state (session capture); out-of-range returns a default strip.
     Channel channel(int index) const {
@@ -184,6 +208,31 @@ public:
     /// Per-track live-input monitoring mode; out-of-range values map to Auto.
     void setMonitorMode(int index, MonitorMode mode);
     MonitorMode monitorMode(int index) const;
+
+    // --- per-strip input source / output destination -----------------------
+    /// Select strip `index`'s live input source: a device channel 0..17 (higher
+    /// values clamp) or kNoInputSource (-1) for silence. The default is
+    /// identity, strip N <- device N. The recorder tap carries the selected
+    /// source instead of the strip's own device index; the take voice, the pan
+    /// and the output destination keep applying to the strip, and a
+    /// silent-source strip keeps playing its own take voice (the monitor rule:
+    /// silence is about live input only).
+    void setInputSource(int index, int deviceChannel);
+    /// Selected device channel, kNoInputSource for a silent strip or when
+    /// `index` is out of range.
+    int inputSource(int index) const;
+    /// Bind the strip's source as a stereo pair: L is `inputSource()`, R is the
+    /// next device channel. The strip stays one strip - one arm/monitor/take
+    /// set, per the manual - and `pan` becomes a stereo balance instead of a
+    /// constant-power pan. An odd source clamps down to the even channel below
+    /// it when the block renders (never in the stored selection), so capture()
+    /// returns exactly what was applied.
+    void setInputPair(int index, bool paired);
+    bool inputPair(int index) const;
+    /// Where the strip's dry signal goes; out-of-range values select Main.
+    void setOutputDestination(int index, OutputDestination destination);
+    /// Out-of-range strips read as Main.
+    OutputDestination outputDestination(int index) const;
 
     /// Linear master gain; negative and NaN values are clamped to 0.
     void setMaster(float gain);
@@ -275,6 +324,11 @@ private:
     void renderClick(int n);
 
     Channel mChannels[kMaxInputs];
+    // Routing state kept out of Channel so a default-constructed strip means
+    // identity input and a Main destination (the historical behaviour).
+    int mInputSource[kMaxInputs] = {};  // identity 0..17, set in the ctor
+    bool mInputPair[kMaxInputs] = {};
+    OutputDestination mOutputDestination[kMaxInputs] = {};
     IEffect* mFx[kNumSends] = {nullptr, nullptr};
     float mFxReturn[kNumSends] = {1.0f, 1.0f};
     float mMaster = 1.0f;

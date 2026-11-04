@@ -169,6 +169,79 @@ loop wrap timing against a known-length ramp take, whole-take loop including
 newest-wins overlap, loop + monitor off/auto/on), plus the existing
 test_audio_features/test_click/test_audio/test_fx targets and the root build.
 
+## Engine wave 5: per-track input source and output destination
+
+Works: each strip has an **input source** (`Engine::setInputSource(index,
+device)`: a device channel 0..17, `kNoInputSource` = -1 for silence; default
+identity, strip N <- device N) and an **output destination**
+(`Engine::setOutputDestination(index, OutputDestination::Main | Out34 | Phones |
+None)`; default Main). Both are routing state, not `Channel` fields: a `Channel`
+value stays the historical mixer strip, so a blind `setChannel` refresh cannot
+remap an input and a default-constructed strip still means identity + Main.
+`inputSource()`/`inputPair()`/`outputDestination()` read them back (out-of-range
+strips read as no source / false / Main).
+
+Takes, taps and monitor compose with the source instead of forking it. The
+recorder tap is the *selected* live source at `tapPoint` and never take
+playback, so a strip remapped to device 5 records device 5; a selected source
+that the block does not supply taps silence. Take playback belongs to the strip,
+not to the device: a remapped strip keeps its own take stack, a strip whose
+source is -1 keeps playing its take, and the take voice enters the same strip
+path, so it follows the strip's pan and destination. That is the existing
+monitor rule read literally — monitor mode and the source select are about live
+input only.
+
+Stereo pair: `Engine::setInputPair(index, true)` makes the strip claim `inCh` +
+`inCh + 1`. **Pairing widens one strip; it does not gang two strips**, which is
+what the manual's "a stereo pair shares monitor, arm and take state; pan spreads
+the pair" requires: one strip already has exactly one arm, monitor and take set
+(and one take stack, with the unchanged per-strip newest-wins layering), so
+nothing new has to be shared or kept in sync. Odd `inCh` clamps *down* at render
+time (5 binds 4/5) and the top channel pairs with the one below it (17 binds
+16/17), so the render never reads past the 18 device channels; the stored
+selection is never rewritten, so capture() returns exactly what apply() wrote.
+A silent (-1) source cannot be paired. Pan becomes a **stereo balance**: both
+sides at unity in the centre (a centred pair passes through unchanged), the side
+turned away from fading to zero at the extreme, no boost — a mono strip keeps
+the constant-power law bit-exactly. The recorder tap of a pair is its mono
+average `0.5 * (L + R)`, and the take voice (mono) is centre-summed into both
+sides before the balance, so it is positioned by the pan but never becomes
+stereo. Gap by name: a paired strip is recorded and played back **mono** (one
+WAV per armed strip); stereo take files per pair need a 2-channel tap and a
+stereo take format, which does not exist yet.
+
+Output destination: `Main` is the historical dry path — master, main
+compressor, Main click — and carries the FX returns; `Out34` adds the dry strip
+signal to the OUT3&4 bus at unity post-fader (following `Out34Mode`, so dual mono
+sums it unpanned into both jacks) and is never compressed; `Phones` adds it to
+the CUE bus; `None` drops the dry signal while sends and taps keep working.
+Sends (FX1/FX2, `cueSend`, `out34Send`) are independent of the destination, and
+mute/solo gate both the dry route and the sends. Gaps by name: (1) the engine has
+**no separate phones bus** — Phones is the CUE bus, the jack plays CUE or a
+compressed Main duplicate (`PhonesSource`), so a Phones-routed strip is
+inaudible at the jack while `PhonesSource::Main` is selected; (2) `Rec` stays
+recorder-tap metadata, so there is no per-strip record destination. Nothing was
+invented to paper over either.
+
+Session forwarding: `capture()` writes `mixer.channels[N].inCh/inPair/outDst`
+from the engine (identity / false / Main for a fresh engine, i.e. identity until
+the app grows a source picker) and `apply()` pushes them back through
+`setInputSource`/`setInputPair`/`setOutputDestination`; the JSON
+format/parser/emitter is unchanged (fecf8bb). Known consequence of the frozen
+format: `inCh` defaults to 0 when the key is absent-but-writable, so a session
+file saved between fecf8bb and this wave (all channels `"inCh":0`) means "every
+strip on device 0" when applied. capture() now writes identity per channel, so
+files saved by this build are correct; old files need a re-save.
+
+Verified with: CTest target `test_audio_routing` (identity defaults and
+getters, strip 2 <- device 5 including the tap and unsupplied-channel silence,
+-1 silence under monitor On, pair binding / odd clamp / top-channel clamp /
+silent pair, the balance law against the unchanged mono pan, all four
+destinations including OUT3&4 dual mono and mute/solo gating, monitor + pair,
+take voice + tap following the strip), plus the untouched test_audio/test_fx and
+the test_audio_features/test_click/test_audio_playback targets and the root
+build.
+
 ## ClickSource (`click.hpp`, JUCE-free)
 
 Works: `setEnabled`, `setLevel` (clamped 0..1, NaN/negative = 0) and

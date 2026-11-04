@@ -1605,6 +1605,13 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
     channel.cueSend = live.cueSend;
     channel.out34Send = live.out34Send;
     channel.monitor = static_cast<int>(live.monitor);
+    // Input source and output destination are routing state, not Channel
+    // fields. A fresh engine is the identity mapping (strip N <- device N) with
+    // every strip on Main, so a session that never selected a source round-trips
+    // as identity until the app grows a TRACK SHIFT source picker.
+    channel.inCh = engine.inputSource(index);
+    channel.inPair = engine.inputPair(index);
+    channel.outDst = static_cast<int>(engine.outputDestination(index));
   }
   snapshot.mixer.master = engine.masterGain();
   snapshot.mixer.out34Mode = static_cast<int>(engine.out34Mode());
@@ -1707,6 +1714,10 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
     channel.out34Send = state.out34Send;
     channel.monitor = static_cast<audio::MonitorMode>(state.monitor);
     engine.setChannel(index, channel);
+    engine.setInputSource(index, state.inCh);
+    engine.setInputPair(index, state.inPair);
+    engine.setOutputDestination(
+        index, static_cast<audio::OutputDestination>(state.outDst));
   }
   engine.setMaster(snapshot.mixer.master);
   engine.setOut34Mode(
