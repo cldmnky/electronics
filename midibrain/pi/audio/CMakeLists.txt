@@ -77,6 +77,13 @@ target_compile_options(test_audio_routing PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_audio_routing PRIVATE mnky_audio)
 add_test(NAME test_audio_routing COMMAND test_audio_routing)
 
+# Four-band EQ inserts: the shipped biquad shapes, type-None transparency, the
+# per-strip send matrix and the post-compressor main placement.
+add_executable(test_audio_eq test_audio_eq.cpp)
+target_compile_options(test_audio_eq PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
+target_link_libraries(test_audio_eq PRIVATE mnky_audio)
+add_test(NAME test_audio_eq COMMAND test_audio_eq)
+
 # pi/CMakeLists.txt already builds test_audio from test_audio.cpp through
 # mnky_module_tests(), so only the standalone build creates the target here.
 if(MNKY_AUDIO_STANDALONE)

@@ -1794,6 +1794,30 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
   snapshot.sends.rec = static_cast<int>(
       engine.sendSource(audio::SendDestination::Rec));
 
+  // The four-band EQ inserts are engine state as of the audio EQ wave. The
+  // session format already carries fx.eq (51ff907); capture() reads the live
+  // strips and main bus so a saved project round-trips the DSP settings.
+  for (int index = 0; index < audio::kMaxInputs; ++index) {
+    for (int band = 0; band < 4; ++band) {
+      const audio::EqBand live = engine.trackEqBand(index, band);
+      EqBand& out =
+          snapshot.fx.eq.tracks[static_cast<std::size_t>(index)]
+                                [static_cast<std::size_t>(band)];
+      out.type = live.type;
+      out.gainDb = live.gainDb;
+      out.freqHz = live.freqHz;
+      out.q = live.q;
+    }
+  }
+  for (int band = 0; band < 4; ++band) {
+    const audio::EqBand live = engine.mainEqBand(band);
+    EqBand& out = snapshot.fx.eq.main[static_cast<std::size_t>(band)];
+    out.type = live.type;
+    out.gainDb = live.gainDb;
+    out.freqHz = live.freqHz;
+    out.q = live.q;
+  }
+
   // TakesState.active stays app-owned (the engine only exposes the newest take
   // path), but per-track take looping and the non-destructive region edit are
   // engine state, so they capture here. The JSON format is unchanged: 43130e8
@@ -1902,6 +1926,32 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
   comp.makeupDb = snapshot.mainComp.makeupDb;
   comp.mode = static_cast<audio::CompressorMode>(snapshot.mainComp.mode);
   engine.setMainComp(comp);
+
+  // Four-band EQ inserts: every strip and the main bus forward the same
+  // session values; the engine clamps them (type 0..5, gain -24..+24 dB,
+  // frequency 20..20000 Hz, Q 0.1..24) and a None band is a bypass.
+  for (int index = 0; index < audio::kMaxInputs; ++index) {
+    for (int band = 0; band < 4; ++band) {
+      const EqBand& in =
+          snapshot.fx.eq.tracks[static_cast<std::size_t>(index)]
+                               [static_cast<std::size_t>(band)];
+      audio::EqBand value;
+      value.type = in.type;
+      value.gainDb = in.gainDb;
+      value.freqHz = in.freqHz;
+      value.q = in.q;
+      engine.setTrackEqBand(index, band, value);
+    }
+  }
+  for (int band = 0; band < 4; ++band) {
+    const EqBand& in = snapshot.fx.eq.main[static_cast<std::size_t>(band)];
+    audio::EqBand value;
+    value.type = in.type;
+    value.gainDb = in.gainDb;
+    value.freqHz = in.freqHz;
+    value.q = in.q;
+    engine.setMainEqBand(band, value);
+  }
 
   engine.setClickMode(static_cast<audio::ClickMode>(snapshot.click.mode));
   engine.setClickOutput(

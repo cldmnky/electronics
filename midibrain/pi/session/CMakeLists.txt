@@ -35,8 +35,8 @@ if(TARGET mnky_audio)
 else()
   # engine.cpp references TakePlayer/ClickSource: keep every audio TU the
   # engine links against in this fallback list.
-  add_library(mnky_session_audio STATIC ../audio/engine.cpp
-                  ../audio/take_player.cpp ../audio/click.cpp)
+  add_library(mnky_session_audio STATIC ../audio/engine.cpp ../audio/take_player.cpp
+                  ../audio/click.cpp)
   target_include_directories(mnky_session_audio PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../audio)
   target_compile_features(mnky_session_audio PUBLIC cxx_std_20)
@@ -47,7 +47,8 @@ endif()
 if(TARGET mnky_midi)
   set(MNKY_SESSION_MIDI mnky_midi)
 else()
-  add_library(mnky_session_midi STATIC ../midi/router.cpp)
+  # router.cpp references the pipe engine: keep it in the fallback list.
+  add_library(mnky_session_midi STATIC ../midi/router.cpp ../midi/midifx.cpp)
   target_include_directories(mnky_session_midi PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../midi)
   target_compile_features(mnky_session_midi PUBLIC cxx_std_20)

@@ -7,7 +7,6 @@
 namespace mnky::audio::fx {
 namespace {
 
-constexpr double kPi = 3.14159265358979323846;
 constexpr double kTypeCount = 5.0;
 
 std::vector<Param> makeParams() {
@@ -26,17 +25,6 @@ std::vector<Param> makeParams() {
     }
     params.push_back(Param{"active_band", "Active Band", 0.0, 3.0, 0.0, 0.0, true});
     return params;
-}
-
-double clamp(double value, double min, double max) {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-}
-
-int bandTypeIndex(int type) {
-    if (type < 0) return 0;
-    return type > 5 ? 5 : type;
 }
 
 }  // namespace
@@ -76,124 +64,6 @@ bool Eq::setActiveBand(int band) {
 int Eq::activeBand() const {
     const int band = static_cast<int>(std::lround(param(kActiveBand)));
     return band < 0 ? 0 : (band >= kBandCount ? kBandCount - 1 : band);
-}
-
-Eq::Biquad Eq::normalized(double b0, double b1, double b2, double a0, double a1, double a2) {
-    const double inverse = 1.0 / a0;
-    Biquad result;
-    result.b0 = b0 * inverse;
-    result.b1 = b1 * inverse;
-    result.b2 = b2 * inverse;
-    result.a1 = a1 * inverse;
-    result.a2 = a2 * inverse;
-    return result;
-}
-
-Eq::Biquad Eq::lowCut(double sampleRate, double freq, double q) {
-    const double w0 = 2.0 * kPi * freq / sampleRate;
-    const double cosw = std::cos(w0);
-    const double sinw = std::sin(w0);
-    const double alpha = sinw / (2.0 * (q < 0.1 ? 0.1 : q));
-    const double b0 = (1.0 + cosw) * 0.5;
-    const double b1 = -(1.0 + cosw);
-    const double b2 = (1.0 + cosw) * 0.5;
-    const double a0 = 1.0 + alpha;
-    const double a1 = -2.0 * cosw;
-    const double a2 = 1.0 - alpha;
-    return normalized(b0, b1, b2, a0, a1, a2);
-}
-
-Eq::Biquad Eq::highCut(double sampleRate, double freq, double q) {
-    const double w0 = 2.0 * kPi * freq / sampleRate;
-    const double cosw = std::cos(w0);
-    const double sinw = std::sin(w0);
-    const double alpha = sinw / (2.0 * (q < 0.1 ? 0.1 : q));
-    const double b0 = (1.0 - cosw) * 0.5;
-    const double b1 = 1.0 - cosw;
-    const double b2 = (1.0 - cosw) * 0.5;
-    const double a0 = 1.0 + alpha;
-    const double a1 = -2.0 * cosw;
-    const double a2 = 1.0 - alpha;
-    return normalized(b0, b1, b2, a0, a1, a2);
-}
-
-Eq::Biquad Eq::lowShelf(double sampleRate, double freq, double gainDb, double q) {
-    const double a = std::pow(10.0, gainDb / 40.0);
-    const double w0 = 2.0 * kPi * freq / sampleRate;
-    const double cosw = std::cos(w0);
-    const double sinw = std::sin(w0);
-    const double slope = clamp(q, 0.1, 1.0);
-    const double alpha = sinw * 0.5 * std::sqrt((a + 1.0 / a) * (1.0 / slope - 1.0) + 2.0);
-    const double beta = 2.0 * std::sqrt(a) * alpha;
-    const double b0 = a * ((a + 1.0) - (a - 1.0) * cosw + beta);
-    const double b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cosw);
-    const double b2 = a * ((a + 1.0) - (a - 1.0) * cosw - beta);
-    const double a0 = (a + 1.0) + (a - 1.0) * cosw + beta;
-    const double a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cosw);
-    const double a2 = (a + 1.0) + (a - 1.0) * cosw - beta;
-    return normalized(b0, b1, b2, a0, a1, a2);
-}
-
-Eq::Biquad Eq::highShelf(double sampleRate, double freq, double gainDb, double q) {
-    const double a = std::pow(10.0, gainDb / 40.0);
-    const double w0 = 2.0 * kPi * freq / sampleRate;
-    const double cosw = std::cos(w0);
-    const double sinw = std::sin(w0);
-    const double slope = clamp(q, 0.1, 1.0);
-    const double alpha = sinw * 0.5 * std::sqrt((a + 1.0 / a) * (1.0 / slope - 1.0) + 2.0);
-    const double beta = 2.0 * std::sqrt(a) * alpha;
-    const double b0 = a * ((a + 1.0) + (a - 1.0) * cosw + beta);
-    const double b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cosw);
-    const double b2 = a * ((a + 1.0) + (a - 1.0) * cosw - beta);
-    const double a0 = (a + 1.0) - (a - 1.0) * cosw + beta;
-    const double a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cosw);
-    const double a2 = (a + 1.0) - (a - 1.0) * cosw - beta;
-    return normalized(b0, b1, b2, a0, a1, a2);
-}
-
-Eq::Biquad Eq::peaking(double sampleRate, double freq, double q, double gainDb) {
-    const double a = std::pow(10.0, gainDb / 40.0);
-    const double w0 = 2.0 * kPi * freq / sampleRate;
-    const double cosw = std::cos(w0);
-    const double sinw = std::sin(w0);
-    const double alpha = sinw / (2.0 * (q < 0.1 ? 0.1 : q));
-    const double b0 = 1.0 + alpha * a;
-    const double b1 = -2.0 * cosw;
-    const double b2 = 1.0 - alpha * a;
-    const double a0 = 1.0 + alpha / a;
-    const double a1 = -2.0 * cosw;
-    const double a2 = 1.0 - alpha / a;
-    return normalized(b0, b1, b2, a0, a1, a2);
-}
-
-Eq::Biquad Eq::makeBand(int type, double sampleRate, double freq, double gainDb, double q) {
-    const double limit = sampleRate * 0.45;
-    const double f = freq < 10.0 ? 10.0 : (freq > limit ? limit : freq);
-    switch (bandTypeIndex(type)) {
-        case 1: return lowCut(sampleRate, f, q);
-        case 2: return lowShelf(sampleRate, f, gainDb, q);
-        case 3: return peaking(sampleRate, f, q, gainDb);
-        case 4: return highShelf(sampleRate, f, gainDb, q);
-        case 5: return highCut(sampleRate, f, q);
-        default: return Biquad{};
-    }
-}
-
-double Eq::run(const Biquad& biquad, BiquadState& state, double x) {
-    const double y = biquad.b0 * x + biquad.b1 * state.x1 + biquad.b2 * state.x2 - biquad.a1 * state.y1 -
-                     biquad.a2 * state.y2;
-    state.x2 = state.x1;
-    state.x1 = x;
-    state.y2 = state.y1;
-    state.y1 = y;
-    return y;
-}
-
-void Eq::flushState(BiquadState& state) {
-    state.x1 = flushDenormal(state.x1);
-    state.x2 = flushDenormal(state.x2);
-    state.y1 = flushDenormal(state.y1);
-    state.y2 = flushDenormal(state.y2);
 }
 
 void Eq::processBlock(float* const* ch, int nch, int n) {

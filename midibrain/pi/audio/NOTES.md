@@ -409,3 +409,90 @@ Pi follow-ups: engine strip/fader/send/return ramps (left unchanged because the
 existing engine tests pin instantaneous values), ramped bypass, delay-time
 automation, reverb modulation/early reflections, CLAP-wrapper registration, and
 per-effect oversampling.
+
+## Engine wave 7: per-strip and main four-band EQ inserts
+
+Works: every one of the 18 strips and the main bus has its own four-band EQ
+insert (`audio::EqInsert`, `eq_insert.hpp`), fed from the session band model
+(type 0 none, 1 low cut, 2 low shelf, 3 parametric, 4 high shelf, 5 high cut;
+gain/frequency/Q shared). The coefficient math is not a second implementation:
+the shipped FX-suite biquad was lifted verbatim into `fx/biquad.hpp`, which both
+`fx::Eq` and `EqInsert` use. `fx::Eq` keeps its FX parameter surface and 20 ms
+ramps; the engine inserts snap their coefficients on the control-thread setter
+(no per-block sin/cos/pow on the audio thread, and no zipper smoothing yet —
+matching the instantaneous gain/vol/pan setters).
+`Engine::setTrackEqBand(track, band, EqBand)` / `trackEqBand()` and
+`setMainEqBand(band, EqBand)` / `mainEqBand()` are the public seam. Values are
+clamped to the session EQ contract: type 0..5, frequency 20..20000 Hz, Q
+0.1..24; gain uses the EQ's ±24 dB operating range (the session parser does not
+clamp gain, so a hand-edited out-of-range value is normalised here). Non-finite
+values fall back to the session defaults (0 dB, 1000 Hz, Q 1.0); a default
+insert is four None bands, which is exactly the session default `EqBand`.
+Out-of-range tracks/bands are ignored and read as the default band.
+`Engine::setSampleRate()` forwards the rate to all 19 inserts (8 kHz..192 kHz,
+as the FX suite accepts) and rebuilds active coefficients; the take player's
+48 kHz rule is unchanged.
+
+Placement decisions:
+
+* **Per-strip EQ is post-gain, pre-fader and post-tap.** It processes the full
+  strip voice (live input plus take playback) after `Channel::gain` and before
+  `Channel::vol`, pan and every send. Pre-fader sends therefore carry gain + EQ
+  (not vol/pan), post-fader sends and the dry destination carry gain + EQ +
+  vol/pan, and the FX/CUE/OUT3&4 matrices all see the same insert.
+  The recorder/monitor `tap()` deliberately stays **pre-EQ**: `tap()` is the
+  historical live-only signal (`in * gain` for the default `PostGain`, raw input
+  for `PreGain`), independent of takes and mute. Making the tap post-EQ would
+  need a second mono filter state per strip because the tap excludes the take
+  voice while the insert includes it; that would roughly double the insert
+  count/cost and split one band setting across two states. So recordings remain
+  dry of strip EQ while every send and the dry output follow it. This is the
+  documented tradeoff of the "pre-tap or post-tap" decision, not a hidden
+  behaviour: a take recorded with EQ active will not have the EQ baked in.
+* **Main EQ is post-compressor and post-click, the final Main 1&2 stage.** It
+  runs after `applyMainComp()` and after a Main-routed metronome click, before
+  the Phones copy and output writes. So the compressor detector never sees the
+  EQ (an EQ boost cannot change gain reduction), the metronome follows the main
+  EQ, Phones-as-Main duplicates the EQ'd Main, and OUT3&4 plus the CUE bus are
+  never EQ'd. Master gain stays upstream, as before.
+
+`EqInsert::process()` is a no-op when all four bands are None, so an
+unconfigured strip/main insert is bit-transparent and costs no samples. A band
+with type None is skipped inside an otherwise active chain. Changing a band's
+type resets that band's state on both channels, so re-enabling a band cannot
+ring with stale history; gain/frequency/Q changes keep the state (standard
+biquad retuning).
+
+Session forwarding: `session::capture()` reads every strip band and the main
+bands from the engine into `snapshot.fx.eq`, and `apply()` writes them back
+through `setTrackEqBand()`/`setMainEqBand()`. The JSON format, parser and
+emitter are unchanged (51ff907 already carried `fx.eq`); this wave only fills
+the existing DSP seam. A fresh engine captures as the session default EQ, so
+the session `apply`/`capture` equality tests stay exact. The app's `EqModel`
+still owns the edit surface and its own `fx::Eq` instances; project save/load
+already applies the same snapshot to both, but live EQ-grid edits are not yet
+forwarded into the engine insert — that app wiring is the remaining follow-up,
+not a claim of this wave.
+
+CPU honesty (not a benchmark suite, not a Pi measurement): the added
+`test_audio_eq` prints a repeated-block timing. On the macOS dev host with
+Apple clang `-O2`, 19 inserts × 4 active bands × 128-frame blocks measured
+about **35 us/block** (270–280 ns/frame, ~650–670 cycles/frame if referred to
+a 2.4 GHz clock) for the inserts alone, and about **39 us/block** (~300 ns/frame,
+~720–740 cycles/frame) for the whole engine with all 18 strip inserts and the
+main insert active. That is roughly 1.3–1.5% of a 48 kHz/128-frame block on this
+host; the Pi 5 number is unmeasured. The `-O0` standalone timing is much
+slower (~146 us/block) because the biquad chain is not inlined well; quote the
+optimised figure only. Inactive inserts cost no biquad work (the all-None
+branch), but the strip staging pass still runs.
+
+Verified with: new CTest target `test_audio_eq` (shelf/cut/parametric shapes
+spot-checked against `fx::Eq` configured with the same values, type-None
+bit-transparency including denormals, per-strip send/dry/tap placement, main
+post-compressor ordering and Main-only routing, session clamps and sample-rate
+forwarding, timing print), plus the untouched `test_audio`/`test_fx`/
+`test_audio_features`/`test_click`/`test_audio_playback`/`test_audio_routing`/
+`test_take_edit`/`test_peaks` targets and `test_session`. Direct line:
+`clang++ -std=c++20 -Wall -Wextra -Werror -I. test_audio_eq.cpp engine.cpp
+take_player.cpp click.cpp fx/eq.cpp fx/effect.cpp fx/params.cpp -o /tmp/t_eq
+-pthread && /tmp/t_eq`.

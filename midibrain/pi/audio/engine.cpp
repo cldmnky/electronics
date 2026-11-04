@@ -228,6 +228,10 @@ void Engine::processBlock(const float* const* in, int nch, int n,
             mCueStyle == CueStyle::Toggle ? (ch.cueSend > 0.0f ? 1.0f : 0.0f)
                                           : ch.cueSend;
         const OutputDestination destination = mOutputDestination[c];
+        EqInsert& eq = mTrackEq[c];
+        // Post-gain, pre-fader insert staged ahead of the send matrix. The
+        // take voice is part of this path (it is the strip's voice), while the
+        // recorder tap above stays live-only and pre-EQ.
         for (int i = 0; i < frames; ++i) {
             float left = 0.0f;
             float right = 0.0f;
@@ -245,13 +249,19 @@ void Engine::processBlock(const float* const* in, int nch, int n,
                 left += take[i];
                 right += take[i];
             }
+            mStripL[i] = left * ch.gain;
+            mStripR[i] = right * ch.gain;
+        }
+        if (eq.active()) eq.process(mStripL, mStripR, frames);
+
+        for (int i = 0; i < frames; ++i) {
             // Unpanned pre-fader stage (mono sum: the pair average plus the
             // take voice once) and the post-fader sides that follow pan.
-            const float mono = 0.5f * (left + right);
-            const float preFader = mono * ch.gain;
-            const float postL = left * ch.gain * ch.vol;
-            const float postR = right * ch.gain * ch.vol;
-            const float postMono = mono * ch.gain * ch.vol;
+            const float mono = 0.5f * (mStripL[i] + mStripR[i]);
+            const float preFader = mono;
+            const float postL = mStripL[i] * ch.vol;
+            const float postR = mStripR[i] * ch.vol;
+            const float postMono = mono * ch.vol;
 
             switch (destination) {
                 case OutputDestination::Main:
@@ -325,6 +335,10 @@ void Engine::processBlock(const float* const* in, int nch, int n,
             }
         }
     }
+
+    // Main-bus EQ: post-compressor and post-click, the final Main 1&2 stage.
+    // Phones-as-Main duplicates it; OUT3&4 and the CUE bus never see it.
+    if (mMainEq.active()) mMainEq.process(accL, accR, frames);
 
     // Phones: CUE by default, or the compressed Main duplicate. A Main-routed
     // click is already in accL/R, so a Main duplicate carries it; a
@@ -522,6 +536,22 @@ void Engine::setMaster(float gain) {
     mMaster = gain > 0.0f ? gain : 0.0f;
 }
 
+void Engine::setTrackEqBand(int track, int band, const EqBand& value) {
+    if (!trackInRange(track)) return;
+    mTrackEq[track].setBand(band, value);
+}
+
+EqBand Engine::trackEqBand(int track, int band) const {
+    if (!trackInRange(track)) return EqBand{};
+    return mTrackEq[track].band(band);
+}
+
+void Engine::setMainEqBand(int band, const EqBand& value) {
+    mMainEq.setBand(band, value);
+}
+
+EqBand Engine::mainEqBand(int band) const { return mMainEq.band(band); }
+
 void Engine::setFx(int send, IEffect* fx) {
     if (send < 0 || send >= kNumSends) return;
     mFx[send] = fx;
@@ -536,6 +566,8 @@ void Engine::setSampleRate(double sampleRate) {
     for (auto* fx : mFx) {
         if (fx != nullptr) fx->setSampleRate(sampleRate);
     }
+    for (EqInsert& eq : mTrackEq) eq.setSampleRate(sampleRate);
+    mMainEq.setSampleRate(sampleRate);
     if (!(sampleRate > 0.0) || !std::isfinite(sampleRate)) return;
     if (sampleRate == mSampleRate) return;
     mSampleRate = sampleRate;

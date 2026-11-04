@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "click.hpp"
+#include "eq_insert.hpp"
 #include "take_player.hpp"
 
 namespace mnky::audio {
@@ -160,8 +161,8 @@ struct IEffect {
     virtual void setSampleRate(double) {}
 };
 
-/// Mixer core: gain/vol/pan, mute/solo, pre/post sends, FX returns, main
-/// compressor, click and monitor outputs.
+/// Mixer core: gain/vol/pan, per-strip and main four-band EQ, mute/solo,
+/// pre/post sends, FX returns, main compressor, click and monitor outputs.
 /// Everything runs in the caller's (audio) thread and never allocates.
 class Engine {
 public:
@@ -238,11 +239,29 @@ public:
     void setMaster(float gain);
     /// Live master gain (session capture).
     float masterGain() const { return mMaster; }
+
+    // --- four-band EQ inserts ---------------------------------------------
+    /// Per-strip EQ band, post-gain and pre-fader. The recorder tap keeps its
+    /// historical pre-EQ live signal, so a recording does not bake the strip
+    /// EQ; every send stage and the dry destination do. `band` is 0..3 and an
+    /// out-of-range track/band is ignored. Values are clamped to the session
+    /// EQ contract: type 0..5, gain -24..+24 dB, frequency 20..20000 Hz,
+    /// Q 0.1..24; non-finite values take the session defaults. Type 0 (None)
+    /// bypasses the band; four None bands make the insert a bit-transparent
+    /// no-op.
+    void setTrackEqBand(int track, int band, const EqBand& value);
+    /// Applied per-strip EQ band; out-of-range reads as the session default.
+    EqBand trackEqBand(int track, int band) const;
+    /// Main-bus EQ band. The main insert is post-compressor and post-click,
+    /// the final Main 1&2 stage; Phones-as-Main carries it, OUT3&4 and CUE do
+    /// not. Same clamps and None rule as the per-strip insert.
+    void setMainEqBand(int band, const EqBand& value);
+    EqBand mainEqBand(int band) const;
     /// `send` is 0..kNumSends-1; nullptr detaches and passes the bus through.
     void setFx(int send, IEffect* fx);
-    /// Control thread only. Forwards to attached FX (see IEffect); engine
-    /// processing itself is rate-agnostic except for the main compressor,
-    /// click and 48 kHz-only take playback.
+    /// Control thread only. Forwards to attached FX (see IEffect) and to every
+    /// EQ insert; engine processing itself is rate-agnostic except for the main
+    /// compressor, click, EQ biquads and 48 kHz-only take playback.
     void setSampleRate(double sampleRate);
     /// Linear return level applied to the FX bus after process().
     void setFxReturn(int send, float gain);
@@ -363,8 +382,13 @@ private:
     float mOut34L[kBlockSize] = {};
     float mOut34R[kBlockSize] = {};
     float mOut34Mono[kBlockSize] = {};
+    float mStripL[kBlockSize] = {};
+    float mStripR[kBlockSize] = {};
     float mClickBuffer[kBlockSize] = {};
     ClickSource mClick;
+
+    EqInsert mTrackEq[kMaxInputs];
+    EqInsert mMainEq;
 
     SendSource mSendSource[kNumSendDestinations] = {
         SendSource::PostFader, SendSource::PostFader, SendSource::PostFader,

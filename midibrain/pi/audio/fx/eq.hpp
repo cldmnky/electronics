@@ -1,5 +1,6 @@
 #pragma once
 
+#include "biquad.hpp"
 #include "effect.hpp"
 
 namespace mnky::audio::fx {
@@ -81,31 +82,8 @@ protected:
     void onReset() override;
 
 private:
-    struct Biquad {
-        double b0 = 1.0;
-        double b1 = 0.0;
-        double b2 = 0.0;
-        double a1 = 0.0;
-        double a2 = 0.0;
-    };
-
-    struct BiquadState {
-        double x1 = 0.0;
-        double x2 = 0.0;
-        double y1 = 0.0;
-        double y2 = 0.0;
-    };
-
-    static Biquad normalized(double b0, double b1, double b2, double a0, double a1, double a2);
-    static Biquad lowCut(double sampleRate, double freq, double q);
-    static Biquad highCut(double sampleRate, double freq, double q);
-    static Biquad lowShelf(double sampleRate, double freq, double gainDb, double q);
-    static Biquad highShelf(double sampleRate, double freq, double gainDb, double q);
-    static Biquad peaking(double sampleRate, double freq, double q, double gainDb);
-    static Biquad makeBand(int type, double sampleRate, double freq, double gainDb, double q);
-    static double run(const Biquad& biquad, BiquadState& state, double x);
-    static void flushState(BiquadState& state);
-
+    // The coefficient math and per-channel state live in biquad.hpp so the
+    // engine's strip/main inserts run the identical formulas.
     Biquad mBands[kBandCount];
     BiquadState mState[2][kBandCount] = {};
     int mLastType[kBandCount] = {-1, -1, -1, -1};
