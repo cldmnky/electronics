@@ -242,6 +242,124 @@ take voice + tap following the strip), plus the untouched test_audio/test_fx and
 the test_audio_features/test_click/test_audio_playback targets and the root
 build.
 
+## Engine wave 6: waveform-editor backend (region render, normalize, peaks)
+
+Works: the take voice can play a **non-destructive region edit** instead of the
+selected take stack. `TakePlayer::setRegions()` / `Engine::setTakeRegions()`
+take the session's ordered region list (`takes.edit`, format frozen at 43130e8):
+each entry is `take`, `offsetBeats`, `lengthBeats` (0 = to the end of the take),
+`gainDb` (-96..+12), `fadeInBeats`, `fadeOutBeats` and `normalize`. Beats map to
+take frames with `framesPerBeat = sampleRate * 60 / bpm`, rounded to the nearest
+frame, resolved **once at apply time** (like the loop: re-apply after a tempo
+change). Regions play in list order as one edited stream: region 0, then region
+1, and so on, so the list is the track's composition. Files are never rewritten;
+render-to-new-take is out of scope (a later op), and `takes.active` stays
+app-owned (applying an edit never selects a take).
+
+Gain and fades run **in the reader thread**, not in `process()`: the edited stream
+has its own ring and reader thread (the layer stack's pattern) and each produced
+frame is multiplied by `gain * fadeIn * fadeOut` before it is published, where
+`fadeIn(i) = min(1, i / fadeInFrames)` and
+`fadeOut(i) = min(1, (frames - 1 - i) / fadeOutFrames)`. Both ramps are exactly 0
+at their region edge and exactly 1 at their inner end, and they multiply, so two
+fades that cover the whole region give a V and never exceed unity. The audio
+thread only copies ring frames (`render()` gained one region-mode branch; the
+layer path is unchanged), so `process()` does no allocation, no file I/O and no
+per-sample envelope work. Underruns still render as counted silence.
+
+Normalize is **one peak pass per region at load/apply time** on the control
+thread (chunked read of just that region's frames, mono downmix). The gain is
+`kNormalizePeakDbfs = -1 dBFS` (`0.891251`) divided by the region peak, so a
+normalised region lands one decibel below full scale instead of clipping the
+next stage; it multiplies with `gainDb` (`gainDb +6.02` on a normalised region is
+exactly 2x). A silent region has no peak to scale to and keeps its gain; a NaN
+sample is ignored by the peak so it can never poison the stream. Peak values
+above full scale (a hot float WAV) attenuate, as they should.
+
+Clamping is **logged, never fatal** (`mnky audio: take edit: ...` on stderr):
+a region that starts at or past the end of its take is skipped, a length longer
+than the rest of the take is clamped to the take end, a fade longer than the
+region is clamped to the region, and a region shorter than one frame is skipped.
+An edit whose every region clamps away stays an explicit, logged silence (empty
+stream, `playing == false`, live input still passes under monitor `Auto`) rather
+than falling back to the unedited take - playing material the user removed would
+be worse. Unreadable or non-48 kHz takes **refuse the whole list** with a reason
+and leave the previous state untouched, matching `setTakes()`: a partially
+applied edit would silently drop audio. An edit list that resolves to zero
+frames still reports the track as take-fed, so it cannot leak live input into a
+take path.
+
+Composition rules are reused, not forked. A non-empty edit replaces the track's
+take voice; the take stack is kept and resumes on
+`clearRegions()`/`clearTakeRegions()` (`clearTrack()` drops both, and
+`setActiveTake()` while an edit is applied restarts the edit, because the edit is
+that track's voice). For a track **without** an edit nothing changed at all:
+newest-wins layering, monitor `Off`/`Auto`/`On`, the recorder tap and the arm rule
+are bit-identical to wave 3/4 (the untouched `test_audio_playback` covers them),
+and an edit on one track never touches another track's stack. The loop now wraps
+the **edited** stream: `endBeats <= startBeats` loops the whole edited material
+(so a 6000-frame edit wraps at 6000, not at the raw file's end), a beat-range loop
+maps over the edited stream from the transport frame that was current at apply,
+and the seam keeps its 64-frame declick ramp (`loopSeamFade`).
+
+Peak scanner (`peaks.hpp`/`peaks.cpp`, no engine dependency): `PeakScanner::start()`
+scans a take on its **own thread** into 256-frame min/max buckets
+(`kPeakBucketFrames`, 5.3 ms at 48 kHz) plus a coarse level that folds every
+`kPeakCoarseFactor = 64` buckets (~341 ms) so a zoomed-out view needs no
+reduction. The scanned signal is the take voice's mono downmix
+(`0.5 * (L + R)`), so the drawing matches playback. Progress is a throttled
+atomic fraction (~100 updates plus 0 and 1, delivered on the worker thread) with
+a completion callback; the finished summary is handed over with one release
+store of an immutable pointer and the scanner keeps every published generation,
+so a paint pass can never dangle and never takes a lock. The sidecar is
+`<take>.wav.peaks` next to the WAV: a 56-byte little-endian header (magic `MNPK`,
+version, bucket size, coarse factor, source frames/bytes/mtime, bucket and coarse
+counts) followed by the min/max pairs. It is written through `<sidecar>.tmp` +
+rename, so an interrupted write cannot pass as valid. `readPeaks()` accepts a
+sidecar only when magic, version, bucket configuration and the WAV's **size and
+mtime** all still match; anything else (missing, truncated, stale, other config)
+means "rescan" and reports the reason. A newer scan first tries the sidecar and
+publishes it without decoding audio. A missing, stale or unwritable sidecar costs
+the UI its overview only: `summary()` stays `nullptr` (the placeholder case) and
+take playback/region render are untouched - they never read peaks.
+`cancel()` drops a scan without publishing or calling back.
+
+Honest limits: an applied edit is not re-anchored when the tempo changes (re-apply,
+the loop's rule); the edited stream always starts at its first region, so a
+selection's transport frame is only the beat origin for the loop window and
+playback is not sample-locked to the transport; a full-speed render loop can
+outrun the 8192-frame ring and produce counted underruns (the test suite paces
+itself like a callback, real-time consumption never does); `.peaks` freshness
+uses the platform file-time tick, so the cache is machine-local and a same-size
+same-timestamp rewrite is trusted; the coarse level is a plain min/max fold (no
+RMS); and the UI wiring of the scanner (drawing, zoom levels) is app-side and not
+part of this wave. The shared WAV reader moved to `wav.hpp` (header-only, so the
+session standalone build needs no extra translation unit) and is the one spelling
+of the accepted take format for the player, the normalize pass and the scanner.
+
+Session forwarding: `session::apply()` converts `snapshot.takes.edit` to
+`audio::TakeRegion` and calls `Engine::setTakeRegions()` (empty -> `clearTakeRegions()`),
+and `session::capture()` reads `Engine::takeRegions()` back, so a saved project
+round-trips its edit. The JSON format, parser and emitter are unchanged (43130e8
+already had them). Known frozen-format quirk: `decodeTakes()` returns early when
+`takes.active` is absent, so a hand-written file needs an `active` object before
+its `edit` is read; the emitter always writes `"active":{}`, so files saved by
+this build round-trip. A refused edit (missing or non-48 kHz take) is tolerant
+like the FX slots: apply() logs the reason and keeps the previous state.
+
+Verified with: CTest targets `test_take_edit` (region window/gain, fade ramps,
+length 0, per-region normalize, clamp/skip reasons including the captured stderr
+line, refusal of a 44.1 kHz take, loop wrapping the edited stream for the
+whole-material and beat-range rules, stack/monitor composition through the engine,
+tempo-dependent beat mapping) and `test_peaks` (bucket values, partial last
+bucket, coarse fold, stereo downmix, sidecar round-trip, size and mtime
+invalidation, worker-thread progress/completion, missing-file and non-48 kHz
+failures), plus the untouched `test_audio`/`test_fx`/`test_audio_features`/
+`test_click`/`test_audio_playback`/`test_audio_routing` targets and the root
+build. Direct lines:
+`c++ -std=c++20 -Wall -Wextra -Werror -I. test_take_edit.cpp engine.cpp take_player.cpp recorder.cpp peaks.cpp click.cpp -o /tmp/t_edit -pthread &&
+/tmp/t_edit`, and the same for `test_peaks.cpp peaks.cpp recorder.cpp engine.cpp take_player.cpp click.cpp`.
+
 ## ClickSource (`click.hpp`, JUCE-free)
 
 Works: `setEnabled`, `setLevel` (clamped 0..1, NaN/negative = 0) and

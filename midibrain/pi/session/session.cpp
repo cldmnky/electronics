@@ -1795,13 +1795,32 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
       engine.sendSource(audio::SendDestination::Rec));
 
   // TakesState.active stays app-owned (the engine only exposes the newest take
-  // path), but per-track take looping is engine state, so it captures here.
+  // path), but per-track take looping and the non-destructive region edit are
+  // engine state, so they capture here. The JSON format is unchanged: 43130e8
+  // already emits and parses takes.edit.
   for (int index = 0; index < audio::kMaxInputs; ++index) {
     const audio::TakeLoop live = engine.takeLoop(index);
     LoopState& loop = snapshot.takes.loop[static_cast<std::size_t>(index)];
     loop.enabled = live.enabled;
     loop.startBeats = live.startBeats;
     loop.endBeats = live.endBeats;
+
+    const std::vector<audio::TakeRegion> applied = engine.takeRegions(index);
+    std::vector<TakeRegion>& regions =
+        snapshot.takes.edit[static_cast<std::size_t>(index)];
+    regions.clear();
+    regions.reserve(applied.size());
+    for (const audio::TakeRegion& region : applied) {
+      TakeRegion edit;
+      edit.take = region.take;
+      edit.offsetBeats = region.offsetBeats;
+      edit.lengthBeats = region.lengthBeats;
+      edit.gainDb = region.gainDb;
+      edit.fadeInBeats = region.fadeInBeats;
+      edit.fadeOutBeats = region.fadeOutBeats;
+      edit.normalize = region.normalize;
+      regions.push_back(std::move(edit));
+    }
   }
 
   for (int index = 0;
@@ -1916,6 +1935,36 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
     loop.startBeats = state.startBeats;
     loop.endBeats = state.endBeats;
     engine.setTakeLoop(index, loop);
+  }
+
+  // The non-destructive region edit forwards the same way: an empty list hands
+  // the track back to its take stack, and the engine resolves beats to frames
+  // with the current tempo (so a later tempo change needs a re-apply, exactly
+  // like the loop). A refused edit - a missing or non-48 kHz take - keeps the
+  // previous state and logs its reason; apply() stays tolerant, like the FX
+  // slots above. takes.active remains app-owned: applying an edit never selects
+  // a take.
+  for (int index = 0; index < audio::kMaxInputs; ++index) {
+    const std::vector<TakeRegion>& regions =
+        snapshot.takes.edit[static_cast<std::size_t>(index)];
+    std::vector<audio::TakeRegion> edits;
+    edits.reserve(regions.size());
+    for (const TakeRegion& region : regions) {
+      audio::TakeRegion edit;
+      edit.take = region.take;
+      edit.offsetBeats = region.offsetBeats;
+      edit.lengthBeats = region.lengthBeats;
+      edit.gainDb = region.gainDb;
+      edit.fadeInBeats = region.fadeInBeats;
+      edit.fadeOutBeats = region.fadeOutBeats;
+      edit.normalize = region.normalize;
+      edits.push_back(std::move(edit));
+    }
+    if (edits.empty()) {
+      engine.clearTakeRegions(index);
+    } else {
+      (void)engine.setTakeRegions(index, edits);
+    }
   }
 
   for (int index = 0;

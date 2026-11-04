@@ -310,6 +310,22 @@ public:
     TakeLoop takeLoop(int track) const {
         return trackInRange(track) ? mTakeLoop[track] : TakeLoop{};
     }
+    /// Control-thread non-destructive region edit for `track`; an empty list
+    /// clears it. While an edit is applied the track's take voice plays the
+    /// ordered region list - offset/length in session beats mapped with the
+    /// current tempo, per-region gain, linear fade in/out in beats, optional
+    /// normalize - instead of the selected take stack, which is kept and
+    /// resumes on clearTakeRegions(). Everything is resolved here at apply time
+    /// (including the one normalize peak pass per region), so process() only
+    /// copies frames that are already gained. Re-apply after a tempo change,
+    /// exactly like setTakeLoop(). A non-48 kHz engine, an out-of-range track or
+    /// an unreadable/non-48 kHz take refuses with a reason and leaves the
+    /// previous state untouched.
+    bool setTakeRegions(int track, const std::vector<TakeRegion>& regions,
+                        std::string* error = nullptr);
+    void clearTakeRegions(int track);
+    /// The applied region list; empty when the track plays its take stack.
+    std::vector<TakeRegion> takeRegions(int track) const;
     /// Ring samples that were not ready in time and rendered as silence.
     std::uint64_t takeUnderruns() const { return mTakePlayer.underruns(); }
 
@@ -338,6 +354,7 @@ private:
 
     TakePlayer mTakePlayer;
     TakeLoop mTakeLoop[kMaxInputs]{};
+    std::vector<TakeRegion> mTakeRegions[kMaxInputs];
     float mTakeBuffer[kMaxInputs][kBlockSize] = {};
     bool mTakeActive[kMaxInputs] = {};
     bool mTakePlaying[kMaxInputs] = {};

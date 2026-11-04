@@ -550,7 +550,15 @@ bool TakePlayer::setRegions(int track, const std::vector<TakeRegion>& regions,
             // One peak pass per region, scaled to kNormalizePeakDbfs. A region
             // with no signal has no peak to scale to, so its gain is unchanged.
             if (peak > 0.0f) {
-                resolved.gain *= dbToLinear(kNormalizePeakDbfs) / peak;
+                const float normalize = dbToLinear(kNormalizePeakDbfs) / peak;
+                if (std::isfinite(normalize) &&
+                    std::isfinite(resolved.gain * normalize)) {
+                    resolved.gain *= normalize;
+                } else {
+                    note(where +
+                         " peak is below the float range; normalize left the "
+                         "gain unchanged");
+                }
             }
         }
         resolved.streamStart = cursor;
@@ -705,6 +713,234 @@ int TakePlayer::produceFrames(Layer& layer, float* mono, int frames) {
     return got;
 }
 
+bool TakePlayer::startEditLocked(int track, std::string* error) {
+    Track& slot = mTracks[track];
+    EditStream& stream = slot.editStream;
+    stopEditStream(stream);
+    const LoopWindow window =
+        loopWindowFor(track, slot, slot.editFrames, slot.editStartFrame);
+    stream.loopStartFrames = window.startFrames;
+    stream.loopEndFrames = window.endFrames;
+    stream.looping.store(window.looping, std::memory_order_relaxed);
+
+    if (slot.editFrames == 0) {
+        // An edit that clamps away entirely is an explicit, logged silence, not
+        // a fallback to the unedited take and never a crash.
+        stream.active.store(true, std::memory_order_release);
+        stream.eof.store(true, std::memory_order_relaxed);
+        return true;
+    }
+    const std::uint64_t streamStart = window.looping ? window.startFrames : 0;
+    if (streamStart == 0 ? !openEditRegion(slot, 0)
+                         : !seekEditStream(slot, streamStart)) {
+        const std::size_t at = static_cast<std::size_t>(stream.region);
+        const std::string path =
+            at < slot.edit.size() ? slot.edit[at].path : std::string();
+        refuse("track " + std::to_string(track) + " region edit: cannot open " +
+                   wav_detail::quoted(path),
+               error);
+        stream.active.store(false, std::memory_order_release);
+        stream.eof.store(true, std::memory_order_relaxed);
+        return false;
+    }
+    stream.active.store(true, std::memory_order_release);
+
+    // Prime the ring like a layer selection: a normal first block after an
+    // apply should not start with an avoidable dropout.
+    const std::uint64_t half = static_cast<std::uint64_t>(kRingFrames) / 2;
+    const std::uint64_t material =
+        slot.editFrames > streamStart ? slot.editFrames - streamStart : 0;
+    const std::uint64_t target =
+        window.looping ? half : std::min<std::uint64_t>(material, half);
+    std::uint64_t primed = 0;
+    while (primed < target) {
+        const int want = static_cast<int>(
+            std::min<std::uint64_t>(kReadChunkFrames, target - primed));
+        const int got =
+            produceEditFrames(slot, stream.ring.data() + primed, want);
+        if (got <= 0) break;
+        primed += static_cast<std::uint64_t>(got);
+    }
+    stream.writeFrame.store(primed, std::memory_order_release);
+
+    if (window.looping || primed < material) {
+        stream.thread = std::thread(&TakePlayer::editReadLoop, this, &slot);
+    } else {
+        stream.eof.store(true, std::memory_order_relaxed);
+    }
+    return true;
+}
+
+bool TakePlayer::openEditRegion(Track& slot, int index) {
+    EditStream& stream = slot.editStream;
+    if (stream.file != nullptr) {
+        std::fclose(stream.file);
+        stream.file = nullptr;
+    }
+    if (index < 0 || index >= static_cast<int>(slot.edit.size())) {
+        stream.region = index;
+        return false;
+    }
+    const Region& region = slot.edit[static_cast<std::size_t>(index)];
+    std::FILE* file = std::fopen(region.path.c_str(), "rb");
+    if (file == nullptr) return false;
+    const std::uint64_t byteOffset =
+        region.info.dataOffset + region.sourceStart * region.info.frameBytes();
+    if (byteOffset > static_cast<std::uint64_t>(LONG_MAX) ||
+        std::fseek(file, static_cast<long>(byteOffset), SEEK_SET) != 0) {
+        std::fclose(file);
+        return false;
+    }
+    stream.file = file;
+    stream.region = index;
+    stream.position = 0;
+    stream.channels = region.info.channels;
+    stream.bytesPerSample = region.info.bits / 8u;
+    stream.floatSamples = region.info.floatSamples();
+    return true;
+}
+
+bool TakePlayer::seekEditStream(Track& slot, std::uint64_t streamPosition) {
+    // Regions are ordered and contiguous, so the containing one is the last
+    // whose streamStart is <= the target.
+    int index = -1;
+    for (std::size_t i = 0; i < slot.edit.size(); ++i) {
+        if (slot.edit[i].streamStart > streamPosition) break;
+        index = static_cast<int>(i);
+    }
+    if (index < 0) return false;
+    const Region& region = slot.edit[static_cast<std::size_t>(index)];
+    EditStream& stream = slot.editStream;
+    const std::uint64_t offset = streamPosition - region.streamStart;
+    if (offset >= region.frames) {
+        // The wrap landed exactly on the next region's first frame.
+        stream.region = index;
+        stream.position = region.frames;
+        stream.streamPosition = streamPosition;
+        return true;
+    }
+    if (!openEditRegion(slot, index)) return false;
+    const std::uint64_t byteOffset = region.info.dataOffset +
+                                     (region.sourceStart + offset) *
+                                         region.info.frameBytes();
+    if (byteOffset > static_cast<std::uint64_t>(LONG_MAX) ||
+        std::fseek(stream.file, static_cast<long>(byteOffset), SEEK_SET) != 0) {
+        return false;
+    }
+    stream.position = offset;
+    stream.streamPosition = streamPosition;
+    return true;
+}
+
+void TakePlayer::stopEditStream(EditStream& stream) {
+    stream.active.store(false, std::memory_order_release);
+    stream.stop.store(true, std::memory_order_release);
+    if (stream.thread.joinable()) stream.thread.join();
+    if (stream.file != nullptr) {
+        std::fclose(stream.file);
+        stream.file = nullptr;
+    }
+    stream.region = 0;
+    stream.channels = 0;
+    stream.bytesPerSample = 0;
+    stream.floatSamples = false;
+    stream.position = 0;
+    stream.streamPosition = 0;
+    stream.loopStartFrames = 0;
+    stream.loopEndFrames = 0;
+    stream.writeFrame.store(0, std::memory_order_relaxed);
+    stream.readFrame.store(0, std::memory_order_relaxed);
+    stream.eof.store(false, std::memory_order_relaxed);
+    stream.stop.store(false, std::memory_order_relaxed);
+    stream.looping.store(false, std::memory_order_relaxed);
+}
+
+int TakePlayer::readEditFrames(Track& slot, float* mono, int frames) {
+    EditStream& stream = slot.editStream;
+    if (mono == nullptr || frames <= 0 || stream.file == nullptr) return 0;
+    int produced = 0;
+    while (produced < frames) {
+        if (stream.region < 0 ||
+            stream.region >= static_cast<int>(slot.edit.size())) {
+            break;
+        }
+        const Region& region = slot.edit[static_cast<std::size_t>(stream.region)];
+        if (stream.position >= region.frames) {
+            if (!openEditRegion(slot, stream.region + 1)) break;
+            continue;
+        }
+        const std::uint64_t left = region.frames - stream.position;
+        const int want = static_cast<int>(
+            std::min<std::uint64_t>(static_cast<std::uint64_t>(frames - produced),
+                                    left));
+        const int got = decodeTakeFrames(stream.file, stream.channels,
+                                         stream.bytesPerSample,
+                                         stream.floatSamples, mono + produced,
+                                         want);
+        if (got <= 0) break;
+        const std::uint64_t start = stream.position;
+        for (int i = 0; i < got; ++i) {
+            mono[produced + i] *=
+                region.gainAt(start + static_cast<std::uint64_t>(i));
+        }
+        stream.position += static_cast<std::uint64_t>(got);
+        stream.streamPosition += static_cast<std::uint64_t>(got);
+        produced += got;
+    }
+    return produced;
+}
+
+int TakePlayer::produceEditFrames(Track& slot, float* mono, int frames) {
+    if (mono == nullptr || frames <= 0 || slot.editFrames == 0) return 0;
+    EditStream& stream = slot.editStream;
+    if (!stream.looping.load(std::memory_order_relaxed)) {
+        return readEditFrames(slot, mono, frames);
+    }
+    if (stream.streamPosition >= stream.loopEndFrames &&
+        !seekEditStream(slot, stream.loopStartFrames)) {
+        return 0;
+    }
+    frames = static_cast<int>(std::min<std::uint64_t>(
+        static_cast<std::uint64_t>(frames),
+        stream.loopEndFrames - stream.streamPosition));
+    const std::uint64_t position = stream.streamPosition;
+    const int got = readEditFrames(slot, mono, frames);
+    if (got <= 0) return 0;
+    applySeamFade(stream.loopStartFrames, stream.loopEndFrames, position, got,
+                  mono);
+    return got;
+}
+
+void TakePlayer::editReadLoop(Track* slot) {
+    EditStream& stream = slot->editStream;
+    float scratch[kReadChunkFrames] = {};
+    while (!stream.stop.load(std::memory_order_acquire)) {
+        const std::uint64_t write =
+            stream.writeFrame.load(std::memory_order_relaxed);
+        const std::uint64_t read =
+            stream.readFrame.load(std::memory_order_acquire);
+        const std::uint64_t used = write - read;
+        if (used >= static_cast<std::uint64_t>(kRingFrames)) {
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+            continue;
+        }
+        const int space = kRingFrames - static_cast<int>(used);
+        const int want = std::min(kReadChunkFrames, space);
+        const int got = produceEditFrames(*slot, scratch, want);
+        if (got <= 0) {
+            stream.eof.store(true, std::memory_order_relaxed);
+            break;
+        }
+        for (int i = 0; i < got; ++i) {
+            stream.ring[static_cast<std::size_t>(
+                (write + static_cast<std::uint64_t>(i)) &
+                static_cast<std::uint64_t>(kRingFrames - 1))] = scratch[i];
+        }
+        stream.writeFrame.store(write + static_cast<std::uint64_t>(got),
+                                std::memory_order_release);
+    }
+}
+
 void TakePlayer::render(bool rolling, int n, float* const* monoOut,
                         bool* active, bool* playing) {
     const int frames = std::min(n, kReadChunkFrames);
@@ -714,9 +950,13 @@ void TakePlayer::render(bool rolling, int n, float* const* monoOut,
         // this block rather than reading a ring that is being reset. Treat a
         // rolling selection as playing so a swap cannot leak live input.
         for (int track = 0; track < kMaxTracks; ++track) {
-            const int count = mTracks[track].count.load(std::memory_order_acquire);
-            if (active != nullptr) active[track] = count > 0;
-            if (playing != nullptr) playing[track] = rolling && count > 0;
+            const bool region =
+                mTracks[track].regionMode.load(std::memory_order_acquire);
+            const int count =
+                mTracks[track].count.load(std::memory_order_acquire);
+            const bool takeFed = region || count > 0;
+            if (active != nullptr) active[track] = takeFed;
+            if (playing != nullptr) playing[track] = rolling && takeFed;
             float* out = monoOut != nullptr ? monoOut[track] : nullptr;
             if (out == nullptr) continue;
             for (int i = 0; i < frames; ++i) out[i] = 0.0f;
@@ -726,11 +966,23 @@ void TakePlayer::render(bool rolling, int n, float* const* monoOut,
     }
     for (int track = 0; track < kMaxTracks; ++track) {
         Track& slot = mTracks[track];
+        const bool region = slot.regionMode.load(std::memory_order_acquire);
         const int count = slot.count.load(std::memory_order_acquire);
-        if (active != nullptr) active[track] = count > 0;
+        if (active != nullptr) active[track] = region || count > 0;
 
         bool anyPlaying = false;
-        for (int index = 0; index < count; ++index) {
+        if (region) {
+            // One edited stream per track: the region list is the composition,
+            // so there is no layering to resolve here.
+            const EditStream& stream = slot.editStream;
+            anyPlaying =
+                stream.active.load(std::memory_order_acquire) &&
+                (stream.looping.load(std::memory_order_acquire) ||
+                 (slot.editFrames > 0 &&
+                  stream.readFrame.load(std::memory_order_relaxed) <
+                      slot.editFrames));
+        }
+        for (int index = 0; !region && index < count; ++index) {
             const Layer& layer = slot.layers[index];
             if (!layer.active.load(std::memory_order_acquire)) continue;
             if (layer.looping.load(std::memory_order_acquire)) {
@@ -752,7 +1004,41 @@ void TakePlayer::render(bool rolling, int n, float* const* monoOut,
         float* out = monoOut != nullptr ? monoOut[track] : nullptr;
         if (out == nullptr) continue;
         for (int i = 0; i < frames; ++i) out[i] = 0.0f;
-        if (!rolling || count == 0 || frames <= 0) continue;
+        if (!rolling || frames <= 0) continue;
+        if (region) {
+            EditStream& stream = slot.editStream;
+            if (!stream.active.load(std::memory_order_acquire)) continue;
+            const bool looping = stream.looping.load(std::memory_order_acquire);
+            const std::uint64_t position =
+                stream.readFrame.load(std::memory_order_relaxed);
+            if (!looping && position >= slot.editFrames) continue;
+            const int want =
+                looping
+                    ? frames
+                    : static_cast<int>(std::min<std::uint64_t>(
+                          static_cast<std::uint64_t>(frames),
+                          slot.editFrames - position));
+            const std::uint64_t write =
+                stream.writeFrame.load(std::memory_order_acquire);
+            const std::uint64_t available =
+                write > position ? write - position : 0;
+            for (int i = 0; i < want; ++i) {
+                if (static_cast<std::uint64_t>(i) < available) {
+                    out[i] = stream.ring[static_cast<std::size_t>(
+                        (position + static_cast<std::uint64_t>(i)) &
+                        static_cast<std::uint64_t>(kRingFrames - 1))];
+                } else {
+                    // The reader has not delivered this frame yet; render
+                    // silence and count it instead of stalling the callback.
+                    out[i] = 0.0f;
+                    mUnderruns.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+            stream.readFrame.store(position + static_cast<std::uint64_t>(want),
+                                   std::memory_order_release);
+            continue;
+        }
+        if (count == 0) continue;
 
         bool covered[kReadChunkFrames] = {};
         for (int index = count - 1; index >= 0; --index) {

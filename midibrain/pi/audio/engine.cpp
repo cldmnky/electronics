@@ -59,6 +59,18 @@ float flushDenormal(float value) {
     return value > -1.0e-20f && value < 1.0e-20f ? 0.0f : value;
 }
 
+// Take playback and region edits are a 48 kHz float path: they never resample,
+// so both selectors refuse at another engine rate with the same reason.
+bool takeRateOk(double sampleRate, std::string* error) {
+    if (sampleRate == 48000.0) return true;
+    if (error != nullptr) *error = "take playback requires a 48000 Hz engine";
+    std::fprintf(stderr,
+                 "mnky audio: take refused: engine rate %.0f Hz is not "
+                 "48000 Hz\n",
+                 sampleRate);
+    return false;
+}
+
 MonitorMode sanitizeMonitor(MonitorMode mode) {
     switch (mode) {
         case MonitorMode::Off:
@@ -635,17 +647,40 @@ bool Engine::setActiveTakes(int track, const std::vector<std::string>& paths,
         if (error != nullptr) *error = "track is out of range";
         return false;
     }
-    if (!paths.empty() && mSampleRate != 48000.0) {
-        if (error != nullptr) {
-            *error = "take playback requires a 48000 Hz engine";
-        }
-        std::fprintf(stderr,
-                     "mnky audio: take refused: engine rate %.0f Hz is not "
-                     "48000 Hz\n",
-                     mSampleRate);
+    if (!paths.empty() && !takeRateOk(mSampleRate, error)) return false;
+    return mTakePlayer.setTakes(track, paths, mTransport.frame, error);
+}
+
+bool Engine::setTakeRegions(int track, const std::vector<TakeRegion>& regions,
+                            std::string* error) {
+    if (track < 0 || track >= kMaxInputs) {
+        if (error != nullptr) *error = "track is out of range";
         return false;
     }
-    return mTakePlayer.setTakes(track, paths, mTransport.frame, error);
+    if (regions.empty()) {
+        clearTakeRegions(track);
+        return true;
+    }
+    if (!takeRateOk(mSampleRate, error)) return false;
+    const double bpm = static_cast<double>(mTransport.bpmX100) / 100.0;
+    const double framesPerBeat = bpm > 0.0 ? mSampleRate * 60.0 / bpm : 0.0;
+    if (!mTakePlayer.setRegions(track, regions, framesPerBeat, mTransport.frame,
+                                error)) {
+        return false;
+    }
+    mTakeRegions[track] = regions;
+    return true;
+}
+
+void Engine::clearTakeRegions(int track) {
+    if (track < 0 || track >= kMaxInputs) return;
+    mTakeRegions[track].clear();
+    mTakePlayer.clearRegions(track);
+}
+
+std::vector<TakeRegion> Engine::takeRegions(int track) const {
+    if (track < 0 || track >= kMaxInputs) return {};
+    return mTakeRegions[track];
 }
 
 bool Engine::setActiveTake(int track, const std::string& path,

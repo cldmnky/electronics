@@ -16,7 +16,7 @@ endif()
 find_package(Threads REQUIRED)
 
 add_library(mnky_audio STATIC
-  engine.cpp recorder.cpp click.cpp take_player.cpp
+  engine.cpp recorder.cpp click.cpp take_player.cpp peaks.cpp
   fx/comp.cpp fx/delay.cpp fx/effect.cpp fx/eq.cpp fx/params.cpp fx/registry.cpp fx/reverb.cpp)
 target_include_directories(mnky_audio PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(mnky_audio PUBLIC cxx_std_20)
@@ -54,6 +54,21 @@ add_executable(test_audio_playback test_audio_playback.cpp)
 target_compile_options(test_audio_playback PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_audio_playback PRIVATE mnky_audio)
 add_test(NAME test_audio_playback COMMAND test_audio_playback)
+
+# Non-destructive region edits in the take voice: beat-mapped offsets/lengths,
+# per-region gain and fade ramps, normalize, clamp reasons, and looping the
+# edited stream instead of the raw take.
+add_executable(test_take_edit test_take_edit.cpp)
+target_compile_options(test_take_edit PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
+target_link_libraries(test_take_edit PRIVATE mnky_audio)
+add_test(NAME test_take_edit COMMAND test_take_edit)
+
+# Background peak scanner: 256-frame min/max buckets, the coarse fold, the
+# `.peaks` sidecar round-trip, mtime/size invalidation and worker-thread progress.
+add_executable(test_peaks test_peaks.cpp)
+target_compile_options(test_peaks PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
+target_link_libraries(test_peaks PRIVATE mnky_audio)
+add_test(NAME test_peaks COMMAND test_peaks)
 
 # Per-strip input source (identity, remap, silence, stereo pair) and output
 # destination (Main / OUT3&4 / Phones=CUE / None).
