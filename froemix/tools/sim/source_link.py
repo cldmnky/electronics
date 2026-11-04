@@ -489,6 +489,46 @@ ASSUMPTIONS: dict[str, dict[str, str]] = {
         "SSW": "settling-case switch", "VSEL": "settling-case switch control",
         "CSM": "settling-case sample capacitor", "RLM": "settling-case leakage",
     },
+    "midi_out.cir": {
+        "VP33": "P3V3_D supply", "VTX": "USART1_TX stimulus at VOL",
+        "RRX": "external receiver 220 ohm (DOMAIN: the other device)",
+        "XRX": "external receiver opto LED model (fixed VF corner)",
+        "XC_*": "transmitter corner and fault cases (RAIL/R58/R61/R59/R60/RDS/VF/RRX)",
+        "VTX?": "case gate-drive stimuli (VOL, VOH min, rail, PULSE for the edge)",
+        "VTIPF": "tip forced to the rail (fault case)",
+        "RRING9": "1 Meg on the floating ring of the tip-fault case",
+        "VDUM": "dummy source: two-point sweep reads every static case",
+        "RG": "case copy of R58", "RP": "case copy of R61",
+        "R59S": "case copy of R59", "R60S": "case copy of R60",
+        "RRXS": "case receiver resistor", "XRXS": "case receiver LED",
+        "CG": "AO3401A Ciss for the gate-edge case (models.MIDI_ASSUMPTIONS)",
+        "DIDE": "receiver LED diode (reverse blocking only)",
+        "VFX": "receiver LED forward drop corner",
+        "XQ": "case MOSFET (AO3401A) inside TXCASE",
+        "BVGS": "MOSFET switch drive (model internal)",
+        "RSD": "MOSFET on resistance (model internal)",
+        "SSW": "MOSFET switch (model internal)",
+        "VNR": "case rail (model internal)",
+    },
+    "midi_in.cir": {
+        "VP33": "P3V3_D supply", "VIN": "sender voltage source (DOMAIN: the other device)",
+        "RSRC": "sender loop resistance", "VTIP": "sender return",
+        "RJ1A": "J1 Type A shunt: ring to R47 (a board part, modelled as 1 uohm)",
+        "RJ1B": "J1 Type A shunt: tip to the LED cathode",
+        "XR_*": "receiver loop cases (sender voltage, loop resistance, VF)",
+        "VDUM": "dummy source: two-point sweep reads every case",
+        "RSNS": "1 ohm LED-current sense inside the receiver model",
+        "DIDE": "receiver LED diode (reverse blocking only)",
+        "VFX": "receiver LED forward drop corner",
+        "BVO": "TLP2361 inverting output (model internal)",
+        "ROUT": "TLP2361 output resistance (model internal)",
+        "DS": "case copy of D1",
+        "VSRC": "case sender source", "RSRC": "case sender resistance",
+        "R47S": "case copy of R47", "R48S": "case copy of R48",
+        "RSHB": "case copy of the tip shunt", "VCC": "case supply",
+        "RSRCS": "case sender loop resistance", "VSRCX": "case sender source",
+        "XU": "case receiver instance",
+    },
     "front_audio.cir": {
         "VOUT": "idealised base-board output source (4.667 Vpk into 1 k)",
         "VIN": "idealised base-board input source (5 Vpk through 1 k)",
@@ -537,6 +577,13 @@ DECK_NETS: dict[str, list[tuple[str, str, str, str]]] = {
         ("MULTIPLEX_S1", "U1", "B", "base"),
         ("MULTIPLEX_S2", "U1", "C", "base"),
     ] + [(f"M_ADC_{n}", "U1", f"X{n}", "base") for n in range(8)],
+    "midi_in.cir": [
+        ("USART1_RX", "U15", "VO", "base"),
+        ("P3V3_D", "U15", "VCC", "base"),
+        ("GND", "U15", "GND", "base"),
+        ("J_MIDI_IN_RING", "J1", "pin3", "base"),
+        ("J_MIDI_IN_TIP", "J1", "pin4", "base"),
+    ],
 }
 
 DECK_PARAMS: dict[str, list[ParamLink]] = {
@@ -615,6 +662,21 @@ DECK_LINKS: dict[str, list[Link]] = {
                            ("VCC", "VPLUS"), ("VEE", "VMINUS")]),
     ],
     "mux_adc.cir": [],
+    "midi_out.cir": [
+        L("R58", "R58", [("USART1_TX", "pin1"), ("NET_Q2_B", "pin2")]),
+        L("R61", "R61", [("NET_Q2_B", "pin1"), ("P3V3_D", "pin2")]),
+        L("XQ2", "Q2", [("NET_Q2_B", "gate"), ("P3V3_D", "source"), ("NET_Q2_C", "drain")]),
+        L("R59", "R59", [("J_MIDI_OUT_RING", "pin1"), ("NET_Q2_C", "pin2")]),
+        L("R60", "R60", [("J_MIDI_OUT_TIP", "pin1"), ("0", "pin2")]),
+    ],
+    "midi_in.cir": [
+        L("R47", "R47", [("NET_J1_2", "pin1"), ("NET_D1_K", "pin2")]),
+        L("R48", "R48", [("USART1_RX", "pin1"), ("P3V3_D", "pin2")]),
+        L("D1", "D1", [("NET_D1_A", "anode"), ("NET_D1_K", "cathode")]),
+        L("XU15", "U15", [("NET_D1_K", "ANODE"), ("NET_D1_A", "CATHODE")],
+          partial=True, note="the deck models the LED input only; VO/VCC/GND are "
+          "checked by DECK_NETS"),
+    ],
     "front_audio.cir": [],
     "front_cv_led.cir": [
         L("RIN1", "R37"), L("RF1", "R40"), L("CF1", "C34"), L("RS1", "R46"),
@@ -809,7 +871,8 @@ def check_deck_nets(deck_path: Path, entries: list[tuple[str, str, str, str]],
         if actual != net:
             problems.append(f"{deck_path.name}: net {net} should be {ref} pin {pin} in the "
                             f"source, which carries {actual!r} -- source connection changed")
-        if not any(net in element.nodes for element in elements.values()):
+        used = {node for element in elements.values() for node in element.nodes}
+        if net not in used and not (net == GROUND_NET and GROUND_NODE in used):
             problems.append(f"{deck_path.name}: net check declares {net} but no deck "
                             "element uses that node")
     del known

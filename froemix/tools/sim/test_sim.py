@@ -76,8 +76,9 @@ class LinkageTests(unittest.TestCase):
         audio = self.sections / "audio.tsx"
         text = audio.read_text()
         self.assertIn('resistance="100k"', text)
-        audio.write_text(re.sub(r'name="R4"(\s+)resistance="100k"',
-                                r'name="R4"\1resistance="110k"', text, count=1))
+        # the props between name and resistance are not fixed, so match across
+        audio.write_text(re.sub(r'name="R4"(.{0,120}?)resistance="100k"',
+                                r'name="R4"\1resistance="110k"', text, count=1, flags=re.S))
         problems = source_link.check_all(base_sections=self.sections)
         self.assertTrue(any("R4" in p and "110k" in p for p in problems), problems)
 
@@ -137,8 +138,8 @@ class LinkageTests(unittest.TestCase):
         """0.4 % drift is inside the check_values window but is still drift."""
         audio = self.sections / "audio.tsx"
         text = audio.read_text()
-        audio.write_text(re.sub(r'name="R4"(\s+)resistance="100k"',
-                                r'name="R4"\1resistance="100400"', text, count=1))
+        audio.write_text(re.sub(r'name="R4"(.{0,120}?)resistance="100k"',
+                                r'name="R4"\1resistance="100400"', text, count=1, flags=re.S))
         problems = source_link.check_all(base_sections=self.sections)
         self.assertTrue(any("R4" in p and "100400" in p for p in problems), problems)
         self.assertTrue(any("exactly" in p for p in problems), problems)
@@ -160,6 +161,38 @@ class LinkageTests(unittest.TestCase):
         problems = source_link.check_deck_params(deck, source_link.DECK_PARAMS["cv_inout.cir"],
                                                 boards)
         self.assertTrue(any("RF1" in p for p in problems), problems)
+
+    def test_midi_source_value_is_detected(self):
+        midi = self.sections / "midi.tsx"
+        text = midi.read_text()
+        midi.write_text(re.sub(r'name="R58"(.{0,200}?)resistance="180"',
+                               r'name="R58"\1resistance="200"', text, count=1, flags=re.S))
+        problems = source_link.check_all(base_sections=self.sections)
+        self.assertTrue(any("R58" in p and "200" in p for p in problems), problems)
+
+    def test_midi_source_connection_is_detected(self):
+        midi = self.sections / "midi.tsx"
+        text = midi.read_text()
+        midi.write_text(text.replace('"drain": "net.NET_Q2_C"',
+                                     '"drain": "net.NET_Q2_B"', 1))
+        problems = source_link.check_all(base_sections=self.sections)
+        self.assertTrue(any("XQ2" in p and "connection" in p for p in problems), problems)
+
+    def test_midi_receiver_pin_net_is_detected(self):
+        midi = self.sections / "midi.tsx"
+        text = midi.read_text()
+        midi.write_text(text.replace('"VO": "net.USART1_RX"', '"VO": "net.USART1_TX"', 1))
+        problems = source_link.check_all(base_sections=self.sections)
+        self.assertTrue(any("USART1_RX" in p for p in problems), problems)
+
+    def test_midi_deck_value_is_detected(self):
+        deck = copy_deck("midi_out.cir", self.tmp,
+                         edit=lambda t: t.replace("R59  J_MIDI_OUT_RING NET_Q2_C 33",
+                                                  "R59  J_MIDI_OUT_RING NET_Q2_C 39"))
+        boards = source_link.load_boards()
+        problems = source_link.check_deck(deck, source_link.DECK_LINKS["midi_out.cir"],
+                                          "midi_out.cir", boards)
+        self.assertTrue(any("R59" in p and "39" in p for p in problems), problems)
 
     def test_nominal_values_match_to_parsing_precision(self):
         self.assertTrue(source_link.same_value(30100.0, 30.1e3))
@@ -195,6 +228,12 @@ class ModelProvenanceTests(unittest.TestCase):
                                                   ".model D4148 D(IS=2.52n N=2.5)"))
         problems = models.check_models(deck)
         self.assertTrue(any("D4148" in p for p in problems), problems)
+
+    def test_midi_deck_assumption_numbers_are_carried(self):
+        deck = copy_deck("midi_out.cir", self.tmp,
+                         edit=lambda t: t.replace("645p", "800p"))
+        problems = models.check_midi_assumptions(deck)
+        self.assertTrue(any("AO3401A_CISS_F" in p for p in problems), problems)
 
     def test_current_decks_pass_provenance(self):
         for deck in sorted(HERE.glob("*.cir")):

@@ -459,7 +459,183 @@ def front_mode(run: DeckRun) -> list[Check]:
     return checks
 
 
+# --------------------------------------------------------------------------
+# MIDI OUT -- AO3401A high-side driver (doc/ELECTRICAL-VERIFICATION.md §3/§4)
+# --------------------------------------------------------------------------
+
+# case resistor values the currents and powers are computed with; they mirror
+# the values the deck passes to TXCASE (source_link.py links them to R58/R59/
+# R60/R61 and models.py records the assumptions)
+MIDI_TX = {
+    "r58": 180.0, "r58_worst": 178.2, "r58_rejected": 99.0,
+    "r61": 2200.0, "r59": 33.0, "r59_tol": 33.33, "r59_worst": 32.67,
+    "r60": 22.0, "r60_tol": 22.22, "r60_worst": 21.78,
+    "rds": 0.085, "rds_hot": 0.1275,
+}
+
+
+def midi_out(run: DeckRun) -> list[Check]:
+    deck = "midi_out"
+    checks: list[Check] = []
+    tx = MIDI_TX
+
+    vgs_on = run.measure("on_gate") - run.measure("on_rail")
+    checks.append(band(deck, "VGS(on) at the documented corner", vgs_on, -2.56, -2.49,
+                       " V", "doc §3: rail 3.135 V, VOL 0.4 V, R58 180/R61 2.2k -> "
+                       "-2.528 V, just inside the -2.5 V RDS(on) point", fmt="{:.4f}"))
+    vgs_tol = run.measure("ontol_gate") - run.measure("ontol_rail")
+    checks.append(band(deck, "VGS(on) with 1 % resistor extremes", vgs_tol, -2.56, -2.45,
+                       " V", "same corner with R58 +1 % and R61 -1 %", fmt="{:.4f}"))
+    vgs_main = run.measure("main_gate") - 3.3
+    checks.append(band(deck, "VGS(on) on the fitted chain", vgs_main, -2.74, -2.62, " V",
+                       "3.3 V rail, VOL 0.4 V, fitted 180/2.2k = -2.681 V", fmt="{:.4f}"))
+    vgs_off = run.measure("off_rail") - run.measure("off_gate")
+    checks.append(band(deck, "|VGS| off at UART VOH min", vgs_off, 0.33, 0.41, " V",
+                       "doc §3: 0.370 V, below the 0.5 V minimum threshold", fmt="{:.4f}"))
+    checks.append(band(deck, "|VGS| off with the pin high-Z (reset)",
+                       abs(run.measure("reset_rail") - run.measure("reset_gate")), 0.0, 0.01,
+                       " V", "R61 holds the gate at the source when the pin is high-Z",
+                       fmt="{:.5f}"))
+    checks.append(band(deck, "Q2 leakage when off", run.measure("off_tip") / tx["r60"] * 1e6,
+                       0.0, 1.0, " uA", "a switch model with ROFF 1e12; the real FET "
+                       "leakage is not modelled", fmt="{:.4f}"))
+    checks.append(band(deck, "loop current, nominal",
+                       run.measure("main_tip") / tx["r60"] * 1e3, 5.94, 6.06, " mA",
+                       "doc §3: (3.3-1.65)/(55+220+0.085) = 6.00 mA", fmt="{:.4f}"))
+    checks.append(band(deck, "loop current, worst CA-033 receiver",
+                       run.measure("ontol_tip") / tx["r60_tol"] * 1e3, 4.25, 4.37, " mA",
+                       "doc §3: 4.31 mA with every tolerance", fmt="{:.4f}"))
+    checks.append(band(deck, "loop current, worst case vs the 4 mA target",
+                       run.measure("ontol_tip") / tx["r60_tol"] * 1e3, 4.0, 6.0, " mA",
+                       "the legacy PC900 reference target is 4 mA; CA-033's 5 mA is NOT "
+                       "a guaranteed minimum and is not asserted", fmt="{:.4f}"))
+    checks.append(band(deck, "loop current, typical into this board's receiver",
+                       run.measure("typrx_tip") / tx["r60"] * 1e3, 6.42, 6.85, " mA",
+                       "doc §5: 6.54 mA at the 3.465 V rail with VF 1.65 V", fmt="{:.4f}"))
+
+    # the pin has already switched to 0 V, so the current is the gate voltage
+    # across R58 (the gate capacitance holds the gate near the rail)
+    edge = run.measure("pk_gate")
+    checks.append(band(deck, "gate charge peak, fitted R58", edge / tx["r58_worst"] * 1e3,
+                       19.0, 19.6, " mA", "doc §3: 3.465/(180x0.99) = 19.44 mA -- the "
+                       "value the 180 R was chosen for", fmt="{:.3f}"))
+    rejected = run.measure("pk_gate100") / tx["r58_rejected"] * 1e3
+    checks.append(band(deck, "gate charge peak with the rejected 100 R (negative)",
+                       rejected, 33.8, 35.2, " mA", "doc §3: 34.6 mA with 100 R, above the "
+                       "20 mA per-I/O ASSUMPTION -- why 180 R", fmt="{:.3f}"))
+    checks.append(band(deck, "gate settled inside one bit", run.measure("pk_gate_settled"),
+                       0.24, 0.28, " V", "180 x 645 pF = 116 ns; one bit is 32 us",
+                       fmt="{:.4f}"))
+
+    ring_current = run.measure("ringf_drain") / tx["r59_worst"]
+    checks.append(band(deck, "ring fault, RDS = 0: current", ring_current * 1e3, 104.0,
+                       108.0, " mA", "doc §4: 106.1 mA, zero RDS(on) is the worst case "
+                       "for R59", fmt="{:.2f}"))
+    checks.append(band(deck, "ring fault, RDS = 0: R59 dissipation",
+                       ring_current ** 2 * tx["r59_worst"], 0.355, 0.380, " W",
+                       "doc §4: 0.368 W of the 1 W 2512 rating", fmt="{:.4f}"))
+    hot_current = run.measure("ringh_drain") / tx["r59_worst"]
+    checks.append(band(deck, "ring fault, RDS 127.5 mOhm: R59 dissipation",
+                       hot_current ** 2 * tx["r59_worst"], 0.352, 0.377, " W",
+                       "doc §4: 0.365 W", fmt="{:.4f}"))
+    checks.append(band(deck, "ring fault, RDS 127.5 mOhm: Q2 dissipation",
+                       hot_current ** 2 * tx["rds_hot"] * 1e3, 1.2, 1.7, " mW",
+                       "doc §4: 1.42 mW -- the FET is not the weak part", fmt="{:.3f}"))
+    tip_current = run.measure("tipf_tip") / tx["r60_worst"]
+    checks.append(band(deck, "tip forced to the rail: current", tip_current * 1e3, 156.0,
+                       162.0, " mA", "doc §4: 159.1 mA, no MOSFET in that leg",
+                       fmt="{:.2f}"))
+    checks.append(band(deck, "tip forced to the rail: R60 dissipation",
+                       tip_current ** 2 * tx["r60_worst"], 0.535, 0.568, " W",
+                       "doc §4: 0.551 W of the 1 W rating (a 10 R tip leg would be "
+                       "1.20 W and fail)", fmt="{:.4f}"))
+    checks.append(band(deck, "1 W part rating is not exceeded in any fault",
+                       max(ring_current ** 2 * tx["r59_worst"],
+                           tip_current ** 2 * tx["r60_worst"]), 0.0, 1.0, " W",
+                       "2512 1 W to 70 C; derating above that is a bench item",
+                       fmt="{:.4f}"))
+    return checks
+
+
+# --------------------------------------------------------------------------
+# MIDI IN -- TLP2361 receiver (doc/ELECTRICAL-VERIFICATION.md §5)
+# --------------------------------------------------------------------------
+
+MIDI_RX = {
+    "r47": 220.0, "r47_tol": 222.2, "r47_ca": 231.0, "ith": 1.6e-3,
+    "if_recommended_max": 6e-3, "if_abs_max": 10e-3,
+    "tlp2362_ith": 5e-3, "tlp2362_recommended": 7.5e-3,
+}
+
+
+def midi_in(run: DeckRun) -> list[Check]:
+    deck = "midi_in"
+    checks: list[Check] = []
+    rx = MIDI_RX
+
+    own = (run.measure("own_ring") - run.measure("own_anode")) / rx["r47_tol"] * 1e3
+    checks.append(band(deck, "own transmitter, worst case", own, 5.20, 5.45, " mA",
+                       "doc §5: 5.34 mA = (3.135-1.65)/(55x1.01+220x1.01+0.1275)",
+                       fmt="{:.4f}"))
+    checks.append(band(deck, "threshold margin over IFHL 1.6 mA", own / (rx["ith"] * 1e3),
+                       3.0, 4.0, " x", "doc §5: 3.34x the 125 C maximum threshold",
+                       fmt="{:.3f}"))
+    typical = (run.measure("typ_ring") - run.measure("typ_anode")) / rx["r47"] * 1e3
+    checks.append(band(deck, "typical loop at the high rail", typical, 6.42, 6.85, " mA",
+                       "doc §5: 6.54 mA, inside the 6 mA recommended point",
+                       fmt="{:.4f}"))
+    checks.append(band(deck, "typical loop vs the 10 mA absolute maximum", typical, 0.0,
+                       rx["if_abs_max"] * 1e3, " mA",
+                       "TLP2361 absolute maximum; the 6 mA recommended point is exceeded "
+                       "and is a pending bench item (doc §7.3)", fmt="{:.4f}"))
+    ca033 = (run.measure("ca_ring") - run.measure("ca_anode")) / rx["r47_ca"] * 1e3
+    checks.append(band(deck, "CA-033 receiver corner", ca033, 4.19, 4.39, " mA",
+                       "doc §5: 4.31 mA, the same number midi_out.cir delivers",
+                       fmt="{:.4f}"))
+    five = (run.measure("v5_ring") - run.measure("v5_anode")) / rx["r47"] * 1e3
+    checks.append(band(deck, "5 V legacy transmitter (2 x 220 R)", five, 5.50, 5.77, " mA",
+                       "doc §5: 5.63 mA at 5.25 V and 418 ohm", fmt="{:.4f}"))
+    noncompliant = (run.measure("leg_ring") - run.measure("leg_anode")) / rx["r47"] * 1e3
+    checks.append(band(deck, "non-compliant 5 V transmitter (33/10 legs)", noncompliant,
+                       14.3, 15.2, " mA", "doc §5/§7.4: 14.8 mA -- above the 10 mA "
+                       "absolute maximum; nothing on this board clamps it", fmt="{:.4f}"))
+    checks.append(band(deck, "non-compliant source exceeds the absolute maximum",
+                       noncompliant, rx["if_abs_max"] * 1e3, 30.0, " mA",
+                       "negative case: this deck must show the pending overstress, not "
+                       "hide it", fmt="{:.4f}"))
+
+    reverse = run.measure("rev_anode") - run.measure("rev_cathode")
+    checks.append(band(deck, "reverse polarity: LED reverse voltage", abs(reverse), 0.30,
+                       0.80, " V", "D1 conducts instead of the LED", fmt="{:.4f}"))
+    reverse_current = (run.measure("rev_ring") - run.measure("rev_anode")) / rx["r47_tol"]
+    checks.append(band(deck, "reverse polarity: current through D1",
+                       abs(reverse_current) * 1e3, 0.0, 12.0, " mA",
+                       "R47 plus the sender's own resistance limit it; D1 is a 150 mA part",
+                       fmt="{:.3f}"))
+    checks.append(band(deck, "idle loop: VO stays high (fail-safe)", run.measure("idle_vo"),
+                       3.2, 3.31, " V", "R48 2.2k pull-up; TLP2361 VO high with no current",
+                       fmt="{:.4f}"))
+    checks.append(band(deck, "receiving: VO is low", run.measure("main_vo"), 0.0, 0.4, " V",
+                       "TLP2361 is inverting: current on -> start bit -> VO low",
+                       fmt="{:.4f}"))
+    checks.append(band(deck, "LED forward drop at the fitted corner",
+                       run.measure("main_anode") - run.measure("main_cathode"), 1.62, 1.69,
+                       " V", "VF 1.65 V (datasheet maximum at 2 mA) plus the model's "
+                       "diode and sense drops", fmt="{:.4f}"))
+    checks.append(band(deck, "old TLP2362 would be marginal on this loop (negative)",
+                       own / (rx["tlp2362_ith"] * 1e3), 1.0, 1.2, " x",
+                       "1.07x its 5 mA maximum threshold: the negative case the part "
+                       "change removed", fmt="{:.3f}"))
+    checks.append(band(deck, "old TLP2362 below its recommended on-current (negative)",
+                       own, 0.0, rx["tlp2362_recommended"] * 1e3, " mA",
+                       "0.71x of 7.5 mA recommended -- not guaranteed, hence TLP2361",
+                       fmt="{:.4f}"))
+    return checks
+
+
 DECK_CHECKS = {
+    "midi_in": midi_in,
+    "midi_out": midi_out,
     "audio_in": audio_in,
     "audio_out": audio_out,
     "cv_inout": cv_inout,

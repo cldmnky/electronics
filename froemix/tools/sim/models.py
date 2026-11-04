@@ -74,6 +74,59 @@ _add("model", "SWMOD", {"RON": 250, "ROFF": 1e12, "VT": 1.65, "VH": 0},
      "button/ADC sample switch, 250 ohm: an assumption for the sample path, "
      "not a measured value.")
 
+# --- MIDI (doc/ELECTRICAL-VERIFICATION.md §2-§5)
+_add("subckt", "AOFET", {"RDS": 0.085, "VT": 0.5},
+     "AO3401A: RDS(on) 85 mOhm at VGS -2.5 V, 25 C; VGS(th) minimum magnitude 0.5 V, "
+     "so the switch turns on above 0.5 V. A behavioural switch, NOT the AOS model: "
+     "no gate charge curve, no body diode, no thermal model.")
+_add("subckt", "AOFET", {"RDS": 0.1275, "VT": 0.5},
+     "RDS(on) at 125 C: 85 mOhm x 1.5, the datasheet's own temperature factor.")
+_add("subckt", "AOFET", {"RDS": 1e-06, "VT": 0.5},
+     "fault bounding case: zero RDS(on) is the worst case for the series resistor and "
+     "the best case for the FET (doc §4). Not a physical value.")
+_add("model", "SWFET", {"RON": 1e-3, "ROFF": 1e12, "VT": 0.0, "VH": 1e-3},
+     "ideal switch behind the explicit RDS resistor; the control voltage is pre-biased "
+     "by the model's VT so one RDS parameter covers every case.")
+_add("model", "DMINI", {"IS": 1e-9, "N": 0.01},
+     "near-ideal diode: the opto LED forward drop is carried by an explicit VF source, "
+     "so a datasheet VF corner can be swept; this diode only provides reverse blocking.")
+_add("subckt", "OPTOLED", {"VF": 1.65},
+     "receiver LED drop corner at 2 mA (TLP2361-style); the real LED curve is not "
+     "modelled.")
+_add("subckt", "OPTOLED", {"VF": 1.9},
+     "receiver LED drop corner from CA-033: the receiver LED is specified at VF <= 1.9 V.")
+_add("subckt", "TLP2361", {"VF": 1.65, "ITH": 1.6e-3},
+     "TLP2361(TPL,E on-disk datasheet: VF maximum 1.65 V at 2 mA, IFHL maximum 1.6 mA "
+     "at 125 C. Inverting totem-pole output modelled as a threshold switch, not as the "
+     "Toshiba model; the 10 mA absolute maximum and 2...6 mA recommended window are "
+     "limits in MIDI_ASSUMPTIONS, not model parameters.")
+
+# MIDI assumptions that are NOT primary-verified. The decks must carry the same
+# numbers; check_midi_assumptions() fails when one side changes alone.
+MIDI_ASSUMPTIONS: dict[str, tuple[str, str]] = {
+    "MCU_GPIO_ABS_MAX_A": ("0.020", "STM32H750 per-I/O DC absolute maximum: ASSUMPTION, "
+                           "the primary datasheet was not reachable (doc §2)"),
+    "MCU_VOL_V": ("0.4", "STM32H750 VOL at the rated current: ASSUMPTION (doc §2)"),
+    "MCU_VOH_MIN_V": ("VDD-0.4", "STM32H750 VOH minimum: ASSUMPTION (doc §2); the deck's "
+                      "2.735 V is 3.135 V - 0.4 V"),
+    "MCU_RESET_STATE": ("high-Z", "USART1_TX in reset: ASSUMPTION; an internal pull-down "
+                        "would move the gate divider (doc §2)"),
+    "AO3401A_CISS_F": ("645p", "AO3401A Ciss for the gate-edge current: datasheet value, "
+                       "used only for the charge-peak case"),
+    "TLP2361_IFHL_MAX_A": ("1.6m", "TLP2361 IFHL maximum at 125 C (datasheet limit)"),
+    "TLP2361_IF_ABS_MAX_A": ("10e-3", "TLP2361 absolute maximum IF (datasheet)"),
+    "TLP2361_IF_RECOMMENDED_A": ("2...6e-3", "TLP2361 recommended on-current (datasheet); "
+                                 "the typical loop of 6.5 mA is at the top of it -- "
+                                 "pending bench item (doc §7.3)"),
+    "TLP2362_IFHL_MAX_A": ("5e-3", "replaced TLP2362 IFHL maximum: the negative case"),
+}
+
+MIDI_DECK_TOKENS: dict[str, list[tuple[str, str]]] = {
+    "midi_out.cir": [("VOL 0.4 V", "MCU_VOL_V"), ("2.735", "MCU_VOH_MIN_V"),
+                     ("645p", "AO3401A_CISS_F")],
+    "midi_in.cir": [("1.6m", "TLP2361_IFHL_MAX_A")],
+}
+
 # ON resistance of the CD4051 model is a resistor value, recorded here so a
 # changed number has to be justified in one place.
 MUX_RON = 250.0
@@ -99,7 +152,7 @@ INSTANCE_RE = re.compile(r"^\s*X\w+\s+(.*)$", re.I)
 OPAMP_PARAMS = {"A0", "GBW", "HEAD"}
 
 # deck-local subcircuits that hold a device model (the rest are case networks)
-DEVICE_SUBCKTS = {"OPAMP", "LM4040_10"}
+DEVICE_SUBCKTS = {"OPAMP", "LM4040_10", "AOFET", "OPTOLED", "TLP2361"}
 
 
 def _pairs(text: str) -> dict[str, float]:
@@ -168,6 +221,21 @@ def check_models(deck_path: Path) -> list[str]:
     return problems
 
 
+def check_midi_assumptions(deck_path: Path) -> list[str]:
+    """The decks must carry the declared MIDI assumption numbers."""
+    problems: list[str] = []
+    name = Path(deck_path).name
+    text = Path(deck_path).read_text()
+    for token, key in MIDI_DECK_TOKENS.get(name, []):
+        if token not in text:
+            problems.append(
+                f"{name}: the declared MIDI assumption {key} ({MIDI_ASSUMPTIONS[key][0]}) "
+                f"is not written as {token!r} any more. Update the deck and the "
+                "assumption together, or explain the change in RESULTS.md."
+            )
+    return problems
+
+
 def check_mux_assumptions(deck_path: Path) -> list[str]:
     """The CD4051 ON resistance and the sample capacitance are assumptions."""
     problems: list[str] = []
@@ -192,6 +260,10 @@ def table_text() -> str:
         lines.append(f"{kind} {name} {shown}")
         lines.append(f"    {text}")
     lines.append("MUX RON 250 ohm: " + MUX_RON_PROVENANCE)
+    lines.append("")
+    lines.append("MIDI assumptions (NOT primary verified, doc/ELECTRICAL-VERIFICATION.md §2):")
+    for key, (value, text) in MIDI_ASSUMPTIONS.items():
+        lines.append(f"  {key} = {value}: {text}")
     lines.append("ADC sample 100 pF: " + ADC_SAMPLE_PROVENANCE)
     return "\n".join(lines)
 
@@ -202,6 +274,7 @@ if __name__ == "__main__":
     decks = sorted(HERE.glob("*.cir"))
     problems = [p for deck in decks for p in check_models(deck)]
     problems += [p for deck in decks for p in check_mux_assumptions(deck)]
+    problems += [p for deck in decks for p in check_midi_assumptions(deck)]
     if problems:
         print(f"model provenance: {len(problems)} problem(s)")
         for problem in problems:

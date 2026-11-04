@@ -5,9 +5,14 @@
 leaves its limit, when a linked value or connection no longer matches the
 tscircuit source, when a model parameter is not in the provenance table, or when
 a `wrdata` file / `.meas` result is missing, empty or holds a NaN. The last run
-reported **129 checks over 9 decks, all passing**, on Linux with native
-`ngspice-39`; the earlier table in this file was measured with `ngspice-47` on
-macOS and the numbers agree to about 0.1 %.
+reported **164 checks over 11 decks, all passing**, on Linux with native
+`ngspice-39`; the earlier base-board table in this file was measured with
+`ngspice-47` on macOS and the numbers agree to about 0.1 %.
+
+The MIDI decks are new since the previous table. They are written against the
+MIDI electrical correction (TLP2361 receiver, AO3401A transmitter) and were made
+source-linked by cherry-picking that source commit into this branch; the parent
+integrates it separately and does not duplicate it from here.
 
 These are design checks against **behavioural models**, not measurements of a
 built board, and not manufacturer SPICE models. `models.py` holds the provenance
@@ -61,13 +66,15 @@ would dirty tracked files, so the tools do not do it.
 | `front_audio.cir` | base-board audio into the front board | THD with and without the removed audio jack-LED branch |
 | `front_cv_led.cir` | last compensated CV stage — `sections/cv.tsx` + euro `jack-leds.tsx` | tran with 100k‖10 nF, LED branch present, and a 100 nF over-spec case |
 | `front_mode.cir` | euro MODE button — `euro/sections/button.tsx` | pull-up, LED current, 100 pF sample, and the "LED only" negative case |
+| `midi_out.cir` | Q2 AO3401A high-side driver, R58/R61 gate network, R59/R60 legs — `sections/midi.tsx` | VGS on/off, gate charge peak, loop current for 4 receivers, ring and tip faults |
+| `midi_in.cir` | U15 TLP2361 receiver, R47 220 Ω, D1, R48 — `sections/midi.tsx` | loop current for 5 senders, threshold margin, reverse polarity, VO polarity, old-part negative case |
 
 ## Source linkage — the decks cannot drift silently
 
 `source_link.py` parses the canonical TSX (`tscircuit/sections/*.tsx`, and for
 the front decks `euro/sections/*.tsx` + `euro/lib/layout.ts`) with the same SI
-literal parser gate step 7 uses, and links **63 deck elements** to their source
-parts. For each linked element it compares
+literal parser gate step 7 uses, and links **72 deck elements** to their source
+parts (17 net links). For each linked element it compares
 
 * the **value** to numerical parsing precision (relative window 1e-9): a deck
   transcribes the NOMINAL value of a part, so `33000` and `33100` ohm must NOT
@@ -277,15 +284,76 @@ sample capacitance (100 pF) are **assumptions**, recorded in `models.py`.
    out**, plus a fixed CV-in offset. Still an open item: firmware calibration,
    or 0.1 % parts.
 
-## Reserved: MIDI (not covered here yet)
+## 9. MIDI OUT — AO3401A high-side driver (`midi_out.cir`)
 
-The MIDI receiver/transmitter decks (`midi_in`, `midi_out`) are **not** part of
-this suite. The approved MIDI topology and its constants are owned by a separate
-change; until that lands, this suite makes no claim about `sections/midi.tsx`
-and no deck reads it. A change to `sections/midi.tsx` therefore does not fail
-here — a stated gap, not a silent pass. When the decks are added, their expected
-values go into `DECK_LINKS`/`assertions.py` in one place and the linkage will
-protect them like the rest.
+The expected values are the ones `doc/ELECTRICAL-VERIFICATION.md` §3/§4 derives
+by hand; the deck solves the same circuit, so a changed resistor has to show up
+in a measurement.
+
+| Quantity | Limit asserted | Measured |
+| --- | --- | --- |
+| `VGS(on)` at the documented corner (rail 3.135 V, VOL 0.4 V) | −2.56…−2.49 V | **−2.5282 V** |
+| `VGS(on)` with R58 +1 % and R61 −1 % | −2.56…−2.45 V | −2.5243 V |
+| `VGS(on)` on the fitted 3.3 V chain | −2.74…−2.62 V | −2.6807 V |
+| \|VGS\| off at VOH min (2.735 V) | 0.33…0.41 V | **0.3697 V** |
+| \|VGS\| off with the pin high-Z (reset) | ≤0.01 V | 0.00000 V |
+| Q2 leakage when off | ≤1 µA | 0.0000 µA (switch model; real leakage not modelled) |
+| Loop current, nominal | 5.94…6.06 mA | 5.9832 mA |
+| Loop current, worst CA-033 receiver | 4.25…4.37 mA | **4.2939 mA** |
+| Loop current vs the 4 mA legacy (PC900) target | ≥4.0 mA | 4.2939 mA |
+| Loop current, typical into this board's receiver | 6.42…6.85 mA | 6.5829 mA |
+| Gate charge peak, fitted R58 180 Ω | 19.0…19.6 mA | **19.193 mA** |
+| Gate charge peak with the rejected 100 Ω (**negative**) | 33.8…35.2 mA | 34.189 mA |
+| Gate settles inside one bit | 0.24…0.28 V at 3 µs | 0.2621 V |
+| Ring fault, RDS = 0: current / R59 power | 104…108 mA / 0.355…0.380 W | 106.06 mA / **0.3675 W** |
+| Ring fault, RDS 127.5 mΩ: R59 / Q2 | 0.352…0.377 W / 1.2…1.7 mW | 0.3646 W / 1.423 mW |
+| Tip forced to the rail: current / R60 power | 156…162 mA / 0.535…0.568 W | 159.09 mA / **0.5513 W** |
+| 1 W 2512 rating in any fault | ≤1.0 W | 0.5513 W |
+
+The gate charge peak is sampled 1 ns after the edge (1.002 µs), which is why the
+measurement reads 19.19 mA rather than the 19.44 mA at the instant of the step;
+the same case with the rejected 100 Ω reproduces the 34.6 mA the document quotes
+as the reason for 180 Ω. Zero RDS(on) is used only in the ring-fault case, where
+it is the worst case for R59 and the best case for Q2 (doc §4).
+
+## 10. MIDI IN — TLP2361 receiver (`midi_in.cir`)
+
+| Quantity | Limit asserted | Measured |
+| --- | --- | --- |
+| Own transmitter, every tolerance | 5.20…5.45 mA | **5.3130 mA** |
+| Threshold margin over IFHL 1.6 mA | 3.0…4.0× | 3.32× |
+| Typical loop at the 3.465 V rail | 6.42…6.85 mA | 6.5614 mA |
+| Typical loop vs the 10 mA absolute maximum | ≤10 mA | 6.5614 mA (passes; the 6 mA recommended point is exceeded — open item) |
+| CA-033 receiver corner | 4.19…4.39 mA | 4.2812 mA |
+| 5 V legacy sender (2 × 220 Ω) | 5.50…5.77 mA | 5.6275 mA |
+| Non-compliant 5 V sender (33/10 legs) | 14.3…15.2 mA | 14.6868 mA |
+| Non-compliant sender vs the 10 mA absolute maximum (**negative**) | >10 mA | 14.6868 mA |
+| Reverse polarity: LED reverse voltage | 0.30…0.80 V | 0.6829 V |
+| Reverse polarity: D1 current | ≤12 mA | 8.829 mA |
+| Idle loop: VO high (fail-safe through R48) | ≥3.2 V | 3.3000 V |
+| Receiving: VO low (inverting) | ≤0.4 V | 0.1435 V |
+| LED forward drop at the fitted corner | 1.62…1.69 V | 1.6600 V |
+| Old TLP2362 on this loop (**negative**) | 1.0…1.2× its 5 mA threshold, < 7.5 mA | 1.06×, 5.313 mA |
+
+## MIDI: what is assumed, and what is still open
+
+The two decks carry the numbers of `doc/ELECTRICAL-VERIFICATION.md` §2 as
+**explicit assumptions, not verified facts** (`models.MIDI_ASSUMPTIONS`, printed
+by `python3 models.py`): the STM32H750 per-I/O ±20 mA absolute maximum, VOL ≤
+0.4 V, VOH ≥ VDD − 0.4 V, `USART1_TX` high-Z in reset, and the AO3401A Ciss of
+645 pF. The primary STM32H750 datasheet was not reachable from this host, so
+nothing here is a claim about the real part; the two decks fail if one of those
+numbers is changed on only one side.
+
+Still open (not asserted as passing):
+
+* the TLP2361 input **high-current** qualification: the non-compliant 5 V case
+  reaches 14.69 mA, above the 10 mA absolute maximum, and nothing on the board
+  clamps it;
+* the 6.58 mA typical loop is above the TLP2361 6 mA recommended on-current
+  (inside the absolute maximum) — measure IF on a real unit;
+* VOL/VOH/reset state and the 20 mA limit need a measurement on a real Seed;
+* R59/R60 are 1 W to 70 °C and derate above it: a closed rack needs a check.
 
 ## What the numbers do and do not cover
 

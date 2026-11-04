@@ -44,6 +44,8 @@ DECKS = (
     "front_audio",
     "front_cv_led",
     "front_mode",
+    "midi_in",
+    "midi_out",
 )
 
 
