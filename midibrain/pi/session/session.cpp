@@ -679,6 +679,114 @@ bool decodeFx(const JsonValue& node, FxState& out, std::string& error) {
     }
     ++index;
   }
+  if (const JsonValue* eq = node.find("eq")) {
+    if (eq->type != JsonValue::Type::Object) {
+      error = "session: \"fx.eq\" is not an object";
+      return false;
+    }
+    if (const JsonValue* tracks = eq->find("tracks")) {
+      if (tracks->type != JsonValue::Type::Array) {
+        error = "session: \"fx.eq.tracks\" is not an array";
+        return false;
+      }
+      std::size_t track = 0;
+      for (const JsonValue& trackItem : tracks->array) {
+        if (track >= out.eq.tracks.size()) break;
+        if (trackItem.type != JsonValue::Type::Array) {
+          error = "session: \"fx.eq.tracks[" + std::to_string(track) +
+                  "]\" is not an array";
+          return false;
+        }
+        std::size_t band = 0;
+        for (const JsonValue& bandItem : trackItem.array) {
+          if (band >= 4) break;
+          const std::string path = "fx.eq.tracks[" + std::to_string(track) +
+                                   "][" + std::to_string(band) + "]";
+          if (bandItem.type != JsonValue::Type::Object) {
+            error = "session: \"" + path + "\" is not an object";
+            return false;
+          }
+          EqBand& outBand = out.eq.tracks[track][band];
+          int type = outBand.type;
+          if (!readOptionalInt(bandItem, "t", type, path, error)) {
+            return false;
+          }
+          if (type < 0) type = 0;
+          if (type > 5) type = 5;
+          outBand.type = type;
+          if (!readOptionalFloat(bandItem, "g", outBand.gainDb, path, error)) {
+            return false;
+          }
+          if (!readOptionalFloat(bandItem, "f", outBand.freqHz, path, error)) {
+            return false;
+          }
+          if (outBand.freqHz < 20.0f) outBand.freqHz = 20.0f;
+          if (outBand.freqHz > 20000.0f) outBand.freqHz = 20000.0f;
+          if (!readOptionalFloat(bandItem, "q", outBand.q, path, error)) {
+            return false;
+          }
+          if (outBand.q < 0.1f) outBand.q = 0.1f;
+          if (outBand.q > 24.0f) outBand.q = 24.0f;
+          ++band;
+        }
+        ++track;
+      }
+    }
+    if (const JsonValue* main = eq->find("main")) {
+      if (main->type != JsonValue::Type::Array) {
+        error = "session: \"fx.eq.main\" is not an array";
+        return false;
+      }
+      std::size_t band = 0;
+      for (const JsonValue& bandItem : main->array) {
+        if (band >= 4) break;
+        const std::string path =
+            "fx.eq.main[" + std::to_string(band) + "]";
+        if (bandItem.type != JsonValue::Type::Object) {
+          error = "session: \"" + path + "\" is not an object";
+          return false;
+        }
+        EqBand& outBand = out.eq.main[band];
+        int type = outBand.type;
+        if (!readOptionalInt(bandItem, "t", type, path, error)) return false;
+        if (type < 0) type = 0;
+        if (type > 5) type = 5;
+        outBand.type = type;
+        if (!readOptionalFloat(bandItem, "g", outBand.gainDb, path, error)) {
+          return false;
+        }
+        if (!readOptionalFloat(bandItem, "f", outBand.freqHz, path, error)) {
+          return false;
+        }
+        if (outBand.freqHz < 20.0f) outBand.freqHz = 20.0f;
+        if (outBand.freqHz > 20000.0f) outBand.freqHz = 20000.0f;
+        if (!readOptionalFloat(bandItem, "q", outBand.q, path, error)) {
+          return false;
+        }
+        if (outBand.q < 0.1f) outBand.q = 0.1f;
+        if (outBand.q > 24.0f) outBand.q = 24.0f;
+        ++band;
+      }
+    }
+  }
+  if (const JsonValue* xy = node.find("xy")) {
+    if (xy->type != JsonValue::Type::Object) {
+      error = "session: \"fx.xy\" is not an object";
+      return false;
+    }
+    const char* const keys[4] = {"delayX", "delayY", "reverbX", "reverbY"};
+    float* const fields[4] = {&out.xy.delayX, &out.xy.delayY, &out.xy.reverbX,
+                               &out.xy.reverbY};
+    for (int i = 0; i < 4; ++i) {
+      float value = *fields[i];
+      if (!readOptionalFloat(*xy, keys[i], value, "fx.xy", error)) {
+        return false;
+      }
+      if (value < 0.0f) value = 0.0f;
+      if (value > 1.0f) value = 1.0f;
+      *fields[i] = value;
+    }
+  }
   return true;
 }
 
@@ -1402,7 +1510,50 @@ std::string encode(const Snapshot& snapshot) {
     appendBool(out, bus.bypass);
     out.push_back('}');
   }
-  out += "]}";
+  out += "],\"eq\":{\"tracks\":[";
+  for (int track = 0; track < audio::kMaxInputs; ++track) {
+    if (track != 0) out.push_back(',');
+    out.push_back('[');
+    for (int band = 0; band < 4; ++band) {
+      if (band != 0) out.push_back(',');
+      const EqBand& outBand = snapshot.fx.eq.tracks[static_cast<std::size_t>(track)]
+                                                     [static_cast<std::size_t>(band)];
+      out += "{\"t\":";
+      appendNumber(out, outBand.type);
+      out += ",\"g\":";
+      appendNumber(out, outBand.gainDb);
+      out += ",\"f\":";
+      appendNumber(out, outBand.freqHz);
+      out += ",\"q\":";
+      appendNumber(out, outBand.q);
+      out.push_back('}');
+    }
+    out.push_back(']');
+  }
+  out += "],\"main\":[";
+  for (int band = 0; band < 4; ++band) {
+    if (band != 0) out.push_back(',');
+    const EqBand& outBand =
+        snapshot.fx.eq.main[static_cast<std::size_t>(band)];
+    out += "{\"t\":";
+    appendNumber(out, outBand.type);
+    out += ",\"g\":";
+    appendNumber(out, outBand.gainDb);
+    out += ",\"f\":";
+    appendNumber(out, outBand.freqHz);
+    out += ",\"q\":";
+    appendNumber(out, outBand.q);
+    out.push_back('}');
+  }
+  out += "]},\"xy\":{\"delayX\":";
+  appendNumber(out, snapshot.fx.xy.delayX);
+  out += ",\"delayY\":";
+  appendNumber(out, snapshot.fx.xy.delayY);
+  out += ",\"reverbX\":";
+  appendNumber(out, snapshot.fx.xy.reverbX);
+  out += ",\"reverbY\":";
+  appendNumber(out, snapshot.fx.xy.reverbY);
+  out += "}}";
 
   out += ",\"transport\":{\"bpm_x100\":";
   appendNumber(out, snapshot.transport.bpmX100);

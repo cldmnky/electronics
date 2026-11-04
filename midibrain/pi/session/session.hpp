@@ -133,8 +133,36 @@ struct FxBusState {
   friend bool operator==(const FxBusState&, const FxBusState&) = default;
 };
 
+// EQ band: `type` 0 = none, 1 = low cut, 2 = low shelf, 3 = parametric,
+// 4 = high shelf, 5 = high cut. `gainDb` unused by cut types. Stored per
+// track + main; the engine has no EQ insert yet, so these are edited,
+// displayed and project-persisted ahead of the DSP seam (see NOTES).
+struct EqBand {
+  int type = 0;
+  float gainDb = 0.0f;
+  float freqHz = 1000.0f;
+  float q = 1.0f;
+  friend bool operator==(const EqBand&, const EqBand&) = default;
+};
+struct EqState {
+  std::array<std::array<EqBand, 4>, audio::kMaxInputs> tracks{};
+  std::array<EqBand, 4> main{};
+  friend bool operator==(const EqState&, const EqState&) = default;
+};
+// X/Y performance grid positions, normalized 0..1. Delay X = feedback-
+// filter cutoff, Y = width; reverb X = size, Y = level. The app maps these
+// onto live effect params; the last position persists per project.
+struct XyState {
+  float delayX = 0.5f;
+  float delayY = 0.5f;
+  float reverbX = 0.5f;
+  float reverbY = 0.5f;
+  friend bool operator==(const XyState&, const XyState&) = default;
+};
 struct FxState {
   std::array<FxBusState, kFxBuses> bus{};
+  EqState eq;
+  XyState xy;
   friend bool operator==(const FxState&, const FxState&) = default;
 };
 

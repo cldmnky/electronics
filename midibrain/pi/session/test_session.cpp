@@ -123,6 +123,16 @@ void testRoundTrip() {
   original.fx.bus[1].params = {0.0, 1000.5};
 
   original.transport.bpmX100 = 13333;
+  original.fx.eq.tracks[2][1].type = 3;
+  original.fx.eq.tracks[2][1].gainDb = -3.0f;
+  original.fx.eq.tracks[2][1].freqHz = 800.0f;
+  original.fx.eq.tracks[2][1].q = 2.0f;
+  original.fx.eq.main[0].type = 1;
+  original.fx.eq.main[0].freqHz = 40.0f;
+  original.fx.xy.delayX = 0.25f;
+  original.fx.xy.delayY = 0.75f;
+  original.fx.xy.reverbX = 0.8f;
+  original.fx.xy.reverbY = 0.2f;
   original.click.mode = 2;
   original.click.output = 1;
   original.click.gainDb = -6.0f;
