@@ -49,8 +49,16 @@ Checks can be re-run by hand:
 ```sh
 board/mnkybox/check-image.sh output/images     # image acceptance list
 board/mnkybox/check-elf-deps.sh output/images  # prebuilt app dependencies
-scripts/qemu-user-smoke.sh output/target       # user-space smoke test
+scripts/qemu-user-smoke.sh output/target       # user-space smoke test (qemu-user)
+scripts/native-smoke.sh                        # same checks, run inside the rootfs
 ```
+
+`scripts/native-smoke.sh` is meant to run **inside** the built root filesystem
+on real aarch64 hardware, for example on the owner's Pi 5 with
+`systemd-nspawn -D output/target` (or a chroot): it executes the same binaries
+without qemu-user, so it catches glibc, library and loader problems that
+emulation hides. It still cannot test the Pi kernel, DRM/DSI, touch, audio or
+systemd unit ordering; those need the flashed image.
 
 ## Verified inputs
 
@@ -102,6 +110,30 @@ Only its numbers are used; the overlay itself is our own source in
 sha256 `ca709be81a78bdb6932936374f39943acbd7af07fae6151011127599a3ce9e3d`
 (2074 bytes), retrieved 2026-11-04; provenance in
 `board/mnkybox/firmware/brcmfmac43455-sdio.txt.source`.
+
+## Measured reference data (Raspberry Pi 5, Rev 1.1)
+
+The owner's reference box is a Raspberry Pi 5 Model B Rev 1.1, 16 GB RAM,
+4 cores, Debian 13, kernel `6.18.34+rpt-rpi-2712`, NVMe with 181 GB free. It is
+a **verification** box only: the image is still cross-built on x86_64, and this
+tree never plans a native build on the Pi. Its probes produced the following
+measured facts, which narrow the "unverified" list below. They are quoted
+verbatim from that box and are **not** results from this image.
+
+| Measurement | Quoted evidence | What it settles |
+|---|---|---|
+| WiFi chip is BCM43455 | `brcmfmac: brcm_fw_alloc_request: using brcm/brcmfmac43455-sdio for chip BCM4345/6` | confirms correction 3: the Pi 5 needs `brcmfmac43455-sdio`, never a BCM43456 file |
+| Cypress firmware variant in use | `brcmfmac_cyw` module loaded next to `brcmfmac` | supports using `cypress/cyfmac43455-sdio.bin` as the blob source |
+| `goodix_ts` driver exists in the Pi kernel line | module `goodix_ts` present | the GT911 path is a stock driver, not a vendor patch |
+| DSI-2 connector works | `card0-DSI-2` is `connected` to a 1920x1080 DSI monitor (not our panel) | the Pi 5 `&dsi1` node drives the second MIPI connector; our overlay's `dsi1` default targets exactly that port |
+| A Goodix chip is present but does not come up at 0x14 | `Goodix-TS 11-0014: Error reading 1 bytes from 0x8140: -121` (after dummy regulators) | the 0x5d-versus-0x14 address selection is real: the INT level during reset picks the address, and a wrong selection looks exactly like this probe failure |
+| Active touchscreen on that box is ILI210x, not Goodix | `N: Name="ILI210x Touchscreen"` at `i2c-11/11-0041` | the Goodix controller on that box is a second device on the same bus, so address collisions must be considered |
+| No USB audio interface attached | `--- no soundcards ---` (only `seq` and `timer`) | UMC1820 bring-up, default-sink policy and 48 kHz graph are still unmeasured |
+
+The overlay therefore keeps `0x5d` as the primary GT911 address and declares
+`0x14` as the documented alternative, in that order. If touch does not probe,
+`i2cdetect -y 11` shows which address answers, and the `.dts` is the single
+place to change it.
 
 ## Decisions, including three plan corrections
 
@@ -342,7 +374,9 @@ covers interactive logins.
    brcmfmac) and any RT-unsafe driver are untested.
 3. **DSI panel and touch.** Connector choice (`dsi1` vs `dsi0`), lane count, the
    `Generic,panel-dsi` binding, `ignore_lcd`, rotation, the GT911 polling
-   fallback and both I2C addresses are untested.
+   fallback and both I2C addresses are untested. The reference box shows a
+   working DSI-2 connector with a 1920x1080 monitor and a Goodix probe failing
+   at `0x14`, but never with this panel.
 4. **Weston 15 + Mesa 26 on the Pi 5.** Mesa 26 no longer has a separate kmsro
    option; whether EGL/GBM works on the RP1 display node is unknown. If it does
    not, Weston falls back to its pixman renderer (slower but functional). Check
@@ -351,7 +385,9 @@ covers interactive logins.
    virtual keyboard and multitouch delivery to Qt are untested on hardware.
 6. **Audio.** PipeWire + `pipewire-pulse` + WirePlumber policy, the 48 kHz
    graph, UMC1820 priority, real-time scheduling and the 2.67 ms budget are
-   unmeasured. `libjack.so` is proven to exist, not to work with any client.
+   unmeasured, and the reference box currently reports `--- no soundcards ---`,
+   so there is not even a USB interface to test against yet. `libjack.so` is
+   proven to exist in the built rootfs, not to work with any client.
 7. **WiFi and Bluetooth.** BCM43455 firmware loading, the NVRAM file, the
    country/regdb gate and association are untested. Bluetooth is not configured
    at all (UART0/UART1 are reserved for MIDI).

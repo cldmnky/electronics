@@ -17,9 +17,13 @@
  *   hfront-porch 48, hsync-len 32, hback-porch 80, vactive 800,
  *   vfront-porch 3, vsync-len 10, vback-porch 62, width-mm 70, height-mm 50,
  *   RGB888. The panel is 480x800 portrait (800x480 landscape after rotation)
- *   and carries a goodix,gt911 touch controller on the DSI I2C bus, which
- *   answers at 0x14 or 0x5d depending on the module strap; both nodes are
- *   declared exactly as the vendor does, without inventing GPIO wiring.
+ *   and carries a goodix,gt911 touch controller on the DSI I2C bus. The
+ *   controller answers at 0x5d (primary here) or 0x14, selected by the INT
+ *   level during reset; both nodes are declared, in that order, as the vendor
+ *   does, without inventing GPIO wiring. Measured on the owner's Pi 5
+ *   (2026-11-04): a Goodix at 0x14 failed to come up with
+ *   "Goodix-TS 11-0014: Error reading 1 bytes from 0x8140: -121", which is
+ *   exactly what a wrong address selection looks like.
  *
  * Touch, multitouch and the missing interrupt line:
  *   The GT911 reports up to 5 simultaneous contact points. The in-kernel
@@ -110,16 +114,18 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			touch1: goodix@14 {
+			/* Primary address: 0x5d. */
+			touch_5d: goodix@5d {
 				compatible = "goodix,gt911";
-				reg = <0x14>;
+				reg = <0x5d>;
 				touchscreen-size-x = <800>;
 				touchscreen-size-y = <480>;
 			};
 
-			touch2: goodix@5d {
+			/* Alternative address: 0x14 (INT level during reset). */
+			touch_14: goodix@14 {
 				compatible = "goodix,gt911";
-				reg = <0x5d>;
+				reg = <0x14>;
 				touchscreen-size-x = <800>;
 				touchscreen-size-y = <480>;
 			};
