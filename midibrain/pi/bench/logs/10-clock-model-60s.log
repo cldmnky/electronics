@@ -1,0 +1,14 @@
+clock_model mode=sched seconds=60.0 interval_us=20833.333
+sched_20ms_lateness_us n=2880 min=6.0 avg=55.8 p50=56.0 p95=60.0 p99=75.0 max=868.0 stdev=20.0
+sched_1ms_lateness_us n=60000 min=8.0 avg=49.1 p50=53.0 p95=55.0 p99=60.0 max=4718.0 stdev=42.2
+clock_model mode=freerun seconds=60.0 interval_us=20833.333
+measured_1ms_lateness_us n=60000 min=6.0 avg=54.2 p50=54.0 p95=56.0 p99=62.0 max=3033.0 stdev=24.6
+model_freerun_emission_late_us n=2876 min=11.0 avg=56.0 p50=54.0 p95=73.0 p99=133.0 max=420.0 stdev=13.9
+model_emission_interval_err_us n=2875 min=-115.3 avg=28.7 p50=-0.3 p95=16.7 p99=78.7 max=20832.7 stdev=773.2
+model_note=UsbClock model only; no Pico, no SPI, no wire
+clock_model mode=pico seconds=60.0 interval_us=20833.333
+measured_1ms_lateness_us n=60000 min=6.0 avg=54.5 p50=54.0 p95=56.0 p99=59.0 max=5129.0 stdev=45.4
+model_pico_latencyUs n=2880 min=0.0 avg=15.4 p50=12.9 p95=33.5 p99=40.7 max=42.5 stdev=9.5
+model_pico_emission_late_us n=2872 min=0.0 avg=0.0 p50=0.0 p95=0.0 p99=0.0 max=0.0 stdev=0.0
+model_emission_interval_err_us n=2871 min=-26.3 avg=57.7 p50=-0.3 p95=0.7 p99=3.7 max=20834.7 stdev=1098.2
+model_note=UsbClock model only; no Pico, no SPI, no wire

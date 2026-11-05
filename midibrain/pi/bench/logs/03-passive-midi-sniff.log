@@ -1,0 +1,53 @@
+=== passive 8 s rawmidi input capture (no injection) ===
+2026-11-05T22:29:59+01:00
+card0: 0 bytes, 0 lines
+cannot open port "hw:0,0,0": Device or resource busy
+
+card1: 0 bytes, 0 lines
+cannot open port "hw:1,0,0": Device or resource busy
+
+card2: 0 bytes, 0 lines
+cannot open port "hw:2,0,0": Device or resource busy
+
+card3: 0 bytes, 0 lines
+cannot open port "hw:3,0,0": Device or resource busy
+
+card4: 0 bytes, 0 lines
+cannot open port "hw:4,0,0": Device or resource busy
+
+=== /proc/asound/card*/midi0 after ===
+--- card 0 ---
+  Tx bytes     : 140323
+  Owner PID    : 39904
+  Rx bytes     : 148184
+  Owner PID    : 39904
+  Overruns     : 0
+--- card 1 ---
+  Tx bytes     : 91906
+  Owner PID    : 39904
+  Rx bytes     : 0
+  Owner PID    : 39904
+  Overruns     : 0
+--- card 2 ---
+  Tx bytes     : 139664
+  Owner PID    : 39904
+  Rx bytes     : 125638
+  Owner PID    : 39904
+  Overruns     : 0
+--- card 3 ---
+  Tx bytes     : 139664
+  Owner PID    : 39904
+  Rx bytes     : 205598
+  Owner PID    : 39904
+  Overruns     : 0
+--- card 4 ---
+  Tx bytes     : 89985
+  Owner PID    : 39904
+  Tx bytes     : 80180
+  Owner PID    : 39904
+  Rx bytes     : 0
+  Owner PID    : 39904
+  Overruns     : 0
+  Rx bytes     : 100670
+  Owner PID    : 39904
+  Overruns     : 0

@@ -1,0 +1,42 @@
+=== 1. UDC inventory before anything is loaded ===
+baseline_udc=[]
+total 0
+=== 3. loading libcomposite (reversible, unloaded at the end) ===
+=== 4. creating a UAC2 gadget in configfs ===
+--- gadget tree created: ---
+/sys/kernel/config/usb_gadget/benchprobe:
+bcdDevice
+bcdUSB
+bDeviceClass
+bDeviceProtocol
+bDeviceSubClass
+bMaxPacketSize0
+configs
+functions
+idProduct
+idVendor
+max_speed
+os_desc
+strings
+UDC
+webusb
+
+/sys/kernel/config/usb_gadget/benchprobe/configs:
+c.1
+
+=== 5. the decisive test: is there a UDC to bind it to? ===
+udc_available=[]
+BIND FAILED: no UDC exists, so the gadget cannot be registered
+udev/UDC state after the attempt: []
+=== 6. teardown ===
+usb_f_uac2 unloaded
+u_audio unloaded
+libcomposite unloaded
+=== 7. verification that nothing is left behind ===
+udc_now=[]
+gadget_dir_present=no
+libcomposite_loaded=no
+u_audio_loaded=no
+usb_f_uac2_loaded=no
+configfs_mounted=yes
+udc_unchanged=yes

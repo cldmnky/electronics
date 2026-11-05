@@ -1,0 +1,115 @@
+=== date ===
+2026-11-05T22:35:19+01:00
+=== udc ===
+total 0
+0
+=== gadget modules present in tree? ===
+function
+legacy
+libcomposite.ko.xz
+ls: cannot access '/lib/modules/6.18.34+rpt-rpi-2712/kernel/drivers/usb/dwc2': No such file or directory
+=== modinfo dwc2 (does not load) ===
+bash: line 5: modinfo: command not found
+=== modinfo dwc_otg ===
+bash: line 6: modinfo: command not found
+=== loaded dwc/gadget modules ===
+=== /sys/module dwc/gadget ===
+dwc3_haps
+dwc_otg
+=== platform drivers ===
+brcmstb-usb-phy
+dwc2
+dwc3
+dwc3-generic-plat
+dwc3-of-simple
+dwc_otg
+usb_phy_generic
+=== devices bound to dwc_otg/dwc2 (if any) ===
+bind
+uevent
+unbind
+version
+bind
+uevent
+unbind
+=== dmesg usb/dwc (may be restricted) ===
+[    0.278811] dwc_otg: version 3.00a 10-AUG-2012 (platform bus)
+[    0.278826] dwc_otg: FIQ enabled
+[    0.278828] dwc_otg: NAK holdoff enabled
+[    0.278829] dwc_otg: FIQ split-transaction FSM enabled
+[    0.278831] Module dwc_common_port init
+=== kernel config paths ===
+cmdline.txt
+config-6.12.93+rpt-rpi-2712
+config-6.12.93+rpt-rpi-v8
+config-6.18.34+rpt-rpi-2712
+config-6.18.34+rpt-rpi-v8
+config.txt
+firmware
+firmware.bak
+initrd.img-6.12.93+rpt-rpi-2712
+initrd.img-6.12.93+rpt-rpi-v8
+initrd.img-6.18.34+rpt-rpi-2712
+initrd.img-6.18.34+rpt-rpi-v8
+issue.txt
+overlays
+System.map-6.12.93+rpt-rpi-2712
+System.map-6.12.93+rpt-rpi-v8
+System.map-6.18.34+rpt-rpi-2712
+System.map-6.18.34+rpt-rpi-v8
+vmlinuz-6.12.93+rpt-rpi-2712
+vmlinuz-6.12.93+rpt-rpi-v8
+bcm2708-rpi-b.dtb
+bcm2708-rpi-b-plus.dtb
+bcm2708-rpi-b-rev1.dtb
+bcm2708-rpi-cm.dtb
+bcm2708-rpi-zero.dtb
+bcm2708-rpi-zero-w.dtb
+bcm2709-rpi-2-b.dtb
+bcm2709-rpi-cm2.dtb
+bcm2710-rpi-2-b.dtb
+bcm2710-rpi-3-b.dtb
+bcm2710-rpi-3-b-plus.dtb
+bcm2710-rpi-cm0.dtb
+bcm2710-rpi-cm3.dtb
+bcm2710-rpi-zero-2.dtb
+bcm2710-rpi-zero-2-w.dtb
+bcm2711-rpi-400.dtb
+bcm2711-rpi-4-b.dtb
+bcm2711-rpi-cm4.dtb
+bcm2711-rpi-cm4-io.dtb
+bcm2711-rpi-cm4s.dtb
+=== kernel config gadget options ===
+file /boot/config-6.18.34+rpt-rpi-2712
+CONFIG_USB_DWC3=y
+CONFIG_USB_DWC3_DUAL_ROLE=y
+CONFIG_USB_DWC3_HAPS=y
+CONFIG_USB_DWC3_OF_SIMPLE=y
+CONFIG_USB_DWC3_GENERIC_PLAT=y
+CONFIG_USB_DWC2=y
+CONFIG_USB_DWC2_DUAL_ROLE=y
+CONFIG_USB_GADGET=y
+CONFIG_USB_GADGET_VBUS_DRAW=2
+CONFIG_USB_GADGET_STORAGE_NUM_BUFFERS=2
+CONFIG_USB_LIBCOMPOSITE=m
+CONFIG_USB_F_UAC1=m
+CONFIG_USB_F_UAC2=m
+CONFIG_USB_CONFIGFS=m
+CONFIG_USB_CONFIGFS_SERIAL=y
+CONFIG_USB_CONFIGFS_ACM=y
+CONFIG_USB_CONFIGFS_OBEX=y
+CONFIG_USB_CONFIGFS_NCM=y
+CONFIG_USB_CONFIGFS_ECM=y
+CONFIG_USB_CONFIGFS_ECM_SUBSET=y
+CONFIG_USB_CONFIGFS_RNDIS=y
+CONFIG_USB_CONFIGFS_EEM=y
+CONFIG_USB_CONFIGFS_MASS_STORAGE=y
+CONFIG_USB_CONFIGFS_F_LB_SS=y
+CONFIG_USB_CONFIGFS_F_FS=y
+CONFIG_USB_CONFIGFS_F_UAC1=y
+CONFIG_USB_CONFIGFS_F_UAC2=y
+CONFIG_USB_CONFIGFS_F_MIDI=y
+CONFIG_USB_CONFIGFS_F_HID=y
+CONFIG_USB_CONFIGFS_F_UVC=y
+CONFIG_USB_CONFIGFS_F_PRINTER=y
+CONFIG_USB_GADGETFS=m

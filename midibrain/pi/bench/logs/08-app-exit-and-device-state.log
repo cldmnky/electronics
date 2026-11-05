@@ -1,0 +1,48 @@
+2026-11-05T23:19:25+01:00
+=== uptime ===
+ 23:19:25 up 1 day,  1:33,  4 users,  load average: 0.20, 0.35, 0.66
+92017.13 356268.69
+=== app alive? ===
+40935 /home/magnus/bin/mnkybox --no-pico
+(exit 0)
+=== lock ===
+-rw-rw-r-- 1 magnus magnus 91 Nov  5 23:05 /tmp/mnkybox-ui.lock
+=== fuser ===
+                     USER        PID ACCESS COMMAND
+/dev/snd/pcmC1D0c:   magnus     1315 F...m pipewire
+/dev/snd/pcmC1D0p:   magnus     1315 F...m pipewire
+/dev/snd/seq:        magnus     1315 F.... pipewire
+                     magnus    40935 F.... mnkybox
+=== pcm status ===
+state: RUNNING
+owner_pid   : 1315
+trigger_time: 91183.084527094
+tstamp      : 92017.180183122
+delay       : 462
+=== dmesg tail (usb + audio) ===
+[90164.087189] usb 3-1.4.3: urb status -32
+[90164.087730] usb 3-1.4.3: urb status -32
+[90164.088418] usb 3-1.4.3: urb status -32
+[90164.088568] usb 3-1.4.3: urb status -32
+[90164.089017] usb 3-1.4.3: urb status -32
+[90164.089290] usb 3-1.4.3: urb status -32
+[90164.089805] usb 3-1.4.3: urb status -32
+[90164.090192] usb 3-1.4.3: urb status -32
+[90164.090554] usb 3-1.4.3: urb status -32
+[90164.091150] usb 3-1.4.3: urb status -32
+[90164.091945] usb 3-1.4.3: urb status -32
+[90164.092536] usb 3-1.4.3: urb status -32
+[90164.093018] usb 3-1.4.3: urb status -32
+[90164.093295] usb 3-1.4.3: urb status -32
+[90164.093802] usb 3-1.4.3: urb status -32
+[90164.094440] usb 3-1.4.3: urb status -32
+[90164.094649] usb 3-1.4.3: urb status -32
+[90164.095097] usb 3-1.4.3: urb status -32
+[90164.095278] usb 3-1.4.3: urb status -32
+[90164.095548] usb 3-1.4.3: urb status -32
+[90164.096048] usb 3-1.4.3: urb status -32
+[90164.096537] usb 3-1.4.3: urb status -32
+[90164.097736] usb 3-1.4.3: urb status -32
+[90164.098918] usb 3-1.4.3: urb status -32
+[90164.099526] usb 3-1.4.3: USB disconnect, device number 9
+=== journal mnkybox ===

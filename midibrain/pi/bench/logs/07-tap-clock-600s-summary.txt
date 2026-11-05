@@ -1,0 +1,124 @@
+capture logs/06-tap-clock-600s.csv: 441692 events over 600.0 s
+
+per-source byte histogram (top 4):
+       0:1 hw n=    46  
+      14:0 hw n= 23659  f8x23655 fcx3 fax1
+      16:0 hw n= 29573  f8x23655 40x3328 6bx3204 80x2957
+      24:0 hw n=    49  7bx49 00x45 b0x4 20x4
+      28:0 hw n= 28386  f8x23656 24x2956 40x2365 00x2365
+      32:1 hw n= 28753  f8x28753
+     138:0 app n= 23659  f8x23655 fcx3 fax1
+     139:0 app n= 23659  f8x23655 fcx3 fax1
+     140:0 app n= 23659  f8x23655 fcx3 fax1
+     141:0 app n= 23659  f8x23655 fcx3 fax1
+     144:0 app n= 23659  f8x23655 fcx3 fax1
+     145:0 app n= 23659  f8x23655 fcx3 fax1
+     146:0 app n= 23659  f8x23655 fcx3 fax1
+     147:0 app n= 23659  f8x23655 fcx3 fax1
+     148:0 app n= 23659  f8x23655 fcx3 fax1
+     149:0 app n= 23659  f8x23655 fcx3 fax1
+     150:0 app n= 23659  f8x23655 fcx3 fax1
+     151:0 app n= 23659  f8x23655 fcx3 fax1
+     152:0 app n= 23659  f8x23655 fcx3 fax1
+     153:0 app n= 23659  f8x23655 fcx3 fax1
+
+14:0 (hw-arrival) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11887/20833/21580/29703 us  (nominal 20833)
+   period jitter vs median: avg=-46.6 p95=700 max=8823 us stdev=696.3
+   |interval-nominal|: avg=536.6 p95=953 p99=2724 max=8946 us
+   gap: 107.207 s ending at t+89506.6 s
+
+16:0 (hw-arrival) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11412/20833/21613/30306 us  (nominal 20833)
+   period jitter vs median: avg=-42.6 p95=737 max=9430 us stdev=746.2
+   |interval-nominal|: avg=555.9 p95=1048 p99=3004 max=9473 us
+   gap: 107.207 s ending at t+89506.6 s
+
+28:0 (hw-arrival) clock: n=23656 rate=39.428/s interval min/avg/p95/max = 11920/20833/22589/30520 us  (nominal 20833)
+   period jitter vs median: avg=-227.6 p95=1528 max=9459 us stdev=1082.0
+   |interval-nominal|: avg=893.5 p95=1957 p99=3191 max=9687 us
+   gap: 107.187 s ending at t+89506.6 s
+
+32:1 (hw-arrival) clock: n=28753 rate=47.923/s interval min/avg/p95/max = 11969/20833/21594/37138 us  (nominal 20833)
+   period jitter vs median: avg=-461.7 p95=300 max=15843 us stdev=851.6
+   |interval-nominal|: avg=714.5 p95=1299 p99=2450 max=16305 us
+   gap: 1.001 s ending at t+89400.4 s
+
+138:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11829/20833/21577/29760 us  (nominal 20833)
+   period jitter vs median: avg=-45.6 p95=698 max=8881 us stdev=702.7
+   |interval-nominal|: avg=539.8 p95=967 p99=2753 max=9004 us
+   gap: 107.207 s ending at t+89506.6 s
+
+139:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11838/20833/21599/29749 us  (nominal 20833)
+   period jitter vs median: avg=-42.6 p95=723 max=8873 us stdev=744.1
+   |interval-nominal|: avg=556.3 p95=1083 p99=3003 max=8995 us
+   gap: 107.207 s ending at t+89506.6 s
+
+140:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11845/20833/21615/29740 us  (nominal 20833)
+   period jitter vs median: avg=-40.6 p95=741 max=8866 us stdev=766.4
+   |interval-nominal|: avg=565.6 p95=1147 p99=3194 max=8988 us
+   gap: 107.207 s ending at t+89506.6 s
+
+141:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11832/20833/21621/29748 us  (nominal 20833)
+   period jitter vs median: avg=-37.6 p95=750 max=8877 us stdev=769.4
+   |interval-nominal|: avg=567.0 p95=1150 p99=3249 max=9001 us
+   gap: 107.207 s ending at t+89506.6 s
+
+144:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11820/20833/21625/29763 us  (nominal 20833)
+   period jitter vs median: avg=-38.6 p95=753 max=8891 us stdev=772.4
+   |interval-nominal|: avg=569.1 p95=1170 p99=3270 max=9013 us
+   gap: 107.207 s ending at t+89506.6 s
+
+145:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11811/20833/21633/29772 us  (nominal 20833)
+   period jitter vs median: avg=-40.6 p95=759 max=8898 us stdev=774.2
+   |interval-nominal|: avg=570.5 p95=1174 p99=3288 max=9022 us
+   gap: 107.207 s ending at t+89506.6 s
+
+146:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11793/20833/21642/29793 us  (nominal 20833)
+   period jitter vs median: avg=-39.6 p95=769 max=8920 us stdev=776.3
+   |interval-nominal|: avg=572.6 p95=1182 p99=3315 max=9040 us
+   gap: 107.207 s ending at t+89506.6 s
+
+147:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11793/20833/21648/29793 us  (nominal 20833)
+   period jitter vs median: avg=-43.6 p95=771 max=8916 us stdev=780.2
+   |interval-nominal|: avg=574.5 p95=1191 p99=3325 max=9040 us
+   gap: 107.207 s ending at t+89506.6 s
+
+148:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11824/20833/21653/29786 us  (nominal 20833)
+   period jitter vs median: avg=-40.6 p95=779 max=8912 us stdev=782.4
+   |interval-nominal|: avg=575.8 p95=1199 p99=3322 max=9009 us
+   gap: 107.207 s ending at t+89506.6 s
+
+149:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11826/20833/21663/29785 us  (nominal 20833)
+   period jitter vs median: avg=-39.6 p95=790 max=8912 us stdev=784.6
+   |interval-nominal|: avg=577.6 p95=1202 p99=3320 max=9007 us
+   gap: 107.207 s ending at t+89506.6 s
+
+150:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11818/20833/21673/29782 us  (nominal 20833)
+   period jitter vs median: avg=-42.6 p95=797 max=8906 us stdev=785.1
+   |interval-nominal|: avg=578.6 p95=1208 p99=3319 max=9015 us
+   gap: 107.207 s ending at t+89506.6 s
+
+151:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11805/20833/21681/29793 us  (nominal 20833)
+   period jitter vs median: avg=-44.6 p95=803 max=8915 us stdev=789.2
+   |interval-nominal|: avg=581.1 p95=1216 p99=3323 max=9028 us
+   gap: 107.207 s ending at t+89506.6 s
+
+152:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11781/20833/21691/29829 us  (nominal 20833)
+   period jitter vs median: avg=-46.6 p95=811 max=8949 us stdev=790.6
+   |interval-nominal|: avg=582.8 p95=1232 p99=3318 max=9052 us
+   gap: 107.207 s ending at t+89506.6 s
+
+153:0 (app-emit) clock: n=23655 rate=39.426/s interval min/avg/p95/max = 11766/20833/21700/29838 us  (nominal 20833)
+   period jitter vs median: avg=-48.6 p95=818 max=8956 us stdev=792.5
+   |interval-nominal|: avg=584.5 p95=1244 p99=3312 max=9067 us
+   gap: 107.207 s ending at t+89506.6 s
+
+bursts: 28859 clock bursts in 600.0 s
+  app fan-out spread (13 ports, same byte): min/avg/p95/max = 0/181/374/6264 us
+  arrival    14:0: n=23652 delay-from-burst-start min/avg/p95/max = -1982/-11/-2/0 us
+  arrival    16:0: n=23655 delay-from-burst-start min/avg/p95/max = 0/162/223/5834 us
+  arrival    28:0: n=23655 delay-from-burst-start min/avg/p95/max = 8/1890/2823/7637 us
+  arrival    32:1: n=23647 delay-from-burst-start min/avg/p95/max = 12/4778/5425/10708 us
+
+mean-interval tempo error: worst source 140:0 +0.0004 % (18 clock sources, nominal 20833.33 us)
+
+wrote logs/06-tap-clock-600s.json

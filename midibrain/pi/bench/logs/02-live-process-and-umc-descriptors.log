@@ -1,0 +1,120 @@
+=== parent chain ===
+    PID    PPID                  STARTED COMMAND
+  39870   39860 Thu Nov  5 22:24:31 2026 bash
+    PID    PPID                  STARTED COMMAND
+  39860       1 Thu Nov  5 22:24:31 2026 x-terminal-emulator
+=== /proc/39904/cwd + cmdline ===
+lrwxrwxrwx 1 magnus magnus 0 Nov  5 22:27 /proc/39904/cwd -> /home/magnus/bin
+./mnkybox --no-pico 
+total 0
+lrwx------ 1 magnus magnus 64 Nov  5 22:27 0 -> /dev/pts/0
+lrwx------ 1 magnus magnus 64 Nov  5 22:27 1 -> /dev/pts/0
+l-wx------ 1 magnus magnus 64 Nov  5 22:27 10 -> pipe:[254552]
+lr-x------ 1 magnus magnus 64 Nov  5 22:27 11 -> pipe:[252408]
+l-wx------ 1 magnus magnus 64 Nov  5 22:27 12 -> pipe:[252408]
+lr-x------ 1 magnus magnus 64 Nov  5 22:27 13 -> anon_inode:inotify
+lrwx------ 1 magnus magnus 64 Nov  5 22:27 14 -> /tmp/mnkybox-ui.lock
+lrwx------ 1 magnus magnus 64 Nov  5 22:27 15 -> anon_inode:[eventfd]
+lrwx------ 1 magnus magnus 64 Nov  5 22:27 16 -> /dev/snd/seq
+lrwx------ 1 magnus magnus 64 Nov  5 22:27 17 -> /dev/snd/pcmC1D0p
+lrwx------ 1 magnus magnus 64 Nov  5 22:27 18 -> /dev/snd/pcmC1D0c
+lr-x------ 1 magnus magnus 64 Nov  5 22:27 19 -> pipe:[253510]
+lrwx------ 1 magnus magnus 64 Nov  5 22:27 2 -> /dev/pts/0
+l-wx------ 1 magnus magnus 64 Nov  5 22:27 20 -> pipe:[253510]
+lrwx------ 1 magnus magnus 64 Nov  5 22:27 21 -> /dev/snd/seq
+lr-x------ 1 magnus magnus 64 Nov  5 22:27 22 -> pipe:[253511]
+l-wx------ 1 magnus magnus 64 Nov  5 22:27 23 -> pipe:[253511]
+lrwx------ 1 magnus magnus 64 Nov  5 22:27 24 -> /dev/snd/seq
+lr-x------ 1 magnus magnus 64 Nov  5 22:27 25 -> pipe:[253512]
+=== proc asound card1 ===
+id
+midi0
+pcm0c
+pcm0p
+stream0
+usbbus
+usbid
+usbmixer
+--- midi0 ---
+UMC1820
+
+Output 0
+  Tx bytes     : 90714
+  Owner PID    : 39904
+  Mode         : native
+  Buffer size  : 16384
+  Avail        : 16384
+Input 0
+  Rx bytes     : 0
+  Owner PID    : 39904
+  Buffer size  : 16384
+  Avail        : 0
+  Overruns     : 0
+=== usb descriptors: UMC1820 (1397:0503) ===
+Bus 003 Device 006: ID 1397:0503 BEHRINGER International GmbH UMC1820
+  idVendor           0x1397 BEHRINGER International GmbH
+  idProduct          0x0503 UMC1820
+  bcdDevice            1.00
+  iManufacturer           1 BEHRINGER
+  iProduct                3 UMC1820
+      bInterfaceNumber        0
+      bNumEndpoints           1
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      1 Control Device
+      bInterfaceProtocol     32 
+      iInterface              3 
+        wMaxPacketSize     0x0006  1x 6 bytes
+      bInterfaceNumber        1
+      bNumEndpoints           0
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32 
+      iInterface              4 
+      bInterfaceNumber        1
+      bNumEndpoints           2
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32 
+      iInterface              4 
+        wMaxPacketSize     0x030c  1x 780 bytes
+        wMaxPacketSize     0x0004  1x 4 bytes
+      bInterfaceNumber        2
+      bNumEndpoints           0
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32 
+      iInterface              5 
+      bInterfaceNumber        2
+      bNumEndpoints           1
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32 
+      iInterface              5 
+        wMaxPacketSize     0x03a8  1x 936 bytes
+      bInterfaceNumber        3
+      bNumEndpoints           0
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      1 Control Device
+      bInterfaceProtocol      0 
+      iInterface              0 
+      bInterfaceNumber        4
+      bNumEndpoints           2
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      3 MIDI Streaming
+      bInterfaceProtocol      0 
+      iInterface              0 
+        wMaxPacketSize     0x0200  1x 512 bytes
+        wMaxPacketSize     0x0200  1x 512 bytes
+      bInterfaceNumber        5
+      bNumEndpoints           0
+      bInterfaceClass       254 Application Specific Interface
+      bInterfaceSubClass      1 Device Firmware Update
+      bInterfaceProtocol      1 
+      iInterface             12 
+=== UDC ===
+total 0
+cat: '/sys/class/udc/*/state': No such file or directory
+=== dwc2 loaded? ===
+dwc3_haps
+dwc_otg
+(end)

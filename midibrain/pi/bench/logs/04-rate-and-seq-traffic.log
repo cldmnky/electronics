@@ -1,0 +1,82 @@
+=== tools ===
+/usr/bin/aseqdump
+/usr/bin/amidi
+/usr/bin/aplay
+/usr/bin/arecord
+/usr/bin/ffmpeg
+/usr/bin/python3
+/usr/bin/gcc
+=== byte counters t0 ===
+card0  Tx bytes : 141801  Rx bytes : 150772 
+card1  Tx bytes : 93385  Rx bytes : 0 
+card2  Tx bytes : 141143  Rx bytes : 128713 
+card3  Tx bytes : 141143  Rx bytes : 205598 
+card4  Tx bytes : 91464  Tx bytes : 81659  Rx bytes : 0  Rx bytes : 102245 
+=== byte counters t1 (10 s later) ===
+card0  Tx bytes : 142282  Rx bytes : 151625 
+card1  Tx bytes : 93865  Rx bytes : 0 
+card2  Tx bytes : 141623  Rx bytes : 129673 
+card3  Tx bytes : 141623  Rx bytes : 205598 
+card4  Tx bytes : 91944  Tx bytes : 82139  Rx bytes : 0  Rx bytes : 102725 
+=== aseqdump 6 s on kernel input ports ===
+Waiting for data. Press Ctrl+C to end.
+Source  Event                  Ch  Data
+ 16:0   Clock
+ 16:0   Clock
+ 24:0   Note off                1, note 51, velocity 100
+ 24:0   Note off                0, note 60, velocity 100
+ 24:0   Note on                 0, note 65, velocity 100
+ 24:0   Note on                 0, note 63, velocity 127
+ 16:0   Clock
+ 16:0   Clock
+ 16:0   Clock
+ 24:0   Note off                0, note 63, velocity 127
+ 16:0   Clock
+ 16:0   Clock
+ 16:0   Clock
+ 24:0   Note off                0, note 65, velocity 100
+ 24:0   Note on                 0, note 68, velocity 100
+ 16:0   Clock
+ 16:0   Clock
+ 16:0   Clock
+ 16:0   Clock
+ 16:0   Clock
+ 16:0   Clock
+ 24:0   Note off                0, note 68, velocity 100
+ 24:0   Note on                 1, note 51, velocity 100
+ 24:0   Note on                 0, note 72, velocity 100
+ 24:0   Note on                 0, note 61, velocity 127
+ 16:0   Clock
+ 16:0   Note on                 0, note 107, velocity 75
+ 16:0   Clock
+ 16:0   Clock
+ 24:0   Note off                0, note 61, velocity 127
+ 16:0   Clock
+ 16:0   Note off                0, note 107, velocity 64
+ 16:0   Clock
+ 16:0   Clock
+ 24:0   Note off                1, note 51, velocity 100
+ 24:0   Note off                0, note 72, velocity 100
+ 24:0   Note on                 0, note 73, velocity 127
+ 16:0   Clock
+ 16:0   Note on                 0, note 107, velocity 81
+ 16:0   Clock
+ 16:0   Clock
+ 24:0   Note off                0, note 73, velocity 127
+ 16:0   Clock
+ 16:0   Note off                0, note 107, velocity 64
+ 16:0   Clock
+ 16:0   Clock
+ 24:0   Note on                 0, note 60, velocity 100
+ 24:0   Note on                 0, note 58, velocity 127
+ 16:0   Clock
+ 16:0   Note on                 0, note 107, velocity 79
+ 16:0   Clock
+ 16:0   Clock
+ 24:0   Note off                0, note 58, velocity 127
+ 16:0   Note off                0, note 107, velocity 64
+ 16:0   Clock
+ 16:0   Clock
+ 16:0   Clock
+ 24:0   Note off                0, note 60, velocity 100
+(aseqdump end)

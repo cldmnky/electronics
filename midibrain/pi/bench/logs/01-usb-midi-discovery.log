@@ -1,0 +1,149 @@
+=== date/host ===
+2026-11-05T22:28:13+01:00
+studio
+Linux studio 6.18.34+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.34-1+rpt1 (2026-06-09) aarch64 GNU/Linux
+=== ps mnkybox ===
+    PID    PPID                  STARTED     ELAPSED COMMAND
+  39904   39870 Thu Nov  5 22:25:16 2026       02:56 ./mnkybox --no-pico
+=== lsusb ===
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 05ac:0265 Apple, Inc. Magic Trackpad
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 003 Device 002: ID 0bda:5411 Realtek Semiconductor Corp. RTS5411 Hub
+Bus 003 Device 003: ID 0bda:5411 Realtek Semiconductor Corp. RTS5411 Hub
+Bus 003 Device 004: ID 1397:121e BEHRINGER International GmbH CRAVE
+Bus 003 Device 006: ID 1397:0503 BEHRINGER International GmbH UMC1820
+Bus 003 Device 007: ID 16d0:0ea0 MCS Play
+Bus 003 Device 008: ID 0944:014d KORG, Inc. drumlogue
+Bus 003 Device 009: ID 0944:0142 KORG, Inc. minilogue xd
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 004 Device 002: ID 0bda:0411 Realtek Semiconductor Corp. Hub
+Bus 004 Device 003: ID 0bda:0411 Realtek Semiconductor Corp. Hub
+=== /proc/asound/cards ===
+ 0 [CRAVE          ]: USB-Audio - CRAVE
+                      Behringer CRAVE at usb-xhci-hcd.1-1.4.4, full speed
+ 1 [UMC1820        ]: USB-Audio - UMC1820
+                      BEHRINGER UMC1820 at usb-xhci-hcd.1-1.1, high speed
+ 2 [Play           ]: USB-Audio - Play
+                      Polyend Play at usb-xhci-hcd.1-1.4.1, high speed
+ 3 [drumlogue      ]: USB-Audio - drumlogue
+                      Korg Inc. drumlogue at usb-xhci-hcd.1-1.4.2, full speed
+ 4 [xd             ]: USB-Audio - minilogue xd
+                      KORG INC. minilogue xd at usb-xhci-hcd.1-1.4.3, full speed
+=== /proc/asound/devices ===
+  1:        : sequencer
+  2: [ 0- 0]: raw midi
+  3: [ 0]   : control
+  4: [ 1- 0]: digital audio playback
+  5: [ 1- 0]: digital audio capture
+  6: [ 1- 0]: raw midi
+  7: [ 1]   : control
+  8: [ 2- 0]: raw midi
+  9: [ 2]   : control
+ 10: [ 3- 0]: raw midi
+ 11: [ 3]   : control
+ 12: [ 4- 0]: raw midi
+ 13: [ 4]   : control
+ 33:        : timer
+=== amidi -l ===
+Dir Device    Name
+IO  hw:0,0,0  CRAVE MIDI 1
+IO  hw:1,0,0  UMC1820 MIDI 1
+IO  hw:2,0,0  Play MIDI 1
+IO  hw:3,0,0  drumlogue _ SEQUENCER
+IO  hw:4,0,0  minilogue xd _ MIDI IN
+IO  hw:4,0,1  minilogue xd _ KBD/KNOB
+=== aconnect -i -o ===
+client 0: 'System' [type=kernel]
+    0 'Timer           '
+    1 'Announce        '
+client 14: 'Midi Through' [type=kernel]
+    0 'Midi Through Port-0'
+client 16: 'CRAVE' [type=kernel,card=0]
+    0 'CRAVE MIDI 1    '
+client 20: 'UMC1820' [type=kernel,card=1]
+    0 'UMC1820 MIDI 1  '
+client 24: 'Play' [type=kernel,card=2]
+    0 'Play MIDI 1     '
+client 28: 'drumlogue' [type=kernel,card=3]
+    0 'drumlogue _ SOUND'
+client 32: 'minilogue xd' [type=kernel,card=4]
+    0 'minilogue xd _ MIDI OUT'
+    1 'minilogue xd _ SOUND'
+client 138: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 139: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 140: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 141: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 144: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 145: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 146: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 147: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 148: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 149: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 150: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 151: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 152: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 153: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 14: 'Midi Through' [type=kernel]
+    0 'Midi Through Port-0'
+client 16: 'CRAVE' [type=kernel,card=0]
+    0 'CRAVE MIDI 1    '
+client 20: 'UMC1820' [type=kernel,card=1]
+    0 'UMC1820 MIDI 1  '
+client 24: 'Play' [type=kernel,card=2]
+    0 'Play MIDI 1     '
+client 28: 'drumlogue' [type=kernel,card=3]
+    0 'drumlogue _ SOUND'
+client 32: 'minilogue xd' [type=kernel,card=4]
+    0 'minilogue xd _ MIDI OUT'
+    1 'minilogue xd _ SOUND'
+client 129: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 130: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 131: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 133: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 134: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 135: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+client 136: 'mnkybox' [type=user,pid=39904]
+    0 'mnkybox         '
+=== ls /dev/snd/by-id ===
+/dev/snd/by-id:
+total 0
+lrwxrwxrwx 1 root root 12 Nov  4 22:07 usb-Behringer_CRAVE_V001-00 -> ../controlC0
+lrwxrwxrwx 1 root root 12 Nov  4 22:07 usb-BEHRINGER_UMC1820_6AB0784A-00 -> ../controlC1
+lrwxrwxrwx 1 root root 12 Nov  5 20:11 usb-Korg_Inc._drumlogue-00 -> ../controlC3
+lrwxrwxrwx 1 root root 12 Nov  5 20:11 usb-KORG_INC._minilogue_xd-00 -> ../controlC4
+lrwxrwxrwx 1 root root 12 Nov  5 20:10 usb-Polyend_Play-00 -> ../controlC2
+
+/dev/snd/by-path:
+total 0
+lrwxrwxrwx 1 root root 12 Nov  4 22:07 platform-xhci-hcd.1-usb-0:1.1:1.0 -> ../controlC1
+lrwxrwxrwx 1 root root 12 Nov  5 20:10 platform-xhci-hcd.1-usb-0:1.4.1:1.0 -> ../controlC2
+lrwxrwxrwx 1 root root 12 Nov  5 20:11 platform-xhci-hcd.1-usb-0:1.4.2:1.0 -> ../controlC3
+lrwxrwxrwx 1 root root 12 Nov  5 20:11 platform-xhci-hcd.1-usb-0:1.4.3:1.0 -> ../controlC4
+lrwxrwxrwx 1 root root 12 Nov  4 22:07 platform-xhci-hcd.1-usb-0:1.4.4:1.0 -> ../controlC0
+lrwxrwxrwx 1 root root 12 Nov  4 22:07 platform-xhci-hcd.1-usbv2-0:1.1:1.0 -> ../controlC1
+lrwxrwxrwx 1 root root 12 Nov  5 20:10 platform-xhci-hcd.1-usbv2-0:1.4.1:1.0 -> ../controlC2
+lrwxrwxrwx 1 root root 12 Nov  5 20:11 platform-xhci-hcd.1-usbv2-0:1.4.2:1.0 -> ../controlC3
+lrwxrwxrwx 1 root root 12 Nov  5 20:11 platform-xhci-hcd.1-usbv2-0:1.4.3:1.0 -> ../controlC4
+lrwxrwxrwx 1 root root 12 Nov  4 22:07 platform-xhci-hcd.1-usbv2-0:1.4.4:1.0 -> ../controlC0

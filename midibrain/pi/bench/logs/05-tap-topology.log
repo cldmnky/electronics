@@ -1,0 +1,111 @@
+tap: client 154 port 0, 89218842413
+client   0: System
+    0:0   Timer                    caps=rwR-- type=0x00000000
+  subscribe 0:0 -> 154:0 : ok
+    0:1   Announce                 caps=r-R-- type=0x00000000
+  subscribe 0:1 -> 154:0 : ok
+client  14: Midi Through
+   14:0   Midi Through Port-0      caps=rwRW- type=0x000a0002
+  subscribe 14:0 -> 154:0 : ok
+client  16: CRAVE
+   16:0   CRAVE MIDI 1             caps=rwRW- type=0x00090002
+  subscribe 16:0 -> 154:0 : ok
+client  20: UMC1820
+   20:0   UMC1820 MIDI 1           caps=rwRW- type=0x00090002
+  subscribe 20:0 -> 154:0 : ok
+client  24: Play
+   24:0   Play MIDI 1              caps=rwRW- type=0x00090002
+  subscribe 24:0 -> 154:0 : ok
+client  28: drumlogue
+   28:0   drumlogue _ SOUND        caps=rwRW- type=0x00090002
+  subscribe 28:0 -> 154:0 : ok
+client  32: minilogue xd
+   32:0   minilogue xd _ MIDI OUT  caps=rwRW- type=0x00090002
+  subscribe 32:0 -> 154:0 : ok
+   32:1   minilogue xd _ SOUND     caps=rwRW- type=0x00090002
+  subscribe 32:1 -> 154:0 : ok
+client 128: mnkybox
+client 129: mnkybox
+  129:0   mnkybox                  caps=-w-W- type=0x00100002
+client 130: mnkybox
+  130:0   mnkybox                  caps=-w-W- type=0x00100002
+client 131: mnkybox
+  131:0   mnkybox                  caps=-w-W- type=0x00100002
+client 132: RtMidi hotplug
+  132:0   Announce                 caps=-w-Wx type=0x00000000
+client 133: mnkybox
+  133:0   mnkybox                  caps=-w-W- type=0x00100002
+client 134: mnkybox
+  134:0   mnkybox                  caps=-w-W- type=0x00100002
+client 135: mnkybox
+  135:0   mnkybox                  caps=-w-W- type=0x00100002
+client 136: mnkybox
+  136:0   mnkybox                  caps=-w-W- type=0x00100002
+client 137: mnkybox
+client 138: mnkybox
+  138:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 138:0 -> 154:0 : ok
+client 139: mnkybox
+  139:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 139:0 -> 154:0 : ok
+client 140: mnkybox
+  140:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 140:0 -> 154:0 : ok
+client 141: mnkybox
+  141:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 141:0 -> 154:0 : ok
+client 142: PipeWire-System
+  142:0   input                    caps=rw--- type=0x00000002
+client 143: PipeWire-RT-Event
+  143:0   input                    caps=rw--- type=0x00000002
+client 144: mnkybox
+  144:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 144:0 -> 154:0 : ok
+client 145: mnkybox
+  145:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 145:0 -> 154:0 : ok
+client 146: mnkybox
+  146:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 146:0 -> 154:0 : ok
+client 147: mnkybox
+  147:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 147:0 -> 154:0 : ok
+client 148: mnkybox
+  148:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 148:0 -> 154:0 : ok
+client 149: mnkybox
+  149:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 149:0 -> 154:0 : ok
+client 150: mnkybox
+  150:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 150:0 -> 154:0 : ok
+client 151: mnkybox
+  151:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 151:0 -> 154:0 : ok
+client 152: mnkybox
+  152:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 152:0 -> 154:0 : ok
+client 153: mnkybox
+  153:0   mnkybox                  caps=r-R-- type=0x00100002
+  subscribe 153:0 -> 154:0 : ok
+tap: 23 subscription(s)
+tap: 8873 rows
+tap: client 0 events 22
+tap: client 14 events 480
+tap: client 16 events 601
+tap: client 28 events 570
+tap: client 32 events 480
+tap: client 138 events 480
+tap: client 139 events 480
+tap: client 140 events 480
+tap: client 141 events 480
+tap: client 144 events 480
+tap: client 145 events 480
+tap: client 146 events 480
+tap: client 147 events 480
+tap: client 148 events 480
+tap: client 149 events 480
+tap: client 150 events 480
+tap: client 151 events 480
+tap: client 152 events 480
+tap: client 153 events 480
