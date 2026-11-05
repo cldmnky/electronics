@@ -46,6 +46,9 @@ QString ToolsViewModel::appVersion() const {
 }
 
 QString ToolsViewModel::firmwareVersion() const {
+  if (link_.noPico()) {
+    return QStringLiteral("n/a - NO PICO mode (no Pico attached)");
+  }
   if (link_.emulated()) {
     return QStringLiteral("emulator (scripted Pico, no firmware image)");
   }

@@ -32,16 +32,17 @@ std::string learnTarget(int strip, const char* parameter) {
 }
 }  // namespace
 
-AppController::AppController(bool emulator, QObject* parent)
+AppController::AppController(bool emulator, bool noPico, QObject* parent)
     : QObject(parent),
       midi_(emulator),
       audio_(mixer_, fx_, performance_, state_, emulator),
-      link_(midi_, state_, emulator) {
+      link_(midi_, state_, emulator, noPico) {
+  noPico_ = noPico;
   context_ = std::make_unique<AppContext>(AppContext{
       state_, mixer_, fx_, midi_, audio_, link_, settings_, eqModel_, performance_});
 
   mixerVm_ = std::make_unique<MixerViewModel>(mixer_, settings_);
-  routingVm_ = std::make_unique<RoutingViewModel>(midi_);
+  routingVm_ = std::make_unique<RoutingViewModel>(midi_, noPico_);
   fxVm_ = std::make_unique<FxViewModel>(fx_, state_, mixer_, audio_.sampleRate());
   recorderVm_ =
       std::make_unique<RecorderViewModel>(state_, audio_, mixer_, link_, settings_);
@@ -52,7 +53,7 @@ AppController::AppController(bool emulator, QObject* parent)
   systemVm_ = std::make_unique<SystemViewModel>(link_, audio_, midi_, fx_, state_);
   learnVm_ = std::make_unique<LearnViewModel>(midi_);
   sessionVm_ = std::make_unique<SessionViewModel>(state_, mixer_, link_, settings_);
-  midiMonitorVm_ = std::make_unique<MidiMonitorViewModel>(midi_);
+  midiMonitorVm_ = std::make_unique<MidiMonitorViewModel>(midi_, noPico_);
   toolsVm_ = std::make_unique<ToolsViewModel>(state_, link_);
   configVm_ =
       std::make_unique<ConfigPopupModel>(state_, mixer_, settings_, eqModel_, performance_);
@@ -136,6 +137,10 @@ void AppController::start() {
   timer_.start();
   log(std::string("app: started with ") + (audio_.emulated() ? "emulator" : "device") +
       " backends");
+  if (noPico_) {
+    log("app: NO PICO: audio, USB MIDI, recorder, takes, mixer, FX, EQ, X/Y and "
+        "projects are active; TRS MIDI/clock, panel controls and LEDs are absent");
+  }
   updateTransport();
   updatePanelLeds();
 }
@@ -2426,6 +2431,10 @@ void AppController::projectStateChanged() {
 }
 
 void AppController::updatePanelLeds() {
+  // No-Pico mode has no panel: there is no LED command to send and no Pico state
+  // machine to feed. Keep the last mask untouched so a hardware run that is
+  // restarted in no-Pico mode does not emit a stale frame.
+  if (noPico_) return;
   std::uint8_t mask = 0;
   std::uint8_t states = 0;
   if (audio_.recording() || state_.recording.load()) {

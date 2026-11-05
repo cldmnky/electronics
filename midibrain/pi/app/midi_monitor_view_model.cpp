@@ -107,14 +107,23 @@ QVariant MidiMonitorPortModel::data(const QModelIndex& index, int role) const {
     case CcRole: return static_cast<qulonglong>(counts_[port].cc);
     case ClockRole: return static_cast<qulonglong>(counts_[port].clock);
     case OtherRole: return static_cast<qulonglong>(counts_[port].other);
+    case AvailableRole: return available(index.row());
     default: return {};
   }
 }
 
+bool MidiMonitorPortModel::available(int port) const {
+  if (!noPico_) return true;
+  // Ports 0/1 = TRS IN1/IN2 and 3/4 = TRS OUT1/OUT2; 2/5 are USB.
+  return port == static_cast<int>(midi::Port::UsbIn) ||
+         port == static_cast<int>(midi::Port::UsbOut);
+}
+
 QHash<int, QByteArray> MidiMonitorPortModel::roleNames() const {
-  return {{NameRole, "name"},       {DirectionRole, "direction"},
-          {NotesRole, "notes"},     {CcRole, "cc"},
-          {ClockRole, "clock"},     {OtherRole, "other"}};
+  return {{NameRole, "name"},         {DirectionRole, "direction"},
+          {NotesRole, "notes"},       {CcRole, "cc"},
+          {ClockRole, "clock"},       {OtherRole, "other"},
+          {AvailableRole, "available"}};
 }
 
 void MidiMonitorPortModel::setCounts(
@@ -128,6 +137,10 @@ QString MidiMonitorPortModel::name(int port) const { return midiPortName(port); 
 
 QString MidiMonitorPortModel::countsText(int port) const {
   if (port < 0 || port >= midi::kPortCount) return {};
+  if (!available(port)) {
+    return QStringLiteral("UNAVAILABLE in NO PICO mode (Pico-owned "
+                          "port; no Pico link)");
+  }
   const auto& counts = counts_[static_cast<std::size_t>(port)];
   return QStringLiteral("notes %1  cc %2  clock %3  other %4")
       .arg(static_cast<qulonglong>(counts.notes))
@@ -173,11 +186,16 @@ void MidiMonitorEventModel::setEntries(std::vector<QString> texts, std::vector<i
   endResetModel();
 }
 
-MidiMonitorViewModel::MidiMonitorViewModel(MidiGlue& midi, QObject* parent)
-    : QObject(parent), midi_(midi) {}
+MidiMonitorViewModel::MidiMonitorViewModel(MidiGlue& midi, bool noPico, QObject* parent)
+    : QObject(parent), midi_(midi), noPico_(noPico) {
+  ports_.setNoPico(noPico);
+}
 
 QString MidiMonitorViewModel::headerText() const {
-  return QStringLiteral("MIDI MONITOR  -  %1 event(s), newest first").arg(logRows_);
+  const QString prefix = noPico_ ? QStringLiteral("NO PICO: TRS rows unavailable. ")
+                                : QString();
+  return prefix +
+         QStringLiteral("MIDI MONITOR  -  %1 event(s), newest first").arg(logRows_);
 }
 
 void MidiMonitorViewModel::setShownEvents(int count) {

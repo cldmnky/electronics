@@ -692,6 +692,60 @@ void clockRoutingGates() {
 }
 
 // ---------------------------------------------------------------------------
+// clock: no-Pico free-run (no Pico ticks; Pi owns the phase)
+// ---------------------------------------------------------------------------
+void clockFreeRunScheduling() {
+  UsbClock c;
+  CHECK(!c.freeRun());
+  c.setFreeRun(true);
+  CHECK(c.freeRun());
+  CHECK(!c.primed());  // no Pico stamp is involved in free-run
+  c.setTempo(12000);
+  c.setRolling(true);
+  CHECK(!c.popDue(1000));  // no phase until the transport start pegs it
+
+  constexpr std::uint64_t kStart = 1'000'000;
+  c.startFreeRun(kStart);
+  CHECK(c.primed());
+  const auto interval = static_cast<std::uint64_t>(std::ceil(c.intervalUs()));
+  CHECK(!c.popDue(kStart + interval - 2));
+  CHECK(c.popDue(kStart + interval));
+  CHECK(c.popDue(kStart + 2 * interval));
+
+  // A tempo edit applies to the next interval instead of re-pegging the phase.
+  c.setTempo(24000);
+  const auto afterTempo = c.nextDueUs(0);
+  CHECK(afterTempo.has_value());
+  CHECK(c.popDue(*afterTempo));
+  CHECK(!c.popDue(*afterTempo));  // exactly one interval advanced
+
+  // A tick cannot disturb the local phase in free-run.
+  const auto phase = c.nextDueUs(0);
+  c.addTick(42, 7, 9'999'999);
+  CHECK(c.nextDueUs(0) == phase);
+  CHECK(c.lastTick() == 0);
+  CHECK(c.reordered() == 0);
+
+  // The clock gate still suppresses bytes, and stop/start pegs a fresh phase.
+  c.setClockEnabled(false);
+  CHECK(!c.nextDueUs(0).has_value());
+  CHECK(!c.popDue(2'000'000'000));
+  // ...but the free-running generator keeps ticking while the output is muted.
+  const std::uint64_t skippedBefore = c.skipped();
+  CHECK(c.advanceFreeRun(2'000'000'000));
+  CHECK(c.skipped() > skippedBefore);
+  CHECK(!c.advanceFreeRun(2'000'000'000));  // one interval per call
+  c.setClockEnabled(true);
+  c.setRolling(false);
+  CHECK(!c.popDue(3'000'000'000));
+  c.setRolling(true);
+  c.startFreeRun(3'000'000'000);
+  const auto restartedInterval = static_cast<std::uint64_t>(std::ceil(c.intervalUs()));
+  CHECK(c.popDue(3'000'000'000 + restartedInterval));
+  pass("clock free-run no-Pico scheduling");
+}
+
+// ---------------------------------------------------------------------------
 // USB transport follow (Pi-side EV_TRANSPORT forwarding policy)
 // ---------------------------------------------------------------------------
 void usbTransportFollow() {
@@ -755,6 +809,7 @@ int main() {
   clockOffsetUnderJitter();
   clockPhaseScheduling();
   clockRoutingGates();
+  clockFreeRunScheduling();
   usbTransportFollow();
   buttonMap();
   usbWrapper();

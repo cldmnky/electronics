@@ -206,11 +206,17 @@ QString SessionViewModel::clockText() const {
   const auto gate = [](bool on) { return on ? QStringLiteral("on") : QStringLiteral("off"); };
   const auto& trs1 = settings_.clock.trs[0];
   const auto& trs2 = settings_.clock.trs[1];
-  return QStringLiteral("GATES clock/transport  TRS1 %1/%2  TRS2 %3/%4  USB %5/%6")
-      .arg(gate(trs1.clock), gate(trs1.transport), gate(trs2.clock), gate(trs2.transport))
-      .arg(gate(settings_.clock.usb.clock), gate(settings_.clock.usb.transport))
-      .arg(trs1.tempoDiv)
-      .arg(trs1.syncDelayMs);
+  QString text =
+      QStringLiteral("GATES clock/transport  TRS1 %1/%2  TRS2 %3/%4  USB %5/%6")
+          .arg(gate(trs1.clock), gate(trs1.transport), gate(trs2.clock),
+               gate(trs2.transport), gate(settings_.clock.usb.clock),
+               gate(settings_.clock.usb.transport));
+  if (link_.noPico()) {
+    text += QStringLiteral(
+        "  -  NO PICO: TRS OUT unavailable (Pico UARTs); USB clock is the Pi free-run; "
+        "clock-source follow disabled");
+  }
+  return text;
 }
 
 void SessionViewModel::pushClockToLink() {

@@ -24,6 +24,10 @@ class SystemViewModel final : public QObject {
   Q_PROPERTY(QString noteText READ noteText NOTIFY audioStateChanged)
   Q_PROPERTY(QString logText READ logText NOTIFY logChanged)
   Q_PROPERTY(QString backendHint READ backendHint CONSTANT)
+  // No-Pico mode (--no-pico): no Pico. The banner says which subsystems are live
+  // and which are physically absent; statsText draws the same distinction.
+  Q_PROPERTY(bool noPicoMode READ noPicoMode CONSTANT)
+  Q_PROPERTY(QString noPicoText READ noPicoText CONSTANT)
   Q_PROPERTY(QStringList backendLabels READ backendLabels NOTIFY choicesChanged)
   Q_PROPERTY(QStringList inputLabels READ inputLabels NOTIFY choicesChanged)
   Q_PROPERTY(QStringList bufferLabels READ bufferLabels NOTIFY choicesChanged)
@@ -40,6 +44,8 @@ class SystemViewModel final : public QObject {
   QString noteText() const { return noteText_; }
   QString logText() const { return logText_; }
   QString backendHint() const { return backendHint_; }
+  bool noPicoMode() const { return link_.noPico(); }
+  QString noPicoText() const;
   QStringList backendLabels() const { return backendLabels_; }
   QStringList inputLabels() const { return inputLabels_; }
   QStringList bufferLabels() const { return bufferLabels_; }
@@ -76,6 +82,7 @@ class SystemViewModel final : public QObject {
   QString noteText_;
   QString logText_;
   QString backendHint_;
+  bool noPico_ = false;
   QStringList backendLabels_;
   QStringList inputLabels_;
   QStringList bufferLabels_;

@@ -63,6 +63,22 @@ class UsbClock {
   // the phase never moves backwards.
   void addTick(std::uint32_t tick, std::uint32_t picoStampUs, std::uint64_t piNowUs);
 
+  // No-Pico mode: there is no Pico, so the Pi owns the clock. In free-run the
+  // phase is local instead of disciplined from ticks: startFreeRun() pegs the
+  // first byte one interval after the transport start, each emitted byte
+  // advances the phase by intervalUs(), and setTempo() takes effect on the next
+  // interval. addTick() is ignored while free-run is on; nothing can pull the
+  // phase backwards. The caller still counts the bytes it emits as ticks.
+  void setFreeRun(bool freeRun);
+  bool freeRun() const { return freeRun_; }
+  void startFreeRun(std::uint64_t piNowUs);
+  // Advances the free-run phase past one due interval and returns true. Unlike
+  // popDue() this ignores the clock gate: the free-running generator must keep
+  // the Pi tick moving even while the USB output is muted. The caller emits a
+  // clock byte only when clockEnabled(); skipped intervals are counted like
+  // popDue's. False when not in free-run, stopped, or not due yet.
+  bool advanceFreeRun(std::uint64_t piNowUs);
+
   // Pi time of the next clock byte, or nullopt while stopped / before the first
   // tick. A phase more than one interval behind piNowUs is reported as due at
   // piNowUs so a stalled caller emits one byte instead of a catch-up burst.
@@ -92,6 +108,7 @@ class UsbClock {
   static constexpr double kPhaseSlew = 0.25;
 
   std::uint16_t bpmX100_ = kDefaultBpmX100;
+  bool freeRun_ = false;
   bool rolling_ = false;
   bool clockEnabled_ = true;
   bool transportEnabled_ = true;

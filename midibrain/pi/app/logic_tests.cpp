@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <string>
 #include <system_error>
@@ -27,6 +28,7 @@
 #include "eq_model.hpp"
 #include "learn_view_model.hpp"
 #include "link_client.hpp"
+#include "logging.hpp"
 #include "logic.hpp"
 #include "midi/learn.hpp"
 #include "midi_glue.hpp"
@@ -39,6 +41,7 @@
 #include "project_logic.hpp"
 #include "recorder_view_model.hpp"
 #include "routing_model.hpp"
+#include "routing_view_model.hpp"
 #include "session_settings.hpp"
 #include "session_view_model.hpp"
 #include "text_buffer.hpp"
@@ -1292,6 +1295,156 @@ void eqForwardingTests() {
         "loaded Q above the UI/CLAP cap is normalized to 10");
 }
 
+// No-Pico mode: a bare Pi with no Pico. The link has no SPI transport or
+// PicoLink, transport commands drive rolling directly, the Pi clock free-runs
+// and TRS surfaces report UNAVAILABLE instead of a zero that looks idle.
+void noPicoModeTests() {
+  const auto waitFor = [](const std::function<bool()>& predicate) {
+    for (int i = 0; i < 600; ++i) {
+      if (predicate()) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return false;
+  };
+
+  AppState state;
+  MidiGlue midi(false);
+  LinkClient link(midi, state, false, true);
+  check(link.noPico(), "LinkClient reports no-Pico mode");
+  check(!link.emulated(), "no-Pico is not the scripted-Pico emulator transport");
+  auto status = link.status();
+  check(status.noPico && !status.linkUp, "no-Pico status is NO PICO, not link down");
+  check(status.tempoX100 == midi::UsbClock::kDefaultBpmX100,
+        "no-Pico clock starts at the default tempo");
+  check(!status.rolling, "no-Pico starts stopped");
+
+  link.start();
+  link.requestTempo(static_cast<std::uint16_t>(midi::UsbClock::kMinBpmX100));
+  check(waitFor([&] { return link.status().tempoX100 == midi::UsbClock::kMinBpmX100; }),
+        "no-Pico tempo edit reaches the Pi clock without a Pico");
+  check(waitFor([&] { return state.tempoX100.load() == midi::UsbClock::kMinBpmX100; }),
+        "no-Pico tempo edit writes AppState for the UI");
+
+  // Slow tempo keeps the START tick-reset check race-free (one interval is
+  // 125 ms at 20 bpm); the clock then runs at 128 bpm for the emission check.
+  link.requestTransport(1);
+  check(waitFor([&] { return link.status().rolling; }),
+        "no-Pico START drives rolling directly (no EV_TRANSPORT frame)");
+  check(waitFor([&] { return state.rolling.load(); }),
+        "no-Pico START writes AppState::rolling");
+  check(link.status().tick <= 1, "no-Pico START resets the Pi tick");
+
+  link.requestTempo(12800);
+  check(waitFor([&] { return link.status().tempoX100 == 12800; }),
+        "no-Pico tempo changes while rolling");
+  const std::uint32_t startTick = link.status().tick;
+  check(waitFor([&] { return link.status().tick >= startTick + 3; }),
+        "no-Pico clock free-runs and advances the Pi tick");
+  check(state.tick.load() > 0, "no-Pico tick reaches AppState");
+
+  // The USB clock gate mutes the output bytes but must not stall the timeline:
+  // the Pico generator keeps ticking under its per-output gates too.
+  const auto usbClockCount = [&] {
+    return midi.monitorSnapshot()
+        .counts[static_cast<std::size_t>(midi::Port::UsbOut)]
+        .clock;
+  };
+  link.requestUsbClockGates(false, true);
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  const auto gatedCount = usbClockCount();
+  const auto gatedTick = link.status().tick;
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  check(link.status().tick > gatedTick,
+        "no-Pico tick keeps running with the USB clock gate closed");
+  check(usbClockCount() == gatedCount,
+        "no-Pico USB clock gate suppresses the emitted clock bytes");
+  link.requestUsbClockGates(true, true);
+
+  link.requestTransport(0);
+  check(waitFor([&] { return !link.status().rolling; }),
+        "no-Pico STOP clears rolling directly");
+  const std::uint32_t stoppedTick = link.status().tick;
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  check(link.status().tick == stoppedTick, "no-Pico clock stops emitting while stopped");
+  const auto noPicoStats = link.status().stats;
+  check(noPicoStats.tx == 0 && noPicoStats.rx == 0 && !link.status().linkUp,
+        "no-Pico link performs no SPI transactions and never reports a lost link");
+
+  // A TRS route is refused by the no-Pico sink: nothing can receive 0x1A, the
+  // Monitor records no TRS OUT send and the reason is logged once.
+  midi.setRoute(midi::Port::TrsIn1, midi::Port::TrsOut1, true);
+  check(midi.routeEnabled(midi::Port::TrsIn1, midi::Port::TrsOut1),
+        "no-Pico still stores TRS matrix metadata");
+  midi::MidiEvent note;
+  note.source = midi::Port::TrsIn1;
+  note.size = 3;
+  note.data[0] = 0x90;
+  note.data[1] = 60;
+  note.data[2] = 100;
+  midi.handleInput(note);
+  check(waitFor([&] {
+          return AppLogger::instance().tail(400).find(
+                     "no-pico: TRS MIDI output unavailable") != std::string::npos;
+        }),
+        "no-Pico logs the suppressed 0x1A TRS route send");
+  const auto snapshot = midi.monitorSnapshot();
+  check(snapshot.counts[static_cast<std::size_t>(midi::Port::TrsOut1)].notes == 0,
+        "no-Pico monitor records no TRS OUT send");
+  // USB destinations still go through the Pi router; only their delivery needs
+  // a USB output port, which this headless check does not open.
+  midi.setRoute(midi::Port::UsbIn, midi::Port::UsbOut, true);
+  check(midi.routeEnabled(midi::Port::UsbIn, midi::Port::UsbOut),
+        "no-Pico keeps the USB routing matrix live");
+  midi::MidiEvent usbNote = note;
+  usbNote.source = midi::Port::UsbIn;
+  midi.handleInput(usbNote);
+  check(midi.routedCount() >= 2, "no-Pico routes USB messages in the Pi engine");
+  link.stop();
+
+  // TRS rows are honest UNAVAILABLE in the Routing and Monitor models.
+  RoutingViewModel routing(midi, true);
+  check(!routing.inputAvailable(0) && !routing.inputAvailable(1) &&
+            routing.inputAvailable(2),
+        "routing marks both TRS inputs UNAVAILABLE in no-Pico mode");
+  check(!routing.outputAvailable(0) && routing.outputAvailable(2),
+        "routing marks the TRS outputs UNAVAILABLE in no-Pico mode");
+  routing.setShiftPage(1);
+  routing.setPipeSource(0);
+  routing.setPipeDestination(0);
+  session::MidiPipe pipe;
+  pipe.type = session::MidiPipeType::Filter;
+  pipe.params = {1, 1, 1, 1, 1, 1, 1, 1};
+  check(midi.setRoutePipes(midi::Port::TrsIn1, midi::Port::TrsOut1, {pipe}),
+        "no-Pico stores a TRS pipe chain as project metadata");
+  routing.refresh();
+  check(routing.pipeStatusText().contains(QStringLiteral("INERT (NO PICO")),
+        "pipe UI labels a TRS->TRS chain inert in no-Pico mode");
+  check(routing.pipeRows().size() == 1 &&
+            routing.pipeRows().first().toMap().value(QStringLiteral("status"))
+                    .toString() == QStringLiteral("INERT (NO PICO)"),
+        "pipe rows report INERT (NO PICO)");
+
+  MidiMonitorViewModel monitor(midi, true);
+  check(monitor.headerText().contains(QStringLiteral("NO PICO")),
+        "monitor header says NO PICO");
+  check(monitor.portSummary(0).contains(QStringLiteral("UNAVAILABLE")),
+        "monitor TRS summary is UNAVAILABLE, not a zero counter");
+  const auto trsRow = monitor.ports()->index(0, 0);
+  const auto usbRow = monitor.ports()->index(2, 0);
+  check(!monitor.ports()
+             ->data(trsRow, MidiMonitorPortModel::AvailableRole)
+             .toBool(),
+        "monitor TRS row is not available in no-Pico mode");
+  check(monitor.ports()->data(usbRow, MidiMonitorPortModel::AvailableRole).toBool(),
+        "monitor USB row stays available in no-Pico mode");
+
+  MidiMonitorViewModel hardwareMonitor(midi, false);
+  check(hardwareMonitor.ports()
+            ->data(trsRow, MidiMonitorPortModel::AvailableRole)
+            .toBool(),
+        "hardware mode keeps the TRS monitor rows available");
+}
+
 void styleTests() {
   QFile file(QStringLiteral(":/qml/Style.qml"));
   check(file.open(QIODevice::ReadOnly | QIODevice::Text), "QML Style resource opens");
@@ -1357,6 +1510,7 @@ int runAll() {
   timelineAndPipeTests();
   pipeLinkTests();
   eqForwardingTests();
+  noPicoModeTests();
   styleTests();
   std::printf("%s mnkybox app logic: %d checks, %d failures\n",
               gFailures == 0 ? "PASS" : "FAIL", gChecks, gFailures);

@@ -44,9 +44,13 @@ class RoutingViewModel final : public QObject {
   Q_PROPERTY(int paramsPerPage READ paramsPerPage CONSTANT)
   Q_PROPERTY(QString pipeRouteText READ pipeRouteText NOTIFY pipeRouteChanged)
   Q_PROPERTY(QString pipeStatusText READ pipeStatusText NOTIFY pipesChanged)
+  // No-Pico mode: no Pico, so TRS nodes and TRS->TRS pipe chains are inert. The
+  // matrix still edits (it is project data) but the UI labels the rows
+  // unavailable instead of implying a wire. Fixed for the process lifetime.
+  Q_PROPERTY(bool noPicoMode READ noPicoMode CONSTANT)
 
  public:
-  explicit RoutingViewModel(MidiGlue& midi, QObject* parent = nullptr);
+  explicit RoutingViewModel(MidiGlue& midi, bool noPico, QObject* parent = nullptr);
 
   QVariantList routes() const { return routes_; }
   QVariantList channelMasks() const { return channelMasks_; }
@@ -80,6 +84,10 @@ class RoutingViewModel final : public QObject {
   int paramsPerPage() const { return kPipeParamsPerPage; }
   QString pipeRouteText() const;
   QString pipeStatusText() const;
+  bool noPicoMode() const { return noPico_; }
+  // A TRS port has no receiver/sender in no-Pico mode. USB stays available.
+  Q_INVOKABLE bool inputAvailable(int source) const;
+  Q_INVOKABLE bool outputAvailable(int destination) const;
 
   // Pipe chain edits (Routing SHIFT > PIPES). Each one writes the MidiGlue
   // store, which keeps the Router chain in sync and is what project_io captures.
@@ -127,6 +135,7 @@ class RoutingViewModel final : public QObject {
   midi::Port pipeOutput() const;
 
   MidiGlue& midi_;
+  const bool noPico_;
   QVariantList routes_;
   QVariantList channelMasks_;
   QVariantList transposes_;

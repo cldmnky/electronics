@@ -92,9 +92,12 @@ Item {
                             x: 92
                             width: parent.width - 100
                             height: parent.height
-                            text: "n " + model.notes + "  cc " + model.cc +
-                                  "  clk " + model.clock + "  o " + model.other
-                            color: (model.notes + model.cc + model.clock + model.other) > 0
+                            text: model.available
+                                  ? "n " + model.notes + "  cc " + model.cc +
+                                    "  clk " + model.clock + "  o " + model.other
+                                  : "UNAVAILABLE - NO PICO (Pico link disabled)"
+                            color: model.available &&
+                                   (model.notes + model.cc + model.clock + model.other) > 0
                                    ? Style.text : Style.textDim
                             font.pixelSize: Style.fontSmall
                             verticalAlignment: Text.AlignVCenter
@@ -179,7 +182,9 @@ Item {
         Text {
             width: parent.width
             height: 12
-            text: "Pi-side view - Pico-generated TRS OUT clock/transport is not echoed back over the link"
+            text: midimon.noPicoMode
+                  ? "NO PICO: TRS IN/OUT and their clock are unavailable; USB MIDI and the Pi clock mirror are live"
+                  : "Pi-side view - Pico-generated TRS OUT clock/transport is not echoed back over the link"
             color: Style.textDim
             font.pixelSize: 9
             elide: Text.ElideRight

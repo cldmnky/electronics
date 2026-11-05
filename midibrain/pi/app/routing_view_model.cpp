@@ -9,8 +9,8 @@
 
 namespace mnky::app {
 
-RoutingViewModel::RoutingViewModel(MidiGlue& midi, QObject* parent)
-    : QObject(parent), midi_(midi) {
+RoutingViewModel::RoutingViewModel(MidiGlue& midi, bool noPico, QObject* parent)
+    : QObject(parent), midi_(midi), noPico_(noPico) {
   refreshRoutes();
   refreshFilters();
   refresh();
@@ -40,9 +40,23 @@ void RoutingViewModel::toggleRoute(int source, int destination) {
   const auto output = routing::kOutputs[destination];
   const bool enabled = !midi_.routeEnabled(input, output);
   midi_.setRoute(input, output, enabled);
+  const bool trsPair = source != 2 || destination != 2;
   log(std::string("routing: ") + routing::kInputNames[source] + " -> " +
-      routing::kOutputNames[destination] + (enabled ? " ON" : " OFF"));
+      routing::kOutputNames[destination] + (enabled ? " ON" : " OFF") +
+      ((noPico_ && trsPair) ? " (no-pico: stored but INERT, no Pico)" : ""));
   refreshRoutes();
+}
+
+bool RoutingViewModel::inputAvailable(int source) const {
+  if (source < 0 || source >= routing::kInputCount) return false;
+  // routing::kInputs[2] is USB IN; the two TRS inputs are Pico-owned.
+  return !noPico_ || source == 2;
+}
+
+bool RoutingViewModel::outputAvailable(int destination) const {
+  if (destination < 0 || destination >= routing::kOutputCount) return false;
+  // routing::kOutputs[2] is USB OUT; the two TRS outputs are Pico-owned.
+  return !noPico_ || destination == 2;
 }
 
 void RoutingViewModel::selectInput(int source) {
@@ -217,6 +231,9 @@ QString RoutingViewModel::pipeStatusText() const {
   // mask -> transpose -> Pico chain.
   status += piOwned ? QStringLiteral("PI ENGINE (WAVE 1)")
                     : QStringLiteral("PICO 0x1A CHAIN (mask -> transpose -> chain)");
+  if (noPico_ && !piOwned) {
+    status += QStringLiteral(" - INERT (NO PICO; 0x18/0x19/0x1A not sent)");
+  }
   const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
   bool wave2 = false;
   int bypassed = 0;
@@ -227,7 +244,7 @@ QString RoutingViewModel::pipeStatusText() const {
   if (wave2 && piOwned) {
     status += QStringLiteral(" - WAVE 2 NOT IN PI ENGINE: midi::PipeChain::process() "
                              "rejects ids 12..16");
-  } else if (wave2) {
+  } else if (wave2 && !(noPico_ && !piOwned)) {
     status += QStringLiteral(" - WAVE 2 LIVE (Pico clocked chain)");
   }
   if (bypassed > 0) status += QStringLiteral(" - ") + QString::number(bypassed) +
@@ -315,11 +332,14 @@ void RoutingViewModel::refreshPipes() {
     QString rowStatus = QStringLiteral("ACTIVE");
     if (pipe.bypass) {
       rowStatus = QStringLiteral("BYPASS");
+    } else if (noPico_ && !piOwned) {
+      rowStatus = QStringLiteral("INERT (NO PICO)");
     } else if (spec != nullptr && spec->clocked) {
       rowStatus = piOwned ? QStringLiteral("PI: NO WAVE-2 ENGINE")
                           : QStringLiteral("ACTIVE (PICO CLOCK)");
     }
     row.insert(QStringLiteral("status"), rowStatus);
+    row.insert(QStringLiteral("inert"), noPico_ && !piOwned && !pipe.bypass);
     rows.push_back(row);
   }
 

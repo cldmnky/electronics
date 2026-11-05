@@ -14,6 +14,40 @@ double UsbClock::intervalUs() const {
   return 6.0e9 / (static_cast<double>(bpmX100_) * kTicksPerQuarter);
 }
 
+void UsbClock::setFreeRun(bool freeRun) {
+  freeRun_ = freeRun;
+  if (freeRun_) {
+    // No Pico stamp will ever arrive: keep only the local phase. Clearing the
+    // primed flag makes the first startFreeRun() the phase reference.
+    haveTick_ = false;
+    offsetUs_ = 0.0;
+    latencyUs_ = 0.0;
+  }
+}
+
+void UsbClock::startFreeRun(std::uint64_t piNowUs) {
+  if (!freeRun_) return;
+  haveTick_ = true;
+  mappedUs_ = static_cast<double>(piNowUs);
+  nextDueUs_ = mappedUs_ + intervalUs();
+}
+
+bool UsbClock::advanceFreeRun(std::uint64_t piNowUs) {
+  if (!freeRun_ || !rolling_ || !haveTick_) return false;
+  const double now = static_cast<double>(piNowUs);
+  if (nextDueUs_ > now) return false;
+  const double interval = intervalUs();
+  const double lateness = now - nextDueUs_;
+  if (lateness >= interval) {
+    // The caller was blocked for at least one interval: re-peg and count the
+    // missed ones instead of advancing the phase many steps in one pass.
+    skipped_ += static_cast<std::uint64_t>(lateness / interval);
+    nextDueUs_ = now;
+  }
+  nextDueUs_ += interval;
+  return true;
+}
+
 void UsbClock::setClockEnabled(bool enabled) { clockEnabled_ = enabled; }
 
 void UsbClock::setTransportEnabled(bool enabled) { transportEnabled_ = enabled; }
@@ -40,6 +74,7 @@ void UsbClock::setRolling(bool rolling) {
 }
 
 void UsbClock::addTick(std::uint32_t tick, std::uint32_t picoStampUs, std::uint64_t piNowUs) {
+  if (freeRun_) return;  // no-Pico mode has no Pico stamps; the local phase is authoritative
   const double delay = static_cast<double>(piNowUs) - static_cast<double>(picoStampUs);
   if (haveTick_ && static_cast<std::int32_t>(tick - lastTick_) <= 0) {
     ++reordered_;  // duplicate or stale: never let the phase run backwards

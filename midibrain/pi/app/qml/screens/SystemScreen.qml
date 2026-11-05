@@ -10,12 +10,43 @@ Item {
 
     readonly property bool shiftFace: app.panelMode === "shift"
 
-    Row {
+    Column {
         visible: !screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 6
+        spacing: 4
 
+        // No-Pico banner: which subsystems are live on a bare Pi and which are
+        // physically absent (Pico-owned TRS/panel/LEDs). Hidden in hardware
+        // mode, so the layout is unchanged there.
+        Rectangle {
+            id: noPicoBanner
+            width: parent.width
+            height: system.noPicoMode ? 46 : 0
+            visible: system.noPicoMode
+            color: Style.panelDark
+            border.width: Style.outlineWidth
+            border.color: Style.record
+            radius: Style.corner
+
+            Text {
+                anchors.fill: parent
+                anchors.margins: 5
+                text: system.noPicoText
+                color: Style.record
+                font.pixelSize: 10
+                font.bold: true
+                wrapMode: Text.WordWrap
+                elide: Text.ElideRight
+                maximumLineCount: 3
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+
+        Row {
+            width: parent.width
+            height: parent.height - (noPicoBanner.visible ? noPicoBanner.height + 4 : 0)
+            spacing: 6
         Flickable {
             id: systemLeft
             objectName: "systemLeft"
@@ -176,6 +207,7 @@ Item {
                 }
             }
         }
+    }
     }
     SystemShiftFace {
         visible: screen.shiftFace

@@ -45,6 +45,9 @@ class AppController final : public QObject {
   Q_PROPERTY(int tab READ tab WRITE setTab NOTIFY tabChanged)
   Q_PROPERTY(bool fullscreen READ fullscreen WRITE setFullscreen NOTIFY fullscreenChanged)
   Q_PROPERTY(bool dirty READ dirty NOTIFY dirtyChanged)
+  // No-Pico mode: no Pico was constructed (--no-pico). QML keys the persistent
+  // NO PICO badge and the unavailable TRS rows off this; it never changes.
+  Q_PROPERTY(bool noPicoMode READ noPicoMode CONSTANT)
   Q_PROPERTY(bool recording READ recording NOTIFY transportChanged)
   Q_PROPERTY(bool rolling READ rolling NOTIFY transportChanged)
   Q_PROPERTY(bool overdub READ overdub NOTIFY transportChanged)
@@ -76,7 +79,7 @@ class AppController final : public QObject {
   Q_PROPERTY(QString valuePopupText READ valuePopupText NOTIFY valuePopupChanged)
 
  public:
-  explicit AppController(bool emulator, QObject* parent = nullptr);
+  explicit AppController(bool emulator, bool noPico, QObject* parent = nullptr);
   ~AppController() override;
 
   void start();
@@ -89,6 +92,7 @@ class AppController final : public QObject {
   bool fullscreen() const { return fullscreen_; }
   Q_INVOKABLE void setFullscreen(bool fullscreen);
   bool dirty() const { return state_.dirty.load(); }
+  bool noPicoMode() const { return noPico_; }
   bool recording() const { return audio_.recording(); }
   bool rolling() const { return state_.rolling.load(); }
   bool overdub() const { return state_.overdub.load(); }
@@ -323,6 +327,9 @@ class AppController final : public QObject {
   QString valuePopupText_;
 
   bool started_ = false;
+  // --no-pico: LinkClient has no SPI transport or PicoLink and the Pi owns the
+  // clock/transport. Fixed for the process lifetime.
+  bool noPico_ = false;
 };
 
 }  // namespace mnky::app

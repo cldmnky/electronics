@@ -34,13 +34,82 @@ cmake --build ~/pi-build -j8
   emulator transport, so a desktop run still starts.
 * `--unittests` runs the C++ checks (`logic_tests.cpp`) and exits; no window,
   audio device, MIDI port or QML engine. Also registered as CTest
-  `mnkybox_app_logic` (341 checks, 0 failures).
+  `mnkybox_app_logic` (374 checks, 0 failures).
+* `--no-pico` runs on a bare Pi 5 with no Pico attached. `LinkClient` is built
+  without an SPI transport, `PicoLink` or READY GPIO, so there is no handshake,
+  no reconnect loop and no "link lost" log; the status line says `NO PICO`. The
+  Pi owns the clock and transport, USB audio/MIDI stay live and the Pico-owned
+  TRS MIDI/clock, panel controls and LEDs are reported unavailable. There is no
+  auto-detect/fallback: without the flag the app takes exactly the existing
+  Pico/hardware path. Independent of `--emulator` (use both for a deterministic
+  desktop run); see "No-Pico mode" below for the exact behaviour and proof.
 * `--screenshots DIR` is the headless proof: forces the emulator backends, loads
   every QML screen and writes `30-qt-*.png` with `QQuickWindow::grabWindow()`,
   then exits 0. Run it with `QT_QPA_PLATFORM=offscreen`; no Xvfb is needed.
 * `--screenshots-live DIR` is the same grab run against the real Qt Multimedia
   audio backend. It was used for the PipeWire/Pulse evidence run below and does
   not imply the emulator backends.
+
+## No-Pico mode (`--no-pico`, bare Pi 5)
+
+`--no-pico` is the bare-Pi mode and the only switch for it. `--bench` was the
+working name in the first draft and is not implemented. The flag changes only
+the link/clock/transport ownership, not the audio or MIDI backend selection
+(`--emulator` still chooses the generated audio and virtual ports, which is how
+the offscreen proof is deterministic). Without `--no-pico` the app takes exactly
+today's full Pico path: no auto-detection and no fallback heuristic.
+
+What is constructed and what is not:
+
+* `LinkClient(midi, state, emulated, noPico=true)` creates **no**
+  `LinuxSpidevTransport`/`EmulatorTransport`, **no** `PicoLink` and **no**
+  `ReadyGpio`. There is no HELLO handshake, no reconnect state machine and no
+  `link: lost` log. `status()` exposes `noPico=true`, `linkUp=false` (nothing is
+  connected; the UI reads `noPico` first and prints `NO PICO`).
+* The one no-Pico pump thread is a 1 ms clock/MIDI pump, not an SPI poll thread:
+  it applies queued tempo/transport/gate commands, calls `MidiGlue::pump()` (the
+  same link-thread role as hardware mode) and emits the Pi clock to USB OUT. It
+  performs zero SPI transactions (`status().stats.tx/rx == 0`).
+* Transport commands have no Pico to echo a state frame, so they **are** the
+  state change: START/CONTINUE set rolling and peg the free-run phase, STOP
+  clears it, START resets the Pi tick to 0 (firmware `transport_cmd()`
+  semantics). No `EV_TRANSPORT` frame exists or is sent. AppState `rolling`,
+  `tick` and `tempoX100` are written directly for the UI and the audio engine.
+* `midi::UsbClock` gains a documented free-run mode (`setFreeRun()` /
+  `startFreeRun()` / `advanceFreeRun()`): no Pico stamps arrive, the first byte
+  is one interval after START, each emitted byte advances the phase by
+  `intervalUs()`, a `setTempo()` edit applies to the next interval, and
+  `addTick()` is ignored. The per-output `clock`/`transport` gates still apply to
+  the USB clock bytes; `advanceFreeRun()` keeps the Pi tick moving while the USB
+  clock gate mutes its bytes, so tap tempo and ensemble tempo edits are instant
+  and the timeline does not freeze behind a closed gate.
+* TRS is absent because the TRS jacks/UARTs and the panel hardware live on the
+  Pico: TRS clock (including clock-source follow; the app has no separate
+  follow control, so the session's `clock.source` is never applied) and the TRS
+  clock/transport gates are inert, panel controls are touch-only and the LEDs
+  are absent. `Routing` SHIFT disables the TRS OUT gate buttons; `clockText()`
+  says so explicitly. On-screen PLAY/STOP/REC are shown only in this mode
+  because the hardware transport buttons and their REC chord are Pico inputs.
+* MIDI: USB in/out is fully live, including the Pi-owned (USB-touching) pipe
+  chains evaluated by `midi::Router`. A routed TRS delivery is refused by the
+  no-Pico sink, so the Monitor records no TRS OUT send and it never reaches the
+  0x1A path; the first refusal logs
+  `no-pico: TRS MIDI output unavailable - 0x15/0x1A route send suppressed (no
+  Pico)`. TRS pipe-chain edits stay project metadata (a 0x18/0x19 command is
+  not sent) and the pipe UI reports `INERT (NO PICO)`.
+* UI: the System screen shows a NO PICO banner (active vs physically absent
+  subsystems) and a `NO PICO` status block; the transport strip carries a
+  persistent `NO PICO` badge; the Monitor screen shows all four TRS rows as
+  `UNAVAILABLE - NO PICO (Pico link disabled)` instead of zero counters; the
+  Routing patchbay labels the TRS nodes `UNAVAILABLE (NO PICO)`.
+
+Proof: `mnkybox --unittests` covers the no-Pico link (no SPI transactions,
+NO PICO status), direct transport, free-run scheduling and the UNAVAILABLE/inert
+models; `QT_QPA_PLATFORM=offscreen mnkybox --screenshots DIR --no-pico` writes
+the required `35-bench-mixer.png` (persistent badge, free-running position) and
+`35-bench-system.png` (banner + status block) in addition to the normal set. The
+screenshot filenames keep the "bench" spelling from the original task brief; the
+UI text inside them is NO PICO.
 
 ## Versions used for verification
 
@@ -594,6 +663,60 @@ Linux guest (Debian bookworm arm64, Qt 6.4.2, `~/pi-build2`):
   `qemu/screenshots/33-{eq,eq-popup,eq-full,eq-shift,eq-type,xy,xy-params,xy-freeze}.png`.
   The 31-*/32-* shots still show the old seven-tab row (this wave only wrote
   33-* files).
+
+### Wave 6 run (no-Pico mode, bare Pi 5)
+
+macOS (Qt 6.12.0, AppleClang, clean directory `/tmp/pi-nopico-final`):
+
+* `cmake -S midibrain/pi -B /tmp/pi-nopico-final -DCMAKE_PREFIX_PATH=$(brew --prefix qt)
+  -DCMAKE_CXX_COMPILER=/usr/bin/c++` then `cmake --build /tmp/pi-nopico-final -j8`:
+  **exit 0, zero warnings** (the app sources stay under `-Wall -Wextra -Werror`).
+* `ctest --test-dir /tmp/pi-nopico-final --output-on-failure`: **17/17 passed**.
+  `mnkybox_app_logic` prints **374 checks, 0 failures** (the no-Pico block adds 33
+  checks: NO PICO status/no SPI stats, direct START/STOP, Pi tick free-run, the
+  gate-independent free-run tick and USB-gate suppression, the TRS 0x1A
+  suppression log/monitor, Routing/Monitor UNAVAILABLE and `INERT (NO PICO)`);
+  `test_midi` adds `clock free-run no-Pico scheduling`.
+* `QT_QPA_PLATFORM=offscreen ./app/mnkybox --screenshots /tmp/nopico-final-shots --no-pico`:
+  **28/28 PNGs**, 0 failures, no QML warnings, including
+  `35-bench-mixer.png` and `35-bench-system.png`.
+* Default-path regression check: the same binary without `--no-pico`
+  (`--screenshots /tmp/nopico-default-shots --emulator`) produces **26/26
+  steps** (no 35-* steps), `31-mixer.png` has no NO PICO badge and no touch
+  PLAY/STOP/REC, and `34-pipes.png` still shows `ACTIVE` / `ACTIVE (PICO
+  CLOCK)` / `WAVE 2 LIVE (Pico clocked chain)`. The flag is the only switch.
+
+Raspberry Pi 5 (studio, Debian 13 trixie arm64, Qt 6.8.2, native build):
+
+* rsync of `midibrain/{pi,firmware}` to `~/mnky` (same excludes as above), then
+  `cmake -S pi -B /tmp/pi-build-nopico -DCMAKE_CXX_COMPILER_LAUNCHER=ccache`
+  (fresh directory, configure exit 0) and `cmake --build /tmp/pi-build-nopico -j4`:
+  **exit 0, zero warnings**.
+* `ctest --test-dir /tmp/pi-build-nopico --output-on-failure`: **17/17 passed**.
+* `QT_QPA_PLATFORM=offscreen /tmp/pi-build-nopico/app/mnkybox --screenshots
+  /tmp/pi-nopico-shots --no-pico`: **28/28 PNGs**, 0 failures, no QML warnings.
+* `QT_QPA_PLATFORM=offscreen timeout -s INT 8 /tmp/pi-build-nopico/app/mnkybox
+  --no-pico` (hardware backends, no `--emulator`): exit 124 from the timeout;
+  the log shows `--no-pico selected: no Pico, no SPI transport`, `link: NO PICO
+  mode`, `audio: Qt Multimedia / UMC1820 Multichannel, 48000 Hz / 384 frames`,
+  `midi: USB 7 in / 14 out`, `app: started with device backends` and the no-Pico
+  active/absent banner line. There is no spidev open and no link-lost line
+  (grep: 0 spidev, 0 "link: lost").
+* `QT_QPA_PLATFORM=offscreen /tmp/pi-build-nopico/app/mnkybox --screenshots-live
+  /tmp/pi-nopico-live --no-pico`: 28/28 PNGs against the real UMC1820 sink
+  (`midi: USB 7 in / 14 out` - the count follows the attached ALSA MIDI
+  devices). The checked-in `qemu/screenshots/35-bench-system.png` shows `LINK
+  NO PICO`, `TRANSPORT tick 159 ... owned by the Pi (NO PICO)`, the UMC1820 live
+  audio line and `MIDI USB ... (NO PICO: USB only)`; `35-bench-mixer.png` shows
+  the persistent NO PICO badge and the touch PLAY/STOP/REC controls while
+  rolling. The same run's `34-monitor.png` shows all four TRS rows `UNAVAILABLE
+  - NO PICO (Pico link disabled)`, live USB rows and `USB OUT ... clk 140`; 140
+  equals the Pi tick in the transport readout, i.e. the free-run clock emitted
+  one 0xF8 per tick.
+
+No Pico was attached to the studio Pi (`/dev/spidev0.0` is absent), which is the
+condition this mode is for. No MIDI-clock timing/jitter measurement is claimed
+for the Pi free-run; the no-Pico pump is an ordinary 1 ms thread, not an RT task.
 
 No hardware, touch-panel, audio-timing, measured metronome-level or JACK/PipeWire
 routing test is claimed. The screenshots are offscreen software-renderer grabs,

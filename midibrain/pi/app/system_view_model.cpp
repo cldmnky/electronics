@@ -18,12 +18,22 @@ QString hexString(std::uint32_t value) {
 SystemViewModel::SystemViewModel(LinkClient& link, AudioGlue& audio, MidiGlue& midi,
                                  FxManager& fx, AppState& state, QObject* parent)
     : QObject(parent), link_(link), audio_(audio), midi_(midi), fx_(fx), state_(state) {
+  noPico_ = link_.noPico();
   backendHint_ = QStringLiteral(
       "Qt Multimedia: PulseAudio/PipeWire on Linux, CoreAudio on macOS. JACK device "
       "selection was dropped with the JUCE app; use a PipeWire/Pulse patchbay for "
       "inter-app routing.");
   refreshDevices();
   refresh();
+}
+
+QString SystemViewModel::noPicoText() const {
+  if (!noPico_) return {};
+  return QStringLiteral(
+      "NO PICO.  Active: audio, USB MIDI, recorder, takes, mixer, FX, EQ, "
+      "X/Y, projects, Pi clock -> USB OUT.\n"
+      "Absent: TRS MIDI + TRS clock (Pico UARTs), panel controls (touch only), "
+      "LEDs, clock-source follow.");
 }
 
 void SystemViewModel::setBackendIndex(int index) {
@@ -133,40 +143,56 @@ void SystemViewModel::refresh() {
 
   QString text;
   QTextStream stream(&text);
-  stream << "LINK      "
-         << (status.emulated ? "emulator transport (scripted Pico)"
-                             : "spidev0.0 @ 1 MHz, mode 0")
-         << "\n";
-  stream << "          " << (status.linkUp ? "UP" : "DOWN") << "   Pico session "
-         << hexString(status.picoSession) << "   Pi session " << hexString(status.piSession)
-         << "\n";
-  stream << "          tx " << static_cast<qulonglong>(stats.tx) << "  rx "
-         << static_cast<qulonglong>(stats.rx) << "  bad "
-         << static_cast<qulonglong>(stats.bad) << "  dup "
-         << static_cast<qulonglong>(stats.dup) << "  overruns "
-         << static_cast<qulonglong>(stats.overruns) << "\n";
-  stream << "READY     "
-         << (status.readyValid ? (status.ready ? "high" : "low")
-                               : "not sampled (READY_IRQ needs the Pi GPIO character device)")
-         << "\n";
-  stream << "CLOCK     " << QString::fromStdString(formatTempo(status.tempoX100)) << "   "
-         << (status.rolling ? "rolling" : "stopped") << "   "
-         << (status.clockPrimed ? "primed" : "cold") << "\n";
-  stream << "          offset " << QString::number(status.offsetUs, 'f', 1) << " us   latency "
-         << QString::number(status.latencyUs, 'f', 1) << " us   skipped "
-         << static_cast<qulonglong>(status.clockSkipped) << "   reordered "
-         << static_cast<qulonglong>(status.clockReordered) << "\n";
-  stream << "TRANSPORT tick " << static_cast<qulonglong>(status.tick) << "   "
-         << QString::fromStdString(formatBarBeatTick(status.tick)) << "   shift "
-         << (status.shift ? "held" : "up") << "   mode "
-         << (status.manual ? "manual" : "local") << "\n";
+  if (status.noPico) {
+    // No PicoLink exists in no-Pico mode: never print the hardware handshake
+    // block, and never call the absent link "DOWN".
+    stream << "LINK      NO PICO (no SPI, no PicoLink)\n";
+    stream << "          Pi clock master; USB OUT only\n";
+    stream << "READY     unavailable (no Pico)\n";
+    stream << "CLOCK     " << QString::fromStdString(formatTempo(status.tempoX100))
+           << "   " << (status.rolling ? "rolling" : "stopped") << "   "
+           << (status.clockPrimed ? "free-run armed" : "free-run cold") << "\n";
+    stream << "          local Pi phase; clock-source follow off\n";
+    stream << "TRANSPORT tick " << static_cast<qulonglong>(status.tick) << "   "
+           << QString::fromStdString(formatBarBeatTick(status.tick))
+           << "   owned by the Pi (NO PICO)\n";
+  } else {
+    stream << "LINK      "
+           << (status.emulated ? "emulator transport (scripted Pico)"
+                               : "spidev0.0 @ 1 MHz, mode 0")
+           << "\n";
+    stream << "          " << (status.linkUp ? "UP" : "DOWN") << "   Pico session "
+           << hexString(status.picoSession) << "   Pi session " << hexString(status.piSession)
+           << "\n";
+    stream << "          tx " << static_cast<qulonglong>(stats.tx) << "  rx "
+           << static_cast<qulonglong>(stats.rx) << "  bad "
+           << static_cast<qulonglong>(stats.bad) << "  dup "
+           << static_cast<qulonglong>(stats.dup) << "  overruns "
+           << static_cast<qulonglong>(stats.overruns) << "\n";
+    stream << "READY     "
+           << (status.readyValid ? (status.ready ? "high" : "low")
+                                 : "not sampled (READY_IRQ needs the Pi GPIO character device)")
+           << "\n";
+    stream << "CLOCK     " << QString::fromStdString(formatTempo(status.tempoX100)) << "   "
+           << (status.rolling ? "rolling" : "stopped") << "   "
+           << (status.clockPrimed ? "primed" : "cold") << "\n";
+    stream << "          offset " << QString::number(status.offsetUs, 'f', 1) << " us   latency "
+           << QString::number(status.latencyUs, 'f', 1) << " us   skipped "
+           << static_cast<qulonglong>(status.clockSkipped) << "   reordered "
+           << static_cast<qulonglong>(status.clockReordered) << "\n";
+    stream << "TRANSPORT tick " << static_cast<qulonglong>(status.tick) << "   "
+           << QString::fromStdString(formatBarBeatTick(status.tick)) << "   shift "
+           << (status.shift ? "held" : "up") << "   mode "
+           << (status.manual ? "manual" : "local") << "\n";
+  }
   stream << "AUDIO     " << QString::fromStdString(audio_.backendDescription()) << "\n";
   stream << "          " << QString::number(audio.sampleRate, 'f', 0) << " Hz / "
          << audio.blockSize << " frames   xruns n/a (Qt)   blocks "
          << static_cast<qulonglong>(audio.callbackBlocks) << "   rec "
          << (audio_.recording() ? "on" : "off") << "   drops "
          << static_cast<qulonglong>(audio_.drops()) << "\n";
-  stream << "MIDI      " << QString::fromStdString(midi_.describe()) << "   routed "
+  stream << "MIDI      " << QString::fromStdString(midi_.describe())
+         << (status.noPico ? "   (NO PICO: USB only)" : "") << "   routed "
          << static_cast<qulonglong>(midi_.routedCount()) << "\n";
   stream << "FX        A " << QString::fromStdString(fx_.slot(0).pluginPath()) << "\n";
   stream << "          B " << QString::fromStdString(fx_.slot(1).pluginPath()) << "\n";

@@ -37,6 +37,9 @@ class MidiMonitorPortModel final : public QAbstractListModel {
     CcRole,
     ClockRole,
     OtherRole,
+    // False for the four TRS rows in no-Pico mode: the Pico owns those UARTs, so
+    // the screen says UNAVAILABLE instead of showing a zero that looks idle.
+    AvailableRole,
   };
 
   explicit MidiMonitorPortModel(QObject* parent = nullptr);
@@ -46,11 +49,14 @@ class MidiMonitorPortModel final : public QAbstractListModel {
   QHash<int, QByteArray> roleNames() const override;
 
   void setCounts(const std::array<MidiGlue::MonitorCounts, midi::kPortCount>& counts);
+  void setNoPico(bool noPico) { noPico_ = noPico; }
+  bool available(int port) const;
   QString name(int port) const;
   QString countsText(int port) const;
 
  private:
   std::array<MidiGlue::MonitorCounts, midi::kPortCount> counts_{};
+  bool noPico_ = false;
 };
 
 // Message log, newest first. Kept short enough that a full rebuild per change
@@ -85,9 +91,10 @@ class MidiMonitorViewModel final : public QObject {
   Q_PROPERTY(int shownEvents READ shownEvents WRITE setShownEvents NOTIFY logChanged)
   Q_PROPERTY(int selectedPort READ selectedPort WRITE setSelectedPort NOTIFY selectionChanged)
   Q_PROPERTY(bool hideClock READ hideClock WRITE setHideClock NOTIFY logChanged)
+  Q_PROPERTY(bool noPicoMode READ noPicoMode CONSTANT)
 
  public:
-  explicit MidiMonitorViewModel(MidiGlue& midi, QObject* parent = nullptr);
+  MidiMonitorViewModel(MidiGlue& midi, bool noPico, QObject* parent = nullptr);
 
   MidiMonitorPortModel* ports() { return &ports_; }
   MidiMonitorEventModel* events() { return &events_; }
@@ -97,6 +104,7 @@ class MidiMonitorViewModel final : public QObject {
   Q_INVOKABLE void setShownEvents(int count);
   int selectedPort() const { return selectedPort_; }
   Q_INVOKABLE void setSelectedPort(int port);
+  bool noPicoMode() const { return noPico_; }
   // Log filter: clock bytes arrive at 24 ppq and would drown every other
   // message. The counters always count them; only the log honours this.
   bool hideClock() const { return hideClock_; }
@@ -123,6 +131,7 @@ class MidiMonitorViewModel final : public QObject {
   int selectedPort_ = 0;
   bool hideClock_ = false;
   std::uint64_t lastTotal_ = 0;
+  const bool noPico_;
 };
 
 }  // namespace mnky::app

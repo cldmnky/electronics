@@ -628,7 +628,11 @@ void RecorderViewModel::updateReadouts() {
 
   QString clock = QString::fromStdString(formatTempo(status.tempoX100)) +
                   QStringLiteral("  -  tick %1").arg(static_cast<qulonglong>(status.tick));
-  if (!status.linkUp) clock += QStringLiteral("  -  link down");
+  if (status.noPico) {
+    clock += QStringLiteral("  -  NO PICO (Pi clock)");
+  } else if (!status.linkUp) {
+    clock += QStringLiteral("  -  link down");
+  }
   if (clockText_ != clock) clockText_ = clock;
 
   const QString button = recording ? QStringLiteral("STOP TAKE")

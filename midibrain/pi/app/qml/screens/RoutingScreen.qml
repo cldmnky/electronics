@@ -32,6 +32,7 @@ Item {
                        ? (screen.pipesPage ? "SHIFT  MIDI FX PIPES - one ordered chain per route"
                                            : "SHIFT  FILTER / TRANSPOSE / CLOCK OUT")
                        : "ROUTING - tap a wire, or an input then an output")
+                      + (routing.noPicoMode ? "  -  NO PICO: TRS UNAVAILABLE" : "")
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 font.bold: true
@@ -150,7 +151,9 @@ Item {
                     height: patchbay.height * routing.nodeHeightFraction
                     radius: Style.corner
                     readonly property bool focused: app.focusId === ("routing.node.in." + index)
-                    color: routing.selectedInput === index ? Style.accent : Style.panel
+                    readonly property bool available: routing.inputAvailable(index)
+                    color: !available ? Style.panelDark
+                                      : (routing.selectedInput === index ? Style.accent : Style.panel)
                     border.width: (routing.selectedInput === index || focused) ? 2 : Style.outlineWidth
                     border.color: (routing.selectedInput === index || focused)
                                   ? Style.accent : Style.outline
@@ -160,13 +163,21 @@ Item {
                         spacing: 1
                         Text {
                             text: screen.inputNames[index]
-                            color: routing.selectedInput === index ? Style.panelDark : Style.text
+                            color: !available ? Style.textDim
+                                              : (routing.selectedInput === index ? Style.panelDark : Style.text)
                             font.pixelSize: 12
                             font.bold: true
                             anchors.horizontalCenter: parent.horizontalCenter
                         }
                         Text {
-                            visible: index === 2
+                            visible: !available
+                            text: "UNAVAILABLE (NO PICO)"
+                            color: Style.record
+                            font.pixelSize: 8
+                            anchors.horizontalCenter: parent.horizontalCenter
+                        }
+                        Text {
+                            visible: available && index === 2
                             text: routing.usbInputs + (routing.usbInputs === 1 ? " DEVICE" : " DEVICES")
                             color: routing.selectedInput === index ? Style.panelDark : Style.textDim
                             font.pixelSize: 10
@@ -189,7 +200,8 @@ Item {
                     height: patchbay.height * routing.nodeHeightFraction
                     radius: Style.corner
                     readonly property bool focused: app.focusId === ("routing.node.out." + index)
-                    color: Style.panel
+                    readonly property bool available: routing.outputAvailable(index)
+                    color: available ? Style.panel : Style.panelDark
                     border.width: ((routing.selectedInput >= 0 &&
                                     routing.routes[routing.selectedInput * 3 + index] === true) ||
                                    focused) ? 2 : Style.outlineWidth
@@ -202,13 +214,20 @@ Item {
                         spacing: 1
                         Text {
                             text: screen.outputNames[index]
-                            color: Style.text
+                            color: available ? Style.text : Style.textDim
                             font.pixelSize: 12
                             font.bold: true
                             anchors.horizontalCenter: parent.horizontalCenter
                         }
                         Text {
-                            visible: index === 2
+                            visible: !available
+                            text: "UNAVAILABLE (NO PICO)"
+                            color: Style.record
+                            font.pixelSize: 8
+                            anchors.horizontalCenter: parent.horizontalCenter
+                        }
+                        Text {
+                            visible: available && index === 2
                             text: routing.usbOutputs + (routing.usbOutputs === 1 ? " PORT" : " PORTS")
                             color: Style.textDim
                             font.pixelSize: 10
@@ -366,6 +385,7 @@ Item {
                                 height: Style.touch
                                 text: "CLOCK"
                                 textSize: 9
+                                active: !routing.noPicoMode || index === 2
                                 checked: index === 0 ? session.trs1Clock
                                         : (index === 1 ? session.trs2Clock : session.usbClock)
                                 focusId: "shift.clock.clock." + index
@@ -382,6 +402,7 @@ Item {
                                 height: Style.touch
                                 text: "TRANSP"
                                 textSize: 9
+                                active: !routing.noPicoMode || index === 2
                                 checked: index === 0 ? session.trs1Transport
                                         : (index === 1 ? session.trs2Transport : session.usbTransport)
                                 focusId: "shift.clock.transport." + index

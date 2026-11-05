@@ -3,6 +3,14 @@
 // Flags:
 //   --emulator          use the emulator backends (scripted Pico SPI link,
 //                       generated audio) instead of the Linux hardware paths.
+//   --no-pico           bare Pi 5, no Pico attached: LinkClient is built
+//                       without an SPI transport, PicoLink or READY GPIO (no
+//                       handshake, no reconnect spam). The Pi free-runs the USB
+//                       clock and owns the transport; USB audio/MIDI, recorder,
+//                       takes, mixer, FX, EQ, X/Y and projects stay live. TRS
+//                       MIDI/clock, panel controls and LEDs are absent because
+//                       that hardware is on the Pico. Independent of
+//                       --emulator: use both for a deterministic desktop run.
 //   --unittests         run the non-visual C++ checks and exit; no window, no
 //                       audio device, no MIDI port is opened.
 //   --screenshots DIR   headless proof: load every QML screen, grab the window
@@ -316,6 +324,31 @@ class ScreenshotRunner final : public QObject {
     steps_.push_back({"34-monitor", [this] {
                         controller_->setTab(6);
                       }});
+    if (controller_->noPicoMode()) {
+      // 35-*: bare-Pi proof. The project is the same as 31-*; only the
+      // persistent NO PICO badge, the Pi free-running clock and the System
+      // banner (live vs physically absent subsystems) differ.
+      steps_.push_back({"35-bench-mixer", [this] {
+                          controller_->hideValuePopup();
+                          controller_->configCancel();
+                          controller_->keypadCancel();
+                          controller_->confirmCancel();
+                          controller_->showShiftFace(false);
+                          controller_->mixer()->setTrackMode(false);
+                          controller_->mixer()->setBank(0);
+                          controller_->mixer()->clearClipDemo();
+                          controller_->selectStrip(0);
+                          controller_->session()->setUsbClock(true);
+                          controller_->session()->setUsbTransport(true);
+                          controller_->play();
+                          controller_->setTab(0);
+                        }});
+      steps_.push_back({"35-bench-system", [this] {
+                          controller_->hideValuePopup();
+                          controller_->play();
+                          controller_->setTab(4);
+                        }});
+    }
   }
 
   // Scripted absolute EQ band values: type 0..5, frequency, gain, Q.
@@ -424,6 +457,7 @@ int main(int argc, char* argv[]) {
   mnky::app::AppLogger::instance();
   const bool emulator = arguments.contains(QStringLiteral("--emulator")) ||
                         (wantsScreenshots && !liveScreenshots);
+  const bool noPico = arguments.contains(QStringLiteral("--no-pico"));
 
   std::unique_ptr<QLockFile> instanceLock;
   if (!wantsScreenshots) {
@@ -442,6 +476,9 @@ int main(int argc, char* argv[]) {
 
   mnky::app::log(std::string("app: backends ") +
                  (emulator ? "emulator (--emulator)" : "hardware (Linux SPI/Qt audio)"));
+  if (noPico) {
+    mnky::app::log("app: --no-pico selected: no Pico, no SPI transport; Pi clock master");
+  }
 
   // The QML Style singleton is a QML file so the theme lives with the UI; it
   // carries the contrast floors from the old theme.hpp comments as comments and
@@ -449,7 +486,7 @@ int main(int argc, char* argv[]) {
   qmlRegisterSingletonType(QUrl(QStringLiteral("qrc:/qml/Style.qml")), "Mnkybox", 1, 0,
                            "Style");
 
-  mnky::app::AppController controller(emulator);
+  mnky::app::AppController controller(emulator, noPico);
   QQmlApplicationEngine engine;
   engine.rootContext()->setContextProperty(QStringLiteral("app"), &controller);
   engine.rootContext()->setContextProperty(QStringLiteral("mixer"), controller.mixer());
