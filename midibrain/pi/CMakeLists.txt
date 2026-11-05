@@ -5,7 +5,7 @@
 #   cmake --build /tmp/pi-build -j
 #   ctest --test-dir /tmp/pi-build --output-on-failure
 #
-# The core modules (link midi audio clap app emulator) are written by parallel
+# The core modules (link midi audio clap session update app emulator) are written by parallel
 # teams, so every module subdirectory is optional: a missing directory skips its
 # target instead of failing configure. Build files here are the contract, not a
 # manufacturing or signal-integrity gate. See README.md and ARCHITECTURE.md.
@@ -139,6 +139,7 @@ mnky_core_module(mnky_midi  midi)
 mnky_core_module(mnky_audio audio)
 mnky_core_module(mnky_clap  clap)
 mnky_core_module(mnky_session session)
+mnky_core_module(mnky_update update)
 
 if(TARGET mnky_midi)
   target_link_libraries(mnky_midi PUBLIC mnky_rtmidi)
@@ -199,6 +200,7 @@ mnky_module_tests(mnky_midi  midi)
 mnky_module_tests(mnky_audio audio)
 mnky_module_tests(mnky_clap  clap)
 mnky_module_tests(mnky_session session)
+mnky_module_tests(mnky_update update)
 
 # --- Optional wave-2 targets --------------------------------------------------
 # app/ (Qt 6 QML touchscreen UI) and emulator/ (backends + headless selftest)
