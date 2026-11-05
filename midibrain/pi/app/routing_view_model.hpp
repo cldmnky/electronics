@@ -66,13 +66,13 @@ class RoutingViewModel final : public QObject {
   double wireHandleFraction() const { return routing::kWireHandleFraction; }
 
   int shiftPage() const { return shiftPage_; }
-  void setShiftPage(int page);
+  Q_INVOKABLE void setShiftPage(int page);
   int pipeSource() const { return pipeSource_; }
   void setPipeSource(int source);
   int pipeDestination() const { return pipeDestination_; }
   void setPipeDestination(int destination);
   int selectedPipe() const { return selectedPipe_; }
-  void selectPipe(int index);
+  Q_INVOKABLE void selectPipe(int index);
   int addTypeIndex() const { return addTypeIndex_; }
   void setAddTypeIndex(int index);
   QString addTypeName() const;
