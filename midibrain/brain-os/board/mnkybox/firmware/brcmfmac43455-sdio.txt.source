@@ -1,0 +1,17 @@
+# Provenance of the vendored file next to this one (kept byte-identical, so
+# the hash can be re-checked).
+#
+# file   : brcmfmac43455-sdio.txt  (BCM43455 SDIO NVRAM for Raspberry Pi boards)
+# source : https://raw.githubusercontent.com/RPi-Distro/firmware-nonfree/bookworm/debian/config/brcm80211/brcm/brcmfmac43455-sdio.txt
+# project: https://github.com/RPi-Distro/firmware-nonfree (branch bookworm)
+# date   : 2026-11-04
+# sha256 : ca709be81a78bdb6932936374f39943acbd7af07fae6151011127599a3ce9e3d
+# size   : 2074 bytes
+# licence: Broadcom/Cypress firmware licence (LICENCE.broadcom_bcm43xx in
+#          linux-firmware); redistribution permitted.
+#
+# Installed by post-build.sh to /lib/firmware/brcm/, together with
+#   brcmfmac43455-sdio.raspberrypi,5-model-b.txt -> brcmfmac43455-sdio.txt
+#   brcmfmac43455-sdio.bin    -> ../cypress/cyfmac43455-sdio.bin
+#   brcmfmac43455-sdio.clm_blob -> ../cypress/cyfmac43455-sdio.clm_blob
+# (the .bin and .clm_blob come from BR2_PACKAGE_LINUX_FIRMWARE_CYPRESS_CYW43XXX).

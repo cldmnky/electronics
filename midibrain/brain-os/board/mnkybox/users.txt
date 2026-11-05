@@ -1,0 +1,17 @@
+# MNKYBOX users and groups (BR2_ROOTFS_USERS_TABLES).
+#
+# Field order: username uid group gid password home shell groups comment
+#   "-" uid/gid  : automatic system id
+#   "*" password : locked account (no password login; SSH public keys only)
+#
+# audio (29) and video (28) come from the Buildroot skeleton. seat, input and
+# render are normally created by the seatd, udev and systemd packages, but
+# mkusers silently skips supplementary groups that do not exist yet, so they
+# are declared here with automatic ids.
+- - seat -1 * - - - Seat management group (seatd)
+- - input -1 * - - - Input device group (udev)
+- - render -1 * - - - DRI render nodes (systemd)
+
+# Session and application user: owns PipeWire, WirePlumber, Weston and the app.
+# uid 1000 is fixed so the rootfs overlay and the app team can rely on it.
+mnkybox 1000 mnkybox 1000 * /home/mnkybox /bin/sh audio,video,input,render,seat - MNKYBOX session and application user

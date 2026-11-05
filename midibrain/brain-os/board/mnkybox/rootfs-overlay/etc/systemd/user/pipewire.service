@@ -1,0 +1,18 @@
+[Unit]
+Description=PipeWire sound server (MNKYBOX)
+Documentation=man:pipewire(1)
+# Session user unit: the systemd user manager of user mnkybox starts it at boot
+# because lingering is enabled (post-build.sh creates
+# /var/lib/systemd/linger/mnkybox). XDG_RUNTIME_DIR is provided by the user
+# manager (/run/user/1000).
+PartOf=pipewire-pulse.service
+Before=pipewire-pulse.service wireplumber.service mnkybox-app.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/pipewire
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=default.target

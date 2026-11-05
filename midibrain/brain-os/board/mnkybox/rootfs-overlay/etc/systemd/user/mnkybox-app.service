@@ -1,0 +1,34 @@
+[Unit]
+Description=MNKYBOX instrument application (Qt 6 QML, native Wayland)
+Documentation=file:/opt/mnkybox/CONTRACT.md
+# Session user unit: started after the sound server (PipeWire, WirePlumber,
+# pipewire-pulse) and the compositor are up.
+Wants=pipewire.service wireplumber.service pipewire-pulse.service
+Requires=weston.service
+After=pipewire.service wireplumber.service pipewire-pulse.service weston.service
+# The stub exits 78 (EX_CONFIG) until the real binary lands; stop retrying
+# instead of flapping forever.
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+Environment=WAYLAND_DISPLAY=wayland-0
+# Qt 6 on the Wayland platform plugin: no X11, no XWayland, native Wayland with
+# full multitouch from libinput. Audio goes through Qt Multimedia's PulseAudio
+# backend to pipewire-pulse; the application never uses the JACK API or ALSA
+# directly.
+Environment=QT_QPA_PLATFORM=wayland
+Environment=QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+Environment=QT_WAYLAND_SHELL_INTEGRATION=xdg-shell
+# Virtual keyboard input method (qt6virtualkeyboard) for text entry on the
+# panel. Qt 6 reads QT_IM_MODULE; QT_IM_MODULES is set for newer QML builds.
+Environment=QT_IM_MODULE=qtvirtualkeyboard
+Environment=QT_IM_MODULES=qtvirtualkeyboard
+Environment=HOME=/home/mnkybox
+ExecStart=/opt/mnkybox/bin/mnkybox
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

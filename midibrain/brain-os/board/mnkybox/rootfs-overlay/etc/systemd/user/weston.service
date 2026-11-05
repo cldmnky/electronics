@@ -1,0 +1,24 @@
+[Unit]
+Description=Weston Wayland compositor (MNKYBOX)
+Documentation=man:weston(1)
+# seatd owns the DRM seat (system unit); weston takes DRM master through
+# libseat as the mnkybox user. No logind seat, no weston-launch, no getty on the
+# panel. This is a user unit so that the compositor and the application share
+# one session and one XDG_RUNTIME_DIR.
+Requires=pipewire.service
+After=pipewire.service
+Before=mnkybox-app.service
+
+[Service]
+Type=simple
+Environment=LIBSEAT_BACKEND=seatd
+Environment=SEATD_SOCK=/run/seatd.sock
+Environment=XDG_SEAT=seat0
+# No --xwayland: the application is a Qt 6 Wayland client.
+# Output rotation, shell and idle behaviour live in /etc/weston.ini.
+ExecStart=/usr/bin/weston --backend=drm --idle-time=0
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

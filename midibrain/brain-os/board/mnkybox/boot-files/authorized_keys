@@ -1,0 +1,11 @@
+# MNKYBOX SSH keys template — edit this file on the FAT boot partition.
+#
+# Put one OpenSSH public key per line (e.g. the contents of ~/.ssh/id_ed25519.pub)
+# and remove the leading "# " of the example line. The first-boot unit installs
+# it as /root/.ssh/authorized_keys (mode 0600) and renames this file to
+# authorized_keys.applied.
+#
+# Dropbear runs with -s: password logins are disabled, so this file is the only
+# way to log in over SSH.
+#
+# ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... you@laptop

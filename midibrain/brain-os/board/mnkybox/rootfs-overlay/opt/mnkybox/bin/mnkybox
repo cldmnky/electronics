@@ -1,0 +1,28 @@
+#!/bin/sh
+#
+# MNKYBOX application — STUB, not the real program.
+#
+# The real binary is the JUCE application target `mnkybox` from midibrain/pi
+# (see pi/README.md and pi/ARCHITECTURE.md). The application team replaces this
+# file through the rootfs overlay (board/mnkybox/rootfs-overlay/opt/mnkybox/bin/mnkybox)
+# or by dropping the binary into /opt/mnkybox/bin at image build time.
+#
+# The stub exists so that the boot path, the systemd unit, the image checks and
+# the overlay contract can be tested before the binary exists. It never
+# pretends to work.
+#
+# Exit codes:
+#   0   only for --version, so probes can detect the stub
+#   78  EX_CONFIG: the application binary is not installed yet (this stub)
+#   (the real application defines its own exit codes)
+
+case "${1:-}" in
+--version)
+	echo "mnkybox stub 0 (application binary not installed)"
+	exit 0
+	;;
+esac
+
+echo "mnkybox: STUB — the application binary is not installed in this image." >&2
+echo "mnkybox: see /opt/mnkybox/CONTRACT.md and midibrain/pi/README.md." >&2
+exit 78

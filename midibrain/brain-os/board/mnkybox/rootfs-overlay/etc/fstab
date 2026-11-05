@@ -1,0 +1,8 @@
+# MNKYBOX mount table (systemd generates mount units from this file).
+#
+# p1 is the FAT boot partition and is mounted at /boot so that the first-boot
+# unit can read /boot/mnkybox/ (WiFi configuration, SSH keys) and rename the
+# files it consumed. nofail: a missing or unreadable boot partition must not
+# stop the instrument from starting.
+/dev/mmcblk0p2	/	ext4	defaults,noatime	0	1
+/dev/mmcblk0p1	/boot	vfat	defaults,noatime,nofail,x-systemd.device-timeout=10s	0	2

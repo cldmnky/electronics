@@ -1,0 +1,7 @@
+# Dropbear arguments (read by /usr/lib/systemd/system/dropbear.service).
+#
+# -s : password logins are disabled. Only SSH public keys work, and the only
+#      key in the image is the one the first-boot unit installs from
+#      /boot/mnkybox/authorized_keys. No password is ever baked in.
+# -R and -F are supplied by the unit itself.
+DROPBEAR_ARGS="-s"
