@@ -202,6 +202,35 @@ void SessionViewModel::setUsbTransport(bool on) {
   emit clockChanged();
 }
 
+QStringList SessionViewModel::deviceOutPairLabels() const {
+  QStringList labels;
+  labels.reserve(kDeviceOutPairs);
+  for (int pair = 0; pair < kDeviceOutPairs; ++pair) {
+    labels << QStringLiteral("%1&%2").arg(2 * pair + 1).arg(2 * pair + 2);
+  }
+  return labels;
+}
+
+int SessionViewModel::deviceOutPair(const std::array<int, 2>& pair) {
+  return std::clamp(pair[0] / 2, 0, kDeviceOutPairs - 1);
+}
+
+void SessionViewModel::setDeviceOutPair(int bus, int pair) {
+  if (bus < 0 || bus > 2) return;
+  const int index = std::clamp(pair, 0, kDeviceOutPairs - 1);
+  const std::array<int, 2> value{2 * index, 2 * index + 1};
+  auto& target = bus == 0 ? settings_.deviceOut.main
+                 : bus == 1 ? settings_.deviceOut.out34
+                            : settings_.deviceOut.phones;
+  if (target == value) return;
+  target = value;
+  emit deviceOutChanged();
+}
+
+void SessionViewModel::setDeviceOutMain(int pair) { setDeviceOutPair(0, pair); }
+void SessionViewModel::setDeviceOutOut34(int pair) { setDeviceOutPair(1, pair); }
+void SessionViewModel::setDeviceOutPhones(int pair) { setDeviceOutPair(2, pair); }
+
 QString SessionViewModel::clockText() const {
   const auto gate = [](bool on) { return on ? QStringLiteral("on") : QStringLiteral("off"); };
   const auto& trs1 = settings_.clock.trs[0];
@@ -236,6 +265,7 @@ void SessionViewModel::refresh() {
   emit sendsChanged();
   emit compChanged();
   emit clockChanged();
+  emit deviceOutChanged();
 }
 
 }  // namespace mnky::app

@@ -70,25 +70,34 @@ Item {
                 Text {
                     width: parent.width
                     height: 16
-                    text: "AUDIO BACKEND - Qt Multimedia"
+                    text: "AUDIO BACKEND"
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     font.bold: true
                 }
 
-                TouchComboBox {
-                    id: backendBox
+                Text {
                     width: parent.width
-                    model: system.backendLabels
+                    height: 12
+                    text: "OUTPUT DEVICE - name / backend / channels"
+                    color: Style.textDim
+                    font.pixelSize: 9
+                }
+
+                DeviceComboBox {
+                    id: backendBox
+                    objectName: "systemOutputList"
+                    width: parent.width
+                    model: system.outputRows
                     focusId: "system.backend"
                     onActivated: (index) => system.backendIndex = index
                     Binding on currentIndex { value: system.backendIndex; when: !backendBox.popup.visible }
                 }
 
-                TouchComboBox {
+                DeviceComboBox {
                     id: inputBox
                     width: parent.width
-                    model: system.inputLabels
+                    model: system.inputRows
                     focusId: "system.input"
                     onActivated: (index) => system.inputIndex = index
                     Binding on currentIndex { value: system.inputIndex; when: !inputBox.popup.visible }
@@ -122,6 +131,118 @@ Item {
                         focusId: "system.refresh"
                         onClicked: system.refreshDevices()
                     }
+                }
+
+                // Device output routing (session v2 deviceOut): which device
+                // channel pair carries Main 1&2, OUT3&4 and the phones bus.
+                // Defaults 1&2, 3&4, 5&6. The pairs are saved with the project;
+                // the audio backend does not map them onto the interface yet.
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: "DEVICE OUT CHANNELS"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    font.bold: true
+                }
+
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 4
+
+                    Text {
+                        width: 84
+                        height: parent.height
+                        text: "MAIN 1&2"
+                        color: Style.text
+                        font.pixelSize: Style.fontSmall
+                        font.bold: true
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TouchComboBox {
+                        id: devoutMainBox
+                        objectName: "systemDevoutList"
+                        width: parent.width - 88
+                        height: parent.height
+                        model: session.deviceOutPairLabels
+                        focusId: "system.devout.main"
+                        onActivated: (index) => {
+                            session.deviceOutMain = index
+                            app.showTextPopup("MAIN 1&2 DEVICE OUT", session.deviceOutPairLabels[index])
+                        }
+                        Binding on currentIndex { value: session.deviceOutMain; when: !devoutMainBox.popup.visible }
+                    }
+                }
+
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 4
+
+                    Text {
+                        width: 84
+                        height: parent.height
+                        text: "OUT3&4"
+                        color: Style.text
+                        font.pixelSize: Style.fontSmall
+                        font.bold: true
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TouchComboBox {
+                        id: devoutOut34Box
+                        width: parent.width - 88
+                        height: parent.height
+                        model: session.deviceOutPairLabels
+                        focusId: "system.devout.out34"
+                        onActivated: (index) => {
+                            session.deviceOutOut34 = index
+                            app.showTextPopup("OUT3&4 DEVICE OUT", session.deviceOutPairLabels[index])
+                        }
+                        Binding on currentIndex { value: session.deviceOutOut34; when: !devoutOut34Box.popup.visible }
+                    }
+                }
+
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 4
+
+                    Text {
+                        width: 84
+                        height: parent.height
+                        text: "PHONES"
+                        color: Style.text
+                        font.pixelSize: Style.fontSmall
+                        font.bold: true
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TouchComboBox {
+                        id: devoutPhonesBox
+                        width: parent.width - 88
+                        height: parent.height
+                        model: session.deviceOutPairLabels
+                        focusId: "system.devout.phones"
+                        onActivated: (index) => {
+                            session.deviceOutPhones = index
+                            app.showTextPopup("PHONES DEVICE OUT", session.deviceOutPairLabels[index])
+                        }
+                        Binding on currentIndex { value: session.deviceOutPhones; when: !devoutPhonesBox.popup.visible }
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    height: 26
+                    text: "Saved with the project (session deviceOut). The audio backend does not map these pairs onto the interface channels yet."
+                    color: Style.textDim
+                    font.pixelSize: 9
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
                 }
 
                 Text {

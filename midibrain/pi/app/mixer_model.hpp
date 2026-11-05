@@ -50,10 +50,10 @@ class MixerModel {
   // Per-track I/O assignment (session v2 mixer.channels[].inCh/inPair/outDst):
   // `inCh` is the mono device channel 0..17 or -1 for none, `inPair` binds the
   // next channel as a stereo pair (inCh is forced even), `outDst` is
-  // 0 = Main 1&2, 1 = OUT3&4, 2 = phones, 3 = none. The engine has no per-track
-  // source/destination fields yet (audio::Channel carries gain/pan/monitor
-  // only), so applyTo() cannot forward them and the values live here until the
-  // audio worker adds them.
+  // 0 = Main 1&2, 1 = OUT3&4, 2 = phones, 3 = none. A new strip is identity
+  // (strip N <- device channel N), as Engine::setInputSource documents, and
+  // applyTo() forwards the triple to the engine every block so a picker edit
+  // lands on the next block like every other mixer value.
   void setInCh(int index, int channel);
   int inCh(int index) const;
   void setInPair(int index, bool pair);

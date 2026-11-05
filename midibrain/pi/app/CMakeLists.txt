@@ -129,6 +129,7 @@ qt_add_resources(mnkybox "qml"
     qml/components/LearnPanel.qml
     qml/components/FxSlotPanel.qml
     qml/components/TouchComboBox.qml
+    qml/components/DeviceComboBox.qml
     qml/components/ValuePopup.qml
     qml/components/TimelineWave.qml
     qml/components/PipeParamEditor.qml

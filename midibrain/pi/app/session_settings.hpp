@@ -45,6 +45,14 @@ class SessionSettings {
   // sync delay in ClockRoute are session-only because EV_CLOCK_ROUTE carries
   // only the two gate bits.
   session::ClockState clock;
+  // Which device channel pair carries Main 1&2, OUT3&4 and the phones bus
+  // (session v2 deviceOut, 0-based: default Main 1&2, OUT3&4, phones 5&6). The
+  // System screen's pickers write it and project_io copies it to and from the
+  // snapshot. The engine side exists (audio::Engine::setDeviceOut and
+  // audio::DeviceOut in audio/engine.cpp); the app-side handoff does not:
+  // AudioGlue has no applyDeviceOut(), so these values are saved and displayed
+  // but do not move the buses on the opened device yet.
+  session::DeviceOutState deviceOut;
   // Settings-only project marker (session v2 snapshot.isTemplate).
   bool isTemplate = false;
 

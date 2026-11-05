@@ -143,9 +143,10 @@ Window {
     }
 
     ValuePopup {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Style.transportHeight + 10
+        // Top band; the component moves below the finger when the finger is in
+        // that band (fullscreen EQ grid), so the readout is never under the
+        // touch point. The panel EDIT path has no anchor and keeps the band.
+        anchorY: app.touchAnchorY
         popupVisible: app.valuePopupVisible
         popupLabel: app.valuePopupLabel
         popupText: app.valuePopupText

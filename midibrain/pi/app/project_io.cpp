@@ -149,6 +149,11 @@ session::Snapshot captureSnapshot(const AppContext& context) {
         context.mixer.outDst(channel);
   }
   snapshot.clock = context.settings.clock;
+  // Device output routing (session v2 deviceOut): Main/OUT3&4/phones channel
+  // pairs, chosen on the System screen. The engine half lands in
+  // audio::Engine::setDeviceOut; the AudioGlue handoff is still missing, so the
+  // pairs are carried by the session and not yet applied per block.
+  snapshot.deviceOut = context.settings.deviceOut;
   // MIDI FX pipe chains are app-owned in MidiGlue. session::capture() only
   // emits enabled routes and carries no pipe lists, so attach the stored chain
   // to its route here and add an entry for a chain whose route is off (the
@@ -341,6 +346,7 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
         result.snapshot.takes.edit[static_cast<std::size_t>(channel)];
   }
   context.settings.clock = result.snapshot.clock;
+  context.settings.deviceOut = result.snapshot.deviceOut;
   context.audio.applyTakeLoops(context.settings);
   return true;
 }
@@ -459,6 +465,11 @@ std::string fingerprint(const AppContext& context) {
   appendInt(out, "ct2", context.settings.clock.trs[1].transport ? 1 : 0);
   appendInt(out, "cku", context.settings.clock.usb.clock ? 1 : 0);
   appendInt(out, "ctu", context.settings.clock.usb.transport ? 1 : 0);
+  for (const auto& pair : {context.settings.deviceOut.main, context.settings.deviceOut.out34,
+                           context.settings.deviceOut.phones}) {
+    appendInt(out, "dl", pair[0]);
+    appendInt(out, "dr", pair[1]);
+  }
   for (const auto& point : {context.settings.punch.playFrom, context.settings.punch.in,
                             context.settings.punch.out}) {
     appendInt(out, "pe", point.enabled ? 1 : 0);

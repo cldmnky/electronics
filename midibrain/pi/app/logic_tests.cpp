@@ -44,6 +44,7 @@
 #include "routing_view_model.hpp"
 #include "session_settings.hpp"
 #include "session_view_model.hpp"
+#include "system_view_model.hpp"
 #include "text_buffer.hpp"
 #include "timeline_model.hpp"
 #include "wav_info.hpp"
@@ -255,6 +256,18 @@ void mixerTests() {
   checkNear(engine.channel(3).gain, dbToGain(-6.0f), 1e-6, "mixer snapshot gain");
   checkNear(engine.channel(3).pan, 0.25, 1e-6, "mixer snapshot pan");
   checkNear(engine.channel(3).send[1], 0.5, 1e-6, "mixer snapshot send");
+  // Input source, pair flag and output destination are separate engine routing
+  // state (Engine::setChannel leaves them alone), so the same snapshot carries
+  // them and a strip picker is live on the next block.
+  check(engine.inputSource(4) == 4 && engine.inputSource(17) == 17,
+        "a new strip listens to its own device channel (identity)");
+  model.setInCh(4, 9);
+  model.setInPair(5, true);
+  model.setOutDst(6, 2);
+  model.applyTo(engine);
+  check(engine.inputSource(4) == 9 && engine.inputPair(5) &&
+            engine.outputDestination(6) == audio::OutputDestination::Phones,
+        "the mixer snapshot carries input source, pair and output destination");
   model.setMonitor(3, 2);
   model.applyTo(engine);
   check(engine.channel(3).monitor == audio::MonitorMode::On,
@@ -555,6 +568,9 @@ void projectRoundTripTests() {
   settings.clock.trs[1].transport = true;
   settings.clock.usb.clock = true;
   settings.clock.usb.transport = false;
+  settings.deviceOut.main = {6, 7};
+  settings.deviceOut.out34 = {0, 1};
+  settings.deviceOut.phones = {8, 9};
   mixer.setInCh(2, 4);
   mixer.setInPair(2, true);
   mixer.setOutDst(2, 1);
@@ -646,6 +662,10 @@ void projectRoundTripTests() {
             !settings.clock.trs[1].clock && settings.clock.trs[1].transport &&
             settings.clock.usb.clock && !settings.clock.usb.transport,
         "project load restores the per-output clock gates");
+  check(settings.deviceOut.main == std::array<int, 2>{6, 7} &&
+            settings.deviceOut.out34 == std::array<int, 2>{0, 1} &&
+            settings.deviceOut.phones == std::array<int, 2>{8, 9},
+        "project load restores the device output channel pairs");
   check(mixer.inCh(2) == 4 && mixer.inPair(2) && mixer.outDst(2) == 1,
         "project load restores the per-track input source and output destination");
   check(mixer.inCh(3) == -1 && mixer.outDst(3) == 3,
@@ -1090,6 +1110,105 @@ void clockGateTests() {
         "pushClockToLink re-reads the session gates");
 }
 
+// Device output routing (session v2 deviceOut): the System pickers write the
+// pairs the session carries, the labels cover the channel range the format
+// accepts, and refresh() re-reads a loaded session.
+void deviceOutTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  MidiGlue midi(false);
+  LinkClient link(midi, state, true);
+  SessionViewModel session(state, mixer, link, settings);
+
+  check(session.deviceOutMain() == 0 && session.deviceOutOut34() == 1 &&
+            session.deviceOutPhones() == 2,
+        "device outputs default to Main 1&2, OUT3&4 and phones 5&6");
+  check(session.deviceOutPairLabels().size() == kDeviceOutPairs &&
+            session.deviceOutPairLabels().value(0) == "1&2" &&
+            session.deviceOutPairLabels().value(1) == "3&4" &&
+            session.deviceOutPairLabels().value(kDeviceOutPairs - 1) == "31&32",
+        "the pair labels cover the session device channel range");
+
+  session.setDeviceOutMain(3);
+  check(settings.deviceOut.main[0] == 6 && settings.deviceOut.main[1] == 7 &&
+            session.deviceOutMain() == 3,
+        "the MAIN picker writes both device channels of the pair");
+  session.setDeviceOutOut34(0);
+  check(settings.deviceOut.out34[0] == 0 && settings.deviceOut.out34[1] == 1,
+        "the OUT3&4 picker writes its own pair");
+  session.setDeviceOutPhones(kDeviceOutPairs + 5);
+  check(settings.deviceOut.phones[0] == 2 * (kDeviceOutPairs - 1) &&
+            settings.deviceOut.phones[1] == 2 * (kDeviceOutPairs - 1) + 1,
+        "a pair index past the picker list clamps to the last pair");
+
+  settings.deviceOut.out34 = {4, 5};
+  session.refresh();
+  check(session.deviceOutOut34() == 2, "refresh re-reads a loaded session pair");
+}
+
+// Compact input source on every MIXER strip: one list of NONE, mono IN 01..18
+// and the nine stereo pairs, wrapping in both directions. The panel encoder
+// steps the same list (adjustFocused "mixer.in.N").
+void mixerInputSourceTests() {
+  SessionSettings settings;
+  MixerModel model;
+  MixerViewModel view(model, settings);
+
+  check(view.inSourceText(0) == "IN 01", "a strip starts on its own input");
+  check(view.data(view.index(0, 0), MixerViewModel::InputTextRole).toString() ==
+            QStringLiteral("IN 01"),
+        "the strip role carries the input source text");
+  check(view.cycleInSource(0, 1) == "IN 02", "the strip selector steps to the next input");
+  check(view.cycleInSource(0, -1) == "IN 01", "and steps back");
+  check(view.cycleInSource(0, -1) == "NONE", "below IN 01 is NONE");
+  check(view.cycleInSource(0, -1) == "IN 17/18",
+        "below NONE the selector wraps to the last stereo pair");
+  check(model.inCh(0) == 16 && model.inPair(0), "the last pair starts on channel 17");
+  check(view.cycleInSource(0, 1) == "NONE", "above the last pair is NONE again");
+  check(view.cycleInSource(0, 1) == "IN 01", "and the list starts over");
+  model.setInCh(0, 4);
+  check(view.inSourceText(0) == "IN 05", "a mono pick reads back through the selector");
+  check(view.toggleInPair(0) == "IN 05/06", "PAIR binds the next device channel");
+  check(model.inCh(0) == 4 && model.inPair(0), "the pair keeps an even first channel");
+  check(view.toggleInPair(0) == "IN 05", "PAIR releases the second channel");
+  check(view.cycleInSource(0, 1) == "IN 06", "a mono step moves one channel");
+  check(view.cycleInSource(7, 1) == "IN 09",
+        "a strip's selector writes that strip only");
+  check(view.inSourceText(0) == "IN 06" && model.inCh(1) == 1,
+        "other strips keep their source");
+}
+
+// System device list columns. The name is the backend's own string (a generic
+// repeated name is displayed as-is, never replaced), and the row carries the
+// backend it came from and the channel count next to it.
+void systemDeviceRowTests() {
+  std::vector<AudioDeviceOption> devices(2);
+  devices[0].id = "pipewire:alsa_output.usb-umc1820";
+  devices[0].name = "USB";
+  devices[0].isDefault = true;
+  devices[1].id = "alsa:hw:2";
+  devices[1].name = "USB";
+
+  const auto rows = SystemViewModel::deviceRows(devices);
+  check(rows.size() == 2, "one row per enumerated device");
+  const auto first = rows.value(0).toMap();
+  const auto second = rows.value(1).toMap();
+  check(first.value(QStringLiteral("name")).toString() == QStringLiteral("USB (default)") &&
+            second.value(QStringLiteral("name")).toString() == QStringLiteral("USB"),
+        "rows keep the backend's device names and mark the default");
+  check(first.value(QStringLiteral("backend")).toString() == QStringLiteral("pipewire") &&
+            second.value(QStringLiteral("backend")).toString() == QStringLiteral("alsa"),
+        "the row names the backend the device came from");
+  check(first.contains(QStringLiteral("channels")) &&
+            second.value(QStringLiteral("channels")).toString() == QStringLiteral("?"),
+        "an unknown channel count is shown as unknown, not guessed");
+  check(first.value(QStringLiteral("label")).toString().contains(
+            QStringLiteral("pipewire")) &&
+            first.value(QStringLiteral("label")).toString().contains(QStringLiteral("USB")),
+        "the closed field carries the same three columns");
+}
+
 void timelineAndPipeTests() {
   using namespace mnky::app::timeline;
   check(measureBeat(1) == 0.0 && measureBeat(5) == 16.0,
@@ -1507,6 +1626,9 @@ int runAll() {
   sendChainTests();
   midiMonitorTests();
   clockGateTests();
+  deviceOutTests();
+  mixerInputSourceTests();
+  systemDeviceRowTests();
   timelineAndPipeTests();
   pipeLinkTests();
   eqForwardingTests();

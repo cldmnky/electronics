@@ -77,6 +77,12 @@ class AppController final : public QObject {
   Q_PROPERTY(bool valuePopupVisible READ valuePopupVisible NOTIFY valuePopupChanged)
   Q_PROPERTY(QString valuePopupLabel READ valuePopupLabel NOTIFY valuePopupChanged)
   Q_PROPERTY(QString valuePopupText READ valuePopupText NOTIFY valuePopupChanged)
+  // Window-Y of the touch point that owns the current gesture (a slider drag or
+  // an EQ node drag), or -1 when no finger is down. The readout is pinned to the
+  // top band; QML flips it below this point when the point would otherwise sit
+  // under it, so a readout is never under the finger. Touch controls set and
+  // clear it, the panel EDIT path never does, so it always keeps the top band.
+  Q_PROPERTY(double touchAnchorY READ touchAnchorY WRITE setTouchAnchorY NOTIFY touchAnchorChanged)
 
  public:
   explicit AppController(bool emulator, bool noPico, QObject* parent = nullptr);
@@ -127,6 +133,8 @@ class AppController final : public QObject {
   bool valuePopupVisible() const { return valuePopupVisible_; }
   QString valuePopupLabel() const { return valuePopupLabel_; }
   QString valuePopupText() const { return valuePopupText_; }
+  double touchAnchorY() const { return touchAnchorY_; }
+  void setTouchAnchorY(double y);
 
   // Transient control-value readout. `kind` selects the formatting (pan, db,
   // percent, ratio, ms, bpm, int, generic). Called by every TouchSlider and by
@@ -207,6 +215,7 @@ class AppController final : public QObject {
   void keypadChanged();
   void confirmChanged();
   void valuePopupChanged();
+  void touchAnchorChanged();
 
  private:
   void timerTick();
@@ -325,6 +334,7 @@ class AppController final : public QObject {
   bool valuePopupVisible_ = false;
   QString valuePopupLabel_;
   QString valuePopupText_;
+  double touchAnchorY_ = -1.0;
 
   bool started_ = false;
   // --no-pico: LinkClient has no SPI transport or PicoLink and the Pi owns the

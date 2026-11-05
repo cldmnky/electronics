@@ -79,6 +79,8 @@ QVariant MixerViewModel::data(const QModelIndex& index, int role) const {
       return model_.monitor(strip);
     case MonitorMarkRole:
       return monitorMark(strip);
+    case InputTextRole:
+      return inputText(model_.inCh(strip), model_.inPair(strip));
     case SelectedRole:
       return strip == selectedStrip_;
     default:
@@ -95,6 +97,7 @@ QHash<int, QByteArray> MixerViewModel::roleNames() const {
           {SoloRole, "solo"},        {ArmRole, "arm"},
           {LevelRole, "level"},      {ClipRole, "clip"},
           {MonitorRole, "monitor"},  {MonitorMarkRole, "monitorMark"},
+          {InputTextRole, "inputText"},
           {SelectedRole, "selected"}};
 }
 
@@ -242,6 +245,48 @@ void MixerViewModel::cycleTrackOutDst(int delta) {
   }
   model_.setOutDst(trackIndex_, next);
   emit trackChanged();
+}
+
+QString MixerViewModel::inSourceText(int index) const {
+  if (index < 0 || index >= kNumStrips) return {};
+  return inputText(model_.inCh(index), model_.inPair(index));
+}
+
+QString MixerViewModel::cycleInSource(int index, int delta) {
+  if (index < 0 || index >= kNumStrips) return {};
+  // State 0 is NONE, 1..18 the mono channels and 19..27 the nine stereo pairs;
+  // both directions wrap so the selector never dead-ends.
+  const int pairBase = 1 + kNumStrips;
+  const int states = pairBase + kNumStrips / 2;
+  const int channel = model_.inCh(index);
+  int state = 0;
+  if (channel >= 0) {
+    state = model_.inPair(index) ? pairBase + channel / 2 : 1 + channel;
+  }
+  state = ((state + delta) % states + states) % states;
+  if (state == 0) {
+    model_.setInPair(index, false);
+    model_.setInCh(index, -1);
+  } else if (state < pairBase) {
+    model_.setInPair(index, false);
+    model_.setInCh(index, state - 1);
+  } else {
+    // Pair first: setInPair clamps an odd channel down, then the even start
+    // channel is stored unchanged while the pair flag is on.
+    model_.setInPair(index, true);
+    model_.setInCh(index, 2 * (state - pairBase));
+  }
+  emit dataChanged(this->index(index, 0), this->index(index, 0), {InputTextRole});
+  if (index == trackIndex_) emit trackChanged();
+  return inSourceText(index);
+}
+
+QString MixerViewModel::toggleInPair(int index) {
+  if (index < 0 || index >= kNumStrips) return {};
+  model_.setInPair(index, !model_.inPair(index));
+  emit dataChanged(this->index(index, 0), this->index(index, 0), {InputTextRole});
+  if (index == trackIndex_) emit trackChanged();
+  return inSourceText(index);
 }
 
 void MixerViewModel::notifyActiveTakesChanged() {

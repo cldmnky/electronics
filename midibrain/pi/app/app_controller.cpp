@@ -845,6 +845,7 @@ bool AppController::isEditableFocus(const QString& focusId) const {
            id.contains(QStringLiteral("sendA")) || id.contains(QStringLiteral("sendB")) ||
            id.contains(QStringLiteral("fx1")) || id.contains(QStringLiteral("fx2")) ||
            id.contains(QStringLiteral("cue")) || id.contains(QStringLiteral("out34")) ||
+           id.startsWith(QStringLiteral("mixer.in.")) ||
            id == QStringLiteral("mixer.master");
   }
   if (id.startsWith(QStringLiteral("track."))) {
@@ -865,6 +866,9 @@ bool AppController::isEditableFocus(const QString& focusId) const {
   if (id.startsWith(QStringLiteral("system."))) {
     return id == QStringLiteral("system.backend") || id == QStringLiteral("system.input") ||
            id == QStringLiteral("system.buffer") ||
+           id == QStringLiteral("system.devout.main") ||
+           id == QStringLiteral("system.devout.out34") ||
+           id == QStringLiteral("system.devout.phones") ||
            id == QStringLiteral("system.click.level") ||
            id == QStringLiteral("system.click.bars");
   }
@@ -1194,6 +1198,13 @@ void AppController::activateFocus() {
       showTextPopup(QStringLiteral("INPUT MON"),
                     next == 0 ? QStringLiteral("Off")
                     : (next == 1 ? QStringLiteral("Auto") : QStringLiteral("On")));
+    } else if (what == QStringLiteral("in")) {
+      // Compact strip input source: EDIT steps it like the TRACK SHIFT picker.
+      // MONO/PAIR stays on the TRACK SHIFT face (its own PAIR button) and on the
+      // strip's long press, so the encoder never has two meanings.
+      setPanelMode(QStringLiteral("edit"));
+      showTextPopup(QStringLiteral("IN %1 INPUT").arg(strip + 1, 2, 10, QLatin1Char('0')),
+                    mixerVm_->inSourceText(strip));
     }
     return;
   }
@@ -1202,6 +1213,14 @@ void AppController::activateFocus() {
     if (parts[1] == QStringLiteral("page") && parts.size() >= 3) {
       routingVm_->setShiftPage(parts[2].toInt());
       rebuildFocusIds();
+    } else if (parts[1] == QStringLiteral("shiftpipes")) {
+      // Touch affordance on the primary face: the MIDI FX pipe chain lives on
+      // the SHIFT face, whose touch gesture is the Routing tab long press.
+      showShiftFace(true);
+      routingVm_->setShiftPage(1);
+      rebuildFocusIds();
+      showTextPopup(QStringLiteral("SHIFT PIPES"),
+                    QStringLiteral("MIDI FX chains - Routing SHIFT > PIPES"));
     } else if (parts[1] == QStringLiteral("pipes") && parts.size() >= 3) {
       const QString what = parts[2];
       if (what == QStringLiteral("src") && parts.size() >= 4) {
@@ -1317,6 +1336,20 @@ void AppController::activateFocus() {
       systemVm_->apply();
     } else if (parts[1] == QStringLiteral("refresh")) {
       systemVm_->refreshDevices();
+    } else if (parts[1] == QStringLiteral("backend") ||
+               parts[1] == QStringLiteral("input") ||
+               parts[1] == QStringLiteral("buffer")) {
+      // Pickers: EDIT turns the encoder into the list stepper.
+      setPanelMode(QStringLiteral("edit"));
+    } else if (parts[1] == QStringLiteral("devout") && parts.size() >= 3) {
+      // Device output pair picker (Main 1&2 / OUT3&4 / phones).
+      setPanelMode(QStringLiteral("edit"));
+      const int pair = parts[2] == QStringLiteral("out34") ? sessionVm_->deviceOutOut34()
+                      : (parts[2] == QStringLiteral("phones")
+                             ? sessionVm_->deviceOutPhones()
+                             : sessionVm_->deviceOutMain());
+      showTextPopup(QStringLiteral("DEVICE OUT"),
+                    sessionVm_->deviceOutPairLabels().value(pair));
     } else if (parts[1] == QStringLiteral("click")) {
       setClickEnabled(!clickEnabled());
     } else if (parts[1] == QStringLiteral("learn")) {
@@ -1582,6 +1615,11 @@ void AppController::adjustFocused(int detents, bool fine) {
     const QString what = parts[1];
     const int strip = parts[2].toInt();
     selectStrip(strip);
+    if (what == QStringLiteral("in")) {
+      showTextPopup(QStringLiteral("IN %1 INPUT").arg(strip + 1, 2, 10, QLatin1Char('0')),
+                    mixerVm_->cycleInSource(strip, detents > 0 ? 1 : -1));
+      return;
+    }
     if (what == QStringLiteral("gain")) {
       mixerVm_->setGainDb(strip, mixerVm_->data(mixerVm_->index(strip), MixerViewModel::GainDbRole).toDouble() +
                                      step * (fine ? 0.1 : 0.5));
@@ -1893,6 +1931,24 @@ void AppController::adjustFocused(int detents, bool fine) {
         showValuePopup(QStringLiteral("CLICK BARS"), QStringLiteral("int"),
                        clickBars());
       }
+    } else if (parts[1] == QStringLiteral("devout") && parts.size() >= 3) {
+      // Device output pair for Main 1&2 / OUT3&4 / phones. The picker list wraps.
+      const int delta = detents > 0 ? 1 : -1;
+      QString label = QStringLiteral("MAIN 1&2 DEVICE OUT");
+      int pair = 0;
+      if (parts[2] == QStringLiteral("out34")) {
+        label = QStringLiteral("OUT3&4 DEVICE OUT");
+        pair = moveIndex(sessionVm_->deviceOutOut34(), delta, kDeviceOutPairs);
+        sessionVm_->setDeviceOutOut34(pair);
+      } else if (parts[2] == QStringLiteral("phones")) {
+        label = QStringLiteral("PHONES DEVICE OUT");
+        pair = moveIndex(sessionVm_->deviceOutPhones(), delta, kDeviceOutPairs);
+        sessionVm_->setDeviceOutPhones(pair);
+      } else {
+        pair = moveIndex(sessionVm_->deviceOutMain(), delta, kDeviceOutPairs);
+        sessionVm_->setDeviceOutMain(pair);
+      }
+      showTextPopup(label, sessionVm_->deviceOutPairLabels().value(pair));
     }
     return;
   }
@@ -2160,6 +2216,7 @@ void AppController::rebuildFocusIds() {
           for (int i = 0; i < kStripsPerBank; ++i) {
             const int strip = first + i;
             ids.push_back(QStringLiteral("mixer.select.%1").arg(strip));
+            ids.push_back(QStringLiteral("mixer.in.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.gain.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.pan.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.mute.%1").arg(strip));
@@ -2174,6 +2231,7 @@ void AppController::rebuildFocusIds() {
       }
       case 1: {
         ids.push_back(QStringLiteral("routing.reset"));
+        ids.push_back(QStringLiteral("routing.shiftpipes"));
         for (int source = 0; source < routing::kInputCount; ++source) {
           ids.push_back(QStringLiteral("routing.node.in.%1").arg(source));
         }
@@ -2209,6 +2267,9 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("system.backend"));
         ids.push_back(QStringLiteral("system.input"));
         ids.push_back(QStringLiteral("system.buffer"));
+        ids.push_back(QStringLiteral("system.devout.main"));
+        ids.push_back(QStringLiteral("system.devout.out34"));
+        ids.push_back(QStringLiteral("system.devout.phones"));
         ids.push_back(QStringLiteral("system.apply"));
         ids.push_back(QStringLiteral("system.refresh"));
         break;
@@ -2557,6 +2618,13 @@ void AppController::hideValuePopup() {
   valuePopupVisible_ = false;
   valuePopupTimer_.stop();
   emit valuePopupChanged();
+}
+
+void AppController::setTouchAnchorY(double y) {
+  const double value = std::isfinite(y) && y >= 0.0 ? y : -1.0;
+  if (std::abs(value - touchAnchorY_) < 0.5) return;
+  touchAnchorY_ = value;
+  emit touchAnchorChanged();
 }
 
 void AppController::popupGain(const QString& label, int strip) {

@@ -13,7 +13,60 @@ namespace {
 QString hexString(std::uint32_t value) {
   return QStringLiteral("0x") + QString::number(value, 16);
 }
+
+// The backend every enumerated device is opened through: AudioDeviceOption::id
+// carries it as its prefix ("pipewire:<node>", "alsa:<pcm>"), which is the one
+// per-device backend fact the audio layer exposes today. A row without a
+// prefixed id (the platform default) says so instead of guessing.
+QString deviceBackend(const AudioDeviceOption& device) {
+  const QString id = QString::fromStdString(device.id);
+  const int colon = id.indexOf(QLatin1Char(':'));
+  return colon > 0 ? id.left(colon) : QStringLiteral("?");
+}
+
+// AudioDeviceOption carries no channel count yet (the missing field is a
+// per-device output/input channel count filled by the backend enumeration in
+// audio_glue.hpp / audio worker scope), so an unknown count is shown as such
+// instead of a guessed number.
+const QString kUnknownChannels = QStringLiteral("?");
+
+QVariantMap deviceRow(const QString& name, const QString& backend,
+                      const QString& channels) {
+  const QString detail =
+      backend + QStringLiteral("  ch ") + channels;
+  QVariantMap row;
+  row.insert(QStringLiteral("name"), name);
+  row.insert(QStringLiteral("backend"), backend);
+  row.insert(QStringLiteral("channels"), channels);
+  row.insert(QStringLiteral("detail"), detail);
+  row.insert(QStringLiteral("label"), name + QStringLiteral("  ") + detail);
+  return row;
+}
+
+QStringList rowLabels(const QVariantList& rows) {
+  QStringList labels;
+  labels.reserve(rows.size());
+  for (const auto& row : rows) {
+    labels << row.toMap().value(QStringLiteral("label")).toString();
+  }
+  return labels;
+}
 }  // namespace
+
+QVariantList SystemViewModel::deviceRows(const std::vector<AudioDeviceOption>& devices) {
+  QVariantList rows;
+  rows.reserve(static_cast<int>(devices.size()));
+  for (const auto& device : devices) {
+    rows.push_back(deviceRow(QString::fromStdString(device.name) +
+                                 (device.isDefault ? QStringLiteral(" (default)") : QString()),
+                             deviceBackend(device), kUnknownChannels));
+  }
+  return rows;
+}
+
+QStringList SystemViewModel::backendLabels() const { return rowLabels(outputRows_); }
+
+QStringList SystemViewModel::inputLabels() const { return rowLabels(inputRows_); }
 
 SystemViewModel::SystemViewModel(LinkClient& link, AudioGlue& audio, MidiGlue& midi,
                                  FxManager& fx, AppState& state, QObject* parent)
@@ -37,14 +90,14 @@ QString SystemViewModel::noPicoText() const {
 }
 
 void SystemViewModel::setBackendIndex(int index) {
-  const int clamped = index >= 0 && index < backendLabels_.size() ? index : 0;
+  const int clamped = index >= 0 && index < outputRows_.size() ? index : 0;
   if (clamped == backendIndex_) return;
   backendIndex_ = clamped;
   emit selectionChanged();
 }
 
 void SystemViewModel::setInputIndex(int index) {
-  const int clamped = index >= 0 && index < inputLabels_.size() ? index : 0;
+  const int clamped = index >= 0 && index < inputRows_.size() ? index : 0;
   if (clamped == inputIndex_) return;
   inputIndex_ = clamped;
   emit selectionChanged();
@@ -87,18 +140,22 @@ void SystemViewModel::refreshDevices() {
   outputs_ = audio_.outputDevices();
   inputs_ = audio_.inputDevices();
 
-  backendLabels_.clear();
-  backendLabels_ << QStringLiteral("Default output")
-                 << QStringLiteral("Emulator generator");
-  for (const auto& device : outputs_) {
-    backendLabels_ << QString::fromStdString(device.name) +
-                          (device.isDefault ? QStringLiteral(" (default)") : QString());
+  // The emulator generator fills audio::kMaxInputs strip channels
+  // (AudioGlue::renderBlock), so its count is known; a real device's count is
+  // pending the backend field. "auto" is the documented Default resolution:
+  // PipeWire first, then ALSA, then the generator.
+  outputRows_.clear();
+  outputRows_ << deviceRow(QStringLiteral("Default output"), QStringLiteral("auto"),
+                          kUnknownChannels)
+              << deviceRow(QStringLiteral("Emulator generator"), QStringLiteral("emulator"),
+                          QString::number(audio::kMaxInputs));
+  for (const auto& row : deviceRows(outputs_)) {
+    outputRows_ << row;
   }
-  inputLabels_.clear();
-  inputLabels_ << QStringLiteral("No input");
-  for (const auto& device : inputs_) {
-    inputLabels_ << QString::fromStdString(device.name) +
-                        (device.isDefault ? QStringLiteral(" (default)") : QString());
+  inputRows_.clear();
+  inputRows_ << deviceRow(QStringLiteral("No input"), QStringLiteral("-"), QStringLiteral("-"));
+  for (const auto& row : deviceRows(inputs_)) {
+    inputRows_ << row;
   }
   bufferLabels_.clear();
   for (const int frames : kAudioBufferSizes) {
@@ -222,8 +279,8 @@ void SystemViewModel::refresh() {
   if (!audio.note.empty()) {
     note = QStringLiteral("NOTE  ") + QString::fromStdString(audio.note);
   } else {
-    note = QStringLiteral("REQUEST  ") + backendLabels_.value(backendIndex_) +
-           QStringLiteral(" / ") + inputLabels_.value(inputIndex_) + QStringLiteral(" / ") +
+    note = QStringLiteral("REQUEST  ") + backendLabels().value(backendIndex_) +
+           QStringLiteral(" / ") + inputLabels().value(inputIndex_) + QStringLiteral(" / ") +
            bufferLabels_.value(bufferIndex_) + QStringLiteral("   ->   EFFECTIVE  ") +
            QString::fromStdString(audioBackendLabel(audio.effective));
   }

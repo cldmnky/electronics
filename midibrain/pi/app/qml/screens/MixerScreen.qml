@@ -78,6 +78,7 @@ Item {
                             gainDb: model.gainDb
                             pan: model.pan
                             panText: model.panText
+                            inputText: model.inputText
                             level: model.level
                             clip: model.clip
                             monitor: model.monitor

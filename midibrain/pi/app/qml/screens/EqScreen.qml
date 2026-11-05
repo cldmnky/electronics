@@ -220,12 +220,18 @@ Item {
                         if (node >= 0) eq.selectBand(node)
                     } else {
                         node = -1
+                        // The readout keeps the top band again (no finger).
+                        app.touchAnchorY = -1
                     }
                 }
 
                 onCentroidChanged: {
                     if (!active || node < 0) return
                     const p = normalized(centroid.position.x, centroid.position.y)
+                    // Fullscreen the grid reaches the top edge, so the readout
+                    // needs the finger's window position to stay out of its way.
+                    app.touchAnchorY = grid.mapToItem(null, centroid.position.x,
+                                                      centroid.position.y).y
                     eq.dragBand(node, p[0], p[1])
                 }
             }

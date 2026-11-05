@@ -79,13 +79,29 @@ Item {
         preventStealing: true
         onPressed: (mouse) => {
             root.dragging = true
+            root.trackFinger(mouse.x, mouse.y)
             root.applyPointer(mouse.x, mouse.y)
         }
         onPositionChanged: (mouse) => {
-            if (pressed) root.applyPointer(mouse.x, mouse.y)
+            if (pressed) {
+                root.trackFinger(mouse.x, mouse.y)
+                root.applyPointer(mouse.x, mouse.y)
+            }
         }
-        onReleased: root.dragging = false
-        onCanceled: root.dragging = false
+        onReleased: {
+            root.dragging = false
+            app.touchAnchorY = -1
+        }
+        onCanceled: {
+            root.dragging = false
+            app.touchAnchorY = -1
+        }
+    }
+
+    // The readout avoids the finger: hand its window-Y to the popup while the
+    // drag lasts and clear it on release, so the panel path keeps the top band.
+    function trackFinger(x, y) {
+        app.touchAnchorY = mapToItem(null, x, y).y
     }
 
     function applyPointer(x, y) {

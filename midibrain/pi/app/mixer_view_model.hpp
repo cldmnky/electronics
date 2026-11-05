@@ -64,6 +64,7 @@ class MixerViewModel final : public QAbstractListModel {
     ClipRole,
     MonitorRole,
     MonitorMarkRole,
+    InputTextRole,
     SelectedRole,
   };
 
@@ -115,9 +116,9 @@ class MixerViewModel final : public QAbstractListModel {
   int trackMonitor() const { return model_.monitor(trackIndex_); }
   Q_INVOKABLE void setTrackMonitor(int mode);
   Q_INVOKABLE void setMonitor(int index, int mode);
-  // Per-track I/O assignment (session v2 inCh/inPair/outDst). The engine has no
-  // source/destination fields yet, so these values live in MixerModel and the
-  // session; the pickers on the TRACK SHIFT face are the only writer.
+  // Per-track I/O assignment (session v2 inCh/inPair/outDst). MixerModel holds
+  // the values and forwards them to the engine; the TRACK SHIFT pickers and the
+  // compact per-strip selector on the MIXER surface are the writers.
   int trackInCh() const { return model_.inCh(trackIndex_); }
   bool trackInPair() const { return model_.inPair(trackIndex_); }
   int trackOutDst() const { return model_.outDst(trackIndex_); }
@@ -132,6 +133,15 @@ class MixerViewModel final : public QAbstractListModel {
   Q_INVOKABLE void cycleTrackOutDst(int delta);
   static QString inputText(int channel, bool pair);
   static QString outputText(int destination);
+  // Compact input-source selector on every MIXER strip: one list of none, mono
+  // IN 01..18 and stereo pairs IN 01/02..17/18. cycleInSource steps it (tap
+  // forward, long press or the panel encoder back) and toggleInPair is the
+  // mono/pair switch; both write MixerModel and return the new label for the
+  // value readout, so the touch surface reaches a strip's source without the
+  // TRACK SHIFT face.
+  Q_INVOKABLE QString cycleInSource(int index, int delta);
+  Q_INVOKABLE QString toggleInPair(int index);
+  Q_INVOKABLE QString inSourceText(int index) const;
   // Re-evaluate the Auto marker after an active-take change (Auto shows only
   // when a take makes it choose the take over the live input).
   void notifyActiveTakesChanged();

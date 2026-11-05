@@ -5,8 +5,11 @@
 namespace mnky::app {
 
 MixerModel::MixerModel() {
-  for (auto& strip : strips_) {
-    for (auto& send : strip.send) send.store(0.0f);
+  for (int index = 0; index < audio::kMaxInputs; ++index) {
+    // Identity input source: strip N listens to device channel N until a picker
+    // says otherwise, which is Engine::setInputSource's documented default.
+    strips_[index].inCh.store(index, std::memory_order_relaxed);
+    for (auto& send : strips_[index].send) send.store(0.0f);
   }
   for (auto& fxReturn : fxReturnDb_) fxReturn.store(0.0f);
 }
@@ -45,6 +48,15 @@ audio::Channel MixerModel::channel(int index) const {
 void MixerModel::applyTo(audio::Engine& engine) const {
   for (int index = 0; index < audio::kMaxInputs; ++index) {
     engine.setChannel(index, channel(index));
+    // Routing state is separate from audio::Channel on purpose (setChannel
+    // leaves it untouched), so the same snapshot carries it: the input pickers
+    // on the mixer strips and the TRACK SHIFT face reach the engine here.
+    const auto& strip = strips_[index];
+    engine.setInputSource(index, strip.inCh.load(std::memory_order_relaxed));
+    engine.setInputPair(index, strip.inPair.load(std::memory_order_relaxed));
+    engine.setOutputDestination(
+        index, static_cast<audio::OutputDestination>(strip.outDst.load(
+                   std::memory_order_relaxed)));
   }
   engine.setMaster(dbToGain(masterDb_.load(std::memory_order_relaxed)));
   for (int send = 0; send < audio::kNumSends; ++send) {

@@ -28,6 +28,7 @@ void SessionSettings::reset() {
   takeLoop.fill(session::LoopState{});
   for (auto& edit : takeEdit) edit.clear();
   clock = session::ClockState{};
+  deviceOut = session::DeviceOutState{};
   isTemplate = false;
   const std::lock_guard<std::mutex> lock(takeLock_);
   for (auto& take : activeTakes_) take.clear();

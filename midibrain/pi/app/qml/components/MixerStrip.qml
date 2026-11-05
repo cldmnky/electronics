@@ -21,7 +21,11 @@ Rectangle {
     property bool solo: false
     property bool arm: false
     property bool selected: false
+    // Current input source of this strip: "NONE", "IN 03" or a stereo pair
+    // "IN 03/04" (session inCh/inPair through MixerViewModel).
+    property string inputText: ""
     readonly property bool focused: app.focusId === ("mixer.select." + stripIndex)
+    readonly property string stripName: "IN " + String(stripIndex + 1).padStart(2, "0")
 
     color: Style.panel
     radius: Style.corner
@@ -39,7 +43,7 @@ Rectangle {
             height: 12
             Text {
                 anchors.left: parent.left
-                text: "IN " + String(root.stripIndex + 1).padStart(2, "0")
+                text: root.stripName
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 font.bold: true
@@ -55,7 +59,7 @@ Rectangle {
 
         Row {
             width: parent.width
-            height: Math.max(Style.touch, root.height - 12 - 4 * Style.touch)
+            height: Math.max(Style.touch, root.height - 12 - 5 * Style.touch)
             spacing: 2
 
             TouchSlider {
@@ -67,7 +71,7 @@ Rectangle {
                 maximumValue: 12
                 value: root.gainDb
                 focusId: "mixer.gain." + root.stripIndex
-                popupLabel: "IN " + String(root.stripIndex + 1).padStart(2, "0") + " GAIN"
+                popupLabel: root.stripName + " GAIN"
                 popupKind: "db"
                 Binding on value { value: root.gainDb; when: !gain.dragging }
                 onMoved: (value) => mixer.setGainDb(root.stripIndex, value)
@@ -131,10 +135,28 @@ Rectangle {
             maximumValue: 1
             value: root.pan
             focusId: "mixer.pan." + root.stripIndex
-            popupLabel: "IN " + String(root.stripIndex + 1).padStart(2, "0") + " PAN"
+            popupLabel: root.stripName + " PAN"
             popupKind: "pan"
             Binding on value { value: root.pan; when: !panSlider.dragging }
             onMoved: (value) => mixer.setPan(root.stripIndex, value)
+        }
+
+        // Compact input source: NONE, mono IN 01..18 or a stereo pair
+        // IN 01/02..17/18. Tap steps forward, long press switches MONO/PAIR and
+        // the value readout confirms both, so a strip's source no longer needs
+        // the TRACK SHIFT face. Panel: NAV_PRESS enters EDIT and the encoder
+        // steps the same list (focus mixer.in.<strip>).
+        TouchButton {
+            width: parent.width
+            height: Style.touch
+            text: root.inputText
+            textSize: Style.fontSmall
+            idleColor: Style.panelDark
+            focusId: "mixer.in." + root.stripIndex
+            onClicked: app.showTextPopup(root.stripName + " INPUT",
+                                         mixer.cycleInSource(root.stripIndex, 1))
+            onLongClicked: app.showTextPopup(root.stripName + " INPUT",
+                                             mixer.toggleInPair(root.stripIndex))
         }
 
         TouchButton {

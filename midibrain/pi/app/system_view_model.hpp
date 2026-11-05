@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QVariantList>
 
 #include <vector>
 
@@ -28,9 +29,15 @@ class SystemViewModel final : public QObject {
   // and which are physically absent; statsText draws the same distinction.
   Q_PROPERTY(bool noPicoMode READ noPicoMode CONSTANT)
   Q_PROPERTY(QString noPicoText READ noPicoText CONSTANT)
-  Q_PROPERTY(QStringList backendLabels READ backendLabels NOTIFY choicesChanged)
-  Q_PROPERTY(QStringList inputLabels READ inputLabels NOTIFY choicesChanged)
   Q_PROPERTY(QStringList bufferLabels READ bufferLabels NOTIFY choicesChanged)
+  // One row per selectable output/input device, with the three columns the
+  // System screen shows: "name" (the device name exactly as the backend
+  // enumerated it, plus " (default)"), "backend" and "channels"; "label" is the
+  // same row flattened for the closed field and the panel readout. Two USB
+  // devices that share a generic name stay distinguishable because the UI never
+  // substitutes a name of its own.
+  Q_PROPERTY(QVariantList outputRows READ outputRows NOTIFY choicesChanged)
+  Q_PROPERTY(QVariantList inputRows READ inputRows NOTIFY choicesChanged)
   Q_PROPERTY(int backendIndex READ backendIndex WRITE setBackendIndex NOTIFY selectionChanged)
   Q_PROPERTY(int inputIndex READ inputIndex WRITE setInputIndex NOTIFY selectionChanged)
   Q_PROPERTY(int bufferIndex READ bufferIndex WRITE setBufferIndex NOTIFY selectionChanged)
@@ -46,9 +53,15 @@ class SystemViewModel final : public QObject {
   QString backendHint() const { return backendHint_; }
   bool noPicoMode() const { return link_.noPico(); }
   QString noPicoText() const;
-  QStringList backendLabels() const { return backendLabels_; }
-  QStringList inputLabels() const { return inputLabels_; }
+  QStringList backendLabels() const;
+  QStringList inputLabels() const;
   QStringList bufferLabels() const { return bufferLabels_; }
+  QVariantList outputRows() const { return outputRows_; }
+  QVariantList inputRows() const { return inputRows_; }
+  // The device rows alone (no Default/Emulator header rows), so the three-column
+  // contract is testable without an audio backend. The backend column comes from
+  // the device id prefix the backend enumeration sets.
+  static QVariantList deviceRows(const std::vector<AudioDeviceOption>& devices);
   int backendIndex() const { return backendIndex_; }
   int inputIndex() const { return inputIndex_; }
   int bufferIndex() const { return bufferIndex_; }
@@ -83,9 +96,9 @@ class SystemViewModel final : public QObject {
   QString logText_;
   QString backendHint_;
   bool noPico_ = false;
-  QStringList backendLabels_;
-  QStringList inputLabels_;
   QStringList bufferLabels_;
+  QVariantList outputRows_;
+  QVariantList inputRows_;
   std::vector<AudioDeviceOption> outputs_;
   std::vector<AudioDeviceOption> inputs_;
   int backendIndex_ = 0;

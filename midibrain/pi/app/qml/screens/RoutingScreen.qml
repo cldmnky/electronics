@@ -26,7 +26,7 @@ Item {
             spacing: 6
 
             Text {
-                width: parent.width - (screen.shiftFace ? 270 : 118)
+                width: parent.width - (screen.shiftFace ? 270 : 220)
                 height: parent.height
                 text: (screen.shiftFace
                        ? (screen.pipesPage ? "SHIFT  MIDI FX PIPES - one ordered chain per route"
@@ -58,6 +58,24 @@ Item {
                 checked: routing.shiftPage === 1
                 focusId: "shift.routing.page.1"
                 onClicked: routing.setShiftPage(1)
+            }
+            // The MIDI FX pipe chain lives on this tab's SHIFT face, which the
+            // panel reaches with a SHIFT long-hold and touch with a long press
+            // on the tab. This affordance names it on the primary face instead
+            // of duplicating the screen.
+            TouchButton {
+                width: screen.shiftFace ? 0 : 96
+                height: parent.height
+                visible: !screen.shiftFace
+                text: "SHIFT PIPES"
+                textSize: 9
+                idleColor: Style.panelDark
+                focusId: "routing.shiftpipes"
+                onClicked: {
+                    app.showShiftFace(true)
+                    routing.setShiftPage(1)
+                    app.showTextPopup("SHIFT PIPES", "MIDI FX chains")
+                }
             }
             TouchButton {
                 width: 112

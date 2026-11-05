@@ -19,6 +19,9 @@ Rectangle {
     property bool bold: true
 
     signal clicked()
+    // Long press (the tab row's SHIFT gesture): the screen decides what the
+    // second action means, so a control only carries the signal.
+    signal longClicked()
 
     implicitWidth: Math.max(Style.touch, label.implicitWidth + 16)
     implicitHeight: Style.touch
@@ -47,6 +50,14 @@ Rectangle {
     TapHandler {
         id: tap
         enabled: root.active
-        onTapped: root.clicked()
+        // A long press fires longClicked() and the release that follows must not
+        // also fire clicked(); the flag is reset when the next press starts.
+        property bool heldLong: false
+        onPressedChanged: if (pressed) heldLong = false
+        onTapped: if (!heldLong) root.clicked()
+        onLongPressed: {
+            heldLong = true
+            root.longClicked()
+        }
     }
 }

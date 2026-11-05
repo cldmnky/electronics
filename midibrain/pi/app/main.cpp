@@ -139,9 +139,11 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setTrackMode(false);
                         controller_->mixer()->setBank(0);
                         controller_->mixer()->setPan(1, 0.51);
+                        // The tab first: AppController::setTab() hides a readout
+                        // left over from the previous screen.
+                        controller_->setTab(0);
                         controller_->showValuePopup(QStringLiteral("IN 02 PAN"),
                                                     QStringLiteral("pan"), 0.5);
-                        controller_->setTab(0);
                       }});
     steps_.push_back({"32-loop", [this] {
                         controller_->keypadCancel();
@@ -349,6 +351,114 @@ class ScreenshotRunner final : public QObject {
                           controller_->setTab(4);
                         }});
     }
+
+    // 36-*: touch-era UI fixes. The value readout sits in the top band (never
+    // under the finger), every mixer strip carries its own input source, the
+    // System screen selects the device output pairs and the device lists show
+    // name + backend + channel count, and the Routing primary face names the
+    // SHIFT PIPES face.
+    steps_.push_back({"36-popup-top", [this] {
+                        controller_->hideValuePopup();
+                        controller_->configCancel();
+                        controller_->keypadCancel();
+                        controller_->confirmCancel();
+                        controller_->setFullscreen(false);
+                        controller_->showShiftFace(false);
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->mixer()->clearClipDemo();
+                        controller_->selectStrip(1);
+                        // The tab first: AppController::setTab() hides a readout
+                        // left over from the previous screen.
+                        controller_->setTab(0);
+                        // A finger on the strip area (window-Y 300): the readout
+                        // must stay in the top band, not under the touch point.
+                        controller_->setTouchAnchorY(300.0);
+                        controller_->showValuePopup(QStringLiteral("IN 02 GAIN"),
+                                                    QStringLiteral("db"), -6.0);
+                      }});
+    steps_.push_back({"36-popup-flip", [this] {
+                        // Finger inside the top band (the fullscreen EQ grid
+                        // reaches y = 0): the readout moves below the finger.
+                        controller_->hideValuePopup();
+                        controller_->setTab(0);
+                        controller_->setTouchAnchorY(20.0);
+                        controller_->showValuePopup(QStringLiteral("BAND 2 GAIN"),
+                                                    QStringLiteral("db"), 3.0);
+                      }});
+    steps_.push_back({"36-mixer-input", [this] {
+                        controller_->hideValuePopup();
+                        controller_->setTouchAnchorY(-1.0);
+                        controller_->showShiftFace(false);
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        // Distinct sources on the perform surface: a mono pick,
+                        // NONE and a stereo pair, without the TRACK SHIFT face.
+                        // The selector is a cycle, so step to the wanted label.
+                        const auto driveTo = [this](int strip, const QString& want) {
+                          for (int step = 0; step < 32; ++step) {
+                            if (controller_->mixer()->inSourceText(strip) == want) return;
+                            (void)controller_->mixer()->cycleInSource(strip, 1);
+                          }
+                        };
+                        driveTo(1, QStringLiteral("IN 03"));
+                        driveTo(2, QStringLiteral("NONE"));
+                        driveTo(3, QStringLiteral("IN 07/08"));
+                        controller_->selectStrip(1);
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"36-masterout", [this] {
+                        // Device output pairs: Main 1&2 -> 3&4, OUT3&4 -> 5&6,
+                        // phones -> 7&8. The selector shows the three model
+                        // columns (name / backend / channel count); the shot
+                        // picks the generator row because this offscreen run
+                        // has no audio device to enumerate.
+                        controller_->hideValuePopup();
+                        controller_->session()->setDeviceOutMain(1);
+                        controller_->session()->setDeviceOutOut34(2);
+                        controller_->session()->setDeviceOutPhones(3);
+                        controller_->system()->setBackendIndex(1);
+                        controller_->system()->setInputIndex(0);
+                        controller_->setTab(4);
+                      }});
+    steps_.push_back({"36-routing-hint", [this] {
+                        controller_->hideValuePopup();
+                        // Close the device list the previous step opened.
+                        if (QObject* list = window_->findChild<QObject*>(
+                                QStringLiteral("systemOutputList"))) {
+                          QObject* popup = list->property("popup").value<QObject*>();
+                          if (popup != nullptr) QMetaObject::invokeMethod(popup, "close");
+                        }
+                        controller_->showShiftFace(false);
+                        controller_->setTab(1);
+                      }});
+    steps_.push_back({"36-device-list", [this] {
+                        // The open device list: one row per device with the three
+                        // model columns (name / backend / channel count).
+                        controller_->hideValuePopup();
+                        controller_->setTab(4);
+                        if (QObject* list = window_->findChild<QObject*>(
+                                QStringLiteral("systemOutputList"))) {
+                          QObject* popup = list->property("popup").value<QObject*>();
+                          if (popup != nullptr) QMetaObject::invokeMethod(popup, "open");
+                        }
+                      }});
+    steps_.push_back({"36-device-out-list", [this] {
+                        // The MAIN 1&2 pair picker open: the 16 pairs (1&2 ..
+                        // 31&32) on a 480 px panel, so the popup has to scroll.
+                        controller_->hideValuePopup();
+                        if (QObject* list = window_->findChild<QObject*>(
+                                QStringLiteral("systemOutputList"))) {
+                          QObject* popup = list->property("popup").value<QObject*>();
+                          if (popup != nullptr) QMetaObject::invokeMethod(popup, "close");
+                        }
+                        controller_->setTab(4);
+                        if (QObject* list = window_->findChild<QObject*>(
+                                QStringLiteral("systemDevoutList"))) {
+                          QObject* popup = list->property("popup").value<QObject*>();
+                          if (popup != nullptr) QMetaObject::invokeMethod(popup, "open");
+                        }
+                      }});
   }
 
   // Scripted absolute EQ band values: type 0..5, frequency, gain, Q.

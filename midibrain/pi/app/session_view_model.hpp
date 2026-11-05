@@ -1,9 +1,11 @@
 #pragma once
 // QML view model for the app-owned session-v2 settings: punch markers,
-// metronome configuration, monitor/cue routing, send pre/post sources and the
-// main-bus compressor. Every setter writes the same field project_io saves in
-// the session v2 sections, so the UI and the project file cannot disagree.
+// metronome configuration, monitor/cue routing, send pre/post sources, the
+// main-bus compressor and the device output channel pairs. Every setter writes
+// the same field project_io saves in the session v2 sections, so the UI and the
+// project file cannot disagree.
 #include <QObject>
+#include <QStringList>
 
 #include "app_state.hpp"
 #include "link_client.hpp"
@@ -11,6 +13,10 @@
 #include "session_settings.hpp"
 
 namespace mnky::app {
+
+// The device output pickers offer adjacent pairs over the channel range the
+// session format accepts (deviceOut clamps to 0..31), so 16 pairs: 1&2 .. 31&32.
+inline constexpr int kDeviceOutPairs = 16;
 
 class SessionViewModel final : public QObject {
   Q_OBJECT
@@ -45,6 +51,16 @@ class SessionViewModel final : public QObject {
   Q_PROPERTY(bool usbClock READ usbClock WRITE setUsbClock NOTIFY clockChanged)
   Q_PROPERTY(bool usbTransport READ usbTransport WRITE setUsbTransport NOTIFY clockChanged)
   Q_PROPERTY(QString clockText READ clockText NOTIFY clockChanged)
+  // Device output routing (session v2 deviceOut): the pair index of the device
+  // channels that carry Main 1&2, OUT3&4 and the phones bus. A pair index p is
+  // the device channels 2p and 2p+1 (0-based), so 0 = 1&2, 1 = 3&4, 2 = 5&6.
+  // audio::Engine::setDeviceOut() takes the map; the missing piece is the
+  // app-side handoff (AudioGlue has no applyDeviceOut()), so the pickers write
+  // session state that is saved but not yet applied per block.
+  Q_PROPERTY(QStringList deviceOutPairLabels READ deviceOutPairLabels CONSTANT)
+  Q_PROPERTY(int deviceOutMain READ deviceOutMain WRITE setDeviceOutMain NOTIFY deviceOutChanged)
+  Q_PROPERTY(int deviceOutOut34 READ deviceOutOut34 WRITE setDeviceOutOut34 NOTIFY deviceOutChanged)
+  Q_PROPERTY(int deviceOutPhones READ deviceOutPhones WRITE setDeviceOutPhones NOTIFY deviceOutChanged)
 
  public:
   SessionViewModel(AppState& state, MixerModel& mixer, LinkClient& link,
@@ -83,6 +99,11 @@ class SessionViewModel final : public QObject {
   // One-line summary of what the gates do and what cannot be sent: the wire's
   // EV_CLOCK_ROUTE carries only the clock and transport bits.
   QString clockText() const;
+  // "1&2" .. "31&32": the pair labels the three device-out pickers offer.
+  QStringList deviceOutPairLabels() const;
+  int deviceOutMain() const { return deviceOutPair(settings_.deviceOut.main); }
+  int deviceOutOut34() const { return deviceOutPair(settings_.deviceOut.out34); }
+  int deviceOutPhones() const { return deviceOutPair(settings_.deviceOut.phones); }
 
   void setPunchPlayFromEnabled(bool enabled);
   void setPunchPlayFromMeasure(int measure);
@@ -114,6 +135,9 @@ class SessionViewModel final : public QObject {
   void setTrs2Transport(bool on);
   void setUsbClock(bool on);
   void setUsbTransport(bool on);
+  void setDeviceOutMain(int pair);
+  void setDeviceOutOut34(int pair);
+  void setDeviceOutPhones(int pair);
 
   // Project load replaced the settings object wholesale.
   Q_INVOKABLE void refresh();
@@ -127,9 +151,14 @@ class SessionViewModel final : public QObject {
   void sendsChanged();
   void compChanged();
   void clockChanged();
+  void deviceOutChanged();
 
  private:
   void setTrsRoute(int output, bool clock, bool transport);
+  // Pair index of a stored pair; a hand-edited session can hold any channels, so
+  // the picker shows the pair that starts at the stored left channel.
+  static int deviceOutPair(const std::array<int, 2>& pair);
+  void setDeviceOutPair(int bus, int pair);
 
   AppState& state_;
   MixerModel& mixer_;
