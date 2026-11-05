@@ -423,7 +423,7 @@ bool parsePortKey(const std::string& key, int& port) {
   if (result.ec != std::errc{} || result.ptr != key.data() + key.size()) {
     return false;
   }
-  if (parsed < 0 || parsed >= midi::kPortCount) return false;
+  if (parsed < 0 || parsed >= kSessionMaxPorts) return false;
   port = parsed;
   return true;
 }
@@ -534,6 +534,23 @@ bool decodeRouter(const JsonValue& node, RouterState& out, std::string& error) {
         return false;
       }
       out.transpose[static_cast<std::size_t>(port)] = semitones;
+    }
+  }
+  if (const JsonValue* devices = node.find("devices")) {
+    if (devices->type != JsonValue::Type::Object) {
+      error = "session: \"router.devices\" is not an object";
+      return false;
+    }
+    for (const auto& member : devices->object) {
+      int port = 0;
+      if (!parsePortKey(member.first, port)) continue;
+      if (member.second.type != JsonValue::Type::String) {
+        error = "session: \"router.devices." + member.first +
+                "\" is not a string";
+        return false;
+      }
+      if (member.second.string.empty()) continue;
+      out.devices[port] = member.second.string;
     }
   }
   return true;
@@ -1474,18 +1491,27 @@ std::string encode(const Snapshot& snapshot) {
     out += "]}";
   }
   out += "],\"channels\":{";
-  for (int port = 0; port < midi::kPortCount; ++port) {
+  for (int port = 0; port < kSessionMaxPorts; ++port) {
     if (port != 0) out.push_back(',');
     writeString(out, std::to_string(port));
     out.push_back(':');
     appendNumber(out, snapshot.router.channels[static_cast<std::size_t>(port)]);
   }
   out += "},\"transpose\":{";
-  for (int port = 0; port < midi::kPortCount; ++port) {
+  for (int port = 0; port < kSessionMaxPorts; ++port) {
     if (port != 0) out.push_back(',');
     writeString(out, std::to_string(port));
     out.push_back(':');
     appendNumber(out, snapshot.router.transpose[static_cast<std::size_t>(port)]);
+  }
+  out += "},\"devices\":{";
+  bool firstDevice = true;
+  for (const auto& [port, name] : snapshot.router.devices) {
+    if (!firstDevice) out.push_back(',');
+    firstDevice = false;
+    writeString(out, std::to_string(port));
+    out.push_back(':');
+    writeString(out, name);
   }
   out += "}}";
 
@@ -1815,6 +1841,15 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
   snapshot.mixer.master = engine.masterGain();
   snapshot.mixer.out34Mode = static_cast<int>(engine.out34Mode());
 
+  // Physical device output map: engine state since the native audio backend
+  // wave, so a saved project round-trips which device pair carries Main,
+  // OUT3&4 and phones. The JSON section is unchanged (deviceOut, commit
+  // 70a0e4b); the backend reads engine.deviceOut() when it maps the buses.
+  const audio::DeviceOut deviceOut = engine.deviceOut();
+  snapshot.deviceOut.main = {deviceOut.main[0], deviceOut.main[1]};
+  snapshot.deviceOut.out34 = {deviceOut.out34[0], deviceOut.out34[1]};
+  snapshot.deviceOut.phones = {deviceOut.phones[0], deviceOut.phones[1]};
+
   snapshot.click.mode = static_cast<int>(engine.clickMode());
   snapshot.click.output = static_cast<int>(engine.clickOutput());
   snapshot.click.gainDb = engine.clickGainDb();
@@ -1924,8 +1959,8 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
     }
   }
   for (const RouteState& route : snapshot.router.routes) {
-    if (route.src < 0 || route.src >= midi::kPortCount || route.dst < 0 ||
-        route.dst >= midi::kPortCount) {
+    if (route.src < 0 || route.src >= kSessionMaxPorts || route.dst < 0 ||
+        route.dst >= kSessionMaxPorts) {
       continue;
     }
     router.setRoute(static_cast<midi::Port>(route.src),
@@ -1964,6 +1999,18 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
   engine.setMaster(snapshot.mixer.master);
   engine.setOut34Mode(
       static_cast<audio::Out34Mode>(snapshot.mixer.out34Mode));
+
+  // The device output map is engine state (the backend maps the three stereo
+  // buses onto these 0-based device channels); session values are already
+  // clamped to 0..31 by the decoder, the engine clamps again.
+  audio::DeviceOut deviceOut;
+  deviceOut.main[0] = snapshot.deviceOut.main[0];
+  deviceOut.main[1] = snapshot.deviceOut.main[1];
+  deviceOut.out34[0] = snapshot.deviceOut.out34[0];
+  deviceOut.out34[1] = snapshot.deviceOut.out34[1];
+  deviceOut.phones[0] = snapshot.deviceOut.phones[0];
+  deviceOut.phones[1] = snapshot.deviceOut.phones[1];
+  engine.setDeviceOut(deviceOut);
 
   audio::MainCompSettings comp;
   comp.on = snapshot.mainComp.on;

@@ -1,14 +1,21 @@
 #pragma once
-// Audio glue: the Engine + Recorder run behind one Qt Multimedia audio path,
-// fed either by a real QAudioSink (ALSA/PulseAudio on Linux, CoreAudio on
-// macOS) or, in --emulator mode, by a clocked generator thread that uses the
-// app's own EmulatorSynth. A selected QAudioSource feeds the first two engine
-// inputs through a small lock-protected ring buffer.
+// Audio glue: the Engine + Recorder run behind one native audio backend, fed
+// either by libpipewire/snd_pcm (audio::DeviceBackend, see
+// audio/device_backend.hpp) or, in --emulator mode, by a clocked generator
+// thread that uses the app's own EmulatorSynth. Qt Multimedia is not part of
+// audio I/O any more; Qt stays the UI toolkit.
 //
-// Backend selection (System screen): one QAudioSink at a time. Switching
-// default/device/emulator restarts that one sink; QSettings stores the request
-// (never a session file). JACK is not offered: Qt Multimedia exposes devices,
-// and PipeWire's Pulse compatibility layer already provides inter-app routing.
+// Device frames are 48 kHz interleaved float32. The backend converts to and from
+// the interface's real sample format (UMC1820: S32_LE capture, S24_3LE
+// playback) and reports the negotiated period; the full 18-channel capture is
+// fanned out to the engine strips through the existing
+// setInputSource/inCh/inPair path, and the engine's Main/OUT3&4/phones buses are
+// mapped onto the 20 device outputs through session deviceOut
+// (Engine::deviceOut()).
+//
+// Backend selection (System screen / `audio/backend`): one backend at a time.
+// Switching default/device/emulator or the API restarts it; QSettings stores
+// the request (never a session file).
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
@@ -18,9 +25,8 @@
 #include <thread>
 #include <vector>
 
-#include <QtMultimedia/QAudioFormat>
-
 #include "../audio/click.hpp"
+#include "../audio/device_backend.hpp"
 #include "../audio/engine.hpp"
 #include "../audio/recorder.hpp"
 #include "audio_backend.hpp"
@@ -30,18 +36,12 @@
 #include "performance_model.hpp"
 #include "session_settings.hpp"
 
-QT_BEGIN_NAMESPACE
-class QAudioSink;
-class QAudioSource;
-class QIODevice;
-QT_END_NAMESPACE
-
 namespace mnky::app {
 
 class AppState;
 
 struct AudioDeviceOption {
-  std::string id;  // stable base64 of QAudioDevice::id()
+  std::string id;  // "pipewire:<node.name>" or "alsa:<pcm>", stable per host
   std::string name;
   bool isDefault = false;
 };
@@ -52,15 +52,18 @@ struct AudioBackendState {
   AudioBackendChoice choice;
   AudioBackend effective = kDefaultAudioBackend;
   AudioBackendAvailability availability;
-  std::string liveType;    // "Qt Multimedia", "emulator" or "none"
-  std::string liveDevice;  // output device name in use
+  std::string liveType;    // "pipewire", "alsa", "emulator" or "none"
+  std::string liveDevice;  // real node/card name in use
   double sampleRate = 0.0;
   int blockSize = 0;
+  int outputChannels = 0;
+  int inputChannels = 0;
   std::uint64_t callbackBlocks = 0;  // rendered engine blocks (audio callback proof)
+  std::uint64_t xruns = 0;
   std::string note;  // fallback/apply note; empty when the request was honoured
 };
 
-class AudioGlue {
+class AudioGlue final : private audio::DeviceClient {
  public:
   // The two send buses are a chain: the built-in delay/reverb that the X/Y
   // grids drive runs first, then the app's CLAP slot for that bus.
@@ -83,7 +86,7 @@ class AudioGlue {
   void rescanBackends();
   std::vector<AudioDeviceOption> outputDevices() const;
   std::vector<AudioDeviceOption> inputDevices() const;
-  // Persists the request and restarts the sink/emulator. Returns an error
+  // Persists the request and restarts the backend/emulator. Returns an error
   // string (empty on success).
   std::string applyAudioChoice(const AudioBackendChoice& choice);
   AudioBackendState backendState() const;
@@ -132,22 +135,29 @@ class AudioGlue {
 
  private:
   class EmulatorDriver;
-  class AudioRenderDevice;
-  class AudioInputConsumer;
 
-  void renderBlock(const float* const* inputChannelData, int numInputChannels,
-                   float* outL, float* outR, int numSamples);
+  // audio::DeviceClient: both callbacks run on the backend thread, serialised.
+  void renderDevice(float* interleaved, int frames, int channels) override;
+  void captureDevice(const float* interleaved, int frames, int channels) override;
+
+  void renderEmulatorBlock(int numSamples);
+  void prepareEngineBlock();
+  void writeRecorderBlock(int frames);
   void updatePeaks(const float* outL, const float* outR, int numSamples);
-  void pushInput(const char* data, int frames, const QAudioFormat& format);
-  void copyInput(float* left, float* right, int frames);
 
   void loadAudioChoice();
   void saveAudioChoice();
   void startEmulator(const std::string& reason);
   void stopEmulator();
   void closeAudio();
-  std::string openDevice(const std::string& outputDeviceId, int bufferSize);
-  bool openInput(const std::string& inputDeviceId);
+  // Opens the selected backend. Empty return means the device is running.
+  std::string openBackend(AudioBackend backend, const std::string& outputDeviceId,
+                          const std::string& inputDeviceId, int bufferSize);
+  int outputChannelsFor(const std::string& node) const;
+  int inputChannelsFor(const std::string& node) const;
+  std::vector<std::string> outputPositionsFor(const std::string& node) const;
+  std::vector<std::string> inputPositionsFor(const std::string& node) const;
+  std::string deviceNameFor(const std::string& id) const;
 
   MixerModel& mixer_;
   FxManager& fx_;
@@ -159,21 +169,24 @@ class AudioGlue {
   audio::Recorder recorder_;
   EmulatorSynth synth_;
   float synthBuffer_[audio::kMaxInputs][audio::kBlockSize] = {};
-  float inputL_[audio::kBlockSize] = {};
-  float inputR_[audio::kBlockSize] = {};
+  audio::DevicePump pump_;
+  float capturePlanes_[audio::kMaxInputs][audio::kBlockSize] = {};
+  float busMainL_[audio::kBlockSize] = {};
+  float busMainR_[audio::kBlockSize] = {};
+  float busOut34L_[audio::kBlockSize] = {};
+  float busOut34R_[audio::kBlockSize] = {};
+  float busPhonesL_[audio::kBlockSize] = {};
+  float busPhonesR_[audio::kBlockSize] = {};
+  audio::DeviceOutSlot deviceOutSlots_[audio::kMaxDeviceChannels] = {};
 
-  // Qt device handles are GUI-thread objects; the render device is read from
-  // Qt's audio thread and only touches the engine.
-  std::unique_ptr<QAudioSink> sink_;
-  std::unique_ptr<QAudioSource> source_;
-  std::unique_ptr<AudioRenderDevice> renderDevice_;
-  std::unique_ptr<AudioInputConsumer> inputConsumer_;
-  QAudioFormat outputFormat_;
-  int outputBytesPerFrame_ = 8;
-  int deviceBufferFrames_ = 0;
+  // The native backend is created, opened and started on the control thread;
+  // its callbacks only touch the engine, the pump and the recorder.
+  std::unique_ptr<audio::DeviceBackend> device_;
+  audio::DeviceInventory inventory_;
+  int devicePeriodFrames_ = 0;
 
   std::unique_ptr<EmulatorDriver> driver_;
-  std::string backend_;
+  std::string backend_;  // live backend description for the System readout
   std::string deviceName_;
   std::string inputName_;
 
@@ -183,6 +196,8 @@ class AudioGlue {
 
   std::atomic<double> sampleRate_{48000.0};
   std::atomic<int> blockSize_{audio::kBlockSize};
+  std::atomic<int> outputChannels_{0};
+  std::atomic<int> inputChannels_{0};
   std::atomic<bool> running_{false};
   std::atomic<std::uint64_t> renderBlocks_{0};
   std::atomic<float> peaks_[2] = {};
@@ -192,7 +207,6 @@ class AudioGlue {
   // read once per block by the audio callback.
   std::atomic<int> monitorPhones_{0};
   std::atomic<int> monitorCueStyle_{0};
-  std::atomic<int> monitorOut34Mode_{0};
   std::atomic<int> monitorSend_[audio::kNumSendDestinations] = {};
   std::atomic<bool> compOn_{false};
   std::atomic<float> compThreshDb_{-12.0f};
@@ -201,12 +215,6 @@ class AudioGlue {
   std::atomic<float> compReleaseMs_{100.0f};
   std::atomic<float> compMakeupDb_{0.0f};
   std::atomic<int> compMode_{0};
-
-  std::mutex inputLock_;
-  std::vector<float> inputRingL_;
-  std::vector<float> inputRingR_;
-  std::uint64_t inputWritten_ = 0;
-  int inputRingFrames_ = 0;
 
   mutable std::mutex takeLock_;
   audio::Recorder::Take lastTake_;

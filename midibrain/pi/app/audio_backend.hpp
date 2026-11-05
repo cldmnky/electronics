@@ -1,15 +1,19 @@
 #pragma once
 // Audio backend selection model for the Qt 6 app: the System screen's
-// default/device/emulator choice, the requested period size and the fallback
-// rules used when a device is gone or a platform has no output at all.
-// Deliberately Qt-free so the same rules run in the app and under
-// `mnkybox --unittests` (logic_tests.cpp).
+// default/device/emulator choice, the persisted audio/backend key, the
+// requested period size and the fallback rules used when a device is gone or a
+// platform has no output at all. Qt-free so the same rules run in the app and
+// under `mnkybox --unittests` (logic_tests.cpp).
 //
-// JACK is deliberately absent: the previous JUCE device manager had an
-// ALSA/JACK type switch, while Qt Multimedia exposes devices, not host APIs.
-// On Linux Qt Multimedia uses PulseAudio when a server is present (PipeWire's
-// Pulse compatibility layer on Raspberry Pi OS) and ALSA otherwise; the
-// System screen therefore offers the Qt default and the explicit device list.
+// The audio path itself is native: libpipewire (product) or ALSA snd_pcm
+// (fallback), see audio/device_backend.hpp. Qt Multimedia is no longer part of
+// audio I/O; it stays a UI dependency only. The persisted key therefore selects
+// the audio API explicitly:
+//   "default"  -> PipeWire when a PipeWire sink exists, then ALSA, then emulator
+//   "pipewire" -> native PipeWire streams
+//   "alsa"     -> snd_pcm
+//   "device"   -> one enumerated endpoint (its id carries the API)
+//   "emulator" -> the clocked generator, always available
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -19,18 +23,20 @@
 
 namespace mnky::app {
 
-enum class AudioBackend : std::uint8_t { Default, Device, Emulator };
+enum class AudioBackend : std::uint8_t { Default, Device, Emulator, PipeWire, Alsa };
 
-inline constexpr int kAudioBackendCount = 3;
+inline constexpr int kAudioBackendCount = 5;
 inline constexpr AudioBackend kAudioBackends[kAudioBackendCount] = {
     AudioBackend::Default,
     AudioBackend::Device,
     AudioBackend::Emulator,
+    AudioBackend::PipeWire,
+    AudioBackend::Alsa,
 };
 
-// ALSA/PulseAudio/CoreAudio stay the default: the platform default device is
-// what a fresh install should use. The emulator generator is an explicit
-// choice and also the documented fallback when no device opens.
+// The platform default is what a fresh install should use: PipeWire first,
+// then ALSA. The emulator generator is an explicit choice and the documented
+// fallback when no device opens.
 inline constexpr AudioBackend kDefaultAudioBackend = AudioBackend::Default;
 
 // Stable keys for QSettings (`audio/backend`), never localised.
@@ -40,6 +46,10 @@ inline constexpr std::string_view audioBackendKey(AudioBackend backend) {
       return "device";
     case AudioBackend::Emulator:
       return "emulator";
+    case AudioBackend::PipeWire:
+      return "pipewire";
+    case AudioBackend::Alsa:
+      return "alsa";
     case AudioBackend::Default:
       break;
   }
@@ -59,6 +69,10 @@ inline std::string audioBackendLabel(AudioBackend backend) {
       return "Audio device";
     case AudioBackend::Emulator:
       return "Emulator generator";
+    case AudioBackend::PipeWire:
+      return "PipeWire";
+    case AudioBackend::Alsa:
+      return "ALSA";
     case AudioBackend::Default:
       break;
   }
@@ -72,11 +86,23 @@ inline std::string audioBackendLabel(AudioBackend backend, bool available) {
 }
 
 // What the platform currently offers: a default output plus the enumerated
-// explicit output/input device ids. The emulator is always available.
+// explicit output/input device ids. The ids are prefixed with the audio API
+// ("pipewire:<node.name>" / "alsa:<pcm>"), so selecting one device also selects
+// the API that opens it; the per-API flags decide the default and the
+// pipewire->alsa fallback. The emulator is always available.
 struct AudioBackendAvailability {
-  bool defaultOutput = false;
+  bool defaultOutput = false;  // any usable default output (PipeWire or ALSA)
+  bool pipewireOutput = false;
+  bool pipewireInput = false;
+  bool alsaOutput = false;
+  bool alsaInput = false;
   std::vector<std::string> outputDeviceIds;
   std::vector<std::string> inputDeviceIds;
+  // Real per-device USB MIDI names (RtMidi client/port names grouped per
+  // device), so the System device list can show "UMC1820" instead of one
+  // generic "USB" label. Never an audio endpoint; the MIDI engine owns I/O.
+  std::vector<std::string> midiInputNames;
+  std::vector<std::string> midiOutputNames;
 };
 
 inline bool audioBackendAvailable(AudioBackend backend,
@@ -86,6 +112,10 @@ inline bool audioBackendAvailable(AudioBackend backend,
       return !availability.outputDeviceIds.empty();
     case AudioBackend::Emulator:
       return true;
+    case AudioBackend::PipeWire:
+      return availability.pipewireOutput;
+    case AudioBackend::Alsa:
+      return availability.alsaOutput;
     case AudioBackend::Default:
       break;
   }
@@ -94,14 +124,23 @@ inline bool audioBackendAvailable(AudioBackend backend,
 
 struct AudioBackendSelection {
   AudioBackend effective = kDefaultAudioBackend;
-  std::string outputDeviceId;  // empty for Default/Emulator
+  std::string outputDeviceId;  // empty for Default/PipeWire/Alsa/Emulator
   bool fellBack = false;
   std::string note;  // why the request was not used ("" when it was)
 };
 
+// The API the "Default output" entry opens: native PipeWire first, then ALSA,
+// then the emulator when the host has no output at all.
+inline AudioBackend defaultOutputBackend(const AudioBackendAvailability& availability) {
+  if (availability.pipewireOutput) return AudioBackend::PipeWire;
+  if (availability.alsaOutput) return AudioBackend::Alsa;
+  return AudioBackend::Emulator;
+}
+
 // The startup path and the Apply path both go through this: a request for a
-// device that disappeared falls back to the default output, and a machine with
-// no output at all falls back to the emulator generator with the reason.
+// device that disappeared falls back to the default output, an explicit API
+// that is not available falls back to the other API, and a machine with no
+// output at all falls back to the emulator generator with the reason.
 inline AudioBackendSelection resolveAudioBackend(
     AudioBackend requested, const std::string& requestedDeviceId,
     const AudioBackendAvailability& availability) {
@@ -130,6 +169,25 @@ inline AudioBackendSelection resolveAudioBackend(
     return selection;
   }
 
+  if (requested == AudioBackend::PipeWire || requested == AudioBackend::Alsa) {
+    const bool available = audioBackendAvailable(requested, availability);
+    if (available) return selection;
+    selection.fellBack = true;
+    const AudioBackend other =
+        requested == AudioBackend::PipeWire ? AudioBackend::Alsa : AudioBackend::PipeWire;
+    if (audioBackendAvailable(other, availability)) {
+      selection.effective = other;
+      selection.note = audioBackendLabel(requested) + " is unavailable; using " +
+                       audioBackendLabel(other);
+      return selection;
+    }
+    selection.effective = AudioBackend::Emulator;
+    selection.note = audioBackendLabel(requested) +
+                     " is unavailable and no audio output was found; using the emulator "
+                     "generator";
+    return selection;
+  }
+
   if (availability.defaultOutput) return selection;
   selection.effective = AudioBackend::Emulator;
   selection.fellBack = true;
@@ -138,8 +196,8 @@ inline AudioBackendSelection resolveAudioBackend(
 }
 
 // Buffer sizes offered by the System screen. 128 is audio::kBlockSize, the
-// engine's block size; Qt Multimedia may report a larger device buffer, which
-// the System live line shows instead of assuming the request was honoured.
+// engine's block size; the backend reports the period it actually negotiated,
+// which the System live line shows instead of assuming the request was honoured.
 inline constexpr int kAudioBufferSizes[] = {64, 128, 256, 512, 1024};
 inline constexpr int kAudioBufferSizeCount =
     static_cast<int>(sizeof(kAudioBufferSizes) / sizeof(kAudioBufferSizes[0]));
@@ -196,6 +254,27 @@ inline bool operator==(const AudioBackendChoice& a, const AudioBackendChoice& b)
 
 inline bool operator!=(const AudioBackendChoice& a, const AudioBackendChoice& b) {
   return !(a == b);
+}
+
+// RtMidi on ALSA names a port "<client>:<port> <card>:<device>", e.g.
+// "UMC1820:UMC1820 MIDI 1 28:0"; CoreMIDI reports a bare name. Group the port
+// list per device (the client part, or the whole name when there is no colon)
+// so a device with several ports is listed once and nothing collapses into a
+// single "USB" label.
+inline std::vector<std::string> midiDeviceNamesFromPortNames(
+    const std::vector<std::string>& portNames) {
+  std::vector<std::string> devices;
+  for (const auto& port : portNames) {
+    std::string name = port;
+    const std::size_t colon = name.find(':');
+    if (colon != std::string::npos && colon > 0) name.resize(colon);
+    while (!name.empty() && name.back() == ' ') name.pop_back();
+    if (name.empty()) continue;
+    if (std::find(devices.begin(), devices.end(), name) == devices.end()) {
+      devices.push_back(std::move(name));
+    }
+  }
+  return devices;
 }
 
 }  // namespace mnky::app

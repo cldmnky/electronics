@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -115,6 +116,19 @@ struct TransportPosition {
     std::uint32_t beat = 1;
     std::uint32_t measure = 1;
     int bpmX100 = 12000;
+};
+
+/// Physical device output mapping (session v2 `deviceOut`): each engine bus
+/// pair is written to two 0-based device output channels, defaults Main = 0/1,
+/// OUT3&4 = 2/3, phones = 4/5. The device backend (not the engine) applies the
+/// map, so the engine only stores the selection; values are clamped to 0..31 and
+/// targets beyond the opened device width are dropped there. DeviceOut lives
+/// here because session::capture()/apply() forward it with the mixer state.
+struct DeviceOut {
+    int main[2] = {0, 1};
+    int out34[2] = {2, 3};
+    int phones[2] = {4, 5};
+    friend bool operator==(const DeviceOut&, const DeviceOut&) = default;
 };
 
 /// Optional output buses for the extended process() call. A null pointer
@@ -234,6 +248,16 @@ public:
     void setOutputDestination(int index, OutputDestination destination);
     /// Out-of-range strips read as Main.
     OutputDestination outputDestination(int index) const;
+
+    // --- physical device output map (session deviceOut) ---------------------
+    /// Control-thread selection of which device output channels carry Main,
+    /// OUT3&4 and the phones/CUE bus. Values are clamped to 0..31 (any sane
+    /// multichannel interface); equal channels for two buses keep the first bus
+    /// in the device map. Audio processing is unaffected, only the device frame
+    /// mapping in DeviceBackend/DeviceOut helpers reads it.
+    void setDeviceOut(const DeviceOut& deviceOut);
+    /// Applied map; audio-thread safe (atomically loaded fields).
+    DeviceOut deviceOut() const;
 
     /// Linear master gain; negative and NaN values are clamped to 0.
     void setMaster(float gain);
@@ -390,6 +414,12 @@ private:
     EqInsert mTrackEq[kMaxInputs];
     EqInsert mMainEq;
 
+    // Device output map: control thread writes, the audio thread loads each
+    // block. Atomic so a session load cannot tear a pair mid-block.
+    std::atomic<int> mDeviceOut[3][2] = {
+        {std::atomic<int>(0), std::atomic<int>(1)},
+        {std::atomic<int>(2), std::atomic<int>(3)},
+        {std::atomic<int>(4), std::atomic<int>(5)}};
     SendSource mSendSource[kNumSendDestinations] = {
         SendSource::PostFader, SendSource::PostFader, SendSource::PostFader,
         SendSource::PostFader, SendSource::PostFader};

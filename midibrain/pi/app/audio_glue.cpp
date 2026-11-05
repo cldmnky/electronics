@@ -7,15 +7,9 @@
 #include <cstring>
 #include <exception>
 
-#include <QAudioDevice>
-#include <QAudioSink>
-#include <QAudioSource>
-#include <QByteArray>
-#include <QIODevice>
-#include <QMediaDevices>
-#include <QAudioFormat>
 #include <QSettings>
 
+#include "../midi/usb.hpp"
 #include "app_state.hpp"
 #include "logic.hpp"
 #include "logging.hpp"
@@ -27,54 +21,18 @@ static_assert(kDefaultAudioBufferSize == audio::kBlockSize,
 
 namespace {
 
-std::string encodeDeviceId(const QAudioDevice& device) {
-  return device.id().toBase64().toStdString();
+std::string deviceName(const audio::DeviceInfo& device) {
+  return device.name + " (" + audio::deviceApiName(device.api) + ", " +
+         (device.channels > 0 ? std::to_string(device.channels) + " ch" : "unknown width") + ")";
 }
 
-std::string deviceName(const QAudioDevice& device) {
-  return device.description().toStdString();
-}
-
-QAudioDevice findOutput(const std::string& id) {
-  for (const auto& device : QMediaDevices::audioOutputs()) {
-    if (encodeDeviceId(device) == id) return device;
+std::string joinDeviceNames(const std::vector<audio::DeviceInfo>& devices) {
+  std::string joined;
+  for (const auto& device : devices) {
+    if (!joined.empty()) joined += ", ";
+    joined += device.name + " [" + audio::deviceApiName(device.api) + "]";
   }
-  return {};
-}
-
-QAudioDevice findInput(const std::string& id) {
-  for (const auto& device : QMediaDevices::audioInputs()) {
-    if (encodeDeviceId(device) == id) return device;
-  }
-  return {};
-}
-
-int bytesPerSample(QAudioFormat::SampleFormat format) {
-  return format == QAudioFormat::Float ? 4 : 2;
-}
-
-// Prefer 48 kHz stereo float, fall back to 16-bit, then to the device's own
-// format with the sample format coerced to one the engine can convert.
-QAudioFormat pickFormat(const QAudioDevice& device) {
-  QAudioFormat format;
-  format.setSampleRate(48000);
-  format.setChannelCount(2);
-  format.setSampleFormat(QAudioFormat::Float);
-  if (device.isFormatSupported(format)) return format;
-  format.setSampleFormat(QAudioFormat::Int16);
-  if (device.isFormatSupported(format)) return format;
-  format = device.preferredFormat();
-  if (format.channelCount() <= 0) format.setChannelCount(2);
-  if (format.sampleRate() <= 0) format.setSampleRate(48000);
-  if (format.sampleFormat() != QAudioFormat::Float &&
-      format.sampleFormat() != QAudioFormat::Int16) {
-    format.setSampleFormat(QAudioFormat::Int16);
-  }
-  return format;
-}
-
-float clampSample(float value) {
-  return value < -1.0f ? -1.0f : (value > 1.0f ? 1.0f : value);
+  return joined;
 }
 
 }  // namespace
@@ -103,12 +61,10 @@ class AudioGlue::EmulatorDriver final {
     const double sampleRate = owner_.sampleRate();
     const double intervalMs =
         sampleRate > 0.0 ? 1000.0 * static_cast<double>(block) / sampleRate : 2.6667;
-    float left[block] = {};
-    float right[block] = {};
 
     auto next = std::chrono::steady_clock::now();
     while (!exit_.load(std::memory_order_relaxed)) {
-      owner_.renderBlock(nullptr, 0, left, right, block);
+      owner_.renderEmulatorBlock(block);
       next += std::chrono::microseconds(static_cast<long long>(intervalMs * 1000.0));
       const auto now = std::chrono::steady_clock::now();
       if (next > now) {
@@ -122,87 +78,6 @@ class AudioGlue::EmulatorDriver final {
   AudioGlue& owner_;
   std::atomic<bool> exit_{false};
   std::thread thread_;
-};
-
-// Pull-mode sink source: Qt asks for bytes on its audio thread; each request is
-// rendered through the same Engine/Recorder/Click path as the emulator.
-class AudioGlue::AudioRenderDevice final : public QIODevice {
- public:
-  AudioRenderDevice(AudioGlue& owner, const QAudioFormat& format)
-      : owner_(owner),
-        format_(format),
-        bytesPerFrame_(format.channelCount() * bytesPerSample(format.sampleFormat())) {}
-
-  bool isSequential() const override { return true; }
-  qint64 bytesAvailable() const override { return 32768; }
-
- protected:
-  qint64 readData(char* data, qint64 maxSize) override {
-    if (data == nullptr || maxSize <= 0 || bytesPerFrame_ <= 0) return 0;
-    const int channels = format_.channelCount();
-    qint64 produced = 0;
-    while (maxSize - produced >= bytesPerFrame_) {
-      const int frames =
-          static_cast<int>(std::min<qint64>(audio::kBlockSize,
-                                           (maxSize - produced) / bytesPerFrame_));
-      if (frames <= 0) break;
-      owner_.renderBlock(nullptr, 0, renderL_, renderR_, frames);
-
-      for (int frame = 0; frame < frames; ++frame) {
-        const float left = clampSample(renderL_[frame]);
-        const float right = clampSample(renderR_[frame]);
-        for (int channel = 0; channel < channels; ++channel) {
-          const float value = channel == 0 ? left : (channel == 1 ? right : 0.0f);
-          if (format_.sampleFormat() == QAudioFormat::Float) {
-            std::memcpy(data + produced, &value, sizeof value);
-            produced += static_cast<qint64>(sizeof value);
-          } else {
-            const auto pcm = static_cast<qint16>(std::lround(value * 32767.0f));
-            std::memcpy(data + produced, &pcm, sizeof pcm);
-            produced += static_cast<qint64>(sizeof pcm);
-          }
-        }
-      }
-    }
-    return produced;
-  }
-
-  qint64 writeData(const char*, qint64) override { return 0; }
-
- private:
-  AudioGlue& owner_;
-  QAudioFormat format_;
-  int bytesPerFrame_ = 8;
-  float renderL_[audio::kBlockSize] = {};
-  float renderR_[audio::kBlockSize] = {};
-};
-
-// Push-mode source consumer: Qt writes captured frames here; they land in a
-// bounded ring the render thread reads for engine inputs 1/2.
-class AudioGlue::AudioInputConsumer final : public QIODevice {
- public:
-  AudioInputConsumer(AudioGlue& owner, const QAudioFormat& format)
-      : owner_(owner), format_(format) {}
-
-  bool isSequential() const override { return true; }
-  qint64 bytesAvailable() const override { return 0; }
-
- protected:
-  qint64 readData(char*, qint64) override { return 0; }
-
-  qint64 writeData(const char* data, qint64 maxSize) override {
-    const int bytesPerFrame =
-        format_.channelCount() * bytesPerSample(format_.sampleFormat());
-    if (data == nullptr || maxSize <= 0 || bytesPerFrame <= 0) return 0;
-    const int frames = static_cast<int>(maxSize / bytesPerFrame);
-    if (frames <= 0) return 0;
-    owner_.pushInput(data, frames, format_);
-    return static_cast<qint64>(frames) * bytesPerFrame;
-  }
-
- private:
-  AudioGlue& owner_;
-  QAudioFormat format_;
 };
 
 AudioGlue::AudioGlue(MixerModel& mixer, FxManager& fx, PerformanceModel& performance,
@@ -221,6 +96,7 @@ AudioGlue::AudioGlue(MixerModel& mixer, FxManager& fx, PerformanceModel& perform
   for (auto& peak : stripPeaks_) peak.store(0.0f);
   for (auto& source : monitorSend_) source.store(1);
   synth_.prepare(sampleRate());
+  pump_.reset();
   loadAudioChoice();
 }
 
@@ -250,7 +126,9 @@ bool AudioGlue::start() {
     log("audio: " + backend_);
     return false;
   }
-  const auto error = openDevice(selection.outputDeviceId, choice_.bufferSize);
+  const auto error =
+      openBackend(selection.effective, choice_.outputDeviceId, choice_.inputDeviceId,
+                  choice_.bufferSize);
   if (!error.empty()) {
     closeAudio();
     note_ = "no audio device (" + error + "); using the emulator generator";
@@ -258,16 +136,20 @@ bool AudioGlue::start() {
     log("audio: " + backend_);
     return false;
   }
-  if (!choice_.inputDeviceId.empty()) {
-    (void)openInput(choice_.inputDeviceId);
-  }
   log("audio: " + backend_);
   return true;
 }
 
 void AudioGlue::stop() {
+  const bool wasRunning = running_.load();
+  const std::uint64_t blocks = renderBlocks_.load(std::memory_order_relaxed);
+  const std::uint64_t xruns = device_ != nullptr ? device_->xruns() : 0;
   stopEmulator();
   closeAudio();
+  if (wasRunning) {
+    log("audio: stopped after " + std::to_string(blocks) + " engine blocks, " +
+        std::to_string(xruns) + " device xruns");
+  }
   if (recorder_.recording()) {
     const auto take = recorder_.stopTake();
     const std::lock_guard<std::mutex> lock(takeLock_);
@@ -280,6 +162,7 @@ void AudioGlue::startEmulator(const std::string& reason) {
   closeAudio();
   emulated_.store(true);
   deviceName_.clear();
+  inputName_.clear();
   backend_ = "emulator: sine/noise generator, 48 kHz / 128 frames";
   if (!reason.empty()) note_ = reason;
   synth_.prepare(sampleRate());
@@ -297,126 +180,189 @@ void AudioGlue::stopEmulator() {
 }
 
 void AudioGlue::closeAudio() {
-  if (source_ != nullptr) {
-    source_->stop();
-    source_.reset();
+  if (device_ != nullptr) {
+    device_->stop();
+    device_->close();
+    device_.reset();
   }
-  inputConsumer_.reset();
-  if (sink_ != nullptr) {
-    sink_->stop();
-    sink_.reset();
-  }
-  renderDevice_.reset();
   deviceName_.clear();
   inputName_.clear();
-  deviceBufferFrames_ = 0;
+  devicePeriodFrames_ = 0;
+  outputChannels_.store(0);
+  inputChannels_.store(0);
   running_.store(false);
   emulated_.store(false);
+  pump_.reset();
 }
 
-std::string AudioGlue::openDevice(const std::string& outputDeviceId, int bufferSize) {
+std::string AudioGlue::openBackend(AudioBackend backend, const std::string& outputDeviceId,
+                                   const std::string& inputDeviceId, int bufferSize) {
   stopEmulator();
   closeAudio();
+  note_.clear();
 
-  QAudioDevice device;
-  if (outputDeviceId.empty()) {
-    device = QMediaDevices::defaultAudioOutput();
-  } else {
-    device = findOutput(outputDeviceId);
+  audio::DeviceApi api = audio::DeviceApi::None;
+  std::string outputNode;
+  switch (backend) {
+    case AudioBackend::PipeWire:
+    case AudioBackend::Alsa:
+      api = backend == AudioBackend::PipeWire ? audio::DeviceApi::PipeWire
+                                              : audio::DeviceApi::Alsa;
+      // An explicit device id may pin one node/card while the API stays
+      // selected; an id from the other API is ignored and the API default is
+      // opened instead.
+      if (!outputDeviceId.empty()) {
+        audio::DeviceApi deviceApi = audio::DeviceApi::None;
+        std::string node;
+        if (audio::parseDeviceId(outputDeviceId, &deviceApi, &node) && deviceApi == api) {
+          outputNode = node;
+        } else {
+          note_ = "output device ignored: it belongs to a different audio API";
+          log("audio: " + note_);
+        }
+      }
+      break;
+    case AudioBackend::Default:
+      switch (defaultOutputBackend(availability_)) {
+        case AudioBackend::PipeWire:
+          api = audio::DeviceApi::PipeWire;
+          break;
+        case AudioBackend::Alsa:
+          api = audio::DeviceApi::Alsa;
+          break;
+        default:
+          api = audio::DeviceApi::None;
+          break;
+      }
+      break;
+    case AudioBackend::Device:
+      if (!audio::parseDeviceId(outputDeviceId, &api, &outputNode)) {
+        return "device id \"" + outputDeviceId + "\" has no audio API prefix";
+      }
+      break;
+    case AudioBackend::Emulator:
+      return "the emulator is not a device backend";
   }
-  if (device.isNull()) return "no usable output device";
-
-  outputFormat_ = pickFormat(device);
-  outputBytesPerFrame_ =
-      outputFormat_.channelCount() * bytesPerSample(outputFormat_.sampleFormat());
-  if (outputBytesPerFrame_ <= 0) return "unsupported output format";
-  sampleRate_.store(outputFormat_.sampleRate() > 0 ? outputFormat_.sampleRate() : 48000.0);
-  synth_.prepare(sampleRate());
-  // The built-in send effects (delay/reverb) allocate their lines for the
-  // device rate; the CLAP adapters were loaded for audio_.sampleRate() already.
-  performance_.setSampleRate(sampleRate());
-
-  const int requested = clampAudioBufferSize(bufferSize);
-  sink_ = std::make_unique<QAudioSink>(device, outputFormat_);
-  sink_->setBufferSize(requested * outputBytesPerFrame_);
-  // A device that dies (server exit, unplug) must stop reading as "live" in the
-  // System readout instead of keeping the last start numbers forever.
-  QObject::connect(sink_.get(), &QAudioSink::stateChanged, sink_.get(),
-                   [this](QAudio::State state) {
-                     if (state == QAudio::ActiveState) {
-                       running_.store(true);
-                       log("audio: sink active, " +
-                           std::to_string(static_cast<int>(sampleRate())) + " Hz / " +
-                           std::to_string(blockSize()) + " frames");
-                     } else if (state == QAudio::StoppedState) {
-                       running_.store(false);
-                       if (sink_ != nullptr && sink_->error() != QAudio::NoError) {
-                         note_ = "output device stopped with an error";
-                         log("audio: output device stopped with an error");
-                       }
-                     }
-                   });
-  renderDevice_ = std::make_unique<AudioRenderDevice>(*this, outputFormat_);
-  renderDevice_->open(QIODevice::ReadOnly);
-  sink_->start(renderDevice_.get());
-  if (sink_->error() != QAudio::NoError) {
-    return "QAudioSink start failed";
+  if (api == audio::DeviceApi::None) return "no audio API is available on this host";
+  if (!audio::deviceApiCompiled(api)) {
+    return std::string(audio::deviceApiName(api)) + " is not compiled into this build";
   }
 
-  deviceName_ = deviceName(device);
-  const int liveBuffer = static_cast<int>(sink_->bufferSize()) /
-                         std::max(1, outputBytesPerFrame_);
-  deviceBufferFrames_ = liveBuffer > 0 ? liveBuffer : requested;
-  blockSize_.store(deviceBufferFrames_);
+  std::string inputNode;
+  if (!inputDeviceId.empty()) {
+    audio::DeviceApi inputApi = audio::DeviceApi::None;
+    std::string parsedInput;
+    if (!audio::parseDeviceId(inputDeviceId, &inputApi, &parsedInput) || inputApi != api) {
+      note_ = "input device ignored: it belongs to a different audio API";
+      log("audio: " + note_);
+    } else {
+      inputNode = parsedInput;
+    }
+  }
+
+  audio::DeviceConfig config;
+  config.sampleRate = 48000.0;
+  config.blockFrames = clampAudioBufferSize(bufferSize);
+  config.streamName = "mnkybox";
+  config.outputId = outputNode;
+  config.inputId = inputNode;
+  config.outputChannels = outputChannelsFor(outputNode);
+  if (api == audio::DeviceApi::PipeWire && config.outputChannels <= 0) {
+    // A PipeWire stream can always ask for the full width: the graph converts
+    // down to a narrower sink, and an explicit UMC node negotiates its own 20.
+    config.outputChannels = audio::kMaxDeviceOutputs;
+  }
+  config.inputChannels = inputChannelsFor(inputNode);
+  if (api == audio::DeviceApi::PipeWire && !inputNode.empty() && config.inputChannels <= 0) {
+    config.inputChannels = audio::kMaxInputs;
+  }
+  // PipeWire links channel by channel through the node's positions. Without
+  // them a multichannel interface is opened stereo-first (the Qt/Pulse bug);
+  // the backend falls back to AUX0.. when the node does not report positions.
+  config.outputPositions = outputPositionsFor(outputNode);
+  config.inputPositions = inputPositionsFor(inputNode);
+
+  std::string error;
+  auto created = audio::createBackend(api, &error);
+  if (created == nullptr) return error;
+  if (!created->open(config, this, &error)) {
+    created->close();
+    return error.empty() ? "audio device open failed" : error;
+  }
+  if (!created->start(&error)) {
+    created->close();
+    return error.empty() ? "audio device start failed" : error;
+  }
+  device_ = std::move(created);
+  sampleRate_.store(device_->sampleRate());
+  const int period = device_->periodFrames();
+  blockSize_.store(period > 0 ? period : audio::kBlockSize);
+  devicePeriodFrames_ = blockSize_.load();
+  outputChannels_.store(device_->outputChannels());
+  inputChannels_.store(device_->inputChannels());
   running_.store(true);
-  backend_ = "Qt Multimedia / " + deviceName_ + ", " +
-             std::to_string(static_cast<int>(sampleRate())) + " Hz / " +
-             std::to_string(deviceBufferFrames_) + " frames";
+  performance_.setSampleRate(sampleRate());
+  engine_.setSampleRate(sampleRate());
+  deviceName_ = deviceNameFor(outputDeviceId);
+  if (deviceName_.empty()) deviceName_ = device_->description();
+  inputName_ = inputDeviceId.empty() ? std::string() : deviceNameFor(inputDeviceId);
+  backend_ = device_->description();
+  if (!inputName_.empty()) backend_ += " / input " + inputName_;
   if (static_cast<int>(std::lround(sampleRate())) != 48000) {
     note_ = "device runs at " + std::to_string(static_cast<int>(sampleRate())) +
             " Hz instead of the requested 48000 Hz";
   }
-  if (deviceBufferFrames_ != requested && note_.empty()) {
-    note_ = "device buffer is " + std::to_string(deviceBufferFrames_) +
-            " frames instead of the requested " + std::to_string(requested);
+  if (devicePeriodFrames_ != clampAudioBufferSize(bufferSize) && note_.empty()) {
+    note_ = "device period is " + std::to_string(devicePeriodFrames_) +
+            " frames instead of the requested " +
+            std::to_string(clampAudioBufferSize(bufferSize));
+  }
+  if (device_->inputChannels() == 0 && !inputDeviceId.empty() && note_.empty()) {
+    note_ = "input device did not open; capture is silent";
   }
   return {};
 }
 
-bool AudioGlue::openInput(const std::string& inputDeviceId) {
-  if (source_ != nullptr) {
-    source_->stop();
-    source_.reset();
+int AudioGlue::outputChannelsFor(const std::string& node) const {
+  if (node.empty()) return 0;
+  for (const auto& device : inventory_.outputs) {
+    if (device.node == node && device.channels > 0) return device.channels;
   }
-  inputConsumer_.reset();
-  if (inputDeviceId.empty()) return false;
-  const auto device = findInput(inputDeviceId);
-  if (device.isNull()) {
-    log("audio: input device unavailable");
-    return false;
+  return 0;
+}
+
+int AudioGlue::inputChannelsFor(const std::string& node) const {
+  if (node.empty()) return 0;
+  for (const auto& device : inventory_.inputs) {
+    if (device.node == node && device.channels > 0) return device.channels;
   }
-  const auto format = pickFormat(device);
-  inputRingFrames_ = static_cast<int>(format.sampleRate() > 0 ? format.sampleRate() : 48000);
-  {
-    const std::lock_guard<std::mutex> lock(inputLock_);
-    inputRingL_.assign(static_cast<std::size_t>(inputRingFrames_), 0.0f);
-    inputRingR_.assign(static_cast<std::size_t>(inputRingFrames_), 0.0f);
-    inputWritten_ = 0;
+  return 0;
+}
+
+std::vector<std::string> AudioGlue::outputPositionsFor(const std::string& node) const {
+  if (node.empty()) return {};
+  for (const auto& device : inventory_.outputs) {
+    if (device.node == node) return device.positions;
   }
-  source_ = std::make_unique<QAudioSource>(device, format);
-  inputConsumer_ = std::make_unique<AudioInputConsumer>(*this, format);
-  inputConsumer_->open(QIODevice::WriteOnly);
-  source_->start(inputConsumer_.get());
-  if (source_->error() != QAudio::NoError) {
-    source_->stop();
-    source_.reset();
-    inputConsumer_.reset();
-    log("audio: input source start failed");
-    return false;
+  return {};
+}
+
+std::vector<std::string> AudioGlue::inputPositionsFor(const std::string& node) const {
+  if (node.empty()) return {};
+  for (const auto& device : inventory_.inputs) {
+    if (device.node == node) return device.positions;
   }
-  inputName_ = deviceName(device);
-  log("audio: input " + inputName_);
-  return true;
+  return {};
+}
+
+std::string AudioGlue::deviceNameFor(const std::string& id) const {
+  for (const auto& device : inventory_.outputs) {
+    if (device.id == id) return device.name;
+  }
+  for (const auto& device : inventory_.inputs) {
+    if (device.id == id) return device.name;
+  }
+  return {};
 }
 
 void AudioGlue::loadAudioChoice() {
@@ -449,24 +395,53 @@ void AudioGlue::saveAudioChoice() {
 }
 
 void AudioGlue::rescanBackends() {
+  inventory_ = audio::enumerateDevices();
   availability_ = {};
-  availability_.defaultOutput = !QMediaDevices::defaultAudioOutput().isNull();
-  std::string outputNames;
-  std::string inputNames;
-  for (const auto& device : QMediaDevices::audioOutputs()) {
-    availability_.outputDeviceIds.push_back(encodeDeviceId(device));
-    if (!outputNames.empty()) outputNames += ", ";
-    outputNames += device.description().toStdString();
+  availability_.pipewireOutput = inventory_.pipewireOutput;
+  availability_.pipewireInput = inventory_.pipewireInput;
+  availability_.alsaOutput = inventory_.alsaOutput;
+  availability_.alsaInput = inventory_.alsaInput;
+  availability_.defaultOutput = inventory_.pipewireOutput || inventory_.alsaOutput;
+  for (const auto& device : inventory_.outputs) {
+    availability_.outputDeviceIds.push_back(device.id);
   }
-  for (const auto& device : QMediaDevices::audioInputs()) {
-    availability_.inputDeviceIds.push_back(encodeDeviceId(device));
-    if (!inputNames.empty()) inputNames += ", ";
-    inputNames += device.description().toStdString();
+  for (const auto& device : inventory_.inputs) {
+    availability_.inputDeviceIds.push_back(device.id);
   }
-  log("audio: Qt devices default=" + std::string(availability_.defaultOutput ? "yes" : "no") +
-      " outputs=" + std::to_string(availability_.outputDeviceIds.size()) + " [" +
-      outputNames + "] inputs=" + std::to_string(availability_.inputDeviceIds.size()) +
-      " [" + inputNames + "]");
+  // Real per-device USB MIDI names for the device list: RtMidi port names
+  // grouped by client instead of one generic "USB" label. MidiGlue owns the
+  // actual ports; this probe only enumerates.
+  try {
+    midi::UsbMidi probe;
+    availability_.midiInputNames = midiDeviceNamesFromPortNames(probe.listInputs());
+    availability_.midiOutputNames = midiDeviceNamesFromPortNames(probe.listOutputs());
+  } catch (const std::exception& error) {
+    log(std::string("audio: USB MIDI enumeration failed: ") + error.what());
+  }
+  log("audio: devices default=" + std::string(availability_.defaultOutput ? "yes" : "no") +
+      " pipewire out=" + std::to_string(inventory_.pipewireOutput ? 1 : 0) + " in=" +
+      std::to_string(inventory_.pipewireInput ? 1 : 0) + " [" +
+      joinDeviceNames(inventory_.outputs) + "] alsa out=" +
+      std::to_string(inventory_.alsaOutput ? 1 : 0) + " in=" +
+      std::to_string(inventory_.alsaInput ? 1 : 0) + " midi in=[" +
+      [&] {
+        std::string joined;
+        for (const auto& name : availability_.midiInputNames) {
+          if (!joined.empty()) joined += ", ";
+          joined += name;
+        }
+        return joined;
+      }() +
+      "] midi out=[" +
+      [&] {
+        std::string joined;
+        for (const auto& name : availability_.midiOutputNames) {
+          if (!joined.empty()) joined += ", ";
+          joined += name;
+        }
+        return joined;
+      }() +
+      "]");
 }
 
 AudioBackendAvailability AudioGlue::backendAvailability() const {
@@ -475,28 +450,24 @@ AudioBackendAvailability AudioGlue::backendAvailability() const {
 
 std::vector<AudioDeviceOption> AudioGlue::outputDevices() const {
   std::vector<AudioDeviceOption> options;
-  const auto defaultDevice = QMediaDevices::defaultAudioOutput();
-  const std::string defaultId = defaultDevice.isNull() ? std::string() : encodeDeviceId(defaultDevice);
-  for (const auto& device : QMediaDevices::audioOutputs()) {
+  for (const auto& device : inventory_.outputs) {
     AudioDeviceOption option;
-    option.id = encodeDeviceId(device);
-    option.name = device.description().toStdString();
-    option.isDefault = !defaultId.empty() && option.id == defaultId;
-    options.push_back(option);
+    option.id = device.id;
+    option.name = deviceName(device);
+    option.isDefault = device.isDefault;
+    options.push_back(std::move(option));
   }
   return options;
 }
 
 std::vector<AudioDeviceOption> AudioGlue::inputDevices() const {
   std::vector<AudioDeviceOption> options;
-  const auto defaultDevice = QMediaDevices::defaultAudioInput();
-  const std::string defaultId = defaultDevice.isNull() ? std::string() : encodeDeviceId(defaultDevice);
-  for (const auto& device : QMediaDevices::audioInputs()) {
+  for (const auto& device : inventory_.inputs) {
     AudioDeviceOption option;
-    option.id = encodeDeviceId(device);
-    option.name = device.description().toStdString();
-    option.isDefault = !defaultId.empty() && option.id == defaultId;
-    options.push_back(option);
+    option.id = device.id;
+    option.name = deviceName(device);
+    option.isDefault = device.isDefault;
+    options.push_back(std::move(option));
   }
   return options;
 }
@@ -506,6 +477,10 @@ std::string AudioGlue::applyAudioChoice(const AudioBackendChoice& choice) {
   choice_.bufferSize = clampAudioBufferSize(choice.bufferSize);
   saveAudioChoice();
   note_.clear();
+  // Release the device before enumerating: an ALSA hw PCM cannot be probed
+  // while this process owns it, and a stale channel count would drop the
+  // device width from the list.
+  closeAudio();
   rescanBackends();
 
   const auto selection =
@@ -529,7 +504,8 @@ std::string AudioGlue::applyAudioChoice(const AudioBackendChoice& choice) {
     return {};
   }
 
-  const auto error = openDevice(selection.outputDeviceId, choice_.bufferSize);
+  const auto error = openBackend(selection.effective, choice_.outputDeviceId,
+                                 choice_.inputDeviceId, choice_.bufferSize);
   if (!error.empty()) {
     closeAudio();
     note_ = "device open failed: " + error + "; using the emulator generator";
@@ -537,7 +513,6 @@ std::string AudioGlue::applyAudioChoice(const AudioBackendChoice& choice) {
     log("audio: " + note_);
     return error;
   }
-  if (!choice_.inputDeviceId.empty()) (void)openInput(choice_.inputDeviceId);
   log("audio: " + backend_);
   return {};
 }
@@ -556,12 +531,15 @@ AudioBackendState AudioGlue::backendState() const {
     state.liveDevice = "generator";
     state.sampleRate = sampleRate();
     state.blockSize = blockSize();
-  } else if (sink_ != nullptr && running_.load()) {
-    state.liveType = "Qt Multimedia";
+  } else if (device_ != nullptr && running_.load()) {
+    state.liveType = audio::deviceApiName(device_->api());
     state.liveDevice = deviceName_;
     state.sampleRate = sampleRate();
-    state.blockSize = blockSize();
+    state.blockSize = device_->periodFrames() > 0 ? device_->periodFrames() : blockSize();
+    state.outputChannels = outputChannels_.load();
+    state.inputChannels = inputChannels_.load();
     state.callbackBlocks = renderBlocks_.load(std::memory_order_relaxed);
+    state.xruns = device_->xruns();
   } else {
     state.liveType = "none";
   }
@@ -723,156 +701,124 @@ bool AudioGlue::setTakeRegions(int track, const std::vector<audio::TakeRegion>& 
   return engine_.setTakeRegions(track, regions, error);
 }
 
-void AudioGlue::pushInput(const char* data, int frames, const QAudioFormat& format) {
-  if (data == nullptr || frames <= 0) return;
-  const int channels = format.channelCount();
-  const int bytesPerFrame = channels * bytesPerSample(format.sampleFormat());
-  if (channels <= 0 || bytesPerFrame <= 0) return;
-  const std::lock_guard<std::mutex> lock(inputLock_);
-  if (inputRingFrames_ <= 0 ||
-      inputRingL_.size() != static_cast<std::size_t>(inputRingFrames_)) {
-    return;
+void AudioGlue::captureDevice(const float* interleaved, int frames, int channels) {
+  pump_.pushCapture(interleaved, frames, channels);
+}
+
+void AudioGlue::prepareEngineBlock() {
+  mixer_.applyTo(engine_);
+  for (int send = 0; send < audio::kNumSends; ++send) {
+    engine_.setFx(send, &performance_.effect(send));
   }
-  for (int frame = 0; frame < frames; ++frame) {
-    float left = 0.0f;
-    float right = 0.0f;
-    for (int channel = 0; channel < channels; ++channel) {
-      float value = 0.0f;
-      const char* sample = data + static_cast<qint64>(frame) * bytesPerFrame +
-                           channel * bytesPerSample(format.sampleFormat());
-      if (format.sampleFormat() == QAudioFormat::Float) {
-        std::memcpy(&value, sample, sizeof value);
-      } else {
-        qint16 pcm = 0;
-        std::memcpy(&pcm, sample, sizeof pcm);
-        value = static_cast<float>(pcm) / 32767.0f;
-      }
-      if (channel == 0) left = value;
-      if (channel == 1) right = value;
+  engine_.setPhonesSource(monitorPhones_.load(std::memory_order_relaxed) == 1
+                              ? audio::PhonesSource::Main
+                              : audio::PhonesSource::Cue);
+  engine_.setCueStyle(monitorCueStyle_.load(std::memory_order_relaxed) == 1
+                          ? audio::CueStyle::Toggle
+                          : audio::CueStyle::Level);
+  for (int destination = 0; destination < audio::kNumSendDestinations; ++destination) {
+    engine_.setSendSource(
+        static_cast<audio::SendDestination>(destination),
+        monitorSend_[static_cast<std::size_t>(destination)].load(std::memory_order_relaxed) == 0
+            ? audio::SendSource::PreFader
+            : audio::SendSource::PostFader);
+  }
+  audio::MainCompSettings comp;
+  comp.on = compOn_.load(std::memory_order_relaxed);
+  comp.threshDb = compThreshDb_.load(std::memory_order_relaxed);
+  comp.ratio = compRatio_.load(std::memory_order_relaxed);
+  comp.attackMs = compAttackMs_.load(std::memory_order_relaxed);
+  comp.releaseMs = compReleaseMs_.load(std::memory_order_relaxed);
+  comp.makeupDb = compMakeupDb_.load(std::memory_order_relaxed);
+  comp.mode = compMode_.load(std::memory_order_relaxed) == 1 ? audio::CompressorMode::Rms
+                                                             : audio::CompressorMode::Peak;
+  engine_.setMainComp(comp);
+  engine_.setClickMode(static_cast<audio::ClickMode>(
+      std::clamp(state_.clickMode.load(std::memory_order_relaxed), 0, 2)));
+  engine_.setClickOutput(static_cast<audio::ClickOutput>(
+      std::clamp(state_.clickOutput.load(std::memory_order_relaxed), 0, 2)));
+  engine_.setClickGainDb(state_.clickGainDb.load(std::memory_order_relaxed));
+  engine_.setRecording(recorder_.recording());
+  engine_.setTransport(state_.rolling.load(std::memory_order_relaxed),
+                       state_.tick.load(std::memory_order_relaxed),
+                       static_cast<std::uint32_t>(kTicksPerBeat),
+                       state_.tempoX100.load(std::memory_order_relaxed));
+}
+
+void AudioGlue::writeRecorderBlock(int frames) {
+  if (!recorder_.recording()) return;
+  const float* taps[audio::kMaxInputs] = {};
+  for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+    taps[channel] = engine_.tap(channel);
+  }
+  recorder_.writeBlock(taps, busMainL_, busMainR_, frames);
+}
+
+void AudioGlue::renderDevice(float* interleaved, int frames, int channels) {
+  if (interleaved == nullptr || frames <= 0 || channels <= 0) return;
+  const int width = std::min(channels, audio::kMaxDeviceChannels);
+  const audio::DeviceOut deviceOut = engine_.deviceOut();
+  audio::buildDeviceOutMap(deviceOut, width, deviceOutSlots_);
+  if (channels > audio::kMaxDeviceChannels) {
+    std::fill(interleaved, interleaved + static_cast<std::size_t>(frames) * channels, 0.0f);
+  }
+  int offset = 0;
+  while (offset < frames) {
+    const int block = std::min(audio::kBlockSize, frames - offset);
+    float* planes[audio::kMaxInputs] = {};
+    for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+      planes[channel] = capturePlanes_[channel];
     }
-    if (channels == 1) right = left;
-    const auto index = static_cast<std::size_t>(
-        inputWritten_ % static_cast<std::uint64_t>(inputRingFrames_));
-    inputRingL_[index] = left;
-    inputRingR_[index] = right;
-    ++inputWritten_;
+    pump_.readCapture(planes, block);
+    const float* inputs[audio::kMaxInputs] = {};
+    for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+      inputs[channel] = capturePlanes_[channel];
+    }
+    prepareEngineBlock();
+    audio::OutputBuses outputs;
+    outputs.mainL = busMainL_;
+    outputs.mainR = busMainR_;
+    outputs.out34L = busOut34L_;
+    outputs.out34R = busOut34R_;
+    outputs.phonesL = busPhonesL_;
+    outputs.phonesR = busPhonesR_;
+    engine_.process(inputs, audio::kMaxInputs, block, outputs);
+    writeRecorderBlock(block);
+    audio::mapBusesToDevice(busMainL_, busMainR_, busOut34L_, busOut34R_,
+                            busPhonesL_, busPhonesR_, deviceOutSlots_, channels, block,
+                            interleaved + static_cast<std::size_t>(offset) * channels);
+    updatePeaks(busMainL_, busMainR_, block);
+    renderBlocks_.fetch_add(1, std::memory_order_relaxed);
+    offset += block;
   }
 }
 
-void AudioGlue::copyInput(float* left, float* right, int frames) {
-  if (left == nullptr || right == nullptr || frames <= 0) return;
-  const std::lock_guard<std::mutex> lock(inputLock_);
-  if (inputRingFrames_ <= 0 || inputRingL_.empty()) {
-    std::fill(left, left + frames, 0.0f);
-    std::fill(right, right + frames, 0.0f);
-    return;
-  }
-  const std::uint64_t available =
-      std::min<std::uint64_t>(inputWritten_, static_cast<std::uint64_t>(frames));
-  const int missing = frames - static_cast<int>(available);
-  for (int i = 0; i < missing; ++i) {
-    left[i] = 0.0f;
-    right[i] = 0.0f;
-  }
-  for (int i = 0; i < static_cast<int>(available); ++i) {
-    const auto index = static_cast<std::size_t>(
-        (inputWritten_ - available + static_cast<std::uint64_t>(i)) %
-        static_cast<std::uint64_t>(inputRingFrames_));
-    left[missing + i] = inputRingL_[index];
-    right[missing + i] = inputRingR_[index];
-  }
-}
-
-void AudioGlue::renderBlock(const float* const* inputChannelData, int numInputChannels,
-                            float* outL, float* outR, int numSamples) {
-  if (outL == nullptr || outR == nullptr || numSamples <= 0) return;
-  renderBlocks_.fetch_add(1, std::memory_order_relaxed);
-
-  // One read per block: the backend can change on the GUI thread while a
-  // callback is still draining.
-  const bool generated = emulated_.load();
-
+void AudioGlue::renderEmulatorBlock(int numSamples) {
+  if (numSamples <= 0) return;
   int offset = 0;
   while (offset < numSamples) {
-    const int frames = std::min(audio::kBlockSize, numSamples - offset);
+    const int block = std::min(audio::kBlockSize, numSamples - offset);
+    float* generated[audio::kMaxInputs] = {};
     const float* inputs[audio::kMaxInputs] = {};
-
-    if (generated) {
-      float* generatedChannels[audio::kMaxInputs] = {};
-      for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
-        generatedChannels[channel] = synthBuffer_[channel];
-        inputs[channel] = synthBuffer_[channel];
-      }
-      synth_.fillBlock(generatedChannels, audio::kMaxInputs, frames);
-    } else if (inputChannelData != nullptr && numInputChannels > 0) {
-      const int count = std::min(audio::kMaxInputs, numInputChannels);
-      for (int channel = 0; channel < count; ++channel) inputs[channel] = inputChannelData[channel];
-    } else {
-      // Real-device path: the optional QAudioSource ring feeds inputs 1/2.
-      copyInput(inputL_, inputR_, frames);
-      inputs[0] = inputL_;
-      inputs[1] = inputR_;
+    for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+      generated[channel] = synthBuffer_[channel];
+      inputs[channel] = synthBuffer_[channel];
     }
-
-    mixer_.applyTo(engine_);
-    for (int send = 0; send < audio::kNumSends; ++send) {
-      engine_.setFx(send, &performance_.effect(send));
-    }
-    engine_.setPhonesSource(monitorPhones_.load(std::memory_order_relaxed) == 1
-                                ? audio::PhonesSource::Main
-                                : audio::PhonesSource::Cue);
-    engine_.setCueStyle(monitorCueStyle_.load(std::memory_order_relaxed) == 1
-                            ? audio::CueStyle::Toggle
-                            : audio::CueStyle::Level);
-    for (int destination = 0; destination < audio::kNumSendDestinations; ++destination) {
-      engine_.setSendSource(
-          static_cast<audio::SendDestination>(destination),
-          monitorSend_[static_cast<std::size_t>(destination)].load(std::memory_order_relaxed) == 0
-              ? audio::SendSource::PreFader
-              : audio::SendSource::PostFader);
-    }
-    audio::MainCompSettings comp;
-    comp.on = compOn_.load(std::memory_order_relaxed);
-    comp.threshDb = compThreshDb_.load(std::memory_order_relaxed);
-    comp.ratio = compRatio_.load(std::memory_order_relaxed);
-    comp.attackMs = compAttackMs_.load(std::memory_order_relaxed);
-    comp.releaseMs = compReleaseMs_.load(std::memory_order_relaxed);
-    comp.makeupDb = compMakeupDb_.load(std::memory_order_relaxed);
-    comp.mode = compMode_.load(std::memory_order_relaxed) == 1
-                    ? audio::CompressorMode::Rms
-                    : audio::CompressorMode::Peak;
-    engine_.setMainComp(comp);
-    engine_.setClickMode(static_cast<audio::ClickMode>(
-        std::clamp(state_.clickMode.load(std::memory_order_relaxed), 0, 2)));
-    engine_.setClickOutput(static_cast<audio::ClickOutput>(
-        std::clamp(state_.clickOutput.load(std::memory_order_relaxed), 0, 2)));
-    engine_.setClickGainDb(state_.clickGainDb.load(std::memory_order_relaxed));
-    engine_.setRecording(recorder_.recording());
-    engine_.setTransport(state_.rolling.load(std::memory_order_relaxed),
-                         state_.tick.load(std::memory_order_relaxed),
-                         static_cast<std::uint32_t>(kTicksPerBeat),
-                         state_.tempoX100.load(std::memory_order_relaxed));
-
+    synth_.fillBlock(generated, audio::kMaxInputs, block);
+    prepareEngineBlock();
     audio::OutputBuses outputs;
-    outputs.mainL = outL + offset;
-    outputs.mainR = outR + offset;
-    engine_.process(inputs, generated ? audio::kMaxInputs : (inputChannelData != nullptr
-                                                                ? numInputChannels
-                                                                : 2),
-                    frames, outputs);
-
-    if (recorder_.recording()) {
-      const float* taps[audio::kMaxInputs] = {};
-      for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
-        taps[channel] = engine_.tap(channel);
-      }
-      recorder_.writeBlock(taps, outL + offset, outR + offset, frames);
-    }
-
-    offset += frames;
+    outputs.mainL = busMainL_;
+    outputs.mainR = busMainR_;
+    outputs.out34L = busOut34L_;
+    outputs.out34R = busOut34R_;
+    outputs.phonesL = busPhonesL_;
+    outputs.phonesR = busPhonesR_;
+    engine_.process(inputs, audio::kMaxInputs, block, outputs);
+    writeRecorderBlock(block);
+    updatePeaks(busMainL_, busMainR_, block);
+    renderBlocks_.fetch_add(1, std::memory_order_relaxed);
+    offset += block;
   }
-
-  updatePeaks(outL, outR, numSamples);
 }
 
 void AudioGlue::updatePeaks(const float* outL, const float* outR, int numSamples) {

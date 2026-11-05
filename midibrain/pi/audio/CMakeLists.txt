@@ -15,12 +15,43 @@ endif()
 
 find_package(Threads REQUIRED)
 
+# Native audio I/O: libpipewire is the product path, snd_pcm the fallback. Both
+# are detected through pkg-config and compiled out (with a clear error at
+# runtime) when the headers are absent, so the core still builds on macOS.
+find_package(PkgConfig QUIET)
+set(MNKY_HAVE_PIPEWIRE 0)
+set(MNKY_HAVE_ALSA 0)
+if(PkgConfig_FOUND)
+  pkg_check_modules(MNKY_PIPEWIRE QUIET IMPORTED_TARGET libpipewire-0.3)
+  pkg_check_modules(MNKY_ALSA QUIET IMPORTED_TARGET alsa)
+  if(MNKY_PIPEWIRE_FOUND)
+    set(MNKY_HAVE_PIPEWIRE 1)
+  endif()
+  if(MNKY_ALSA_FOUND)
+    set(MNKY_HAVE_ALSA 1)
+  endif()
+endif()
+
 add_library(mnky_audio STATIC
   engine.cpp recorder.cpp click.cpp take_player.cpp peaks.cpp
+  device_backend.cpp pipewire_backend.cpp alsa_backend.cpp
   fx/comp.cpp fx/delay.cpp fx/effect.cpp fx/eq.cpp fx/params.cpp fx/registry.cpp fx/reverb.cpp)
 target_include_directories(mnky_audio PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(mnky_audio PUBLIC cxx_std_20)
 target_link_libraries(mnky_audio PUBLIC Threads::Threads)
+target_compile_definitions(mnky_audio PRIVATE
+  MNKY_HAVE_PIPEWIRE=${MNKY_HAVE_PIPEWIRE}
+  MNKY_HAVE_ALSA=${MNKY_HAVE_ALSA})
+if(MNKY_HAVE_PIPEWIRE)
+  target_link_libraries(mnky_audio PUBLIC PkgConfig::MNKY_PIPEWIRE)
+else()
+  message(STATUS "mnkybox audio: libpipewire-0.3 not found - PipeWire backend compiled out")
+endif()
+if(MNKY_HAVE_ALSA)
+  target_link_libraries(mnky_audio PUBLIC PkgConfig::MNKY_ALSA)
+else()
+  message(STATUS "mnkybox audio: alsa not found - snd_pcm backend compiled out")
+endif()
 
 # The root build defines MNKY_WARNINGS; a standalone build uses the same set.
 if(NOT MNKY_WARNINGS)
@@ -83,6 +114,24 @@ add_executable(test_audio_eq test_audio_eq.cpp)
 target_compile_options(test_audio_eq PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_audio_eq PRIVATE mnky_audio)
 add_test(NAME test_audio_eq COMMAND test_audio_eq)
+
+# Native device layer: exact sample-format conversion (S32/S24_3/S24_32/S16/
+# F32), the 18-in -> strips -> 20-out deviceOut mapping, the capture pump, the
+# buffer-size chunking and a fake period-based PCM device.
+add_executable(test_device_backend test_device_backend.cpp)
+target_compile_options(test_device_backend PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
+target_link_libraries(test_device_backend PRIVATE mnky_audio)
+add_test(NAME test_device_backend COMMAND test_device_backend)
+
+# Native-backend evidence tool for the Pi (UMC1820): device enumeration with
+# real node/card names, an 18-channel take through the same Engine/Recorder
+# path, and per-channel peak/fundamental/THD analysis. Built only where a real
+# backend exists (Linux); the Pi runs it, macOS never does.
+if(MNKY_HAVE_PIPEWIRE OR MNKY_HAVE_ALSA)
+  add_executable(mnky_audio_probe backend_probe.cpp)
+  target_compile_options(mnky_audio_probe PRIVATE ${MNKY_WARNINGS})
+  target_link_libraries(mnky_audio_probe PRIVATE mnky_audio)
+endif()
 
 # pi/CMakeLists.txt already builds test_audio from test_audio.cpp through
 # mnky_module_tests(), so only the standalone build creates the target here.

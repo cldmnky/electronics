@@ -532,6 +532,30 @@ OutputDestination Engine::outputDestination(int index) const {
     return mOutputDestination[index];
 }
 
+void Engine::setDeviceOut(const DeviceOut& deviceOut) {
+    const int pairs[3][2] = {{deviceOut.main[0], deviceOut.main[1]},
+                             {deviceOut.out34[0], deviceOut.out34[1]},
+                             {deviceOut.phones[0], deviceOut.phones[1]}};
+    for (int bus = 0; bus < 3; ++bus) {
+        for (int side = 0; side < 2; ++side) {
+            const int channel = pairs[bus][side];
+            mDeviceOut[bus][side].store(channel < 0 ? 0 : (channel > 31 ? 31 : channel),
+                                        std::memory_order_relaxed);
+        }
+    }
+}
+
+DeviceOut Engine::deviceOut() const {
+    DeviceOut result;
+    result.main[0] = mDeviceOut[0][0].load(std::memory_order_relaxed);
+    result.main[1] = mDeviceOut[0][1].load(std::memory_order_relaxed);
+    result.out34[0] = mDeviceOut[1][0].load(std::memory_order_relaxed);
+    result.out34[1] = mDeviceOut[1][1].load(std::memory_order_relaxed);
+    result.phones[0] = mDeviceOut[2][0].load(std::memory_order_relaxed);
+    result.phones[1] = mDeviceOut[2][1].load(std::memory_order_relaxed);
+    return result;
+}
+
 void Engine::setMaster(float gain) {
     mMaster = gain > 0.0f ? gain : 0.0f;
 }

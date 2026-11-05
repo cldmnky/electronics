@@ -496,3 +496,105 @@ forwarding, timing print), plus the untouched `test_audio`/`test_fx`/
 `clang++ -std=c++20 -Wall -Wextra -Werror -I. test_audio_eq.cpp engine.cpp
 take_player.cpp click.cpp fx/eq.cpp fx/effect.cpp fx/params.cpp -o /tmp/t_eq
 -pthread && /tmp/t_eq`.
+
+## Engine wave 8: native audio backend (PipeWire + ALSA, Qt Multimedia removed)
+
+Works: `device_backend.hpp` is the device I/O seam. A `DeviceBackend` opens one
+playback and (optionally) one capture endpoint, converts device frames to and
+from **48 kHz interleaved float32**, and calls `DeviceClient::renderDevice()` /
+`captureDevice()` from one serialised backend thread. The requested period is
+`kBlockSize` (128 frames); a backend that negotiated more splits it, because the
+engine block is a hard ceiling. Implementations:
+
+- `pipewire_backend.cpp` — two SPA audio streams on one `pw_main_loop` thread
+  via libpipewire. Playback is `PW_DIRECTION_OUTPUT` (a producing stream),
+  capture is `PW_DIRECTION_INPUT` (a consuming stream); the node names are
+  `mnkybox` and `mnkybox-capture`. `node.latency` requests `128/48000`, the
+  reported period is the frames the graph actually hands the process callback,
+  and the stream is connected with the target node's real channel positions.
+  Playback prefers F32_LE and capture S32_LE. Proxies are created and destroyed
+  on the loop thread (PipeWire 1.4 rejects `pw_stream_set_active`/`destroy` from
+  another thread).
+- `alsa_backend.cpp` — `snd_pcm` duplex on one poll thread, `hw:` first and
+  `plughw:` as the format fallback, interleaved S32_LE/F32_LE/S24_3LE/S24_LE/
+  S16_LE, 128-frame period with a 3-period buffer, xrun recovery counted, and a
+  1.5 s EBUSY retry so switching from PipeWire to ALSA does not fall back to the
+  generator while the graph releases the card.
+- `device_backend.cpp` — exact sample conversion (a 24-bit *packed* S24_3LE and
+  a 24-bit-in-32-bit S24_32 are distinct types, never a `reinterpret_cast`), the
+  `DeviceOut` slot map, and `DevicePump` (18-channel capture ring -> engine
+  plane pointers; it skips ahead instead of growing latency).
+- Enumeration reports the REAL names: PipeWire `node.name`/`node.description`/
+  `audio.channels`/`audio.position` (the last two from the bound node's info,
+  not the registry global), ALSA card id + PCM name + probed channel count.
+  PipeWire links channel-by-channel through the positions; without them a
+  multichannel node is linked stereo-first. That was the Qt/Pulse bug.
+
+`Engine::setDeviceOut()/deviceOut()` now holds the session `deviceOut` map
+(defaults Main 0/1, OUT3&4 2/3, phones 4/5, clamped 0..31) so
+`session::capture()`/`apply()` forward it with the rest of the mixer state; the
+device frame mapping is applied by the glue/probe, not by the DSP.
+
+`app/audio_backend.hpp` keys: `default` (PipeWire, then ALSA, then emulator),
+`pipewire`, `alsa`, `device` (the id carries the API: `pipewire:<node>` /
+`alsa:<pcm>`), `emulator`. The System device list shows both APIs with real
+names and the per-device USB MIDI names (RtMidi port names grouped by client,
+e.g. `UMC1820`), not one "USB" label.
+
+Measured on the studio Pi 5 / UMC1820 (2026-11-05, Debian 13, PipeWire 1.4.2,
+`mnky_audio_probe`, take files under `/tmp/probe-*`):
+
+- Enumeration: `pipewire:alsa_output…multichannel-output` 20 ch,
+  `…multichannel-input` 18 ch, `alsa:hw:CARD=UMC1820,DEV=0` 20/18 ch, all 48 kHz.
+- ALSA duplex: 20 out `S24_3LE` + 18 in `S32_LE`, period 128, buffer 384,
+  240,000 frames in 5.00 s, **0 xruns**; 18 `chNN.wav` + `master.wav`. Channel
+  peaks matched a raw `arecord -f S32_LE -c 18` capture of the same inputs
+  (e.g. ch3/ch4 at 0.0/-0.1 dBFS from the overdriven external source, ch9/10
+  digital zero) - the conversion adds nothing.
+- PipeWire duplex: 20 out F32_LE + 18 in S32_LE, period 128, 192,384 frames in
+  4.00 s (= 48,096 frames/s, real time), **0 xruns**; the app itself ran
+  `--no-pico --screenshots-live` with 3,190 engine blocks and 0 xruns.
+- Playback mapping (sink monitor captured with 20 AUX channels): the default
+  `deviceOut` puts 1.0/1.5/2.0/2.5/3.0/3.5 kHz on device channels 1..6 and
+  nothing on 7..20; `deviceOut 2,3,4,5,6,7` moves the same six tones to
+  channels 3..8 and leaves 1/2/9.. silent.
+- Per-channel ident sine at unity on all 18 capture channels: peak
+  `1.000000`, RMS `0.707107`, 0 samples above unity, THD **-156 … -175 dB**,
+  inter-channel crosstalk **-161.6 dB** (steady 1 s window).
+- `session::capture()`/`apply()` deviceOut forwarding verified on the Pi with a
+  one-off program: default -> apply {6,7,8,9,10,11} -> capture reads it back,
+  `{-5,99}` clamps to `{0,31}`.
+
+Distortion root cause: the old path was structurally stereo. Qt Multimedia
+opened the UMC1820 as a 2-channel `QAudioSink`/`QAudioSource` (Pulse device
+model), so engine channels 3..20 never left the app and Pulse's channelmix
+handled whatever reached the device; the sample format was whatever Qt/Pulse
+negotiated (UMC playback is S24_3LE, capture S32_LE) and the glue only knew
+float/Int16. Native ALSA/PipeWire streams plus the position-aware stream config
+remove both the stereo-first device model and the implicit conversion. The
+remaining 0 dBFS peaks measured on inputs 3/4 come from the external source
+overdriving the UMC ADC, not from the app (the raw arecord capture shows the
+same). Two measurement artifacts are documented in `backend_probe.cpp` so they
+are not mistaken for distortion: a rectangular Goertzel window leaks the
+fundamental into the harmonic bins (~-77 dB) and a window straddling the start
+of playback creates a step (~-66 dB); both are removed (Hann + steady window).
+
+Limits: there is **no analog loopback** on the UMC here (a -20 dBFS 1 kHz tone
+on OUT1/2 was measured at -45 dB or lower on every input), so converter THD
+cannot be measured; the THD figures above are digital (app stream -> UMC sink
+node/monitor), and the UMC ADC path is evidenced by peak/RMS equality with raw
+ALSA. The app has no headless record trigger (`main.cpp` is outside this
+module), so the 18-channel take is produced by `mnky_audio_probe`, which drives
+the identical `DeviceBackend` + `DevicePump` + `Engine` + `Recorder` path. ALSA
+device ids contain commas, so a hand-edited `mnkybox.conf` must quote them
+(`outputDevice="alsa:hw:CARD=UMC1820,DEV=0"`); QSettings writes that quoting
+itself.
+
+Verified with: `test_device_backend` (CTest; format exactness for S32/S24_3/
+S24_32/S16/F32 including full-scale rails and NaN, device id round-trip, the
+DeviceOut slot map incl. overlap and width truncation, the pump's zero-fill and
+drop, the 18-in -> strips -> 20-out path through a real `Engine` at 64/128/256/
+512/1024-frame periods, and a fake 3-period PCM device) plus the untouched
+audio/session targets and `mnkybox --unittests` (404 checks). Pi:
+`ctest` 18/18 and `--unittests` 404/404; `mnky_audio_probe list`, `take` and the
+`screenshots-live` runs above.
