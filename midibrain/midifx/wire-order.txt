@@ -1,0 +1,26 @@
+# Frozen 0x19 positional parameter contract for the MIDI FX pipes.
+#
+# One line per pipe: <type id> <pipe key> <param key>...
+# Param position IS the wire offset the Pi sends in EV_MIDI_ROUTE_PIPE (0x19,
+# int16 LE, chunked 5 at a time) and the positional `params[]` order stored in
+# a session. This file is written by hand on purpose: it is the wire ABI, not a
+# second copy of pipes.json. midifx/gen/gen_params.py refuses to generate when
+# pipes.json no longer matches it, so a reorder/rename cannot slip through a
+# regeneration. To change the wire contract deliberately: edit both files,
+# bump `schemaVersion` in pipes.json, then regenerate.
+1 filter noteOn noteOff cc pc pressure bend realtime sysex
+2 noteRange lo hi velLo velHi
+3 ccRemap inLo inHi outLo outHi
+4 channelRemap inCh outCh
+5 scaleQuantize scale root mask12
+6 chance percent
+7 velocityRandom amount minVel
+8 dispatcher numCh startCh
+9 sustain latch
+10 noteLength lengthMs
+11 transform matchKind matchLo matchHi outKind outVal
+12 arp div type octaves swing accent gate
+13 repeater div repeats falloff
+14 ccLfo cc wave div depth center
+15 harmonizer voices i1 i2 i3 i4
+16 midiDelay delayMs repeats falloff

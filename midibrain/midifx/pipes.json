@@ -1,0 +1,657 @@
+{
+  "schemaVersion": 1,
+  "description": "MIDI FX pipe definitions shared by the Pico firmware and the Pi. Param order IS the 0x19 positional wire order; missing positional params use `default`, extra params are ignored. Generated C++ lives in gen/generated/ - edit this file (and the frozen wire order) instead.",
+  "channelScope": {
+    "key": "chMask",
+    "docs": "Per-pipe channel scope: channel n (0-based) enters the pipe when bit n is set; every other message passes that pipe unchanged. 0xFFFF (default) = all messages, 0 = pipe inert. Sent on the 0x19 offset-0 chunk; a continuation chunk keeps the established scope.",
+    "min": 0,
+    "max": 65535,
+    "default": 65535
+  },
+  "pipes": [
+    {
+      "id": 1,
+      "key": "filter",
+      "name": "Filter",
+      "short": "FILT",
+      "category": "stateless",
+      "docs": "Per-message-kind pass gate; system/common messages have no mask bit and always pass.",
+      "params": [
+        {
+          "key": "noteOn",
+          "label": "PASS NOTE ON",
+          "kind": "bool",
+          "default": 1
+        },
+        {
+          "key": "noteOff",
+          "label": "PASS NOTE OFF",
+          "kind": "bool",
+          "default": 1
+        },
+        {
+          "key": "cc",
+          "label": "PASS CC",
+          "kind": "bool",
+          "default": 1
+        },
+        {
+          "key": "pc",
+          "label": "PASS PC",
+          "kind": "bool",
+          "default": 1
+        },
+        {
+          "key": "pressure",
+          "label": "PASS PRESS",
+          "kind": "bool",
+          "default": 1
+        },
+        {
+          "key": "bend",
+          "label": "PASS BEND",
+          "kind": "bool",
+          "default": 1
+        },
+        {
+          "key": "realtime",
+          "label": "PASS CLOCK",
+          "kind": "bool",
+          "default": 1
+        },
+        {
+          "key": "sysex",
+          "label": "PASS SYSEX",
+          "kind": "bool",
+          "default": 1
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "key": "noteRange",
+      "name": "Note Range",
+      "short": "NOTE",
+      "category": "stateless",
+      "docs": "Inclusive note window plus a note-on velocity window; reversed bounds swap.",
+      "params": [
+        {
+          "key": "lo",
+          "label": "LOW NOTE",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 0
+        },
+        {
+          "key": "hi",
+          "label": "HIGH NOTE",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 127
+        },
+        {
+          "key": "velLo",
+          "label": "LOW VELOCITY",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 0
+        },
+        {
+          "key": "velHi",
+          "label": "HIGH VELOCITY",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 127
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "key": "ccRemap",
+      "name": "CC Remap",
+      "short": "CC",
+      "category": "stateless",
+      "docs": "Linear CC-number remap: controllers in [inLo,inHi] rescale onto [outLo,outHi], rounded half away from zero.",
+      "params": [
+        {
+          "key": "inLo",
+          "label": "IN LOW",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 0
+        },
+        {
+          "key": "inHi",
+          "label": "IN HIGH",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 127
+        },
+        {
+          "key": "outLo",
+          "label": "OUT LOW",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 0
+        },
+        {
+          "key": "outHi",
+          "label": "OUT HIGH",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 127
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "key": "channelRemap",
+      "name": "Channel Remap",
+      "short": "CH",
+      "category": "stateless",
+      "docs": "Channel rewriter: channel-voice messages on inCh (0 = any) move to outCh (1..16).",
+      "params": [
+        {
+          "key": "inCh",
+          "label": "IN CHANNEL",
+          "kind": "int",
+          "min": 0,
+          "max": 16,
+          "default": 0
+        },
+        {
+          "key": "outCh",
+          "label": "OUT CHANNEL",
+          "kind": "int",
+          "min": 1,
+          "max": 16,
+          "default": 1
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "key": "scaleQuantize",
+      "name": "Scale",
+      "short": "SCAL",
+      "category": "stateless",
+      "docs": "Snap note events to a scale: 1..5 transpose the fixed scales by root, 6 is the absolute user mask (root ignored), 0 is off.",
+      "params": [
+        {
+          "key": "scale",
+          "label": "SCALE",
+          "kind": "enum",
+          "choices": [
+            "OFF",
+            "MAJOR",
+            "MINOR",
+            "PENTA MAJ",
+            "PENTA MIN",
+            "DORIAN",
+            "USER"
+          ],
+          "default": 0
+        },
+        {
+          "key": "root",
+          "label": "ROOT",
+          "kind": "enum",
+          "choices": [
+            "C",
+            "C#",
+            "D",
+            "D#",
+            "E",
+            "F",
+            "F#",
+            "G",
+            "G#",
+            "A",
+            "A#",
+            "B"
+          ],
+          "default": 0
+        },
+        {
+          "key": "mask12",
+          "label": "USER MASK",
+          "kind": "int",
+          "min": 0,
+          "max": 4095,
+          "default": 4095
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "key": "chance",
+      "name": "Chance",
+      "short": "CHAN",
+      "category": "stateless",
+      "docs": "Drops a note-on with `percent` probability; note-offs and other kinds always pass (0 disables, 100 drops every note-on).",
+      "params": [
+        {
+          "key": "percent",
+          "label": "DROP CHANCE",
+          "kind": "int",
+          "min": 0,
+          "max": 100,
+          "default": 0,
+          "unit": "%"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "key": "velocityRandom",
+      "name": "Velocity",
+      "short": "VEL",
+      "category": "stateless",
+      "docs": "Humanize: each note-on velocity gains a uniform random delta in [-amount,+amount], clamped to [minVel,127].",
+      "params": [
+        {
+          "key": "amount",
+          "label": "HUMANIZE",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 0
+        },
+        {
+          "key": "minVel",
+          "label": "MIN VELOCITY",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 0
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "key": "dispatcher",
+      "name": "Dispatch",
+      "short": "DISP",
+      "category": "stateless",
+      "docs": "Round-robin spread: successive note-ons rotate across numCh channels starting at startCh; the matching note-off follows its assignment.",
+      "params": [
+        {
+          "key": "numCh",
+          "label": "CHANNELS",
+          "kind": "int",
+          "min": 2,
+          "max": 16,
+          "default": 2
+        },
+        {
+          "key": "startCh",
+          "label": "START CHANNEL",
+          "kind": "int",
+          "min": 1,
+          "max": 16,
+          "default": 1
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "key": "sustain",
+      "name": "Sustain",
+      "short": "SUS",
+      "category": "stateless",
+      "docs": "CC64 latch: while the pedal is down, note-offs are held and released ahead of the pedal-up message.",
+      "params": [
+        {
+          "key": "latch",
+          "label": "LATCH",
+          "kind": "bool",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "key": "noteLength",
+      "name": "Note Length",
+      "short": "LEN",
+      "category": "stateless",
+      "docs": "Fixed note length: the note-on passes and a matching note-off is scheduled lengthMs later (capped at 60000 ms; 0 is off).",
+      "params": [
+        {
+          "key": "lengthMs",
+          "label": "LENGTH",
+          "kind": "int",
+          "min": 0,
+          "max": 60000,
+          "default": 0,
+          "unit": "ms"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "key": "transform",
+      "name": "Transform",
+      "short": "XF",
+      "category": "stateless",
+      "docs": "Message conversion: a match of matchKind with the value in [matchLo,matchHi] converts to outKind/outVal; non-matches pass unchanged.",
+      "params": [
+        {
+          "key": "matchKind",
+          "label": "MATCH KIND",
+          "kind": "enum",
+          "choices": [
+            "NOTE",
+            "CC",
+            "PC",
+            "BEND",
+            "PRESS"
+          ],
+          "default": 0
+        },
+        {
+          "key": "matchLo",
+          "label": "MATCH LOW",
+          "kind": "int",
+          "min": 0,
+          "max": 16383,
+          "default": 0
+        },
+        {
+          "key": "matchHi",
+          "label": "MATCH HIGH",
+          "kind": "int",
+          "min": 0,
+          "max": 16383,
+          "default": 127
+        },
+        {
+          "key": "outKind",
+          "label": "OUT KIND",
+          "kind": "enum",
+          "choices": [
+            "NOTE",
+            "CC",
+            "PC",
+            "BEND",
+            "PRESS"
+          ],
+          "default": 0
+        },
+        {
+          "key": "outVal",
+          "label": "OUT VALUE",
+          "kind": "int",
+          "min": 0,
+          "max": 16383,
+          "default": 0
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "key": "arp",
+      "name": "Arp",
+      "short": "ARP",
+      "category": "clocked",
+      "docs": "Arpeggiator: held note-ons are consumed and the pattern is generated on the division grid (up, down, updown, random, chord).",
+      "params": [
+        {
+          "key": "div",
+          "label": "DIVISION",
+          "kind": "enum",
+          "choices": [
+            "1/4",
+            "1/8",
+            "1/16",
+            "1/32"
+          ],
+          "default": 0
+        },
+        {
+          "key": "type",
+          "label": "TYPE",
+          "kind": "enum",
+          "choices": [
+            "UP",
+            "DOWN",
+            "UPDOWN",
+            "RANDOM",
+            "CHORD"
+          ],
+          "default": 0
+        },
+        {
+          "key": "octaves",
+          "label": "OCTAVES",
+          "kind": "int",
+          "min": 1,
+          "max": 4,
+          "default": 1
+        },
+        {
+          "key": "swing",
+          "label": "SWING",
+          "kind": "int",
+          "min": 0,
+          "max": 100,
+          "default": 50,
+          "unit": "%"
+        },
+        {
+          "key": "accent",
+          "label": "ACCENT",
+          "kind": "int",
+          "min": 0,
+          "max": 100,
+          "default": 0,
+          "unit": "%"
+        },
+        {
+          "key": "gate",
+          "label": "GATE",
+          "kind": "int",
+          "min": 1,
+          "max": 100,
+          "default": 50,
+          "unit": "%"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "key": "repeater",
+      "name": "Repeat",
+      "short": "REP",
+      "category": "clocked",
+      "docs": "Ratchet: every division step retriggers the whole held set, with the falloff envelope restarting every `repeats` steps.",
+      "params": [
+        {
+          "key": "div",
+          "label": "DIVISION",
+          "kind": "enum",
+          "choices": [
+            "1/4",
+            "1/8",
+            "1/16",
+            "1/32"
+          ],
+          "default": 0
+        },
+        {
+          "key": "repeats",
+          "label": "REPEATS",
+          "kind": "int",
+          "min": 1,
+          "max": 8,
+          "default": 1
+        },
+        {
+          "key": "falloff",
+          "label": "FALLOFF",
+          "kind": "int",
+          "min": 0,
+          "max": 100,
+          "default": 0,
+          "unit": "%"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "key": "ccLfo",
+      "name": "CC LFO",
+      "short": "LFO",
+      "category": "clocked",
+      "docs": "Emits its own CC values on the division grid (channel 1); depth 0 holds the centre and the routed bytes pass untouched.",
+      "params": [
+        {
+          "key": "cc",
+          "label": "CC",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 1
+        },
+        {
+          "key": "wave",
+          "label": "WAVE",
+          "kind": "enum",
+          "choices": [
+            "SINE",
+            "TRI",
+            "SQUARE",
+            "SAW"
+          ],
+          "default": 0
+        },
+        {
+          "key": "div",
+          "label": "DIVISION",
+          "kind": "enum",
+          "choices": [
+            "1/4",
+            "1/8",
+            "1/16",
+            "1/32"
+          ],
+          "default": 0
+        },
+        {
+          "key": "depth",
+          "label": "DEPTH",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 0
+        },
+        {
+          "key": "center",
+          "label": "CENTER",
+          "kind": "int",
+          "min": 0,
+          "max": 127,
+          "default": 64
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "key": "harmonizer",
+      "name": "Harmony",
+      "short": "HARM",
+      "category": "clocked",
+      "docs": "Harmonizer: the input note passes and each distinct voice offset is added as an extra note-on, refcounted so offs follow their ons.",
+      "params": [
+        {
+          "key": "voices",
+          "label": "VOICES",
+          "kind": "int",
+          "min": 0,
+          "max": 4,
+          "default": 0
+        },
+        {
+          "key": "i1",
+          "label": "INTERVAL 1",
+          "kind": "int",
+          "min": -48,
+          "max": 48,
+          "default": 0,
+          "unit": "st"
+        },
+        {
+          "key": "i2",
+          "label": "INTERVAL 2",
+          "kind": "int",
+          "min": -48,
+          "max": 48,
+          "default": 0,
+          "unit": "st"
+        },
+        {
+          "key": "i3",
+          "label": "INTERVAL 3",
+          "kind": "int",
+          "min": -48,
+          "max": 48,
+          "default": 0,
+          "unit": "st"
+        },
+        {
+          "key": "i4",
+          "label": "INTERVAL 4",
+          "kind": "int",
+          "min": -48,
+          "max": 48,
+          "default": 0,
+          "unit": "st"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "key": "midiDelay",
+      "name": "MIDI Delay",
+      "short": "DLY",
+      "category": "clocked",
+      "docs": "Echoes note-on/note-off/CC events `repeats` times, delayMs apart and attenuated by falloff; delayMs 0 is off.",
+      "params": [
+        {
+          "key": "delayMs",
+          "label": "DELAY",
+          "kind": "int",
+          "min": 0,
+          "max": 2000,
+          "default": 0,
+          "unit": "ms"
+        },
+        {
+          "key": "repeats",
+          "label": "REPEATS",
+          "kind": "int",
+          "min": 0,
+          "max": 8,
+          "default": 0
+        },
+        {
+          "key": "falloff",
+          "label": "FALLOFF",
+          "kind": "int",
+          "min": 0,
+          "max": 100,
+          "default": 0,
+          "unit": "%"
+        }
+      ]
+    }
+  ]
+}

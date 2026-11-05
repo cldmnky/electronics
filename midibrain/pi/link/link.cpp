@@ -206,10 +206,12 @@ void EmulatorTransport::handle(const mb::Frame& f) {
     case mb::EV_MIDI_ROUTE_PIPE: {
       std::uint8_t src = 0, dst = 0, index = 0, type = 0, offset = 0;
       bool bypass = false;
-      std::int16_t raw[mb::route_pipe_param_frame_max]{};
+      std::uint16_t ch_mask = 0;
+      std::int16_t raw[mb::route_pipe_param_frame_max_legacy]{};
       std::size_t count = 0;
-      if (!mb::unpack_midi_route_pipe(f, src, dst, index, type, bypass, offset, raw,
-                                      mb::route_pipe_param_frame_max, count))
+      if (!mb::unpack_midi_route_pipe(f, src, dst, index, type, bypass, offset,
+                                      ch_mask, raw,
+                                      mb::route_pipe_param_frame_max_legacy, count))
         return;
       MidiRouteState& chain = midi_routes_[src][dst];
       // Same shape rules as the firmware's MidiPipeChain::setPipeChunk: an
@@ -218,8 +220,8 @@ void EmulatorTransport::handle(const mb::Frame& f) {
         if (index > chain.pipe_count) return;
       } else {
         if (index >= chain.pipe_count) return;
-        // setPipeChunk compares the type only; bypass on a continuation chunk
-        // is ignored by the firmware, not a second identity field.
+        // setPipeChunk compares the type only; bypass and chMask on a
+        // continuation chunk are ignored by the firmware, not identity fields.
         if (chain.pipes[index].type != type) return;
       }
       RoutePipeState& pipe = chain.pipes[index];
@@ -227,6 +229,7 @@ void EmulatorTransport::handle(const mb::Frame& f) {
         pipe = RoutePipeState{};
         pipe.type = type;
         pipe.bypass = bypass;
+        pipe.chMask = ch_mask;
         if (index == chain.pipe_count) ++chain.pipe_count;
       }
       for (std::size_t i = 0; i < count; ++i) pipe.params[offset + i] = raw[i];
@@ -788,7 +791,7 @@ bool PicoLink::midiRoute(std::uint8_t src, std::uint8_t dst, bool on) {
 bool PicoLink::midiRoutePipe(std::uint8_t src, std::uint8_t dst, std::uint8_t index,
                              std::uint8_t type, bool bypass,
                              std::uint8_t param_offset, const std::int16_t* params,
-                             std::size_t count) {
+                             std::size_t count, std::uint16_t chMask) {
   if (src > 1 || dst > 1) return false;  // only the two physical TRS routes
   if (count != 0 && params == nullptr) return false;
   CachedMidiRoute& cache = midi_routes_[src][dst];
@@ -804,7 +807,7 @@ bool PicoLink::midiRoutePipe(std::uint8_t src, std::uint8_t dst, std::uint8_t in
   }
   mb::Frame f{};
   if (!mb::pack_midi_route_pipe(f, 0, 0, src, dst, index, type, bypass,
-                                param_offset, params, count))
+                                param_offset, params, count, chMask))
     return false;
   if (!queueFrame(f)) return false;
   CachedRoutePipe& pipe = cache.pipes[index];
@@ -812,6 +815,7 @@ bool PicoLink::midiRoutePipe(std::uint8_t src, std::uint8_t dst, std::uint8_t in
     pipe = CachedRoutePipe{};
     pipe.type = type;
     pipe.bypass = bypass;
+    pipe.chMask = chMask;
     if (index == cache.pipe_count) ++cache.pipe_count;
   }
   for (std::size_t i = 0; i < count; ++i) pipe.params[param_offset + i] = params[i];
@@ -845,7 +849,7 @@ void PicoLink::resendMidiRoutes() {
           mb::Frame f{};
           if (!mb::pack_midi_route_pipe(f, 0, 0, src, dst, index, pipe.type,
                                         pipe.bypass, offset,
-                                        &pipe.params[offset], chunk))
+                                        &pipe.params[offset], chunk, pipe.chMask))
             continue;
           queueFrame(f);
         }

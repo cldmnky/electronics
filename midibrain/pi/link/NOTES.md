@@ -19,17 +19,21 @@ Works (host-tested, `PASS` lines from `test_link.cpp`):
   `MidiPipeChain::setPipeChunk` shape rules before queueing, so its cache can
   never describe a chain the Pico refused. Each route's last successfully
   queued chain is re-sent after HELLO in wire order (0x18 first, then chunked
-  params of at most 5 per frame), covering Pico power cycles and RESET_LINK;
+  params of at most 4 per frame), covering Pico power cycles and RESET_LINK;
   a new `midiRoute()` starts a fresh chain and clears the cached pipes, exactly
   like firmware `begin()`. `EmulatorTransport` records the applied chain for
   tests (`midiRoute(src,dst)`), and `reboot()` resets it as RAM would.
-  **Gap:** 0x19 has no per-pipe channel-scope (`chMask`) field -- its payload is
-  src, dst, index, type, bypass, parameter offset, count, then positional int16
-  params. A session pipe's `chMask` therefore cannot round-trip to the firmware
-  over this wire; `kMidiRoutePipeCarriesChannelScope` is false, and MidiGlue
-  logs the gap when a TRS chain carries a scope. Closing it requires a wire
-  field in `firmware/pico/protocol.hpp` plus firmware pipe-engine enforcement;
-  USB-touching Pi-owned chains already enforce `chMask` in `midi::PipeChain`.
+  **Channel scope:** 0x19 carries the per-pipe `chMask` (LE16) after the
+  positional params, so a TRS chain's scope reaches the firmware and the
+  shared pipe core applies it (`kMidiRoutePipeCarriesChannelScope` is true).
+  The mask takes effect on the offset-0 chunk; a continuation chunk keeps the
+  established scope, like its bypass byte. Because the mask costs two payload
+  bytes, a current frame carries at most 4 params (`route_pipe_param_frame_max`)
+  instead of 5. A legacy mask-less frame (length `8 + 2*count`, up to 5 params)
+  still decodes and means all channels, so new firmware accepts old frames; an
+  old firmware rejects the new length as a bad frame, so the Pi and Pico
+  builds move together. The cached chain stores chMask and the resend after
+  HELLO reproduces it.
 - Routed UART emit: `sendMidiRoute(src,dst,data,n)` queues
   `EV_MIDI_ROUTE_SEND` (0x1A) through `mb::pack_midi_route_send`, so the Pico
   evaluates the (src,dst) chain configured by 0x18/0x19 before emitting on that

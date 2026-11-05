@@ -72,12 +72,20 @@ constexpr std::uint8_t EV_CLOCK_ROUTE_EXT = 0x1B;  // tempoDiv + syncDelayMs
 constexpr std::uint8_t ROUTE_FLAG_ON = 0x01;
 constexpr std::uint8_t ROUTE_FLAG_MASK = ROUTE_FLAG_ON;
 
-// Pipe chain limits, shared by the wire codec and midi_pipe.hpp. A param is a
-// signed 16-bit positional integer; the largest Wave-1 pipe (Filter) has 8,
-// and the frame carries at most 5 per chunk (offset selects the next chunk).
+// Pipe chain limits, shared by the wire codec and the shared core
+// (midibrain/midifx/core; firmware/pico/main.cpp static_asserts the match). A
+// param is a signed 16-bit positional integer; the largest pipe (Filter) has 8.
+//
+// A current 0x19 frame is 8 header bytes + int16 params + the 2-byte channel
+// scope, inside the 18-byte payload: at most route_pipe_param_frame_max (4)
+// params per frame, and offset selects the next chunk. Frames sent before the
+// scope field existed carried up to 5 params and no mask; the decoder still
+// accepts them and defaults chMask to all channels.
 constexpr std::size_t route_pipe_count_max = 8;
 constexpr std::size_t route_pipe_param_max = 10;
-constexpr std::size_t route_pipe_param_frame_max = 5;
+constexpr std::size_t route_pipe_param_frame_max = 4;
+constexpr std::size_t route_pipe_param_frame_max_legacy = 5;
+constexpr std::uint16_t route_pipe_channel_mask_default = 0xFFFF;
 
 // EV_MIDI_ROUTE layout: [1]=src, [2]=dst, [3]=flags. Length 4. Starts a fresh
 // chain and clears its runtime state (dispatcher rotation, sustain latch and
@@ -109,13 +117,18 @@ inline bool unpack_midi_route(const Frame& f, std::uint8_t& src, std::uint8_t& d
 
 // EV_MIDI_ROUTE_PIPE layout: [1]=src, [2]=dst, [3]=pipe index, [4]=type,
 // [5]=bypass, [6]=param offset, [7]=param count, then count signed int16 LE
-// params. Length 8 + 2*count. type 1..16 is accepted (Wave-2 ids are stored
-// but pass through on this firmware); param offset+count <= 10 and count <= 5.
+// params, then the 2-byte chMask LE. Length 10 + 2*count. type 1..16 is
+// accepted (all 16 evaluate in the shared core); param offset+count <= 10 and
+// count <= route_pipe_param_frame_max (4). The mask takes effect on the
+// offset-0 chunk; a continuation chunk keeps the scope the pipe already has.
+// A frame of length 8 + 2*count (no mask, up to the legacy 5 params) is still
+// decoded and means chMask = all channels.
 inline bool pack_midi_route_pipe(Frame& f, std::uint16_t seq, std::uint32_t session,
                                  std::uint8_t src, std::uint8_t dst,
                                  std::uint8_t index, std::uint8_t type, bool bypass,
                                  std::uint8_t param_offset, const std::int16_t* params,
-                                 std::size_t count) {
+                                 std::size_t count,
+                                 std::uint16_t ch_mask = route_pipe_channel_mask_default) {
   if (src > 1 || dst > 1 || index >= route_pipe_count_max || type < 1 || type > 16 ||
       count > route_pipe_param_frame_max ||
       param_offset + count > route_pipe_param_max || (count != 0 && params == nullptr))
@@ -124,7 +137,7 @@ inline bool pack_midi_route_pipe(Frame& f, std::uint16_t seq, std::uint32_t sess
   f.type = Type::control_event;
   f.sequence = seq;
   f.session = session;
-  f.length = static_cast<std::uint8_t>(8 + 2 * count);
+  f.length = static_cast<std::uint8_t>(10 + 2 * count);
   f.payload[0] = EV_MIDI_ROUTE_PIPE;
   f.payload[1] = src;
   f.payload[2] = dst;
@@ -138,21 +151,29 @@ inline bool pack_midi_route_pipe(Frame& f, std::uint16_t seq, std::uint32_t sess
     f.payload[8 + 2 * i] = static_cast<std::uint8_t>(bits);
     f.payload[9 + 2 * i] = static_cast<std::uint8_t>(bits >> 8);
   }
+  f.payload[8 + 2 * count] = static_cast<std::uint8_t>(ch_mask);
+  f.payload[9 + 2 * count] = static_cast<std::uint8_t>(ch_mask >> 8);
   return true;
 }
 inline bool unpack_midi_route_pipe(const Frame& f, std::uint8_t& src, std::uint8_t& dst,
                                    std::uint8_t& index, std::uint8_t& type, bool& bypass,
-                                   std::uint8_t& param_offset, std::int16_t* params,
-                                   std::size_t capacity, std::size_t& count) {
+                                   std::uint8_t& param_offset, std::uint16_t& ch_mask,
+                                   std::int16_t* params, std::size_t capacity,
+                                   std::size_t& count) {
   if (f.type != Type::control_event || f.length < 8 ||
       f.payload[0] != EV_MIDI_ROUTE_PIPE || f.payload[1] > 1 || f.payload[2] > 1 ||
       f.payload[3] >= route_pipe_count_max || f.payload[4] < 1 || f.payload[4] > 16 ||
-      f.payload[5] > 1 || f.payload[7] > route_pipe_param_frame_max ||
+      f.payload[5] > 1 || f.payload[7] > route_pipe_param_frame_max_legacy ||
       f.payload[6] + f.payload[7] > route_pipe_param_max)
     return false;
   count = f.payload[7];
-  if (f.length != 8 + 2 * count || capacity < count || (count != 0 && params == nullptr))
-    return false;
+  const std::size_t legacy_length = 8 + 2 * count;
+  const std::size_t scope_length = 10 + 2 * count;
+  if (f.length != legacy_length && f.length != scope_length) return false;
+  // An 18-byte payload holds the mask plus at most four params; the fifth
+  // param survives only in a legacy (mask-less) frame.
+  if (f.length == scope_length && count > route_pipe_param_frame_max) return false;
+  if (capacity < count || (count != 0 && params == nullptr)) return false;
   src = f.payload[1];
   dst = f.payload[2];
   index = f.payload[3];
@@ -163,6 +184,11 @@ inline bool unpack_midi_route_pipe(const Frame& f, std::uint8_t& src, std::uint8
     const auto bits = static_cast<std::uint16_t>(f.payload[8 + 2 * i] |
                                                  (f.payload[9 + 2 * i] << 8));
     params[i] = static_cast<std::int16_t>(bits);
+  }
+  ch_mask = route_pipe_channel_mask_default;
+  if (f.length == scope_length) {
+    ch_mask = static_cast<std::uint16_t>(
+        f.payload[8 + 2 * count] | (f.payload[9 + 2 * count] << 8));
   }
   return true;
 }

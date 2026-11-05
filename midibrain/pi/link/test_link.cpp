@@ -338,10 +338,9 @@ void testClockSourceSender() {
 }
 
 void testMidiRouteSender() {
-  // Documented wire gap: 0x19 has no per-pipe chMask field, so a TRS chain's
-  // channel scope cannot round-trip to the Pico. Pi-owned USB chains enforce
-  // it locally (midi::PipeChain).
-  assert(!mnky::link::kMidiRoutePipeCarriesChannelScope);
+  // 0x19 carries the per-pipe channel scope after the positional params, so a
+  // TRS chain's chMask reaches the Pico (legacy mask-less frames stay valid).
+  assert(mnky::link::kMidiRoutePipeCarriesChannelScope);
   EmulatorTransport pico;
   PicoLink link(pico);
   assert(pumpUntil(link, 200, [&] { return link.linkUp(); }));
@@ -356,21 +355,23 @@ void testMidiRouteSender() {
     }
   }
 
-  // Begin + a two-chunk Filter: 5 params then 3 more at offset 5, exactly the
-  // frame limit (route_pipe_param_frame_max).
-  const std::int16_t filter[5] = {1, 0, 1, 1, 0};
-  const std::int16_t tail[3] = {1, 1, 0};
+  // Begin + a two-chunk Filter: 4 params then 4 more at offset 4, exactly the
+  // current frame limit (route_pipe_param_frame_max), with a channel scope.
+  const std::int16_t filter[4] = {1, 0, 1, 1};
+  const std::int16_t tail[4] = {0, 1, 1, 0};
   assert(link.midiRoute(0, 1, true));
-  assert(link.midiRoutePipe(0, 1, 0, 1, false, 0, filter, 5));
-  assert(link.midiRoutePipe(0, 1, 0, 1, false, 5, tail, 3));
+  assert(link.midiRoutePipe(0, 1, 0, 1, false, 0, filter, 4, 0x0003));
+  // A continuation chunk's chMask is ignored (like its bypass byte).
+  assert(link.midiRoutePipe(0, 1, 0, 1, false, 4, tail, 4, 0x0001));
   pump(link, 30);
   assert(pico.midiRoute(0, 1).flags == mb::ROUTE_FLAG_ON);
   assert(pico.midiRoute(0, 1).pipe_count == 1);
   const auto& filter_pipe = pico.midiRoute(0, 1).pipes[0];
   assert(filter_pipe.type == 1 && !filter_pipe.bypass);
+  assert(filter_pipe.chMask == 0x0003);  // the offset-0 chunk's mask
   assert(filter_pipe.param_count == 8);
-  assert(filter_pipe.params[0] == 1 && filter_pipe.params[4] == 0);
-  assert(filter_pipe.params[5] == 1 && filter_pipe.params[7] == 0);
+  assert(filter_pipe.params[0] == 1 && filter_pipe.params[3] == 1);
+  assert(filter_pipe.params[4] == 0 && filter_pipe.params[7] == 0);
 
   // index == pipe_count appends; a gap is rejected before it reaches the wire.
   const std::int16_t chance = 35;
@@ -383,19 +384,21 @@ void testMidiRouteSender() {
   assert(pico.midiRoute(0, 1).pipes[1].params[0] == 35);
 
   // Sender-side validation mirrors the wire limits: only the two physical TRS
-  // routes exist, types are 1..16, 5 params per chunk and 10 per pipe, and a
-  // continuation must match the pipe it extends.
+  // routes exist, types are 1..16, 4 params per chunk (a pre-scope frame's 5
+  // are not produced) and 10 per pipe, and a continuation must match the pipe
+  // it extends.
   assert(!link.midiRoute(2, 0, true));
   assert(!link.midiRoute(0, 2, true));
   assert(!link.midiRoutePipe(2, 0, 0, 1, false, 0, nullptr, 0));
   assert(!link.midiRoutePipe(0, 0, 0, 0, false, 0, nullptr, 0));
   assert(!link.midiRoutePipe(0, 0, 0, 17, false, 0, nullptr, 0));
+  assert(!link.midiRoutePipe(0, 0, 0, 1, false, 0, nullptr, 5));
   assert(!link.midiRoutePipe(0, 0, 0, 1, false, 0, nullptr, 6));
-  assert(!link.midiRoutePipe(0, 0, 0, 1, false, 6, nullptr, 5));
+  assert(!link.midiRoutePipe(0, 0, 0, 1, false, 6, nullptr, 4));
   assert(!link.midiRoutePipe(0, 0, 0, 1, false, 0, nullptr, 1));
   assert(!link.midiRoutePipe(0, 0, 1, 1, false, 0, nullptr, 0));
   assert(link.midiRoute(0, 0, true));
-  assert(link.midiRoutePipe(0, 0, 0, 1, false, 0, filter, 5));
+  assert(link.midiRoutePipe(0, 0, 0, 1, false, 0, filter, 4));
   const std::int16_t one = 1;
   assert(!link.midiRoutePipe(0, 0, 0, 2, false, 5, &one, 1));  // type mismatch
   pump(link, 20);
@@ -423,6 +426,7 @@ void testMidiRouteSender() {
   assert(pico.midiRoute(0, 1).pipe_count == 2);
   assert(pico.midiRoute(0, 1).pipes[0].param_count == 8);
   assert(pico.midiRoute(0, 1).pipes[0].params[5] == 1);
+  assert(pico.midiRoute(0, 1).pipes[0].chMask == 0x0003);
   assert(pico.midiRoute(0, 1).pipes[1].params[0] == 35);
   assert(pico.midiRoute(0, 0).pipe_count == 1);
 
@@ -439,7 +443,7 @@ void testMidiRouteSender() {
   pump(link, 20);
   assert(pico.midiRoute(0, 1).flags == 0);
   assert(pico.midiRoute(0, 1).pipe_count == 0);
-  std::cout << "PASS midi route: chain begin/chunks validated, applied and resent after HELLO\n";
+  std::cout << "PASS midi route: chain begin/chunks/chMask validated, applied and resent after HELLO\n";
 }
 
 void testMidiRouteEncoding() {
@@ -452,7 +456,7 @@ void testMidiRouteEncoding() {
 
   assert(link.midiRoute(1, 0, true));
   const std::int16_t params[2] = {-7, 300};
-  assert(link.midiRoutePipe(1, 0, 0, 11, true, 0, params, 2));
+  assert(link.midiRoutePipe(1, 0, 0, 11, true, 0, params, 2, 0x0005));
   pump(link, 20);
 
   bool saw_route = false;
@@ -468,7 +472,7 @@ void testMidiRouteEncoding() {
       saw_route = true;
     }
     if (frame.payload[0] == mb::EV_MIDI_ROUTE_PIPE && !saw_pipe) {
-      assert(frame.length == 8 + 2 * 2);
+      assert(frame.length == 10 + 2 * 2);  // header + params + chMask
       assert(frame.payload[1] == 1 && frame.payload[2] == 0);
       assert(frame.payload[3] == 0);   // pipe index
       assert(frame.payload[4] == 11);  // Transform
@@ -478,6 +482,9 @@ void testMidiRouteEncoding() {
                                                   (frame.payload[9] << 8));
       const auto high = static_cast<std::uint16_t>(frame.payload[10] |
                                                    (frame.payload[11] << 8));
+      const auto mask = static_cast<std::uint16_t>(frame.payload[12] |
+                                                   (frame.payload[13] << 8));
+      assert(mask == 0x0005);
       assert(static_cast<std::int16_t>(low) == -7);
       assert(static_cast<std::int16_t>(high) == 300);
       saw_pipe = true;
@@ -485,7 +492,7 @@ void testMidiRouteEncoding() {
   }
   assert(saw_route);
   assert(saw_pipe);
-  std::cout << "PASS midi route encoding: 0x18/0x19 payloads and int16 LE params\n";
+  std::cout << "PASS midi route encoding: 0x18/0x19 payloads, int16 LE params, chMask\n";
 }
 
 void testMidiRouteSend() {

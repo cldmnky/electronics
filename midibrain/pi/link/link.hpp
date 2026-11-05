@@ -23,13 +23,13 @@ inline constexpr unsigned kReadyBcm = 24;
 inline constexpr std::uint32_t kSpiClockHz = 1'000'000;
 // One transaction carries exactly 32 bytes; anything less hangs the slave.
 inline constexpr std::size_t kFrameBytes = mb::frame_size;
-// 0x19 (EV_MIDI_ROUTE_PIPE) carries type, bypass and positional int16 params
-// only; it has no per-pipe channel-scope field. A TRS->TRS chain's chMask can
-// therefore not reach the Pico: Pi-owned (USB-touching) chains enforce it in
-// midi::PipeChain, while a scoped TRS chain would run unscoped on the firmware.
-// Closing the gap needs a field in firmware/pico/protocol.hpp and the firmware
-// pipe engine, not a Pi-side re-encoding of a positional parameter.
-inline constexpr bool kMidiRoutePipeCarriesChannelScope = false;
+// 0x19 (EV_MIDI_ROUTE_PIPE) carries the per-pipe channel scope (chMask) after
+// the positional int16 params, so a TRS->TRS chain's scope reaches the
+// firmware and the shared pipe core applies it. The mask rides the offset-0
+// chunk; continuation chunks keep the established scope. A legacy frame
+// without the trailing mask still decodes as all-channels (backward
+// tolerance), see firmware/pico/protocol.hpp.
+inline constexpr bool kMidiRoutePipeCarriesChannelScope = true;
 // Pacing budget for PicoLink::poll: >= 1 ms between transactions so the Pico
 // main loop drains each received frame before the next one lands.
 inline constexpr std::uint64_t kMinTransactionUs = 1'000;
@@ -68,11 +68,13 @@ class EmulatorTransport : public ISpiTransport {
   // Scripted panel input, queued as CONTROL_EVENT frames.
   void injectButton(std::uint8_t id, std::uint8_t value);
   bool injectMidi(std::uint8_t port, const std::uint8_t* data, std::uint8_t n);
-  // Wave-1 MIDI FX chain the Pi configured on this emulated Pico (0x18/0x19).
-  // flags bit0 = route on; pipe params are positional int16 like the wire.
+  // MIDI FX chain the Pi configured on this emulated Pico (0x18/0x19). flags
+  // bit0 = route on; pipe params are positional int16 like the wire and
+  // chMask is the per-pipe channel scope carried on the offset-0 chunk.
   struct RoutePipeState {
     std::uint8_t type{};
     bool bypass{};
+    std::uint16_t chMask{mb::route_pipe_channel_mask_default};
     std::uint8_t param_count{};
     std::array<std::int16_t, mb::route_pipe_param_max> params{};
   };
@@ -276,19 +278,21 @@ class PicoLink {
   // last successfully queued config is re-sent after HELLO; the Pico resets to
   // internal/no-follow at boot.
   bool clockSource(std::uint8_t source, std::uint8_t transport_mask);
-  // MIDI FX Wave-1 chain for one physical TRS route (0x18/0x19). src/dst are
+  // MIDI FX chain for one physical TRS route (0x18/0x19). src/dst are
   // 0 = TRS IN1/OUT1, 1 = TRS IN2/OUT2; routes touching USB stay Pi-side and
   // are rejected here. midiRoute() starts a fresh chain (the firmware clears
   // its pipes and runtime state), so send it before that route's pipes.
   // midiRoutePipe() mirrors the firmware's setPipeChunk rules: offset 0 with
   // index == pipe count appends, index < count replaces; a larger offset
   // extends an existing pipe of the same type (the continuation chunk's
-  // bypass byte is ignored, as in firmware). The last successfully
-  // queued chain per route is re-sent after HELLO, in wire order.
+  // bypass byte and chMask are ignored, as in firmware). chMask takes effect
+  // on the offset-0 chunk only; the default is all channels. The last
+  // successfully queued chain per route is re-sent after HELLO, in wire order.
   bool midiRoute(std::uint8_t src, std::uint8_t dst, bool on);
   bool midiRoutePipe(std::uint8_t src, std::uint8_t dst, std::uint8_t index,
                      std::uint8_t type, bool bypass, std::uint8_t param_offset,
-                     const std::int16_t* params, std::size_t count);
+                     const std::int16_t* params, std::size_t count,
+                     std::uint16_t chMask = mb::route_pipe_channel_mask_default);
   // Deprecated in the firmware (clock is always on); sent for compatibility.
   bool clockEnable(bool on);
   bool ledSet(std::uint8_t mask, std::uint8_t states);
@@ -344,6 +348,7 @@ class PicoLink {
   struct CachedRoutePipe {
     std::uint8_t type = 0;
     bool bypass = false;
+    std::uint16_t chMask = mb::route_pipe_channel_mask_default;
     std::uint8_t param_count = 0;
     std::array<std::int16_t, mb::route_pipe_param_max> params{};
   };

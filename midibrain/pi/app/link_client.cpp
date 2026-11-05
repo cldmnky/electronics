@@ -312,9 +312,10 @@ void LinkClient::applyCommands() {
           }
           const auto type = static_cast<std::uint8_t>(pipe.type);
           const auto pipeIndex = static_cast<std::uint8_t>(index);
+          const auto chMask = static_cast<std::uint16_t>(pipe.chMask);
           if (paramCount == 0) {
             (void)link_->midiRoutePipe(command.value8, command.extra8, pipeIndex, type,
-                                       pipe.bypass, 0, nullptr, 0);
+                                       pipe.bypass, 0, nullptr, 0, chMask);
             continue;
           }
           for (std::size_t offset = 0; offset < paramCount;
@@ -324,7 +325,7 @@ void LinkClient::applyCommands() {
                 std::min(remaining, mb::route_pipe_param_frame_max);
             (void)link_->midiRoutePipe(
                 command.value8, command.extra8, pipeIndex, type, pipe.bypass,
-                static_cast<std::uint8_t>(offset), &params[offset], chunk);
+                static_cast<std::uint8_t>(offset), &params[offset], chunk, chMask);
           }
         }
         break;

@@ -40,13 +40,6 @@ int dynamicRouteKey(midi::Port source, midi::Port destination) {
   return midi::portId(source) * midi::kMaxPorts + midi::portId(destination);
 }
 
-bool hasChannelScope(const std::vector<session::MidiPipe>& pipes) {
-  for (const auto& pipe : pipes) {
-    if (pipe.chMask != 0xFFFF) return true;
-  }
-  return false;
-}
-
 // The wire limits are midifx.hpp's (8 pipes, 10 positional parameters). A chain
 // outside them is refused by Router::setPipes, so refuse it here too instead of
 // storing a list the engine never accepted.
@@ -673,10 +666,6 @@ void MidiGlue::notifyPipeSync(midi::Port source, midi::Port destination) {
     fn = pipeSync_;
     pipes = routePipes_[static_cast<std::size_t>(slot)];
     enabled = router_.routeEnabled(source, destination);
-  }
-  if (hasChannelScope(pipes)) {
-    log("midi: Pico 0x19 has no per-pipe channel-scope field; this TRS chain's "
-        "chMask is not applied on the Pico");
   }
   if (fn) fn(source, destination, pipes, enabled);
 }

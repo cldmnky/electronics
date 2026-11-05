@@ -2,7 +2,7 @@
 #include "clock_follow.hpp"
 #include "clock_output.hpp"
 #include "midi.hpp"
-#include "midi_pipe.hpp"
+#include "pipe_event.hpp"
 #include "panel_input.hpp"
 #include <cassert>
 #include <cmath>
@@ -125,408 +125,20 @@ mb::MidiMessage test_message(std::uint8_t status, std::uint8_t data1 = 0,
   return m;
 }
 
-mb::Pipe test_pipe(mb::MidiPipeType type, std::initializer_list<int> params,
-                   bool bypass = false) {
-  mb::Pipe p;
-  p.type = type;
-  p.bypass = bypass;
-  p.param_count = static_cast<std::uint8_t>(params.size());
-  std::size_t i = 0;
-  for (int value : params) {
-    p.params[i++] = value;
-  }
-  return p;
-}
-
-mb::MidiPipeChain test_chain(mb::MidiPipeType type,
-                             std::initializer_list<int> params,
-                             bool bypass = false) {
-  mb::MidiPipeChain chain;
-  chain.begin(true);
-  chain.setSeed(0x12345678u);
-  assert(chain.append(test_pipe(type, params, bypass)));
-  return chain;
-}
-
-bool output_has(const mb::PipeOutput& out, std::uint8_t status, std::uint8_t data1,
-                std::uint8_t data2, std::uint8_t size = 3) {
-  for (std::size_t i = 0; i < out.count; ++i) {
-    if (out.events[i].size != size) continue;
-    if (out.events[i].data[0] != status || out.events[i].data[1] != data1) continue;
-    if (size == 1 || out.events[i].data[2] == data2) return true;
-  }
-  return false;
-}
-
-// --- Wave-2 clocked pipe helpers -------------------------------------------
-// One wire event with the tick (or millisecond) the chain emitted it on.
-struct StampedEvent {
-  std::uint32_t at;
-  std::uint8_t size;
-  std::uint8_t data[3];
-};
-
-void collect(const mb::PipeOutput& out, std::uint32_t at,
-             std::vector<StampedEvent>& events) {
-  for (std::size_t i = 0; i < out.count; ++i)
-    events.push_back({at, out.events[i].size,
-                      {out.events[i].data[0], out.events[i].data[1],
-                       out.events[i].data[2]}});
-}
-
-// The firmware's main-loop order: millisecond deadlines first, then the clocked
-// pipes, one call per tick. The 24-PPQN grid is the only clock the pipes use, so
-// the tick index is the whole input a synthetic tick train needs.
-std::vector<StampedEvent> run_tick_train(mb::MidiPipeChain& chain,
-                                         std::uint32_t from_tick,
-                                         std::uint32_t to_tick) {
-  std::vector<StampedEvent> events;
-  for (std::uint32_t tick = from_tick; tick <= to_tick; ++tick) {
-    const std::uint32_t now_ms = tick * 21u;  // 120 bpm: 20.833 ms per tick
-    collect(chain.tick(now_ms), tick, events);
-    collect(chain.clockTick(tick, now_ms), tick, events);
-  }
-  return events;
-}
-
-// Millisecond-only train for MidiDelay, whose parameter is delayMs.
-std::vector<StampedEvent> run_ms_train(mb::MidiPipeChain& chain,
-                                       std::uint32_t from_ms,
-                                       std::uint32_t to_ms) {
-  std::vector<StampedEvent> events;
-  for (std::uint32_t now = from_ms; now <= to_ms; ++now)
-    collect(chain.tick(now), now, events);
-  return events;
-}
-
-// Events of one status nibble (0x90 note-on, 0x80 note-off, 0xB0 CC), in order.
-std::vector<StampedEvent> kind_events(const std::vector<StampedEvent>& events,
-                                     std::uint8_t status) {
-  std::vector<StampedEvent> filtered;
-  for (const auto& event : events)
-    if ((event.data[0] & 0xF0) == status) filtered.push_back(event);
-  return filtered;
-}
-
-std::vector<int> notes_of(const std::vector<StampedEvent>& events) {
-  std::vector<int> notes;
-  for (const auto& event : events) notes.push_back(event.data[1]);
-  return notes;
-}
-
-std::vector<int> values_of(const std::vector<StampedEvent>& events) {
-  std::vector<int> values;
-  for (const auto& event : events) values.push_back(event.data[2]);
-  return values;
-}
-
-std::vector<std::uint32_t> times_of(const std::vector<StampedEvent>& events) {
-  std::vector<std::uint32_t> times;
-  for (const auto& event : events) times.push_back(event.at);
-  return times;
-}
-
-void run_pipe_tests() {
+// The 0x18/0x19/0x1A/0x1B wire frames for the MIDI FX route pipes. Chain
+// behavior lives in the shared core suite (midifx/tests/test_core.cpp); this
+// test proves the firmware wire decode reaches the core with the right types,
+// chunked params, per-pipe channel scope and MidiMessage conversion.
+void run_wire_config_tests() {
   using namespace mb;
+  const mnky::midifx::PipeEvent converted = pipeEvent(test_message(0x90, 60, 100));
+  assert(converted.size == 3 && converted.data[0] == 0x90 &&
+         converted.data[1] == 60 && converted.data[2] == 100);
+  const MidiMessage malformed{0, 4, {0x90, 60, 100}, 0};
+  assert(pipeEvent(malformed).size == 0);
 
-  // Filter: every one of the eight mask positions independently. A zero mask
-  // is drop for that kind; missing params default to pass.
-  const MidiMessage filter_inputs[8] = {
-      test_message(0x90, 60, 100),  // note on
-      test_message(0x80, 60, 0),    // note off
-      test_message(0xB0, 7, 100),   // cc
-      test_message(0xC0, 12, 0, 2), // pc
-      test_message(0xD0, 90, 0, 2), // channel pressure
-      test_message(0xE0, 0, 64),    // bend
-      test_message(0xF8, 0, 0, 1),  // realtime
-      test_message(0xF0, 0, 0, 1),  // sysex
-  };
-  for (std::size_t pass = 0; pass < 8; ++pass) {
-    std::array<int, 8> mask{};
-    mask[pass] = 1;
-    Pipe filter;
-    filter.type = MidiPipeType::Filter;
-    filter.param_count = 8;
-    for (std::size_t i = 0; i < mask.size(); ++i) filter.params[i] = mask[i];
-    MidiPipeChain chain;
-    chain.begin(true);
-    chain.setSeed(1);
-    assert(chain.append(filter));
-    for (std::size_t kind = 0; kind < 8; ++kind) {
-      const PipeOutput out = chain.process(filter_inputs[kind], 0);
-      assert(out.count == (kind == pass ? 1u : 0u));
-    }
-  }
-  {
-    // All params missing -> every kind passes (no silent mute).
-    MidiPipeChain chain = test_chain(MidiPipeType::Filter, {});
-    for (const auto& m : filter_inputs) assert(chain.process(m, 0).count == 1);
-  }
-  {
-    // A system-common message outside the mask registry passes.
-    MidiPipeChain chain = test_chain(MidiPipeType::Filter, {0, 0, 0, 0, 0, 0, 0, 0});
-    const PipeOutput out = chain.process(test_message(0xF1, 0, 0, 2), 0);
-    assert(out.count == 1 && out.events[0].size == 2);
-  }
-
-  // NoteRange: inclusive note edges and an inclusive note-on velocity window.
-  // Release velocity is deliberately not filtered (a high floor must not
-  // strand a held note).
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::NoteRange, {60, 64, 64, 127});
-    assert(chain.process(test_message(0x90, 59, 100), 0).count == 0);
-    assert(chain.process(test_message(0x90, 60, 64), 0).count == 1);
-    assert(chain.process(test_message(0x90, 60, 63), 0).count == 0);
-    assert(chain.process(test_message(0x90, 64, 127), 0).count == 1);
-    assert(chain.process(test_message(0x90, 65, 100), 0).count == 0);
-    assert(chain.process(test_message(0x80, 60, 0), 0).count == 1);
-    assert(chain.process(test_message(0xB0, 60, 100), 0).count == 1);
-    // Reversed lo/hi is normalised instead of dropping everything.
-    MidiPipeChain reversed = test_chain(MidiPipeType::NoteRange, {64, 60, 0, 127});
-    assert(reversed.process(test_message(0x90, 62, 100), 0).count == 1);
-  }
-
-  // CcRemap: endpoints, a middle value, and out-of-range pass-through.
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::CcRemap, {10, 20, 100, 110});
-    assert(output_has(chain.process(test_message(0xB0, 10, 1), 0), 0xB0, 100, 1));
-    assert(output_has(chain.process(test_message(0xB0, 15, 1), 0), 0xB0, 105, 1));
-    assert(output_has(chain.process(test_message(0xB0, 20, 1), 0), 0xB0, 110, 1));
-    assert(output_has(chain.process(test_message(0xB0, 9, 1), 0), 0xB0, 9, 1));
-    assert(output_has(chain.process(test_message(0xB0, 21, 1), 0), 0xB0, 21, 1));
-    // Reverse output range and a one-to-one input range.
-    MidiPipeChain reverse = test_chain(MidiPipeType::CcRemap, {0, 2, 127, 0});
-    assert(output_has(reverse.process(test_message(0xB0, 0, 1), 0), 0xB0, 127, 1));
-    assert(output_has(reverse.process(test_message(0xB0, 2, 1), 0), 0xB0, 0, 1));
-    MidiPipeChain single = test_chain(MidiPipeType::CcRemap, {7, 7, 70, 70});
-    assert(output_has(single.process(test_message(0xB0, 7, 1), 0), 0xB0, 70, 1));
-  }
-
-  // ChannelRemap: 0 = any input channel, output channel 1..16.
-  {
-    MidiPipeChain any = test_chain(MidiPipeType::ChannelRemap, {0, 5});
-    const PipeOutput out = any.process(test_message(0x93, 60, 100), 0);
-    assert(out.count == 1 && out.events[0].data[0] == 0x94);  // channel 5
-    MidiPipeChain specific = test_chain(MidiPipeType::ChannelRemap, {2, 16});
-    const PipeOutput nonmatch = specific.process(test_message(0x90, 60, 100), 0);
-    assert(nonmatch.count == 1 && nonmatch.events[0].data[0] == 0x90);
-    const PipeOutput moved = specific.process(test_message(0x91, 60, 100), 0);
-    assert(moved.count == 1 && moved.events[0].data[0] == 0x9F);
-    const PipeOutput non_channel = specific.process(test_message(0xF8, 0, 0, 1), 0);
-    assert(non_channel.count == 1 && non_channel.events[0].data[0] == 0xF8);
-  }
-
-  // ScaleQuantize: six scales, root transposition and the absolute user mask.
-  {
-    // C major: 61 -> 60 (tie resolves down), 63 -> 62 (nearest down).
-    MidiPipeChain major = test_chain(MidiPipeType::ScaleQuantize, {1, 0, 0});
-    assert(output_has(major.process(test_message(0x90, 61, 100), 0), 0x90, 60, 100));
-    assert(output_has(major.process(test_message(0x90, 63, 100), 0), 0x90, 62, 100));
-    assert(output_has(major.process(test_message(0x90, 60, 100), 0), 0x90, 60, 100));
-    // D minor (root 2): C#3 (61) -> C3 (60), F#3 (66) -> F3 (65).
-    MidiPipeChain minor = test_chain(MidiPipeType::ScaleQuantize, {2, 2, 0});
-    assert(output_has(minor.process(test_message(0x90, 61, 100), 0), 0x90, 60, 100));
-    assert(output_has(minor.process(test_message(0x90, 66, 100), 0), 0x90, 65, 100));
-    // Major pentatonic on C leaves E and drops nothing; F# snaps to G.
-    MidiPipeChain penta_major =
-        test_chain(MidiPipeType::ScaleQuantize, {3, 0, 0});
-    assert(output_has(penta_major.process(test_message(0x90, 64, 100), 0), 0x90, 64, 100));
-    assert(output_has(penta_major.process(test_message(0x90, 66, 100), 0), 0x90, 67, 100));
-    // Minor pentatonic on C: Eb stays, E snaps down to Eb.
-    MidiPipeChain penta_minor =
-        test_chain(MidiPipeType::ScaleQuantize, {4, 0, 0});
-    assert(output_has(penta_minor.process(test_message(0x90, 63, 100), 0), 0x90, 63, 100));
-    assert(output_has(penta_minor.process(test_message(0x90, 64, 100), 0), 0x90, 63, 100));
-    // Dorian on C: Eb and Bb are in, E and B snap down.
-    MidiPipeChain dorian = test_chain(MidiPipeType::ScaleQuantize, {5, 0, 0});
-    assert(output_has(dorian.process(test_message(0x90, 63, 100), 0), 0x90, 63, 100));
-    assert(output_has(dorian.process(test_message(0x90, 64, 100), 0), 0x90, 63, 100));
-    assert(output_has(dorian.process(test_message(0x90, 71, 100), 0), 0x90, 70, 100));
-    // User mask 0xAAA = pitch classes 1,3,5,7,9,11; C snaps down to B.
-    MidiPipeChain user = test_chain(MidiPipeType::ScaleQuantize, {6, 0, 0xAAA});
-    assert(output_has(user.process(test_message(0x90, 61, 100), 0), 0x90, 61, 100));
-    assert(output_has(user.process(test_message(0x90, 60, 100), 0), 0x90, 59, 100));
-    // mask12 boundary: 0 = no allowed class (pass unchanged), 0xFFF = all pass.
-    MidiPipeChain empty_mask = test_chain(MidiPipeType::ScaleQuantize, {6, 0, 0});
-    assert(output_has(empty_mask.process(test_message(0x90, 60, 100), 0), 0x90, 60, 100));
-    MidiPipeChain full_mask =
-        test_chain(MidiPipeType::ScaleQuantize, {6, 0, 0xFFF});
-    assert(output_has(full_mask.process(test_message(0x90, 61, 100), 0), 0x90, 61, 100));
-    // Low/high MIDI note edges stay in range after octave wrapping.
-    assert(output_has(major.process(test_message(0x90, 0, 100), 0), 0x90, 0, 100));
-    assert(output_has(major.process(test_message(0x90, 127, 100), 0), 0x90, 127, 100));
-    // Scale 0 (and an out-of-range scale id) is off and passes untouched.
-    MidiPipeChain off = test_chain(MidiPipeType::ScaleQuantize, {0, 0, 0});
-    assert(output_has(off.process(test_message(0x90, 61, 100), 0), 0x90, 61, 100));
-    MidiPipeChain bad_scale = test_chain(MidiPipeType::ScaleQuantize, {99, 0, 0});
-    assert(output_has(bad_scale.process(test_message(0x90, 61, 100), 0), 0x90, 61, 100));
-  }
-
-  // Chance: 0 % passes, 100 % drops note-ons only; note-offs keep flowing so
-  // a dropped note cannot stick.
-  {
-    MidiPipeChain never = test_chain(MidiPipeType::Chance, {0});
-    assert(never.process(test_message(0x90, 60, 100), 0).count == 1);
-    MidiPipeChain always = test_chain(MidiPipeType::Chance, {100});
-    assert(always.process(test_message(0x90, 60, 100), 0).count == 0);
-    assert(always.process(test_message(0x80, 60, 0), 0).count == 1);
-    assert(always.process(test_message(0xB0, 7, 100), 0).count == 1);
-  }
-
-  // VelocityRandom: amount bounds, the floor, and amount 0 still applies the
-  // floor to note-on velocity; note-off release velocity is untouched.
-  {
-    MidiPipeChain humanize = test_chain(MidiPipeType::VelocityRandom, {5, 40});
-    for (int i = 0; i < 200; ++i) {
-      const PipeOutput out = humanize.process(test_message(0x90, 60, 64), 0);
-      assert(out.count == 1 && out.events[0].data[2] >= 40);
-      assert(out.events[0].data[2] <= 69);
-    }
-    MidiPipeChain floor_only = test_chain(MidiPipeType::VelocityRandom, {0, 100});
-    assert(output_has(floor_only.process(test_message(0x90, 60, 20), 0), 0x90, 60, 100));
-    assert(output_has(floor_only.process(test_message(0x90, 60, 127), 0), 0x90, 60, 127));
-    assert(output_has(floor_only.process(test_message(0x80, 60, 5), 0), 0x80, 60, 5));
-  }
-
-  // Dispatcher: rotation across the configured window, wrapping past ch 16,
-  // and note-off pairing back to the channel the note-on used.
-  {
-    MidiPipeChain dispatch = test_chain(MidiPipeType::Dispatcher, {4, 15});
-    const std::uint8_t expected[6] = {15, 16, 1, 2, 15, 16};
-    for (int i = 0; i < 6; ++i) {
-      const PipeOutput on =
-          dispatch.process(test_message(0x90, static_cast<std::uint8_t>(60 + i), 100), 0);
-      assert(on.count == 1);
-      assert((on.events[0].data[0] & 0x0F) == expected[i] - 1);
-      const PipeOutput off =
-          dispatch.process(test_message(0x80, static_cast<std::uint8_t>(60 + i), 0), 0);
-      assert(off.count == 1);
-      assert((off.events[0].data[0] & 0x0F) == expected[i] - 1);
-    }
-  }
-
-  // Sustain: CC64 down latches note-offs, CC64 up releases them as note-offs;
-  // after release a normal note-off passes again.
-  {
-    MidiPipeChain sustain = test_chain(MidiPipeType::Sustain, {1});
-    assert(sustain.process(test_message(0xB0, 64, 127), 0).count == 1);
-    assert(sustain.process(test_message(0x90, 60, 100), 0).count == 1);
-    assert(sustain.process(test_message(0x80, 60, 0), 0).count == 0);
-    assert(sustain.process(test_message(0x90, 64, 100), 0).count == 1);
-    assert(sustain.process(test_message(0x80, 64, 0), 0).count == 0);
-    const PipeOutput release = sustain.process(test_message(0xB0, 64, 0), 0);
-    assert(release.count == 3);  // two note-offs, then CC64
-    assert(output_has(release, 0x80, 60, 0) && output_has(release, 0x80, 64, 0));
-    assert(output_has(release, 0xB0, 64, 0));
-    assert(sustain.process(test_message(0x80, 60, 0), 0).count == 1);
-    // latch 0 is a pass-through pipe.
-    MidiPipeChain off = test_chain(MidiPipeType::Sustain, {0});
-    assert(off.process(test_message(0xB0, 64, 127), 0).count == 1);
-    assert(off.process(test_message(0x80, 60, 0), 0).count == 1);
-  }
-
-  // NoteLength: fixed length schedules one off and ignores an early note-off;
-  // length 0 leaves the stream alone. The generated off re-enters the chain
-  // after the pipe (a later ChannelRemap still sees it).
-  {
-    MidiPipeChain length = test_chain(MidiPipeType::NoteLength, {100});
-    assert(length.process(test_message(0x90, 60, 100), 1000).count == 1);
-    assert(length.process(test_message(0x80, 60, 0), 1050).count == 0);
-    assert(length.tick(1099).count == 0);
-    const PipeOutput due = length.tick(1100);
-    assert(due.count == 1 && due.events[0].data[0] == 0x80 && due.events[0].data[1] == 60);
-    assert(length.tick(1200).count == 0);
-    MidiPipeChain staged;
-    staged.begin(true);
-    assert(staged.append(test_pipe(MidiPipeType::NoteLength, {50})));
-    assert(staged.append(test_pipe(MidiPipeType::ChannelRemap, {0, 5})));
-    assert(staged.process(test_message(0x90, 60, 100), 0).count == 1);
-    const PipeOutput remapped = staged.tick(50);
-    assert(remapped.count == 1 && remapped.events[0].data[0] == 0x84 &&
-           remapped.events[0].data[1] == 60);
-    MidiPipeChain off = test_chain(MidiPipeType::NoteLength, {0});
-    assert(off.process(test_message(0x80, 60, 0), 1000).count == 1);
-    assert(off.tick(2000).count == 0);
-  }
-
-  // Transform: kind conversion, match range, non-match pass-through, bend
-  // 14-bit output and invalid out-kind safety.
-  {
-    MidiPipeChain cc_to_note = test_chain(MidiPipeType::Transform, {1, 7, 7, 0, 60});
-    assert(output_has(cc_to_note.process(test_message(0xB0, 7, 100), 0), 0x90, 60, 100));
-    assert(output_has(cc_to_note.process(test_message(0xB0, 8, 100), 0), 0xB0, 8, 100));
-    MidiPipeChain note_to_cc = test_chain(MidiPipeType::Transform, {0, 60, 60, 1, 74});
-    assert(output_has(note_to_cc.process(test_message(0x90, 60, 100), 0), 0xB0, 74, 100));
-    assert(output_has(note_to_cc.process(test_message(0x90, 61, 100), 0), 0x90, 61, 100));
-    MidiPipeChain to_bend = test_chain(MidiPipeType::Transform, {0, 60, 60, 3, 8192});
-    const PipeOutput bend = to_bend.process(test_message(0x90, 60, 100), 0);
-    assert(bend.count == 1 && bend.events[0].data[0] == 0xE0 &&
-           bend.events[0].data[1] == 0 && bend.events[0].data[2] == 64);
-    MidiPipeChain to_pc = test_chain(MidiPipeType::Transform, {1, 10, 20, 2, 42});
-    const PipeOutput pc = to_pc.process(test_message(0xB0, 10, 9), 0);
-    assert(pc.count == 1 && pc.events[0].size == 2 && pc.events[0].data[0] == 0xC0 &&
-           pc.events[0].data[1] == 42);
-    MidiPipeChain to_pressure =
-        test_chain(MidiPipeType::Transform, {1, 10, 20, 4, 77});
-    const PipeOutput pressure = to_pressure.process(test_message(0xB0, 10, 9), 0);
-    assert(pressure.count == 1 && pressure.events[0].size == 2 &&
-           pressure.events[0].data[0] == 0xD0 && pressure.events[0].data[1] == 77);
-    MidiPipeChain partial = test_chain(MidiPipeType::Transform, {});
-    assert(output_has(partial.process(test_message(0x90, 60, 100), 0), 0x90, 60, 100));
-  }
-
-  // Bypass is honoured for every Wave-1 type: the configured transform never
-  // runs, and an empty chain/unknown Wave-2 id passes bytes untouched.
-  for (std::uint8_t type = 1; type <= 11; ++type) {
-    MidiPipeChain bypassed;
-    bypassed.begin(true);
-    bypassed.setSeed(7);
-    Pipe p;
-    p.type = static_cast<MidiPipeType>(type);
-    p.bypass = true;
-    p.param_count = 5;
-    p.params[0] = 0;
-    p.params[1] = 0;
-    p.params[2] = 127;
-    p.params[3] = 1;
-    p.params[4] = 1;
-    assert(bypassed.append(p));
-    const PipeOutput out = bypassed.process(test_message(0x90, 60, 100), 0);
-    assert(out.count == 1 && out.events[0].data[0] == 0x90 &&
-           out.events[0].data[1] == 60 && out.events[0].data[2] == 100);
-  }
-  {
-    // Chunked wire-style configuration: a Filter has 8 positional params, so
-    // it arrives as a 5-param chunk followed by a 3-param chunk at offset 5.
-    MidiPipeChain chunked;
-    chunked.begin(true);
-    const std::int32_t first[5] = {1, 0, 0, 0, 0};
-    const std::int32_t rest[3] = {0, 0, 0};
-    assert(chunked.setPipeChunk(0, 1, false, 0, first, 5));
-    assert(chunked.setPipeChunk(0, 1, false, 5, rest, 3));
-    assert(chunked.process(test_message(0x90, 60, 100), 0).count == 1);
-    assert(chunked.process(test_message(0x80, 60, 0), 0).count == 0);
-    assert(!chunked.setPipeChunk(1, 1, false, 5, rest, 3));  // no pipe 1 yet
-    assert(!chunked.setPipeChunk(0, 2, false, 5, rest, 3));  // type mismatch
-    assert(!chunked.setPipeChunk(8, 1, false, 0, first, 5));  // index out of range
-  }
-  {
-    // Type ids are the wire contract (1..16); anything outside it is rejected
-    // at config time instead of being stored and passed through silently.
-    MidiPipeChain unknown;
-    unknown.begin(true);
-    Pipe p;
-    p.type = static_cast<MidiPipeType>(17);
-    p.param_count = 0;
-    assert(!unknown.append(p));
-    // Out-of-range/unknown params never crash a pipe access: the missing
-    // inHi/outLo/outHi fall back to their documented defaults.
-    MidiPipeChain sparse = test_chain(MidiPipeType::CcRemap, {3});
-    assert(output_has(sparse.process(test_message(0xB0, 3, 1), 0), 0xB0, 0, 1));
-  }
-
-  // Wire config round trips: route begin, a chunked pipe, a route send and
-  // the clock-extras frame.
+  // Route begin, a chunked pipe carrying a channel scope, a route send and the
+  // clock-extras frame.
   {
     Frame f{};
     Bytes wire{};
@@ -539,19 +151,72 @@ void run_pipe_tests() {
     assert(!pack_midi_route(f, 31, 0x12345678, 2, 0, 0));
     assert(!pack_midi_route(f, 31, 0x12345678, 0, 0, 0x80));
 
-    const std::int16_t params[5] = {60, 64, 64, 127, -7};
-    assert(pack_midi_route_pipe(f, 32, 0x12345678, 0, 1, 2, 2, false, 0, params, 5));
+    const std::int16_t params[4] = {60, 64, 64, 127};
+    assert(pack_midi_route_pipe(f, 32, 0x12345678, 0, 1, 2, 2, false, 0, params, 4,
+                                0x0003));
+    assert(f.length == 10 + 2 * 4);
     assert(encode(f, wire) && decode(wire, decoded));
     std::uint8_t index = 0, type = 0, offset = 0;
     bool bypass = true;
-    std::int16_t out_params[5]{};
+    std::uint16_t ch_mask = 0;
+    std::int16_t out_params[route_pipe_param_frame_max_legacy]{};
     std::size_t count = 0;
     assert(unpack_midi_route_pipe(decoded, src, dst, index, type, bypass, offset,
-                                  out_params, 5, count));
+                                  ch_mask, out_params,
+                                  route_pipe_param_frame_max_legacy, count));
     assert(src == 0 && dst == 1 && index == 2 && type == 2 && !bypass);
-    assert(offset == 0 && count == 5 && out_params[0] == 60 && out_params[4] == -7);
-    assert(!pack_midi_route_pipe(f, 33, 0x12345678, 0, 1, 0, 2, false, 6, params, 5));
-    assert(!pack_midi_route_pipe(f, 33, 0x12345678, 0, 1, 0, 0, false, 0, params, 5));
+    assert(offset == 0 && count == 4 && out_params[0] == 60 && out_params[3] == 127);
+    assert(ch_mask == 0x0003);
+    // Five params need two current chunks; the scope rides the offset-0 one.
+    assert(!pack_midi_route_pipe(f, 33, 0x12345678, 0, 1, 0, 2, false, 0, params, 5));
+    const std::int16_t six[6] = {1, 2, 3, 4, 5, 6};
+    assert(!pack_midi_route_pipe(f, 33, 0x12345678, 0, 1, 0, 2, false, 5, six, 6));
+    assert(!pack_midi_route_pipe(f, 33, 0x12345678, 0, 1, 0, 2, false, 0, params, 5));
+
+    // Backward tolerance: a pre-scope frame (length 8 + 2*count, five params,
+    // no mask) still decodes and means chMask = all channels.
+    Frame legacy{};
+    legacy.type = Type::control_event;
+    legacy.sequence = 40;
+    legacy.session = 0x12345678;
+    legacy.length = static_cast<std::uint8_t>(8 + 2 * 5);
+    legacy.payload[0] = EV_MIDI_ROUTE_PIPE;
+    legacy.payload[1] = 0;
+    legacy.payload[2] = 1;
+    legacy.payload[3] = 0;
+    legacy.payload[4] = 2;
+    legacy.payload[5] = 0;
+    legacy.payload[6] = 0;
+    legacy.payload[7] = 5;
+    const std::int16_t legacy_params[5] = {60, 64, 64, 127, -7};
+    for (std::size_t i = 0; i < 5; ++i) {
+      const auto bits = static_cast<std::uint16_t>(legacy_params[i]);
+      legacy.payload[8 + 2 * i] = static_cast<std::uint8_t>(bits);
+      legacy.payload[9 + 2 * i] = static_cast<std::uint8_t>(bits >> 8);
+    }
+    assert(encode(legacy, wire) && decode(wire, decoded));
+    ch_mask = 0;
+    assert(unpack_midi_route_pipe(decoded, src, dst, index, type, bypass, offset,
+                                  ch_mask, out_params,
+                                  route_pipe_param_frame_max_legacy, count));
+    assert(count == 5 && out_params[4] == -7);
+    assert(ch_mask == route_pipe_channel_mask_default);
+    // A scope frame cannot smuggle the legacy fifth param past the 18-byte
+    // payload: a length-20 scope frame is rejected before its mask is read.
+    Frame oversize{};
+    oversize.type = Type::control_event;
+    oversize.length = 20;
+    oversize.payload[0] = EV_MIDI_ROUTE_PIPE;
+    oversize.payload[1] = 0;
+    oversize.payload[2] = 1;
+    oversize.payload[3] = 0;
+    oversize.payload[4] = 2;
+    oversize.payload[5] = 0;
+    oversize.payload[6] = 0;
+    oversize.payload[7] = 5;
+    assert(!unpack_midi_route_pipe(oversize, src, dst, index, type, bypass, offset,
+                                   ch_mask, out_params,
+                                   route_pipe_param_frame_max_legacy, count));
 
     const std::uint8_t bytes[3] = {0x90, 60, 100};
     assert(pack_midi_route_send(f, 34, 0x12345678, 1, 0, bytes, 3));
@@ -581,312 +246,49 @@ void run_pipe_tests() {
     assert(!pack_clock_route_ext(f, 37, 0x12345678, 2, 1, 0));
   }
 
-  std::printf("PASS: Wave-1 MIDI pipes (filter/range/remap/scale/chance/velocity/"
-              "dispatch/sustain/length/transform, bypass, wire config)\n");
-}
+  // Sends one pipe through real 0x19 frames in wire-limit chunks. The scope
+  // travels on the offset-0 chunk; a continuation frame's mask byte is ignored
+  // by the firmware exactly like its bypass byte.
+  auto send_pipe = [](mnky::midifx::PipeChain& chain, std::uint8_t index,
+                      std::uint8_t type, const std::int16_t* params,
+                      std::size_t param_count, std::uint16_t ch_mask) {
+    std::size_t offset = 0;
+    do {
+      const std::size_t chunk = param_count - offset < route_pipe_param_frame_max
+                                    ? param_count - offset
+                                    : route_pipe_param_frame_max;
+      Frame f{};
+      Bytes wire{};
+      Frame decoded{};
+      const std::int16_t* chunk_params =
+          params == nullptr ? nullptr : params + offset;
+      assert(pack_midi_route_pipe(f, 0, 0x12345678, 0, 1, index, type, false,
+                                  static_cast<std::uint8_t>(offset), chunk_params,
+                                  chunk, ch_mask));
+      assert(encode(f, wire) && decode(wire, decoded));
+      std::uint8_t src = 9, dst = 9, out_index = 9, out_type = 0, out_offset = 9;
+      bool bypass = true;
+      std::uint16_t out_mask = 0;
+      std::int16_t raw[route_pipe_param_frame_max_legacy]{};
+      std::size_t count = 0;
+      assert(unpack_midi_route_pipe(decoded, src, dst, out_index, out_type, bypass,
+                                    out_offset, out_mask, raw,
+                                    route_pipe_param_frame_max_legacy, count));
+      assert(src == 0 && dst == 1 && out_index == index && out_type == type);
+      assert(!bypass && out_offset == offset && count == chunk);
+      assert(out_mask == ch_mask);
+      std::int32_t params32[route_pipe_param_frame_max_legacy]{};
+      for (std::size_t i = 0; i < count; ++i) params32[i] = raw[i];
+      assert(chain.setPipeChunk(out_index, out_type, bypass, out_offset, params32,
+                                count, out_mask));
+      offset += chunk;
+    } while (offset < param_count);
+  };
 
-// Wave-2 clocked pipes: every expectation below is driven by a synthetic tick
-// train, so division accuracy, swing, gates, LFO phase, harmonizer pairing and
-// delay taps are exact numbers rather than a listening test.
-void run_wave2_pipe_tests() {
-  using namespace mb;
-
-  // Division accuracy: an arp division is 24 >> div ticks, so 1/4, 1/8, 1/16 and
-  // 1/32 land on ticks 24, 12, 6 and 3. One held note keeps the pattern trivial.
+  // Every Wave-2 type fits the 0x19 transport with its real positional params
+  // (the five-param LFO/harmonizer need two chunks).
   {
-    const std::uint32_t expected[4] = {24, 12, 6, 3};
-    for (int div = 0; div < 4; ++div) {
-      MidiPipeChain chain = test_chain(MidiPipeType::Arp, {div, 0, 1, 50, 0, 50});
-      assert(chain.process(test_message(0x90, 60, 100), 0).count == 0);
-      const auto ons = kind_events(run_tick_train(chain, 0, expected[div] * 3 + 1), 0x90);
-      assert(times_of(ons) == (std::vector<std::uint32_t>{expected[div],
-                                                          2 * expected[div],
-                                                          3 * expected[div]}));
-      assert(notes_of(ons) == (std::vector<int>{60, 60, 60}));
-    }
-  }
-
-  // Gate percentage of a 1/16 step: 50 % is 3 ticks on / 3 ticks off, and the
-  // gate note-off always precedes the next step's note-on.
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::Arp, {2, 0, 1, 50, 0, 50});
-    chain.process(test_message(0x90, 60, 100), 0);
-    const auto events = run_tick_train(chain, 0, 13);
-    assert(times_of(kind_events(events, 0x90)) == (std::vector<std::uint32_t>{6, 12}));
-    assert(times_of(kind_events(events, 0x80)) == (std::vector<std::uint32_t>{9}));
-  }
-
-  // Swing: 50 is straight, 75 delays every odd step by 25 % of the step
-  // (six ticks at 1/4), so the pair is 24 + 6 ticks and the next pair restarts
-  // on the grid: ons on 30, 48 and 78.
-  {
-    MidiPipeChain straight = test_chain(MidiPipeType::Arp, {0, 0, 1, 50, 0, 50});
-    straight.process(test_message(0x90, 60, 100), 0);
-    assert(times_of(kind_events(run_tick_train(straight, 0, 73), 0x90)) ==
-           (std::vector<std::uint32_t>{24, 48, 72}));
-    MidiPipeChain swung = test_chain(MidiPipeType::Arp, {0, 0, 1, 75, 0, 50});
-    swung.process(test_message(0x90, 60, 100), 0);
-    assert(times_of(kind_events(run_tick_train(swung, 0, 78), 0x90)) ==
-           (std::vector<std::uint32_t>{30, 48, 78}));
-  }
-
-  // Accent scales the velocity of every fourth grid step (the beat) by
-  // (100 + accent) %: velocity 80 at accent 50 becomes 120 on steps 4 and 8.
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::Arp, {3, 0, 1, 50, 50, 50});
-    chain.process(test_message(0x90, 60, 80), 0);
-    const auto ons = kind_events(run_tick_train(chain, 0, 24), 0x90);
-    assert(values_of(ons) == (std::vector<int>{80, 80, 80, 120, 80, 80, 80, 120}));
-  }
-
-  // Arp types over a held C-E-G, one octave, 1/4 steps: up, down, updown (the
-  // down leg repeats neither endpoint), chord (all held notes on one step) and
-  // random (any pattern entry, and not always the same one).
-  {
-    const auto arp_notes = [](int type, int octaves, std::uint32_t until) {
-      MidiPipeChain chain = test_chain(MidiPipeType::Arp, {0, type, octaves, 50, 0, 25});
-      assert(chain.process(test_message(0x90, 60, 100), 0).count == 0);
-      assert(chain.process(test_message(0x90, 64, 90), 0).count == 0);
-      assert(chain.process(test_message(0x90, 67, 80), 0).count == 0);
-      return notes_of(kind_events(run_tick_train(chain, 0, until), 0x90));
-    };
-    assert(arp_notes(0, 1, 96) == (std::vector<int>{60, 64, 67, 60}));
-    assert(arp_notes(1, 1, 96) == (std::vector<int>{67, 64, 60, 67}));
-    assert(arp_notes(2, 1, 96) == (std::vector<int>{60, 64, 67, 64}));
-    // Two octaves stack the set 12 semitones higher before walking it.
-    assert(arp_notes(0, 2, 144) == (std::vector<int>{60, 64, 67, 72, 76, 79}));
-    // Chord holds every base-octave note together; octaves is ignored.
-    {
-      MidiPipeChain chord = test_chain(MidiPipeType::Arp, {0, 4, 4, 50, 0, 25});
-      chord.process(test_message(0x90, 60, 100), 0);
-      chord.process(test_message(0x90, 64, 90), 0);
-      chord.process(test_message(0x90, 67, 80), 0);
-      const auto events = run_tick_train(chord, 0, 24);
-      assert(notes_of(kind_events(events, 0x90)) == (std::vector<int>{60, 64, 67}));
-      assert(values_of(kind_events(events, 0x90)) == (std::vector<int>{100, 90, 80}));
-      assert(times_of(kind_events(events, 0x90)) ==
-             (std::vector<std::uint32_t>{24, 24, 24}));
-    }
-    {
-      const std::vector<int> random_notes = arp_notes(3, 1, 16 * 24);
-      assert(random_notes.size() == 16);
-      bool saw_other = false;
-      for (int note : random_notes) {
-        assert(note == 60 || note == 64 || note == 67);
-        saw_other = saw_other || note != random_notes[0];
-      }
-      assert(saw_other);
-    }
-  }
-
-  // Holds drive the notes: the note-on is consumed (the arp plays its own), the
-  // last note-off releases everything immediately and the grid stops.
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::Arp, {2, 0, 1, 50, 0, 50});
-    assert(chain.process(test_message(0x90, 60, 100), 0).count == 0);
-    assert(kind_events(run_tick_train(chain, 0, 6), 0x90).size() == 1);
-    const PipeOutput released = chain.process(test_message(0x80, 60, 0), 0);
-    assert(released.count == 1);
-    assert(released.events[0].data[0] == 0x80 && released.events[0].data[1] == 60);
-    assert(run_tick_train(chain, 7, 48).empty());
-  }
-
-  // A chain edit drops the clocked runtime state: the note it had on is
-  // released on the next tick instead of sounding forever.
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::Arp, {2, 0, 1, 50, 0, 50});
-    chain.process(test_message(0x90, 60, 100), 0);
-    assert(kind_events(run_tick_train(chain, 0, 6), 0x90).size() == 1);
-    assert(chain.setPipeChunk(0, 1, false, 0, nullptr, 0));  // replace with a Filter
-    const PipeOutput flushed = chain.tick(1000);
-    assert(flushed.count == 1);
-    assert(flushed.events[0].data[0] == 0x80 && flushed.events[0].data[1] == 60);
-  }
-
-  // Bypassing a running arp is the same edit seen through the bypass flag: the
-  // note it had on goes off and the routed bytes pass again.
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::Arp, {2, 0, 1, 50, 0, 50});
-    chain.process(test_message(0x90, 60, 100), 0);
-    assert(kind_events(run_tick_train(chain, 0, 6), 0x90).size() == 1);
-    const std::int32_t params[1] = {0};
-    assert(chain.setPipeChunk(0, 12, true, 0, params, 1));  // bypass, same type
-    const PipeOutput flushed = chain.tick(1000);
-    assert(flushed.count == 1 && flushed.events[0].data[0] == 0x80 &&
-           flushed.events[0].data[1] == 60);
-    const PipeOutput passthrough = chain.process(test_message(0x90, 62, 64), 0);
-    assert(passthrough.count == 1 && passthrough.events[0].data[1] == 62);
-  }
-
-  // Repeater: every division step retriggers the held set, the falloff envelope
-  // restarts every `repeats` steps and each strike is gated for half a step.
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::Repeater, {2, 3, 50});
-    assert(chain.process(test_message(0x90, 60, 100), 0).count == 0);
-    const auto events = run_tick_train(chain, 0, 25);
-    assert(times_of(kind_events(events, 0x90)) ==
-           (std::vector<std::uint32_t>{6, 12, 18, 24}));
-    assert(values_of(kind_events(events, 0x90)) == (std::vector<int>{100, 50, 25, 100}));
-    assert(times_of(kind_events(events, 0x80)) ==
-           (std::vector<std::uint32_t>{9, 15, 21}));
-    // repeats 1 repeats the same note at full velocity on every step.
-    MidiPipeChain single = test_chain(MidiPipeType::Repeater, {2, 1, 90});
-    single.process(test_message(0x90, 60, 100), 0);
-    assert(values_of(kind_events(run_tick_train(single, 0, 18), 0x90)) ==
-           (std::vector<int>{100, 100, 100}));
-  }
-
-  // CcLfo: one wave cycle spans eight division steps, the phase is the absolute
-  // step index and depth/center scale the sampled shape onto 0..127. Values are
-  // depth 64 around center 64 at 1/16 (phases 1, 2, 3, 4).
-  {
-    const auto lfo_values = [](int wave, std::uint32_t until) {
-      MidiPipeChain chain = test_chain(MidiPipeType::CcLfo, {74, wave, 2, 64, 64});
-      return values_of(kind_events(run_tick_train(chain, 0, until), 0xB0));
-    };
-    assert(lfo_values(0, 24) == (std::vector<int>{109, 127, 109, 64}));
-    assert(lfo_values(1, 24) == (std::vector<int>{96, 127, 96, 64}));
-    assert(lfo_values(2, 24) == (std::vector<int>{127, 127, 127, 0}));
-    assert(lfo_values(3, 24) == (std::vector<int>{17, 32, 48, 64}));
-    // A full cycle wraps back to phase 0 on step 8 (tick 48): the sine returns
-    // to the centre and the square to its high half.
-    assert(lfo_values(0, 48) ==
-           (std::vector<int>{109, 127, 109, 64, 19, 0, 19, 64}));
-    assert(lfo_values(2, 48).back() == 127);
-    // The CC number and channel are part of the contract (no channel param).
-    MidiPipeChain chain = test_chain(MidiPipeType::CcLfo, {74, 0, 2, 64, 64});
-    const auto cc = kind_events(run_tick_train(chain, 0, 6), 0xB0);
-    assert(cc.size() == 1 && cc[0].data[0] == 0xB0 && cc[0].data[1] == 74);
-    // depth 0 holds the centre; the value is clamped into the CC range.
-    MidiPipeChain flat = test_chain(MidiPipeType::CcLfo, {1, 0, 2, 0, 90});
-    assert(values_of(kind_events(run_tick_train(flat, 0, 12), 0xB0)) ==
-           (std::vector<int>{90, 90}));
-    MidiPipeChain clipped = test_chain(MidiPipeType::CcLfo, {1, 2, 2, 127, 10});
-    assert(values_of(kind_events(run_tick_train(clipped, 0, 12), 0xB0)) ==
-           (std::vector<int>{127, 127}));  // 10 + 127 clamps to 127
-  }
-
-  // Harmonizer: the input note passes and each voice is added, and every
-  // note-off that follows releases exactly the notes that note-on created.
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::Harmonizer, {2, 7, 4});
-    const PipeOutput on = chain.process(test_message(0x90, 60, 100), 0);
-    std::vector<StampedEvent> stamped;
-    collect(on, 0, stamped);
-    assert(notes_of(stamped) == (std::vector<int>{60, 67, 64}));
-    std::vector<StampedEvent> offs;
-    collect(chain.process(test_message(0x80, 60, 0), 0), 0, offs);
-    assert(notes_of(offs) == (std::vector<int>{60, 67, 64}));
-  }
-
-  // Overlap: holding C (+7, +4) makes E sound twice (the C+4 voice and E's own
-  // note-on). Releasing E must not silence the harmonized voice; releasing C
-  // then closes both E references.
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::Harmonizer, {2, 7, 4});
-    std::vector<StampedEvent> events;
-    collect(chain.process(test_message(0x90, 60, 100), 0), 0, events);
-    collect(chain.process(test_message(0x90, 64, 90), 0), 1, events);
-    assert(notes_of(events) == (std::vector<int>{60, 67, 64, 64, 71, 68}));
-    std::vector<StampedEvent> off_e;
-    collect(chain.process(test_message(0x80, 64, 0), 0), 0, off_e);
-    assert(notes_of(off_e) == (std::vector<int>{71, 68}));  // E itself stays on
-    std::vector<StampedEvent> off_c;
-    collect(chain.process(test_message(0x80, 60, 0), 0), 0, off_c);
-    assert(notes_of(off_c) == (std::vector<int>{60, 67, 64}));
-    // A retriggered note-on does not stack voices or references.
-    std::vector<StampedEvent> retrigger;
-    collect(chain.process(test_message(0x90, 60, 100), 0), 0, retrigger);
-    collect(chain.process(test_message(0x90, 60, 100), 0), 1, retrigger);
-    assert(notes_of(retrigger) == (std::vector<int>{60, 67, 64, 60}));
-    std::vector<StampedEvent> release;
-    collect(chain.process(test_message(0x80, 60, 0), 0), 0, release);
-    assert(notes_of(release) == (std::vector<int>{60, 67, 64}));
-    assert(chain.process(test_message(0x80, 60, 0), 0).count == 1);  // untracked off
-  }
-
-  // Sustain interplay, both orders. With the Sustain first the harmonizer sees
-  // the input note-off only when CC64 lifts, so the voices release together with
-  // it; with the Sustain last the harmonizer's own offs are latched and released
-  // by the sustain pipe like any other note-off.
-  {
-    MidiPipeChain sustain_first;
-    sustain_first.begin(true);
-    assert(sustain_first.append(test_pipe(MidiPipeType::Sustain, {1})));
-    assert(sustain_first.append(test_pipe(MidiPipeType::Harmonizer, {1, 7})));
-    assert(sustain_first.process(test_message(0xB0, 64, 127), 0).count == 1);
-    std::vector<StampedEvent> events;
-    assert(sustain_first.process(test_message(0x90, 60, 100), 0).count == 2);
-    assert(sustain_first.process(test_message(0x80, 60, 0), 0).count == 0);
-    collect(sustain_first.process(test_message(0xB0, 64, 0), 0), 0, events);
-    // The sustain pipe's release reaches the harmonizer as the input note-off,
-    // which answers with the matched pair instead of passing it through.
-    assert(notes_of(kind_events(events, 0x80)) == (std::vector<int>{60, 67}));
-
-    MidiPipeChain harmonizer_first;
-    harmonizer_first.begin(true);
-    assert(harmonizer_first.append(test_pipe(MidiPipeType::Harmonizer, {1, 7})));
-    assert(harmonizer_first.append(test_pipe(MidiPipeType::Sustain, {1})));
-    assert(harmonizer_first.process(test_message(0xB0, 64, 127), 0).count == 1);
-    assert(harmonizer_first.process(test_message(0x90, 60, 100), 0).count == 2);
-    assert(harmonizer_first.process(test_message(0x80, 60, 0), 0).count == 0);
-    std::vector<StampedEvent> latched;
-    collect(harmonizer_first.process(test_message(0xB0, 64, 0), 0), 0, latched);
-    assert(notes_of(kind_events(latched, 0x80)) == (std::vector<int>{60, 67}));
-  }
-
-  // Bypass: every Wave-2 type passes the routed bytes untouched and emits
-  // nothing on the clock grid.
-  for (std::uint8_t type = 12; type <= 16; ++type) {
-    MidiPipeChain chain;
-    chain.begin(true);
-    chain.setSeed(7);
-    Pipe p;
-    p.type = static_cast<MidiPipeType>(type);
-    p.bypass = true;
-    p.param_count = 6;
-    for (std::size_t i = 0; i < p.params.size(); ++i) p.params[i] = 1;
-    assert(chain.append(p));
-    const PipeOutput out = chain.process(test_message(0x90, 60, 100), 0);
-    assert(out.count == 1 && out.events[0].data[0] == 0x90 &&
-           out.events[0].data[1] == 60 && out.events[0].data[2] == 100);
-    assert(run_tick_train(chain, 0, 48).empty());
-  }
-
-  // MidiDelay: the dry event passes and `repeats` echoes follow delayMs apart,
-  // each attenuated by falloff; the note-off echo keeps the echo gates paired.
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::MidiDelay, {100, 3, 50});
-    assert(chain.process(test_message(0x90, 60, 100), 0).count == 1);
-    const auto events = run_ms_train(chain, 1, 400);
-    const auto ons = kind_events(events, 0x90);
-    assert(times_of(ons) == (std::vector<std::uint32_t>{100, 200, 300}));
-    assert(values_of(ons) == (std::vector<int>{100, 50, 25}));
-    assert(notes_of(ons) == (std::vector<int>{60, 60, 60}));
-    // The echo tail is what turns a chain edit into a stuck note: the delayed
-    // note-ons are tracked, so the edit releases them.
-    assert(chain.setPipeChunk(0, 1, false, 0, nullptr, 0));
-    const PipeOutput flushed = chain.tick(1000);
-    assert(flushed.count == 1 && flushed.events[0].data[0] == 0x80 &&
-           flushed.events[0].data[1] == 60);
-  }
-  {
-    MidiPipeChain chain = test_chain(MidiPipeType::MidiDelay, {100, 1, 0});
-    assert(chain.process(test_message(0x90, 60, 100), 0).count == 1);
-    assert(chain.process(test_message(0x80, 60, 0), 30).count == 1);
-    const auto events = run_ms_train(chain, 31, 200);
-    assert(times_of(kind_events(events, 0x90)) == (std::vector<std::uint32_t>{100}));
-    assert(times_of(kind_events(events, 0x80)) == (std::vector<std::uint32_t>{130}));
-    // delayMs 0 (the default) is off and only passes the dry event.
-    MidiPipeChain off = test_chain(MidiPipeType::MidiDelay, {});
-    assert(off.process(test_message(0x90, 60, 100), 0).count == 1);
-    assert(run_ms_train(off, 1, 500).empty());
-  }
-
-  // Every Wave-2 type fits the existing 0x19 transport with its real positional
-  // params (the Arp's six need the two-chunk path checked above).
-  {
-    MidiPipeChain chain;
+    mnky::midifx::PipeChain chain;
     chain.begin(true);
     const std::int16_t repeater[3] = {1, 4, 30};
     const std::int16_t lfo[5] = {74, 3, 2, 100, 64};
@@ -894,76 +296,56 @@ void run_wave2_pipe_tests() {
     const std::int16_t delay[3] = {250, 3, 25};
     const std::int16_t* per_type[4] = {repeater, lfo, harmonizer, delay};
     const std::size_t counts[4] = {3, 5, 5, 3};
-    for (std::size_t i = 0; i < 4; ++i) {
-      const auto type = static_cast<std::uint8_t>(13 + i);
-      Frame f{};
-      Bytes wire{};
-      Frame decoded{};
-      assert(pack_midi_route_pipe(f, static_cast<std::uint16_t>(70 + i), 0x12345678, 0,
-                                  1, static_cast<std::uint8_t>(i), type, false, 0,
-                                  per_type[i], counts[i]));
-      assert(encode(f, wire) && decode(wire, decoded));
-      std::uint8_t src = 0, dst = 0, index = 0, out_type = 0, offset = 0;
-      bool bypass = true;
-      std::int16_t raw[route_pipe_param_frame_max]{};
-      std::size_t count = 0;
-      assert(unpack_midi_route_pipe(decoded, src, dst, index, out_type, bypass, offset,
-                                    raw, route_pipe_param_frame_max, count));
-      assert(src == 0 && dst == 1 && index == i && out_type == type && !bypass);
-      assert(count == counts[i] && offset == 0);
-      std::int32_t params[route_pipe_param_frame_max]{};
-      for (std::size_t k = 0; k < count; ++k) params[k] = raw[k];
-      assert(chain.setPipeChunk(index, out_type, bypass, offset, params, count));
-    }
+    for (std::size_t i = 0; i < 4; ++i)
+      send_pipe(chain, static_cast<std::uint8_t>(i),
+                static_cast<std::uint8_t>(13 + i), per_type[i], counts[i],
+                route_pipe_channel_mask_default);
     assert(chain.pipeCount() == 4);
-    // Repeater, LFO, harmonizer and delay are all live after that config: the
-    // repeater holds the note-on, the LFO emits CCs on the grid and the delay
-    // echoes them 250 ms later (the train's ms clock is tick * 21).
-    assert(chain.process(test_message(0x90, 60, 100), 0).count == 0);
-    const auto events = run_tick_train(chain, 0, 24);
-    assert(!kind_events(events, 0x90).empty());  // repeater retriggers
-    // The LFO alone emits one CC per 1/16 step, so anything beyond four CCs in
-    // the first 24 ticks is the MidiDelay echoing them 250 ms later.
-    assert(kind_events(events, 0xB0).size() > 4);
+    // The repeater holds the note-on, the LFO emits CCs on the grid and the
+    // delay echoes them 250 ms later (the train's ms clock is tick * 21).
+    assert(chain.process(pipeEvent(test_message(0x90, 60, 100)), 0).count == 0);
+    assert(chain.clockTick(0, 0).count == 0);
+    const auto lfo_cc = chain.clockTick(6, 126);
+    assert(lfo_cc.count == 1 && (lfo_cc.events[0].data[0] & 0xF0) == 0xB0 &&
+           lfo_cc.events[0].data[1] == 74);
+    const auto echo = chain.tick(376);
+    assert(echo.count >= 1 && (echo.events[0].data[0] & 0xF0) == 0xB0);
   }
 
-  // Reusing the 0x19 pipe-config transport for type 12..16: an Arp needs six
-  // positional params, so it arrives as a 5-param chunk plus a 1-param chunk at
-  // offset 5 and plays without any new wire code.
+  // An Arp needs six positional params: two chunks at offsets 0 and 4, then the
+  // 1/32 grid starts on tick 3.
   {
-    MidiPipeChain chain;
+    mnky::midifx::PipeChain chain;
     chain.begin(true);
     chain.setSeed(0x12345678u);
-    const std::int16_t first_chunk[5] = {3, 0, 1, 50, 0};
-    const std::int16_t gate_chunk[1] = {50};
-    Frame f{};
-    Bytes wire{};
-    Frame decoded{};
-    for (int chunk = 0; chunk < 2; ++chunk) {
-      const std::int16_t* params = chunk == 0 ? first_chunk : gate_chunk;
-      const std::size_t count = chunk == 0 ? 5u : 1u;
-      const std::uint8_t offset = chunk == 0 ? 0u : 5u;
-      assert(pack_midi_route_pipe(f, static_cast<std::uint16_t>(50 + chunk),
-                                  0x12345678, 0, 0, 0, 12, false, offset, params, count));
-      assert(encode(f, wire) && decode(wire, decoded));
-      std::uint8_t src = 0, dst = 0, index = 0, type = 0, out_offset = 0;
-      bool bypass = false;
-      std::int16_t raw[route_pipe_param_frame_max]{};
-      std::size_t out_count = 0;
-      assert(unpack_midi_route_pipe(decoded, src, dst, index, type, bypass, out_offset,
-                                    raw, route_pipe_param_frame_max, out_count));
-      std::int32_t params32[route_pipe_param_frame_max]{};
-      for (std::size_t i = 0; i < out_count; ++i) params32[i] = raw[i];
-      assert(chain.setPipeChunk(index, type, bypass, out_offset, params32, out_count));
-    }
-    assert(chain.process(test_message(0x90, 60, 100), 0).count == 0);
-    assert(times_of(kind_events(run_tick_train(chain, 0, 9), 0x90)) ==
-           (std::vector<std::uint32_t>{3, 6, 9}));
+    const std::int16_t arp[6] = {3, 0, 1, 50, 0, 50};
+    send_pipe(chain, 0, 12, arp, 6, route_pipe_channel_mask_default);
+    assert(chain.pipeCount() == 1);
+    assert(chain.process(pipeEvent(test_message(0x90, 60, 100)), 0).count == 0);
+    assert(chain.clockTick(0, 0).count == 0);
+    const auto step = chain.clockTick(3, 63);
+    assert(step.count == 1 && (step.events[0].data[0] & 0xF0) == 0x90 &&
+           step.events[0].data[1] == 60);
   }
 
-  std::printf("PASS: Wave-2 clocked pipes (arp divisions/types/swing/accent/gate, "
-              "repeater falloff, LFO waves, harmonizer pairing + sustain, delay "
-              "taps, bypass, 0x19 transport)\n");
+  // The channel scope reaches the engine through 0x19: a note-on-blocking
+  // Filter scoped to channel 1 drops channel 1 and leaves channel 0 alone; the
+  // continuation chunk cannot move the scope once set.
+  {
+    mnky::midifx::PipeChain chain;
+    chain.begin(true);
+    const std::int16_t blocking[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    send_pipe(chain, 0, 1, blocking, 8, 0x0002);
+    const auto in_scope =
+        chain.process(pipeEvent(test_message(0x91, 60, 100)), 0);
+    const auto out_of_scope =
+        chain.process(pipeEvent(test_message(0x90, 60, 100)), 0);
+    assert(in_scope.count == 0);
+    assert(out_of_scope.count == 1);
+  }
+
+  std::printf("PASS: MIDI route pipe wire frames (0x18/0x19/0x1A/0x1B, chMask, "
+              "MidiMessage conversion)\n");
 }
 
 void run_clock_extras_tests() {
@@ -1249,8 +631,7 @@ int main(int argc, char** argv) {
   assert(nav.update(true, 115) && nav.state());
   assert(!nav.update(false, 120)); assert(nav.update(false, 130) && !nav.state());
   run_panel_tests();
-  run_pipe_tests();
-  run_wave2_pipe_tests();
+  run_wire_config_tests();
   run_clock_extras_tests();
   run_clock_follow_tests();
   Debouncer wrap(10); assert(!wrap.update(true, 0xfffffffau)); assert(wrap.update(true, 4));

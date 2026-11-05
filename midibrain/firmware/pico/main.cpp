@@ -31,11 +31,24 @@
 #include "clock_follow.hpp"
 #include "clock_output.hpp"
 #include "midi.hpp"
-#include "midi_pipe.hpp"
 #include "panel_input.hpp"
+#include "pipe_event.hpp"
 #include "pins.h"
 
 namespace {
+// The shared MIDI FX core (midibrain/midifx/core) is the only pipe
+// implementation; the firmware supplies its tick alarm as the engine clock and
+// owns the 0x18/0x19 wire decode. These asserts keep the wire limits and the
+// core capacity identical.
+using mnky::midifx::PipeChain;
+using mnky::midifx::PipeOutput;
+static_assert(mnky::midifx::kMaxRoutePipes == mb::route_pipe_count_max);
+static_assert(mnky::midifx::kMaxPipeParams == mb::route_pipe_param_max);
+static_assert(mnky::midifx::generated::kMaxParamsPerPipe <=
+              mnky::midifx::kMaxPipeParams);
+static_assert(mnky::midifx::generated::kChannelScope.defaultValue ==
+              mb::route_pipe_channel_mask_default);
+
 // ---------------------------------------------------------------------------
 // Local parameters (prototype values, see docs/protocol.md)
 // ---------------------------------------------------------------------------
@@ -160,7 +173,7 @@ volatile uint32_t clock_delay_drops = 0;
 // EV_MIDI_ROUTE_SEND; plain EV_MIDI_SEND stays the unprocessed immediate path.
 // The clocked Wave-2 pipes (arp, repeater, LFO) are stepped from clock_ticks in
 // drain_route_engines(), so the Pico tick alarm is their only clock.
-mb::MidiPipeChain route_pipes[2][2];
+PipeChain route_pipes[2][2];
 // External clock follow (RAM only). Default: internal generator, no transport
 // follow; the Pi re-sends its last-known config after HELLO. The generator
 // always runs from clock_interval_us; follow only retunes that period.
@@ -276,7 +289,7 @@ void midi_emit(uint8_t port, const uint8_t* data, uint32_t n) {
 }
 
 // Emits the ordered result of one route evaluation to the physical output.
-void emit_pipe_output(uint8_t dst, const mb::PipeOutput& out) {
+void emit_pipe_output(uint8_t dst, const PipeOutput& out) {
   for (std::size_t i = 0; i < out.count; ++i) {
     if (out.events[i].size < 1 || out.events[i].size > 3) continue;
     midi_emit(dst, out.events[i].data, out.events[i].size);
@@ -293,10 +306,10 @@ void drain_route_engines() {
   const uint32_t ticks = clock_ticks;
   for (uint8_t src = 0; src < 2; ++src) {
     for (uint8_t dst = 0; dst < 2; ++dst) {
-      mb::MidiPipeChain& chain = route_pipes[src][dst];
-      const mb::PipeOutput timed = chain.tick(now_ms);
+      PipeChain& chain = route_pipes[src][dst];
+      const PipeOutput timed = chain.tick(now_ms);
       if (timed.count != 0) emit_pipe_output(dst, timed);
-      const mb::PipeOutput clocked = chain.clockTick(ticks, now_ms);
+      const PipeOutput clocked = chain.clockTick(ticks, now_ms);
       if (clocked.count != 0) emit_pipe_output(dst, clocked);
     }
   }
@@ -562,23 +575,30 @@ void handle_frame(const mb::Frame& f) {
     case mb::EV_MIDI_ROUTE_PIPE: {
       std::uint8_t src = 0, dst = 0, index = 0, type = 0, offset = 0;
       bool bypass = false;
-      std::int16_t raw[mb::route_pipe_param_frame_max]{};
+      std::uint16_t ch_mask = 0;
+      // Legacy frames (no scope) carry up to five params; the decoder keeps
+      // accepting them, so the array holds the legacy maximum.
+      std::int16_t raw[mb::route_pipe_param_frame_max_legacy]{};
       std::size_t count = 0;
-      if (!mb::unpack_midi_route_pipe(f, src, dst, index, type, bypass, offset, raw,
-                                      mb::route_pipe_param_frame_max, count)) {
+      if (!mb::unpack_midi_route_pipe(f, src, dst, index, type, bypass, offset, ch_mask,
+                                      raw, mb::route_pipe_param_frame_max_legacy,
+                                      count)) {
         ++bad_frames;
         break;
       }
-      std::int32_t params[mb::route_pipe_param_frame_max]{};
+      std::int32_t params[mb::route_pipe_param_frame_max_legacy]{};
       for (std::size_t i = 0; i < count; ++i) params[i] = raw[i];
-      if (!route_pipes[src][dst].setPipeChunk(index, type, bypass, offset, params, count)) {
+      if (!route_pipes[src][dst].setPipeChunk(index, type, bypass, offset, params, count,
+                                              ch_mask)) {
         ++bad_frames;
         break;
       }
-      printf("[link] MIDI_ROUTE_PIPE in%u -> out%u [%u] type=%u bypass=%d params=%u+%u\n",
+      printf("[link] MIDI_ROUTE_PIPE in%u -> out%u [%u] type=%u bypass=%d "
+             "mask=%04x params=%u+%u\n",
              static_cast<unsigned>(src), static_cast<unsigned>(dst),
              static_cast<unsigned>(index), static_cast<unsigned>(type), bypass ? 1 : 0,
-             static_cast<unsigned>(offset), static_cast<unsigned>(count));
+             static_cast<unsigned>(ch_mask), static_cast<unsigned>(offset),
+             static_cast<unsigned>(count));
       break;
     }
     case mb::EV_MIDI_ROUTE_SEND: {
@@ -591,8 +611,8 @@ void handle_frame(const mb::Frame& f) {
       mb::MidiMessage m{};
       m.size = size;
       for (std::uint8_t i = 0; i < size; ++i) m.data[i] = data[i];
-      const mb::PipeOutput out =
-          route_pipes[src][dst].process(m, to_ms_since_boot(get_absolute_time()));
+      const PipeOutput out = route_pipes[src][dst].process(
+          mb::pipeEvent(m), to_ms_since_boot(get_absolute_time()));
       emit_pipe_output(dst, out);
       break;
     }
@@ -808,8 +828,9 @@ int main() {
 
   pico_session = session_from_rosc();
   printf("\n[mnkybox] Pico firmware " __DATE__
-         " " __TIME__ " session=%08lx\n",
-         static_cast<unsigned long>(pico_session));
+         " " __TIME__ " session=%08lx midi-fx-schema=v%u\n",
+         static_cast<unsigned long>(pico_session),
+         static_cast<unsigned>(mnky::midifx::generated::kSchemaVersion));
   // Seed the FX RNGs from the session/time so Chance and VelocityRandom do not
   // repeat the same sequence after every boot. The route config stays off until
   // the Pi sends EV_MIDI_ROUTE.
