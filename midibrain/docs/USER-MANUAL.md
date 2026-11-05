@@ -319,11 +319,24 @@ for the full-session capture; takes land named and ACTIVE.
 
 ## 15. USB audio streaming
 
-The module is a class-compliant 2-in/2-out USB audio device on its data
-port: the Main bus always streams out (post comp, post FX) for DAW
-capture, and the USB return maps to any track pair like a hardware input
-— stream a laptop into channels 7&8 and mix it with the rack. 48 kHz
-native; 44.1 kHz converts automatically.
+The module does **not** appear as a USB audio device. This is a hardware
+limit of the Raspberry Pi 5, measured and documented in
+`pi/bench/REPORT.md`: the Pi 5 exposes no USB peripheral controller on
+any user-facing port (the USB-C inlet is power input; `dwc2`/OTG exists
+only on CM4/CM5 carriers), so class-compliant gadget audio is not
+achievable regardless of software.
+
+What works instead:
+
+- **Takes to disk**: the Main bus and all 18 channels record to NVMe as
+  WAV; copy the project folder to the computer (§16). This is the
+  intended "send the mix to the DAW" path.
+- **Outboard loop**: route Main/OUT3&4 to a hardware interface connected
+  to the computer — the UMC1820's outputs can feed a DAW input directly.
+- **Future hardware** (not in this revision): a CM5 carrier or a USB-audio
+  gadget daughterboard would restore the original streaming goal; the
+  app already keeps the 2-in/2-out routing concept (`deviceOut`, USB
+  return mapping) so the feature becomes possible without redesign.
 
 ## 16. File management and backup
 
