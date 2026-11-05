@@ -86,7 +86,7 @@ class AppController final : public QObject {
   void shutdown();
 
   int tab() const { return tab_; }
-  void setTab(int tab);
+  Q_INVOKABLE void setTab(int tab);
   // EQ fullscreen: the shell hides the tab row and the transport strip so the
   // grid gets the whole 800x480 panel. Leaving the EQ tab restores the bridge.
   bool fullscreen() const { return fullscreen_; }

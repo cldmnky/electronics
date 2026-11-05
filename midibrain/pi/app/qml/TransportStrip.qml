@@ -83,6 +83,7 @@ Rectangle {
             visible: app.noPicoMode
             text: "PLAY"
             textSize: 9
+            checked: app.rolling
             focusId: "transport.play"
             onClicked: app.play()
         }
@@ -92,6 +93,7 @@ Rectangle {
             visible: app.noPicoMode
             text: "STOP"
             textSize: 9
+            checked: !app.rolling
             focusId: "transport.stop"
             onClicked: app.stop()
         }

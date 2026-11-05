@@ -24,10 +24,11 @@ Rectangle {
     implicitHeight: Style.touch
     radius: Style.corner
     color: !active ? Style.panelDark
-                    : (checked ? checkedColor : idleColor)
+                    : (tap.pressed ? checkedColor
+                                   : (checked ? checkedColor : idleColor))
     border.width: (app.focusId === focusId && focusId !== "") ? 2 : Style.outlineWidth
     border.color: (app.focusId === focusId && focusId !== "") ? Style.accent : Style.outline
-    opacity: active ? 1.0 : 0.45
+    opacity: tap.pressed ? 0.8 : (active ? 1.0 : 0.45)
 
     Text {
         id: label
