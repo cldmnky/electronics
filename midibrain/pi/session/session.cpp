@@ -1340,6 +1340,39 @@ bool decode(const JsonValue& root, Snapshot& out, std::string& error) {
     }
     if (!decodeClock(*clock, out.clock, error)) return false;
   }
+  if (const JsonValue* deviceOut = root.find("deviceOut")) {
+    if (deviceOut->type != JsonValue::Type::Object) {
+      error = "session: \"deviceOut\" is not an object";
+      return false;
+    }
+    const char* const keys[3] = {"main", "out34", "phones"};
+    std::array<int, 2>* const fields[3] = {&out.deviceOut.main,
+                                            &out.deviceOut.out34,
+                                            &out.deviceOut.phones};
+    for (int b = 0; b < 3; ++b) {
+      const JsonValue* pair = deviceOut->find(keys[b]);
+      if (pair == nullptr) continue;
+      if (pair->type != JsonValue::Type::Array) {
+        error = "session: \"deviceOut." + std::string(keys[b]) +
+                "\" is not an array";
+        return false;
+      }
+      std::size_t i = 0;
+      for (const JsonValue& value : pair->array) {
+        if (i >= fields[b]->size()) break;
+        int ch = 0;
+        if (!readInt(value, ch)) {
+          error = "session: \"deviceOut." + std::string(keys[b]) +
+                  "\" holds a non-integer";
+          return false;
+        }
+        if (ch < 0) ch = 0;
+        if (ch > 31) ch = 31;  // any sane multichannel interface
+        (*fields[b])[i] = ch;
+        ++i;
+      }
+    }
+  }
   return true;
 }
 
@@ -1710,7 +1743,22 @@ std::string encode(const Snapshot& snapshot) {
   appendNumber(out, snapshot.mainComp.makeupDb);
   out += ",\"mode\":";
   appendNumber(out, snapshot.mainComp.mode);
-  out += "}}\n";
+  out += "},\"deviceOut\":{\"main\":[";
+  for (std::size_t i = 0; i < snapshot.deviceOut.main.size(); ++i) {
+    if (i != 0) out.push_back(',');
+    appendNumber(out, snapshot.deviceOut.main[i]);
+  }
+  out += "],\"out34\":[";
+  for (std::size_t i = 0; i < snapshot.deviceOut.out34.size(); ++i) {
+    if (i != 0) out.push_back(',');
+    appendNumber(out, snapshot.deviceOut.out34[i]);
+  }
+  out += "],\"phones\":[";
+  for (std::size_t i = 0; i < snapshot.deviceOut.phones.size(); ++i) {
+    if (i != 0) out.push_back(',');
+    appendNumber(out, snapshot.deviceOut.phones[i]);
+  }
+  out += "]}}\n";
   return out;
 }
 

@@ -80,7 +80,24 @@ Window {
                         }
 
                         TapHandler {
-                            onTapped: app.setTab(index)
+                            // Short tap: navigate to the tab (leaves a shift face).
+                            // Long-press: open the tab's SHIFT face — the touch twin of
+                            // the panel's SHIFT long-hold. The flag stops the tap that
+                            // ends the hold from navigating back out of the face.
+                            id: tabTap
+                            property bool heldShift: false
+                            onPressedChanged: if (pressed) heldShift = false
+                            onTapped: {
+                                if (heldShift) return
+                                app.setTab(index)
+                                if (app.panelMode === "shift") app.showShiftFace(false)
+                            }
+                            onLongPressed: {
+                                heldShift = true
+                                app.setTab(index)
+                                app.showShiftFace(true)
+                                app.showTextPopup("SHIFT", window.tabNames[index] + " shift face")
+                            }
                         }
                     }
                 }

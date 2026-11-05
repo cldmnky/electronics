@@ -308,12 +308,24 @@ struct MidiMapEntry {
   friend bool operator==(const MidiMapEntry&, const MidiMapEntry&) = default;
 };
 
+// Physical device output channel routing (UMC1820-class multichannel out).
+// Each bus writes to a pair of device channels: 0-based, defaults Main =
+// 1&2, OUT3&4 = 3&4, phones = 5&6. The app maps engine buses onto the
+// device through these; the UI offers the pickers.
+struct DeviceOutState {
+  std::array<int, 2> main{0, 1};
+  std::array<int, 2> out34{2, 3};
+  std::array<int, 2> phones{4, 5};
+  friend bool operator==(const DeviceOutState&, const DeviceOutState&) = default;
+};
+
 struct Snapshot {
   RouterState router;
   MixerState mixer;
   FxState fx;
   TransportState transport;
   ClockState clock;
+  DeviceOutState deviceOut;
   ClickState click;
   std::vector<MidiMapEntry> midimap;
   bool isTemplate = false;  // v2: settings-only project, no take registry

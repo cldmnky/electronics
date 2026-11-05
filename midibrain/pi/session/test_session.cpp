@@ -184,6 +184,9 @@ void testRoundTrip() {
   original.clock.transportFollow[2] = true;
   original.clock.trs[0].tempoDiv = 2;
   original.clock.trs[0].syncDelayMs = 12;
+  original.deviceOut.main = {4, 5};
+  original.deviceOut.out34 = {6, 7};
+  original.deviceOut.phones = {0, 1};
   RouteState split;
   split.src = 2;
   split.dst = 3;
