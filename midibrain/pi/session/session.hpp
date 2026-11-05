@@ -32,6 +32,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <span>
 #include <string>
 #include <vector>
@@ -43,6 +44,8 @@
 namespace mnky::session {
 
 inline constexpr int kVersion = 2;
+// Dynamic (USB) port ids live at 6..31; 0..5 are the fixed TRS/merged ports.
+inline constexpr int kSessionMaxPorts = 32;
 // Lowest session version this build reads (v1 click maps to v2 fields).
 inline constexpr const char* kAppId = "mnkybox";
 // Two FX send buses, matching audio::kNumSends.
@@ -76,6 +79,11 @@ enum class MidiPipeType : std::uint8_t {
 struct MidiPipe {
   MidiPipeType type = MidiPipeType::Filter;
   bool bypass = false;
+  // Channel scope: the pipe processes only messages whose channel (0-based)
+  // has its bit set; other channels pass through unchanged. 0xFFFF = all.
+  // Combined with per-device routes this gives "this arp on this device's
+  // channels 1-4 only" exactly.
+  std::uint16_t chMask = 0xFFFF;
   std::vector<int> params;
   friend bool operator==(const MidiPipe&, const MidiPipe&) = default;
 };
@@ -89,12 +97,17 @@ struct RouteState {
 
 // Router state is a full snapshot: every port's channel mask and transpose are
 // present, so a default RouterState is the documented "all channels, no shift".
+// `devices` binds dynamic port ids (6..31; discovered USB MIDI devices) to a
+// stable identity string ("usb:<name>" convention), so routes/channels survive
+// restarts and replug order: the app re-binds by name at load, and a missing
+// device leaves its routes dormant but intact, never silently reassigned.
 struct RouterState {
   RouterState() { channels.fill(midi::Router::kAllChannels); }
 
   std::vector<RouteState> routes;
-  std::array<std::uint16_t, midi::kPortCount> channels{};
-  std::array<int, midi::kPortCount> transpose{};
+  std::array<std::uint16_t, kSessionMaxPorts> channels{};
+  std::array<int, kSessionMaxPorts> transpose{};
+  std::map<int, std::string> devices;
   friend bool operator==(const RouterState&, const RouterState&) = default;
 };
 
@@ -107,8 +120,11 @@ struct MixerChannelState {
   std::array<float, audio::kNumSends> send{};
   float cueSend = 0.0f;    // per-track CUE bus send level (v2)
   float out34Send = 0.0f;  // per-track OUT3&4 send level (v2)
-  // Input monitoring (MPC-style): 0 = off (never pass live input),
-  // 1 = auto (live input iff armed, or no active take playing), 2 = on.
+  // Input monitoring (MPC-style): 0 = playback only (never pass live input;
+  // "just playback"), 1 = auto (live input iff armed, or no active take
+  // playing), 2 = on (live input + take layer; "both playback and
+  // monitoring"), 3 = monitor only (live input always, take never plays;
+  // "just monitoring").
   int monitor = 1;
   // Input source: mono device channel 0..17, or -1 = none. `inPair` binds
   // the next channel as a stereo pair (inCh must be even; odd clamps down).

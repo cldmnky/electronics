@@ -172,6 +172,7 @@ void testRoundTrip() {
   original.mixer.channels[2].out34Send = 0.5f;
   original.mixer.channels[2].monitor = 2;
   original.mixer.channels[3].monitor = 0;
+  original.mixer.channels[4].monitor = 3;
   original.mixer.channels[2].inCh = 5;
   original.mixer.channels[2].inPair = true;
   original.mixer.channels[2].outDst = 1;
@@ -187,6 +188,15 @@ void testRoundTrip() {
   original.deviceOut.main = {4, 5};
   original.deviceOut.out34 = {6, 7};
   original.deviceOut.phones = {0, 1};
+  original.router.devices = {{6, "usb:Arturia KeyStep 32"},
+                              {7, "usb:Elektron Digitakt"}};
+  original.router.channels[6] = 0x000F;
+  original.router.transpose[7] = -2;
+  RouteState usbRoute;
+  usbRoute.src = 6;
+  usbRoute.dst = 7;
+  usbRoute.on = true;
+  original.router.routes.push_back(std::move(usbRoute));
   RouteState split;
   split.src = 2;
   split.dst = 3;
@@ -198,6 +208,7 @@ void testRoundTrip() {
   MidiPipe chance;
   chance.type = MidiPipeType::Chance;
   chance.bypass = true;
+  chance.chMask = 0x000F;  // channels 1-4 only
   chance.params = {25};
   split.pipes.push_back(chance);
   original.router.routes.push_back(std::move(split));

@@ -475,6 +475,13 @@ bool decodeRouter(const JsonValue& node, RouterState& out, std::string& error) {
                                  error)) {
             return false;
           }
+          int chMask = pipe.chMask;
+          if (!readOptionalInt(pipeItem, "chm", chMask, pipePath, error)) {
+            return false;
+          }
+          if (chMask < 0) chMask = 0;
+          if (chMask > 0xFFFF) chMask = 0xFFFF;
+          pipe.chMask = static_cast<std::uint16_t>(chMask);
           if (const JsonValue* params = pipeItem.find("params")) {
             if (params->type != JsonValue::Type::Array) {
               error = "session: \"" + pipePath +
@@ -597,7 +604,7 @@ bool decodeMixer(const JsonValue& node, MixerState& out, std::string& error) {
         return false;
       }
       if (monitor < 0) monitor = 0;
-      if (monitor > 2) monitor = 2;
+      if (monitor > 3) monitor = 3;
       channel.monitor = monitor;
       if (item.find("inCh") == nullptr) {
         channel.inCh = static_cast<int>(index);  // legacy: identity mapping
@@ -1481,6 +1488,8 @@ std::string encode(const Snapshot& snapshot) {
       appendNumber(out, static_cast<int>(pipe.type));
       out += ",\"bypass\":";
       appendBool(out, pipe.bypass);
+      out += ",\"chm\":";
+      appendNumber(out, static_cast<int>(pipe.chMask));
       out += ",\"params\":[";
       for (std::size_t q = 0; q < pipe.params.size(); ++q) {
         if (q != 0) out.push_back(',');
