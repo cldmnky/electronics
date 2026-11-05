@@ -43,6 +43,12 @@ with nohup + log file and check back — never hold a tool call open on a
 build. Nothing commits from the Pi; it is a verification target, and
 `~/mnky` is a sync drop (safe to `--delete`).
 
+**NEVER write an image to this Pi's own storage** (no `dd`/`pv`/`bmaptool`
+to `/dev/mmcblk0`, `/dev/nvme0n1`, or any partition of them) — it would
+brick the build host and every workflow that depends on it. The brain-os
+image is written to a **spare SD card in a USB reader, from the Mac**;
+even then the Pi only BUILDS the `.img`, it never flashes it.
+
 ARM gate (2026-11-04, final tree): native configure + `-j4` build clean,
 CTest 13/13, `mnkybox --unittests` 204/204 offscreen. After any file-list
 change, reconfigure explicitly before trusting green (a stale build dir
