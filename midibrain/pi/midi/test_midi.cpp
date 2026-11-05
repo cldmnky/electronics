@@ -38,6 +38,7 @@ using mnky::midi::Router;
 using mnky::midi::UsbClock;
 using mnky::midi::UsbMidi;
 using mnky::midi::UsbTransportFollow;
+using mnky::midi::piOwnsPipeChain;
 
 struct Delivery {
   Port dst;
@@ -797,6 +798,102 @@ void usbTransportFollow() {
   pass("usb transport follow");
 }
 
+// ---------------------------------------------------------------------------
+// dynamic USB endpoints: ids 6..31 are ordinary route endpoints
+// ---------------------------------------------------------------------------
+void dynamicPorts() {
+  const Port dynamicIn = static_cast<Port>(mnky::midi::kFirstDynamicPort);
+  const Port dynamicOut = static_cast<Port>(mnky::midi::kFirstDynamicPort + 1);
+  CHECK(mnky::midi::isDynamicPort(dynamicIn));
+  CHECK(!mnky::midi::isDynamicPort(Port::UsbIn));
+  CHECK(mnky::midi::isInput(dynamicIn) && mnky::midi::isOutput(dynamicIn));
+
+  // Pipe ownership per id class: a dynamic endpoint is a USB side, so the Pi
+  // evaluates it; TRS->TRS stays on the Pico.
+  CHECK(!piOwnsPipeChain(Port::TrsIn1, Port::TrsOut1));
+  CHECK(piOwnsPipeChain(dynamicIn, Port::TrsOut1));
+  CHECK(piOwnsPipeChain(Port::TrsIn1, dynamicOut));
+  CHECK(piOwnsPipeChain(dynamicIn, dynamicOut));
+
+  Router r;
+  CHECK(r.setRoute(dynamicIn, dynamicOut, true));
+  CHECK(r.setRoute(dynamicIn, Port::TrsOut1, true));
+  r.setChannelMask(dynamicIn, 0x0001);
+  r.setTranspose(dynamicIn, 12);
+  std::vector<Delivery> log;
+  const DeliverFn capture = [&log](Port dst, const MidiEvent& ev) { log.push_back({dst, ev}); };
+  r.route(message(dynamicIn, 0, 0x90, 60, 100), capture);
+  CHECK(log.size() == 2);
+  // Delivery runs in ascending port id: TrsOut1 (3) before dynamicOut (7).
+  bool sawTrs = false;
+  bool sawDynamic = false;
+  for (const auto& delivery : log) {
+    CHECK(delivery.ev.data[1] == 72);  // source transpose applies to both
+    if (delivery.dst == Port::TrsOut1) sawTrs = true;
+    if (delivery.dst == dynamicOut) sawDynamic = true;
+  }
+  CHECK(sawTrs && sawDynamic);
+
+  log.clear();
+  r.route(message(dynamicIn, 1, 0x90, 60, 100), capture);
+  CHECK(log.empty());
+
+  // A dynamic route carries a chain too. Scope it to channel 2: channel 1
+  // passes the blocking Filter unchanged, channel 2 is dropped.
+  Router piped;
+  CHECK(piped.setRoute(dynamicIn, dynamicOut, true));
+  PipeConfig scopedFilter;
+  scopedFilter.type = PipeType::Filter;
+  scopedFilter.chMask = 0x0002;  // channel 2 only
+  scopedFilter.paramCount = 8;   // all-zero kind bits: block every covered kind
+  CHECK(piped.setPipes(dynamicIn, dynamicOut, &scopedFilter, 1));
+  CHECK(piped.pipeCount(dynamicIn, dynamicOut) == 1);
+  log.clear();
+  piped.route(message(dynamicIn, 0, 0x90, 60, 100), capture);
+  CHECK(log.size() == 1 && log[0].dst == dynamicOut);
+  log.clear();
+  piped.route(message(dynamicIn, 1, 0x90, 60, 100), capture);
+  CHECK(log.empty());
+
+  // One dynamic and one fixed side is a Pi-owned chain as well. Disable the
+  // dynamic destination so only the scoped TrsOut1 chain is observed.
+  CHECK(piped.setRoute(dynamicIn, dynamicOut, false));
+  CHECK(piped.setRoute(dynamicIn, Port::TrsOut1, true));
+  PipeConfig chanceOut;
+  chanceOut.type = PipeType::Chance;
+  chanceOut.chMask = 0x0001;  // channel 1 only
+  chanceOut.paramCount = 1;
+  chanceOut.params[0] = 100;
+  CHECK(piped.setPipes(dynamicIn, Port::TrsOut1, &chanceOut, 1));
+  log.clear();
+  piped.route(message(dynamicIn, 0, 0x90, 60, 100), capture);
+  CHECK(log.empty());  // channel 1 is in scope and dropped by 100 % Chance
+  log.clear();
+  piped.route(message(dynamicIn, 1, 0x90, 60, 100), capture);
+  CHECK(log.size() == 1 && log[0].dst == Port::TrsOut1);
+  CHECK(piped.pipeCount(dynamicIn, dynamicOut) == 1);
+  piped.clearPipes();
+  CHECK(piped.pipeCount(dynamicIn, dynamicOut) == 0);
+  CHECK(piped.pipeCount(dynamicIn, Port::TrsOut1) == 0);
+
+  // Out-of-range ids are rejected, never read past the arrays.
+  const Port invalid = static_cast<Port>(mnky::midi::kMaxPorts);
+  CHECK(!r.setRoute(invalid, Port::TrsOut1, true));
+  CHECK(r.channelMask(invalid) == Router::kAllChannels);
+  CHECK(r.transpose(invalid) == 0);
+
+  // Per-device USB plumbing rejects fixed/out-of-range ids without touching a
+  // backend port (no hardware needed for this check).
+  UsbMidi usb;
+  CHECK(!usb.openDeviceInput(0, static_cast<std::uint8_t>(Port::UsbIn)));
+  CHECK(!usb.openDeviceOutput(0, static_cast<std::uint8_t>(invalid)));
+  CHECK(!usb.sendToDevice(static_cast<std::uint8_t>(Port::UsbOut),
+                          oneByte(dynamicIn, 0x90)));
+  CHECK(!usb.sendToDevice(static_cast<std::uint8_t>(dynamicIn),
+                          oneByte(dynamicIn, 0x90)));  // no output opened
+  pass("dynamic ports");
+}
+
 }  // namespace
 
 int main() {
@@ -813,6 +910,7 @@ int main() {
   usbTransportFollow();
   buttonMap();
   usbWrapper();
+  dynamicPorts();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "FAILURES %d\n", g_failures);

@@ -1,9 +1,26 @@
 # midi/ - router, USB MIDI, clock discipline, buttons, MIDI learn (JUCE-free)
 
-Works (host-verified here): `router.{hpp,cpp}` 3-in/3-out matrix, routes default
-off, channel mask (bit n = channel n+1, `0xFFFF` = all) on channel voice only,
-transpose on note on/off only with out-of-range notes dropped (never clamped),
-realtime/system-common never channel-masked or transposed. `midifx.{hpp,cpp}`
+Works (host-verified here): `router.{hpp,cpp}` 3-in/3-out fixed matrix plus
+dynamic USB endpoints at ids 6..31, routes default off, channel mask (bit n =
+channel n+1, `0xFFFF` = all) on channel voice only, transpose on note on/off only
+with out-of-range notes dropped (never clamped), realtime/system-common never
+channel-masked or transposed. The six fixed ports keep the firmware ABI; a
+dynamic id is routable exactly like a fixed one (`src`/`dst` stay ints) and has
+its own mask/transpose slot. `port_registry.{hpp,cpp}` owns those ids:
+`usb:<name>` identity, input/output direction flags, live count, hot-unplug ->
+dormant slot (id and routes stay reserved) and name-based `bindSession()` for
+session load. Fixed-port pairs keep their 3x3 pipe chains; a route touching a
+dynamic id stores its chain in a sparse `Router` map, so a per-device USB route
+carries a scoped pipe chain as well (`MidiGlue::setRoutePipes` accepts it and
+project capture keeps `RouteState::pipes`). Each pipe carries the session's
+`chMask` (0xFFFF = all): only matching 0-based channels enter that pipe, every
+other channel and every channel-less byte passes it bit-identically. The gate is
+per pipe and reads the channel at that pipe's entry, so a ChannelRemap before a
+scope changes what the next pipe matches; mask 0 makes the pipe inert.
+`midi_glue` owns the RtMidi inventory seam: it groups port names with the audio
+worker's `midiDeviceNamesFromPortNames()`, reopens one input/output per device
+tagged with its dynamic id, and exposes `usbPorts()` / `bindSessionRouter()` /
+`captureSessionRouter()` for the Routing UI and project save/load. `midifx.{hpp,cpp}`
 is the portable Wave-1 MIDI FX pipe engine (types 1..11, positional params from
 `pi/session/session.hpp`, bypass, deterministic per-route RNG, Wave-2 rejection)
 described below. `clock.{hpp,cpp}`: `UsbClock` is pure
@@ -85,7 +102,14 @@ Integration gaps owned outside this lane (reported, not fixed here):
   makes the Pico forward TRS->TRS locally, the app must stop forwarding those
   routes over 0x15; the ownership split in `piOwnsPipeChain` does not change.
 - `session::apply()` does not copy `RouteState::pipes` into `Router::setPipes()`
-  yet, and the app does not push the TRS chain to the link. Session/app lane.
+  yet; `MidiGlue::applySessionRouter()` does (including dynamic routes). The
+  app must use that seam or apply pipes separately. Session/app lane.
+- Per-pipe `chMask` cannot reach the Pico over 0x19: the EV_MIDI_ROUTE_PIPE
+  payload has no scope field (src, dst, index, type, bypass, param offset,
+  count, positional int16 params only). Pi-owned chains enforce it; a scoped
+  TRS->TRS chain runs unscoped on the firmware until `firmware/pico/protocol.hpp`
+  and the firmware pipe engine gain a field. `link::kMidiRoutePipeCarriesChannelScope`
+  is false and MidiGlue logs this when a TRS chain carries a scope.
 - Transpose order asymmetry on TRS->TRS: `Router` applies the source transpose
   when it forwards those bytes, and the Pico's chain then sees the transposed
   note. The effective order there is mask -> transpose -> firmware pipes, while
@@ -105,6 +129,12 @@ Integration gaps owned outside this lane (reported, not fixed here):
   needs a wire extension; none is invented here.
 
 ## midifx engine
+
+`test_midifx.cpp` also covers per-pipe `chMask` scope for every Wave-1 type
+(matching channels processed, others bit-identical), an all-zero inert mask,
+channel-less realtime bytes passing a restricted scope, and ChannelRemap
+ordering in both directions. Router tests add scoped chains on dynamic and
+dynamic->TRS routes.
 
 `test_midifx.cpp` covers each Wave-1 pipe with boundary values (Filter kind
 mask, NoteRange note/velocity edges + swap/clamp, CcRemap endpoints + rounding

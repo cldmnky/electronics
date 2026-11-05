@@ -23,6 +23,13 @@ inline constexpr unsigned kReadyBcm = 24;
 inline constexpr std::uint32_t kSpiClockHz = 1'000'000;
 // One transaction carries exactly 32 bytes; anything less hangs the slave.
 inline constexpr std::size_t kFrameBytes = mb::frame_size;
+// 0x19 (EV_MIDI_ROUTE_PIPE) carries type, bypass and positional int16 params
+// only; it has no per-pipe channel-scope field. A TRS->TRS chain's chMask can
+// therefore not reach the Pico: Pi-owned (USB-touching) chains enforce it in
+// midi::PipeChain, while a scoped TRS chain would run unscoped on the firmware.
+// Closing the gap needs a field in firmware/pico/protocol.hpp and the firmware
+// pipe engine, not a Pi-side re-encoding of a positional parameter.
+inline constexpr bool kMidiRoutePipeCarriesChannelScope = false;
 // Pacing budget for PicoLink::poll: >= 1 ms between transactions so the Pico
 // main loop drains each received frame before the next one lands.
 inline constexpr std::uint64_t kMinTransactionUs = 1'000;

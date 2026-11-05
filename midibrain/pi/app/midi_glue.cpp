@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <map>
 #include <utility>
 
+#include "audio_backend.hpp"
 #include "logging.hpp"
 
 namespace mnky::app {
@@ -11,14 +13,38 @@ namespace {
 // Bounded so a stalled link thread cannot grow the queue without limit; the
 // oldest deliveries are discarded first, which is what a MIDI hub has to do.
 constexpr std::size_t kMaxPendingDeliveries = 2048;
-// Same 3x3 slot order as midi::Router::pipeIndex().
+// One RtMidi port name -> the per-device name the System audio inventory uses
+// (audio_backend.hpp). Calling the shared helper with a single name reuses its
+// grouping rule instead of forking a second copy of it here.
+std::string portDeviceName(const std::string& portName) {
+  const auto names = midiDeviceNamesFromPortNames({portName});
+  return names.empty() ? std::string() : names.front();
+}
+
+// Same 3x3 slot order as midi::Router::pipeIndex(); -1 when either side is a
+// dynamic USB id (those chains live in dynamicRoutePipes_).
 int routeSlot(midi::Port source, midi::Port destination) {
-  if (!midi::isInput(source) || !midi::isOutput(destination)) return -1;
+  if (!midi::isFixedInput(source) || !midi::isFixedOutput(destination)) return -1;
   const int in = source == midi::Port::TrsIn1 ? 0 : (source == midi::Port::TrsIn2 ? 1 : 2);
   const int out = destination == midi::Port::TrsOut1
                       ? 0
                       : (destination == midi::Port::TrsOut2 ? 1 : 2);
   return in * 3 + out;
+}
+
+// Sparse-chain key for a valid route that is not one of the fixed 3x3 pairs,
+// matching midi::Router's dynamic key. -1 when the pair is not routable.
+int dynamicRouteKey(midi::Port source, midi::Port destination) {
+  if (!midi::isInput(source) || !midi::isOutput(destination)) return -1;
+  if (routeSlot(source, destination) >= 0) return -1;
+  return midi::portId(source) * midi::kMaxPorts + midi::portId(destination);
+}
+
+bool hasChannelScope(const std::vector<session::MidiPipe>& pipes) {
+  for (const auto& pipe : pipes) {
+    if (pipe.chMask != 0xFFFF) return true;
+  }
+  return false;
 }
 
 // The wire limits are midifx.hpp's (8 pipes, 10 positional parameters). A chain
@@ -49,6 +75,7 @@ bool routerPipes(const std::vector<session::MidiPipe>& pipes,
     config = midi::PipeConfig{};
     config.type = static_cast<midi::PipeType>(static_cast<int>(pipe.type));
     config.bypass = pipe.bypass;
+    config.chMask = pipe.chMask;
     config.paramCount = static_cast<std::uint8_t>(pipe.params.size());
     for (std::size_t param = 0; param < pipe.params.size(); ++param) {
       config.params[param] = pipe.params[param];
@@ -95,10 +122,98 @@ MidiGlue::~MidiGlue() {
 
 bool MidiGlue::open() {
   usb_.setInputCallback([this](const midi::MidiEvent& event) { handleInput(event); });
-  const auto inputs = usb_.openAll(virtualPorts_);
-  const auto outputs = usb_.outputAll(virtualPorts_);
-  std::string summary = "USB " + std::to_string(inputs) + " in / " +
-                        std::to_string(outputs) + " out";
+  return refreshDevices();
+}
+
+void MidiGlue::close() {
+  usb_.closeAll();
+  const std::lock_guard<std::mutex> lock(lock_);
+  devicesOpen_ = false;
+}
+
+bool MidiGlue::refreshDevices() {
+  struct PortRef {
+    unsigned int index;
+    std::string identity;
+  };
+  const auto collect = [](const std::vector<std::string>& names,
+                          std::vector<PortRef>& ports,
+                          std::vector<std::string>& identities) {
+    for (unsigned int index = 0; index < names.size(); ++index) {
+      const std::string device = portDeviceName(names[index]);
+      if (device.empty()) continue;
+      // Never register our own published virtual port as a device: a refresh
+      // enumerates while that port is open, and a dynamic loopback would feed
+      // UsbIn back into the matrix.
+      if (device == midi::UsbMidi::kVirtualPortName) continue;
+      const std::string identity = midi::usbIdentity(device);
+      ports.push_back(PortRef{index, identity});
+      if (std::find(identities.begin(), identities.end(), identity) ==
+          identities.end()) {
+        identities.push_back(identity);
+      }
+    }
+  };
+
+  std::vector<PortRef> inputPorts;
+  std::vector<PortRef> outputPorts;
+  std::vector<std::string> inputIdentities;
+  std::vector<std::string> outputIdentities;
+  collect(usb_.listInputs(), inputPorts, inputIdentities);
+  collect(usb_.listOutputs(), outputPorts, outputIdentities);
+
+  // The inventory signature is the RtMidi index + grouped device name in both
+  // directions: a hot-plug changes it, an unchanged poll does no port churn.
+  std::vector<std::string> inventory;
+  inventory.reserve(inputPorts.size() + outputPorts.size());
+  for (const auto& port : inputPorts) {
+    inventory.push_back("in:" + std::to_string(port.index) + ":" + port.identity);
+  }
+  for (const auto& port : outputPorts) {
+    inventory.push_back("out:" + std::to_string(port.index) + ":" + port.identity);
+  }
+
+  bool changed = false;
+  bool wasOpen = false;
+  std::map<std::string, int> idByIdentity;
+  {
+    const std::lock_guard<std::mutex> lock(lock_);
+    changed = inventory != deviceInventory_;
+    wasOpen = devicesOpen_;
+    registry_.syncDevices(inputIdentities, outputIdentities);
+    deviceInventory_ = inventory;
+    for (const auto& entry : registry_.entries()) {
+      idByIdentity[entry.identity] = entry.id;
+    }
+  }
+
+  if (changed || !wasOpen) {
+    usb_.closeAll();
+    for (const auto& port : inputPorts) {
+      const auto found = idByIdentity.find(port.identity);
+      if (found == idByIdentity.end()) continue;
+      (void)usb_.openDeviceInput(port.index,
+                                 static_cast<std::uint8_t>(found->second));
+    }
+    for (const auto& port : outputPorts) {
+      const auto found = idByIdentity.find(port.identity);
+      if (found == idByIdentity.end()) continue;
+      (void)usb_.openDeviceOutput(port.index,
+                                  static_cast<std::uint8_t>(found->second));
+    }
+    if (virtualPorts_) (void)usb_.openVirtualPorts(midi::UsbMidi::kVirtualPortName);
+    const std::lock_guard<std::mutex> lock(lock_);
+    devicesOpen_ = true;
+  }
+
+  std::size_t connected = 0;
+  {
+    const std::lock_guard<std::mutex> lock(lock_);
+    connected = registry_.connectedCount();
+  }
+  std::string summary = "USB " + std::to_string(usb_.inputCount()) + " in / " +
+                        std::to_string(usb_.outputCount()) + " out, " +
+                        std::to_string(connected) + " device(s)";
   if (virtualPorts_) {
     summary += std::string(" (virtual \"") + midi::UsbMidi::kVirtualPortName + "\")";
   }
@@ -107,17 +222,114 @@ bool MidiGlue::open() {
     const std::lock_guard<std::mutex> lock(lock_);
     description_ = summary;
   }
-  log("midi: " + summary);
-  return inputs > 0 || outputs > 0;
-}
-
-void MidiGlue::close() {
-  usb_.closeAll();
+  if (changed || !wasOpen) log("midi: " + summary);
+  return usb_.inputCount() > 0 || usb_.outputCount() > 0;
 }
 
 std::string MidiGlue::describe() const {
   const std::lock_guard<std::mutex> lock(lock_);
   return description_;
+}
+
+std::vector<MidiGlue::UsbPortInfo> MidiGlue::usbPorts() const {
+  std::vector<UsbPortInfo> ports;
+  const std::lock_guard<std::mutex> lock(lock_);
+  for (const auto& entry : registry_.entries()) {
+    UsbPortInfo info;
+    info.id = entry.id;
+    info.identity = entry.identity;
+    info.name = midi::usbDeviceName(entry.identity);
+    info.input = entry.input;
+    info.output = entry.output;
+    info.connected = entry.connected;
+    ports.push_back(std::move(info));
+  }
+  return ports;
+}
+
+std::size_t MidiGlue::usbPortCount() const {
+  const std::lock_guard<std::mutex> lock(lock_);
+  return registry_.connectedCount();
+}
+
+std::size_t MidiGlue::bindSessionRouter(session::RouterState& state) {
+  midi::PortRegistry::SessionBinding binding;
+  {
+    const std::lock_guard<std::mutex> lock(lock_);
+    binding = registry_.bindSession(state.devices);
+  }
+  midi::remapRouteIds(binding.ids, state.routes);
+  midi::remapSessionPorts(binding.ids, state.channels, state.transpose);
+  std::map<int, std::string> live;
+  for (const auto& [storedId, identity] : state.devices) {
+    const auto mapped = binding.ids.find(storedId);
+    live[mapped == binding.ids.end() ? storedId : mapped->second] = identity;
+  }
+  state.devices = std::move(live);
+  return binding.ids.size();
+}
+
+void MidiGlue::captureSessionDevices(session::RouterState& state) const {
+  const std::lock_guard<std::mutex> lock(lock_);
+  state.devices = registry_.sessionDevices();
+}
+
+session::RouterState MidiGlue::captureSessionRouter() const {
+  session::RouterState state;
+  const std::lock_guard<std::mutex> lock(lock_);
+  for (int source = 0; source < midi::kMaxPorts; ++source) {
+    for (int destination = 0; destination < midi::kMaxPorts; ++destination) {
+      const auto src = static_cast<midi::Port>(source);
+      const auto dst = static_cast<midi::Port>(destination);
+      if (!midi::isInput(src) || !midi::isOutput(dst)) continue;
+      if (!router_.routeEnabled(src, dst)) continue;
+      std::vector<session::MidiPipe> pipes;
+      const int slot = routeSlot(src, dst);
+      if (slot >= 0) {
+        pipes = routePipes_[static_cast<std::size_t>(slot)];
+      } else {
+        const auto found = dynamicRoutePipes_.find(dynamicRouteKey(src, dst));
+        if (found != dynamicRoutePipes_.end()) pipes = found->second;
+      }
+      state.routes.push_back(
+          session::RouteState{source, destination, true, std::move(pipes)});
+    }
+  }
+  for (int port = 0; port < midi::kMaxPorts; ++port) {
+    const auto id = static_cast<midi::Port>(port);
+    state.channels[static_cast<std::size_t>(port)] = router_.channelMask(id);
+    state.transpose[static_cast<std::size_t>(port)] = router_.transpose(id);
+  }
+  state.devices = registry_.sessionDevices();
+  return state;
+}
+
+void MidiGlue::applySessionRouter(const session::RouterState& input) {
+  session::RouterState state = input;
+  (void)bindSessionRouter(state);
+  {
+    const std::lock_guard<std::mutex> lock(lock_);
+    for (int source = 0; source < midi::kMaxPorts; ++source) {
+      for (int destination = 0; destination < midi::kMaxPorts; ++destination) {
+        (void)router_.setRoute(static_cast<midi::Port>(source),
+                               static_cast<midi::Port>(destination), false);
+      }
+    }
+    router_.clearPipes();
+    for (const auto& route : state.routes) {
+      const auto source = static_cast<midi::Port>(route.src);
+      const auto destination = static_cast<midi::Port>(route.dst);
+      (void)router_.setRoute(source, destination, route.on);
+      if (!route.pipes.empty())
+        (void)applyRoutePipesToRouter(router_, source, destination, route.pipes);
+    }
+    for (int port = 0; port < midi::kMaxPorts; ++port) {
+      const auto id = static_cast<midi::Port>(port);
+      router_.setChannelMask(id, state.channels[static_cast<std::size_t>(port)]);
+      router_.setTranspose(id, state.transpose[static_cast<std::size_t>(port)]);
+    }
+  }
+  setRoutePipeLists(state.routes);
 }
 
 void MidiGlue::handleInput(const midi::MidiEvent& event) {
@@ -177,6 +389,11 @@ void MidiGlue::pump(const TrsSink& trsSink) {
     if (delivery.destination == midi::Port::UsbOut) {
       usb_.send(delivery.event);
       sent = true;
+    } else if (midi::isDynamicPort(delivery.destination)) {
+      // Per-device USB output: only that device's ports receive the message.
+      sent = usb_.sendToDevice(
+          static_cast<std::uint8_t>(midi::portId(delivery.destination)),
+          delivery.event);
     } else if (trsSink) {
       sent = trsSink(delivery.destination, delivery.event);
     }
@@ -290,22 +507,30 @@ int MidiGlue::transpose(midi::Port source) const {
 std::vector<session::MidiPipe> MidiGlue::routePipes(midi::Port source,
                                                     midi::Port destination) const {
   const int slot = routeSlot(source, destination);
-  if (slot < 0) return {};
+  const int key = dynamicRouteKey(source, destination);
+  if (slot < 0 && key < 0) return {};
   const std::lock_guard<std::mutex> lock(lock_);
-  return routePipes_[static_cast<std::size_t>(slot)];
+  if (slot >= 0) return routePipes_[static_cast<std::size_t>(slot)];
+  const auto found = dynamicRoutePipes_.find(key);
+  return found == dynamicRoutePipes_.end() ? std::vector<session::MidiPipe>{}
+                                           : found->second;
 }
 
 bool MidiGlue::routeHasPipes(midi::Port source, midi::Port destination) const {
   const int slot = routeSlot(source, destination);
-  if (slot < 0) return false;
+  const int key = dynamicRouteKey(source, destination);
+  if (slot < 0 && key < 0) return false;
   const std::lock_guard<std::mutex> lock(lock_);
-  return !routePipes_[static_cast<std::size_t>(slot)].empty();
+  if (slot >= 0) return !routePipes_[static_cast<std::size_t>(slot)].empty();
+  const auto found = dynamicRoutePipes_.find(key);
+  return found != dynamicRoutePipes_.end() && !found->second.empty();
 }
 
 bool MidiGlue::setRoutePipes(midi::Port source, midi::Port destination,
                              const std::vector<session::MidiPipe>& pipes) {
   const int slot = routeSlot(source, destination);
-  if (slot < 0) return false;
+  const int key = dynamicRouteKey(source, destination);
+  if (slot < 0 && key < 0) return false;
   std::vector<session::MidiPipe> sanitized;
   if (!sanitizePipes(pipes, sanitized)) return false;
   std::array<midi::PipeConfig, midi::kMaxRoutePipes> configs;
@@ -314,7 +539,11 @@ bool MidiGlue::setRoutePipes(midi::Port source, midi::Port destination,
   {
     const std::lock_guard<std::mutex> lock(lock_);
     if (!router_.setPipes(source, destination, configs.data(), count)) return false;
-    routePipes_[static_cast<std::size_t>(slot)] = std::move(sanitized);
+    if (slot >= 0) {
+      routePipes_[static_cast<std::size_t>(slot)] = std::move(sanitized);
+    } else {
+      dynamicRoutePipes_[key] = std::move(sanitized);
+    }
   }
   notifyPipeSync(source, destination);
   return true;
@@ -374,18 +603,40 @@ bool MidiGlue::setRoutePipeParam(midi::Port source, midi::Port destination,
   return setRoutePipes(source, destination, pipes);
 }
 
+bool MidiGlue::setRoutePipeChannelMask(midi::Port source, midi::Port destination,
+                                       int index, std::uint16_t mask) {
+  auto pipes = routePipes(source, destination);
+  if (index < 0 || index >= static_cast<int>(pipes.size())) return false;
+  pipes[static_cast<std::size_t>(index)].chMask = mask;
+  return setRoutePipes(source, destination, pipes);
+}
+
+std::uint16_t MidiGlue::routePipeChannelMask(midi::Port source,
+                                             midi::Port destination,
+                                             int index) const {
+  const auto pipes = routePipes(source, destination);
+  if (index < 0 || index >= static_cast<int>(pipes.size())) return 0xFFFF;
+  return pipes[static_cast<std::size_t>(index)].chMask;
+}
+
 void MidiGlue::setRoutePipeLists(const std::vector<session::RouteState>& routes) {
   {
     const std::lock_guard<std::mutex> lock(lock_);
     for (auto& list : routePipes_) list.clear();
+    dynamicRoutePipes_.clear();
     for (const auto& route : routes) {
       const auto source = static_cast<midi::Port>(route.src);
       const auto destination = static_cast<midi::Port>(route.dst);
       const int slot = routeSlot(source, destination);
-      if (slot < 0) continue;
+      const int key = dynamicRouteKey(source, destination);
+      if (slot < 0 && key < 0) continue;
       std::vector<session::MidiPipe> sanitized;
       if (!sanitizePipes(route.pipes, sanitized)) continue;
-      routePipes_[static_cast<std::size_t>(slot)] = std::move(sanitized);
+      if (slot >= 0) {
+        routePipes_[static_cast<std::size_t>(slot)] = std::move(sanitized);
+      } else {
+        dynamicRoutePipes_[key] = std::move(sanitized);
+      }
     }
   }
   // A project load can remove a chain; re-sending every TRS->TRS pair (including
@@ -422,6 +673,10 @@ void MidiGlue::notifyPipeSync(midi::Port source, midi::Port destination) {
     fn = pipeSync_;
     pipes = routePipes_[static_cast<std::size_t>(slot)];
     enabled = router_.routeEnabled(source, destination);
+  }
+  if (hasChannelScope(pipes)) {
+    log("midi: Pico 0x19 has no per-pipe channel-scope field; this TRS chain's "
+        "chMask is not applied on the Pico");
   }
   if (fn) fn(source, destination, pipes, enabled);
 }

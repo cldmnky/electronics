@@ -32,36 +32,76 @@ bool Router::routeEnabled(Port src, Port dst) const {
   return route_[idx(src)][idx(dst)];
 }
 
-void Router::setChannelMask(Port src, std::uint16_t mask) { channelMask_[idx(src)] = mask; }
+void Router::setChannelMask(Port src, std::uint16_t mask) {
+  if (!isValidPort(src)) return;
+  channelMask_[idx(src)] = mask;
+}
 
-std::uint16_t Router::channelMask(Port src) const { return channelMask_[idx(src)]; }
+std::uint16_t Router::channelMask(Port src) const {
+  if (!isValidPort(src)) return kAllChannels;
+  return channelMask_[idx(src)];
+}
 
 void Router::setTranspose(Port src, int semitones) {
+  if (!isValidPort(src)) return;
   if (semitones < -127) semitones = -127;
   if (semitones > 127) semitones = 127;
   transpose_[idx(src)] = semitones;
 }
 
-int Router::transpose(Port src) const { return transpose_[idx(src)]; }
+int Router::transpose(Port src) const {
+  if (!isValidPort(src)) return 0;
+  return transpose_[idx(src)];
+}
+
+PipeChain* Router::mutableChain(Port src, Port dst) const {
+  const int slot = pipeIndex(src, dst);
+  if (slot >= 0) return &pipes_[static_cast<std::size_t>(slot)];
+  if (!isInput(src) || !isOutput(dst)) return nullptr;
+  const auto found = dynamicPipes_.find(dynamicPipeKey(src, dst));
+  return found == dynamicPipes_.end() ? nullptr : &found->second;
+}
 
 bool Router::setPipes(Port src, Port dst, const PipeConfig* pipes, std::size_t count) {
+  const int slot = pipeIndex(src, dst);
+  if (slot >= 0) return pipes_[static_cast<std::size_t>(slot)].configure(pipes, count);
   if (!isInput(src) || !isOutput(dst)) return false;
-  return pipes_[pipeIndex(src, dst)].configure(pipes, count);
+  const int key = dynamicPipeKey(src, dst);
+  const auto found = dynamicPipes_.find(key);
+  if (found != dynamicPipes_.end()) return found->second.configure(pipes, count);
+  PipeChain chain;
+  if (!chain.configure(pipes, count)) return false;
+  dynamicPipes_.emplace(key, std::move(chain));
+  return true;
 }
 
 std::size_t Router::pipeCount(Port src, Port dst) const {
-  if (!isInput(src) || !isOutput(dst)) return 0;
-  return pipes_[pipeIndex(src, dst)].pipeCount();
+  const int slot = pipeIndex(src, dst);
+  if (slot >= 0) return pipes_[static_cast<std::size_t>(slot)].pipeCount();
+  const PipeChain* chain = mutableChain(src, dst);
+  return chain == nullptr ? 0 : chain->pipeCount();
 }
 
 void Router::setPipeSeed(Port src, Port dst, std::uint32_t seed) {
+  const int slot = pipeIndex(src, dst);
+  if (slot >= 0) {
+    pipes_[static_cast<std::size_t>(slot)].setSeed(seed);
+    return;
+  }
   if (!isInput(src) || !isOutput(dst)) return;
-  pipes_[pipeIndex(src, dst)].setSeed(seed);
+  dynamicPipes_[dynamicPipeKey(src, dst)].setSeed(seed);
 }
 
 std::uint32_t Router::pipeSeed(Port src, Port dst) const {
-  if (!isInput(src) || !isOutput(dst)) return 0;
-  return pipes_[pipeIndex(src, dst)].seed();
+  const int slot = pipeIndex(src, dst);
+  if (slot >= 0) return pipes_[static_cast<std::size_t>(slot)].seed();
+  const PipeChain* chain = mutableChain(src, dst);
+  return chain == nullptr ? 0 : chain->seed();
+}
+
+void Router::clearPipes() {
+  for (auto& chain : pipes_) chain = PipeChain{};
+  dynamicPipes_.clear();
 }
 
 Router::PipeDiagnostics Router::pipeDiagnostics() const { return pipeStats_; }
@@ -77,18 +117,20 @@ void Router::route(const MidiEvent& ev, const DeliverFn& deliver) const {
   // 32-bit ms clock; the comparison is wrap-safe.
   const std::uint32_t nowMs = static_cast<std::uint32_t>(ev.stampUs / 1000u);
 
-  for (int d = 0; d < kPortCount; ++d) {
+  for (int d = 0; d < kMaxPorts; ++d) {
     const Port dst = static_cast<Port>(d);
     if (!isOutput(dst) || !route_[idx(ev.source)][d]) continue;
-    if (!piOwnsPipeChain(ev.source, dst)) {
-      // Firmware owns this chain; forward the bytes untouched (transpose is
-      // the Pi's source-wide transform, applied on both sides of the split).
+    PipeChain* chainPtr = mutableChain(ev.source, dst);
+    if (chainPtr == nullptr || !piOwnsPipeChain(ev.source, dst)) {
+      // No stored chain (or a firmware-owned TRS->TRS route): forward the
+      // bytes untouched (transpose is the Pi's source-wide transform, applied
+      // on both sides of the split).
       MidiEvent out;
       if (!transposeForOutput(ev, shift, out)) continue;
       deliver(dst, out);
       continue;
     }
-    PipeChain& chain = pipes_[pipeIndex(ev.source, dst)];
+    PipeChain& chain = *chainPtr;
     if (chain.empty()) {
       MidiEvent out;
       if (!transposeForOutput(ev, shift, out)) continue;
@@ -111,14 +153,15 @@ void Router::route(const MidiEvent& ev, const DeliverFn& deliver) const {
 }
 
 void Router::tick(std::uint32_t nowMs, const DeliverFn& deliver) const {
-  for (int s = 0; s < kPortCount; ++s) {
+  for (int s = 0; s < kMaxPorts; ++s) {
     const Port src = static_cast<Port>(s);
     if (!isInput(src)) continue;
-    for (int d = 0; d < kPortCount; ++d) {
+    for (int d = 0; d < kMaxPorts; ++d) {
       const Port dst = static_cast<Port>(d);
       if (!isOutput(dst) || !route_[s][d]) continue;
-      if (!piOwnsPipeChain(src, dst)) continue;
-      PipeChain& chain = pipes_[pipeIndex(src, dst)];
+      PipeChain* chainPtr = mutableChain(src, dst);
+      if (chainPtr == nullptr || !piOwnsPipeChain(src, dst)) continue;
+      PipeChain& chain = *chainPtr;
       if (chain.empty() || chain.wave2Pipe() >= 0) continue;
       MidiEvent stamp;
       stamp.source = src;

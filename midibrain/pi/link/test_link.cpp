@@ -338,6 +338,10 @@ void testClockSourceSender() {
 }
 
 void testMidiRouteSender() {
+  // Documented wire gap: 0x19 has no per-pipe chMask field, so a TRS chain's
+  // channel scope cannot round-trip to the Pico. Pi-owned USB chains enforce
+  // it locally (midi::PipeChain).
+  assert(!mnky::link::kMidiRoutePipeCarriesChannelScope);
   EmulatorTransport pico;
   PicoLink link(pico);
   assert(pumpUntil(link, 200, [&] { return link.linkUp(); }));

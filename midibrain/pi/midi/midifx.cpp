@@ -16,6 +16,18 @@ constexpr bool isWave2(PipeType type) {
   return typeId(type) >= kFirstWave2Pipe && typeId(type) <= 16;
 }
 
+// A message is in a pipe's scope only when it is channel voice and its
+// 0-based channel bit is set. Channel-less messages (realtime/system common)
+// never match a restricted scope, so they pass that pipe unchanged; the
+// 0xFFFF fast path keeps the historical all-messages behaviour.
+bool inChannelScope(std::uint16_t mask, const PipeEvent& event) {
+  if (mask == 0xFFFF) return true;
+  if (event.size < 1) return false;
+  const std::uint8_t status = event.data[0];
+  if (status < 0x80 || status >= 0xF0) return false;
+  return (mask & static_cast<std::uint16_t>(1u << (status & 0x0F))) != 0;
+}
+
 }  // namespace
 
 const char* wave2Reason(PipeType type) noexcept {
@@ -252,13 +264,41 @@ PipeOutput PipeChain::runFrom(std::size_t startPipe, const PipeEvent& start,
   for (std::size_t index = startPipe; index < pipe_count_ && currentCount != 0;
        ++index) {
     std::size_t nextCount = 0;
-    runPipe(pipes_[index], index, current, currentCount, next, nextCount, out.dropped,
-            nowMs);
+    runPipeScoped(pipes_[index], index, current, currentCount, next, nextCount,
+                  out.dropped, nowMs);
     current = next;
     currentCount = nextCount;
   }
   for (std::size_t i = 0; i < currentCount; ++i) out.push(current[i]);
   return out;
+}
+
+void PipeChain::runPipeScoped(
+    const PipeConfig& pipe, std::size_t pipeIndex,
+    const std::array<PipeEvent, kMaxPipeEvents>& in, std::size_t inCount,
+    std::array<PipeEvent, kMaxPipeEvents>& out, std::size_t& outCount,
+    std::size_t& dropped, std::uint32_t nowMs) {
+  if (pipe.bypass || pipe.chMask == 0xFFFF) {
+    runPipe(pipe, pipeIndex, in, inCount, out, outCount, dropped, nowMs);
+    return;
+  }
+  outCount = 0;
+  for (std::size_t i = 0; i < inCount; ++i) {
+    if (!inChannelScope(pipe.chMask, in[i])) {
+      append(out, outCount, dropped, in[i]);
+      continue;
+    }
+    // Feed one matching event at a time so out-of-scope events keep their
+    // position in the stream; stateful pipes (Dispatcher, Sustain, NoteLength)
+    // still see matching events in their original order.
+    std::array<PipeEvent, kMaxPipeEvents> singleIn{};
+    std::array<PipeEvent, kMaxPipeEvents> singleOut{};
+    singleIn[0] = in[i];
+    std::size_t singleCount = 0;
+    runPipe(pipe, pipeIndex, singleIn, 1, singleOut, singleCount, dropped, nowMs);
+    for (std::size_t j = 0; j < singleCount; ++j)
+      append(out, outCount, dropped, singleOut[j]);
+  }
 }
 
 void PipeChain::runPipe(const PipeConfig& pipe, std::size_t pipeIndex,

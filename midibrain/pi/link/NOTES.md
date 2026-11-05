@@ -23,6 +23,13 @@ Works (host-tested, `PASS` lines from `test_link.cpp`):
   a new `midiRoute()` starts a fresh chain and clears the cached pipes, exactly
   like firmware `begin()`. `EmulatorTransport` records the applied chain for
   tests (`midiRoute(src,dst)`), and `reboot()` resets it as RAM would.
+  **Gap:** 0x19 has no per-pipe channel-scope (`chMask`) field -- its payload is
+  src, dst, index, type, bypass, parameter offset, count, then positional int16
+  params. A session pipe's `chMask` therefore cannot round-trip to the firmware
+  over this wire; `kMidiRoutePipeCarriesChannelScope` is false, and MidiGlue
+  logs the gap when a TRS chain carries a scope. Closing it requires a wire
+  field in `firmware/pico/protocol.hpp` plus firmware pipe-engine enforcement;
+  USB-touching Pi-owned chains already enforce `chMask` in `midi::PipeChain`.
 - Routed UART emit: `sendMidiRoute(src,dst,data,n)` queues
   `EV_MIDI_ROUTE_SEND` (0x1A) through `mb::pack_midi_route_send`, so the Pico
   evaluates the (src,dst) chain configured by 0x18/0x19 before emitting on that

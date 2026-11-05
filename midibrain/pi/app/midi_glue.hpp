@@ -8,17 +8,25 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../midi/learn.hpp"
+#include "../midi/port_registry.hpp"
 #include "../midi/router.hpp"
 #include "../midi/usb.hpp"
 #include "../session/session.hpp"
 #include "pipe_params.hpp"
 
 namespace mnky::app {
+
+// midi/router.hpp cannot include the session header; keep the two array bounds
+// tied together here so a session format change cannot silently truncate.
+static_assert(midi::kMaxPorts == session::kSessionMaxPorts,
+              "dynamic port bound must match session::kSessionMaxPorts");
 
 // Applies one stored pipe list to a Router (used by project load on the router
 // snapshot before it is swapped in, because session::apply() ignores
@@ -41,6 +49,52 @@ class MidiGlue {
   bool open();
   void close();
   std::string describe() const;
+
+  // --- Dynamic USB MIDI device endpoints (ids 6..31) ----------------------
+  // One routable endpoint per discovered USB MIDI device, keyed by the stable
+  // identity string "usb:<name>". `name` is the per-device name produced by the
+  // same RtMidi grouping as the System audio inventory
+  // (audio_backend.hpp:midiDeviceNamesFromPortNames). An entry with
+  // connected == false is a reserved dormant slot: it keeps its id so routes
+  // survive an unplug, and it wakes when the identity returns.
+  struct UsbPortInfo {
+    int id = 0;             // 6..31
+    std::string name;       // display name (identity without the "usb:" prefix)
+    std::string identity;   // stable session identity, "usb:<name>"
+    bool input = false;     // device offers an input endpoint
+    bool output = false;    // device offers an output endpoint
+    bool connected = false;
+    friend bool operator==(const UsbPortInfo&, const UsbPortInfo&) = default;
+  };
+  // Every registered dynamic id in ascending order, dormant included.
+  std::vector<UsbPortInfo> usbPorts() const;
+  // Number of currently connected USB MIDI devices.
+  std::size_t usbPortCount() const;
+  // Re-enumerates RtMidi, reconciles the registry by identity and reopens the
+  // per-device input/output ports. Routes are never touched: a missing device
+  // goes dormant and keeps its id. Returns true when ports are open afterwards.
+  bool refreshDevices();
+
+  // --- Session binding for dynamic ids ------------------------------------
+  // Rewrites dynamic ids in `state` from stored ids to live/reserved ids by
+  // `state.devices` identity, then rewrites `state.devices` to the live ids.
+  // Fixed ports 0..5 are untouched. A missing device is reserved as a dormant
+  // slot, so its routes stay intact and are never reassigned to another device.
+  // Returns the number of stored ids bound (including dormant reservations).
+  std::size_t bindSessionRouter(session::RouterState& state);
+  // Fills state.devices from every reserved identity (connected or dormant).
+  void captureSessionDevices(session::RouterState& state) const;
+  // Save-side router snapshot including dynamic ids: routes (src/dst ints),
+  // channels/transpose for all 32 ports and the device identity map. Unlike
+  // session::capture() (fixed ports only), this is the dynamic-aware capture a
+  // project save should merge into its snapshot.
+  session::RouterState captureSessionRouter() const;
+  // Authoritative router load for a session snapshot: binds dynamic ids by
+  // name, clears every fixed and dynamic route and pipe chain in the live
+  // Router, applies routes/channels/transpose for all 32 ids, applies each
+  // RouteState::pipes chain to the Router and replaces the stored chain lists
+  // (including the TRS mirrors pushed to the Pico).
+  void applySessionRouter(const session::RouterState& state);
 
   void handleInput(const midi::MidiEvent& event);  // any thread
   void pump(const TrsSink& trsSink);               // link thread
@@ -77,6 +131,13 @@ class MidiGlue {
                           bool bypass);
   bool setRoutePipeParam(midi::Port source, midi::Port destination, int index,
                          int param, int value);
+  // Per-pipe channel scope (session::MidiPipe::chMask): the pipe processes only
+  // matching channels, everything else passes that pipe unchanged. 0xFFFF is
+  // all channels. Works for fixed and per-device (dynamic) routes.
+  bool setRoutePipeChannelMask(midi::Port source, midi::Port destination, int index,
+                               std::uint16_t mask);
+  std::uint16_t routePipeChannelMask(midi::Port source, midi::Port destination,
+                                     int index) const;
   // Replaces the stored chains after a project load; the caller applies the same
   // lists to the Router snapshot before swapping it in (session::apply() does
   // not apply RouteState::pipes).
@@ -183,10 +244,19 @@ class MidiGlue {
 
   mutable std::mutex lock_;
   midi::Router router_;
-  // Stored chains, indexed by input*3 + output. Kept in sync with router_ by
+  // Stored chains: the fixed 3x3 matrix is indexed by input*3 + output; any
+  // route touching a dynamic USB id lives in the sparse map keyed by
+  // source*kMaxPorts + destination. Kept in sync with router_ by
   // setRoutePipes() and captured into session::RouteState::pipes by project_io.
   std::array<std::vector<session::MidiPipe>, 9> routePipes_{};
+  std::map<int, std::vector<session::MidiPipe>> dynamicRoutePipes_{};
   midi::UsbMidi usb_;
+  // Dynamic USB device endpoints (ids 6..31), guarded by lock_. Ports are
+  // reopened on an inventory change but the registry never frees an id while
+  // routes may still reference it.
+  midi::PortRegistry registry_;
+  std::vector<std::string> deviceInventory_;
+  bool devicesOpen_ = false;
   std::deque<Delivery> outbox_;
   const bool virtualPorts_;
   PipeSyncFn pipeSync_;

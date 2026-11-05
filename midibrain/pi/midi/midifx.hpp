@@ -13,10 +13,14 @@
 // pass-through: on the Pi a clocked pipe must not silently emit
 // un-clock-processed bytes.
 //
-// Ownership: this engine evaluates only routes touching UsbIn/UsbOut (see
-// Router::piOwnsPipeChain). A TRS->TRS chain is configured on the Pico with
-// EV_MIDI_ROUTE / EV_MIDI_ROUTE_PIPE and evaluated there for
-// EV_MIDI_ROUTE_SEND, so the Pi never runs the same chain twice.
+// Ownership: this engine evaluates only routes touching UsbIn/UsbOut or a
+// dynamic USB endpoint (see Router::piOwnsPipeChain). A TRS->TRS chain is
+// configured on the Pico with EV_MIDI_ROUTE / EV_MIDI_ROUTE_PIPE and evaluated
+// there for EV_MIDI_ROUTE_SEND, so the Pi never runs the same chain twice.
+//
+// Per-pipe channel scope (PipeConfig::chMask) is enforced here: matching
+// channels enter the pipe, every other message passes that pipe unchanged in
+// stream order.
 //
 // Convergence follow-up: firmware/pico/midi_pipe.hpp should eventually adopt
 // this file as the single implementation instead of keeping a second copy of
@@ -65,6 +69,12 @@ enum class PipeType : std::uint8_t {
 struct PipeConfig {
   PipeType type = PipeType::Filter;
   bool bypass = false;
+  // Per-pipe channel scope: a channel-voice message (0x80..0xEF) is processed
+  // only when bit (channel, 0-based) is set; every other message passes this
+  // pipe unchanged. 0xFFFF (default) processes all messages, including
+  // channel-less realtime/system bytes; a restricted mask leaves those bytes
+  // untouched because they have no channel to match. 0 makes the pipe inert.
+  std::uint16_t chMask = 0xFFFF;
   std::uint8_t paramCount = 0;
   std::array<std::int32_t, kMaxPipeParams> params{};
 };
@@ -180,6 +190,14 @@ class PipeChain {
                const std::array<PipeEvent, kMaxPipeEvents>& in, std::size_t inCount,
                std::array<PipeEvent, kMaxPipeEvents>& out, std::size_t& outCount,
                std::size_t& dropped, std::uint32_t nowMs);
+  // Applies one pipe with its chMask gate. Out-of-scope events are copied
+  // through unchanged in input order; matching events run through runPipe.
+  void runPipeScoped(const PipeConfig& pipe, std::size_t pipeIndex,
+                     const std::array<PipeEvent, kMaxPipeEvents>& in,
+                     std::size_t inCount,
+                     std::array<PipeEvent, kMaxPipeEvents>& out,
+                     std::size_t& outCount, std::size_t& dropped,
+                     std::uint32_t nowMs);
 
   std::array<PipeConfig, kMaxRoutePipes> pipes_{};
   std::size_t pipe_count_ = 0;

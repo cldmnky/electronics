@@ -53,6 +53,13 @@ PipeConfig pipe(PipeType type, std::initializer_list<std::int32_t> params,
   return config;
 }
 
+PipeConfig scoped(PipeType type, std::initializer_list<std::int32_t> params,
+                 std::uint16_t mask, bool bypass = false) {
+  PipeConfig config = pipe(type, params, bypass);
+  config.chMask = mask;
+  return config;
+}
+
 PipeChain chainWith(std::initializer_list<PipeConfig> pipes) {
   PipeChain chain;
   const std::vector<PipeConfig> config(pipes);
@@ -68,6 +75,14 @@ bool matches(const PipeEvent& got, std::uint8_t status, std::uint8_t d1,
              std::uint8_t d2, std::uint8_t size) {
   return got.size == size && got.data[0] == status && got.data[1] == d1 &&
          got.data[2] == d2;
+}
+
+bool identical(const PipeEvent& a, const PipeEvent& b) {
+  if (a.size != b.size) return false;
+  for (std::uint8_t i = 0; i < a.size; ++i) {
+    if (a.data[i] != b.data[i]) return false;
+  }
+  return true;
 }
 
 const PipeEvent noteOn(std::uint8_t channel = 0, std::uint8_t note = 60,
@@ -206,6 +221,154 @@ void channelRemapPipe() {
   const PipeOutput clock = run(anyToTwo, event(0xF8, 0, 0, 1));
   CHECK(matches(clock.events[0], 0xF8, 0, 0, 1));
   pass("channel remap");
+}
+
+// ---------------------------------------------------------------------------
+// per-pipe channel scope: only matching channels are processed, everything
+// else passes that pipe bit-identically (independent of the other pipes)
+// ---------------------------------------------------------------------------
+void channelScope() {
+  // Filter: a note-on blocker drops channel 1 and leaves channel 2 alone.
+  PipeChain filter =
+      chainWith({scoped(PipeType::Filter, {0, 0, 0, 0, 0, 0, 0, 0}, 0x0001)});
+  CHECK(run(filter, noteOn(0, 60, 100)).count == 0);
+  const PipeEvent otherNote = noteOn(1, 60, 100);
+  const PipeOutput filterOther = run(filter, otherNote);
+  CHECK(filterOther.count == 1 && identical(filterOther.events[0], otherNote));
+  // A restricted scope leaves a channel-less realtime byte untouched even
+  // though the same Filter would block it with the default all-mask.
+  const PipeEvent clock = event(0xF8, 0, 0, 1);
+  const PipeOutput scopedClock = run(filter, clock);
+  CHECK(scopedClock.count == 1 && identical(scopedClock.events[0], clock));
+  PipeChain allFilter =
+      chainWith({pipe(PipeType::Filter, {0, 0, 0, 0, 0, 0, 0, 0})});
+  CHECK(run(allFilter, clock).count == 0);
+
+  // NoteRange: matching note outside the window drops, other channel passes.
+  PipeChain range = chainWith({scoped(PipeType::NoteRange, {0, 59, 0, 127}, 0x0001)});
+  CHECK(run(range, noteOn(0, 60, 100)).count == 0);
+  const PipeOutput rangeOther = run(range, noteOn(1, 60, 100));
+  CHECK(rangeOther.count == 1 && identical(rangeOther.events[0], noteOn(1, 60, 100)));
+
+  // CcRemap: matching CC is remapped, other channel is byte-identical.
+  PipeChain cc = chainWith({scoped(PipeType::CcRemap, {0, 127, 100, 100}, 0x0001)});
+  const PipeOutput ccMapped = run(cc, event(0xB0, 1, 5));
+  CHECK(ccMapped.count == 1 && matches(ccMapped.events[0], 0xB0, 100, 5, 3));
+  const PipeEvent ccOther = event(0xB1, 1, 5);
+  const PipeOutput ccKept = run(cc, ccOther);
+  CHECK(ccKept.count == 1 && identical(ccKept.events[0], ccOther));
+
+  // ChannelRemap: the scope reads the channel at this pipe's entry.
+  PipeChain remap = chainWith({scoped(PipeType::ChannelRemap, {0, 5}, 0x0001)});
+  const PipeOutput remapped = run(remap, noteOn(0, 60, 100));
+  CHECK(remapped.count == 1 && matches(remapped.events[0], 0x94, 60, 100, 3));
+  const PipeEvent remapOther = noteOn(1, 60, 100);
+  const PipeOutput remapKept = run(remap, remapOther);
+  CHECK(remapKept.count == 1 && identical(remapKept.events[0], remapOther));
+
+  // ScaleQuantize: matching note is quantized, other channel is untouched.
+  PipeChain scale = chainWith({scoped(PipeType::ScaleQuantize, {1, 0}, 0x0001)});
+  const PipeOutput quantized = run(scale, noteOn(0, 61, 100));
+  CHECK(quantized.count == 1 && quantized.events[0].data[1] == 60);
+  const PipeEvent scaleOther = noteOn(1, 61, 100);
+  const PipeOutput scaleKept = run(scale, scaleOther);
+  CHECK(scaleKept.count == 1 && identical(scaleKept.events[0], scaleOther));
+
+  // Chance: the RNG is consumed only for matching note-ons.
+  PipeChain chance = chainWith({scoped(PipeType::Chance, {100}, 0x0001)});
+  CHECK(run(chance, noteOn(0, 60, 100)).count == 0);
+  const PipeEvent chanceOther = noteOn(1, 60, 100);
+  const PipeOutput chanceKept = run(chance, chanceOther);
+  CHECK(chanceKept.count == 1 && identical(chanceKept.events[0], chanceOther));
+
+  // VelocityRandom: matching velocity is clamped to the floor, other channel
+  // keeps its velocity.
+  PipeChain velocity =
+      chainWith({scoped(PipeType::VelocityRandom, {0, 127}, 0x0001)});
+  const PipeOutput loud = run(velocity, noteOn(0, 60, 100));
+  CHECK(loud.count == 1 && loud.events[0].data[2] == 127);
+  const PipeEvent velocityOther = noteOn(1, 60, 100);
+  const PipeOutput velocityKept = run(velocity, velocityOther);
+  CHECK(velocityKept.count == 1 && identical(velocityKept.events[0], velocityOther));
+
+  // Dispatcher: matching note is spread to the configured channel, other
+  // channel passes without advancing the rotation.
+  PipeChain dispatcher = chainWith({scoped(PipeType::Dispatcher, {2, 5}, 0x0001)});
+  const PipeOutput dispatched = run(dispatcher, noteOn(0, 60, 100));
+  CHECK(dispatched.count == 1 && matches(dispatched.events[0], 0x94, 60, 100, 3));
+  const PipeEvent dispatcherOther = noteOn(1, 60, 100);
+  const PipeOutput dispatcherKept = run(dispatcher, dispatcherOther);
+  CHECK(dispatcherKept.count == 1 && identical(dispatcherKept.events[0], dispatcherOther));
+
+  // Sustain: only matching channels may latch or be held; an out-of-scope
+  // CC64 release passes through and does not release the in-scope latch.
+  PipeChain sustain = chainWith({scoped(PipeType::Sustain, {1}, 0x0001)});
+  CHECK(run(sustain, noteOn(0, 60, 100)).count == 1);
+  CHECK(run(sustain, event(0xB0, 64, 127)).count == 1);
+  CHECK(run(sustain, noteOff(0, 60)).count == 0);
+  const PipeEvent otherOff = noteOff(1, 60);
+  const PipeOutput otherHeld = run(sustain, otherOff);
+  CHECK(otherHeld.count == 1 && identical(otherHeld.events[0], otherOff));
+  const PipeEvent otherRelease = event(0xB1, 64, 0);
+  const PipeOutput otherReleaseKept = run(sustain, otherRelease);
+  CHECK(otherReleaseKept.count == 1 &&
+        identical(otherReleaseKept.events[0], otherRelease));
+  const PipeOutput release = run(sustain, event(0xB0, 64, 0));
+  CHECK(release.count == 2);  // held note-off + the CC64 release
+  CHECK(matches(release.events[0], 0x80, 60, 0, 3));
+
+  // NoteLength: matching off is suppressed until the scheduled one; other
+  // channel's off is untouched. The scheduled off re-enters after the pipe.
+  PipeChain length = chainWith({scoped(PipeType::NoteLength, {100}, 0x0001)});
+  CHECK(run(length, noteOn(0, 60, 100), 1000).count == 1);
+  CHECK(run(length, noteOff(0, 60), 1050).count == 0);
+  const PipeEvent lengthOther = noteOff(1, 60);
+  const PipeOutput lengthKept = run(length, lengthOther, 1050);
+  CHECK(lengthKept.count == 1 && identical(lengthKept.events[0], lengthOther));
+  const PipeOutput due = length.tick(1100);
+  CHECK(due.count == 1 && matches(due.events[0], 0x80, 60, 0, 3));
+
+  // Transform: matching CC is converted, other channel is byte-identical.
+  PipeChain transform =
+      chainWith({scoped(PipeType::Transform, {1, 74, 74, 1, 7}, 0x0001)});
+  const PipeOutput converted = run(transform, event(0xB0, 74, 33));
+  CHECK(converted.count == 1 && matches(converted.events[0], 0xB0, 7, 33, 3));
+  const PipeEvent transformOther = event(0xB1, 74, 33);
+  const PipeOutput transformKept = run(transform, transformOther);
+  CHECK(transformKept.count == 1 && identical(transformKept.events[0], transformOther));
+
+  // A 0 mask makes the pipe inert, including for channel-less bytes.
+  PipeChain inert =
+      chainWith({scoped(PipeType::Filter, {0, 0, 0, 0, 0, 0, 0, 0}, 0x0000)});
+  const PipeEvent inertNote = noteOn(0, 60, 100);
+  const PipeOutput inertOut = run(inert, inertNote);
+  CHECK(inertOut.count == 1 && identical(inertOut.events[0], inertNote));
+  CHECK(run(inert, clock).count == 1);
+  CHECK(run(inert, event(0xB0, 1, 2)).count == 1);
+
+  // ChannelRemap ordering: the next pipe's scope sees the remapped channel.
+  PipeChain remapThenScopedFilter = chainWith({
+      scoped(PipeType::ChannelRemap, {0, 5}, 0x0001),
+      scoped(PipeType::Filter, {0, 0, 0, 0, 0, 0, 0, 0}, 0x0010),
+  });
+  CHECK(run(remapThenScopedFilter, noteOn(0, 60, 100)).count == 0);
+  PipeChain remapThenWrongScope = chainWith({
+      scoped(PipeType::ChannelRemap, {0, 5}, 0x0001),
+      scoped(PipeType::Filter, {0, 0, 0, 0, 0, 0, 0, 0}, 0x0001),
+  });
+  const PipeOutput afterRemap = run(remapThenWrongScope, noteOn(0, 60, 100));
+  CHECK(afterRemap.count == 1 && matches(afterRemap.events[0], 0x94, 60, 100, 3));
+  // A pipe-gate before the remap sees the original channel.
+  PipeChain filterThenRemap = chainWith({
+      scoped(PipeType::Filter, {0, 0, 0, 0, 0, 0, 0, 0}, 0x0001),
+      scoped(PipeType::ChannelRemap, {0, 5}, 0xFFFF),
+  });
+  CHECK(run(filterThenRemap, noteOn(0, 60, 100)).count == 0);
+  const PipeOutput otherRemapped = run(filterThenRemap, noteOn(1, 60, 100));
+  CHECK(otherRemapped.count == 1 &&
+        matches(otherRemapped.events[0], 0x94, 60, 100, 3));
+
+  pass("pipe channel scope");
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +785,7 @@ int main() {
   noteRangePipe();
   ccRemapPipe();
   channelRemapPipe();
+  channelScope();
   scaleQuantizePipe();
   chancePipe();
   velocityRandomPipe();

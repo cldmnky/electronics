@@ -1,5 +1,5 @@
-# mnkybox midi core (JUCE-free): router, USB MIDI, clock discipline, buttons,
-# MIDI learn.
+# mnkybox midi core (JUCE-free): router, dynamic USB port registry, USB MIDI,
+# clock discipline, buttons, MIDI learn.
 #
 # Two supported uses:
 #  * root build (pi/CMakeLists.txt, setup team): its mnky_core_module() adds this
@@ -49,6 +49,7 @@ endif()
 
 add_library(mnky_midi STATIC
   router.cpp
+  port_registry.cpp
   midifx.cpp
   clock.cpp
   usb.cpp
@@ -80,4 +81,22 @@ if(MB_MIDI_STANDALONE)
   target_link_libraries(test_learn PRIVATE mnky_midi)
   target_compile_options(test_learn PRIVATE -Wall -Wextra -Werror)
   add_test(NAME test_learn COMMAND test_learn)
+
+  # Dynamic USB port registry + session binding rules. Includes the session
+  # header for the RouterState shape but calls no session.cpp symbol, so the
+  # standalone midi build does not need the audio engine.
+  add_executable(test_registry test_registry.cpp)
+  target_link_libraries(test_registry PRIVATE mnky_midi)
+  target_compile_options(test_registry PRIVATE -Wall -Wextra -Werror)
+  # Standalone only: compile the real session reader/writer (and the audio TUs
+  # session.cpp links against) to prove a dynamic-id snapshot round-trips. The
+  # root build's module test links mnky_midi alone and skips this section.
+  target_sources(test_registry PRIVATE
+    ../session/session.cpp
+    ../audio/engine.cpp
+    ../audio/take_player.cpp
+    ../audio/click.cpp)
+  target_include_directories(test_registry PRIVATE ../session ../audio)
+  target_compile_definitions(test_registry PRIVATE MNKY_MIDI_SESSION_TEST=1)
+  add_test(NAME test_registry COMMAND test_registry)
 endif()

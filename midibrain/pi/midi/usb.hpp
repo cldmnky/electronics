@@ -1,6 +1,9 @@
 #pragma once
-// USB MIDI I/O for the mnkybox Pi core: an RtMidi wrapper that merges every
-// open input into Port::UsbIn and fans UsbOut out to every open output.
+// USB MIDI I/O for the mnkybox Pi core: an RtMidi wrapper with two paths.
+// The legacy merged path opens every input as Port::UsbIn and fans UsbOut out
+// to every open output. The per-device path opens one enumerated port at a time
+// tagged with a dynamic port id (6..31); its input callback reports that id as
+// MidiEvent::source and sendToDevice() targets only that device's output ports.
 // RtMidi stays out of this header (pimpl) so consumers do not need the vendor
 // include path; usb.cpp defines the backend macro (__MACOSX_CORE__ here,
 // __LINUX_ALSA__ on the Pi) before including RtMidi.h.
@@ -37,10 +40,28 @@ class UsbMidi {
                       const std::string& virtualName = kVirtualPortName);
   std::size_t outputAll(bool withVirtual = false,
                         const std::string& virtualName = kVirtualPortName);
+
+  // Per-device routing. `device` is a dynamic port id (midi::kFirstDynamicPort
+  // .. midi::kMaxPorts-1). An input opened this way reports `source =
+  // static_cast<Port>(device)`; an output opened this way is reachable only
+  // through sendToDevice(device). Both are additive: openAll()/send() keep the
+  // legacy merge/fan-out behaviour.
+  bool openDeviceInput(unsigned int index, std::uint8_t device);
+  bool openDeviceOutput(unsigned int index, std::uint8_t device);
+  bool sendToDevice(std::uint8_t device, const MidiEvent& ev);
+
+  // Opens just our virtual input+output pair (no enumerated ports).
+  bool openVirtualPorts(const std::string& virtualName = kVirtualPortName);
+
+  // Closes every input and output. Callback tags stay alive until the wrapper
+  // is destroyed, so a backend thread still inside a callback can never follow
+  // a freed userData pointer.
   void closeAll();
 
   // Input callback: invoked on the backend's input thread with a fully formed
-  // event (source UsbIn, device index, Pi capture time).
+  // event. source is UsbIn on the merged path and the dynamic port id on a
+  // per-device port; device is the enumeration index or dynamic id; stampUs is
+  // the Pi capture time.
   void setInputCallback(std::function<void(const MidiEvent&)> fn);
 
   // UsbOut fan-out; false when no output port is open or a send failed.
