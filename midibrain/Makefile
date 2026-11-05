@@ -1,4 +1,4 @@
-.PHONY: test release gate reports electrical mechanical mechanical-export host spice panel-preview firmware
+.PHONY: test release gate reports electrical mechanical mechanical-export host midifx spice panel-preview firmware
 
 # Defaults cover the setup in firmware/README.md; override on the command
 # line (PICO_SDK_PATH=/path/to/sdk make firmware) if yours lives elsewhere.
@@ -81,9 +81,22 @@ mechanical:
 mechanical-export:
 	cd tscircuit && $(BUN) run scripts/export-mechanical.ts
 
-host:
+host: midifx
 	@set -eu; exe=$$(mktemp "$${TMPDIR:-/tmp}/midibrain-test.XXXXXX"); trap 'rm -f "$$exe"' EXIT; \
 	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic firmware/pico/protocol_test.cpp -o "$$exe"; "$$exe"
+
+# Shared MIDI FX core + schema suite (midibrain/midifx): the firmware compiles
+# this header today and the Pi adopts the same one, so the behavior expectations
+# live here once. `gen_params.py --check` fails when pipes.json/wire-order.txt
+# and the committed generated tables disagree; test_codegen.py checks that
+# alarm, including a deliberate reorder that must be refused.
+midifx:
+	@set -eu; dir=$$(mktemp -d "$${TMPDIR:-/tmp}/midibrain-midifx.XXXXXX"); trap 'rm -rf "$$dir"' EXIT; \
+	  $(PYTHON) midifx/gen/gen_params.py --check; \
+	  PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s midifx/tests -p 'test_*.py'; \
+	  /usr/bin/c++ -std=c++20 -Wall -Wextra -Werror -pedantic -I. midifx/tests/test_core.cpp -o "$$dir/test_core"; \
+	  /usr/bin/c++ -std=c++20 -Wall -Wextra -Werror -pedantic -I. midifx/tests/test_schema.cpp -o "$$dir/test_schema"; \
+	  "$$dir/test_core"; "$$dir/test_schema"
 
 placement:
 	cd tscircuit && $(BUN) run build && $(BUN) run placement
