@@ -70,6 +70,32 @@ engages between PUNCH IN/OUT. During each: the status line states exactly
 what will happen and when (`COUNT-IN 2 bars - recording at bar 1`,
 `PUNCH - recording at bar 9 of 13`).
 
+### W2b · Record source: PRE / POST / POST+FX (owner, 2026-11-06)
+
+"we should be able to choose if we want to record pre post or post, with
+effects" — the recorder tap becomes a per-track choice of where in the
+channel chain the take is captured:
+
+| REC SOURCE | Tap point on the chain (input -> gain -> EQ -> FX1 -> FX2 -> fader) | Use |
+|---|---|---|
+| `PRE` | after gain, before EQ (today's default; the dry capture) | material for re-amping later |
+| `POST` | through EQ + fader, before the FX rack | the track's mix sound, effects-free |
+| `POST+FX` | through EQ + the FX rack + fader | printing the channel sound (FX on the recording) |
+
+- **Per track** (default `PRE`), settable from the ARM area popup and the
+  TRACK FX popup; the status line names it while recording:
+  `REC 00:04 - 02-bass-001 (POST+FX)`.
+- **Invariant kept**: the tap is the LIVE INPUT signal processed through
+  that track's chain — take/clip audio NEVER enters a recording (no
+  bounce-into-self; rendering is the explicit RENDER path).
+- Interaction with modes: ARM and OVERDUB record the chosen tap; OVERDUB
+  monitoring still plays the old take alongside (newest-wins layers).
+- Count-in does not write; PUNCH writes the chosen tap between the marks.
+- The meter shows what is recorded (post-tap), so "what you see is what
+  you bake" — except PRE, where the meter intentionally shows the
+  processed signal while the take is dry (hint: `meter shows the mix -
+  recording is PRE`).
+
 ### W3 · Record → create an audio track (owner's drums case)
 1. `drums` track, input PAIR 01/02, COUNT-IN 2 bars, ARM → record → STOP.
 2. Take row `...` → `NEW TRACK FROM THIS TAKE` → name `beat`.
@@ -125,6 +151,7 @@ words make that verifiable at a glance.
 |---|---|---|
 | Track modes | LIVE/PLAY/ARM/OVERDUB + auto-PLAY-on-stop + §hint strings | app (+ engine MonitorMode mapping exists) |
 | RECMODE | NOW/COUNT-IN/PUNCH scheduling at measure boundaries; click-only roll during count-in | app + recorder scheduling |
+| REC SOURCE | per-track PRE / POST / POST+FX tap selection (default PRE), status naming | engine (tap-point routing) + app |
 | Take manager | per-row actions, delete/remove semantics, import 48 kHz check, disk line | app |
 | Take → track | NEW TRACK FROM TAKE / MOVE/KEEP / RENDER REGION TO TRACK | app + render (engine has region render) |
 | resolveTakeKey | drop filename-prefix binding | app (contract note) |
@@ -161,15 +188,18 @@ words make that verifiable at a glance.
   fxSlots (in flight) untouched by this plan.
 - engine: record scheduling (measure-boundary start/stop), clip scheduler,
   RENDER SONG; take playback/fades/regions already exist (the plan leans
-  on them).
+  on them). REC SOURCE extends the existing `tapPoint` policy: the tap
+  moves to the chosen chain point per track (gain-only / EQ+fader /
+  +FX-rack); the live-input-only invariant of taps is preserved.
 - files: filename convention `NN-<name>-<n>` stays, but the resolver
   treats it as convention (assignment = state). 48 kHz rule everywhere.
 
 ## 7. Waves (implementation order)
 
 1. **W1 — the broken path**: track modes + auto-PLAY + RECMODE
-   (NOW/COUNT-IN/PUNCH) + hint strings. Acceptance: W1+W2 work headless
-   (`--ui-taps` scenarios) and on hardware.
+   (NOW/COUNT-IN/PUNCH) + REC SOURCE (PRE/POST/POST+FX) + hint strings.
+   Acceptance: W1+W2+W2b work headless (`--ui-taps` scenarios) and on
+   hardware.
 2. **W2 — material management**: take manager (delete/remove/import/
    rename) + take→track + RENDER REGION TO TRACK + resolveTakeKey
    relaxation. Acceptance: W3+W4 vignettes.
