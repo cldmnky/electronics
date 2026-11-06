@@ -41,6 +41,10 @@ class EqModel {
   static constexpr int kCurvePoints = 49;
   static constexpr int kCurveImpulseFrames = 1024;
   static constexpr double kCurveSampleRate = 48000.0;
+  // Display spread of the four nodes when a subject has no EQ data yet: an
+  // all-None stack at the same frequency would draw four nodes on one spot.
+  static constexpr std::array<double, kBandCount> kDefaultFreqHz = {
+      100.0, 400.0, 1000.0, 4000.0};
 
   // Panel EDIT steps (USER-MANUAL section 9: left/right = frequency with SHIFT
   // coarse, up/down = gain, Q on SHIFT+up/down, encoder = the focused value).
@@ -63,6 +67,13 @@ class EqModel {
   void setBand(int band);
   void stepBand(int delta);
 
+  // If the selected subject's four bands are all None at one identical
+  // frequency it is still the untouched session default (None bands have no
+  // DSP, only a grid position). Spread those bands over kDefaultFreqHz so the
+  // grid draws four distinct nodes. Returns 1 when the subject was spread, 0
+  // when it already has an edited or spread EQ.
+  int ensureVisibleBandDefaults();
+
   int type(int index) const;
   double freqHz(int index) const;
   double gainDb(int index) const;
@@ -82,7 +93,8 @@ class EqModel {
   static const char* typeLongName(int type);
 
   // Grid mapping. x runs 0 (20 Hz) .. 1 (20 kHz) on a log scale; y runs 0
-  // (-24 dB, bottom) .. 1 (+24 dB, top). Non-finite input maps to the middle.
+  // (-24 dB, bottom) .. 1 (+24 dB, top). Non-finite input maps to the middle,
+  // so a delegate can never receive a NaN/Inf grid coordinate.
   static double freqToX(double hz);
   static double xToFreq(double x);
   static double gainToY(double db);

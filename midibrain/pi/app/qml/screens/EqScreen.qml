@@ -222,24 +222,46 @@ Item {
             Repeater {
                 model: eq.nodes
                 delegate: Rectangle {
+                    id: node
                     readonly property int bandIndex: index
                     readonly property bool selected: modelData.selected
+                    // B3: the model maps every band to a finite grid position;
+                    // this clamp is the delegate's own guard (a NaN coordinate
+                    // would otherwise place the node outside the scene) and it
+                    // keeps the whole circle on the grid at the edges.
+                    readonly property real nodeX: Number.isFinite(modelData.x)
+                                                  ? Math.max(0, Math.min(1, modelData.x))
+                                                  : 0.5
+                    readonly property real nodeY: Number.isFinite(modelData.y)
+                                                  ? Math.max(0, Math.min(1, modelData.y))
+                                                  : 0.5
                     width: selected ? 30 : 24
                     height: width
                     radius: width / 2
-                    x: modelData.x * grid.width - width / 2
-                    y: (1.0 - modelData.y) * grid.height - height / 2
+                    x: Math.max(0, Math.min(grid.width - width,
+                                            nodeX * grid.width - width / 2))
+                    y: Math.max(0, Math.min(grid.height - height,
+                                            (1.0 - nodeY) * grid.height - height / 2))
+                    // The selected node paints last, so a deliberate overlap
+                    // can never hide the one the corner chips are editing.
+                    z: selected ? 2 : 1
                     color: selected ? Style.nodePink : Style.panel
                     border.width: selected ? 3 : 2
                     border.color: selected ? Style.nodePink : Style.textDim
+                    // A None band has no filter to bend yet (nodeAt skips it),
+                    // but it stays visible and a tap selects it for the corner
+                    // chips and the band stepper.
                     opacity: modelData.type === 0 ? 0.55 : 1.0
 
                     Text {
                         anchors.centerIn: parent
-                        text: parent.bandIndex + 1
-                        color: parent.selected ? Style.panelDark : Style.text
+                        text: node.bandIndex + 1
+                        color: node.selected ? Style.panelDark : Style.text
                         font.pixelSize: Style.fontSmall
                         font.weight: Font.DemiBold
+                    }
+                    TapHandler {
+                        onTapped: eq.selectBand(node.bandIndex)
                     }
                 }
             }

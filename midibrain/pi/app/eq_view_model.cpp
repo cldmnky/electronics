@@ -8,6 +8,9 @@ EqViewModel::EqViewModel(EqModel& model, MixerModel& mixer, QObject* parent)
     : QObject(parent), model_(model), mixer_(mixer) {}
 
 QVariantList EqViewModel::nodes() const {
+  // B3: the QML Repeater's data source returns four distinct positions even
+  // for the untouched default (see repairDefaultBands).
+  repairDefaultBands();
   QVariantList list;
   for (int band = 0; band < EqModel::kBandCount; ++band) {
     QVariantMap node;
@@ -61,6 +64,9 @@ QString EqViewModel::typeText() const {
 }
 
 QString EqViewModel::freqText() const {
+  // The corner chip reads the same frequency the grid node uses; repairing
+  // first keeps the readout and the node position in agreement on first load.
+  repairDefaultBands();
   return QString::fromStdString(model_.freqText(model_.band()));
 }
 
@@ -81,6 +87,10 @@ QString EqViewModel::summaryText() const {
          typeText() + QStringLiteral(" - ") + freqText() +
          (cutBand() ? QString() : QStringLiteral(" - ") + gainText()) +
          QStringLiteral(" - ") + qText();
+}
+
+void EqViewModel::repairDefaultBands() const {
+  model_.ensureVisibleBandDefaults();
 }
 
 void EqViewModel::emitChanged() {

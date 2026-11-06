@@ -68,6 +68,30 @@ void EqModel::stepBand(int delta) {
   setBand((effect().activeBand() + delta % kBandCount + kBandCount) % kBandCount);
 }
 
+int EqModel::ensureVisibleBandDefaults() {
+  audio::fx::Eq& target = effect();
+  bool allNone = true;
+  bool sameFreq = true;
+  const double firstFreq = target.param(
+      audio::fx::Eq::bandParam(0, audio::fx::Eq::kFreq));
+  for (int band = 0; band < kBandCount; ++band) {
+    if (std::lround(target.param(
+            audio::fx::Eq::bandParam(band, audio::fx::Eq::kType))) != 0) {
+      allNone = false;
+    }
+    const double hz = target.param(
+        audio::fx::Eq::bandParam(band, audio::fx::Eq::kFreq));
+    if (std::abs(hz - firstFreq) > 0.5) sameFreq = false;
+  }
+  if (!allNone || !sameFreq) return 0;
+  for (int band = 0; band < kBandCount; ++band) {
+    target.setParam(audio::fx::Eq::bandParam(band, audio::fx::Eq::kFreq),
+                    kDefaultFreqHz[static_cast<std::size_t>(band)]);
+  }
+  curveDirty_ = true;
+  return 1;
+}
+
 int EqModel::type(int index) const {
   return static_cast<int>(std::lround(effect().param(
       audio::fx::Eq::bandParam(clampBand(index), audio::fx::Eq::kType))));
@@ -150,7 +174,11 @@ const char* EqModel::typeLongName(int value) {
 }
 
 double EqModel::freqToX(double hz) {
-  const double clamped = clampValue(hz, kMinFreqHz, kMaxFreqHz);
+  // A missing band value must still draw on the grid: a non-finite input (a
+  // stored value that never got a number) maps to the grid middle, and a
+  // finite out-of-range frequency clamps to the nearest edge.
+  if (!std::isfinite(hz)) return 0.5;
+  const double clamped = std::clamp(hz, kMinFreqHz, kMaxFreqHz);
   return std::log(clamped / kMinFreqHz) / std::log(kMaxFreqHz / kMinFreqHz);
 }
 
@@ -160,7 +188,8 @@ double EqModel::xToFreq(double x) {
 }
 
 double EqModel::gainToY(double db) {
-  const double clamped = clampValue(db, kMinGainDb, kMaxGainDb);
+  if (!std::isfinite(db)) return 0.5;
+  const double clamped = std::clamp(db, kMinGainDb, kMaxGainDb);
   return (clamped - kMinGainDb) / (kMaxGainDb - kMinGainDb);
 }
 

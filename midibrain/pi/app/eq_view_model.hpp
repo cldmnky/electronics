@@ -80,6 +80,12 @@ class EqViewModel final : public QObject {
  private:
   void emitChanged();
   void popupForBand(int band);
+  // Self-healing read of the selected subject: an untouched EQ is four None
+  // bands at one 1 kHz default, which would stack the four grid nodes. Any
+  // getter that exposes a band position or frequency repairs it first, so the
+  // QML bindings can never observe the stacked state (no signal needed: the
+  // repaired values are what the getter returns).
+  void repairDefaultBands() const;
 
   EqModel& model_;
   MixerModel& mixer_;

@@ -25,8 +25,11 @@ Item {
 
     signal moved(real value)
 
-    implicitWidth: showText ? 126 : dialSize
-    implicitHeight: showText ? 58 : dialSize
+    // B2: a bare knob (no label column) is still a 44 px touch target even if
+    // a caller asks for a smaller painted dial; the MouseArea fills this item.
+    readonly property int hitSize: Math.max(Style.touch, dialSize)
+    implicitWidth: showText ? 126 : hitSize
+    implicitHeight: showText ? 58 : hitSize
     opacity: active ? 1.0 : 0.45
 
     readonly property real fraction: maximumValue > minimumValue

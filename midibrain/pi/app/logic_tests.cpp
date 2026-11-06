@@ -5,6 +5,7 @@
 #include <QColor>
 #include <QFile>
 #include <QRegularExpression>
+#include <QVariantMap>
 
 #include <algorithm>
 #include <chrono>
@@ -13,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <map>
 #include <string>
 #include <system_error>
@@ -28,6 +30,7 @@
 #include "audio_glue.hpp"
 #include "config_popup_model.hpp"
 #include "eq_model.hpp"
+#include "eq_view_model.hpp"
 #include "fx_params.hpp"
 #include "fx_view_model.hpp"
 #include "learn_view_model.hpp"
@@ -1399,6 +1402,31 @@ void eqAndXyTests() {
   check(eq.type(0) == 0, "EQ bands default to None");
   checkNear(eq.freqHz(0), 1000.0, 0.5, "EQ bands default to 1 kHz");
 
+  // B3: an untouched subject's four None bands share one frequency, which
+  // stacked all four nodes on one spot. The screen's first load spreads them.
+  EqModel spread;
+  check(spread.ensureVisibleBandDefaults() == 1,
+        "an untouched EQ subject gets spread default bands");
+  for (int band = 0; band < EqModel::kBandCount; ++band) {
+    checkNear(spread.freqHz(band),
+              EqModel::kDefaultFreqHz[static_cast<std::size_t>(band)], 0.01,
+              "the default bands are spread 100/400/1k/4k");
+    check(spread.type(band) == 0, "spread default bands stay None");
+  }
+  check(spread.ensureVisibleBandDefaults() == 0,
+        "a spread EQ is left alone on the next screen load");
+  spread.setSubject(0);
+  check(spread.ensureVisibleBandDefaults() == 1,
+        "stepping to an untouched track spreads that subject");
+  checkNear(spread.freqHz(0), EqModel::kDefaultFreqHz[0], 0.01,
+            "the untouched track's first node moves to its default");
+  spread.setSubject(EqModel::kMainSubject);
+  spread.setType(1, 3);
+  spread.setFreqHz(1, 5000.0);
+  check(spread.ensureVisibleBandDefaults() == 0,
+        "an edited EQ is never re-spread");
+  checkNear(spread.freqHz(1), 5000.0, 0.01, "an edited band keeps its frequency");
+
   checkNear(EqModel::freqToX(20.0), 0.0, 1e-9, "20 Hz is the left grid edge");
   checkNear(EqModel::freqToX(20000.0), 1.0, 1e-9, "20 kHz is the right grid edge");
   for (const double hz : {20.0, 100.0, 1000.0, 10000.0, 20000.0}) {
@@ -1409,6 +1437,94 @@ void eqAndXyTests() {
             "gain/grid-y round trip");
   checkNear(EqModel::yToGain(0.0), -24.0, 1e-9, "the grid bottom is -24 dB");
   checkNear(EqModel::yToGain(1.0), 24.0, 1e-9, "the grid top is +24 dB");
+
+  // B3: every band must produce a finite grid coordinate for every type and
+  // for degenerate stored values (0 Hz, non-finite, far out of range).
+  for (int type = 0; type < EqModel::kTypeCount; ++type) {
+    EqModel band;
+    band.setType(0, type);
+    for (const double hz : {0.0, -1.0, 20.0, 1000.0, 20000.0, 1.0e9}) {
+      band.setFreqHz(0, hz);
+      const double x = band.bandX(0);
+      check(std::isfinite(x) && x >= 0.0 && x <= 1.0,
+            "every EQ band type maps to a finite x on the grid");
+    }
+    for (const double db : {-1.0e9, -24.0, 0.0, 24.0, 1.0e9}) {
+      band.setGainDb(0, db);
+      const double y = band.bandY(0);
+      check(std::isfinite(y) && y >= 0.0 && y <= 1.0,
+            "every EQ band type maps to a finite y on the grid");
+    }
+  }
+  checkNear(EqModel::freqToX(0.0), 0.0, 1e-9, "0 Hz clamps to the left grid edge");
+  checkNear(EqModel::freqToX(std::nan("")), 0.5, 1e-9,
+            "a non-finite frequency maps to the grid middle");
+  checkNear(EqModel::freqToX(std::numeric_limits<double>::infinity()), 0.5, 1e-9,
+            "an infinite frequency maps to the grid middle");
+  checkNear(EqModel::gainToY(std::nan("")), 0.5, 1e-9,
+            "a non-finite gain maps to the grid middle");
+
+  // A loaded session with all-None bands at 0 Hz still yields finite nodes
+  // (the effect clamps the stored value), and the screen load then spreads it.
+  EqModel degenerate;
+  session::EqState emptyState;
+  for (auto& entry : emptyState.main) entry = session::EqBand{0, 0.0f, 0.0f, 0.0f};
+  degenerate.apply(emptyState);
+  for (int band = 0; band < EqModel::kBandCount; ++band) {
+    const double x = degenerate.bandX(band);
+    const double y = degenerate.bandY(band);
+    check(std::isfinite(x) && x >= 0.0 && x <= 1.0,
+          "a degenerate loaded EQ band keeps a finite x");
+    check(std::isfinite(y) && y >= 0.0 && y <= 1.0,
+          "a degenerate loaded EQ band keeps a finite y");
+  }
+  degenerate.ensureVisibleBandDefaults();
+  for (int band = 0; band < EqModel::kBandCount; ++band) {
+    checkNear(degenerate.freqHz(band),
+              EqModel::kDefaultFreqHz[static_cast<std::size_t>(band)], 0.01,
+              "a degenerate loaded EQ spreads to the default nodes");
+  }
+
+  // The QML data source (EqViewModel::nodes) reports four finite grid points
+  // for all type states, so the Repeater can never place a node off-grid.
+  {
+    EqModel viewModel;
+    MixerModel mixerModel;
+    EqViewModel view(viewModel, mixerModel);
+    // nodes() is the QML Repeater's data source: reading it spreads the
+    // untouched default, so the grid gets four distinct x positions instead of
+    // one stacked point.
+    {
+      std::vector<double> xs;
+      for (const QVariant& entry : view.nodes()) {
+        xs.push_back(entry.toMap().value(QStringLiteral("x")).toDouble());
+      }
+      std::sort(xs.begin(), xs.end());
+      check(xs.size() == EqModel::kBandCount && xs[0] + 0.01 < xs[1] &&
+                xs[1] + 0.01 < xs[2] && xs[2] + 0.01 < xs[3],
+            "the default EQ exposes four distinct node positions");
+    }
+    checkEqual(view.freqText().toStdString(), "100 Hz",
+               "the default band-1 readout matches its spread node");
+    for (int type = 0; type < EqModel::kTypeCount; ++type) {
+      viewModel.setType(0, type);
+      viewModel.setType(1, type);
+      viewModel.setType(2, type);
+      viewModel.setType(3, type);
+      const QVariantList nodes = view.nodes();
+      check(nodes.size() == EqModel::kBandCount,
+            "the EQ grid always exposes four nodes");
+      for (const QVariant& entry : nodes) {
+        const QVariantMap node = entry.toMap();
+        const double x = node.value(QStringLiteral("x")).toDouble();
+        const double y = node.value(QStringLiteral("y")).toDouble();
+        check(std::isfinite(x) && x >= 0.0 && x <= 1.0,
+              "every EQ node x is a finite normalized coordinate");
+        check(std::isfinite(y) && y >= 0.0 && y <= 1.0,
+              "every EQ node y is a finite normalized coordinate");
+      }
+    }
+  }
 
   // Types: None/LCut/LShelf/Param/HShelf/HCut, and cuts carry no gain.
   eq.setType(0, 1);
