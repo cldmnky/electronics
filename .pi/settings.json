@@ -1,0 +1,24 @@
+{
+  "subagents": {
+    "agentOverrides": {
+      "worker": { "thinking": "max" },
+      "scout": { "thinking": "max" },
+      "reviewer": { "thinking": "max" },
+      "researcher": { "thinking": "max" },
+      "developer": { "thinking": "max" },
+      "coder": { "thinking": "max" },
+      "implementer": { "thinking": "max" },
+      "develop": { "thinking": "max" },
+      "delegate": { "thinking": "max" },
+      "advisor": { "thinking": "max" },
+      "oracle": { "thinking": "max" },
+      "evidence-auditor": { "thinking": "max" },
+      "claude-code": { "thinking": "max" },
+      "claude-code-writer": { "thinking": "max" },
+      "codex-exec": { "thinking": "max" },
+      "codex-exec-writer": { "thinking": "max" },
+      "cursor-agent": { "thinking": "max" },
+      "cursor-agent-writer": { "thinking": "max" }
+    }
+  }
+}
