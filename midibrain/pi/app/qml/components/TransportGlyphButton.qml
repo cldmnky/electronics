@@ -63,12 +63,14 @@ Item {
             } else if (root.glyph === "stop") {
                 ctx.fillRect(1, 1, width - 2, height - 2)
             } else {
-                ctx.globalAlpha = root.pulse
-                ctx.beginPath()
-                ctx.arc(width / 2, height / 2, Math.min(width, height) / 2 - 1, 0,
-                        Math.PI * 2)
-                ctx.fill()
-                ctx.globalAlpha = 1.0
+                const radius = Math.min(width, height) / 2 - 1
+                if (radius > 0) {
+                    ctx.globalAlpha = root.pulse
+                    ctx.beginPath()
+                    ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2)
+                    ctx.fill()
+                    ctx.globalAlpha = 1.0
+                }
             }
         }
     }

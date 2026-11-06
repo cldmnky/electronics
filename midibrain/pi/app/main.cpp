@@ -38,6 +38,7 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -796,12 +797,120 @@ class ScreenshotRunner final : public QObject {
                         controller_->showShiftFace(true);
                         controller_->openConfig(QStringLiteral("comp"));
                       }});
+
+    // ---- 40-*: app UX wave - dynamic mixer, selectors, FX, popout --------
+    steps_.push_back({"40-mixer-empty", [this] {
+                        resetShot();
+                        clearMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->setTab(0);
+                      }, 1100});
+    steps_.push_back({"40-mixer-add-track", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->setTab(0);
+                        controller_->requestAddTrack();
+                      }});
+    steps_.push_back({"40-mixer-bank", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->mixer()->showClipDemo();
+                        controller_->mixer()->setMonitor(0, 0);
+                        controller_->mixer()->setMonitor(1, 1);
+                        controller_->mixer()->setMonitor(2, 2);
+                        controller_->mixer()->setMonitor(3, 3);
+                        controller_->selectStrip(1);
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"40-fx-builtin", [this] {
+                        resetShot();
+                        controller_->setTab(2);
+                      }});
+    steps_.push_back({"40-channel-popout", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->clearClipDemo();
+                        controller_->setTab(0);
+                        controller_->openChannel(2);
+                      }});
+    steps_.push_back({"40-popup-input", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->setTab(0);
+                        controller_->openInputSource(1);
+                      }});
+    steps_.push_back({"40-mixer-capacity", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        // Fill every track slot the engine supports: the page
+                        // readout proves the banks follow the list, not 9 or 18.
+                        for (int slot = 0; slot < mnky::audio::kMaxTracks; ++slot) {
+                          if (controller_->mixer()->trackSlotActive(slot)) continue;
+                          controller_->mixer()->addTrack(
+                              slot, QStringLiteral("t%1").arg(slot + 1, 2, 10, QLatin1Char('0')),
+                              slot % mnky::audio::kMaxDeviceInputs, false, 0);
+                        }
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->selectStrip(0);
+                        controller_->setTab(0);
+                        controller_->showTextPopup(
+                            QStringLiteral("CAPACITY"),
+                            QStringLiteral("%1 TRACKS / %2 PAGES")
+                                .arg(controller_->mixer()->stripCount())
+                                .arg(controller_->mixer()->pageCount()));
+                      }});
+    steps_.push_back({"40-popup-insert", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->setTab(0);
+                        // Opened from the channel popout's own strip, exactly as
+                        // the popout's INSERT selector does.
+                        controller_->openChannel(2);
+                        controller_->openInsert(2);
+                      }});
+    // The mixer screens above show strips; the app's own default stays empty.
+    primeMixerDemo();
+  }
+
+  // Screenshot fixture: the app starts with an empty mixer by owner contract,
+  // so the screen-proof run seeds a small demo track list once. The empty-mixer
+  // shot clears it again and the next step re-primes.
+  void primeMixerDemo() {
+    controller_->mixer()->clearClipDemo();
+    if (!controller_->mixer()->empty()) return;
+    const char* names[] = {"drums", "bass", "keys", "gtr",
+                           "vox",   "perc", "pad",  "fx"};
+    for (int slot = 0; slot < 8; ++slot) {
+      controller_->mixer()->addTrack(slot, QString::fromLatin1(names[slot]), slot,
+                                     false, 0);
+    }
+    controller_->mixer()->setTrackIndex(2);
+    controller_->selectStrip(1);
+  }
+
+  void clearMixerDemo() {
+    while (controller_->mixer()->stripCount() > 0) {
+      const QVariant slot =
+          controller_->mixer()->data(controller_->mixer()->index(0, 0),
+                                     mnky::app::MixerViewModel::SlotRole);
+      controller_->mixer()->removeTrack(slot.toInt());
+    }
+    // No strip feeds the master any more; clear the decaying meter tails so the
+    // empty-mixer shot reads as silence instead of the previous take's level.
+    controller_->mixer()->setMeters(0.0, 0.0);
+    controller_->mixer()->setStripMeters(
+        std::array<double, mnky::audio::kMaxTracks>{});
   }
 
   // Common reset before every 39-* refresh shot: no stale overlay, no
   // fullscreen bridge, primary face.
   void resetShot() {
     controller_->hideValuePopup();
+    controller_->closeChannel();
     controller_->configCancel();
     controller_->keypadCancel();
     controller_->confirmCancel();
@@ -857,6 +966,10 @@ class ScreenshotRunner final : public QObject {
   struct Step {
     QString name;
     std::function<void()> apply;
+    // Settle time before the grab. The default matches the long-standing
+    // 180 ms; a step that removes every strip asks for longer so the master
+    // meter tails (a display decay, not audio) fall before the grab.
+    int settleMs = 180;
   };
 
   void next() {
@@ -889,7 +1002,7 @@ class ScreenshotRunner final : public QObject {
     controller_->system()->refresh();
     window_->update();
     ++index_;
-    QTimer::singleShot(180, this, &ScreenshotRunner::next);
+    QTimer::singleShot(step.settleMs, this, &ScreenshotRunner::next);
   }
 
   mnky::app::AppController* controller_;

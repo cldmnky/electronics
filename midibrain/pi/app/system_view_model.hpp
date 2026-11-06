@@ -38,6 +38,10 @@ class SystemViewModel final : public QObject {
   // substitutes a name of its own.
   Q_PROPERTY(QVariantList outputRows READ outputRows NOTIFY choicesChanged)
   Q_PROPERTY(QVariantList inputRows READ inputRows NOTIFY choicesChanged)
+  // Live device selection: a picker change reopens the stream immediately, so
+  // there is no APPLY button. `applyNote` carries the audio layer's fallback
+  // reason (a requested device that could not open falls back and says why).
+  Q_PROPERTY(QString applyNote READ applyNote NOTIFY applyNoteChanged)
   Q_PROPERTY(int backendIndex READ backendIndex WRITE setBackendIndex NOTIFY selectionChanged)
   Q_PROPERTY(int inputIndex READ inputIndex WRITE setInputIndex NOTIFY selectionChanged)
   Q_PROPERTY(int bufferIndex READ bufferIndex WRITE setBufferIndex NOTIFY selectionChanged)
@@ -62,6 +66,7 @@ class SystemViewModel final : public QObject {
   // contract is testable without an audio backend. The backend column comes from
   // the device id prefix the backend enumeration sets.
   static QVariantList deviceRows(const std::vector<AudioDeviceOption>& devices);
+  QString applyNote() const { return applyNote_; }
   int backendIndex() const { return backendIndex_; }
   int inputIndex() const { return inputIndex_; }
   int bufferIndex() const { return bufferIndex_; }
@@ -80,6 +85,10 @@ class SystemViewModel final : public QObject {
   void logChanged();
   void choicesChanged();
   void selectionChanged();
+  void applyNoteChanged();
+  // One-shot notice for the app's transient popup: the fallback reason when the
+  // requested device cannot open. Empty notes never fire it.
+  void applyNotice(const QString& note);
 
  private:
   void rebuildChoices();
@@ -101,6 +110,7 @@ class SystemViewModel final : public QObject {
   QVariantList inputRows_;
   std::vector<AudioDeviceOption> outputs_;
   std::vector<AudioDeviceOption> inputs_;
+  QString applyNote_;
   int backendIndex_ = 0;
   int inputIndex_ = 0;
   int bufferIndex_ = 1;

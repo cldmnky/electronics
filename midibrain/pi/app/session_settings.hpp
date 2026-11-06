@@ -34,12 +34,14 @@ class SessionSettings {
   session::SendsState sends;
   session::MainCompState mainComp;
   // Per-track take loop in session beats (session v2 takes.loop). Written on
-  // the GUI thread only; the engine copy lives in AudioGlue.
-  std::array<session::LoopState, audio::kMaxInputs> takeLoop{};
+  // the GUI thread only; the engine copy lives in AudioGlue. Sized to the mixer
+  // track capacity (audio::kMaxTracks): the session snapshot carries whatever
+  // its own store width is, and project_io copies by container size.
+  std::array<session::LoopState, audio::kMaxTracks> takeLoop{};
   // Per-track non-destructive region edits (session v2 takes.edit, landed in
   // 43130e8). The TimelineViewModel owns the edits and applies them through
   // AudioGlue; this array is what project_io saves and loads.
-  std::array<std::vector<session::TakeRegion>, audio::kMaxInputs> takeEdit{};
+  std::array<std::vector<session::TakeRegion>, audio::kMaxTracks> takeEdit{};
   // Per-output clock/transport gates (session v2 clock). Index 0/1 = TRS OUT1/
   // OUT2 via ClockState::trs, usb covers the USB mirror; the tempo divider and
   // sync delay in ClockRoute are session-only because EV_CLOCK_ROUTE carries
@@ -58,7 +60,7 @@ class SessionSettings {
 
  private:
   mutable std::mutex takeLock_;
-  std::array<std::string, audio::kMaxInputs> activeTakes_{};
+  std::array<std::string, audio::kMaxTracks> activeTakes_{};
 };
 
 }  // namespace mnky::app

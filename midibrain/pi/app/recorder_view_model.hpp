@@ -150,7 +150,8 @@ class RecorderViewModel final : public QObject {
   void takeStateChanged();
   // Rename the just-recorded `chNN.wav` files to the session-v2 per-track form
   // and make each armed track's new take active. Returns the number renamed.
-  int adoptRecordedTake(const std::string& takeDirectoryPath, std::uint32_t armMask);
+  int adoptRecordedTake(const std::string& takeDirectoryPath,
+                        MixerModel::TrackMask armMask);
   // Push the session active-take pointers into the engine take player after a
   // project load (or at startup). Missing files clear the track.
   void resyncActiveTakes();

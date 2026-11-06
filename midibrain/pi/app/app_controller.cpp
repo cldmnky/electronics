@@ -44,9 +44,10 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
   context_ = std::make_unique<AppContext>(AppContext{
       state_, mixer_, fx_, midi_, audio_, link_, settings_, eqModel_, performance_});
 
-  mixerVm_ = std::make_unique<MixerViewModel>(mixer_, settings_);
+  mixerVm_ = std::make_unique<MixerViewModel>(mixer_, settings_, eqModel_);
   routingVm_ = std::make_unique<RoutingViewModel>(midi_, noPico_);
-  fxVm_ = std::make_unique<FxViewModel>(fx_, state_, mixer_, audio_.sampleRate());
+  fxVm_ = std::make_unique<FxViewModel>(fx_, state_, mixer_, performance_,
+                                        audio_.sampleRate());
   recorderVm_ =
       std::make_unique<RecorderViewModel>(state_, audio_, mixer_, link_, settings_);
   timelineVm_ = std::make_unique<TimelineViewModel>(state_, audio_, *recorderVm_,
@@ -62,6 +63,7 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
       std::make_unique<ConfigPopupModel>(state_, mixer_, settings_, eqModel_, performance_);
   configVm_->setTimeline(timelineVm_.get());
   configVm_->setRouting(routingVm_.get());
+  configVm_->setMixer(mixerVm_.get());
   eqVm_ = std::make_unique<EqViewModel>(eqModel_);
   xyVm_ = std::make_unique<XyViewModel>(performance_);
   // Every EQ/XY screen change shows one transient readout, the same single
@@ -85,6 +87,14 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
           });
   connect(recorderVm_.get(), &RecorderViewModel::activeTakeChanged, mixerVm_.get(),
           &MixerViewModel::notifyActiveTakesChanged);
+  // Live device pickers: the audio layer falls back to a working backend when a
+  // requested device cannot open. The screen keeps the fallback note and this
+  // popup says what happened, so a pick never fails silently.
+  connect(systemVm_.get(), &SystemViewModel::applyNotice, this,
+          [this](const QString& note) {
+            setNotice(QStringLiteral("audio: ") + note);
+            showTextPopup(QStringLiteral("AUDIO DEVICE"), note);
+          });
 
   shiftActions_ = {QStringLiteral("Save"), QStringLiteral("Panic"), QStringLiteral("Tap"),
                    QStringLiteral("Click")};
@@ -261,7 +271,7 @@ void AppController::toggleOverdub() {
 }
 
 void AppController::selectStrip(int index) {
-  const int clamped = std::clamp(index, 0, kNumStrips - 1);
+  const int clamped = std::clamp(index, 0, audio::kMaxTracks - 1);
   state_.selectedStrip.store(clamped);
   mixerVm_->setSelectedStrip(clamped);
 }
@@ -339,6 +349,8 @@ void AppController::keypadAccept(const QString& text) {
       setNotice(QStringLiteral("pipe chain exported: ") + text);
       showTextPopup(QStringLiteral("PIPE CHAIN EXPORTED"), text);
     }
+  } else if (keypadAction_ == QStringLiteral("add-track-name")) {
+    configVm_->setAddTrackName(text);
   } else if (keypadAction_ == QStringLiteral("pipe-chain-import")) {
     error = routingVm_->importPipeChain(
         text, QString::fromStdString(state_.currentProject().string()));
@@ -387,6 +399,8 @@ void AppController::confirmAccept() {
     projectsVm_->deleteSelected();
   } else if (action == QStringLiteral("take-delete")) {
     recorderVm_->deleteSelected();
+  } else if (action == QStringLiteral("remove-track")) {
+    mixerVm_->removeTrack(index);
   }
 }
 
@@ -474,6 +488,51 @@ void AppController::requestImportPipeChain() {
                 QStringLiteral("pipe-chain-import"), -1);
 }
 
+void AppController::requestAddTrack() {
+  openConfigFrom(QStringLiteral("addtrack"), nullptr);
+}
+
+void AppController::requestRemoveTrack(int slot) {
+  const QString name = mixerVm_->suggestedTrackName(slot);
+  requestConfirm(
+      QStringLiteral("REMOVE TRACK"),
+      QStringLiteral("Remove %1 from the mixer? Its input, sends, insert and "
+                     "takes stay in the project, so re-adding the track "
+                     "restores them.")
+          .arg(name.toUpper()),
+      QStringLiteral("REMOVE"), QStringLiteral("remove-track"), slot);
+}
+
+void AppController::requestAddTrackName() {
+  requestKeypad(QStringLiteral("TRACK NAME"), configVm_->addTrackName(),
+                QStringLiteral("add-track-name"), 0);
+}
+
+void AppController::openInputSource(int slot) {
+  configVm_->setInputTarget(slot);
+  openConfigFrom(QStringLiteral("inputsource"), nullptr);
+}
+
+void AppController::openOutputDest(int slot) {
+  configVm_->setOutputTarget(slot);
+  openConfigFrom(QStringLiteral("outputdest"), nullptr);
+}
+
+void AppController::openInsert(int slot) {
+  configVm_->setInsertTarget(slot);
+  openConfigFrom(QStringLiteral("insert"), nullptr);
+}
+
+void AppController::openChannel(int slot) {
+  mixerVm_->openChannel(slot);
+  rebuildFocusIds();
+}
+
+void AppController::closeChannel() {
+  mixerVm_->closeChannel();
+  rebuildFocusIds();
+}
+
 void AppController::openDemoKeypad() {
   requestKeypad(QStringLiteral("RENAME PROJECT"), QStringLiteral("Project-demo"),
                 QStringLiteral("project-rename"), -1);
@@ -523,6 +582,20 @@ void AppController::openConfigFrom(const QString& kind, QObject* item) {
 void AppController::openConfigInternal(const QString& kind) {
   if (kind == QStringLiteral("trackmonitor")) {
     configVm_->setTrackMonitorIndex(mixerVm_->trackIndex());
+  }
+  // A selector popup opened without an explicit strip (panel/keyboard path)
+  // targets the TRACK screen's strip, which is where the ring points.
+  if (kind == QStringLiteral("inputsource") &&
+      !mixerVm_->trackSlotActive(configVm_->inputTarget())) {
+    configVm_->setInputTarget(mixerVm_->trackIndex());
+  } else if (kind == QStringLiteral("outputdest") &&
+             !mixerVm_->trackSlotActive(configVm_->outputTarget())) {
+    configVm_->setOutputTarget(mixerVm_->trackIndex());
+  } else if (kind == QStringLiteral("insert") &&
+             !mixerVm_->trackSlotActive(configVm_->insertTarget())) {
+    configVm_->setInsertTarget(mixerVm_->trackIndex());
+  } else if (kind == QStringLiteral("addtrack")) {
+    configVm_->setAddTrackSlot(mixerVm_->nextFreeSlot());
   }
   if (!configVm_->openKind(kind)) return;
   // A popup opened from the SHIFT face keeps that face underneath it; the
@@ -928,7 +1001,22 @@ bool AppController::isEditableFocus(const QString& focusId) const {
   if (id.startsWith(QStringLiteral("routing.transpose."))) return true;
   if (id.startsWith(QStringLiteral("routing.pipes.param."))) return true;
   if (id.startsWith(QStringLiteral("fx."))) {
+    if (id == QStringLiteral("fx.delay.time") || id == QStringLiteral("fx.delay.feedback") ||
+        id == QStringLiteral("fx.delay.mix") || id == QStringLiteral("fx.delay.cutoff") ||
+        id == QStringLiteral("fx.delay.width") ||
+        id == QStringLiteral("fx.reverb.predelay") ||
+        id == QStringLiteral("fx.reverb.decay") ||
+        id == QStringLiteral("fx.reverb.damping") || id == QStringLiteral("fx.reverb.mix") ||
+        id == QStringLiteral("fx.reverb.size")) {
+      return true;
+    }
     return id.endsWith(QStringLiteral(".return")) || id.contains(QStringLiteral(".param."));
+  }
+  if (id.startsWith(QStringLiteral("channel."))) {
+    return id == QStringLiteral("channel.gain") || id == QStringLiteral("channel.trim") ||
+           id == QStringLiteral("channel.pan") || id == QStringLiteral("channel.fx1") ||
+           id == QStringLiteral("channel.fx2") || id == QStringLiteral("channel.cue") ||
+           id == QStringLiteral("channel.out34");
   }
   if (id.startsWith(QStringLiteral("system."))) {
     return id == QStringLiteral("system.backend") || id == QStringLiteral("system.input") ||
@@ -1043,6 +1131,33 @@ void AppController::activateFocus() {
       if (parts[2] == QStringLiteral("model")) {
         configVm_->setReverbModel(parts.size() >= 4 ? parts[3].toInt() : 0);
       }
+    } else if (parts[1] == QStringLiteral("input") && parts.size() >= 3) {
+      configVm_->setInputSourceIndex(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("output") && parts.size() >= 3) {
+      configVm_->setOutputIndex(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("insert") && parts.size() >= 3 &&
+               parts[2] != QStringLiteral("bypass")) {
+      configVm_->setInsertIndex(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("pipesource") && parts.size() >= 3) {
+      configVm_->setPipeSourceIndex(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("pipedest") && parts.size() >= 3) {
+      configVm_->setPipeDestIndex(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("pipetype") && parts.size() >= 3) {
+      configVm_->setPipeTypeIndex(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("delaydivision") && parts.size() >= 3) {
+      configVm_->setDelayDivision(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("reverbmodel") && parts.size() >= 3) {
+      configVm_->setReverbModel(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("addtrack") && parts.size() >= 3) {
+      if (parts[2] == QStringLiteral("name")) {
+        requestAddTrackName();
+      } else if (parts[2] == QStringLiteral("mode") && parts.size() >= 4) {
+        configVm_->setAddTrackInputMode(parts[3].toInt());
+      } else if (parts[2] == QStringLiteral("ch") && parts.size() >= 4) {
+        configVm_->setAddTrackChannel(parts[3].toInt());
+      } else if (parts[2] == QStringLiteral("out") && parts.size() >= 4) {
+        configVm_->setAddTrackOutput(parts[3].toInt());
+      }
     } else if (parts[1] == QStringLiteral("pipe") && parts.size() >= 4) {
       if (parts[2] == QStringLiteral("ch")) {
         configVm_->togglePipeChannel(parts[3].toInt());
@@ -1070,6 +1185,10 @@ void AppController::activateFocus() {
   }
   if (focusId == QStringLiteral("transport.click")) {
     setClickEnabled(!clickEnabled());
+    return;
+  }
+  if (focusId == QStringLiteral("mixer.add")) {
+    requestAddTrack();
     return;
   }
   if (focusId == QStringLiteral("mixer.mode.0")) {
@@ -1252,7 +1371,12 @@ void AppController::activateFocus() {
   if (parts.size() >= 3 && parts[0] == QStringLiteral("mixer")) {
     const QString what = parts[1];
     if (what == QStringLiteral("bank")) {
-      mixerVm_->setBank(parts[2].toInt());
+      // The two page buttons step one page; the id keeps its historical name.
+      mixerVm_->stepBank(parts[2].toInt() == 0 ? -1 : 1);
+      return;
+    }
+    if (what == QStringLiteral("expand")) {
+      openChannel(parts[2].toInt());
       return;
     }
     if (what == QStringLiteral("master")) {
@@ -1273,8 +1397,7 @@ void AppController::activateFocus() {
     } else if (what == QStringLiteral("arm")) {
       mixerVm_->toggleArm(strip);
     } else if (what == QStringLiteral("monitor")) {
-      const int next = (mixerVm_->data(mixerVm_->index(strip),
-                                      MixerViewModel::MonitorRole).toInt() + 1) % 4;
+      const int next = (mixerVm_->monitorAt(strip) + 1) % 4;
       mixerVm_->setMonitor(strip, next);
       // MPC parity: PLAY = take only, AUTO = smart, BOTH = input + take,
       // MON = input always / take never (session::MixerChannelState::monitor).
@@ -1284,12 +1407,69 @@ void AppController::activateFocus() {
                                  : (next == 2 ? QStringLiteral("Both")
                                               : QStringLiteral("Mon"))));
     } else if (what == QStringLiteral("in")) {
-      // Compact strip input source: EDIT steps it like the TRACK SHIFT picker.
-      // MONO/PAIR stays on the TRACK SHIFT face (its own PAIR button) and on the
-      // strip's long press, so the encoder never has two meanings.
+      // Tap-to-open selector list: the strip's input source opens the same
+      // popup the touch surface uses, so there is no cycle-stepper to learn.
+      openInputSource(strip);
+    }
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("channel")) {
+    // Full channel popout: the TRACK property family already addresses the
+    // popout's slot (openChannel points it there).
+    const QString what = parts[1];
+    if (what == QStringLiteral("close")) {
+      closeChannel();
+    } else if (what == QStringLiteral("remove")) {
+      requestRemoveTrack(mixerVm_->trackIndex());
+    } else if (what == QStringLiteral("input")) {
+      openInputSource(mixerVm_->trackIndex());
+    } else if (what == QStringLiteral("output")) {
+      openOutputDest(mixerVm_->trackIndex());
+    } else if (what == QStringLiteral("insert")) {
+      openInsert(mixerVm_->trackIndex());
+    } else if (what == QStringLiteral("insert.bypass")) {
+      mixerVm_->toggleChannelInsertBypass();
+    } else if (what == QStringLiteral("mute")) {
+      mixerVm_->setTrackMute(!mixerVm_->trackMute());
+    } else if (what == QStringLiteral("solo")) {
+      mixerVm_->setTrackSolo(!mixerVm_->trackSolo());
+    } else if (what == QStringLiteral("arm")) {
+      mixerVm_->setTrackArm(!mixerVm_->trackArm());
+    } else if (what == QStringLiteral("monitor")) {
+      const int next = (mixerVm_->trackMonitor() + 1) % 4;
+      mixerVm_->setTrackMonitor(next);
+      showTextPopup(QStringLiteral("INPUT MON"),
+                    next == 0 ? QStringLiteral("Play")
+                    : (next == 1 ? QStringLiteral("Auto")
+                                 : (next == 2 ? QStringLiteral("Both")
+                                              : QStringLiteral("Mon"))));
+    } else if (what == QStringLiteral("gain") || what == QStringLiteral("trim") ||
+               what == QStringLiteral("pan") || what == QStringLiteral("fx1") ||
+               what == QStringLiteral("fx2") || what == QStringLiteral("cue") ||
+               what == QStringLiteral("out34")) {
       setPanelMode(QStringLiteral("edit"));
-      showTextPopup(QStringLiteral("IN %1 INPUT").arg(strip + 1, 2, 10, QLatin1Char('0')),
-                    mixerVm_->inSourceText(strip));
+    }
+    return;
+  }
+
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("fx") &&
+      (parts[1] == QStringLiteral("delay") || parts[1] == QStringLiteral("reverb"))) {
+    const bool delay = parts[1] == QStringLiteral("delay");
+    const QString what = parts.size() >= 3 ? parts[2] : QString();
+    auto* builtin = fxVm_->builtin();
+    if (delay && what == QStringLiteral("beat")) {
+      builtin->setDelayBeat(!builtin->delayBeat());
+    } else if (delay && what == QStringLiteral("ping")) {
+      builtin->setDelayPingPong(!builtin->delayPingPong());
+    } else if (delay && what == QStringLiteral("division")) {
+      builtin->cycleDelayDivision(1);
+      showTextPopup(QStringLiteral("DELAY DIVISION"), builtin->delayDivisionText());
+    } else if (!delay && what == QStringLiteral("model")) {
+      builtin->cycleReverbModel(1);
+      showTextPopup(QStringLiteral("REVERB MODEL"), builtin->reverbModelText());
+    } else {
+      setPanelMode(QStringLiteral("edit"));
     }
     return;
   }
@@ -1715,6 +1895,41 @@ void AppController::adjustFocused(int detents, bool fine) {
     return;
   }
 
+  if (parts.size() >= 2 && parts[0] == QStringLiteral("channel")) {
+    // The popout's TRACK property family addresses the strip it was opened on.
+    const QString what = parts[1];
+    if (what == QStringLiteral("gain")) {
+      mixerVm_->setTrackGainDb(mixerVm_->trackGainDb() + step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("CHANNEL GAIN"), QStringLiteral("db"),
+                     mixerVm_->trackGainDb());
+    } else if (what == QStringLiteral("trim")) {
+      mixerVm_->setTrackTrimDb(mixerVm_->trackTrimDb() + step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("CHANNEL TRIM"), QStringLiteral("db"),
+                     mixerVm_->trackTrimDb());
+    } else if (what == QStringLiteral("pan")) {
+      mixerVm_->setTrackPan(mixerVm_->trackPan() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("CHANNEL PAN"), QStringLiteral("pan"),
+                     mixerVm_->trackPan());
+    } else if (what == QStringLiteral("fx1")) {
+      mixerVm_->setTrackSendA(mixerVm_->trackSendA() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("CHANNEL FX1"), QStringLiteral("percent"),
+                     mixerVm_->trackSendA());
+    } else if (what == QStringLiteral("fx2")) {
+      mixerVm_->setTrackSendB(mixerVm_->trackSendB() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("CHANNEL FX2"), QStringLiteral("percent"),
+                     mixerVm_->trackSendB());
+    } else if (what == QStringLiteral("cue")) {
+      mixerVm_->setTrackCue(mixerVm_->trackCue() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("CHANNEL CUE"), QStringLiteral("percent"),
+                     mixerVm_->trackCue());
+    } else if (what == QStringLiteral("out34")) {
+      mixerVm_->setTrackOut34(mixerVm_->trackOut34() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("CHANNEL OUT34"), QStringLiteral("percent"),
+                     mixerVm_->trackOut34());
+    }
+    return;
+  }
+
   if (parts.size() >= 2 && parts[0] == QStringLiteral("mixer") &&
       parts[1] == QStringLiteral("master")) {
     const double delta = step * (fine ? 0.1 : 0.5);
@@ -1734,34 +1949,32 @@ void AppController::adjustFocused(int detents, bool fine) {
       return;
     }
     if (what == QStringLiteral("gain")) {
-      mixerVm_->setGainDb(strip, mixerVm_->data(mixerVm_->index(strip), MixerViewModel::GainDbRole).toDouble() +
+      mixerVm_->setGainDb(strip, mixerVm_->gainDbAt(strip) +
                                      step * (fine ? 0.1 : 0.5));
       popupGain(QStringLiteral("IN %1 GAIN").arg(strip + 1, 2, 10, QLatin1Char('0')),
                 strip);
     } else if (what == QStringLiteral("pan")) {
-      mixerVm_->setPan(strip, mixerVm_->data(mixerVm_->index(strip), MixerViewModel::PanRole).toDouble() +
+      mixerVm_->setPan(strip, mixerVm_->panAt(strip) +
                                   step * (fine ? 0.005 : 0.02));
       popupPan(QStringLiteral("IN %1 PAN").arg(strip + 1, 2, 10, QLatin1Char('0')),
                strip);
     } else if (what == QStringLiteral("sendA")) {
-      mixerVm_->setSend(strip, 0,
-                        mixerVm_->data(mixerVm_->index(strip), MixerViewModel::SendARole).toDouble() +
+      mixerVm_->setSend(strip, 0, mixerVm_->sendAt(strip, 0) +
                             step * (fine ? 0.005 : 0.02));
       popupSend(QStringLiteral("IN %1 FX1").arg(strip + 1, 2, 10, QLatin1Char('0')),
                 strip, 0);
     } else if (what == QStringLiteral("sendB")) {
-      mixerVm_->setSend(strip, 1,
-                        mixerVm_->data(mixerVm_->index(strip), MixerViewModel::SendBRole).toDouble() +
+      mixerVm_->setSend(strip, 1, mixerVm_->sendAt(strip, 1) +
                             step * (fine ? 0.005 : 0.02));
       popupSend(QStringLiteral("IN %1 FX2").arg(strip + 1, 2, 10, QLatin1Char('0')),
                 strip, 1);
     } else if (what == QStringLiteral("fx1")) {
-      mixerVm_->setSend(strip, 0, mixerVm_->data(mixerVm_->index(strip), MixerViewModel::SendARole).toDouble() +
+      mixerVm_->setSend(strip, 0, mixerVm_->sendAt(strip, 0) +
                                           step * (fine ? 0.005 : 0.02));
       popupSend(QStringLiteral("IN %1 FX1").arg(strip + 1, 2, 10, QLatin1Char('0')),
                 strip, 0);
     } else if (what == QStringLiteral("fx2")) {
-      mixerVm_->setSend(strip, 1, mixerVm_->data(mixerVm_->index(strip), MixerViewModel::SendBRole).toDouble() +
+      mixerVm_->setSend(strip, 1, mixerVm_->sendAt(strip, 1) +
                                           step * (fine ? 0.005 : 0.02));
       popupSend(QStringLiteral("IN %1 FX2").arg(strip + 1, 2, 10, QLatin1Char('0')),
                 strip, 1);
@@ -1992,6 +2205,60 @@ void AppController::adjustFocused(int detents, bool fine) {
     return;
   }
 
+  if (parts.size() >= 3 && parts[0] == QStringLiteral("fx") &&
+      (parts[1] == QStringLiteral("delay") || parts[1] == QStringLiteral("reverb"))) {
+    auto* builtin = fxVm_->builtin();
+    const bool delay = parts[1] == QStringLiteral("delay");
+    const QString what = parts[2];
+    if (delay && what == QStringLiteral("time")) {
+      builtin->setDelayTimeMs(builtin->delayTimeMs() + step * (fine ? 1.0 : 10.0));
+      showValuePopup(QStringLiteral("DELAY TIME"), QStringLiteral("ms"),
+                     builtin->delayTimeMs());
+    } else if (delay && what == QStringLiteral("feedback")) {
+      builtin->setDelayFeedback(builtin->delayFeedback() +
+                                step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("DELAY FEEDBACK"), QStringLiteral("percent"),
+                     builtin->delayFeedback());
+    } else if (delay && what == QStringLiteral("mix")) {
+      builtin->setDelayMix(builtin->delayMix() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("DELAY MIX"), QStringLiteral("percent"),
+                     builtin->delayMix());
+    } else if (delay && what == QStringLiteral("cutoff")) {
+      builtin->setDelayCutoffHz(builtin->delayCutoffHz() *
+                                (detents > 0 ? (fine ? 1.02 : 1.1) : (fine ? 0.98 : 0.9)));
+      showValuePopup(QStringLiteral("DELAY BP CUTOFF"), QStringLiteral("hz"),
+                     builtin->delayCutoffHz());
+    } else if (delay && what == QStringLiteral("width")) {
+      builtin->setDelayWidthOct(builtin->delayWidthOct() +
+                                step * (fine ? 0.02 : 0.1));
+      showValuePopup(QStringLiteral("DELAY BP WIDTH"), QStringLiteral("generic"),
+                     builtin->delayWidthOct());
+    } else if (!delay && what == QStringLiteral("predelay")) {
+      builtin->setReverbPredelayMs(builtin->reverbPredelayMs() +
+                                   step * (fine ? 1.0 : 5.0));
+      showValuePopup(QStringLiteral("REVERB PREDELAY"), QStringLiteral("ms"),
+                     builtin->reverbPredelayMs());
+    } else if (!delay && what == QStringLiteral("decay")) {
+      builtin->setReverbDecay(builtin->reverbDecay() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("REVERB DECAY"), QStringLiteral("generic"),
+                     builtin->reverbDecay());
+    } else if (!delay && what == QStringLiteral("damping")) {
+      builtin->setReverbDamping(builtin->reverbDamping() +
+                                step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("REVERB DAMPING"), QStringLiteral("generic"),
+                     builtin->reverbDamping());
+    } else if (!delay && what == QStringLiteral("mix")) {
+      builtin->setReverbMix(builtin->reverbMix() + step * (fine ? 0.005 : 0.02));
+      showValuePopup(QStringLiteral("REVERB MIX"), QStringLiteral("percent"),
+                     builtin->reverbMix());
+    } else if (!delay && what == QStringLiteral("size")) {
+      builtin->setReverbSize(builtin->reverbSize() + step * (fine ? 0.01 : 0.05));
+      showValuePopup(QStringLiteral("REVERB SIZE"), QStringLiteral("generic"),
+                     builtin->reverbSize());
+    }
+    return;
+  }
+
   if (parts.size() >= 4 && parts[0] == QStringLiteral("fx")) {
     const int slot = parts[1] == QStringLiteral("B") ? 1 : 0;
     auto* view = slot == 1 ? fxVm_->slotB() : fxVm_->slotA();
@@ -2146,6 +2413,51 @@ void AppController::rebuildFocusIds() {
       ids.push_back(QStringLiteral("config.timeline.gain"));
       ids.push_back(QStringLiteral("config.timeline.fadein"));
       ids.push_back(QStringLiteral("config.timeline.fadeout"));
+    } else if (kind == QStringLiteral("inputsource")) {
+      const int channels = MixerViewModel::inputChannelCount();
+      for (int state = 0; state < 1 + channels + channels / 2; ++state) {
+        ids.push_back(QStringLiteral("config.input.%1").arg(state));
+      }
+    } else if (kind == QStringLiteral("outputdest")) {
+      for (int destination = 0; destination < kOutDstCount; ++destination) {
+        ids.push_back(QStringLiteral("config.output.%1").arg(destination));
+      }
+    } else if (kind == QStringLiteral("insert")) {
+      for (int choice = 0; choice < MixerViewModel::kInsertChoiceCount; ++choice) {
+        ids.push_back(QStringLiteral("config.insert.%1").arg(choice));
+      }
+    } else if (kind == QStringLiteral("pipesource")) {
+      for (int index = 0; index < routingVm_->inputNodes().size(); ++index) {
+        ids.push_back(QStringLiteral("config.pipesource.%1").arg(index));
+      }
+    } else if (kind == QStringLiteral("pipedest")) {
+      for (int index = 0; index < routingVm_->outputNodes().size(); ++index) {
+        ids.push_back(QStringLiteral("config.pipedest.%1").arg(index));
+      }
+    } else if (kind == QStringLiteral("pipetype")) {
+      const int types = configVm_->pipeTypeLabels().size();
+      for (int index = 0; index < types; ++index) {
+        ids.push_back(QStringLiteral("config.pipetype.%1").arg(index));
+      }
+    } else if (kind == QStringLiteral("delaydivision")) {
+      for (int division = 0; division < audio::fx::Delay::kDivCount; ++division) {
+        ids.push_back(QStringLiteral("config.delaydivision.%1").arg(division));
+      }
+    } else if (kind == QStringLiteral("reverbmodel")) {
+      for (int model = 0; model < audio::fx::Reverb::kModelCount; ++model) {
+        ids.push_back(QStringLiteral("config.reverbmodel.%1").arg(model));
+      }
+    } else if (kind == QStringLiteral("addtrack")) {
+      ids.push_back(QStringLiteral("config.addtrack.name"));
+      for (int mode = 0; mode < 3; ++mode) {
+        ids.push_back(QStringLiteral("config.addtrack.mode.%1").arg(mode));
+      }
+      for (int channel = 0; channel < MixerViewModel::inputChannelCount(); ++channel) {
+        ids.push_back(QStringLiteral("config.addtrack.ch.%1").arg(channel));
+      }
+      for (int destination = 0; destination < kOutDstCount; ++destination) {
+        ids.push_back(QStringLiteral("config.addtrack.out.%1").arg(destination));
+      }
     } else if (kind == QStringLiteral("pipechannels")) {
       for (int channel = 0; channel < 16; ++channel) {
         ids.push_back(QStringLiteral("config.pipe.ch.%1").arg(channel));
@@ -2165,6 +2477,26 @@ void AppController::rebuildFocusIds() {
     }
     ids.push_back(QStringLiteral("config.ok"));
     ids.push_back(QStringLiteral("config.cancel"));
+  } else if (mixerVm_->channelOpen()) {
+    // Full channel popout: it traps the ring like the config popup, so the
+    // panel can reach every control of the channel it shows.
+    ids.push_back(QStringLiteral("channel.close"));
+    ids.push_back(QStringLiteral("channel.gain"));
+    ids.push_back(QStringLiteral("channel.trim"));
+    ids.push_back(QStringLiteral("channel.pan"));
+    ids.push_back(QStringLiteral("channel.fx1"));
+    ids.push_back(QStringLiteral("channel.fx2"));
+    ids.push_back(QStringLiteral("channel.cue"));
+    ids.push_back(QStringLiteral("channel.out34"));
+    ids.push_back(QStringLiteral("channel.mute"));
+    ids.push_back(QStringLiteral("channel.solo"));
+    ids.push_back(QStringLiteral("channel.arm"));
+    ids.push_back(QStringLiteral("channel.monitor"));
+    ids.push_back(QStringLiteral("channel.input"));
+    ids.push_back(QStringLiteral("channel.output"));
+    ids.push_back(QStringLiteral("channel.insert"));
+    ids.push_back(QStringLiteral("channel.insert.bypass"));
+    ids.push_back(QStringLiteral("channel.remove"));
   } else if (shiftFace_) {
     switch (tab_) {
       case 0:
@@ -2179,16 +2511,20 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("shift.track.out34"));
           ids.push_back(QStringLiteral("shift.monitor.sends"));
           ids.push_back(QStringLiteral("shift.track.monitor"));
+          ids.push_back(QStringLiteral("shift.track.insert"));
         } else {
           const int first = mixerVm_->bank() * kStripsPerBank;
-          for (int i = 0; i < kStripsPerBank; ++i) {
-            const int strip = first + i;
-            ids.push_back(QStringLiteral("shift.mixer.gain.%1").arg(strip));
-            ids.push_back(QStringLiteral("shift.mixer.fx1.%1").arg(strip));
-            ids.push_back(QStringLiteral("shift.mixer.fx2.%1").arg(strip));
-            ids.push_back(QStringLiteral("shift.mixer.cue.%1").arg(strip));
-            ids.push_back(QStringLiteral("shift.mixer.out34.%1").arg(strip));
-            ids.push_back(QStringLiteral("shift.mixer.monitor.%1").arg(strip));
+          for (int position = first;
+               position < first + kStripsPerBank && position < mixerVm_->stripCount();
+               ++position) {
+            const QVariant slot = mixerVm_->data(mixerVm_->index(position, 0),
+                                                MixerViewModel::SlotRole);
+            ids.push_back(QStringLiteral("shift.mixer.gain.%1").arg(slot.toInt()));
+            ids.push_back(QStringLiteral("shift.mixer.fx1.%1").arg(slot.toInt()));
+            ids.push_back(QStringLiteral("shift.mixer.fx2.%1").arg(slot.toInt()));
+            ids.push_back(QStringLiteral("shift.mixer.cue.%1").arg(slot.toInt()));
+            ids.push_back(QStringLiteral("shift.mixer.out34.%1").arg(slot.toInt()));
+            ids.push_back(QStringLiteral("shift.mixer.monitor.%1").arg(slot.toInt()));
           }
         }
         break;
@@ -2326,8 +2662,15 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("mixer.mode.0"));
         ids.push_back(QStringLiteral("mixer.mode.1"));
         if (mixerVm_->trackMode()) {
-          for (int track = 0; track < kNumStrips; ++track) {
-            ids.push_back(QStringLiteral("track.select.%1").arg(track));
+          // Only the current page of four is on screen; the header page buttons
+          // walk the same list the MIXER face banks.
+          const int first = mixerVm_->bank() * kStripsPerBank;
+          for (int position = first;
+               position < first + kStripsPerBank && position < mixerVm_->stripCount();
+               ++position) {
+            const QVariant slot = mixerVm_->data(mixerVm_->index(position, 0),
+                                                MixerViewModel::SlotRole);
+            ids.push_back(QStringLiteral("track.select.%1").arg(slot.toInt()));
           }
           ids.push_back(QStringLiteral("track.gain"));
           ids.push_back(QStringLiteral("track.pan"));
@@ -2336,8 +2679,13 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("track.solo"));
         } else {
           const int first = mixerVm_->bank() * kStripsPerBank;
-          for (int i = 0; i < kStripsPerBank; ++i) {
-            const int strip = first + i;
+          for (int position = first;
+               position < first + kStripsPerBank && position < mixerVm_->stripCount();
+               ++position) {
+            const QVariant slot = mixerVm_->data(mixerVm_->index(position, 0),
+                                                MixerViewModel::SlotRole);
+            const int strip = slot.toInt();
+            ids.push_back(QStringLiteral("mixer.expand.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.select.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.in.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.gain.%1").arg(strip));
@@ -2346,6 +2694,7 @@ void AppController::rebuildFocusIds() {
             ids.push_back(QStringLiteral("mixer.solo.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.arm.%1").arg(strip));
           }
+          ids.push_back(QStringLiteral("mixer.add"));
           ids.push_back(QStringLiteral("mixer.master"));
           ids.push_back(QStringLiteral("mixer.bank.0"));
           ids.push_back(QStringLiteral("mixer.bank.1"));
@@ -2366,15 +2715,27 @@ void AppController::rebuildFocusIds() {
         break;
       }
       case 2: {
-        ids.push_back(QStringLiteral("fx.A.plugin"));
-        ids.push_back(QStringLiteral("fx.A.eject"));
-        ids.push_back(QStringLiteral("fx.A.save"));
-        ids.push_back(QStringLiteral("fx.A.load"));
-        ids.push_back(QStringLiteral("fx.A.return"));
-        ids.push_back(QStringLiteral("fx.A.bypass"));
-        for (int param = 0; param < fxVm_->slotA()->params()->rowCount(); ++param) {
-          ids.push_back(QStringLiteral("fx.A.param.%1").arg(param));
+        for (const char* letter : {"A", "B"}) {
+          const QString prefix = QStringLiteral("fx.") + QLatin1String(letter);
+          ids.push_back(prefix + QStringLiteral(".plugin"));
+          ids.push_back(prefix + QStringLiteral(".eject"));
+          ids.push_back(prefix + QStringLiteral(".return"));
+          ids.push_back(prefix + QStringLiteral(".bypass"));
         }
+        ids.push_back(QStringLiteral("fx.delay.time"));
+        ids.push_back(QStringLiteral("fx.delay.feedback"));
+        ids.push_back(QStringLiteral("fx.delay.mix"));
+        ids.push_back(QStringLiteral("fx.delay.beat"));
+        ids.push_back(QStringLiteral("fx.delay.division"));
+        ids.push_back(QStringLiteral("fx.delay.ping"));
+        ids.push_back(QStringLiteral("fx.delay.cutoff"));
+        ids.push_back(QStringLiteral("fx.delay.width"));
+        ids.push_back(QStringLiteral("fx.reverb.model"));
+        ids.push_back(QStringLiteral("fx.reverb.predelay"));
+        ids.push_back(QStringLiteral("fx.reverb.decay"));
+        ids.push_back(QStringLiteral("fx.reverb.damping"));
+        ids.push_back(QStringLiteral("fx.reverb.mix"));
+        ids.push_back(QStringLiteral("fx.reverb.size"));
         break;
       }
       case 3: {
@@ -2395,7 +2756,6 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("system.devout.main"));
         ids.push_back(QStringLiteral("system.devout.out34"));
         ids.push_back(QStringLiteral("system.devout.phones"));
-        ids.push_back(QStringLiteral("system.apply"));
         ids.push_back(QStringLiteral("system.refresh"));
         break;
       }
@@ -2574,8 +2934,8 @@ void AppController::updateTransport() {
   const double left = audio_.peak(0);
   const double right = audio_.peak(1);
   mixerVm_->setMeters(left, right);
-  std::array<double, kNumStrips> stripLevels{};
-  for (int strip = 0; strip < kNumStrips; ++strip) {
+  std::array<double, audio::kMaxTracks> stripLevels{};
+  for (int strip = 0; strip < audio::kMaxTracks; ++strip) {
     stripLevels[static_cast<std::size_t>(strip)] =
         meterFraction(audio_.stripPeak(strip));
   }
@@ -2757,25 +3117,15 @@ void AppController::setTouchAnchorY(double y) {
 }
 
 void AppController::popupGain(const QString& label, int strip) {
-  showValuePopup(label, QStringLiteral("db"),
-                 mixerVm_->data(mixerVm_->index(strip),
-                                MixerViewModel::GainDbRole)
-                     .toDouble());
+  showValuePopup(label, QStringLiteral("db"), mixerVm_->gainDbAt(strip));
 }
 
 void AppController::popupPan(const QString& label, int strip) {
-  showValuePopup(label, QStringLiteral("pan"),
-                 mixerVm_->data(mixerVm_->index(strip),
-                                MixerViewModel::PanRole)
-                     .toDouble());
+  showValuePopup(label, QStringLiteral("pan"), mixerVm_->panAt(strip));
 }
 
 void AppController::popupSend(const QString& label, int strip, int send) {
-  showValuePopup(label, QStringLiteral("percent"),
-                 mixerVm_->data(mixerVm_->index(strip),
-                                send == 0 ? MixerViewModel::SendARole
-                                          : MixerViewModel::SendBRole)
-                     .toDouble());
+  showValuePopup(label, QStringLiteral("percent"), mixerVm_->sendAt(strip, send));
 }
 
 void AppController::popupTrackSend(const QString& label, int send) {

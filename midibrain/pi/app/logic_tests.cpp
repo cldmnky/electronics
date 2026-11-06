@@ -306,6 +306,12 @@ void routingTests() {
 
 void mixerTests() {
   MixerModel model;
+  // Slots must exist as tracks for the routing state and the arm mask to reach
+  // the engine; a removed track is silent by contract (dynamicMixerTests).
+  model.addTrack(3, "");
+  model.addTrack(4, "");
+  model.addTrack(5, "");
+  model.addTrack(6, "");
   model.setGainDb(3, -6.0f);
   model.setPan(3, 0.25f);
   model.setSend(3, 1, 0.5f);
@@ -330,7 +336,7 @@ void mixerTests() {
   // Input source, pair flag and output destination are separate engine routing
   // state (Engine::setChannel leaves them alone), so the same snapshot carries
   // them and a strip picker is live on the next block.
-  check(engine.inputSource(4) == 4 && engine.inputSource(17) == 17,
+  check(engine.inputSource(4) == 4 && engine.inputSource(6) == 6,
         "a new strip listens to its own device channel (identity)");
   model.setInCh(4, 9);
   model.setInPair(5, true);
@@ -354,6 +360,314 @@ void mixerTests() {
   checkNear(model.pan(3), 0.5, 1e-9, "pan snaps to centre inside the detent");
   model.setPan(3, 0.40f);
   checkNear(model.pan(3), 0.40, 1e-6, "pan outside the detent is unchanged");
+}
+
+// Dynamic track list (owner contract): the mixer starts empty, ADD TRACK
+// appends a slot in session order, REMOVE TRACK silences the slot while its
+// configuration, name and takes stay, and a re-add restores them. The per-slot
+// store is fixed, so nothing is ever reallocated by the audio path.
+void dynamicMixerTests() {
+  MixerModel model;
+  check(model.trackCount() == 0, "a new project starts with an empty mixer");
+  check(model.firstInactiveSlot() == 0, "the first add uses slot 0");
+  model.setGainDb(2, -3.0f);
+  model.setOutDst(2, 1);
+  check(model.addTrack(2, "keys"), "ADD TRACK appends the slot");
+  check(!model.addTrack(2, "again"), "a slot that is already a track cannot be re-added");
+  check(model.trackCount() == 1 && model.trackName(2) == "keys",
+        "the added track keeps its name");
+  check(model.positionOfSlot(2) == 0 && model.slotAt(0) == 2,
+        "the list maps positions to slots");
+
+  audio::Engine engine;
+  model.applyTo(engine);
+  check(engine.inputSource(2) == 2 && engine.outputDestination(2) ==
+            audio::OutputDestination::Out34,
+        "an active track forwards its input source and output destination");
+  model.setArm(2, true);
+  check((model.armMask() & (1u << 2)) != 0, "an active armed slot is in the arm mask");
+
+  check(model.removeTrackAt(0), "REMOVE TRACK removes the strip");
+  check(model.trackCount() == 0 && !model.trackActive(2),
+        "a removed track is no longer in the list");
+  model.applyTo(engine);
+  check(engine.inputSource(2) == -1 &&
+            engine.outputDestination(2) == audio::OutputDestination::None,
+        "a removed track is silent (no input, no output destination)");
+  check((model.armMask() & (1u << 2)) == 0, "a removed track never records");
+  checkNear(model.gainDb(2), -3.0, 1e-6, "REMOVE TRACK keeps the slot's settings");
+  check(model.outDst(2) == 1, "REMOVE TRACK keeps the slot's output destination");
+
+  check(model.addTrack(2, ""), "a removed slot can be re-added");
+  check(model.trackName(2) == "keys", "a re-add restores the stored name");
+  checkNear(model.gainDb(2), -3.0, 1e-6, "a re-add restores the stored settings");
+
+  check(model.addTrack(0, ""), "a nameless add succeeds");
+  check(model.slotAt(0) == 2 && model.slotAt(1) == 0,
+        "the list keeps session order (a re-added track goes last)");
+  check(model.trackName(0) == defaultTrackName(0),
+        "a nameless track uses the take-name default");
+
+  MixerModel::Insert insert;
+  insert.id = "builtin.delay";
+  insert.bypass = true;
+  insert.params = {0.4, 0.25};
+  model.setInsert(2, insert);
+  const auto stored = model.insert(2);
+  check(stored.id == "builtin.delay" && stored.bypass && stored.params.size() == 2,
+        "the per-track FX insert holds id, bypass and params");
+
+  // Legacy sessions: a default session::MixerState carries all 18 slots in
+  // order, so the app shows the legacy 18-strip mixer for a file without a
+  // "tracks" key (the session reader keeps that default).
+  session::MixerState legacy;
+  const int legacySlots = static_cast<int>(legacy.tracks.size());
+  check(legacySlots > 0 && legacySlots <= audio::kMaxTracks,
+        "a legacy session state lists every slot its store carries");
+  std::vector<MixerModel::Track> legacyTracks;
+  for (const auto& entry : legacy.tracks) {
+    legacyTracks.push_back(MixerModel::Track{entry.slot, entry.name});
+  }
+  model.setTracks(legacyTracks);
+  check(model.trackCount() == legacySlots && model.trackActive(0) &&
+            model.trackActive(legacySlots - 1),
+        "a legacy session shows every slot as an active strip");
+
+  // Session load replaces the whole ordered list and the active set.
+  model.setTracks({MixerModel::Track{5, "lead"}, MixerModel::Track{1, ""}});
+  check(model.trackCount() == 2 && model.slotAt(0) == 5 && model.slotAt(1) == 1 &&
+            model.trackActive(5) && !model.trackActive(2),
+        "a loaded track list replaces the active set in order");
+  check(model.trackName(5) == "lead" && model.trackName(1) == defaultTrackName(1),
+        "loaded names are kept and empty names fall back to the default");
+}
+
+// Capacity: the mixer's slot store and the arm mask follow the engine's track
+// capacity (audio::kMaxTracks, 64), not the device capture width (18). Nothing
+// in the app may assume a literal slot count, so a last-slot track is a normal
+// add/remove/arm, and the mask carries bit 63.
+void capacityTests() {
+  check(audio::kMaxTracks >= 64, "the engine track capacity is at least 64");
+  check(audio::kMaxChannels == 2 * audio::kMaxTracks,
+        "each track owns at most two internal channels");
+  check(sizeof(MixerModel::TrackMask) == sizeof(std::uint64_t),
+        "the app arm mask is 64-bit, matching Recorder::startTake");
+  check(MixerModel::kMaskBits >= audio::kMaxTracks,
+        "the mask covers every track slot");
+
+  MixerModel model;
+  const int lastSlot = audio::kMaxTracks - 1;
+  check(model.firstInactiveSlot() == 0, "the first add still uses slot 0");
+  check(model.addTrack(lastSlot, "last"), "a track can occupy the last slot");
+  check(model.trackActive(lastSlot) && model.positionOfSlot(lastSlot) == 0,
+        "the last slot is a normal track");
+  model.setArm(lastSlot, true);
+  const auto mask = model.armMask();
+  check((mask & (MixerModel::TrackMask{1} << lastSlot)) != 0,
+        "the arm mask carries the last slot");
+  check(model.addTrack(lastSlot, "again") == false,
+        "the last slot cannot be added twice");
+  model.setInCh(lastSlot, 5);
+  audio::Engine engine;
+  model.applyTo(engine);
+  check(engine.inputSource(lastSlot) == 5,
+        "the last slot carries its own device input selection");
+  check(model.removeTrackAt(0), "the last slot can be removed");
+  check(!model.trackActive(lastSlot), "the removed last slot is silent");
+
+  // A full 64-track list: the page count follows the list, four per page.
+  MixerModel full;
+  for (int slot = 0; slot < audio::kMaxTracks; ++slot) {
+    check(full.addTrack(slot, ""), "every capacity slot can be added");
+  }
+  SessionSettings settings;
+  EqModel eq;
+  MixerViewModel view(full, settings, eq);
+  check(view.stripCount() == audio::kMaxTracks, "the mixer shows every track");
+  check(view.pageCount() == (audio::kMaxTracks + kStripsPerBank - 1) / kStripsPerBank,
+        "the page count is ceil(tracks / 4), never a constant");
+  view.setBank(view.pageCount() - 1);
+  check(view.bank() == view.pageCount() - 1, "the last page is reachable");
+  view.setBank(view.pageCount());
+  check(view.bank() == view.pageCount() - 1, "the bank clamps at the last page");
+}
+
+// The QML model over the dynamic list: rows carry slots (not positions), the
+// bank pages four strips at a time, the selectors are absolute list writes and
+// the channel popout reads the same slot the strip was opened on.
+void dynamicMixerViewModelTests() {
+  SessionSettings settings;
+  MixerModel model;
+  EqModel eq;
+  MixerViewModel view(model, settings, eq);
+
+  check(view.rowCount() == 0 && view.empty() && view.pageCount() == 1,
+        "an empty project has no strip rows and one empty page");
+  check(view.bankText() == "NO TRACKS", "the page readout names the empty mixer");
+
+  check(view.addTrack(0, "drums", 0, false, 0), "the view adds slot 0");
+  check(view.addTrack(1, "bass", 1, false, 1), "the view adds slot 1");
+  check(view.addTrack(2, "keys", 2, true, 3), "the view adds slot 2 as a pair");
+  check(view.rowCount() == 3 && !view.empty(), "the list has three strips");
+  check(view.data(view.index(1, 0), MixerViewModel::SlotRole).toInt() == 1,
+        "a row carries its slot, not just its position");
+  check(view.data(view.index(1, 0), MixerViewModel::NameRole).toString() == "bass",
+        "a row carries the track name");
+  check(view.data(view.index(2, 0), MixerViewModel::InputTextRole).toString() ==
+            "IN 03/04",
+        "the pair input reads back as a stereo pair");
+  check(view.data(view.index(2, 0), MixerViewModel::OutputTextRole).toString() ==
+            "NONE",
+        "the output destination reads back in the row");
+  check(view.bankText() == "TRACKS 1-3 / 3", "the page readout counts the tracks");
+
+  check(view.addTrack(3, "gtr", 3, false, 0), "the view adds slot 3");
+  check(view.addTrack(4, "vox", 4, false, 0), "the view adds slot 4");
+  check(view.pageCount() == 2 && view.bankText() == "TRACKS 1-4 / 5",
+        "four strips fit one page and the fifth opens a second page");
+  view.stepBank(1);
+  check(view.bank() == 1 && view.bankText() == "TRACKS 5-5 / 5",
+        "stepping the bank reaches the second page");
+  view.stepBank(1);
+  check(view.bank() == 1, "the bank cannot step past the last page");
+  view.stepBank(-1);
+
+  view.setGainDb(1, -6.0);
+  view.removeTrack(1);
+  check(view.rowCount() == 4, "REMOVE TRACK drops one row");
+  checkNear(model.gainDb(1), -6.0, 1e-6, "REMOVE TRACK keeps the removed settings");
+  check(view.data(view.index(1, 0), MixerViewModel::SlotRole).toInt() == 2,
+        "the rows below a removed track keep their slots");
+
+  const int inputChannels = MixerViewModel::inputChannelCount();
+  check(view.inSourceState(2) == 1 + inputChannels + 1,
+        "slot 2 is the pair IN 03/04");
+  check(MixerViewModel::inputSourceLabel(1 + inputChannels + 1) == "PAIR 03/04",
+        "the selector list names the pair");
+  view.setInSourceState(2, 0);
+  check(model.inCh(2) == -1 && !model.inPair(2), "NONE clears the input source");
+  view.setInSourceState(2, 1 + 4);
+  check(model.inCh(2) == 4 && !model.inPair(2), "a mono pick writes the device channel");
+  view.setOutDstOf(2, 2);
+  check(model.outDst(2) == 2, "the output selector writes the destination");
+
+  check(MixerViewModel::inputSourceLabels().size() ==
+            1 + MixerViewModel::inputChannelCount() +
+                MixerViewModel::inputChannelCount() / 2,
+        "the input list covers none, mono device channels and every pair");
+  check(MixerViewModel::outputLabels().size() == kOutDstCount,
+        "the output list covers the four destinations");
+
+  view.setInsertChoiceAt(2, 1);
+  check(model.insert(2).id == "builtin.delay", "the insert selector writes the id");
+  check(view.trackInsertNameAt(2) == "DELAY", "the insert reads back by name");
+  view.setInsertBypassAt(2, true);
+  check(model.insert(2).bypass, "the insert bypass is stored per track");
+  view.setInsertChoiceAt(2, 0);
+  check(model.insert(2).id.empty() && view.trackInsertNameAt(2) == "NONE",
+        "NONE clears the insert");
+
+  view.openChannel(2);
+  check(view.channelOpen() && view.channelSlot() == 2,
+        "the channel popout opens on the strip's slot");
+  check(view.channelEqSummary().contains("1 NONE"),
+        "the popout summarises the channel's EQ bands");
+  view.setChannelInsertBypass(true);
+  check(model.insert(2).bypass, "the popout bypass writes the slot's insert");
+  view.closeChannel();
+  check(!view.channelOpen(), "CLOSE closes the channel popout");
+}
+
+// Every config popup field is live: the change lands on the model at the tap
+// (no apply button) and CANCEL restores what the popup opened with. ADD TRACK
+// is the one kind that creates anything, and only on OK.
+void configLiveTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  EqModel eq;
+  PerformanceModel performance;
+  ConfigPopupModel popup(state, mixer, settings, eq, performance);
+  MixerViewModel view(mixer, settings, eq);
+  popup.setMixer(&view);
+
+  const int clickModeBefore = state.clickMode.load();
+  check(popup.openKind(QStringLiteral("metronome")), "the metronome popup opens");
+  popup.setClickMode(2);
+  check(state.clickMode.load() == 2,
+        "a metronome change reaches the model immediately (no OK)");
+  popup.cancel();
+  check(state.clickMode.load() == clickModeBefore,
+        "CANCEL restores the metronome value the popup opened with");
+
+  check(popup.openKind(QStringLiteral("sends")), "the send-source popup opens");
+  popup.setSendCue(0);
+  check(settings.sends.cue == 0, "a send-source change is live");
+  popup.accept();
+  check(settings.sends.cue == 0, "OK keeps the live value");
+
+  // ADD TRACK: name plus input (none / mono / pair) and output.
+  check(popup.openKind(QStringLiteral("addtrack")), "the add-track popup opens");
+  popup.setAddTrackName(QStringLiteral("lead"));
+  popup.setAddTrackInputMode(2);
+  popup.setAddTrackChannel(5);
+  popup.setAddTrackOutput(1);
+  check(popup.addTrackChannel() == 4,
+        "a stereo pair clamps the input to an even first channel");
+  popup.accept();
+  check(view.stripCount() == 1, "OK ADDS the track");
+  check(mixer.trackName(0) == "lead", "the new track carries the popup name");
+  check(mixer.inCh(0) == 4 && mixer.inPair(0),
+        "the new track carries the popup's stereo input");
+  check(mixer.outDst(0) == 1, "the new track carries the popup's output");
+
+  check(popup.openKind(QStringLiteral("addtrack")), "the add-track popup reopens");
+  popup.setAddTrackName(QStringLiteral("discarded"));
+  popup.cancel();
+  check(view.stripCount() == 1, "CANCEL adds nothing");
+
+  // Selector popups: input, output, insert, delay division, reverb model.
+  popup.setInputTarget(0);
+  check(popup.openKind(QStringLiteral("inputsource")), "the input list opens");
+  popup.setInputSourceIndex(1 + 7);
+  check(mixer.inCh(0) == 7 && !mixer.inPair(0),
+        "an input pick is written to the strip immediately");
+  popup.cancel();
+  check(mixer.inCh(0) == 4 && mixer.inPair(0),
+        "CANCEL restores the strip's previous input source");
+  popup.setOutputTarget(0);
+  check(popup.openKind(QStringLiteral("outputdest")), "the output list opens");
+  popup.setOutputIndex(3);
+  check(mixer.outDst(0) == 3, "an output pick is live");
+  popup.cancel();
+  check(mixer.outDst(0) == 1, "CANCEL restores the previous output");
+  popup.setInsertTarget(0);
+  check(popup.openKind(QStringLiteral("insert")), "the insert list opens");
+  popup.setInsertIndex(2);
+  check(mixer.insert(0).id == "builtin.reverb", "an insert pick is live");
+  popup.cancel();
+  check(mixer.insert(0).id.empty(), "CANCEL restores the previous insert");
+
+  const int divisionBefore = static_cast<int>(std::lround(
+      performance.param(PerformanceModel::kDelayGrid, audio::fx::Delay::kDivision)));
+  check(popup.openKind(QStringLiteral("delaydivision")), "the delay division list opens");
+  popup.setDelayDivision(1);
+  check(static_cast<int>(std::lround(
+            performance.param(PerformanceModel::kDelayGrid,
+                              audio::fx::Delay::kDivision))) == 1,
+        "a delay division pick is live");
+  popup.cancel();
+  check(static_cast<int>(std::lround(
+            performance.param(PerformanceModel::kDelayGrid,
+                              audio::fx::Delay::kDivision))) == divisionBefore,
+        "CANCEL restores the previous delay division");
+  check(popup.openKind(QStringLiteral("reverbmodel")), "the reverb model list opens");
+  popup.setReverbModel(2);
+  check(static_cast<int>(std::lround(
+            performance.param(PerformanceModel::kReverbGrid,
+                              audio::fx::Reverb::kModel))) == 2,
+        "a reverb model pick is live");
+  popup.cancel();
 }
 
 void valueFormatTests() {
@@ -655,6 +969,16 @@ void projectRoundTripTests() {
   mixer.setOutDst(2, 1);
   mixer.setInCh(3, -1);
   mixer.setOutDst(3, 3);
+  // Dynamic track list and one per-track insert: the ordered slots and their
+  // names are session v2 mixer.tracks, the insert is mixer.channels[].insert.
+  mixer.addTrack(2, "keys");
+  mixer.addTrack(0, "drums");
+  mixer.addTrack(4, "");
+  MixerModel::Insert projectInsert;
+  projectInsert.id = "builtin.delay";
+  projectInsert.bypass = true;
+  projectInsert.params = {0.4, 0.25};
+  mixer.setInsert(2, projectInsert);
   midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, true);
   // Per-device route and its scoped pipe chain: id 6 is a dynamic USB id, so
   // this proves the project capture/load path covers ids 6..31, not only the
@@ -762,6 +1086,16 @@ void projectRoundTripTests() {
         "project load restores the per-track input source and output destination");
   check(mixer.inCh(3) == -1 && mixer.outDst(3) == 3,
         "project load restores a disabled input source and the NONE destination");
+  check(mixer.trackCount() == 3 && mixer.slotAt(0) == 2 && mixer.slotAt(1) == 0 &&
+            mixer.slotAt(2) == 4,
+        "project load restores the ordered dynamic track list");
+  check(mixer.trackName(2) == "keys" && mixer.trackName(0) == "drums" &&
+            mixer.trackName(4) == defaultTrackName(4),
+        "project load restores the track names (empty names keep the default)");
+  const auto loadedInsert = mixer.insert(2);
+  check(loadedInsert.id == "builtin.delay" && loadedInsert.bypass &&
+            loadedInsert.params.size() == 2,
+        "project load restores the per-track FX insert");
   check(midi.routeEnabled(midi::Port::TrsIn1, midi::Port::UsbOut),
         "project load restores the routing matrix");
   check(midi.routeEnabled(midi::dynamicPort(6), midi::Port::UsbOut),
@@ -789,6 +1123,26 @@ void projectRoundTripTests() {
             "project load restores the reverb X/Y position");
   checkNear(performance.y(PerformanceModel::kReverbGrid), 0.2, 1e-6,
             "project load restores the reverb Y position");
+
+  // Capacity seam: when the session store is narrower than the mixer's track
+  // capacity, a slot beyond it must fail the save closed (the session reader
+  // rejects such a slot, so a written file could never be loaded again). The
+  // guard follows the session store width, so this test is a no-op once the
+  // store reaches audio::kMaxTracks.
+  const int sessionSlots =
+      static_cast<int>(std::tuple_size_v<decltype(session::MixerState::channels)>);
+  if (sessionSlots < audio::kMaxTracks) {
+    const int overflowSlot = audio::kMaxTracks - 1;
+    mixer.addTrack(overflowSlot, "overflow");
+    std::string capacityError;
+    check(!project::save(context, directory, capacityError) &&
+              capacityError.find("session store") != std::string::npos,
+          "a track beyond the session store fails the save closed");
+    mixer.removeTrackAt(mixer.positionOfSlot(overflowSlot));
+    std::string retryError;
+    check(project::save(context, directory, retryError),
+          "the same project saves once the slot is removed");
+  }
 
   std::error_code removeError;
   std::filesystem::remove_all(directory, removeError);
@@ -1094,7 +1448,7 @@ void loopAndIoTests() {
   check(loopBeats(std::nan("")) == 0.0, "a NaN loop field reads as 0");
 
   check(clampInCh(-5) == -1 && clampInCh(0) == 0 && clampInCh(17) == 17 &&
-            clampInCh(99) == kNumStrips - 1,
+            clampInCh(99) == audio::kMaxDeviceInputs - 1,
         "input source clamps to none or a real channel");
   check(evenInCh(4) == 4 && evenInCh(5) == 4 && evenInCh(-1) == -1,
         "a stereo pair keeps the first channel even");
@@ -1250,7 +1604,12 @@ void deviceOutTests() {
 void mixerInputSourceTests() {
   SessionSettings settings;
   MixerModel model;
-  MixerViewModel view(model, settings);
+  EqModel eq;
+  // The mixer list is dynamic: seed the two slots this test addresses so the
+  // model rows exist, exactly as ADD TRACK would.
+  model.addTrack(0, "");
+  model.addTrack(7, "");
+  MixerViewModel view(model, settings, eq);
 
   check(view.inSourceText(0) == "IN 01", "a strip starts on its own input");
   check(view.data(view.index(0, 0), MixerViewModel::InputTextRole).toString() ==
@@ -1259,9 +1618,12 @@ void mixerInputSourceTests() {
   check(view.cycleInSource(0, 1) == "IN 02", "the strip selector steps to the next input");
   check(view.cycleInSource(0, -1) == "IN 01", "and steps back");
   check(view.cycleInSource(0, -1) == "NONE", "below IN 01 is NONE");
-  check(view.cycleInSource(0, -1) == "IN 17/18",
+  const int lastPairChannel = MixerViewModel::inputChannelCount() - 2;
+  check(view.cycleInSource(0, -1) ==
+            MixerViewModel::inputText(lastPairChannel, true),
         "below NONE the selector wraps to the last stereo pair");
-  check(model.inCh(0) == 16 && model.inPair(0), "the last pair starts on channel 17");
+  check(model.inCh(0) == lastPairChannel && model.inPair(0),
+        "the last pair starts on the last even device channel");
   check(view.cycleInSource(0, 1) == "NONE", "above the last pair is NONE again");
   check(view.cycleInSource(0, 1) == "IN 01", "and the list starts over");
   model.setInCh(0, 4);
@@ -1890,6 +2252,10 @@ int runAll() {
   clockGateTests();
   deviceOutTests();
   mixerInputSourceTests();
+  dynamicMixerTests();
+  dynamicMixerViewModelTests();
+  capacityTests();
+  configLiveTests();
   systemDeviceRowTests();
   timelineAndPipeTests();
   pipeLinkTests();

@@ -566,9 +566,10 @@ Item {
                         height: parent.height
                         text: routing.pipeSourceName
                         textSize: Style.fontSmall
-                        checked: true
+                        variant: "ghost"
+                        chevron: "down"
                         focusId: "shift.routing.pipes.src.name"
-                        onClicked: routing.cyclePipeSource(1)
+                        onClicked: app.openConfigFrom("pipesource", this)
                     }
                     TouchButton {
                         width: Style.touch
@@ -601,9 +602,10 @@ Item {
                         height: parent.height
                         text: routing.pipeDestinationName
                         textSize: Style.fontSmall
-                        checked: true
+                        variant: "ghost"
+                        chevron: "down"
                         focusId: "shift.routing.pipes.dst.name"
-                        onClicked: routing.cyclePipeDestination(1)
+                        onClicked: app.openConfigFrom("pipedest", this)
                     }
                     TouchButton {
                         width: Style.touch
@@ -651,8 +653,10 @@ Item {
                         height: parent.height
                         text: routing.addTypeName
                         textSize: Style.fontSmall
+                        variant: "ghost"
+                        chevron: "down"
                         focusId: "shift.routing.pipes.add.type"
-                        onClicked: routing.cycleAddType(1)
+                        onClicked: app.openConfigFrom("pipetype", this)
                     }
                     TouchButton {
                         width: Style.touch

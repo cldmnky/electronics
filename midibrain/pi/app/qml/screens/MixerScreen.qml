@@ -3,11 +3,12 @@ import Mnkybox 1.0
 import "../components"
 
 // Mixer screen with two views of the same strips: MIXER (one setting across
-// many tracks) and TRACK (one track with many settings). SHIFT switches to the
-// configure face: per-strip Gain/FX/CUE/OUT34/monitor for MIXER, and the
-// TRACK I/O, sends and monitor summaries for TRACK. Selection groups of more
-// than two choices live in the shared ConfigPopup; the face shows the live
-// summary.
+// many tracks) and TRACK (one track with many settings). The mixer is the
+// session's dynamic track list, four strips per page: ADD TRACK appends a strip,
+// the expand chevron on a strip opens the full channel popout (where REMOVE
+// TRACK lives, confirmed), and every selector opens its option list. SHIFT
+// switches to the configure face: per-strip Gain/FX/CUE/OUT34/monitor for
+// MIXER, and the TRACK I/O, sends and monitor summaries for TRACK.
 Item {
     id: screen
 
@@ -24,7 +25,7 @@ Item {
             spacing: Style.gap
 
             TouchButton {
-                width: 96
+                width: 84
                 height: parent.height
                 text: "MIXER"
                 textSize: Style.fontSmall
@@ -33,7 +34,7 @@ Item {
                 onClicked: mixer.trackMode = false
             }
             TouchButton {
-                width: 96
+                width: 84
                 height: parent.height
                 text: "TRACK"
                 textSize: Style.fontSmall
@@ -42,34 +43,54 @@ Item {
                 onClicked: mixer.trackMode = true
             }
             Row {
-                width: screen.shiftFace && !mixer.trackMode ? 176 : 0
+                width: 196
                 height: parent.height
                 spacing: Style.gapTight
-                visible: width > 0
+
                 TouchButton {
-                    width: (parent.width - Style.gapTight) / 2
+                    width: Style.touch
                     height: parent.height
-                    text: "1-9"
-                    textSize: Style.fontSmall
-                    checked: mixer.bank === 0
+                    text: "<"
+                    textSize: 18
                     focusId: "mixer.bank.0"
-                    onClicked: mixer.setBank(0)
+                    onClicked: mixer.stepBank(-1)
+                }
+                Text {
+                    width: parent.width - Style.touch * 2 - Style.gapTight * 2
+                    height: parent.height
+                    text: mixer.bankText
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
                 }
                 TouchButton {
-                    width: (parent.width - Style.gapTight) / 2
+                    width: Style.touch
                     height: parent.height
-                    text: "10-18"
-                    textSize: Style.fontSmall
-                    checked: mixer.bank === 1
+                    text: ">"
+                    textSize: 18
                     focusId: "mixer.bank.1"
-                    onClicked: mixer.setBank(1)
+                    onClicked: mixer.stepBank(1)
                 }
             }
+            TouchButton {
+                width: 110
+                height: parent.height
+                text: "ADD TRACK"
+                textSize: Style.fontSmall
+                variant: "primary"
+                focusId: "mixer.add"
+                onClicked: app.requestAddTrack()
+            }
             Text {
-                width: parent.width - 192 - (screen.shiftFace && !mixer.trackMode ? 184 : 0)
+                width: parent.width - 84 - 84 - 196 - 110 - Style.gap * 4
                 height: parent.height
                 text: (screen.shiftFace ? "SHIFT  " : "") +
-                      (mixer.trackMode ? mixer.trackName : "one setting across tracks")
+                      (mixer.trackMode ? mixer.trackName
+                                       : (mixer.empty ? "no tracks yet"
+                                                      : "tap ^ on a strip for the channel"))
                 color: screen.shiftFace ? Style.accent : Style.textDim
                 font.pixelSize: Style.fontSmall
                 verticalAlignment: Text.AlignVCenter
@@ -92,6 +113,18 @@ Item {
                     width: parent.width - Style.masterWidth - Style.gap
                     height: parent.height
 
+                    Text {
+                        visible: mixer.empty
+                        anchors.centerIn: parent
+                        width: parent.width - 40
+                        text: "EMPTY MIXER - PRESS ADD TRACK"
+                        color: Style.textDim
+                        font.pixelSize: Style.fontBody
+                        font.weight: Font.DemiBold
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                    }
+
                     Repeater {
                         model: mixer
                         delegate: MixerStrip {
@@ -100,7 +133,8 @@ Item {
                             width: visible ? stripsArea.width / mixer.stripsPerBank : 0
                             height: stripsArea.height
                             x: visible ? (index % mixer.stripsPerBank) * width : 0
-                            stripIndex: index
+                            stripIndex: model.slot
+                            stripName: model.name
                             gainDb: model.gainDb
                             pan: model.pan
                             panText: model.panText
@@ -117,88 +151,57 @@ Item {
                     }
                 }
 
-                Column {
+                Rectangle {
                     width: Style.masterWidth
                     height: parent.height
-                    spacing: Style.gap
+                    color: Style.panel
+                    radius: Style.cornerPanel
+                    border.width: Style.outlineWidth
+                    border.color: Style.outline
 
-                    Row {
-                        width: parent.width
-                        height: Style.touch
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 8
                         spacing: Style.gapTight
 
-                        TouchButton {
-                            width: (parent.width - Style.gapTight) / 2
-                            height: parent.height
-                            text: "1-9"
-                            textSize: Style.fontSmall
-                            checked: mixer.bank === 0
-                            focusId: "mixer.bank.0"
-                            onClicked: mixer.setBank(0)
+                        Text {
+                            width: parent.width
+                            height: 18
+                            text: "MASTER"
+                            color: Style.text
+                            font.pixelSize: Style.fontTitle
+                            font.weight: Font.DemiBold
+                            horizontalAlignment: Text.AlignHCenter
                         }
-                        TouchButton {
-                            width: (parent.width - Style.gapTight) / 2
-                            height: parent.height
-                            text: "10-18"
-                            textSize: Style.fontSmall
-                            checked: mixer.bank === 1
-                            focusId: "mixer.bank.1"
-                            onClicked: mixer.setBank(1)
+
+                        TouchSlider {
+                            id: masterGain
+                            width: parent.width
+                            height: Math.max(96, parent.height - 18 - 88 - Style.gapTight * 2)
+                            vertical: true
+                            minimumValue: -60
+                            maximumValue: 12
+                            value: mixer.masterDb
+                            focusId: "mixer.master"
+                            popupLabel: "MASTER"
+                            popupKind: "db"
+                            Binding on value { value: mixer.masterDb; when: !masterGain.dragging }
+                            onMoved: (value) => mixer.setMasterDb(value)
                         }
-                    }
 
-                    Rectangle {
-                        width: parent.width
-                        height: parent.height - Style.touch - Style.gap
-                        color: Style.panel
-                        radius: Style.cornerPanel
-                        border.width: Style.outlineWidth
-                        border.color: Style.outline
+                        Row {
+                            width: parent.width
+                            height: 84
+                            spacing: 5
 
-                        Column {
-                            anchors.fill: parent
-                            anchors.margins: 8
-                            spacing: Style.gapTight
-
-                            Text {
-                                width: parent.width
-                                height: 18
-                                text: "MASTER"
-                                color: Style.text
-                                font.pixelSize: Style.fontTitle
-                                font.weight: Font.DemiBold
-                                horizontalAlignment: Text.AlignHCenter
-                            }
-
-                            TouchSlider {
-                                id: masterGain
-                                width: parent.width
-                                height: 108
-                                vertical: true
-                                minimumValue: -60
-                                maximumValue: 12
-                                value: mixer.masterDb
-                                focusId: "mixer.master"
-                                popupLabel: "MASTER"
-                                popupKind: "db"
-                                Binding on value { value: mixer.masterDb; when: !masterGain.dragging }
-                                onMoved: (value) => mixer.setMasterDb(value)
-                            }
-
-                            Row {
-                                width: parent.width
-                                height: Math.max(48, parent.height - 18 - 108 - 8)
-                                spacing: 5
-
-                                Repeater {
-                                    model: 2
-                                    delegate: Meter {
-                                        width: (parent.width - 5) / 2
-                                        height: parent.height
-                                        level: index === 0 ? mixer.meterLeft : mixer.meterRight
-                                        clip: (index === 0 ? mixer.meterLeft : mixer.meterRight) > 0.95
-                                        vertical: true
-                                    }
+                            Repeater {
+                                model: 2
+                                delegate: Meter {
+                                    width: (parent.width - 5) / 2
+                                    height: parent.height
+                                    level: index === 0 ? mixer.meterLeft : mixer.meterRight
+                                    clip: (index === 0 ? mixer.meterLeft : mixer.meterRight) > 0.95
+                                    vertical: true
                                 }
                             }
                         }
@@ -213,26 +216,21 @@ Item {
             width: parent.width
             height: parent.height - Style.touch - Style.gap
 
-            Column {
+            Item {
+                id: shiftStripsArea
                 width: parent.width
                 height: parent.height
-                spacing: Style.gap
 
-                Item {
-                    id: shiftStripsArea
-                    width: parent.width
-                    height: parent.height
-
-                    Repeater {
-                        model: mixer
-                        delegate: MixerShiftStrip {
-                            visible: index >= mixer.bank * mixer.stripsPerBank &&
-                                     index < (mixer.bank + 1) * mixer.stripsPerBank
-                            width: visible ? shiftStripsArea.width / mixer.stripsPerBank : 0
-                            height: shiftStripsArea.height
-                            x: visible ? (index % mixer.stripsPerBank) * width : 0
-                            stripIndex: index
-                        }
+                Repeater {
+                    model: mixer
+                    delegate: MixerShiftStrip {
+                        visible: index >= mixer.bank * mixer.stripsPerBank &&
+                                 index < (mixer.bank + 1) * mixer.stripsPerBank
+                        width: visible ? shiftStripsArea.width / mixer.stripsPerBank : 0
+                        height: shiftStripsArea.height
+                        x: visible ? (index % mixer.stripsPerBank) * width : 0
+                        stripIndex: model.slot
+                        stripName: model.name
                     }
                 }
             }
@@ -251,21 +249,33 @@ Item {
 
                 Item {
                     width: parent.width
-                    height: Style.touch * 2
+                    height: Style.touch
 
+                    // The selector is the current page of four: the header's
+                    // page buttons walk the same list the MIXER face banks.
                     Repeater {
-                        model: 18
+                        model: mixer
                         delegate: TouchButton {
-                            width: parent.width / 9
+                            visible: index >= mixer.bank * mixer.stripsPerBank &&
+                                     index < (mixer.bank + 1) * mixer.stripsPerBank
+                            width: visible ? parent.width / mixer.stripsPerBank : 0
                             height: Style.touch
-                            x: (index % 9) * width
-                            y: Math.floor(index / 9) * Style.touch
-                            text: String(index + 1).padStart(2, "0")
+                            x: visible ? (index % mixer.stripsPerBank) * width : 0
+                            text: model.name
                             textSize: Style.fontSmall
-                            checked: index === mixer.trackIndex
-                            focusId: "track.select." + index
-                            onClicked: mixer.setTrackIndex(index)
+                            checked: model.slot === mixer.trackIndex
+                            focusId: "track.select." + model.slot
+                            onClicked: mixer.setTrackIndex(model.slot)
                         }
+                    }
+
+                    Text {
+                        visible: mixer.empty
+                        anchors.fill: parent
+                        text: "no tracks yet - ADD TRACK on the MIXER face"
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSmall
+                        verticalAlignment: Text.AlignVCenter
                     }
                 }
 
@@ -303,7 +313,7 @@ Item {
                         checked: mixer.trackArm
                         checkedColor: Style.record
                         focusId: "track.rec"
-                        onClicked: mixer.toggleArm(mixer.trackIndex)
+                        onClicked: mixer.setTrackArm(!mixer.trackArm)
                     }
                     TouchButton {
                         width: (parent.width - Style.gap * 2) / 3
@@ -312,7 +322,7 @@ Item {
                         textSize: Style.fontSmall
                         checked: mixer.trackMute
                         focusId: "track.mute"
-                        onClicked: mixer.toggleMute(mixer.trackIndex)
+                        onClicked: mixer.setTrackMute(!mixer.trackMute)
                     }
                     TouchButton {
                         width: (parent.width - Style.gap * 2) / 3
@@ -321,7 +331,7 @@ Item {
                         textSize: Style.fontSmall
                         checked: mixer.trackSolo
                         focusId: "track.solo"
-                        onClicked: mixer.toggleSolo(mixer.trackIndex)
+                        onClicked: mixer.setTrackSolo(!mixer.trackSolo)
                     }
                 }
             }
@@ -338,11 +348,9 @@ Item {
                 height: parent.height
                 spacing: Style.gap
 
-                // Per-track I/O assignment (session v2 inCh/inPair/outDst). The
-                // left picker walks none / IN 01..18 with the PAIR toggle for a
-                // stereo pair (3/4, 5/6, ...); the right picker walks the four
-                // output destinations. Panel: NAV_PRESS enters EDIT, the encoder
-                // steps the focused picker.
+                // Per-track I/O assignment (session v2 inCh/inPair/outDst): both
+                // pickers are tap-to-open option lists, so the face has no
+                // steppers and every pick lands on the engine immediately.
                 Row {
                     width: parent.width
                     height: Style.touch
@@ -363,39 +371,14 @@ Item {
                             verticalAlignment: Text.AlignVCenter
                         }
                         TouchButton {
-                            width: Style.touch
-                            height: parent.height
-                            text: "<"
-                            textSize: 18
-                            focusId: "shift.track.input.dec"
-                            onClicked: {
-                                mixer.cycleTrackInCh(-1)
-                                app.showTextPopup("INPUT SOURCE", mixer.trackInputText)
-                            }
-                        }
-                        TouchButton {
-                            width: parent.width - 44 - Style.touch * 2 - 68 -
-                                   Style.gapTight * 3
+                            width: parent.width - 44 - 64 - Style.gapTight * 2
                             height: parent.height
                             text: mixer.trackInputText
                             textSize: Style.fontSmall
                             variant: "ghost"
+                            chevron: "down"
                             focusId: "shift.track.input"
-                            onClicked: {
-                                mixer.cycleTrackInCh(1)
-                                app.showTextPopup("INPUT SOURCE", mixer.trackInputText)
-                            }
-                        }
-                        TouchButton {
-                            width: Style.touch
-                            height: parent.height
-                            text: ">"
-                            textSize: 18
-                            focusId: "shift.track.input.inc"
-                            onClicked: {
-                                mixer.cycleTrackInCh(1)
-                                app.showTextPopup("INPUT SOURCE", mixer.trackInputText)
-                            }
+                            onClicked: app.openInputSource(mixer.trackIndex)
                         }
                         TouchButton {
                             width: 64
@@ -427,39 +410,14 @@ Item {
                             verticalAlignment: Text.AlignVCenter
                         }
                         TouchButton {
-                            width: Style.touch
-                            height: parent.height
-                            text: "<"
-                            textSize: 18
-                            focusId: "shift.track.output.dec"
-                            onClicked: {
-                                mixer.cycleTrackOutDst(-1)
-                                app.showTextPopup("OUTPUT DEST", mixer.trackOutputText)
-                            }
-                        }
-                        TouchButton {
-                            width: parent.width - 52 - Style.touch * 2 -
-                                   Style.gapTight * 2
+                            width: parent.width - 52 - Style.gapTight
                             height: parent.height
                             text: mixer.trackOutputText
                             textSize: Style.fontSmall
                             variant: "ghost"
+                            chevron: "down"
                             focusId: "shift.track.output"
-                            onClicked: {
-                                mixer.cycleTrackOutDst(1)
-                                app.showTextPopup("OUTPUT DEST", mixer.trackOutputText)
-                            }
-                        }
-                        TouchButton {
-                            width: Style.touch
-                            height: parent.height
-                            text: ">"
-                            textSize: 18
-                            focusId: "shift.track.output.inc"
-                            onClicked: {
-                                mixer.cycleTrackOutDst(1)
-                                app.showTextPopup("OUTPUT DEST", mixer.trackOutputText)
-                            }
+                            onClicked: app.openOutputDest(mixer.trackIndex)
                         }
                     }
                 }
@@ -527,6 +485,7 @@ Item {
                             height: Style.touch
                             text: "SENDS  " + config.sendSummary
                             textSize: Style.fontSmall
+                            chevron: "down"
                             focusId: "shift.monitor.sends"
                             onClicked: app.openConfigFrom("sends", this)
                         }
@@ -535,8 +494,18 @@ Item {
                             height: Style.touch
                             text: "MONITOR   " + ["PLAY", "AUTO", "BOTH", "MON"][mixer.trackMonitor]
                             textSize: Style.fontSmall
+                            chevron: "down"
                             focusId: "shift.track.monitor"
                             onClicked: app.openConfigFrom("trackmonitor", this)
+                        }
+                        TouchButton {
+                            width: parent.width
+                            height: Style.touch
+                            text: "INSERT   " + mixer.channelInsertName
+                            textSize: Style.fontSmall
+                            chevron: "down"
+                            focusId: "shift.track.insert"
+                            onClicked: app.openInsert(mixer.trackIndex)
                         }
                         Text {
                             width: parent.width

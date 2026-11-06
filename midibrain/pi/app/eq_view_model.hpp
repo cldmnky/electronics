@@ -16,6 +16,9 @@ class EqViewModel final : public QObject {
   Q_PROPERTY(QVariantList nodes READ nodes NOTIFY changed)
   Q_PROPERTY(QVariantList curve READ curve NOTIFY curveChanged)
   Q_PROPERTY(int subject READ subject NOTIFY changed)
+  // Index of the Main-bus subject in the band store (EqModel::kMainSubject):
+  // QML compares against this instead of a literal track count.
+  Q_PROPERTY(int mainSubject READ mainSubject CONSTANT)
   Q_PROPERTY(int band READ band NOTIFY changed)
   Q_PROPERTY(QString subjectText READ subjectText NOTIFY changed)
   Q_PROPERTY(QString bandText READ bandText NOTIFY changed)
@@ -32,6 +35,7 @@ class EqViewModel final : public QObject {
   QVariantList nodes() const;
   QVariantList curve() const;
   int subject() const { return model_.subject(); }
+  int mainSubject() const { return EqModel::kMainSubject; }
   int band() const { return model_.band(); }
   QString subjectText() const;
   QString bandText() const;

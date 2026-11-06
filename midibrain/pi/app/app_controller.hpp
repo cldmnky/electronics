@@ -200,6 +200,24 @@ class AppController final : public QObject {
   Q_INVOKABLE void requestExportPipeChain();
   Q_INVOKABLE void requestImportPipeChain();
 
+  // Dynamic mixer. ADD TRACK opens the config popup pre-filled with the first
+  // free slot's name, input and output; the strip appears in track order the
+  // moment OK adds it. REMOVE TRACK asks for confirmation and leaves the slot's
+  // configuration, name and takes in the project, so a re-add restores them.
+  Q_INVOKABLE void requestAddTrack();
+  Q_INVOKABLE void requestRemoveTrack(int slot);
+  // The add-track popup's NAME button opens the shared keypad; accepting writes
+  // the name back into the live popup draft.
+  Q_INVOKABLE void requestAddTrackName();
+  // Selector popups: every cycle-style selector opens the option list instead
+  // of stepping a value, and a pick applies immediately.
+  Q_INVOKABLE void openInputSource(int slot);
+  Q_INVOKABLE void openOutputDest(int slot);
+  Q_INVOKABLE void openInsert(int slot);
+  // Full channel popout opened from a strip's expand affordance.
+  Q_INVOKABLE void openChannel(int slot);
+  Q_INVOKABLE void closeChannel();
+
   // Screenshot runner helper: force an overlay state for a deterministic grab.
   Q_INVOKABLE void openDemoKeypad();
   // Screenshot runner helper: force the SHIFT face (the panel reaches it with a
@@ -309,7 +327,7 @@ class AppController final : public QObject {
   ChordDetector chord_;
   bool pendingRec_ = false;
   std::uint64_t pendingRecMs_ = 0;
-  std::uint32_t takeArmMask_ = 0;
+  MixerModel::TrackMask takeArmMask_ = 0;
 
   std::uint8_t lastLedMask_ = 0;
   std::uint8_t lastLedStates_ = 0;

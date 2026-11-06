@@ -48,10 +48,12 @@ Item {
 
         Item {
             width: parent.width
-            height: Style.touch * 2
+            // One row of nine per line; the row count and the arm state come
+            // from the recorder's own arm model, not a literal.
+            height: Math.ceil(recorder.arms.rowCount / 9) * Style.touch
 
             Repeater {
-                model: 18
+                model: recorder.arms
                 delegate: TouchButton {
                     width: parent.width / 9
                     height: Style.touch

@@ -218,11 +218,148 @@ void FxSlotViewModel::updateStatus() {
   }
 }
 
+BuiltinFxViewModel::BuiltinFxViewModel(PerformanceModel& performance, QObject* parent)
+    : QObject(parent), performance_(performance) {}
+
+double BuiltinFxViewModel::param(int grid, int index) const {
+  return performance_.param(grid, index);
+}
+
+void BuiltinFxViewModel::setParamValue(int grid, int index, double value) {
+  if (!performance_.setParam(grid, index, value)) return;
+  emit changed();
+}
+
+double BuiltinFxViewModel::delayTimeMs() const {
+  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kTimeMs);
+}
+void BuiltinFxViewModel::setDelayTimeMs(double value) {
+  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kTimeMs,
+                std::clamp(value, 1.0, audio::fx::Delay::kMaxTimeMs));
+}
+double BuiltinFxViewModel::delayFeedback() const {
+  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kFeedback);
+}
+void BuiltinFxViewModel::setDelayFeedback(double value) {
+  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kFeedback,
+                std::clamp(value, 0.0, 0.95));
+}
+double BuiltinFxViewModel::delayMix() const {
+  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kMix);
+}
+void BuiltinFxViewModel::setDelayMix(double value) {
+  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kMix,
+                std::clamp(value, 0.0, 1.0));
+}
+bool BuiltinFxViewModel::delayBeat() const {
+  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kBeatMode) >= 0.5;
+}
+void BuiltinFxViewModel::setDelayBeat(bool value) {
+  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kBeatMode,
+                value ? 1.0 : 0.0);
+}
+int BuiltinFxViewModel::delayDivision() const {
+  return static_cast<int>(std::lround(
+      param(PerformanceModel::kDelayGrid, audio::fx::Delay::kDivision)));
+}
+void BuiltinFxViewModel::setDelayDivision(int value) {
+  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kDivision,
+                std::clamp(value, 0, audio::fx::Delay::kDivCount - 1));
+}
+QString BuiltinFxViewModel::delayDivisionText() const {
+  return QString::fromLatin1(audio::fx::Delay::divisionName(delayDivision()));
+}
+bool BuiltinFxViewModel::delayPingPong() const {
+  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kPingPong) >= 0.5;
+}
+void BuiltinFxViewModel::setDelayPingPong(bool value) {
+  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kPingPong,
+                value ? 1.0 : 0.0);
+}
+double BuiltinFxViewModel::delayCutoffHz() const {
+  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kBpCutoffHz);
+}
+void BuiltinFxViewModel::setDelayCutoffHz(double value) {
+  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kBpCutoffHz,
+                std::clamp(value, 20.0, 20000.0));
+}
+double BuiltinFxViewModel::delayWidthOct() const {
+  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kBpWidthOct);
+}
+void BuiltinFxViewModel::setDelayWidthOct(double value) {
+  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kBpWidthOct,
+                std::clamp(value, 0.1, 4.0));
+}
+double BuiltinFxViewModel::reverbPredelayMs() const {
+  return param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kPredelayMs);
+}
+void BuiltinFxViewModel::setReverbPredelayMs(double value) {
+  setParamValue(PerformanceModel::kReverbGrid, audio::fx::Reverb::kPredelayMs,
+                std::clamp(value, 0.0, 200.0));
+}
+double BuiltinFxViewModel::reverbDecay() const {
+  return param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kDecay);
+}
+void BuiltinFxViewModel::setReverbDecay(double value) {
+  setParamValue(PerformanceModel::kReverbGrid, audio::fx::Reverb::kDecay,
+                std::clamp(value, 0.0, 0.98));
+}
+double BuiltinFxViewModel::reverbDamping() const {
+  return param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kDamping);
+}
+void BuiltinFxViewModel::setReverbDamping(double value) {
+  setParamValue(PerformanceModel::kReverbGrid, audio::fx::Reverb::kDamping,
+                std::clamp(value, 0.0, 1.0));
+}
+double BuiltinFxViewModel::reverbMix() const {
+  return param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kMix);
+}
+void BuiltinFxViewModel::setReverbMix(double value) {
+  setParamValue(PerformanceModel::kReverbGrid, audio::fx::Reverb::kMix,
+                std::clamp(value, 0.0, 1.0));
+}
+int BuiltinFxViewModel::reverbModel() const {
+  return static_cast<int>(std::lround(
+      param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kModel)));
+}
+void BuiltinFxViewModel::setReverbModel(int value) {
+  const int model = std::clamp(value, 0, audio::fx::Reverb::kModelCount - 1);
+  // The model is a preset: applying it also rewrites decay/damping/size, so the
+  // panel reads them back from the effect instead of showing stale values.
+  if (!performance_.setReverbModel(model)) return;
+  emit changed();
+}
+QString BuiltinFxViewModel::reverbModelText() const {
+  return QString::fromLatin1(audio::fx::Reverb::modelName(reverbModel()));
+}
+double BuiltinFxViewModel::reverbSize() const {
+  return param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kSize);
+}
+void BuiltinFxViewModel::setReverbSize(double value) {
+  setParamValue(PerformanceModel::kReverbGrid, audio::fx::Reverb::kSize,
+                std::clamp(value, 0.25, 2.0));
+}
+
+void BuiltinFxViewModel::cycleDelayDivision(int delta) {
+  const int next = delayDivision() + (delta < 0 ? -1 : 1);
+  setDelayDivision((next + audio::fx::Delay::kDivCount) % audio::fx::Delay::kDivCount);
+}
+
+void BuiltinFxViewModel::cycleReverbModel(int delta) {
+  const int next = reverbModel() + (delta < 0 ? -1 : 1);
+  setReverbModel((next + audio::fx::Reverb::kModelCount) %
+                 audio::fx::Reverb::kModelCount);
+}
+
+void BuiltinFxViewModel::refresh() { emit changed(); }
+
 FxViewModel::FxViewModel(FxManager& fx, AppState& state, MixerModel& mixer,
-                         double sampleRate, QObject* parent)
+                         PerformanceModel& performance, double sampleRate,
+                         QObject* parent)
     : QObject(parent),
       slotA_(fx.slot(0), 0, state, mixer, this),
-      slotB_(fx.slot(1), 1, state, mixer, this) {
+      slotB_(fx.slot(1), 1, state, mixer, this),
+      builtin_(performance) {
   (void)sampleRate;
 }
 
@@ -233,6 +370,7 @@ void FxViewModel::loadDefaults() {
 void FxViewModel::refresh() {
   slotA_.refresh();
   slotB_.refresh();
+  builtin_.refresh();
 }
 
 }  // namespace mnky::app

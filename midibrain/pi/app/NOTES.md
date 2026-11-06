@@ -786,3 +786,95 @@ macOS (Qt 6.12.0, AppleClang, clean directory `/tmp/pi-build-clean`):
 
 No hardware or touch-panel measurement is claimed; the taps are in-process
 offscreen `QMouseEvent` pairs, not a real digitizer.
+
+### Wave 8 run (dynamic mixer, live settings, selector popups, FX tab, channel popout)
+
+Owner direction: the mixer must be a dynamic track list (start empty, ADD/REMOVE
+TRACK), four strips per page with bigger faders, no apply buttons anywhere,
+selector popups instead of in-place cycle steppers, the built-in delay/reverb
+full settings on the FX tab beside the CLAP slots, and a full channel popout
+from a strip. Implementation and seams:
+
+* Dynamic mixer. `MixerModel` keeps the fixed per-slot store and adds a UI-side
+  ordered `tracks` list plus an atomic per-slot `active` gate. ADD TRACK appends
+  the first free slot with the popup's name, input (none / mono 1..18 / stereo
+  pair) and output (Main / OUT3&4 / phones / none); REMOVE TRACK (confirmed in
+  `ConfirmDialog`) drops the strip while the slot's settings, name, insert and
+  takes stay in the project, so re-adding restores them. A removed slot is
+  silent by contract: `applyTo()` forwards input `-1` and output destination
+  `None` for it and `armMask()` never includes it. A new project is empty; the
+  session v2 reader fills all 18 slots for a legacy file that has no
+  `mixer.tracks` key.
+* Four strips per page. `MixerViewModel` rows are the track order and each row
+  carries its slot (`SlotRole`), so a strip's controls and focus ids address the
+  slot, not the position. The bank pages four strips and the header readout is
+  `TRACKS n-m / total`; the two historical bank buttons step one page.
+* No apply buttons. `ConfigPopupModel` writes every change to the models the
+  moment it is made and CANCEL restores the values the popup opened with, so
+  OK/CLOSE never applies anything late. ADD TRACK is the one kind that creates
+  on OK (CANCEL adds nothing); the timeline region ops keep OK = RUN. The System
+  device/buffer pickers reopen the audio stream on every pick, and the audio
+  layer's fallback reason is shown both on the screen and as a notice popup.
+* Selector popups. Cycle-style selectors are tap-to-open option lists:
+  input source (none, mono 1..18, nine pairs), output destination, per-track FX
+  insert (none / builtin delay / builtin reverb), delay division, reverb model,
+  and the Routing pipe page's FROM / TO / ADD type. `TouchButton` draws a chevron
+  (`down` = opens a list, `up` = expands the channel) as the visual affordance;
+  the value button stays the same 44 px target.
+* FX tab. The primary face shows the built-in Delay and Reverb panels with their
+  FULL parameters (time, feedback, mix, beat, division, ping-pong, feedback-path
+  cutoff and width; model, pre-delay, decay, damping, mix, size) beside compact
+  CLAP send A/B cards. SHIFT keeps the large CLAP B parameter editor with both
+  return levels. The built-in values are `PerformanceModel`'s own parameters, so
+  an X/Y grid move and a panel knob edit are the same value.
+* Channel popout. The strip's expand chevron opens `ChannelPopout`: fader with
+  meter, pan, trim, M/S/ARM, the four send levels, the four-way input monitor,
+  input source, output destination, the per-track insert with bypass, the four
+  EQ band summaries and REMOVE TRACK. Every field is live; CLOSE only closes and
+  the popout traps the panel focus ring while it is open. The TRACK tab stays.
+* Per-track insert. `MixerModel::Insert {id, bypass, params}` is stored per slot
+  and travels in session v2 `mixer.channels[].insert`; the engine instance path
+  lands in the parallel audio work item, so this wave ships the selector, the
+  bypass and the persistence.
+
+Verification (macOS, Qt 6.12.0, AppleClang, clean directory
+`/tmp/pi-build-uxclean`, configured with `-DFETCHCONTENT_SOURCE_DIR_CLAP` at the
+previous run's fetched headers so the clean configure needs no network):
+
+* `cmake -S midibrain/pi -B /tmp/pi-build-uxclean ...` + full
+  `cmake --build ... -j14`: **exit 0, zero warnings** (`-Wall -Wextra -Werror`
+  on the app sources).
+* `ctest --test-dir /tmp/pi-build-uxclean --output-on-failure`: **21/21 passed**;
+  `mnkybox_app_logic` prints **750 checks, 0 failures**.
+* `QT_QPA_PLATFORM=offscreen ./app/mnkybox --ui-taps`: **603 taps, 0 QML
+  warnings, 0 failures**. The run covers the empty mixer, the add-track popup,
+  the channel popout and every ConfigPopup kind, including the six new selector
+  lists and the pipe FROM/TO/type lists.
+* `./app/mnkybox --screenshots /tmp/ux-final`: **81/81 PNGs**, 0 failures. The
+  wave-8 proof set copied into `pi/qemu/screenshots/`: `40-mixer-empty.png`,
+  `40-mixer-add-track.png`, `40-mixer-bank.png`, `40-fx-builtin.png`,
+  `40-channel-popout.png`, `40-popup-input.png`, `40-popup-insert.png`.
+* `projectRoundTripTests` covers the dynamic track list and the per-track insert
+  through a real save/load, so `mixer.tracks` and `mixer.channels[].insert` are
+  proven on the app<->session seam.
+
+No hardware, touch-digitizer, audio-timing or plugin-instance test is claimed.
+The FX insert's audio path, and a written track name in a legacy project (the
+take naming keeps the `chNN` default when the name is empty), remain explicit
+limits of this wave.
+
+## Capacity (64 tracks / 128 channels, 2026-11-06)
+
+Named capacities from `audio/capacity.hpp` everywhere in the app path:
+track slots/arrays/loops use `audio::kMaxTracks` (64), device capture width
+uses `audio::kMaxDeviceInputs` (18), `kNumStrips` is the legacy fixed-row
+screens' width only. Mixer banks paginate the tracks LIST (4 per page;
+64 tracks = 16 pages); input enumeration is model-driven (device width,
+never a literal). Masks are `uint64_t` (`MixerModel::TrackMask`);
+`RecorderViewModel::adoptRecordedTake` matches `Recorder::startTake(uint64_t)`.
+App-owned take state (SessionSettings loop/edit/active arrays, AudioGlue
+meter taps) is `kMaxTracks`-wide. Saving a project with a track slot beyond
+the session store fails CLOSED with an explicit reason instead of writing an
+unloadable file. Assumption: the engine-side capacity raise (done in
+pi/audio/capacity.hpp by the engine wave) keeps `kMaxInputs` as the
+legacy device-width name; session entry counts follow `audio::kMaxInputs`.

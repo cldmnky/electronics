@@ -4,8 +4,13 @@
 // Every value is an atomic and the audio callback reads a snapshot once per
 // block (applyTo), so a UI change lands on the next block and the audio thread
 // never blocks, allocates or takes a lock.
+#include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <string>
+#include <vector>
 
 #include "../audio/engine.hpp"
 
@@ -13,6 +18,31 @@ namespace mnky::app {
 
 class MixerModel {
  public:
+  // One bit per track slot. The audio::Recorder mask is uint64_t and the owner's
+  // track ceiling is audio::kMaxTracks (64), so this named type is the app's
+  // single mask width: every consumer names it instead of a literal, and a
+  // capacity change is a change here plus the recorder's matching type.
+  using TrackMask = std::uint64_t;
+  static constexpr int kMaskBits = std::numeric_limits<TrackMask>::digits;
+
+  // One active mixer track: the fixed per-slot configuration store plus the
+  // ordered list of slots the mixer shows. The owner's contract is that the
+  // mixer starts empty, ADD TRACK appends a slot and REMOVE TRACK deletes the
+  // strip while the slot's configuration and takes stay in the project; order
+  // is the list order, and a re-add of a removed slot restores its settings.
+  struct Track {
+    int slot = 0;     // 0..audio::kMaxTracks-1
+    std::string name;
+  };
+  // Per-track FX insert (session v2 mixer.channels[].insert). The engine
+  // instance path lands in parallel; this model carries the selector, the
+  // bypass and the parameter vector the channel popout and the session need.
+  struct Insert {
+    std::string id;  // empty = none; "builtin.delay" | "builtin.reverb" | CLAP id
+    bool bypass = false;
+    std::vector<double> params;
+  };
+
   MixerModel();
 
   audio::Channel channel(int index) const;  // snapshot for Engine::setChannel
@@ -64,6 +94,32 @@ class MixerModel {
   int outDst(int index) const;
 
   // 0 = OUT3&4 stereo pair, 1 = two mono sends (session v2 mixer.out34mode).
+  // ---- dynamic track list -------------------------------------------------
+  // UI-thread only: the audio callback never reads the list itself, it reads
+  // the per-slot `active` flag that addTrack/removeTrack publishes, so an
+  // inactive slot is silenced (inCh -1, outDst none) while its configuration
+  // stays in strips_ for a later re-add. A new project starts with no tracks.
+  int trackCount() const { return static_cast<int>(tracks_.size()); }
+  const Track* trackAt(int position) const;
+  int slotAt(int position) const;
+  int positionOfSlot(int slot) const;
+  bool trackActive(int slot) const;
+  // Appends `slot`. Fails (returns false) for an invalid slot or one that is
+  // already active. An empty `name` keeps the stored name or the default.
+  bool addTrack(int slot, std::string name);
+  // Removes the track at `position`; configuration, name and takes stay.
+  bool removeTrackAt(int position);
+  void setTrackName(int slot, std::string name);
+  std::string trackName(int slot) const;
+  // Session load: replaces the whole ordered list (one begin/end reset in the
+  // view model) and marks exactly those slots active.
+  void setTracks(std::vector<Track> tracks);
+  int firstInactiveSlot() const;
+
+  // ---- per-track FX insert ------------------------------------------------
+  Insert insert(int slot) const;
+  void setInsert(int slot, Insert insert);
+
   void setOut34Mode(int mode);
   int out34Mode() const;
 
@@ -72,8 +128,10 @@ class MixerModel {
   void setFxReturnDb(int send, float db);
   float fxReturnDb(int send) const;
 
-  // Bit n = strip n armed for the next take (Recorder::startTake arm mask).
-  std::uint32_t armMask() const;
+  // Bit n = active slot n armed for the next take (Recorder::startTake takes
+  // the same 64-bit mask). Inactive slots are never in the mask: they are
+  // silent and must not record.
+  TrackMask armMask() const;
 
  private:
   static bool valid(int index);
@@ -95,7 +153,16 @@ class MixerModel {
     std::atomic<int> outDst{0};
   };
 
-  Strip strips_[audio::kMaxInputs];
+  // The slot store follows the engine's track capacity (audio::kMaxTracks), not
+  // the device capture width: every track is mono or stereo and owns one or two
+  // internal channels.
+  Strip strips_[audio::kMaxTracks];
+  // Audio-thread gate: addTrack/removeTrack publish it and applyTo reads it.
+  std::array<std::atomic<bool>, audio::kMaxTracks> active_{};
+  // UI-thread state below (never touched by the audio callback).
+  std::vector<Track> tracks_;
+  std::array<std::string, audio::kMaxTracks> names_{};
+  std::array<Insert, audio::kMaxTracks> inserts_{};
   std::atomic<int> out34Mode_{0};
   std::atomic<float> masterDb_{0.0f};
   std::atomic<float> fxReturnDb_[audio::kNumSends] = {};

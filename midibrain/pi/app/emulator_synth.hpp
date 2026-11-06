@@ -20,9 +20,9 @@ class EmulatorSynth {
 
   double sampleRate_ = 48000.0;
   // 32-bit phase accumulators: modulo wraps for free in the audio callback.
-  std::uint32_t phase_[audio::kMaxInputs] = {};
-  std::uint32_t rng_[audio::kMaxInputs] = {};
-  float filtered_[audio::kMaxInputs] = {};
+  std::uint32_t phase_[audio::kMaxDeviceInputs] = {};
+  std::uint32_t rng_[audio::kMaxDeviceInputs] = {};
+  float filtered_[audio::kMaxDeviceInputs] = {};
 };
 
 }  // namespace mnky::app

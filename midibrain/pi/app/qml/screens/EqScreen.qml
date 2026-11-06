@@ -53,7 +53,7 @@ Item {
                 width: 74
                 height: parent.height
                 text: "MAIN"
-                checked: eq.subject === 18
+                checked: eq.subject === eq.mainSubject
                 focusId: "eq.subject.main"
                 onClicked: eq.selectMain()
             }
@@ -332,7 +332,7 @@ Item {
                 height: parent.height
                 text: "MAIN"
                 textSize: Style.fontSmall
-                checked: eq.subject === 18
+                checked: eq.subject === eq.mainSubject
                 focusId: "shift.eq.subject.main"
                 onClicked: eq.selectMain()
             }

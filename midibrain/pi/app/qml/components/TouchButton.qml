@@ -20,6 +20,11 @@ Rectangle {
     property bool bold: true
     // "secondary" | "primary" | "ghost" | "danger"
     property string variant: "secondary"
+    // Selector affordance: "" | "down" | "up". A popup-opening button draws a
+    // chevron (down = opens a list, up = expands the channel) so a tap-to-open
+    // selector is visibly different from a plain toggle. With no text the
+    // chevron is the whole label (a 44 px icon button).
+    property string chevron: ""
 
     signal clicked()
     // Long press (the tab row's SHIFT gesture): the screen decides what the
@@ -59,7 +64,8 @@ Rectangle {
     Text {
         id: label
         anchors.centerIn: parent
-        width: parent.width - 8
+        width: parent.width - 8 - (root.chevron !== "" && root.text !== "" ? 14 : 0)
+        anchors.horizontalCenterOffset: root.chevron !== "" && root.text !== "" ? -7 : 0
         text: root.text
         color: root.labelColor
         font.pixelSize: root.textSize
@@ -68,6 +74,38 @@ Rectangle {
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
         maximumLineCount: 1
+    }
+
+    Canvas {
+        id: chevronCanvas
+        visible: root.chevron !== ""
+        width: root.text === "" ? 16 : 12
+        height: 8
+        anchors.verticalCenter: parent.verticalCenter
+        x: root.text === "" ? (parent.width - width) / 2 : parent.width - width - 4
+        Component.onCompleted: requestPaint()
+        onVisibleChanged: requestPaint()
+        Connections {
+            target: root
+            function onChevronChanged() { chevronCanvas.requestPaint() }
+            function onCheckedChanged() { chevronCanvas.requestPaint() }
+            function onVariantChanged() { chevronCanvas.requestPaint() }
+            function onTextChanged() { chevronCanvas.requestPaint() }
+        }
+        onPaint: {
+            const ctx = getContext("2d")
+            ctx.reset()
+            ctx.strokeStyle = root.labelColor
+            ctx.lineWidth = 2
+            ctx.lineCap = "round"
+            ctx.lineJoin = "round"
+            const down = root.chevron === "down"
+            ctx.beginPath()
+            ctx.moveTo(1, down ? 2 : 6)
+            ctx.lineTo(width / 2, down ? 6 : 2)
+            ctx.lineTo(width - 1, down ? 2 : 6)
+            ctx.stroke()
+        }
     }
 
     TapHandler {

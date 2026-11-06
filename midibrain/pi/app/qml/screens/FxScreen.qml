@@ -2,21 +2,60 @@ import QtQuick
 import Mnkybox 1.0
 import "../components"
 
-// FX: primary face is the first send slot's parameters; SHIFT is the second
-// parameter bank plus both return levels. The per-strip send amount lives on
-// the Mixer SHIFT face.
+// FX: the primary face shows the two built-in send effects with their FULL
+// settings (delay and reverb are no longer X/Y-only) beside the two CLAP send
+// slots. SHIFT keeps the large CLAP parameter editor for slot B with both return
+// levels, which is where a plugin's own parameter list gets the whole height.
 Item {
     id: screen
 
     readonly property bool shiftFace: app.panelMode === "shift"
 
-    FxSlotPanel {
+    Item {
         visible: !screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        slot: fx.slotA
-        slotLetter: "A"
-        showReturn: false
+
+        Column {
+            anchors.fill: parent
+            spacing: Style.gap
+
+            Row {
+                width: parent.width
+                height: (parent.height - Style.gap) / 2
+                spacing: Style.gap
+
+                BuiltinDelayPanel {
+                    width: (parent.width - Style.gap) / 2
+                    height: parent.height
+                }
+                BuiltinReverbPanel {
+                    width: (parent.width - Style.gap) / 2
+                    height: parent.height
+                }
+            }
+
+            Row {
+                width: parent.width
+                height: (parent.height - Style.gap) / 2
+                spacing: Style.gap
+
+                FxSlotPanel {
+                    width: (parent.width - Style.gap) / 2
+                    height: parent.height
+                    slot: fx.slotA
+                    slotLetter: "A"
+                    showReturn: false
+                }
+                FxSlotPanel {
+                    width: (parent.width - Style.gap) / 2
+                    height: parent.height
+                    slot: fx.slotB
+                    slotLetter: "B"
+                    showReturn: false
+                }
+            }
+        }
     }
 
     Column {

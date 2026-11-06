@@ -3,21 +3,104 @@
 #include <algorithm>
 
 #include "logic.hpp"
+#include "project_logic.hpp"
 
 namespace mnky::app {
 
 MixerModel::MixerModel() {
-  for (int index = 0; index < audio::kMaxInputs; ++index) {
+  for (int index = 0; index < audio::kMaxTracks; ++index) {
     // Identity input source: strip N listens to device channel N until a picker
     // says otherwise, which is Engine::setInputSource's documented default.
     strips_[index].inCh.store(index, std::memory_order_relaxed);
     for (auto& send : strips_[index].send) send.store(0.0f);
+    active_[index].store(false, std::memory_order_relaxed);
   }
   for (auto& fxReturn : fxReturnDb_) fxReturn.store(0.0f);
 }
 
+const MixerModel::Track* MixerModel::trackAt(int position) const {
+  if (position < 0 || position >= static_cast<int>(tracks_.size())) return nullptr;
+  return &tracks_[static_cast<std::size_t>(position)];
+}
+
+int MixerModel::slotAt(int position) const {
+  const Track* track = trackAt(position);
+  return track == nullptr ? -1 : track->slot;
+}
+
+int MixerModel::positionOfSlot(int slot) const {
+  for (std::size_t position = 0; position < tracks_.size(); ++position) {
+    if (tracks_[position].slot == slot) return static_cast<int>(position);
+  }
+  return -1;
+}
+
+bool MixerModel::trackActive(int slot) const {
+  if (!valid(slot)) return false;
+  return active_[static_cast<std::size_t>(slot)].load(std::memory_order_relaxed);
+}
+
+bool MixerModel::addTrack(int slot, std::string name) {
+  if (!valid(slot) || trackActive(slot)) return false;
+  if (!name.empty()) names_[static_cast<std::size_t>(slot)] = std::move(name);
+  tracks_.push_back(Track{slot, trackName(slot)});
+  active_[static_cast<std::size_t>(slot)].store(true, std::memory_order_relaxed);
+  return true;
+}
+
+bool MixerModel::removeTrackAt(int position) {
+  const Track* track = trackAt(position);
+  if (track == nullptr) return false;
+  const int slot = track->slot;
+  tracks_.erase(tracks_.begin() + position);
+  // Config, name and takes stay; the audio gate is what makes it silent.
+  active_[static_cast<std::size_t>(slot)].store(false, std::memory_order_relaxed);
+  return true;
+}
+
+void MixerModel::setTrackName(int slot, std::string name) {
+  if (!valid(slot)) return;
+  names_[static_cast<std::size_t>(slot)] = std::move(name);
+  const int position = positionOfSlot(slot);
+  if (position >= 0) tracks_[static_cast<std::size_t>(position)].name = trackName(slot);
+}
+
+std::string MixerModel::trackName(int slot) const {
+  if (!valid(slot)) return {};
+  const auto& stored = names_[static_cast<std::size_t>(slot)];
+  return stored.empty() ? defaultTrackName(slot) : stored;
+}
+
+void MixerModel::setTracks(std::vector<Track> tracks) {
+  for (auto& active : active_) active.store(false, std::memory_order_relaxed);
+  tracks_.clear();
+  for (const auto& track : tracks) {
+    if (!valid(track.slot) || trackActive(track.slot)) continue;
+    if (!track.name.empty()) names_[static_cast<std::size_t>(track.slot)] = track.name;
+    tracks_.push_back(Track{track.slot, trackName(track.slot)});
+    active_[static_cast<std::size_t>(track.slot)].store(true, std::memory_order_relaxed);
+  }
+}
+
+int MixerModel::firstInactiveSlot() const {
+  for (int slot = 0; slot < audio::kMaxTracks; ++slot) {
+    if (!trackActive(slot)) return slot;
+  }
+  return -1;
+}
+
+MixerModel::Insert MixerModel::insert(int slot) const {
+  if (!valid(slot)) return {};
+  return inserts_[static_cast<std::size_t>(slot)];
+}
+
+void MixerModel::setInsert(int slot, Insert insert) {
+  if (!valid(slot)) return;
+  inserts_[static_cast<std::size_t>(slot)] = std::move(insert);
+}
+
 bool MixerModel::valid(int index) {
-  return index >= 0 && index < audio::kMaxInputs;
+  return index >= 0 && index < audio::kMaxTracks;
 }
 
 bool MixerModel::validSend(int send) {
@@ -54,17 +137,23 @@ audio::Channel MixerModel::channel(int index) const {
 }
 
 void MixerModel::applyTo(audio::Engine& engine) const {
-  for (int index = 0; index < audio::kMaxInputs; ++index) {
+  for (int index = 0; index < audio::kMaxTracks; ++index) {
     engine.setChannel(index, channel(index));
     // Routing state is separate from audio::Channel on purpose (setChannel
     // leaves it untouched), so the same snapshot carries it: the input pickers
     // on the mixer strips and the TRACK SHIFT face reach the engine here.
+    // A removed track has no input source and no output destination: silent,
+    // with every setting retained for a re-add.
     const auto& strip = strips_[index];
-    engine.setInputSource(index, strip.inCh.load(std::memory_order_relaxed));
-    engine.setInputPair(index, strip.inPair.load(std::memory_order_relaxed));
+    const bool active = trackActive(index);
+    engine.setInputSource(index,
+                          active ? strip.inCh.load(std::memory_order_relaxed) : -1);
+    engine.setInputPair(index,
+                        active && strip.inPair.load(std::memory_order_relaxed));
     engine.setOutputDestination(
-        index, static_cast<audio::OutputDestination>(strip.outDst.load(
-                   std::memory_order_relaxed)));
+        index, active ? static_cast<audio::OutputDestination>(strip.outDst.load(
+                            std::memory_order_relaxed))
+                      : audio::OutputDestination::None);
   }
   engine.setMaster(dbToGain(masterDb_.load(std::memory_order_relaxed)));
   for (int send = 0; send < audio::kNumSends; ++send) {
@@ -170,7 +259,11 @@ int MixerModel::monitor(int index) const {
 
 void MixerModel::setInCh(int index, int channel) {
   if (!valid(index)) return;
-  int value = channel < 0 ? -1 : (channel >= audio::kMaxInputs ? audio::kMaxInputs - 1 : channel);
+  // The input source is a device capture channel, so it is bounded by the
+  // device width (audio::kMaxDeviceInputs), never by the track capacity.
+  int value = channel < 0 ? -1 : (channel >= audio::kMaxDeviceInputs
+                                      ? audio::kMaxDeviceInputs - 1
+                                      : channel);
   // A stereo pair needs an even first channel (session contract: odd clamps
   // down), and "none" cannot be a pair.
   if (strips_[index].inPair.load(std::memory_order_relaxed) && value >= 0 &&
@@ -236,10 +329,15 @@ float MixerModel::fxReturnDb(int send) const {
   return validSend(send) ? fxReturnDb_[send].load(std::memory_order_relaxed) : 0.0f;
 }
 
-std::uint32_t MixerModel::armMask() const {
-  std::uint32_t mask = 0;
-  for (int index = 0; index < audio::kMaxInputs; ++index) {
-    if (arm(index)) mask |= 1u << static_cast<unsigned>(index);
+MixerModel::TrackMask MixerModel::armMask() const {
+  TrackMask mask = 0;
+  for (int index = 0; index < audio::kMaxTracks; ++index) {
+    // The owner ceiling is 64 tracks and TrackMask has 64 bits; the guard keeps
+    // the shift defined if the slot store ever grows before the mask does.
+    if (index >= kMaskBits) break;
+    if (trackActive(index) && arm(index)) {
+      mask |= TrackMask{1} << static_cast<unsigned>(index);
+    }
   }
   return mask;
 }

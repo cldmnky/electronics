@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <string>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 #include "../../session/session.hpp"
 #include "app_state.hpp"
@@ -136,23 +138,45 @@ session::Snapshot captureSnapshot(const AppContext& context) {
   snapshot.mainComp = context.settings.mainComp;
   snapshot.isTemplate = context.settings.isTemplate;
   snapshot.mixer.out34Mode = context.mixer.out34Mode();
-  for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
-    snapshot.mixer.channels[static_cast<std::size_t>(channel)].cueSend =
-        context.mixer.cueSend(channel);
-    snapshot.mixer.channels[static_cast<std::size_t>(channel)].out34Send =
-        context.mixer.out34Send(channel);
-    snapshot.takes.active[static_cast<std::size_t>(channel)] =
-        context.settings.activeTake(channel);
-    snapshot.takes.loop[static_cast<std::size_t>(channel)] =
-        context.settings.takeLoop[static_cast<std::size_t>(channel)];
-    snapshot.takes.edit[static_cast<std::size_t>(channel)] =
-        context.settings.takeEdit[static_cast<std::size_t>(channel)];
-    snapshot.mixer.channels[static_cast<std::size_t>(channel)].inCh =
-        context.mixer.inCh(channel);
-    snapshot.mixer.channels[static_cast<std::size_t>(channel)].inPair =
-        context.mixer.inPair(channel);
-    snapshot.mixer.channels[static_cast<std::size_t>(channel)].outDst =
-        context.mixer.outDst(channel);
+  // Copy by the session store's own width, never a literal: the mixer model
+  // supports audio::kMaxTracks slots while the session store width follows the
+  // session wave. Iterating its size means a widening needs no change here and
+  // a narrower store is never over-run.
+  const std::size_t sessionTrackSlots = snapshot.mixer.channels.size();
+  for (std::size_t channel = 0; channel < sessionTrackSlots; ++channel) {
+    const int track = static_cast<int>(channel);
+    auto& out = snapshot.mixer.channels[channel];
+    out.cueSend = context.mixer.cueSend(track);
+    out.out34Send = context.mixer.out34Send(track);
+    out.inCh = context.mixer.inCh(track);
+    out.inPair = context.mixer.inPair(track);
+    out.outDst = context.mixer.outDst(track);
+    const auto insert = context.mixer.insert(track);
+    out.insert.id = insert.id;
+    out.insert.bypass = insert.bypass;
+    out.insert.params = insert.params;
+    if (channel < snapshot.takes.active.size()) {
+      snapshot.takes.active[channel] = context.settings.activeTake(track);
+    }
+    if (channel < snapshot.takes.loop.size()) {
+      snapshot.takes.loop[channel] = context.settings.takeLoop[channel];
+    }
+    if (channel < snapshot.takes.edit.size()) {
+      snapshot.takes.edit[channel] = context.settings.takeEdit[channel];
+    }
+  }
+  // Dynamic track list (session v2 mixer.tracks): the ordered slots the mixer
+  // shows and their names. The per-slot configuration above is saved for every
+  // slot, so a removed track's settings and takes survive in the project and a
+  // re-add restores them.
+  snapshot.mixer.tracks.clear();
+  for (int position = 0; position < context.mixer.trackCount(); ++position) {
+    const auto* track = context.mixer.trackAt(position);
+    if (track == nullptr) continue;
+    session::MixerState::TrackEntry entry;
+    entry.slot = track->slot;
+    entry.name = track->name;
+    snapshot.mixer.tracks.push_back(entry);
   }
   snapshot.clock = context.settings.clock;
   // Device output routing (session v2 deviceOut): Main/OUT3&4/phones channel
@@ -201,8 +225,10 @@ session::Snapshot captureSnapshot(const AppContext& context) {
 }
 
 void applyMixer(const AppContext& context, const session::MixerState& mixer) {
-  for (int index = 0; index < audio::kMaxInputs; ++index) {
-    const auto& channel = mixer.channels[static_cast<std::size_t>(index)];
+  // The loaded store is the session's width; every index it carries is valid
+  // for the mixer model (which is at least as wide).
+  for (std::size_t index = 0; index < mixer.channels.size(); ++index) {
+    const auto& channel = mixer.channels[index];
     context.mixer.setGainDb(index, gainToDb(channel.gain));
     // Session v2 has one gain field; the app-side trim is reset so the loaded
     // combined gain is not applied twice.
@@ -220,7 +246,21 @@ void applyMixer(const AppContext& context, const session::MixerState& mixer) {
     context.mixer.setInCh(index, channel.inCh);
     context.mixer.setInPair(index, channel.inPair);
     context.mixer.setOutDst(index, channel.outDst);
+    MixerModel::Insert insert;
+    insert.id = channel.insert.id;
+    insert.bypass = channel.insert.bypass;
+    insert.params = channel.insert.params;
+    context.mixer.setInsert(index, std::move(insert));
   }
+  // The session reader defaults an absent "tracks" key to every slot (legacy
+  // all-18); an empty vector here is therefore a genuinely empty project, not a
+  // legacy one.
+  std::vector<MixerModel::Track> tracks;
+  tracks.reserve(mixer.tracks.size());
+  for (const auto& entry : mixer.tracks) {
+    tracks.push_back(MixerModel::Track{entry.slot, entry.name});
+  }
+  context.mixer.setTracks(std::move(tracks));
   context.mixer.setMasterDb(gainToDb(mixer.master));
   context.mixer.setOut34Mode(mixer.out34Mode);
 }
@@ -269,7 +309,21 @@ bool save(const AppContext& context, const std::filesystem::path& directory,
     return false;
   }
   const auto file = directory / kProjectFileName;
+  // Fail closed on a track slot the session store cannot carry: the reader
+  // rejects an out-of-range slot, so writing the file would create a project
+  // that cannot be loaded. This is a capacity seam, not a policy: when the
+  // session store widens to audio::kMaxTracks the guard follows it.
   const auto snapshot = captureSnapshot(context);
+  const std::size_t sessionTrackSlots = snapshot.mixer.channels.size();
+  for (const auto& track : snapshot.mixer.tracks) {
+    if (track.slot >= 0 && static_cast<std::size_t>(track.slot) < sessionTrackSlots) {
+      continue;
+    }
+    error = "project: track slot " + std::to_string(track.slot + 1) +
+            " is beyond the session store (" + std::to_string(sessionTrackSlots) +
+            " slots); the session capacity widening is pending";
+    return false;
+  }
   if (!session::save(file.string(), snapshot)) {
     error = "cannot write " + file.string();
     return false;
@@ -334,13 +388,17 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
   context.settings.sends = result.snapshot.sends;
   context.settings.mainComp = result.snapshot.mainComp;
   context.settings.isTemplate = result.snapshot.isTemplate;
-  for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
-    context.settings.setActiveTake(
-        channel, result.snapshot.takes.active[static_cast<std::size_t>(channel)]);
-    context.settings.takeLoop[static_cast<std::size_t>(channel)] =
-        result.snapshot.takes.loop[static_cast<std::size_t>(channel)];
-    context.settings.takeEdit[static_cast<std::size_t>(channel)] =
-        result.snapshot.takes.edit[static_cast<std::size_t>(channel)];
+  // The session store width is the snapshot's own; a narrower store leaves the
+  // app-side slots above it at their defaults (they are not persisted yet).
+  for (std::size_t channel = 0; channel < result.snapshot.takes.active.size(); ++channel) {
+    const int track = static_cast<int>(channel);
+    context.settings.setActiveTake(track, result.snapshot.takes.active[channel]);
+    if (channel < result.snapshot.takes.loop.size()) {
+      context.settings.takeLoop[channel] = result.snapshot.takes.loop[channel];
+    }
+    if (channel < result.snapshot.takes.edit.size()) {
+      context.settings.takeEdit[channel] = result.snapshot.takes.edit[channel];
+    }
   }
   context.settings.clock = result.snapshot.clock;
   context.settings.deviceOut = result.snapshot.deviceOut;
@@ -379,7 +437,7 @@ std::string fingerprint(const AppContext& context) {
     }
   }
 
-  for (int index = 0; index < audio::kMaxInputs; ++index) {
+  for (int index = 0; index < audio::kMaxTracks; ++index) {
     appendFloat(out, "g", context.mixer.gainDb(index));
     appendFloat(out, "tr", context.mixer.trimDb(index));
     appendFloat(out, "p", context.mixer.pan(index));
@@ -402,11 +460,13 @@ std::string fingerprint(const AppContext& context) {
     }
   }
 
-  // EQ: every band of all 18 tracks plus Main (type, gain, frequency, Q).
+  // EQ: every band of the EQ store's tracks plus Main (type, gain, frequency,
+  // Q). The store's own width keeps this correct when it widens.
   const auto eq = context.eq.capture();
-  for (int track = 0; track <= audio::kMaxInputs; ++track) {
+  const int eqTracks = static_cast<int>(eq.tracks.size());
+  for (int track = 0; track <= eqTracks; ++track) {
     for (int band = 0; band < 4; ++band) {
-      const auto& entry = track >= audio::kMaxInputs
+      const auto& entry = track >= eqTracks
                               ? eq.main[static_cast<std::size_t>(band)]
                               : eq.tracks[static_cast<std::size_t>(track)]
                                          [static_cast<std::size_t>(band)];
@@ -432,7 +492,7 @@ std::string fingerprint(const AppContext& context) {
   appendInt(out, "co", context.state.clickOutput.load());
   appendFloat(out, "cg", context.state.clickGainDb.load());
   appendInt(out, "o34", context.mixer.out34Mode());
-  for (int index = 0; index < audio::kMaxInputs; ++index) {
+  for (int index = 0; index < audio::kMaxTracks; ++index) {
     appendFloat(out, "cue", context.mixer.cueSend(index));
     appendFloat(out, "o34s", context.mixer.out34Send(index));
     appendInt(out, "mon", context.mixer.monitor(index));

@@ -159,6 +159,8 @@ class RoutingViewModel final : public QObject {
   // Default export name for the selected route, e.g. "chain-1-3".
   Q_INVOKABLE QString defaultChainName() const;
   Q_INVOKABLE void cycleAddType(int delta);
+  // Every selectable pipe type, in add order, for the tap-to-open type list.
+  Q_INVOKABLE QStringList addTypeLabels() const;
   Q_INVOKABLE void cycleSelectedPipe(int delta);
   Q_INVOKABLE void setParamPage(int page);
   // Per-pipe channel scope (session::MidiPipe::chMask) of the selected pipe.

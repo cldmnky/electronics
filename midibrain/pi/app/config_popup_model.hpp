@@ -1,13 +1,18 @@
 #pragma once
-// Draft state for the generic configuration modal. open() copies the live
-// session values, the QML popup edits these drafts, accept() writes them back,
-// cancel()/EXIT discards them. The summary properties are one-line live
-// readouts for the buttons that open each popup.
+// Draft state for the generic configuration modal. The owner's wave-end rule
+// is "no apply buttons": every setting is live, so each setter writes the open
+// kind's values to the models immediately; OK/CLOSE keeps them and CANCEL
+// restores the values the popup opened with. The summary properties are
+// one-line live readouts for the buttons that open each popup; the list kinds
+// (input source, output destination, insert, add track) are tap-to-open
+// selector popups with the full option list.
 #include <QObject>
 #include <QString>
 #include <QStringList>
 
+#include <array>
 #include <cstdint>
+#include <vector>
 
 #include "app_state.hpp"
 #include "eq_model.hpp"
@@ -19,6 +24,7 @@ namespace mnky::app {
 
 class RoutingViewModel;
 class TimelineViewModel;
+class MixerViewModel;
 
 class ConfigPopupModel final : public QObject {
   Q_OBJECT
@@ -78,6 +84,42 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(int pipeChannelMask READ pipeChannelMask NOTIFY changed)
   Q_PROPERTY(QString pipeChannelText READ pipeChannelText NOTIFY changed)
   Q_PROPERTY(QString pipeScopeContext READ pipeScopeContext NOTIFY changed)
+  // Footer text: the popup states its own OK/CANCEL contract (live values vs
+  // the add-track create and the region-op run).
+  Q_PROPERTY(QString footerHint READ footerHint NOTIFY openChanged)
+  // ---- selector popups (tap-to-open lists) -------------------------------
+  // INPUT SOURCE: 0 = none, 1..18 mono device channels, 19..27 stereo pairs.
+  // Every pick writes MixerModel the moment it is tapped.
+  Q_PROPERTY(QString inputSourceTitle READ inputSourceTitle NOTIFY openChanged)
+  Q_PROPERTY(QStringList inputSourceLabels READ inputSourceLabels CONSTANT)
+  Q_PROPERTY(int inputSourceIndex READ inputSourceIndex WRITE setInputSourceIndex NOTIFY changed)
+  // OUTPUT DEST: Main 1&2 / OUT3&4 / phones / none (engine destination order).
+  Q_PROPERTY(QString outputTitle READ outputTitle NOTIFY openChanged)
+  Q_PROPERTY(QStringList outputLabels READ outputLabels CONSTANT)
+  Q_PROPERTY(int outputIndex READ outputIndex WRITE setOutputIndex NOTIFY changed)
+  // Per-track FX insert: none / builtin delay / builtin reverb.
+  Q_PROPERTY(QString insertTitle READ insertTitle NOTIFY openChanged)
+  Q_PROPERTY(QStringList insertLabels READ insertLabels CONSTANT)
+  Q_PROPERTY(int insertIndex READ insertIndex WRITE setInsertIndex NOTIFY changed)
+  // ADD TRACK: name plus input (none / mono 1..18 / pair) and output; OK adds
+  // the strip, CANCEL adds nothing. The name button opens the shared keypad.
+  Q_PROPERTY(QString addTrackName READ addTrackName WRITE setAddTrackName NOTIFY changed)
+  Q_PROPERTY(int addTrackInputMode READ addTrackInputMode WRITE setAddTrackInputMode NOTIFY changed)
+  Q_PROPERTY(int addTrackChannel READ addTrackChannel WRITE setAddTrackChannel NOTIFY changed)
+  Q_PROPERTY(int addTrackOutput READ addTrackOutput WRITE setAddTrackOutput NOTIFY changed)
+  Q_PROPERTY(QString addTrackSummary READ addTrackSummary NOTIFY changed)
+  Q_PROPERTY(QString addTrackError READ addTrackError NOTIFY changed)
+  // Upper bound of the ADD TRACK channel grid: the model's device capture
+  // width, so a wider device registry grows the grid without a QML edit.
+  Q_PROPERTY(int addTrackChannelCount READ addTrackChannelCount CONSTANT)
+  // Pipe chain selectors on the Routing SHIFT > PIPES face: FROM/TO/ADD type
+  // are tap-to-open lists instead of prev/next steppers.
+  Q_PROPERTY(QStringList pipeSourceLabels READ pipeSourceLabels NOTIFY changed)
+  Q_PROPERTY(int pipeSourceIndex READ pipeSourceIndex WRITE setPipeSourceIndex NOTIFY changed)
+  Q_PROPERTY(QStringList pipeDestLabels READ pipeDestLabels NOTIFY changed)
+  Q_PROPERTY(int pipeDestIndex READ pipeDestIndex WRITE setPipeDestIndex NOTIFY changed)
+  Q_PROPERTY(QStringList pipeTypeLabels READ pipeTypeLabels CONSTANT)
+  Q_PROPERTY(int pipeTypeIndex READ pipeTypeIndex WRITE setPipeTypeIndex NOTIFY changed)
 
  public:
   ConfigPopupModel(AppState& state, MixerModel& mixer, SessionSettings& settings,
@@ -132,6 +174,39 @@ class ConfigPopupModel final : public QObject {
   int pipeChannelMask() const { return pipeChannelMask_; }
   QString pipeChannelText() const;
   QString pipeScopeContext() const { return pipeScopeContext_; }
+  QString footerHint() const;
+  QString inputSourceTitle() const;
+  QStringList inputSourceLabels() const;
+  int inputSourceIndex() const { return inputSourceIndex_; }
+  void setInputSourceIndex(int value);
+  QString outputTitle() const;
+  QStringList outputLabels() const;
+  int outputIndex() const { return outputIndex_; }
+  void setOutputIndex(int value);
+  QString insertTitle() const;
+  QStringList insertLabels() const;
+  int insertIndex() const { return insertIndex_; }
+  void setInsertIndex(int value);
+  QString addTrackName() const { return addTrackName_; }
+  void setAddTrackName(const QString& name);
+  int addTrackInputMode() const { return addTrackInputMode_; }
+  void setAddTrackInputMode(int mode);
+  int addTrackChannel() const { return addTrackChannel_; }
+  void setAddTrackChannel(int channel);
+  int addTrackOutput() const { return addTrackOutput_; }
+  void setAddTrackOutput(int destination);
+  QString addTrackSummary() const;
+  QString addTrackError() const { return addTrackError_; }
+  int addTrackChannelCount() const;
+  QStringList pipeSourceLabels() const { return pipeSourceLabels_; }
+  int pipeSourceIndex() const { return pipeSourceIndex_; }
+  void setPipeSourceIndex(int value);
+  QStringList pipeDestLabels() const { return pipeDestLabels_; }
+  int pipeDestIndex() const { return pipeDestIndex_; }
+  void setPipeDestIndex(int value);
+  QStringList pipeTypeLabels() const;
+  int pipeTypeIndex() const { return pipeTypeIndex_; }
+  void setPipeTypeIndex(int value);
 
   void setClickMode(int value);
   void setClickOutput(int value);
@@ -178,9 +253,23 @@ class ConfigPopupModel final : public QObject {
   // Set once by AppController; the pipe-scope popup reads and writes the
   // selected pipe's chMask through this view model.
   void setRouting(RoutingViewModel* routing) { routing_ = routing; }
+  // Set once by AppController; the selector and add-track popups read the
+  // dynamic track list and write the strip they target through this view
+  // model.
+  void setMixer(MixerViewModel* mixer) { mixerVm_ = mixer; }
   // AppController points the INPUT MON popup at the TRACK screen's selected
   // strip before openKind("trackmonitor"); MixerModel itself is index-free.
-  void setTrackMonitorIndex(int index) { trackMonitorIndex_ = index; }
+  void setTrackMonitorIndex(int index) { trackMonitorSlot_ = index; }
+  // AppController points a selector popup at the strip it was opened from.
+  void setInputTarget(int slot) { inputTargetSlot_ = slot; }
+  void setOutputTarget(int slot) { outputTargetSlot_ = slot; }
+  void setInsertTarget(int slot) { insertTargetSlot_ = slot; }
+  int inputTarget() const { return inputTargetSlot_; }
+  int outputTarget() const { return outputTargetSlot_; }
+  int insertTarget() const { return insertTargetSlot_; }
+  // ADD TRACK always appends the first free slot; AppController pre-fills the
+  // name with that slot's default and the input with the slot's device channel.
+  void setAddTrackSlot(int slot);
 
   // AppController entry points.
   bool openKind(const QString& kind);
@@ -195,9 +284,54 @@ class ConfigPopupModel final : public QObject {
 
  private:
   void loadDraft();
-  void commitDraft();
+  // emit changed() and push the open kind's values to the models (no apply
+  // button anywhere).
+  void changedLive();
+  // Live write of the open kind's values (no apply button); a setter calls it
+  // after every change so the models already hold what the popup shows.
+  void applyDraft();
+  void captureRestore();
+  void restoreRestore();
   static int clampChoice(int value, int maximum);
   static int clampBoolChoice(int value);
+
+  // Values the open popup must put back on CANCEL. Only the open kind's group
+  // is written back, so a cancel can never resurrect an unrelated stale value.
+  struct Restore {
+    int clickMode = 0;
+    int clickOutput = 0;
+    float clickGainDb = 0.0f;
+    int clickBars = 1;
+    int sendCue = 1;
+    int sendFx1 = 1;
+    int sendFx2 = 1;
+    int sendOut34 = 1;
+    int sendRec = 1;
+    int phonesSrc = 0;
+    int cueStyle = 0;
+    int out34Mode = 0;
+    bool compOn = false;
+    float compThreshDb = -12.0f;
+    float compRatio = 2.0f;
+    float compAttackMs = 10.0f;
+    float compReleaseMs = 100.0f;
+    float compMakeupDb = 0.0f;
+    int compMode = 0;
+    int trackMonitor = 1;
+    int eqType = 0;
+    int eqBand = 0;
+    int delayChoice[3] = {0, 0, 3};
+    double delayValue[2] = {0.35, 1.0};
+    int reverbChoice = 0;
+    double reverbValue[3] = {20.0, 0.7, 0.5};
+    std::uint16_t pipeMask = 0xFFFF;
+    int pipeSource = 0;
+    int pipeDestination = 0;
+    int pipeType = 0;
+    int inputSource = 0;
+    int outputDst = 0;
+    int insertChoice = 0;
+  };
 
   AppState& state_;
   MixerModel& mixer_;
@@ -227,7 +361,7 @@ class ConfigPopupModel final : public QObject {
   double compMakeupDb_ = 0.0;
   int compMode_ = 0;
   int trackMonitor_ = 1;
-  int trackMonitorIndex_ = 0;
+  int trackMonitorSlot_ = 0;
   QString metronomeSummary_;
   QString sendSummary_;
   QString monitorSummary_;
@@ -245,7 +379,29 @@ class ConfigPopupModel final : public QObject {
   double reverbDamping_ = 0.5;
   TimelineViewModel* timeline_ = nullptr;
   RoutingViewModel* routing_ = nullptr;
+  MixerViewModel* mixerVm_ = nullptr;
+  // Selector targets and their live values.
+  int inputTargetSlot_ = 0;
+  int inputSourceIndex_ = 0;
+  int outputTargetSlot_ = 0;
+  int outputIndex_ = 0;
+  int insertTargetSlot_ = 0;
+  int insertIndex_ = 0;
+  int addTrackSlot_ = 0;
+  QString addTrackName_;
+  int addTrackInputMode_ = 1;
+  int addTrackChannel_ = 0;
+  int addTrackOutput_ = 0;
+  QString addTrackError_;
+  Restore restore_{};
   std::uint16_t pipeChannelMask_ = 0xFFFF;
+  QStringList pipeSourceLabels_;
+  QStringList pipeDestLabels_;
+  std::vector<int> pipeSourcePorts_;
+  std::vector<int> pipeDestPorts_;
+  int pipeSourceIndex_ = 0;
+  int pipeDestIndex_ = 0;
+  int pipeTypeIndex_ = 0;
   QString pipeScopeContext_;
   int timelineOp_ = 0;
   double timelineGainDb_ = 0.0;

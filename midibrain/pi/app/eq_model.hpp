@@ -20,7 +20,11 @@ namespace mnky::app {
 class EqModel {
  public:
   static constexpr int kBandCount = audio::fx::Eq::kBandCount;  // 4
-  static constexpr int kTrackCount = audio::kMaxInputs;         // 18
+  // The EQ band store is still the device width: the session EqState and the
+  // engine EQ arrays are that wide. The mixer supports audio::kMaxTracks slots,
+  // so a slot above this store has no bands yet (MixerViewModel says so instead
+  // of reading past it); widening is a later wave.
+  static constexpr int kTrackCount = audio::kMaxDeviceInputs;
   static constexpr int kMainSubject = kTrackCount;              // 18 = Main
   static constexpr int kSubjectCount = kTrackCount + 1;
   static constexpr int kTypeCount = 6;  // None, LCut, LShelf, Param, HShelf, HCut

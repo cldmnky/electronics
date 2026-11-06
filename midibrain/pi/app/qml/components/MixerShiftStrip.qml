@@ -7,6 +7,9 @@ Rectangle {
     id: root
 
     property int stripIndex: 0
+    property string stripName: ""
+    readonly property string nameText: stripName !== "" ? stripName
+                                                        : "IN " + String(stripIndex + 1).padStart(2, "0")
     readonly property int monitor: mixer.monitorAt(stripIndex)
 
     color: Style.panel
@@ -22,7 +25,7 @@ Rectangle {
         Text {
             width: parent.width
             height: 12
-            text: "IN " + String(root.stripIndex + 1).padStart(2, "0")
+            text: root.nameText
             color: Style.textDim
             font.pixelSize: Style.fontSmall
             font.weight: Font.DemiBold
@@ -113,7 +116,7 @@ Rectangle {
             maximumValue: parent.maximumValue
             value: parent.value
             focusId: parent.focusId
-            popupLabel: "IN " + String(root.stripIndex + 1).padStart(2, "0") + " " + parent.label
+            popupLabel: root.nameText + " " + parent.label
             popupKind: parent.popupKind
             Binding on value { value: shiftSlider.parent.value; when: !shiftSlider.dragging }
             onMoved: (value) => parent.moved(value)

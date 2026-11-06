@@ -10,6 +10,7 @@
 #include <iterator>
 #include <string>
 
+#include "../audio/capacity.hpp"
 #include "../midi/buttons.hpp"
 #include "../midi/clock.hpp"
 
@@ -17,7 +18,11 @@ namespace mnky::app {
 
 inline constexpr int kScreenCount = 10;  // Mixer, Routing, FX, Recorder, System,
                                          // Projects, Monitor, EQ, X/Y, EDIT
-inline constexpr int kNumStrips = 18;   // audio::kMaxInputs
+// Fixed-width surfaces that predate the dynamic mixer (Recorder, Timeline and
+// the Learn target list show this many rows). Mixer/track code never uses it:
+// track slots are audio::kMaxTracks and device capture channels are
+// audio::kMaxDeviceInputs, both from audio/capacity.hpp.
+inline constexpr int kNumStrips = audio::kMaxDeviceInputs;
 
 // One thing the app does in response to a panel gesture or a screen control.
 // Screens post intents; the Qt controller performs them on the GUI thread.
@@ -128,11 +133,12 @@ inline double loopBeats(double beats) {
   return snapped;
 }
 
-// Per-track input source choices: -1 (none) then mono channels 0..17. A stereo
-// pair keeps the chosen channel even and uses the next one as the right side.
+// Per-track input source choices: -1 (none) then the device capture channels
+// (audio::kMaxDeviceInputs). A stereo pair keeps the chosen channel even and
+// uses the next one as the right side.
 inline int clampInCh(int channel) {
   if (channel < 0) return -1;
-  if (channel >= kNumStrips) return kNumStrips - 1;
+  if (channel >= audio::kMaxDeviceInputs) return audio::kMaxDeviceInputs - 1;
   return channel;
 }
 

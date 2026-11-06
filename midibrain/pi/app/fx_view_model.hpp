@@ -11,6 +11,7 @@
 #include "clap/host.hpp"
 #include "fx_slot.hpp"
 #include "mixer_model.hpp"
+#include "performance_model.hpp"
 
 namespace mnky::app {
 
@@ -103,23 +104,100 @@ class FxSlotViewModel final : public QObject {
   double returnDb_ = 0.0;
 };
 
+// Built-in send effects (the two X/Y performance instances) as a flat QML
+// model: every Delay and Reverb parameter is a property, so the FX tab can show
+// their FULL settings beside the CLAP slots instead of only the X/Y grid. The
+// values live in PerformanceModel (the same instance the audio bind bus runs),
+// so a knob here and an X/Y grid move are the same parameter.
+class BuiltinFxViewModel final : public QObject {
+  Q_OBJECT
+  Q_PROPERTY(double delayTimeMs READ delayTimeMs WRITE setDelayTimeMs NOTIFY changed)
+  Q_PROPERTY(double delayFeedback READ delayFeedback WRITE setDelayFeedback NOTIFY changed)
+  Q_PROPERTY(double delayMix READ delayMix WRITE setDelayMix NOTIFY changed)
+  Q_PROPERTY(bool delayBeat READ delayBeat WRITE setDelayBeat NOTIFY changed)
+  Q_PROPERTY(int delayDivision READ delayDivision WRITE setDelayDivision NOTIFY changed)
+  Q_PROPERTY(QString delayDivisionText READ delayDivisionText NOTIFY changed)
+  Q_PROPERTY(bool delayPingPong READ delayPingPong WRITE setDelayPingPong NOTIFY changed)
+  Q_PROPERTY(double delayCutoffHz READ delayCutoffHz WRITE setDelayCutoffHz NOTIFY changed)
+  Q_PROPERTY(double delayWidthOct READ delayWidthOct WRITE setDelayWidthOct NOTIFY changed)
+  Q_PROPERTY(double reverbPredelayMs READ reverbPredelayMs WRITE setReverbPredelayMs NOTIFY changed)
+  Q_PROPERTY(double reverbDecay READ reverbDecay WRITE setReverbDecay NOTIFY changed)
+  Q_PROPERTY(double reverbDamping READ reverbDamping WRITE setReverbDamping NOTIFY changed)
+  Q_PROPERTY(double reverbMix READ reverbMix WRITE setReverbMix NOTIFY changed)
+  Q_PROPERTY(int reverbModel READ reverbModel WRITE setReverbModel NOTIFY changed)
+  Q_PROPERTY(QString reverbModelText READ reverbModelText NOTIFY changed)
+  Q_PROPERTY(double reverbSize READ reverbSize WRITE setReverbSize NOTIFY changed)
+
+ public:
+  explicit BuiltinFxViewModel(PerformanceModel& performance, QObject* parent = nullptr);
+
+  double delayTimeMs() const;
+  void setDelayTimeMs(double value);
+  double delayFeedback() const;
+  void setDelayFeedback(double value);
+  double delayMix() const;
+  void setDelayMix(double value);
+  bool delayBeat() const;
+  void setDelayBeat(bool value);
+  int delayDivision() const;
+  void setDelayDivision(int value);
+  QString delayDivisionText() const;
+  bool delayPingPong() const;
+  void setDelayPingPong(bool value);
+  double delayCutoffHz() const;
+  void setDelayCutoffHz(double value);
+  double delayWidthOct() const;
+  void setDelayWidthOct(double value);
+  double reverbPredelayMs() const;
+  void setReverbPredelayMs(double value);
+  double reverbDecay() const;
+  void setReverbDecay(double value);
+  double reverbDamping() const;
+  void setReverbDamping(double value);
+  double reverbMix() const;
+  void setReverbMix(double value);
+  int reverbModel() const;
+  void setReverbModel(int value);
+  QString reverbModelText() const;
+  double reverbSize() const;
+  void setReverbSize(double value);
+
+  Q_INVOKABLE void cycleDelayDivision(int delta);
+  Q_INVOKABLE void cycleReverbModel(int delta);
+  // Re-reads every parameter (project load, X/Y moves).
+  void refresh();
+
+ signals:
+  void changed();
+
+ private:
+  double param(int grid, int index) const;
+  void setParamValue(int grid, int index, double value);
+
+  PerformanceModel& performance_;
+};
+
 class FxViewModel final : public QObject {
   Q_OBJECT
   Q_PROPERTY(FxSlotViewModel* slotA READ slotA CONSTANT)
   Q_PROPERTY(FxSlotViewModel* slotB READ slotB CONSTANT)
+  Q_PROPERTY(BuiltinFxViewModel* builtin READ builtin CONSTANT)
 
  public:
-  FxViewModel(FxManager& fx, AppState& state, MixerModel& mixer, double sampleRate,
+  FxViewModel(FxManager& fx, AppState& state, MixerModel& mixer,
+              PerformanceModel& performance, double sampleRate,
               QObject* parent = nullptr);
 
   FxSlotViewModel* slotA() { return &slotA_; }
   FxSlotViewModel* slotB() { return &slotB_; }
+  BuiltinFxViewModel* builtin() { return &builtin_; }
   void loadDefaults();
   void refresh();
 
  private:
   FxSlotViewModel slotA_;
   FxSlotViewModel slotB_;
+  BuiltinFxViewModel builtin_;
 };
 
 }  // namespace mnky::app

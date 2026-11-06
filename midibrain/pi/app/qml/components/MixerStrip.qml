@@ -1,14 +1,19 @@
 import QtQuick
 import Mnkybox 1.0
 
-// One banked mixer strip: gain fader, pan, input source and the three track
-// switches. The outer border is the selected-strip indicator; every control
-// carries a panel focus id. The meter is the shared gradient/peak-hold/clip
-// component so the primary face stays perform-only.
+// One mixer strip of the dynamic four-per-page bank: the track name and expand
+// affordance, a large gain fader with its meter, pan, the input-source selector
+// and the three track switches. Every selector is a value button with a chevron
+// that opens its option list (ConfigPopup); nothing steps through choices in
+// place, and every change applies immediately. The outer border is the
+// selected-strip indicator; every control carries a panel focus id.
 Rectangle {
     id: root
 
+    // Slot index (0..17) of this strip, not its row: the model is dynamic and
+    // a track keeps its slot when another track before it is removed.
     property int stripIndex: 0
+    property string stripName: ""
     property real gainDb: 0.0
     property real pan: 0.5
     property string panText: "C"
@@ -26,7 +31,8 @@ Rectangle {
     // "IN 03/04" (session inCh/inPair through MixerViewModel).
     property string inputText: ""
     readonly property bool focused: app.focusId === ("mixer.select." + stripIndex)
-    readonly property string stripName: "IN " + String(stripIndex + 1).padStart(2, "0")
+    readonly property string nameText: stripName !== "" ? stripName
+                                                        : "IN " + String(stripIndex + 1).padStart(2, "0")
 
     color: Style.panel
     radius: Style.corner
@@ -36,43 +42,60 @@ Rectangle {
     Column {
         anchors.fill: parent
         anchors.margins: 3
-        spacing: 0
+        spacing: 2
         clip: true
 
-        Item {
+        Row {
             width: parent.width
-            height: 14
+            height: Style.touch
+            spacing: 2
+
             Text {
-                anchors.left: parent.left
-                text: root.stripName
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
+                width: parent.width - Style.touch - 30
+                height: parent.height
+                text: root.nameText
+                color: Style.text
+                font.pixelSize: Style.fontBody
                 font.weight: Font.DemiBold
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
             }
             Text {
-                anchors.right: parent.right
+                width: 28
+                height: parent.height
                 text: root.panText
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignRight
+                verticalAlignment: Text.AlignVCenter
+            }
+            TouchButton {
+                width: Style.touch
+                height: parent.height
+                text: ""
+                chevron: "up"
+                variant: "ghost"
+                focusId: "mixer.expand." + root.stripIndex
+                onClicked: app.openChannel(root.stripIndex)
             }
         }
 
         Row {
             width: parent.width
-            height: Math.max(Style.touch, root.height - 14 - 5 * Style.touch)
-            spacing: 2
+            height: Math.max(Style.touch, root.height - Style.touch * 4 - 8)
+            spacing: 3
 
             TouchSlider {
                 id: gain
-                width: parent.width - 18
+                width: parent.width - 20
                 height: parent.height
                 vertical: true
                 minimumValue: -60
                 maximumValue: 12
                 value: root.gainDb
                 focusId: "mixer.gain." + root.stripIndex
-                popupLabel: root.stripName + " GAIN"
+                popupLabel: root.nameText + " GAIN"
                 popupKind: "db"
                 Binding on value { value: root.gainDb; when: !gain.dragging }
                 onMoved: (value) => mixer.setGainDb(root.stripIndex, value)
@@ -82,7 +105,7 @@ Rectangle {
             // component owns the dB taper, the 10 ms peak hold and the crown.
             Item {
                 id: meter
-                width: 16
+                width: 17
                 height: parent.height
 
                 Meter {
@@ -119,57 +142,56 @@ Rectangle {
             maximumValue: 1
             value: root.pan
             focusId: "mixer.pan." + root.stripIndex
-            popupLabel: root.stripName + " PAN"
+            popupLabel: root.nameText + " PAN"
             popupKind: "pan"
             Binding on value { value: root.pan; when: !panSlider.dragging }
             onMoved: (value) => mixer.setPan(root.stripIndex, value)
         }
 
-        // Compact input source: NONE, mono IN 01..18 or a stereo pair
-        // IN 01/02..17/18. Tap steps forward, long press switches MONO/PAIR and
-        // the value readout confirms both, so a strip's source no longer needs
-        // the TRACK SHIFT face. Panel: NAV_PRESS enters EDIT and the encoder
-        // steps the same list (focus mixer.in.<strip>).
+        // Input-source selector: the list of none, mono IN 01..18 and the nine
+        // stereo pairs opens as a popup and the pick applies immediately.
         TouchButton {
             width: parent.width
             height: Style.touch
             text: root.inputText
             textSize: Style.fontSmall
             variant: "ghost"
+            chevron: "down"
             focusId: "mixer.in." + root.stripIndex
-            onClicked: app.showTextPopup(root.stripName + " INPUT",
-                                         mixer.cycleInSource(root.stripIndex, 1))
-            onLongClicked: app.showTextPopup(root.stripName + " INPUT",
-                                             mixer.toggleInPair(root.stripIndex))
+            onClicked: app.openInputSource(root.stripIndex)
         }
 
-        TouchButton {
+        Row {
             width: parent.width
             height: Style.touch
-            text: "M"
-            checked: root.mute
-            focusId: "mixer.mute." + root.stripIndex
-            onClicked: mixer.toggleMute(root.stripIndex)
-        }
+            spacing: 2
 
-        TouchButton {
-            width: parent.width
-            height: Style.touch
-            text: "S"
-            checked: root.solo
-            focusId: "mixer.solo." + root.stripIndex
-            onClicked: mixer.toggleSolo(root.stripIndex)
-        }
-
-        TouchButton {
-            width: parent.width
-            height: Style.touch
-            text: "ARM"
-            textSize: Style.fontSmall
-            checked: root.arm
-            checkedColor: Style.record
-            focusId: "mixer.arm." + root.stripIndex
-            onClicked: mixer.toggleArm(root.stripIndex)
+            TouchButton {
+                width: (parent.width - 4) / 3
+                height: parent.height
+                text: "M"
+                checked: root.mute
+                focusId: "mixer.mute." + root.stripIndex
+                onClicked: mixer.toggleMute(root.stripIndex)
+            }
+            TouchButton {
+                width: (parent.width - 4) / 3
+                height: parent.height
+                text: "S"
+                checked: root.solo
+                focusId: "mixer.solo." + root.stripIndex
+                onClicked: mixer.toggleSolo(root.stripIndex)
+            }
+            TouchButton {
+                width: (parent.width - 4) / 3
+                height: parent.height
+                text: "ARM"
+                textSize: Style.fontSmall
+                checked: root.arm
+                checkedColor: Style.record
+                focusId: "mixer.arm." + root.stripIndex
+                onClicked: mixer.toggleArm(root.stripIndex)
+            }
         }
     }
 

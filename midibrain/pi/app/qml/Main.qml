@@ -194,6 +194,10 @@ Window {
         popupText: app.valuePopupText
     }
 
+    ChannelPopout {
+        anchors.fill: parent
+    }
+
     ConfigPopup {
         anchors.fill: parent
     }

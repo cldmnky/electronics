@@ -14,7 +14,7 @@ constexpr float kNoiseLevel = 0.015f;
 
 void EmulatorSynth::prepare(double sampleRate) {
   sampleRate_ = sampleRate > 0.0 ? sampleRate : 48000.0;
-  for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+  for (int channel = 0; channel < audio::kMaxDeviceInputs; ++channel) {
     // Odd channels get noise, even channels sine; the seeds differ so the noise
     // lanes are uncorrelated.
     phase_[channel] = 0;
@@ -37,7 +37,7 @@ float EmulatorSynth::noise(int channel) {
 
 void EmulatorSynth::fillBlock(float* const* channels, int channelCount, int frames) {
   if (channels == nullptr || channelCount <= 0 || frames <= 0) return;
-  const int count = channelCount < audio::kMaxInputs ? channelCount : audio::kMaxInputs;
+  const int count = channelCount < audio::kMaxDeviceInputs ? channelCount : audio::kMaxDeviceInputs;
   const int n = frames < audio::kBlockSize ? frames : audio::kBlockSize;
 
   for (int channel = 0; channel < count; ++channel) {
@@ -60,7 +60,7 @@ void EmulatorSynth::fillBlock(float* const* channels, int channelCount, int fram
     phase_[channel] = phase;
   }
 
-  for (int channel = count; channel < audio::kMaxInputs; ++channel) {
+  for (int channel = count; channel < audio::kMaxDeviceInputs; ++channel) {
     if (channels[channel] != nullptr) {
       for (int i = 0; i < n; ++i) channels[channel][i] = 0.0f;
     }

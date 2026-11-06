@@ -16,7 +16,7 @@ Item {
         Text {
             width: parent.width
             height: 18
-            text: "MONITOR CONFIG  -  tap a summary to open it; OK applies, EXIT/CANCEL discards"
+            text: "MONITOR CONFIG  -  tap a summary to open it; changes apply at once, CANCEL restores"
             color: Style.textDim
             font.pixelSize: Style.fontSmall
             font.weight: Font.DemiBold

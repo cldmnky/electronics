@@ -14,10 +14,13 @@ namespace {
 
 QString textOf(const std::string& text) { return QString::fromStdString(text); }
 
+// Templates on the store width so the take-edit array follows SessionSettings
+// when its capacity changes; the timeline's visible lanes are paged separately.
+template <std::size_t N>
 std::string editSignature(
-    const std::array<std::vector<session::TakeRegion>, audio::kMaxInputs>& edits) {
+    const std::array<std::vector<session::TakeRegion>, N>& edits) {
   std::string out;
-  for (int track = 0; track < audio::kMaxInputs; ++track) {
+  for (std::size_t track = 0; track < N; ++track) {
     for (const auto& region : edits[static_cast<std::size_t>(track)]) {
       out += region.take;
       out += ':';

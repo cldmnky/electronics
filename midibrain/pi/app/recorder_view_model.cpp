@@ -172,7 +172,7 @@ void RecorderViewModel::startStop() {
 }
 
 void RecorderViewModel::setSelectedTrack(int track) {
-  const int clamped = std::clamp(track, 0, kNumStrips - 1);
+  const int clamped = std::clamp(track, 0, audio::kMaxTracks - 1);
   if (clamped == selectedTrack_) return;
   selectedTrack_ = clamped;
   selectedRow_ = -1;
@@ -193,7 +193,7 @@ void RecorderViewModel::selectRow(int row) {
 QString RecorderViewModel::trackName() const { return displayTrackName(selectedTrack_); }
 
 QString RecorderViewModel::activeTakePath(int track) const {
-  if (track < 0 || track >= kNumStrips) return {};
+  if (track < 0 || track >= audio::kMaxTracks) return {};
   const auto key = settings_.activeTake(track);
   if (key.empty()) return {};
   const auto path = resolveTakeKey(track, key);
@@ -202,12 +202,12 @@ QString RecorderViewModel::activeTakePath(int track) const {
 
 std::filesystem::path RecorderViewModel::takePathForKey(int track,
                                                         const std::string& key) const {
-  if (track < 0 || track >= kNumStrips || key.empty()) return {};
+  if (track < 0 || track >= audio::kMaxTracks || key.empty()) return {};
   return resolveTakeKey(track, key);
 }
 
 QString RecorderViewModel::trackDisplayName(int track) const {
-  if (track < 0 || track >= kNumStrips) return {};
+  if (track < 0 || track >= audio::kMaxTracks) return {};
   return QString::fromStdString(defaultTrackName(track));
 }
 
@@ -392,12 +392,17 @@ void RecorderViewModel::deleteSelected() {
 }
 
 int RecorderViewModel::adoptRecordedTake(const std::string& takeDirectoryPath,
-                                         std::uint32_t armMask) {
+                                         MixerModel::TrackMask armMask) {
   const std::filesystem::path folder(takeDirectoryPath);
   const auto base = state_.takeDirectory();
   int renamed = 0;
-  for (int track = 0; track < kNumStrips; ++track) {
-    if ((armMask & (1u << static_cast<unsigned>(track))) == 0) continue;
+  // One bit per track slot, up to the mask width: every armed slot's chNN.wav
+  // is renamed, not just the first 18.
+  for (int track = 0; track < audio::kMaxTracks; ++track) {
+    if (track >= MixerModel::kMaskBits) break;
+    if ((armMask & (MixerModel::TrackMask{1} << static_cast<unsigned>(track))) == 0) {
+      continue;
+    }
     const auto source = folder / channelFileName(track);
     std::error_code existsError;
     if (!std::filesystem::is_regular_file(source, existsError)) continue;
@@ -486,7 +491,7 @@ void RecorderViewModel::syncActiveTake(int track) {
 }
 
 void RecorderViewModel::resyncActiveTakes() {
-  for (int track = 0; track < kNumStrips; ++track) syncActiveTake(track);
+  for (int track = 0; track < audio::kMaxTracks; ++track) syncActiveTake(track);
 }
 
 void RecorderViewModel::scanTakes() {

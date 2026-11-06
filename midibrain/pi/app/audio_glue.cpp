@@ -274,7 +274,7 @@ std::string AudioGlue::openBackend(AudioBackend backend, const std::string& outp
   }
   config.inputChannels = inputChannelsFor(inputNode);
   if (api == audio::DeviceApi::PipeWire && !inputNode.empty() && config.inputChannels <= 0) {
-    config.inputChannels = audio::kMaxInputs;
+    config.inputChannels = audio::kMaxDeviceInputs;
   }
   // PipeWire links channel by channel through the node's positions. Without
   // them a multichannel interface is opened stereo-first (the Qt/Pulse bug);
@@ -600,7 +600,7 @@ float AudioGlue::peak(int channel) {
 }
 
 float AudioGlue::stripPeak(int channel) {
-  if (channel < 0 || channel >= audio::kMaxInputs) return 0.0f;
+  if (channel < 0 || channel >= audio::kMaxTracks) return 0.0f;
   const auto index = static_cast<std::size_t>(channel);
   const float value = stripPeaks_[index].load(std::memory_order_relaxed);
   stripPeaks_[index].store(value * 0.82f, std::memory_order_relaxed);
@@ -630,7 +630,7 @@ void AudioGlue::applyMonitorSettings(const SessionSettings& settings) {
 }
 
 void AudioGlue::applyTakeLoops(const SessionSettings& settings) {
-  for (int track = 0; track < audio::kMaxInputs; ++track) {
+  for (int track = 0; track < audio::kMaxTracks; ++track) {
     const auto& loop = settings.takeLoop[static_cast<std::size_t>(track)];
     audio::TakeLoop window;
     window.enabled = loop.enabled;
@@ -641,16 +641,17 @@ void AudioGlue::applyTakeLoops(const SessionSettings& settings) {
 }
 
 void AudioGlue::applyEq(const session::EqState& state) {
-  for (int track = 0; track < audio::kMaxInputs; ++track) {
+  // The EQ store is the session's: iterate its own width so a later widening
+  // needs no change here (and a narrower store is never over-read).
+  for (std::size_t track = 0; track < state.tracks.size(); ++track) {
     for (int band = 0; band < 4; ++band) {
-      const auto& source = state.tracks[static_cast<std::size_t>(track)]
-                                     [static_cast<std::size_t>(band)];
+      const auto& source = state.tracks[track][static_cast<std::size_t>(band)];
       audio::EqBand value;
       value.type = source.type;
       value.gainDb = source.gainDb;
       value.freqHz = source.freqHz;
       value.q = source.q;
-      engine_.setTrackEqBand(track, band, value);
+      engine_.setTrackEqBand(static_cast<int>(track), band, value);
     }
   }
   for (int band = 0; band < 4; ++band) {
@@ -666,11 +667,10 @@ void AudioGlue::applyEq(const session::EqState& state) {
 
 session::EqState AudioGlue::appliedEq() const {
   session::EqState state;
-  for (int track = 0; track < audio::kMaxInputs; ++track) {
+  for (std::size_t track = 0; track < state.tracks.size(); ++track) {
     for (int band = 0; band < 4; ++band) {
-      const audio::EqBand value = engine_.trackEqBand(track, band);
-      auto& out = state.tracks[static_cast<std::size_t>(track)]
-                               [static_cast<std::size_t>(band)];
+      const audio::EqBand value = engine_.trackEqBand(static_cast<int>(track), band);
+      auto& out = state.tracks[track][static_cast<std::size_t>(band)];
       out.type = value.type;
       out.gainDb = value.gainDb;
       out.freqHz = value.freqHz;
@@ -747,8 +747,8 @@ void AudioGlue::prepareEngineBlock() {
 
 void AudioGlue::writeRecorderBlock(int frames) {
   if (!recorder_.recording()) return;
-  const float* taps[audio::kMaxInputs] = {};
-  for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+  const float* taps[audio::kMaxDeviceInputs] = {};
+  for (int channel = 0; channel < audio::kMaxDeviceInputs; ++channel) {
     taps[channel] = engine_.tap(channel);
   }
   recorder_.writeBlock(taps, busMainL_, busMainR_, frames);
@@ -765,13 +765,13 @@ void AudioGlue::renderDevice(float* interleaved, int frames, int channels) {
   int offset = 0;
   while (offset < frames) {
     const int block = std::min(audio::kBlockSize, frames - offset);
-    float* planes[audio::kMaxInputs] = {};
-    for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+    float* planes[audio::kMaxDeviceInputs] = {};
+    for (int channel = 0; channel < audio::kMaxDeviceInputs; ++channel) {
       planes[channel] = capturePlanes_[channel];
     }
     pump_.readCapture(planes, block);
-    const float* inputs[audio::kMaxInputs] = {};
-    for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+    const float* inputs[audio::kMaxDeviceInputs] = {};
+    for (int channel = 0; channel < audio::kMaxDeviceInputs; ++channel) {
       inputs[channel] = capturePlanes_[channel];
     }
     prepareEngineBlock();
@@ -782,7 +782,7 @@ void AudioGlue::renderDevice(float* interleaved, int frames, int channels) {
     outputs.out34R = busOut34R_;
     outputs.phonesL = busPhonesL_;
     outputs.phonesR = busPhonesR_;
-    engine_.process(inputs, audio::kMaxInputs, block, outputs);
+    engine_.process(inputs, audio::kMaxDeviceInputs, block, outputs);
     writeRecorderBlock(block);
     audio::mapBusesToDevice(busMainL_, busMainR_, busOut34L_, busOut34R_,
                             busPhonesL_, busPhonesR_, deviceOutSlots_, channels, block,
@@ -798,13 +798,13 @@ void AudioGlue::renderEmulatorBlock(int numSamples) {
   int offset = 0;
   while (offset < numSamples) {
     const int block = std::min(audio::kBlockSize, numSamples - offset);
-    float* generated[audio::kMaxInputs] = {};
-    const float* inputs[audio::kMaxInputs] = {};
-    for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+    float* generated[audio::kMaxDeviceInputs] = {};
+    const float* inputs[audio::kMaxDeviceInputs] = {};
+    for (int channel = 0; channel < audio::kMaxDeviceInputs; ++channel) {
       generated[channel] = synthBuffer_[channel];
       inputs[channel] = synthBuffer_[channel];
     }
-    synth_.fillBlock(generated, audio::kMaxInputs, block);
+    synth_.fillBlock(generated, audio::kMaxDeviceInputs, block);
     prepareEngineBlock();
     audio::OutputBuses outputs;
     outputs.mainL = busMainL_;
@@ -813,7 +813,7 @@ void AudioGlue::renderEmulatorBlock(int numSamples) {
     outputs.out34R = busOut34R_;
     outputs.phonesL = busPhonesL_;
     outputs.phonesR = busPhonesR_;
-    engine_.process(inputs, audio::kMaxInputs, block, outputs);
+    engine_.process(inputs, audio::kMaxDeviceInputs, block, outputs);
     writeRecorderBlock(block);
     updatePeaks(busMainL_, busMainR_, block);
     renderBlocks_.fetch_add(1, std::memory_order_relaxed);
@@ -836,7 +836,7 @@ void AudioGlue::updatePeaks(const float* outL, const float* outR, int numSamples
   // Per-strip meter taps: post-gain mono, independent of mute/pan/master. The
   // engine tap holds the last processed block (<= kBlockSize frames).
   const int tapFrames = std::min(numSamples, audio::kBlockSize);
-  for (int channel = 0; channel < audio::kMaxInputs; ++channel) {
+  for (int channel = 0; channel < audio::kMaxTracks; ++channel) {
     const float* tap = engine_.tap(channel);
     if (tap == nullptr) continue;
     float stripPeak = 0.0f;

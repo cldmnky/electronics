@@ -134,23 +134,30 @@ Item {
                     Binding on currentIndex { value: system.bufferIndex; when: !bufferBox.popup.visible }
                 }
 
+                // No APPLY: the pickers above reopen the stream on every pick.
+                // This row is the live outcome - the fallback note when the
+                // requested device could not open, plus the rescan button.
                 Row {
                     width: parent.width
                     height: Style.touch
                     spacing: 4
 
-                    TouchButton {
-                        width: (parent.width - 4) / 2
+                    Text {
+                        width: parent.width - 96
                         height: parent.height
-                        text: "APPLY"
-                        variant: "primary"
-                        focusId: "system.apply"
-                        onClicked: system.apply()
+                        text: system.applyNote !== "" ? system.applyNote
+                                                      : "live: a picker change reopens audio"
+                        color: system.applyNote !== "" ? Style.record : Style.textDim
+                        font.pixelSize: Style.fontSmall
+                        wrapMode: Text.Wrap
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
                     }
                     TouchButton {
-                        width: (parent.width - 4) / 2
+                        width: 92
                         height: parent.height
                         text: "REFRESH"
+                        textSize: Style.fontSmall
                         focusId: "system.refresh"
                         onClicked: system.refreshDevices()
                     }

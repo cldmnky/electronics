@@ -137,6 +137,9 @@ qt_add_resources(mnkybox "qml"
     qml/components/MixerShiftStrip.qml
     qml/components/LearnPanel.qml
     qml/components/FxSlotPanel.qml
+    qml/components/FxParamKnob.qml
+    qml/components/BuiltinDelayPanel.qml
+    qml/components/BuiltinReverbPanel.qml
     qml/components/TouchComboBox.qml
     qml/components/DeviceComboBox.qml
     qml/components/ValuePopup.qml
@@ -157,6 +160,7 @@ qt_add_resources(mnkybox "qml"
     qml/screens/EqScreen.qml
     qml/screens/XyScreen.qml
     qml/screens/TimelineScreen.qml
+    qml/overlays/ChannelPopout.qml
     qml/overlays/ConfigPopup.qml
     qml/overlays/Keypad.qml
     qml/overlays/ConfirmDialog.qml)

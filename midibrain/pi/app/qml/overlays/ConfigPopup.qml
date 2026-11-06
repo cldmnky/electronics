@@ -2,10 +2,13 @@ import QtQuick
 import Mnkybox 1.0
 import "../components"
 
-// Generic configuration modal: summary buttons open a draft editor, OK applies,
-// CANCEL/EXIT discards. The background swallows touch but never dismisses, so a
-// stray touch cannot lose edits. Panel focus is trapped by AppController while
-// config.open is true.
+// Generic configuration modal. Every setting is live: a tap writes the model
+// immediately, OK/CLOSE keeps it and CANCEL restores what the popup opened with.
+// The selector kinds are tap-to-open option lists (input source, output
+// destination, insert, delay division, reverb model); ADD TRACK is the one kind
+// that creates something on OK. The background swallows touch but never
+// dismisses, so a stray touch cannot drop a change. Panel focus is trapped by
+// AppController while config.open is true.
 Rectangle {
     id: root
 
@@ -64,7 +67,7 @@ Rectangle {
                 width: parent.width
                 height: 24
                 Text {
-                    width: parent.width - 190
+                    width: parent.width - 250
                     height: parent.height
                     text: config.title
                     color: Style.text
@@ -73,9 +76,9 @@ Rectangle {
                     verticalAlignment: Text.AlignVCenter
                 }
                 Text {
-                    width: 190
+                    width: 250
                     height: parent.height
-                    text: "OK APPLIES - EXIT CANCELS"
+                    text: config.footerHint
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     horizontalAlignment: Text.AlignRight
@@ -322,6 +325,336 @@ Rectangle {
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
+                }
+            }
+
+            // ---- INPUT SOURCE (tap-to-open option list) -------------------
+            Column {
+                visible: config.kind === "inputsource" || config.kind === "outputdest" ||
+                         config.kind === "insert"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: config.kind === "inputsource"
+                          ? "MONO DEVICE CHANNELS OR A STEREO PAIR; NONE IS SILENT"
+                          : (config.kind === "outputdest"
+                             ? "MAIN 1&2, OUT3&4, PHONES OR NONE (SENDS STILL REACH THE BUSES)"
+                             : "ONE INSERT PER TRACK; BYPASS LIVES IN THE CHANNEL POPOUT")
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
+                }
+
+                // The source list follows the model's device width, so it is
+                // scrollable instead of assuming a fixed number of entries.
+                Flickable {
+                    id: inputSourceScroll
+                    visible: config.kind === "inputsource"
+                    width: parent.width
+                    // Seven rows fit the 480 px popup at today's device width;
+                    // a wider registry scrolls instead of shrinking a target.
+                    height: Math.min(inputSourceGrid.height,
+                                     Style.touch * 7 + Style.gapTight * 6)
+                    contentWidth: width
+                    contentHeight: inputSourceGrid.height
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    Grid {
+                        id: inputSourceGrid
+                        width: parent.width
+                        columns: 4
+                        spacing: Style.gapTight
+                        readonly property int rows: Math.ceil(config.inputSourceLabels.length / 4)
+                        height: rows * Style.touch + Math.max(0, rows - 1) * Style.gapTight
+
+                        Repeater {
+                            model: config.inputSourceLabels
+                            delegate: TouchButton {
+                                width: (parent.width - Style.gapTight * 3) / 4
+                                height: Style.touch
+                                text: modelData
+                                textSize: Style.fontSmall
+                                checked: index === config.inputSourceIndex
+                                focusId: "config.input." + index
+                                onClicked: config.inputSourceIndex = index
+                            }
+                        }
+                    }
+                }
+
+                Row {
+                    visible: config.kind === "outputdest"
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+
+                    Repeater {
+                        model: config.outputLabels
+                        delegate: TouchButton {
+                            width: (parent.width - Style.gapTight * 3) / 4
+                            height: Style.touch
+                            text: modelData
+                            textSize: Style.fontSmall
+                            checked: index === config.outputIndex
+                            focusId: "config.output." + index
+                            onClicked: config.outputIndex = index
+                        }
+                    }
+                }
+
+                Row {
+                    visible: config.kind === "insert"
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+
+                    Repeater {
+                        model: config.insertLabels
+                        delegate: TouchButton {
+                            width: (parent.width - Style.gapTight * 2) / 3
+                            height: Style.touch
+                            text: modelData
+                            textSize: Style.fontSmall
+                            checked: index === config.insertIndex
+                            focusId: "config.insert." + index
+                            onClicked: config.insertIndex = index
+                        }
+                    }
+                }
+            }
+
+            // ---- ADD TRACK ------------------------------------------------
+            Column {
+                visible: config.kind === "addtrack"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+
+                    TouchButton {
+                        width: 150
+                        height: parent.height
+                        text: "NAME"
+                        textSize: Style.fontSmall
+                        focusId: "config.addtrack.name"
+                        onClicked: app.requestAddTrackName()
+                    }
+                    Text {
+                        width: parent.width - 158
+                        height: parent.height
+                        text: config.addTrackSummary
+                        color: Style.text
+                        font.pixelSize: Style.fontBody
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
+
+                Text { width: parent.width; height: 16; text: "INPUT"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+                    TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "NONE"; textSize: Style.fontSmall; checked: config.addTrackInputMode === 0; focusId: "config.addtrack.mode.0"; onClicked: config.addTrackInputMode = 0 }
+                    TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "MONO 1-18"; textSize: Style.fontSmall; checked: config.addTrackInputMode === 1; focusId: "config.addtrack.mode.1"; onClicked: config.addTrackInputMode = 1 }
+                    TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "STEREO PAIR"; textSize: Style.fontSmall; checked: config.addTrackInputMode === 2; focusId: "config.addtrack.mode.2"; onClicked: config.addTrackInputMode = 2 }
+                }
+                // Channel count comes from the model's device width; the grid
+                // scrolls when the device exposes more inputs than fit here.
+                Flickable {
+                    id: addTrackChannelScroll
+                    width: parent.width
+                    height: Math.min(addTrackChannelGrid.height,
+                                     Style.touch * 2 + Style.gapTight)
+                    contentWidth: width
+                    contentHeight: addTrackChannelGrid.height
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    Item {
+                        id: addTrackChannelGrid
+                        width: parent.width
+                        readonly property int count: config.addTrackChannelCount
+                        readonly property int rows: Math.ceil(count / 9)
+                        height: rows * Style.touch + Math.max(0, rows - 1) * Style.gapTight
+
+                        Repeater {
+                            model: addTrackChannelGrid.count
+                            delegate: TouchButton {
+                                width: (parent.width - Style.gapTight * 8) / 9
+                                height: Style.touch
+                                x: (index % 9) * (width + Style.gapTight)
+                                y: Math.floor(index / 9) * (height + Style.gapTight)
+                                text: String(index + 1).padStart(2, "0")
+                                textSize: Style.fontSmall
+                                checked: config.addTrackInputMode !== 0 &&
+                                         index === config.addTrackChannel
+                                active: config.addTrackInputMode !== 0
+                                focusId: "config.addtrack.ch." + index
+                                onClicked: config.addTrackChannel = index
+                            }
+                        }
+                    }
+                }
+                Text { width: parent.width; height: 16; text: "OUTPUT"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+
+                    Repeater {
+                        model: config.outputLabels
+                        delegate: TouchButton {
+                            width: (parent.width - Style.gapTight * 3) / 4
+                            height: Style.touch
+                            text: modelData
+                            textSize: Style.fontSmall
+                            checked: index === config.addTrackOutput
+                            focusId: "config.addtrack.out." + index
+                            onClicked: config.addTrackOutput = index
+                        }
+                    }
+                }
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: config.addTrackError
+                    visible: config.addTrackError !== ""
+                    color: Style.record
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
+                }
+            }
+
+            // ---- PIPE CHAIN SELECTORS -------------------------------------
+            Column {
+                visible: config.kind === "pipesource" || config.kind === "pipedest" ||
+                         config.kind === "pipetype"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: config.kind === "pipesource"
+                          ? "CHAIN SOURCE - EVERY MESSAGE FROM THIS PORT RUNS THE CHAIN"
+                          : (config.kind === "pipedest"
+                             ? "CHAIN TARGET - THE SELECTED PORT RECEIVES THE CHAIN OUTPUT"
+                             : "PIPE TYPE - ADD PIPE APPENDS THIS TYPE TO THE CHAIN")
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
+                }
+                Grid {
+                    visible: config.kind === "pipesource"
+                    width: parent.width
+                    columns: 4
+                    spacing: Style.gapTight
+
+                    Repeater {
+                        model: config.pipeSourceLabels
+                        delegate: TouchButton {
+                            width: (parent.width - Style.gapTight * 3) / 4
+                            height: Style.touch
+                            text: modelData
+                            textSize: Style.fontSmall
+                            checked: index === config.pipeSourceIndex
+                            focusId: "config.pipesource." + index
+                            onClicked: config.pipeSourceIndex = index
+                        }
+                    }
+                }
+                Grid {
+                    visible: config.kind === "pipedest"
+                    width: parent.width
+                    columns: 4
+                    spacing: Style.gapTight
+
+                    Repeater {
+                        model: config.pipeDestLabels
+                        delegate: TouchButton {
+                            width: (parent.width - Style.gapTight * 3) / 4
+                            height: Style.touch
+                            text: modelData
+                            textSize: Style.fontSmall
+                            checked: index === config.pipeDestIndex
+                            focusId: "config.pipedest." + index
+                            onClicked: config.pipeDestIndex = index
+                        }
+                    }
+                }
+                Grid {
+                    visible: config.kind === "pipetype"
+                    width: parent.width
+                    columns: 4
+                    spacing: Style.gapTight
+
+                    Repeater {
+                        model: config.pipeTypeLabels
+                        delegate: TouchButton {
+                            width: (parent.width - Style.gapTight * 3) / 4
+                            height: Style.touch
+                            text: modelData
+                            textSize: Style.fontSmall
+                            checked: index === config.pipeTypeIndex
+                            focusId: "config.pipetype." + index
+                            onClicked: config.pipeTypeIndex = index
+                        }
+                    }
+                }
+            }
+
+            // ---- DELAY DIVISION / REVERB MODEL selector lists --------------
+            Column {
+                visible: config.kind === "delaydivision" || config.kind === "reverbmodel"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Grid {
+                    visible: config.kind === "delaydivision"
+                    width: parent.width
+                    columns: 4
+                    spacing: Style.gapTight
+
+                    Repeater {
+                        model: 8
+                        delegate: TouchButton {
+                            width: (parent.width - Style.gapTight * 3) / 4
+                            height: Style.touch
+                            text: ["1/32", "1/16", "1/8", "1/4", "1/2", "1/1", "2/1", "4/1"][index]
+                            textSize: Style.fontSmall
+                            checked: index === config.delayDivision
+                            focusId: "config.delaydivision." + index
+                            onClicked: config.delayDivision = index
+                        }
+                    }
+                }
+                Row {
+                    visible: config.kind === "reverbmodel"
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+
+                    Repeater {
+                        model: 4
+                        delegate: TouchButton {
+                            width: (parent.width - Style.gapTight * 3) / 4
+                            height: Style.touch
+                            text: ["CORE", "ROOM", "HALL", "PLATE"][index]
+                            textSize: Style.fontSmall
+                            checked: index === config.reverbModel
+                            focusId: "config.reverbmodel." + index
+                            onClicked: config.reverbModel = index
+                        }
+                    }
                 }
             }
 
@@ -579,7 +912,8 @@ Rectangle {
                 TouchButton {
                     width: (parent.width - Style.gapTight) / 2
                     height: parent.height
-                    text: "OK"
+                    text: config.kind === "addtrack" ? "ADD TRACK"
+                          : (config.kind === "timelineops" ? "RUN" : "OK")
                     variant: "primary"
                     focusId: "config.ok"
                     onClicked: app.configAccept()

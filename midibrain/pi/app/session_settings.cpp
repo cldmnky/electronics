@@ -5,13 +5,13 @@
 namespace mnky::app {
 
 std::string SessionSettings::activeTake(int track) const {
-  if (track < 0 || track >= audio::kMaxInputs) return {};
+  if (track < 0 || track >= audio::kMaxTracks) return {};
   const std::lock_guard<std::mutex> lock(takeLock_);
   return activeTakes_[static_cast<std::size_t>(track)];
 }
 
 void SessionSettings::setActiveTake(int track, std::string value) {
-  if (track < 0 || track >= audio::kMaxInputs) return;
+  if (track < 0 || track >= audio::kMaxTracks) return;
   const std::lock_guard<std::mutex> lock(takeLock_);
   activeTakes_[static_cast<std::size_t>(track)] = std::move(value);
 }

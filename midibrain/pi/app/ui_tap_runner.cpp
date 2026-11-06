@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "app_controller.hpp"
+#include "mixer_view_model.hpp"
 #include "routing_view_model.hpp"
 
 namespace mnky::app {
@@ -115,6 +116,7 @@ void UiTapRunner::buildScenarios() {
           controller_->showShiftFace(false);
           controller_->setTab(tab);
           if (tab == 0) {
+            primeMixerTracks();
             controller_->mixer()->setTrackMode(false);
             controller_->mixer()->setBank(0);
           } else if (tab == 1) {
@@ -148,6 +150,7 @@ void UiTapRunner::buildScenarios() {
           controller_->setTab(tab);
           controller_->showShiftFace(true);
           if (tab == 0) {
+            primeMixerTracks();
             controller_->mixer()->setTrackMode(false);
             controller_->mixer()->setBank(0);
           } else if (tab == 1) {
@@ -167,6 +170,7 @@ void UiTapRunner::buildScenarios() {
         closeOverlays();
         controller_->showShiftFace(false);
         controller_->setTab(0);
+        primeMixerTracks();
         controller_->mixer()->setTrackMode(true);
         controller_->mixer()->setTrackIndex(2);
         controller_->showShiftFace(true);
@@ -241,6 +245,40 @@ void UiTapRunner::buildScenarios() {
       },
       QStringLiteral("shift.routing.pipes.param."), shiftExcluded, {}, false, true});
 
+  // 3c. Dynamic mixer states of their own: the empty mixer (ADD TRACK is the
+  // only strip control), the full channel popout, and the add-track popup.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("mixer.empty"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        clearMixerTracks();
+        controller_->mixer()->setTrackMode(false);
+      },
+      QStringLiteral("mixer."), {}, {}, false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("mixer.channel"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        controller_->openChannel(1);
+      },
+      QStringLiteral("channel."), {}, {QStringLiteral("channel.close")}, false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("mixer.addtrack"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        controller_->requestAddTrack();
+      },
+      QStringLiteral("config.addtrack."), {},
+      {QStringLiteral("config.addtrack.name")}, false, true});
+
   // 4. Every ConfigPopup kind. One pass taps all non-terminal controls and ends
   // with CANCEL; a second pass opens the same kind and taps OK, so both draft
   // paths and every focus stop in the popup are exercised.
@@ -249,14 +287,44 @@ void UiTapRunner::buildScenarios() {
       QStringLiteral("monitor"),   QStringLiteral("comp"),
       QStringLiteral("eqtype"),    QStringLiteral("delay"),
       QStringLiteral("reverb"),    QStringLiteral("pipechannels"),
-      QStringLiteral("timelineops"), QStringLiteral("trackmonitor")};
+      QStringLiteral("timelineops"), QStringLiteral("trackmonitor"),
+      QStringLiteral("inputsource"), QStringLiteral("outputdest"),
+      QStringLiteral("insert"),    QStringLiteral("addtrack"),
+      QStringLiteral("delaydivision"), QStringLiteral("reverbmodel"),
+      QStringLiteral("pipesource"), QStringLiteral("pipedest"),
+      QStringLiteral("pipetype")};
   for (const auto& kind : configKinds) {
     const QString openConfig = kind;
     scenarios_.push_back(Scenario{
         QStringLiteral("config.%1.cancel").arg(kind),
         [this, openConfig] {
           closeOverlays();
-          if (openConfig == QStringLiteral("pipechannels")) {
+          if (openConfig == QStringLiteral("inputsource")) {
+            controller_->setTab(0);
+            primeMixerTracks();
+            controller_->openInputSource(0);
+            return;
+          }
+          if (openConfig == QStringLiteral("outputdest")) {
+            controller_->setTab(0);
+            primeMixerTracks();
+            controller_->openOutputDest(0);
+            return;
+          }
+          if (openConfig == QStringLiteral("insert")) {
+            controller_->setTab(0);
+            primeMixerTracks();
+            controller_->openInsert(0);
+            return;
+          }
+          if (openConfig == QStringLiteral("addtrack")) {
+            controller_->setTab(0);
+            primeMixerTracks();
+          }
+          if (openConfig == QStringLiteral("pipechannels") ||
+              openConfig == QStringLiteral("pipesource") ||
+              openConfig == QStringLiteral("pipedest") ||
+              openConfig == QStringLiteral("pipetype")) {
             controller_->showShiftFace(false);
             controller_->setTab(1);
             controller_->routing()->setShiftPage(1);
@@ -280,7 +348,32 @@ void UiTapRunner::buildScenarios() {
         QStringLiteral("config.%1.ok").arg(kind),
         [this, openConfig] {
           closeOverlays();
-          if (openConfig == QStringLiteral("pipechannels")) {
+          if (openConfig == QStringLiteral("inputsource")) {
+            controller_->setTab(0);
+            primeMixerTracks();
+            controller_->openInputSource(0);
+            return;
+          }
+          if (openConfig == QStringLiteral("outputdest")) {
+            controller_->setTab(0);
+            primeMixerTracks();
+            controller_->openOutputDest(0);
+            return;
+          }
+          if (openConfig == QStringLiteral("insert")) {
+            controller_->setTab(0);
+            primeMixerTracks();
+            controller_->openInsert(0);
+            return;
+          }
+          if (openConfig == QStringLiteral("addtrack")) {
+            controller_->setTab(0);
+            primeMixerTracks();
+          }
+          if (openConfig == QStringLiteral("pipechannels") ||
+              openConfig == QStringLiteral("pipesource") ||
+              openConfig == QStringLiteral("pipedest") ||
+              openConfig == QStringLiteral("pipetype")) {
             controller_->showShiftFace(false);
             controller_->setTab(1);
             controller_->routing()->setShiftPage(1);
@@ -317,6 +410,27 @@ void UiTapRunner::primePipePage(int pipeIndex, int page) {
   routing->addPipe();
   routing->selectPipe(pipeIndex);
   routing->setParamPage(page);
+}
+
+void UiTapRunner::primeMixerTracks() {
+  if (!controller_->mixer()->empty()) return;
+  controller_->mixer()->clearClipDemo();
+  const char* names[] = {"drums", "bass", "keys", "gtr", "vox", "perc"};
+  for (int slot = 0; slot < 6; ++slot) {
+    controller_->mixer()->addTrack(slot, QString::fromLatin1(names[slot]), slot,
+                                   false, 0);
+  }
+  controller_->mixer()->setTrackMode(false);
+  controller_->mixer()->setBank(0);
+}
+
+void UiTapRunner::clearMixerTracks() {
+  while (controller_->mixer()->stripCount() > 0) {
+    const QVariant slot =
+        controller_->mixer()->data(controller_->mixer()->index(0, 0),
+                                   MixerViewModel::SlotRole);
+    controller_->mixer()->removeTrack(slot.toInt());
+  }
 }
 
 void UiTapRunner::beginScenario() {

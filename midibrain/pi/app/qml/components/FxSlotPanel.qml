@@ -128,6 +128,7 @@ Rectangle {
         Item {
             width: parent.width
             height: Math.max(0, parent.height - Style.touch - (root.showReturn ? Style.touch : 0) - 3 * Style.gapTight - 15)
+            clip: true
 
         ListView {
             id: paramList

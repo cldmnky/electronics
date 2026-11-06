@@ -613,6 +613,16 @@ QString RoutingViewModel::importPipeChain(const QString& target,
   return {};
 }
 
+QStringList RoutingViewModel::addTypeLabels() const {
+  QStringList labels;
+  const int count = static_cast<int>(mnky::midifx::generated::kPipeCount);
+  labels.reserve(count);
+  for (int index = 0; index < count; ++index) {
+    labels << pipeui::pipeName(index + 1);
+  }
+  return labels;
+}
+
 void RoutingViewModel::cycleAddType(int delta) {
   setAddTypeIndex(addTypeIndex_ + (delta < 0 ? -1 : 1));
 }

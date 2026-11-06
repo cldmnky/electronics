@@ -101,7 +101,7 @@ class AudioGlue final : private audio::DeviceClient {
   // these atomics into the engine every block.
   void applyMonitorSettings(const SessionSettings& settings);
   // Control-thread take-loop configuration (session v2 takes.loop). Calls
-  // Engine::setTakeLoop for all 18 tracks, which maps the beat window to take
+  // Engine::setTakeLoop for every track slot, which maps the beat window to take
   // frames with the transport tempo of that moment, so the caller re-applies it
   // after a tempo change (AppController::timerTick) as the engine documents.
   void applyTakeLoops(const SessionSettings& settings);
@@ -168,9 +168,9 @@ class AudioGlue final : private audio::DeviceClient {
   audio::Engine engine_;
   audio::Recorder recorder_;
   EmulatorSynth synth_;
-  float synthBuffer_[audio::kMaxInputs][audio::kBlockSize] = {};
+  float synthBuffer_[audio::kMaxDeviceInputs][audio::kBlockSize] = {};
   audio::DevicePump pump_;
-  float capturePlanes_[audio::kMaxInputs][audio::kBlockSize] = {};
+  float capturePlanes_[audio::kMaxDeviceInputs][audio::kBlockSize] = {};
   float busMainL_[audio::kBlockSize] = {};
   float busMainR_[audio::kBlockSize] = {};
   float busOut34L_[audio::kBlockSize] = {};
@@ -201,7 +201,9 @@ class AudioGlue final : private audio::DeviceClient {
   std::atomic<bool> running_{false};
   std::atomic<std::uint64_t> renderBlocks_{0};
   std::atomic<float> peaks_[2] = {};
-  std::atomic<float> stripPeaks_[audio::kMaxInputs] = {};
+  // Per-track meter taps: one per mixer track slot (audio::kMaxTracks), not the
+  // device capture width, so every strip has a meter.
+  std::atomic<float> stripPeaks_[audio::kMaxTracks] = {};
 
   // Monitor configuration copied from SessionSettings on the GUI thread and
   // read once per block by the audio callback.

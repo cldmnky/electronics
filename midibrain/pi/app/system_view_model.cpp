@@ -101,6 +101,7 @@ void SystemViewModel::setInputIndex(int index) {
   if (clamped == inputIndex_) return;
   inputIndex_ = clamped;
   emit selectionChanged();
+  apply();
 }
 
 void SystemViewModel::setBufferIndex(int index) {
@@ -108,6 +109,7 @@ void SystemViewModel::setBufferIndex(int index) {
   if (clamped == bufferIndex_) return;
   bufferIndex_ = clamped;
   emit selectionChanged();
+  apply();
 }
 
 AudioBackendChoice SystemViewModel::pendingChoice() const {
@@ -130,7 +132,15 @@ AudioBackendChoice SystemViewModel::pendingChoice() const {
 
 void SystemViewModel::apply() {
   const auto choice = pendingChoice();
-  (void)audio_.applyAudioChoice(choice);
+  // The audio layer resolves the request and reports a fallback reason when the
+  // requested device cannot open; the picker keeps the user's choice and the
+  // note says what is actually running.
+  const QString note = QString::fromStdString(audio_.applyAudioChoice(choice)).trimmed();
+  if (note != applyNote_) {
+    applyNote_ = note;
+    emit applyNoteChanged();
+    if (!note.isEmpty()) emit applyNotice(note);
+  }
   refreshDevices();
   refresh();
 }
