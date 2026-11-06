@@ -526,9 +526,25 @@ struct SongClip {
 // and capture() reads the applied lanes back in track order; sections,
 // lengthBars and grid stay app-owned.
 struct SongState {
+  // Owner loop model (2026-11-06): the song is a loop. mode: true = the
+  // arrangement drives playback (default); false = free take-loops.
+  // Absent in old files: true when the song is non-empty, else false.
+  bool mode = true;
+  // Sequence length in beats (clips live in beats; display bars:beats).
+  // 0 = derive from the last clip end; new-song default 32 (8 bars @4/4).
+  // lengthBars is DEPRECATED: migrate x4 @4/4.
+  double lengthBeats = 0.0;
+  // Loop region: playback wraps at endBeats (0 = song length); start/end
+  // define a sub-region (whole song, or a section as a preset).
+  struct LoopRegion {
+    bool on = true;
+    double startBeats = 0.0;
+    double endBeats = 0.0;
+    friend bool operator==(const LoopRegion&, const LoopRegion&) = default;
+  } loop;
   std::vector<SongSection> sections;
   std::vector<SongClip> clips;
-  int lengthBars = 0;
+  int lengthBars = 0;  // DEPRECATED: kept for old readers; use lengthBeats
   int grid = 0;
   friend bool operator==(const SongState&, const SongState&) = default;
 };

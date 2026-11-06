@@ -1401,6 +1401,34 @@ bool decodeSong(const JsonValue& node, SongState& out, std::string& error) {
   }
   if (lengthBars < 0) lengthBars = 0;
   out.lengthBars = lengthBars;
+  bool songMode = out.mode;
+  if (!readOptionalBool(node, "mode", songMode, "song", error)) return false;
+  out.mode = songMode;
+  double lb = out.lengthBeats;
+  if (!readOptionalDouble(node, "lengthBeats", lb, "song", error)) {
+    return false;
+  }
+  if (lb < 0.0) lb = 0.0;
+  out.lengthBeats = lb;
+  if (const JsonValue* lp = node.find("loop")) {
+    if (lp->type != JsonValue::Type::Object) {
+      error = "session: \"song.loop\" is not an object";
+      return false;
+    }
+    if (!readOptionalBool(*lp, "on", out.loop.on, "song.loop", error)) {
+      return false;
+    }
+    if (!readOptionalDouble(*lp, "start", out.loop.startBeats, "song.loop",
+                            error)) {
+      return false;
+    }
+    if (!readOptionalDouble(*lp, "end", out.loop.endBeats, "song.loop",
+                           error)) {
+      return false;
+    }
+    if (out.loop.startBeats < 0.0) out.loop.startBeats = 0.0;
+    if (out.loop.endBeats < 0.0) out.loop.endBeats = 0.0;
+  }
   int grid = out.grid;
   if (!readOptionalInt(node, "grid", grid, "song", error)) return false;
   if (grid < 0) grid = 0;
@@ -2170,6 +2198,17 @@ std::string encode(const Snapshot& snapshot) {
   appendNumber(out, snapshot.song.lengthBars);
   out += ",\"grid\":";
   appendNumber(out, snapshot.song.grid);
+  out += ",\"mode\":";
+  appendBool(out, snapshot.song.mode);
+  out += ",\"lengthBeats\":";
+  appendNumber(out, snapshot.song.lengthBeats);
+  out += ",\"loop\":{\"on\":";
+  appendBool(out, snapshot.song.loop.on);
+  out += ",\"start\":";
+  appendNumber(out, snapshot.song.loop.startBeats);
+  out += ",\"end\":";
+  appendNumber(out, snapshot.song.loop.endBeats);
+  out.push_back('}');
   out += "},\"punch\":{\"playFrom\":{\"enabled\":";
   appendBool(out, snapshot.punch.playFrom.enabled);
   out += ",\"measure\":";

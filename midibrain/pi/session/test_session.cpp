@@ -238,6 +238,11 @@ void testRoundTrip() {
   original.clock.transportFollow[2] = true;
   original.clock.trs[0].tempoDiv = 2;
   original.clock.trs[0].syncDelayMs = 12;
+  original.song.mode = false;
+  original.song.lengthBeats = 19.0;  // fractional bars: 4:3
+  original.song.loop.on = false;
+  original.song.loop.startBeats = 8.0;
+  original.song.loop.endBeats = 16.0;
   original.deviceOut.main = {4, 5};
   original.deviceOut.out34 = {6, 7};
   original.deviceOut.phones = {0, 1};
@@ -1579,7 +1584,7 @@ void testSongWireAndEmpty() {
   const Snapshot empty;
   CHECK(mnky::session::save(path, empty));
   CHECK(readFile(path).find("\"song\":{\"sections\":[],\"clips\":[],"
-                            "\"lengthBars\":0,\"grid\":0}") !=
+                            "\"lengthBars\":0,\"grid\":0,\"mode\":true,\"lengthBeats\":0,\"loop\":{\"on\":true,\"start\":0,\"end\":0}}") !=
         std::string::npos);
   LoadResult result = mnky::session::load(path);
   if (!result.ok) std::printf("FAIL song load: %s\n", result.error.c_str());
@@ -1612,7 +1617,7 @@ void testSongWireAndEmpty() {
                   "\"take\":\"01-drums-001.wav\",\"offset\":0,"
                   "\"length\":0,\"gainDb\":0,\"fadeIn\":0,"
                   "\"fadeOut\":0,\"normalize\":false,\"loop\":false,"
-                  "\"muted\":false}],\"lengthBars\":8,\"grid\":3}") !=
+                  "\"muted\":false}],\"lengthBars\":8,\"grid\":3,\"mode\":true,\"lengthBeats\":0,\"loop\":{\"on\":true,\"start\":0,\"end\":0}}") !=
         std::string::npos);
 
   // Unknown keys are ignored at every level.
