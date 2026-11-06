@@ -557,8 +557,10 @@ void capacityTests() {
 void dynamicMixerViewModelTests() {
   SessionSettings settings;
   MixerModel model;
+  FxManager fx;
   EqModel eq;
   MixerViewModel view(model, settings, eq);
+  view.setClapHost(&fx);
 
   check(view.rowCount() == 0 && view.empty() && view.pageCount() == 1,
         "an empty project has no strip rows and one empty page");
@@ -644,9 +646,24 @@ void dynamicMixerViewModelTests() {
         "the slot selector writes the effect id");
   check(view.fxNameAt(2, 0) == "DELAY", "the slot reads back by name");
   check(model.fxSlot(2, 1).id.empty(), "FX1 and FX2 are independent slots");
-  view.setFxChoiceAt(2, 0, MixerViewModel::kFxChoicePlugin);
-  check(model.fxSlot(2, 0).id == "builtin.delay",
-        "PLUGIN is listed but never written (no per-track CLAP host)");
+  if (!fx.plugins().empty()) {
+    const auto plugin = fx.plugins().front();
+    check(view.setFxChoiceAt(2, 0, MixerViewModel::kFxChoicePlugin),
+          "a discovered plugin is a selectable rack choice");
+    check(model.fxSlot(2, 0).id == plugin.id,
+          "the plugin choice writes the plugin's CLAP id");
+    check(model.fxSlot(2, 0).params.size() == plugin.params.size(),
+          "a new plugin slot starts from the plugin's own parameter defaults");
+    check(view.fxParams(2, 0).size() == static_cast<int>(plugin.params.size()),
+          "the card list comes from the plugin's clap.params table");
+    check(view.setFxChoiceAt(2, 0, 0),
+          "clearing the plugin slot is a built-in NONE selection");
+    check(model.fxSlot(2, 0).id.empty(), "NONE clears the CLAP plugin id");
+    check(view.setFxChoiceAt(2, 0, 1), "the built-in selector still works");
+  } else {
+    check(!view.setFxChoiceAt(2, 0, MixerViewModel::kFxChoicePlugin),
+          "without a discovered plugin the choice is refused");
+  }
   view.setFxBypassAt(2, 0, true);
   check(model.fxSlot(2, 0).bypass, "the slot bypass is stored per track");
   view.setFxWetAt(2, 0, 0.65);
@@ -692,10 +709,12 @@ void configLiveTests() {
   AppState state;
   SessionSettings settings;
   MixerModel mixer;
+  FxManager fx;
   EqModel eq;
   PerformanceModel performance;
   ConfigPopupModel popup(state, mixer, settings, eq);
   MixerViewModel view(mixer, settings, eq);
+  view.setClapHost(&fx);
   popup.setMixer(&view);
 
   const int clickModeBefore = state.clickMode.load();
@@ -753,9 +772,14 @@ void configLiveTests() {
   popup.setFxSlotChoice(2);
   check(mixer.fxSlot(0, 1).id == "builtin.reverb", "a slot pick is live");
   check(mixer.fxSlot(0, 0).id.empty(), "the pick writes only the targeted slot");
-  popup.setFxSlotChoice(MixerViewModel::kFxChoicePlugin);
-  check(mixer.fxSlot(0, 1).id == "builtin.reverb",
-        "the plugin choice is refused, so the popup cannot claim a host");
+  if (!fx.plugins().empty()) {
+    const auto plugin = fx.plugins().front();
+    popup.setFxSlotChoice(MixerViewModel::kFxChoicePlugin);
+    check(mixer.fxSlot(0, 1).id == plugin.id,
+          "the plugin choice loads into the targeted rack slot");
+    check(popup.fxSlotChoice() == MixerViewModel::kFxChoicePlugin,
+          "the selector shows the selected plugin");
+  }
   popup.cancel();
   check(mixer.fxSlot(0, 1).id.empty(), "CANCEL restores the previous slot");
 
@@ -1137,6 +1161,26 @@ void projectRoundTripTests() {
   projectReverb.wet = 0.25f;
   projectReverb.params = {20.0, 0.8, 0.4, 0.6, 2.0, 1.4};
   mixer.setFxSlot(2, 1, projectReverb);
+  // A CLAP slot round-trips by plugin id plus the plugin's positional
+  // parameter vector. Track 4 slot 0 keeps the built-in slots at tracks 2/3
+  // independent.
+  bool clapProject = !fx.plugins().empty();
+  MixerModel::FxSlot projectClap;
+  double clapFirstParam = 0.0;
+  if (clapProject) {
+    const auto& plugin = fx.plugins().front();
+    projectClap.id = plugin.id;
+    projectClap.wet = 0.8f;
+    for (const auto& param : plugin.params) projectClap.params.push_back(param.value);
+    if (!projectClap.params.empty()) {
+      clapFirstParam = std::clamp(3.5, plugin.params.front().min,
+                                  plugin.params.front().max);
+      projectClap.params.front() = clapFirstParam;
+    }
+    mixer.setFxSlot(4, 0, projectClap);
+    check(fx.trackEffectLoaded(4, 0),
+          "selecting a CLAP slot creates the host instance before save");
+  }
   midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, true);
   // Per-device route and its scoped pipe chain: id 6 is a dynamic USB id, so
   // this proves the project capture/load path covers ids 6..31, not only the
@@ -1201,6 +1245,11 @@ void projectRoundTripTests() {
   midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, false);
   midi.setRoute(midi::dynamicPort(6), midi::Port::UsbOut, false);
   midi.clearLearnBindings();
+  if (clapProject) {
+    mixer.setFxSlot(4, 0, {});
+    check(!fx.trackEffectLoaded(4, 0),
+          "clearing the CLAP slot destroys the instance before load");
+  }
 
   check(project::load(context, directory, error), "project load applies the session file");
   checkNear(mixer.gainDb(2), -6.0, 0.01, "project load restores strip gain");
@@ -1264,6 +1313,17 @@ void projectRoundTripTests() {
   checkNear(loadedFx2.wet, 0.25, 1e-6, "project load restores the FX2 wet");
   check(mixer.fxSlot(2, 0).id == "builtin.delay" && mixer.fxSlot(3, 0).id.empty(),
         "a rack slot loads for its own track only");
+  if (clapProject) {
+    check(mixer.fxSlot(4, 0).id == projectClap.id &&
+              mixer.fxSlot(4, 0).params == projectClap.params,
+          "project load restores the CLAP slot id and parameter vector");
+    check(fx.trackEffectLoaded(4, 0),
+          "project load recreates the CLAP host instance lazily");
+    if (clapFirstParam != 0.0) {
+      check(std::abs(fx.trackParamValue(4, 0, 0) - clapFirstParam) < 1e-9,
+            "the restored session parameters reach the plugin's param API");
+    }
+  }
   check(midi.routeEnabled(midi::Port::TrsIn1, midi::Port::UsbOut),
         "project load restores the routing matrix");
   check(midi.routeEnabled(midi::dynamicPort(6), midi::Port::UsbOut),
@@ -1522,8 +1582,10 @@ void eqAndXyTests() {
 void trackFxRackTests() {
   MixerModel model;
   SessionSettings settings;
+  FxManager fxHost;
   EqModel eq;
   MixerViewModel mixer(model, settings, eq);
+  mixer.setClapHost(&fxHost);
   model.addTrack(0, "drums");
   model.addTrack(1, "bass");
   mixer.setSelectedStrip(0);
@@ -1591,9 +1653,13 @@ void trackFxRackTests() {
   check(!xy.fx1()->bound() && !xy.fx2()->bound(),
         "the grids follow the selected track");
   check(xy.fx1()->note().contains("NONE"), "the unbound slot names its state");
-  mixer.setFxChoiceAt(1, 1, 3);
-  check(model.fxSlot(1, 1).id.empty(),
-        "a plugin id is not reachable from the rack selector");
+  if (!fxHost.plugins().empty()) {
+    check(mixer.setFxChoiceAt(1, 1, MixerViewModel::kFxChoicePlugin),
+          "the rack selector reaches a discovered plugin");
+    check(model.fxSlot(1, 1).id == fxHost.plugins().front().id,
+          "the plugin choice writes its CLAP id");
+    check(mixer.setFxChoiceAt(1, 1, 0), "NONE clears the plugin slot again");
+  }
 
   // TRACK FX popup: it follows the selected track and edits the same rack.
   fx.openFor(1, 1);
@@ -1601,7 +1667,7 @@ void trackFxRackTests() {
         "TRACK FX opens on the requested track and slot");
   check(fx.fx1()->title() == "FX1" && fx.fx2()->title() == "FX2",
         "the two cards are FX1 and FX2");
-  check(fx.fx1()->choice() == MixerViewModel::fxChoiceOf(""),
+  check(fx.fx1()->choice() == mixer.fxChoiceOf(""),
         "the closed selector reads the slot it shows");
   fx.setChoice(0, 1);
   check(model.fxSlot(1, 0).id == "builtin.delay",
@@ -1631,6 +1697,206 @@ void trackFxRackTests() {
   checkNear(presetModel.fxSlot(0, 0).params[audio::fx::Reverb::kSize],
             audio::fx::Reverb::modelPreset(audio::fx::Reverb::kModelHall).size, 1e-9,
             "a reverb model writes its preset size");
+}
+
+// Per-track CLAP hosting: the first plugin selection creates the host instance,
+// the plugin's own clap.params table drives the cards, NONE destroys the
+// instance, and the measured 16-instance cap refuses a 17th selection with the
+// exact UI message.
+void clapTrackHostTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  FxManager fx;
+  EqModel eq;
+  PerformanceModel performance;
+  AudioGlue audio(mixer, fx, performance, state, true);
+  MixerViewModel view(mixer, settings, eq);
+  view.setClapHost(&fx);
+
+  const auto& plugins = fx.plugins();
+  if (plugins.empty()) {
+    check(!view.setFxChoiceAt(0, 0, MixerViewModel::kFxChoicePlugin),
+          "no discovered plugin refuses the CLAP choice");
+    return;
+  }
+  const auto plugin = plugins.front();
+  check(fx.trackInstanceCount() == 0,
+        "empty and built-in slots allocate no CLAP instance");
+  check(view.setFxChoiceAt(0, 1, MixerViewModel::kFxChoicePlugin),
+        "the first discovered plugin is selectable");
+  check(mixer.fxSlot(0, 1).id == plugin.id,
+        "the slot stores the plugin's CLAP id (session-fied)");
+  check(fx.trackEffectLoaded(0, 1) && fx.trackInstanceCount() == 1,
+        "selecting the plugin creates exactly one host instance");
+  check(fx.trackEffectName(0, 1) == plugin.name,
+        "the host reports the plugin's own name");
+  const auto cards = view.fxParams(0, 1);
+  check(cards.size() == static_cast<int>(plugin.params.size()),
+        "the card list is the plugin's clap.params table");
+  if (!cards.isEmpty() && !plugin.params.empty()) {
+    check(cards.first().toMap().value(QStringLiteral("name")).toString() ==
+              QString::fromStdString(plugin.params.front().name).toUpper(),
+          "a card carries the plugin's parameter name");
+    const auto& first = plugin.params.front();
+    const double requested = std::clamp(3.5, first.min, first.max);
+    view.setFxParamAt(0, 1, 0, requested);
+    checkNear(mixer.fxSlot(0, 1).params[0], requested, 1e-9,
+              "a plugin card writes the session parameter vector");
+    check(std::abs(fx.trackParamValue(0, 1, 0) - requested) < 1e-9,
+          "the parameter write reaches the plugin's own clap.params API");
+  }
+
+  // Fill the host to the measured admission cap: track 0's second slot plus
+  // one slot on tracks 1..15 is 16 live instances.
+  int loaded = fx.trackInstanceCount();
+  for (int track = 1; track < FxManager::kMaxTrackInstances && loaded <
+                                                              FxManager::kMaxTrackInstances;
+       ++track) {
+    if (!view.setFxChoiceAt(track, 0, MixerViewModel::kFxChoicePlugin)) break;
+    loaded = fx.trackInstanceCount();
+  }
+  check(fx.trackInstanceCount() == FxManager::kMaxTrackInstances,
+        "the host reaches the 16 simultaneous instance cap");
+  const int refusedTrack = 16;
+  mixer.setFxSlot(refusedTrack, 0, {});
+  check(!view.setFxChoiceAt(refusedTrack, 0, MixerViewModel::kFxChoicePlugin),
+        "a 17th selection at the cap is refused");
+  check(view.fxChoiceRefusal(refusedTrack, 0) ==
+            "PLUGIN LIMIT REACHED - unload one first",
+        "the refusal carries the exact owner-facing message");
+  check(mixer.fxSlot(refusedTrack, 0).id.empty(),
+        "a refused selection leaves the slot untouched");
+  ConfigPopupModel popup(state, mixer, settings, eq);
+  popup.setMixer(&view);
+  popup.setFxTarget(refusedTrack, 0);
+  check(popup.openKind(QStringLiteral("fxslot")), "the FX slot popup opens at the cap");
+  popup.setFxSlotChoice(MixerViewModel::kFxChoicePlugin);
+  check(popup.fxSlotNote() == "PLUGIN LIMIT REACHED - unload one first",
+        "the popup shows the exact cap message");
+  check(popup.fxSlotChoice() == 0,
+        "the popup selector stays on the slot's actual value");
+  popup.cancel();
+
+  check(view.setFxChoiceAt(0, 1, 0), "NONE unloads the plugin slot");
+  check(!fx.trackEffectLoaded(0, 1) && fx.trackInstanceCount() == 15,
+        "clearing a slot destroys its instance");
+  check(view.setFxChoiceAt(refusedTrack, 0, MixerViewModel::kFxChoicePlugin),
+        "the freed slot admits the next selection");
+  check(fx.trackInstanceCount() == FxManager::kMaxTrackInstances,
+        "the host is at the cap again");
+
+  // Teardown path: every remaining track slot is cleared through the same
+  // UI path, and no plugin instance stays loaded.
+  for (int track = 0; track < audio::kMaxTracks; ++track) {
+    for (int slot = 0; slot < MixerModel::kFxSlotCount; ++slot) {
+      if (mixer.fxSlot(track, slot).id.empty()) continue;
+      (void)view.setFxChoiceAt(track, slot, 0);
+    }
+  }
+  check(fx.trackInstanceCount() == 0, "every CLAP instance is torn down");
+}
+
+// Output inserts: selecting USB OUT exposes an ordered chain list; add/remove/
+// reorder and the chain's pipes round-trip through the session router, and a
+// TRS output reports that inserts are Pi-owned only.
+void outputInsertChainTests() {
+  MidiGlue midi(false);
+  RoutingViewModel routing(midi, false);
+  int usbOut = -1;
+  int trsOut = -1;
+  for (const auto& row : routing.outputNodes()) {
+    const auto map = row.toMap();
+    if (map.value(QStringLiteral("port")).toInt() ==
+        midi::portId(midi::Port::UsbOut)) {
+      usbOut = map.value(QStringLiteral("nodeIndex")).toInt();
+    }
+    if (map.value(QStringLiteral("port")).toInt() ==
+        midi::portId(midi::Port::TrsOut1)) {
+      trsOut = map.value(QStringLiteral("nodeIndex")).toInt();
+    }
+  }
+  check(usbOut >= 0 && trsOut >= 0, "the routing model lists USB and TRS outputs");
+  routing.setPipeDestination(usbOut);
+  check(routing.outputInsertsAvailable(),
+        "a USB output exposes output inserts");
+  routing.addInsertChain();
+  check(routing.insertSlot() == 0 && routing.insertRows().size() == 1,
+        "ADD appends the first output insert chain");
+  routing.setAddTypeIndex(0);  // FILTER
+  routing.addPipe();
+  check(routing.pipeCount() == 1, "the insert chain takes ordinary modifiers");
+  const QStringList insertTypes = routing.addTypeLabels();
+  check(!insertTypes.contains(QStringLiteral("CC LFO")),
+        "a generator-role head is not offered as an insert modifier");
+  check(!midi.addOutputInsertPipe(midi::Port::UsbOut, 0,
+                                  session::MidiPipeType::CcLfo),
+        "the glue refuses a generator head in an output insert chain");
+  check(routing.pipeStatusText().contains(QStringLiteral("PI ENGINE")),
+        "the insert chain reports the Pi engine");
+  const auto routerSnapshot = midi.routerSnapshot();
+  check(routerSnapshot.outputInsertEnabled(midi::Port::UsbOut, 0) &&
+            routerSnapshot.outputInsertPipeCount(midi::Port::UsbOut, 0) == 1,
+        "the glue applies the insert chain to the live Router slot");
+  routing.addInsertChain();
+  routing.setAddTypeIndex(11);  // ARP
+  routing.addPipe();
+  check(midi.outputInsertChains(midi::Port::UsbOut).size() == 2,
+        "a second insert chain is stored in order");
+  check(midi.outputInsertPipes(midi::Port::UsbOut, 1).size() == 1,
+        "the second chain holds its own pipe");
+  routing.moveInsertChain(1, -1);
+  check(midi.outputInsertPipes(midi::Port::UsbOut, 0).size() == 1 &&
+            static_cast<int>(midi.outputInsertPipes(midi::Port::UsbOut, 0)
+                                 .front()
+                                 .type) ==
+                static_cast<int>(session::MidiPipeType::Arp),
+        "moving a chain swaps the ordered slots");
+  routing.removeInsertChain(1);
+  check(midi.outputInsertChains(midi::Port::UsbOut).size() == 1,
+        "removing a chain compacts the list");
+  routing.toggleInsertChain(0);
+  check(!midi.outputInsertEnabled(midi::Port::UsbOut, 0),
+        "the insert chain has its own ON gate");
+
+  // Session round-trip keeps the ordered chains, their gates and pipes.
+  const auto captured = midi.captureSessionRouter();
+  int insertRoutes = 0;
+  for (const auto& route : captured.routes) {
+    if (route.src == session::kSrcOutputInsert &&
+        route.dst == midi::portId(midi::Port::UsbOut)) {
+      ++insertRoutes;
+      check(!route.pipes.empty(), "capture keeps the insert chain's pipes");
+    }
+  }
+  check(insertRoutes == 1, "capture writes the output insert pseudo route");
+  MidiGlue restored(false);
+  restored.applySessionRouter(captured);
+  const auto restoredChains = restored.outputInsertChains(midi::Port::UsbOut);
+  check(restoredChains.size() == 1 && restoredChains.front().pipes.size() == 1 &&
+            !restoredChains.front().enabled,
+        "project load restores the ordered insert chain and its gate");
+
+  // The ordered list is capped at the Router's four slots.
+  while (routing.insertRows().size() <
+         static_cast<int>(midi::Router::kMaxOutputInserts)) {
+    routing.addInsertChain();
+  }
+  check(routing.insertRows().size() ==
+            static_cast<int>(midi::Router::kMaxOutputInserts),
+        "an output holds at most four insert chains");
+  routing.addInsertChain();
+  check(routing.insertHint() == "OUTPUT INSERT LIMIT (4) REACHED",
+        "a fifth insert chain is refused with a named limit");
+  routing.setPipeDestination(trsOut);
+  check(!routing.outputInsertsAvailable(),
+        "a TRS output is Pico-owned, so it exposes no insert chain");
+  routing.addInsertChain();
+  check(routing.insertHint().contains(QStringLiteral("USB-ONLY")),
+        "ADD on a TRS output names the actual engine boundary");
+  routing.reset();
+  check(midi.outputInsertChains(midi::Port::UsbOut).empty(),
+        "matrix RESET clears output inserts");
 }
 
 // The send chain behind the X/Y grids: the built-in delay/reverb process the
@@ -2692,6 +2958,8 @@ int runAll() {
   loopAndIoTests();
   eqAndXyTests();
   trackFxRackTests();
+  clapTrackHostTests();
+  outputInsertChainTests();
   sendChainTests();
   midiMonitorTests();
   clockGateTests();

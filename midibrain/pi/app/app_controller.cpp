@@ -49,6 +49,7 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
       state_, mixer_, fx_, midi_, audio_, link_, settings_, eqModel_, performance_});
 
   mixerVm_ = std::make_unique<MixerViewModel>(mixer_, settings_, eqModel_);
+  mixerVm_->setClapHost(&fx_);
   routingVm_ = std::make_unique<RoutingViewModel>(midi_, noPico_);
   fxVm_ = std::make_unique<TrackFxViewModel>(mixer_, *mixerVm_);
   recorderVm_ =
@@ -833,9 +834,13 @@ void AppController::openFxSlotParams(int slot) {
     openConfigFrom(QStringLiteral("delay"), nullptr);
   } else if (choice == 2) {
     openConfigFrom(QStringLiteral("reverb"), nullptr);
+  } else if (choice >= MixerViewModel::kFxChoicePlugin) {
+    // A CLAP slot's editors are the plugin's own parameter chips in TRACK FX.
+    mixerVm_->setTrackIndex(track);
+    openTrackFx(slot);
   } else {
-    // No built-in effect in this slot: name the gap instead of opening an
-    // editor that would accept values nothing runs.
+    // No effect in this slot: name the state instead of opening an editor that
+    // would accept values nothing runs.
     showTextPopup(QStringLiteral("FX%1").arg(slot == 1 ? 2 : 1),
                   mixerVm_->fxSlotNote(track, slot));
   }
@@ -2818,9 +2823,9 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("config.output.%1").arg(destination));
       }
     } else if (kind == QStringLiteral("fxslot")) {
-      // The plugin choice is listed but greyed: the ring stops on the three
-      // choices the build can actually load.
-      for (int choice = 0; choice < MixerViewModel::kFxChoicePlugin; ++choice) {
+      // NONE / DELAY / REVERB plus every discovered CLAP plugin; a plugin
+      // selection is a real ring stop now.
+      for (int choice = 0; choice < configVm_->fxSlotLabels().size(); ++choice) {
         ids.push_back(QStringLiteral("config.fxslot.%1").arg(choice));
       }
     } else if (kind == QStringLiteral("pipesource")) {
@@ -2883,8 +2888,8 @@ void AppController::rebuildFocusIds() {
     ids.push_back(QStringLiteral("config.cancel"));
   } else if (fxVm_ && fxVm_->open()) {
     // TRACK FX popup: it sits above the channel popout, so it owns the ring
-    // while it is open. The two slot cards are FX1 then FX2; PLUGIN is never a
-    // ring stop because the selector cannot load one.
+    // while it is open. The two slot cards are FX1 then FX2; a CLAP slot's
+    // parameter cards come from the plugin's own clap.params table.
     ids.push_back(QStringLiteral("trackfx.close"));
     for (int slot = 0; slot < MixerModel::kFxSlotCount; ++slot) {
       const QString prefix = QStringLiteral("trackfx.fx%1").arg(slot + 1);
@@ -2976,6 +2981,25 @@ void AppController::rebuildFocusIds() {
           // there too.
           ids.push_back(QStringLiteral("shift.routing.pipes.src.name"));
           ids.push_back(QStringLiteral("shift.routing.pipes.dst.name"));
+          if (routingVm_->outputInsertsAvailable()) {
+            ids.push_back(QStringLiteral("shift.routing.pipes.insert.route"));
+            ids.push_back(QStringLiteral("shift.routing.pipes.insert.add"));
+            for (int chain = 0; chain < routingVm_->insertRows().size(); ++chain) {
+              ids.push_back(
+                  QStringLiteral("shift.routing.pipes.insert.chain.%1").arg(chain));
+            }
+          }
+          if (routingVm_->insertSlot() >= 0) {
+            const int insert = routingVm_->insertSlot();
+            ids.push_back(
+                QStringLiteral("shift.routing.pipes.insert.on.%1").arg(insert));
+            ids.push_back(
+                QStringLiteral("shift.routing.pipes.insert.up.%1").arg(insert));
+            ids.push_back(
+                QStringLiteral("shift.routing.pipes.insert.down.%1").arg(insert));
+            ids.push_back(
+                QStringLiteral("shift.routing.pipes.insert.remove.%1").arg(insert));
+          }
           ids.push_back(QStringLiteral("shift.routing.pipes.add.type"));
           ids.push_back(QStringLiteral("shift.routing.pipes.add"));
           ids.push_back(QStringLiteral("shift.routing.pipes.scope"));

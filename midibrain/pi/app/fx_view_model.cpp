@@ -57,6 +57,7 @@ QString TrackFxViewModel::footer() const {
 void TrackFxViewModel::openFor(int track, int slot) {
   if (track < 0 || track >= audio::kMaxTracks) return;
   focusSlot_ = slot == 1 ? 1 : 0;
+  mixer_.clearFxChoiceRefusal();
   mixer_.setTrackIndex(track);
   if (!open_) {
     open_ = true;

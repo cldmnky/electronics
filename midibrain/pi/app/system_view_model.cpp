@@ -280,8 +280,15 @@ void SystemViewModel::refresh() {
   stream << "MIDI      " << QString::fromStdString(midi_.describe())
          << (status.noPico ? "   (NO PICO: USB only)" : "") << "   routed "
          << static_cast<qulonglong>(midi_.routedCount()) << "\n";
-  stream << "FX        A " << QString::fromStdString(fx_.slot(0).pluginPath()) << "\n";
-  stream << "          B " << QString::fromStdString(fx_.slot(1).pluginPath()) << "\n";
+  stream << "CLAP      " << fx_.trackInstanceCount() << " / "
+         << FxManager::kMaxTrackInstances << " per-track instance(s)";
+  if (!fx_.plugins().empty()) {
+    stream << "   plugins";
+    for (const auto& plugin : fx_.plugins()) {
+      stream << " " << QString::fromStdString(plugin.name);
+    }
+  }
+  stream << "\n";
   stream << "CLICK     mode "
          << (state_.clickMode.load() == 0 ? "off"
                                            : (state_.clickMode.load() == 1 ? "record" : "play"))

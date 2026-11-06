@@ -170,6 +170,45 @@ class MidiGlue {
   std::uint16_t generatorPipeChannelMask(midi::Port destination, int index) const;
   // Matrix RESET: drop every generator route and chain.
   void clearGeneratorRoutes();
+
+  // --- output inserts (session kSrcOutputInsert, -2) -----------------------
+  // An output insert is a chain in front of every message routed to one
+  // destination. The Router keeps four ordered slots per output; this glue
+  // stores them as a compact per-output list so ADD/REMOVE/REORDER map onto
+  // slot order without leaving holes. Only a Pi-owned destination (USB OUT or
+  // a dynamic USB output) can host an insert; a TRS output is Pico-owned and
+  // this build's link seam does not carry pseudo-source chains.
+  struct OutputInsertChain {
+    bool enabled = false;
+    std::vector<session::MidiPipe> pipes;
+  };
+  bool outputInsertSupported(midi::Port destination) const;
+  std::vector<OutputInsertChain> outputInsertChains(midi::Port destination) const;
+  bool outputInsertEnabled(midi::Port destination, int index) const;
+  bool setOutputInsertEnabled(midi::Port destination, int index, bool enabled);
+  std::vector<session::MidiPipe> outputInsertPipes(midi::Port destination,
+                                                   int index) const;
+  bool setOutputInsertPipes(midi::Port destination, int index,
+                            const std::vector<session::MidiPipe>& pipes);
+  // Appends an empty, enabled chain; false at the four-slot limit.
+  bool addOutputInsertChain(midi::Port destination);
+  bool removeOutputInsertChain(midi::Port destination, int index);
+  bool moveOutputInsertChain(midi::Port destination, int index, int delta);
+  bool addOutputInsertPipe(midi::Port destination, int index,
+                           session::MidiPipeType type);
+  bool removeOutputInsertPipe(midi::Port destination, int index, int pipe);
+  bool moveOutputInsertPipe(midi::Port destination, int index, int pipe,
+                            int delta);
+  bool setOutputInsertPipeBypass(midi::Port destination, int index, int pipe,
+                                 bool bypass);
+  bool setOutputInsertPipeParam(midi::Port destination, int index, int pipe,
+                                int param, int value);
+  bool setOutputInsertPipeChannelMask(midi::Port destination, int index,
+                                      int pipe, std::uint16_t mask);
+  std::uint16_t outputInsertPipeChannelMask(midi::Port destination, int index,
+                                            int pipe) const;
+  // Matrix RESET: drop every output insert chain.
+  void clearOutputInserts();
   // Dotted LearnEngine paths for every positional parameter of every stored
   // chain, in route/pipe/param order.
   std::vector<std::string> routePipeLearnTargets() const;
@@ -263,6 +302,9 @@ class MidiGlue {
  private:
   void recordMonitor(midi::Port port, bool outbound, const std::uint8_t* data,
                      std::uint8_t size);
+  // Re-applies one destination's stored chain list to the Router slots and
+  // clears the slots beyond the list. lock_ must be held.
+  bool syncOutputInserts(midi::Port destination);
   // Queues one TRS->TRS chain through pipeSync_ (no-op for a Pi-owned pair).
   void notifyPipeSync(midi::Port source, midi::Port destination);
   struct Delivery {
@@ -281,6 +323,9 @@ class MidiGlue {
   // Generator chains and their route gate, indexed by output destination id.
   std::array<std::vector<session::MidiPipe>, midi::kMaxPorts> generatorPipes_{};
   std::array<bool, midi::kMaxPorts> generatorEnabled_{};
+  // Output-insert chains in slot order per destination; reordering compacts
+  // the vector and re-applies every Router slot.
+  std::array<std::vector<OutputInsertChain>, midi::kMaxPorts> outputInserts_{};
   midi::UsbMidi usb_;
   // Dynamic USB device endpoints (ids 6..31), guarded by lock_. Ports are
   // reopened on an inventory change but the registry never frees an id while

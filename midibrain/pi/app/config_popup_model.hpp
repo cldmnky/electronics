@@ -115,8 +115,9 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(QString outputTitle READ outputTitle NOTIFY openChanged)
   Q_PROPERTY(QStringList outputLabels READ outputLabels CONSTANT)
   Q_PROPERTY(int outputIndex READ outputIndex WRITE setOutputIndex NOTIFY changed)
-  // Per-track FX rack slot: NONE / DELAY / REVERB / PLUGIN (greyed - per-track
-  // CLAP hosting is not wired in this build).
+  // Per-track FX rack slot: NONE / DELAY / REVERB plus one entry per discovered
+  // CLAP plugin. Selecting a plugin loads it into that track slot; the note
+  // states the 16-instance refusal instead of silently changing the slot.
   Q_PROPERTY(QString fxSlotTitle READ fxSlotTitle NOTIFY openChanged)
   Q_PROPERTY(QStringList fxSlotLabels READ fxSlotLabels CONSTANT)
   Q_PROPERTY(int fxSlotChoice READ fxSlotChoice WRITE setFxSlotChoice NOTIFY changed)
@@ -448,6 +449,7 @@ class ConfigPopupModel final : public QObject {
   int fxTrackSlot_ = 0;
   int fxSlotIndex_ = 0;
   int fxSlotChoice_ = 0;
+  QString fxSlotNote_;
   int addTrackSlot_ = 0;
   QString addTrackName_;
   int addTrackInputMode_ = 1;

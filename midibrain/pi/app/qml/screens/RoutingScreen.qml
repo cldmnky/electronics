@@ -656,9 +656,9 @@ Item {
             // cards (two columns) and scroll for a longer schema.
             readonly property int chainListHeight: Style.touch * 2
             readonly property int paramAreaHeight: Math.max(Style.touch,
-                                                            height - Style.touch * 2
+                                                            height - Style.touch * 3
                                                             - chainListHeight
-                                                            - Style.gapTight * 3)
+                                                            - Style.gapTight * 4)
             readonly property int cardHeight: Math.max(Style.touch,
                                                        Math.floor((paramAreaHeight
                                                                    - Style.gapTight) / 2))
@@ -693,6 +693,114 @@ Item {
                         chevron: "down"
                         focusId: "shift.routing.pipes.dst.name"
                         onClicked: app.openConfigFrom("pipedest", this)
+                    }
+                }
+
+                // OUTPUT INSERTS: the selected TO output's ordered chain list.
+                // ROUTE edits the normal FROM->TO chain; a numbered chip edits
+                // that insert chain in the same pipe editor below. ADD appends
+                // a chain (four max); ^/v reorder and X removes the selected
+                // one. TRS outputs are Pico-owned, so this strip says so
+                // instead of pretending the chain is selectable.
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+
+                    Text {
+                        width: 62
+                        height: parent.height
+                        text: "INSERTS"
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    TouchButton {
+                        width: 62
+                        height: parent.height
+                        text: "ROUTE"
+                        textSize: Style.fontSmall
+                        checked: routing.insertSlot === -1
+                        visible: routing.outputInsertsAvailable
+                        focusId: "shift.routing.pipes.insert.route"
+                        onClicked: routing.selectRouteChain()
+                    }
+                    Repeater {
+                        model: routing.insertRows
+                        delegate: TouchButton {
+                            width: 70
+                            height: parent.height
+                            text: modelData.text
+                            textSize: Style.fontSmall
+                            checked: modelData.selected
+                            focusId: "shift.routing.pipes.insert.chain." + index
+                            onClicked: routing.selectInsertChain(index)
+                        }
+                    }
+                    TouchButton {
+                        width: 54
+                        height: parent.height
+                        text: "+"
+                        textSize: Style.fontTab
+                        visible: routing.outputInsertsAvailable
+                        focusId: "shift.routing.pipes.insert.add"
+                        onClicked: routing.addInsertChain()
+                    }
+                    TouchButton {
+                        width: Style.touch
+                        height: parent.height
+                        text: "ON"
+                        textSize: Style.fontSmall
+                        checked: routing.insertSlot >= 0 &&
+                                 (routing.insertRows[routing.insertSlot] !== undefined) &&
+                                 routing.insertRows[routing.insertSlot].enabled
+                        visible: routing.insertSlot >= 0
+                        focusId: "shift.routing.pipes.insert.on." + routing.insertSlot
+                        onClicked: routing.toggleInsertChain(routing.insertSlot)
+                    }
+                    TouchButton {
+                        width: Style.touch
+                        height: parent.height
+                        text: "^"
+                        textSize: 16
+                        visible: routing.insertSlot >= 0
+                        focusId: "shift.routing.pipes.insert.up." + routing.insertSlot
+                        onClicked: routing.moveInsertChain(routing.insertSlot, -1)
+                    }
+                    TouchButton {
+                        width: Style.touch
+                        height: parent.height
+                        text: "v"
+                        textSize: 16
+                        visible: routing.insertSlot >= 0
+                        focusId: "shift.routing.pipes.insert.down." + routing.insertSlot
+                        onClicked: routing.moveInsertChain(routing.insertSlot, 1)
+                    }
+                    TouchButton {
+                        width: Style.touch
+                        height: parent.height
+                        text: "X"
+                        textSize: Style.fontSmall
+                        variant: "danger"
+                        visible: routing.insertSlot >= 0
+                        focusId: "shift.routing.pipes.insert.remove." + routing.insertSlot
+                        onClicked: routing.removeInsertChain(routing.insertSlot)
+                    }
+                    Text {
+                        width: Math.max(0, parent.width - 62 - 62 -
+                                        routing.insertRows.length * 70 -
+                                        (routing.outputInsertsAvailable ? 54 : 0) -
+                                        (routing.insertSlot >= 0 ? Style.touch * 4 : 0) -
+                                        Style.gapTight * 8)
+                        height: parent.height
+                        visible: !routing.outputInsertsAvailable
+                        text: "PICO-OWNED OUTPUT - OUTPUT INSERTS ARE USB ONLY"
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSmall
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
                     }
                 }
 
@@ -907,16 +1015,20 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                 }
                 // A13: naming truth. GENERATOR is a first-class, source-less
-                // FROM (head = CC LFO, the schema's generator role); output
-                // inserts still have no rows in this build. The refusal line
-                // replaces the hint when ADD rejects a non-generator head.
+                // FROM (head = CC LFO, the schema's generator role). Output
+                // inserts are selected on the INSERTS strip above; their chains
+                // accept every Wave-1/Wave-2 modifier (heads stay generator
+                // only). A refusal line replaces the hint.
                 Text {
                     width: parent.width
                     height: 14
                     text: routing.addHint !== ""
                           ? routing.addHint
-                          : "GENERATOR needs no input (head = CC LFO) - output inserts are engine-ready but not selectable here"
-                    color: routing.addHint !== "" ? Style.record : Style.textDim
+                          : (routing.insertHint !== ""
+                             ? routing.insertHint
+                             : "GENERATOR needs no input (head = CC LFO) - INSERT n edits an output chain; its pipes are ordinary modifiers")
+                    color: (routing.addHint !== "" || routing.insertHint !== "")
+                           ? Style.record : Style.textDim
                     font.pixelSize: Style.fontSmall
                     elide: Text.ElideRight
                 }

@@ -95,6 +95,11 @@ bool ConfigPopupModel::openKind(const QString& kind) {
     if (mixerVm_ == nullptr || mixerVm_->nextFreeSlot() < 0) return false;
   }
   kind_ = kind;
+  if (kind_ == QStringLiteral("fxslot") && mixerVm_ != nullptr) {
+    // A refusal from an earlier open is stale once the popup is reopened; the
+    // next tap only shows a new refusal.
+    mixerVm_->clearFxChoiceRefusal();
+  }
   title_ = kind == QStringLiteral("metronome")   ? QStringLiteral("METRONOME")
            : kind == QStringLiteral("sends")     ? QStringLiteral("SEND SOURCE")
            : kind == QStringLiteral("monitor")   ? QStringLiteral("OUTPUT")
@@ -180,6 +185,7 @@ void ConfigPopupModel::loadDraft() {
   if (kind_ == QStringLiteral("fxslot")) {
     fxSlotChoice_ =
         mixerVm_ == nullptr ? 0 : mixerVm_->fxChoiceAt(fxTrackSlot_, fxSlotIndex_);
+    fxSlotNote_.clear();
   }
   if (kind_ == QStringLiteral("pipesource") || kind_ == QStringLiteral("pipedest")) {
     pipeSourceLabels_.clear();
@@ -429,8 +435,9 @@ void ConfigPopupModel::restoreRestore() {
     }
   } else if (kind_ == QStringLiteral("fxslot")) {
     if (mixerVm_ != nullptr) {
-      mixerVm_->setFxChoiceAt(fxTrackSlot_, fxSlotIndex_, restore.fxChoice);
+      (void)mixerVm_->setFxChoiceAt(fxTrackSlot_, fxSlotIndex_, restore.fxChoice);
     }
+    fxSlotNote_.clear();
   }
   loadDraft();
 }
@@ -523,7 +530,7 @@ void ConfigPopupModel::applyDraft() {
     if (mixerVm_ != nullptr) mixerVm_->setOutDstOf(outputTargetSlot_, outputIndex_);
   } else if (kind_ == QStringLiteral("fxslot")) {
     if (mixerVm_ != nullptr) {
-      mixerVm_->setFxChoiceAt(fxTrackSlot_, fxSlotIndex_, fxSlotChoice_);
+      (void)mixerVm_->setFxChoiceAt(fxTrackSlot_, fxSlotIndex_, fxSlotChoice_);
     }
   } else if (kind_ == QStringLiteral("delaydivision")) {
     if (mixerVm_ != nullptr && fxTargetIs(mixer_, fxTrackSlot_, fxSlotIndex_, kFxIdDelay)) {
@@ -895,18 +902,29 @@ QString ConfigPopupModel::fxSlotTitle() const {
 }
 
 QStringList ConfigPopupModel::fxSlotLabels() const {
-  return MixerViewModel::fxChoiceLabels();
+  return mixerVm_ == nullptr ? QStringList{QStringLiteral("NONE")}
+                             : mixerVm_->fxChoiceLabels();
 }
 
 void ConfigPopupModel::setFxSlotChoice(int value) {
-  // PLUGIN is a listed-but-greyed choice: the selector never writes it, so a tap
-  // cannot pretend a plugin slot exists.
-  if (value == MixerViewModel::kFxChoicePlugin) return;
-  fxSlotChoice_ = std::clamp(value, 0, MixerViewModel::kFxChoiceCount - 1);
-  changedLive();
+  if (mixerVm_ == nullptr) return;
+  const int maximum = std::max(0, static_cast<int>(fxSlotLabels().size()) - 1);
+  value = std::clamp(value, 0, maximum);
+  if (!mixerVm_->setFxChoiceAt(fxTrackSlot_, fxSlotIndex_, value)) {
+    // The rack refused (plugin cap, no host): keep the selector on the value
+    // the slot actually holds and show the exact reason under it.
+    fxSlotChoice_ = mixerVm_->fxChoiceAt(fxTrackSlot_, fxSlotIndex_);
+    fxSlotNote_ = mixerVm_->fxChoiceRefusal(fxTrackSlot_, fxSlotIndex_);
+    emit changed();
+    return;
+  }
+  fxSlotChoice_ = value;
+  fxSlotNote_.clear();
+  emit changed();
 }
 
 QString ConfigPopupModel::fxSlotNote() const {
+  if (!fxSlotNote_.isEmpty()) return fxSlotNote_;
   if (mixerVm_ == nullptr) return QString();
   return mixerVm_->fxSlotNote(fxTrackSlot_, fxSlotIndex_);
 }

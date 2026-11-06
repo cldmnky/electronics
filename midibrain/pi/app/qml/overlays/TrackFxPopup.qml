@@ -8,12 +8,14 @@ import "../components"
 // edits exactly what the strip plays:
 //
 //   FX1 card -> FX2 card          (subline states the order and the scope)
-//   selector  NONE / DELAY / REVERB / PLUGIN (greyed: no per-track CLAP host)
+//   selector  NONE / DELAY / REVERB / every discovered CLAP plugin
 //   WET       the slot's dry/wet crossfade
 //   BYPASS    the slot's hard dry switch
 //   params    the effect's own controls as arc-dial chips (slider law)
 //
-// Every control is live (no apply button); CLOSE only closes. The panel focus
+// Every control is live (no apply button); CLOSE only closes. A CLAP slot's
+// parameter cards are the plugin's own clap.params table, and its note names
+// the instance state (loaded, or the exact load/limit refusal). The panel focus
 // ring is trapped here while the popup is open.
 Rectangle {
     id: root
@@ -151,7 +153,7 @@ Rectangle {
             }
 
             // Effect selector: a tap opens the slot list (NONE / DELAY / REVERB /
-            // PLUGIN greyed). The closed state names what the slot runs.
+            // discovered plugins). The closed state names what the slot runs.
             TouchButton {
                 width: parent.width
                 height: Style.touch

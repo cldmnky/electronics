@@ -74,6 +74,13 @@ class RoutingViewModel final : public QObject {
   Q_PROPERTY(QString pipeStatusText READ pipeStatusText NOTIFY pipesChanged)
   Q_PROPERTY(QString addHint READ addHint NOTIFY addTypeChanged)
   Q_PROPERTY(QString selectedPipeScopeText READ selectedPipeScopeText NOTIFY pipesChanged)
+  // Output inserts: the selected output's ordered chain list (up to four) and
+  // the chain the editor currently addresses. insertSlot = -1 edits the normal
+  // FROM->TO route; 0..3 edit that output insert chain.
+  Q_PROPERTY(bool outputInsertsAvailable READ outputInsertsAvailable NOTIFY pipeRouteChanged)
+  Q_PROPERTY(int insertSlot READ insertSlot NOTIFY pipesChanged)
+  Q_PROPERTY(QVariantList insertRows READ insertRows NOTIFY pipesChanged)
+  Q_PROPERTY(QString insertHint READ insertHint NOTIFY pipesChanged)
   // No-Pico mode: no Pico, so TRS nodes and TRS->TRS pipe chains are inert. The
   // matrix still edits (it is project data) but the UI labels the rows
   // unavailable instead of implying a wire. Fixed for the process lifetime.
@@ -159,6 +166,7 @@ class RoutingViewModel final : public QObject {
   // input port.
   bool generatorSelected() const;
   bool generatorHeadPending() const;
+  bool insertSelected() const;
   int addTypeIdAt(int index) const;
   // Position of the armed add type inside the (possibly generator-filtered)
   // type list.
@@ -174,6 +182,19 @@ class RoutingViewModel final : public QObject {
   // passes the rest through that pipe unchanged.
   Q_INVOKABLE int selectedPipeChannelMask() const;
   Q_INVOKABLE void setSelectedPipeChannelMask(int mask);
+  // Output inserts (Routing SHIFT > PIPES, selected TO output). The chains are
+  // ordered; ADD appends, REMOVE compacts and ^/v swap them. Each chain opens
+  // in the same schema-driven pipe editor as a normal route.
+  bool outputInsertsAvailable() const;
+  int insertSlot() const { return insertSlot_; }
+  QVariantList insertRows() const { return insertRows_; }
+  QString insertHint() const { return insertHint_; }
+  Q_INVOKABLE void selectRouteChain();
+  Q_INVOKABLE void selectInsertChain(int index);
+  Q_INVOKABLE void addInsertChain();
+  Q_INVOKABLE void removeInsertChain(int index);
+  Q_INVOKABLE void moveInsertChain(int index, int delta);
+  Q_INVOKABLE void toggleInsertChain(int index);
 
   Q_INVOKABLE bool routeEnabled(int source, int destination) const;
   Q_INVOKABLE void toggleRoute(int source, int destination);
@@ -218,6 +239,8 @@ class RoutingViewModel final : public QObject {
   midi::Port pipeOutput() const;
   int pipeSourceId() const;
   bool pipeRouteEnabled() const;
+  int insertChainCount() const;
+  void refreshInsertRows();
   std::vector<session::MidiPipe> currentPipes() const;
   // Input rows of the channel-filter page: every real source, never GENERATOR.
   QVariantList filterTabRows() const;
@@ -244,9 +267,13 @@ class RoutingViewModel final : public QObject {
   static constexpr int kFilterRowsPerPage = 3;
   QVariantList pipeRows_;
   QVariantList pipeParams_;
+  QVariantList insertRows_;
+  QString insertHint_;
+  QString pipeInsertHint_;
   QString pipeRouteText_;
   QString pipeStatusText_;
   QString addHint_;
+  int insertSlot_ = -1;
 };
 
 }  // namespace mnky::app

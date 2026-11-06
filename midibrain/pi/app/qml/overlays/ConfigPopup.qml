@@ -433,33 +433,47 @@ Rectangle {
                     width: parent.width
                     spacing: Style.gapTight
 
-                    Row {
+                    // One effect per slot: three built-ins then every discovered
+                    // CLAP plugin. A longer plugin list scrolls instead of
+                    // shrinking the 44 px targets.
+                    Flickable {
+                        id: fxSlotScroll
                         width: parent.width
-                        height: Style.touch
-                        spacing: Style.gapTight
+                        height: Math.min(fxSlotGrid.height,
+                                         Style.touch * 2 + Style.gapTight)
+                        contentWidth: width
+                        contentHeight: fxSlotGrid.height
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
 
-                        Repeater {
-                            model: config.fxSlotLabels
-                            delegate: TouchButton {
-                                width: (parent.width - Style.gapTight * 3) / 4
-                                height: Style.touch
-                                text: modelData
-                                textSize: Style.fontSmall
-                                // PLUGIN is listed so the gap is visible, never
-                                // tappable: per-track CLAP hosting is not in
-                                // this build.
-                                active: index < 3
-                                checked: index === config.fxSlotChoice
-                                focusId: "config.fxslot." + index
-                                onClicked: config.fxSlotChoice = index
+                        Grid {
+                            id: fxSlotGrid
+                            width: parent.width
+                            columns: 4
+                            spacing: Style.gapTight
+                            readonly property int rows: Math.ceil(config.fxSlotLabels.length / 4)
+                            height: rows * Style.touch + Math.max(0, rows - 1) * Style.gapTight
+
+                            Repeater {
+                                model: config.fxSlotLabels
+                                delegate: TouchButton {
+                                    width: (fxSlotGrid.width - Style.gapTight * 3) / 4
+                                    height: Style.touch
+                                    text: modelData
+                                    textSize: Style.fontSmall
+                                    checked: index === config.fxSlotChoice
+                                    focusId: "config.fxslot." + index
+                                    onClicked: config.fxSlotChoice = index
+                                }
                             }
                         }
                     }
                     Text {
                         width: parent.width
                         height: 16
-                        text: "PLUGIN SLOTS - NOT IN THIS BUILD. " + config.fxSlotNote
-                        color: Style.textDim
+                        text: config.fxSlotNote
+                        color: config.fxSlotNote.indexOf("LIMIT") >= 0
+                               ? Style.record : Style.textDim
                         font.pixelSize: Style.fontSmall
                         elide: Text.ElideRight
                     }

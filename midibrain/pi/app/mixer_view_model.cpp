@@ -3,9 +3,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <utility>
 
 #include "fx_params.hpp"
+#include "fx_slot.hpp"
+#include "logging.hpp"
 #include "logic.hpp"
 
 namespace mnky::app {
@@ -25,6 +28,25 @@ QString panText(double pan) {
 
 double clampPan(double pan) { return std::clamp(pan, 0.0, 1.0); }
 double clampSend(double level) { return std::clamp(level, 0.0, 1.0); }
+
+// CLAP's params extension has no unit field, so a plugin parameter reads as a
+// trimmed number. The plugin's own name/min/max/value text is otherwise shown
+// verbatim from its clap.params table; inventing dB/Hz labels here would lie.
+QString clapParamText(double value) {
+  char buffer[32] = {};
+  const double magnitude = std::abs(value);
+  if (magnitude >= 100.0) {
+    std::snprintf(buffer, sizeof buffer, "%.0f", value);
+  } else {
+    std::snprintf(buffer, sizeof buffer, "%.2f", value);
+  }
+  QString text = QString::fromLatin1(buffer);
+  if (text.contains(QLatin1Char('.'))) {
+    while (text.endsWith(QLatin1Char('0'))) text.chop(1);
+    if (text.endsWith(QLatin1Char('.'))) text.chop(1);
+  }
+  return text;
+}
 
 // One EQ band as the channel popout's summary reads it: type plus the value
 // the type actually uses (cut types have no gain).
@@ -553,34 +575,73 @@ QString MixerViewModel::channelFxSummary() const {
          fxNameAt(trackIndex_, 1);
 }
 
-QStringList MixerViewModel::fxChoiceLabels() {
-  return {QStringLiteral("NONE"), QStringLiteral("DELAY"),
-          QStringLiteral("REVERB"), QStringLiteral("PLUGIN")};
+QStringList MixerViewModel::fxChoiceLabels() const {
+  QStringList labels{QStringLiteral("NONE"), QStringLiteral("DELAY"),
+                     QStringLiteral("REVERB")};
+  if (clap_ != nullptr) {
+    for (const auto& plugin : clap_->plugins()) {
+      labels << QString::fromStdString(plugin.name).toUpper();
+    }
+  }
+  return labels;
 }
 
-QString MixerViewModel::fxChoiceId(int choice) {
+QString MixerViewModel::fxChoiceId(int choice) const {
   switch (choice) {
     case 1: return QString::fromLatin1(kFxIdDelay);
     case 2: return QString::fromLatin1(kFxIdReverb);
-    default: return QString();
+    case 0: return QString();
+    default: break;
   }
+  if (clap_ == nullptr) return {};
+  const auto& plugins = clap_->plugins();
+  const auto index = static_cast<std::size_t>(choice - kFxChoicePlugin);
+  if (index >= plugins.size()) return {};
+  return QString::fromStdString(plugins[index].id);
 }
 
-int MixerViewModel::fxChoiceOf(const QString& id) {
+int MixerViewModel::fxChoiceOf(const QString& id) const {
   if (id == QString::fromLatin1(kFxIdDelay)) return 1;
   if (id == QString::fromLatin1(kFxIdReverb)) return 2;
   if (id.isEmpty()) return 0;
+  if (clap_ != nullptr) {
+    const auto& plugins = clap_->plugins();
+    for (std::size_t index = 0; index < plugins.size(); ++index) {
+      if (QString::fromStdString(plugins[index].id) == id) {
+        return kFxChoicePlugin + static_cast<int>(index);
+      }
+    }
+  }
   return kFxChoicePlugin;
 }
 
-QString MixerViewModel::fxName(const QString& id) {
-  // A CLAP id shows where it would load instead of pretending to be a built-in.
-  if (fxChoiceOf(id) == kFxChoicePlugin) return QStringLiteral("PLUGIN  ") + id;
-  return QString::fromStdString(fxEffectName(id.toStdString()));
+QString MixerViewModel::fxName(const QString& id) const {
+  if (id.isEmpty()) return QStringLiteral("NONE");
+  if (id == QString::fromLatin1(kFxIdDelay)) return QStringLiteral("DELAY");
+  if (id == QString::fromLatin1(kFxIdReverb)) return QStringLiteral("REVERB");
+  if (clap_ != nullptr) {
+    if (const auto* plugin = clap_->findPlugin(id.toStdString())) {
+      return QString::fromStdString(plugin->name);
+    }
+  }
+  // An unavailable plugin id is still named honestly instead of pretending to
+  // be a built-in effect.
+  return QStringLiteral("PLUGIN ") + id;
+}
+
+QString MixerViewModel::fxChoiceRefusal(int slot, int index) const {
+  if (slot != fxRefusalSlot_ || index != fxRefusalIndex_) return {};
+  return fxChoiceRefusal_;
+}
+
+void MixerViewModel::clearFxChoiceRefusal() {
+  fxChoiceRefusal_.clear();
+  fxRefusalSlot_ = -1;
+  fxRefusalIndex_ = -1;
 }
 
 QString MixerViewModel::fxNameAt(int slot, int index) const {
-  if (slot < 0 || slot >= audio::kMaxTracks) return fxName(QString());
+  if (slot < 0 || slot >= audio::kMaxTracks) return QStringLiteral("NONE");
   return fxName(QString::fromStdString(model_.fxSlot(slot, index).id));
 }
 
@@ -589,23 +650,65 @@ int MixerViewModel::fxChoiceAt(int slot, int index) const {
   return fxChoiceOf(QString::fromStdString(model_.fxSlot(slot, index).id));
 }
 
-void MixerViewModel::setFxChoiceAt(int slot, int index, int choice) {
-  if (slot < 0 || slot >= audio::kMaxTracks) return;
-  if (choice < 0 || choice >= kFxChoiceCount) return;
-  // PLUGIN is offered so the gap is visible, never as a fake load: per-track
-  // CLAP hosting is not wired in this build.
-  if (choice == kFxChoicePlugin) return;
+bool MixerViewModel::setFxChoiceAt(int slot, int index, int choice) {
+  if (slot < 0 || slot >= audio::kMaxTracks) return false;
+  fxChoiceRefusal_.clear();
+  fxRefusalSlot_ = slot;
+  fxRefusalIndex_ = index;
+  const QStringList labels = fxChoiceLabels();
+  if (choice < 0 || choice >= labels.size()) return false;
+
   MixerModel::FxSlot fx = model_.fxSlot(slot, index);
-  const QString id = fxChoiceId(choice);
-  if (QString::fromStdString(fx.id) != id) {
-    fx.id = id.toStdString();
-    // A newly selected effect starts from its published defaults (MixerModel
-    // fills them) instead of inheriting the previous effect's parameters.
-    fx.params.clear();
-    fx.bypass = false;
+  if (choice < kFxChoiceBuiltinCount) {
+    // NONE / DELAY / REVERB: the sink detaches and destroys any CLAP instance
+    // this slot was holding.
+    const QString id = fxChoiceId(choice);
+    if (QString::fromStdString(fx.id) != id) {
+      fx.id = id.toStdString();
+      // A newly selected effect starts from its published defaults (MixerModel
+      // fills them) instead of inheriting the previous effect's parameters.
+      fx.params.clear();
+      fx.bypass = false;
+    }
+    model_.setFxSlot(slot, index, std::move(fx));
+    notifyFxChanged(slot);
+    return true;
   }
+
+  if (clap_ == nullptr) {
+    fxChoiceRefusal_ = QStringLiteral("PLUGIN HOST UNAVAILABLE");
+    notifyFxChanged(slot);
+    return false;
+  }
+  const auto& plugins = clap_->plugins();
+  const auto pluginIndex = static_cast<std::size_t>(choice - kFxChoicePlugin);
+  if (pluginIndex >= plugins.size()) return false;
+  const auto& plugin = plugins[pluginIndex];
+  if (fx.id == plugin.id) {
+    // Re-selecting the same plugin is a no-op, not another instance.
+    notifyFxChanged(slot);
+    return true;
+  }
+  if (!clap_->canLoadTrackEffect(slot, index)) {
+    fxChoiceRefusal_ = QStringLiteral("PLUGIN LIMIT REACHED - unload one first");
+    log("fx: track " + std::to_string(slot) + " slot " +
+        std::to_string(index) + " refused " + plugin.id +
+        ": plugin limit reached");
+    notifyFxChanged(slot);
+    return false;
+  }
+  // The host instance itself is created by the AudioGlue sink below (control
+  // thread, actual sample rate). The session vector starts from the plugin's
+  // own parameter defaults captured by the scan, so a new slot is complete
+  // before the first audio block.
+  fx.id = plugin.id;
+  fx.params.clear();
+  fx.params.reserve(plugin.params.size());
+  for (const auto& param : plugin.params) fx.params.push_back(param.value);
+  fx.bypass = false;
   model_.setFxSlot(slot, index, std::move(fx));
   notifyFxChanged(slot);
+  return true;
 }
 
 bool MixerViewModel::fxBypassAt(int slot, int index) const {
@@ -634,6 +737,35 @@ QVariantList MixerViewModel::fxParams(int slot, int index) const {
   QVariantList cards;
   if (slot < 0 || slot >= audio::kMaxTracks) return cards;
   const auto fx = model_.fxSlot(slot, index);
+  if (!fx.id.empty() && !fxIsBuiltin(fx.id)) {
+    // CLAP: the plugin's own parameter table (names, ranges and current
+    // values) from its clap.params extension; the slot vector is the saved
+    // session contract, so a loaded value wins over the host default.
+    std::vector<clap::Param> params;
+    if (clap_ != nullptr) params = clap_->trackParams(slot, index);
+    if (params.empty() && clap_ != nullptr) {
+      if (const auto* plugin = clap_->findPlugin(fx.id)) {
+        params = plugin->params;
+      }
+    }
+    for (std::size_t param = 0; param < params.size(); ++param) {
+      const auto& meta = params[param];
+      const double value =
+          param < fx.params.size() ? fx.params[param] : meta.value;
+      QVariantMap card;
+      card.insert(QStringLiteral("index"), static_cast<int>(param));
+      card.insert(QStringLiteral("name"),
+                  QString::fromStdString(meta.name).toUpper());
+      card.insert(QStringLiteral("value"), value);
+      card.insert(QStringLiteral("text"), clapParamText(value));
+      card.insert(QStringLiteral("unit"), QString());
+      card.insert(QStringLiteral("minimum"), meta.min);
+      card.insert(QStringLiteral("maximum"), meta.max);
+      card.insert(QStringLiteral("stepped"), false);
+      cards.push_back(card);
+    }
+    return cards;
+  }
   const auto table = fxParamTable(fx.id);
   if (table.empty()) return cards;
   for (const auto& meta : table) {
@@ -658,6 +790,29 @@ QVariantList MixerViewModel::fxParams(int slot, int index) const {
 
 void MixerViewModel::setFxParamAt(int slot, int index, int param, double value) {
   if (slot < 0 || slot >= audio::kMaxTracks) return;
+  const auto fx = model_.fxSlot(slot, index);
+  if (!fx.id.empty() && !fxIsBuiltin(fx.id)) {
+    if (clap_ == nullptr) return;
+    auto params = clap_->trackParams(slot, index);
+    if (params.empty()) {
+      if (const auto* plugin = clap_->findPlugin(fx.id)) params = plugin->params;
+    }
+    if (param < 0 || param >= static_cast<int>(params.size())) return;
+    const auto& meta = params[static_cast<std::size_t>(param)];
+    const double clamped = std::clamp(value, meta.min, meta.max);
+    MixerModel::FxSlot next = fx;
+    if (next.params.size() != params.size()) {
+      next.params.resize(params.size());
+      for (std::size_t entry = 0; entry < params.size(); ++entry) {
+        next.params[entry] = entry < fx.params.size() ? fx.params[entry]
+                                                      : params[entry].value;
+      }
+    }
+    next.params[static_cast<std::size_t>(param)] = clamped;
+    model_.setFxSlot(slot, index, std::move(next));
+    notifyFxChanged(slot);
+    return;
+  }
   model_.setFxParam(slot, index, param, value);
   notifyFxChanged(slot);
 }
@@ -668,10 +823,28 @@ QString MixerViewModel::fxSubline() const {
 
 QString MixerViewModel::fxSlotNote(int slot, int index) const {
   if (slot < 0 || slot >= audio::kMaxTracks) return QString();
+  const QString refusal = fxChoiceRefusal(slot, index);
+  if (!refusal.isEmpty()) return refusal;
   const auto fx = model_.fxSlot(slot, index);
-  if (fx.id.empty()) return QStringLiteral("slot is NONE - pick DELAY or REVERB");
+  if (fx.id.empty()) return QStringLiteral("slot is NONE - pick an effect or plugin");
   if (!fxIsBuiltin(fx.id)) {
-    return QStringLiteral("slot is PLUGIN - plugin slots - not in this build");
+    const QString name = fxName(QString::fromStdString(fx.id));
+    if (clap_ != nullptr && clap_->trackEffectLoaded(slot, index)) {
+      const int count = static_cast<int>(fx.params.size());
+      return QStringLiteral("%1 - %2 PAR - wet %3% - %4")
+          .arg(name)
+          .arg(count)
+          .arg(static_cast<int>(std::lround(fx.wet * 100.0f)))
+          .arg(fx.bypass ? QStringLiteral("BYPASSED") : QStringLiteral("active"));
+    }
+    if (clap_ != nullptr) {
+      const std::string error = clap_->trackEffectError(slot, index);
+      if (!error.empty()) {
+        return name + QStringLiteral(" - NOT LOADED: ") +
+               QString::fromStdString(error);
+      }
+    }
+    return name + QStringLiteral(" - NOT LOADED");
   }
   return QStringLiteral("wet %1% - %2")
       .arg(static_cast<int>(std::lround(fx.wet * 100.0f)))

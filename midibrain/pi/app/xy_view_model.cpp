@@ -123,7 +123,7 @@ QString XyViewModel::noteAt(int grid) const {
     return QStringLiteral("slot is NONE - pick DELAY or REVERB");
   }
   if (!fxIsBuiltin(effect)) {
-    return QStringLiteral("slot is PLUGIN - plugin slots - not in this build");
+    return QStringLiteral("slot is a CLAP plugin - edit its parameters in TRACK FX");
   }
   return QStringLiteral("series FX1 -> FX2 - per track");
 }

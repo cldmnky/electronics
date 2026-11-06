@@ -13,6 +13,8 @@
 //                       --emulator: use both for a deterministic desktop run.
 //   --unittests         run the non-visual C++ checks and exit; no window, no
 //                       audio device, no MIDI port is opened.
+//   --clap-bench        measure N simultaneous mnkygain instances at a 64-frame
+//                       block and print the 16-instance cap refusal; exits.
 //   --screenshots DIR   headless proof: load every QML screen, grab the window
 //                       and write 30-qt-*.png into DIR, then exit. Implies the
 //                       emulator backends like --emulator. Combine with
@@ -39,6 +41,7 @@
 #include <QUrl>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -1144,8 +1147,8 @@ class ScreenshotRunner final : public QObject {
                         controller_->setTab(0);
                         controller_->openChannel(2);
                         controller_->openTrackFx(0);
-                        // NONE / DELAY / REVERB / PLUGIN with the plugin choice
-                        // greyed and the gap named.
+                        // NONE / DELAY / REVERB plus the discovered plugin
+                        // list; selecting a plugin loads it live.
                         controller_->openFxSlot(1);
                       }});
     steps_.push_back({"43-mixer-shift-wet", [this] {
@@ -1406,6 +1409,50 @@ class ScreenshotRunner final : public QObject {
                         controller_->requestAddTrack();
                       }});
 
+    // ---- 45-*: per-track CLAP hosting + output inserts -------------------
+    // A live CLAP plugin slot: the card name, note and parameter chips come
+    // from the plugin's own clap.params table (mnkygain in this build).
+    steps_.push_back({"45-track-fx-plugin", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->selectTrackAt(2);
+                        controller_->mixer()->setFxChoiceAt(2, 0, 0);
+                        controller_->mixer()->setFxChoiceAt(
+                            2, 0, mnky::app::MixerViewModel::kFxChoicePlugin);
+                        controller_->mixer()->setFxWetAt(2, 0, 0.65);
+                        controller_->mixer()->setFxChoiceAt(2, 1, 2);
+                        controller_->setTab(0);
+                        controller_->openChannel(2);
+                        controller_->openTrackFx(0);
+                      }});
+    // The same slot's selector: NONE / DELAY / REVERB / MNKYGAIN (the first
+    // discovered plugin is selected), with the live parameter count noted.
+    steps_.push_back({"45-popup-fxslot-plugin", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->selectTrackAt(2);
+                        controller_->mixer()->setFxChoiceAt(2, 0, 0);
+                        controller_->mixer()->setFxChoiceAt(
+                            2, 0, mnky::app::MixerViewModel::kFxChoicePlugin);
+                        controller_->mixer()->setFxWetAt(2, 0, 0.65);
+                        controller_->setTab(0);
+                        controller_->openChannel(2);
+                        controller_->openTrackFx(0);
+                        controller_->openFxSlot(0);
+                      }});
+    // An output insert chain on USB OUT, edited in the same schema-driven pipe
+    // editor as a normal route; the INSERTS strip owns add/remove/reorder.
+    steps_.push_back({"45-output-insert", [this] {
+                        resetShot();
+                        primeOutputInsert();
+                      }});
+    // The generator route is unchanged by the insert work: FROM = GENERATOR,
+    // TO = USB OUT, head = CC LFO, no input selected.
+    steps_.push_back({"45-generator-route", [this] {
+                        resetShot();
+                        primeGeneratorChain();
+                      }});
+
     // The mixer screens above show strips; the app's own default stays empty.
     primeMixerDemo();
   }
@@ -1583,6 +1630,23 @@ class ScreenshotRunner final : public QObject {
     return -1;
   }
 
+  // Output-insert fixture: USB OUT with one FILTER insert chain selected, so
+  // the INSERTS strip, the chain row and the modifier cards are all populated.
+  void primeOutputInsert() {
+    auto* routing = controller_->routing();
+    controller_->setTab(1);
+    controller_->showShiftFace(true);
+    routing->setShiftPage(1);
+    const int usbOut = outputNodeFor(mnky::midi::Port::UsbOut);
+    if (usbOut < 0) return;
+    routing->setPipeDestination(usbOut);
+    while (routing->insertRows().size() > 0) routing->removeInsertChain(0);
+    routing->addInsertChain();
+    routing->setAddTypeIndex(0);  // FILTER
+    routing->addPipe();
+    routing->selectPipe(0);
+  }
+
   // A13 fixture: FROM = GENERATOR (no input), TO = USB OUT, head = CC LFO.
   void primeGeneratorChain(bool withHead = true) {
     auto* routing = controller_->routing();
@@ -1594,6 +1658,7 @@ class ScreenshotRunner final : public QObject {
     if (generator < 0 || usbOut < 0) return;
     routing->setPipeSource(generator);
     routing->setPipeDestination(usbOut);
+    while (routing->insertRows().size() > 0) routing->removeInsertChain(0);
     while (routing->pipeCount() > 0) routing->removePipe(0);
     if (!withHead) {
       routing->setAddTypeIndex(0);
@@ -1688,6 +1753,104 @@ class ScreenshotRunner final : public QObject {
 
 }  // namespace
 
+namespace {
+
+// --clap-bench: the Studio Pi CPU table for the per-track CLAP host and the
+// admission-cap proof. It loads the discovered plugin into 1..16 track slots
+// directly (no audio device, no QML), times N adapters on the same 64-frame
+// stereo block, then asks MixerViewModel for a 17th selection and prints the
+// exact refusal. Measurement only; the numbers are target-machine evidence, not
+// a real-time guarantee.
+int runClapBench() {
+  using namespace mnky::app;
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  EqModel eq;
+  FxManager fx;
+  const auto& plugins = fx.plugins();
+  if (plugins.empty()) {
+    std::fprintf(stderr, "clap-bench: no CLAP plugin discovered\n");
+    return 1;
+  }
+  const auto& plugin = plugins.front();
+  std::printf("clap-bench: plugin %s (%s)\n", plugin.name.c_str(),
+              plugin.id.c_str());
+  std::printf("clap-bench: sample rate 48000 Hz, block 64 frames, stereo\n");
+
+  int loaded = 0;
+  for (int track = 0; track < FxManager::kMaxTrackInstances; ++track) {
+    if (!fx.loadTrackEffect(track, 0, plugin.id, 48000.0, 128)) {
+      std::fprintf(stderr, "clap-bench: load failed at instance %d\n", loaded + 1);
+      return 1;
+    }
+    ++loaded;
+  }
+  std::printf("clap-bench: %d instances loaded (host cap %d)\n", loaded,
+              FxManager::kMaxTrackInstances);
+
+  MixerViewModel view(mixer, settings, eq);
+  view.setClapHost(&fx);
+  const bool accepted = view.setFxChoiceAt(FxManager::kMaxTrackInstances, 0,
+                                           MixerViewModel::kFxChoicePlugin);
+  std::printf("clap-bench: 17th selection accepted=%d message=\"%s\"\n",
+              accepted ? 1 : 0,
+              view.fxChoiceRefusal(FxManager::kMaxTrackInstances, 0)
+                  .toStdString()
+                  .c_str());
+
+  constexpr int frames = 64;
+  constexpr int blocks = 20000;
+  constexpr int warmup = 2000;
+  std::array<float, frames> left{};
+  std::array<float, frames> right{};
+  for (int frame = 0; frame < frames; ++frame) {
+    left[static_cast<std::size_t>(frame)] =
+        0.1f * std::sin(2.0f * 3.14159265f *
+                        static_cast<float>(frame) / static_cast<float>(frames));
+    right[static_cast<std::size_t>(frame)] =
+        0.1f * std::cos(2.0f * 3.14159265f *
+                        static_cast<float>(frame) / static_cast<float>(frames));
+  }
+  std::array<mnky::audio::IEffect*, FxManager::kMaxTrackInstances> effects{};
+  for (int index = 0; index < FxManager::kMaxTrackInstances; ++index) {
+    effects[static_cast<std::size_t>(index)] = fx.trackEffect(index, 0);
+  }
+  std::printf("clap-bench: instances  us/block  us/instance  %% of 1333.3 us\n");
+  for (const int count : {1, 2, 4, 8, 16}) {
+    for (int block = 0; block < warmup; ++block) {
+      for (int index = 0; index < count; ++index) {
+        float* channels[2] = {left.data(), right.data()};
+        effects[static_cast<std::size_t>(index)]->process(channels, 2, frames);
+      }
+    }
+    const auto start = std::chrono::steady_clock::now();
+    for (int block = 0; block < blocks; ++block) {
+      for (int index = 0; index < count; ++index) {
+        float* channels[2] = {left.data(), right.data()};
+        effects[static_cast<std::size_t>(index)]->process(channels, 2, frames);
+      }
+    }
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    const double totalUs =
+        std::chrono::duration<double, std::micro>(elapsed).count();
+    const double perBlockUs = totalUs / blocks;
+    const double perInstanceUs = perBlockUs / count;
+    const double budgetUs = 1000000.0 * frames / 48000.0;
+    std::printf("clap-bench: %9d  %8.2f  %11.2f  %13.2f%%\n", count,
+                perBlockUs, perInstanceUs, 100.0 * perBlockUs / budgetUs);
+  }
+
+  for (int track = 0; track < FxManager::kMaxTrackInstances; ++track) {
+    fx.unloadTrackEffect(track, 0);
+  }
+  std::printf("clap-bench: teardown leaves %d instance(s)\n",
+              fx.trackInstanceCount());
+  return 0;
+}
+
+}  // namespace
+
 int main(int argc, char* argv[]) {
   QCoreApplication::setOrganizationName(QStringLiteral("mnkybox"));
   QCoreApplication::setApplicationName(QStringLiteral("mnkybox"));
@@ -1699,6 +1862,12 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setOrganizationName(QStringLiteral("mnkybox"));
     QCoreApplication::setApplicationName(QStringLiteral("mnkybox"));
     return mnky::app::runLogicUnitTests();
+  }
+  if (arguments.contains(QStringLiteral("--clap-bench"))) {
+    QCoreApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("mnkybox"));
+    QCoreApplication::setApplicationName(QStringLiteral("mnkybox"));
+    return runClapBench();
   }
 
   // Quick Controls' native styles cannot be customized; the dark theme needs

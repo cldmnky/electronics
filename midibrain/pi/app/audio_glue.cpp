@@ -11,6 +11,7 @@
 
 #include "../midi/usb.hpp"
 #include "app_state.hpp"
+#include "fx_params.hpp"
 #include "logic.hpp"
 #include "logging.hpp"
 
@@ -655,7 +656,39 @@ void AudioGlue::applyTrackFxSlot(int track, int slot) {
   next.bypass = value.bypass;
   next.wet = value.wet;
   next.params = value.params;
+  const bool clap = !value.id.empty() && !fxIsBuiltin(value.id);
+  if (!clap) {
+    // Clear the effect state first so the audio thread stops selecting the
+    // external branch, then detach and destroy the plugin instance. FxManager
+    // keeps the tiny wrapper so a callback that already loaded the adapter
+    // cannot dereference freed memory.
+    engine_.setTrackFxSlot(track, slot, next);
+    engine_.setTrackFxSlotEffect(track, slot, nullptr);
+    fx_.unloadTrackEffect(track, slot);
+    return;
+  }
+
+  const std::string currentId = engine_.trackFxSlot(track, slot).id;
+  if (currentId != value.id) {
+    // Selection/switch: detach the old instance before the engine publishes
+    // the new id, then attach the new adapter once it is loaded and active.
+    engine_.setTrackFxSlotEffect(track, slot, nullptr);
+  }
   engine_.setTrackFxSlot(track, slot, next);
+  if (!fx_.loadTrackEffect(track, slot, value.id, sampleRate(), audio::kBlockSize)) {
+    engine_.setTrackFxSlotEffect(track, slot, nullptr);
+    log("track fx " + std::to_string(track) + "/" + std::to_string(slot) +
+        ": " + value.id + " not loaded - the slot passes the strip dry");
+    return;
+  }
+  // The session vector is the slot's parameter contract; apply every value in
+  // the plugin's own stable order. The CLAP host latches writes per block.
+  const auto params = fx_.trackParams(track, slot);
+  const std::size_t count = std::min(params.size(), value.params.size());
+  for (std::size_t index = 0; index < count; ++index) {
+    (void)fx_.setTrackParam(track, slot, index, value.params[index]);
+  }
+  engine_.setTrackFxSlotEffect(track, slot, fx_.trackEffect(track, slot));
 }
 
 void AudioGlue::applyTrackFxRack() {

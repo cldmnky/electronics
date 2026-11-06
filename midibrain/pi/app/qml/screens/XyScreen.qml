@@ -10,9 +10,10 @@ import "../components"
 // directions move the focused grid, SHIFT is the coarse step, PRESS leaves EDIT,
 // FREEZE is a PRESS toggle over the track's reverb slot.
 //
-// A slot that holds nothing (or a plugin id, which this build cannot host) shows
-// the slot note and the picker chip instead of a position. The track row reuses
-// the mixer's four-per-page banks, so the same strip selection is one tap away.
+// A slot that holds nothing (or a CLAP plugin, which has no X/Y axes) shows the
+// slot note and the picker chip instead of a position; a plugin slot's parameters
+// are edited in TRACK FX. The track row reuses the mixer's four-per-page banks,
+// so the same strip selection is one tap away.
 Item {
     id: screen
 
@@ -269,8 +270,8 @@ Item {
             opacity: 0.9
         }
 
-        // Unbound slot: name the gap and offer the slot's picker, so the screen
-        // never shows a grid that cannot move anything.
+        // Unbound slot: name the state and offer the slot's picker, so the
+        // screen never shows a grid that cannot move anything.
         Text {
             visible: !gridItem.bound
             anchors.horizontalCenter: parent.horizontalCenter

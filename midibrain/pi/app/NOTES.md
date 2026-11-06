@@ -1001,9 +1001,9 @@ through MixerViewModel, so the rack, the session and the engine are one value.
 `FxParamKnob.qml`, `BuiltinDelayPanel.qml`, `BuiltinReverbPanel.qml` and
 `FxScreen.qml` are deleted; `fx_slot.*` (FxSlot/FxManager) stays as the engine's
 send-bus CLAP seam for a later host wave. Per-track CLAP hosting is still not
-wired (audio wave 11 "CLAP gap"), so the PLUGIN choice is listed but disabled
-and the popup says "PLUGIN SLOTS - NOT IN THIS BUILD" under it (this UI has no
-tooltip layer; the note is always visible instead of hover-only).
+wired in that wave (audio wave 11 "CLAP gap"), so the PLUGIN choice was listed
+but disabled then; the gap-closing wave below replaced it with the real plugin
+list and a live host per CLAP slot.
 
 **FX tab retired (9 tabs).** Row is Mixer, Routing, Recorder, System, Projects,
 Monitor, EQ, X/Y, EDIT (`kScreenCount` 9, tab constants in `app_controller.cpp`
@@ -1067,3 +1067,78 @@ Not done in this wave (named): `docs/USER-MANUAL.md` still describes the FX tab
 and the global X/Y grids - a docs wave must rewrite section 10 and the tab list
 (the task restricted edits to `pi/app/`); per-track CLAP hosting; MIDI-learn
 bindings saved as `sendA`/`sendB` do not rebind.
+
+### Gap-closing wave: per-track CLAP hosting + output inserts
+
+**Per-track CLAP hosting.** `fx_slot.*` stopped being a send-bus-only seam:
+`FxManager` now also owns one `FxSlot` wrapper per track rack slot, created on
+the first CLAP selection (`loadTrackEffect`) and never for NONE/DELAY/REVERB.
+`AudioGlue::applyTrackFxSlot` is the one control-thread path: a CLAP id asks the
+manager for the instance, applies the slot's session parameter vector through
+the plugin's own `clap.params` extension, and attaches the existing `IEffect`
+adapter with `Engine::setTrackFxSlotEffect(track, slot, adapter)`. Built-in and
+empty ids set the engine slot state first, detach with a null effect, then call
+`FxSlot::unload()` (deactivate, destroy the plugin, deinit and `dlclose` the
+module). The wrapper stays parked so a callback that already loaded the adapter
+cannot dereference freed memory; `FxManager` destroys every wrapper after
+`AudioGlue`/the Engine in `AppController` member order. No leaks are claimed
+beyond that bounded wrapper pool.
+
+Plugin discovery is lazy (`FxManager::plugins()` on the first selector/open):
+`MNKY_DEFAULT_PLUGIN` first, then `MNKY_PLUGIN_PATH`, the conventional macOS/
+Linux CLAP directories and `FxSlot::defaultPluginPath()`. Each candidate is
+loaded just long enough to read its factory id, name and default parameter
+table, then unloaded. The slot selector is NONE / DELAY / REVERB / one entry per
+discovered plugin (mnkygain in this build); the TRACK FX card's parameter chips
+are the plugin's own names, ranges and values, and the note names the instance
+state. The session stores the CLAP id plus the positional parameter vector in
+`mixer.channels[].fxSlots[]`; load recreates the instance lazily through the
+same mixer sink.
+
+Instance policy: lazy, with a measured simultaneous cap of 16 live track hosts.
+The 17th selection is refused before the model changes and the selector note
+reads exactly `PLUGIN LIMIT REACHED - unload one first`; switching a plugin in
+an already admitted slot keeps one admission. `--clap-bench` is the reproducible
+measurement mode (no audio device, no QML).
+
+**Output inserts.** `MidiGlue` now stores the ordered `kSrcOutputInsert` chains
+per destination (compact list, four slots max) and keeps the live `Router`
+slots in sync on every add/remove/reorder/ON/edit. Capture writes
+`RouteState{src = -2, dst, on, pipes}` in slot order and load maps them back,
+including a disabled chain that still carries pipes. Only a Pi-owned output
+(USB OUT or a dynamic USB output) exposes inserts; a TRS output is Pico-owned
+and the INSERTS strip says so instead of pretending. The Routing SHIFT > PIPES
+page gained a compact INSERTS strip: ROUTE edits the normal FROM->TO chain, a
+numbered chip edits that insert chain in the same schema-driven editor, + adds
+a chain, ON toggles its gate, ^/v reorder and X removes. The chain accepts every
+Wave-1/Wave-2 modifier; generator-role heads are filtered out of its ADD list and
+refused at the MidiGlue store boundary. Generator routes are
+unchanged: FROM = GENERATOR remains source-less with a generator-role head, and
+changing FROM returns the editor to the route chain.
+
+**Run (macOS, Qt 6.12.0, clean `/tmp/pi-gap-final`).** Configure + full
+`cmake --build -j8`: exit 0, zero warnings. CTest **21/21**; app logic **996
+checks, 0 failures** (new CLAP host, 17th-refusal, teardown, project round-trip
+and output-insert tests, including generator-head rejection in an insert). `--ui-taps --no-pico`: **606 taps, 0 QML warnings, 0
+failures**. `--screenshots --no-pico`: **145 steps, 0 failures**; checked in as
+`qemu/screenshots/45-{track-fx-plugin,popup-fxslot-plugin,output-insert,
+generator-route}.png`.
+
+**Studio Pi 5 (Debian trixie arm64, Qt 6.8.2).** Synced tree configure + `-j4`
+build under `nice`/`ionice`: exit 0, zero warnings. CTest **21/21**; app logic
+**996 checks, 0 failures**; `--ui-taps` **651 taps, 0 QML warnings**; offscreen
+screenshots **145 steps** with all four 45-* PNGs. `--clap-bench` (64-frame
+stereo block, 48 kHz; budget 1333.3 us):
+
+| instances | us/block | us/instance | % of 64-frame budget |
+|---:|---:|---:|---:|
+| 1 | 3.41 | 3.41 | 0.26% |
+| 2 | 6.82 | 3.41 | 0.51% |
+| 4 | 13.65 | 3.41 | 1.02% |
+| 8 | 27.32 | 3.41 | 2.05% |
+| 16 | 54.68 | 3.42 | 4.10% |
+
+The 17th selection printed `accepted=0 message="PLUGIN LIMIT REACHED - unload
+one first"`; teardown left 0 instances. This is CPU cost of the plugin
+process() calls only, not a full-engine real-time, latency or audio-quality
+claim.

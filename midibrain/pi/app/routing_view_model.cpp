@@ -285,6 +285,9 @@ void RoutingViewModel::reset() {
     }
   }
   midi_.clearGeneratorRoutes();
+  midi_.clearOutputInserts();
+  insertSlot_ = -1;
+  insertHint_.clear();
   for (int source = 0; source < routing::kInputCount; ++source) {
     for (int destination = 0; destination < routing::kOutputCount; ++destination) {
       midi_.setRoute(routing::kInputs[source], routing::kOutputs[destination],
@@ -364,6 +367,8 @@ void RoutingViewModel::setPipeSource(int source) {
   if (clamped == pipeSource_) return;
   pipeSource_ = clamped;
   selectedPipe_ = 0;
+  insertSlot_ = -1;
+  insertHint_.clear();
   emit pipeRouteChanged();
   refreshPipes();
 }
@@ -374,6 +379,8 @@ void RoutingViewModel::setPipeDestination(int destination) {
   if (clamped == pipeDestination_) return;
   pipeDestination_ = clamped;
   selectedPipe_ = 0;
+  insertSlot_ = -1;
+  insertHint_.clear();
   emit pipeRouteChanged();
   refreshPipes();
 }
@@ -440,7 +447,104 @@ int RoutingViewModel::pipeSourceId() const {
 }
 
 bool RoutingViewModel::generatorSelected() const {
-  return pipeSourceId() == midi::kSrcGenerator;
+  return !insertSelected() && pipeSourceId() == midi::kSrcGenerator;
+}
+
+bool RoutingViewModel::insertSelected() const {
+  return insertSlot_ >= 0 && insertSlot_ < insertChainCount();
+}
+
+bool RoutingViewModel::outputInsertsAvailable() const {
+  return midi_.outputInsertSupported(pipeOutput());
+}
+
+int RoutingViewModel::insertChainCount() const {
+  if (!outputInsertsAvailable()) return 0;
+  return static_cast<int>(midi_.outputInsertChains(pipeOutput()).size());
+}
+
+void RoutingViewModel::refreshInsertRows() {
+  QVariantList rows;
+  if (outputInsertsAvailable()) {
+    const auto chains = midi_.outputInsertChains(pipeOutput());
+    rows.reserve(static_cast<int>(chains.size()));
+    for (std::size_t index = 0; index < chains.size(); ++index) {
+      QVariantMap row;
+      row.insert(QStringLiteral("index"), static_cast<int>(index));
+      row.insert(QStringLiteral("pipeCount"),
+                 static_cast<int>(chains[index].pipes.size()));
+      row.insert(QStringLiteral("enabled"), chains[index].enabled);
+      row.insert(QStringLiteral("selected"),
+                 static_cast<int>(index) == insertSlot_);
+      row.insert(QStringLiteral("text"),
+                 QStringLiteral("%1 %2P").arg(index + 1).arg(chains[index].pipes.size()));
+      rows.push_back(row);
+    }
+  }
+  if (insertSlot_ >= static_cast<int>(rows.size())) insertSlot_ = -1;
+  insertRows_ = std::move(rows);
+}
+
+void RoutingViewModel::selectRouteChain() {
+  if (insertSlot_ == -1) return;
+  insertSlot_ = -1;
+  selectedPipe_ = 0;
+  insertHint_.clear();
+  refreshPipes();
+}
+
+void RoutingViewModel::selectInsertChain(int index) {
+  const int count = insertChainCount();
+  if (index < 0 || index >= count) return;
+  if (insertSlot_ == index) return;
+  insertSlot_ = index;
+  selectedPipe_ = 0;
+  insertHint_.clear();
+  refreshPipes();
+}
+
+void RoutingViewModel::addInsertChain() {
+  if (!outputInsertsAvailable()) {
+    insertHint_ = QStringLiteral("OUTPUT INSERTS ARE USB-ONLY (PICO OWNS TRS)");
+    emit pipesChanged();
+    return;
+  }
+  if (!midi_.addOutputInsertChain(pipeOutput())) {
+    insertHint_ = QStringLiteral("OUTPUT INSERT LIMIT (4) REACHED");
+    emit pipesChanged();
+    return;
+  }
+  insertHint_.clear();
+  insertSlot_ = insertChainCount() - 1;
+  selectedPipe_ = 0;
+  log(std::string("routing: output insert added on ") +
+      pipeDestinationName().toStdString());
+  refreshPipes();
+}
+
+void RoutingViewModel::removeInsertChain(int index) {
+  if (index < 0 || index >= insertChainCount()) return;
+  if (!midi_.removeOutputInsertChain(pipeOutput(), index)) return;
+  insertSlot_ = insertChainCount() == 0 ? -1
+                                        : std::min(index, insertChainCount() - 1);
+  selectedPipe_ = 0;
+  insertHint_.clear();
+  refreshPipes();
+}
+
+void RoutingViewModel::moveInsertChain(int index, int delta) {
+  if (index < 0 || index >= insertChainCount()) return;
+  if (!midi_.moveOutputInsertChain(pipeOutput(), index, delta)) return;
+  insertSlot_ = std::clamp(index + (delta < 0 ? -1 : 1), 0,
+                           insertChainCount() - 1);
+  refreshPipes();
+}
+
+void RoutingViewModel::toggleInsertChain(int index) {
+  if (index < 0 || index >= insertChainCount()) return;
+  const bool enabled = !midi_.outputInsertEnabled(pipeOutput(), index);
+  (void)midi_.setOutputInsertEnabled(pipeOutput(), index, enabled);
+  refreshPipes();
 }
 
 bool RoutingViewModel::generatorHeadPending() const {
@@ -448,11 +552,17 @@ bool RoutingViewModel::generatorHeadPending() const {
 }
 
 bool RoutingViewModel::pipeRouteEnabled() const {
+  if (insertSelected()) {
+    return midi_.outputInsertEnabled(pipeOutput(), insertSlot_);
+  }
   return generatorSelected() ? midi_.generatorRouteEnabled(pipeOutput())
                              : midi_.routeEnabled(pipeInput(), pipeOutput());
 }
 
 std::vector<session::MidiPipe> RoutingViewModel::currentPipes() const {
+  if (insertSelected()) {
+    return midi_.outputInsertPipes(pipeOutput(), insertSlot_);
+  }
   return generatorSelected() ? midi_.generatorPipes(pipeOutput())
                              : midi_.routePipes(pipeInput(), pipeOutput());
 }
@@ -462,6 +572,10 @@ int RoutingViewModel::pipeCount() const {
 }
 
 QString RoutingViewModel::pipeRouteText() const {
+  if (insertSelected()) {
+    return pipeDestinationName() + QStringLiteral(" INSERT ") +
+           QString::number(insertSlot_ + 1);
+  }
   return pipeSourceName() + QStringLiteral(" -> ") + pipeDestinationName();
 }
 
@@ -471,6 +585,10 @@ QString RoutingViewModel::selectedPipeScopeText() const {
 }
 
 int RoutingViewModel::selectedPipeChannelMask() const {
+  if (insertSelected()) {
+    return midi_.outputInsertPipeChannelMask(pipeOutput(), insertSlot_,
+                                             selectedPipe_);
+  }
   return generatorSelected()
              ? midi_.generatorPipeChannelMask(pipeOutput(), selectedPipe_)
              : midi_.routePipeChannelMask(pipeInput(), pipeOutput(), selectedPipe_);
@@ -481,10 +599,14 @@ void RoutingViewModel::setSelectedPipeChannelMask(int mask) {
   if (mask > 0xFFFF) mask = 0xFFFF;
   const auto value = static_cast<std::uint16_t>(mask);
   const bool stored =
-      generatorSelected()
-          ? midi_.setGeneratorPipeChannelMask(pipeOutput(), selectedPipe_, value)
-          : midi_.setRoutePipeChannelMask(pipeInput(), pipeOutput(), selectedPipe_,
-                                          value);
+      insertSelected()
+          ? midi_.setOutputInsertPipeChannelMask(pipeOutput(), insertSlot_,
+                                                 selectedPipe_, value)
+          : (generatorSelected()
+                 ? midi_.setGeneratorPipeChannelMask(pipeOutput(), selectedPipe_,
+                                                     value)
+                 : midi_.setRoutePipeChannelMask(pipeInput(), pipeOutput(),
+                                                 selectedPipe_, value));
   if (!stored) {
     return;
   }
@@ -496,16 +618,25 @@ void RoutingViewModel::setSelectedPipeChannelMask(int mask) {
 QString RoutingViewModel::pipeStatusText() const {
   const auto route = pipeRouteText();
   const int count = pipeCount();
+  const bool insert = insertSelected();
   const bool generator = generatorSelected();
   if (count == 0) {
+    if (insert) {
+      return route + QStringLiteral(" - NO PIPES - INSERT ") +
+             (pipeRouteEnabled() ? QStringLiteral("ON") : QStringLiteral("OFF"));
+    }
     return route +
            (generator ? QStringLiteral(" - NO PIPES - GENERATOR NEEDS NO INPUT")
                       : QStringLiteral(" - NO PIPES"));
   }
-  const bool piOwned = midi::piOwnsPipeChain(pipeSourceId(), pipeOutput());
+  const bool piOwned = insert ? true
+                              : midi::piOwnsPipeChain(pipeSourceId(), pipeOutput());
   QString status = route + QStringLiteral(" - ") + QString::number(count) +
                    (count == 1 ? QStringLiteral(" PIPE - ") : QStringLiteral(" PIPES - "));
-  if (generator && !piOwned) {
+  if (insert) {
+    status += QStringLiteral("PI ENGINE - EVERY MESSAGE TO ") +
+              pipeDestinationName();
+  } else if (generator && !piOwned) {
     // The router can only own USB-side chains; a TRS generator route belongs to
     // the Pico and this build's link seam does not carry pseudo-source frames.
     status += QStringLiteral("PICO-OWNED - NOT SENT BY THIS BUILD");
@@ -554,18 +685,34 @@ QString RoutingViewModel::pipeStatusText() const {
 void RoutingViewModel::addPipe() {
   const int typeId = addTypeIndex_ + 1;
   if (!pipeui::isKnown(typeId)) return;
+  const bool insert = insertSelected();
+  if (insert &&
+      mnky::midifx::generated::pipeIsGenerator(
+          static_cast<std::uint8_t>(typeId))) {
+    addHint_ = QStringLiteral("GENERATOR HEADS BELONG TO GENERATOR ROUTES");
+    emit addTypeChanged();
+    return;
+  }
   const auto type = static_cast<session::MidiPipeType>(typeId);
   const bool generator = generatorSelected();
-  const bool added =
-      generator ? midi_.addGeneratorPipe(pipeOutput(), type)
-                : midi_.addRoutePipe(pipeInput(), pipeOutput(), type);
+  bool added = false;
+  if (insert) {
+    added = midi_.addOutputInsertPipe(pipeOutput(), insertSlot_, type);
+  } else if (generator) {
+    added = midi_.addGeneratorPipe(pipeOutput(), type);
+  } else {
+    added = midi_.addRoutePipe(pipeInput(), pipeOutput(), type);
+  }
   if (!added) {
     log(std::string("routing: pipe add refused for ") + pipeRouteText().toStdString() +
         (generator ? " (a generator chain's head must be a generator type)"
-                   : ""));
+                   : (insert ? " (output insert chain full)" : "")));
     if (generator) {
       addHint_ = QStringLiteral(
           "GENERATOR HEAD MUST BE A GENERATOR TYPE (CC LFO) - PICK IT IN THE ADD LIST");
+      emit addTypeChanged();
+    } else if (insert) {
+      addHint_ = QStringLiteral("OUTPUT INSERT CHAIN IS FULL (8 PIPES)");
       emit addTypeChanged();
     }
     return;
@@ -573,6 +720,9 @@ void RoutingViewModel::addPipe() {
   // A generator route has no source to gate; building its chain is the act
   // that puts it on the air, so the first ADD opens the route gate.
   if (generator && !pipeRouteEnabled()) midi_.setGeneratorRoute(pipeOutput(), true);
+  if (insert && !pipeRouteEnabled()) {
+    (void)midi_.setOutputInsertEnabled(pipeOutput(), insertSlot_, true);
+  }
   if (!addHint_.isEmpty()) {
     addHint_.clear();
     emit addTypeChanged();
@@ -585,9 +735,11 @@ void RoutingViewModel::addPipe() {
 
 void RoutingViewModel::removeSelectedPipe() {
   const bool removed =
-      generatorSelected()
-          ? midi_.removeGeneratorPipe(pipeOutput(), selectedPipe_)
-          : midi_.removeRoutePipe(pipeInput(), pipeOutput(), selectedPipe_);
+      insertSelected()
+          ? midi_.removeOutputInsertPipe(pipeOutput(), insertSlot_, selectedPipe_)
+          : (generatorSelected()
+                 ? midi_.removeGeneratorPipe(pipeOutput(), selectedPipe_)
+                 : midi_.removeRoutePipe(pipeInput(), pipeOutput(), selectedPipe_));
   if (!removed) return;
   selectedPipe_ = std::max(0, std::min(selectedPipe_, pipeCount() - 1));
   refreshPipes();
@@ -595,9 +747,13 @@ void RoutingViewModel::removeSelectedPipe() {
 
 void RoutingViewModel::moveSelectedPipe(int delta) {
   const bool moved =
-      generatorSelected()
-          ? midi_.moveGeneratorPipe(pipeOutput(), selectedPipe_, delta)
-          : midi_.moveRoutePipe(pipeInput(), pipeOutput(), selectedPipe_, delta);
+      insertSelected()
+          ? midi_.moveOutputInsertPipe(pipeOutput(), insertSlot_, selectedPipe_,
+                                       delta)
+          : (generatorSelected()
+                 ? midi_.moveGeneratorPipe(pipeOutput(), selectedPipe_, delta)
+                 : midi_.moveRoutePipe(pipeInput(), pipeOutput(), selectedPipe_,
+                                       delta));
   if (!moved) return;
   selectedPipe_ = std::clamp(selectedPipe_ + (delta < 0 ? -1 : 1), 0,
                              std::max(0, pipeCount() - 1));
@@ -607,9 +763,11 @@ void RoutingViewModel::moveSelectedPipe(int delta) {
 void RoutingViewModel::movePipe(int index, int delta) {
   if (index < 0 || index >= pipeCount()) return;
   const bool moved =
-      generatorSelected()
-          ? midi_.moveGeneratorPipe(pipeOutput(), index, delta)
-          : midi_.moveRoutePipe(pipeInput(), pipeOutput(), index, delta);
+      insertSelected()
+          ? midi_.moveOutputInsertPipe(pipeOutput(), insertSlot_, index, delta)
+          : (generatorSelected()
+                 ? midi_.moveGeneratorPipe(pipeOutput(), index, delta)
+                 : midi_.moveRoutePipe(pipeInput(), pipeOutput(), index, delta));
   if (moved) {
     selectedPipe_ = std::clamp(index + (delta < 0 ? -1 : 1), 0,
                                std::max(0, pipeCount() - 1));
@@ -622,9 +780,11 @@ void RoutingViewModel::movePipe(int index, int delta) {
 void RoutingViewModel::removePipe(int index) {
   if (index < 0 || index >= pipeCount()) return;
   const bool removed =
-      generatorSelected()
-          ? midi_.removeGeneratorPipe(pipeOutput(), index)
-          : midi_.removeRoutePipe(pipeInput(), pipeOutput(), index);
+      insertSelected()
+          ? midi_.removeOutputInsertPipe(pipeOutput(), insertSlot_, index)
+          : (generatorSelected()
+                 ? midi_.removeGeneratorPipe(pipeOutput(), index)
+                 : midi_.removeRoutePipe(pipeInput(), pipeOutput(), index));
   if (!removed) return;
   selectedPipe_ = std::max(0, std::min(index, pipeCount() - 1));
   refreshPipes();
@@ -639,19 +799,27 @@ void RoutingViewModel::toggleSelectedPipeBypass() {
 
 void RoutingViewModel::setPipeBypass(int index, bool bypass) {
   const bool stored =
-      generatorSelected()
-          ? midi_.setGeneratorPipeBypass(pipeOutput(), index, bypass)
-          : midi_.setRoutePipeBypass(pipeInput(), pipeOutput(), index, bypass);
+      insertSelected()
+          ? midi_.setOutputInsertPipeBypass(pipeOutput(), insertSlot_, index,
+                                            bypass)
+          : (generatorSelected()
+                 ? midi_.setGeneratorPipeBypass(pipeOutput(), index, bypass)
+                 : midi_.setRoutePipeBypass(pipeInput(), pipeOutput(), index,
+                                            bypass));
   if (!stored) return;
   refreshPipes();
 }
 
 void RoutingViewModel::setPipeParam(int pipeIndex, int param, int value) {
   const bool stored =
-      generatorSelected()
-          ? midi_.setGeneratorPipeParam(pipeOutput(), pipeIndex, param, value)
-          : midi_.setRoutePipeParam(pipeInput(), pipeOutput(), pipeIndex, param,
-                                    value);
+      insertSelected()
+          ? midi_.setOutputInsertPipeParam(pipeOutput(), insertSlot_, pipeIndex,
+                                           param, value)
+          : (generatorSelected()
+                 ? midi_.setGeneratorPipeParam(pipeOutput(), pipeIndex, param,
+                                               value)
+                 : midi_.setRoutePipeParam(pipeInput(), pipeOutput(), pipeIndex,
+                                           param, value));
   if (!stored) return;
   refreshPipes();
 }
@@ -665,6 +833,11 @@ QString RoutingViewModel::pipeParamValueText(int param, int value) const {
 }
 
 QString RoutingViewModel::defaultChainName() const {
+  if (insertSelected()) {
+    return QStringLiteral("chain-ins-%1-%2")
+        .arg(midi::portId(pipeOutput()))
+        .arg(insertSlot_ + 1);
+  }
   return QStringLiteral("chain-%1-%2")
       .arg(generatorSelected() ? QStringLiteral("gen")
                                : QString::number(midi::portId(pipeInput())))
@@ -697,9 +870,11 @@ QString RoutingViewModel::importPipeChain(const QString& target,
   const QString error = pipe_preset::read(file, chain);
   if (!error.isEmpty()) return error;
   const bool stored =
-      generatorSelected()
-          ? midi_.setGeneratorPipes(pipeOutput(), chain.pipes)
-          : midi_.setRoutePipes(pipeInput(), pipeOutput(), chain.pipes);
+      insertSelected()
+          ? midi_.setOutputInsertPipes(pipeOutput(), insertSlot_, chain.pipes)
+          : (generatorSelected()
+                 ? midi_.setGeneratorPipes(pipeOutput(), chain.pipes)
+                 : midi_.setRoutePipes(pipeInput(), pipeOutput(), chain.pipes));
   if (!stored) return QStringLiteral("the router refused the chain");
   selectedPipe_ = 0;
   log(std::string("routing: imported ") + std::to_string(chain.pipes.size()) +
@@ -710,17 +885,24 @@ QString RoutingViewModel::importPipeChain(const QString& target,
 
 int RoutingViewModel::addTypeIdAt(int index) const {
   const int count = static_cast<int>(mnky::midifx::generated::kPipeCount);
-  if (!generatorHeadPending()) return std::clamp(index, 0, count - 1) + 1;
-  // Only a generator-role pipe may head a source-less route, so the pending
-  // list is the generator-role subset (today just CC LFO).
+  const bool headOnly = generatorHeadPending();
+  const bool modifiersOnly = insertSelected();
+  if (!headOnly && !modifiersOnly) {
+    return std::clamp(index, 0, count - 1) + 1;
+  }
+  // A source-less generator route may only start with a generator-role head;
+  // an output insert is an ordinary modifier chain, so generator heads are not
+  // offered there. Both lists map their visible index onto the full type set.
   int filtered = 0;
   for (int id = 1; id <= count; ++id) {
-    if (pipeui::pipeRoleName(id) != QStringLiteral("GENERATOR")) continue;
+    const bool generator = pipeui::pipeRoleName(id) == QStringLiteral("GENERATOR");
+    if (headOnly != generator) continue;
     if (filtered == index) return id;
     ++filtered;
   }
   for (int id = 1; id <= count; ++id) {
-    if (pipeui::pipeRoleName(id) == QStringLiteral("GENERATOR")) return id;
+    const bool generator = pipeui::pipeRoleName(id) == QStringLiteral("GENERATOR");
+    if (headOnly == generator) return id;
   }
   return 1;
 }
@@ -738,9 +920,12 @@ QStringList RoutingViewModel::addTypeLabels() const {
   const int count = static_cast<int>(mnky::midifx::generated::kPipeCount);
   labels.reserve(count);
   const bool headOnly = generatorHeadPending();
+  const bool modifiersOnly = insertSelected();
   for (int index = 0; index < count; ++index) {
     const int id = index + 1;
-    if (headOnly && pipeui::pipeRoleName(id) != QStringLiteral("GENERATOR")) continue;
+    const bool generator = pipeui::pipeRoleName(id) == QStringLiteral("GENERATOR");
+    if (headOnly && !generator) continue;
+    if (modifiersOnly && generator) continue;
     labels << pipeui::pipeName(id);
   }
   return labels;
@@ -752,6 +937,12 @@ void RoutingViewModel::refreshPipes() {
   // so the armed type follows the filtered list instead of a stale modifier.
   if (generatorSelected() && pipes.empty() &&
       pipeui::pipeRoleName(addTypeIndex_ + 1) != QStringLiteral("GENERATOR")) {
+    addTypeIndex_ = addTypeIdAt(0) - 1;
+    emit addTypeChanged();
+  } else if (insertSelected() &&
+             pipeui::pipeRoleName(addTypeIndex_ + 1) == QStringLiteral("GENERATOR")) {
+    // An insert chain takes modifiers only; move the armed type off the
+    // generator head instead of silently offering it.
     addTypeIndex_ = addTypeIdAt(0) - 1;
     emit addTypeChanged();
   }
@@ -776,7 +967,8 @@ void RoutingViewModel::refreshPipes() {
     row.insert(QStringLiteral("chMask"), static_cast<int>(pipe.chMask));
     row.insert(QStringLiteral("scopeText"),
                QString::fromStdString(formatChannelMask(pipe.chMask)));
-    const bool piOwned = midi::piOwnsPipeChain(pipeSourceId(), pipeOutput());
+    const bool piOwned =
+        insertSelected() || midi::piOwnsPipeChain(pipeSourceId(), pipeOutput());
     const bool generatorHead = generatorSelected() && !piOwned;
     QString rowStatus = QStringLiteral("ACTIVE");
     bool warning = false;
@@ -816,14 +1008,16 @@ void RoutingViewModel::refreshPipes() {
     params = pipeui::editorRows(typeId, pipe.params, 0, pipeui::paramCount(typeId));
   }
 
+  refreshInsertRows();
   const QString routeText = pipeRouteText();
   const QString statusText = pipeStatusText();
   if (rows == pipeRows_ && params == pipeParams_ && routeText == pipeRouteText_ &&
-      statusText == pipeStatusText_) {
+      statusText == pipeStatusText_ && insertHint_ == pipeInsertHint_) {
     return;
   }
   pipeRows_ = std::move(rows);
   pipeParams_ = std::move(params);
+  pipeInsertHint_ = insertHint_;
   pipeRouteText_ = routeText;
   pipeStatusText_ = statusText;
   emit pipesChanged();

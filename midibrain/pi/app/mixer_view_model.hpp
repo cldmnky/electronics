@@ -24,6 +24,8 @@
 
 namespace mnky::app {
 
+class FxManager;
+
 // Four strips per page: the owner's "8-9 crammed, sliders too small" ask. The
 // page count comes from the track list (ceil(tracks / kStripsPerBank)), never
 // from a capacity constant.
@@ -246,25 +248,35 @@ class MixerViewModel final : public QAbstractListModel {
   // Slot index 0 = FX1, 1 = FX2. `slot` is a track slot; the track-scoped
   // helpers above address the TRACK/channel-popout track.
   static constexpr int kFxSlotCount = MixerModel::kFxSlotCount;
-  // Selector choices in the popup order: 0 NONE, 1 DELAY, 2 REVERB, 3 PLUGIN.
-  // PLUGIN is listed but refused by setFxChoiceAt(): CLAP per-track hosting is
-  // not wired in this build (docs/NOTES audio wave 11, "CLAP gap").
-  static constexpr int kFxChoiceCount = 4;
+  // Selector choices in the popup order: 0 NONE, 1 DELAY, 2 REVERB, then one
+  // entry per discovered CLAP plugin in FxManager::plugins() order (index 3 is
+  // the first plugin). The labels are live: a build with no discoverable module
+  // simply has the three built-ins.
+  static constexpr int kFxChoiceBuiltinCount = 3;
   static constexpr int kFxChoicePlugin = 3;
-  static QStringList fxChoiceLabels();
-  static QString fxChoiceId(int choice);
-  static int fxChoiceOf(const QString& id);
-  static QString fxName(const QString& id);
+  QStringList fxChoiceLabels() const;
+  QString fxChoiceId(int choice) const;
+  int fxChoiceOf(const QString& id) const;
+  QString fxName(const QString& id) const;
+  // AppController installs the app's CLAP host once. Without it the plugin
+  // choices are unavailable and the rack stays built-in only (unit tests).
+  void setClapHost(FxManager* host) { clap_ = host; }
+  // Last refused CLAP selection ("PLUGIN LIMIT REACHED - unload one first"),
+  // cleared by the next accepted write. `track`/`slot`-qualified so a note on
+  // another card never inherits it.
+  QString fxChoiceRefusal(int slot, int index) const;
+  void clearFxChoiceRefusal();
   Q_INVOKABLE QString fxNameAt(int slot, int index) const;
   Q_INVOKABLE int fxChoiceAt(int slot, int index) const;
-  Q_INVOKABLE void setFxChoiceAt(int slot, int index, int choice);
+  Q_INVOKABLE bool setFxChoiceAt(int slot, int index, int choice);
   Q_INVOKABLE bool fxBypassAt(int slot, int index) const;
   Q_INVOKABLE void setFxBypassAt(int slot, int index, bool bypass);
   Q_INVOKABLE double fxWetAt(int slot, int index) const;
   Q_INVOKABLE void setFxWetAt(int slot, int index, double wet);
   // One slot's parameter cards: {"index","name","value","text","unit",
-  // "minimum","maximum","stepped"} in the effect's stable order. Empty for
-  // NONE and for a CLAP id (the plugin owns its table).
+  // "minimum","maximum","stepped"} in the effect's stable order. A CLAP id
+  // uses the plugin's own clap.params table (its names/ranges), read through
+  // FxManager; NONE is empty.
   Q_INVOKABLE QVariantList fxParams(int slot, int index) const;
   Q_INVOKABLE void setFxParamAt(int slot, int index, int param, double value);
   // The subline both rack surfaces state: series order plus scope.
@@ -315,6 +327,10 @@ class MixerViewModel final : public QAbstractListModel {
   MixerModel& model_;
   SessionSettings& settings_;
   EqModel& eq_;
+  FxManager* clap_ = nullptr;
+  QString fxChoiceRefusal_;
+  int fxRefusalSlot_ = -1;
+  int fxRefusalIndex_ = -1;
   int bank_ = 0;
   int selectedStrip_ = 0;
   bool trackMode_ = false;

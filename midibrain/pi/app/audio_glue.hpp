@@ -108,9 +108,12 @@ class AudioGlue final : private audio::DeviceClient {
   // Control thread: one per-track FX rack slot (Engine::setTrackFxSlot).
   // MixerModel installs a sink that calls this after every rack edit, so the
   // rack reaches the engine without the audio callback touching the engine's
-  // allocating setter. applyTrackFxRack() forwards every stored slot, which the
-  // session load and the new-project reset use. `wet` is the slot's dry/wet
-  // crossfade; the effect clamps its own parameters.
+  // allocating setter. A CLAP id additionally creates/reuses the FxManager host
+  // instance and attaches its adapter with Engine::setTrackFxSlotEffect(); a
+  // built-in/empty id detaches and destroys the instance. applyTrackFxRack()
+  // forwards every stored slot, which the session load and the new-project
+  // reset use. `wet` is the slot's dry/wet crossfade; the effect clamps its own
+  // parameters.
   void applyTrackFxSlot(int track, int slot);
   void applyTrackFxRack();
   // Control-thread EQ forwarding (session fx.eq -> Engine track/main inserts).

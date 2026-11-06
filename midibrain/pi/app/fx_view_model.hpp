@@ -4,12 +4,10 @@
 //
 // The rack lives in MixerModel (fxSlots[2]) and reaches the engine through
 // AudioGlue's control-thread forwarder, so this class formats values and
-// forwards edits only. CLAP per-track hosting is not wired in this build
-// (audio/NOTES.md wave 11, "CLAP gap"): the PLUGIN choice is listed but greyed,
-// and a slot that already carries a plugin id shows the gap instead of a
-// parameter list. The old global FX-tab CLAP slot view models retired with the
-// tab; fx_slot.hpp stays as the engine's send-bus CLAP seam for a later host
-// wave.
+// forwards edits only. A CLAP slot's parameter cards and note come from
+// MixerViewModel (plugin discovery + FxManager), so this popup is the same
+// schema-driven card list for built-ins and plugins; the old global FX-tab CLAP
+// slot view models retired with the tab.
 #include <QObject>
 #include <QString>
 #include <QVariantList>

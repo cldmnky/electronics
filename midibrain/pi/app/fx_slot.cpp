@@ -1,7 +1,9 @@
 #include "fx_slot.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <set>
 
 #include "logging.hpp"
 
@@ -36,7 +38,8 @@ audio::IEffect& FxSlot::effect() {
   return *adapter_;
 }
 
-bool FxSlot::load(const std::string& path, double sampleRate, int maxFrames) {
+bool FxSlot::load(const std::string& path, double sampleRate, int maxFrames,
+                  const std::string& pluginId) {
   const std::lock_guard<std::mutex> lock(lock_);
   host_.unload();
   path_.clear();
@@ -46,7 +49,7 @@ bool FxSlot::load(const std::string& path, double sampleRate, int maxFrames) {
     lastError_ = "no plugin path";
     return false;
   }
-  if (!host_.load(path)) {
+  if (!host_.load(path, pluginId.empty() ? nullptr : pluginId.c_str())) {
     lastError_ = host_.lastError().empty() ? "load failed" : host_.lastError();
     log("fx " + std::to_string(index_) + ": " + lastError_ + " (" + path + ")");
     return false;
@@ -179,6 +182,213 @@ FxSlot& FxManager::slot(int index) {
 
 audio::IEffect* FxManager::effect(int index) {
   return &slot(index).effect();
+}
+
+bool FxManager::validSlot(int track, int slot) {
+  return track >= 0 && track < audio::kMaxTracks && slot >= 0 &&
+         slot < kTrackSlots;
+}
+
+std::size_t FxManager::flatSlot(int track, int slot) {
+  return static_cast<std::size_t>(track) * kTrackSlots +
+         static_cast<std::size_t>(slot);
+}
+
+void FxManager::scanPlugins() {
+  if (scanned_) return;
+  scanned_ = true;
+
+  std::vector<std::string> candidates;
+  const auto add = [&candidates](const std::string& path) {
+    if (path.empty()) return;
+    if (std::find(candidates.begin(), candidates.end(), path) == candidates.end()) {
+      candidates.push_back(path);
+    }
+  };
+#if defined(MNKY_DEFAULT_PLUGIN)
+  add(MNKY_DEFAULT_PLUGIN);
+#endif
+  if (const char* override = std::getenv("MNKY_PLUGIN_PATH")) add(override);
+  add(FxSlot::defaultPluginPath());
+
+  std::filesystem::path home;
+  if (const char* env = std::getenv("HOME")) home = env;
+  std::vector<std::filesystem::path> directories;
+  if (!home.empty()) {
+    directories.push_back(home / "Library/Audio/Plug-Ins/CLAP");
+    directories.push_back(home / ".clap");
+  }
+  directories.emplace_back("/usr/lib/clap");
+  directories.emplace_back("/usr/local/lib/clap");
+  for (const auto& directory : directories) {
+    std::error_code error;
+    if (!std::filesystem::is_directory(directory, error) || error) continue;
+    for (std::filesystem::directory_iterator it(directory, error), end;
+         !error && it != end; it.increment(error)) {
+      const auto extension = it->path().extension().string();
+      if (extension != ".clap") continue;
+      std::error_code typeError;
+      if (it->is_directory(typeError) || it->is_regular_file(typeError)) {
+        add(it->path().string());
+      }
+    }
+  }
+
+  std::set<std::string> seenIds;
+  for (const auto& candidate : candidates) {
+    clap::Host probe;
+    if (!probe.load(candidate)) continue;
+    PluginInfo info;
+    info.id = probe.id();
+    info.name = probe.name();
+    info.path = candidate;
+    info.params = probe.params();
+    probe.unload();
+    if (info.id.empty() || info.name.empty()) continue;
+    if (!seenIds.insert(info.id).second) continue;
+    log("clap: discovered " + info.name + " (" + info.id + ") at " + candidate);
+    plugins_.push_back(std::move(info));
+  }
+  if (plugins_.empty()) {
+    log("clap: no plugin found (set MNKY_PLUGIN_PATH or install a .clap module)");
+  }
+}
+
+const std::vector<FxManager::PluginInfo>& FxManager::plugins() {
+  scanPlugins();
+  return plugins_;
+}
+
+const FxManager::PluginInfo* FxManager::findPlugin(const std::string& id) {
+  if (id.empty()) return nullptr;
+  for (const auto& plugin : plugins()) {
+    if (plugin.id == id) return &plugin;
+  }
+  return nullptr;
+}
+
+bool FxManager::loadTrackEffect(int track, int slot, const std::string& pluginId,
+                                double sampleRate, int maxFrames) {
+  if (!validSlot(track, slot) || pluginId.empty()) return false;
+  const std::size_t flat = flatSlot(track, slot);
+  auto& holder = trackSlots_[static_cast<std::size_t>(track)]
+                            [static_cast<std::size_t>(slot)];
+  if (!holder) holder = std::make_unique<FxSlot>(track * kTrackSlots + slot);
+  if (holder->loaded()) {
+    if (holder->pluginId() == pluginId) {
+      trackErrors_[flat].clear();
+      return true;
+    }
+    // Switching a slot keeps its single admission: unload the old instance
+    // before the cap test so the new one sees the same instance count.
+    holder->unload();
+  }
+  if (trackInstanceCount() >= kMaxTrackInstances) {
+    trackErrors_[flat] = "plugin limit reached";
+    log("track fx " + std::to_string(track) + "/" + std::to_string(slot) +
+        ": plugin limit reached (" + std::to_string(kMaxTrackInstances) + ")");
+    return false;
+  }
+  const PluginInfo* plugin = findPlugin(pluginId);
+  const std::string path =
+      plugin != nullptr ? plugin->path : FxSlot::defaultPluginPath();
+  if (path.empty()) {
+    trackErrors_[flat] = "no plugin path for " + pluginId;
+    log("track fx " + std::to_string(track) + "/" + std::to_string(slot) + ": " +
+        trackErrors_[flat]);
+    return false;
+  }
+  if (!holder->load(path, sampleRate, maxFrames, pluginId)) {
+    trackErrors_[flat] =
+        holder->lastError().empty() ? "load failed" : holder->lastError();
+    log("track fx " + std::to_string(track) + "/" + std::to_string(slot) + ": " +
+        trackErrors_[flat] + " (" + path + ")");
+    return false;
+  }
+  trackErrors_[flat].clear();
+  return true;
+}
+
+void FxManager::unloadTrackEffect(int track, int slot) {
+  if (!validSlot(track, slot)) return;
+  auto& holder = trackSlots_[static_cast<std::size_t>(track)]
+                            [static_cast<std::size_t>(slot)];
+  if (!holder) return;
+  holder->unload();
+  trackErrors_[flatSlot(track, slot)].clear();
+}
+
+bool FxManager::trackEffectLoaded(int track, int slot) const {
+  if (!validSlot(track, slot)) return false;
+  const auto& holder = trackSlots_[static_cast<std::size_t>(track)]
+                                  [static_cast<std::size_t>(slot)];
+  return holder != nullptr && holder->loaded();
+}
+
+audio::IEffect* FxManager::trackEffect(int track, int slot) {
+  if (!trackEffectLoaded(track, slot)) return nullptr;
+  auto& holder = trackSlots_[static_cast<std::size_t>(track)]
+                            [static_cast<std::size_t>(slot)];
+  return &holder->effect();
+}
+
+std::string FxManager::trackEffectId(int track, int slot) const {
+  if (!trackEffectLoaded(track, slot)) return {};
+  const auto& holder = trackSlots_[static_cast<std::size_t>(track)]
+                                  [static_cast<std::size_t>(slot)];
+  return holder->pluginId();
+}
+
+std::string FxManager::trackEffectName(int track, int slot) const {
+  if (!trackEffectLoaded(track, slot)) return {};
+  const auto& holder = trackSlots_[static_cast<std::size_t>(track)]
+                                  [static_cast<std::size_t>(slot)];
+  return holder->pluginName();
+}
+
+std::string FxManager::trackEffectError(int track, int slot) const {
+  if (!validSlot(track, slot)) return {};
+  return trackErrors_[flatSlot(track, slot)];
+}
+
+std::vector<clap::Param> FxManager::trackParams(int track, int slot) {
+  if (!trackEffectLoaded(track, slot)) return {};
+  auto& holder = trackSlots_[static_cast<std::size_t>(track)]
+                            [static_cast<std::size_t>(slot)];
+  return holder->params();
+}
+
+double FxManager::trackParamValue(int track, int slot, std::size_t index) const {
+  if (!trackEffectLoaded(track, slot)) return 0.0;
+  const auto& holder = trackSlots_[static_cast<std::size_t>(track)]
+                                  [static_cast<std::size_t>(slot)];
+  return holder->paramValue(index);
+}
+
+bool FxManager::setTrackParam(int track, int slot, std::size_t index,
+                              double value) {
+  if (!trackEffectLoaded(track, slot)) return false;
+  auto& holder = trackSlots_[static_cast<std::size_t>(track)]
+                            [static_cast<std::size_t>(slot)];
+  return holder->setParamValue(index, value);
+}
+
+int FxManager::trackInstanceCount() const {
+  int count = 0;
+  for (int track = 0; track < audio::kMaxTracks; ++track) {
+    for (int slot = 0; slot < kTrackSlots; ++slot) {
+      const auto& holder = trackSlots_[static_cast<std::size_t>(track)]
+                                      [static_cast<std::size_t>(slot)];
+      if (holder != nullptr && holder->loaded()) ++count;
+    }
+  }
+  return count;
+}
+
+bool FxManager::canLoadTrackEffect(int track, int slot) const {
+  if (!validSlot(track, slot)) return false;
+  if (trackEffectLoaded(track, slot)) return true;
+  return trackInstanceCount() < kMaxTrackInstances;
 }
 
 }  // namespace mnky::app
