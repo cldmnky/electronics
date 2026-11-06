@@ -4,22 +4,77 @@ import "../components"
 
 // ARRANGE (docs/daw-plan.md W6/W7): the section band, the clip lanes, the
 // playhead/loop band, SONG mode and the clip "..." sheet. The primary face is
-// the arrangement; the SHIFT face keeps the section verbs and the grid/zoom
-// controls. All values live in ArrangeViewModel; this file draws and forwards
-// touches so the touch path and the panel ring drive the same state.
+// the arrangement: one 56 px action row, then the section band, the ruler and
+// the lanes. The section verbs live in the SECTIONS sheet and RENDER SONG in
+// the SONG sheet, so the default view prioritises selecting, inspecting and
+// moving clips. The SHIFT face keeps the one-tap section verbs and grid/zoom.
+//
+// All values live in ArrangeViewModel; this file draws and forwards touches so
+// the touch path and the panel ring drive the same state. Sizes are inline
+// (stage 1 tokenizes): 56 px frequent controls, 44 px minimum, 8 px spacing,
+// 16-18 px primary labels, 14 px secondary text. Lane height is min 64 px and
+// grows to 72 px; the chrome above it keeps its current height and the lane
+// area takes whatever vertical space is left, so a taller nav row later only
+// makes the lane area shorter (it scrolls).
 Item {
     id: page
 
     readonly property bool shiftFace: app.panelMode === "shift"
-    readonly property int laneHeaderWidth: 112
-    readonly property int laneHeight: 52
+    readonly property int laneHeaderWidth: 128
+    // Frequent controls: 56 px tall. Style.touch (44) stays the hard minimum.
+    readonly property int rowHeight: 56
+    readonly property int sectionBandHeight: 44
+    readonly property int rulerHeight: 20
+    readonly property int statusHeight: 16
     readonly property real timelineWidth: Math.max(1, width - laneHeaderWidth)
     readonly property real pxPerBeat: timelineWidth / Math.max(0.001, arrange.viewBeats)
+    // Lanes: 64 px minimum, 72 px target; extra height fills the last lane and
+    // the row scrolls once it cannot fit.
+    readonly property real laneHeight: {
+        const count = Math.max(1, arrange.lanes.length)
+        return Math.max(64, Math.min(72, laneArea.height / count))
+    }
+    // Ruler label density: one label per bar when the bars are wide enough,
+    // then every 2/4/8/16 bars as the timeline zooms out.
+    readonly property int rulerBarStep: {
+        const pxPerBar = Math.max(0.001, page.pxPerBeat * 4)
+        const wanted = Math.max(1, Math.ceil(30 / pxPerBar))
+        let step = 1
+        while (step < wanted && step < 256) step *= 2
+        return step
+    }
     // Section colour roles: a repeated cycle keeps adjacent sections distinct
     // without inventing a per-section colour field in the session.
     readonly property var sectionColors: [Style.accent, Style.ok, Style.nodePink,
                                           Style.textDim]
+    // The two sheet overlays are page-local state: the screen Loader rebuilds
+    // this page on a tab change, so a sheet can never survive into another tab.
+    property bool sectionSheetOpen: false
+    property bool songSheetOpen: false
     property real lastPinchScale: 1.0
+
+    onShiftFaceChanged: {
+        page.sectionSheetOpen = false
+        page.songSheetOpen = false
+    }
+
+    // The panel ring's ARRANGE list is fixed (AppController::rebuildFocusIds):
+    // the section verbs are stops even while the SECTIONS sheet is closed. Open
+    // the sheet when the ring lands on one of them so the focus ring is always
+    // visible, and close it when the ring moves back to the arrangement.
+    Connections {
+        target: app
+        function onFocusChanged() {
+            if (page.shiftFace) return
+            const id = app.focusId
+            // RENAME is the visible section-name cell, so the sheet only
+            // needs to open for the verbs that live inside it.
+            page.sectionSheetOpen = (id === "arrange.addsection" ||
+                                     id === "arrange.dupsection" ||
+                                     id === "arrange.loopsection" ||
+                                     id === "arrange.length")
+        }
+    }
 
     function beatAtX(x) {
         return arrange.viewStartBeats + x / pxPerBeat
@@ -33,133 +88,177 @@ Item {
         return Math.round(delta / gridPx) * gridPx
     }
 
-    Column {
+    Item {
+        id: primary
         visible: !page.shiftFace
         anchors.fill: parent
         anchors.margins: Style.marginCompact
-        spacing: Style.gapTight
 
-        // ---- row 1: sections --------------------------------------------
-        Row {
+        // ---- action row: sections, grid, zoom, loop, clip, song ---------
+        Item {
+            id: actionRow
             width: parent.width
-            height: Style.touch
-            spacing: Style.gapTight
+            height: page.rowHeight
+
             TouchButton {
+                id: sectionsButton
+                anchors.left: parent.left
+                anchors.top: parent.top
+                width: 118
+                height: parent.height
+                text: "SECTIONS"
+                textSize: 16
+                chevron: "down"
+                focusId: "arrange.sectionmenu"
+                onClicked: page.sectionSheetOpen = true
+            }
+
+            // The selected section name doubles as RENAME: the name is context
+            // and the cell keeps the ring's arrange.rename stop visible without
+            // spending a toolbar slot on a separate verb.
+            Rectangle {
+                id: sectionNameCell
+                anchors.left: sectionsButton.right
+                anchors.leftMargin: Style.gap
+                anchors.right: (clipButton.visible ? clipButton.left : gridButton.left)
+                anchors.rightMargin: Style.gap
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                radius: Style.corner
+                color: Style.panel
+                border.width: app.focusId === "arrange.rename" ? 2 : 1
+                border.color: app.focusId === "arrange.rename" ? Style.accent
+                                                               : Style.outline
+                property string focusId: "arrange.rename"
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 0
+                    Text {
+                        width: parent.width
+                        height: 22
+                        text: arrange.selectedSectionName
+                        color: Style.text
+                        font.pixelSize: 18
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        width: parent.width
+                        height: 16
+                        text: "TAP TO RENAME"
+                        color: Style.textDim
+                        font.pixelSize: 14
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
+                TapHandler {
+                    onTapped: app.requestArrangeSectionRename()
+                }
+            }
+
+            TouchButton {
+                id: clipButton
+                anchors.right: songButton.left
+                anchors.rightMargin: Style.gap
+                anchors.top: parent.top
                 width: 92
                 height: parent.height
-                text: "ADD SECTION"
-                textSize: Style.fontSmall
-                focusId: "arrange.addsection"
-                onClicked: arrange.addSection()
+                text: "CLIP ..."
+                textSize: 16
+                visible: arrange.hasClipSelection
+                active: arrange.hasClipSelection
+                focusId: "arrange.clipmenu"
+                onClicked: arrange.openClipMenu(arrange.selectedClip)
             }
+
             TouchButton {
-                width: 92
+                id: songButton
+                anchors.right: parent.right
+                anchors.top: parent.top
+                width: 96
                 height: parent.height
-                text: "DUP SECTION"
-                textSize: Style.fontSmall
-                focusId: "arrange.dupsection"
-                onClicked: arrange.duplicateSection()
+                text: "SONG"
+                textSize: 16
+                chevron: "down"
+                // The ring's arrange.render stop lives here: a ring press
+                // renders immediately (AppController), while a touch opens the
+                // SONG sheet that owns RENDER SONG plus loop/length. The id is
+                // preserved because the ring list is fixed; see the handoff.
+                focusId: "arrange.render"
+                onClicked: page.songSheetOpen = true
             }
+
             TouchButton {
-                width: 104
-                height: parent.height
-                text: "LOOP SECTION"
-                textSize: Style.fontSmall
-                focusId: "arrange.loopsection"
-                onClicked: arrange.loopSection()
-            }
-            TouchButton {
-                width: 76
-                height: parent.height
-                text: "RENAME"
-                textSize: Style.fontSmall
-                focusId: "arrange.rename"
-                onClicked: app.requestArrangeSectionRename()
-            }
-            Text {
-                width: Math.max(70, parent.width - 92 - 92 - 104 - 76 - 84 - 64 -
-                                Style.gapTight * 6)
-                height: parent.height
-                text: arrange.selectedSectionName
-                color: Style.text
-                font.pixelSize: Style.fontBody
-                font.weight: Font.DemiBold
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
-            }
-            TouchButton {
-                width: 84
-                height: parent.height
-                text: "LEN " + arrange.lengthText
-                textSize: Style.fontSmall
-                focusId: "arrange.length"
-                onClicked: arrange.openLengthPopup()
-            }
-            TouchButton {
-                width: 64
+                id: loopButton
+                anchors.right: songButton.left
+                anchors.rightMargin: Style.gap
+                anchors.top: parent.top
+                width: 72
                 height: parent.height
                 text: "LOOP"
-                textSize: Style.fontSmall
+                textSize: 16
                 checked: arrange.loopOn
                 focusId: "arrange.loop"
                 onClicked: arrange.setLoopOn(!arrange.loopOn)
             }
-        }
 
-        // ---- row 2: grid, zoom, clip menu, render -----------------------
-        Row {
-            width: parent.width
-            height: Style.touch
-            spacing: Style.gapTight
             TouchButton {
-                width: 62; height: parent.height; text: "BAR"; textSize: Style.fontSmall
-                checked: arrange.grid === 0; focusId: "arrange.grid.0"
-                onClicked: arrange.setGrid(0)
-            }
-            TouchButton {
-                width: 62; height: parent.height; text: "1/2"; textSize: Style.fontSmall
-                checked: arrange.grid === 1; focusId: "arrange.grid.1"
-                onClicked: arrange.setGrid(1)
-            }
-            TouchButton {
-                width: 62; height: parent.height; text: "1/4"; textSize: Style.fontSmall
-                checked: arrange.grid === 2; focusId: "arrange.grid.2"
-                onClicked: arrange.setGrid(2)
-            }
-            TouchButton {
-                width: 62; height: parent.height; text: "1/16"; textSize: Style.fontSmall
-                checked: arrange.grid === 3; focusId: "arrange.grid.3"
-                onClicked: arrange.setGrid(3)
-            }
-            TouchButton {
-                width: 66; height: parent.height; text: "Z-"; textSize: Style.fontSmall
-                focusId: "arrange.zoomout"; onClicked: arrange.zoomOut()
-            }
-            TouchButton {
-                width: 66; height: parent.height; text: "Z+"; textSize: Style.fontSmall
-                focusId: "arrange.zoomin"; onClicked: arrange.zoomIn()
-            }
-            TouchButton {
-                width: 92; height: parent.height; text: "CLIP ..."; textSize: Style.fontSmall
-                active: arrange.hasClipSelection; focusId: "arrange.clipmenu"
-                onClicked: arrange.openClipMenu(arrange.selectedClip)
-            }
-            TouchButton {
-                width: Math.max(92, parent.width - 62 * 4 - 66 * 2 - 92 - 8 * Style.gapTight)
+                id: zoomInButton
+                anchors.right: loopButton.left
+                anchors.rightMargin: Style.gap
+                anchors.top: parent.top
+                width: 56
                 height: parent.height
-                text: "RENDER SONG"
-                textSize: Style.fontSmall
-                variant: "primary"
-                focusId: "arrange.render"
-                onClicked: app.renderSong()
+                text: "Z+"
+                textSize: 16
+                focusId: "arrange.zoomin"
+                onClicked: arrange.zoomIn()
+            }
+            TouchButton {
+                id: zoomOutButton
+                anchors.right: zoomInButton.left
+                anchors.rightMargin: Style.gap
+                anchors.top: parent.top
+                width: 56
+                height: parent.height
+                text: "Z-"
+                textSize: 16
+                focusId: "arrange.zoomout"
+                onClicked: arrange.zoomOut()
+            }
+
+            // One grid selector instead of four buttons: a touch cycles
+            // BAR -> 1/2 -> 1/4 -> 1/16, and the panel's fixed grid.0..3 stops
+            // all draw on this control while the ring writes the exact grid.
+            TouchButton {
+                id: gridButton
+                anchors.right: zoomOutButton.left
+                anchors.rightMargin: Style.gap
+                anchors.top: parent.top
+                width: 116
+                height: parent.height
+                text: "GRID " + arrange.gridText
+                textSize: 16
+                focusId: app.focusId.indexOf("arrange.grid.") === 0
+                         ? app.focusId : "arrange.grid"
+                onClicked: arrange.setGrid((arrange.grid + 1) % 4)
             }
         }
 
         // ---- section band ------------------------------------------------
         Item {
             id: sectionBand
+            anchors.top: actionRow.bottom
+            anchors.topMargin: 6
             width: parent.width
-            height: Style.touch
+            height: page.sectionBandHeight
             clip: true
             Rectangle {
                 anchors.fill: parent
@@ -176,7 +275,7 @@ Item {
                     readonly property real spanRatio:
                         (modelData.endBeats - modelData.startBeats) / arrange.viewBeats
                     x: Math.max(0, startRatio * sectionBand.width)
-                    width: Math.max(58, spanRatio * sectionBand.width)
+                    width: Math.max(64, spanRatio * sectionBand.width)
                     height: sectionBand.height
                     radius: Style.corner
                     color: modelData.selected ? Style.raised : Style.panel
@@ -194,7 +293,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData.name + "  " + modelData.bars
                         color: modelData.selected ? Style.text : Style.textDim
-                        font.pixelSize: Style.fontSmall
+                        font.pixelSize: 14
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                         verticalAlignment: Text.AlignVCenter
@@ -217,9 +316,9 @@ Item {
             Text {
                 visible: arrange.sectionCount === 0
                 anchors.centerIn: parent
-                text: "NO SECTIONS - ADD SECTION"
+                text: "NO SECTIONS - OPEN SECTIONS"
                 color: Style.textDim
-                font.pixelSize: Style.fontSmall
+                font.pixelSize: 14
                 font.weight: Font.DemiBold
             }
         }
@@ -227,8 +326,10 @@ Item {
         // ---- ruler -------------------------------------------------------
         Item {
             id: ruler
+            anchors.top: sectionBand.bottom
+            anchors.topMargin: 2
             width: parent.width
-            height: 18
+            height: page.rulerHeight
             clip: true
             Repeater {
                 model: Math.max(1, Math.ceil(arrange.viewBeats / 4) + 2)
@@ -237,11 +338,12 @@ Item {
                         Math.floor(arrange.viewStartBeats / 4) + index
                     x: page.laneHeaderWidth +
                        (bar * 4 - arrange.viewStartBeats) * page.pxPerBeat
-                    width: 40
+                    width: 56
                     height: ruler.height
+                    visible: bar % page.rulerBarStep === 0
                     text: bar + 1
                     color: Style.textDim
-                    font.pixelSize: Style.fontSmall
+                    font.pixelSize: 14
                     verticalAlignment: Text.AlignVCenter
                 }
             }
@@ -258,10 +360,10 @@ Item {
         // ---- lanes -------------------------------------------------------
         Item {
             id: laneArea
+            anchors.top: ruler.bottom
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: page.statusHeight + 2
             width: parent.width
-            height: Math.max(1, page.height - Style.marginCompact * 2 -
-                                Style.touch * 2 - Style.touch - 18 -
-                                Style.gapTight * 4)
             clip: true
 
             Flickable {
@@ -293,23 +395,30 @@ Item {
                                 Column {
                                     anchors.left: parent.left
                                     anchors.leftMargin: 6
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 6
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width - 12
+                                    spacing: 0
                                     Text {
                                         width: parent.width
+                                        height: 22
                                         text: (modelData.track + 1).toString().padStart(2, "0") +
                                               "  " + modelData.name
                                         color: Style.text
-                                        font.pixelSize: Style.fontSmall
+                                        font.pixelSize: 15
                                         font.weight: Font.DemiBold
                                         elide: Text.ElideRight
+                                        verticalAlignment: Text.AlignVCenter
                                     }
                                     Text {
                                         width: parent.width
+                                        height: 18
                                         text: modelData.mode
                                         color: Style.accent
-                                        font.pixelSize: Style.fontSmall
+                                        font.pixelSize: 14
                                         font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                        verticalAlignment: Text.AlignVCenter
                                     }
                                 }
                                 TapHandler {
@@ -379,18 +488,20 @@ Item {
                                             (modelData.startBeats - arrange.viewStartBeats) *
                                             page.pxPerBeat
                                         readonly property real baseWidth:
-                                            Math.max(44, (modelData.endBeats -
+                                            Math.max(48, (modelData.endBeats -
                                                           modelData.startBeats) *
                                                          page.pxPerBeat)
                                         readonly property bool active: moveDrag.active ||
                                                                        leftDrag.active ||
                                                                        rightDrag.active
+                                        readonly property real edgeWidth:
+                                            Math.max(20, Math.min(28, width / 3))
                                         x: baseX + (moveDrag.active
                                                     ? page.snappedOffsetPx(moveDrag.translation.x)
                                                     : (leftDrag.active
                                                        ? page.snappedOffsetPx(leftDrag.translation.x)
                                                        : 0))
-                                        width: Math.max(44, baseWidth +
+                                        width: Math.max(48, baseWidth +
                                                         (rightDrag.active
                                                          ? page.snappedOffsetPx(rightDrag.translation.x)
                                                          : (leftDrag.active
@@ -408,7 +519,7 @@ Item {
                                             radius: Style.corner
                                             color: modelData.muted ? Style.panelDark
                                                    : (modelData.selected ? Style.raised : Style.panel)
-                                            border.width: modelData.selected ? 2 : 1
+                                            border.width: modelData.selected ? 3 : 1
                                             border.color: modelData.selected ? Style.accent : Style.outline
                                             clip: true
 
@@ -451,11 +562,11 @@ Item {
                                             anchors.left: parent.left
                                             anchors.leftMargin: 6
                                             anchors.right: parent.right
-                                            anchors.rightMargin: 20
+                                            anchors.rightMargin: 6
                                             anchors.verticalCenter: parent.verticalCenter
                                             text: modelData.name
-                                            color: Style.text
-                                            font.pixelSize: Style.fontSmall
+                                            color: modelData.selected ? Style.accent : Style.text
+                                            font.pixelSize: 14
                                             font.weight: Font.DemiBold
                                             elide: Text.ElideMiddle
                                             verticalAlignment: Text.AlignVCenter
@@ -477,7 +588,8 @@ Item {
                                         TapHandler {
                                             // First tap selects; a tap on the already
                                             // selected clip opens its "..." sheet
-                                            // (the toolbar CLIP ... is the same verb).
+                                            // (the SECTIONS row's CLIP ... is the
+                                            // same verb).
                                             onTapped: {
                                                 if (arrange.selectedClip === modelData.index)
                                                     arrange.openClipMenu(modelData.index)
@@ -503,9 +615,10 @@ Item {
                                                 }
                                             }
                                         }
-                                        // Left/right trim handles: 22 px hit areas.
+                                        // Edge trim handles: 20-28 px per side,
+                                        // wide enough to grab at 64 px lanes.
                                         Rectangle {
-                                            width: 16
+                                            width: clipItem.edgeWidth
                                             height: parent.height
                                             anchors.left: parent.left
                                             color: "transparent"
@@ -528,7 +641,7 @@ Item {
                                             }
                                         }
                                         Rectangle {
-                                            width: 16
+                                            width: clipItem.edgeWidth
                                             height: parent.height
                                             anchors.right: parent.right
                                             color: "transparent"
@@ -556,6 +669,21 @@ Item {
                         }
                     }
                 }
+            }
+
+            // Empty song: the lanes may be empty or absent entirely, so the
+            // state names the way in from here.
+            Text {
+                visible: arrange.clipCount === 0
+                anchors.left: parent.left
+                anchors.leftMargin: page.laneHeaderWidth + 12
+                anchors.verticalCenter: parent.verticalCenter
+                width: page.timelineWidth - 24
+                text: "NO CLIPS YET - PUNCH A TAKE INTO SONG MODE"
+                color: Style.textDim
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
             }
 
             // Loop band over the lanes, aligned with the ruler/timeline.
@@ -606,16 +734,6 @@ Item {
                 visible: x >= page.laneHeaderWidth &&
                          x <= page.laneHeaderWidth + page.timelineWidth
             }
-            Text {
-                anchors.left: parent.left
-                anchors.bottom: parent.bottom
-                width: parent.width
-                height: 14
-                text: arrange.statusText
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
-                elide: Text.ElideRight
-            }
 
             PinchHandler {
                 id: pinch
@@ -631,11 +749,213 @@ Item {
                 }
             }
         }
+
+        // ---- status line -------------------------------------------------
+        Text {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: page.statusHeight
+            text: arrange.statusText
+            color: Style.textDim
+            font.pixelSize: 14
+            elide: Text.ElideRight
+        }
     }
 
     ArrangeShiftFace {
         anchors.fill: parent
         visible: page.shiftFace
+    }
+
+    // ---- SECTIONS sheet: the section verbs in one 64 px grid -----------
+    Rectangle {
+        id: sectionSheet
+        anchors.fill: parent
+        visible: page.sectionSheetOpen
+        color: "#9e000000"
+        z: 18
+        MouseArea {
+            anchors.fill: parent
+            onClicked: page.sectionSheetOpen = false
+        }
+        Rectangle {
+            width: Math.min(560, page.width - 32)
+            height: sheetColumn.implicitHeight + 24
+            anchors.centerIn: parent
+            radius: Style.cornerPanel
+            color: Style.raised
+            border.width: 2
+            border.color: Style.accent
+
+            Column {
+                id: sheetColumn
+                x: 12
+                y: 12
+                width: parent.width - 24
+                spacing: Style.gap
+
+                Row {
+                    width: parent.width
+                    height: 26
+                    Text {
+                        width: parent.width - 150
+                        height: parent.height
+                        text: "SECTIONS  " + arrange.selectedSectionName
+                        color: Style.text
+                        font.pixelSize: 18
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        width: 150
+                        height: parent.height
+                        text: arrange.sectionCount + " SECTIONS"
+                        color: Style.textDim
+                        font.pixelSize: 14
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
+
+                Grid {
+                    width: parent.width
+                    columns: 2
+                    spacing: Style.gap
+                    TouchButton {
+                        width: (parent.width - Style.gap) / 2
+                        height: 64
+                        text: "ADD SECTION"
+                        textSize: 16
+                        focusId: "arrange.addsection"
+                        onClicked: arrange.addSection()
+                    }
+                    TouchButton {
+                        width: (parent.width - Style.gap) / 2
+                        height: 64
+                        text: "DUP SECTION"
+                        textSize: 16
+                        focusId: "arrange.dupsection"
+                        onClicked: arrange.duplicateSection()
+                    }
+                    TouchButton {
+                        width: (parent.width - Style.gap) / 2
+                        height: 64
+                        text: "LOOP SECTION"
+                        textSize: 16
+                        focusId: "arrange.loopsection"
+                        onClicked: arrange.loopSection()
+                    }
+                    TouchButton {
+                        width: (parent.width - Style.gap) / 2
+                        height: 64
+                        text: "LEN " + arrange.lengthText
+                        textSize: 16
+                        focusId: "arrange.length"
+                        onClicked: arrange.openLengthPopup()
+                    }
+                    TouchButton {
+                        width: (parent.width - Style.gap) / 2
+                        height: 64
+                        text: "RENAME"
+                        textSize: 16
+                        onClicked: app.requestArrangeSectionRename()
+                    }
+                    TouchButton {
+                        width: (parent.width - Style.gap) / 2
+                        height: 64
+                        text: "CLOSE"
+                        textSize: 16
+                        variant: "ghost"
+                        onClicked: page.sectionSheetOpen = false
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- SONG sheet: render + the song-wide verbs ----------------------
+    Rectangle {
+        id: songSheet
+        anchors.fill: parent
+        visible: page.songSheetOpen
+        color: "#9e000000"
+        z: 17
+        MouseArea {
+            anchors.fill: parent
+            onClicked: page.songSheetOpen = false
+        }
+        Rectangle {
+            width: Math.min(480, page.width - 32)
+            height: songColumn.implicitHeight + 24
+            anchors.centerIn: parent
+            radius: Style.cornerPanel
+            color: Style.raised
+            border.width: 2
+            border.color: Style.accent
+
+            Column {
+                id: songColumn
+                x: 12
+                y: 12
+                width: parent.width - 24
+                spacing: Style.gap
+
+                Text {
+                    width: parent.width
+                    height: 26
+                    text: "SONG ACTIONS"
+                    color: Style.text
+                    font.pixelSize: 18
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                }
+                TouchButton {
+                    width: parent.width
+                    height: 64
+                    text: "RENDER SONG"
+                    textSize: 18
+                    variant: "primary"
+                    onClicked: {
+                        page.songSheetOpen = false
+                        app.renderSong()
+                    }
+                }
+                Row {
+                    width: parent.width
+                    height: 56
+                    spacing: Style.gap
+                    TouchButton {
+                        width: (parent.width - Style.gap) / 2
+                        height: parent.height
+                        text: "LEN " + arrange.lengthText
+                        textSize: 14
+                        onClicked: {
+                            page.songSheetOpen = false
+                            arrange.openLengthPopup()
+                        }
+                    }
+                    TouchButton {
+                        width: (parent.width - Style.gap) / 2
+                        height: parent.height
+                        text: arrange.loopOn ? "LOOP ON" : "LOOP OFF"
+                        textSize: 14
+                        checked: arrange.loopOn
+                        onClicked: arrange.setLoopOn(!arrange.loopOn)
+                    }
+                }
+                TouchButton {
+                    width: parent.width
+                    height: 56
+                    text: "CLOSE"
+                    textSize: 16
+                    variant: "ghost"
+                    onClicked: page.songSheetOpen = false
+                }
+            }
+        }
     }
 
     // ---- LEN stepper popup ------------------------------------------------
@@ -648,7 +968,7 @@ Item {
         MouseArea { anchors.fill: parent; onClicked: {} }
         Rectangle {
             width: 380
-            height: 196
+            height: 232
             anchors.centerIn: parent
             radius: Style.cornerPanel
             color: Style.raised
@@ -661,50 +981,51 @@ Item {
                 spacing: Style.gapTight
                 Text {
                     width: parent.width
-                    height: 24
+                    height: 26
                     text: "SONG LENGTH  LEN " + arrange.lengthText
                     color: Style.text
-                    font.pixelSize: Style.fontTitle
+                    font.pixelSize: 18
                     font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
                 }
                 Row {
                     width: parent.width
-                    height: Style.touch
+                    height: 56
                     spacing: Style.gapTight
                     TouchButton { width: (parent.width - Style.gapTight) / 2;
                                   height: parent.height; text: "BARS -";
-                                  textSize: Style.fontSmall;
+                                  textSize: 16;
                                   focusId: "arrange.length.decbar";
                                   onClicked: arrange.adjustLengthBars(-1) }
                     TouchButton { width: (parent.width - Style.gapTight) / 2;
                                   height: parent.height; text: "BARS +";
-                                  textSize: Style.fontSmall;
+                                  textSize: 16;
                                   focusId: "arrange.length.incbar";
                                   onClicked: arrange.adjustLengthBars(1) }
                 }
                 Row {
                     width: parent.width
-                    height: Style.touch
+                    height: 56
                     spacing: Style.gapTight
                     TouchButton { width: (parent.width - Style.gapTight) / 2;
                                   height: parent.height; text: "BEATS -";
-                                  textSize: Style.fontSmall;
+                                  textSize: 16;
                                   focusId: "arrange.length.decbeat";
                                   onClicked: arrange.adjustLengthBeats(-1) }
                     TouchButton { width: (parent.width - Style.gapTight) / 2;
                                   height: parent.height; text: "BEATS +";
-                                  textSize: Style.fontSmall;
+                                  textSize: 16;
                                   focusId: "arrange.length.incbeat";
                                   onClicked: arrange.adjustLengthBeats(1) }
                 }
                 Row {
                     width: parent.width
-                    height: Style.touch
+                    height: 56
                     spacing: Style.gapTight
                     Item { width: parent.width - 96; height: 1 }
                     TouchButton { width: 96; height: parent.height; text: "DONE";
-                                  textSize: Style.fontSmall; variant: "primary";
+                                  textSize: 16; variant: "primary";
                                   focusId: "arrange.length.done";
                                   onClicked: arrange.closeLengthPopup() }
                 }

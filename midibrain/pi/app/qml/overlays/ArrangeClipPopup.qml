@@ -4,9 +4,11 @@ import "../components"
 
 // ARRANGE clip "..." sheet (docs/daw-plan.md W6). One clip at a time: OPEN EDIT
 // hands the take to the W3 edit popup, MOVE/TRIM arm the touch drag and the
-// panel value knob, DUPLICATE/MUTE/DELETE are instant, and GAIN/FADE opens the
-// three KnobChip cards (never a slider). The panel ring is trapped while this
-// sheet is open (AppController::rebuildFocusIds).
+// panel value knob (pos/length stay editable through the sheet AND the
+// encoder, never drag-only), DUPLICATE/MUTE/DELETE are instant, and GAIN/FADE
+// opens the three KnobChip cards (never a slider). The panel ring is trapped
+// while this sheet is open (AppController::rebuildFocusIds). Sizes are inline:
+// 52 px secondary actions, 14-18 px labels.
 Rectangle {
     id: root
 
@@ -39,25 +41,25 @@ Rectangle {
 
             Row {
                 width: parent.width
-                height: 24
+                height: 26
                 Text {
-                    width: parent.width - 190
+                    width: parent.width - 200
                     height: parent.height
                     text: arrange.clipMenuTitle
                     color: Style.text
-                    font.pixelSize: Style.fontTitle
+                    font.pixelSize: 18
                     font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
                 Text {
-                    width: 190
+                    width: 200
                     height: parent.height
                     text: arrange.clipMenuPane === 0
-                          ? "TAP AN ACTION - THE RING STOPS HERE"
+                          ? "TAP AN ACTION"
                           : "GAIN / FADES - LIVE"
                     color: Style.textDim
-                    font.pixelSize: Style.fontSmall
+                    font.pixelSize: 14
                     horizontalAlignment: Text.AlignRight
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
@@ -71,25 +73,26 @@ Rectangle {
                 spacing: Style.gapTight
                 Text {
                     width: parent.width
-                    height: 18
+                    height: 20
                     text: arrange.clipPositionText + "   " + arrange.clipLengthText
                     color: Style.textDim
-                    font.pixelSize: Style.fontSmall
+                    font.pixelSize: 14
+                    verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
                 Grid {
                     width: parent.width
                     columns: 2
-                    spacing: Style.gapTight
+                    spacing: Style.gap
                     Repeater {
                         model: arrange.clipActions
                         delegate: TouchButton {
-                            width: (parent.width - Style.gapTight) / 2
-                            height: Style.touch
+                            width: (parent.width - Style.gap) / 2
+                            height: 52
                             text: (index === 5 && arrange.clipMuted)
                                   ? "UNMUTE"
                                   : modelData
-                            textSize: Style.fontSmall
+                            textSize: 16
                             variant: index === 6 ? "danger" : "secondary"
                             focusId: "arrange.clip.action." + index
                             onClicked: arrange.clipMenuAction(index)
@@ -105,7 +108,7 @@ Rectangle {
                 spacing: Style.gapTight
                 Row {
                     width: parent.width
-                    height: Style.touch
+                    height: 56
                     spacing: Style.gapTight
                     KnobChip {
                         width: (parent.width - Style.gapTight * 2) / 3
@@ -160,21 +163,21 @@ Rectangle {
                     width: parent.width
                     text: "Gain and fades are non-destructive clip values; the take file is never rewritten. 0 dB / 0 beats are the defaults."
                     color: Style.textDim
-                    font.pixelSize: Style.fontSmall
+                    font.pixelSize: 14
                     wrapMode: Text.Wrap
                 }
             }
 
             Row {
                 width: parent.width
-                height: Style.touch
+                height: 56
                 spacing: Style.gapTight
                 TouchButton {
                     width: 96
                     height: parent.height
                     text: arrange.clipMenuPane === 0 ? "" : "BACK"
                     visible: arrange.clipMenuPane !== 0
-                    textSize: Style.fontSmall
+                    textSize: 16
                     variant: "ghost"
                     focusId: "arrange.clip.pane.back"
                     onClicked: arrange.showClipMenuActions()
@@ -184,7 +187,7 @@ Rectangle {
                     width: 104
                     height: parent.height
                     text: "CLOSE"
-                    textSize: Style.fontSmall
+                    textSize: 16
                     variant: "ghost"
                     focusId: "arrange.clip.close"
                     onClicked: arrange.closeClipMenu()
