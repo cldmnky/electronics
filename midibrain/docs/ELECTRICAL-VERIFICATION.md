@@ -36,7 +36,7 @@ along the first row instead of in the second pair, so every net after pin 2 sat
 on the wrong physical pad.
 
 Fix: both connectors now use the exact parts already selected in
-`docs/design-review.md`:
+the historical design-review record (removed in the 2026-11-06 consolidation; git history):
 
 | Ref | Part | LCSC | Pads |
 |---|---|---|---|
@@ -472,7 +472,7 @@ fixed:
 7. **Not re-verified here:** SN74LVC1G126 pinout and maximum height, MMBT3906
    pinout, B5819W polarity (the checker verifies the net pair only), TRS jack
    contact continuity, and every mechanical question in
-   `docs/design-review.md`. The 2.2 mm TLP2361 height fits the existing SO-6
+   the historical design-review record. The 2.2 mm TLP2361 height fits the existing SO-6
    land area; no 3D clearance check was run.
 8. No ERC, DRC sign-off, Gerber review, first article or hardware measurement
    was performed. The 5 V sender source, the resistor tolerances and the

@@ -1,6 +1,6 @@
 # mnkybox
 
-A planned **26HP/3U** Eurorack recorder and MIDI hub (module name **mnkybox**; `midibrain/` stays the project/repo identifier) using a removable Raspberry Pi 5 and Pico 2, a **128 × 112 mm front/UI PCB**, a **20HP (101.6 × 112 mm) rear/base PCB**, and a separate front panel. Manufacturing target: **JLCPCB fabrication and SMD assembly, with SMD parts sourced from JLCPCB/LCSC**; through-hole parts are hand-soldered, except the Bourns PEC11R encoder, which needs a qualified THT process (hand soldering is not recommended). This directory is a **work in progress, not a fabrication release**. Both tscircuit boards now contain prototype schematics, placed components and routed copper, but the mechanical stack, cable envelopes, manufacturing review and physical first article are unresolved. Do not manufacture or order them yet.
+A planned **26HP/3U** Eurorack recorder and MIDI hub (module name **mnkybox**; `midibrain/` stays the project/repo identifier) using a removable Raspberry Pi 5 and Pico 2, a **128 × 112 mm front/UI PCB**, a **20HP (101.6 × 112 mm) rear/base PCB**, and a separate front panel. Manufacturing target: **JLCPCB fabrication and SMD assembly, with SMD parts sourced from JLCPCB/LCSC**; through-hole parts are hand-soldered, except the Bourns PEC11R encoder, which needs a qualified THT process (hand soldering is not recommended). The boards are fully designed and routed; the mechanical stack, cable envelopes and physical first article are open acceptance items (tracked in `hardware-acceptance.json`, which `make release` enforces). The companion software -- Pi DAW app (Qt 6 QML), Pico 2 firmware and the shared MIDI FX core -- is built and running on a studio Pi 5 with a UMC1820; see [docs/USER-MANUAL.md](docs/USER-MANUAL.md) for the instrument and [pi/README.md](pi/README.md) for the code.
 
 The user-supplied original front-panel reference is [`assets/front-panel-concept.png`](assets/front-panel-concept.png). The new [`assets/front-panel.svg`](assets/front-panel.svg) ([PNG snapshot](assets/front-panel-preview.png)) is generated from tentative centres in `tscircuit/lib/layout.ts`: REC/OVER DUB/STOP/PLAY/PLAY START below the 3.5-inch landscape display, with LEDs above REC/OVER DUB/PLAY; TEMPO/NAV to its right, and SHIFT/EXIT below NAV. It is illustrative, **not a cutting template**. Waveshare 3.5inch DSI LCD (H), SKU 33087, is the selected display candidate. It uses the Pi 5 DSI1 connector, 3.3 V and I2C touch on one 15-pin cable; no HDMI or touch-USB cable. The LCD mounts on the front board at the vendor’s asymmetric 58 × 49 mm hole pattern; the FR-4 front panel has an 89.2 × 56.3 mm cutout and 4 mm light-pipe holes above the three 0805 LEDs. Real mounting and cable envelopes still require validation.
 
@@ -40,10 +40,9 @@ recommended), and SparkFun CAB-15455 is rejected for the 5 A USB-C path.
 - [USB feedthroughs, panel cutouts and strain relief](docs/feedthroughs.md)
 - [JLCPCB DRC/ERC and fabrication check](docs/fab-check.md)
 - [SPICE design checks and results](docs/spice.md)
-- [Design review: mechanical/electrical blockers and decisions](docs/design-review.md)
 - [Acceptance and next steps](docs/acceptance.md)
 - [Evidence format and hardware fingerprint](docs/evidence/README.md)
 
 Prototype PCB renders: [front/UI](assets/front-pcb.png) and [20HP base](assets/base-pcb.png). These are routed design artifacts, not fabrication releases; the autorouter output has not been reviewed for manufacturing or signal integrity.
 
-No recorder, real MIDI interfaces, Pico firmware, Pi SPI driver or finished schematics have yet been implemented. Do not confuse successful build or tests with first-milestone completion.
+`make order` exports the three-board JLCPCB upload set and prints the order sheet (fab intent = production); `make release` remains the fail-closed acceptance harness. The encoder needs a qualified THT process; SparkFun CAB-15455 is rejected for the 5 A USB-C path.

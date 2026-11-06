@@ -106,5 +106,5 @@ never edit a CPL merely to force a match.
   strain relief are still pending.
 
 See [assembly.md](assembly.md), [MECHANICAL-VERIFICATION.md](MECHANICAL-VERIFICATION.md)
-and [HARDWARE-REVIEW.md](HARDWARE-REVIEW.md). No source document or generated
+and the physical acceptance record ([acceptance.md](acceptance.md)). No source document or generated
 packet is a substitute for the required reviewed evidence.

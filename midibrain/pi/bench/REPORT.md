@@ -222,3 +222,22 @@ sh run/04-clock-model.sh 60
   has only been exercised in its refusal path.
 - The `UsbClock` numbers from `clock_model` are model output fed with measured
   latency, not Pico behaviour.
+
+## 8. Post-fix jitter (2026-11-06, after the fine-schedule emitter)
+
+The 1 ms poll emitter (the root cause named above) was replaced with a
+phase-targeted timer thread; UsbClock phase discipline unchanged. Re-run on
+the studio Pi via run/01-tap-clock.sh (app-emit |interval-nominal|):
+
+| run | avg | p95 | p99 | max |
+|---|---|---|---|---|
+| before (this report, 600 s) | 540-585 us | 967-1244 us | 2750-3300 us | 8900-9100 us |
+| after, 120 s (5760 int/port) | 28.5-30.1 us | 92.7-97.7 us | 127.9-137.9 us | 531.7-574.7 us |
+| after, 180 s (8640 int/port) | 26.7-28.2 us | 90-92 us | 116-121 us | 889-926 us |
+
+Fan-out spread avg/p95/max: 181/374/6260 us -> 51/96/214 us (120 s),
+51/90/203 us (180 s). Tempo error ~0.0000%. p95 < 1 ms met with ~10x
+margin, repeatable. The drumlogue wire round trip stays ~1.9 ms p95 (the
+device's own clock/latency, not app emission). The <=1 ms TRS wire item
+still awaits the physical Pico jacks; this remains the USB-mirror proxy
+the original sections measured.

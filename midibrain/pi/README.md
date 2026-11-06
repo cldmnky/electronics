@@ -113,19 +113,26 @@ Two macOS dev-machine facts are baked into the root build:
 * JUCE licence (GPLv3 vs commercial) is undecided, so no binary built here may
   be distributed yet.
 
-## Status
+## Status (2026-11-06)
 
-Working today: root configure/build on macOS arm64, RtMidi compiled once, the
-core module libraries and their CTest suites (link, MIDI incl. learn table,
-audio incl. built-in FX suite, CLAP host + example plugin, versioned sessions),
-the JUCE touchscreen application (`mnkybox`, `--emulator` backends verified
-running with link up and real CLAP load), and the headless `mnky_selftest`
-(link/MIDI/record/CLAP/WAV, exit 0). UI: dark theme with measured contrast,
-banked mixer, patchbay routing, Projects tab (save/load/rename/delete, dirty
-tracking, touch keyboard), transport strip, metronome toggle, take rename —
-all screenshot-verified at 800x480 in a Linux guest. Audio backends: ALSA
-default + JACK selectable, proven streaming in-guest.
+Built and running on macOS (dev) and the studio Pi 5 (product host, UMC1820):
 
-Not yet: any Pi hardware run, real touch input, audio/MIDI timing or latency
-measurement, EQ grid + X/Y performance screens, MIDI-learn capture mode UI,
-external-clock follow, take audition, CUE bus.
+- **App**: Qt 6 QML (`mnkybox`), 9 tabs + SHIFT faces + popups; dynamic mixer
+  (tracks are created, up to 64 with stereo pairs), track modes
+  (PLAY/ARM/OVERDUB/LIVE), record start modes (NOW/COUNT-IN/PUNCH), record
+  source (PRE/POST/POST+FX), take manager + take-to-track, edit popup with
+  full-width waveforms (W3), per-track FX rack (FX1/FX2 selectable:
+  built-in delay/reverb + CLAP plugins, lazy 16-instance hosting), EQ +
+  per-track X/Y, panel/touch parity (NAV/EDIT/SHIFT + value knob), value
+  popups, slider law, `--ui-taps` headless tap gate (every control).
+- **Cores**: link (SPI + no-pico Pi clock master), MIDI (router, per-device
+  USB ports, MIDI-learn), audio (64-track engine, per-track EQ inserts,
+  take playback + regions + loops, song clip scheduler, RENDER SONG),
+  CLAP host + example plugin, sessions v2 (song + takes + rack + router).
+- **Tooling**: `--ui-taps` regression gate, `--screenshots`, emulator +
+  headless selftest, studio bench harness (jitter/latency/gadget probes),
+  updater core (`pi/update`, UF2 + BOOTSEL).
+
+Open: DAW W3 in flight (edit popup polish), W4/W5 (song UI + arranger)
+next; hardware acceptance items (see docs/acceptance.md); physical touch
+and timing measurement; brain-os image parked.

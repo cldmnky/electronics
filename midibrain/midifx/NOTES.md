@@ -1,6 +1,6 @@
 # midifx — shared MIDI FX core, pipe schema and codegen
 
-Status: **phases 1–2 of `docs/midifx-library-plan.md` implemented**. The behavior
+Status: **fully implemented (core, schema, codegen, schema-driven UI, presets; its plan doc retired in the doc consolidation)**. The behavior
 DSL stays out of scope. The Pi-side adoption of the core is deliberately
 deferred (a parallel worker owns `pi/midi`); nothing in `pi/` is changed here.
 

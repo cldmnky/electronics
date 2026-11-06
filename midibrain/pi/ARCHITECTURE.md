@@ -109,27 +109,20 @@ pi/
   params+state exts). Builds as a loadable module here; bundle layout + Pi
   notes in its README. It is the default FX for sends and the emulator.
 
-## Wave 2 (after core lands + parent integrates)
+## Current state (2026-11-06)
 
-- `app/`: Qt 6 QML (`mnkybox`: QGuiApplication + QQmlApplicationEngine,
-  C++ view-models bridging the JUCE-free core libs, Qt Multimedia
-  QAudioSource/QAudioSink for I/O). JUCE was removed: its Linux multitouch
-  story does not hold on our Wayland touch target, and Qt Quick handles
-  touch natively. Tabs Mixer / Routing / FX / Recorder / System / Projects,
-  ≥44 px touch targets, `--emulator` backend switch, panel-button wiring,
-  tempo/clock/link status. Code to the Qt 6.4-compatible QML subset
-  (unversioned imports) so newest-macOS and Debian-bookworm Qt both build.
-  Owns `pi/CMakeLists.txt` app target.
-- `emulator/`: `EmulatorLink/Audio/Midi` backends implementing core interfaces
-  (synth note generator, oscillator/noise channel banks) + headless `selftest`
-  binary: scripted 5 s session (link handshake, MIDI loopback, record take,
-  CLAP gain pass, WAV verify) printing PASS/FAIL, exit code meaningful.
+Everything above is built: `app/` is the Qt 6 QML touchscreen application
+(9 tabs, SHIFT faces, popups, dynamic mixer, per-track FX rack, EQ/X-Y,
+edit popup, panel/touch parity) and `emulator/` is the scripted backends +
+headless selftest. The tree also carries `update/` (Pico UF2/BOOTSEL
+updater core) and `bench/` (studio measurement harness). The one-writer
+rule and the module contracts above remain law for new work.
 
-## Acceptance per team
+## Acceptance
 
-New dir with headers + sources + `test_*.cpp` passing per the build lines
-above on this Mac, zero warnings with `-Werror`, no JUCE/Linux-only leakage
-(check: `grep -rn "juce_\|linux/\|alsa\|gpiod" <dir> --include=*.hpp --include=*.cpp`
-empty outside documented guards), plus a 20-line `NOTES.md` (what works,
-what is stubbed, Pi follow-ups). Stop when green; do not gold-plate.
-Parent reviews, integrates, commits.
+`make test` = prototype verification (typecheck, build, placement,
+protocol, SPICE). The DAW program's gates: full CTest green on both hosts,
+`--ui-taps` clean (every control tapped headless; any QML warning = fail),
+offscreen screenshot sets per wave, and the studio Pi run for anything
+touching audio/MIDI timing (see pi/STUDIO-PI.md and pi/bench/). Physical
+hardware acceptance is docs/acceptance.md's domain.

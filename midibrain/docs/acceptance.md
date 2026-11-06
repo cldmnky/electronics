@@ -109,6 +109,13 @@ holds what has actually been recorded, which is nothing yet.
 
 ## Reviewed engineering prototype (how the evidence gets produced)
 
+> **Superseded 2026-11-06 (owner decision): the prototype ceremony is
+> retired.** Boards are ordered production-intent through `make order`
+> (no decision rows, no prototype labeling). This gate remains the
+> ACCEPTANCE HARNESS: its items are closed by measurements recorded in
+> `docs/evidence/` as the hardware is built and exercised — the boards
+> ordered today are what produce that evidence.
+
 The DFM/CPL and first-article evidence can only come from prototype material, so
 the project needs an explicit prototype path that is *not* the production
 release. Policy:

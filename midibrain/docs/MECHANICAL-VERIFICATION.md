@@ -195,7 +195,7 @@ Not edited here, by instruction. Requested by the mechanical pass:
    mm with 15.6/17.9/17.9 mm slots (not 105 × 21 mm with 18 mm slots).
 4. `docs/decisions.md` — record the single 9.0 mm provisional display standoff with the Z datum, and the USB-C
    feedthrough as an open part choice rated 3 A today.
-5. `docs/design-review.md` — "LCD lowered to y = 0", "display glass y = −24…32", "8–10 mm standoffs" and
+5. the historical design-review record (removed in the 2026-11-06 doc consolidation; git history) — "LCD lowered to y = 0", "display glass y = −24…32", "8–10 mm standoffs" and
    "89.2 × 56.3 mm cutout" are stale; the display centre is (−17, 11), the aperture is 90.67 × 54.36 mm, the lens is
    88.87 × 52.56 and the 6.7/4.0 mm depth labels were reversed.
 6. `docs/acceptance.md` — add the §5 gates as named acceptance items.

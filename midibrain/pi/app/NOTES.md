@@ -490,7 +490,7 @@ pactl list short sink-inputs                                                 # o
   and one `CHAIN` button, and the chain preset file actions live in that chain
   menu popup. The chain itself is one line per pipe; tapping a row selects it and
   only the selected row carries the small BYP/up/down/remove buttons.
-* The parameter editors are **schema-driven** (midifx-library-plan phase 3).
+* The parameter editors are **schema-driven** (schema-driven pipe UI).
   `midifx/gen/gen_params.py` emits `midifx/gen/generated/midifx_ui.hpp` from
   `midifx/pipes.json`: per positional parameter a label, range, default, unit,
   choices and a display format. `pi/app/pipe_ui.cpp` is a generic adapter over
@@ -536,7 +536,7 @@ pactl list short sink-inputs                                                 # o
   pipe/param exists again. The path stays positional on purpose: the
   LearnEngine's setter table is registered once (720 paths) and a key-suffixed
   path would orphan every learned knob as soon as a pipe type changed.
-* Chain presets (midifx-library-plan phase 4): EXPORT/IMPORT on the pipe row
+* Chain presets (chain presets): EXPORT/IMPORT on the pipe row
   writes/reads one JSON file per route chain (`t`, `bypass`, `chm`, `params`
   plus the generated schema version) inside the project folder, with the take
   path entry for the name (`.json` implied). Import validates against the

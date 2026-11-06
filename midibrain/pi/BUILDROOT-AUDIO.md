@@ -1,3 +1,8 @@
+> **STATUS: PARKED (2026-11-06, owner decision).** The brain-os Buildroot
+> image work is paused; this contract is the frozen target for when it
+> resumes. Until then the verification host is the studio Pi (see
+> `pi/STUDIO-PI.md`).
+
 # PipeWire audio stack: app ↔ image contract
 
 The product audio stack is **PipeWire**. The app (this tree, Qt 6 QML) talks to
