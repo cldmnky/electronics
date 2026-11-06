@@ -72,6 +72,8 @@ void UiTapRunner::closeOverlays() {
   controller_->closeBankGrid();
   controller_->closeTakeSheet();
   controller_->closeTakeEdit();
+  controller_->arrange()->closeClipMenu();
+  controller_->arrange()->closeLengthPopup();
   controller_->hideValuePopup();
   controller_->setFullscreen(false);
   if (controller_->recording()) controller_->recToggle();
@@ -120,6 +122,15 @@ void UiTapRunner::buildScenarios() {
       // walking the strips instead of opening an overlay over them.
       excluded << QStringLiteral("mixer.bank.pages");
     }
+    if (tab == 8) {
+      // The clip sheet, the LEN stepper, the section rename keypad and the
+      // render verb own their scenarios; the screen pass covers the toolbar,
+      // section band and clip blocks.
+      excluded << QStringLiteral("arrange.rename")
+               << QStringLiteral("arrange.length")
+               << QStringLiteral("arrange.clipmenu")
+               << QStringLiteral("arrange.clip.menu");
+    }
     scenarios_.push_back(Scenario{
         QStringLiteral("screen.%1").arg(tab),
         [this, tab] {
@@ -135,6 +146,9 @@ void UiTapRunner::buildScenarios() {
           } else if (tab == 6) {
             controller_->eq()->selectMain();
             controller_->eq()->selectBand(2);
+          } else if (tab == 8) {
+            controller_->demoSeedArrange();
+            controller_->arrange()->setSongMode(true);
           }
         },
         QString(), excluded, {}, false, true});
@@ -171,6 +185,9 @@ void UiTapRunner::buildScenarios() {
             if (!controller_->routing()->routeEnabled(0, 2)) {
               controller_->routing()->toggleRoute(0, 2);
             }
+          } else if (tab == 8) {
+            controller_->demoSeedArrange();
+            controller_->arrange()->setSongMode(true);
           }
         },
         QStringLiteral("shift."), shiftExcluded, {}, false, false});
@@ -572,6 +589,113 @@ void UiTapRunner::buildScenarios() {
       },
       QStringLiteral("edit.render"), {}, {QStringLiteral("edit.render")}, false, true});
 
+  // 3i. KEYPAD TYPING (owner bug: keys dismissed the keypad and BACK looked
+  // dead). This pass opens a track-name keypad, types a real sequence, checks
+  // the QML buffer after every key, single-taps DEL (one character), long-holds
+  // DEL (clears), types a new name and commits with DONE. The buffer is read
+  // from the Keypad objectName probe; no model pointer is held across a rescan.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("keypad.typing"),
+      [this] {
+        closeOverlays();
+        controller_->setTab(0);
+        primeMixerTracks();
+        const int slot = controller_->mixer()->nextFreeSlot();
+        int target = 0;
+        if (slot >= 0 &&
+            controller_->mixer()->addTrack(slot, QStringLiteral("drums"), -1,
+                                           false, 0)) {
+          target = slot;
+        }
+        controller_->mixer()->setTrackIndex(target);
+        controller_->requestRenameTrack(target);
+      },
+      QStringLiteral("keypad."), {}, {}, false, true});
+  {
+    Scenario& scenario = scenarios_.back();
+    scenario.typing = {
+        {QStringLiteral("keypad.key.b"), QStringLiteral("drumsb"), false},
+        {QStringLiteral("keypad.key.e"), QStringLiteral("drumsbe"), false},
+        {QStringLiteral("keypad.key.a"), QStringLiteral("drumsbea"), false},
+        {QStringLiteral("keypad.key.t"), QStringLiteral("drumsbeat"), false},
+        {QStringLiteral("keypad.back"), QStringLiteral("drumsbea"), false},
+        {QStringLiteral("keypad.back"), QString(), true},
+        {QStringLiteral("keypad.key.b"), QStringLiteral("b"), false},
+        {QStringLiteral("keypad.key.e"), QStringLiteral("be"), false},
+        {QStringLiteral("keypad.key.a"), QStringLiteral("bea"), false},
+        {QStringLiteral("keypad.key.t"), QStringLiteral("beat"), false},
+        {QStringLiteral("keypad.done"), QStringLiteral("beat"), false}};
+    scenario.verify = [this] {
+      return controller_->mixer()->trackName() == QStringLiteral("beat");
+    };
+    scenario.verifyFailure =
+        QStringLiteral("DONE did not commit the typed name (expected beat)");
+  }
+
+  // 3h. ARRANGE (W4/W5): the section band/clip blocks, the clip "..." sheet,
+  // the LEN stepper, section rename, punch-into-song auto-place and RENDER SONG.
+  // Each destructive/overlay-opening verb gets its own pass so the modal it
+  // opens cannot hide the rest of the screen.
+  const auto primeArrange = [this] {
+    closeOverlays();
+    controller_->showShiftFace(false);
+    controller_->setTab(0);
+    primeMixerTracks();
+    activateRealTakes();
+    controller_->demoSeedArrange();
+    controller_->arrange()->setSongMode(true);
+    controller_->setTab(8);
+  };
+  scenarios_.push_back(Scenario{
+      QStringLiteral("arrange.screen"), primeArrange, QStringLiteral("arrange."),
+      {QStringLiteral("arrange.rename"), QStringLiteral("arrange.length"),
+       QStringLiteral("arrange.clipmenu"), QStringLiteral("arrange.render")},
+      {}, false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("arrange.rename"), primeArrange,
+      QStringLiteral("arrange.rename"), {}, {QStringLiteral("arrange.rename")},
+      false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("arrange.length"),
+      [this, primeArrange] {
+        primeArrange();
+        controller_->arrange()->openLengthPopup();
+      },
+      QStringLiteral("arrange.length."), {}, {}, false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("arrange.render"), primeArrange,
+      QStringLiteral("arrange.render"), {}, {QStringLiteral("arrange.render")},
+      true, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("arrange.punch"),
+      [this, primeArrange] {
+        primeArrange();
+        controller_->demoPunchAutoPlace();
+      },
+      QStringLiteral("arrange.clip."), {}, {}, false, true});
+  // Clip "..." actions: OPEN EDIT opens the W3 popup, DELETE opens the confirm,
+  // so those get terminal-only passes; MOVE/TRIM/DUPLICATE/MUTE each run in
+  // their own pass because MOVE/TRIM close the sheet on the pick.
+  const auto openClipSheet = [this, primeArrange] {
+    primeArrange();
+    controller_->arrange()->openClipMenu(0);
+  };
+  for (int action : {0, 1, 2, 3, 5, 6}) {
+    const QString id = QStringLiteral("arrange.clip.action.%1").arg(action);
+    scenarios_.push_back(Scenario{
+        QStringLiteral("arrange.clip.action.%1").arg(action), openClipSheet, id,
+        {}, {id}, false, true});
+  }
+  scenarios_.push_back(Scenario{
+      QStringLiteral("arrange.clip.gain"),
+      [this, openClipSheet] {
+        openClipSheet();
+        controller_->arrange()->clipMenuAction(4);
+      },
+      QStringLiteral("arrange.clip."),
+      {QStringLiteral("arrange.clip.close"), QStringLiteral("arrange.clip.pane.back")},
+      {QStringLiteral("arrange.clip.close")}, false, true});
+
   // 4. Every ConfigPopup kind. One pass taps all non-terminal controls and ends
   // with CANCEL; a second pass opens the same kind and taps OK, so both draft
   // paths and every focus stop in the popup are exercised.
@@ -798,6 +922,7 @@ void UiTapRunner::beginScenario() {
   scenarioStarted_ = true;
   scenarioSawTarget_ = false;
   tapped_.clear();
+  typingIndex_ = 0;
   scenarios_[scenarioIndex_].setup();
   std::printf("ui-taps: -- %s\n", qPrintable(scenarios_[scenarioIndex_].name));
   scheduleNext(kScenarioDelayMs);
@@ -840,6 +965,107 @@ void UiTapRunner::collectTargets(QQuickItem* item, std::vector<Target>& targets)
   }
 }
 
+void UiTapRunner::typingNext() {
+  auto& scenario = scenarios_[scenarioIndex_];
+  if (typingIndex_ >= static_cast<int>(scenario.typing.size())) {
+    if (scenario.verify && !scenario.verify()) {
+      std::fprintf(stderr, "ui-taps: FAIL %s: %s\n", qPrintable(scenario.name),
+                   qPrintable(scenario.verifyFailure));
+      ++failures_;
+    }
+    finishScenario();
+    return;
+  }
+  const TypeStep& step =
+      scenario.typing[static_cast<std::size_t>(typingIndex_)];
+  QQuickItem* target = findFocusTarget(step.focusId);
+  if (target == nullptr) {
+    std::fprintf(stderr, "ui-taps: FAIL %s: no target %s\n",
+                 qPrintable(scenario.name), qPrintable(step.focusId));
+    ++failures_;
+    finishScenario();
+    return;
+  }
+  scenarioSawTarget_ = true;
+  tapped_.push_back(step.focusId);
+  ++taps_;
+  std::printf("ui-taps:    type %s\n", qPrintable(step.focusId));
+  if (step.longPress) {
+    press(window_, target);
+    QTimer::singleShot(700, this, [this, step] {
+      QQuickItem* held = findFocusTarget(step.focusId);
+      if (held != nullptr) release(window_, held);
+      const QString buffer = keypadBuffer();
+      std::printf("ui-taps:      hold -> \"%s\" (expected \"%s\")\n",
+                  qPrintable(buffer), qPrintable(step.expectedBuffer));
+      if (buffer != step.expectedBuffer) {
+        std::fprintf(stderr, "ui-taps: FAIL %s: buffer \"%s\" != \"%s\"\n",
+                     qPrintable(scenarios_[scenarioIndex_].name),
+                     qPrintable(buffer), qPrintable(step.expectedBuffer));
+        ++failures_;
+      }
+      ++typingIndex_;
+      scheduleNext(kTapDelayMs);
+    });
+    return;
+  }
+  (void)tap(window_, target, 0);
+  const QString buffer = keypadBuffer();
+  std::printf("ui-taps:      buffer \"%s\" (expected \"%s\")\n",
+              qPrintable(buffer), qPrintable(step.expectedBuffer));
+  if (buffer != step.expectedBuffer) {
+    std::fprintf(stderr, "ui-taps: FAIL %s: buffer \"%s\" != \"%s\"\n",
+                 qPrintable(scenario.name), qPrintable(buffer),
+                 qPrintable(step.expectedBuffer));
+    ++failures_;
+  }
+  ++typingIndex_;
+  scheduleNext(kTapDelayMs);
+}
+
+QQuickItem* UiTapRunner::findFocusTarget(const QString& focusId) const {
+  for (const auto& target : visibleTargets()) {
+    if (target.focusId == focusId) return target.item;
+  }
+  return nullptr;
+}
+
+QQuickItem* UiTapRunner::findObjectByName(QQuickItem* item, const QString& name) {
+  if (item == nullptr) return nullptr;
+  if (item->objectName() == name) return item;
+  for (QQuickItem* child : item->childItems()) {
+    if (QQuickItem* found = findObjectByName(child, name)) return found;
+  }
+  return nullptr;
+}
+
+QString UiTapRunner::keypadBuffer() const {
+  QQuickItem* keypad = findObjectByName(window_->contentItem(),
+                                        QStringLiteral("keypad"));
+  if (keypad == nullptr) return QString();
+  return keypad->property("buffer").toString();
+}
+
+void UiTapRunner::press(QQuickWindow* window, QQuickItem* item) {
+  if (window == nullptr || item == nullptr) return;
+  const QPointF scene =
+      item->mapToScene(QPointF(item->width() / 2.0, item->height() / 2.0));
+  const QPoint global = window->mapToGlobal(scene.toPoint());
+  QMouseEvent event(QEvent::MouseButtonPress, scene, QPointF(global),
+                    Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+  QCoreApplication::sendEvent(window, &event);
+}
+
+void UiTapRunner::release(QQuickWindow* window, QQuickItem* item) {
+  if (window == nullptr || item == nullptr) return;
+  const QPointF scene =
+      item->mapToScene(QPointF(item->width() / 2.0, item->height() / 2.0));
+  const QPoint global = window->mapToGlobal(scene.toPoint());
+  QMouseEvent event(QEvent::MouseButtonRelease, scene, QPointF(global),
+                    Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+  QCoreApplication::sendEvent(window, &event);
+}
+
 void UiTapRunner::tapNext() {
   if (!scenarioStarted_) {
     if (scenarioIndex_ >= scenarios_.size()) {
@@ -847,6 +1073,10 @@ void UiTapRunner::tapNext() {
       return;
     }
     beginScenario();
+    return;
+  }
+  if (!scenarios_[scenarioIndex_].typing.empty()) {
+    typingNext();
     return;
   }
   if (tapped_.size() > kMaxTapsPerScenario) {

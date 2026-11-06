@@ -46,6 +46,11 @@ class UiTapRunner final : public QObject {
     QQuickItem* item = nullptr;
     QString focusId;
   };
+  struct TypeStep {
+    QString focusId;
+    QString expectedBuffer;
+    bool longPress = false;
+  };
   struct Scenario {
     QString name;
     std::function<void()> setup;
@@ -58,6 +63,12 @@ class UiTapRunner final : public QObject {
     // that only reacts to onPositionChanged (the EDIT edge handles) is covered
     // by the run and not only by the press.
     bool dragTerminal = false;
+    // Scripted typing pass: tap these keys in order and assert the QML keypad
+    // buffer after each one. `verify` runs after the last step (e.g. the
+    // committed model value).
+    std::vector<TypeStep> typing{};
+    std::function<bool()> verify{};
+    QString verifyFailure{};
   };
 
   void buildScenarios();
@@ -75,6 +86,12 @@ class UiTapRunner final : public QObject {
   void clearMixerTracks();
   void beginScenario();
   void tapNext();
+  void typingNext();
+  QQuickItem* findFocusTarget(const QString& focusId) const;
+  QString keypadBuffer() const;
+  static QQuickItem* findObjectByName(QQuickItem* item, const QString& name);
+  static void press(QQuickWindow* window, QQuickItem* item);
+  static void release(QQuickWindow* window, QQuickItem* item);
   void finishScenario();
   void finish();
   void scheduleNext(int delayMs);
@@ -95,6 +112,7 @@ class UiTapRunner final : public QObject {
   QStringList warnings_;
   int taps_ = 0;
   int failures_ = 0;
+  int typingIndex_ = 0;
   QtMessageHandler previousHandler_ = nullptr;
   static UiTapRunner* active_;
 };

@@ -144,6 +144,22 @@ class AudioGlue final : private audio::DeviceClient {
   bool setActiveTake(int track, const std::filesystem::path& path,
                      std::string* error = nullptr);
   void clearActiveTake(int track);
+  // --- SONG mode / clip scheduler / RENDER SONG (W4/W5) ---------------------
+  // SONG mode swaps the take voice to the per-track clip lanes; false restores
+  // the legacy Active-take/loops path exactly. The app only enables it when the
+  // arrangement has clips, so an empty song keeps the W1 take path audible.
+  void setSongMode(bool on);
+  bool songMode() const;
+  // Applies one track's already-resolved song lane (absolute take paths). An
+  // empty list clears the lane. Returns false with the engine's reason.
+  bool setSongClips(int track, const std::vector<audio::SongClip>& clips,
+                     std::string* error = nullptr);
+  void clearSongClips(int track);
+  // RENDER SONG: writes a stereo 48 kHz master WAV of `lengthBars` bars. The
+  // audio callback is paused for the duration (the engine contract says it
+  // must be stopped or paused); no divider/fader/mute state is changed.
+  bool renderSong(const std::string& path, int lengthBars,
+                  std::filesystem::path* out, std::string* error = nullptr);
   // Control-thread non-destructive region edit (Engine::setTakeRegions, session
   // v2 takes.edit). An empty list clears the edit and resumes the take stack;
   // the caller resolves each region's take key to a path first. Re-apply after
@@ -213,6 +229,9 @@ class AudioGlue final : private audio::DeviceClient {
   std::string backend_;  // live backend description for the System readout
   std::string deviceName_;
   std::string inputName_;
+  // The audio callback and the control-thread RENDER SONG hold this: the
+  // engine's offline render is only valid with no callback inside process().
+  std::mutex renderLock_;
 
   AudioBackendChoice choice_;
   AudioBackendAvailability availability_;

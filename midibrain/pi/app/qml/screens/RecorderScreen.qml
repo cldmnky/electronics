@@ -231,7 +231,7 @@ Item {
                     x: 72
                     width: parent.width * 0.30
                     height: parent.height
-                    text: (model.imported ? "PTR  " : "") + model.name
+                    text: (model.imported ? "PTR  " : (model.master ? "MASTER  " : "")) + model.name
                     color: Style.text
                     font.pixelSize: Style.fontBody
                     font.weight: Font.DemiBold

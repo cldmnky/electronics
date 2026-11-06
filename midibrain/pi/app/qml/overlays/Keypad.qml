@@ -12,6 +12,9 @@ Rectangle {
     color: "#9e000000"
     visible: app.keypadOpen
     z: 100
+    // Tap-runner probe: the buffer is QML-local by design, so the typing
+    // regression scenario reads this object's `buffer` property.
+    objectName: "keypad"
 
     property string buffer: ""
     property int cursor: 0
@@ -51,9 +54,12 @@ Rectangle {
         }
     }
 
+    // Outside a popup is never a dismiss: the ConfigPopup contract applies to
+    // the keypad too. Only CANCEL, DONE (accept) and EXIT close it. This
+    // background swallows stray touches.
     MouseArea {
         anchors.fill: parent
-        onClicked: app.keypadCancel()
+        onClicked: {}
     }
 
     Rectangle {
@@ -65,6 +71,14 @@ Rectangle {
         radius: Style.cornerPanel
         border.width: Style.outlineWidth
         border.color: Style.outline
+
+        // A click on the panel's blank area must not bubble to the background
+        // or to the previous screen. Keys are declared after this and stay on
+        // top, so their taps reach the key handlers first.
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {}
+        }
 
         Column {
             anchors.fill: parent
@@ -143,6 +157,12 @@ Rectangle {
                             height: keyRow.height
                             text: keyRow.rowText.charAt(index)
                             textSize: 16
+                            focusId: {
+                                const character = keyRow.rowText.charAt(index)
+                                if (character === "<") return "keypad.cursor.left"
+                                if (character === ">") return "keypad.cursor.right"
+                                return "keypad.key." + character
+                            }
                             onClicked: {
                                 const character = keyRow.rowText.charAt(index)
                                 if (character === "<") {
@@ -180,6 +200,7 @@ Rectangle {
                     height: actionRow.height
                     text: "SPACE"
                     textSize: Style.fontSmall
+                    focusId: "keypad.space"
                     onClicked: root.insert(" ")
                 }
                 TouchButton {
@@ -187,6 +208,7 @@ Rectangle {
                     height: actionRow.height
                     text: "<"
                     textSize: 18
+                    focusId: "keypad.left"
                     onClicked: if (root.cursor > 0) root.cursor -= 1
                     onLongClicked: root.cursor = Math.max(0, root.cursor - 2)
                 }
@@ -195,14 +217,18 @@ Rectangle {
                     height: actionRow.height
                     text: ">"
                     textSize: 18
+                    focusId: "keypad.right"
                     onClicked: if (root.cursor < root.buffer.length) root.cursor += 1
                     onLongClicked: root.cursor = Math.min(root.buffer.length, root.cursor + 2)
                 }
                 TouchButton {
                     width: actionRow.unit
                     height: actionRow.height
-                    text: "BACK"
+                    // DEL = one character; hold it to clear (A2). CLEAR is
+                    // the explicit whole-buffer key beside it.
+                    text: "DEL"
                     textSize: Style.fontSmall
+                    focusId: "keypad.back"
                     onClicked: root.backspace()
                     // A2: 600 ms on BACK clears the whole buffer.
                     onLongClicked: {
@@ -215,6 +241,7 @@ Rectangle {
                     height: actionRow.height
                     text: "CLEAR"
                     textSize: Style.fontSmall
+                    focusId: "keypad.clear"
                     onClicked: { root.buffer = ""; root.cursor = 0 }
                 }
                 TouchButton {
@@ -223,6 +250,7 @@ Rectangle {
                     text: "CANCEL"
                     textSize: Style.fontSmall
                     variant: "ghost"
+                    focusId: "keypad.cancel"
                     onClicked: app.keypadCancel()
                 }
                 // C9: button = verb. The keypad's action is named by its title
@@ -233,6 +261,7 @@ Rectangle {
                     text: "DONE"
                     variant: "primary"
                     textSize: Style.fontBody
+                    focusId: "keypad.done"
                     onClicked: app.keypadAccept(root.buffer)
                 }
             }

@@ -3,12 +3,19 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <system_error>
 #include <utility>
 #include <vector>
+
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
+#include <QSaveFile>
 
 #include "../../session/session.hpp"
 #include "app_state.hpp"
@@ -124,6 +131,77 @@ struct SlotTargets {
   std::array<session::FxSlotTarget*, session::kFxBuses> pointers;
 };
 
+// W4/W5 settled song fields that session::SongState does not carry yet. The
+// sidecar is app-owned and deliberately temporary:
+// TODO(fold-into-session): SongState gains mode/lengthBeats/loop; then this
+// writer/reader and arrange.mnkybox are deleted and the fields ride in
+// project.mnkybox.
+bool saveArrangeSidecar(const std::filesystem::path& directory,
+                        const SessionSettings& settings, std::string& error) {
+  QJsonObject loop;
+  loop.insert(QStringLiteral("on"), settings.loopOn);
+  loop.insert(QStringLiteral("startBeats"), settings.loopStartBeats);
+  loop.insert(QStringLiteral("endBeats"), settings.loopEndBeats);
+  QJsonObject song;
+  song.insert(QStringLiteral("mode"), settings.songMode);
+  song.insert(QStringLiteral("lengthBeats"), settings.songLengthBeats);
+  song.insert(QStringLiteral("loop"), loop);
+  QJsonObject root;
+  root.insert(QStringLiteral("song"), song);
+  QSaveFile file(QString::fromStdString(
+      (directory / kArrangeFileName).string()));
+  if (!file.open(QIODevice::WriteOnly)) {
+    error = "cannot write " +
+            (directory / kArrangeFileName).string();
+    return false;
+  }
+  file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+  if (!file.commit()) {
+    error = "cannot write " +
+            (directory / kArrangeFileName).string();
+    return false;
+  }
+  return true;
+}
+
+// Missing sidecar = an older project: keep the settled defaults (mode on, the
+// app's default length, whole-song loop). A malformed sidecar is ignored with a
+// log line rather than blocking the session load; the session song object still
+// carries the section/clip data.
+void loadArrangeSidecar(const std::filesystem::path& directory,
+                        SessionSettings& settings) {
+  QFile file(QString::fromStdString(
+      (directory / kArrangeFileName).string()));
+  if (!file.exists()) return;
+  if (!file.open(QIODevice::ReadOnly)) {
+    log("arrange: cannot read " + (directory / kArrangeFileName).string() +
+        "; using the song defaults");
+    return;
+  }
+  QJsonParseError parseError{};
+  const auto document = QJsonDocument::fromJson(file.readAll(), &parseError);
+  if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+    log("arrange: invalid " + (directory / kArrangeFileName).string() +
+        "; using the song defaults");
+    return;
+  }
+  const auto song = document.object().value(QStringLiteral("song")).toObject();
+  if (song.contains(QStringLiteral("mode"))) {
+    settings.songMode = song.value(QStringLiteral("mode")).toBool(settings.songMode);
+  }
+  if (song.contains(QStringLiteral("lengthBeats"))) {
+    const double value = song.value(QStringLiteral("lengthBeats")).toDouble(
+        settings.songLengthBeats);
+    if (value > 0.0) settings.songLengthBeats = value;
+  }
+  const auto loop = song.value(QStringLiteral("loop")).toObject();
+  settings.loopOn = loop.value(QStringLiteral("on")).toBool(settings.loopOn);
+  settings.loopStartBeats =
+      loop.value(QStringLiteral("startBeats")).toDouble(settings.loopStartBeats);
+  settings.loopEndBeats =
+      loop.value(QStringLiteral("endBeats")).toDouble(settings.loopEndBeats);
+}
+
 session::Snapshot captureSnapshot(const AppContext& context) {
   // Capture the mixer through a scratch Engine filled from the atomics the UI
   // writes, so the audio thread's Engine is never read from the GUI thread.
@@ -164,6 +242,12 @@ session::Snapshot captureSnapshot(const AppContext& context) {
   snapshot.sends = context.settings.sends;
   snapshot.mainComp = context.settings.mainComp;
   snapshot.isTemplate = context.settings.isTemplate;
+  // Song sections/clips/grid are app-owned (session::capture only reads the
+  // live engine lanes). Copy by value so session save writes the arrangement;
+  // lengthBars is the deprecated view of the settled lengthBeats (4/4).
+  snapshot.song = context.settings.song;
+  snapshot.song.lengthBars = static_cast<int>(
+      std::lround(context.settings.songLengthBeats / 4.0));
   snapshot.mixer.out34Mode = context.mixer.out34Mode();
   // Copy by the session store's own width, never a literal: the mixer model
   // supports audio::kMaxTracks slots while the session store width follows the
@@ -387,7 +471,7 @@ bool save(const AppContext& context, const std::filesystem::path& directory,
     error = "cannot write " + file.string();
     return false;
   }
-  return true;
+  return saveArrangeSidecar(directory, context.settings, error);
 }
 
 bool load(const AppContext& context, const std::filesystem::path& directory,
@@ -447,6 +531,15 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
   context.settings.sends = result.snapshot.sends;
   context.settings.mainComp = result.snapshot.mainComp;
   context.settings.isTemplate = result.snapshot.isTemplate;
+  context.settings.song = result.snapshot.song;
+  // The settled song length/loop/mode fields ride in arrange.mnkybox until the
+  // session seam gains them. Older projects without it keep the defaults, and
+  // a non-zero legacy lengthBars becomes the length (x4 at 4/4).
+  if (result.snapshot.song.lengthBars > 0) {
+    context.settings.songLengthBeats =
+        static_cast<double>(result.snapshot.song.lengthBars) * 4.0;
+  }
+  loadArrangeSidecar(directory, context.settings);
   // The session store width is the snapshot's own; a narrower store leaves the
   // app-side slots above it at their defaults (they are not persisted yet).
   for (std::size_t channel = 0; channel < result.snapshot.takes.active.size(); ++channel) {
@@ -609,6 +702,32 @@ std::string fingerprint(const AppContext& context) {
   appendFloat(out, "mcm", context.settings.mainComp.makeupDb);
   appendInt(out, "mcmd", context.settings.mainComp.mode);
   appendInt(out, "tmpl", context.settings.isTemplate ? 1 : 0);
+  // Arrangement: every section, every clip field, the settled length/loop/mode
+  // values and the grid. A clip edit, section add/duplicate and a song-mode or
+  // loop change all mark the project dirty.
+  appendInt(out, "sm", context.settings.songMode ? 1 : 0);
+  appendFloat(out, "sl", context.settings.songLengthBeats);
+  appendInt(out, "slo", context.settings.loopOn ? 1 : 0);
+  appendFloat(out, "sls", context.settings.loopStartBeats);
+  appendFloat(out, "sle", context.settings.loopEndBeats);
+  appendInt(out, "sg", context.settings.song.grid);
+  for (const auto& section : context.settings.song.sections) {
+    out += "ss=" + section.name + ";";
+    appendInt(out, "sb", section.bars);
+  }
+  for (const auto& clip : context.settings.song.clips) {
+    appendInt(out, "sct", clip.track);
+    appendFloat(out, "scs", clip.startBeats);
+    out += "scn=" + clip.take + ";";
+    appendFloat(out, "sco", clip.offsetBeats);
+    appendFloat(out, "scl", clip.lengthBeats);
+    appendFloat(out, "scg", clip.gainDb);
+    appendFloat(out, "scfi", clip.fadeInBeats);
+    appendFloat(out, "scfo", clip.fadeOutBeats);
+    appendInt(out, "scnm", clip.normalize ? 1 : 0);
+    appendInt(out, "sclp", clip.loop ? 1 : 0);
+    appendInt(out, "scmu", clip.muted ? 1 : 0);
+  }
   for (const auto& binding : context.midi.learnBindings()) {
     appendInt(out, "lc", binding.cc);
     appendInt(out, "lh", binding.ch);

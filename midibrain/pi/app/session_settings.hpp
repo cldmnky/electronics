@@ -42,6 +42,16 @@ class SessionSettings {
   // 43130e8). The TimelineViewModel owns the edits and applies them through
   // AudioGlue; this array is what project_io saves and loads.
   std::array<std::vector<session::TakeRegion>, audio::kMaxTracks> takeEdit{};
+  // Song arrangement (the session "song" object: sections, clips, grid and the
+  // deprecated lengthBars). The W4/W5 addendum's settled length/loop/mode
+  // fields ride in the app-owned project sidecar until the session seam gains
+  // them; see project_io.cpp TODO(fold-into-session).
+  session::SongState song;
+  bool songMode = true;
+  double songLengthBeats = 32.0;
+  bool loopOn = true;
+  double loopStartBeats = 0.0;
+  double loopEndBeats = 0.0;  // <= start means "to the song length"
   // Per-output clock/transport gates (session v2 clock). Index 0/1 = TRS OUT1/
   // OUT2 via ClockState::trs, usb covers the USB mirror; the tempo divider and
   // sync delay in ClockRoute are session-only because EV_CLOCK_ROUTE carries

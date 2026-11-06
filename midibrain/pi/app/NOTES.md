@@ -1142,3 +1142,60 @@ The 17th selection printed `accepted=0 message="PLUGIN LIMIT REACHED - unload
 one first"`; teardown left 0 instances. This is CPU cost of the plugin
 process() calls only, not a full-engine real-time, latency or audio-quality
 claim.
+
+## DAW W4/W5 — ARRANGE tab, SONG mode, punch-into-song, RENDER SONG
+
+**Song model and persistence.** The ARRANGE tab is `ArrangeViewModel` plus
+`arrange_logic.*` (Qt-free section/clip math covered by `--unittests`). The
+session `song` object still carries sections, clips, grid and the deprecated
+`lengthBars`; `project_io.cpp` copies the app's `SessionSettings::song` into it
+and fills `lengthBars = round(lengthBeats/4)`. The W4/W5 settled fields the
+frozen session object does not carry yet (`mode`, `lengthBeats`, loop
+`{on,startBeats,endBeats}`) ride in the app-owned `arrange.mnkybox` sidecar,
+written with those exact names. `TODO(fold-into-session)`: when
+`session::SongState` gains the fields, delete the sidecar and move read/write
+into `project.mnkybox`. `songMode` defaults on; an empty/new arrangement keeps
+the engine in free-take mode (`applySongToEngine` only enables the clip
+scheduler when at least one lane resolves), so the W1 take path is never
+silently muted by an empty SONG project. The whole-song loop is on by default,
+end 0 = song length.
+
+**Transport seek.** The Pico owns the raw tick and `link_client.*` is
+untouched. A tap on the ARRANGE playhead writes a signed
+`AppState::transportOffsetTicks`; `AudioGlue::prepareEngineBlock` passes
+`transportTick(state.tick, offset)` to `Engine::setTransport`, and every UI
+readout/punch decision uses the same helper. On a stopped→rolling transition
+in SONG mode the offset is rebased with the previous link tick, so a seek while
+stopped or rolling survives the Pico START tick reset and STOP+PLAY continues
+from the playhead. Free mode keeps its legacy START-at-bar-1 behaviour. The
+engine's existing song scheduler sees the frame discontinuity and seeks its
+reader; no new engine API was needed.
+
+**Punch into song.** `pollRecSchedule` compares the displayed song bar with the
+punch markers. In SONG mode the marker measures are loop-relative (absolute
+beat = loop start + (measure-1)*4) and a REC press engages once
+(`punchEngaged_`); PUNCH OUT calls `stopTake(keepRolling=true)` so the transport
+continues. After the take is adopted, `placePunchTakeClips` resolves each armed
+track's new active take and adds a clip at the punch in beat; the notice is
+`TAKE SAVED -> clip at bar N`. With SONG off the original absolute punch
+semantics are unchanged.
+
+**RENDER SONG and the master take.** `AudioGlue::renderSong` holds a render lock
+that the audio callback also takes, so the engine's offline render never races
+`process()` (the callback is paused for the duration, as the engine contract
+requires). The output is `song-YYYYMMDD-HHMMSS.wav` in the take folder. The
+Recorder scan lists root-level `song-*.wav` files on every track as `MASTER`
+entries; selecting one only makes it that track's ACTIVE take for audition and
+never changes the file. The notice states the main-bus scope honestly:
+`SONG RENDERED <file> - master mix rendered (main bus)`.
+
+**UI.** `ArrangeScreen.qml` draws the section band, ruler, lanes, clip blocks
+(TimelineWave values from `.peaks`), loop band and playhead; `ArrangeShiftFace`
+keeps the section verbs and grid/zoom. `ArrangeClipPopup.qml` is the clip `...`
+sheet (actions plus GAIN/FADE KnobChips). Clips are dragged with a local
+preview and committed once on release (`commitClipDrag`), so a model update
+cannot reset the drag delegate; the engine lane is re-applied on release, not
+per pixel. Focus ids cover sections, toolbar verbs, clips, clip actions and the
+LEN stepper; NAV moves clips spatially and EDIT turns the knob into POS/LEN.
+The transport strip gains a persisted `SONG` chip; the tab row is now nine tabs
+(Mixer..ARRANGE).

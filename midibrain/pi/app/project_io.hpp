@@ -14,6 +14,11 @@
 namespace mnky::app::project {
 
 inline constexpr const char* kProjectFileName = "project.mnkybox";
+// Temporary carrier for the W4/W5 settled song fields that the frozen session
+// object does not carry yet. TODO(fold-into-session): when SongState gains
+// mode/lengthBeats/loop, delete this sidecar and read/write those fields from
+// project.mnkybox instead. The sidecar keeps exactly the settled names/shapes.
+inline constexpr const char* kArrangeFileName = "arrange.mnkybox";
 
 struct Entry {
   std::string name;

@@ -138,6 +138,8 @@ QVariant RecorderTakeModel::data(const QModelIndex& index, int role) const {
       return entry.imported;
     case WaveRole:
       return entry.wave;
+    case MasterRole:
+      return entry.master;
     default:
       break;
   }
@@ -152,7 +154,8 @@ QHash<int, QByteArray> RecorderTakeModel::roleNames() const {
           {PathRole, "path"},
           {ActiveRole, "active"},
           {ImportedRole, "imported"},
-          {WaveRole, "wave"}};
+          {WaveRole, "wave"},
+          {MasterRole, "master"}};
 }
 
 void RecorderTakeModel::setEntries(std::vector<Entry> entries) {
@@ -713,12 +716,20 @@ void RecorderViewModel::scanTakes() {
         entries.push_back(entry);
       }
     } else if (it->path().extension() == ".wav") {
-      const auto parts = parseTakeFileName(it->path().filename().string());
-      if (!parts.valid || parts.track != selectedTrack_) continue;
+      const auto fileName = it->path().filename().string();
+      // RENDER SONG bounce: a song-<date>.wav in the take root is a master
+      // take, listed on every track (audition/import material). It is not a
+      // per-track recording, so it never becomes ACTIVE by itself.
+      const bool master = fileName.rfind("song-", 0) == 0;
+      if (!master) {
+        const auto parts = parseTakeFileName(fileName);
+        if (!parts.valid || parts.track != selectedTrack_) continue;
+      }
       RecorderTakeModel::Entry entry;
       entry.path = it->path();
-      entry.key = QString::fromStdString(it->path().filename().string());
-      entry.name = QString::fromStdString(it->path().filename().string());
+      entry.key = QString::fromStdString(fileName);
+      entry.name = QString::fromStdString(fileName);
+      entry.master = master;
       entry.active = entry.key.toStdString() == active;
       fillTakeMetrics(entry);
       entries.push_back(entry);

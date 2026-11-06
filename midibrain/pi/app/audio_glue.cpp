@@ -800,6 +800,47 @@ bool AudioGlue::setActiveTake(int track, const std::filesystem::path& path,
 
 void AudioGlue::clearActiveTake(int track) { engine_.clearActiveTake(track); }
 
+void AudioGlue::setSongMode(bool on) { engine_.setSongMode(on); }
+
+bool AudioGlue::songMode() const { return engine_.songMode(); }
+
+bool AudioGlue::setSongClips(int track, const std::vector<audio::SongClip>& clips,
+                             std::string* error) {
+  if (clips.empty()) {
+    engine_.clearSongClips(track);
+    return true;
+  }
+  return engine_.setSongClips(track, clips, error);
+}
+
+void AudioGlue::clearSongClips(int track) { engine_.clearSongClips(track); }
+
+bool AudioGlue::renderSong(const std::string& path, int lengthBars,
+                           std::filesystem::path* out, std::string* error) {
+  if (out != nullptr) out->clear();
+  if (error != nullptr) error->clear();
+  if (recorder_.recording()) {
+    if (error != nullptr) *error = "stop the take before rendering the song";
+    return false;
+  }
+  audio::RenderSongResult rendered;
+  {
+    // The engine contract: control-thread render only while no audio callback
+    // is inside process(). The callback blocks on this lock and resumes after
+    // the file is written; no engine setting is changed by the pause.
+    const std::lock_guard<std::mutex> lock(renderLock_);
+    // The callback normally publishes the mixer/transport atomics into the
+    // engine; with it paused, do that once here so RENDER SONG uses the console
+    // exactly as the last edit left it.
+    prepareEngineBlock();
+    if (!engine_.renderSong(path, lengthBars, rendered, error)) return false;
+  }
+  if (out != nullptr) *out = std::filesystem::path(rendered.path);
+  log("render song: " + rendered.path + " (" +
+      std::to_string(rendered.frames) + " frames)");
+  return true;
+}
+
 bool AudioGlue::setTakeRegions(int track, const std::vector<audio::TakeRegion>& regions,
                                std::string* error) {
   return engine_.setTakeRegions(track, regions, error);
@@ -844,7 +885,9 @@ void AudioGlue::prepareEngineBlock() {
   engine_.setClickGainDb(state_.clickGainDb.load(std::memory_order_relaxed));
   engine_.setRecording(recorder_.recording());
   engine_.setTransport(state_.rolling.load(std::memory_order_relaxed),
-                       state_.tick.load(std::memory_order_relaxed),
+                       transportTick(state_.tick.load(std::memory_order_relaxed),
+                                     state_.transportOffsetTicks.load(
+                                         std::memory_order_relaxed)),
                        static_cast<std::uint32_t>(kTicksPerBeat),
                        state_.tempoX100.load(std::memory_order_relaxed));
 }
@@ -860,6 +903,7 @@ void AudioGlue::writeRecorderBlock(int frames) {
 
 void AudioGlue::renderDevice(float* interleaved, int frames, int channels) {
   if (interleaved == nullptr || frames <= 0 || channels <= 0) return;
+  const std::lock_guard<std::mutex> renderLock(renderLock_);
   const int width = std::min(channels, audio::kMaxDeviceChannels);
   const audio::DeviceOut deviceOut = engine_.deviceOut();
   audio::buildDeviceOutMap(deviceOut, width, deviceOutSlots_);
@@ -899,6 +943,7 @@ void AudioGlue::renderDevice(float* interleaved, int frames, int channels) {
 
 void AudioGlue::renderEmulatorBlock(int numSamples) {
   if (numSamples <= 0) return;
+  const std::lock_guard<std::mutex> renderLock(renderLock_);
   int offset = 0;
   while (offset < numSamples) {
     const int block = std::min(audio::kBlockSize, numSamples - offset);

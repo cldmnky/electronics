@@ -64,6 +64,7 @@ class RecorderTakeModel final : public QAbstractListModel {
     ActiveRole,
     ImportedRole,
     WaveRole,
+    MasterRole,
   };
 
   struct Entry {
@@ -75,6 +76,10 @@ class RecorderTakeModel final : public QAbstractListModel {
     std::filesystem::path path;
     bool active = false;
     bool imported = false;
+    // RENDER SONG bounce: song-<date>.wav in the take root. Shown on every
+    // track's list with a MASTER badge; selecting it only makes it ACTIVE on
+    // that track (an audition), never changes the render on disk.
+    bool master = false;
     // Mini-waveform magnitudes (0..1, `kTakeRowWaveColumns` of them) reduced
     // from the take's `.peaks` sidecar for the 44 px row strip; empty while the
     // take has no sidecar yet (the row then draws its dotted baseline).

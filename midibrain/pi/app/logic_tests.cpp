@@ -22,6 +22,7 @@
 #include "../../session/session.hpp"
 #include "app_context.hpp"
 #include "app_state.hpp"
+#include "arrange_logic.hpp"
 #include "audio/engine.hpp"
 #include "audio_backend.hpp"
 #include "audio_glue.hpp"
@@ -3057,6 +3058,120 @@ void styleTests() {
         "the transport strip is a 44 px touch row");
 }
 
+void arrangeTests() {
+  using namespace mnky::app::arrange;
+  check(transportTick(10, 5) == 15, "song seek offset adds to the link tick");
+  check(transportTick(10, -20) == 0,
+        "song seek offset never wraps the transport tick below zero");
+  check(std::abs(gridStepBeats(kGridBar) - 4.0) < 1e-9,
+        "arrange grid bar = 4 beats");
+  check(std::abs(gridStepBeats(kGridHalf) - 2.0) < 1e-9,
+        "arrange grid half = 2 beats");
+  check(std::abs(gridStepBeats(kGridQuarter) - 1.0) < 1e-9,
+        "arrange grid quarter = 1 beat");
+  check(std::abs(gridStepBeats(kGridSixteenth) - 0.25) < 1e-9,
+        "arrange grid sixteenth = 0.25 beat");
+  check(std::abs(snapBeats(5.1, kGridBar) - 4.0) < 1e-9,
+        "arrange snap rounds to the nearest bar");
+  check(std::abs(snapLength(0.0, kGridQuarter) - 1.0) < 1e-9,
+        "arrange length never collapses below one grid step");
+
+  session::SongState song;
+  song.sections.push_back(session::SongSection{"INTRO", 4});
+  song.sections.push_back(session::SongSection{"VERSE", 8});
+  const auto spans = sectionSpans(song.sections);
+  check(spans.size() == 2 && std::abs(spans[0].startBeats) < 1e-9 &&
+            std::abs(spans[0].endBeats - 16.0) < 1e-9,
+        "arrange section spans are sequential bars");
+  check(std::abs(spans[1].startBeats - 16.0) < 1e-9 &&
+            std::abs(spans[1].endBeats - 48.0) < 1e-9,
+        "arrange second section starts at the first section end");
+  check(sectionAtBeat(song.sections, 17.0) == 1,
+        "arrange section lookup finds the second section");
+  check(std::abs(sectionsEndBeats(song.sections) - 48.0) < 1e-9,
+        "arrange section end is bars * 4");
+
+  const auto takeLength = [](const session::SongClip&) { return 16.0; };
+  session::SongClip introClip;
+  introClip.track = 1;
+  introClip.startBeats = 0.0;
+  introClip.take = "01-drums-001.wav";
+  std::string error;
+  check(addClip(song, introClip, takeLength, &error),
+        "arrange adds a clip to an empty lane");
+  check(!addClip(song, introClip, takeLength, &error),
+        "arrange refuses an overlapping clip");
+  session::SongClip verseClip = introClip;
+  verseClip.startBeats = 32.0;
+  check(addClip(song, verseClip, takeLength, &error),
+        "arrange adds a non-overlapping clip on the same track");
+  check(clipAtBeat(song.clips, 1, 10.0, takeLength) == 0,
+        "arrange clip lookup uses the clip span");
+  check(moveClip(song, 0, 4.0, takeLength, &error),
+        "arrange moves a clip inside an empty region");
+  check(!moveClip(song, 0, 20.0, takeLength, &error),
+        "arrange refuses a move that would overlap");
+  check(trimClipStart(song, 0, 12.0, takeLength, &error),
+        "arrange trims a clip start");
+  check(std::abs(song.clips[0].lengthBeats - 8.0) < 1e-9,
+        "arrange trim start materializes the clip length");
+  check(trimClipEnd(song, 0, 16.0, takeLength, &error),
+        "arrange trims a clip end");
+  check(std::abs(song.clips[0].lengthBeats - 4.0) < 1e-9,
+        "arrange trim end updates the length");
+  const int duplicate = duplicateClip(song, 0, kGridBar, takeLength, &error);
+  check(duplicate >= 0, "arrange duplicates a clip into free space");
+
+  session::SongState dupSong;
+  dupSong.sections = song.sections;
+  session::SongClip sectionClip;
+  sectionClip.track = 2;
+  sectionClip.startBeats = 4.0;
+  sectionClip.take = "02-bass-001.wav";
+  session::SongClip laterClip;
+  laterClip.track = 3;
+  laterClip.startBeats = 20.0;
+  laterClip.take = "03-keys-001.wav";
+  check(addClip(dupSong, sectionClip, takeLength, &error), "arrange section copy source placed");
+  check(addClip(dupSong, laterClip, takeLength, &error), "arrange later clip placed");
+  const int dupIndex = duplicateSection(dupSong, 0, takeLength);
+  check(dupIndex == 1 && dupSong.sections.size() == 3,
+        "arrange duplicate section inserts after the source");
+  check(dupSong.sections[1].name == "INTRO" && dupSong.sections[1].bars == 4,
+        "arrange duplicate section copies name and bars");
+  check(dupSong.clips.size() == 3, "arrange duplicate section copies its clips");
+  check(std::abs(dupSong.clips[1].startBeats - 36.0) < 1e-9,
+        "arrange duplicate section shifts later clips right");
+  check(std::abs(dupSong.clips[2].startBeats - 20.0) < 1e-9,
+        "arrange duplicate section shifts the copy by the section length");
+
+  session::SongState lengthSong;
+  session::SongClip lengthClip;
+  lengthClip.track = 0;
+  lengthClip.take = "01-drums-001.wav";
+  lengthClip.lengthBeats = 32.0;
+  const auto longTake = [](const session::SongClip&) { return 64.0; };
+  check(addClip(lengthSong, lengthClip, longTake, &error),
+        "arrange length fixture placed");
+  check(std::abs(effectiveLengthBeats(lengthSong, 0.0, longTake) - 32.0) < 1e-9,
+        "arrange length 0 derives from the last clip end");
+  check(std::abs(effectiveLengthBeats(lengthSong, 32.0, longTake) - 32.0) < 1e-9,
+        "arrange explicit length wins");
+  check(std::abs(loopEndBeats(0.0, 0.0, 32.0) - 32.0) < 1e-9,
+        "arrange loop end 0 follows the song length");
+  check(loopIsWholeSong(0.0, 0.0, 32.0),
+        "arrange empty loop window is the whole song");
+  check(!loopIsWholeSong(8.0, 16.0, 32.0),
+        "arrange section loop is not the whole song");
+  check(lengthText(32.0) == "8:0", "arrange length text is bars:beats");
+  check(barOfBeat(punchStartBeats(9, 0.0)) == 9,
+        "arrange punch bar 9 maps to song bar 9");
+  check(barOfBeat(punchStartBeats(3, 16.0)) == 7,
+        "arrange punch markers are loop-relative");
+  check(deleteClip(song, 0), "arrange deletes a clip");
+  check(!deleteClip(song, 99), "arrange refuses an out-of-range delete");
+}
+
 int runAll() {
   logicTests();
   textBufferTests();
@@ -3096,6 +3211,7 @@ int runAll() {
   noPicoModeTests();
   trackModeTests();
   styleTests();
+  arrangeTests();
   std::printf("%s mnkybox app logic: %d checks, %d failures\n",
               gFailures == 0 ? "PASS" : "FAIL", gChecks, gFailures);
   return gFailures == 0 ? 0 : 1;

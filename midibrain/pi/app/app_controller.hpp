@@ -16,6 +16,7 @@
 
 #include "app_context.hpp"
 #include "app_state.hpp"
+#include "arrange_view_model.hpp"
 #include "config_popup_model.hpp"
 #include "audio_glue.hpp"
 #include "eq_model.hpp"
@@ -52,6 +53,9 @@ class AppController final : public QObject {
   Q_PROPERTY(bool noPicoMode READ noPicoMode CONSTANT)
   Q_PROPERTY(bool recording READ recording NOTIFY transportChanged)
   Q_PROPERTY(bool rolling READ rolling NOTIFY transportChanged)
+  // SONG mode governs playback (docs/daw-plan.md W6): on = the ARRANGE clip
+  // lanes, off = the free Active-take/loop path. Persisted per project.
+  Q_PROPERTY(bool songMode READ songMode WRITE setSongMode NOTIFY songModeChanged)
   Q_PROPERTY(bool overdub READ overdub NOTIFY transportChanged)
   Q_PROPERTY(bool clickEnabled READ clickEnabled WRITE setClickEnabled NOTIFY clickChanged)
   Q_PROPERTY(double clickLevel READ clickLevel WRITE setClickLevel NOTIFY clickChanged)
@@ -128,6 +132,9 @@ class AppController final : public QObject {
   bool noPicoMode() const { return noPico_; }
   bool recording() const { return audio_.recording(); }
   bool rolling() const { return state_.rolling.load(); }
+  bool songMode() const;
+  Q_INVOKABLE void setSongMode(bool on);
+  Q_INVOKABLE void toggleSongMode();
   bool overdub() const { return state_.overdub.load(); }
   bool clickEnabled() const { return state_.clickEnabled.load(); }
   Q_INVOKABLE void setClickEnabled(bool enabled);
@@ -202,6 +209,7 @@ class AppController final : public QObject {
   EqViewModel* eq() { return eqVm_.get(); }
   XyViewModel* xy() { return xyVm_.get(); }
   TimelineViewModel* timeline() { return timelineVm_.get(); }
+  ArrangeViewModel* arrange() { return arrangeVm_.get(); }
 
   // Transport / screen actions used by QML buttons.
   Q_INVOKABLE void play();
@@ -228,6 +236,11 @@ class AppController final : public QObject {
   Q_INVOKABLE void requestEditTake(int row);
   // RENDER REGION TO TRACK from the region-ops popup (W3).
   Q_INVOKABLE void renderRegionToTrack();
+  // RENDER SONG (W7): master bounce into the take folder, listed as a MASTER
+  // take; the notice names the file and says what the mix includes.
+  Q_INVOKABLE void renderSong();
+  // ARRANGE section rename through the shared keypad (W6).
+  Q_INVOKABLE void requestArrangeSectionRename();
   Q_INVOKABLE void selectStrip(int index);
   Q_INVOKABLE void shiftAction(int index);
   Q_INVOKABLE void tapTempo();
@@ -318,6 +331,10 @@ class AppController final : public QObject {
 
   // B5: the NO PICO badge opens this explanation with an OPEN SYSTEM action.
   Q_INVOKABLE void showNoPicoInfo();
+  // Screenshot/tap runner helpers: seed a deterministic arrangement and the
+  // punch auto-place notice. Not called by the UI.
+  void demoSeedArrange();
+  void demoPunchAutoPlace();
   // Screenshot runner helper: force an overlay state for a deterministic grab.
   Q_INVOKABLE void openDemoKeypad();
   // Screenshot runner helper: force the SHIFT face (the panel reaches it with a
@@ -342,6 +359,7 @@ class AppController final : public QObject {
   void fullscreenChanged();
   void dirtyChanged();
   void transportChanged();
+  void songModeChanged();
   void clickChanged();
   void toolsPageChanged();
   void systemShiftPageChanged();
@@ -394,9 +412,16 @@ class AppController final : public QObject {
   void createTrackFromTake(int row, const QString& name, bool move);
   void takeAction(int action);
   void toggleTake();
-  void stopTake();
+  // `keepRolling` is the PUNCH OUT rule: the take closes but the transport
+  // keeps playing past the out point.
+  void stopTake(bool keepRolling = false);
   void startTakeNow();
   void projectStateChanged();
+  void openArrangeClipEdit(int track, const QString& takeKey);
+  void placePunchTakeClips(MixerModel::TrackMask recorded);
+  std::uint32_t displayTick(const LinkStatus& status) const;
+  double displayBeats(const LinkStatus& status) const;
+  int songPunchBar(int loopRelativeMeasure) const;
   void registerLearnTargets();
   enum NoticeKind { NoticeInfo, NoticeWarn, NoticeError };
   void showNotice(NoticeKind kind, const QString& notice);
@@ -435,6 +460,7 @@ class AppController final : public QObject {
   std::unique_ptr<EqViewModel> eqVm_;
   std::unique_ptr<XyViewModel> xyVm_;
   std::unique_ptr<TimelineViewModel> timelineVm_;
+  std::unique_ptr<ArrangeViewModel> arrangeVm_;
 
   QTimer timer_;
   int tab_ = 0;
@@ -462,6 +488,16 @@ class AppController final : public QObject {
   // The RECMODE value the transport strip last showed (change detection).
   int lastRecMode_ = 0;
   int lastCountInBars_ = 2;
+  // PUNCH INTO SONG: the take opened by the punch schedule auto-places at the
+  // punch in point once it stops. `punchPlaceStartBeats_` is the absolute song
+  // position; `punchPlaceArmed_` survives until the take is adopted.
+  bool punchPlaceArmed_ = false;
+  double punchPlaceStartBeats_ = 0.0;
+  bool punchEngaged_ = false;
+  // Song transport seek rebasing: the raw Pico tick resets on START, so the
+  // displayed position is remembered across the transition.
+  bool lastRolling_ = false;
+  std::uint32_t lastLinkTick_ = 0;
   // The name the NEW TRACK FROM TAKE keypad accepted, held until the MOVE /
   // KEEP ON SOURCE pick creates the track.
   QString pendingTrackFromTakeName_;

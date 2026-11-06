@@ -35,14 +35,14 @@ Rectangle {
 
         // Every width is fixed except the notice, so the row computes the
         // leftover instead of overlapping a neighbour.
-        readonly property int positionWidth: app.noPicoMode ? 132 : 148
-        readonly property int fixedWidth: 36 + positionWidth + 96 +
+        readonly property int positionWidth: 118
+        readonly property int fixedWidth: 32 + positionWidth + 94 +
                                           (app.noPicoMode ? 52 : 0) + 3 * 44 +
-                                          74 + 88 + 62 + 8
-        readonly property int itemCount: app.noPicoMode ? 11 : 10
+                                          60 + 54 + 68 + 56
+        readonly property int itemCount: app.noPicoMode ? 12 : 11
 
         Text {
-            width: 36
+            width: 32
             height: parent.height
             text: app.transportState
             color: app.transportState === "REC" ? Style.record
@@ -63,7 +63,7 @@ Rectangle {
         // A7: tempo is a control, not a readout. The chevron opens the TEMPO
         // popup (40..240 slider, +-1 buttons, TAP).
         TouchButton {
-            width: 96
+            width: 94
             height: Style.touch
             text: app.tempoText
             textSize: Style.fontSmall
@@ -127,7 +127,7 @@ Rectangle {
         }
         // W2 readout: which RECMODE is armed, next to the REC glyph.
         Text {
-            width: 74
+            width: 60
             height: parent.height
             // Panel focus stop: PRESS opens the RECMODE picker (the REC glyph's
             // long press is the touch gesture for the same popup).
@@ -141,6 +141,19 @@ Rectangle {
             TapHandler {
                 onTapped: app.openRecMode()
             }
+        }
+        // W6: SONG mode governs playback - on = the ARRANGE clip lanes, off =
+        // the free Active-take path. Persisted per project; the panel ring stops
+        // here and the touch twin is the same button.
+        TouchButton {
+            width: 54
+            height: Style.touch
+            text: "SONG"
+            textSize: Style.fontSmall
+            variant: "ghost"
+            checked: app.songMode
+            focusId: "transport.song"
+            onClicked: app.toggleSongMode()
         }
         // C6: the slot is an inset well with severity colour, not a floating
         // label. B6: an ordinary value readout renders here (accent, right
@@ -171,13 +184,15 @@ Rectangle {
                 horizontalAlignment: parent.showingValue ? Text.AlignRight
                                                          : Text.AlignLeft
                 verticalAlignment: Text.AlignVCenter
+                wrapMode: Text.Wrap
+                maximumLineCount: 2
                 elide: Text.ElideRight
             }
         }
         // B1: the SHIFT face is reachable by touch. Dimmed on a tab without a
         // second face, and a tap there names the reason (D3).
         TouchButton {
-            width: 88
+            width: 68
             height: Style.touch
             text: app.panelMode === "shift" ? "< PRIMARY" : "SHIFT >"
             textSize: Style.fontSmall
@@ -188,7 +203,7 @@ Rectangle {
             onClicked: app.showShiftFace(app.panelMode !== "shift")
         }
         TouchButton {
-            width: 62
+            width: 56
             height: Style.touch
             text: app.clickLabel
             textSize: Style.fontSmall
@@ -202,7 +217,7 @@ Rectangle {
         // C5: the dirty indicator lives once, next to the project name; the
         // transport strip keeps the 8 px end margin only.
         Item {
-            width: 8
+            width: 0
             height: parent.height
         }
     }

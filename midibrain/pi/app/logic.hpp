@@ -16,11 +16,11 @@
 
 namespace mnky::app {
 
-inline constexpr int kScreenCount = 8;  // Mixer, Routing, Recorder, System,
-                                        // Projects, Monitor, EQ, X/Y. The global
-                                        // FX tab retired into the per-track rack
-                                        // popup and EDIT into the take edit
-                                        // popup (plan W5).
+inline constexpr int kScreenCount = 9;  // Mixer, Routing, Recorder, System,
+                                        // Projects, Monitor, EQ, X/Y, Arrange.
+                                        // The global FX tab retired into the
+                                        // per-track rack popup and EDIT into
+                                        // the take edit popup (plan W5).
 // Fixed-width surfaces that predate the dynamic mixer (the Recorder selector
 // and the Learn target list show this many rows). Mixer/track code never uses it:
 // track slots are audio::kMaxTracks and device capture channels are
@@ -96,6 +96,13 @@ inline int clampTempoX100(int bpmX100) {
   if (bpmX100 < midi::UsbClock::kMinBpmX100) return midi::UsbClock::kMinBpmX100;
   if (bpmX100 > midi::UsbClock::kMaxBpmX100) return midi::UsbClock::kMaxBpmX100;
   return bpmX100;
+}
+
+// Song transport seek: the displayed/engine tick is the Pico tick plus a signed
+// app-side offset. A negative result clamps to zero instead of wrapping.
+inline std::uint32_t transportTick(std::uint32_t tick, std::int64_t offset) {
+  const std::int64_t value = static_cast<std::int64_t>(tick) + offset;
+  return value <= 0 ? 0u : static_cast<std::uint32_t>(value);
 }
 
 // Pure mapping from one midi::Action. Releases never reach here (mapControl

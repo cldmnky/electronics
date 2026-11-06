@@ -33,6 +33,10 @@ class AppState {
   // 1 = phones, 2 = OUT3&4; gainDb -96..+20. clickEnabled/clickLevel are the
   // legacy amplitude view kept for the audio callback and old controls.
   std::atomic<std::uint32_t> tick{0};
+  // App-side song transport seek offset. The Pico owns the raw tick, so a
+  // tap-to-seek shifts the engine and UI position by this signed delta instead
+  // of writing the Pico's counter. See docs/daw-plan.md W6 and NOTES.
+  std::atomic<std::int64_t> transportOffsetTicks{0};
   std::atomic<bool> clickEnabled{false};
   std::atomic<float> clickLevel{0.5f};
   std::atomic<int> clickMode{0};

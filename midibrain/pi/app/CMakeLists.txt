@@ -19,6 +19,8 @@ set(MNKY_APP_SOURCES
   main.cpp
   app_controller.cpp
   app_state.cpp
+  arrange_logic.cpp
+  arrange_view_model.cpp
   config_popup_model.cpp
   audio_glue.cpp
   emulator_synth.cpp
@@ -57,6 +59,8 @@ set(MNKY_APP_HEADERS
   app_context.hpp
   app_controller.hpp
   app_state.hpp
+  arrange_logic.hpp
+  arrange_view_model.hpp
   config_popup_model.hpp
   audio_backend.hpp
   audio_glue.hpp
@@ -157,13 +161,16 @@ qt_add_resources(mnkybox "qml"
     qml/screens/SystemShiftFace.qml
     qml/screens/EqScreen.qml
     qml/screens/XyScreen.qml
+    qml/screens/ArrangeScreen.qml
+    qml/screens/ArrangeShiftFace.qml
     qml/overlays/ChannelPopout.qml
     qml/overlays/TrackFxPopup.qml
     qml/overlays/ConfigPopup.qml
     qml/overlays/Keypad.qml
     qml/overlays/TempoPopup.qml
     qml/overlays/ConfirmDialog.qml
-    qml/overlays/EditPopup.qml)
+    qml/overlays/EditPopup.qml
+    qml/overlays/ArrangeClipPopup.qml)
 
 # mnky_clap links mnky_audio PUBLIC (clap::Host implements audio::IEffect), so
 # libmnky_audio.a legitimately appears twice on the link line. Apple's ld calls

@@ -27,6 +27,17 @@ void SessionSettings::reset() {
   mainComp = session::MainCompState{};
   takeLoop.fill(session::LoopState{});
   for (auto& edit : takeEdit) edit.clear();
+  song = session::SongState{};
+  song.sections.clear();
+  song.clips.clear();
+  // W4/W5 settled defaults: mode on, eight bars of song, loop over the whole
+  // song. The engine only switches to the clip scheduler when clips exist, so
+  // an empty new project keeps the W1 take path audible.
+  songMode = true;
+  songLengthBeats = 32.0;
+  loopOn = true;
+  loopStartBeats = 0.0;
+  loopEndBeats = 0.0;
   clock = session::ClockState{};
   deviceOut = session::DeviceOutState{};
   isTemplate = false;

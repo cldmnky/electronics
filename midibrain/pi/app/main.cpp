@@ -1588,6 +1588,55 @@ class ScreenshotRunner final : public QObject {
                         controller_->timeline()->applyEditOp();
                         controller_->hideValuePopup();
                       }});
+    // W4/W5 ARRANGE shots: a real fixture take drives the clip waveforms, and
+    // the demo arrangement gives the section band, lanes, loop band and clip
+    // sheet deterministic content.
+    steps_.push_back({"48-arrange", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->demoSeedArrange();
+                        controller_->setTab(8);
+                        controller_->arrange()->zoomBy(0.8);
+                        controller_->arrange()->selectClip(1);
+                        controller_->hideValuePopup();
+                      }});
+    steps_.push_back({"48-clip-menu", [this] {
+                        controller_->setTab(8);
+                        controller_->arrange()->openClipMenu(1);
+                      }});
+    steps_.push_back({"48-clip-gain", [this] {
+                        controller_->arrange()->openClipMenu(1);
+                        controller_->arrange()->clipMenuAction(4);
+                      }});
+    steps_.push_back({"48-punch-place", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->demoSeedArrange();
+                        controller_->setTab(8);
+                        controller_->demoPunchAutoPlace();
+                        controller_->arrange()->selectClip(
+                            controller_->arrange()->clipCount() - 1);
+                        controller_->hideValuePopup();
+                      }});
+    steps_.push_back({"48-render", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->demoSeedArrange();
+                        controller_->setTab(8);
+                        controller_->renderSong();
+                        controller_->hideValuePopup();
+                      }});
+    steps_.push_back({"48-song-off", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->demoSeedArrange();
+                        controller_->setSongMode(false);
+                        controller_->setTab(8);
+                      }});
+    steps_.push_back({"48-song-on", [this] {
+                        controller_->setTab(8);
+                        controller_->setSongMode(true);
+                      }});
     // The mixer screens above show strips; the app's own default stays empty.
     primeMixerDemo();
   }
@@ -1764,6 +1813,8 @@ class ScreenshotRunner final : public QObject {
     controller_->closeBankGrid();
     controller_->closeTakeSheet();
     controller_->closeTakeEdit();
+    controller_->arrange()->closeClipMenu();
+    controller_->arrange()->closeLengthPopup();
     controller_->clearNotice();
     controller_->setFullscreen(false);
     controller_->showShiftFace(false);
@@ -2175,6 +2226,7 @@ int main(int argc, char* argv[]) {
   engine.rootContext()->setContextProperty(QStringLiteral("eq"), controller.eq());
   engine.rootContext()->setContextProperty(QStringLiteral("xy"), controller.xy());
   engine.rootContext()->setContextProperty(QStringLiteral("timeline"), controller.timeline());
+  engine.rootContext()->setContextProperty(QStringLiteral("arrange"), controller.arrange());
 
   controller.start();
   engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));

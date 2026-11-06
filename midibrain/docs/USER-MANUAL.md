@@ -28,6 +28,7 @@ in the present tense.
 8. EQ - four bands per track and the main
 9. FX RACK - two effect slots per track, X/Y grid
 10. EDIT - timeline, regions, trim and chop
+10A. ARRANGE - sections, clips, song mode, render
 11. PROJ - projects and templates
 12. SYSTEM SHIFT - output, metronome, MIDI learn, TOOLS
 13. Recording and playing takes
@@ -142,11 +143,13 @@ meter without lighting the crown.
 | MIDI | in/out activity, counters, event log | none |
 | EQ | band grid for a track or the main | band editor: gain, Q, frequency, type |
 | XY | the selected track's FX1 and FX2 grids | none |
-| EDIT | timeline lanes, regions, ops | none |
+| ARRANGE | section band, clip lanes, loop band, PLAYHEAD seek | section add/duplicate/loop, LEN and LOOP, grid and zoom, RENDER SONG |
 
-There is no FX tab: the tab row holds nine tabs. Effects live inside the
-track that owns them - every track carries its own two-slot rack, opened
-from the channel popout (section 9).
+There is no FX tab: the tab row holds nine tabs (Mixer, Routing, Recorder,
+System, PROJ, MIDI, EQ, XY, ARRANGE). Effects live inside the track that
+owns them - every track carries its own two-slot rack, opened from the
+channel popout (section 9). The take editor is the W5 EDIT popup, not a
+tab.
 
 SHIFT gives a tab a second face. On the panel, hold SHIFT: after ~0.5 s the
 tab's second face comes up and LEFT/RIGHT step through tabs while the key
@@ -411,6 +414,89 @@ Nothing commits on focus change alone.
 the heads, normalize, chop the break, keep two takes for two arrangements.
 Files are never rewritten by edits - only a render would write new audio,
 and it is not in this build.
+
+## 10A. ARRANGE - sections, clips, song mode, render
+
+**You see** the arrangement as a section band across the top and one lane
+per track that has clips (plus the selected track), time left to right. A
+section marker shows its name and bar count; a coloured border identifies
+it. A clip block is a rounded rectangle with its take name and mini
+waveform, a loop arrow when it repeats, and a dimmed/red-underlined style
+when muted. The 2 px accent line is the playhead; the tinted band is the
+loop window.
+
+**SONG mode.** The `SONG` chip in the transport strip governs playback.
+`SONG ON` means the transport reads the song timeline and the clip lanes
+play; `SONG` (off) means the classic free Active-take and take-loop path,
+exactly as before. The choice is stored per project (the app-side
+`arrange.mnkybox` sidecar until the session song object carries it). The
+transport's bar:beat readout is the song position in both cases; with SONG
+on it is the position the arrangement is playing.
+
+**Sections.** `ADD SECTION` appends a four-bar section. `DUP SECTION` is
+the core arranger verb: it copies the selected section (marker, bars and
+every clip that starts inside it) immediately after itself and shifts every
+later section and clip right by the section length. `LOOP SECTION` sets
+the loop window to the selected section. `RENAME` opens the shared keypad
+for the section name. Tapping a section selects it; when a section loop is
+already armed, tapping another section moves the loop with the selection.
+
+**Length and loop.** `LEN 20:0` is the song length in bars:beats. Tap it to
+open the LEN stepper: `BARS -/+` are coarse (four beats), `BEATS -/+` are
+fine and grid-snapped, `DONE` closes. The length is independent of the
+sections; `LOOP` toggles the loop window on/off. With the loop window at
+its default (whole song, end 0) the playhead wraps at `LEN`; a section loop
+wraps at that section's edges. The loop band flashes when the playhead
+wraps. The playhead itself is a transport seek: tap an empty lane or a bar
+position and playback (or the next PLAY from stopped) starts from the
+touched point; the Pico keeps its own clock, the app carries the song
+position as a signed tick offset.
+
+**Clips.** Tap a clip to select it, then `CLIP ...` for its actions:
+`OPEN EDIT` opens the W5 take editor for the clip's take; `MOVE` arms the
+clip for the touch drag and the panel value knob (`POS 12.0 bars`);
+`TRIM` arms the edge drags and `SHIFT`+knob (`LEN 4.0 bars`); `DUPLICATE`
+places a copy in the next free grid position; `GAIN/FADE` opens three
+KnobChip cards (gain, fade in, fade out); `MUTE` keeps the block and
+silences it; `DELETE` asks first and removes only the placement - the take
+file stays on disk. Drag the body to move (grid-snapped) and the left/right
+16 px edges to trim. A long press duplicates. `BAR`, `1/2`, `1/4`, `1/16`
+set the snap grid; `Z-`/`Z+` and a two-finger pinch zoom. Clips on one
+track never overlap: an edit that would overlap is refused with a notice.
+
+**Panel.** NAV walks clips spatially: LEFT/RIGHT move along a track by grid
+step, UP/DOWN move to the nearest clip on the adjacent track. PRESS opens
+the clip's `...` actions; `MOVE`/`TRIM` leave the ring in EDIT on that clip,
+where the value knob changes `POS` (move) or, with SHIFT held, `LEN`
+(trim). The SHIFT face holds the section verbs and the grid/zoom controls.
+The keypad, confirmations and the clip sheet trap the panel while open.
+
+**Punch into song.** With SONG on, the Recorder SHIFT punch markers are
+song positions, counted from the active loop start (loop-relative). Set
+PLAY FROM/PUNCH IN/PUNCH OUT as usual and roll RECMODE PUNCH: the take opens
+at PUNCH IN, closes at PUNCH OUT (the transport keeps rolling), and the
+written take is placed as a clip at the punch position on its recorded
+track. The notice names it: `TAKE SAVED -> clip at bar 9`. Punch engages
+once per REC press; it does not re-arm on a loop wrap. With SONG off the
+session punch fields keep their original absolute-measure meaning.
+
+**RENDER SONG.** `RENDER SONG` writes `song-<date>.wav` (stereo, 48 kHz,
+the song length) into the take folder and lists it in the Recorder as a
+`MASTER` take (selecting it makes it that track's ACTIVE take; it never
+changes automatically). The notice says `SONG RENDERED song-<date>.wav -
+master mix rendered (main bus)`. The file is the ordinary master path: per
+track gain, EQ, FX1/FX2 rack, fader, pan, mute/solo and destination, then
+master gain, the main compressor and Main EQ. Tracks routed to OUT3&4 or
+PHONES do not reach the main bus and are not in the file; the click is
+forced off. Stop a running take before rendering.
+
+**Worked example - V1 drums to song.** PAIR 01/02, `COUNT-IN 2 bars`, ARM
+the drums track, REC, play the part, STOP. Take row `...` -> `NEW TRACK
+FROM THIS TAKE` -> name `beat`. In ARRANGE: `ADD SECTION` -> `INTRO`;
+`DUP SECTION` -> `VERSE`; rename it; move the clip blocks into place. Set
+`LEN` to the song length, arm `LOOP SECTION` on the verse, tap the empty
+lane at bar 9, set PUNCH IN 9 / PUNCH OUT 11 and record the fill; the take
+appears as a clip at bar 9. `RENDER SONG` gives the master bounce.
 
 ## 11. PROJ - projects and templates
 

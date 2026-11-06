@@ -111,13 +111,29 @@ Rectangle {
     TapHandler {
         id: tap
         enabled: root.active
-        // A long press fires longClicked() and the release that follows must not
-        // also fire clicked(); the flag is reset when the next press starts.
+        // A long press fires longClicked() at the A2 600 ms threshold and the
+        // release that follows must not also fire clicked(); the flag resets
+        // when the next press starts. The threshold is our own Timer because
+        // TapHandler's longPressed follows the platform press-and-hold (800 ms
+        // default) - past both the spec and the tap gate's 700 ms hold, so the
+        // long-press gesture never fired and the release read as a click.
         property bool heldLong: false
-        onPressedChanged: if (pressed) heldLong = false
+        onPressedChanged: {
+            if (pressed) {
+                heldLong = false
+                longPressTimer.restart()
+            } else {
+                longPressTimer.stop()
+            }
+        }
         onTapped: if (!heldLong) root.clicked()
-        onLongPressed: {
-            heldLong = true
+    }
+
+    Timer {
+        id: longPressTimer
+        interval: 600
+        onTriggered: {
+            tap.heldLong = true
             root.longClicked()
         }
     }

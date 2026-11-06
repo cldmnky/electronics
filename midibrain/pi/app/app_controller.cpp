@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <ctime>
 #include <string>
 
 #include "logging.hpp"
@@ -24,6 +25,7 @@ constexpr int kProjectsTabIndex = 4;
 constexpr int kMonitorTabIndex = 5;
 constexpr int kEqTabIndex = 6;
 constexpr int kXyTabIndex = 7;
+constexpr int kArrangeTabIndex = 8;
 
 std::uint64_t nowMs() {
   using namespace std::chrono;
@@ -55,6 +57,8 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
       std::make_unique<RecorderViewModel>(state_, audio_, mixer_, link_, settings_);
   timelineVm_ = std::make_unique<TimelineViewModel>(state_, audio_, *recorderVm_,
                                                     link_, settings_);
+  arrangeVm_ = std::make_unique<ArrangeViewModel>(state_, audio_, mixer_,
+                                                  *recorderVm_, settings_);
   projectsVm_ = std::make_unique<ProjectsViewModel>(
       *context_, [this] { projectStateChanged(); });
   systemVm_ = std::make_unique<SystemViewModel>(link_, audio_, midi_, fx_, state_,
@@ -108,6 +112,39 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
   // The take edit popup is a modal: its own focus ring replaces the tab's the
   // moment it opens or closes, so NAV can never walk behind it.
   connect(timelineVm_.get(), &TimelineViewModel::editOpenChanged, this,
+          [this] { rebuildFocusIds(); });
+  // ARRANGE: the view model reports user-facing outcomes; the controller owns
+  // notices, the keypad/confirm modals and the take edit popup.
+  connect(arrangeVm_.get(), &ArrangeViewModel::noticeRequested, this,
+          [this](const QString& kind, const QString& text) {
+            if (kind == QStringLiteral("warn")) {
+              showNotice(NoticeWarn, text);
+            } else if (kind == QStringLiteral("error")) {
+              showNotice(NoticeError, text);
+            } else {
+              showNotice(NoticeInfo, text);
+            }
+          });
+  connect(arrangeVm_.get(), &ArrangeViewModel::editTakeRequested, this,
+          [this](int track, const QString& takeKey) {
+            openArrangeClipEdit(track, takeKey);
+          });
+  connect(arrangeVm_.get(), &ArrangeViewModel::deleteClipRequested, this,
+          [this](int index) {
+            const QString name = arrangeVm_->clipNameAt(index);
+            requestConfirm(QStringLiteral("DELETE CLIP ") + name,
+                           QStringLiteral("Remove the clip from the song? The take "
+                                          "file stays on disk."),
+                           QStringLiteral("DELETE"),
+                           QStringLiteral("arrange-clip-delete"), index);
+          });
+  connect(arrangeVm_.get(), &ArrangeViewModel::songModeChanged, this, [this] {
+    emit songModeChanged();
+    updateTransport();
+  });
+  connect(arrangeVm_.get(), &ArrangeViewModel::clipMenuChanged, this,
+          [this] { rebuildFocusIds(); });
+  connect(arrangeVm_.get(), &ArrangeViewModel::lengthPopupChanged, this,
           [this] { rebuildFocusIds(); });
   // Live device pickers: the audio layer falls back to a working backend when a
   // requested device cannot open. The screen keeps the fallback note and this
@@ -172,6 +209,7 @@ void AppController::start() {
   audio_.applyTakeLoops(settings_);
   audio_.applyEq(eqModel_.capture());
   timelineVm_->reloadFromSettings();
+  arrangeVm_->reloadFromSettings();
   sessionVm_->pushClockToLink();
 
   state_.clearDirty();
@@ -204,6 +242,10 @@ void AppController::setTab(int tab) {
   closeTempoPopup();
   closeTakeSheet();
   closeTakeEdit();
+  if (arrangeVm_ != nullptr) {
+    arrangeVm_->closeClipMenu();
+    arrangeVm_->closeLengthPopup();
+  }
   if (clamped == tab_) return;
   // D3: a tab without a second face leaves the SHIFT face instead of landing
   // in a dead state with an empty ring.
@@ -453,7 +495,8 @@ void AppController::chooseBankPage(int page) {
 
 bool AppController::tabHasShiftFace(int tab) const {
   // D3: tabs 5 (MIDI) and 7 (XY) have no second face.
-  return tab <= 3 || tab == kProjectsTabIndex || tab == kEqTabIndex;
+  return tab <= 3 || tab == kProjectsTabIndex || tab == kEqTabIndex ||
+         tab == kArrangeTabIndex;
 }
 
 void AppController::requestKeypad(const QString& title, const QString& initial,
@@ -549,6 +592,8 @@ void AppController::keypadAccept(const QString& text) {
       showNotice(NoticeInfo, QStringLiteral("pipe chain exported: ") + text);
       showTextPopup(QStringLiteral("PIPE CHAIN EXPORTED"), text);
     }
+  } else if (keypadAction_ == QStringLiteral("arrange-section-rename")) {
+    arrangeVm_->renameSection(text);
   } else if (keypadAction_ == QStringLiteral("track-rename")) {
     // Same 48-character printable-ASCII rule as a project name.
     error = QString::fromStdString(validateProjectName(text.toStdString()));
@@ -612,6 +657,8 @@ void AppController::confirmAccept() {
     recorderVm_->deleteSelected();
     timelineVm_->refresh();
     mixerVm_->notifyActiveTakesChanged();
+  } else if (action == QStringLiteral("arrange-clip-delete")) {
+    arrangeVm_->deleteClipAt(index);
   } else if (action == QStringLiteral("take-remove")) {
     // Project only: the take file stays on disk.
     recorderVm_->removeSelected();
@@ -968,6 +1015,82 @@ void AppController::closeChannel() {
   rebuildFocusIds();
 }
 
+void AppController::demoSeedArrange() {
+  if (arrangeVm_ == nullptr) return;
+  settings_.song.sections.clear();
+  settings_.song.clips.clear();
+  arrangeVm_->addSection();  // INTRO
+  arrangeVm_->addSection();  // SECTION 2
+  arrangeVm_->addSection();  // SECTION 3
+  settings_.song.sections[0].name = "INTRO";
+  settings_.song.sections[0].bars = 4;
+  settings_.song.sections[1].name = "VERSE";
+  settings_.song.sections[1].bars = 8;
+  settings_.song.sections[2].name = "CHORUS";
+  settings_.song.sections[2].bars = 8;
+  settings_.songLengthBeats = 80.0;  // 20 bars
+  settings_.loopOn = true;
+  settings_.loopStartBeats = 0.0;
+  settings_.loopEndBeats = 0.0;
+  settings_.songMode = true;
+  std::string take;
+  int takeTrack = -1;
+  for (int track = 0; track < audio::kMaxTracks; ++track) {
+    const auto key = settings_.activeTake(track);
+    if (!key.empty()) {
+      take = key;
+      takeTrack = track;
+      break;
+    }
+  }
+  if (take.empty()) {
+    take = "demo-take.wav";
+    takeTrack = mixerVm_->trackIndex();
+  }
+  int first = -1;
+  const double starts[] = {0.0, 24.0, 48.0, 24.0, 48.0};
+  const int tracks[] = {takeTrack, takeTrack, takeTrack, takeTrack + 1, takeTrack + 1};
+  for (int index = 0; index < 5; ++index) {
+    const int track = std::clamp(tracks[index], 0, audio::kMaxTracks - 1);
+    const int clip = arrangeVm_->placePunchTake(track, take, starts[index], nullptr);
+    if (index == 0) first = clip;
+  }
+  arrangeVm_->reloadFromSettings();
+  if (first >= 0) arrangeVm_->selectClip(first);
+  showNotice(NoticeInfo, QStringLiteral("ARRANGE demo - 3 sections, 5 clips"));
+}
+
+void AppController::demoPunchAutoPlace() {
+  if (arrangeVm_ == nullptr) return;
+  settings_.songMode = true;
+  settings_.punch.in.enabled = true;
+  settings_.punch.in.measure = 9;
+  settings_.punch.out.enabled = true;
+  settings_.punch.out.measure = 11;
+  settings_.loopStartBeats = 0.0;
+  settings_.loopEndBeats = 0.0;
+  punchPlaceStartBeats_ = arrange::punchStartBeats(9, 0.0);
+  std::string key;
+  int sourceTrack = mixerVm_->trackIndex();
+  for (int current = 0; current < audio::kMaxTracks; ++current) {
+    const auto active = settings_.activeTake(current);
+    if (!active.empty()) {
+      key = active;
+      sourceTrack = current;
+      break;
+    }
+  }
+  if (key.empty()) key = "demo-take.wav";
+  // The punch clip lands on an empty lane so the demo placement cannot be
+  // refused by an existing clip; the take key is independent of the lane.
+  int track = std::min(audio::kMaxTracks - 1, sourceTrack + 2);
+  if (track == sourceTrack) track = std::max(0, sourceTrack - 2);
+  arrangeVm_->placePunchTake(track, key, punchPlaceStartBeats_, nullptr);
+  punchPlaceArmed_ = false;
+  showNotice(NoticeInfo, QStringLiteral("TAKE SAVED -> clip at bar %1")
+                             .arg(arrange::barOfBeat(punchPlaceStartBeats_)));
+}
+
 void AppController::openDemoKeypad() {
   requestKeypad(QStringLiteral("RENAME PROJECT"), QStringLiteral("Project-demo"),
                 QStringLiteral("project-rename"), -1);
@@ -1082,6 +1205,36 @@ void AppController::timerTick() {
 
   expirePendingRec();
   const auto status = link_.status();
+  // SONG transport seek (W4/W5): the Pico tick resets on START, so preserve
+  // the displayed song position across the stopped -> rolling transition. Free
+  // mode keeps its legacy "START begins at bar 1" behaviour.
+  if (settings_.songMode && status.rolling && !lastRolling_) {
+    // target = the song position the previous link tick represented. The START
+    // reset the raw tick to 0, so the offset absorbs the old link tick and the
+    // displayed position (seek point or stop point) is preserved.
+    const std::int64_t target =
+        state_.transportOffsetTicks.load(std::memory_order_relaxed) +
+        static_cast<std::int64_t>(lastLinkTick_);
+    state_.transportOffsetTicks.store(
+        target - static_cast<std::int64_t>(status.tick));
+  }
+  lastRolling_ = status.rolling;
+  lastLinkTick_ = status.tick;
+  // Loop wrap: the transport loops the song or section window while SONG mode
+  // plays a non-empty arrangement. A wrap is a seek to the loop start, so the
+  // engine's song reader detects the frame jump and re-primes.
+  if (settings_.songMode && arrangeVm_ != nullptr && arrangeVm_->loopOn() &&
+      status.rolling && arrangeVm_->clipCount() > 0) {
+    const double beats = displayBeats(status);
+    const double start = arrangeVm_->effectiveLoopStartBeats();
+    const double end = arrangeVm_->effectiveLoopEndBeats();
+    if (end > start && beats >= end) {
+      const auto target = static_cast<std::int64_t>(
+          std::llround(start / 4.0 * static_cast<double>(kTicksPerBeat)));
+      state_.transportOffsetTicks.store(target - static_cast<std::int64_t>(status.tick));
+      arrangeVm_->noteLoopWrap();
+    }
+  }
   pollRecSchedule(status);
   if (state_.recMode.load() != lastRecMode_ ||
       state_.countInBars.load() != lastCountInBars_) {
@@ -1097,6 +1250,7 @@ void AppController::timerTick() {
   }
   updateShiftState(status);
   updateTransport();
+  if (arrangeVm_ != nullptr) arrangeVm_->refresh();
 
   ++refreshTicks_;
   // MIDI-learn writes the model atomics on RtMidi's thread; the mixer only has
@@ -1246,6 +1400,42 @@ void AppController::performPanelFocus(const Intent& intent) {
     rebuildFocusIds();
     return;
   }
+  if (arrangeVm_ != nullptr &&
+      (arrangeVm_->clipMenuOpen() || arrangeVm_->lengthPopupOpen())) {
+    // The clip "..." sheet and the LEN stepper are modals: the ring walks their
+    // controls, NAV directions do not leak to the screen behind, and PRESS on
+    // a knob card enters EDIT like every other focused value.
+    switch (intent.kind) {
+      case Intent::Kind::NavUp:
+      case Intent::Kind::NavLeft:
+        moveFocus(-1);
+        break;
+      case Intent::Kind::NavDown:
+      case Intent::Kind::NavRight:
+        moveFocus(1);
+        break;
+      case Intent::Kind::NavPress:
+        if (panelMode_ == QStringLiteral("edit")) {
+          setPanelMode(QStringLiteral("navigate"));
+        } else if (isEditableFocus(focusId_)) {
+          setPanelMode(QStringLiteral("edit"));
+        } else {
+          activateFocus();
+        }
+        break;
+      case Intent::Kind::EncoderSw:
+        if (panelMode_ == QStringLiteral("edit")) {
+          setPanelMode(QStringLiteral("navigate"));
+        } else {
+          activateFocus();
+        }
+        break;
+      default:
+        break;
+    }
+    rebuildFocusIds();
+    return;
+  }
   if (configVm_ && configVm_->open()) {
     switch (intent.kind) {
       case Intent::Kind::NavUp:
@@ -1318,6 +1508,35 @@ void AppController::performPanelFocus(const Intent& intent) {
     return;
   }
 
+  // ARRANGE NAV walks clips spatially (rows = tracks, columns = grid steps):
+  // LEFT/RIGHT pick the neighbouring clip on the lane, UP/DOWN the nearest clip
+  // on the adjacent lane. PRESS opens the clip "..."; the panel knob keeps the
+  // focused clip in EDIT.
+  if (tab_ == kArrangeTabIndex && !shiftFace_ && arrangeVm_ != nullptr &&
+      focusId_.startsWith(QStringLiteral("arrange.clip."))) {
+    const int dx = intent.kind == Intent::Kind::NavLeft
+                       ? -1
+                       : (intent.kind == Intent::Kind::NavRight ? 1 : 0);
+    const int dy = intent.kind == Intent::Kind::NavUp
+                       ? -1
+                       : (intent.kind == Intent::Kind::NavDown ? 1 : 0);
+    if (dx != 0 || dy != 0) {
+      const int next = arrangeVm_->neighborClip(arrangeVm_->selectedClip(), dx, dy);
+      if (next >= 0) {
+        arrangeVm_->selectClip(next);
+        focusId_ = QStringLiteral("arrange.clip.%1").arg(next);
+        const auto found = std::find(focusIds_.begin(), focusIds_.end(), focusId_);
+        if (found != focusIds_.end()) {
+          focusIndex_ = static_cast<int>(std::distance(focusIds_.begin(), found));
+          focusByScreen_[tab_] = focusIndex_;
+        }
+        emit focusChanged();
+      }
+      rebuildFocusIds();
+      return;
+    }
+  }
+
   // EDIT on the EQ grid or an X/Y grid: the directions are the control (node
   // frequency/gain, grid point), so they never move the focus ring there.
   if (panelMode_ == QStringLiteral("edit") && performGridEdit(intent)) {
@@ -1369,6 +1588,10 @@ void AppController::performPanelFocus(const Intent& intent) {
         }
       } else if (panelMode_ == QStringLiteral("edit")) {
         setPanelMode(QStringLiteral("navigate"));
+      } else if (focusId_.startsWith(QStringLiteral("arrange.clip."))) {
+        // W6: PRESS on a clip opens its "..." actions; MOVE/TRIM in that menu
+        // put the ring into EDIT on the same clip for the value knob.
+        activateFocus();
       } else if (isEditableFocus(focusId_)) {
         setPanelMode(QStringLiteral("edit"));
       } else {
@@ -1485,6 +1708,10 @@ void AppController::updateShiftState(const LinkStatus& status) {
         closeTempoPopup();
       } else if (tabGridOpen_) {
         closeTabGrid();
+      } else if (arrangeVm_ != nullptr && arrangeVm_->clipMenuOpen()) {
+        arrangeVm_->closeClipMenu();
+      } else if (arrangeVm_ != nullptr && arrangeVm_->lengthPopupOpen()) {
+        arrangeVm_->closeLengthPopup();
       } else if (takeSheetOpen_) {
         closeTakeSheet();
       } else if (timelineVm_->editOpen()) {
@@ -1590,6 +1817,16 @@ bool AppController::isEditableFocus(const QString& focusId) const {
       id == QStringLiteral("config.reverb.decay") ||
       id == QStringLiteral("config.reverb.damping")) {
     return true;
+  }
+  if (id == QStringLiteral("arrange.clip.gain") ||
+      id == QStringLiteral("arrange.clip.fadein") ||
+      id == QStringLiteral("arrange.clip.fadeout")) {
+    return true;
+  }
+  if (id.startsWith(QStringLiteral("arrange.clip."))) {
+    bool numeric = false;
+    (void)id.mid(13).toInt(&numeric);
+    return numeric;
   }
   if (id == QStringLiteral("tools.brightness")) return true;
   if (id == QStringLiteral("learn.target")) return true;
@@ -1844,6 +2081,139 @@ void AppController::activateFocus() {
   if (focusId == QStringLiteral("transport.click")) {
     setClickEnabled(!clickEnabled());
     return;
+  }
+  if (focusId == QStringLiteral("transport.song")) {
+    toggleSongMode();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.addsection") ||
+      focusId == QStringLiteral("shift.arrange.addsection")) {
+    arrangeVm_->addSection();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.dupsection") ||
+      focusId == QStringLiteral("shift.arrange.dupsection")) {
+    arrangeVm_->duplicateSection();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.loopsection") ||
+      focusId == QStringLiteral("shift.arrange.loopsection")) {
+    arrangeVm_->loopSection();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.rename") ||
+      focusId == QStringLiteral("shift.arrange.rename")) {
+    requestArrangeSectionRename();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.length") ||
+      focusId == QStringLiteral("shift.arrange.length")) {
+    arrangeVm_->openLengthPopup();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.loop") ||
+      focusId == QStringLiteral("shift.arrange.loop")) {
+    arrangeVm_->setLoopOn(!arrangeVm_->loopOn());
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.zoomout") ||
+      focusId == QStringLiteral("shift.arrange.zoomout")) {
+    arrangeVm_->zoomOut();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.zoomin") ||
+      focusId == QStringLiteral("shift.arrange.zoomin")) {
+    arrangeVm_->zoomIn();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.render") ||
+      focusId == QStringLiteral("shift.arrange.render")) {
+    renderSong();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.clipmenu")) {
+    arrangeVm_->openClipMenu(arrangeVm_->selectedClip());
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.clip.close")) {
+    arrangeVm_->closeClipMenu();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.clip.pane.back")) {
+    arrangeVm_->showClipMenuActions();
+    return;
+  }
+  if (focusId.startsWith(QStringLiteral("arrange.clip.action."))) {
+    const int action = focusId.mid(20).toInt();
+    arrangeVm_->clipMenuAction(action);
+    if ((action == 1 || action == 2) && arrangeVm_->hasClipSelection()) {
+      // MOVE/TRIM arm the panel value knob on the clip: return the ring to the
+      // clip block and enter EDIT, so the next detent is POS or LEN.
+      focusId_ = QStringLiteral("arrange.clip.%1").arg(arrangeVm_->selectedClip());
+      const auto found = std::find(focusIds_.begin(), focusIds_.end(), focusId_);
+      if (found != focusIds_.end()) {
+        focusIndex_ = static_cast<int>(std::distance(focusIds_.begin(), found));
+        focusByScreen_[tab_] = focusIndex_;
+      }
+      setPanelMode(QStringLiteral("edit"));
+      emit focusChanged();
+      rebuildFocusIds();
+      panelMode_ = QStringLiteral("edit");
+      emit panelModeChanged();
+    }
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.length.done")) {
+    arrangeVm_->closeLengthPopup();
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.length.decbar")) {
+    arrangeVm_->adjustLengthBars(-1);
+    showTextPopup(QStringLiteral("LEN"), arrangeVm_->lengthText());
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.length.incbar")) {
+    arrangeVm_->adjustLengthBars(1);
+    showTextPopup(QStringLiteral("LEN"), arrangeVm_->lengthText());
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.length.decbeat")) {
+    arrangeVm_->adjustLengthBeats(-1);
+    showTextPopup(QStringLiteral("LEN"), arrangeVm_->lengthText());
+    return;
+  }
+  if (focusId == QStringLiteral("arrange.length.incbeat")) {
+    arrangeVm_->adjustLengthBeats(1);
+    showTextPopup(QStringLiteral("LEN"), arrangeVm_->lengthText());
+    return;
+  }
+  if (parts.size() >= 2 &&
+      (parts[0] == QStringLiteral("arrange") ||
+       (parts[0] == QStringLiteral("shift") && parts.size() >= 3 &&
+        parts[1] == QStringLiteral("arrange")))) {
+    const int base = parts[0] == QStringLiteral("shift") ? 2 : 1;
+    const QString what = parts[base];
+    bool numeric = false;
+    const int argument = parts.size() > base + 1
+                             ? parts[base + 1].toInt(&numeric)
+                             : -1;
+    if (!numeric) return;
+    if (what == QStringLiteral("section")) {
+      arrangeVm_->selectSection(argument);
+      return;
+    }
+    if (what == QStringLiteral("clip")) {
+      arrangeVm_->openClipMenu(argument);
+      return;
+    }
+    if (what == QStringLiteral("clipmenu")) {
+      arrangeVm_->clipMenuAction(argument);
+      return;
+    }
+    if (what == QStringLiteral("grid")) {
+      arrangeVm_->setGrid(argument);
+      return;
+    }
   }
   if (focusId == QStringLiteral("channel.rename")) {
     requestRenameTrack(mixerVm_->channelSlot());
@@ -2441,6 +2811,55 @@ void AppController::adjustFocused(int detents, bool fine) {
     return;
   }
 
+  if (focusId.startsWith(QStringLiteral("arrange.clip."))) {
+    if (focusId == QStringLiteral("arrange.clip.gain")) {
+      arrangeVm_->setClipGainDb(arrangeVm_->clipGainDb() +
+                                step * (fine ? 0.1 : 0.5));
+      showValuePopup(QStringLiteral("CLIP GAIN"), QStringLiteral("db"),
+                     arrangeVm_->clipGainDb());
+      return;
+    }
+    if (focusId == QStringLiteral("arrange.clip.fadein")) {
+      arrangeVm_->setClipFadeIn(arrangeVm_->clipFadeInBeats() +
+                                step * (fine ? 0.05 : 0.25));
+      showTextPopup(QStringLiteral("FADE IN"),
+                    QString::number(arrangeVm_->clipFadeInBeats(), 'f', 2) +
+                        QStringLiteral(" beats"));
+      return;
+    }
+    if (focusId == QStringLiteral("arrange.clip.fadeout")) {
+      arrangeVm_->setClipFadeOut(arrangeVm_->clipFadeOutBeats() +
+                                 step * (fine ? 0.05 : 0.25));
+      showTextPopup(QStringLiteral("FADE OUT"),
+                    QString::number(arrangeVm_->clipFadeOutBeats(), 'f', 2) +
+                        QStringLiteral(" beats"));
+      return;
+    }
+    bool numeric = false;
+    const int clip = focusId.mid(13).toInt(&numeric);
+    if (numeric && arrangeVm_->clipCount() > clip) {
+      arrangeVm_->selectClip(clip);
+      if (shiftHeld_) {
+        arrangeVm_->nudgeClipLength(detents);
+        const auto rows = arrangeVm_->clips();
+        const double beats =
+            rows.at(clip).toMap().value(QStringLiteral("lengthBeats")).toDouble();
+        showTextPopup(QStringLiteral("LEN"),
+                      QString::number(beats / 4.0, 'f', 1) +
+                          QStringLiteral(" bars"));
+      } else {
+        arrangeVm_->nudgeClipPosition(detents);
+        const auto rows = arrangeVm_->clips();
+        const double beats =
+            rows.at(clip).toMap().value(QStringLiteral("startBeats")).toDouble();
+        showTextPopup(QStringLiteral("POS"),
+                      QString::number(beats / 4.0, 'f', 1) +
+                          QStringLiteral(" bars"));
+      }
+      return;
+    }
+  }
+
   if (parts.size() >= 3 && parts[0] == QStringLiteral("mixer") &&
       parts[1] == QStringLiteral("bank") && parts[2] == QStringLiteral("pages")) {
     // A11: the panel focuses the label and the encoder still walks pages, so
@@ -3008,6 +3427,23 @@ void AppController::rebuildFocusIds() {
     ids.push_back(QStringLiteral("edit.apply"));
     ids.push_back(QStringLiteral("edit.undo"));
     ids.push_back(QStringLiteral("edit.render"));
+  } else if (arrangeVm_ != nullptr && arrangeVm_->clipMenuOpen()) {
+    for (int action = 0; action < arrangeVm_->clipActions().size(); ++action) {
+      ids.push_back(QStringLiteral("arrange.clip.action.%1").arg(action));
+    }
+    if (arrangeVm_->clipMenuPane() != 0) {
+      ids.push_back(QStringLiteral("arrange.clip.gain"));
+      ids.push_back(QStringLiteral("arrange.clip.fadein"));
+      ids.push_back(QStringLiteral("arrange.clip.fadeout"));
+      ids.push_back(QStringLiteral("arrange.clip.pane.back"));
+    }
+    ids.push_back(QStringLiteral("arrange.clip.close"));
+  } else if (arrangeVm_ != nullptr && arrangeVm_->lengthPopupOpen()) {
+    ids.push_back(QStringLiteral("arrange.length.decbar"));
+    ids.push_back(QStringLiteral("arrange.length.incbar"));
+    ids.push_back(QStringLiteral("arrange.length.decbeat"));
+    ids.push_back(QStringLiteral("arrange.length.incbeat"));
+    ids.push_back(QStringLiteral("arrange.length.done"));
   } else if (takeSheetOpen_) {
     ids.push_back(QStringLiteral("take.sheet.live"));
     for (int row = 0; row < recorderVm_->takes()->rowCount(); ++row) {
@@ -3331,6 +3767,20 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("shift.tools.brightness"));
         }
         break;
+      case kArrangeTabIndex:
+        ids.push_back(QStringLiteral("shift.arrange.addsection"));
+        ids.push_back(QStringLiteral("shift.arrange.dupsection"));
+        ids.push_back(QStringLiteral("shift.arrange.loopsection"));
+        ids.push_back(QStringLiteral("shift.arrange.rename"));
+        ids.push_back(QStringLiteral("shift.arrange.length"));
+        ids.push_back(QStringLiteral("shift.arrange.loop"));
+        for (int grid = 0; grid < arrange::kGridCount; ++grid) {
+          ids.push_back(QStringLiteral("shift.arrange.grid.%1").arg(grid));
+        }
+        ids.push_back(QStringLiteral("shift.arrange.zoomout"));
+        ids.push_back(QStringLiteral("shift.arrange.zoomin"));
+        ids.push_back(QStringLiteral("shift.arrange.render"));
+        break;
       case 6: {
         // EQ SHIFT face: the band editor is too tall for the tile row, so the
         // sliders and the six explicit band types live here.
@@ -3366,6 +3816,7 @@ void AppController::rebuildFocusIds() {
     }
     ids.push_back(QStringLiteral("transport.click"));
     ids.push_back(QStringLiteral("transport.recmode"));
+    ids.push_back(QStringLiteral("transport.song"));
     switch (tab_) {
       case 0: {
         ids.push_back(QStringLiteral("mixer.mode.0"));
@@ -3489,6 +3940,32 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("xy.freeze"));
         ids.push_back(QStringLiteral("xy.delay.params"));
         ids.push_back(QStringLiteral("xy.reverb.params"));
+        break;
+      }
+      case kArrangeTabIndex: {
+        // ARRANGE: section markers, section verbs, the length/loop controls,
+        // grid and zoom, every clip block and the selected clip's "...".
+        for (int section = 0; section < arrangeVm_->sectionCount(); ++section) {
+          ids.push_back(QStringLiteral("arrange.section.%1").arg(section));
+        }
+        ids.push_back(QStringLiteral("arrange.addsection"));
+        ids.push_back(QStringLiteral("arrange.dupsection"));
+        ids.push_back(QStringLiteral("arrange.loopsection"));
+        ids.push_back(QStringLiteral("arrange.rename"));
+        ids.push_back(QStringLiteral("arrange.length"));
+        ids.push_back(QStringLiteral("arrange.loop"));
+        for (int grid = 0; grid < arrange::kGridCount; ++grid) {
+          ids.push_back(QStringLiteral("arrange.grid.%1").arg(grid));
+        }
+        ids.push_back(QStringLiteral("arrange.zoomout"));
+        ids.push_back(QStringLiteral("arrange.zoomin"));
+        for (int clip = 0; clip < arrangeVm_->clipCount(); ++clip) {
+          ids.push_back(QStringLiteral("arrange.clip.%1").arg(clip));
+        }
+        if (arrangeVm_->hasClipSelection()) {
+          ids.push_back(QStringLiteral("arrange.clipmenu"));
+        }
+        ids.push_back(QStringLiteral("arrange.render"));
         break;
       }
       default:
@@ -3720,9 +4197,161 @@ void AppController::renderRegionToTrack() {
                 QStringLiteral("render-region"), -1);
 }
 
+
+bool AppController::songMode() const {
+  return arrangeVm_ != nullptr && arrangeVm_->songMode();
+}
+
+void AppController::setSongMode(bool on) {
+  if (arrangeVm_ == nullptr) return;
+  arrangeVm_->setSongMode(on);
+}
+
+void AppController::toggleSongMode() {
+  if (arrangeVm_ == nullptr) return;
+  arrangeVm_->setSongMode(!arrangeVm_->songMode());
+}
+
+void AppController::requestArrangeSectionRename() {
+  if (arrangeVm_ == nullptr) return;
+  const int index = arrangeVm_->selectedSection();
+  const QString name = arrangeVm_->selectedSectionName();
+  if (index < 0 || name.isEmpty()) {
+    showNotice(NoticeWarn, QStringLiteral("add or select a section first"));
+    return;
+  }
+  requestKeypad(QStringLiteral("RENAME SECTION"), name,
+                QStringLiteral("arrange-section-rename"), index);
+}
+
+void AppController::renderSong() {
+  if (arrangeVm_ == nullptr) return;
+  if (audio_.recording()) {
+    showNotice(NoticeWarn, QStringLiteral("stop the take before RENDER SONG"));
+    return;
+  }
+  if (arrangeVm_->clipCount() == 0) {
+    showNotice(NoticeWarn, QStringLiteral("RENDER SONG needs at least one clip"));
+    return;
+  }
+  // Re-apply at the current tempo (the engine refuses a lane resolved at a
+  // different tempo) and read the settled length in bars.
+  arrangeVm_->applySongToEngine();
+  if (arrangeVm_->readableClipCount() == 0) {
+    showNotice(NoticeError,
+               QStringLiteral("RENDER SONG refused - no readable clip takes"));
+    return;
+  }
+  const int bars = std::max(
+      1, static_cast<int>(std::lround(std::ceil(arrangeVm_->lengthBeats() / 4.0))));
+  const std::time_t now = std::time(nullptr);
+  std::tm parts{};
+#if defined(_WIN32)
+  if (gmtime_s(&parts, &now) != 0) {
+    showNotice(NoticeError, QStringLiteral("cannot read the clock"));
+    return;
+  }
+#else
+  if (gmtime_r(&now, &parts) == nullptr) {
+    showNotice(NoticeError, QStringLiteral("cannot read the clock"));
+    return;
+  }
+#endif
+  char name[64] = {};
+  std::snprintf(name, sizeof name, "song-%04d%02d%02d-%02d%02d%02d.wav",
+                parts.tm_year + 1900, parts.tm_mon + 1, parts.tm_mday,
+                parts.tm_hour, parts.tm_min, parts.tm_sec);
+  const auto path = state_.takeDirectory() / name;
+  std::error_code createError;
+  std::filesystem::create_directories(state_.takeDirectory(), createError);
+  if (createError) {
+    showNotice(NoticeError, QStringLiteral("cannot create the take folder"));
+    return;
+  }
+  std::filesystem::path written;
+  std::string error;
+  if (!audio_.renderSong(path.string(), bars, &written, &error)) {
+    showNotice(NoticeError, QString::fromStdString(error));
+    return;
+  }
+  recorderVm_->takeStateChanged();
+  recorderVm_->refresh();
+  // The master bounce is a take in the list (MASTER badge), never the track's
+  // ACTIVE take: selecting it is a deliberate audition step.
+  showNotice(NoticeInfo,
+             QStringLiteral("SONG RENDERED ") +
+                 QString::fromStdString(written.filename().string()) +
+                 QStringLiteral(" - master mix rendered (main bus)"));
+  showTextPopup(QStringLiteral("SONG RENDERED"),
+                QString::fromStdString(written.filename().string()));
+}
+
+void AppController::openArrangeClipEdit(int track, const QString& takeKey) {
+  if (takeKey.isEmpty()) return;
+  recorderVm_->setSelectedTrack(track);
+  settings_.setActiveTake(track, takeKey.toStdString());
+  recorderVm_->resyncActiveTakes();
+  mixerVm_->notifyActiveTakesChanged();
+  timelineVm_->setSelectedTrack(track);
+  timelineVm_->refresh();
+  timelineVm_->openEdit(track);
+  showNotice(NoticeInfo,
+             QStringLiteral("EDIT %1 - non-destructive (RENDER writes a new take)")
+                 .arg(takeKey));
+}
+
+void AppController::placePunchTakeClips(MixerModel::TrackMask recorded) {
+  if (arrangeVm_ == nullptr || !settings_.songMode) return;
+  int placed = 0;
+  int bar = 0;
+  for (int track = 0; track < audio::kMaxTracks && track < MixerModel::kMaskBits;
+       ++track) {
+    if ((recorded & (MixerModel::TrackMask{1} << static_cast<unsigned>(track))) == 0) {
+      continue;
+    }
+    const std::string key = settings_.activeTake(track);
+    if (key.empty()) continue;
+    std::string error;
+    const int clip = arrangeVm_->placePunchTake(track, key, punchPlaceStartBeats_,
+                                                &error);
+    if (clip < 0) {
+      showNotice(NoticeWarn, QString::fromStdString(error));
+      continue;
+    }
+    ++placed;
+    const auto clips = arrangeVm_->clips();
+    if (clip >= 0 && static_cast<qsizetype>(clip) < clips.size()) {
+      const auto row = clips.at(clip).toMap();
+      bar = arrange::barOfBeat(row.value(QStringLiteral("startBeats")).toDouble());
+    }
+  }
+  if (placed > 0) {
+    showNotice(NoticeInfo,
+               QStringLiteral("TAKE SAVED -> clip at bar %1").arg(bar));
+  }
+}
+
+std::uint32_t AppController::displayTick(const LinkStatus& status) const {
+  return transportTick(status.tick, state_.transportOffsetTicks.load());
+}
+
+double AppController::displayBeats(const LinkStatus& status) const {
+  return static_cast<double>(displayTick(status)) /
+         static_cast<double>(kTicksPerBeat) * 4.0;
+}
+
+int AppController::songPunchBar(int loopRelativeMeasure) const {
+  if (arrangeVm_ == nullptr) return loopRelativeMeasure;
+  const double beats = arrange::punchStartBeats(
+      loopRelativeMeasure, arrangeVm_->effectiveLoopStartBeats());
+  return arrange::barOfBeat(beats);
+}
+
 void AppController::startTakeNow() {
   pendingRec_ = false;
   chord_.reset();
+  punchPlaceArmed_ = false;
+  punchEngaged_ = false;
   toggleTake();
 }
 
@@ -3770,6 +4399,8 @@ void AppController::armRecSchedule() {
   }
   state_.recScheduled.store(true);
   recScheduleSawRolling_ = false;
+  punchEngaged_ = false;
+  punchPlaceArmed_ = false;
   clearNotice();
   // START (command 1) resets the tick, so the roll begins at bar 1 exactly as
   // the status line states.
@@ -3795,7 +4426,8 @@ void AppController::pollRecSchedule(const LinkStatus& status) {
     return;
   }
   recScheduleSawRolling_ = true;
-  const int bar = barOfTick(status.tick);
+  const int rawBar = barOfTick(status.tick);
+  const int bar = barOfTick(displayTick(status));
   if (recSchedule_ == RecSchedule::CountIn) {
     // The click rolls from bar 1 for n bars with the recorder silent; the take
     // then opens at bar 1 of the recorded timeline, which is what the status
@@ -3803,7 +4435,7 @@ void AppController::pollRecSchedule(const LinkStatus& status) {
     // reached by restarting the transport on the boundary (same tempo, same
     // click phase) instead of pre-rolling to bar -n.
     const int engageBar = clampCountInBars(state_.countInBars.load()) + 1;
-    if (bar < engageBar) return;
+    if (rawBar < engageBar) return;
     recSchedule_ = RecSchedule::None;
     state_.recScheduled.store(false);
     link_.requestTransport(0);
@@ -3811,27 +4443,45 @@ void AppController::pollRecSchedule(const LinkStatus& status) {
     toggleTake();
     return;
   }
-  const int punchIn = settings_.punch.in.enabled ? settings_.punch.in.measure : 1;
+  const int punchInMeasure =
+      settings_.punch.in.enabled ? settings_.punch.in.measure : 1;
+  const int punchOutMeasure = recPunchOutBar_;
+  // SONG mode punch points are loop-relative (W4/W5 addendum): a marker bar
+  // counts from the active loop start. Free mode keeps the legacy absolute
+  // measure interpretation.
+  const int punchIn = settings_.songMode ? songPunchBar(punchInMeasure)
+                                         : punchInMeasure;
+  const int punchOut = settings_.songMode && punchOutMeasure > 0
+                           ? songPunchBar(punchOutMeasure)
+                           : punchOutMeasure;
   if (!audio_.recording()) {
-    if (bar >= punchIn) {
+    if (!punchEngaged_ && bar >= punchIn) {
+      punchEngaged_ = true;
       recSchedule_ = RecSchedule::None;
       state_.recScheduled.store(false);
       toggleTake();
+      if (audio_.recording()) {
+        punchPlaceArmed_ = true;
+        punchPlaceStartBeats_ = arrange::punchStartBeats(
+            punchInMeasure, arrangeVm_ == nullptr
+                                ? 0.0
+                                : arrangeVm_->effectiveLoopStartBeats());
+      }
     }
     return;
   }
-  if (recPunchOutBar_ > 0 && bar >= recPunchOutBar_) {
+  if (punchOut > 0 && bar >= punchOut) {
     // PUNCH OUT: the take stops writing, the transport keeps rolling so the
     // performance can continue past the punch.
-    stopTake();
+    stopTake(/*keepRolling=*/true);
     cancelRecSchedule();
   }
 }
 
-void AppController::stopTake() {
+void AppController::stopTake(bool keepRolling) {
   const auto take = audio_.stopTake();
   state_.recording.store(false);
-  link_.requestTransport(0);
+  if (!keepRolling) link_.requestTransport(0);
   // Adopt the core recorder's chNN.wav files into the session-v2 per-track
   // names before the take list rescans. This is the app-side name policy; a
   // future Recorder API can take the template directly.
@@ -3842,7 +4492,12 @@ void AppController::stopTake() {
     // take and the way to hear it. OVERDUB stays in OVERDUB (§9 decision): it
     // is a layering mode the user asked for, not a one-shot arm.
     applyTakeModeAfterStop(takeArmMask_);
-    if (!lastKey.empty()) {
+    if (punchPlaceArmed_ && settings_.songMode) {
+      // PUNCH INTO SONG: the written take becomes a clip at the punch in point.
+      // The auto-place notice replaces the generic TAKE SAVED line.
+      punchPlaceArmed_ = false;
+      placePunchTakeClips(takeArmMask_);
+    } else if (!lastKey.empty()) {
       // The notice names the take without its extension, exactly as the plan
       // writes it: `TAKE SAVED 02-bass-001 - mode PLAY to hear it`.
       std::string stem = std::filesystem::path(lastKey).filename().string();
@@ -3854,6 +4509,8 @@ void AppController::stopTake() {
                                  QStringLiteral(" - mode PLAY to hear it"));
     }
   }
+  punchPlaceArmed_ = false;
+  punchEngaged_ = false;
   recorderVm_->takeStateChanged();
   if (take.files > 0) {
     log("recorder: take finished, " + std::to_string(take.files) + " files in " + take.path);
@@ -3869,9 +4526,14 @@ void AppController::updateTransport() {
   const QString state = recording() ? QStringLiteral("REC")
                         : (status.rolling ? QStringLiteral("PLAY")
                                           : QStringLiteral("STOP"));
+  // SONG mode reads the song timeline: the displayed tick carries the app-side
+  // seek offset, so a tap on the ARRANGE playhead moves this bar:beat readout.
+  const std::uint32_t positionTick = displayTick(status);
   const QString position =
-      QString::fromStdString(formatBarBeatTick(status.tick)) + QStringLiteral(" / ") +
-      QString::fromStdString(formatDuration(tickSeconds(status.tick, status.tempoX100)));
+      QString::fromStdString(formatBarBeatTick(positionTick)) +
+      QStringLiteral(" / ") +
+      QString::fromStdString(
+          formatDuration(tickSeconds(positionTick, status.tempoX100)));
   const QString tempo = QString::fromStdString(formatTempo(status.tempoX100));
   bool changed = false;
   if (state != transportState_) {
@@ -3939,9 +4601,13 @@ void AppController::projectStateChanged() {
   routingVm_->refresh();
   mixerVm_->refresh();
   sessionVm_->refresh();
+  // A project load/new starts the song transport at bar 1; a stale seek offset
+  // from the previous project must not shift it.
+  state_.transportOffsetTicks.store(0);
   recorderVm_->takeStateChanged();
   recorderVm_->resyncActiveTakes();
   timelineVm_->reloadFromSettings();
+  arrangeVm_->reloadFromSettings();
   audio_.applyMonitorSettings(settings_);
   audio_.applyTakeLoops(settings_);
   audio_.applyEq(eqModel_.capture());
