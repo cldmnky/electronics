@@ -16,11 +16,14 @@
 
 namespace mnky::app {
 namespace {
-constexpr int kProjectsTabIndex = 5;
-constexpr int kMonitorTabIndex = 6;
-constexpr int kEqTabIndex = 7;
-constexpr int kXyTabIndex = 8;
-constexpr int kEditTabIndex = 9;
+// Tab order after the FX tab retired into the per-track rack popup:
+// 0 Mixer, 1 Routing, 2 Recorder, 3 System, 4 Projects, 5 Monitor, 6 EQ,
+// 7 X/Y, 8 EDIT (logic.hpp kScreenCount keeps the same count).
+constexpr int kProjectsTabIndex = 4;
+constexpr int kMonitorTabIndex = 5;
+constexpr int kEqTabIndex = 6;
+constexpr int kXyTabIndex = 7;
+constexpr int kEditTabIndex = 8;
 
 std::uint64_t nowMs() {
   using namespace std::chrono;
@@ -46,8 +49,7 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
 
   mixerVm_ = std::make_unique<MixerViewModel>(mixer_, settings_, eqModel_);
   routingVm_ = std::make_unique<RoutingViewModel>(midi_, noPico_);
-  fxVm_ = std::make_unique<FxViewModel>(fx_, state_, mixer_, performance_,
-                                        audio_.sampleRate());
+  fxVm_ = std::make_unique<TrackFxViewModel>(mixer_, *mixerVm_);
   recorderVm_ =
       std::make_unique<RecorderViewModel>(state_, audio_, mixer_, link_, settings_);
   timelineVm_ = std::make_unique<TimelineViewModel>(state_, audio_, *recorderVm_,
@@ -60,12 +62,12 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
   midiMonitorVm_ = std::make_unique<MidiMonitorViewModel>(midi_, noPico_);
   toolsVm_ = std::make_unique<ToolsViewModel>(state_, link_);
   configVm_ =
-      std::make_unique<ConfigPopupModel>(state_, mixer_, settings_, eqModel_, performance_);
+      std::make_unique<ConfigPopupModel>(state_, mixer_, settings_, eqModel_);
   configVm_->setTimeline(timelineVm_.get());
   configVm_->setRouting(routingVm_.get());
   configVm_->setMixer(mixerVm_.get());
   eqVm_ = std::make_unique<EqViewModel>(eqModel_);
-  xyVm_ = std::make_unique<XyViewModel>(performance_);
+  xyVm_ = std::make_unique<XyViewModel>(mixer_, *mixerVm_);
   // Every EQ/XY screen change shows one transient readout, the same single
   // popup instance the sliders and the panel EDIT path drive.
   connect(eqVm_.get(), &EqViewModel::valuePopupRequested, this,
@@ -146,7 +148,6 @@ void AppController::start() {
   routingVm_->refresh();
 
   link_.start();
-  fxVm_->loadDefaults();
   audio_.applyMonitorSettings(settings_);
   audio_.applyTakeLoops(settings_);
   audio_.applyEq(eqModel_.capture());
@@ -408,9 +409,8 @@ void AppController::closeTabGrid() {
 }
 
 bool AppController::tabHasShiftFace(int tab) const {
-  // D3: tabs 6 (MIDI), 8 (XY) and 9 (EDIT) have no second face.
-  return tab == 0 || tab == 1 || tab == 2 || tab == 3 || tab == 4 ||
-         tab == kProjectsTabIndex || tab == kEqTabIndex;
+  // D3: tabs 5 (MIDI), 7 (XY) and 8 (EDIT) have no second face.
+  return tab <= 3 || tab == kProjectsTabIndex || tab == kEqTabIndex;
 }
 
 void AppController::requestKeypad(const QString& title, const QString& initial,
@@ -721,10 +721,10 @@ void AppController::learnTargetTouched(const QString& focusId) {
         learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "pan"));
   } else if (id.startsWith(QStringLiteral("mixer.fx1."))) {
     path = QString::fromStdString(
-        learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "sendA"));
+        learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "fx1wet"));
   } else if (id.startsWith(QStringLiteral("mixer.fx2."))) {
     path = QString::fromStdString(
-        learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "sendB"));
+        learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "fx2wet"));
   }
   if (path.isEmpty()) return;
   learnVm_->setTargetByPath(path);
@@ -746,9 +746,35 @@ void AppController::openOutputDest(int slot) {
   openConfigFrom(QStringLiteral("outputdest"), nullptr);
 }
 
-void AppController::openInsert(int slot) {
-  configVm_->setInsertTarget(slot);
-  openConfigFrom(QStringLiteral("insert"), nullptr);
+void AppController::openTrackFx(int slot) {
+  fxVm_->openFor(mixerVm_->selectedStrip(), slot);
+  rebuildFocusIds();
+}
+
+void AppController::closeTrackFx() {
+  fxVm_->close();
+  rebuildFocusIds();
+}
+
+void AppController::openFxSlot(int slot) {
+  configVm_->setFxTarget(mixerVm_->selectedStrip(), slot);
+  openConfigFrom(QStringLiteral("fxslot"), nullptr);
+}
+
+void AppController::openFxSlotParams(int slot) {
+  const int track = mixerVm_->selectedStrip();
+  const int choice = mixerVm_->fxChoiceAt(track, slot);
+  configVm_->setFxTarget(track, slot);
+  if (choice == 1) {
+    openConfigFrom(QStringLiteral("delay"), nullptr);
+  } else if (choice == 2) {
+    openConfigFrom(QStringLiteral("reverb"), nullptr);
+  } else {
+    // No built-in effect in this slot: name the gap instead of opening an
+    // editor that would accept values nothing runs.
+    showTextPopup(QStringLiteral("FX%1").arg(slot == 1 ? 2 : 1),
+                  mixerVm_->fxSlotNote(track, slot));
+  }
 }
 
 void AppController::openChannel(int slot) {
@@ -842,9 +868,11 @@ void AppController::openConfigInternal(const QString& kind) {
   } else if (kind == QStringLiteral("outputdest") &&
              !mixerVm_->trackSlotActive(configVm_->outputTarget())) {
     configVm_->setOutputTarget(mixerVm_->trackIndex());
-  } else if (kind == QStringLiteral("insert") &&
-             !mixerVm_->trackSlotActive(configVm_->insertTarget())) {
-    configVm_->setInsertTarget(mixerVm_->trackIndex());
+  } else if (kind == QStringLiteral("fxslot") &&
+             !mixerVm_->trackSlotActive(configVm_->fxTargetTrack())) {
+    // The selector always targets a slot on a live track: a removed track would
+    // show an empty list over a strip nobody can see.
+    configVm_->setFxTarget(mixerVm_->selectedStrip(), configVm_->fxTargetSlot());
   } else if (kind == QStringLiteral("addtrack")) {
     configVm_->setAddTrackSlot(mixerVm_->nextFreeSlot());
   }
@@ -1208,9 +1236,8 @@ bool AppController::performGridEdit(const Intent& intent) {
     return true;
   }
   if (id == QStringLiteral("xy.delay") || id == QStringLiteral("xy.reverb")) {
-    const int grid = id == QStringLiteral("xy.reverb") ? PerformanceModel::kReverbGrid
-                                                      : PerformanceModel::kDelayGrid;
-    xyVm_->nudge(grid, dx, dy, shiftHeld_);
+    // Grid 0 bends FX1, grid 1 bends FX2 of the selected track.
+    xyVm_->nudge(id == QStringLiteral("xy.reverb") ? 1 : 0, dx, dy, shiftHeld_);
     return true;
   }
   return false;
@@ -1302,7 +1329,6 @@ bool AppController::isEditableFocus(const QString& focusId) const {
   }
   if (id.startsWith(QStringLiteral("mixer."))) {
     return id.contains(QStringLiteral("gain")) || id.contains(QStringLiteral("pan")) ||
-           id.contains(QStringLiteral("sendA")) || id.contains(QStringLiteral("sendB")) ||
            id.contains(QStringLiteral("fx1")) || id.contains(QStringLiteral("fx2")) ||
            id.contains(QStringLiteral("cue")) || id.contains(QStringLiteral("out34")) ||
            id.startsWith(QStringLiteral("mixer.in.")) ||
@@ -1393,6 +1419,17 @@ void AppController::activateFocus() {
   if (focusId.isEmpty()) return;
   const auto parts = focusId.split(QLatin1Char('.'));
 
+  if (fxVm_ && fxVm_->open() && parts.size() >= 2 &&
+      parts[0] == QStringLiteral("trackfx")) {
+    // PRESS on a rack control gives the encoder its directions; the slot
+    // selector is a real tap (it opens the list) so it is handled in QML.
+    const QString what = parts[2];
+    if (what == QStringLiteral("wet") || what == QStringLiteral("param")) {
+      setPanelMode(QStringLiteral("edit"));
+    }
+    return;
+  }
+
   if (configVm_ && configVm_->open() && parts.size() >= 2 &&
       parts[0] == QStringLiteral("config")) {
     const int index = parts.size() >= 3 ? parts[2].toInt() : 0;
@@ -1457,9 +1494,8 @@ void AppController::activateFocus() {
       configVm_->setInputSourceIndex(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("output") && parts.size() >= 3) {
       configVm_->setOutputIndex(parts[2].toInt());
-    } else if (parts[1] == QStringLiteral("insert") && parts.size() >= 3 &&
-               parts[2] != QStringLiteral("bypass")) {
-      configVm_->setInsertIndex(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("fxslot") && parts.size() >= 3) {
+      configVm_->setFxSlotChoice(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("pipesource") && parts.size() >= 3) {
       configVm_->setPipeSourceIndex(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("pipedest") && parts.size() >= 3) {
@@ -1581,6 +1617,9 @@ void AppController::activateFocus() {
     } else if (parts[1] == QStringLiteral("output")) {
       setPanelMode(QStringLiteral("edit"));
       showTextPopup(QStringLiteral("OUTPUT DEST"), mixerVm_->trackOutputText());
+    } else if (parts[1] == QStringLiteral("fx")) {
+      // TRACK SHIFT > TRACK FX: the same popup the channel popout opens.
+      openTrackFx(0);
     } else if (parts[1] == QStringLiteral("gain") || parts[1] == QStringLiteral("trim") ||
                parts[1] == QStringLiteral("pan") || parts[1] == QStringLiteral("fx1") ||
                parts[1] == QStringLiteral("fx2") || parts[1] == QStringLiteral("cue") ||
@@ -1740,7 +1779,6 @@ void AppController::activateFocus() {
     const int strip = parts[2].toInt();
     selectStrip(strip);
     if (what == QStringLiteral("gain") || what == QStringLiteral("pan") ||
-        what == QStringLiteral("sendA") || what == QStringLiteral("sendB") ||
         what == QStringLiteral("fx1") || what == QStringLiteral("fx2") ||
         what == QStringLiteral("cue") || what == QStringLiteral("out34")) {
       setPanelMode(QStringLiteral("edit"));
@@ -1780,10 +1818,8 @@ void AppController::activateFocus() {
       openInputSource(mixerVm_->trackIndex());
     } else if (what == QStringLiteral("output")) {
       openOutputDest(mixerVm_->trackIndex());
-    } else if (what == QStringLiteral("insert")) {
-      openInsert(mixerVm_->trackIndex());
-    } else if (what == QStringLiteral("insert.bypass")) {
-      mixerVm_->toggleChannelInsertBypass();
+    } else if (what == QStringLiteral("fx")) {
+      openTrackFx(0);
     } else if (what == QStringLiteral("mute")) {
       mixerVm_->setTrackMute(!mixerVm_->trackMute());
     } else if (what == QStringLiteral("solo")) {
@@ -1802,27 +1838,6 @@ void AppController::activateFocus() {
                what == QStringLiteral("pan") || what == QStringLiteral("fx1") ||
                what == QStringLiteral("fx2") || what == QStringLiteral("cue") ||
                what == QStringLiteral("out34")) {
-      setPanelMode(QStringLiteral("edit"));
-    }
-    return;
-  }
-
-  if (parts.size() >= 2 && parts[0] == QStringLiteral("fx") &&
-      (parts[1] == QStringLiteral("delay") || parts[1] == QStringLiteral("reverb"))) {
-    const bool delay = parts[1] == QStringLiteral("delay");
-    const QString what = parts.size() >= 3 ? parts[2] : QString();
-    auto* builtin = fxVm_->builtin();
-    if (delay && what == QStringLiteral("beat")) {
-      builtin->setDelayBeat(!builtin->delayBeat());
-    } else if (delay && what == QStringLiteral("ping")) {
-      builtin->setDelayPingPong(!builtin->delayPingPong());
-    } else if (delay && what == QStringLiteral("division")) {
-      builtin->cycleDelayDivision(1);
-      showTextPopup(QStringLiteral("DELAY DIVISION"), builtin->delayDivisionText());
-    } else if (!delay && what == QStringLiteral("model")) {
-      builtin->cycleReverbModel(1);
-      showTextPopup(QStringLiteral("REVERB MODEL"), builtin->reverbModelText());
-    } else {
       setPanelMode(QStringLiteral("edit"));
     }
     return;
@@ -1902,26 +1917,6 @@ void AppController::activateFocus() {
       const int mask = masks.value(source).toInt();
       routingVm_->setMaskBit(source, channel, (mask & (1 << channel)) == 0);
     } else if (parts[1] == QStringLiteral("transpose")) {
-      setPanelMode(QStringLiteral("edit"));
-    }
-    return;
-  }
-
-  if (parts.size() >= 3 && parts[0] == QStringLiteral("fx")) {
-    const int slot = parts[1] == QStringLiteral("B") ? 1 : 0;
-    const QString what = parts[2];
-    auto* view = slot == 1 ? fxVm_->slotB() : fxVm_->slotA();
-    if (what == QStringLiteral("plugin")) {
-      view->loadDefault();
-    } else if (what == QStringLiteral("eject")) {
-      view->eject();
-    } else if (what == QStringLiteral("save")) {
-      view->saveState();
-    } else if (what == QStringLiteral("load")) {
-      view->loadState();
-    } else if (what == QStringLiteral("bypass")) {
-      view->toggleBypass();
-    } else if (what == QStringLiteral("return") || what == QStringLiteral("param")) {
       setPanelMode(QStringLiteral("edit"));
     }
     return;
@@ -2059,14 +2054,14 @@ void AppController::activateFocus() {
       xyVm_->toggleFreeze();
     } else if (parts[1] == QStringLiteral("delay") ||
                parts[1] == QStringLiteral("reverb")) {
+      // Grid ids keep their historical names; the grid is the rack slot.
+      const int slot = parts[1] == QStringLiteral("reverb") ? 1 : 0;
       if (parts.size() >= 3 && parts[2] == QStringLiteral("params")) {
-        // Freeze owns every reverb parameter until it is released, so the
-        // popup would accept and then write nothing: say so instead.
-        if (parts[1] == QStringLiteral("reverb") && xyVm_->frozen()) {
-          showTextPopup(QStringLiteral("REVERB"),
+        if (slot == 1 && xyVm_->frozen()) {
+          showTextPopup(QStringLiteral("FX2"),
                         QStringLiteral("FREEZE locks the reverb params"));
         } else {
-          openConfig(parts[1]);
+          openFxSlotParams(slot);
         }
       } else {
         setPanelMode(QStringLiteral("edit"));
@@ -2132,6 +2127,51 @@ void AppController::adjustFocused(int detents, bool fine) {
   if (focusId.isEmpty() || detents == 0) return;
   const auto parts = focusId.split(QLatin1Char('.'));
   const double step = static_cast<double>(detents);
+
+  if (fxVm_ && fxVm_->open() && parts.size() >= 2 &&
+      parts[0] == QStringLiteral("trackfx")) {
+    // PRESS on a rack control gives the encoder its directions; the slot
+    // selector is a real tap (it opens the list) so it is handled in QML.
+    const QString what = parts[2];
+    if (what == QStringLiteral("wet") || what == QStringLiteral("param")) {
+      setPanelMode(QStringLiteral("edit"));
+    }
+    return;
+  }
+
+  if (fxVm_ && fxVm_->open() && parts.size() >= 3 &&
+      parts[0] == QStringLiteral("trackfx")) {
+    // The encoder turns a rack control the ring stopped on: the wet chip, or one
+    // card of the slot's parameter grid (its own range and step decide the
+    // increment).
+    const int slot = parts[1] == QStringLiteral("fx2") ? 1 : 0;
+    const int track = mixerVm_->selectedStrip();
+    if (parts[2] == QStringLiteral("wet")) {
+      const double next = std::clamp(mixerVm_->fxWetAt(track, slot) +
+                                         step * (fine ? 0.01 : 0.05),
+                                     0.0, 1.0);
+      mixerVm_->setFxWetAt(track, slot, next);
+      showValuePopup(QStringLiteral("FX%1 WET").arg(slot + 1),
+                     QStringLiteral("percent"), next);
+    } else if (parts[2] == QStringLiteral("param") && parts.size() >= 4) {
+      const int param = parts[3].toInt();
+      const auto card = paramCard(track, slot, param);
+      if (!card.isEmpty()) {
+        const double value = card.value(QStringLiteral("value")).toDouble();
+        const double minimum = card.value(QStringLiteral("minimum")).toDouble();
+        const double maximum = card.value(QStringLiteral("maximum")).toDouble();
+        const bool stepped = card.value(QStringLiteral("stepped")).toBool();
+        const double span = maximum - minimum;
+        const double delta = stepped ? step : step * (fine ? span / 100.0 : span / 20.0);
+        const double next = std::clamp(value + delta, minimum, maximum);
+        mixerVm_->setFxParamAt(track, slot, param, next);
+        showValuePopup(QStringLiteral("FX%1 ").arg(slot + 1) +
+                           card.value(QStringLiteral("name")).toString(),
+                       QStringLiteral("generic"), next);
+      }
+    }
+    return;
+  }
 
   if (configVm_ && configVm_->open() && parts.size() >= 2 &&
       parts[0] == QStringLiteral("config")) {
@@ -2251,14 +2291,14 @@ void AppController::adjustFocused(int detents, bool fine) {
       mixerVm_->setTrackPan(mixerVm_->trackPan() + step * (fine ? 0.005 : 0.02));
       showValuePopup(QStringLiteral("CHANNEL PAN"), QStringLiteral("pan"),
                      mixerVm_->trackPan());
-    } else if (what == QStringLiteral("fx1")) {
-      mixerVm_->setTrackSendA(mixerVm_->trackSendA() + step * (fine ? 0.005 : 0.02));
-      showValuePopup(QStringLiteral("CHANNEL FX1"), QStringLiteral("percent"),
-                     mixerVm_->trackSendA());
-    } else if (what == QStringLiteral("fx2")) {
-      mixerVm_->setTrackSendB(mixerVm_->trackSendB() + step * (fine ? 0.005 : 0.02));
-      showValuePopup(QStringLiteral("CHANNEL FX2"), QStringLiteral("percent"),
-                     mixerVm_->trackSendB());
+    } else if (what == QStringLiteral("fx1") || what == QStringLiteral("fx2")) {
+      const int slot = what == QStringLiteral("fx2") ? 1 : 0;
+      const double next = std::clamp(mixerVm_->fxWetAt(mixerVm_->trackIndex(), slot) +
+                                         step * (fine ? 0.005 : 0.02),
+                                     0.0, 1.0);
+      mixerVm_->setFxWetAt(mixerVm_->trackIndex(), slot, next);
+      showValuePopup(QStringLiteral("CHANNEL FX%1 WET").arg(slot + 1),
+                     QStringLiteral("percent"), next);
     } else if (what == QStringLiteral("cue")) {
       mixerVm_->setTrackCue(mixerVm_->trackCue() + step * (fine ? 0.005 : 0.02));
       showValuePopup(QStringLiteral("CHANNEL CUE"), QStringLiteral("percent"),
@@ -2299,26 +2339,16 @@ void AppController::adjustFocused(int detents, bool fine) {
                                   step * (fine ? 0.005 : 0.02));
       popupPan(QStringLiteral("IN %1 PAN").arg(strip + 1, 2, 10, QLatin1Char('0')),
                strip);
-    } else if (what == QStringLiteral("sendA")) {
-      mixerVm_->setSend(strip, 0, mixerVm_->sendAt(strip, 0) +
-                            step * (fine ? 0.005 : 0.02));
-      popupSend(QStringLiteral("IN %1 FX1").arg(strip + 1, 2, 10, QLatin1Char('0')),
-                strip, 0);
-    } else if (what == QStringLiteral("sendB")) {
-      mixerVm_->setSend(strip, 1, mixerVm_->sendAt(strip, 1) +
-                            step * (fine ? 0.005 : 0.02));
-      popupSend(QStringLiteral("IN %1 FX2").arg(strip + 1, 2, 10, QLatin1Char('0')),
-                strip, 1);
-    } else if (what == QStringLiteral("fx1")) {
-      mixerVm_->setSend(strip, 0, mixerVm_->sendAt(strip, 0) +
-                                          step * (fine ? 0.005 : 0.02));
-      popupSend(QStringLiteral("IN %1 FX1").arg(strip + 1, 2, 10, QLatin1Char('0')),
-                strip, 0);
-    } else if (what == QStringLiteral("fx2")) {
-      mixerVm_->setSend(strip, 1, mixerVm_->sendAt(strip, 1) +
-                                          step * (fine ? 0.005 : 0.02));
-      popupSend(QStringLiteral("IN %1 FX2").arg(strip + 1, 2, 10, QLatin1Char('0')),
-                strip, 1);
+    } else if (what == QStringLiteral("fx1") || what == QStringLiteral("fx2")) {
+      const int slot = what == QStringLiteral("fx2") ? 1 : 0;
+      const double next = std::clamp(mixerVm_->fxWetAt(strip, slot) +
+                                         step * (fine ? 0.005 : 0.02),
+                                     0.0, 1.0);
+      mixerVm_->setFxWetAt(strip, slot, next);
+      popupFxWet(QStringLiteral("IN %1 FX%2 WET")
+                     .arg(strip + 1, 2, 10, QLatin1Char('0'))
+                     .arg(slot + 1),
+                 strip, slot);
     } else if (what == QStringLiteral("cue")) {
       mixerVm_->setCue(strip, mixerVm_->cueSend(strip) + step * (fine ? 0.005 : 0.02));
       showValuePopup(QStringLiteral("IN %1 CUE").arg(strip + 1, 2, 10, QLatin1Char('0')),
@@ -2344,14 +2374,14 @@ void AppController::adjustFocused(int detents, bool fine) {
       mixerVm_->setTrackPan(mixerVm_->trackPan() + step * (fine ? 0.005 : 0.02));
       showValuePopup(QStringLiteral("PAN"), QStringLiteral("pan"),
                      mixerVm_->trackPan());
-    } else if (parts[1] == QStringLiteral("fx1")) {
-      mixerVm_->setTrackSendA(mixerVm_->trackSendA() + step * (fine ? 0.005 : 0.02));
-      showValuePopup(QStringLiteral("FX1"), QStringLiteral("percent"),
-                     mixerVm_->trackSendA());
-    } else if (parts[1] == QStringLiteral("fx2")) {
-      mixerVm_->setTrackSendB(mixerVm_->trackSendB() + step * (fine ? 0.005 : 0.02));
-      showValuePopup(QStringLiteral("FX2"), QStringLiteral("percent"),
-                     mixerVm_->trackSendB());
+    } else if (parts[1] == QStringLiteral("fx1") || parts[1] == QStringLiteral("fx2")) {
+      const int slot = parts[1] == QStringLiteral("fx2") ? 1 : 0;
+      const double next = std::clamp(mixerVm_->fxWetAt(mixerVm_->trackIndex(), slot) +
+                                         step * (fine ? 0.005 : 0.02),
+                                     0.0, 1.0);
+      mixerVm_->setFxWetAt(mixerVm_->trackIndex(), slot, next);
+      showValuePopup(QStringLiteral("FX%1 WET").arg(slot + 1),
+                     QStringLiteral("percent"), next);
     } else if (parts[1] == QStringLiteral("cue")) {
       mixerVm_->setTrackCue(mixerVm_->trackCue() + step * (fine ? 0.005 : 0.02));
       showValuePopup(QStringLiteral("CUE"), QStringLiteral("percent"),
@@ -2491,10 +2521,8 @@ void AppController::adjustFocused(int detents, bool fine) {
 
   if (parts.size() >= 2 && parts[0] == QStringLiteral("xy")) {
     if (parts[1] == QStringLiteral("delay") || parts[1] == QStringLiteral("reverb")) {
-      const int grid = parts[1] == QStringLiteral("reverb")
-                           ? PerformanceModel::kReverbGrid
-                           : PerformanceModel::kDelayGrid;
-      xyVm_->nudge(grid, 0, detents > 0 ? 1 : -1, fine);
+      xyVm_->nudge(parts[1] == QStringLiteral("reverb") ? 1 : 0, 0,
+                   detents > 0 ? 1 : -1, fine);
     }
     return;
   }
@@ -2543,86 +2571,6 @@ void AppController::adjustFocused(int detents, bool fine) {
     showTextPopup(QStringLiteral("TRANSPOSE"),
                   index >= 0 && index < values.size() ? values.value(index).toString()
                                                       : QString());
-    return;
-  }
-
-  if (parts.size() >= 3 && parts[0] == QStringLiteral("fx") &&
-      (parts[1] == QStringLiteral("delay") || parts[1] == QStringLiteral("reverb"))) {
-    auto* builtin = fxVm_->builtin();
-    const bool delay = parts[1] == QStringLiteral("delay");
-    const QString what = parts[2];
-    if (delay && what == QStringLiteral("time")) {
-      builtin->setDelayTimeMs(builtin->delayTimeMs() + step * (fine ? 1.0 : 10.0));
-      showValuePopup(QStringLiteral("DELAY TIME"), QStringLiteral("ms"),
-                     builtin->delayTimeMs());
-    } else if (delay && what == QStringLiteral("feedback")) {
-      builtin->setDelayFeedback(builtin->delayFeedback() +
-                                step * (fine ? 0.005 : 0.02));
-      showValuePopup(QStringLiteral("DELAY FEEDBACK"), QStringLiteral("percent"),
-                     builtin->delayFeedback());
-    } else if (delay && what == QStringLiteral("mix")) {
-      builtin->setDelayMix(builtin->delayMix() + step * (fine ? 0.005 : 0.02));
-      showValuePopup(QStringLiteral("DELAY MIX"), QStringLiteral("percent"),
-                     builtin->delayMix());
-    } else if (delay && what == QStringLiteral("cutoff")) {
-      builtin->setDelayCutoffHz(builtin->delayCutoffHz() *
-                                (detents > 0 ? (fine ? 1.02 : 1.1) : (fine ? 0.98 : 0.9)));
-      showValuePopup(QStringLiteral("DELAY BP CUTOFF"), QStringLiteral("hz"),
-                     builtin->delayCutoffHz());
-    } else if (delay && what == QStringLiteral("width")) {
-      builtin->setDelayWidthOct(builtin->delayWidthOct() +
-                                step * (fine ? 0.02 : 0.1));
-      showValuePopup(QStringLiteral("DELAY BP WIDTH"), QStringLiteral("generic"),
-                     builtin->delayWidthOct());
-    } else if (!delay && what == QStringLiteral("predelay")) {
-      builtin->setReverbPredelayMs(builtin->reverbPredelayMs() +
-                                   step * (fine ? 1.0 : 5.0));
-      showValuePopup(QStringLiteral("REVERB PREDELAY"), QStringLiteral("ms"),
-                     builtin->reverbPredelayMs());
-    } else if (!delay && what == QStringLiteral("decay")) {
-      builtin->setReverbDecay(builtin->reverbDecay() + step * (fine ? 0.005 : 0.02));
-      showValuePopup(QStringLiteral("REVERB DECAY"), QStringLiteral("generic"),
-                     builtin->reverbDecay());
-    } else if (!delay && what == QStringLiteral("damping")) {
-      builtin->setReverbDamping(builtin->reverbDamping() +
-                                step * (fine ? 0.005 : 0.02));
-      showValuePopup(QStringLiteral("REVERB DAMPING"), QStringLiteral("generic"),
-                     builtin->reverbDamping());
-    } else if (!delay && what == QStringLiteral("mix")) {
-      builtin->setReverbMix(builtin->reverbMix() + step * (fine ? 0.005 : 0.02));
-      showValuePopup(QStringLiteral("REVERB MIX"), QStringLiteral("percent"),
-                     builtin->reverbMix());
-    } else if (!delay && what == QStringLiteral("size")) {
-      builtin->setReverbSize(builtin->reverbSize() + step * (fine ? 0.01 : 0.05));
-      showValuePopup(QStringLiteral("REVERB SIZE"), QStringLiteral("generic"),
-                     builtin->reverbSize());
-    }
-    return;
-  }
-
-  if (parts.size() >= 4 && parts[0] == QStringLiteral("fx")) {
-    const int slot = parts[1] == QStringLiteral("B") ? 1 : 0;
-    auto* view = slot == 1 ? fxVm_->slotB() : fxVm_->slotA();
-    if (parts[2] == QStringLiteral("return")) {
-      view->setReturnDb(view->returnDb() + step * (fine ? 0.1 : 0.5));
-      showValuePopup(QStringLiteral("SEND %1 RETURN").arg(slot == 1 ? "B" : "A"),
-                     QStringLiteral("db"), view->returnDb());
-    } else if (parts[2] == QStringLiteral("param")) {
-      const int index = parts[3].toInt();
-      const auto params = fx_.slot(slot).params();
-      if (index >= 0 && index < static_cast<int>(params.size())) {
-        const auto& param = params[static_cast<std::size_t>(index)];
-        const double range = std::max(0.0, param.max - param.min);
-        const double paramStep = range / (fine ? 1000.0 : 100.0);
-        view->adjustParam(index, step * paramStep);
-        const auto updated = fx_.slot(slot).params();
-        if (index < static_cast<int>(updated.size())) {
-          showValuePopup(QString::fromStdString(updated[static_cast<std::size_t>(index)].name),
-                         QStringLiteral("generic"),
-                         updated[static_cast<std::size_t>(index)].value);
-        }
-      }
-    }
     return;
   }
 
@@ -2778,9 +2726,11 @@ void AppController::rebuildFocusIds() {
       for (int destination = 0; destination < kOutDstCount; ++destination) {
         ids.push_back(QStringLiteral("config.output.%1").arg(destination));
       }
-    } else if (kind == QStringLiteral("insert")) {
-      for (int choice = 0; choice < MixerViewModel::kInsertChoiceCount; ++choice) {
-        ids.push_back(QStringLiteral("config.insert.%1").arg(choice));
+    } else if (kind == QStringLiteral("fxslot")) {
+      // The plugin choice is listed but greyed: the ring stops on the three
+      // choices the build can actually load.
+      for (int choice = 0; choice < MixerViewModel::kFxChoicePlugin; ++choice) {
+        ids.push_back(QStringLiteral("config.fxslot.%1").arg(choice));
       }
     } else if (kind == QStringLiteral("pipesource")) {
       for (int index = 0; index < routingVm_->inputNodes().size(); ++index) {
@@ -2840,6 +2790,24 @@ void AppController::rebuildFocusIds() {
     }
     ids.push_back(QStringLiteral("config.ok"));
     ids.push_back(QStringLiteral("config.cancel"));
+  } else if (fxVm_ && fxVm_->open()) {
+    // TRACK FX popup: it sits above the channel popout, so it owns the ring
+    // while it is open. The two slot cards are FX1 then FX2; PLUGIN is never a
+    // ring stop because the selector cannot load one.
+    ids.push_back(QStringLiteral("trackfx.close"));
+    for (int slot = 0; slot < MixerModel::kFxSlotCount; ++slot) {
+      const QString prefix = QStringLiteral("trackfx.fx%1").arg(slot + 1);
+      ids.push_back(prefix + QStringLiteral(".select"));
+      ids.push_back(prefix + QStringLiteral(".wet"));
+      if (mixerVm_->fxChoiceAt(mixerVm_->selectedStrip(), slot) != 0) {
+        ids.push_back(prefix + QStringLiteral(".bypass"));
+      }
+      QVariantList params = mixerVm_->fxParams(mixerVm_->selectedStrip(), slot);
+      for (const auto& entry : params) {
+        ids.push_back(prefix + QStringLiteral(".param.%1")
+                          .arg(entry.toMap().value(QStringLiteral("index")).toInt()));
+      }
+    }
   } else if (mixerVm_->channelOpen()) {
     // Full channel popout: it traps the ring like the config popup, so the
     // panel can reach every control of the channel it shows.
@@ -2858,8 +2826,7 @@ void AppController::rebuildFocusIds() {
     ids.push_back(QStringLiteral("channel.monitor"));
     ids.push_back(QStringLiteral("channel.input"));
     ids.push_back(QStringLiteral("channel.output"));
-    ids.push_back(QStringLiteral("channel.insert"));
-    ids.push_back(QStringLiteral("channel.insert.bypass"));
+    ids.push_back(QStringLiteral("channel.fx"));
     ids.push_back(QStringLiteral("channel.remove"));
   } else if (shiftFace_) {
     switch (tab_) {
@@ -2875,7 +2842,7 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("shift.track.out34"));
           ids.push_back(QStringLiteral("shift.monitor.sends"));
           ids.push_back(QStringLiteral("shift.track.monitor"));
-          ids.push_back(QStringLiteral("shift.track.insert"));
+          ids.push_back(QStringLiteral("shift.track.fx"));
         } else {
           const int first = mixerVm_->bank() * kStripsPerBank;
           for (int position = first;
@@ -2941,21 +2908,7 @@ void AppController::rebuildFocusIds() {
           }
         }
         break;
-      case 2: {
-        ids.push_back(QStringLiteral("shift.fx.A.return"));
-        auto* view = fxVm_->slotB();
-        ids.push_back(QStringLiteral("shift.fx.B.plugin"));
-        ids.push_back(QStringLiteral("shift.fx.B.eject"));
-        ids.push_back(QStringLiteral("shift.fx.B.save"));
-        ids.push_back(QStringLiteral("shift.fx.B.load"));
-        ids.push_back(QStringLiteral("shift.fx.B.return"));
-        ids.push_back(QStringLiteral("shift.fx.B.bypass"));
-        for (int param = 0; param < view->params()->rowCount(); ++param) {
-          ids.push_back(QStringLiteral("shift.fx.B.param.%1").arg(param));
-        }
-        break;
-      }
-      case 3:
+      case 2:
         ids.push_back(QStringLiteral("shift.recorder.import"));
         ids.push_back(QStringLiteral("shift.recorder.live"));
         ids.push_back(QStringLiteral("shift.recorder.activate"));
@@ -2969,7 +2922,7 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("shift.punch.%1.measure").arg(QLatin1String(point)));
         }
         break;
-      case 4:
+      case 3:
         ids.push_back(QStringLiteral("shift.system.panic"));
         ids.push_back(QStringLiteral("shift.system.page.0"));
         ids.push_back(QStringLiteral("shift.system.page.1"));
@@ -2990,7 +2943,7 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("shift.tools.brightness"));
         }
         break;
-      case 7: {
+      case 6: {
         // EQ SHIFT face: the band editor is too tall for the tile row, so the
         // sliders and the six explicit band types live here.
         ids.push_back(QStringLiteral("shift.eq.subject.main"));
@@ -3082,30 +3035,6 @@ void AppController::rebuildFocusIds() {
         break;
       }
       case 2: {
-        for (const char* letter : {"A", "B"}) {
-          const QString prefix = QStringLiteral("fx.") + QLatin1String(letter);
-          ids.push_back(prefix + QStringLiteral(".plugin"));
-          ids.push_back(prefix + QStringLiteral(".eject"));
-          ids.push_back(prefix + QStringLiteral(".return"));
-          ids.push_back(prefix + QStringLiteral(".bypass"));
-        }
-        ids.push_back(QStringLiteral("fx.delay.time"));
-        ids.push_back(QStringLiteral("fx.delay.feedback"));
-        ids.push_back(QStringLiteral("fx.delay.mix"));
-        ids.push_back(QStringLiteral("fx.delay.beat"));
-        ids.push_back(QStringLiteral("fx.delay.division"));
-        ids.push_back(QStringLiteral("fx.delay.ping"));
-        ids.push_back(QStringLiteral("fx.delay.cutoff"));
-        ids.push_back(QStringLiteral("fx.delay.width"));
-        ids.push_back(QStringLiteral("fx.reverb.model"));
-        ids.push_back(QStringLiteral("fx.reverb.predelay"));
-        ids.push_back(QStringLiteral("fx.reverb.decay"));
-        ids.push_back(QStringLiteral("fx.reverb.damping"));
-        ids.push_back(QStringLiteral("fx.reverb.mix"));
-        ids.push_back(QStringLiteral("fx.reverb.size"));
-        break;
-      }
-      case 3: {
         for (int track = 0; track < kNumStrips; ++track) {
           ids.push_back(QStringLiteral("recorder.track.%1").arg(track));
         }
@@ -3116,7 +3045,7 @@ void AppController::rebuildFocusIds() {
         }
         break;
       }
-      case 4: {
+      case 3: {
         ids.push_back(QStringLiteral("system.backend"));
         ids.push_back(QStringLiteral("system.input"));
         ids.push_back(QStringLiteral("system.buffer"));
@@ -3385,13 +3314,15 @@ void AppController::registerLearnTargets() {
                               [this, strip](double value) {
                                 mixer_.setPan(strip, static_cast<float>(value));
                               });
-    midi_.registerLearnTarget(learnTarget(strip, "sendA"),
+    // FX1/FX2 are the rack slots' wet now: the target names say so, so an old
+    // "sendA"/"sendB" binding to a retired bus does not silently keep writing.
+    midi_.registerLearnTarget(learnTarget(strip, "fx1wet"),
                               [this, strip](double value) {
-                                mixer_.setSend(strip, 0, static_cast<float>(value));
+                                mixer_.setFxWet(strip, 0, static_cast<float>(value));
                               });
-    midi_.registerLearnTarget(learnTarget(strip, "sendB"),
+    midi_.registerLearnTarget(learnTarget(strip, "fx2wet"),
                               [this, strip](double value) {
-                                mixer_.setSend(strip, 1, static_cast<float>(value));
+                                mixer_.setFxWet(strip, 1, static_cast<float>(value));
                               });
   }
   midi_.registerLearnTarget("mixer.master.gain", [this](double value) {
@@ -3510,13 +3441,16 @@ void AppController::popupPan(const QString& label, int strip) {
   showValuePopup(label, QStringLiteral("pan"), mixerVm_->panAt(strip));
 }
 
-void AppController::popupSend(const QString& label, int strip, int send) {
-  showValuePopup(label, QStringLiteral("percent"), mixerVm_->sendAt(strip, send));
+void AppController::popupFxWet(const QString& label, int strip, int slot) {
+  showValuePopup(label, QStringLiteral("percent"), mixerVm_->fxWetAt(strip, slot));
 }
 
-void AppController::popupTrackSend(const QString& label, int send) {
-  showValuePopup(label, QStringLiteral("percent"),
-                 send == 0 ? mixerVm_->trackSendA() : mixerVm_->trackSendB());
+QVariantMap AppController::paramCard(int track, int slot, int param) const {
+  for (const auto& entry : mixerVm_->fxParams(track, slot)) {
+    const auto card = entry.toMap();
+    if (card.value(QStringLiteral("index")).toInt() == param) return card;
+  }
+  return {};
 }
 
 }  // namespace mnky::app

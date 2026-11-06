@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "fx_params.hpp"
 #include "logic.hpp"
 #include "mixer_view_model.hpp"
 #include "pipe_ui.hpp"
@@ -29,15 +30,35 @@ QString sendName(int source) {
 
 ConfigPopupModel::ConfigPopupModel(AppState& state, MixerModel& mixer,
                                    SessionSettings& settings, EqModel& eq,
-                                   PerformanceModel& performance, QObject* parent)
+                                   QObject* parent)
     : QObject(parent),
       state_(state),
       mixer_(mixer),
       settings_(settings),
-      eq_(eq),
-      performance_(performance) {
+      eq_(eq) {
   refreshSummaries();
 }
+
+namespace {
+
+// One parameter value of the FX target slot, read through the rack table so a
+// missing entry falls back to the effect's published default.
+double fxValueAt(const MixerModel& mixer, int track, int slot, const char* paramId) {
+  const auto fx = mixer.fxSlot(track, slot);
+  const int index = fxParamIndex(fx.id, paramId);
+  const auto table = fxParamTable(fx.id);
+  if (index < 0 || index >= static_cast<int>(table.size())) return 0.0;
+  if (index < static_cast<int>(fx.params.size())) {
+    return fx.params[static_cast<std::size_t>(index)];
+  }
+  return table[static_cast<std::size_t>(index)].def;
+}
+
+bool fxTargetIs(const MixerModel& mixer, int track, int slot, const char* effectId) {
+  return mixer.fxSlot(track, slot).id == effectId;
+}
+
+}  // namespace
 
 int ConfigPopupModel::clampChoice(int value, int maximum) {
   return std::clamp(value, 0, maximum);
@@ -52,7 +73,7 @@ bool ConfigPopupModel::openKind(const QString& kind) {
       QStringLiteral("reverb"),    QStringLiteral("timelineops"),
       QStringLiteral("pipechannels"), QStringLiteral("trackmonitor"),
       QStringLiteral("inputsource"), QStringLiteral("outputdest"),
-      QStringLiteral("insert"),    QStringLiteral("addtrack"),
+      QStringLiteral("fxslot"),    QStringLiteral("addtrack"),
       QStringLiteral("delaydivision"), QStringLiteral("reverbmodel"),
       QStringLiteral("pipesource"), QStringLiteral("pipedest"),
       QStringLiteral("pipetype"), QStringLiteral("pipeparam"),
@@ -67,7 +88,7 @@ bool ConfigPopupModel::openKind(const QString& kind) {
     return false;
   }
   if ((kind == QStringLiteral("inputsource") || kind == QStringLiteral("outputdest") ||
-       kind == QStringLiteral("insert")) && mixerVm_ == nullptr) {
+       kind == QStringLiteral("fxslot")) && mixerVm_ == nullptr) {
     return false;
   }
   if (kind == QStringLiteral("addtrack")) {
@@ -85,7 +106,7 @@ bool ConfigPopupModel::openKind(const QString& kind) {
            : kind == QStringLiteral("trackmonitor") ? QStringLiteral("INPUT MONITOR")
            : kind == QStringLiteral("inputsource") ? inputSourceTitle()
            : kind == QStringLiteral("outputdest") ? outputTitle()
-           : kind == QStringLiteral("insert")     ? insertTitle()
+           : kind == QStringLiteral("fxslot")     ? fxSlotTitle()
            : kind == QStringLiteral("addtrack")   ? QStringLiteral("ADD TRACK")
            : kind == QStringLiteral("delaydivision") ? QStringLiteral("DELAY DIVISION")
            : kind == QStringLiteral("reverbmodel") ? QStringLiteral("REVERB MODEL")
@@ -125,21 +146,20 @@ void ConfigPopupModel::loadDraft() {
   compMode_ = settings_.mainComp.mode;
   trackMonitor_ = clampChoice(mixer_.monitor(trackMonitorSlot_), 3);
   eqType_ = eq_.type(eq_.band());
-  const int delayGrid = PerformanceModel::kDelayGrid;
-  const int reverbGrid = PerformanceModel::kReverbGrid;
-  delayBeat_ = static_cast<int>(std::lround(
-      performance_.param(delayGrid, audio::fx::Delay::kBeatMode)));
-  delayPing_ = static_cast<int>(std::lround(
-      performance_.param(delayGrid, audio::fx::Delay::kPingPong)));
-  delayDivision_ = static_cast<int>(std::lround(
-      performance_.param(delayGrid, audio::fx::Delay::kDivision)));
-  delayFeedback_ = performance_.param(delayGrid, audio::fx::Delay::kFeedback);
-  delayMix_ = performance_.param(delayGrid, audio::fx::Delay::kMix);
-  reverbModel_ = static_cast<int>(std::lround(
-      performance_.param(reverbGrid, audio::fx::Reverb::kModel)));
-  reverbPredelayMs_ = performance_.param(reverbGrid, audio::fx::Reverb::kPredelayMs);
-  reverbDecay_ = performance_.param(reverbGrid, audio::fx::Reverb::kDecay);
-  reverbDamping_ = performance_.param(reverbGrid, audio::fx::Reverb::kDamping);
+  // The X/Y parameter kinds edit the rack slot AppController pointed them at.
+  delayBeat_ = static_cast<int>(
+      std::lround(fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "beat_mode")));
+  delayPing_ = static_cast<int>(
+      std::lround(fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "ping_pong")));
+  delayDivision_ = static_cast<int>(
+      std::lround(fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "division")));
+  delayFeedback_ = fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "feedback");
+  delayMix_ = fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "mix");
+  reverbModel_ = static_cast<int>(
+      std::lround(fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "model")));
+  reverbPredelayMs_ = fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "predelay_ms");
+  reverbDecay_ = fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "decay");
+  reverbDamping_ = fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "damping");
   if (kind_ == QStringLiteral("pipechannels")) {
     pipeChannelMask_ = static_cast<std::uint16_t>(
         routing_ == nullptr ? 0xFFFF : routing_->selectedPipeChannelMask());
@@ -157,9 +177,9 @@ void ConfigPopupModel::loadDraft() {
   if (kind_ == QStringLiteral("outputdest")) {
     outputIndex_ = mixerVm_ == nullptr ? 0 : mixerVm_->outDstOf(outputTargetSlot_);
   }
-  if (kind_ == QStringLiteral("insert")) {
-    insertIndex_ =
-        mixerVm_ == nullptr ? 0 : mixerVm_->insertChoiceAt(insertTargetSlot_);
+  if (kind_ == QStringLiteral("fxslot")) {
+    fxSlotChoice_ =
+        mixerVm_ == nullptr ? 0 : mixerVm_->fxChoiceAt(fxTrackSlot_, fxSlotIndex_);
   }
   if (kind_ == QStringLiteral("pipesource") || kind_ == QStringLiteral("pipedest")) {
     pipeSourceLabels_.clear();
@@ -330,21 +350,6 @@ void ConfigPopupModel::captureRestore() {
   restore.trackMonitor = mixer_.monitor(trackMonitorSlot_);
   restore.eqBand = eq_.band();
   restore.eqType = eq_.type(eq_.band());
-  const int delayGrid = PerformanceModel::kDelayGrid;
-  const int reverbGrid = PerformanceModel::kReverbGrid;
-  restore.delayChoice[0] = static_cast<int>(std::lround(
-      performance_.param(delayGrid, audio::fx::Delay::kBeatMode)));
-  restore.delayChoice[1] = static_cast<int>(std::lround(
-      performance_.param(delayGrid, audio::fx::Delay::kPingPong)));
-  restore.delayChoice[2] = static_cast<int>(std::lround(
-      performance_.param(delayGrid, audio::fx::Delay::kDivision)));
-  restore.delayValue[0] = performance_.param(delayGrid, audio::fx::Delay::kFeedback);
-  restore.delayValue[1] = performance_.param(delayGrid, audio::fx::Delay::kMix);
-  restore.reverbChoice = static_cast<int>(std::lround(
-      performance_.param(reverbGrid, audio::fx::Reverb::kModel)));
-  restore.reverbValue[0] = performance_.param(reverbGrid, audio::fx::Reverb::kPredelayMs);
-  restore.reverbValue[1] = performance_.param(reverbGrid, audio::fx::Reverb::kDecay);
-  restore.reverbValue[2] = performance_.param(reverbGrid, audio::fx::Reverb::kDamping);
   restore.pipeMask =
       static_cast<std::uint16_t>(routing_ == nullptr ? 0xFFFF
                                                     : routing_->selectedPipeChannelMask());
@@ -355,8 +360,11 @@ void ConfigPopupModel::captureRestore() {
   restore.inputSource =
       mixerVm_ == nullptr ? 0 : mixerVm_->inSourceState(inputTargetSlot_);
   restore.outputDst = mixerVm_ == nullptr ? 0 : mixerVm_->outDstOf(outputTargetSlot_);
-  restore.insertChoice =
-      mixerVm_ == nullptr ? 0 : mixerVm_->insertChoiceAt(insertTargetSlot_);
+  restore.fxChoice =
+      mixerVm_ == nullptr ? 0 : mixerVm_->fxChoiceAt(fxTrackSlot_, fxSlotIndex_);
+  restore.fxParams =
+      mixerVm_ == nullptr ? std::vector<double>{}
+                          : mixer_.fxSlot(fxTrackSlot_, fxSlotIndex_).params;
 }
 
 void ConfigPopupModel::restoreRestore() {
@@ -391,28 +399,19 @@ void ConfigPopupModel::restoreRestore() {
   } else if (kind_ == QStringLiteral("eqtype")) {
     eq_.setType(restore.eqBand, restore.eqType);
   } else if (kind_ == QStringLiteral("delay") ||
-             kind_ == QStringLiteral("delaydivision")) {
-    const int delayGrid = PerformanceModel::kDelayGrid;
-    performance_.setParam(delayGrid, audio::fx::Delay::kBeatMode,
-                          restore.delayChoice[0]);
-    performance_.setParam(delayGrid, audio::fx::Delay::kPingPong,
-                          restore.delayChoice[1]);
-    performance_.setParam(delayGrid, audio::fx::Delay::kDivision,
-                          restore.delayChoice[2]);
-    performance_.setParam(delayGrid, audio::fx::Delay::kFeedback,
-                          restore.delayValue[0]);
-    performance_.setParam(delayGrid, audio::fx::Delay::kMix, restore.delayValue[1]);
-  } else if (kind_ == QStringLiteral("reverb") ||
+             kind_ == QStringLiteral("delaydivision") ||
+             kind_ == QStringLiteral("reverb") ||
              kind_ == QStringLiteral("reverbmodel")) {
-    const int reverbGrid = PerformanceModel::kReverbGrid;
-    performance_.setParam(reverbGrid, audio::fx::Reverb::kModel,
-                          restore.reverbChoice);
-    performance_.setParam(reverbGrid, audio::fx::Reverb::kPredelayMs,
-                          restore.reverbValue[0]);
-    performance_.setParam(reverbGrid, audio::fx::Reverb::kDecay,
-                          restore.reverbValue[1]);
-    performance_.setParam(reverbGrid, audio::fx::Reverb::kDamping,
-                          restore.reverbValue[2]);
+    // CANCEL puts back the whole slot vector, not only the fields this kind
+    // displays: the grid's cutoff/size are the same slot's parameters.
+    if (mixerVm_ != nullptr && mixerVm_->fxChoiceAt(fxTrackSlot_, fxSlotIndex_) ==
+                                   restore.fxChoice) {
+      for (std::size_t param = 0; param < restore.fxParams.size(); ++param) {
+        mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,
+                               static_cast<int>(param),
+                               restore.fxParams[param]);
+      }
+    }
   } else if (kind_ == QStringLiteral("pipechannels")) {
     if (routing_ != nullptr) routing_->setSelectedPipeChannelMask(restore.pipeMask);
   } else if (kind_ == QStringLiteral("pipesource")) {
@@ -433,9 +432,9 @@ void ConfigPopupModel::restoreRestore() {
     if (mixerVm_ != nullptr) {
       mixerVm_->setOutDstOf(outputTargetSlot_, restore.outputDst);
     }
-  } else if (kind_ == QStringLiteral("insert")) {
+  } else if (kind_ == QStringLiteral("fxslot")) {
     if (mixerVm_ != nullptr) {
-      mixerVm_->setInsertChoiceAt(insertTargetSlot_, restore.insertChoice);
+      mixerVm_->setFxChoiceAt(fxTrackSlot_, fxSlotIndex_, restore.fxChoice);
     }
   }
   loadDraft();
@@ -479,18 +478,29 @@ void ConfigPopupModel::applyDraft() {
   } else if (kind_ == QStringLiteral("eqtype")) {
     eq_.setType(eq_.band(), eqType_);
   } else if (kind_ == QStringLiteral("delay")) {
-    const int delayGrid = PerformanceModel::kDelayGrid;
-    performance_.setParam(delayGrid, audio::fx::Delay::kBeatMode, delayBeat_);
-    performance_.setParam(delayGrid, audio::fx::Delay::kPingPong, delayPing_);
-    performance_.setParam(delayGrid, audio::fx::Delay::kDivision, delayDivision_);
-    performance_.setParam(delayGrid, audio::fx::Delay::kFeedback, delayFeedback_);
-    performance_.setParam(delayGrid, audio::fx::Delay::kMix, delayMix_);
+    if (mixerVm_ != nullptr && fxTargetIs(mixer_, fxTrackSlot_, fxSlotIndex_, kFxIdDelay)) {
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,
+                             audio::fx::Delay::kBeatMode, delayBeat_);
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,
+                             audio::fx::Delay::kPingPong, delayPing_);
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,
+                             audio::fx::Delay::kDivision, delayDivision_);
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,
+                             audio::fx::Delay::kFeedback, delayFeedback_);
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_, audio::fx::Delay::kMix,
+                             delayMix_);
+    }
   } else if (kind_ == QStringLiteral("reverb")) {
-    const int reverbGrid = PerformanceModel::kReverbGrid;
-    performance_.setParam(reverbGrid, audio::fx::Reverb::kModel, reverbModel_);
-    performance_.setParam(reverbGrid, audio::fx::Reverb::kPredelayMs, reverbPredelayMs_);
-    performance_.setParam(reverbGrid, audio::fx::Reverb::kDecay, reverbDecay_);
-    performance_.setParam(reverbGrid, audio::fx::Reverb::kDamping, reverbDamping_);
+    if (mixerVm_ != nullptr && fxTargetIs(mixer_, fxTrackSlot_, fxSlotIndex_, kFxIdReverb)) {
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,
+                             audio::fx::Reverb::kModel, reverbModel_);
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,
+                             audio::fx::Reverb::kPredelayMs, reverbPredelayMs_);
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,
+                             audio::fx::Reverb::kDecay, reverbDecay_);
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,
+                             audio::fx::Reverb::kDamping, reverbDamping_);
+    }
   } else if (kind_ == QStringLiteral("pipechannels")) {
     if (routing_ != nullptr) routing_->setSelectedPipeChannelMask(pipeChannelMask_);
   } else if (kind_ == QStringLiteral("pipesource")) {
@@ -516,15 +526,20 @@ void ConfigPopupModel::applyDraft() {
     }
   } else if (kind_ == QStringLiteral("outputdest")) {
     if (mixerVm_ != nullptr) mixerVm_->setOutDstOf(outputTargetSlot_, outputIndex_);
-  } else if (kind_ == QStringLiteral("insert")) {
+  } else if (kind_ == QStringLiteral("fxslot")) {
     if (mixerVm_ != nullptr) {
-      mixerVm_->setInsertChoiceAt(insertTargetSlot_, insertIndex_);
+      mixerVm_->setFxChoiceAt(fxTrackSlot_, fxSlotIndex_, fxSlotChoice_);
     }
   } else if (kind_ == QStringLiteral("delaydivision")) {
-    performance_.setParam(PerformanceModel::kDelayGrid, audio::fx::Delay::kDivision,
-                          delayDivision_);
+    if (mixerVm_ != nullptr && fxTargetIs(mixer_, fxTrackSlot_, fxSlotIndex_, kFxIdDelay)) {
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,
+                             audio::fx::Delay::kDivision, delayDivision_);
+    }
   } else if (kind_ == QStringLiteral("reverbmodel")) {
-    performance_.setReverbModel(reverbModel_);
+    if (mixerVm_ != nullptr && fxTargetIs(mixer_, fxTrackSlot_, fxSlotIndex_, kFxIdReverb)) {
+      mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_, audio::fx::Reverb::kModel,
+                             reverbModel_);
+    }
   }
 }
 
@@ -624,13 +639,15 @@ void ConfigPopupModel::setDelayMix(double value) {
 }
 void ConfigPopupModel::setReverbModel(int value) {
   reverbModel_ = std::clamp(value, 0, audio::fx::Reverb::kModelCount - 1);
-  // A reverb model is a preset: show the decay/damping it selects so OK writes
-  // back exactly what the popup displays.
-  performance_.setReverbModel(reverbModel_);
-  reverbDecay_ = performance_.param(PerformanceModel::kReverbGrid,
-                                    audio::fx::Reverb::kDecay);
-  reverbDamping_ = performance_.param(PerformanceModel::kReverbGrid,
-                                      audio::fx::Reverb::kDamping);
+  // A reverb model is a preset (Reverb::setModel documents decay/damping/size
+  // following it), so the rack write applies the preset and the popup re-reads
+  // the values it now holds.
+  if (mixerVm_ != nullptr && fxTargetIs(mixer_, fxTrackSlot_, fxSlotIndex_, kFxIdReverb)) {
+    mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_, audio::fx::Reverb::kModel,
+                           reverbModel_);
+    reverbDecay_ = fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "decay");
+    reverbDamping_ = fxValueAt(mixer_, fxTrackSlot_, fxSlotIndex_, "damping");
+  }
   changedLive();
 }
 void ConfigPopupModel::setReverbPredelayMs(double value) {
@@ -833,20 +850,35 @@ void ConfigPopupModel::setOutputIndex(int value) {
   changedLive();
 }
 
-QString ConfigPopupModel::insertTitle() const {
+QString ConfigPopupModel::fxSlotTitle() const {
   const QString name = mixerVm_ == nullptr
                            ? QString()
-                           : mixerVm_->suggestedTrackName(insertTargetSlot_);
-  return QStringLiteral("TRACK INSERT  %1").arg(name.toUpper());
+                           : mixerVm_->suggestedTrackName(fxTrackSlot_);
+  return QStringLiteral("FX%1 SLOT  %2")
+      .arg(fxSlotIndex_ == 1 ? 2 : 1)
+      .arg(name.toUpper());
 }
 
-QStringList ConfigPopupModel::insertLabels() const {
-  return MixerViewModel::insertLabels();
+QStringList ConfigPopupModel::fxSlotLabels() const {
+  return MixerViewModel::fxChoiceLabels();
 }
 
-void ConfigPopupModel::setInsertIndex(int value) {
-  insertIndex_ = std::clamp(value, 0, MixerViewModel::kInsertChoiceCount - 1);
+void ConfigPopupModel::setFxSlotChoice(int value) {
+  // PLUGIN is a listed-but-greyed choice: the selector never writes it, so a tap
+  // cannot pretend a plugin slot exists.
+  if (value == MixerViewModel::kFxChoicePlugin) return;
+  fxSlotChoice_ = std::clamp(value, 0, MixerViewModel::kFxChoiceCount - 1);
   changedLive();
+}
+
+QString ConfigPopupModel::fxSlotNote() const {
+  if (mixerVm_ == nullptr) return QString();
+  return mixerVm_->fxSlotNote(fxTrackSlot_, fxSlotIndex_);
+}
+
+void ConfigPopupModel::setFxTarget(int track, int slot) {
+  fxTrackSlot_ = std::clamp(track, 0, audio::kMaxTracks - 1);
+  fxSlotIndex_ = slot == 1 ? 1 : 0;
 }
 
 int ConfigPopupModel::addTrackChannelCount() const {

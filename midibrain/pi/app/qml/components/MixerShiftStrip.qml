@@ -1,16 +1,21 @@
 import QtQuick
 import Mnkybox 1.0
 
-// SHIFT-face mixer strip: configure Gain, FX1, FX2, CUE, OUT34 and the
-// per-track monitor mode. The primary strip stays perform-only (Vol/Pan/M/S/ARM).
-// Every value here is a narrow per-strip cell, so it is an arc-dial chip
-// (KnobChip), never a slider: the refresh law keeps sliders for the dedicated
-// wide faders only.
+// SHIFT-face mixer strip: configure Gain, the FX1/FX2 rack slot wet, CUE,
+// OUT34 and the per-track monitor mode. The primary strip stays perform-only
+// (Vol/Pan/M/S/ARM). Every value here is a narrow per-strip cell, so it is an
+// arc-dial chip (KnobChip), never a slider: the refresh law keeps sliders for
+// the dedicated wide faders only. FX1/FX2 edit the slot's wet (the slot name is
+// the value hint); the effect itself is configured in the TRACK FX popup.
 Rectangle {
     id: root
 
     property int stripIndex: 0
     property string stripName: ""
+    property real fx1Wet: 1.0
+    property real fx2Wet: 1.0
+    property string fx1Name: "NONE"
+    property string fx2Name: "NONE"
     readonly property string nameText: stripName !== "" ? stripName
                                                         : "IN " + String(stripIndex + 1).padStart(2, "0")
     readonly property int monitor: mixer.monitorAt(stripIndex)
@@ -50,25 +55,25 @@ Rectangle {
         }
         KnobChip {
             width: parent.width
-            label: "FX1"
-            value: mixer.sendAt(root.stripIndex, 0)
-            valueText: Math.round(mixer.sendAt(root.stripIndex, 0) * 100)
+            label: "FX1 " + root.fx1Name
+            value: root.fx1Wet
+            valueText: Math.round(root.fx1Wet * 100)
             suffix: "%"
-            popupLabel: root.nameText + " FX1"
+            popupLabel: root.nameText + " FX1 WET"
             popupKind: "percent"
             focusId: "shift.mixer.fx1." + root.stripIndex
-            onMoved: (value) => mixer.setSend(root.stripIndex, 0, value)
+            onMoved: (value) => mixer.setFxWetAt(root.stripIndex, 0, value)
         }
         KnobChip {
             width: parent.width
-            label: "FX2"
-            value: mixer.sendAt(root.stripIndex, 1)
-            valueText: Math.round(mixer.sendAt(root.stripIndex, 1) * 100)
+            label: "FX2 " + root.fx2Name
+            value: root.fx2Wet
+            valueText: Math.round(root.fx2Wet * 100)
             suffix: "%"
-            popupLabel: root.nameText + " FX2"
+            popupLabel: root.nameText + " FX2 WET"
             popupKind: "percent"
             focusId: "shift.mixer.fx2." + root.stripIndex
-            onMoved: (value) => mixer.setSend(root.stripIndex, 1, value)
+            onMoved: (value) => mixer.setFxWetAt(root.stripIndex, 1, value)
         }
         KnobChip {
             width: parent.width

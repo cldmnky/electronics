@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 #include <QTimer>
+#include <QVariantMap>
 
 #include <cstdint>
 #include <deque>
@@ -177,7 +178,7 @@ class AppController final : public QObject {
 
   MixerViewModel* mixer() { return mixerVm_.get(); }
   RoutingViewModel* routing() { return routingVm_.get(); }
-  FxViewModel* fx() { return fxVm_.get(); }
+  TrackFxViewModel* fx() { return fxVm_.get(); }
   RecorderViewModel* recorder() { return recorderVm_.get(); }
   ProjectsViewModel* projects() { return projectsVm_.get(); }
   SystemViewModel* system() { return systemVm_.get(); }
@@ -266,7 +267,12 @@ class AppController final : public QObject {
   // of stepping a value, and a pick applies immediately.
   Q_INVOKABLE void openInputSource(int slot);
   Q_INVOKABLE void openOutputDest(int slot);
-  Q_INVOKABLE void openInsert(int slot);
+  // Per-track FX rack popup (TRACK FX) and its two popups: the slot selector
+  // and the slot's delay/reverb parameter editor. `slot` is 0 = FX1, 1 = FX2.
+  Q_INVOKABLE void openTrackFx(int slot);
+  Q_INVOKABLE void closeTrackFx();
+  Q_INVOKABLE void openFxSlot(int slot);
+  Q_INVOKABLE void openFxSlotParams(int slot);
   // Full channel popout opened from a strip's expand affordance.
   Q_INVOKABLE void openChannel(int slot);
   Q_INVOKABLE void closeChannel();
@@ -344,8 +350,10 @@ class AppController final : public QObject {
   void setTakeSheetTrack(int track);
   void popupGain(const QString& label, int strip);
   void popupPan(const QString& label, int strip);
-  void popupSend(const QString& label, int strip, int send);
-  void popupTrackSend(const QString& label, int send);
+  void popupFxWet(const QString& label, int strip, int slot);
+  // One parameter card of a rack slot (the popup's knobs and the panel encoder
+  // read the same {index,name,value,minimum,maximum,stepped} row).
+  QVariantMap paramCard(int track, int slot, int param) const;
 
   AppState state_;
   SessionSettings settings_;
@@ -362,7 +370,7 @@ class AppController final : public QObject {
 
   std::unique_ptr<MixerViewModel> mixerVm_;
   std::unique_ptr<RoutingViewModel> routingVm_;
-  std::unique_ptr<FxViewModel> fxVm_;
+  std::unique_ptr<TrackFxViewModel> fxVm_;
   std::unique_ptr<RecorderViewModel> recorderVm_;
   std::unique_ptr<ProjectsViewModel> projectsVm_;
   std::unique_ptr<SystemViewModel> systemVm_;

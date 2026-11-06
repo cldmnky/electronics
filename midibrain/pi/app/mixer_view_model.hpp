@@ -44,8 +44,10 @@ class MixerViewModel final : public QAbstractListModel {
   Q_PROPERTY(double trackTrimDb READ trackTrimDb WRITE setTrackTrimDb NOTIFY trackChanged)
   Q_PROPERTY(double trackPan READ trackPan WRITE setTrackPan NOTIFY trackChanged)
   Q_PROPERTY(QString trackPanText READ trackPanText NOTIFY trackChanged)
-  Q_PROPERTY(double trackSendA READ trackSendA WRITE setTrackSendA NOTIFY trackChanged)
-  Q_PROPERTY(double trackSendB READ trackSendB WRITE setTrackSendB NOTIFY trackChanged)
+  // FX1/FX2 mix knobs: the per-track rack slot's wet (session fxSlots[i].wet,
+  // 0..1 dry/wet crossfade). The deprecated send values are session-load only.
+  Q_PROPERTY(double trackFxWet1 READ trackFxWet1 WRITE setTrackFxWet1 NOTIFY trackChanged)
+  Q_PROPERTY(double trackFxWet2 READ trackFxWet2 WRITE setTrackFxWet2 NOTIFY trackChanged)
   Q_PROPERTY(double trackCue READ trackCue WRITE setTrackCue NOTIFY trackChanged)
   Q_PROPERTY(double trackOut34 READ trackOut34 WRITE setTrackOut34 NOTIFY trackChanged)
   Q_PROPERTY(bool trackMute READ trackMute WRITE setTrackMute NOTIFY trackChanged)
@@ -56,7 +58,6 @@ class MixerViewModel final : public QAbstractListModel {
   Q_PROPERTY(int trackMonitor READ trackMonitor WRITE setTrackMonitor NOTIFY trackChanged)
   Q_PROPERTY(QString trackInputText READ trackInputText NOTIFY trackChanged)
   Q_PROPERTY(QString trackOutputText READ trackOutputText NOTIFY trackChanged)
-  Q_PROPERTY(QString trackInsertName READ trackInsertName NOTIFY trackChanged)
   Q_PROPERTY(bool trackInPair READ trackInPair WRITE setTrackInPair NOTIFY trackChanged)
   Q_PROPERTY(int selectedStrip READ selectedStrip WRITE setSelectedStrip NOTIFY selectedStripChanged)
   // Full-channel popout: the strip's expand affordance opens it; the TRACK
@@ -65,8 +66,9 @@ class MixerViewModel final : public QAbstractListModel {
   Q_PROPERTY(bool channelOpen READ channelOpen NOTIFY channelOpenChanged)
   Q_PROPERTY(int channelSlot READ channelSlot NOTIFY channelOpenChanged)
   Q_PROPERTY(QString channelEqSummary READ channelEqSummary NOTIFY channelOpenChanged)
-  Q_PROPERTY(QString channelInsertName READ channelInsertName NOTIFY channelChanged)
-  Q_PROPERTY(bool channelInsertBypass READ channelInsertBypass WRITE setChannelInsertBypass NOTIFY channelChanged)
+  // The channel popout's FX rack summary: one effect name per slot plus the
+  // subline that states the series order and the per-track scope.
+  Q_PROPERTY(QString channelFxSummary READ channelFxSummary NOTIFY channelChanged)
   Q_PROPERTY(double masterDb READ masterDb WRITE setMasterDb NOTIFY masterChanged)
   Q_PROPERTY(double meterLeft READ meterLeft NOTIFY metersChanged)
   Q_PROPERTY(double meterRight READ meterRight NOTIFY metersChanged)
@@ -91,6 +93,12 @@ class MixerViewModel final : public QAbstractListModel {
     InputTextRole,
     OutputTextRole,
     SelectedRole,
+    // FX rack mix knobs (fxSlots[i].wet) and effect names for the strip's
+    // SHIFT face, which is the per-strip FX1/FX2 row.
+    Fx1WetRole,
+    Fx2WetRole,
+    Fx1NameRole,
+    Fx2NameRole,
     // A1: the strip is armed and has an active take, so ARM mutes the take.
     // BadgeRole is the same state for the 8 s after a take stops, when the
     // strip spells the warning out instead of showing the monitor letter.
@@ -127,10 +135,10 @@ class MixerViewModel final : public QAbstractListModel {
   double trackPan() const { return model_.pan(trackIndex_); }
   Q_INVOKABLE void setTrackPan(double pan);
   QString trackPanText() const;
-  double trackSendA() const { return model_.send(trackIndex_, 0); }
-  Q_INVOKABLE void setTrackSendA(double level);
-  double trackSendB() const { return model_.send(trackIndex_, 1); }
-  Q_INVOKABLE void setTrackSendB(double level);
+  double trackFxWet1() const { return fxWetAt(trackIndex_, 0); }
+  Q_INVOKABLE void setTrackFxWet1(double wet) { setFxWetAt(trackIndex_, 0, wet); }
+  double trackFxWet2() const { return fxWetAt(trackIndex_, 1); }
+  Q_INVOKABLE void setTrackFxWet2(double wet) { setFxWetAt(trackIndex_, 1, wet); }
   double cueSend(int slot) const { return model_.cueSend(slot); }
   double out34Send(int slot) const { return model_.out34Send(slot); }
   Q_INVOKABLE double gainDbAt(int slot) const { return model_.gainDb(slot); }
@@ -138,7 +146,6 @@ class MixerViewModel final : public QAbstractListModel {
   // Compact pan readout of any strip ("C", "L50", "R32"), the same text the
   // model's PanTextRole carries.
   Q_INVOKABLE QString panTextAt(int slot) const;
-  Q_INVOKABLE double sendAt(int slot, int send) const { return model_.send(slot, send); }
   Q_INVOKABLE double cueAt(int slot) const { return model_.cueSend(slot); }
   Q_INVOKABLE double out34At(int slot) const { return model_.out34Send(slot); }
   Q_INVOKABLE int monitorAt(int slot) const { return model_.monitor(slot); }
@@ -165,7 +172,6 @@ class MixerViewModel final : public QAbstractListModel {
   int trackOutDst() const { return model_.outDst(trackIndex_); }
   QString trackInputText() const { return inputText(trackInCh(), trackInPair()); }
   QString trackOutputText() const { return outputText(trackOutDst()); }
-  QString trackInsertName() const { return insertDisplayName(insertIdOf(trackIndex_)); }
   Q_INVOKABLE void setTrackInCh(int channel);
   Q_INVOKABLE void setTrackInPair(bool pair);
   Q_INVOKABLE void setTrackOutDst(int destination);
@@ -231,31 +237,39 @@ class MixerViewModel final : public QAbstractListModel {
   bool channelOpen() const { return channelOpen_; }
   int channelSlot() const { return trackIndex_; }
   QString channelEqSummary() const { return channelEqSummary_; }
-  QString channelInsertName() const;
-  bool channelInsertBypass() const;
-  void setChannelInsertBypass(bool bypass);
-  Q_INVOKABLE void toggleChannelInsertBypass();
-  // Per-track FX insert selector (0 = none, 1 = builtin.delay, 2 =
-  // builtin.reverb). The engine instance path lands in parallel; the selector,
-  // the bypass and the session vector are what this wave ships.
-  static constexpr int kInsertChoiceCount = 3;
-  static QStringList insertLabels();
-  static QString insertId(int choice);
-  static int insertChoice(const QString& id);
-  static QString insertDisplayName(const QString& id);
-  QString insertIdOf(int slot) const;
-  Q_INVOKABLE QString trackInsertNameAt(int slot) const {
-    return insertDisplayName(insertIdOf(slot));
-  }
-  Q_INVOKABLE int insertChoiceAt(int slot) const;
-  Q_INVOKABLE void setInsertChoiceAt(int slot, int choice);
-  Q_INVOKABLE bool insertBypassAt(int slot) const;
-  Q_INVOKABLE void setInsertBypassAt(int slot, bool bypass);
+  QString channelFxSummary() const;
+  // ---- per-track FX rack ------------------------------------------------
+  // Slot index 0 = FX1, 1 = FX2. `slot` is a track slot; the track-scoped
+  // helpers above address the TRACK/channel-popout track.
+  static constexpr int kFxSlotCount = MixerModel::kFxSlotCount;
+  // Selector choices in the popup order: 0 NONE, 1 DELAY, 2 REVERB, 3 PLUGIN.
+  // PLUGIN is listed but refused by setFxChoiceAt(): CLAP per-track hosting is
+  // not wired in this build (docs/NOTES audio wave 11, "CLAP gap").
+  static constexpr int kFxChoiceCount = 4;
+  static constexpr int kFxChoicePlugin = 3;
+  static QStringList fxChoiceLabels();
+  static QString fxChoiceId(int choice);
+  static int fxChoiceOf(const QString& id);
+  static QString fxName(const QString& id);
+  Q_INVOKABLE QString fxNameAt(int slot, int index) const;
+  Q_INVOKABLE int fxChoiceAt(int slot, int index) const;
+  Q_INVOKABLE void setFxChoiceAt(int slot, int index, int choice);
+  Q_INVOKABLE bool fxBypassAt(int slot, int index) const;
+  Q_INVOKABLE void setFxBypassAt(int slot, int index, bool bypass);
+  Q_INVOKABLE double fxWetAt(int slot, int index) const;
+  Q_INVOKABLE void setFxWetAt(int slot, int index, double wet);
+  // One slot's parameter cards: {"index","name","value","text","unit",
+  // "minimum","maximum","stepped"} in the effect's stable order. Empty for
+  // NONE and for a CLAP id (the plugin owns its table).
+  Q_INVOKABLE QVariantList fxParams(int slot, int index) const;
+  Q_INVOKABLE void setFxParamAt(int slot, int index, int param, double value);
+  // The subline both rack surfaces state: series order plus scope.
+  Q_INVOKABLE QString fxSubline() const;
+  Q_INVOKABLE QString fxSlotNote(int slot, int index) const;
 
   // QML writes and panel-focus adjustments.
   Q_INVOKABLE void setGainDb(int slot, double db);
   Q_INVOKABLE void setPan(int slot, double pan);
-  Q_INVOKABLE void setSend(int slot, int send, double level);
   Q_INVOKABLE void setCue(int slot, double level);
   Q_INVOKABLE void setOut34(int slot, double level);
   Q_INVOKABLE void toggleMute(int slot);
@@ -282,6 +296,7 @@ class MixerViewModel final : public QAbstractListModel {
   void metersChanged();
   void channelOpenChanged();
   void channelChanged();
+  void fxChanged();
 
  private:
   double stripLevel(int slot) const;
@@ -289,6 +304,7 @@ class MixerViewModel final : public QAbstractListModel {
   QString monitorMark(int slot) const;
   void clampSelection();
   void updateChannelSummary();
+  void notifyFxChanged(int slot);
 
   MixerModel& model_;
   SessionSettings& settings_;

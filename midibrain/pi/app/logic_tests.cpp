@@ -27,6 +27,8 @@
 #include "audio_glue.hpp"
 #include "config_popup_model.hpp"
 #include "eq_model.hpp"
+#include "fx_params.hpp"
+#include "fx_view_model.hpp"
 #include "learn_view_model.hpp"
 #include "link_client.hpp"
 #include "logging.hpp"
@@ -50,6 +52,7 @@
 #include "text_buffer.hpp"
 #include "timeline_model.hpp"
 #include "wav_info.hpp"
+#include "xy_view_model.hpp"
 
 namespace mnky::app {
 namespace {
@@ -292,7 +295,7 @@ void routingTests() {
   scopeRouting.setPipeDestination(2);
   scopeRouting.addPipe();
   check(scopeRouting.pipeCount() == 1, "pipe scope test has a selected pipe");
-  ConfigPopupModel popup(state, mixer, settings, eq, performance);
+  ConfigPopupModel popup(state, mixer, settings, eq);
   popup.setRouting(&scopeRouting);
   check(popup.openKind(QStringLiteral("pipechannels")),
         "the pipe channel-scope popup opens for a selected pipe");
@@ -453,14 +456,22 @@ void dynamicMixerTests() {
   check(model.trackName(0) == defaultTrackName(0),
         "a nameless track uses the take-name default");
 
-  MixerModel::Insert insert;
-  insert.id = "builtin.delay";
-  insert.bypass = true;
-  insert.params = {0.4, 0.25};
-  model.setInsert(2, insert);
-  const auto stored = model.insert(2);
-  check(stored.id == "builtin.delay" && stored.bypass && stored.params.size() == 2,
-        "the per-track FX insert holds id, bypass and params");
+  MixerModel::FxSlot rack;
+  rack.id = "builtin.delay";
+  rack.bypass = true;
+  rack.wet = 0.4f;
+  model.setFxSlot(2, 1, rack);
+  const auto stored = model.fxSlot(2, 1);
+  check(stored.id == "builtin.delay" && stored.bypass,
+        "a rack slot holds id, bypass and wet");
+  checkNear(stored.wet, 0.4, 1e-6, "the rack slot stores the wet crossfade");
+  check(stored.params.size() == fxParamTable("builtin.delay").size(),
+        "a selected effect starts from its published parameter table");
+  model.setFxWet(2, 1, 2.5f);
+  checkNear(model.fxSlot(2, 1).wet, 1.0, 1e-6, "wet is clamped to 0..1");
+  model.setFxSlot(2, 1, {});
+  check(model.fxSlot(2, 1).id.empty() && model.fxSlot(2, 1).params.empty(),
+        "an empty slot holds no effect");
 
   // Legacy sessions: a default session::MixerState carries all 18 slots in
   // order, so the app shows the legacy 18-strip mixer for a file without a
@@ -603,22 +614,48 @@ void dynamicMixerViewModelTests() {
   check(MixerViewModel::outputLabels().size() == kOutDstCount,
         "the output list covers the four destinations");
 
-  view.setInsertChoiceAt(2, 1);
-  check(model.insert(2).id == "builtin.delay", "the insert selector writes the id");
-  check(view.trackInsertNameAt(2) == "DELAY", "the insert reads back by name");
-  view.setInsertBypassAt(2, true);
-  check(model.insert(2).bypass, "the insert bypass is stored per track");
-  view.setInsertChoiceAt(2, 0);
-  check(model.insert(2).id.empty() && view.trackInsertNameAt(2) == "NONE",
-        "NONE clears the insert");
+  view.setFxChoiceAt(2, 0, 1);
+  check(model.fxSlot(2, 0).id == "builtin.delay",
+        "the slot selector writes the effect id");
+  check(view.fxNameAt(2, 0) == "DELAY", "the slot reads back by name");
+  check(model.fxSlot(2, 1).id.empty(), "FX1 and FX2 are independent slots");
+  view.setFxChoiceAt(2, 0, MixerViewModel::kFxChoicePlugin);
+  check(model.fxSlot(2, 0).id == "builtin.delay",
+        "PLUGIN is listed but never written (no per-track CLAP host)");
+  view.setFxBypassAt(2, 0, true);
+  check(model.fxSlot(2, 0).bypass, "the slot bypass is stored per track");
+  view.setFxWetAt(2, 0, 0.65);
+  checkNear(model.fxSlot(2, 0).wet, 0.65, 1e-6,
+            "the FX1 knob writes the slot wet (not a send)");
+  check(model.fxSlot(2, 0).params.size() == fxParamTable("builtin.delay").size(),
+        "the rack holds one parameter per effect parameter");
+  view.setFxParamAt(2, 0, audio::fx::Delay::kBpCutoffHz, 1234.0);
+  checkNear(model.fxSlot(2, 0).params[audio::fx::Delay::kBpCutoffHz], 1234.0, 1e-9,
+            "a rack parameter write lands positionally");
+  view.setFxParamAt(2, 0, audio::fx::Delay::kBpCutoffHz, 1.0e9);
+  checkNear(model.fxSlot(2, 0).params[audio::fx::Delay::kBpCutoffHz], 20000.0, 1e-9,
+            "a rack parameter write is clamped to the effect range");
+  check(view.fxParams(2, 0).size() ==
+            static_cast<int>(fxParamTable("builtin.delay").size()),
+        "the popup gets one card per parameter");
+  check(view.fxParams(2, 1).isEmpty(), "an empty slot has no parameter cards");
+  view.setFxChoiceAt(2, 0, 0);
+  check(model.fxSlot(2, 0).id.empty() && view.fxNameAt(2, 0) == "NONE",
+        "NONE clears the slot");
+  checkNear(model.fxSlot(2, 0).wet, 0.65, 1e-6,
+            "an empty slot keeps the wet knob position");
 
   view.openChannel(2);
   check(view.channelOpen() && view.channelSlot() == 2,
         "the channel popout opens on the strip's slot");
   check(view.channelEqSummary().contains("1 NONE"),
         "the popout summarises the channel's EQ bands");
-  view.setChannelInsertBypass(true);
-  check(model.insert(2).bypass, "the popout bypass writes the slot's insert");
+  check(view.channelFxSummary().contains("FX1") &&
+            view.channelFxSummary().contains("FX2"),
+        "the popout summarises both rack slots");
+  view.setTrackFxWet1(0.25);
+  checkNear(model.fxSlot(2, 0).wet, 0.25, 1e-6,
+            "the popout's FX1 knob writes that track's slot wet");
   view.closeChannel();
   check(!view.channelOpen(), "CLOSE closes the channel popout");
 }
@@ -632,7 +669,7 @@ void configLiveTests() {
   MixerModel mixer;
   EqModel eq;
   PerformanceModel performance;
-  ConfigPopupModel popup(state, mixer, settings, eq, performance);
+  ConfigPopupModel popup(state, mixer, settings, eq);
   MixerViewModel view(mixer, settings, eq);
   popup.setMixer(&view);
 
@@ -671,7 +708,7 @@ void configLiveTests() {
   popup.cancel();
   check(view.stripCount() == 1, "CANCEL adds nothing");
 
-  // Selector popups: input, output, insert, delay division, reverb model.
+  // Selector popups: input, output, FX slot, delay division, reverb model.
   popup.setInputTarget(0);
   check(popup.openKind(QStringLiteral("inputsource")), "the input list opens");
   popup.setInputSourceIndex(1 + 7);
@@ -686,32 +723,40 @@ void configLiveTests() {
   check(mixer.outDst(0) == 3, "an output pick is live");
   popup.cancel();
   check(mixer.outDst(0) == 1, "CANCEL restores the previous output");
-  popup.setInsertTarget(0);
-  check(popup.openKind(QStringLiteral("insert")), "the insert list opens");
-  popup.setInsertIndex(2);
-  check(mixer.insert(0).id == "builtin.reverb", "an insert pick is live");
+  popup.setFxTarget(0, 1);
+  check(popup.openKind(QStringLiteral("fxslot")), "the FX slot list opens");
+  popup.setFxSlotChoice(2);
+  check(mixer.fxSlot(0, 1).id == "builtin.reverb", "a slot pick is live");
+  check(mixer.fxSlot(0, 0).id.empty(), "the pick writes only the targeted slot");
+  popup.setFxSlotChoice(MixerViewModel::kFxChoicePlugin);
+  check(mixer.fxSlot(0, 1).id == "builtin.reverb",
+        "the plugin choice is refused, so the popup cannot claim a host");
   popup.cancel();
-  check(mixer.insert(0).id.empty(), "CANCEL restores the previous insert");
+  check(mixer.fxSlot(0, 1).id.empty(), "CANCEL restores the previous slot");
 
+  // The X/Y parameter kinds edit the rack slot they are pointed at.
+  mixer.setFxSlot(0, 0, MixerModel::FxSlot{"builtin.delay", false, 1.0f,
+                                           fxDefaultParams("builtin.delay")});
+  popup.setFxTarget(0, 0);
   const int divisionBefore = static_cast<int>(std::lround(
-      performance.param(PerformanceModel::kDelayGrid, audio::fx::Delay::kDivision)));
+      mixer.fxSlot(0, 0).params[audio::fx::Delay::kDivision]));
   check(popup.openKind(QStringLiteral("delaydivision")), "the delay division list opens");
   popup.setDelayDivision(1);
   check(static_cast<int>(std::lround(
-            performance.param(PerformanceModel::kDelayGrid,
-                              audio::fx::Delay::kDivision))) == 1,
-        "a delay division pick is live");
+            mixer.fxSlot(0, 0).params[audio::fx::Delay::kDivision])) == 1,
+        "a delay division pick is live on the track's slot");
   popup.cancel();
   check(static_cast<int>(std::lround(
-            performance.param(PerformanceModel::kDelayGrid,
-                              audio::fx::Delay::kDivision))) == divisionBefore,
+            mixer.fxSlot(0, 0).params[audio::fx::Delay::kDivision])) == divisionBefore,
         "CANCEL restores the previous delay division");
+  mixer.setFxSlot(1, 1, MixerModel::FxSlot{"builtin.reverb", false, 1.0f,
+                                           fxDefaultParams("builtin.reverb")});
+  popup.setFxTarget(1, 1);
   check(popup.openKind(QStringLiteral("reverbmodel")), "the reverb model list opens");
   popup.setReverbModel(2);
   check(static_cast<int>(std::lround(
-            performance.param(PerformanceModel::kReverbGrid,
-                              audio::fx::Reverb::kModel))) == 2,
-        "a reverb model pick is live");
+            mixer.fxSlot(1, 1).params[audio::fx::Reverb::kModel])) == 2,
+        "a reverb model pick is live on the track's slot");
   popup.cancel();
 }
 
@@ -1042,16 +1087,23 @@ void projectRoundTripTests() {
   mixer.setOutDst(2, 1);
   mixer.setInCh(3, -1);
   mixer.setOutDst(3, 3);
-  // Dynamic track list and one per-track insert: the ordered slots and their
-  // names are session v2 mixer.tracks, the insert is mixer.channels[].insert.
+  // Dynamic track list and the per-track FX rack: the ordered slots and their
+  // names are session v2 mixer.tracks, the rack is mixer.channels[].fxSlots
+  // (the deprecated "insert" key is written as the FX1 view).
   mixer.addTrack(2, "keys");
   mixer.addTrack(0, "drums");
   mixer.addTrack(4, "");
-  MixerModel::Insert projectInsert;
-  projectInsert.id = "builtin.delay";
-  projectInsert.bypass = true;
-  projectInsert.params = {0.4, 0.25};
-  mixer.setInsert(2, projectInsert);
+  MixerModel::FxSlot projectDelay;
+  projectDelay.id = "builtin.delay";
+  projectDelay.bypass = true;
+  projectDelay.wet = 0.5f;
+  projectDelay.params = {250.0, 0.55, 0.3, 0.0, 3.0, 0.0, 1200.0, 1.5};
+  mixer.setFxSlot(2, 0, projectDelay);
+  MixerModel::FxSlot projectReverb;
+  projectReverb.id = "builtin.reverb";
+  projectReverb.wet = 0.25f;
+  projectReverb.params = {20.0, 0.8, 0.4, 0.6, 2.0, 1.4};
+  mixer.setFxSlot(2, 1, projectReverb);
   midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, true);
   // Per-device route and its scoped pipe chain: id 6 is a dynamic USB id, so
   // this proves the project capture/load path covers ids 6..31, not only the
@@ -1165,10 +1217,20 @@ void projectRoundTripTests() {
   check(mixer.trackName(2) == "keys" && mixer.trackName(0) == "drums" &&
             mixer.trackName(4) == defaultTrackName(4),
         "project load restores the track names (empty names keep the default)");
-  const auto loadedInsert = mixer.insert(2);
-  check(loadedInsert.id == "builtin.delay" && loadedInsert.bypass &&
-            loadedInsert.params.size() == 2,
-        "project load restores the per-track FX insert");
+  const auto loadedFx1 = mixer.fxSlot(2, 0);
+  check(loadedFx1.id == "builtin.delay" && loadedFx1.bypass &&
+            loadedFx1.params.size() == fxParamTable("builtin.delay").size(),
+        "project load restores the per-track FX1 slot");
+  checkNear(loadedFx1.wet, 0.5, 1e-6, "project load restores the FX1 wet");
+  checkNear(loadedFx1.params[audio::fx::Delay::kBpCutoffHz], 1200.0, 1e-9,
+            "project load restores a rack parameter");
+  const auto loadedFx2 = mixer.fxSlot(2, 1);
+  check(loadedFx2.id == "builtin.reverb" && loadedFx2.params.size() ==
+                                                 fxParamTable("builtin.reverb").size(),
+        "project load restores the per-track FX2 slot");
+  checkNear(loadedFx2.wet, 0.25, 1e-6, "project load restores the FX2 wet");
+  check(mixer.fxSlot(2, 0).id == "builtin.delay" && mixer.fxSlot(3, 0).id.empty(),
+        "a rack slot loads for its own track only");
   check(midi.routeEnabled(midi::Port::TrsIn1, midi::Port::UsbOut),
         "project load restores the routing matrix");
   check(midi.routeEnabled(midi::dynamicPort(6), midi::Port::UsbOut),
@@ -1419,6 +1481,123 @@ void eqAndXyTests() {
             "X/Y capture/apply keeps the reverb Y position");
   checkEqual(xy.gridName(Model::kDelayGrid) + "/" + xy.gridName(Model::kReverbGrid),
              "DELAY/REVERB", "grid names");
+}
+
+// The per-track X/Y grid and the rack popup: both bind the SELECTED track's
+// FX1/FX2 slots, so a grid move and a popup knob are the same parameter write
+// (and the slot's wet stays a separate control).
+void trackFxRackTests() {
+  MixerModel model;
+  SessionSettings settings;
+  EqModel eq;
+  MixerViewModel mixer(model, settings, eq);
+  model.addTrack(0, "drums");
+  model.addTrack(1, "bass");
+  mixer.setSelectedStrip(0);
+
+  XyViewModel xy(model, mixer);
+  TrackFxViewModel fx(model, mixer);
+
+  check(!xy.fx1()->bound() && !xy.fx2()->bound(),
+        "an empty rack has no X/Y grid");
+  check(xy.fx1()->note().contains("NONE"),
+        "an empty slot says NONE and asks for DELAY or REVERB");
+
+  // Track 0: FX1 delay, FX2 reverb.
+  mixer.setFxChoiceAt(0, 0, 1);
+  mixer.setFxChoiceAt(0, 1, 2);
+  check(xy.fx1()->bound() && xy.fx2()->bound(),
+        "a built-in slot binds its grid");
+  check(xy.fx1()->axisX() == "X CUTOFF" && xy.fx1()->axisY() == "Y WIDTH",
+        "the delay grid is cutoff / width");
+  check(xy.fx2()->axisX() == "X SIZE" && xy.fx2()->axisY() == "Y LEVEL",
+        "the reverb grid is size / level");
+
+  xy.setPoint(0, 0.0, 0.0);
+  checkNear(model.fxSlot(0, 0).params[audio::fx::Delay::kBpCutoffHz], 20.0, 1e-6,
+            "delay X = 0 writes the lowest cutoff");
+  checkNear(model.fxSlot(0, 0).params[audio::fx::Delay::kBpWidthOct], 0.1, 1e-6,
+            "delay Y = 0 writes the narrowest width");
+  xy.setPoint(0, 1.0, 1.0);
+  checkNear(model.fxSlot(0, 0).params[audio::fx::Delay::kBpCutoffHz], 20000.0, 1e-6,
+            "delay X = 1 writes the highest cutoff");
+  checkNear(xy.fx1()->x(), 1.0, 1e-6, "the grid position reads back from the slot");
+  xy.nudge(0, -1, 0, false);
+  checkNear(xy.fx1()->x(), 0.98, 1e-6, "a fine panel step is 0.02 on the slot value");
+  xy.nudge(0, -1, 0, true);
+  checkNear(xy.fx1()->x(), 0.88, 1e-6, "a SHIFT panel step is 0.10 on the slot value");
+
+  xy.setPoint(1, 0.0, 0.5);
+  checkNear(model.fxSlot(0, 1).params[audio::fx::Reverb::kSize], 0.25, 1e-6,
+            "reverb X = 0 writes the smallest size");
+  checkNear(model.fxSlot(0, 1).params[audio::fx::Reverb::kMix], 0.5, 1e-6,
+            "reverb Y writes the level");
+
+  // Freeze is the reverb macro on the selected track's reverb slot.
+  const double decayBefore = model.fxSlot(0, 1).params[audio::fx::Reverb::kDecay];
+  xy.toggleFreeze();
+  check(xy.frozen(), "freeze latches on a reverb slot");
+  checkNear(model.fxSlot(0, 1).params[audio::fx::Reverb::kDecay], 0.98, 1e-9,
+            "freeze sets the longest decay");
+  checkNear(model.fxSlot(0, 1).params[audio::fx::Reverb::kSize], 2.0, 1e-9,
+            "freeze uses the largest size");
+  xy.toggleFreeze();
+  check(!xy.frozen(), "freeze releases");
+  checkNear(model.fxSlot(0, 1).params[audio::fx::Reverb::kDecay], decayBefore, 1e-9,
+            "freeze release restores the decay");
+
+  // Slot writes are not wet writes: the strip knob stays where it was.
+  mixer.setFxWetAt(0, 0, 0.4);
+  xy.setPoint(0, 0.5, 0.5);
+  checkNear(model.fxSlot(0, 0).wet, 0.4, 1e-6,
+            "a grid move leaves the slot wet alone");
+
+  // Selecting another track rebinds both grids; a NONE slot is named, not
+  // silently left showing the previous track's position.
+  mixer.setSelectedStrip(1);
+  check(!xy.fx1()->bound() && !xy.fx2()->bound(),
+        "the grids follow the selected track");
+  check(xy.fx1()->note().contains("NONE"), "the unbound slot names its state");
+  mixer.setFxChoiceAt(1, 1, 3);
+  check(model.fxSlot(1, 1).id.empty(),
+        "a plugin id is not reachable from the rack selector");
+
+  // TRACK FX popup: it follows the selected track and edits the same rack.
+  fx.openFor(1, 1);
+  check(fx.open() && fx.track() == 1 && fx.focusSlot() == 1,
+        "TRACK FX opens on the requested track and slot");
+  check(fx.fx1()->title() == "FX1" && fx.fx2()->title() == "FX2",
+        "the two cards are FX1 and FX2");
+  check(fx.fx1()->choice() == MixerViewModel::fxChoiceOf(""),
+        "the closed selector reads the slot it shows");
+  fx.setChoice(0, 1);
+  check(model.fxSlot(1, 0).id == "builtin.delay",
+        "the popup selector writes that track's FX1");
+  fx.setWet(0, 0.3);
+  checkNear(model.fxSlot(1, 0).wet, 0.3, 1e-6, "the popup wet writes the slot");
+  fx.toggleBypass(0);
+  check(model.fxSlot(1, 0).bypass, "the popup bypass writes the slot");
+  fx.setParam(0, audio::fx::Delay::kFeedback, 0.75);
+  checkNear(model.fxSlot(1, 0).params[audio::fx::Delay::kFeedback], 0.75, 1e-9,
+            "a popup parameter card writes the effect parameter");
+  check(fx.fx1()->paramCount() ==
+            static_cast<int>(fxParamTable("builtin.delay").size()),
+        "the card count follows the slot's effect");
+  fx.close();
+  check(!fx.open(), "CLOSE closes the TRACK FX popup");
+
+  // Reverb model is a preset in the effect contract: the rack expands it.
+  MixerModel presetModel;
+  presetModel.setFxSlot(0, 0, MixerModel::FxSlot{"builtin.reverb", false, 1.0f,
+                                                 fxDefaultParams("builtin.reverb")});
+  presetModel.setFxParam(0, 0, audio::fx::Reverb::kModel,
+                         static_cast<double>(audio::fx::Reverb::kModelHall));
+  checkNear(presetModel.fxSlot(0, 0).params[audio::fx::Reverb::kDecay],
+            audio::fx::Reverb::modelPreset(audio::fx::Reverb::kModelHall).decay, 1e-9,
+            "a reverb model writes its preset decay");
+  checkNear(presetModel.fxSlot(0, 0).params[audio::fx::Reverb::kSize],
+            audio::fx::Reverb::modelPreset(audio::fx::Reverb::kModelHall).size, 1e-9,
+            "a reverb model writes its preset size");
 }
 
 // The send chain behind the X/Y grids: the built-in delay/reverb process the
@@ -2360,6 +2539,7 @@ int runAll() {
   projectRoundTripTests();
   loopAndIoTests();
   eqAndXyTests();
+  trackFxRackTests();
   sendChainTests();
   midiMonitorTests();
   clockGateTests();

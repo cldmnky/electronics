@@ -16,8 +16,10 @@
 
 namespace mnky::app {
 
-inline constexpr int kScreenCount = 10;  // Mixer, Routing, FX, Recorder, System,
-                                         // Projects, Monitor, EQ, X/Y, EDIT
+inline constexpr int kScreenCount = 9;  // Mixer, Routing, Recorder, System,
+                                        // Projects, Monitor, EQ, X/Y, EDIT (the
+                                        // global FX tab retired into the
+                                        // per-track rack popup)
 // Fixed-width surfaces that predate the dynamic mixer (Recorder, Timeline and
 // the Learn target list show this many rows). Mixer/track code never uses it:
 // track slots are audio::kMaxTracks and device capture channels are

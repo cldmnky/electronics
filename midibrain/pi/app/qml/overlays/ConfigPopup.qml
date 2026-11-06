@@ -5,8 +5,9 @@ import "../components"
 // Generic configuration modal. Every setting is live: a tap writes the model
 // immediately, OK/CLOSE keeps it and CANCEL restores what the popup opened with.
 // The selector kinds are tap-to-open option lists (input source, output
-// destination, insert, delay division, reverb model); ADD TRACK is the one kind
-// that creates something on OK. The background swallows touch but never
+// destination, FX slot, delay division, reverb model); ADD TRACK is the one kind
+// that creates something on OK. The delay/reverb kinds edit one per-track rack
+// slot (AppController points them at the selected track's FX1/FX2). The background swallows touch but never
 // dismisses, so a stray touch cannot drop a change. Panel focus is trapped by
 // AppController while config.open is true.
 Rectangle {
@@ -165,8 +166,10 @@ Rectangle {
                 spacing: 2
                 Text {
                     width: parent.width
-                    height: 18
-                    text: "PRE = gain before the fader; POST = after gain + fader. One choice per destination."
+                    height: 30
+                    text: "PRE = gain before the fader; POST = after gain + fader. One choice per " +
+                          "destination. FX sends are retired - the FX1/FX2 rows are legacy " +
+                          "session values, the rack runs per track."
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
@@ -350,7 +353,7 @@ Rectangle {
             // ---- INPUT SOURCE (tap-to-open option list) -------------------
             Column {
                 visible: config.kind === "inputsource" || config.kind === "outputdest" ||
-                         config.kind === "insert"
+                         config.kind === "fxslot"
                 width: parent.width
                 spacing: Style.gapTight
 
@@ -360,8 +363,8 @@ Rectangle {
                     text: config.kind === "inputsource"
                           ? "MONO DEVICE CHANNELS OR A STEREO PAIR; NONE IS SILENT"
                           : (config.kind === "outputdest"
-                             ? "MAIN 1&2, OUT3&4, PHONES OR NONE (SENDS STILL REACH THE BUSES)"
-                             : "ONE INSERT PER TRACK; BYPASS LIVES IN THE CHANNEL POPOUT")
+                             ? "MAIN 1&2, OUT3&4, PHONES OR NONE"
+                             : "ONE EFFECT PER SLOT; WET AND BYPASS LIVE IN THE TRACK FX POPUP")
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     elide: Text.ElideRight
@@ -425,23 +428,40 @@ Rectangle {
                     }
                 }
 
-                Row {
-                    visible: config.kind === "insert"
+                Column {
+                    visible: config.kind === "fxslot"
                     width: parent.width
-                    height: Style.touch
                     spacing: Style.gapTight
 
-                    Repeater {
-                        model: config.insertLabels
-                        delegate: TouchButton {
-                            width: (parent.width - Style.gapTight * 2) / 3
-                            height: Style.touch
-                            text: modelData
-                            textSize: Style.fontSmall
-                            checked: index === config.insertIndex
-                            focusId: "config.insert." + index
-                            onClicked: config.insertIndex = index
+                    Row {
+                        width: parent.width
+                        height: Style.touch
+                        spacing: Style.gapTight
+
+                        Repeater {
+                            model: config.fxSlotLabels
+                            delegate: TouchButton {
+                                width: (parent.width - Style.gapTight * 3) / 4
+                                height: Style.touch
+                                text: modelData
+                                textSize: Style.fontSmall
+                                // PLUGIN is listed so the gap is visible, never
+                                // tappable: per-track CLAP hosting is not in
+                                // this build.
+                                active: index < 3
+                                checked: index === config.fxSlotChoice
+                                focusId: "config.fxslot." + index
+                                onClicked: config.fxSlotChoice = index
+                            }
                         }
+                    }
+                    Text {
+                        width: parent.width
+                        height: 16
+                        text: "PLUGIN SLOTS - NOT IN THIS BUILD. " + config.fxSlotNote
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSmall
+                        elide: Text.ElideRight
                     }
                 }
             }
@@ -900,7 +920,7 @@ Rectangle {
                 }
                 Text {
                     width: parent.width
-                    text: "The grid owns cutoff (X) and width (Y). These are the delay's other controls: Beat syncs Time to the clock and Division picks the note value."
+                    text: "This track's FX slot. The grid owns cutoff (X) and width (Y); these are the delay's other controls: Beat syncs Time to the clock and Division picks the note value."
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
@@ -963,7 +983,7 @@ Rectangle {
                 }
                 Text {
                     width: parent.width
-                    text: "The grid owns size (X) and level (Y). Freeze is the panel/touch macro: longest decay, fully wet, no damping, largest size; releasing restores these values."
+                    text: "This track's FX slot. The grid owns size (X) and level (Y); Freeze is the macro: longest decay, fully damped-free, largest size, fully wet; releasing restores these values."
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap

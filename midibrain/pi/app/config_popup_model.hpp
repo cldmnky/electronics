@@ -4,8 +4,13 @@
 // kind's values to the models immediately; OK/CLOSE keeps them and CANCEL
 // restores the values the popup opened with. The summary properties are
 // one-line live readouts for the buttons that open each popup; the list kinds
-// (input source, output destination, insert, add track) are tap-to-open
+// (input source, output destination, FX slot, add track) are tap-to-open
 // selector popups with the full option list.
+//
+// The X/Y parameter kinds ("delay", "delaydivision", "reverb", "reverbmodel")
+// edit one per-track FX rack slot: AppController points the popup at the
+// selected track's FX1/FX2 with setFxTarget() before openKind(), so what the
+// popup shows is the effect that strip actually runs.
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -17,7 +22,6 @@
 #include "app_state.hpp"
 #include "eq_model.hpp"
 #include "mixer_model.hpp"
-#include "performance_model.hpp"
 #include "session_settings.hpp"
 
 namespace mnky::app {
@@ -97,10 +101,12 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(QString outputTitle READ outputTitle NOTIFY openChanged)
   Q_PROPERTY(QStringList outputLabels READ outputLabels CONSTANT)
   Q_PROPERTY(int outputIndex READ outputIndex WRITE setOutputIndex NOTIFY changed)
-  // Per-track FX insert: none / builtin delay / builtin reverb.
-  Q_PROPERTY(QString insertTitle READ insertTitle NOTIFY openChanged)
-  Q_PROPERTY(QStringList insertLabels READ insertLabels CONSTANT)
-  Q_PROPERTY(int insertIndex READ insertIndex WRITE setInsertIndex NOTIFY changed)
+  // Per-track FX rack slot: NONE / DELAY / REVERB / PLUGIN (greyed - per-track
+  // CLAP hosting is not wired in this build).
+  Q_PROPERTY(QString fxSlotTitle READ fxSlotTitle NOTIFY openChanged)
+  Q_PROPERTY(QStringList fxSlotLabels READ fxSlotLabels CONSTANT)
+  Q_PROPERTY(int fxSlotChoice READ fxSlotChoice WRITE setFxSlotChoice NOTIFY changed)
+  Q_PROPERTY(QString fxSlotNote READ fxSlotNote NOTIFY changed)
   // ADD TRACK: name plus input (none / mono 1..18 / pair) and output; OK adds
   // the strip, CANCEL adds nothing. The name button opens the shared keypad.
   Q_PROPERTY(QString addTrackName READ addTrackName WRITE setAddTrackName NOTIFY changed)
@@ -133,8 +139,7 @@ class ConfigPopupModel final : public QObject {
 
  public:
   ConfigPopupModel(AppState& state, MixerModel& mixer, SessionSettings& settings,
-                   EqModel& eq, PerformanceModel& performance,
-                   QObject* parent = nullptr);
+                   EqModel& eq, QObject* parent = nullptr);
 
   bool open() const { return open_; }
   QString kind() const { return kind_; }
@@ -193,10 +198,11 @@ class ConfigPopupModel final : public QObject {
   QStringList outputLabels() const;
   int outputIndex() const { return outputIndex_; }
   void setOutputIndex(int value);
-  QString insertTitle() const;
-  QStringList insertLabels() const;
-  int insertIndex() const { return insertIndex_; }
-  void setInsertIndex(int value);
+  QString fxSlotTitle() const;
+  QStringList fxSlotLabels() const;
+  int fxSlotChoice() const { return fxSlotChoice_; }
+  void setFxSlotChoice(int value);
+  QString fxSlotNote() const;
   QString addTrackName() const { return addTrackName_; }
   void setAddTrackName(const QString& name);
   int addTrackInputMode() const { return addTrackInputMode_; }
@@ -284,10 +290,13 @@ class ConfigPopupModel final : public QObject {
   // AppController points a selector popup at the strip it was opened from.
   void setInputTarget(int slot) { inputTargetSlot_ = slot; }
   void setOutputTarget(int slot) { outputTargetSlot_ = slot; }
-  void setInsertTarget(int slot) { insertTargetSlot_ = slot; }
+  // The rack slot the FX-slot selector and the delay/reverb parameter kinds
+  // edit: (track slot, 0 = FX1 / 1 = FX2).
+  void setFxTarget(int track, int slot);
   int inputTarget() const { return inputTargetSlot_; }
   int outputTarget() const { return outputTargetSlot_; }
-  int insertTarget() const { return insertTargetSlot_; }
+  int fxTargetTrack() const { return fxTrackSlot_; }
+  int fxTargetSlot() const { return fxSlotIndex_; }
   // ADD TRACK always appends the first free slot; AppController pre-fills the
   // name with that slot's default and the input with the slot's device channel.
   void setAddTrackSlot(int slot);
@@ -352,14 +361,16 @@ class ConfigPopupModel final : public QObject {
     int pipeParam = 0;
     int inputSource = 0;
     int outputDst = 0;
-    int insertChoice = 0;
+    int fxChoice = 0;
+    // The target slot's parameter vector as the popup opened with: CANCEL puts
+    // every parameter back, including the ones the kind does not display.
+    std::vector<double> fxParams;
   };
 
   AppState& state_;
   MixerModel& mixer_;
   SessionSettings& settings_;
   EqModel& eq_;
-  PerformanceModel& performance_;
   bool open_ = false;
   QString kind_;
   QString title_;
@@ -407,8 +418,9 @@ class ConfigPopupModel final : public QObject {
   int inputSourceIndex_ = 0;
   int outputTargetSlot_ = 0;
   int outputIndex_ = 0;
-  int insertTargetSlot_ = 0;
-  int insertIndex_ = 0;
+  int fxTrackSlot_ = 0;
+  int fxSlotIndex_ = 0;
+  int fxSlotChoice_ = 0;
   int addTrackSlot_ = 0;
   QString addTrackName_;
   int addTrackInputMode_ = 1;

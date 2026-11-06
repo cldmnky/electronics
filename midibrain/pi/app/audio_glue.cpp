@@ -95,12 +95,16 @@ AudioGlue::AudioGlue(MixerModel& mixer, FxManager& fx, PerformanceModel& perform
   for (auto& peak : peaks_) peak.store(0.0f);
   for (auto& peak : stripPeaks_) peak.store(0.0f);
   for (auto& source : monitorSend_) source.store(1);
+  // The rack is control-thread state: every edit forwards one slot to the
+  // engine here instead of from the audio callback (see MixerModel::setFxSlot).
+  mixer_.setFxSlotSink([this](int track, int slot) { applyTrackFxSlot(track, slot); });
   synth_.prepare(sampleRate());
   pump_.reset();
   loadAudioChoice();
 }
 
 AudioGlue::~AudioGlue() {
+  mixer_.setFxSlotSink({});
   stop();
 }
 
@@ -637,6 +641,28 @@ void AudioGlue::applyTakeLoops(const SessionSettings& settings) {
     window.startBeats = loop.startBeats;
     window.endBeats = loop.endBeats;
     engine_.setTakeLoop(track, window);
+  }
+}
+
+void AudioGlue::applyTrackFxSlot(int track, int slot) {
+  if (track < 0 || track >= audio::kMaxTracks || slot < 0 ||
+      slot >= MixerModel::kFxSlotCount) {
+    return;
+  }
+  const auto value = mixer_.fxSlot(track, slot);
+  audio::TrackFxSlot next;
+  next.id = value.id;
+  next.bypass = value.bypass;
+  next.wet = value.wet;
+  next.params = value.params;
+  engine_.setTrackFxSlot(track, slot, next);
+}
+
+void AudioGlue::applyTrackFxRack() {
+  for (int track = 0; track < audio::kMaxTracks; ++track) {
+    for (int slot = 0; slot < MixerModel::kFxSlotCount; ++slot) {
+      applyTrackFxSlot(track, slot);
+    }
   }
 }
 

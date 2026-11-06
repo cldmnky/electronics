@@ -1,376 +1,131 @@
 #include "fx_view_model.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdlib>
-#include <filesystem>
-
-#include "app_state.hpp"
-#include "logic.hpp"
-#include "logging.hpp"
-#include "mixer_model.hpp"
+#include "fx_params.hpp"
 
 namespace mnky::app {
 
-FxParamModel::FxParamModel(FxSlot& slot, QObject* parent)
-    : QAbstractListModel(parent), slot_(slot) {
-  rebuild();
+FxSlotCard::FxSlotCard(TrackFxViewModel& owner, int slot)
+    : QObject(&owner), owner_(owner), slot_(slot) {}
+
+QString FxSlotCard::title() const {
+  return slot_ == 0 ? QStringLiteral("FX1") : QStringLiteral("FX2");
 }
 
-int FxParamModel::rowCount(const QModelIndex& parent) const {
-  return parent.isValid() ? 0 : static_cast<int>(params_.size());
-}
+QString FxSlotCard::effectName() const { return owner_.effectNameAt(slot_); }
 
-QVariant FxParamModel::data(const QModelIndex& index, int role) const {
-  if (!index.isValid() || index.row() < 0 ||
-      index.row() >= static_cast<int>(params_.size())) {
-    return {};
-  }
-  const auto& param = params_[static_cast<std::size_t>(index.row())];
-  switch (role) {
-    case NameRole:
-      return QString::fromStdString(param.name);
-    case ValueRole:
-      return param.value;
-    case MinimumRole:
-      return param.min;
-    case MaximumRole:
-      return param.max;
-    default:
-      break;
-  }
-  return {};
-}
+int FxSlotCard::choice() const { return owner_.choiceAt(slot_); }
 
-QHash<int, QByteArray> FxParamModel::roleNames() const {
-  return {{NameRole, "name"},
-          {ValueRole, "value"},
-          {MinimumRole, "minimum"},
-          {MaximumRole, "maximum"}};
-}
+bool FxSlotCard::bypass() const { return owner_.bypassAt(slot_); }
 
-void FxParamModel::rebuild() {
-  beginResetModel();
-  params_ = slot_.params();
-  endResetModel();
-}
+double FxSlotCard::wet() const { return owner_.wetAt(slot_); }
 
-void FxParamModel::refresh() {
-  const auto current = slot_.params();
-  bool same = current.size() == params_.size();
-  if (same) {
-    for (std::size_t i = 0; i < current.size(); ++i) {
-      if (current[i].id != params_[i].id || current[i].name != params_[i].name) {
-        same = false;
-        break;
-      }
-    }
-  }
-  if (!same) {
-    beginResetModel();
-    params_ = current;
-    endResetModel();
-    return;
-  }
-  for (std::size_t i = 0; i < current.size(); ++i) {
-    if (current[i].value != params_[i].value || current[i].min != params_[i].min ||
-        current[i].max != params_[i].max) {
-      params_[i] = current[i];
-      emit dataChanged(index(static_cast<int>(i), 0), index(static_cast<int>(i), 0),
-                       {ValueRole, MinimumRole, MaximumRole});
-    }
-  }
-}
+int FxSlotCard::paramCount() const { return owner_.paramsAt(slot_).size(); }
 
-FxSlotViewModel::FxSlotViewModel(FxSlot& slot, int index, AppState& state,
-                                 MixerModel& mixer, QObject* parent)
+QVariantList FxSlotCard::params() const { return owner_.paramsAt(slot_); }
+
+QString FxSlotCard::note() const { return owner_.noteAt(slot_); }
+
+bool FxSlotCard::builtin() const { return owner_.builtinAt(slot_); }
+
+TrackFxViewModel::TrackFxViewModel(MixerModel& model, MixerViewModel& mixer,
+                                   QObject* parent)
     : QObject(parent),
-      slot_(slot),
-      index_(index),
-      state_(state),
+      model_(model),
       mixer_(mixer),
-      params_(slot, nullptr),
-      title_(QStringLiteral("SEND %1").arg(QChar(QLatin1Char('A').unicode() + index))),
-      returnDb_(mixer.fxReturnDb(index)) {
-  auto directory = state_.takeDirectory();
-  if (!directory.empty() && directory.has_parent_path()) directory = directory.parent_path();
-  const auto name = index == 1 ? "fx-slot-B.state" : "fx-slot-A.state";
-  statePath_ = QString::fromStdString((directory / name).string());
+      fx1_(*this, 0),
+      fx2_(*this, 1) {
+  // Both the rack edit signal and a track switch re-read the cards, so the
+  // popup never shows one track's slot over another track's values.
+  connect(&mixer_, &MixerViewModel::fxChanged, this, &TrackFxViewModel::refresh);
+  connect(&mixer_, &MixerViewModel::trackChanged, this,
+          [this] { emit trackChanged(); });
+}
+
+int TrackFxViewModel::track() const { return mixer_.trackIndex(); }
+
+QString TrackFxViewModel::title() const {
+  return QStringLiteral("TRACK %1 - FX RACK")
+      .arg(track() + 1, 2, 10, QLatin1Char('0'));
+}
+
+QString TrackFxViewModel::subline() const { return mixer_.fxSubline(); }
+
+QString TrackFxViewModel::footer() const {
+  return QStringLiteral("live - every change applies at once; OK/CLOSE keeps it");
+}
+
+void TrackFxViewModel::openFor(int track, int slot) {
+  if (track < 0 || track >= audio::kMaxTracks) return;
+  focusSlot_ = slot == 1 ? 1 : 0;
+  mixer_.setTrackIndex(track);
+  if (!open_) {
+    open_ = true;
+    emit openChanged();
+  }
   refresh();
 }
 
-void FxSlotViewModel::setBypassed(bool bypassed) {
-  slot_.setBypassed(bypassed);
-  if (bypassed_ == bypassed) return;
-  bypassed_ = bypassed;
-  emit bypassedChanged();
-  updateStatus();
+void TrackFxViewModel::close() {
+  if (!open_) return;
+  open_ = false;
+  emit openChanged();
 }
 
-void FxSlotViewModel::setReturnDb(double db) {
-  const double clamped = std::clamp(db, static_cast<double>(kMinGainDb),
-                                    static_cast<double>(kMaxGainDb));
-  mixer_.setFxReturnDb(index_, static_cast<float>(clamped));
-  if (std::abs(clamped - returnDb_) < 0.001) return;
-  returnDb_ = clamped;
-  emit returnChanged();
+void TrackFxViewModel::refresh() {
+  fx1_.refresh();
+  fx2_.refresh();
+  emit trackChanged();
 }
 
-void FxSlotViewModel::loadDefault() {
-  if (!slot_.pluginPath().empty()) return;
-  const auto candidate = FxSlot::defaultPluginPath();
-  if (candidate.empty()) {
-    statusText_ = QStringLiteral("no default plugin found (set MNKY_PLUGIN_PATH)");
-    emit statusChanged();
-    return;
-  }
-  (void)slot_.load(candidate, 48000.0, audio::kBlockSize);
-  rebuildParams();
-  refresh();
+QString TrackFxViewModel::effectNameAt(int slot) const {
+  if (slot < 0 || slot >= MixerModel::kFxSlotCount) return QString();
+  return mixer_.fxNameAt(track(), slot);
 }
 
-void FxSlotViewModel::eject() {
-  slot_.unload();
-  rebuildParams();
-  refresh();
+int TrackFxViewModel::choiceAt(int slot) const {
+  if (slot < 0 || slot >= MixerModel::kFxSlotCount) return 0;
+  return mixer_.fxChoiceAt(track(), slot);
 }
 
-void FxSlotViewModel::saveState() {
-  const bool ok = slot_.saveState(statePath_.toStdString());
-  statusText_ = ok ? QStringLiteral("state saved to ") + statePath_
-                   : QString::fromStdString(slot_.lastError());
-  emit statusChanged();
+bool TrackFxViewModel::bypassAt(int slot) const {
+  if (slot < 0 || slot >= MixerModel::kFxSlotCount) return false;
+  return mixer_.fxBypassAt(track(), slot);
 }
 
-void FxSlotViewModel::loadState() {
-  const bool ok = slot_.loadState(statePath_.toStdString());
-  if (ok) params_.rebuild();
-  statusText_ = ok ? QStringLiteral("state loaded from ") + statePath_
-                   : QString::fromStdString(slot_.lastError());
-  emit statusChanged();
+double TrackFxViewModel::wetAt(int slot) const {
+  if (slot < 0 || slot >= MixerModel::kFxSlotCount) return 0.0;
+  return mixer_.fxWetAt(track(), slot);
 }
 
-void FxSlotViewModel::setParam(int index, double value) {
-  if (index < 0 || index >= params_.rowCount()) return;
-  const auto list = slot_.params();
-  if (index >= static_cast<int>(list.size())) return;
-  const auto& param = list[static_cast<std::size_t>(index)];
-  const double clamped = std::clamp(value, param.min, param.max);
-  slot_.setParam(param.id, clamped);
-  params_.refresh();
+QVariantList TrackFxViewModel::paramsAt(int slot) const {
+  if (slot < 0 || slot >= MixerModel::kFxSlotCount) return {};
+  return mixer_.fxParams(track(), slot);
 }
 
-void FxSlotViewModel::adjustParam(int index, double delta) {
-  const auto list = slot_.params();
-  if (index < 0 || index >= static_cast<int>(list.size())) return;
-  const auto& param = list[static_cast<std::size_t>(index)];
-  setParam(index, param.value + delta);
+QString TrackFxViewModel::noteAt(int slot) const {
+  if (slot < 0 || slot >= MixerModel::kFxSlotCount) return QString();
+  return mixer_.fxSlotNote(track(), slot);
 }
 
-void FxSlotViewModel::toggleBypass() {
-  setBypassed(!bypassed_);
+bool TrackFxViewModel::builtinAt(int slot) const {
+  if (slot < 0 || slot >= MixerModel::kFxSlotCount) return false;
+  return fxIsBuiltin(model_.fxSlot(track(), slot).id);
 }
 
-void FxSlotViewModel::refresh() {
-  const auto path = slot_.pluginPath();
-  const auto name = slot_.pluginName();
-  const bool loaded = slot_.loaded();
-  const bool bypassed = slot_.bypassed();
-  const double returnDb = mixer_.fxReturnDb(index_);
-  const QString newPath = QString::fromStdString(path);
-  const QString newName = QString::fromStdString(name);
-  bool changed = false;
-  if (pluginPath_ != newPath || pluginName_ != newName || loaded_ != loaded) {
-    pluginPath_ = newPath;
-    pluginName_ = newName;
-    loaded_ = loaded;
-    changed = true;
-  }
-  if (bypassed_ != bypassed) {
-    bypassed_ = bypassed;
-    emit bypassedChanged();
-  }
-  if (std::abs(returnDb - returnDb_) > 0.001) {
-    returnDb_ = returnDb;
-    emit returnChanged();
-  }
-  if (changed) emit pluginChanged();
-  params_.refresh();
-  updateStatus();
+void TrackFxViewModel::setChoice(int slot, int choice) {
+  mixer_.setFxChoiceAt(track(), slot, choice);
 }
 
-void FxSlotViewModel::rebuildParams() {
-  params_.rebuild();
+void TrackFxViewModel::setWet(int slot, double wet) {
+  mixer_.setFxWetAt(track(), slot, wet);
 }
 
-void FxSlotViewModel::updateStatus() {
-  QString text;
-  if (!loaded_) {
-    text = QStringLiteral("send idle; return passes the bus through");
-  } else {
-    text = bypassed_ ? QStringLiteral("loaded (bypassed)") : QStringLiteral("loaded");
-  }
-  const auto error = slot_.lastError();
-  if (!error.empty()) text += QStringLiteral("  -  ") + QString::fromStdString(error);
-  if (statusText_ != text) {
-    statusText_ = text;
-    emit statusChanged();
-  }
+void TrackFxViewModel::toggleBypass(int slot) {
+  mixer_.setFxBypassAt(track(), slot, !mixer_.fxBypassAt(track(), slot));
 }
 
-BuiltinFxViewModel::BuiltinFxViewModel(PerformanceModel& performance, QObject* parent)
-    : QObject(parent), performance_(performance) {}
-
-double BuiltinFxViewModel::param(int grid, int index) const {
-  return performance_.param(grid, index);
-}
-
-void BuiltinFxViewModel::setParamValue(int grid, int index, double value) {
-  if (!performance_.setParam(grid, index, value)) return;
-  emit changed();
-}
-
-double BuiltinFxViewModel::delayTimeMs() const {
-  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kTimeMs);
-}
-void BuiltinFxViewModel::setDelayTimeMs(double value) {
-  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kTimeMs,
-                std::clamp(value, 1.0, audio::fx::Delay::kMaxTimeMs));
-}
-double BuiltinFxViewModel::delayFeedback() const {
-  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kFeedback);
-}
-void BuiltinFxViewModel::setDelayFeedback(double value) {
-  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kFeedback,
-                std::clamp(value, 0.0, 0.95));
-}
-double BuiltinFxViewModel::delayMix() const {
-  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kMix);
-}
-void BuiltinFxViewModel::setDelayMix(double value) {
-  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kMix,
-                std::clamp(value, 0.0, 1.0));
-}
-bool BuiltinFxViewModel::delayBeat() const {
-  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kBeatMode) >= 0.5;
-}
-void BuiltinFxViewModel::setDelayBeat(bool value) {
-  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kBeatMode,
-                value ? 1.0 : 0.0);
-}
-int BuiltinFxViewModel::delayDivision() const {
-  return static_cast<int>(std::lround(
-      param(PerformanceModel::kDelayGrid, audio::fx::Delay::kDivision)));
-}
-void BuiltinFxViewModel::setDelayDivision(int value) {
-  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kDivision,
-                std::clamp(value, 0, audio::fx::Delay::kDivCount - 1));
-}
-QString BuiltinFxViewModel::delayDivisionText() const {
-  return QString::fromLatin1(audio::fx::Delay::divisionName(delayDivision()));
-}
-bool BuiltinFxViewModel::delayPingPong() const {
-  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kPingPong) >= 0.5;
-}
-void BuiltinFxViewModel::setDelayPingPong(bool value) {
-  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kPingPong,
-                value ? 1.0 : 0.0);
-}
-double BuiltinFxViewModel::delayCutoffHz() const {
-  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kBpCutoffHz);
-}
-void BuiltinFxViewModel::setDelayCutoffHz(double value) {
-  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kBpCutoffHz,
-                std::clamp(value, 20.0, 20000.0));
-}
-double BuiltinFxViewModel::delayWidthOct() const {
-  return param(PerformanceModel::kDelayGrid, audio::fx::Delay::kBpWidthOct);
-}
-void BuiltinFxViewModel::setDelayWidthOct(double value) {
-  setParamValue(PerformanceModel::kDelayGrid, audio::fx::Delay::kBpWidthOct,
-                std::clamp(value, 0.1, 4.0));
-}
-double BuiltinFxViewModel::reverbPredelayMs() const {
-  return param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kPredelayMs);
-}
-void BuiltinFxViewModel::setReverbPredelayMs(double value) {
-  setParamValue(PerformanceModel::kReverbGrid, audio::fx::Reverb::kPredelayMs,
-                std::clamp(value, 0.0, 200.0));
-}
-double BuiltinFxViewModel::reverbDecay() const {
-  return param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kDecay);
-}
-void BuiltinFxViewModel::setReverbDecay(double value) {
-  setParamValue(PerformanceModel::kReverbGrid, audio::fx::Reverb::kDecay,
-                std::clamp(value, 0.0, 0.98));
-}
-double BuiltinFxViewModel::reverbDamping() const {
-  return param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kDamping);
-}
-void BuiltinFxViewModel::setReverbDamping(double value) {
-  setParamValue(PerformanceModel::kReverbGrid, audio::fx::Reverb::kDamping,
-                std::clamp(value, 0.0, 1.0));
-}
-double BuiltinFxViewModel::reverbMix() const {
-  return param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kMix);
-}
-void BuiltinFxViewModel::setReverbMix(double value) {
-  setParamValue(PerformanceModel::kReverbGrid, audio::fx::Reverb::kMix,
-                std::clamp(value, 0.0, 1.0));
-}
-int BuiltinFxViewModel::reverbModel() const {
-  return static_cast<int>(std::lround(
-      param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kModel)));
-}
-void BuiltinFxViewModel::setReverbModel(int value) {
-  const int model = std::clamp(value, 0, audio::fx::Reverb::kModelCount - 1);
-  // The model is a preset: applying it also rewrites decay/damping/size, so the
-  // panel reads them back from the effect instead of showing stale values.
-  if (!performance_.setReverbModel(model)) return;
-  emit changed();
-}
-QString BuiltinFxViewModel::reverbModelText() const {
-  return QString::fromLatin1(audio::fx::Reverb::modelName(reverbModel()));
-}
-double BuiltinFxViewModel::reverbSize() const {
-  return param(PerformanceModel::kReverbGrid, audio::fx::Reverb::kSize);
-}
-void BuiltinFxViewModel::setReverbSize(double value) {
-  setParamValue(PerformanceModel::kReverbGrid, audio::fx::Reverb::kSize,
-                std::clamp(value, 0.25, 2.0));
-}
-
-void BuiltinFxViewModel::cycleDelayDivision(int delta) {
-  const int next = delayDivision() + (delta < 0 ? -1 : 1);
-  setDelayDivision((next + audio::fx::Delay::kDivCount) % audio::fx::Delay::kDivCount);
-}
-
-void BuiltinFxViewModel::cycleReverbModel(int delta) {
-  const int next = reverbModel() + (delta < 0 ? -1 : 1);
-  setReverbModel((next + audio::fx::Reverb::kModelCount) %
-                 audio::fx::Reverb::kModelCount);
-}
-
-void BuiltinFxViewModel::refresh() { emit changed(); }
-
-FxViewModel::FxViewModel(FxManager& fx, AppState& state, MixerModel& mixer,
-                         PerformanceModel& performance, double sampleRate,
-                         QObject* parent)
-    : QObject(parent),
-      slotA_(fx.slot(0), 0, state, mixer, this),
-      slotB_(fx.slot(1), 1, state, mixer, this),
-      builtin_(performance) {
-  (void)sampleRate;
-}
-
-void FxViewModel::loadDefaults() {
-  slotA_.loadDefault();
-}
-
-void FxViewModel::refresh() {
-  slotA_.refresh();
-  slotB_.refresh();
-  builtin_.refresh();
+void TrackFxViewModel::setParam(int slot, int index, double value) {
+  mixer_.setFxParamAt(track(), slot, index, value);
 }
 
 }  // namespace mnky::app

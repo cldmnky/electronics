@@ -105,6 +105,14 @@ class AudioGlue final : private audio::DeviceClient {
   // frames with the transport tempo of that moment, so the caller re-applies it
   // after a tempo change (AppController::timerTick) as the engine documents.
   void applyTakeLoops(const SessionSettings& settings);
+  // Control thread: one per-track FX rack slot (Engine::setTrackFxSlot).
+  // MixerModel installs a sink that calls this after every rack edit, so the
+  // rack reaches the engine without the audio callback touching the engine's
+  // allocating setter. applyTrackFxRack() forwards every stored slot, which the
+  // session load and the new-project reset use. `wet` is the slot's dry/wet
+  // crossfade; the effect clamps its own parameters.
+  void applyTrackFxSlot(int track, int slot);
+  void applyTrackFxRack();
   // Control-thread EQ forwarding (session fx.eq -> Engine track/main inserts).
   // Every band is written, so an all-None state bypasses the inserts; the
   // engine clamps type 0..5, gain -24..+24 dB, freq 20..20000 Hz and Q

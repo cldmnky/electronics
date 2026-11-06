@@ -1,7 +1,10 @@
 #include "mixer_model.hpp"
 
 #include <algorithm>
+#include <cmath>
 
+#include "../audio/fx/reverb.hpp"
+#include "fx_params.hpp"
 #include "logic.hpp"
 #include "project_logic.hpp"
 
@@ -89,14 +92,59 @@ int MixerModel::firstInactiveSlot() const {
   return -1;
 }
 
-MixerModel::Insert MixerModel::insert(int slot) const {
-  if (!valid(slot)) return {};
-  return inserts_[static_cast<std::size_t>(slot)];
+MixerModel::FxSlot MixerModel::fxSlot(int slot, int index) const {
+  if (!valid(slot) || index < 0 || index >= kFxSlotCount) return {};
+  return fxSlots_[static_cast<std::size_t>(slot)][static_cast<std::size_t>(index)];
 }
 
-void MixerModel::setInsert(int slot, Insert insert) {
-  if (!valid(slot)) return;
-  inserts_[static_cast<std::size_t>(slot)] = std::move(insert);
+void MixerModel::setFxSlot(int slot, int index, FxSlot fx) {
+  if (!valid(slot) || index < 0 || index >= kFxSlotCount) return;
+  if (!std::isfinite(fx.wet)) fx.wet = 1.0f;
+  fx.wet = std::clamp(fx.wet, 0.0f, 1.0f);
+  if (fxIsBuiltin(fx.id) &&
+      fx.params.size() != fxParamTable(fx.id).size()) {
+    // A freshly selected effect starts from the table's published defaults (the
+    // same values the engine instance uses); replacing an id with the effect's
+    // full positional vector keeps the incoming values.
+    fx.params = fxDefaultParams(fx.id);
+  }
+  auto& target = fxSlots_[static_cast<std::size_t>(slot)][static_cast<std::size_t>(index)];
+  const bool changed = target.id != fx.id || target.bypass != fx.bypass ||
+                       target.wet != fx.wet || target.params != fx.params;
+  target = std::move(fx);
+  if (changed && fxSink_) fxSink_(slot, index);
+}
+
+void MixerModel::setFxSlotSink(FxSlotSink sink) { fxSink_ = std::move(sink); }
+
+void MixerModel::setFxWet(int slot, int index, float wet) {
+  FxSlot fx = fxSlot(slot, index);
+  fx.wet = wet;
+  setFxSlot(slot, index, std::move(fx));
+}
+
+void MixerModel::setFxBypass(int slot, int index, bool bypass) {
+  FxSlot fx = fxSlot(slot, index);
+  fx.bypass = bypass;
+  setFxSlot(slot, index, std::move(fx));
+}
+
+void MixerModel::setFxParam(int slot, int index, int param, double value) {
+  FxSlot fx = fxSlot(slot, index);
+  fxSetParam(fx.params, fx.id, param, value);
+  if (fx.id == kFxIdReverb && param == audio::fx::Reverb::kModel &&
+      fx.params.size() == fxParamTable(fx.id).size()) {
+    // Reverb::setModel documents the model as a preset of decay/damping/size;
+    // the rack stores parameters positionally, so the preset is expanded here or
+    // the engine would receive a model index with the previous decay.
+    const auto& preset = audio::fx::Reverb::modelPreset(
+        std::clamp(static_cast<int>(std::lround(fx.params[audio::fx::Reverb::kModel])),
+                   0, audio::fx::Reverb::kModelCount - 1));
+    fx.params[audio::fx::Reverb::kDecay] = preset.decay;
+    fx.params[audio::fx::Reverb::kDamping] = preset.damping;
+    fx.params[audio::fx::Reverb::kSize] = preset.size;
+  }
+  setFxSlot(slot, index, std::move(fx));
 }
 
 bool MixerModel::valid(int index) {

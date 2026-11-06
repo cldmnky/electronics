@@ -4,10 +4,11 @@ import "../components"
 
 // Full channel popout: the strip's expand affordance opens every control of
 // one channel in one place - fader, pan, switches, sends, monitor, I/O, the FX
-// insert and the EQ band summary - so a mixer move no longer needs the TRACK tab
-// and the SHIFT face. Every field is live (no apply button); CLOSE only closes,
-// REMOVE TRACK asks for confirmation and leaves the slot's settings and takes in
-// the project. The TRACK tab stays as the compact single-channel face.
+// rack entry and the EQ band summary - so a mixer move no longer needs the TRACK
+// tab and the SHIFT face. Every field is live (no apply button); CLOSE only
+// closes, REMOVE TRACK asks for confirmation and leaves the slot's settings and
+// takes in the project. The TRACK tab stays as the compact single-channel face.
+// FX1/FX2 are the per-track rack slots' wet; TRACK FX opens the rack popup.
 Rectangle {
     id: root
 
@@ -224,10 +225,10 @@ Rectangle {
                     }
                 }
 
-                // ---- right column: sends | monitor, I/O, insert, EQ --------
+                // ---- right column: sends/FX wet | monitor, I/O, EQ ---------
                 // Two sub-columns keep every control inside the panel at 480 px:
-                // the send faders on the left, the assignment and summaries on
-                // the right.
+                // the FX wet and monitor-send chips on the left, the assignment
+                // and the TRACK FX entry on the right.
                 Row {
                     width: parent.width - (parent.width - Style.gap) * 0.36 - Style.gap
                     height: parent.height
@@ -241,24 +242,24 @@ Rectangle {
                         Text {
                             width: parent.width
                             height: 16
-                            text: "SENDS"
+                            text: "SENDS / FX WET"
                             color: Style.textDim
                             font.pixelSize: Style.fontSmall
                             font.weight: Font.DemiBold
                         }
                         ChannelSliderRow {
                             width: parent.width
-                            label: "FX1"
-                            value: mixer.trackSendA
+                            label: "FX1 WET"
+                            value: mixer.trackFxWet1
                             focusId: "channel.fx1"
-                            onMoved: (value) => mixer.setTrackSendA(value)
+                            onMoved: (value) => mixer.setTrackFxWet1(value)
                         }
                         ChannelSliderRow {
                             width: parent.width
-                            label: "FX2"
-                            value: mixer.trackSendB
+                            label: "FX2 WET"
+                            value: mixer.trackFxWet2
                             focusId: "channel.fx2"
-                            onMoved: (value) => mixer.setTrackSendB(value)
+                            onMoved: (value) => mixer.setTrackFxWet2(value)
                         }
                         ChannelSliderRow {
                             width: parent.width
@@ -276,8 +277,8 @@ Rectangle {
                         }
                         Text {
                             width: parent.width
-                            text: "Every control applies immediately; the FX insert is one " +
-                                  "instance per track."
+                            text: "Every control applies immediately; FX1/FX2 are this " +
+                                  "track's rack slot wet, in series."
                             color: Style.textDim
                             font.pixelSize: Style.fontSmall
                             wrapMode: Text.Wrap
@@ -340,29 +341,14 @@ Rectangle {
                             focusId: "channel.output"
                             onClicked: app.openOutputDest(mixer.trackIndex)
                         }
-                        Row {
+                        TouchButton {
                             width: parent.width
                             height: Style.touch
-                            spacing: 4
-                            TouchButton {
-                                width: parent.width - 96 - 4
-                                height: parent.height
-                                text: "INSERT  " + mixer.channelInsertName
-                                textSize: Style.fontSmall
-                                variant: "ghost"
-                                chevron: "down"
-                                focusId: "channel.insert"
-                                onClicked: app.openInsert(mixer.trackIndex)
-                            }
-                            TouchButton {
-                                width: 96
-                                height: parent.height
-                                text: "BYPASS"
-                                textSize: Style.fontSmall
-                                checked: mixer.channelInsertBypass
-                                focusId: "channel.insert.bypass"
-                                onClicked: mixer.toggleChannelInsertBypass()
-                            }
+                            text: "TRACK FX   " + mixer.channelFxSummary
+                            textSize: Style.fontSmall
+                            chevron: "up"
+                            focusId: "channel.fx"
+                            onClicked: app.openTrackFx(0)
                         }
 
                         Text {
@@ -388,7 +374,7 @@ Rectangle {
         }
     }
 
-    // A send level in a narrow sub-column: an arc-dial chip with its own
+    // A wet or send level in a narrow sub-column: an arc-dial chip with its own
     // readout, per the refresh law (no slider outside a wide fader).
     component ChannelSliderRow: KnobChip {
         height: Style.touch

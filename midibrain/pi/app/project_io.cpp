@@ -151,10 +151,24 @@ session::Snapshot captureSnapshot(const AppContext& context) {
     out.inCh = context.mixer.inCh(track);
     out.inPair = context.mixer.inPair(track);
     out.outDst = context.mixer.outDst(track);
-    const auto insert = context.mixer.insert(track);
-    out.insert.id = insert.id;
-    out.insert.bypass = insert.bypass;
-    out.insert.params = insert.params;
+    // Per-track FX rack: the mixer model is the app's authority, so both slots
+    // are written verbatim. The deprecated single insert is the FX1 view, kept
+    // in the format for old readers.
+    for (int slot = 0;
+         slot < MixerModel::kFxSlotCount &&
+         slot < static_cast<int>(out.fxSlots.size());
+         ++slot) {
+      const auto value = context.mixer.fxSlot(track, slot);
+      auto& fxOut = out.fxSlots[static_cast<std::size_t>(slot)];
+      fxOut.id = value.id;
+      fxOut.bypass = value.bypass;
+      fxOut.wet = value.wet;
+      fxOut.params = value.params;
+    }
+    const auto fx1 = context.mixer.fxSlot(track, 0);
+    out.insert.id = fx1.id;
+    out.insert.bypass = fx1.bypass;
+    out.insert.params = fx1.params;
     if (channel < snapshot.takes.active.size()) {
       snapshot.takes.active[channel] = context.settings.activeTake(track);
     }
@@ -246,11 +260,19 @@ void applyMixer(const AppContext& context, const session::MixerState& mixer) {
     context.mixer.setInCh(index, channel.inCh);
     context.mixer.setInPair(index, channel.inPair);
     context.mixer.setOutDst(index, channel.outDst);
-    MixerModel::Insert insert;
-    insert.id = channel.insert.id;
-    insert.bypass = channel.insert.bypass;
-    insert.params = channel.insert.params;
-    context.mixer.setInsert(index, std::move(insert));
+    // The reader already migrated a file without "fxSlots" (legacy insert into
+    // FX1, legacy send[i] into the slot's wet), so both slots load as-is; the
+    // deprecated send values keep round-tripping through the mixer model.
+    for (int slot = 0; slot < MixerModel::kFxSlotCount; ++slot) {
+      if (slot >= static_cast<int>(channel.fxSlots.size())) break;
+      const auto& source = channel.fxSlots[static_cast<std::size_t>(slot)];
+      MixerModel::FxSlot fx;
+      fx.id = source.id;
+      fx.bypass = source.bypass;
+      fx.wet = source.wet;
+      fx.params = source.params;
+      context.mixer.setFxSlot(static_cast<int>(index), slot, std::move(fx));
+    }
   }
   // The session reader defaults an absent "tracks" key to every slot (legacy
   // all-18); an empty vector here is therefore a genuinely empty project, not a
@@ -263,6 +285,9 @@ void applyMixer(const AppContext& context, const session::MixerState& mixer) {
   context.mixer.setTracks(std::move(tracks));
   context.mixer.setMasterDb(gainToDb(mixer.master));
   context.mixer.setOut34Mode(mixer.out34Mode);
+  // The engine's racks are control-thread state: after a load every stored slot
+  // is forwarded once, including the slots the file cleared.
+  context.audio.applyTrackFxRack();
 }
 
 }  // namespace

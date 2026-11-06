@@ -14,8 +14,8 @@ std::string targetPath(int strip, const char* parameter) {
 QString parameterLabel(const QString& parameter) {
   if (parameter == QStringLiteral("gain")) return QStringLiteral("GAIN");
   if (parameter == QStringLiteral("pan")) return QStringLiteral("PAN");
-  if (parameter == QStringLiteral("sendA")) return QStringLiteral("SEND A");
-  if (parameter == QStringLiteral("sendB")) return QStringLiteral("SEND B");
+  if (parameter == QStringLiteral("fx1wet")) return QStringLiteral("FX1 WET");
+  if (parameter == QStringLiteral("fx2wet")) return QStringLiteral("FX2 WET");
   return parameter.toUpper();
 }
 }  // namespace
@@ -25,8 +25,8 @@ LearnViewModel::LearnViewModel(MidiGlue& midi, QObject* parent)
   for (int strip = 0; strip < kNumStrips; ++strip) {
     baseTargets_ << QString::fromStdString(targetPath(strip, "gain"));
     baseTargets_ << QString::fromStdString(targetPath(strip, "pan"));
-    baseTargets_ << QString::fromStdString(targetPath(strip, "sendA"));
-    baseTargets_ << QString::fromStdString(targetPath(strip, "sendB"));
+    baseTargets_ << QString::fromStdString(targetPath(strip, "fx1wet"));
+    baseTargets_ << QString::fromStdString(targetPath(strip, "fx2wet"));
   }
   baseTargets_ << QStringLiteral("mixer.master.gain");
   baseTargets_ << QStringLiteral("click.level");

@@ -969,3 +969,101 @@ rows, channel popout sends, FX returns, brightness, loop/punch fields, and
 all ConfigPopup params (ConfigSlider deleted). Kept: strip/master/popout
 gain faders. 41-* screenshots cover the converted surfaces; --ui-taps 547
 clean, 841 app checks.
+
+## Wave 10: per-track FX rack UI (2026-11-06)
+
+Owner direction: "per track delay/reverb settings", "select what we want on
+FX1/FX2", "move away from the global FX tab, use a popup for configuring per
+track FX settings". Engine + session landed in 2ee640c (audio wave 11); this
+wave is the last mile: the rack reaches every surface.
+
+**Data path.** `MixerModel` now owns the rack (`fxSlots[2]` per track:
+`{id, bypass, wet, params}`). `MixerModel::setFxSlot()` calls a control-thread
+sink that `AudioGlue` installs (`applyTrackFxSlot()` ->
+`Engine::setTrackFxSlot()`), so the engine's allocating setter is never reached
+from the audio callback (`applyTo()` stays allocation-free). A session load
+forwards every stored slot once (`applyTrackFxRack()`), and `project_io` writes
+both slots plus the deprecated `insert` (the FX1 view) from the model, so save
+and the engine agree. `fx_params.{hpp,cpp}` is the app's one table of the
+built-in effects' stable indices, ranges, defaults, units and value formats; the
+index constants come from `audio/fx/delay.hpp` / `reverb.hpp` (static_asserts
+catch a reorder), the values restate what the effect constructors publish, and
+the effect still clamps everything it receives.
+
+**TRACK FX popup (`qml/overlays/TrackFxPopup.qml`, `fx_view_model.*`).** Opened
+from the channel popout's TRACK FX row (which replaced the old INSERT row) and
+from the X/Y screen's parameter buttons. Two slot cards, FX1 then FX2: effect
+selector (opens the `fxslot` ConfigPopup: NONE / DELAY / REVERB / PLUGIN), WET
+KnobChip, BYPASS chip, the effect's full parameter grid as KnobChip cards (the
+slider law), and the subline "series FX1 -> FX2 - per track". Every edit is live
+through MixerViewModel, so the rack, the session and the engine are one value.
+**CLAP choice: retired the CLAP slot panel with the tab.** `FxSlotPanel.qml`,
+`FxParamKnob.qml`, `BuiltinDelayPanel.qml`, `BuiltinReverbPanel.qml` and
+`FxScreen.qml` are deleted; `fx_slot.*` (FxSlot/FxManager) stays as the engine's
+send-bus CLAP seam for a later host wave. Per-track CLAP hosting is still not
+wired (audio wave 11 "CLAP gap"), so the PLUGIN choice is listed but disabled
+and the popup says "PLUGIN SLOTS - NOT IN THIS BUILD" under it (this UI has no
+tooltip layer; the note is always visible instead of hover-only).
+
+**FX tab retired (9 tabs).** Row is Mixer, Routing, Recorder, System, Projects,
+Monitor, EQ, X/Y, EDIT (`kScreenCount` 9, tab constants in `app_controller.cpp`
+and `Main.qml`); `tabHasShiftFace()` is tabs 0..3 + Projects + EQ. EDIT stays for
+the DAW plan's later popup move.
+
+**Strip knobs = WET.** The FX1/FX2 knobs on the mixer SHIFT strips (roles
+`fx1Wet`/`fx2Wet` + the slot's effect name), the TRACK SHIFT rows, the channel
+popout and the panel EDIT paths all bind `fxSlots[i].wet`; labels stay FX1/FX2
+and the value popup reads "FX1 WET n%". The MIDI-learn targets were renamed
+`mixer.chNN.fx1wet`/`fx2wet` (an old `sendA`/`sendB` binding no longer binds:
+the bus it wrote is retired). The deprecated per-track `send[i]` values are only
+written by the session loader now (they still round-trip and the reader migrates
+them into `wet` for a file without `fxSlots`); the Monitor SHIFT SENDS popup
+labels its FX1/FX2 source rows as legacy in one line.
+
+**X/Y per track.** Grid 0 bends the selected track's FX1, grid 1 its FX2
+(delay X = cutoff, Y = width; reverb X = size, Y = level) through the same rack
+writes, so a grid move is exactly the slot parameter. The selected track is the
+mixer's selected strip and the screen gained a track row on the mixer's
+four-per-page banks. A slot that is NONE or a plugin id has no grid: it shows
+"slot is NONE - pick DELAY or REVERB" (or the plugin gap) plus a PICK EFFECT
+chip that opens the same slot selector. FREEZE is the reverb macro over the
+selected track's reverb slot and restores the exact vector on release. The X/Y
+delay/reverb parameter popups (`delay`, `delaydivision`, `reverb`,
+`reverbmodel`) were retargeted from `PerformanceModel` to the rack slot
+AppController points them at; CANCEL restores the whole slot vector. The global
+`PerformanceModel` send-bus chain and `session fx.xy`/`fx.bus` stay in the
+format and in AudioGlue (the engine ignores the retired buses) but no screen
+writes them any more.
+
+### Wave 10 run
+
+macOS (Qt 6.12.0, AppleClang, clean directory `/tmp/pi-fx-ui`,
+`-DCMAKE_PREFIX_PATH=$(brew --prefix qt)`):
+
+* clean configure + `cmake --build -j8`: **exit 0, zero warnings** (app sources
+  stay under `-Wall -Wextra -Werror`).
+* `ctest --output-on-failure`: **21/21 passed**; `mnkybox_app_logic` prints
+  **903 checks, 0 failures**, including the new rack checks (slot defaults from
+  the table, wet clamp, effect independence, PLUGIN refused, positional/clamped
+  parameter writes, per-track popup grid rebinding, reverb model preset
+  expansion, project save/load of both slots, X/Y writes = rack writes, freeze
+  save/restore).
+* `QT_QPA_PLATFORM=offscreen ./app/mnkybox --ui-taps --no-pico`: **559 taps, 0
+  QML warnings, 0 failures**, including the two new scenarios
+  `mixer.trackfx` (21 taps across both cards) and `mixer.trackfx.none`, plus the
+  X/Y bound/unbound passes and the `config.fxslot` kind.
+* `QT_QPA_PLATFORM=offscreen ./app/mnkybox --screenshots /tmp/fx-shots --no-pico`:
+  **117 steps, 0 failures**, no QML warnings. Checked in as
+  `qemu/screenshots/43-{tabs,track-fx,track-fx-wet,popup-fxslot,mixer-shift-wet,
+  track-shift,channel-popout,xy-track,xy-picker}.png`.
+
+Raspberry Pi 5 (studio, Debian trixie arm64, Qt 6.8.2, offscreen only, under
+`nice`/`ionice`, fresh `/tmp/pi-fx-ui`): synced tree configure + `-j4` build
+**exit 0, zero warnings/errors**, CTest **21/21**, `--ui-taps` **575 taps, 0 QML
+warnings, 0 failures**, `--screenshots` **117 steps, 0 failures** (9 43-* PNGs,
+written to /tmp and removed afterwards). No hardware, touch or timing claim.
+
+Not done in this wave (named): `docs/USER-MANUAL.md` still describes the FX tab
+and the global X/Y grids - a docs wave must rewrite section 10 and the tab list
+(the task restricted edits to `pi/app/`); per-track CLAP hosting; MIDI-learn
+bindings saved as `sendA`/`sendB` do not rebind.

@@ -1,203 +1,121 @@
 #pragma once
-// QML view models for the two CLAP send slots: plugin identity, parameters,
-// bypass, return level and state files. The GUI thread owns all plugin calls;
-// the audio thread only enters FxSlot's try-locked adapter.
-#include <QAbstractListModel>
+// QML view model for the per-track FX rack popup (TRACK FX): two slot cards,
+// FX1 then FX2, bound to the mixer's rack on the track the popup opened on.
+//
+// The rack lives in MixerModel (fxSlots[2]) and reaches the engine through
+// AudioGlue's control-thread forwarder, so this class formats values and
+// forwards edits only. CLAP per-track hosting is not wired in this build
+// (audio/NOTES.md wave 11, "CLAP gap"): the PLUGIN choice is listed but greyed,
+// and a slot that already carries a plugin id shows the gap instead of a
+// parameter list. The old global FX-tab CLAP slot view models retired with the
+// tab; fx_slot.hpp stays as the engine's send-bus CLAP seam for a later host
+// wave.
 #include <QObject>
 #include <QString>
+#include <QVariantList>
 
-#include <vector>
-
-#include "clap/host.hpp"
-#include "fx_slot.hpp"
 #include "mixer_model.hpp"
-#include "performance_model.hpp"
+#include "mixer_view_model.hpp"
 
 namespace mnky::app {
 
-class AppState;
+class TrackFxViewModel;
 
-class FxParamModel final : public QAbstractListModel {
-  Q_OBJECT
- public:
-  enum Roles {
-    NameRole = Qt::UserRole + 1,
-    ValueRole,
-    MinimumRole,
-    MaximumRole,
-  };
-
-  explicit FxParamModel(FxSlot& slot, QObject* parent = nullptr);
-
-  int rowCount(const QModelIndex& parent = QModelIndex()) const override;
-  QVariant data(const QModelIndex& index, int role) const override;
-  QHash<int, QByteArray> roleNames() const override;
-
-  void rebuild();
-  void refresh();
-
- private:
-  FxSlot& slot_;
-  std::vector<clap::Param> params_;
-};
-
-class FxSlotViewModel final : public QObject {
+// One slot card of the popup. Its values are read through the owner, which
+// keeps a single track/rack binding for both cards.
+class FxSlotCard final : public QObject {
   Q_OBJECT
   Q_PROPERTY(QString title READ title CONSTANT)
-  Q_PROPERTY(QString pluginName READ pluginName NOTIFY pluginChanged)
-  Q_PROPERTY(QString pluginPath READ pluginPath NOTIFY pluginChanged)
-  Q_PROPERTY(QString statusText READ statusText NOTIFY statusChanged)
-  Q_PROPERTY(QString statePath READ statePath CONSTANT)
-  Q_PROPERTY(bool loaded READ loaded NOTIFY pluginChanged)
-  Q_PROPERTY(bool bypassed READ bypassed WRITE setBypassed NOTIFY bypassedChanged)
-  Q_PROPERTY(double returnDb READ returnDb WRITE setReturnDb NOTIFY returnChanged)
-  Q_PROPERTY(FxParamModel* params READ params CONSTANT)
+  Q_PROPERTY(QString effectName READ effectName NOTIFY changed)
+  Q_PROPERTY(int choice READ choice NOTIFY changed)
+  Q_PROPERTY(bool bypass READ bypass NOTIFY changed)
+  Q_PROPERTY(double wet READ wet NOTIFY changed)
+  Q_PROPERTY(int paramCount READ paramCount NOTIFY changed)
+  Q_PROPERTY(QVariantList params READ params NOTIFY changed)
+  Q_PROPERTY(QString note READ note NOTIFY changed)
+  Q_PROPERTY(bool builtin READ builtin NOTIFY changed)
 
  public:
-  FxSlotViewModel(FxSlot& slot, int index, AppState& state, MixerModel& mixer,
-                  QObject* parent = nullptr);
+  FxSlotCard(TrackFxViewModel& owner, int slot);
 
-  QString title() const { return title_; }
-  QString pluginName() const { return pluginName_; }
-  QString pluginPath() const { return pluginPath_; }
-  QString statusText() const { return statusText_; }
-  QString statePath() const { return statePath_; }
-  bool loaded() const { return loaded_; }
-  bool bypassed() const { return bypassed_; }
-  void setBypassed(bool bypassed);
-  double returnDb() const { return returnDb_; }
-  void setReturnDb(double db);
-  FxParamModel* params() { return &params_; }
-
-  Q_INVOKABLE void loadDefault();
-  Q_INVOKABLE void eject();
-  Q_INVOKABLE void saveState();
-  Q_INVOKABLE void loadState();
-  Q_INVOKABLE void setParam(int index, double value);
-  Q_INVOKABLE void adjustParam(int index, double delta);
-  Q_INVOKABLE void toggleBypass();
-
-  void refresh();
-
- signals:
-  void pluginChanged();
-  void statusChanged();
-  void bypassedChanged();
-  void returnChanged();
-
- private:
-  void rebuildParams();
-  void updateStatus();
-
-  FxSlot& slot_;
-  const int index_;
-  AppState& state_;
-  MixerModel& mixer_;
-  FxParamModel params_;
-  QString title_;
-  QString pluginName_;
-  QString pluginPath_;
-  QString statusText_;
-  QString statePath_;
-  bool loaded_ = false;
-  bool bypassed_ = false;
-  double returnDb_ = 0.0;
-};
-
-// Built-in send effects (the two X/Y performance instances) as a flat QML
-// model: every Delay and Reverb parameter is a property, so the FX tab can show
-// their FULL settings beside the CLAP slots instead of only the X/Y grid. The
-// values live in PerformanceModel (the same instance the audio bind bus runs),
-// so a knob here and an X/Y grid move are the same parameter.
-class BuiltinFxViewModel final : public QObject {
-  Q_OBJECT
-  Q_PROPERTY(double delayTimeMs READ delayTimeMs WRITE setDelayTimeMs NOTIFY changed)
-  Q_PROPERTY(double delayFeedback READ delayFeedback WRITE setDelayFeedback NOTIFY changed)
-  Q_PROPERTY(double delayMix READ delayMix WRITE setDelayMix NOTIFY changed)
-  Q_PROPERTY(bool delayBeat READ delayBeat WRITE setDelayBeat NOTIFY changed)
-  Q_PROPERTY(int delayDivision READ delayDivision WRITE setDelayDivision NOTIFY changed)
-  Q_PROPERTY(QString delayDivisionText READ delayDivisionText NOTIFY changed)
-  Q_PROPERTY(bool delayPingPong READ delayPingPong WRITE setDelayPingPong NOTIFY changed)
-  Q_PROPERTY(double delayCutoffHz READ delayCutoffHz WRITE setDelayCutoffHz NOTIFY changed)
-  Q_PROPERTY(double delayWidthOct READ delayWidthOct WRITE setDelayWidthOct NOTIFY changed)
-  Q_PROPERTY(double reverbPredelayMs READ reverbPredelayMs WRITE setReverbPredelayMs NOTIFY changed)
-  Q_PROPERTY(double reverbDecay READ reverbDecay WRITE setReverbDecay NOTIFY changed)
-  Q_PROPERTY(double reverbDamping READ reverbDamping WRITE setReverbDamping NOTIFY changed)
-  Q_PROPERTY(double reverbMix READ reverbMix WRITE setReverbMix NOTIFY changed)
-  Q_PROPERTY(int reverbModel READ reverbModel WRITE setReverbModel NOTIFY changed)
-  Q_PROPERTY(QString reverbModelText READ reverbModelText NOTIFY changed)
-  Q_PROPERTY(double reverbSize READ reverbSize WRITE setReverbSize NOTIFY changed)
-
- public:
-  explicit BuiltinFxViewModel(PerformanceModel& performance, QObject* parent = nullptr);
-
-  double delayTimeMs() const;
-  void setDelayTimeMs(double value);
-  double delayFeedback() const;
-  void setDelayFeedback(double value);
-  double delayMix() const;
-  void setDelayMix(double value);
-  bool delayBeat() const;
-  void setDelayBeat(bool value);
-  int delayDivision() const;
-  void setDelayDivision(int value);
-  QString delayDivisionText() const;
-  bool delayPingPong() const;
-  void setDelayPingPong(bool value);
-  double delayCutoffHz() const;
-  void setDelayCutoffHz(double value);
-  double delayWidthOct() const;
-  void setDelayWidthOct(double value);
-  double reverbPredelayMs() const;
-  void setReverbPredelayMs(double value);
-  double reverbDecay() const;
-  void setReverbDecay(double value);
-  double reverbDamping() const;
-  void setReverbDamping(double value);
-  double reverbMix() const;
-  void setReverbMix(double value);
-  int reverbModel() const;
-  void setReverbModel(int value);
-  QString reverbModelText() const;
-  double reverbSize() const;
-  void setReverbSize(double value);
-
-  Q_INVOKABLE void cycleDelayDivision(int delta);
-  Q_INVOKABLE void cycleReverbModel(int delta);
-  // Re-reads every parameter (project load, X/Y moves).
-  void refresh();
+  QString title() const;
+  QString effectName() const;
+  int choice() const;
+  bool bypass() const;
+  double wet() const;
+  int paramCount() const;
+  QVariantList params() const;
+  QString note() const;
+  bool builtin() const;
+  int slot() const { return slot_; }
+  // Re-emits changed(): the owner calls it after a rack edit or a track switch.
+  void refresh() { emit changed(); }
 
  signals:
   void changed();
 
  private:
-  double param(int grid, int index) const;
-  void setParamValue(int grid, int index, double value);
-
-  PerformanceModel& performance_;
+  TrackFxViewModel& owner_;
+  const int slot_;
 };
 
-class FxViewModel final : public QObject {
+class TrackFxViewModel final : public QObject {
   Q_OBJECT
-  Q_PROPERTY(FxSlotViewModel* slotA READ slotA CONSTANT)
-  Q_PROPERTY(FxSlotViewModel* slotB READ slotB CONSTANT)
-  Q_PROPERTY(BuiltinFxViewModel* builtin READ builtin CONSTANT)
+  Q_PROPERTY(bool open READ open NOTIFY openChanged)
+  Q_PROPERTY(int track READ track NOTIFY trackChanged)
+  Q_PROPERTY(int focusSlot READ focusSlot NOTIFY openChanged)
+  Q_PROPERTY(QString title READ title NOTIFY trackChanged)
+  Q_PROPERTY(QString subline READ subline NOTIFY trackChanged)
+  Q_PROPERTY(QString footer READ footer NOTIFY trackChanged)
+  Q_PROPERTY(FxSlotCard* fx1 READ fx1 CONSTANT)
+  Q_PROPERTY(FxSlotCard* fx2 READ fx2 CONSTANT)
 
  public:
-  FxViewModel(FxManager& fx, AppState& state, MixerModel& mixer,
-              PerformanceModel& performance, double sampleRate,
-              QObject* parent = nullptr);
+  TrackFxViewModel(MixerModel& model, MixerViewModel& mixer,
+                   QObject* parent = nullptr);
 
-  FxSlotViewModel* slotA() { return &slotA_; }
-  FxSlotViewModel* slotB() { return &slotB_; }
-  BuiltinFxViewModel* builtin() { return &builtin_; }
-  void loadDefaults();
+  bool open() const { return open_; }
+  int track() const;
+  int focusSlot() const { return focusSlot_; }
+  QString title() const;
+  QString subline() const;
+  QString footer() const;
+  FxSlotCard* fx1() { return &fx1_; }
+  FxSlotCard* fx2() { return &fx2_; }
+
+  // Opens on `track` (its slot is selected in the mixer, so the channel popout
+  // and the mixer agree which strip is being configured) and highlights the
+  // slot the caller came from.
+  Q_INVOKABLE void openFor(int track, int slot);
+  Q_INVOKABLE void close();
+  // Re-reads both cards (mixer rack edits, session load, track switch).
   void refresh();
 
+  Q_INVOKABLE void setChoice(int slot, int choice);
+  Q_INVOKABLE void setWet(int slot, double wet);
+  Q_INVOKABLE void toggleBypass(int slot);
+  Q_INVOKABLE void setParam(int slot, int index, double value);
+
+  // Card reads.
+  QString effectNameAt(int slot) const;
+  int choiceAt(int slot) const;
+  bool bypassAt(int slot) const;
+  double wetAt(int slot) const;
+  QVariantList paramsAt(int slot) const;
+  QString noteAt(int slot) const;
+  bool builtinAt(int slot) const;
+
+ signals:
+  void openChanged();
+  void trackChanged();
+
  private:
-  FxSlotViewModel slotA_;
-  FxSlotViewModel slotB_;
-  BuiltinFxViewModel builtin_;
+  MixerModel& model_;
+  MixerViewModel& mixer_;
+  FxSlotCard fx1_;
+  FxSlotCard fx2_;
+  bool open_ = false;
+  int focusSlot_ = 0;
 };
 
 }  // namespace mnky::app

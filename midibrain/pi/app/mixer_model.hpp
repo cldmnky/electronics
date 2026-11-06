@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <string>
 #include <vector>
@@ -34,14 +35,19 @@ class MixerModel {
     int slot = 0;     // 0..audio::kMaxTracks-1
     std::string name;
   };
-  // Per-track FX insert (session v2 mixer.channels[].insert). The engine
-  // instance path lands in parallel; this model carries the selector, the
-  // bypass and the parameter vector the channel popout and the session need.
-  struct Insert {
+  // Per-track FX rack entry (session v2 mixer.channels[].fxSlots[i]). The
+  // engine instance path is audio wave 11: FX slot 0 is FX1, 1 is FX2, they run
+  // in series post-EQ pre-fader, and each slot's wet is its dry/wet crossfade.
+  // `params` are positional doubles in the effect's stable order (fx_params.hpp
+  // mirrors the tables); the engine clamps what it receives.
+  struct FxSlot {
     std::string id;  // empty = none; "builtin.delay" | "builtin.reverb" | CLAP id
     bool bypass = false;
+    float wet = 1.0f;
     std::vector<double> params;
   };
+  // Slots per track: FX1 then FX2 (audio::kTrackFxSlots, session::kTrackFxSlots).
+  static constexpr int kFxSlotCount = audio::kTrackFxSlots;
 
   MixerModel();
 
@@ -58,6 +64,11 @@ class MixerModel {
   bool solo(int index) const;
   void setArm(int index, bool arm);
   bool arm(int index) const;
+  // DEPRECATED per-track FX send (session v2 mixer.channels[].send[i]). Engine
+  // wave 11 retired the FX1/FX2 buses from the signal path, so nothing feeds
+  // them and no UI writes them any more: the session loader keeps the values
+  // round-tripping and migrates them into fxSlots[i].wet for a file without
+  // "fxSlots". New code uses the rack below.
   void setSend(int index, int send, float level);
   float send(int index, int send) const;
   // App-side input trim in dB. The engine exposes one per-channel gain, so the
@@ -116,9 +127,26 @@ class MixerModel {
   void setTracks(std::vector<Track> tracks);
   int firstInactiveSlot() const;
 
-  // ---- per-track FX insert ------------------------------------------------
-  Insert insert(int slot) const;
-  void setInsert(int slot, Insert insert);
+  // ---- per-track FX rack ------------------------------------------------
+  // UI-thread state, like the track list. The rack's audio-thread half is the
+  // engine's own slot state: setFxSlot() hands the new value to the installed
+  // sink, which calls Engine::setTrackFxSlot() from the control thread (the
+  // engine's setter allocates on a slot's first use, so the audio callback must
+  // never reach it).
+  FxSlot fxSlot(int slot, int index) const;
+  // Stores `fx` and notifies the sink when a value actually changed. A slot
+  // with a new effect id starts from that effect's published defaults unless
+  // `fx.params` already carries the effect's full parameter vector.
+  void setFxSlot(int slot, int index, FxSlot fx);
+  // Field writers built on setFxSlot(): each clamps, stores and forwards.
+  void setFxWet(int slot, int index, float wet);
+  void setFxBypass(int slot, int index, bool bypass);
+  void setFxParam(int slot, int index, int param, double value);
+  // Control-thread hook, called with (track, slot) after every rack change.
+  // AudioGlue installs it once; an empty sink (unit tests, headless logic)
+  // leaves the rack purely in the model.
+  using FxSlotSink = std::function<void(int track, int slot)>;
+  void setFxSlotSink(FxSlotSink sink);
 
   void setOut34Mode(int mode);
   int out34Mode() const;
@@ -162,7 +190,8 @@ class MixerModel {
   // UI-thread state below (never touched by the audio callback).
   std::vector<Track> tracks_;
   std::array<std::string, audio::kMaxTracks> names_{};
-  std::array<Insert, audio::kMaxTracks> inserts_{};
+  std::array<std::array<FxSlot, kFxSlotCount>, audio::kMaxTracks> fxSlots_{};
+  FxSlotSink fxSink_;
   std::atomic<int> out34Mode_{0};
   std::atomic<float> masterDb_{0.0f};
   std::atomic<float> fxReturnDb_[audio::kNumSends] = {};

@@ -2,12 +2,17 @@ import QtQuick
 import Mnkybox 1.0
 import "../components"
 
-// X/Y performance: two grids over the built-in send effects. Delay X = feedback
-// filter cutoff, Y = width; reverb X = size, Y = level (USER-MANUAL section 10).
-// One finger per grid, both grids at once: each MultiPointTouchArea forwards its
-// TouchPoints to XyViewModel, so two fingers are tracked independently. The
-// panel path is the same mapping: EDIT directions move the focused point,
-// SHIFT is the coarse step, PRESS leaves EDIT, FREEZE is a PRESS toggle.
+// X/Y performance, per track: grid 0 bends the selected track's FX1 slot, grid 1
+// its FX2 slot. Delay X = feedback-filter cutoff, Y = width; reverb X = size,
+// Y = level (USER-MANUAL section 10). One finger per grid, both grids at once:
+// each MultiPointTouchArea forwards its TouchPoints to XyViewModel, so two
+// fingers are tracked independently. The panel path is the same mapping: EDIT
+// directions move the focused grid, SHIFT is the coarse step, PRESS leaves EDIT,
+// FREEZE is a PRESS toggle over the track's reverb slot.
+//
+// A slot that holds nothing (or a plugin id, which this build cannot host) shows
+// the slot note and the picker chip instead of a position. The track row reuses
+// the mixer's four-per-page banks, so the same strip selection is one tap away.
 Item {
     id: screen
 
@@ -24,7 +29,7 @@ Item {
             Text {
                 width: parent.width - 376
                 height: parent.height
-                text: "X/Y PERFORMANCE - one finger per grid, both at once"
+                text: "X/Y - " + xy.trackName + " - FX1 then FX2, one finger per grid"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold
@@ -57,22 +62,78 @@ Item {
             }
         }
 
+        // Track selector: the selected track is the one both grids bend. The
+        // bank is the mixer's, so the X/Y row and the mixer show the same four.
         Row {
             width: parent.width
-            height: parent.height - Style.touch * 2 - Style.gap * 2
+            height: Style.touch
+            spacing: Style.gapTight
+
+            TouchButton {
+                width: Style.touch
+                height: parent.height
+                text: "<"
+                textSize: 18
+                focusId: "xy.bank.0"
+                onClicked: mixer.stepBank(-1)
+            }
+            TouchButton {
+                width: Style.touch
+                height: parent.height
+                text: ">"
+                textSize: 18
+                focusId: "xy.bank.1"
+                onClicked: mixer.stepBank(1)
+            }
+            Repeater {
+                model: mixer
+                delegate: TouchButton {
+                    readonly property int stripSlot: model.slot
+                    width: visible ? (screen.width - Style.margin * 2 - Style.touch * 2 -
+                                      Style.gapTight * 5) / mixer.stripsPerBank : 0
+                    height: Style.touch
+                    visible: index >= mixer.bank * mixer.stripsPerBank &&
+                             index < (mixer.bank + 1) * mixer.stripsPerBank
+                    text: model.name !== "" ? model.name
+                                            : "IN " + String(model.slot + 1).padStart(2, "0")
+                    textSize: Style.fontSmall
+                    checked: model.slot === mixer.selectedStrip
+                    focusId: "xy.track." + model.slot
+                    onClicked: app.selectStrip(stripSlot)
+                }
+            }
+            Text {
+                width: mixer.pageCount > 1 ? 64 : 0
+                height: parent.height
+                visible: mixer.pageCount > 1
+                text: mixer.bankText
+                color: Style.textDim
+                font.pixelSize: Style.fontSmall
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+        }
+
+        Row {
+            width: parent.width
+            height: parent.height - Style.touch * 3 - Style.gap * 3
             spacing: Style.gap
 
             XyGrid {
                 width: (parent.width - Style.gap) / 2
                 height: parent.height
                 gridIndex: 0
-                title: "DELAY"
-                axisX: "X CUTOFF"
-                axisY: "Y WIDTH"
-                px: xy.delayX
-                py: xy.delayY
-                xValue: xy.delayXText
-                yValue: xy.delayYText
+                title: xy.fx1.title
+                axisX: xy.fx1.axisX
+                axisY: xy.fx1.axisY
+                px: xy.fx1.x
+                py: xy.fx1.y
+                xValue: xy.fx1.xValue
+                yValue: xy.fx1.yValue
+                bound: xy.fx1.bound
+                note: xy.fx1.note
                 focusId: "xy.delay"
                 frozenGrid: false
             }
@@ -80,13 +141,15 @@ Item {
                 width: (parent.width - Style.gap) / 2
                 height: parent.height
                 gridIndex: 1
-                title: "REVERB"
-                axisX: "X SIZE"
-                axisY: "Y LEVEL"
-                px: xy.reverbX
-                py: xy.reverbY
-                xValue: xy.reverbXText
-                yValue: xy.reverbYText
+                title: xy.fx2.title
+                axisX: xy.fx2.axisX
+                axisY: xy.fx2.axisY
+                px: xy.fx2.x
+                py: xy.fx2.y
+                xValue: xy.fx2.xValue
+                yValue: xy.fx2.yValue
+                bound: xy.fx2.bound
+                note: xy.fx2.note
                 focusId: "xy.reverb"
                 frozenGrid: xy.frozen
             }
@@ -100,25 +163,27 @@ Item {
             TouchButton {
                 width: (parent.width - 8) / 2
                 height: parent.height
-                text: "DELAY PARAMS  " + xy.delayXText + " / " + xy.delayYText
+                text: "FX1 PARAMS  " + xy.fx1.kind
                 textSize: Style.fontSmall
+                active: xy.fx1.bound
                 focusId: "xy.delay.params"
-                onClicked: app.openConfig("delay")
+                onClicked: app.openFxSlotParams(0)
             }
             TouchButton {
                 width: (parent.width - 8) / 2
                 height: parent.height
-                text: "REVERB PARAMS  " + xy.reverbXText + " / " + xy.reverbYText
+                text: "FX2 PARAMS  " + xy.fx2.kind
                 textSize: Style.fontSmall
-                active: !xy.frozen
+                active: xy.fx2.bound && !xy.frozen
                 focusId: "xy.reverb.params"
-                onClicked: app.openConfig("reverb")
+                onClicked: app.openFxSlotParams(1)
             }
         }
     }
 
     // One X/Y grid. `px`/`py` are the normalized model position; the touch area
     // forwards every point id so two fingers on the two grids stay independent.
+    // An unbound slot shows the note and the picker chip instead of the point.
     component XyGrid: Item {
         id: gridItem
         property int gridIndex: 0
@@ -129,6 +194,8 @@ Item {
         property real py: 0.5
         property string xValue: ""
         property string yValue: ""
+        property bool bound: false
+        property string note: ""
         property string focusId: ""
         property bool frozenGrid: false
         // The point stays fully inside the tile; the touch area uses the same
@@ -144,7 +211,6 @@ Item {
         }
 
         Canvas {
-            id: gridLines
             anchors.fill: parent
             anchors.margins: 1
             onPaint: {
@@ -178,10 +244,13 @@ Item {
             color: Style.textDim
             font.pixelSize: Style.fontSmall
             font.weight: Font.DemiBold
+            elide: Text.ElideRight
+            width: gridItem.width - 16
         }
 
         Rectangle {
             id: point
+            visible: gridItem.bound
             width: 30
             height: 30
             radius: 15
@@ -191,6 +260,35 @@ Item {
             border.width: 2
             border.color: Style.panelDark
             opacity: 0.9
+        }
+
+        // Unbound slot: name the gap and offer the slot's picker, so the screen
+        // never shows a grid that cannot move anything.
+        Text {
+            visible: !gridItem.bound
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: 40
+            width: gridItem.width - 32
+            text: gridItem.note
+            color: Style.textDim
+            font.pixelSize: Style.fontSmall
+            font.weight: Font.DemiBold
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+        }
+        TouchButton {
+            visible: !gridItem.bound
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: values.top
+            anchors.bottomMargin: Style.gap
+            width: 200
+            height: Style.touch
+            text: "PICK EFFECT"
+            textSize: Style.fontSmall
+            chevron: "down"
+            focusId: gridItem.focusId + ".pick"
+            onClicked: app.openFxSlot(gridItem.gridIndex)
         }
 
         Rectangle {
@@ -210,6 +308,7 @@ Item {
         }
 
         Row {
+            id: values
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
@@ -218,19 +317,23 @@ Item {
             Text {
                 width: parent.width / 2
                 height: parent.height
-                text: gridItem.axisX + " " + gridItem.xValue
+                text: gridItem.bound ? gridItem.axisX + " " + gridItem.xValue
+                                     : gridItem.axisX
                 color: Style.text
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold
+                elide: Text.ElideRight
             }
             Text {
                 width: parent.width / 2
                 height: parent.height
-                text: gridItem.axisY + " " + gridItem.yValue
+                text: gridItem.bound ? gridItem.axisY + " " + gridItem.yValue
+                                     : gridItem.axisY
                 color: Style.text
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold
                 horizontalAlignment: Text.AlignRight
+                elide: Text.ElideRight
             }
         }
 
@@ -238,6 +341,7 @@ Item {
         // one finger here and one on the other grid are two independent points.
         MultiPointTouchArea {
             anchors.fill: parent
+            enabled: gridItem.bound
             minimumTouchPoints: 1
             maximumTouchPoints: 4
             mouseEnabled: false
@@ -271,6 +375,7 @@ Item {
 
         // Tap-to-place for a single mouse click in the desktop run.
         TapHandler {
+            enabled: gridItem.bound
             onTapped: (eventPoint) => {
                 const p = eventPoint.position
                 xy.setPoint(gridItem.gridIndex,

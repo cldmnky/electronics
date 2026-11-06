@@ -4,8 +4,10 @@ import Mnkybox 1.0
 import "components"
 import "overlays"
 
-// mnkybox shell: tab row, persistent transport strip, one of ten screens, and
-// the keypad/confirmation overlays. 800 x 480 landscape-first, resizable.
+// mnkybox shell: tab row, persistent transport strip, one of nine screens, and
+// the keypad/confirmation overlays. 800 x 480 landscape-first, resizable. The
+// global FX tab retired into the per-track FX rack popup (ChannelPopout >
+// TRACK FX), so the tab row is Mixer..EDIT with no FX entry.
 // Face switches (a tab tap or a SHIFT toggle) fade the screen host over 80 ms;
 // the popups own their 120 ms scale-fade from the summary button that opened
 // them.
@@ -20,21 +22,20 @@ Window {
     title: "mnkybox"
     color: Style.background
 
-    readonly property var tabNames: ["Mixer", "Routing", "FX", "Recorder", "System",
+    readonly property var tabNames: ["Mixer", "Routing", "Recorder", "System",
                                      "Projects", "Monitor", "EQ", "XY", "EDIT"]
 
     function screenSource() {
         switch (app.tab) {
         case 0: return "screens/MixerScreen.qml"
         case 1: return "screens/RoutingScreen.qml"
-        case 2: return "screens/FxScreen.qml"
-        case 3: return "screens/RecorderScreen.qml"
-        case 4: return "screens/SystemScreen.qml"
-        case 5: return "screens/ProjectsScreen.qml"
-        case 6: return "screens/MidiMonitorScreen.qml"
-        case 7: return "screens/EqScreen.qml"
-        case 8: return "screens/XyScreen.qml"
-        case 9: return "screens/TimelineScreen.qml"
+        case 2: return "screens/RecorderScreen.qml"
+        case 3: return "screens/SystemScreen.qml"
+        case 4: return "screens/ProjectsScreen.qml"
+        case 5: return "screens/MidiMonitorScreen.qml"
+        case 6: return "screens/EqScreen.qml"
+        case 7: return "screens/XyScreen.qml"
+        case 8: return "screens/TimelineScreen.qml"
         default: return ""
         }
     }
@@ -54,7 +55,7 @@ Window {
             visible: !app.fullscreen
 
             readonly property bool shiftMode: app.panelMode === "shift"
-            readonly property int tabCount: 10
+            readonly property int tabCount: 9
             // The single TAB ring stop is the row itself; its focus ring is the
             // accent border so a panel user sees where the ring is.
             readonly property bool tabStopFocused: app.focusId === "tab.menu"
@@ -116,7 +117,7 @@ Window {
                         }
 
                         Rectangle {
-                            visible: index === 5 && app.dirty
+                            visible: index === 4 && app.dirty
                             x: parent.width - 12
                             y: parent.height - 10
                             width: 6
@@ -213,6 +214,10 @@ Window {
     }
 
     ChannelPopout {
+        anchors.fill: parent
+    }
+
+    TrackFxPopup {
         anchors.fill: parent
     }
 

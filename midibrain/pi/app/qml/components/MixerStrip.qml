@@ -17,8 +17,6 @@ Rectangle {
     property real gainDb: 0.0
     property real pan: 0.5
     property string panText: "C"
-    property real sendA: 0.0
-    property real sendB: 0.0
     property real level: 0.0
     property bool clip: false
     property int monitor: 1

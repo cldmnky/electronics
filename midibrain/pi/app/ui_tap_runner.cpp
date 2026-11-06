@@ -64,6 +64,7 @@ void UiTapRunner::scheduleNext(int delayMs) {
 
 void UiTapRunner::closeOverlays() {
   controller_->configCancel();
+  controller_->closeTrackFx();
   controller_->confirmCancel();
   controller_->keypadCancel();
   controller_->closeTempoPopup();
@@ -124,7 +125,7 @@ void UiTapRunner::buildScenarios() {
             controller_->mixer()->setBank(0);
           } else if (tab == 1) {
             controller_->routing()->setShiftPage(0);
-          } else if (tab == 7) {
+          } else if (tab == 6) {
             controller_->eq()->selectMain();
             controller_->eq()->selectBand(2);
           }
@@ -284,6 +285,72 @@ void UiTapRunner::buildScenarios() {
       QStringLiteral("config.addtrack."), {},
       {QStringLiteral("config.addtrack.name")}, false, true});
 
+  // 3d. The per-track FX rack popup (TRACK FX): both slot cards filled with the
+  // built-in effects, so every selector, the wet chips, the bypass chips and
+  // the delay/reverb parameter cards are tapped. A second pass covers a slot
+  // that is still NONE (the selector is the only control on that card).
+  scenarios_.push_back(Scenario{
+      QStringLiteral("mixer.trackfx"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        controller_->mixer()->selectTrackAt(1);
+        controller_->mixer()->setFxChoiceAt(controller_->mixer()->selectedStrip(),
+                                            0, 1);
+        controller_->mixer()->setFxChoiceAt(controller_->mixer()->selectedStrip(),
+                                            1, 2);
+        controller_->openChannel(1);
+        controller_->openTrackFx(0);
+      },
+      QStringLiteral("trackfx."), {}, {QStringLiteral("trackfx.close")}, false,
+      true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("mixer.trackfx.none"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        controller_->mixer()->selectTrackAt(2);
+        controller_->mixer()->setFxChoiceAt(controller_->mixer()->selectedStrip(),
+                                            0, 0);
+        controller_->mixer()->setFxChoiceAt(controller_->mixer()->selectedStrip(),
+                                            1, 0);
+        controller_->openTrackFx(1);
+      },
+      QStringLiteral("trackfx."), {}, {QStringLiteral("trackfx.close")}, false,
+      true});
+  // 3e. X/Y per track: the grid ids exist on both a bound slot pair and an
+  // empty one, and the track row selects the strip both grids bend.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("screen.7.track"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(7);
+        primeMixerTracks();
+        controller_->mixer()->setFxChoiceAt(controller_->mixer()->selectedStrip(),
+                                            0, 1);
+        controller_->mixer()->setFxChoiceAt(controller_->mixer()->selectedStrip(),
+                                            1, 2);
+      },
+      QStringLiteral("xy."), {}, {}, false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("screen.7.none"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(7);
+        primeMixerTracks();
+        controller_->mixer()->setFxChoiceAt(controller_->mixer()->selectedStrip(),
+                                            0, 0);
+        controller_->mixer()->setFxChoiceAt(controller_->mixer()->selectedStrip(),
+                                            1, 0);
+      },
+      QStringLiteral("xy."), {}, {}, false, true});
+
   // 4. Every ConfigPopup kind. One pass taps all non-terminal controls and ends
   // with CANCEL; a second pass opens the same kind and taps OK, so both draft
   // paths and every focus stop in the popup are exercised.
@@ -294,7 +361,7 @@ void UiTapRunner::buildScenarios() {
       QStringLiteral("reverb"),    QStringLiteral("pipechannels"),
       QStringLiteral("timelineops"), QStringLiteral("trackmonitor"),
       QStringLiteral("inputsource"), QStringLiteral("outputdest"),
-      QStringLiteral("insert"),    QStringLiteral("addtrack"),
+      QStringLiteral("fxslot"),    QStringLiteral("addtrack"),
       QStringLiteral("delaydivision"), QStringLiteral("reverbmodel"),
       QStringLiteral("pipesource"), QStringLiteral("pipedest"),
       QStringLiteral("pipetype"), QStringLiteral("pipeparam"),
@@ -317,10 +384,11 @@ void UiTapRunner::buildScenarios() {
             controller_->openOutputDest(0);
             return;
           }
-          if (openConfig == QStringLiteral("insert")) {
+          if (openConfig == QStringLiteral("fxslot")) {
             controller_->setTab(0);
             primeMixerTracks();
-            controller_->openInsert(0);
+            controller_->openChannel(1);
+            controller_->openFxSlot(0);
             return;
           }
           if (openConfig == QStringLiteral("addtrack")) {
@@ -373,10 +441,11 @@ void UiTapRunner::buildScenarios() {
             controller_->openOutputDest(0);
             return;
           }
-          if (openConfig == QStringLiteral("insert")) {
+          if (openConfig == QStringLiteral("fxslot")) {
             controller_->setTab(0);
             primeMixerTracks();
-            controller_->openInsert(0);
+            controller_->openChannel(1);
+            controller_->openFxSlot(0);
             return;
           }
           if (openConfig == QStringLiteral("addtrack")) {

@@ -233,6 +233,10 @@ Item {
                         x: visible ? (index % mixer.stripsPerBank) * width : 0
                         stripIndex: model.slot
                         stripName: model.name
+                        fx1Wet: model.fx1Wet
+                        fx2Wet: model.fx2Wet
+                        fx1Name: model.fx1Name
+                        fx2Name: model.fx2Name
                     }
                 }
 
@@ -466,23 +470,25 @@ Item {
                         }
                         TrackSliderRow {
                             width: parent.width
-                            label: "FX1"
-                            value: mixer.trackSendA
-                            valueText: Math.round(mixer.trackSendA * 100)
+                            label: "FX1 WET"
+                            value: mixer.trackFxWet1
+                            valueText: Math.round(mixer.trackFxWet1 * 100)
                             suffix: "%"
+                            popupLabel: mixer.trackName + " FX1 WET"
                             popupKind: "percent"
                             focusId: "shift.track.fx1"
-                            onMoved: (value) => mixer.setTrackSendA(value)
+                            onMoved: (value) => mixer.setTrackFxWet1(value)
                         }
                         TrackSliderRow {
                             width: parent.width
-                            label: "FX2"
-                            value: mixer.trackSendB
-                            valueText: Math.round(mixer.trackSendB * 100)
+                            label: "FX2 WET"
+                            value: mixer.trackFxWet2
+                            valueText: Math.round(mixer.trackFxWet2 * 100)
                             suffix: "%"
+                            popupLabel: mixer.trackName + " FX2 WET"
                             popupKind: "percent"
                             focusId: "shift.track.fx2"
-                            onMoved: (value) => mixer.setTrackSendB(value)
+                            onMoved: (value) => mixer.setTrackFxWet2(value)
                         }
                         TrackSliderRow {
                             width: parent.width
@@ -532,15 +538,15 @@ Item {
                         TouchButton {
                             width: parent.width
                             height: Style.touch
-                            text: "INSERT   " + mixer.channelInsertName
+                            text: "TRACK FX   " + mixer.channelFxSummary
                             textSize: Style.fontSmall
-                            chevron: "down"
-                            focusId: "shift.track.insert"
-                            onClicked: app.openInsert(mixer.trackIndex)
+                            chevron: "up"
+                            focusId: "shift.track.fx"
+                            onClicked: app.openTrackFx(0)
                         }
                         Text {
                             width: parent.width
-                            text: "Send source is PRE (before the fader) or POST (after gain + fader). " +
+                            text: "FX1/FX2 are the slot wet; TRACK FX opens the rack (series FX1 -> FX2). " +
                                   "Input monitor is the same four-way choice as the TRACK strip."
                             color: Style.textDim
                             font.pixelSize: Style.fontSmall

@@ -24,6 +24,7 @@ set(MNKY_APP_SOURCES
   emulator_synth.cpp
   eq_model.cpp
   eq_view_model.cpp
+  fx_params.cpp
   fx_slot.cpp
   fx_view_model.cpp
   learn_view_model.cpp
@@ -62,6 +63,7 @@ set(MNKY_APP_HEADERS
   emulator_synth.hpp
   eq_model.hpp
   eq_view_model.hpp
+  fx_params.hpp
   fx_slot.hpp
   fx_view_model.hpp
   learn_view_model.hpp
@@ -137,10 +139,6 @@ qt_add_resources(mnkybox "qml"
     qml/components/MixerStrip.qml
     qml/components/MixerShiftStrip.qml
     qml/components/LearnPanel.qml
-    qml/components/FxSlotPanel.qml
-    qml/components/FxParamKnob.qml
-    qml/components/BuiltinDelayPanel.qml
-    qml/components/BuiltinReverbPanel.qml
     qml/components/TouchComboBox.qml
     qml/components/DeviceComboBox.qml
     qml/components/ValuePopup.qml
@@ -148,7 +146,6 @@ qt_add_resources(mnkybox "qml"
     qml/components/PipeParamCard.qml
     qml/screens/MixerScreen.qml
     qml/screens/RoutingScreen.qml
-    qml/screens/FxScreen.qml
     qml/screens/RecorderScreen.qml
     qml/screens/SystemScreen.qml
     qml/screens/ProjectsScreen.qml
@@ -162,6 +159,7 @@ qt_add_resources(mnkybox "qml"
     qml/screens/XyScreen.qml
     qml/screens/TimelineScreen.qml
     qml/overlays/ChannelPopout.qml
+    qml/overlays/TrackFxPopup.qml
     qml/overlays/ConfigPopup.qml
     qml/overlays/Keypad.qml
     qml/overlays/TempoPopup.qml
@@ -174,8 +172,9 @@ if(APPLE)
   target_link_options(mnkybox PRIVATE "-Wl,-no_warn_duplicate_libraries")
 endif()
 
-# Default FX: the in-tree example plugin. The FX screen falls back to the
-# default plugin path candidates when this compile-time path is stale.
+# Default FX: the in-tree example plugin for the CLAP send-slot seam (fx_slot.*),
+# which has no per-track host in this build. The default path falls back to the
+# candidate list when this compile-time path is stale.
 if(TARGET mnkygain)
   add_dependencies(mnkybox mnkygain)
   target_compile_definitions(mnkybox PRIVATE

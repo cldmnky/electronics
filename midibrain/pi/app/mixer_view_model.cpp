@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <utility>
 
+#include "fx_params.hpp"
 #include "logic.hpp"
 
 namespace mnky::app {
@@ -103,10 +105,14 @@ QVariant MixerViewModel::data(const QModelIndex& index, int role) const {
       return model_.pan(slot);
     case PanTextRole:
       return panText(model_.pan(slot));
-    case SendARole:
-      return model_.send(slot, 0);
-    case SendBRole:
-      return model_.send(slot, 1);
+    case Fx1WetRole:
+      return fxWetAt(slot, 0);
+    case Fx2WetRole:
+      return fxWetAt(slot, 1);
+    case Fx1NameRole:
+      return fxNameAt(slot, 0);
+    case Fx2NameRole:
+      return fxNameAt(slot, 1);
     case MuteRole:
       return model_.mute(slot);
     case SoloRole:
@@ -142,7 +148,8 @@ QHash<int, QByteArray> MixerViewModel::roleNames() const {
   return {{IndexRole, "index"},           {SlotRole, "slot"},
           {NameRole, "name"},             {GainDbRole, "gainDb"},
           {PanRole, "pan"},               {PanTextRole, "panText"},
-          {SendARole, "sendA"},           {SendBRole, "sendB"},
+          {Fx1WetRole, "fx1Wet"},         {Fx2WetRole, "fx2Wet"},
+          {Fx1NameRole, "fx1Name"},       {Fx2NameRole, "fx2Name"},
           {MuteRole, "mute"},             {SoloRole, "solo"},
           {ArmRole, "arm"},               {LevelRole, "level"},
           {ClipRole, "clip"},             {MonitorRole, "monitor"},
@@ -246,9 +253,6 @@ void MixerViewModel::setTrackPan(double pan) { setPan(trackIndex_, pan); }
 QString MixerViewModel::trackPanText() const { return panText(model_.pan(trackIndex_)); }
 
 QString MixerViewModel::panTextAt(int slot) const { return panText(model_.pan(slot)); }
-
-void MixerViewModel::setTrackSendA(double level) { setSend(trackIndex_, 0, level); }
-void MixerViewModel::setTrackSendB(double level) { setSend(trackIndex_, 1, level); }
 
 void MixerViewModel::setTrackCue(double level) { setCue(trackIndex_, level); }
 void MixerViewModel::setTrackOut34(double level) { setOut34(trackIndex_, level); }
@@ -520,86 +524,147 @@ void MixerViewModel::closeChannel() {
   emit channelOpenChanged();
 }
 
-QString MixerViewModel::channelInsertName() const {
-  return insertDisplayName(
-      QString::fromStdString(model_.insert(trackIndex_).id));
+QString MixerViewModel::channelFxSummary() const {
+  return QStringLiteral("FX1 ") + fxNameAt(trackIndex_, 0) + QStringLiteral("  FX2 ") +
+         fxNameAt(trackIndex_, 1);
 }
 
-bool MixerViewModel::channelInsertBypass() const {
-  return model_.insert(trackIndex_).bypass;
+QStringList MixerViewModel::fxChoiceLabels() {
+  return {QStringLiteral("NONE"), QStringLiteral("DELAY"),
+          QStringLiteral("REVERB"), QStringLiteral("PLUGIN")};
 }
 
-void MixerViewModel::setChannelInsertBypass(bool bypass) {
-  MixerModel::Insert insert = model_.insert(trackIndex_);
-  insert.bypass = bypass;
-  model_.setInsert(trackIndex_, std::move(insert));
-  emit channelChanged();
-}
-
-void MixerViewModel::toggleChannelInsertBypass() {
-  setChannelInsertBypass(!channelInsertBypass());
-}
-
-QStringList MixerViewModel::insertLabels() {
-  return {QStringLiteral("NONE"), QStringLiteral("BUILTIN DELAY"),
-          QStringLiteral("BUILTIN REVERB")};
-}
-
-QString MixerViewModel::insertId(int choice) {
+QString MixerViewModel::fxChoiceId(int choice) {
   switch (choice) {
-    case 1: return QStringLiteral("builtin.delay");
-    case 2: return QStringLiteral("builtin.reverb");
+    case 1: return QString::fromLatin1(kFxIdDelay);
+    case 2: return QString::fromLatin1(kFxIdReverb);
     default: return QString();
   }
 }
 
-int MixerViewModel::insertChoice(const QString& id) {
-  if (id == QStringLiteral("builtin.delay")) return 1;
-  if (id == QStringLiteral("builtin.reverb")) return 2;
-  return 0;
+int MixerViewModel::fxChoiceOf(const QString& id) {
+  if (id == QString::fromLatin1(kFxIdDelay)) return 1;
+  if (id == QString::fromLatin1(kFxIdReverb)) return 2;
+  if (id.isEmpty()) return 0;
+  return kFxChoicePlugin;
 }
 
-QString MixerViewModel::insertIdOf(int slot) const {
-  if (slot < 0 || slot >= audio::kMaxTracks) return {};
-  return QString::fromStdString(model_.insert(slot).id);
+QString MixerViewModel::fxName(const QString& id) {
+  // A CLAP id shows where it would load instead of pretending to be a built-in.
+  if (fxChoiceOf(id) == kFxChoicePlugin) return QStringLiteral("PLUGIN  ") + id;
+  return QString::fromStdString(fxEffectName(id.toStdString()));
 }
 
-QString MixerViewModel::insertDisplayName(const QString& id) {
-  if (id.isEmpty()) return QStringLiteral("NONE");
-  if (id == QStringLiteral("builtin.delay")) return QStringLiteral("DELAY");
-  if (id == QStringLiteral("builtin.reverb")) return QStringLiteral("REVERB");
-  return id;
+QString MixerViewModel::fxNameAt(int slot, int index) const {
+  if (slot < 0 || slot >= audio::kMaxTracks) return fxName(QString());
+  return fxName(QString::fromStdString(model_.fxSlot(slot, index).id));
 }
 
-int MixerViewModel::insertChoiceAt(int slot) const {
-  return insertChoice(QString::fromStdString(model_.insert(slot).id));
+int MixerViewModel::fxChoiceAt(int slot, int index) const {
+  if (slot < 0 || slot >= audio::kMaxTracks) return 0;
+  return fxChoiceOf(QString::fromStdString(model_.fxSlot(slot, index).id));
 }
 
-void MixerViewModel::setInsertChoiceAt(int slot, int choice) {
-  MixerModel::Insert insert = model_.insert(slot);
-  const QString id = insertId(choice);
-  if (QString::fromStdString(insert.id) != id) {
-    insert.id = id.toStdString();
-    // A built-in insert starts from the effect's own documented defaults: the
-    // parameter vector stays empty until the engine instance path (parallel
-    // work item) owns per-track parameter storage.
-    insert.params.clear();
+void MixerViewModel::setFxChoiceAt(int slot, int index, int choice) {
+  if (slot < 0 || slot >= audio::kMaxTracks) return;
+  if (choice < 0 || choice >= kFxChoiceCount) return;
+  // PLUGIN is offered so the gap is visible, never as a fake load: per-track
+  // CLAP hosting is not wired in this build.
+  if (choice == kFxChoicePlugin) return;
+  MixerModel::FxSlot fx = model_.fxSlot(slot, index);
+  const QString id = fxChoiceId(choice);
+  if (QString::fromStdString(fx.id) != id) {
+    fx.id = id.toStdString();
+    // A newly selected effect starts from its published defaults (MixerModel
+    // fills them) instead of inheriting the previous effect's parameters.
+    fx.params.clear();
+    fx.bypass = false;
   }
-  model_.setInsert(slot, std::move(insert));
+  model_.setFxSlot(slot, index, std::move(fx));
+  notifyFxChanged(slot);
+}
+
+bool MixerViewModel::fxBypassAt(int slot, int index) const {
+  if (slot < 0 || slot >= audio::kMaxTracks) return false;
+  return model_.fxSlot(slot, index).bypass;
+}
+
+void MixerViewModel::setFxBypassAt(int slot, int index, bool bypass) {
+  if (slot < 0 || slot >= audio::kMaxTracks) return;
+  model_.setFxBypass(slot, index, bypass);
+  notifyFxChanged(slot);
+}
+
+double MixerViewModel::fxWetAt(int slot, int index) const {
+  if (slot < 0 || slot >= audio::kMaxTracks) return 0.0;
+  return model_.fxSlot(slot, index).wet;
+}
+
+void MixerViewModel::setFxWetAt(int slot, int index, double wet) {
+  if (slot < 0 || slot >= audio::kMaxTracks) return;
+  model_.setFxWet(slot, index, static_cast<float>(clampSend(wet)));
+  notifyFxChanged(slot);
+}
+
+QVariantList MixerViewModel::fxParams(int slot, int index) const {
+  QVariantList cards;
+  if (slot < 0 || slot >= audio::kMaxTracks) return cards;
+  const auto fx = model_.fxSlot(slot, index);
+  const auto table = fxParamTable(fx.id);
+  if (table.empty()) return cards;
+  for (const auto& meta : table) {
+    const double value = meta.index < static_cast<int>(fx.params.size())
+                             ? fx.params[static_cast<std::size_t>(meta.index)]
+                             : meta.def;
+    QVariantMap card;
+    card.insert(QStringLiteral("index"), meta.index);
+    card.insert(QStringLiteral("name"), QString::fromLatin1(meta.label));
+    card.insert(QStringLiteral("value"), value);
+    card.insert(QStringLiteral("text"),
+                QString::fromStdString(
+                    fxParamValueText(fx.id, meta.index, value)));
+    card.insert(QStringLiteral("unit"), QString::fromLatin1(meta.unit));
+    card.insert(QStringLiteral("minimum"), meta.min);
+    card.insert(QStringLiteral("maximum"), meta.max);
+    card.insert(QStringLiteral("stepped"), meta.stepped);
+    cards.push_back(card);
+  }
+  return cards;
+}
+
+void MixerViewModel::setFxParamAt(int slot, int index, int param, double value) {
+  if (slot < 0 || slot >= audio::kMaxTracks) return;
+  model_.setFxParam(slot, index, param, value);
+  notifyFxChanged(slot);
+}
+
+QString MixerViewModel::fxSubline() const {
+  return QStringLiteral("series FX1 -> FX2 - per track");
+}
+
+QString MixerViewModel::fxSlotNote(int slot, int index) const {
+  if (slot < 0 || slot >= audio::kMaxTracks) return QString();
+  const auto fx = model_.fxSlot(slot, index);
+  if (fx.id.empty()) return QStringLiteral("slot is NONE - pick DELAY or REVERB");
+  if (!fxIsBuiltin(fx.id)) {
+    return QStringLiteral("slot is PLUGIN - plugin slots - not in this build");
+  }
+  return QStringLiteral("wet %1% - %2")
+      .arg(static_cast<int>(std::lround(fx.wet * 100.0f)))
+      .arg(fx.bypass ? QStringLiteral("BYPASSED") : QStringLiteral("active"));
+}
+
+void MixerViewModel::notifyFxChanged(int slot) {
   const int row = model_.positionOfSlot(slot);
-  if (row >= 0) emit dataChanged(index(row, 0), index(row, 0));
-  if (slot == trackIndex_) emit channelChanged();
-}
-
-bool MixerViewModel::insertBypassAt(int slot) const {
-  return model_.insert(slot).bypass;
-}
-
-void MixerViewModel::setInsertBypassAt(int slot, bool bypass) {
-  MixerModel::Insert insert = model_.insert(slot);
-  insert.bypass = bypass;
-  model_.setInsert(slot, std::move(insert));
-  if (slot == trackIndex_) emit channelChanged();
+  if (row >= 0) {
+    emit dataChanged(index(row, 0), index(row, 0),
+                     {Fx1WetRole, Fx2WetRole, Fx1NameRole, Fx2NameRole});
+  }
+  if (slot == trackIndex_) {
+    emit trackChanged();
+    emit channelChanged();
+  }
+  emit fxChanged();
 }
 
 void MixerViewModel::notifyActiveTakesChanged() {
@@ -660,16 +725,6 @@ void MixerViewModel::setPan(int slot, double pan) {
   if (slot == trackIndex_) emit trackChanged();
 }
 
-void MixerViewModel::setSend(int slot, int send, double level) {
-  if (slot < 0 || slot >= audio::kMaxTracks || send < 0 || send >= audio::kNumSends) return;
-  model_.setSend(slot, send, static_cast<float>(clampSend(level)));
-  const int row = model_.positionOfSlot(slot);
-  if (row >= 0) {
-    emit dataChanged(index(row, 0), index(row, 0), {send == 0 ? SendARole : SendBRole});
-  }
-  if (slot == trackIndex_) emit trackChanged();
-}
-
 void MixerViewModel::setCue(int slot, double level) {
   if (slot < 0 || slot >= audio::kMaxTracks) return;
   model_.setCueSend(slot, static_cast<float>(clampSend(level)));
@@ -712,10 +767,10 @@ void MixerViewModel::adjust(int slot, const QString& parameter, double delta) {
     setGainDb(slot, model_.gainDb(slot) + delta);
   } else if (parameter == QStringLiteral("pan")) {
     setPan(slot, model_.pan(slot) + delta);
-  } else if (parameter == QStringLiteral("sendA")) {
-    setSend(slot, 0, model_.send(slot, 0) + delta);
-  } else if (parameter == QStringLiteral("sendB")) {
-    setSend(slot, 1, model_.send(slot, 1) + delta);
+  } else if (parameter == QStringLiteral("fx1wet")) {
+    setFxWetAt(slot, 0, model_.fxSlot(slot, 0).wet + delta);
+  } else if (parameter == QStringLiteral("fx2wet")) {
+    setFxWetAt(slot, 1, model_.fxSlot(slot, 1).wet + delta);
   } else if (parameter == QStringLiteral("cue")) {
     setCue(slot, model_.cueSend(slot) + delta);
   } else if (parameter == QStringLiteral("out34")) {

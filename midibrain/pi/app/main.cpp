@@ -105,7 +105,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->recorder()->setSelectedTrack(1);
                         controller_->recorder()->selectRow(0);
                         controller_->recorder()->activateSelected();
-                        controller_->setTab(3);
+                        controller_->setTab(2);
                       }});
     steps_.push_back({"31-punch", [this] {
                         controller_->session()->setPunchPlayFromEnabled(true);
@@ -115,7 +115,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->session()->setPunchOutEnabled(true);
                         controller_->session()->setPunchOutMeasure(9);
                         controller_->setToolsPage(0);
-                        controller_->setTab(6);
+                        controller_->setTab(5);
                       }});
     steps_.push_back({"31-monitor", [this] {
                         controller_->session()->setClickMode(2);
@@ -132,15 +132,15 @@ class ScreenshotRunner final : public QObject {
                         controller_->session()->setCompMakeupDb(3.0);
                         controller_->session()->setCompMode(1);
                         controller_->setToolsPage(1);
-                        controller_->setTab(6);
+                        controller_->setTab(5);
                       }});
     steps_.push_back({"31-tools", [this] {
                         controller_->setToolsPage(2);
                         controller_->tools()->showLowSpaceDemo();
-                        controller_->setTab(6);
+                        controller_->setTab(5);
                       }});
     steps_.push_back({"31-keypad", [this] {
-                        controller_->setTab(3);
+                        controller_->setTab(2);
                         controller_->requestImportTake();
                       }});
     steps_.push_back({"31-value-popup", [this] {
@@ -163,7 +163,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->recorder()->setLoopEnabled(true);
                         controller_->recorder()->setLoopStartBeats(1.0);
                         controller_->recorder()->setLoopEndBeats(5.0);
-                        controller_->setTab(3);
+                        controller_->setTab(2);
                       }});
     steps_.push_back({"32-io", [this] {
                         controller_->hideValuePopup();
@@ -195,7 +195,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->shiftAction(1);
                         controller_->midiMonitor()->setSelectedPort(3);
                         controller_->midiMonitor()->setHideClock(true);
-                        controller_->setTab(6);
+                        controller_->setTab(5);
                       }});
     steps_.push_back({"33-eq", [this] {
                         controller_->hideValuePopup();
@@ -210,19 +210,19 @@ class ScreenshotRunner final : public QObject {
                         eqBand(3, 4, 9000.0, 3.0, 0.8);
                         controller_->eq()->selectBand(2);
                         controller_->hideValuePopup();
-                        controller_->setTab(7);
+                        controller_->setTab(6);
                       }});
     steps_.push_back({"33-eq-popup", [this] {
                         // Transient readout on a Q change (Hz/dB/Q popups).
                         controller_->eq()->selectBand(1);
                         controller_->eq()->adjustQ(0.5);
-                        controller_->setTab(7);
+                        controller_->setTab(6);
                       }});
     steps_.push_back({"33-eq-full", [this] {
                         controller_->hideValuePopup();
                         controller_->eq()->selectBand(2);
                         controller_->setFullscreen(true);
-                        controller_->setTab(7);
+                        controller_->setTab(6);
                         controller_->hideValuePopup();
                       }});
     steps_.push_back({"33-xy", [this] {
@@ -233,24 +233,29 @@ class ScreenshotRunner final : public QObject {
                         controller_->xy()->touchBegin(0, 41, 0.18, 0.72);
                         controller_->xy()->touchBegin(1, 42, 0.62, 0.35);
                         controller_->hideValuePopup();
-                        controller_->setTab(8);
+                        controller_->setTab(7);
                       }});
     steps_.push_back({"33-xy-params", [this] {
-                        // Secondary parameters of the reverb grid live in the
+                        // Secondary parameters of the FX2 grid live in the
                         // shared ConfigPopup (draft + OK), not on the grid.
                         controller_->hideValuePopup();
-                        controller_->setTab(8);
+                        primeMixerDemo();
+                        controller_->mixer()->setFxChoiceAt(
+                            controller_->mixer()->selectedStrip(), 1, 2);
+                        controller_->mixer()->setFxChoiceAt(
+                            controller_->mixer()->selectedStrip(), 0, 1);
+                        controller_->setTab(7);
                         controller_->openConfig(QStringLiteral("reverb"));
                       }});
     steps_.push_back({"33-xy-freeze", [this] {
                         controller_->configCancel();
                         controller_->xy()->toggleFreeze();
-                        controller_->setTab(8);
+                        controller_->setTab(7);
                       }});
     steps_.push_back({"33-eq-type", [this] {
                         controller_->setFullscreen(false);
                         controller_->eq()->selectBand(2);
-                        controller_->setTab(7);
+                        controller_->setTab(6);
                         controller_->openConfig(QStringLiteral("eqtype"));
                       }});
     steps_.push_back({"33-eq-shift", [this] {
@@ -259,7 +264,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->configCancel();
                         controller_->hideValuePopup();
                         controller_->showShiftFace(true);
-                        controller_->setTab(7);
+                        controller_->setTab(6);
                       }});
     steps_.push_back({"34-edit", [this] {
                         controller_->configCancel();
@@ -299,11 +304,11 @@ class ScreenshotRunner final : public QObject {
                         controller_->timeline()->setPage(0);
                         controller_->timeline()->setSelectedTrack(1);
                         controller_->timeline()->setCursorBeats(3.0);
-                        controller_->setTab(9);
+                        controller_->setTab(8);
                       }});
     steps_.push_back({"34-ops", [this] {
                         controller_->hideValuePopup();
-                        controller_->setTab(9);
+                        controller_->setTab(8);
                         controller_->openConfig(QStringLiteral("timelineops"));
                       }});
     steps_.push_back({"34-pipes", [this] {
@@ -333,7 +338,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->injectDemoTrsMidi(0, 0x90, 60, 100);
                       }});
     steps_.push_back({"34-monitor", [this] {
-                        controller_->setTab(6);
+                        controller_->setTab(5);
                       }});
     if (controller_->noPicoMode()) {
       // 35-*: bare-Pi proof. The project is the same as 31-*; only the
@@ -357,7 +362,7 @@ class ScreenshotRunner final : public QObject {
       steps_.push_back({"35-bench-system", [this] {
                           controller_->hideValuePopup();
                           controller_->play();
-                          controller_->setTab(4);
+                          controller_->setTab(3);
                         }});
     }
 
@@ -428,7 +433,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->session()->setDeviceOutPhones(3);
                         controller_->system()->setBackendIndex(1);
                         controller_->system()->setInputIndex(0);
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                       }});
     steps_.push_back({"36-routing-hint", [this] {
                         controller_->hideValuePopup();
@@ -445,7 +450,7 @@ class ScreenshotRunner final : public QObject {
                         // The open device list: one row per device with the three
                         // model columns (name / backend / channel count).
                         controller_->hideValuePopup();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         if (QObject* list = window_->findChild<QObject*>(
                                 QStringLiteral("systemOutputList"))) {
                           QObject* popup = list->property("popup").value<QObject*>();
@@ -461,7 +466,7 @@ class ScreenshotRunner final : public QObject {
                           QObject* popup = list->property("popup").value<QObject*>();
                           if (popup != nullptr) QMetaObject::invokeMethod(popup, "close");
                         }
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         if (QObject* list = window_->findChild<QObject*>(
                                 QStringLiteral("systemDevoutList"))) {
                           QObject* popup = list->property("popup").value<QObject*>();
@@ -573,63 +578,54 @@ class ScreenshotRunner final : public QObject {
                         controller_->routing()->selectPipe(0);
                         controller_->routing()->setSelectedPipeChannelMask(0x000F);
                       }});
-    steps_.push_back({"39-fx", [this] {
-                        resetShot();
-                        controller_->setTab(2);
-                      }});
-    steps_.push_back({"39-fx-shift", [this] {
-                        resetShot();
-                        controller_->setTab(2);
-                        controller_->showShiftFace(true);
-                      }});
     steps_.push_back({"39-recorder", [this] {
                         resetShot();
                         controller_->recorder()->setSelectedTrack(1);
                         controller_->recorder()->selectRow(0);
                         controller_->recorder()->activateSelected();
-                        controller_->setTab(3);
+                        controller_->setTab(2);
                       }});
     steps_.push_back({"39-recorder-shift", [this] {
                         resetShot();
                         controller_->recorder()->setSelectedTrack(1);
-                        controller_->setTab(3);
+                        controller_->setTab(2);
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"39-system", [this] {
                         resetShot();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                       }});
     steps_.push_back({"39-system-monitor", [this] {
                         resetShot();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         controller_->setSystemShiftPage(0);
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"39-system-learn", [this] {
                         resetShot();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         controller_->setSystemShiftPage(1);
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"39-system-tools", [this] {
                         resetShot();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         controller_->setSystemShiftPage(2);
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"39-projects", [this] {
                         resetShot();
-                        controller_->setTab(5);
+                        controller_->setTab(4);
                       }});
     steps_.push_back({"39-projects-shift", [this] {
                         resetShot();
-                        controller_->setTab(5);
+                        controller_->setTab(4);
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"39-monitor", [this] {
                         resetShot();
                         controller_->midiMonitor()->setHideClock(false);
-                        controller_->setTab(6);
+                        controller_->setTab(5);
                       }});
     steps_.push_back({"39-eq", [this] {
                         resetShot();
@@ -639,7 +635,7 @@ class ScreenshotRunner final : public QObject {
                         eqBand(2, 3, 1000.0, -3.0, 1.4);
                         eqBand(3, 4, 8000.0, 2.0, 1.0);
                         controller_->eq()->selectBand(2);
-                        controller_->setTab(7);
+                        controller_->setTab(6);
                         controller_->hideValuePopup();
                       }});
     steps_.push_back({"39-eq-shift", [this] {
@@ -647,18 +643,18 @@ class ScreenshotRunner final : public QObject {
                         controller_->eq()->selectMain();
                         controller_->eq()->selectBand(2);
                         controller_->eq()->selectType(3);
-                        controller_->setTab(7);
+                        controller_->setTab(6);
                         controller_->showShiftFace(true);
                         controller_->hideValuePopup();
                       }});
     steps_.push_back({"39-eq-full", [this] {
                         resetShot();
-                        controller_->setTab(7);
+                        controller_->setTab(6);
                         controller_->setFullscreen(true);
                       }});
     steps_.push_back({"39-xy", [this] {
                         resetShot();
-                        controller_->setTab(8);
+                        controller_->setTab(7);
                       }});
     steps_.push_back({"39-timeline", [this] {
                         resetShot();
@@ -672,11 +668,11 @@ class ScreenshotRunner final : public QObject {
                         controller_->timeline()->setSelectedTrack(1);
                         controller_->timeline()->setPage(0);
                         controller_->timeline()->setCursorBeats(3.0);
-                        controller_->setTab(9);
+                        controller_->setTab(8);
                       }});
     steps_.push_back({"39-popup-comp", [this] {
                         resetShot();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         controller_->setSystemShiftPage(0);
                         controller_->showShiftFace(true);
                         controller_->openConfig(QStringLiteral("comp"));
@@ -717,7 +713,7 @@ class ScreenshotRunner final : public QObject {
                       }});
     steps_.push_back({"39-popup-sends", [this] {
                         resetShot();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         controller_->setSystemShiftPage(0);
                         controller_->showShiftFace(true);
                         controller_->openConfig(QStringLiteral("sends"));
@@ -726,7 +722,7 @@ class ScreenshotRunner final : public QObject {
                         resetShot();
                         controller_->eq()->selectMain();
                         controller_->eq()->selectBand(2);
-                        controller_->setTab(7);
+                        controller_->setTab(6);
                         controller_->openConfig(QStringLiteral("eqtype"));
                       }});
     steps_.push_back({"39-popup-timelineops", [this] {
@@ -735,7 +731,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->timeline()->beginSelection(1, 1.0);
                         controller_->timeline()->updateSelection(5.0);
                         controller_->timeline()->endSelection();
-                        controller_->setTab(9);
+                        controller_->setTab(8);
                         controller_->openConfig(QStringLiteral("timelineops"));
                       }});
     steps_.push_back({"39-transport", [this] {
@@ -790,7 +786,7 @@ class ScreenshotRunner final : public QObject {
                       }});
     steps_.push_back({"40-popup-comp", [this] {
                         resetShot();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         controller_->setSystemShiftPage(0);
                         controller_->showShiftFace(true);
                         controller_->openConfig(QStringLiteral("comp"));
@@ -822,10 +818,6 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setMonitor(3, 3);
                         controller_->selectStrip(1);
                         controller_->setTab(0);
-                      }});
-    steps_.push_back({"40-fx-builtin", [this] {
-                        resetShot();
-                        controller_->setTab(2);
                       }});
     steps_.push_back({"40-channel-popout", [this] {
                         resetShot();
@@ -861,14 +853,14 @@ class ScreenshotRunner final : public QObject {
                                 .arg(controller_->mixer()->stripCount())
                                 .arg(controller_->mixer()->pageCount()));
                       }});
-    steps_.push_back({"40-popup-insert", [this] {
+    steps_.push_back({"40-popup-trackfx", [this] {
                         resetShot();
                         primeMixerDemo();
                         controller_->setTab(0);
                         // Opened from the channel popout's own strip, exactly as
-                        // the popout's INSERT selector does.
+                        // the popout's TRACK FX row does.
                         controller_->openChannel(2);
-                        controller_->openInsert(2);
+                        controller_->openTrackFx(0);
                       }});
     // ---- 41-*: pipes page declutter, popup selectors, knob-card params ----
     steps_.push_back({"41-routing-pipes", [this] {
@@ -913,7 +905,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->routing()->selectPipe(0);
                         // The sweep's numeric steppers are knob cards now: the
                         // click BARS value is the metronome's.
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         controller_->setSystemShiftPage(0);
                         controller_->showShiftFace(true);
                         controller_->openConfig(QStringLiteral("metronome"));
@@ -922,7 +914,7 @@ class ScreenshotRunner final : public QObject {
                         resetShot();
                         // The delay DIVISION is a full choice row instead of a
                         // prev/name/next stepper.
-                        controller_->setTab(8);
+                        controller_->setTab(7);
                         controller_->openConfig(QStringLiteral("delay"));
                       }});
     steps_.push_back({"41-chain-menu", [this] {
@@ -958,30 +950,21 @@ class ScreenshotRunner final : public QObject {
                         controller_->setTab(0);
                         controller_->openChannel(2);
                       }});
-    steps_.push_back({"41-fx-builtin", [this] {
-                        resetShot();
-                        controller_->setTab(2);
-                      }});
-    steps_.push_back({"41-fx-shift", [this] {
-                        resetShot();
-                        controller_->setTab(2);
-                        controller_->showShiftFace(true);
-                      }});
     steps_.push_back({"41-recorder-shift", [this] {
                         resetShot();
-                        controller_->setTab(3);
+                        controller_->setTab(2);
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"41-system-tools", [this] {
                         resetShot();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         controller_->setSystemShiftPage(1);
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"41-popup-reverb", [this] {
                         resetShot();
                         // The X/Y reverb secondary parameters: one row of cards.
-                        controller_->setTab(8);
+                        controller_->setTab(7);
                         controller_->openConfig(QStringLiteral("reverb"));
                       }});
 
@@ -1006,7 +989,7 @@ class ScreenshotRunner final : public QObject {
                         primeMixerDemo();
                         // D3/B1: tab 6 (MIDI) has no second face; the chip is
                         // dimmed and the tab long-press cannot enter it.
-                        controller_->setTab(6);
+                        controller_->setTab(5);
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"42-mixer-arm-mutes", [this] {
@@ -1038,20 +1021,20 @@ class ScreenshotRunner final : public QObject {
                         controller_->recorder()->selectRow(0);
                         controller_->recorder()->activateSelected();
                         setStripArm(1, true);
-                        controller_->setTab(3);
+                        controller_->setTab(2);
                       }});
     steps_.push_back({"42-recorder-shift-selected", [this] {
                         resetShot();
                         controller_->recorder()->setSelectedTrack(1);
                         controller_->recorder()->selectRow(0);
                         controller_->recorder()->activateSelected();
-                        controller_->setTab(3);
+                        controller_->setTab(2);
                         // A3: the SHIFT face names the take its buttons act on.
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"42-projects-select", [this] {
                         resetShot();
-                        controller_->setTab(5);
+                        controller_->setTab(4);
                         // A deterministic row in the isolated HOME: the
                         // capacity step above leaves 64 tracks, which the
                         // session store refuses to save.
@@ -1065,7 +1048,7 @@ class ScreenshotRunner final : public QObject {
                       }});
     steps_.push_back({"42-projects-shift-mirror", [this] {
                         resetShot();
-                        controller_->setTab(5);
+                        controller_->setTab(4);
                         clearMixerDemo();
                         primeMixerDemo();
                         controller_->projects()->saveProject();
@@ -1077,20 +1060,20 @@ class ScreenshotRunner final : public QObject {
                       }});
     steps_.push_back({"42-timeline-take-sheet", [this] {
                         resetShot();
-                        controller_->setTab(9);
+                        controller_->setTab(8);
                         // A10: the lane label opens TAKE FOR TRACK nn.
                         controller_->openTakeSheet(1);
                       }});
     steps_.push_back({"42-popup-timelineops", [this] {
                         resetShot();
-                        controller_->setTab(9);
+                        controller_->setTab(8);
                         // A14: seven ops (no RENDER), footer names the peaks
                         // sidecar, missing peaks is a RENDER PEAKS action.
                         controller_->openConfig(QStringLiteral("timelineops"));
                       }});
     steps_.push_back({"42-popup-metronome", [this] {
                         resetShot();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         // A8: OFF / REC ONLY / ON PLAY, MAIN / PHONES / OUT3&4,
                         // LEVEL and COUNT-IN.
                         controller_->openConfig(QStringLiteral("metronome"));
@@ -1101,18 +1084,120 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setTrackMode(false);
                         controller_->mixer()->setBank(0);
                         controller_->setTab(0);
-                        // A9: the learnable gain/pan/send controls outline in
+                        // A9: the learnable gain/pan/FX-wet controls outline in
                         // the accent colour while the target capture waits.
                         controller_->armLearnTargetCapture();
                       }});
     steps_.push_back({"42-system-learn", [this] {
                         resetShot();
-                        controller_->setTab(4);
+                        controller_->setTab(3);
                         controller_->setSystemShiftPage(1);
                         controller_->showShiftFace(true);
                         // A9: ARM CAPTURE with no target outlines every
                         // learnable control and waits for a touch.
                         controller_->armLearnTargetCapture();
+                      }});
+
+    // ---- 43-*: per-track FX rack ----------------------------------------
+    // The two rack slots reach every surface: the tab row lost its FX entry,
+    // the strip knobs edit the slot wet, the channel popout opens TRACK FX and
+    // the X/Y tab bends the selected track's slots.
+    steps_.push_back({"43-tabs", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->selectStrip(1);
+                        // No FX entry in the row (9 tabs), and the selected
+                        // strip keeps its own wet values in the mixer.
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"43-track-fx", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        primeTrackFx(2);
+                        controller_->mixer()->setFxWetAt(2, 0, 0.65);
+                        controller_->mixer()->setFxWetAt(2, 1, 0.35);
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->setTab(0);
+                        controller_->openChannel(2);
+                        controller_->openTrackFx(0);
+                      }});
+    steps_.push_back({"43-track-fx-wet", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        primeTrackFx(1);
+                        controller_->mixer()->setFxWetAt(1, 1, 0.35);
+                        controller_->setTab(0);
+                        controller_->openChannel(1);
+                        controller_->openTrackFx(1);
+                        // The wet value popup reads the slot mix, not a send.
+                        controller_->showValuePopup(QStringLiteral("FX2 WET"),
+                                                    QStringLiteral("percent"), 0.35);
+                      }});
+    steps_.push_back({"43-popup-fxslot", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        primeTrackFx(2);
+                        controller_->setTab(0);
+                        controller_->openChannel(2);
+                        controller_->openTrackFx(0);
+                        // NONE / DELAY / REVERB / PLUGIN with the plugin choice
+                        // greyed and the gap named.
+                        controller_->openFxSlot(1);
+                      }});
+    steps_.push_back({"43-mixer-shift-wet", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        primeTrackFx(0);
+                        primeTrackFx(1);
+                        controller_->mixer()->setFxWetAt(0, 0, 0.5);
+                        controller_->mixer()->setFxWetAt(1, 1, 0.8);
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->selectStrip(1);
+                        controller_->setTab(0);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"43-track-shift", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        primeTrackFx(2);
+                        controller_->mixer()->setFxWetAt(2, 0, 0.65);
+                        controller_->mixer()->setFxWetAt(2, 1, 0.35);
+                        controller_->mixer()->setTrackMode(true);
+                        controller_->mixer()->setTrackIndex(2);
+                        controller_->setTab(0);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"43-channel-popout", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        primeTrackFx(2);
+                        controller_->mixer()->setFxWetAt(2, 0, 0.65);
+                        controller_->mixer()->setFxWetAt(2, 1, 0.35);
+                        controller_->setTab(0);
+                        controller_->openChannel(2);
+                      }});
+    steps_.push_back({"43-xy-track", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        primeTrackFx(1);
+                        controller_->selectStrip(1);
+                        controller_->xy()->setPoint(0, 0.7, 0.4);
+                        controller_->xy()->setPoint(1, 0.35, 0.8);
+                        controller_->hideValuePopup();
+                        controller_->setTab(7);
+                      }});
+    steps_.push_back({"43-xy-picker", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        primeTrackFx(1);
+                        controller_->mixer()->setFxChoiceAt(1, 1, 0);
+                        controller_->selectStrip(1);
+                        controller_->xy()->setPoint(0, 0.6, 0.5);
+                        controller_->hideValuePopup();
+                        controller_->setTab(7);
                       }});
 
     // The mixer screens above show strips; the app's own default stays empty.
@@ -1165,6 +1250,13 @@ class ScreenshotRunner final : public QObject {
   // fullscreen bridge, primary face.
   void resetShot() {
     controller_->hideValuePopup();
+    controller_->closeTrackFx();
+    // A previous X/Y shot may have left finger points and the freeze macro
+    // latched; no shot inherits either.
+    controller_->xy()->touchEnd(0, 41);
+    controller_->xy()->touchEnd(1, 42);
+    if (controller_->xy()->frozen()) controller_->xy()->toggleFreeze();
+    controller_->hideValuePopup();
     controller_->closeChannel();
     controller_->configCancel();
     controller_->keypadCancel();
@@ -1199,6 +1291,16 @@ class ScreenshotRunner final : public QObject {
     }
     controller_->routing()->selectPipe(0);
     controller_->routing()->setSelectedPipeChannelMask(0x000F);
+  }
+
+  // Deterministic rack for the 43-* shots: both slots are cleared first, so a
+  // shot shows the effects' published defaults rather than a previous step's
+  // parameter edits (or a freeze macro that never released).
+  void primeTrackFx(int slot) {
+    controller_->mixer()->setFxChoiceAt(slot, 0, 0);
+    controller_->mixer()->setFxChoiceAt(slot, 1, 0);
+    controller_->mixer()->setFxChoiceAt(slot, 0, 1);
+    controller_->mixer()->setFxChoiceAt(slot, 1, 2);
   }
 
   // Scripted absolute EQ band values: type 0..5, frequency, gain, Q.
