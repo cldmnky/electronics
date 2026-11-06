@@ -1,6 +1,8 @@
 // Implementation of the Pico <-> Pi link core (see link.hpp for the contract).
 #include "link.hpp"
 
+#include "../../midifx/core/midifx.hpp"
+
 #include "../../firmware/pico/clock_follow.hpp"
 
 #include <algorithm>
@@ -199,8 +201,9 @@ void EmulatorTransport::handle(const mb::Frame& f) {
       std::uint8_t src = 0, dst = 0, flags = 0;
       if (!mb::unpack_midi_route(f, src, dst, flags)) return;
       // begin(): fresh chain, runtime state cleared, flags applied.
-      midi_routes_[src][dst] = MidiRouteState{};
-      midi_routes_[src][dst].flags = flags;
+      MidiRouteState& state = midi_routes_[midiRouteKey(src, dst)];
+      state = MidiRouteState{};
+      state.flags = flags;
       break;
     }
     case mb::EV_MIDI_ROUTE_PIPE: {
@@ -213,7 +216,12 @@ void EmulatorTransport::handle(const mb::Frame& f) {
                                       ch_mask, raw,
                                       mb::route_pipe_param_frame_max_legacy, count))
         return;
-      MidiRouteState& chain = midi_routes_[src][dst];
+      // A generator chain's head must have the schema role generator; the
+      // firmware refuses the frame, so the emulator refuses it too.
+      if (mb::route_src_is_generator(src) && index == 0 && offset == 0 &&
+          !mnky::midifx::generated::pipeIsGenerator(type))
+        return;
+      MidiRouteState& chain = midi_routes_[midiRouteKey(src, dst)];
       // Same shape rules as the firmware's MidiPipeChain::setPipeChunk: an
       // invalid index/type mismatch is a bad frame, not a silent append.
       if (offset == 0) {
@@ -353,8 +361,8 @@ void EmulatorTransport::reboot() {
   clock_route_flags_[1] = mb::CLOCK_ROUTE_DEFAULT;
   clock_source_ = mb::CLOCK_SOURCE_INTERNAL;
   transport_follow_mask_ = 0;
-  // The Pico's route_pipes are RAM: a power cycle starts them off and empty.
-  midi_routes_ = {};
+  // The Pico's route chains are RAM: a power cycle starts them off and empty.
+  midi_routes_.clear();
   led_mask_ = 0;
   led_states_ = 0;
   sent_midi_.clear();
@@ -781,7 +789,7 @@ bool PicoLink::midiRoute(std::uint8_t src, std::uint8_t dst, bool on) {
   if (!queueFrame(f)) return false;
   // 0x18 starts a fresh chain on the Pico: the cache mirrors that, so a
   // reconnect re-sends the begin before any pipe chunk of this route.
-  CachedMidiRoute& cache = midi_routes_[src][dst];
+  CachedMidiRoute& cache = midi_routes_[midiRouteKey(src, dst)];
   cache = CachedMidiRoute{};
   cache.known = true;
   cache.flags = flags;
@@ -792,9 +800,14 @@ bool PicoLink::midiRoutePipe(std::uint8_t src, std::uint8_t dst, std::uint8_t in
                              std::uint8_t type, bool bypass,
                              std::uint8_t param_offset, const std::int16_t* params,
                              std::size_t count, std::uint16_t chMask) {
-  if (src > 1 || dst > 1) return false;  // only the two physical TRS routes
+  if (!mb::route_src_valid(src) || dst > 1) return false;
   if (count != 0 && params == nullptr) return false;
-  CachedMidiRoute& cache = midi_routes_[src][dst];
+  // A generator chain's head must have the schema role generator; the
+  // firmware refuses that frame, so never cache a chain it would reject.
+  if (mb::route_src_is_generator(src) && index == 0 && param_offset == 0 &&
+      !mnky::midifx::generated::pipeIsGenerator(type))
+    return false;
+  CachedMidiRoute& cache = midi_routes_[midiRouteKey(src, dst)];
   // Mirror the firmware's setPipeChunk acceptance before queueing, so the
   // cache can never describe a chain the Pico refused.
   if (param_offset == 0) {
@@ -828,31 +841,30 @@ bool PicoLink::midiRoutePipe(std::uint8_t src, std::uint8_t dst, std::uint8_t in
 }
 
 void PicoLink::resendMidiRoutes() {
-  for (std::uint8_t src = 0; src < 2; ++src) {
-    for (std::uint8_t dst = 0; dst < 2; ++dst) {
-      const CachedMidiRoute& cache = midi_routes_[src][dst];
-      if (!cache.known) continue;
-      mb::Frame begin{};
-      if (!mb::pack_midi_route(begin, 0, 0, src, dst, cache.flags)) continue;
-      queueFrame(begin);
-      for (std::uint8_t index = 0; index < cache.pipe_count; ++index) {
-        const CachedRoutePipe& pipe = cache.pipes[index];
-        for (std::uint8_t offset = 0; offset < pipe.param_count;
-             offset = static_cast<std::uint8_t>(
-                 offset + mb::route_pipe_param_frame_max)) {
-          const std::uint8_t remaining =
-              static_cast<std::uint8_t>(pipe.param_count - offset);
-          const std::uint8_t chunk = static_cast<std::uint8_t>(
-              remaining < mb::route_pipe_param_frame_max
-                  ? remaining
-                  : mb::route_pipe_param_frame_max);
-          mb::Frame f{};
-          if (!mb::pack_midi_route_pipe(f, 0, 0, src, dst, index, pipe.type,
-                                        pipe.bypass, offset,
-                                        &pipe.params[offset], chunk, pipe.chMask))
-            continue;
-          queueFrame(f);
-        }
+  for (const auto& [key, cache] : midi_routes_) {
+    if (!cache.known) continue;
+    const std::uint8_t src = static_cast<std::uint8_t>(key >> 8);
+    const std::uint8_t dst = static_cast<std::uint8_t>(key & 0xFF);
+    mb::Frame begin{};
+    if (!mb::pack_midi_route(begin, 0, 0, src, dst, cache.flags)) continue;
+    queueFrame(begin);
+    for (std::uint8_t index = 0; index < cache.pipe_count; ++index) {
+      const CachedRoutePipe& pipe = cache.pipes[index];
+      for (std::uint8_t offset = 0; offset < pipe.param_count;
+           offset = static_cast<std::uint8_t>(
+               offset + mb::route_pipe_param_frame_max)) {
+        const std::uint8_t remaining =
+            static_cast<std::uint8_t>(pipe.param_count - offset);
+        const std::uint8_t chunk = static_cast<std::uint8_t>(
+            remaining < mb::route_pipe_param_frame_max
+                ? remaining
+                : mb::route_pipe_param_frame_max);
+        mb::Frame f{};
+        if (!mb::pack_midi_route_pipe(f, 0, 0, src, dst, index, pipe.type,
+                                      pipe.bypass, offset,
+                                      &pipe.params[offset], chunk, pipe.chMask))
+          continue;
+        queueFrame(f);
       }
     }
   }

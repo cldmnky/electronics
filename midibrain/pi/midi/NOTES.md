@@ -20,10 +20,16 @@ scope changes what the next pipe matches; mask 0 makes the pipe inert.
 `midi_glue` owns the RtMidi inventory seam: it groups port names with the audio
 worker's `midiDeviceNamesFromPortNames()`, reopens one input/output per device
 tagged with its dynamic id, and exposes `usbPorts()` / `bindSessionRouter()` /
-`captureSessionRouter()` for the Routing UI and project save/load. `midifx.{hpp,cpp}`
-is the portable Wave-1 MIDI FX pipe engine (types 1..11, positional params from
-`pi/session/session.hpp`, bypass, deterministic per-route RNG, Wave-2 rejection)
-described below. `clock.{hpp,cpp}`: `UsbClock` is pure
+`captureSessionRouter()` for the Routing UI and project save/load. `midifx.hpp`
+is a header-only adapter over the shared core (`midibrain/midifx/core`), which
+evaluates all 16 pipe types with the positional params from
+`pi/session/session.hpp`, bypass, the deterministic per-route RNG and the schema
+role table. `Router` also owns the two pseudo-source route kinds: a generator
+chain per destination (`kSrcGenerator`, head must be generator-role) evaluated
+by `clockTick()`, and ordered output inserts (`kSrcOutputInsert`) applied to every
+message routed to that destination before delivery. Both are Pi-owned only when
+the destination is USB; a TRS destination's chain is configured on the Pico over
+0x18/0x19. See the router/engine sections below. `clock.{hpp,cpp}`: `UsbClock` is pure
 logic - the offset EMA follows the fastest recent delivery so arrival is never
 mistaken for the tick stamp, creeping up for clock drift; the phase is a local
 Pi timer slewed from each `EV_CLOCK_TICK` and re-pegged (not burst-fired) after a
@@ -50,7 +56,7 @@ capture state (the app chooses which CC becomes a binding), persistence code
 (the session layer owns save/load) and thread synchronization (one MIDI
 thread owns the engine).
 
-## MIDI FX (Wave-1) data path and side split
+## MIDI FX data path and side split
 
 The iron rule is that one route's pipe chain is evaluated exactly once, on
 exactly one side. Firmware owns every TRS->TRS chain; the Pi owns every route
@@ -117,11 +123,12 @@ Integration gaps owned outside this lane (reported, not fixed here):
   either moving transpose into the Pico chain or applying it after
   `EV_MIDI_ROUTE_SEND`; neither is in this wave, and no fake order is claimed
   here.
-- The firmware worker's `firmware/pico/midi_pipe.hpp` passes Wave-2 ids (12..16)
-  through unchanged; this Pi engine rejects evaluation with a reason. Wire
-  types/limits match `firmware/pico/protocol.hpp` byte-for-byte, so only the
-  evaluation policy differs. Convergence follow-up: firmware should adopt
-  `midifx.*` as the single engine when Wave 2 lands.
+- The firmware and the Pi both compile the shared core; the Pi reaches it
+  through `pi/midi/midifx.hpp`. Wire types/limits match
+  `firmware/pico/protocol.hpp` and the core's behavior suite runs once.
+  `PipeOutput::rejected`/`rejectPipe`/`reason` and the matching diagnostics
+  fields stay as the retired log seam (always false/null); the app's log line is
+  harmless until it is removed.
 - The 0x18/0x19 wire has no RNG seed field. The Pi engine takes a per-route
   seed, but the Pico seeds `route_pipes` from its own session/time at boot
   (`firmware/pico/main.cpp` main()), so a TRS route's Chance/VelocityRandom
@@ -143,17 +150,19 @@ mask/0/127 wrap, Chance 0/100 and seeded determinism, VelocityRandom
 window/floor/clamp/determinism, Dispatcher rotation and off pairing,
 Sustain latch/release/64-event cap, NoteLength scheduling/suppression/later
 pipes, Transform all match/output kinds and partial config), bypass and chain
-order, the 8-pipe/10-param configure limits, and Wave-2 configure-tolerated /
-evaluation-rejected behaviour. `Router` tests in `test_midi.cpp` add the
-Pi-owned USB-route cases, mask->pipes->transpose order, Wave-2 statistics and
-the no-double-processing check: a piped TRS->TRS message crossing the Pi is
-delivered unprocessed and `pipeDiagnostics().evaluations` stays 0.
+order, the 8-pipe/10-param configure limits, and the former Pi suite's
+expectations (all now evaluated by the shared core). `Router` tests in
+`test_midi.cpp` add the Pi-owned USB-route cases, mask->pipes->transpose order,
+the no-double-processing check (a piped TRS->TRS message crossing the Pi is
+delivered unprocessed and `pipeDiagnostics().evaluations` stays 0), and the
+generator/output-insert route kinds: generator emission with no input, modifier
+head refusal, insert slot order, generator output through inserts, and a
+MidiDelay insert shifting note+CC together.
 
-Not done: Wave 2 (all five clocked types), per-route seeding from the session
-(the Router default is a fixed deterministic constant plus `setPipeSeed`), and
-persistence (session owns it). The log seam for a rejected chain is
-`Router::pipeDiagnostics()` (`rejected`, `lastRejectReason`, `lastRejectPipe`);
-the app owns the actual log line.
+Not done: per-route seeding from the session (the Router default is a fixed
+deterministic constant plus `setPipeSeed`), and persistence of a real port
+pair's chain (app-owned; session capture/apply leaves it alone). The retired
+rejection diagnostics stay all-zero for the app log seam.
 
 `test_midi.cpp`: routing matrix, merge/fan-out, channel mask, transpose, USB
 route pipes and the Pi/firmware side split, button table, RtMidi plumbing, and

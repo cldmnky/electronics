@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <map>
 #include <utility>
 #include <vector>
 
@@ -70,7 +71,9 @@ class EmulatorTransport : public ISpiTransport {
   bool injectMidi(std::uint8_t port, const std::uint8_t* data, std::uint8_t n);
   // MIDI FX chain the Pi configured on this emulated Pico (0x18/0x19). flags
   // bit0 = route on; pipe params are positional int16 like the wire and
-  // chMask is the per-pipe channel scope carried on the offset-0 chunk.
+  // chMask is the per-pipe channel scope carried on the offset-0 chunk. src is
+  // the wire route-source byte: 0/1 = TRS, mb::route_src_generator, or
+  // mb::route_src_insert(slot).
   struct RoutePipeState {
     std::uint8_t type{};
     bool bypass{};
@@ -83,8 +86,11 @@ class EmulatorTransport : public ISpiTransport {
     std::uint8_t pipe_count{};
     std::array<RoutePipeState, mb::route_pipe_count_max> pipes{};
   };
+  // Missing chains read as the boot state (off, empty).
   const MidiRouteState& midiRoute(std::uint8_t src, std::uint8_t dst) const {
-    return midi_routes_[src][dst];
+    static const MidiRouteState empty;
+    const auto found = midi_routes_.find(midiRouteKey(src, dst));
+    return found == midi_routes_.end() ? empty : found->second;
   }
   // Local tempo change (encoder path): affects tick rate, queues EV_TEMPO.
   void setTempo(std::uint16_t bpm_x100);
@@ -156,7 +162,10 @@ class EmulatorTransport : public ISpiTransport {
   // Wave-1 chain state per physical TRS route, [src][dst] (0 = IN1/OUT1),
   // mirroring the firmware's route_pipes[2][2]: a begin clears it and pipe
   // chunks fill it in order. reboot() resets it to the boot default.
-  std::array<std::array<MidiRouteState, 2>, 2> midi_routes_{};
+  static constexpr int midiRouteKey(std::uint8_t src, std::uint8_t dst) {
+    return (static_cast<int>(src) << 8) | dst;
+  }
+  std::map<int, MidiRouteState> midi_routes_{};
   std::uint16_t tx_overflow_ = 0;
   std::uint16_t rx_overflow_ = 0;
   bool reboot_requested_ = false;
@@ -278,10 +287,13 @@ class PicoLink {
   // last successfully queued config is re-sent after HELLO; the Pico resets to
   // internal/no-follow at boot.
   bool clockSource(std::uint8_t source, std::uint8_t transport_mask);
-  // MIDI FX chain for one physical TRS route (0x18/0x19). src/dst are
-  // 0 = TRS IN1/OUT1, 1 = TRS IN2/OUT2; routes touching USB stay Pi-side and
-  // are rejected here. midiRoute() starts a fresh chain (the firmware clears
-  // its pipes and runtime state), so send it before that route's pipes.
+  // MIDI FX chain for one TRS route or pseudo-source (0x18/0x19). src is the
+  // wire route-source byte: 0 = TRS IN1, 1 = TRS IN2,
+  // mb::route_src_generator, or mb::route_src_insert(slot); dst is 0/1. Routes
+  // touching USB stay Pi-side and are rejected here. midiRoute() starts a
+  // fresh chain (the firmware clears its pipes and runtime state), so send it
+  // before that route's pipes. A generator chain's head must have the schema
+  // role generator; the link mirrors the firmware's refusal before queueing.
   // midiRoutePipe() mirrors the firmware's setPipeChunk rules: offset 0 with
   // index == pipe count appends, index < count replaces; a larger offset
   // extends an existing pipe of the same type (the continuation chunk's
@@ -343,8 +355,12 @@ class PicoLink {
   std::uint8_t clock_source_ = 0;
   std::uint8_t clock_source_mask_ = 0;
   bool clock_source_known_ = false;
-  // Last-known Wave-1 chain per physical TRS route, [src][dst], re-sent after
-  // HELLO in the same order the firmware applied it (0x18, then pipe chunks).
+  // Last-known chain per route source/destination, re-sent after HELLO in the
+  // same order the firmware applied it (0x18, then pipe chunks). The key is
+  // (src << 8) | dst so the pseudo-sources fit the same cache.
+  static constexpr int midiRouteKey(std::uint8_t src, std::uint8_t dst) {
+    return (static_cast<int>(src) << 8) | dst;
+  }
   struct CachedRoutePipe {
     std::uint8_t type = 0;
     bool bypass = false;
@@ -358,7 +374,7 @@ class PicoLink {
     std::uint8_t pipe_count = 0;
     std::array<CachedRoutePipe, mb::route_pipe_count_max> pipes{};
   };
-  std::array<std::array<CachedMidiRoute, 2>, 2> midi_routes_{};
+  std::map<int, CachedMidiRoute> midi_routes_;
   TickFn tick_fn_;
   Stats stats_;
 };

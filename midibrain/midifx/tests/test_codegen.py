@@ -106,8 +106,21 @@ class CodegenTest(unittest.TestCase):
 
             header = (out / "midifx_params.hpp").read_text(encoding="utf-8")
             self.assertIn("kPipeCount = 17", header)
+            self.assertIn('"TEST RAMP", "TST", "clocked", PipeRole::Modifier', header)
             self.assertIn("\"TEST NOTE\", ParamKind::Int, 0, 127, 60, \"\", nullptr", header)
             self.assertIn("kChoicesTestRampShape[] = {\"RAMP\", \"STEP\", \"SINE\"}", header)
+
+    def test_missing_pipe_role_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp) / "midifx"
+            shutil.copytree(MIDIFX, tree)
+            schema_path = tree / "pipes.json"
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+            del schema["pipes"][3]["role"]
+            schema_path.write_text(json.dumps(schema), encoding="utf-8")
+            result = run(tree / "gen" / "gen_params.py", "--check")
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("role must be one of", result.stderr)
 
     def test_unknown_param_format_is_refused(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

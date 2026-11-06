@@ -1,5 +1,7 @@
 #include "router.hpp"
 
+#include <utility>
+
 namespace mnky::midi {
 namespace {
 
@@ -17,6 +19,30 @@ bool transposeForOutput(const MidiEvent& in, int shift, MidiEvent& out) {
   if (pitch < 0 || pitch > 127) return false;
   out.data[1] = static_cast<std::uint8_t>(pitch);
   return true;
+}
+
+PipeEvent toPipeEvent(const MidiEvent& in) {
+  PipeEvent event;
+  event.size = in.size;
+  for (std::uint8_t i = 0; i < in.size && i < 3; ++i) event.data[i] = in.data[i];
+  return event;
+}
+
+MidiEvent fromPipeEvent(const MidiEvent& origin, const PipeEvent& event) {
+  MidiEvent out = origin;
+  out.size = event.size;
+  for (std::size_t i = 0; i < 3; ++i)
+    out.data[i] = i < event.size ? event.data[i] : 0;
+  return out;
+}
+
+// A time-generated event has no source route identity; only the destination is
+// meaningful to the sink, so the stamp keeps dst and the caller's clock.
+MidiEvent generatedEvent(Port dst, std::uint32_t nowMs) {
+  MidiEvent ev;
+  ev.source = dst;
+  ev.stampUs = static_cast<std::uint64_t>(nowMs) * 1000u;
+  return ev;
 }
 
 }  // namespace
@@ -82,6 +108,91 @@ std::size_t Router::pipeCount(Port src, Port dst) const {
   return chain == nullptr ? 0 : chain->pipeCount();
 }
 
+Router::PseudoChain* Router::pseudoChain(int key) const {
+  const auto found = pseudoPipes_.find(key);
+  return found == pseudoPipes_.end() ? nullptr : &found->second;
+}
+
+bool Router::setGenerator(Port dst, bool enabled) {
+  if (!isOutput(dst) || !piOwnsPipeChain(kSrcGenerator, dst)) return false;
+  pseudoPipes_[generatorKey(dst)].enabled = enabled;
+  return true;
+}
+
+bool Router::generatorEnabled(Port dst) const {
+  const PseudoChain* entry = pseudoChain(generatorKey(dst));
+  return entry != nullptr && entry->enabled;
+}
+
+bool Router::setGeneratorPipes(Port dst, const PipeConfig* pipes, std::size_t count) {
+  if (!isOutput(dst) || !piOwnsPipeChain(kSrcGenerator, dst)) return false;
+  if (count != 0 && pipes == nullptr) return false;
+  if (count != 0 &&
+      !mnky::midifx::generated::pipeIsGenerator(static_cast<std::uint8_t>(pipes[0].type)))
+    return false;
+  PipeChain chain;
+  if (!chain.configure(pipes, count)) return false;
+  pseudoPipes_[generatorKey(dst)].chain = std::move(chain);
+  return true;
+}
+
+std::size_t Router::generatorPipeCount(Port dst) const {
+  const PseudoChain* entry = pseudoChain(generatorKey(dst));
+  return entry == nullptr ? 0 : entry->chain.pipeCount();
+}
+
+bool Router::setOutputInsert(Port dst, std::size_t slot, bool enabled) {
+  if (!isOutput(dst) || slot >= kMaxOutputInserts ||
+      !piOwnsPipeChain(kSrcOutputInsert, dst))
+    return false;
+  pseudoPipes_[insertKey(dst, slot)].enabled = enabled;
+  return true;
+}
+
+bool Router::outputInsertEnabled(Port dst, std::size_t slot) const {
+  if (slot >= kMaxOutputInserts) return false;
+  const PseudoChain* entry = pseudoChain(insertKey(dst, slot));
+  return entry != nullptr && entry->enabled;
+}
+
+bool Router::setOutputInsertPipes(Port dst, std::size_t slot,
+                                  const PipeConfig* pipes, std::size_t count) {
+  if (!isOutput(dst) || slot >= kMaxOutputInserts ||
+      !piOwnsPipeChain(kSrcOutputInsert, dst))
+    return false;
+  PipeChain chain;
+  if (!chain.configure(pipes, count)) return false;
+  pseudoPipes_[insertKey(dst, slot)].chain = std::move(chain);
+  return true;
+}
+
+std::size_t Router::outputInsertPipeCount(Port dst, std::size_t slot) const {
+  if (slot >= kMaxOutputInserts) return 0;
+  const PseudoChain* entry = pseudoChain(insertKey(dst, slot));
+  return entry == nullptr ? 0 : entry->chain.pipeCount();
+}
+
+bool Router::generatorPipes(Port dst, PipeConfig* out, std::size_t capacity,
+                            std::size_t& count) const {
+  const PseudoChain* entry = pseudoChain(generatorKey(dst));
+  if (entry == nullptr || entry->chain.pipeCount() > capacity) return false;
+  count = entry->chain.pipeCount();
+  for (std::size_t i = 0; i < count; ++i)
+    if (!entry->chain.pipeAt(i, out[i])) return false;
+  return true;
+}
+
+bool Router::outputInsertPipes(Port dst, std::size_t slot, PipeConfig* out,
+                               std::size_t capacity, std::size_t& count) const {
+  if (slot >= kMaxOutputInserts) return false;
+  const PseudoChain* entry = pseudoChain(insertKey(dst, slot));
+  if (entry == nullptr || entry->chain.pipeCount() > capacity) return false;
+  count = entry->chain.pipeCount();
+  for (std::size_t i = 0; i < count; ++i)
+    if (!entry->chain.pipeAt(i, out[i])) return false;
+  return true;
+}
+
 void Router::setPipeSeed(Port src, Port dst, std::uint32_t seed) {
   const int slot = pipeIndex(src, dst);
   if (slot >= 0) {
@@ -102,9 +213,39 @@ std::uint32_t Router::pipeSeed(Port src, Port dst) const {
 void Router::clearPipes() {
   for (auto& chain : pipes_) chain = PipeChain{};
   dynamicPipes_.clear();
+  pseudoPipes_.clear();
 }
 
+void Router::clearPseudoPipes() { pseudoPipes_.clear(); }
+
 Router::PipeDiagnostics Router::pipeDiagnostics() const { return pipeStats_; }
+
+void Router::deliverThroughInsert(Port dst, std::size_t slot, const MidiEvent& ev,
+                                  std::uint32_t nowMs, const DeliverFn& deliver) const {
+  if (slot >= kMaxOutputInserts) {
+    ++pipeStats_.emitted;
+    deliver(dst, ev);
+    return;
+  }
+  PseudoChain* insert = pseudoChain(insertKey(dst, slot));
+  if (insert == nullptr || !insert->enabled || insert->chain.empty()) {
+    deliverThroughInsert(dst, slot + 1, ev, nowMs, deliver);
+    return;
+  }
+  const PipeOutput out = insert->chain.process(toPipeEvent(ev), nowMs);
+  pipeStats_.dropped += out.dropped;
+  for (std::size_t i = 0; i < out.count; ++i)
+    deliverThroughInsert(dst, slot + 1, fromPipeEvent(ev, out.events[i]), nowMs,
+                         deliver);
+}
+
+void Router::deliverToDestination(Port dst, const MidiEvent& ev, int shift,
+                                  std::uint32_t nowMs,
+                                  const DeliverFn& deliver) const {
+  MidiEvent shifted;
+  if (!transposeForOutput(ev, shift, shifted)) return;
+  deliverThroughInsert(dst, 0, shifted, nowMs, deliver);
+}
 
 void Router::route(const MidiEvent& ev, const DeliverFn& deliver) const {
   if (!isInput(ev.source) || ev.size < 1 || ev.size > 3) return;
@@ -121,34 +262,41 @@ void Router::route(const MidiEvent& ev, const DeliverFn& deliver) const {
     const Port dst = static_cast<Port>(d);
     if (!isOutput(dst) || !route_[idx(ev.source)][d]) continue;
     PipeChain* chainPtr = mutableChain(ev.source, dst);
-    if (chainPtr == nullptr || !piOwnsPipeChain(ev.source, dst)) {
+    if (chainPtr == nullptr || !piOwnsPipeChain(ev.source, dst) ||
+        chainPtr->empty()) {
       // No stored chain (or a firmware-owned TRS->TRS route): forward the
-      // bytes untouched (transpose is the Pi's source-wide transform, applied
-      // on both sides of the split).
-      MidiEvent out;
-      if (!transposeForOutput(ev, shift, out)) continue;
-      deliver(dst, out);
+      // bytes untouched; the destination's output inserts still apply.
+      deliverToDestination(dst, ev, shift, nowMs, deliver);
       continue;
     }
-    PipeChain& chain = *chainPtr;
-    if (chain.empty()) {
-      MidiEvent out;
-      if (!transposeForOutput(ev, shift, out)) continue;
-      deliver(dst, out);
-      continue;
-    }
-    PipeEvent input;
-    input.size = ev.size;
-    for (std::uint8_t i = 0; i < ev.size; ++i) input.data[i] = ev.data[i];
     ++pipeStats_.evaluations;
-    if (chain.wave2Pipe() >= 0) {
-      recordRejection(chain.process(input, nowMs));
-      continue;
-    }
+    PipeChain& chain = *chainPtr;
     // Fixed-length offs due at this message's time are emitted before the new
     // message, so a note-off can never arrive after a later note-on.
-    deliverPipeOutput(chain.tick(nowMs), dst, ev, shift, deliver);
-    deliverPipeOutput(chain.process(input, nowMs), dst, ev, shift, deliver);
+    const PipeOutput timed = chain.tick(nowMs);
+    const PipeOutput processed = chain.process(toPipeEvent(ev), nowMs);
+    pipeStats_.dropped += timed.dropped + processed.dropped;
+    for (std::size_t i = 0; i < timed.count; ++i)
+      deliverToDestination(dst, fromPipeEvent(ev, timed.events[i]), shift, nowMs,
+                           deliver);
+    for (std::size_t i = 0; i < processed.count; ++i)
+      deliverToDestination(dst, fromPipeEvent(ev, processed.events[i]), shift,
+                           nowMs, deliver);
+  }
+}
+
+void Router::serviceChain(PipeChain& chain, Port dst, std::size_t firstSlot,
+                          int shift, std::uint32_t nowMs, std::uint32_t tickIndex,
+                          bool clocked, const DeliverFn& deliver) const {
+  if (chain.empty()) return;
+  const PipeOutput out = clocked ? chain.clockTick(tickIndex, nowMs)
+                                 : chain.tick(nowMs);
+  pipeStats_.dropped += out.dropped;
+  for (std::size_t i = 0; i < out.count; ++i) {
+    const MidiEvent ev = fromPipeEvent(generatedEvent(dst, nowMs), out.events[i]);
+    MidiEvent shifted;
+    if (!transposeForOutput(ev, shift, shifted)) continue;
+    deliverThroughInsert(dst, firstSlot, shifted, nowMs, deliver);
   }
 }
 
@@ -158,43 +306,54 @@ void Router::tick(std::uint32_t nowMs, const DeliverFn& deliver) const {
     if (!isInput(src)) continue;
     for (int d = 0; d < kMaxPorts; ++d) {
       const Port dst = static_cast<Port>(d);
-      if (!isOutput(dst) || !route_[s][d]) continue;
-      PipeChain* chainPtr = mutableChain(src, dst);
-      if (chainPtr == nullptr || !piOwnsPipeChain(src, dst)) continue;
-      PipeChain& chain = *chainPtr;
-      if (chain.empty() || chain.wave2Pipe() >= 0) continue;
-      MidiEvent stamp;
-      stamp.source = src;
-      stamp.stampUs = static_cast<std::uint64_t>(nowMs) * 1000u;
-      const int shift = transpose_[s];
-      deliverPipeOutput(chain.tick(nowMs), dst, stamp, shift, deliver);
+      if (!isOutput(dst) || !route_[s][d] || !piOwnsPipeChain(src, dst)) continue;
+      PipeChain* chain = mutableChain(src, dst);
+      if (chain == nullptr) continue;
+      serviceChain(*chain, dst, 0, transpose_[s], nowMs, 0, false, deliver);
     }
   }
-}
-
-void Router::recordRejection(const PipeOutput& output) const {
-  ++pipeStats_.rejected;
-  pipeStats_.lastRejectReason = output.reason;
-  pipeStats_.lastRejectPipe = static_cast<int>(output.rejectPipe);
-}
-
-void Router::deliverPipeOutput(const PipeOutput& output, Port dst,
-                               const MidiEvent& ev, int shift,
-                               const DeliverFn& deliver) const {
-  if (output.rejected) {
-    recordRejection(output);
-    return;
+  for (std::size_t slot = 0; slot < kMaxOutputInserts; ++slot) {
+    for (int d = 0; d < kMaxPorts; ++d) {
+      const Port dst = static_cast<Port>(d);
+      PseudoChain* insert = pseudoChain(insertKey(dst, slot));
+      if (insert == nullptr || !insert->enabled) continue;
+      serviceChain(insert->chain, dst, slot + 1, 0, nowMs, 0, false, deliver);
+    }
   }
-  pipeStats_.dropped += output.dropped;
-  for (std::size_t i = 0; i < output.count; ++i) {
-    MidiEvent out = ev;
-    out.size = output.events[i].size;
-    for (std::size_t b = 0; b < 3; ++b)
-      out.data[b] = b < out.size ? output.events[i].data[b] : 0;
-    MidiEvent shifted;
-    if (!transposeForOutput(out, shift, shifted)) continue;
-    ++pipeStats_.emitted;
-    deliver(dst, shifted);
+  for (int d = 0; d < kMaxPorts; ++d) {
+    const Port dst = static_cast<Port>(d);
+    PseudoChain* generator = pseudoChain(generatorKey(dst));
+    if (generator == nullptr || !generator->enabled) continue;
+    serviceChain(generator->chain, dst, 0, 0, nowMs, 0, false, deliver);
+  }
+}
+
+void Router::clockTick(std::uint32_t tickIndex, std::uint32_t nowMs,
+                       const DeliverFn& deliver) const {
+  for (int s = 0; s < kMaxPorts; ++s) {
+    const Port src = static_cast<Port>(s);
+    if (!isInput(src)) continue;
+    for (int d = 0; d < kMaxPorts; ++d) {
+      const Port dst = static_cast<Port>(d);
+      if (!isOutput(dst) || !route_[s][d] || !piOwnsPipeChain(src, dst)) continue;
+      PipeChain* chain = mutableChain(src, dst);
+      if (chain == nullptr) continue;
+      serviceChain(*chain, dst, 0, transpose_[s], nowMs, tickIndex, true, deliver);
+    }
+  }
+  for (std::size_t slot = 0; slot < kMaxOutputInserts; ++slot) {
+    for (int d = 0; d < kMaxPorts; ++d) {
+      const Port dst = static_cast<Port>(d);
+      PseudoChain* insert = pseudoChain(insertKey(dst, slot));
+      if (insert == nullptr || !insert->enabled) continue;
+      serviceChain(insert->chain, dst, slot + 1, 0, nowMs, tickIndex, true, deliver);
+    }
+  }
+  for (int d = 0; d < kMaxPorts; ++d) {
+    const Port dst = static_cast<Port>(d);
+    PseudoChain* generator = pseudoChain(generatorKey(dst));
+    if (generator == nullptr || !generator->enabled) continue;
+    serviceChain(generator->chain, dst, 0, 0, nowMs, tickIndex, true, deliver);
   }
 }
 

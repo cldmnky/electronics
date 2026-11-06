@@ -35,6 +35,10 @@ OUT_DIR = MIDIFX / "gen" / "generated"
 
 KINDS = {"int", "bool", "enum"}
 CATEGORIES = {"stateless", "clocked"}
+# Pipe role drives route legality, not the wire: a generator pipe emits its own
+# messages from the clock grid and may head a generator route (src = -1); a
+# modifier needs an input message and is only legal after such a head.
+ROLES = {"generator", "modifier"}
 # Display-only hints. They shape the generated editor metadata and never reach
 # the 0x19 wire, so they are not part of the schema version.
 FORMATS = {"note"}
@@ -100,6 +104,14 @@ def validate(schema: dict, wire: list[tuple[int, str, list[str]]]) -> None:
                 "pipes.json: channelScope.default must be a 16-bit mask")
         require(isinstance(scope.get("docs"), str) and bool(scope["docs"]),
                 "pipes.json: channelScope.docs must be a non-empty string")
+    role_docs = schema.get("roles")
+    require(isinstance(role_docs, dict), "pipes.json: roles object missing")
+    if isinstance(role_docs, dict):
+        require(set(role_docs) == ROLES,
+                f"pipes.json: roles must document exactly {sorted(ROLES)}")
+        for name in sorted(ROLES):
+            require(isinstance(role_docs.get(name), str) and bool(role_docs[name]),
+                    f"pipes.json: roles.{name} must be a non-empty string")
     pipes = schema.get("pipes")
     require(isinstance(pipes, list) and bool(pipes), "pipes.json: pipes[] missing or empty")
     if errors:
@@ -133,6 +145,11 @@ def validate(schema: dict, wire: list[tuple[int, str, list[str]]]) -> None:
         require(category == expected_category,
                 f"{where}: category '{category}' contradicts the id {pipe_id} "
                 f"(ids >= {FIRST_CLOCKED_ID} are clocked)")
+        role = pipe.get("role")
+        require(role in ROLES, f"{where}: role must be one of {sorted(ROLES)}")
+        # A generator emits on the tick grid, so it must be a clocked pipe.
+        require(role != "generator" or category == "clocked",
+                f"{where}: a generator pipe must be clocked (it emits on the tick grid)")
 
         params = pipe.get("params")
         require(isinstance(params, list) and bool(params), f"{where}: params[] missing or empty")
@@ -239,12 +256,17 @@ def render_header(schema: dict) -> str:
     out.append("  std::uint8_t index;           // == 0x19 positional offset")
     out.append("};")
     out.append("")
+    out.append("// Route legality, not wire data: a generator emits without an input and")
+    out.append("// may head a generator route; a modifier needs an incoming message.")
+    out.append("enum class PipeRole : std::uint8_t { Modifier = 0, Generator = 1 };")
+    out.append("")
     out.append("struct PipeSpec {")
     out.append("  std::uint8_t id;")
     out.append("  const char* key;")
     out.append("  const char* name;")
     out.append("  const char* shortName;")
     out.append("  const char* category;")
+    out.append("  PipeRole role;")
     out.append("  bool clocked;")
     out.append("  const char* docs;")
     out.append("  const ParamSpec* params;")
@@ -304,9 +326,10 @@ def render_header(schema: dict) -> str:
         out.append("")
     out.append("inline constexpr PipeSpec kPipes[] = {")
     for pipe in pipes:
+        role = "PipeRole::Generator" if pipe["role"] == "generator" else "PipeRole::Modifier"
         out.append(
             f"    {{{pipe['id']}, {c_string(pipe['key'])}, {c_string(pipe['name'])}, "
-            f"{c_string(pipe['short'])}, {c_string(pipe['category'])}, "
+            f"{c_string(pipe['short'])}, {c_string(pipe['category'])}, {role}, "
             f"{'true' if pipe['category'] == 'clocked' else 'false'}, "
             f"{c_string(pipe['docs'])}, kParams{c_ident(pipe['key'])}, "
             f"{len(pipe['params'])}}},")
@@ -314,6 +337,19 @@ def render_header(schema: dict) -> str:
     out.append("")
     out.append(f"inline constexpr std::size_t kPipeCount = {len(pipes)};")
     out.append(f"inline constexpr std::size_t kMaxParamsPerPipe = {max_params};")
+    out.append("")
+    out.append("// Route legality helper: true when the pipe emits from the tick grid and")
+    out.append("// may be the head of a generator route (src = kSrcGenerator).")
+    out.append("constexpr bool pipeIsGenerator(std::uint8_t id) {")
+    out.append("  for (const PipeSpec& pipe : kPipes)")
+    out.append("    if (pipe.id == id) return pipe.role == PipeRole::Generator;")
+    out.append("  return false;")
+    out.append("}")
+    out.append("")
+    out.append("// Route legality helper for the documented role names (schema/docs only).")
+    out.append("constexpr const char* pipeRoleName(PipeRole role) {")
+    out.append("  return role == PipeRole::Generator ? \"generator\" : \"modifier\";")
+    out.append("}")
     out.append("")
     out.append("constexpr const PipeSpec* pipeSpecById(std::uint8_t id) {")
     out.append("  for (const PipeSpec& pipe : kPipes)")
@@ -385,6 +421,12 @@ def render_schema_tests(schema: dict) -> str:
     out.append("    check(pipe.shortName != nullptr && pipe.shortName[0] != 0,")
     out.append("          \"pipe short name is set\");")
     out.append("    check(pipe.clocked == (pipe.id >= 12), \"clocked flag matches the id range\");")
+    out.append("    check(pipe.role == PipeRole::Modifier || pipe.role == PipeRole::Generator,")
+    out.append("          \"pipe role is generator or modifier\");")
+    out.append("    check(pipe.role != PipeRole::Generator || pipe.clocked,")
+    out.append("          \"a generator pipe is clocked\");")
+    out.append("    check(pipeIsGenerator(pipe.id) == (pipe.role == PipeRole::Generator),")
+    out.append("          \"pipeIsGenerator agrees with the row role\");")
     out.append("    check(pipe.paramCount == 0 ? pipe.params == nullptr : pipe.params != nullptr,")
     out.append("          \"param table matches paramCount\");")
     out.append("    check(uniqueKeys(pipe.params, pipe.paramCount), \"param keys are unique\");")
@@ -459,12 +501,16 @@ def render_docs(schema: dict) -> str:
     out.append("| `{}` | {} | {} | {} |".format(scope["key"], scope["min"],
                                                  scope["max"], scope["default"]))
     out.append("")
-    out.append("| Id | Key | Name | Short | Category | Params |")
-    out.append("|---|---|---|---|---|---|")
+    out.append("## Pipe roles\n")
+    for name in ("generator", "modifier"):
+        out.append(f"- **{name}** — {schema['roles'][name]}")
+    out.append("")
+    out.append("| Id | Key | Name | Short | Category | Role | Params |")
+    out.append("|---|---|---|---|---|---|---|")
     for pipe in schema["pipes"]:
         out.append(
             f"| {pipe['id']} | `{pipe['key']}` | {pipe['name']} | {pipe['short']} | "
-            f"{pipe['category']} | {len(pipe['params'])} |")
+            f"{pipe['category']} | {pipe['role']} | {len(pipe['params'])} |")
     out.append("")
     for pipe in schema["pipes"]:
         out.append(f"## {pipe['id']} - {pipe['name']} (`{pipe['key']}`, {pipe['short']})")

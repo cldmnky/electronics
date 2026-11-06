@@ -1,8 +1,9 @@
 // mnkybox Pico firmware (RP2350 / Pico 2): MIDI UARTs, panel controls, SPI link to Pi.
 //
-// Owns, in real time: both MIDI UARTs (31250 baud), debounced panel inputs,
-// quadrature tempo encoder, three LEDs, the local MIDI-clock scheduler, the
-// external-clock follower, and the SPI-slave side of the 32-byte framed link
+// Owns, in real time: both MIDI UARTs (31250 baud), debounced panel inputs, the
+// detentless value-knob quadrature decoder, three LEDs, the local MIDI-clock
+// scheduler, the external-clock follower, and the SPI-slave side of the
+// 32-byte framed link
 // (protocol.hpp / midi.hpp / clock_follow.hpp). The Pico is the single clock
 // master: every tick also queues a timestamped tick frame so the Pi can
 // discipline its USB clock and map Pico timestamps into its own timeline. The
@@ -30,10 +31,12 @@
 
 #include "clock_follow.hpp"
 #include "clock_output.hpp"
+#include "encoder_input.hpp"
 #include "midi.hpp"
 #include "panel_input.hpp"
 #include "pipe_event.hpp"
 #include "pins.h"
+#include "route_chain.hpp"
 
 namespace {
 // The shared MIDI FX core (midibrain/midifx/core) is the only pipe
@@ -58,8 +61,6 @@ constexpr uint32_t kTxDepth = 16;     // outbound SPI frames
 constexpr uint32_t kRxDepth = 128;    // stamped UART bytes per port
 constexpr int32_t kTempoDefault = 12000;  // bpm * 100
 constexpr int32_t kTempoMin = 2000, kTempoMax = 30000;
-constexpr int32_t kTempoStep = 100, kTempoFineStep = 10;
-constexpr int kQuartersPerDetent = 4;
 // EV_TEMPO announcements while following use a 0.1 bpm deadband so residual
 // jitter on the interval estimate does not flood the link; the generator
 // itself always runs at the unquantized estimate.
@@ -168,12 +169,13 @@ mb::ClockGates clock_gates;
 // transport bytes are emitted directly. The alarm pushes, the main loop pops.
 mb::ClockDelayLine clock_delay[2];
 volatile uint32_t clock_delay_drops = 0;
-// Wave-1/2 MIDI FX chains for the four physical TRS routes, indexed [src][dst]
-// (0 = IN1/OUT1, 1 = IN2/OUT2). Configured by EV_MIDI_ROUTE* and evaluated for
-// EV_MIDI_ROUTE_SEND; plain EV_MIDI_SEND stays the unprocessed immediate path.
-// The clocked Wave-2 pipes (arp, repeater, LFO) are stepped from clock_ticks in
-// drain_route_engines(), so the Pico tick alarm is their only clock.
-PipeChain route_pipes[2][2];
+// Every physical TRS route plus the generator and output-insert pseudo-source
+// route kinds (see route_chain.hpp). Configured by EV_MIDI_ROUTE* and
+// evaluated for EV_MIDI_ROUTE_SEND; plain EV_MIDI_SEND stays the unprocessed
+// immediate path. The clocked pipes (arp, repeater, LFO) and the generator
+// chains are stepped from clock_ticks in drain_route_engines(), so the Pico
+// tick alarm is their only clock.
+mb::RouteChains route_chains;
 // External clock follow (RAM only). Default: internal generator, no transport
 // follow; the Pi re-sends its last-known config after HELLO. The generator
 // always runs from clock_interval_us; follow only retunes that period.
@@ -304,15 +306,9 @@ void emit_pipe_output(uint8_t dst, const PipeOutput& out) {
 void drain_route_engines() {
   const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
   const uint32_t ticks = clock_ticks;
-  for (uint8_t src = 0; src < 2; ++src) {
-    for (uint8_t dst = 0; dst < 2; ++dst) {
-      PipeChain& chain = route_pipes[src][dst];
-      const PipeOutput timed = chain.tick(now_ms);
-      if (timed.count != 0) emit_pipe_output(dst, timed);
-      const PipeOutput clocked = chain.clockTick(ticks, now_ms);
-      if (clocked.count != 0) emit_pipe_output(dst, clocked);
-    }
-  }
+  route_chains.service(ticks, now_ms, [](uint8_t dst, const PipeOutput& out) {
+    emit_pipe_output(dst, out);
+  });
 }
 
 // Main-loop half of the clock delay line. The alarm callback pushes; each pop
@@ -567,7 +563,7 @@ void handle_frame(const mb::Frame& f) {
         ++bad_frames;
         break;
       }
-      route_pipes[src][dst].begin((flags & mb::ROUTE_FLAG_ON) != 0);
+      route_chains.begin(src, dst, (flags & mb::ROUTE_FLAG_ON) != 0);
       printf("[link] MIDI_ROUTE in%u -> out%u %s\n", static_cast<unsigned>(src),
              static_cast<unsigned>(dst), (flags & mb::ROUTE_FLAG_ON) ? "on" : "off");
       break;
@@ -588,8 +584,8 @@ void handle_frame(const mb::Frame& f) {
       }
       std::int32_t params[mb::route_pipe_param_frame_max_legacy]{};
       for (std::size_t i = 0; i < count; ++i) params[i] = raw[i];
-      if (!route_pipes[src][dst].setPipeChunk(index, type, bypass, offset, params, count,
-                                              ch_mask)) {
+      if (!route_chains.setPipeChunk(src, dst, index, type, bypass, offset, params,
+                                     count, ch_mask)) {
         ++bad_frames;
         break;
       }
@@ -611,8 +607,8 @@ void handle_frame(const mb::Frame& f) {
       mb::MidiMessage m{};
       m.size = size;
       for (std::uint8_t i = 0; i < size; ++i) m.data[i] = data[i];
-      const PipeOutput out = route_pipes[src][dst].process(
-          mb::pipeEvent(m), to_ms_since_boot(get_absolute_time()));
+      const PipeOutput out = route_chains.processRoute(
+          src, dst, mb::pipeEvent(m), to_ms_since_boot(get_absolute_time()));
       emit_pipe_output(dst, out);
       break;
     }
@@ -716,10 +712,11 @@ Button buttons[] = {
     {MB_PIN_SHIFT_EXIT, mb::PanelControl(mb::CTL_SHIFT_EXIT)},
 };
 
-// Quadrature edges per poll; 4 edges make one detent (adjust if the fitted
-// encoder reports otherwise).
-int8_t quad_table[16] = {0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0};
-int quad_prev = 0, quad_acc = 0;
+// The front knob is the context-aware value knob (Bourns PEC11R-4015F-S0024:
+// detentless, 24 pulses/rev). It only reports CTL_ENCODER_TURN deltas; the Pi
+// owns the mapping to the focused control and sends EV_SET_TEMPO back when
+// that control is tempo.
+mb::ValueEncoder value_encoder;
 
 void scan_controls(uint32_t now_ms) {
   for (auto& b : buttons) {
@@ -728,7 +725,7 @@ void scan_controls(uint32_t now_ms) {
     const uint8_t id = b.control.id();
     const bool pressed = b.control.pressed();
     if (id == mb::CTL_SHIFT_EXIT) {
-      // SHIFT/EXIT state feeds the encoder's fine-tempo step; the event
+      // SHIFT/EXIT held is the knob's fine mode (no acceleration); the event
       // stream carries press/release plus the single long-hold (2) that
       // enters shift mode live. Short-press exit and mode policy live on
       // the Pi (see docs/protocol.md).
@@ -762,15 +759,12 @@ void scan_controls(uint32_t now_ms) {
       }
     }
   }
-  const int quad = (gpio_get(MB_PIN_ENCODER_A) ? 2 : 0) | (gpio_get(MB_PIN_ENCODER_B) ? 1 : 0);
-  quad_acc += quad_table[(quad_prev << 2) | quad];
-  quad_prev = quad;
-  const int detents = quad_acc / kQuartersPerDetent;
-  if (detents != 0) {
-    quad_acc -= detents * kQuartersPerDetent;
-    set_tempo(bpm_x100 + detents * (shift_held ? kTempoFineStep : kTempoStep), true);
-    queue_control(mb::CTL_ENCODER_TURN, static_cast<uint8_t>(detents));
-  }
+  // Encoder turns only leave the Pico as CTL_ENCODER_TURN: an accelerated
+  // int8 delta, unaccelerated while SHIFT/EXIT is held (the Pi's fine step).
+  // Stepping the local tempo here as well would move tempo in every context.
+  const mb::ValueEncoder::Result turn = value_encoder.update(
+      gpio_get(MB_PIN_ENCODER_A), gpio_get(MB_PIN_ENCODER_B), shift_held, time_us_32());
+  if (turn.turned) queue_control(mb::CTL_ENCODER_TURN, static_cast<uint8_t>(turn.delta));
 }
 
 void drain_midi() {
@@ -834,12 +828,7 @@ int main() {
   // Seed the FX RNGs from the session/time so Chance and VelocityRandom do not
   // repeat the same sequence after every boot. The route config stays off until
   // the Pi sends EV_MIDI_ROUTE.
-  for (uint8_t src = 0; src < 2; ++src) {
-    for (uint8_t dst = 0; dst < 2; ++dst) {
-      const uint32_t route = static_cast<uint32_t>(src * 2 + dst + 1);
-      route_pipes[src][dst].setSeed(pico_session ^ (route * 0x9e3779b9u) ^ time_us_32());
-    }
-  }
+  route_chains.setSeeds(pico_session, time_us_32());
 
   // Panel inputs: active-low with pull-ups. Encoder/nav/transport alike.
   for (const auto& b : buttons) {
@@ -852,7 +841,7 @@ int main() {
     gpio_set_dir(gpio, GPIO_IN);
     gpio_pull_up(gpio);
   }
-  quad_prev = (gpio_get(MB_PIN_ENCODER_A) ? 2 : 0) | (gpio_get(MB_PIN_ENCODER_B) ? 1 : 0);
+  value_encoder.reset(gpio_get(MB_PIN_ENCODER_A), gpio_get(MB_PIN_ENCODER_B));
 
   // LEDs: high-side drive through 330R, low = off.
   for (uint gpio : {MB_PIN_PLAY_LED, MB_PIN_REC_LED, MB_PIN_OVERDUB_LED}) {

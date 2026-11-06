@@ -93,13 +93,62 @@ Pi → Pico:
 | `0x15` MIDI_SEND | port, size, bytes | Immediate UART emit (no scheduled timeline yet) |
 | `0x16` MODE | 0 local, 1 manual | Panel-transport authority; resets to local on boot/HELLO |
 | `0x17` CLOCK_SOURCE | source, follow mask | External clock follow. source 0 = internal, 1 = TRS IN1, 2 = TRS IN2 (3+ rejected); mask bit 0 = TRS IN1 transport follow, bit 1 = TRS IN2, reserved bits (including USB bit 2, Pi-side only) rejected (length 3). RAM state resets to internal/no-follow at boot, so the Pi re-sends after HELLO. The Pico always sends clock; follow retunes tempo only and coasts at the last estimate on source loss |
-| `0x18` MIDI_ROUTE | src, dst, flags | Starts a fresh pipe chain for one physical TRS route and clears its runtime state (dispatcher rotation, sustain latch, pending note lengths, clocked pipe holds and grids). src/dst 0 = TRS IN1/OUT1, 1 = TRS IN2/OUT2; there are no virtual/USB ports on the Pico, so routes touching USB stay Pi-side. flags bit 0 = route on, reserved bits must be zero (length 4). RAM only; the Pi re-sends after HELLO. |
-| `0x19` MIDI_ROUTE_PIPE | src, dst, index, type, bypass, paramOffset, paramCount, params[paramCount] int16 LE, chMask LE16 | Sets/replaces one pipe in that route's chain. index 0..7 (send pipes in order: index <= the current pipe count; index == count appends, index < count replaces), type 1..16 (both waves are evaluated on this firmware; Wave-2 ids 12..16 are clocked, see below), bypass 0/1, paramOffset+paramCount <= 10, paramCount <= 4 (length 10 + 2×paramCount: header, params, then the 2-byte per-pipe channel scope; send more parameter chunks with a larger offset). chMask bit n admits 0-based channel n to that pipe, every other message passes the pipe unchanged; 0xFFFF (all) is the default and 0 makes the pipe inert. The mask takes effect on the offset-0 chunk, a continuation chunk keeps the established scope. A legacy frame without the trailing mask (length 8 + 2×paramCount, up to 5 params) is still decoded and means chMask = 0xFFFF, so new firmware accepts old frames. Positional parameter order is the `MidiPipeType` contract in `pi/session/session.hpp` and the frozen `0x19` order in `midibrain/midifx/wire-order.txt`; missing parameters use the generated schema defaults in `midibrain/midifx/gen/generated/midifx_params.hpp` (`midibrain/midifx/pipes.json` is the single source, `midibrain/midifx/gen/generated/pipes-docs.md` the docs table). Pipe chains are evaluated in index order for the bytes routed through `0x1A`. |
-| `0x1A` MIDI_ROUTE_SEND | src, dst, size, bytes | Emits one routed message through the configured `(src,dst)` pipe chain on the physical TRS output. src/dst 0..1, size 1..3 (length 4 + size). A route that is not enabled drops the message; plain `0x15` remains the unprocessed immediate path. |
+| `0x18` MIDI_ROUTE | src, dst, flags | Starts a fresh pipe chain for one physical TRS route, generator route or output insert and clears its runtime state (dispatcher rotation, sustain latch, pending note lengths, clocked pipe holds and grids). dst 0 = TRS OUT1, 1 = TRS OUT2. src is the route-source byte (below): 0/1 = TRS IN1/IN2, `0xFF` = generator (`kSrcGenerator`, -1), `0xFE`..`0xFB` = output insert slot 0..3 (`kSrcOutputInsert`, -2). Pseudo-source frames are new; a pre-pseudo frame only carries src 0/1 and keeps exactly that meaning. flags bit 0 = route on, reserved bits must be zero (length 4). RAM only; the Pi re-sends after HELLO. |
+| `0x19` MIDI_ROUTE_PIPE | src, dst, index, type, bypass, paramOffset, paramCount, params[paramCount] int16 LE, chMask LE16 | Sets/replaces one pipe in that route's chain. src uses the same route-source byte as `0x18`, so pipe chunks address a TRS route, a generator chain or one output-insert slot. A generator chain's head (index 0, offset 0) must have the schema role `generator`; a modifier head is refused as a bad frame and leaves the chain untouched. index 0..7 (send pipes in order: index <= the current pipe count; index == count appends, index < count replaces), type 1..16 (both waves are evaluated on this firmware; Wave-2 ids 12..16 are clocked, see below), bypass 0/1, paramOffset+paramCount <= 10, paramCount <= 4 (length 10 + 2×paramCount: header, params, then the 2-byte per-pipe channel scope; send more parameter chunks with a larger offset). chMask bit n admits 0-based channel n to that pipe, every other message passes the pipe unchanged; 0xFFFF (all) is the default and 0 makes the pipe inert. The mask takes effect on the offset-0 chunk, a continuation chunk keeps the established scope. A legacy frame without the trailing mask (length 8 + 2×paramCount, up to 5 params) is still decoded and means chMask = 0xFFFF, so new firmware accepts old frames. Positional parameter order is the `MidiPipeType` contract in `pi/session/session.hpp` and the frozen `0x19` order in `midibrain/midifx/wire-order.txt`; missing parameters use the generated schema defaults in `midibrain/midifx/gen/generated/midifx_params.hpp` (`midibrain/midifx/pipes.json` is the single source, `midibrain/midifx/gen/generated/pipes-docs.md` the docs table). Pipe chains are evaluated in index order for the bytes routed through `0x1A`. |
+| `0x1A` MIDI_ROUTE_SEND | src, dst, size, bytes | Emits one routed message through the configured `(src,dst)` pipe chain and then every enabled output insert for dst, in slot order. src/dst 0..1, size 1..3 (length 4 + size); there is no pseudo-source send: generator output is produced on the Pico's tick grid and insert output on its own deadline. A route that is not enabled drops the message; plain `0x15` remains the unprocessed immediate path and does not pass the output inserts. |
 | `0x1B` CLOCK_ROUTE_EXT | port, tempoDiv, syncDelayMs LE16 | Per-output clock divider/delay. port 0 = OUT1 (uart0), 1 = OUT2 (uart1); tempoDiv 1/2/4 (invalid values clamp to 1) drops ticks so `tickIndex % tempoDiv != 0` is not emitted (24 → 12 → 6 PPQN), and syncDelayMs 0..500 (larger values clamp to 500) delays only 0xF8 clock bytes through a per-output delay line. Transport bytes FA/FB/FC bypass the delay line and keep their order among themselves, so a delayed clock byte may arrive after a transport byte: transport timing stays authoritative while the clock phase is shifted. A config change clears queued delayed ticks. RAM state, re-sent after HELLO. |
 | `0x20` STATUS_REQ | none | Liveness/status probe; the Pico answers with `0x21` (length 1) |
 | `0x22` REBOOT | mode: 0 normal firmware reboot, 1 USB boot | 0 restarts the application from flash via the watchdog; 1 enters BOOTSEL for the firmware-update flow (length 2). No ACK: mode 0 shows up as a session change, mode 1 as link silence. |
 | `0x23` RESET_LINK | none | Mint a fresh Pico session and re-announce state/tempo without rebooting; the Pi re-handshakes (length 1) |
+
+### Generator and output-insert routes (pseudo-sources)
+
+Beyond an input port -> output port pair, a route's `src` may be one of two
+pseudo-sources. They share the route/pipe wire frames (`0x18`/`0x19`) and the
+same per-pipe `chMask`; only the evaluation differs.
+
+| Source byte | Session value | Meaning |
+|---|---|---|
+| `0x00` / `0x01` | `0..1` | Physical TRS input -> TRS output (existing behaviour) |
+| `0xFF` | `kSrcGenerator` (-1) | Generator route: the chain emits, it consumes no input |
+| `0xFE` / `0xFD` / `0xFC` / `0xFB` | `kSrcOutputInsert` (-2) | Output insert slot 0 / 1 / 2 / 3 on `dst` |
+
+**Generator routes.** A generator chain's HEAD must be a pipe whose schema role
+is `generator`; `midibrain/midifx/pipes.json` carries `role` per pipe and the codegen
+emits the derived legality table. Only `ccLfo` (14) is a true generator: it
+emits its own CC values on the clock grid and never needs an input. Arp,
+Repeater, Harmonizer and MidiDelay are modifiers even though they are clocked:
+they need held notes or arriving events, so they cannot head a generator route.
+The remaining stateless pipes are modifiers by definition. A modifier after the
+generator head shapes the generated stream (for example an LFO followed by
+ChannelRemap, Filter or Transform).
+
+The generator is fed by the same tick context as the clocked pipes: the Pico
+tick alarm for TRS destinations, the disciplined USB-clock phase for a USB
+destination (the Pi calls `Router::clockTick`). It never consumes an input; the
+route has no source message to drop.
+
+**Output inserts.** The output insert is the last stage before the wire: every
+message routed to `dst` runs its source route chain, then insert slot 0, then
+slot 1, ... in route order, and only then reaches the output. Multiple inserts
+on one destination compose in that order; a generator route's output and a
+time-generated insert event (MidiDelay echo) follow the same order. An insert
+belongs to the output, not to one source, so it is state shared by all senders.
+Timing pipes (`MidiDelay`) and conversions (`Transform`) belong here: a
+`MidiDelay` insert shifts the routed note/CC stream while the dry event still
+passes, which is how a sync-channel timing offset is applied to everything sent
+to that output. Realtime clock bytes (`0xF8`/`0xFA`/`0xFB`/`0xFC`) are produced
+by the Pico clock scheduler, not by routed messages; shifting those relative to
+the routed stream remains the per-output `0x1B` `syncDelayMs` job, and
+`MidiDelay` deliberately echoes only note/CC events. This split is documented in
+`midifx/NOTES.md`.
+
+**Ownership.** The split is the existing `piOwnsPipeChain` rule extended by
+destination: a pseudo-source whose destination is `UsbOut` or a dynamic USB
+endpoint is Pi-side; one whose destination is a TRS output is Pico-side. The
+same chain therefore runs on exactly one engine. A Pi-side generator is driven
+by `Router::clockTick(tickIndex, nowMs, deliver)`; the Pico uses `clock_ticks`
+in `drain_route_engines()`.
 
 ### Wave-2 clocked pipes (`0x19` types 12..16)
 

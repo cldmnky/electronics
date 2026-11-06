@@ -346,8 +346,8 @@ void routingPipes() {
   CHECK(log[0].dst == Port::TrsOut2 && log[0].ev.data[1] == 62);
   CHECK(log[1].dst == Port::UsbOut && log[1].ev.data[1] == 61);
 
-  // Wave-2 chains configure (Wire/session tolerance) but refuse evaluation;
-  // the app log seam reports the pipe index and a static reason.
+  // Wave-2 chains now evaluate on the shared core: the Arp consumes the
+  // note-on and the clock grid emits it on the next division.
   Router wave2;
   const PipeConfig arp = fxPipe(PipeType::Arp, {});
   CHECK(wave2.setPipes(Port::UsbIn, Port::TrsOut1, &arp, 1));
@@ -355,9 +355,13 @@ void routingPipes() {
   log.clear();
   wave2.route(message(Port::UsbIn, 0, 0x90, 60, 100), capture);
   CHECK(log.empty());
-  CHECK(wave2.pipeDiagnostics().rejected == 1);
-  CHECK(wave2.pipeDiagnostics().lastRejectReason != nullptr);
-  CHECK(wave2.pipeDiagnostics().lastRejectPipe == 0);
+  CHECK(wave2.pipeDiagnostics().evaluations == 1);
+  CHECK(wave2.pipeDiagnostics().rejected == 0);
+  wave2.clockTick(0, 1000, capture);
+  CHECK(log.empty());
+  wave2.clockTick(24, 1000, capture);  // default 1/4 grid
+  CHECK(log.size() == 1);
+  CHECK(log[0].dst == Port::TrsOut1 && log[0].ev.data[0] == 0x90);
 
   // NoteLength on a Pi-owned route: the note-off is due on the time line and
   // Router::tick emits it, not the next incoming message.
@@ -384,6 +388,101 @@ void routingPipes() {
   CHECK(!length.setPipes(Port::UsbIn, Port::TrsOut2, nullptr, 9));
   CHECK(length.pipeCount(Port::UsbIn, Port::TrsOut2) == 1);
   pass("routing pipes");
+}
+
+// ---------------------------------------------------------------------------
+// generator routes (src = -1) and output inserts (src = -2)
+// ---------------------------------------------------------------------------
+void generatorAndInsertRoutes() {
+  std::vector<Delivery> log;
+  const DeliverFn capture = [&log](Port dst, const MidiEvent& ev) { log.push_back({dst, ev}); };
+  using mnky::midi::kSrcGenerator;
+  using mnky::midi::kSrcOutputInsert;
+
+  // Pi ownership extends by destination: USB destinations belong to the Pi,
+  // TRS outputs to the Pico (the same chain must not run twice).
+  CHECK(piOwnsPipeChain(kSrcGenerator, Port::UsbOut));
+  CHECK(piOwnsPipeChain(kSrcGenerator, Port::TrsOut1) == false);
+  CHECK(piOwnsPipeChain(kSrcOutputInsert, Port::UsbOut));
+  CHECK(piOwnsPipeChain(kSrcOutputInsert, Port::TrsOut1) == false);
+  const Port dynamicOut =
+      static_cast<Port>(mnky::midi::kFirstDynamicPort + 1);
+  CHECK(piOwnsPipeChain(kSrcGenerator, dynamicOut));
+  CHECK(piOwnsPipeChain(kSrcOutputInsert, dynamicOut));
+
+  // Generator route: the LFO head emits CC on the target with no input event.
+  Router generator;
+  const PipeConfig lfo = fxPipe(PipeType::CcLfo, {1, 0, 2, 64, 64});
+  CHECK(generator.setGenerator(Port::UsbOut, true));
+  CHECK(generator.setGeneratorPipes(Port::UsbOut, &lfo, 1));
+  CHECK(generator.generatorEnabled(Port::UsbOut));
+  CHECK(generator.generatorPipeCount(Port::UsbOut) == 1);
+  CHECK(!generator.setGenerator(Port::TrsOut1, true));
+  CHECK(!generator.setGeneratorPipes(Port::TrsOut1, &lfo, 1));
+  // A modifier cannot head a generator route.
+  const PipeConfig modifier = fxPipe(PipeType::NoteRange, {});
+  CHECK(!generator.setGeneratorPipes(Port::UsbOut, &modifier, 1));
+  CHECK(generator.generatorPipeCount(Port::UsbOut) == 1);
+  generator.clockTick(0, 1000, capture);
+  CHECK(log.empty());
+  generator.clockTick(6, 1000, capture);
+  CHECK(log.size() == 1);
+  CHECK(log[0].dst == Port::UsbOut);
+  CHECK(log[0].ev.data[0] == 0xB0 && log[0].ev.data[1] == 1);
+  log.clear();
+
+  // Output inserts: every message routed to the destination passes slot 0,
+  // then slot 1, in route order before delivery. CC1 -> PC5 -> CC7 proves the
+  // order (the reverse would leave a program change).
+  Router inserts;
+  const PipeConfig ccToPc = fxPipe(PipeType::Transform, {1, 0, 127, 2, 5});
+  const PipeConfig pcToCc = fxPipe(PipeType::Transform, {2, 0, 127, 1, 7});
+  CHECK(inserts.setOutputInsert(Port::UsbOut, 0, true));
+  CHECK(inserts.setOutputInsert(Port::UsbOut, 1, true));
+  CHECK(inserts.setOutputInsertPipes(Port::UsbOut, 0, &ccToPc, 1));
+  CHECK(inserts.setOutputInsertPipes(Port::UsbOut, 1, &pcToCc, 1));
+  CHECK(inserts.outputInsertEnabled(Port::UsbOut, 1));
+  CHECK(inserts.outputInsertPipeCount(Port::UsbOut, 1) == 1);
+  CHECK(!inserts.setOutputInsert(Port::TrsOut1, 0, true));
+  CHECK(inserts.setRoute(Port::UsbIn, Port::UsbOut, true));
+  inserts.route(message(Port::UsbIn, 0, 0xB0, 1, 99), capture);
+  CHECK(log.size() == 1);
+  CHECK(log[0].dst == Port::UsbOut);
+  CHECK(log[0].ev.data[0] == 0xB0 && log[0].ev.data[1] == 7);
+  log.clear();
+  inserts.route(message(Port::UsbIn, 0, 0x90, 60, 100), capture);
+  CHECK(log.size() == 1 && log[0].ev.data[0] == 0x90 && log[0].ev.data[1] == 60);
+  log.clear();
+
+  // Generator output passes the same inserts before delivery.
+  Router generatorInserts;
+  CHECK(generatorInserts.setGenerator(Port::UsbOut, true));
+  CHECK(generatorInserts.setGeneratorPipes(Port::UsbOut, &lfo, 1));
+  CHECK(generatorInserts.setOutputInsert(Port::UsbOut, 0, true));
+  CHECK(generatorInserts.setOutputInsertPipes(Port::UsbOut, 0, &ccToPc, 1));
+  generatorInserts.clockTick(0, 1000, capture);
+  generatorInserts.clockTick(6, 1000, capture);
+  CHECK(log.size() == 1 && log[0].ev.data[0] == 0xC0 &&
+        log[0].ev.data[1] == 5);
+  log.clear();
+
+  // A timing insert (MidiDelay) shifts the routed stream: the dry note and CC
+  // pass, and both echoes arrive together on the insert's timeline.
+  Router timing;
+  const PipeConfig delay = fxPipe(PipeType::MidiDelay, {10, 1, 0});
+  CHECK(timing.setOutputInsert(Port::UsbOut, 0, true));
+  CHECK(timing.setOutputInsertPipes(Port::UsbOut, 0, &delay, 1));
+  CHECK(timing.setRoute(Port::UsbIn, Port::UsbOut, true));
+  timing.route(message(Port::UsbIn, 0, 0x90, 60, 100, 1000000), capture);
+  timing.route(message(Port::UsbIn, 0, 0xB0, 1, 50, 1000000), capture);
+  CHECK(log.size() == 2);  // dry events
+  log.clear();
+  timing.tick(1009, capture);
+  CHECK(log.empty());
+  timing.tick(1010, capture);
+  CHECK(log.size() == 2);  // both echoes, same due time
+  CHECK(log[0].ev.data[0] == 0x90 && log[1].ev.data[0] == 0xB0);
+  pass("generator and output-insert routes");
 }
 
 // ---------------------------------------------------------------------------
@@ -902,6 +1001,7 @@ int main() {
   channelFilter();
   transpose();
   routingPipes();
+  generatorAndInsertRoutes();
   clockTempoAndTransport();
   clockOffsetUnderJitter();
   clockPhaseScheduling();

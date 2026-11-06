@@ -40,6 +40,12 @@ inline int runSchemaTests() {
     check(pipe.shortName != nullptr && pipe.shortName[0] != 0,
           "pipe short name is set");
     check(pipe.clocked == (pipe.id >= 12), "clocked flag matches the id range");
+    check(pipe.role == PipeRole::Modifier || pipe.role == PipeRole::Generator,
+          "pipe role is generator or modifier");
+    check(pipe.role != PipeRole::Generator || pipe.clocked,
+          "a generator pipe is clocked");
+    check(pipeIsGenerator(pipe.id) == (pipe.role == PipeRole::Generator),
+          "pipeIsGenerator agrees with the row role");
     check(pipe.paramCount == 0 ? pipe.params == nullptr : pipe.params != nullptr,
           "param table matches paramCount");
     check(uniqueKeys(pipe.params, pipe.paramCount), "param keys are unique");

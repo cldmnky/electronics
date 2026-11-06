@@ -31,12 +31,17 @@ struct ParamSpec {
   std::uint8_t index;           // == 0x19 positional offset
 };
 
+// Route legality, not wire data: a generator emits without an input and
+// may head a generator route; a modifier needs an incoming message.
+enum class PipeRole : std::uint8_t { Modifier = 0, Generator = 1 };
+
 struct PipeSpec {
   std::uint8_t id;
   const char* key;
   const char* name;
   const char* shortName;
   const char* category;
+  PipeRole role;
   bool clocked;
   const char* docs;
   const ParamSpec* params;
@@ -170,26 +175,39 @@ inline constexpr ParamSpec kParamsMidiDelay[] = {
 };
 
 inline constexpr PipeSpec kPipes[] = {
-    {1, "filter", "Filter", "FILT", "stateless", false, "Per-message-kind pass gate; system/common messages have no mask bit and always pass.", kParamsFilter, 8},
-    {2, "noteRange", "Note Range", "NOTE", "stateless", false, "Inclusive note window plus a note-on velocity window; reversed bounds swap.", kParamsNoteRange, 4},
-    {3, "ccRemap", "CC Remap", "CC", "stateless", false, "Linear CC-number remap: controllers in [inLo,inHi] rescale onto [outLo,outHi], rounded half away from zero.", kParamsCcRemap, 4},
-    {4, "channelRemap", "Channel Remap", "CH", "stateless", false, "Channel rewriter: channel-voice messages on inCh (0 = any) move to outCh (1..16).", kParamsChannelRemap, 2},
-    {5, "scaleQuantize", "Scale", "SCAL", "stateless", false, "Snap note events to a scale: 1..5 transpose the fixed scales by root, 6 is the absolute user mask (root ignored), 0 is off.", kParamsScaleQuantize, 3},
-    {6, "chance", "Chance", "CHAN", "stateless", false, "Drops a note-on with `percent` probability; note-offs and other kinds always pass (0 disables, 100 drops every note-on).", kParamsChance, 1},
-    {7, "velocityRandom", "Velocity", "VEL", "stateless", false, "Humanize: each note-on velocity gains a uniform random delta in [-amount,+amount], clamped to [minVel,127].", kParamsVelocityRandom, 2},
-    {8, "dispatcher", "Dispatch", "DISP", "stateless", false, "Round-robin spread: successive note-ons rotate across numCh channels starting at startCh; the matching note-off follows its assignment.", kParamsDispatcher, 2},
-    {9, "sustain", "Sustain", "SUS", "stateless", false, "CC64 latch: while the pedal is down, note-offs are held and released ahead of the pedal-up message.", kParamsSustain, 1},
-    {10, "noteLength", "Note Length", "LEN", "stateless", false, "Fixed note length: the note-on passes and a matching note-off is scheduled lengthMs later (capped at 60000 ms; 0 is off).", kParamsNoteLength, 1},
-    {11, "transform", "Transform", "XF", "stateless", false, "Message conversion: a match of matchKind with the value in [matchLo,matchHi] converts to outKind/outVal; non-matches pass unchanged.", kParamsTransform, 5},
-    {12, "arp", "Arp", "ARP", "clocked", true, "Arpeggiator: held note-ons are consumed and the pattern is generated on the division grid (up, down, updown, random, chord).", kParamsArp, 6},
-    {13, "repeater", "Repeat", "REP", "clocked", true, "Ratchet: every division step retriggers the whole held set, with the falloff envelope restarting every `repeats` steps.", kParamsRepeater, 3},
-    {14, "ccLfo", "CC LFO", "LFO", "clocked", true, "Emits its own CC values on the division grid (channel 1); depth 0 holds the centre and the routed bytes pass untouched.", kParamsCcLfo, 5},
-    {15, "harmonizer", "Harmony", "HARM", "clocked", true, "Harmonizer: the input note passes and each distinct voice offset is added as an extra note-on, refcounted so offs follow their ons.", kParamsHarmonizer, 5},
-    {16, "midiDelay", "MIDI Delay", "DLY", "clocked", true, "Echoes note-on/note-off/CC events `repeats` times, delayMs apart and attenuated by falloff; delayMs 0 is off.", kParamsMidiDelay, 3},
+    {1, "filter", "Filter", "FILT", "stateless", PipeRole::Modifier, false, "Per-message-kind pass gate; system/common messages have no mask bit and always pass. Modifier: it gates messages that already exist; with no input it can produce nothing.", kParamsFilter, 8},
+    {2, "noteRange", "Note Range", "NOTE", "stateless", PipeRole::Modifier, false, "Inclusive note window plus a note-on velocity window; reversed bounds swap. Modifier: it windows incoming notes and velocities; it cannot invent notes.", kParamsNoteRange, 4},
+    {3, "ccRemap", "CC Remap", "CC", "stateless", PipeRole::Modifier, false, "Linear CC-number remap: controllers in [inLo,inHi] rescale onto [outLo,outHi], rounded half away from zero. Modifier: it remaps incoming controllers; it cannot invent CC traffic.", kParamsCcRemap, 4},
+    {4, "channelRemap", "Channel Remap", "CH", "stateless", PipeRole::Modifier, false, "Channel rewriter: channel-voice messages on inCh (0 = any) move to outCh (1..16). Modifier: it rewrites the channel of incoming messages; it cannot invent them.", kParamsChannelRemap, 2},
+    {5, "scaleQuantize", "Scale", "SCAL", "stateless", PipeRole::Modifier, false, "Snap note events to a scale: 1..5 transpose the fixed scales by root, 6 is the absolute user mask (root ignored), 0 is off. Modifier: it snaps incoming note events to a scale; it cannot invent notes.", kParamsScaleQuantize, 3},
+    {6, "chance", "Chance", "CHAN", "stateless", PipeRole::Modifier, false, "Drops a note-on with `percent` probability; note-offs and other kinds always pass (0 disables, 100 drops every note-on). Modifier: it drops incoming note-ons by probability; it cannot invent them.", kParamsChance, 1},
+    {7, "velocityRandom", "Velocity", "VEL", "stateless", PipeRole::Modifier, false, "Humanize: each note-on velocity gains a uniform random delta in [-amount,+amount], clamped to [minVel,127]. Modifier: it humanizes incoming note-on velocities; it cannot invent notes.", kParamsVelocityRandom, 2},
+    {8, "dispatcher", "Dispatch", "DISP", "stateless", PipeRole::Modifier, false, "Round-robin spread: successive note-ons rotate across numCh channels starting at startCh; the matching note-off follows its assignment. Modifier: it spreads incoming notes across channels; without input notes it has nothing to spread.", kParamsDispatcher, 2},
+    {9, "sustain", "Sustain", "SUS", "stateless", PipeRole::Modifier, false, "CC64 latch: while the pedal is down, note-offs are held and released ahead of the pedal-up message. Modifier: it holds incoming note-offs while CC64 is down; it needs the input stream.", kParamsSustain, 1},
+    {10, "noteLength", "Note Length", "LEN", "stateless", PipeRole::Modifier, false, "Fixed note length: the note-on passes and a matching note-off is scheduled lengthMs later (capped at 60000 ms; 0 is off). Modifier: it schedules an off for each incoming note-on; it needs the input stream.", kParamsNoteLength, 1},
+    {11, "transform", "Transform", "XF", "stateless", PipeRole::Modifier, false, "Message conversion: a match of matchKind with the value in [matchLo,matchHi] converts to outKind/outVal; non-matches pass unchanged. Modifier: it converts incoming messages; it needs an input message to match.", kParamsTransform, 5},
+    {12, "arp", "Arp", "ARP", "clocked", PipeRole::Modifier, true, "Arpeggiator: held note-ons are consumed and the pattern is generated on the division grid (up, down, updown, random, chord). Modifier: it arpeggiates HELD NOTES from the input stream; with no held notes the grid emits nothing (it is not a generator).", kParamsArp, 6},
+    {13, "repeater", "Repeat", "REP", "clocked", PipeRole::Modifier, true, "Ratchet: every division step retriggers the whole held set, with the falloff envelope restarting every `repeats` steps. Modifier: it retriggers the HELD NOTES from the input stream; with no held notes the grid emits nothing.", kParamsRepeater, 3},
+    {14, "ccLfo", "CC LFO", "LFO", "clocked", PipeRole::Generator, true, "Emits its own CC values on the division grid (channel 1); depth 0 holds the centre and the routed bytes pass untouched. Generator: it emits its own CC values on the division grid without consuming an input, so it is legal at the head of a generator route. A modifier after it shapes the generated stream.", kParamsCcLfo, 5},
+    {15, "harmonizer", "Harmony", "HARM", "clocked", PipeRole::Modifier, true, "Harmonizer: the input note passes and each distinct voice offset is added as an extra note-on, refcounted so offs follow their ons. Modifier: it adds voices to incoming notes; with no input notes there is nothing to harmonize.", kParamsHarmonizer, 5},
+    {16, "midiDelay", "MIDI Delay", "DLY", "clocked", PipeRole::Modifier, true, "Echoes note-on/note-off/CC events `repeats` times, delayMs apart and attenuated by falloff; delayMs 0 is off. Modifier: it echoes incoming events; with no input it has nothing to delay.", kParamsMidiDelay, 3},
 };
 
 inline constexpr std::size_t kPipeCount = 16;
 inline constexpr std::size_t kMaxParamsPerPipe = 8;
+
+// Route legality helper: true when the pipe emits from the tick grid and
+// may be the head of a generator route (src = kSrcGenerator).
+constexpr bool pipeIsGenerator(std::uint8_t id) {
+  for (const PipeSpec& pipe : kPipes)
+    if (pipe.id == id) return pipe.role == PipeRole::Generator;
+  return false;
+}
+
+// Route legality helper for the documented role names (schema/docs only).
+constexpr const char* pipeRoleName(PipeRole role) {
+  return role == PipeRole::Generator ? "generator" : "modifier";
+}
 
 constexpr const PipeSpec* pipeSpecById(std::uint8_t id) {
   for (const PipeSpec& pipe : kPipes)

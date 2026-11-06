@@ -6,6 +6,7 @@
     "name": "TEST RAMP",
     "short": "TST",
     "category": "clocked",
+    "role": "modifier",
     "docs": "Throwaway fixture type (codegen test only): one of every editor format.",
     "params": [
       {
@@ -18,7 +19,11 @@
         "key": "shape",
         "label": "TEST SHAPE",
         "kind": "enum",
-        "choices": ["RAMP", "STEP", "SINE"],
+        "choices": [
+          "RAMP",
+          "STEP",
+          "SINE"
+        ],
         "default": 1
       },
       {

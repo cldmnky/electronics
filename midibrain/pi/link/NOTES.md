@@ -14,15 +14,18 @@ Works (host-tested, `PASS` lines from `test_link.cpp`):
   new session without rebooting).
 - MIDI FX route config: `midiRoute(src,dst,on)` (0x18) and
   `midiRoutePipe(src,dst,index,type,bypass,offset,params,count)` (0x19) for the
-  four physical TRS routes only (src/dst 0 = IN1/OUT1, 1 = IN2/OUT2; USB routes
-  are Pi-side and rejected). The sender mirrors the firmware's
-  `MidiPipeChain::setPipeChunk` shape rules before queueing, so its cache can
-  never describe a chain the Pico refused. Each route's last successfully
-  queued chain is re-sent after HELLO in wire order (0x18 first, then chunked
-  params of at most 4 per frame), covering Pico power cycles and RESET_LINK;
-  a new `midiRoute()` starts a fresh chain and clears the cached pipes, exactly
-  like firmware `begin()`. `EmulatorTransport` records the applied chain for
-  tests (`midiRoute(src,dst)`), and `reboot()` resets it as RAM would.
+  two physical TRS destinations. `src` is the wire route-source byte: 0 = IN1,
+  1 = IN2, `mb::route_src_generator` (0xFF, session `kSrcGenerator`) or
+  `mb::route_src_insert(slot)` (0xFE..0xFB, session `kSrcOutputInsert` slot
+  0..3). USB destinations are Pi-side and rejected. The sender mirrors the
+  firmware's `RouteChains::setPipeChunk` shape rules before queueing (including
+  the generator-head role check), so its cache can never describe a chain the
+  Pico refused. Each route's last successfully queued chain is re-sent after
+  HELLO in wire order (0x18 first, then chunked params of at most 4 per frame),
+  covering Pico power cycles and RESET_LINK; a new `midiRoute()` starts a fresh
+  chain and clears the cached pipes, exactly like firmware `begin()`.
+  `EmulatorTransport` records the applied chain for tests
+  (`midiRoute(src,dst)`), and `reboot()` resets it as RAM would.
   **Channel scope:** 0x19 carries the per-pipe `chMask` (LE16) after the
   positional params, so a TRS chain's scope reaches the firmware and the
   shared pipe core applies it (`kMidiRoutePipeCarriesChannelScope` is true).
@@ -36,10 +39,11 @@ Works (host-tested, `PASS` lines from `test_link.cpp`):
   HELLO reproduces it.
 - Routed UART emit: `sendMidiRoute(src,dst,data,n)` queues
   `EV_MIDI_ROUTE_SEND` (0x1A) through `mb::pack_midi_route_send`, so the Pico
-  evaluates the (src,dst) chain configured by 0x18/0x19 before emitting on that
-  physical TRS output. src/dst are 0/1 and the message is 1..3 bytes; a disabled
-  route drops it on the firmware. Per-message, no resend cache. `sendMidi`
-  (0x15) stays the unprocessed immediate path.
+  evaluates the (src,dst) chain configured by 0x18/0x19 and then that output's
+  insert slots before emitting on the physical TRS output. src/dst are 0/1 and
+  the message is 1..3 bytes; a disabled route drops it on the firmware.
+  Per-message, no resend cache. `sendMidi` (0x15) stays the unprocessed
+  immediate path and does not pass the output inserts.
 - Wire format never redefined: `link.hpp` includes the firmware
   `protocol.hpp`/`midi.hpp` and uses `mb::encode/decode` plus `EV_*`/`CTL_*`.
   The 0x18/0x19 payloads come from `mb::pack_midi_route*`, matched against the

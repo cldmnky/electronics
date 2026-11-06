@@ -1,9 +1,11 @@
 #include "protocol.hpp"
 #include "clock_follow.hpp"
+#include "route_chain.hpp"
 #include "clock_output.hpp"
 #include "midi.hpp"
 #include "pipe_event.hpp"
 #include "panel_input.hpp"
+#include "encoder_input.hpp"
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -113,6 +115,189 @@ void run_panel_tests() {
                {{100, true}, {103, false}, {105, true}, {300, false}}, 400,
                {{{115, mb::CTL_NAV_DOWN, mb::CTL_STATE_PRESSED},
                  {310, mb::CTL_NAV_DOWN, mb::CTL_STATE_RELEASED}}});
+}
+
+// Synthetic A/B timeline for the value knob: each entry is a sampled level
+// pair (bit 1 = A, bit 0 = B, as gpio_get reports them) held for a dwell in
+// microseconds. The driver walks it at the firmware's 1 kHz scan cadence and
+// collects the deltas the encoder reports.
+typedef std::vector<std::pair<std::uint8_t, std::uint32_t>> KnobTimeline;
+
+std::vector<int> drive_encoder(mb::ValueEncoder& encoder, std::uint8_t idle,
+                               const KnobTimeline& timeline, bool fine,
+                               std::uint32_t start_us = 0) {
+  std::vector<int> deltas;
+  std::uint32_t now_us = start_us;
+  encoder.reset((idle & 2u) != 0, (idle & 1u) != 0);
+  for (const auto& entry : timeline) {
+    for (std::uint32_t elapsed = 0; elapsed < entry.second; elapsed += 1000, now_us += 1000) {
+      const mb::ValueEncoder::Result r =
+          encoder.update((entry.first & 2u) != 0, (entry.first & 1u) != 0, fine, now_us);
+      if (r.turned) deltas.push_back(r.delta);
+    }
+  }
+  return deltas;
+}
+
+// Append `pulses` quarter-turn pulses: A leads clockwise (00 10 11 01 00), B
+// leads counter-clockwise. Each state is held `edge_us`, the idle state after
+// a pulse `gap_us`, so a pulse completes one base step every four edges.
+void knob_turns(KnobTimeline& timeline, bool clockwise, int pulses,
+                std::uint32_t edge_us, std::uint32_t gap_us) {
+  static const std::uint8_t cw[3] = {2, 3, 1};
+  static const std::uint8_t ccw[3] = {1, 3, 2};
+  for (int p = 0; p < pulses; ++p) {
+    for (int i = 0; i < 3; ++i) timeline.push_back({clockwise ? cw[i] : ccw[i], edge_us});
+    timeline.push_back({0, gap_us});
+  }
+}
+
+int knob_sum(const std::vector<int>& deltas) {
+  int sum = 0;
+  for (int d : deltas) sum += d;
+  return sum;
+}
+
+// The knob is a detentless 24-pulse/revolution encoder with acceleration. These
+// tests pin the properties the Pi relies on: one step per pulse when slow, a
+// multiplied (int8) delta when flicked, no acceleration in SHIFT/fine mode, no
+// invented steps from contact bounce, and no drift from a sampled jump.
+void run_value_encoder_tests() {
+  using namespace mb;
+
+  // Slow clockwise turn, edges 15 ms apart: 10 pulses -> 10 steps of +1.
+  {
+    ValueEncoder encoder;
+    KnobTimeline slow;
+    knob_turns(slow, true, 10, 15'000, 10'000);
+    const auto deltas = drive_encoder(encoder, 0, slow, false);
+    assert(deltas.size() == 10);
+    for (int d : deltas) assert(d == 1);
+  }
+
+  // Three edges are not a step; the fourth completes exactly one.
+  {
+    ValueEncoder encoder;
+    const std::vector<int> partial =
+        drive_encoder(encoder, 0, {{2, 20'000}, {3, 20'000}, {1, 20'000}}, false);
+    assert(partial.empty());
+    ValueEncoder completion;
+    const std::vector<int> complete =
+        drive_encoder(completion, 0, {{2, 20'000}, {3, 20'000}, {1, 20'000}, {0, 20'000}}, false);
+    assert(complete.size() == 1 && complete[0] == 1);
+  }
+
+  // Counter-clockwise is the negative direction, same magnitude.
+  {
+    ValueEncoder encoder;
+    KnobTimeline ccw;
+    knob_turns(ccw, false, 4, 15'000, 10'000);
+    const auto deltas = drive_encoder(encoder, 0, ccw, false);
+    assert(deltas.size() == 4);
+    for (int d : deltas) assert(d == -1);
+  }
+
+  // Acceleration buckets, measured between completed steps: 28 ms -> x2,
+  // 12 ms -> x4, 4 ms -> x8. The 1 kHz scan cannot report faster than that.
+  {
+    ValueEncoder encoder;
+    KnobTimeline medium;
+    knob_turns(medium, true, 4, 7'000, 1'000);
+    const auto deltas = drive_encoder(encoder, 0, medium, false);
+    assert(deltas.size() == 4 && deltas[0] == 1 && deltas[1] == 2 && deltas[3] == 2);
+  }
+  {
+    ValueEncoder encoder;
+    KnobTimeline fast;
+    knob_turns(fast, true, 4, 3'000, 1'000);
+    const auto deltas = drive_encoder(encoder, 0, fast, false);
+    assert(deltas.size() == 4 && deltas[0] == 1 && deltas[1] == 4 && deltas[3] == 4);
+  }
+  {
+    ValueEncoder encoder;
+    KnobTimeline flick;
+    knob_turns(flick, true, 6, 1'000, 1'000);
+    const auto deltas = drive_encoder(encoder, 0, flick, false);
+    assert(deltas.size() == 6 && deltas[0] == 1 && deltas[1] == 8 && deltas[5] == 8);
+  }
+
+  // SHIFT/fine mode never accelerates: the Pi applies its own fine increment.
+  {
+    ValueEncoder encoder;
+    KnobTimeline flick;
+    knob_turns(flick, false, 6, 1'000, 1'000);
+    const auto deltas = drive_encoder(encoder, 0, flick, true);
+    assert(deltas.size() == 6);
+    for (int d : deltas) assert(d == -1);
+  }
+
+  // Contact bounce (datasheet 2.0 ms max at 15 rpm) cancels in the edge
+  // accumulator: a bounce pair on A adds no step and no net drift.
+  {
+    ValueEncoder encoder;
+    KnobTimeline clean;
+    knob_turns(clean, true, 6, 15'000, 10'000);
+    const auto clean_deltas = drive_encoder(encoder, 0, clean, false);
+
+    ValueEncoder bouncy;
+    KnobTimeline noisy;
+    knob_turns(noisy, true, 6, 15'000, 10'000);
+    for (std::size_t i = 0; i < noisy.size(); ++i) {
+      if (noisy[i].first != 2) continue;
+      noisy.insert(noisy.begin() + static_cast<std::ptrdiff_t>(i) + 1,
+                   {{0, 1'000}, {2, 1'000}});  // A chatters low for 1 ms, twice
+      i += 2;
+    }
+    const auto noisy_deltas = drive_encoder(bouncy, 0, noisy, false);
+    assert(noisy_deltas.size() == clean_deltas.size());
+    assert(knob_sum(noisy_deltas) == knob_sum(clean_deltas));
+  }
+
+  // Chatter with no real rotation never reports a turn.
+  {
+    ValueEncoder encoder;
+    KnobTimeline chatter;
+    for (int i = 0; i < 6; ++i) chatter.push_back({static_cast<std::uint8_t>(i % 2 == 0 ? 2 : 0), 1'000});
+    assert(drive_encoder(encoder, 0, chatter, false).empty());
+  }
+
+  // A sampled double transition (both channels changed between scans) is not a
+  // turn; the state machine resynchronizes and the following edges count.
+  {
+    ValueEncoder encoder;
+    const auto jumped =
+        drive_encoder(encoder, 0, {{3, 2'000}, {1, 2'000}, {0, 2'000}, {2, 2'000}}, false);
+    assert(jumped.empty());  // three valid edges: the 00 -> 11 jump added none
+    ValueEncoder resync;
+    const auto completed = drive_encoder(
+        resync, 0, {{3, 2'000}, {1, 2'000}, {0, 2'000}, {2, 2'000}, {3, 2'000}}, false);
+    assert(completed.size() == 1 && completed[0] == 1);
+  }
+
+  // Microsecond-clock wraparound keeps the interval (and the bucket) correct.
+  {
+    ValueEncoder encoder;
+    KnobTimeline slow;
+    knob_turns(slow, true, 3, 15'000, 10'000);
+    const auto deltas = drive_encoder(encoder, 0, slow, false, 0xFFFFFF00u);
+    assert(deltas.size() == 3);
+    for (int d : deltas) assert(d == 1);
+  }
+
+  // The delta is the frozen int8 CTL_ENCODER_TURN payload, not a new code.
+  {
+    Frame frame{};
+    Bytes bytes{};
+    Frame decoded{};
+    assert(pack_control(frame, 7, 0x12345678u, CTL_ENCODER_TURN, static_cast<std::uint8_t>(-8)));
+    assert(encode(frame, bytes) && decode(bytes, decoded));
+    assert(decoded.type == Type::control_event && decoded.length == 3);
+    assert(decoded.payload[0] == EV_CONTROL && decoded.payload[1] == CTL_ENCODER_TURN);
+    assert(static_cast<std::int8_t>(decoded.payload[2]) == -8);
+  }
+
+  std::printf("PASS: value-knob decode (smooth steps, acceleration, fine mode, "
+              "bounce, wraparound, int8 delta)\n");
 }
 
 mb::MidiMessage test_message(std::uint8_t status, std::uint8_t data1 = 0,
@@ -346,6 +531,160 @@ void run_wire_config_tests() {
 
   std::printf("PASS: MIDI route pipe wire frames (0x18/0x19/0x1A/0x1B, chMask, "
               "MidiMessage conversion)\n");
+}
+
+// Generator and output-insert route kinds: the same RouteChains class the
+// firmware main loop uses, so the wire pseudo-source bytes, generator-head
+// legality, insert ordering and the no-input generator path are tested here.
+void run_route_chain_tests() {
+  using namespace mb;
+  using mnky::midifx::PipeOutput;
+
+  // Pseudo-source bytes are the 0x18/0x19 src field; 0/1 stay the TRS inputs.
+  assert(route_src_generator == 0xFF);
+  assert(route_src_insert(0) == 0xFE && route_src_insert(1) == 0xFD);
+  assert(route_src_insert(route_insert_slot_max - 1) == 0xFB);
+  assert(route_src_valid(0) && route_src_valid(1) && route_src_valid(route_src_generator));
+  assert(route_src_valid(route_src_insert(3)));
+  assert(!route_src_valid(2) && !route_src_valid(0xFA));
+  assert(route_src_insert_slot(route_src_insert(2)) == 2);
+
+  // A 0x18 frame carries the generator and insert pseudo-sources; a legacy
+  // frame (src 0/1) still decodes, and an undefined src byte is refused.
+  {
+    Frame f{};
+    Bytes wire{};
+    Frame decoded{};
+    std::uint8_t src = 9, dst = 9, flags = 0;
+    assert(pack_midi_route(f, 50, 0x12345678, route_src_generator, 1, ROUTE_FLAG_ON));
+    assert(encode(f, wire) && decode(wire, decoded));
+    assert(unpack_midi_route(decoded, src, dst, flags));
+    assert(src == route_src_generator && dst == 1 && flags == ROUTE_FLAG_ON);
+    assert(pack_midi_route(f, 51, 0x12345678, route_src_insert(2), 0, 0));
+    assert(encode(f, wire) && decode(wire, decoded));
+    assert(unpack_midi_route(decoded, src, dst, flags));
+    assert(src == route_src_insert(2) && dst == 0 && flags == 0);
+    assert(!pack_midi_route(f, 52, 0x12345678, 2, 0, 0));
+    assert(!pack_midi_route(f, 52, 0x12345678, 0xFA, 0, 0));
+
+    const std::int16_t lfo[4] = {1, 0, 2, 64};
+    assert(pack_midi_route_pipe(f, 53, 0x12345678, route_src_generator, 1, 0, 14,
+                                false, 0, lfo, 4));
+    assert(encode(f, wire) && decode(wire, decoded));
+    std::uint8_t index = 0, type = 0, offset = 0;
+    bool bypass = true;
+    std::uint16_t ch_mask = 0;
+    std::int16_t out[route_pipe_param_frame_max_legacy]{};
+    std::size_t count = 0;
+    assert(unpack_midi_route_pipe(decoded, src, dst, index, type, bypass, offset,
+                                  ch_mask, out, route_pipe_param_frame_max_legacy,
+                                  count));
+    assert(src == route_src_generator && dst == 1 && type == 14 && count == 4);
+
+    // A pre-pseudo 0x18 frame (src byte 1) has the same meaning as today.
+    Frame legacy{};
+    legacy.type = Type::control_event;
+    legacy.sequence = 54;
+    legacy.session = 0x12345678;
+    legacy.length = 4;
+    legacy.payload[0] = EV_MIDI_ROUTE;
+    legacy.payload[1] = 1;
+    legacy.payload[2] = 0;
+    legacy.payload[3] = ROUTE_FLAG_ON;
+    assert(encode(legacy, wire) && decode(wire, decoded));
+    assert(unpack_midi_route(decoded, src, dst, flags));
+    assert(src == 1 && dst == 0 && flags == ROUTE_FLAG_ON);
+  }
+
+  // Generator route: the LFO head produces CC on the target with no input
+  // message; a modifier cannot be configured as the head.
+  {
+    RouteChains chains;
+    assert(chains.begin(route_src_generator, 1, true));
+    const std::int32_t lfo[5] = {1, 0, 2, 64, 64};  // CC1, 1/16 grid
+    const std::int32_t arp[1] = {0};
+    assert(!chains.setPipeChunk(route_src_generator, 1, 0, 12, false, 0, arp, 1));
+    assert(chains.setPipeChunk(route_src_generator, 1, 0, 14, false, 0, lfo, 5));
+    std::vector<std::pair<std::uint8_t, PipeOutput>> emitted;
+    auto emit = [&](std::uint8_t dst, const PipeOutput& out) {
+      emitted.emplace_back(dst, out);
+    };
+    chains.service(0, 1000, emit);       // seeds the grid; no step yet
+    assert(emitted.empty());
+    chains.service(6, 1000, emit);       // first 1/16 step
+    assert(emitted.size() == 1);
+    assert(emitted[0].first == 1 && emitted[0].second.count == 1);
+    assert(emitted[0].second.events[0].data[0] == 0xB0);
+    assert(emitted[0].second.events[0].data[1] == 1);
+  }
+
+  // Output inserts: every routed message passes insert 0 then 1, in route
+  // order. CC1 -> PC5 at slot 0, PC5 -> CC7 at slot 1 proves the order (the
+  // reverse order would leave a program change).
+  {
+    RouteChains chains;
+    assert(chains.begin(route_src_insert(0), 1, true));
+    assert(chains.begin(route_src_insert(1), 1, true));
+    assert(chains.begin(0, 1, true));
+    const std::int32_t cc_to_pc[5] = {1, 0, 127, 2, 5};
+    const std::int32_t pc_to_cc[5] = {2, 0, 127, 1, 7};
+    assert(chains.setPipeChunk(route_src_insert(0), 1, 0, 11, false, 0,
+                               cc_to_pc, 5));
+    assert(chains.setPipeChunk(route_src_insert(1), 1, 0, 11, false, 0,
+                               pc_to_cc, 5));
+    const PipeOutput cc = chains.processRoute(
+        0, 1, pipeEvent(test_message(0xB0, 1, 99)), 1000);
+    assert(cc.count == 1 && cc.events[0].data[0] == 0xB0 &&
+           cc.events[0].data[1] == 7);
+    const PipeOutput note = chains.processRoute(
+        0, 1, pipeEvent(test_message(0x90, 60, 100)), 1000);
+    assert(note.count == 1 && note.events[0].data[0] == 0x90 &&
+           note.events[0].data[1] == 60);
+  }
+
+  // A timing insert (MidiDelay) shifts the routed stream: the dry note and CC
+  // pass, and both echoes arrive at the same due time.
+  {
+    RouteChains chains;
+    assert(chains.begin(route_src_insert(0), 0, true));
+    assert(chains.begin(0, 0, true));
+    const std::int32_t delay[3] = {10, 1, 0};
+    assert(chains.setPipeChunk(route_src_insert(0), 0, 0, 16, false, 0, delay, 3));
+    std::vector<PipeOutput> emitted;
+    auto emit = [&](std::uint8_t, const PipeOutput& out) { emitted.push_back(out); };
+    assert(chains.processRoute(0, 0, pipeEvent(test_message(0x90, 60, 100)), 1000)
+               .count == 1);
+    assert(chains.processRoute(0, 0, pipeEvent(test_message(0xB0, 1, 50)), 1000)
+               .count == 1);
+    chains.service(0, 1009, emit);
+    assert(emitted.empty());
+    chains.service(0, 1010, emit);
+    assert(emitted.size() == 1 && emitted[0].count == 2);
+    assert(emitted[0].events[0].data[0] == 0x90);
+    assert(emitted[0].events[1].data[0] == 0xB0);
+  }
+
+  // Generator output also passes the output inserts before the wire.
+  {
+    RouteChains chains;
+    assert(chains.begin(route_src_generator, 1, true));
+    assert(chains.begin(route_src_insert(0), 1, true));
+    const std::int32_t lfo[5] = {1, 0, 2, 64, 64};
+    const std::int32_t cc_to_pc[5] = {1, 0, 127, 2, 5};
+    assert(chains.setPipeChunk(route_src_generator, 1, 0, 14, false, 0, lfo, 5));
+    assert(chains.setPipeChunk(route_src_insert(0), 1, 0, 11, false, 0,
+                               cc_to_pc, 5));
+    std::vector<PipeOutput> emitted;
+    auto emit = [&](std::uint8_t, const PipeOutput& out) { emitted.push_back(out); };
+    chains.service(0, 1000, emit);
+    chains.service(6, 1000, emit);
+    assert(emitted.size() == 1 && emitted[0].count == 1);
+    assert(emitted[0].events[0].data[0] == 0xC0);
+    assert(emitted[0].events[0].data[1] == 5);
+  }
+
+  std::printf("PASS: generator and output-insert route kinds (0x18/0x19 "
+              "pseudo-sources, generator head, insert order, timing shift)\n");
 }
 
 void run_clock_extras_tests() {
@@ -631,7 +970,9 @@ int main(int argc, char** argv) {
   assert(nav.update(true, 115) && nav.state());
   assert(!nav.update(false, 120)); assert(nav.update(false, 130) && !nav.state());
   run_panel_tests();
+  run_value_encoder_tests();
   run_wire_config_tests();
+  run_route_chain_tests();
   run_clock_extras_tests();
   run_clock_follow_tests();
   Debouncer wrap(10); assert(!wrap.update(true, 0xfffffffau)); assert(wrap.update(true, 4));

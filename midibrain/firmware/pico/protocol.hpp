@@ -72,6 +72,36 @@ constexpr std::uint8_t EV_CLOCK_ROUTE_EXT = 0x1B;  // tempoDiv + syncDelayMs
 constexpr std::uint8_t ROUTE_FLAG_ON = 0x01;
 constexpr std::uint8_t ROUTE_FLAG_MASK = ROUTE_FLAG_ON;
 
+// Route source byte: 0/1 are the physical TRS inputs. Two pseudo-sources extend
+// the same frame (legacy-tolerant: an old frame could only carry 0/1 because
+// the encoder rejected anything else, and a decoder that predates these
+// constants still rejects them as bad frames rather than misreading them).
+//   route_src_generator: session kSrcGenerator (-1). The chain emits from its
+//     generator head and never consumes an input; dst is a real output.
+//   route_src_insert(slot): session kSrcOutputInsert (-2), slot is the insert's
+//     position among the output's insert routes. Every message routed to dst
+//     passes insert 0, then 1, ... in route order before delivery.
+constexpr std::uint8_t route_src_generator = 0xFF;
+constexpr std::size_t route_insert_slot_max = 4;
+constexpr std::uint8_t route_src_insert(std::size_t slot) {
+  return static_cast<std::uint8_t>(0xFE - slot);
+}
+constexpr bool route_src_is_trs(std::uint8_t src) { return src <= 1; }
+constexpr bool route_src_is_generator(std::uint8_t src) {
+  return src == route_src_generator;
+}
+constexpr bool route_src_is_insert(std::uint8_t src) {
+  return src >= route_src_insert(route_insert_slot_max - 1) &&
+         src <= route_src_insert(0);
+}
+constexpr std::size_t route_src_insert_slot(std::uint8_t src) {
+  return static_cast<std::size_t>(0xFE - src);
+}
+constexpr bool route_src_valid(std::uint8_t src) {
+  return route_src_is_trs(src) || route_src_is_generator(src) ||
+         route_src_is_insert(src);
+}
+
 // Pipe chain limits, shared by the wire codec and the shared core
 // (midibrain/midifx/core; firmware/pico/main.cpp static_asserts the match). A
 // param is a signed 16-bit positional integer; the largest pipe (Filter) has 8.
@@ -89,10 +119,12 @@ constexpr std::uint16_t route_pipe_channel_mask_default = 0xFFFF;
 
 // EV_MIDI_ROUTE layout: [1]=src, [2]=dst, [3]=flags. Length 4. Starts a fresh
 // chain and clears its runtime state (dispatcher rotation, sustain latch and
-// pending note lengths); flags bit 0 enables the route.
+// pending note lengths); flags bit 0 enables the route. src is a route-source
+// byte (0/1, route_src_generator, route_src_insert(slot)); legacy frames with
+// 0/1 keep their meaning.
 inline bool pack_midi_route(Frame& f, std::uint16_t seq, std::uint32_t session,
                             std::uint8_t src, std::uint8_t dst, std::uint8_t flags) {
-  if (src > 1 || dst > 1 || (flags & ~ROUTE_FLAG_MASK) != 0) return false;
+  if (!route_src_valid(src) || dst > 1 || (flags & ~ROUTE_FLAG_MASK) != 0) return false;
   f = Frame{};
   f.type = Type::control_event;
   f.sequence = seq;
@@ -107,7 +139,8 @@ inline bool pack_midi_route(Frame& f, std::uint16_t seq, std::uint32_t session,
 inline bool unpack_midi_route(const Frame& f, std::uint8_t& src, std::uint8_t& dst,
                               std::uint8_t& flags) {
   if (f.type != Type::control_event || f.length != 4 || f.payload[0] != EV_MIDI_ROUTE ||
-      f.payload[1] > 1 || f.payload[2] > 1 || (f.payload[3] & ~ROUTE_FLAG_MASK) != 0)
+      !route_src_valid(f.payload[1]) || f.payload[2] > 1 ||
+      (f.payload[3] & ~ROUTE_FLAG_MASK) != 0)
     return false;
   src = f.payload[1];
   dst = f.payload[2];
@@ -117,19 +150,21 @@ inline bool unpack_midi_route(const Frame& f, std::uint8_t& src, std::uint8_t& d
 
 // EV_MIDI_ROUTE_PIPE layout: [1]=src, [2]=dst, [3]=pipe index, [4]=type,
 // [5]=bypass, [6]=param offset, [7]=param count, then count signed int16 LE
-// params, then the 2-byte chMask LE. Length 10 + 2*count. type 1..16 is
-// accepted (all 16 evaluate in the shared core); param offset+count <= 10 and
-// count <= route_pipe_param_frame_max (4). The mask takes effect on the
-// offset-0 chunk; a continuation chunk keeps the scope the pipe already has.
-// A frame of length 8 + 2*count (no mask, up to the legacy 5 params) is still
-// decoded and means chMask = all channels.
+// params, then the 2-byte chMask LE. Length 10 + 2*count. src uses the same
+// route-source byte as 0x18, including the generator/insert pseudo-sources.
+// type 1..16 is accepted (all 16 evaluate in the shared core); param
+// offset+count <= 10 and count <= route_pipe_param_frame_max (4). The mask
+// takes effect on the offset-0 chunk; a continuation chunk keeps the scope the
+// pipe already has. A frame of length 8 + 2*count (no mask, up to the legacy 5
+// params) is still decoded and means chMask = all channels.
 inline bool pack_midi_route_pipe(Frame& f, std::uint16_t seq, std::uint32_t session,
                                  std::uint8_t src, std::uint8_t dst,
                                  std::uint8_t index, std::uint8_t type, bool bypass,
                                  std::uint8_t param_offset, const std::int16_t* params,
                                  std::size_t count,
                                  std::uint16_t ch_mask = route_pipe_channel_mask_default) {
-  if (src > 1 || dst > 1 || index >= route_pipe_count_max || type < 1 || type > 16 ||
+  if (!route_src_valid(src) || dst > 1 || index >= route_pipe_count_max ||
+      type < 1 || type > 16 ||
       count > route_pipe_param_frame_max ||
       param_offset + count > route_pipe_param_max || (count != 0 && params == nullptr))
     return false;
@@ -161,7 +196,8 @@ inline bool unpack_midi_route_pipe(const Frame& f, std::uint8_t& src, std::uint8
                                    std::int16_t* params, std::size_t capacity,
                                    std::size_t& count) {
   if (f.type != Type::control_event || f.length < 8 ||
-      f.payload[0] != EV_MIDI_ROUTE_PIPE || f.payload[1] > 1 || f.payload[2] > 1 ||
+      f.payload[0] != EV_MIDI_ROUTE_PIPE || !route_src_valid(f.payload[1]) ||
+      f.payload[2] > 1 ||
       f.payload[3] >= route_pipe_count_max || f.payload[4] < 1 || f.payload[4] > 16 ||
       f.payload[5] > 1 || f.payload[7] > route_pipe_param_frame_max_legacy ||
       f.payload[6] + f.payload[7] > route_pipe_param_max)

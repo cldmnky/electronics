@@ -1,7 +1,8 @@
-// Host self-test for the portable MIDI FX Wave-1 pipe engine (midifx.hpp).
+// Host self-test for the Pi adapter over the shared MIDI FX core (midifx.hpp).
 // No framework: a failing check prints FAIL and the process exits non-zero.
-// Covers every Wave-1 pipe with boundary values, bypass, the Wave-2 rejection
-// contract and the deterministic RNG, and prints one PASS line per behaviour.
+// Covers every pipe the shared core evaluates (Wave-1 semantics are the
+// former Pi suite) with boundary values, bypass and the deterministic RNG, and
+// prints one PASS line per behaviour.
 #include <cstdint>
 #include <cstdio>
 #include <initializer_list>
@@ -732,52 +733,6 @@ void bypassAndLimits() {
   pass("bypass, order and limits");
 }
 
-// ---------------------------------------------------------------------------
-// Wave 2: configure tolerated, evaluation rejected with a reason
-// ---------------------------------------------------------------------------
-void wave2Rejection() {
-  struct Case {
-    PipeType type;
-    const char* text;
-  };
-  const Case cases[] = {
-      {PipeType::Arp, "Arp"},       {PipeType::Repeater, "Repeater"},
-      {PipeType::CcLfo, "CcLfo"},   {PipeType::Harmonizer, "Harmonizer"},
-      {PipeType::MidiDelay, "MidiDelay"},
-  };
-  for (const Case& item : cases) {
-    CHECK(mnky::midi::wave2Reason(item.type) != nullptr);
-    PipeChain chain = chainWith({pipe(PipeType::Filter, {}), pipe(item.type, {})});
-    CHECK(chain.wave2Pipe() == 1);
-    CHECK(chain.pipeCount() == 2);
-    const PipeOutput out = run(chain, noteOn());
-    CHECK(out.rejected && out.count == 0);
-    CHECK(out.rejectPipe == 1);
-    CHECK(out.reason != nullptr);
-    if (out.reason != nullptr) CHECK(std::string(out.reason).find("Wave-2") != std::string::npos);
-    CHECK(chain.tick(5000).rejected);
-  }
-  CHECK(mnky::midi::wave2Reason(PipeType::Filter) == nullptr);
-  CHECK(mnky::midi::wave2Reason(PipeType::Transform) == nullptr);
-
-  // A bypassed Wave-2 pipe is ignored: the Wave-1 chain still runs.
-  PipeChain bypassed =
-      chainWith({pipe(PipeType::Arp, {}, true), pipe(PipeType::Chance, {100})});
-  CHECK(bypassed.wave2Pipe() == -1);
-  CHECK(run(bypassed, noteOn()).count == 0);
-
-  // Bypass toggling is part of the config, so reconfiguring re-evaluates the
-  // rejection state.
-  std::vector<PipeConfig> config{pipe(PipeType::Arp, {}, true)};
-  PipeChain chain;
-  CHECK(chain.configure(config.data(), config.size()));
-  CHECK(chain.wave2Pipe() == -1);
-  config[0].bypass = false;
-  CHECK(chain.configure(config.data(), config.size()));
-  CHECK(chain.wave2Pipe() == 0);
-  pass("wave 2 rejection");
-}
-
 }  // namespace
 
 int main() {
@@ -794,7 +749,6 @@ int main() {
   noteLengthPipe();
   transformPipe();
   bypassAndLimits();
-  wave2Rejection();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "FAILURES %d\n", g_failures);

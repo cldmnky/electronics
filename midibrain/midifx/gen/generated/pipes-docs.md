@@ -13,28 +13,33 @@ Per-pipe channel scope: channel n (0-based) enters the pipe when bit n is set; e
 |---|---|---|---|
 | `chMask` | 0 | 65535 | 65535 |
 
-| Id | Key | Name | Short | Category | Params |
-|---|---|---|---|---|---|
-| 1 | `filter` | Filter | FILT | stateless | 8 |
-| 2 | `noteRange` | Note Range | NOTE | stateless | 4 |
-| 3 | `ccRemap` | CC Remap | CC | stateless | 4 |
-| 4 | `channelRemap` | Channel Remap | CH | stateless | 2 |
-| 5 | `scaleQuantize` | Scale | SCAL | stateless | 3 |
-| 6 | `chance` | Chance | CHAN | stateless | 1 |
-| 7 | `velocityRandom` | Velocity | VEL | stateless | 2 |
-| 8 | `dispatcher` | Dispatch | DISP | stateless | 2 |
-| 9 | `sustain` | Sustain | SUS | stateless | 1 |
-| 10 | `noteLength` | Note Length | LEN | stateless | 1 |
-| 11 | `transform` | Transform | XF | stateless | 5 |
-| 12 | `arp` | Arp | ARP | clocked | 6 |
-| 13 | `repeater` | Repeat | REP | clocked | 3 |
-| 14 | `ccLfo` | CC LFO | LFO | clocked | 5 |
-| 15 | `harmonizer` | Harmony | HARM | clocked | 5 |
-| 16 | `midiDelay` | MIDI Delay | DLY | clocked | 3 |
+## Pipe roles
+
+- **generator** — Emits its own messages from the caller's clock/tick grid and consumes no input. Legal as the HEAD of a generator route (src = kSrcGenerator, -1) and as a later stage in any chain, where it adds messages to the stream.
+- **modifier** — Requires an input message to do anything (it filters, transforms, holds or echoes what arrives). Legal in src->dst routes and output-insert chains, and only after a generator head in a generator route.
+
+| Id | Key | Name | Short | Category | Role | Params |
+|---|---|---|---|---|---|---|
+| 1 | `filter` | Filter | FILT | stateless | modifier | 8 |
+| 2 | `noteRange` | Note Range | NOTE | stateless | modifier | 4 |
+| 3 | `ccRemap` | CC Remap | CC | stateless | modifier | 4 |
+| 4 | `channelRemap` | Channel Remap | CH | stateless | modifier | 2 |
+| 5 | `scaleQuantize` | Scale | SCAL | stateless | modifier | 3 |
+| 6 | `chance` | Chance | CHAN | stateless | modifier | 1 |
+| 7 | `velocityRandom` | Velocity | VEL | stateless | modifier | 2 |
+| 8 | `dispatcher` | Dispatch | DISP | stateless | modifier | 2 |
+| 9 | `sustain` | Sustain | SUS | stateless | modifier | 1 |
+| 10 | `noteLength` | Note Length | LEN | stateless | modifier | 1 |
+| 11 | `transform` | Transform | XF | stateless | modifier | 5 |
+| 12 | `arp` | Arp | ARP | clocked | modifier | 6 |
+| 13 | `repeater` | Repeat | REP | clocked | modifier | 3 |
+| 14 | `ccLfo` | CC LFO | LFO | clocked | generator | 5 |
+| 15 | `harmonizer` | Harmony | HARM | clocked | modifier | 5 |
+| 16 | `midiDelay` | MIDI Delay | DLY | clocked | modifier | 3 |
 
 ## 1 - Filter (`filter`, FILT)
 
-Per-message-kind pass gate; system/common messages have no mask bit and always pass.
+Per-message-kind pass gate; system/common messages have no mask bit and always pass. Modifier: it gates messages that already exist; with no input it can produce nothing.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -49,7 +54,7 @@ Per-message-kind pass gate; system/common messages have no mask bit and always p
 
 ## 2 - Note Range (`noteRange`, NOTE)
 
-Inclusive note window plus a note-on velocity window; reversed bounds swap.
+Inclusive note window plus a note-on velocity window; reversed bounds swap. Modifier: it windows incoming notes and velocities; it cannot invent notes.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -60,7 +65,7 @@ Inclusive note window plus a note-on velocity window; reversed bounds swap.
 
 ## 3 - CC Remap (`ccRemap`, CC)
 
-Linear CC-number remap: controllers in [inLo,inHi] rescale onto [outLo,outHi], rounded half away from zero.
+Linear CC-number remap: controllers in [inLo,inHi] rescale onto [outLo,outHi], rounded half away from zero. Modifier: it remaps incoming controllers; it cannot invent CC traffic.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -71,7 +76,7 @@ Linear CC-number remap: controllers in [inLo,inHi] rescale onto [outLo,outHi], r
 
 ## 4 - Channel Remap (`channelRemap`, CH)
 
-Channel rewriter: channel-voice messages on inCh (0 = any) move to outCh (1..16).
+Channel rewriter: channel-voice messages on inCh (0 = any) move to outCh (1..16). Modifier: it rewrites the channel of incoming messages; it cannot invent them.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -80,7 +85,7 @@ Channel rewriter: channel-voice messages on inCh (0 = any) move to outCh (1..16)
 
 ## 5 - Scale (`scaleQuantize`, SCAL)
 
-Snap note events to a scale: 1..5 transpose the fixed scales by root, 6 is the absolute user mask (root ignored), 0 is off.
+Snap note events to a scale: 1..5 transpose the fixed scales by root, 6 is the absolute user mask (root ignored), 0 is off. Modifier: it snaps incoming note events to a scale; it cannot invent notes.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -90,7 +95,7 @@ Snap note events to a scale: 1..5 transpose the fixed scales by root, 6 is the a
 
 ## 6 - Chance (`chance`, CHAN)
 
-Drops a note-on with `percent` probability; note-offs and other kinds always pass (0 disables, 100 drops every note-on).
+Drops a note-on with `percent` probability; note-offs and other kinds always pass (0 disables, 100 drops every note-on). Modifier: it drops incoming note-ons by probability; it cannot invent them.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -98,7 +103,7 @@ Drops a note-on with `percent` probability; note-offs and other kinds always pas
 
 ## 7 - Velocity (`velocityRandom`, VEL)
 
-Humanize: each note-on velocity gains a uniform random delta in [-amount,+amount], clamped to [minVel,127].
+Humanize: each note-on velocity gains a uniform random delta in [-amount,+amount], clamped to [minVel,127]. Modifier: it humanizes incoming note-on velocities; it cannot invent notes.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -107,7 +112,7 @@ Humanize: each note-on velocity gains a uniform random delta in [-amount,+amount
 
 ## 8 - Dispatch (`dispatcher`, DISP)
 
-Round-robin spread: successive note-ons rotate across numCh channels starting at startCh; the matching note-off follows its assignment.
+Round-robin spread: successive note-ons rotate across numCh channels starting at startCh; the matching note-off follows its assignment. Modifier: it spreads incoming notes across channels; without input notes it has nothing to spread.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -116,7 +121,7 @@ Round-robin spread: successive note-ons rotate across numCh channels starting at
 
 ## 9 - Sustain (`sustain`, SUS)
 
-CC64 latch: while the pedal is down, note-offs are held and released ahead of the pedal-up message.
+CC64 latch: while the pedal is down, note-offs are held and released ahead of the pedal-up message. Modifier: it holds incoming note-offs while CC64 is down; it needs the input stream.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -124,7 +129,7 @@ CC64 latch: while the pedal is down, note-offs are held and released ahead of th
 
 ## 10 - Note Length (`noteLength`, LEN)
 
-Fixed note length: the note-on passes and a matching note-off is scheduled lengthMs later (capped at 60000 ms; 0 is off).
+Fixed note length: the note-on passes and a matching note-off is scheduled lengthMs later (capped at 60000 ms; 0 is off). Modifier: it schedules an off for each incoming note-on; it needs the input stream.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -132,7 +137,7 @@ Fixed note length: the note-on passes and a matching note-off is scheduled lengt
 
 ## 11 - Transform (`transform`, XF)
 
-Message conversion: a match of matchKind with the value in [matchLo,matchHi] converts to outKind/outVal; non-matches pass unchanged.
+Message conversion: a match of matchKind with the value in [matchLo,matchHi] converts to outKind/outVal; non-matches pass unchanged. Modifier: it converts incoming messages; it needs an input message to match.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -144,7 +149,7 @@ Message conversion: a match of matchKind with the value in [matchLo,matchHi] con
 
 ## 12 - Arp (`arp`, ARP)
 
-Arpeggiator: held note-ons are consumed and the pattern is generated on the division grid (up, down, updown, random, chord).
+Arpeggiator: held note-ons are consumed and the pattern is generated on the division grid (up, down, updown, random, chord). Modifier: it arpeggiates HELD NOTES from the input stream; with no held notes the grid emits nothing (it is not a generator).
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -157,7 +162,7 @@ Arpeggiator: held note-ons are consumed and the pattern is generated on the divi
 
 ## 13 - Repeat (`repeater`, REP)
 
-Ratchet: every division step retriggers the whole held set, with the falloff envelope restarting every `repeats` steps.
+Ratchet: every division step retriggers the whole held set, with the falloff envelope restarting every `repeats` steps. Modifier: it retriggers the HELD NOTES from the input stream; with no held notes the grid emits nothing.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -167,7 +172,7 @@ Ratchet: every division step retriggers the whole held set, with the falloff env
 
 ## 14 - CC LFO (`ccLfo`, LFO)
 
-Emits its own CC values on the division grid (channel 1); depth 0 holds the centre and the routed bytes pass untouched.
+Emits its own CC values on the division grid (channel 1); depth 0 holds the centre and the routed bytes pass untouched. Generator: it emits its own CC values on the division grid without consuming an input, so it is legal at the head of a generator route. A modifier after it shapes the generated stream.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -179,7 +184,7 @@ Emits its own CC values on the division grid (channel 1); depth 0 holds the cent
 
 ## 15 - Harmony (`harmonizer`, HARM)
 
-Harmonizer: the input note passes and each distinct voice offset is added as an extra note-on, refcounted so offs follow their ons.
+Harmonizer: the input note passes and each distinct voice offset is added as an extra note-on, refcounted so offs follow their ons. Modifier: it adds voices to incoming notes; with no input notes there is nothing to harmonize.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|
@@ -191,7 +196,7 @@ Harmonizer: the input note passes and each distinct voice offset is added as an 
 
 ## 16 - MIDI Delay (`midiDelay`, DLY)
 
-Echoes note-on/note-off/CC events `repeats` times, delayMs apart and attenuated by falloff; delayMs 0 is off.
+Echoes note-on/note-off/CC events `repeats` times, delayMs apart and attenuated by falloff; delayMs 0 is off. Modifier: it echoes incoming events; with no input it has nothing to delay.
 
 | # | Key | Label | Kind | Range / choices | Default | Unit |
 |---|---|---|---|---|---|---|

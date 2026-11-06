@@ -417,6 +417,42 @@ void testMidiRouteSender() {
   assert(pico.midiRoute(1, 1).pipes[0].params[1] == 60);
   assert(pico.midiRoute(1, 1).pipes[0].params[2] == 72);
 
+  // Pseudo-source route kinds (0x18/0x19 src byte): a generator chain headed
+  // by the LFO, and output-insert slots 0 and 2 on the same output.
+  const std::uint8_t generator = mb::route_src_generator;
+  const std::uint8_t insert0 = mb::route_src_insert(0);
+  const std::uint8_t insert2 = mb::route_src_insert(2);
+  const std::int16_t lfo[5] = {1, 0, 2, 64, 64};
+  assert(link.midiRoute(generator, 1, true));
+  assert(link.midiRoutePipe(generator, 1, 0, 14, false, 0, lfo, 4));
+  assert(link.midiRoutePipe(generator, 1, 0, 14, false, 4, &lfo[4], 1));
+  const std::int16_t cc_to_pc[5] = {1, 0, 127, 2, 5};
+  assert(link.midiRoute(insert0, 1, true));
+  assert(link.midiRoutePipe(insert0, 1, 0, 11, false, 0, cc_to_pc, 4));
+  assert(link.midiRoutePipe(insert0, 1, 0, 11, false, 4, &cc_to_pc[4], 1));
+  assert(link.midiRoute(insert2, 0, true));
+  pump(link, 40);
+  assert(pico.midiRoute(generator, 1).flags == mb::ROUTE_FLAG_ON);
+  assert(pico.midiRoute(generator, 1).pipe_count == 1);
+  assert(pico.midiRoute(generator, 1).pipes[0].type == 14);
+  assert(pico.midiRoute(insert0, 1).pipe_count == 1);
+  assert(pico.midiRoute(insert0, 1).pipes[0].type == 11);
+  assert(pico.midiRoute(insert0, 1).pipes[0].param_count == 5);
+  assert(pico.midiRoute(insert2, 0).flags == mb::ROUTE_FLAG_ON);
+
+  // A generator chain's head must have the schema role generator; the link
+  // refuses the frame before it reaches the Pico.
+  assert(link.midiRoute(generator, 0, true));
+  const std::int16_t one_head = 0;
+  assert(!link.midiRoutePipe(generator, 0, 0, 12, false, 0, &one_head, 1));
+  pump(link, 20);
+  assert(pico.midiRoute(generator, 0).pipe_count == 0);
+
+  // Undefined source bytes are refused on both 0x18 and 0x19; the legacy
+  // source bytes 0/1 above keep their meaning.
+  assert(!link.midiRoute(0xFA, 0, true));
+  assert(!link.midiRoutePipe(0xFA, 0, 0, 1, false, 0, nullptr, 0));
+
   // A Pico power cycle drops the RAM chains; the reconnect re-sends 0x18
   // before the chunks, so the pipe count and params come back.
   pico.reboot();
@@ -429,6 +465,9 @@ void testMidiRouteSender() {
   assert(pico.midiRoute(0, 1).pipes[0].chMask == 0x0003);
   assert(pico.midiRoute(0, 1).pipes[1].params[0] == 35);
   assert(pico.midiRoute(0, 0).pipe_count == 1);
+  assert(pico.midiRoute(generator, 1).pipes[0].type == 14);
+  assert(pico.midiRoute(insert0, 1).pipes[0].param_count == 5);
+  assert(pico.midiRoute(insert2, 0).flags == mb::ROUTE_FLAG_ON);
 
   // RESET_LINK keeps the Pico RAM state and the Pi re-asserts the cache.
   const std::uint32_t reset_from = link.session();

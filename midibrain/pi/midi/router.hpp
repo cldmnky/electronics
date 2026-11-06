@@ -8,7 +8,7 @@
 // 6..31 (see port_registry.hpp); a route refers to a dynamic id exactly like a
 // fixed one, and the glue owns which of the two directions a device uses.
 //
-// Pipe ownership: the Pico has no USB view, so a Wave-1 pipe chain on a route
+// Pipe ownership: the Pico has no USB view, so a pipe chain on a route
 // touching UsbIn/UsbOut (fixed or a dynamic USB device) is evaluated here (see
 // piOwnsPipeChain). A TRS->TRS chain stays on the Pico and is only configured
 // over the link (pi/link EV_MIDI_ROUTE*), never evaluated here, so each route's
@@ -75,8 +75,8 @@ constexpr bool isFixedOutput(Port p) {
 
 // The one side-ownership rule for MIDI FX chains: the Pi evaluates chains on
 // routes it alone can see. TRS->TRS belongs to firmware's route engine
-// (firmware/pico/main.cpp route_pipes, fed by EV_MIDI_ROUTE_SEND); evaluating
-// it here as well would process the same message twice. Any route touching a
+// (firmware/pico/route_chain.hpp, fed by EV_MIDI_ROUTE_SEND); evaluating it
+// here as well would process the same message twice. Any route touching a
 // dynamic USB device is USB-side and therefore Pi-owned. The predicate answers
 // "is this route USB-side", not "is this registry direction live"; Router does
 // not own the registry, and a dormant/invalid direction simply never carries
@@ -84,6 +84,23 @@ constexpr bool isFixedOutput(Port p) {
 constexpr bool piOwnsPipeChain(Port src, Port dst) {
   return src == Port::UsbIn || dst == Port::UsbOut || isDynamicPort(src) ||
          isDynamicPort(dst);
+}
+
+// Route kinds beyond src->dst, frozen with session::RouteState:
+//   kSrcGenerator (-1): the chain emits from a generator head and consumes no
+//     input; dst is a real output.
+//   kSrcOutputInsert (-2): every message routed to dst passes the insert
+//     chains first, insert 0 then 1, ... in route order, before delivery.
+// Pi ownership extends by destination: a pseudo-source chain is Pi-owned when
+// its destination is UsbOut or a dynamic USB endpoint; a TRS output's generator
+// and insert chains belong to the Pico (0x18 pseudo-source frames).
+inline constexpr int kSrcGenerator = -1;
+inline constexpr int kSrcOutputInsert = -2;
+constexpr bool piOwnsPipeChain(int src, Port dst) {
+  if (src == kSrcGenerator || src == kSrcOutputInsert)
+    return dst == Port::UsbOut || isDynamicPort(dst);
+  if (src < 0 || src >= kMaxPorts) return false;
+  return piOwnsPipeChain(static_cast<Port>(src), dst);
 }
 
 // One MIDI 1.0 message. `size` is 1..3 data bytes (SysEx is not forwarded, see
@@ -98,6 +115,7 @@ struct MidiEvent {
   std::uint64_t stampUs{};
 };
 
+// deliverPipeOutput/apply inserts: the final destination stage.
 // destination port, message (already channel-filtered, piped and transposed).
 using DeliverFn = std::function<void(Port dst, const MidiEvent& ev)>;
 
@@ -126,7 +144,7 @@ class Router {
   void setTranspose(Port src, int semitones);
   int transpose(Port src) const;  // 0 for an invalid id
 
-  // Ordered Wave-1 chain for one route (midifx.hpp). The six fixed ports keep
+  // Ordered pipe chain for one route (midifx.hpp). The six fixed ports keep
   // their 3x3 slot array; any route touching a dynamic USB id stores its chain
   // in a sparse map, so a per-device USB route can carry a scoped chain too.
   // Only piOwnsPipeChain() routes evaluate a stored chain here; a TRS->TRS
@@ -136,8 +154,33 @@ class Router {
   // previous chain then stays untouched.
   bool setPipes(Port src, Port dst, const PipeConfig* pipes, std::size_t count);
   std::size_t pipeCount(Port src, Port dst) const;
-  // Drops every fixed and dynamic chain (project load is authoritative).
+
+  // Pseudo-source chains (the two route kinds above). Both are sparse and
+  // Pi-owned only for USB destinations; configuring a TRS output here fails
+  // because the Pico evaluates that side. A generator chain's head must have
+  // the schema role generator (pipes.json role), so a modifier can never be a
+  // source. `enabled` is the route gate and survives a pipe reconfiguration.
+  bool setGenerator(Port dst, bool enabled);
+  bool generatorEnabled(Port dst) const;
+  bool setGeneratorPipes(Port dst, const PipeConfig* pipes, std::size_t count);
+  std::size_t generatorPipeCount(Port dst) const;
+  bool setOutputInsert(Port dst, std::size_t slot, bool enabled);
+  bool outputInsertEnabled(Port dst, std::size_t slot) const;
+  bool setOutputInsertPipes(Port dst, std::size_t slot, const PipeConfig* pipes,
+                            std::size_t count);
+  std::size_t outputInsertPipeCount(Port dst, std::size_t slot) const;
+  // Snapshot owner read-back: copies up to `capacity` configured pipes and
+  // sets `count`. False when the chain is absent or the buffer is too small.
+  bool generatorPipes(Port dst, PipeConfig* out, std::size_t capacity,
+                      std::size_t& count) const;
+  bool outputInsertPipes(Port dst, std::size_t slot, PipeConfig* out,
+                         std::size_t capacity, std::size_t& count) const;
+  // Drops every fixed and dynamic chain, including the pseudo-source chains
+  // (project load is authoritative).
   void clearPipes();
+  // Drops only the generator and output-insert chains; the src->dst chains
+  // keep their state (session::apply owns only the pseudo-source kinds).
+  void clearPseudoPipes();
 
   // Deterministic per-route RNG seed for Chance/VelocityRandom; 0 maps to 1.
   // Pipe streams survive events, so restoring the same seed replays decisions.
@@ -151,9 +194,17 @@ class Router {
   // fake-stamp test is deterministic without a timer.
   void tick(std::uint32_t nowMs, const DeliverFn& deliver) const;
 
-  // Wave-2 chains configure but refuse evaluation; this is the log seam.
-  // lastRejectReason is a static string from midifx.hpp and lastRejectPipe its
-  // chain index, or -1 before the first rejection.
+  // Clocked pipes on the caller's 24-PPQN grid: a Pi-owned route chain's
+  // arp/repeater/LFO, the output-insert chains, and the generator chains. The
+  // Pi supplies the tick derived from its disciplined USB-clock phase; the
+  // Pico uses its alarm tick for the TRS side. Time-generated output follows
+  // the same insert order as routed traffic.
+  void clockTick(std::uint32_t tickIndex, std::uint32_t nowMs,
+                 const DeliverFn& deliver) const;
+
+  // Retired rejection log seam: the shared core evaluates every pipe type, so
+  // rejected/lastReject* stay zero/nullptr until the app log line is removed.
+  // evaluations/emitted/dropped remain live counters.
   struct PipeDiagnostics {
     std::uint64_t evaluations = 0;
     std::uint64_t rejected = 0;
@@ -166,9 +217,12 @@ class Router {
 
   // Delivers `ev` to every enabled destination for its source. The channel
   // mask runs first, then the route's pipe chain (Pi-owned routes only), then
-  // the source transpose; realtime and system common (0xF0..0xFF) are never
-  // channel-masked or transposed (a Filter pipe can still drop them by config).
+  // the source transpose, then the destination's output inserts in route order;
+  // realtime and system common (0xF0..0xFF) are never channel-masked or
+  // transposed (a Filter pipe can still drop them by config).
   void route(const MidiEvent& ev, const DeliverFn& deliver) const;
+
+  static constexpr std::size_t kMaxOutputInserts = 4;
 
  private:
   static constexpr int idx(Port p) { return static_cast<int>(p); }
@@ -187,9 +241,28 @@ class Router {
   // setPipes()/setPipeSeed(); route()/tick() never allocate.
   PipeChain* mutableChain(Port src, Port dst) const;
 
-  void deliverPipeOutput(const PipeOutput& output, Port dst, const MidiEvent& ev,
-                         int shift, const DeliverFn& deliver) const;
-  void recordRejection(const PipeOutput& output) const;
+  struct PseudoChain {
+    PipeChain chain;
+    bool enabled = false;
+  };
+  static constexpr int generatorKey(Port dst) { return idx(dst); }
+  static constexpr int insertKey(Port dst, std::size_t slot) {
+    return 0x100 + static_cast<int>(slot) * kMaxPorts + idx(dst);
+  }
+  PseudoChain* pseudoChain(int key) const;
+
+  // Final delivery stage for one message: source transpose, then the
+  // destination's output inserts in route order, then deliver(dst, ...).
+  void deliverToDestination(Port dst, const MidiEvent& ev, int shift,
+                            std::uint32_t nowMs, const DeliverFn& deliver) const;
+  void deliverThroughInsert(Port dst, std::size_t slot, const MidiEvent& ev,
+                            std::uint32_t nowMs, const DeliverFn& deliver) const;
+  // Services one chain's time line and pushes every generated event through
+  // insert slots [firstSlot, ...). shift is the source transpose (0 for a
+  // pseudo-source chain, which is already at the destination stage).
+  void serviceChain(PipeChain& chain, Port dst, std::size_t firstSlot, int shift,
+                    std::uint32_t nowMs, std::uint32_t tickIndex, bool clocked,
+                    const DeliverFn& deliver) const;
 
   std::array<std::uint16_t, kMaxPorts> channelMask_{};
   std::array<int, kMaxPorts> transpose_{};
@@ -201,6 +274,8 @@ class Router {
   // Sparse chain storage for routes touching dynamic USB ids (key =
   // src * kMaxPorts + dst). Only configured routes exist here.
   mutable std::map<int, PipeChain> dynamicPipes_{};
+  // Generator (one per output) and output-insert (slot x output) chains.
+  mutable std::map<int, PseudoChain> pseudoPipes_{};
   mutable PipeDiagnostics pipeStats_{};
 };
 

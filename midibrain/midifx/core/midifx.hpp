@@ -129,6 +129,23 @@ class PipeChain {
   bool empty() const { return pipe_count_ == 0; }
   std::size_t pipeCount() const { return pipe_count_; }
 
+  // Copies one configured pipe (positional params included) for snapshot
+  // owners. False for an index past the chain; the output is untouched then.
+  bool pipeAt(std::size_t index, PipeConfig& out) const {
+    if (index >= pipe_count_) return false;
+    out = pipes_[index];
+    return true;
+  }
+
+  // Route legality for a generator route (src = kSrcGenerator): the chain HEAD
+  // must be a pipe whose schema role is generator (pipes.json role). An empty
+  // chain is legal but emits nothing; a modifier head is refused when the
+  // chain is configured. Bypassing the head does not change its role.
+  bool headIsGenerator() const {
+    return pipe_count_ != 0 &&
+           generated::pipeIsGenerator(static_cast<std::uint8_t>(pipes_[0].type));
+  }
+
   bool append(const PipeConfig& pipe) {
     return setPipeChunk(pipe_count_, static_cast<std::uint8_t>(pipe.type),
                         pipe.bypass, 0, pipe.params.data(), pipe.paramCount);

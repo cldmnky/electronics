@@ -15,7 +15,8 @@
       "name": "Filter",
       "short": "FILT",
       "category": "stateless",
-      "docs": "Per-message-kind pass gate; system/common messages have no mask bit and always pass.",
+      "role": "modifier",
+      "docs": "Per-message-kind pass gate; system/common messages have no mask bit and always pass. Modifier: it gates messages that already exist; with no input it can produce nothing.",
       "params": [
         {
           "key": "noteOn",
@@ -73,7 +74,8 @@
       "name": "Note Range",
       "short": "NOTE",
       "category": "stateless",
-      "docs": "Inclusive note window plus a note-on velocity window; reversed bounds swap.",
+      "role": "modifier",
+      "docs": "Inclusive note window plus a note-on velocity window; reversed bounds swap. Modifier: it windows incoming notes and velocities; it cannot invent notes.",
       "params": [
         {
           "key": "lo",
@@ -117,7 +119,8 @@
       "name": "CC Remap",
       "short": "CC",
       "category": "stateless",
-      "docs": "Linear CC-number remap: controllers in [inLo,inHi] rescale onto [outLo,outHi], rounded half away from zero.",
+      "role": "modifier",
+      "docs": "Linear CC-number remap: controllers in [inLo,inHi] rescale onto [outLo,outHi], rounded half away from zero. Modifier: it remaps incoming controllers; it cannot invent CC traffic.",
       "params": [
         {
           "key": "inLo",
@@ -159,7 +162,8 @@
       "name": "Channel Remap",
       "short": "CH",
       "category": "stateless",
-      "docs": "Channel rewriter: channel-voice messages on inCh (0 = any) move to outCh (1..16).",
+      "role": "modifier",
+      "docs": "Channel rewriter: channel-voice messages on inCh (0 = any) move to outCh (1..16). Modifier: it rewrites the channel of incoming messages; it cannot invent them.",
       "params": [
         {
           "key": "inCh",
@@ -185,7 +189,8 @@
       "name": "Scale",
       "short": "SCAL",
       "category": "stateless",
-      "docs": "Snap note events to a scale: 1..5 transpose the fixed scales by root, 6 is the absolute user mask (root ignored), 0 is off.",
+      "role": "modifier",
+      "docs": "Snap note events to a scale: 1..5 transpose the fixed scales by root, 6 is the absolute user mask (root ignored), 0 is off. Modifier: it snaps incoming note events to a scale; it cannot invent notes.",
       "params": [
         {
           "key": "scale",
@@ -238,7 +243,8 @@
       "name": "Chance",
       "short": "CHAN",
       "category": "stateless",
-      "docs": "Drops a note-on with `percent` probability; note-offs and other kinds always pass (0 disables, 100 drops every note-on).",
+      "role": "modifier",
+      "docs": "Drops a note-on with `percent` probability; note-offs and other kinds always pass (0 disables, 100 drops every note-on). Modifier: it drops incoming note-ons by probability; it cannot invent them.",
       "params": [
         {
           "key": "percent",
@@ -257,7 +263,8 @@
       "name": "Velocity",
       "short": "VEL",
       "category": "stateless",
-      "docs": "Humanize: each note-on velocity gains a uniform random delta in [-amount,+amount], clamped to [minVel,127].",
+      "role": "modifier",
+      "docs": "Humanize: each note-on velocity gains a uniform random delta in [-amount,+amount], clamped to [minVel,127]. Modifier: it humanizes incoming note-on velocities; it cannot invent notes.",
       "params": [
         {
           "key": "amount",
@@ -283,7 +290,8 @@
       "name": "Dispatch",
       "short": "DISP",
       "category": "stateless",
-      "docs": "Round-robin spread: successive note-ons rotate across numCh channels starting at startCh; the matching note-off follows its assignment.",
+      "role": "modifier",
+      "docs": "Round-robin spread: successive note-ons rotate across numCh channels starting at startCh; the matching note-off follows its assignment. Modifier: it spreads incoming notes across channels; without input notes it has nothing to spread.",
       "params": [
         {
           "key": "numCh",
@@ -309,7 +317,8 @@
       "name": "Sustain",
       "short": "SUS",
       "category": "stateless",
-      "docs": "CC64 latch: while the pedal is down, note-offs are held and released ahead of the pedal-up message.",
+      "role": "modifier",
+      "docs": "CC64 latch: while the pedal is down, note-offs are held and released ahead of the pedal-up message. Modifier: it holds incoming note-offs while CC64 is down; it needs the input stream.",
       "params": [
         {
           "key": "latch",
@@ -325,7 +334,8 @@
       "name": "Note Length",
       "short": "LEN",
       "category": "stateless",
-      "docs": "Fixed note length: the note-on passes and a matching note-off is scheduled lengthMs later (capped at 60000 ms; 0 is off).",
+      "role": "modifier",
+      "docs": "Fixed note length: the note-on passes and a matching note-off is scheduled lengthMs later (capped at 60000 ms; 0 is off). Modifier: it schedules an off for each incoming note-on; it needs the input stream.",
       "params": [
         {
           "key": "lengthMs",
@@ -344,7 +354,8 @@
       "name": "Transform",
       "short": "XF",
       "category": "stateless",
-      "docs": "Message conversion: a match of matchKind with the value in [matchLo,matchHi] converts to outKind/outVal; non-matches pass unchanged.",
+      "role": "modifier",
+      "docs": "Message conversion: a match of matchKind with the value in [matchLo,matchHi] converts to outKind/outVal; non-matches pass unchanged. Modifier: it converts incoming messages; it needs an input message to match.",
       "params": [
         {
           "key": "matchKind",
@@ -404,7 +415,8 @@
       "name": "Arp",
       "short": "ARP",
       "category": "clocked",
-      "docs": "Arpeggiator: held note-ons are consumed and the pattern is generated on the division grid (up, down, updown, random, chord).",
+      "role": "modifier",
+      "docs": "Arpeggiator: held note-ons are consumed and the pattern is generated on the division grid (up, down, updown, random, chord). Modifier: it arpeggiates HELD NOTES from the input stream; with no held notes the grid emits nothing (it is not a generator).",
       "params": [
         {
           "key": "div",
@@ -474,7 +486,8 @@
       "name": "Repeat",
       "short": "REP",
       "category": "clocked",
-      "docs": "Ratchet: every division step retriggers the whole held set, with the falloff envelope restarting every `repeats` steps.",
+      "role": "modifier",
+      "docs": "Ratchet: every division step retriggers the whole held set, with the falloff envelope restarting every `repeats` steps. Modifier: it retriggers the HELD NOTES from the input stream; with no held notes the grid emits nothing.",
       "params": [
         {
           "key": "div",
@@ -513,7 +526,8 @@
       "name": "CC LFO",
       "short": "LFO",
       "category": "clocked",
-      "docs": "Emits its own CC values on the division grid (channel 1); depth 0 holds the centre and the routed bytes pass untouched.",
+      "role": "generator",
+      "docs": "Emits its own CC values on the division grid (channel 1); depth 0 holds the centre and the routed bytes pass untouched. Generator: it emits its own CC values on the division grid without consuming an input, so it is legal at the head of a generator route. A modifier after it shapes the generated stream.",
       "params": [
         {
           "key": "cc",
@@ -571,7 +585,8 @@
       "name": "Harmony",
       "short": "HARM",
       "category": "clocked",
-      "docs": "Harmonizer: the input note passes and each distinct voice offset is added as an extra note-on, refcounted so offs follow their ons.",
+      "role": "modifier",
+      "docs": "Harmonizer: the input note passes and each distinct voice offset is added as an extra note-on, refcounted so offs follow their ons. Modifier: it adds voices to incoming notes; with no input notes there is nothing to harmonize.",
       "params": [
         {
           "key": "voices",
@@ -625,7 +640,8 @@
       "name": "MIDI Delay",
       "short": "DLY",
       "category": "clocked",
-      "docs": "Echoes note-on/note-off/CC events `repeats` times, delayMs apart and attenuated by falloff; delayMs 0 is off.",
+      "role": "modifier",
+      "docs": "Echoes note-on/note-off/CC events `repeats` times, delayMs apart and attenuated by falloff; delayMs 0 is off. Modifier: it echoes incoming events; with no input it has nothing to delay.",
       "params": [
         {
           "key": "delayMs",
@@ -655,5 +671,9 @@
         }
       ]
     }
-  ]
+  ],
+  "roles": {
+    "generator": "Emits its own messages from the caller's clock/tick grid and consumes no input. Legal as the HEAD of a generator route (src = kSrcGenerator, -1) and as a later stage in any chain, where it adds messages to the stream.",
+    "modifier": "Requires an input message to do anything (it filters, transforms, holds or echoes what arrives). Legal in src->dst routes and output-insert chains, and only after a generator head in a generator route."
+  }
 }

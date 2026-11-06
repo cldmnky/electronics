@@ -1261,6 +1261,49 @@ void piParityExtras() {
   pass("pi parity extras");
 }
 
+// Pipe role is the schema's route-legality field: only a generator pipe can
+// head a generator route, and a generator produces output with no input
+// message at all (the caller's tick grid is its source).
+void generatorRole() {
+  using mnky::midifx::generated::pipeIsGenerator;
+  for (std::uint8_t id = 1; id <= 16; ++id)
+    CHECK(pipeIsGenerator(id) == (id == 14));  // CcLfo is the only generator
+
+  // The LFO emits its own CC on the division grid without any process() call.
+  PipeChain lfo = test_chain(PipeType::CcLfo, {1, 0, 2, 64, 64});  // cc1 1/16
+  CHECK(lfo.headIsGenerator());
+  CHECK(lfo.clockTick(0, 1000).count == 0);  // first step is the next grid
+  const PipeOutput first = lfo.clockTick(6, 1000);
+  CHECK(first.count == 1);
+  CHECK(first.events[0].size == 3);
+  CHECK((first.events[0].data[0] & 0xF0) == 0xB0);
+  CHECK(first.events[0].data[1] == 1);
+  CHECK(lfo.clockTick(12, 1000).count == 1);
+
+  // A modifier after the generator head shapes the generated stream: the CC
+  // re-enters the chain at the Transform and becomes a program change.
+  PipeChain shaped;
+  const std::vector<PipeConfig> both = {
+      test_pipe(PipeType::CcLfo, {1, 0, 2, 64, 64}),
+      test_pipe(PipeType::Transform, {1, 0, 127, 2, 5}),
+  };
+  CHECK(shaped.configure(both.data(), both.size()));
+  CHECK(shaped.headIsGenerator());
+  CHECK(shaped.clockTick(0, 1000).count == 0);  // first step is the next grid
+  const PipeOutput transformed = shaped.clockTick(6, 1000);
+  CHECK(transformed.count == 1);
+  CHECK(transformed.events[0].data[0] == 0xC0);
+  CHECK(transformed.events[0].data[1] == 5);
+
+  // A modifier cannot head a generator route (the router/route graph enforces
+  // it through this same predicate).
+  CHECK(!test_chain(PipeType::Arp, {}).headIsGenerator());
+  CHECK(!test_chain(PipeType::MidiDelay, {}).headIsGenerator());
+  PipeChain empty;
+  CHECK(!empty.headIsGenerator());
+  pass("generator role");
+}
+
 }  // namespace
 
 int main() {
@@ -1272,6 +1315,7 @@ int main() {
   schemaDefaults();
   channelScope();
   piParityExtras();
+  generatorRole();
   if (g_failures != 0) {
     std::fprintf(stderr, "%d midifx core failure(s)\n", g_failures);
     return 1;

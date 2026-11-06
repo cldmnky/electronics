@@ -10,7 +10,7 @@ deferred (a parallel worker owns `pi/midi`); nothing in `pi/` is changed here.
 |---|---|
 | `core/midifx.hpp` | The single pipe engine: all 16 types, fixed-capacity, no heap, no exceptions/RTTI. Header-only so the firmware (one TU) and the Pi (any TU) compile the same source. |
 | `core/timing.hpp` | 24-PPQN tick math, LFO wave tables, bounded note sets, arp/harmony helpers, one clocked-pipe runtime slot. |
-| `pipes.json` | Single source of truth for pipe metadata: id, key, name, short name, category, docs line and `params[]` (`key`, `label`, `kind`, `min`/`max` or `choices`, `default`, `unit`). |
+| `pipes.json` | Single source of truth for pipe metadata: id, key, name, short name, category, **role** (`generator`/`modifier`, the route-legality field), docs line and `params[]` (`key`, `label`, `kind`, `min`/`max` or `choices`, `default`, `unit`). |
 | `wire-order.txt` | **Hand-frozen** `0x19` positional ABI. The generator refuses to emit when `pipes.json` no longer matches it. |
 | `gen/gen_params.py` | python3-stdlib generator + `--check` mode. Regenerate with `python3 midifx/gen/gen_params.py`. |
 | `gen/generated/midifx_params.hpp` | Generated constexpr tables for **both** builds: `kSchemaVersion`, param tables (positional `index`, keyed metadata) and `pipeDefaultParam()`. |
@@ -49,6 +49,53 @@ deferred (a parallel worker owns `pi/midi`); nothing in `pi/` is changed here.
   (the firmware previously truncated silently).
 - Wave-2 behavior is live in the core (the Pi's old parse-only rejection was a
   temporary guard; it disappears when `pi/midi` adopts the core).
+
+## Pipe roles and the two pseudo-source route kinds
+
+`pipes.json` now carries `role` on every pipe. The generated table exposes
+`generated::PipeRole`, `generated::pipeIsGenerator(id)` and `pipeRoleName()`;
+both route engines use the same predicate, so role legality cannot drift
+between the Pico and the Pi.
+
+| Pipe | Role | Why |
+|---|---|---|
+| CcLfo (14) | **generator** | Emits its own CC stream on the tick grid; consumes no input. |
+| Arp (12) | modifier | Arpeggiates held notes from the input; no held notes, no output. |
+| Repeater (13) | modifier | Retriggers held input notes; no held notes, no output. |
+| Harmonizer (15) | modifier | Adds voices to incoming notes. |
+| MidiDelay (16) | modifier | Echoes incoming events. |
+| Filter..Transform (1..11) | modifier | Every stateless pipe filters, maps or schedules an incoming message. |
+
+A **generator route** (`session::kSrcGenerator` = -1) evaluates a chain whose
+HEAD is generator-role: `PipeChain::headIsGenerator()`, the Pico
+`RouteChains::setPipeChunk` and the Pi `Router::setGeneratorPipes` all refuse a
+modifier head. The chain emits on `clockTick()` with no `process()` input. The
+Pico feeds its 24-PPQN alarm tick (`drain_route_engines()`); the Pi feeds its
+disciplined USB-clock phase through `Router::clockTick(tickIndex, nowMs, …)`.
+A modifier after the head shapes the generated stream because generated events
+re-enter the chain after the producing pipe (`runGenerated`).
+
+An **output insert** (`session::kSrcOutputInsert` = -2) is the last stage on a
+destination: a routed message runs its source route chain, then insert slot 0,
+then 1, … in route order before the wire. The Pico route graph
+(`firmware/pico/route_chain.hpp`) and the Pi `Router` implement the same order
+for immediate messages and for time-generated output (NoteLength/MidiDelay
+echoes, clocked pipes, generator output). Inserts are per destination, not per
+source, so their state is shared by every sender to that output. Ordering is
+observable and tested: a Transform at slot 0 followed by an inverse Transform
+at slot 1 proves slot order, and a MidiDelay insert delays the routed note/CC
+stream while the dry events still pass.
+
+`role` is route metadata, not wire data: it changes which chain head is legal,
+never a positional parameter, so `schemaVersion` stays 1. The generated
+`schema_tests.cpp` pins that a generator is always a clocked pipe.
+
+MidiDelay deliberately echoes only note-on/note-off/CC (existing engine
+behavior). It does not move realtime clock bytes: the firmware's clock scheduler
+emits those before routes, and the per-output `0x1B` `syncDelayMs` remains the
+clock-shift mechanism. This is the documented split for "timing on a sync
+channel"; changing MidiDelay to echo realtime would be a separate engine
+decision, not a route-kind detail.
 
 ## Firmware integration
 
@@ -175,16 +222,26 @@ with the `seed()`/`empty()` accessors, chance clamping and the
 reconfigure-rewinds-the-stream rule, the 8-pipe/9-pipe and `configure(nullptr)`
 limits, the empty-chain malformed-size rule, chain order, the NoteLength
 deadline replacement and 60 s clamp, the swapped Transform window, the sustain
-output-cap counter and the Transform conversions. The one Pi-only section not
-ported is `wave2Rejection()`: it asserts the Pi's temporary Wave-2 refusal,
-which the core replaces with the live Wave-2 engine (the plan's "free win").
-That rejection disappears when `pi/midi` adopts the core.
+output-cap counter and the Transform conversions. The former Pi-only
+`wave2Rejection()` section is deleted: the Pi now links this core through
+`pi/midi/midifx.hpp`, so Wave-2 evaluates on both sides. Route-kind expectations
+are split by what each test owns: `test_core.cpp` owns pipe behavior and the
+generator-role table; the firmware `protocol_test.cpp` owns the 0x18/0x19
+pseudo-source wire, generator-head refusal, insert order and the no-input
+generator path (`RouteChains`); `pi/midi/test_midi.cpp` owns the Pi Router
+equivalents (ownership by dst, generator `clockTick`, insert slot order,
+generator-through-insert, MidiDelay insert timing); `pi/link/test_link.cpp`
+owns pseudo-source configuration and resend; `pi/session/test_session.cpp` owns
+apply/capture forwarding. No expectation is duplicated across those four; the
+core suite runs once.
 
 ## Deferred / open
 
-- **Pi adoption**: `pi/midi/midifx.*` still has the Wave-1 copy and the Wave-2
-  rejection. Adopting the core is a link/include change plus calling
-  `begin(true)`/`configure()`; the Pi suite can then run `test_core.cpp`.
+- **Pi adoption (done)**: `pi/midi/midifx.hpp` is now a header-only adapter over
+  this core (the Wave-1 copy and Wave-2 rejection are gone). `Router` evaluates
+  all 16 types and calls `clockTick()` for Pi-owned clocked/generator chains.
+  `test_midifx.cpp` keeps the former Pi expectations and `test_core.cpp` is the
+  shared behavior suite.
 - **Schema version in the status frame**: the plan asks for the version to be
   reported in status. The firmware reports it in the boot log; a real status
   field needs `protocol.hpp` + `pi/link` changes (read-only in this lane), so it
@@ -211,6 +268,6 @@ python3 -m unittest discover -s midifx/tests -p 'test_*.py'
 /usr/bin/c++ -std=c++20 -Wall -Wextra -Werror -pedantic -I. midifx/tests/test_core.cpp
 /usr/bin/c++ -std=c++20 -Wall -Wextra -Werror -pedantic -I. midifx/tests/test_schema.cpp
 make midifx      # all of the above, wired into `make host`
-make host        # firmware protocol_test + midifx suites
-make firmware    # PICO_BOARD=pico2
+make host        # firmware protocol_test (wire + route kinds) + midifx suites
+make firmware    # PICO_BOARD=pico2 (RouteChains: generator/insert chains)
 ```
