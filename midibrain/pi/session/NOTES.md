@@ -53,6 +53,38 @@ clearEffect / paramCount / paramValue / setParamValue / bypassed / setBypassed).
   owns it). `capture()` reads the enabled Pi-side generator/insert chains and
   their pipes back, in slot order; a TRS destination is never in this view.
   A real port pair's pipe list remains app-owned.
+- `mixer.channels[i].mode` — track mode 0..3 with the values of
+  `audio::MonitorMode`: 0 = PLAY (take only), 1 = ARM (smart/auto), 2 =
+  OVERDUB (input + take layer), 3 = LIVE (input only). It is the canonical
+  field for the W1 UI words. `monitor` is the pre-W1 spelling of the same
+  values and stays encoded for old readers: the encoder writes both from
+  `mode`, and the reader derives `mode` from `monitor` when `mode` is absent
+  (a legacy file therefore loads unchanged, both fields equal). `apply()`
+  forwards `mode` to `Engine::setChannel()`, `capture()` fills both from the
+  engine's `MonitorMode`.
+- `mixer.channels[i].recSource` — recorder tap point 0..2 (default 0): 0 = PRE
+  (post-gain, pre-EQ; the historical tap and the legacy value), 1 = POST
+  (post-EQ + fader, pre-FX rack), 2 = POSTFX (post-FX rack + fader). The tap is
+  the live input only; take/clip audio never enters a recording. The session
+  reader clamps to 0..2. Engine state: `apply()` forwards it through
+  `Channel::recSource` and `capture()` reads `Engine::recSource()` back.
+- `song` — the arrangement (`SongState`):
+  `{"sections":[{"name","bars"}],"clips":[SongClip],"lengthBars","grid"}`.
+  A clip is a takes.edit region plus placement: `track` (0..kMaxTracks-1),
+  `start` (beats), `take`, `offset`, `length`, `gainDb`, `fadeIn`, `fadeOut`,
+  `normalize`, `loop`, `muted`. Section names truncate to 16 bytes at a UTF-8
+  boundary, `bars` clamps to >= 1, `grid` to 0..3 (bar/half/quarter/sixteenth),
+  `lengthBars` to >= 0 (0 = derive from the last clip), negative beats to 0
+  and `gainDb` to -96..+12. `track` and `take` are required identity keys; a
+  track outside 0..63 is a load error instead of a silently moved clip. An
+  empty song is valid. A file without `song` migrates a non-empty legacy
+  `takes.edit` into clips on their tracks at `start` 0, preserving region
+  order; a file with `song` wins, even with an empty clip list. (This also
+  made the `takes.active`, `takes.loop` and `takes.edit` sub-keys independent:
+  an edit-only legacy file now loads its regions.) The clip lanes are engine
+  state: `apply()` forwards them per track (an empty lane clears that track)
+  and `capture()` reads the applied lanes back in track order. `sections`,
+  `lengthBars` and `grid` stay app-owned; `capture()` leaves them at defaults.
 
 Pi follow-ups: create `~/Music/mnkybox-sessions` at startup; apply
 `transport.bpm_x100` to `midi::UsbClock` + `PicoLink::setTempo`; save via

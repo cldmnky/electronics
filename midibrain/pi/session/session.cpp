@@ -428,6 +428,19 @@ void clampTrackName(std::string& name) {
   name.resize(length);
 }
 
+// Song section names follow the track-name rule with a shorter budget: keep
+// them short, and never cut a multi-byte UTF-8 sequence in half. Producers
+// write printable ASCII; a file that carries more is truncated, not rejected.
+void clampSectionName(std::string& name) {
+  if (name.size() <= kMaxSectionNameBytes) return;
+  std::size_t length = kMaxSectionNameBytes;
+  while (length > 0 &&
+         (static_cast<unsigned char>(name[length]) & 0xC0) == 0x80) {
+    --length;
+  }
+  name.resize(length);
+}
+
 // "mixer.tracks": the ordered list of slots that exist. Absent keeps the
 // default (every slot, the legacy layout); an empty array is a valid empty
 // project. Slots are unique by contract - the app's add-track operation is the
@@ -742,7 +755,24 @@ bool decodeMixer(const JsonValue& node, MixerState& out, std::string& error) {
       }
       if (monitor < 0) monitor = 0;
       if (monitor > 3) monitor = 3;
-      channel.monitor = monitor;
+      // Track mode (frozen W1 contract): the canonical field. A legacy file
+      // carries only "monitor" (the same 0..3 values), so it is the fallback;
+      // both fields are kept equal in memory and the writer emits both from
+      // `mode`, which keeps old readers working.
+      int mode = monitor;
+      if (!readOptionalInt(item, "mode", mode, path, error)) return false;
+      if (mode < 0) mode = 0;
+      if (mode > 3) mode = 3;
+      channel.mode = mode;
+      channel.monitor = mode;
+      // REC SOURCE: 0 PRE / 1 POST / 2 POST+FX; absent is the legacy tap PRE.
+      int recSource = channel.recSource;
+      if (!readOptionalInt(item, "recSource", recSource, path, error)) {
+        return false;
+      }
+      if (recSource < kRecSourcePre) recSource = kRecSourcePre;
+      if (recSource > kRecSourcePostFx) recSource = kRecSourcePostFx;
+      channel.recSource = recSource;
       if (item.find("inCh") == nullptr) {
         channel.inCh = static_cast<int>(index);  // legacy: identity mapping
       } else {
@@ -1094,139 +1124,288 @@ bool decodePunch(const JsonValue& node, PunchState& out, std::string& error) {
 }
 
 bool decodeTakes(const JsonValue& node, TakesState& out, std::string& error) {
-  const JsonValue* active = node.find("active");
-  if (active == nullptr) return true;
-  if (active->type != JsonValue::Type::Object) {
-    error = "session: \"takes.active\" is not an object";
-    return false;
-  }
-  for (const auto& member : active->object) {
-    int track = -1;
-    try {
-      std::size_t pos = 0;
-      track = std::stoi(member.first, &pos);
-      if (pos != member.first.size()) track = -1;
-    } catch (...) {
-      track = -1;
-    }
-    if (track < 0 || track >= audio::kMaxInputs) continue;  // unknown track
-    if (member.second.type != JsonValue::Type::String) {
-      error = "session: \"takes.active." + member.first +
-              "\" is not a string";
+  // The three sub-keys are independent: a file may carry only "takes.edit"
+  // (the song migration consumes it) or only "takes.active".
+  if (const JsonValue* active = node.find("active")) {
+    if (active->type != JsonValue::Type::Object) {
+      error = "session: \"takes.active\" is not an object";
       return false;
     }
-    out.active[static_cast<std::size_t>(track)] = member.second.string;
-  }
-  const JsonValue* loop = node.find("loop");
-  if (loop != nullptr) {
-  if (loop->type != JsonValue::Type::Object) {
-    error = "session: \"takes.loop\" is not an object";
-    return false;
-  }
-  for (const auto& member : loop->object) {
-    int track = -1;
-    try {
-      std::size_t pos = 0;
-      track = std::stoi(member.first, &pos);
-      if (pos != member.first.size()) track = -1;
-    } catch (...) {
-      track = -1;
+    for (const auto& member : active->object) {
+      int track = -1;
+      try {
+        std::size_t pos = 0;
+        track = std::stoi(member.first, &pos);
+        if (pos != member.first.size()) track = -1;
+      } catch (...) {
+        track = -1;
+      }
+      if (track < 0 || track >= audio::kMaxInputs) continue;  // unknown track
+      if (member.second.type != JsonValue::Type::String) {
+        error = "session: \"takes.active." + member.first +
+                "\" is not a string";
+        return false;
+      }
+      out.active[static_cast<std::size_t>(track)] = member.second.string;
     }
-    if (track < 0 || track >= audio::kMaxInputs) continue;
-    if (member.second.type != JsonValue::Type::Object) {
-      error = "session: \"takes.loop." + member.first +
-              "\" is not an object";
+  }
+  if (const JsonValue* loop = node.find("loop")) {
+    if (loop->type != JsonValue::Type::Object) {
+      error = "session: \"takes.loop\" is not an object";
       return false;
     }
-    LoopState& state = out.loop[static_cast<std::size_t>(track)];
-    const std::string path = "takes.loop." + member.first;
-    if (!readOptionalBool(member.second, "enabled", state.enabled, path,
-                           error)) {
-      return false;
-    }
-    if (!readOptionalDouble(member.second, "start", state.startBeats, path,
+    for (const auto& member : loop->object) {
+      int track = -1;
+      try {
+        std::size_t pos = 0;
+        track = std::stoi(member.first, &pos);
+        if (pos != member.first.size()) track = -1;
+      } catch (...) {
+        track = -1;
+      }
+      if (track < 0 || track >= audio::kMaxInputs) continue;
+      if (member.second.type != JsonValue::Type::Object) {
+        error = "session: \"takes.loop." + member.first +
+                "\" is not an object";
+        return false;
+      }
+      LoopState& state = out.loop[static_cast<std::size_t>(track)];
+      const std::string path = "takes.loop." + member.first;
+      if (!readOptionalBool(member.second, "enabled", state.enabled, path,
                              error)) {
+        return false;
+      }
+      if (!readOptionalDouble(member.second, "start", state.startBeats, path,
+                               error)) {
+        return false;
+      }
+      if (!readOptionalDouble(member.second, "end", state.endBeats, path,
+                               error)) {
+        return false;
+      }
+      if (state.startBeats < 0.0) state.startBeats = 0.0;
+      if (state.endBeats < 0.0) state.endBeats = 0.0;
+    }
+  }
+  if (const JsonValue* edit = node.find("edit")) {
+    if (edit->type != JsonValue::Type::Object) {
+      error = "session: \"takes.edit\" is not an object";
       return false;
     }
-    if (!readOptionalDouble(member.second, "end", state.endBeats, path,
-                             error)) {
+    for (const auto& member : edit->object) {
+      int track = -1;
+      try {
+        std::size_t pos = 0;
+        track = std::stoi(member.first, &pos);
+        if (pos != member.first.size()) track = -1;
+      } catch (...) {
+        track = -1;
+      }
+      if (track < 0 || track >= audio::kMaxInputs) continue;
+      if (member.second.type != JsonValue::Type::Array) {
+        error = "session: \"takes.edit." + member.first +
+                "\" is not an array";
+        return false;
+      }
+      std::vector<TakeRegion>& regions =
+          out.edit[static_cast<std::size_t>(track)];
+      std::size_t regionIndex = 0;
+      for (const JsonValue& item : member.second.array) {
+        const std::string path = "takes.edit." + member.first + "[" +
+                                 std::to_string(regionIndex++) + "]";
+        if (item.type != JsonValue::Type::Object) {
+          error = "session: \"" + path + "\" is not an object";
+          return false;
+        }
+        TakeRegion region;
+        const JsonValue* take = item.find("take");
+        if (take == nullptr || !readString(*take, region.take)) {
+          error = "session: \"" + path + ".take\" is not a string";
+          return false;
+        }
+        if (!readOptionalDouble(item, "offset", region.offsetBeats, path,
+                                 error)) {
+          return false;
+        }
+        if (!readOptionalDouble(item, "length", region.lengthBeats, path,
+                                 error)) {
+          return false;
+        }
+        float gainDb = region.gainDb;
+        if (!readOptionalFloat(item, "gainDb", gainDb, path, error)) {
+          return false;
+        }
+        if (gainDb < -96.0f) gainDb = -96.0f;
+        if (gainDb > 12.0f) gainDb = 12.0f;
+        region.gainDb = gainDb;
+        if (!readOptionalDouble(item, "fadeIn", region.fadeInBeats, path,
+                                 error)) {
+          return false;
+        }
+        if (!readOptionalDouble(item, "fadeOut", region.fadeOutBeats, path,
+                                 error)) {
+          return false;
+        }
+        if (region.offsetBeats < 0.0) region.offsetBeats = 0.0;
+        if (region.lengthBeats < 0.0) region.lengthBeats = 0.0;
+        if (region.fadeInBeats < 0.0) region.fadeInBeats = 0.0;
+        if (region.fadeOutBeats < 0.0) region.fadeOutBeats = 0.0;
+        if (!readOptionalBool(item, "normalize", region.normalize, path,
+                               error)) {
+          return false;
+        }
+        regions.push_back(std::move(region));
+      }
+    }
+  }
+  return true;
+}
+
+// A file without a "song" section predates the arranger: its non-empty legacy
+// per-track region edit becomes the initial arrangement. Every region lands on
+// its own track at startBeats 0 in the order the file lists it, so the moved
+// material is exactly what the old reader played. A file that carries "song"
+// wins over takes.edit, even when its clip list is empty.
+void migrateSongFromTakesEdit(const TakesState& takes, SongState& out) {
+  for (int track = 0; track < audio::kMaxInputs; ++track) {
+    for (const TakeRegion& region :
+         takes.edit[static_cast<std::size_t>(track)]) {
+      SongClip clip;
+      clip.track = track;
+      clip.startBeats = 0.0;
+      clip.take = region.take;
+      clip.offsetBeats = region.offsetBeats;
+      clip.lengthBeats = region.lengthBeats;
+      clip.gainDb = region.gainDb;
+      clip.fadeInBeats = region.fadeInBeats;
+      clip.fadeOutBeats = region.fadeOutBeats;
+      clip.normalize = region.normalize;
+      clip.loop = false;
+      clip.muted = false;
+      out.clips.push_back(std::move(clip));
+    }
+  }
+}
+
+// "song": the arrangement. See SongState for the frozen key table. Identity
+// keys are required (a placement without a track/take is not a clip the app
+// could show or the engine could schedule); every other key defaults, ranged
+// values clamp per the house rules, and unknown keys are ignored.
+bool decodeSong(const JsonValue& node, SongState& out, std::string& error) {
+  if (const JsonValue* sections = node.find("sections")) {
+    if (sections->type != JsonValue::Type::Array) {
+      error = "session: \"song.sections\" is not an array";
       return false;
     }
-    if (state.startBeats < 0.0) state.startBeats = 0.0;
-    if (state.endBeats < 0.0) state.endBeats = 0.0;
-  }
-  }
-  const JsonValue* edit = node.find("edit");
-  if (edit == nullptr) return true;
-  if (edit->type != JsonValue::Type::Object) {
-    error = "session: \"takes.edit\" is not an object";
-    return false;
-  }
-  for (const auto& member : edit->object) {
-    int track = -1;
-    try {
-      std::size_t pos = 0;
-      track = std::stoi(member.first, &pos);
-      if (pos != member.first.size()) track = -1;
-    } catch (...) {
-      track = -1;
-    }
-    if (track < 0 || track >= audio::kMaxInputs) continue;
-    if (member.second.type != JsonValue::Type::Array) {
-      error = "session: \"takes.edit." + member.first +
-              "\" is not an array";
-      return false;
-    }
-    std::vector<TakeRegion>& regions =
-        out.edit[static_cast<std::size_t>(track)];
-    std::size_t regionIndex = 0;
-    for (const JsonValue& item : member.second.array) {
-      const std::string path = "takes.edit." + member.first + "[" +
-                               std::to_string(regionIndex++) + "]";
+    std::size_t index = 0;
+    for (const JsonValue& item : sections->array) {
+      const std::string path =
+          "song.sections[" + std::to_string(index++) + "]";
       if (item.type != JsonValue::Type::Object) {
         error = "session: \"" + path + "\" is not an object";
         return false;
       }
-      TakeRegion region;
+      SongSection section;
+      if (const JsonValue* name = item.find("name")) {
+        if (!readString(*name, section.name)) {
+          error = "session: \"" + path + ".name\" is not a string";
+          return false;
+        }
+        clampSectionName(section.name);
+      }
+      int bars = section.bars;
+      if (!readOptionalInt(item, "bars", bars, path, error)) return false;
+      if (bars < 1) bars = 1;
+      section.bars = bars;
+      out.sections.push_back(std::move(section));
+    }
+  }
+  if (const JsonValue* clips = node.find("clips")) {
+    if (clips->type != JsonValue::Type::Array) {
+      error = "session: \"song.clips\" is not an array";
+      return false;
+    }
+    std::size_t index = 0;
+    for (const JsonValue& item : clips->array) {
+      const std::string path = "song.clips[" + std::to_string(index++) + "]";
+      if (item.type != JsonValue::Type::Object) {
+        error = "session: \"" + path + "\" is not an object";
+        return false;
+      }
+      SongClip clip;
+      const JsonValue* track = item.find("track");
+      if (track == nullptr) {
+        error = "session: \"" + path + "\" needs track";
+        return false;
+      }
+      if (!readInt(*track, clip.track)) {
+        error = "session: \"" + path + ".track\" is not an integer";
+        return false;
+      }
+      if (clip.track < 0 || clip.track >= audio::kMaxTracks) {
+        error = "session: \"" + path + ".track\" is outside 0.." +
+                std::to_string(audio::kMaxTracks - 1);
+        return false;
+      }
       const JsonValue* take = item.find("take");
-      if (take == nullptr || !readString(*take, region.take)) {
+      if (take == nullptr || !readString(*take, clip.take)) {
         error = "session: \"" + path + ".take\" is not a string";
         return false;
       }
-      if (!readOptionalDouble(item, "offset", region.offsetBeats, path,
+      if (!readOptionalDouble(item, "start", clip.startBeats, path, error)) {
+        return false;
+      }
+      if (!readOptionalDouble(item, "offset", clip.offsetBeats, path,
                                error)) {
         return false;
       }
-      if (!readOptionalDouble(item, "length", region.lengthBeats, path,
+      if (!readOptionalDouble(item, "length", clip.lengthBeats, path,
                                error)) {
         return false;
       }
-      float gainDb = region.gainDb;
+      float gainDb = clip.gainDb;
       if (!readOptionalFloat(item, "gainDb", gainDb, path, error)) {
         return false;
       }
       if (gainDb < -96.0f) gainDb = -96.0f;
       if (gainDb > 12.0f) gainDb = 12.0f;
-      region.gainDb = gainDb;
-      if (!readOptionalDouble(item, "fadeIn", region.fadeInBeats, path,
+      clip.gainDb = gainDb;
+      if (!readOptionalDouble(item, "fadeIn", clip.fadeInBeats, path,
                                error)) {
         return false;
       }
-      if (!readOptionalDouble(item, "fadeOut", region.fadeOutBeats, path,
+      if (!readOptionalDouble(item, "fadeOut", clip.fadeOutBeats, path,
                                error)) {
         return false;
       }
-      if (region.offsetBeats < 0.0) region.offsetBeats = 0.0;
-      if (region.lengthBeats < 0.0) region.lengthBeats = 0.0;
-      if (region.fadeInBeats < 0.0) region.fadeInBeats = 0.0;
-      if (region.fadeOutBeats < 0.0) region.fadeOutBeats = 0.0;
-      if (!readOptionalBool(item, "normalize", region.normalize, path,
-                             error)) {
+      if (!readOptionalBool(item, "normalize", clip.normalize, path, error)) {
         return false;
       }
-      regions.push_back(std::move(region));
+      if (!readOptionalBool(item, "loop", clip.loop, path, error)) {
+        return false;
+      }
+      if (!readOptionalBool(item, "muted", clip.muted, path, error)) {
+        return false;
+      }
+      if (clip.startBeats < 0.0) clip.startBeats = 0.0;
+      if (clip.offsetBeats < 0.0) clip.offsetBeats = 0.0;
+      if (clip.lengthBeats < 0.0) clip.lengthBeats = 0.0;
+      if (clip.fadeInBeats < 0.0) clip.fadeInBeats = 0.0;
+      if (clip.fadeOutBeats < 0.0) clip.fadeOutBeats = 0.0;
+      out.clips.push_back(std::move(clip));
     }
   }
+  int lengthBars = out.lengthBars;
+  if (!readOptionalInt(node, "lengthBars", lengthBars, "song", error)) {
+    return false;
+  }
+  if (lengthBars < 0) lengthBars = 0;
+  out.lengthBars = lengthBars;
+  int grid = out.grid;
+  if (!readOptionalInt(node, "grid", grid, "song", error)) return false;
+  if (grid < 0) grid = 0;
+  if (grid > kSongGridSixteenth) grid = kSongGridSixteenth;
+  out.grid = grid;
   return true;
 }
 
@@ -1510,6 +1689,17 @@ bool decode(const JsonValue& root, Snapshot& out, std::string& error) {
     }
     if (!decodeTakes(*takes, out.takes, error)) return false;
   }
+  if (const JsonValue* song = root.find("song")) {
+    if (song->type != JsonValue::Type::Object) {
+      error = "session: \"song\" is not an object";
+      return false;
+    }
+    if (!decodeSong(*song, out.song, error)) return false;
+  } else {
+    // No "song": migrate the legacy region edit into clips at start 0. A file
+    // that carries "song" wins over takes.edit, even with an empty clip list.
+    migrateSongFromTakesEdit(out.takes, out.song);
+  }
   if (const JsonValue* punch = root.find("punch")) {
     if (punch->type != JsonValue::Type::Object) {
       error = "session: \"punch\" is not an object";
@@ -1738,8 +1928,14 @@ std::string encode(const Snapshot& snapshot) {
     appendNumber(out, channel.cueSend);
     out += ",\"out34\":";
     appendNumber(out, channel.out34Send);
+    // `mode` is canonical; the deprecated `monitor` is encoded from the same
+    // value so an old reader still sees the track's mode.
     out += ",\"monitor\":";
-    appendNumber(out, channel.monitor);
+    appendNumber(out, channel.mode);
+    out += ",\"mode\":";
+    appendNumber(out, channel.mode);
+    out += ",\"recSource\":";
+    appendNumber(out, channel.recSource);
     out += ",\"inCh\":";
     appendNumber(out, channel.inCh);
     out += ",\"inPair\":";
@@ -1931,7 +2127,50 @@ std::string encode(const Snapshot& snapshot) {
     }
     out.push_back(']');
   }
-  out += "}},\"punch\":{\"playFrom\":{\"enabled\":";
+  out += "}},\"song\":{\"sections\":[";
+  for (std::size_t index = 0; index < snapshot.song.sections.size();
+       ++index) {
+    if (index != 0) out.push_back(',');
+    const SongSection& section = snapshot.song.sections[index];
+    out += "{\"name\":";
+    writeString(out, section.name);
+    out += ",\"bars\":";
+    appendNumber(out, section.bars);
+    out.push_back('}');
+  }
+  out += "],\"clips\":[";
+  for (std::size_t index = 0; index < snapshot.song.clips.size(); ++index) {
+    if (index != 0) out.push_back(',');
+    const SongClip& clip = snapshot.song.clips[index];
+    out += "{\"track\":";
+    appendNumber(out, clip.track);
+    out += ",\"start\":";
+    appendNumber(out, clip.startBeats);
+    out += ",\"take\":";
+    writeString(out, clip.take);
+    out += ",\"offset\":";
+    appendNumber(out, clip.offsetBeats);
+    out += ",\"length\":";
+    appendNumber(out, clip.lengthBeats);
+    out += ",\"gainDb\":";
+    appendNumber(out, clip.gainDb);
+    out += ",\"fadeIn\":";
+    appendNumber(out, clip.fadeInBeats);
+    out += ",\"fadeOut\":";
+    appendNumber(out, clip.fadeOutBeats);
+    out += ",\"normalize\":";
+    appendBool(out, clip.normalize);
+    out += ",\"loop\":";
+    appendBool(out, clip.loop);
+    out += ",\"muted\":";
+    appendBool(out, clip.muted);
+    out.push_back('}');
+  }
+  out += "],\"lengthBars\":";
+  appendNumber(out, snapshot.song.lengthBars);
+  out += ",\"grid\":";
+  appendNumber(out, snapshot.song.grid);
+  out += "},\"punch\":{\"playFrom\":{\"enabled\":";
   appendBool(out, snapshot.punch.playFrom.enabled);
   out += ",\"measure\":";
   appendNumber(out, snapshot.punch.playFrom.measure);
@@ -2117,9 +2356,14 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
     }
     channel.cueSend = live.cueSend;
     channel.out34Send = live.out34Send;
-    // The engine enum values are the frozen session wire values (0..3), so
-    // capture returns monitor-only (3) unchanged.
-    channel.monitor = static_cast<int>(live.monitor);
+    // The engine enum values are the frozen session wire values (0..3) and
+    // the canonical session field is `mode`; `monitor` is its deprecated
+    // encoded view, so both are captured with the same value.
+    channel.mode = static_cast<int>(live.monitor);
+    channel.monitor = channel.mode;
+    // REC SOURCE (W2b): the engine holds the three-point tap selection, so a
+    // session round-trip reads it back instead of re-applying a stale value.
+    channel.recSource = static_cast<int>(engine.recSource(index));
     // Input source and output destination are routing state, not Channel
     // fields. A fresh engine is the identity mapping (strip N <- device N) with
     // every strip on Main, so a session that never selected a source round-trips
@@ -2241,6 +2485,31 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
     }
   }
 
+  // The song lane is engine scheduler state (the clips resolve to frames at
+  // the tempo they were applied with). Capture every track's applied list in
+  // track/start order; sections, lengthBars and grid stay app-owned. A track
+  // with an empty lane contributes nothing, so an empty clip list means "no
+  // arrangement", exactly like a fresh session.
+  snapshot.song.clips.clear();
+  for (int track = 0; track < audio::kMaxTracks; ++track) {
+    const std::vector<audio::SongClip> applied = engine.songClips(track);
+    for (const audio::SongClip& clip : applied) {
+      SongClip placed;
+      placed.track = track;
+      placed.startBeats = clip.startBeats;
+      placed.take = clip.take;
+      placed.offsetBeats = clip.offsetBeats;
+      placed.lengthBeats = clip.lengthBeats;
+      placed.gainDb = clip.gainDb;
+      placed.fadeInBeats = clip.fadeInBeats;
+      placed.fadeOutBeats = clip.fadeOutBeats;
+      placed.normalize = clip.normalize;
+      placed.loop = clip.loop;
+      placed.muted = clip.muted;
+      snapshot.song.clips.push_back(std::move(placed));
+    }
+  }
+
   for (int index = 0;
        index < kFxBuses && index < static_cast<int>(fxSlots.size()); ++index) {
     FxSlotTarget* slot = fxSlots[static_cast<std::size_t>(index)];
@@ -2326,9 +2595,13 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
     }
     channel.cueSend = state.cueSend;
     channel.out34Send = state.out34Send;
-    // 1:1 with the frozen wire value; setChannel() maps anything outside the
-    // documented 0..3 back to Auto.
-    channel.monitor = static_cast<audio::MonitorMode>(state.monitor);
+    // Track mode: the canonical `mode` is forwarded (the deprecated `monitor`
+    // is its encoded view, not a second input). setChannel() maps anything
+    // outside the documented 0..3 back to Auto.
+    channel.monitor = static_cast<audio::MonitorMode>(state.mode);
+    // REC SOURCE (W2b): setChannel carries the per-track tap point; anything
+    // outside 0..2 maps back to PRE in the engine.
+    channel.recSource = static_cast<audio::RecSource>(state.recSource);
     engine.setChannel(index, channel);
     engine.setInputSource(index, state.inCh);
     engine.setInputPair(index, state.inPair);
@@ -2473,6 +2746,37 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
       engine.clearTakeRegions(index);
     } else {
       (void)engine.setTakeRegions(index, edits);
+    }
+  }
+
+  // Song lanes are engine scheduler state (W4): re-apply every track from the
+  // snapshot so a load is authoritative. The engine resolves the beat fields
+  // with its current tempo, so the app applies the transport tempo before (or
+  // re-applies) the song; lengthBars/sections/grid stay app-owned. A refused
+  // lane (missing/non-48 kHz take) keeps the previous state and logs its
+  // reason, like takes.edit above.
+  for (int track = 0; track < audio::kMaxTracks; ++track) {
+    std::vector<audio::SongClip> lane;
+    for (const SongClip& clip : snapshot.song.clips) {
+      if (clip.track != track) continue;
+      audio::SongClip placed;
+      placed.track = track;
+      placed.startBeats = clip.startBeats;
+      placed.take = clip.take;
+      placed.offsetBeats = clip.offsetBeats;
+      placed.lengthBeats = clip.lengthBeats;
+      placed.gainDb = clip.gainDb;
+      placed.fadeInBeats = clip.fadeInBeats;
+      placed.fadeOutBeats = clip.fadeOutBeats;
+      placed.normalize = clip.normalize;
+      placed.loop = clip.loop;
+      placed.muted = clip.muted;
+      lane.push_back(std::move(placed));
+    }
+    if (lane.empty()) {
+      engine.clearSongClips(track);
+    } else {
+      (void)engine.setSongClips(track, lane);
     }
   }
 

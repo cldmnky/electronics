@@ -9,6 +9,7 @@
 //    "mixer":{"tracks":[{"slot":0,"name":"kick"},{"slot":1,"name":""}],
 //             "channels":[{"gain":1,"pan":0.5,"mute":false,"solo":false,
 //                          "arm":false,"send":[0,0],"cue":0,"out34":0,
+//                          "monitor":1,"mode":1,"recSource":0,
 //                          "insert":{"id":"","bypass":false,
 //                                     "params":[]},
 //                          "fxSlots":[{"id":"","bypass":false,"wet":1,
@@ -21,6 +22,12 @@
 //    "click":{"mode":0,"output":0,"gainDb":0,"bars":1},
 //    "midimap":[{"cc":74,"ch":1,"target":"mixer.ch3.gain","track":3}],
 //    "takes":{"active":{"0":"","1":"02-drums-003.wav"}},
+//    "song":{"sections":[{"name":"INTRO","bars":4}],
+//            "clips":[{"track":0,"start":0,"take":"01-drums-001.wav",
+//                      "offset":0,"length":16,"gainDb":0,"fadeIn":0.1,
+//                      "fadeOut":0.1,"normalize":false,"loop":true,
+//                      "muted":false}],
+//            "lengthBars":0,"grid":0},
 //    "punch":{"playFrom":{"enabled":false,"measure":1},
 //               "in":{"enabled":false,"measure":1},
 //               "out":{"enabled":false,"measure":1}},
@@ -44,11 +51,26 @@
 //   "router.routes[i].src" -1 / -2  generator and output-insert chains (see
 //                    kSrcGenerator / kSrcOutputInsert); absent routes keep the
 //                    documented src 0..31 -> dst 0..31 port pairs.
-// "click", "midimap", "takes", "punch", "cue",
-// "sends" and "mainComp" are additive version-2 sections: capture() leaves
-// them at their defaults and apply() does not touch them, because the app
-// owns the metronome, take registry, punch points, monitor and bus-comp
-// state. The reader accepts version 1 (mapping legacy click enabled/level)
+//   "mixer.channels[i].mode"  track mode 0..3, the same values as
+//                    audio::MonitorMode (see MixerChannelState): the canonical
+//                    W1 field. Absent = derive 1:1 from the deprecated
+//                    "monitor", so legacy files load unchanged.
+//   "mixer.channels[i].recSource"  recorder tap 0..2 = PRE / POST / POST+FX
+//                    (see MixerChannelState::recSource); absent = 0 = PRE,
+//                    the legacy tap.
+//   "song"          the arrangement: sections, placed clips, length and grid
+//                    (see SongState for the frozen key table). Absent = a
+//                    legacy file whose non-empty "takes.edit" becomes clips
+//                    at start 0; a file that carries "song" wins over it.
+// "song" and the per-track `recSource` are engine state where the engine
+// owns the seam: capture() reads the clip lanes and the tap point back, and
+// apply() forwards them. The app still owns song.sections, song.lengthBars
+// and song.grid (the arrangement's presentation and length policy).
+// "click", "midimap", "takes", "punch", "cue", "sends" and "mainComp"
+// are additive version-2 sections: capture() leaves them at their defaults and
+// apply() does not touch them, because the app owns the metronome, take
+// registry, punch points, monitor and bus-comp state.
+// The reader accepts version 1 (mapping legacy click enabled/level)
 // and version 2; it tolerates unknown fields, defaults missing ones and
 // rejects corrupt input with a reason string; it never throws across this API.
 #include <array>
@@ -73,11 +95,30 @@ inline constexpr const char* kAppId = "mnkybox";
 // Track display names are short strings that also end up in take filenames;
 // the reader truncates longer ones at a UTF-8 boundary (bytes, not codepoints).
 inline constexpr std::size_t kMaxTrackNameBytes = 64;
+// Song section names are short ASCII labels ("INTRO", "VERSE A"); the reader
+// truncates longer ones at a UTF-8 boundary (bytes, not codepoints).
+inline constexpr std::size_t kMaxSectionNameBytes = 16;
 // Two FX send buses, matching audio::kNumSends.
 inline constexpr int kFxBuses = audio::kNumSends;
 // Per-track FX rack size. Index 0 is FX1, index 1 is FX2; the engine runs
 // FX1 -> FX2 in series, post-EQ and pre-fader.
 inline constexpr int kTrackFxSlots = 2;
+// REC SOURCE wire values (frozen W1/W2b contract, see
+// MixerChannelState::recSource): where the recorder taps the track's live
+// input. PRE is the historical tap and the default, so a legacy file is PRE.
+inline constexpr int kRecSourcePre = 0;      // post-gain, pre-EQ
+inline constexpr int kRecSourcePost = 1;     // post-EQ + fader, pre-FX rack
+inline constexpr int kRecSourcePostFx = 2;   // post-FX rack + fader
+// Track mode wire values (frozen W1 contract, see MixerChannelState::mode).
+// They are the storage values of audio::MonitorMode, named by what the UI
+// shows: PLAY/ARM/OVERDUB/LIVE.
+inline constexpr int kTrackModePlay = 0;     // MonitorMode::Off, take only
+inline constexpr int kTrackModeArm = 1;      // MonitorMode::Auto, smart
+inline constexpr int kTrackModeOverdub = 2;  // MonitorMode::On, input + take
+inline constexpr int kTrackModeLive = 3;     // MonitorMode::InputOnly
+// Song clip grid: 0 = bar, 1 = half, 2 = quarter, 3 = sixteenth. The reader
+// clamps to 0..kSongGridSixteenth.
+inline constexpr int kSongGridSixteenth = 3;
 
 // MIDI FX pipe types (stable ids; positional int params documented below).
 // Wave 1 (stateless): Filter..Transform. Wave 2 (clocked): Arp..MidiDelay.
@@ -195,12 +236,27 @@ struct MixerChannelState {
   std::array<float, audio::kNumSends> send{};
   float cueSend = 0.0f;    // per-track CUE bus send level (v2)
   float out34Send = 0.0f;  // per-track OUT3&4 send level (v2)
-  // Input monitoring (MPC-style): 0 = playback only (never pass live input;
-  // "just playback"), 1 = auto (live input iff armed, or no active take
-  // playing), 2 = on (live input + take layer; "both playback and
-  // monitoring"), 3 = monitor only (live input always, take never plays;
-  // "just monitoring").
+  // Track mode (frozen W1 wire contract): the same 0..3 values as
+  // audio::MonitorMode, presented as words: 0 = PLAY (take only, live input
+  // never passes), 1 = ARM (smart/auto: live input iff armed or no take is
+  // playing), 2 = OVERDUB (live input + take layer), 3 = LIVE (live input
+  // only, the take never plays). This is the canonical field: the writer emits
+  // it plus the deprecated "monitor" from the same value, and the reader
+  // derives it from "monitor" when "mode" is absent. A loaded or captured
+  // snapshot keeps the two equal; `mode` is what apply() forwards.
+  int mode = 1;
+  // DEPRECATED: the pre-W1 spelling of `mode` (identical values, MPC input-
+  // monitoring wording). Kept encoded for old readers and kept equal to
+  // `mode` on load; new code binds to `mode`.
   int monitor = 1;
+  // REC SOURCE (frozen W1/W2b wire contract): where the recorder taps this
+  // track's live input. 0 = PRE (post-gain, pre-EQ; the default and therefore
+  // the legacy value), 1 = POST (post-EQ + fader, pre-FX rack), 2 = POSTFX
+  // (post-FX rack + fader). Take/clip audio never enters a recording; the tap
+  // is always the live input signal processed through that track's chain.
+  // Engine state: apply() forwards it to Channel::recSource and capture()
+  // reads Engine::recSource() back.
+  int recSource = kRecSourcePre;
   // Input source: mono device channel 0..17, or -1 = none. `inPair` binds
   // the next channel as a stereo pair (inCh must be even; odd clamps down).
   // Output destination: 0 = Main 1&2, 1 = OUT3&4, 2 = phones, 3 = none.
@@ -398,6 +454,85 @@ struct TakesState {
   friend bool operator==(const TakesState&, const TakesState&) = default;
 };
 
+// One song section marker ("INTRO", "VERSE A"). `name` is a short ASCII label
+// of at most kMaxSectionNameBytes; `bars` is its length in bars (>= 1).
+struct SongSection {
+  std::string name;
+  int bars = 1;
+  friend bool operator==(const SongSection&, const SongSection&) = default;
+};
+
+// One take region placed on a song track: exactly the non-destructive
+// TakeRegion fields (take/offset/length/gainDb/fades/normalize) plus the
+// placement and the clip switches. `startBeats` is the song position;
+// `lengthBeats` 0 = to the end of the take; `loop` repeats the region for the
+// clip's length; `muted` keeps the clip but makes it inaudible. Clips never
+// overlap on a track - the engine scheduler rejects an overlap, the session
+// reader only stores the placement.
+//
+// FROZEN WIRE CONTRACT for the app and engine workers (W1 session wave):
+//   "clips":[{"track":<int>,"start":<beats>,"take":<string>,
+//              "offset":<beats>,"length":<beats>,"gainDb":<number>,
+//              "fadeIn":<beats>,"fadeOut":<beats>,"normalize":<bool>,
+//              "loop":<bool>,"muted":<bool>},...]
+//   track       song track index 0..audio::kMaxTracks-1 (the 64-track song
+//               model; the mixer.channels store keeps its own fixed width)
+//   start       clip start in beats from the song start (>= 0)
+//   take/offset/length/gainDb/fadeIn/fadeOut/normalize
+//               exactly the takes.edit region keys and semantics (length 0 =
+//               to the end of the take, gainDb -96..+12)
+//   loop        loop the region for the clip length (default false)
+//   muted       clip is inaudible, its state is kept (default false)
+struct SongClip {
+  int track = 0;
+  double startBeats = 0.0;
+  std::string take;
+  double offsetBeats = 0.0;
+  double lengthBeats = 0.0;
+  float gainDb = 0.0f;  // -96..+12
+  double fadeInBeats = 0.0;
+  double fadeOutBeats = 0.0;
+  bool normalize = false;
+  bool loop = false;
+  bool muted = false;
+  friend bool operator==(const SongClip&, const SongClip&) = default;
+};
+
+// The song arrangement (the `song` section).
+//
+// FROZEN WIRE CONTRACT (W1 session wave; the app and engine workers bind to
+// exactly this table):
+//   "song":{"sections":[{"name":<string>,"bars":<int>},...],
+//           "clips":[<SongClip>,...],"lengthBars":<int>,"grid":<int>}
+//   sections[]  ordered section markers; name ASCII, <= kMaxSectionNameBytes
+//               (the reader truncates longer names at a UTF-8 boundary), bars
+//               clamped to >= 1; absent name = "", absent bars = 1; a repeated
+//               name is allowed (duplicate section is an app verb, not session
+//               state)
+//   clips[]     ordered SongClip placements (see above); order is stable;
+//               track and take are required, every other clip key defaults to
+//               0/false
+//   lengthBars  0 = derive the song length from the last clip, negative clamps
+//               to 0; otherwise the song length in bars; absent = 0
+//   grid        0 = bar, 1 = half, 2 = quarter, 3 = sixteenth; clamped to
+//               0..kSongGridSixteenth; absent = 0
+// An empty song (no sections, no clips, lengthBars 0, grid 0) is valid; it is
+// also the default of a Snapshot. A file WITHOUT "song" migrates a non-empty
+// legacy "takes.edit" into clips on their tracks at startBeats 0, preserving
+// the per-track region order (loop and muted are false, since the legacy
+// region has neither switch); a file WITH "song" wins over "takes.edit",
+// even when its clip list is empty. Unknown keys are ignored at every level.
+// clips are engine state (the clip scheduler): apply() forwards them per track
+// and capture() reads the applied lanes back in track order; sections,
+// lengthBars and grid stay app-owned.
+struct SongState {
+  std::vector<SongSection> sections;
+  std::vector<SongClip> clips;
+  int lengthBars = 0;
+  int grid = 0;
+  friend bool operator==(const SongState&, const SongState&) = default;
+};
+
 // Monitor configuration. `phonesSrc`: 0 = CUE mix, 1 = Main duplicate.
 // `style`: 0 = per-track CUE fader levels, 1 = per-track CUE toggle.
 struct CueState {
@@ -465,6 +600,7 @@ struct Snapshot {
   std::vector<MidiMapEntry> midimap;
   bool isTemplate = false;  // v2: settings-only project, no take registry
   TakesState takes;
+  SongState song;
   PunchState punch;
   CueState cue;
   SendsState sends;
@@ -492,12 +628,17 @@ class FxSlotTarget {
 
 // Reads the live Router/Engine (and optional FX slots) into a session snapshot.
 // Ports 0..kPortCount-1 and all audio::kMaxInputs mixer strips are always
-// captured, so the result is canonical and save/load round-trips exactly. The app-owned
-// sections (click, midimap, takes, punch, cue, sends, mainComp, isTemplate)
-// stay at their defaults; the app fills them before save(). mixer.tracks is
-// likewise app-owned while the engine has no dynamic track list: capture()
-// reports allSlots() (the legacy layout), and the app overwrites it with its
-// live list. The per-track FX rack is engine state (audio wave 11): capture()
+// captured, so the result is canonical and save/load round-trips exactly. Each
+// strip's canonical track mode is captured into `mode` and mirrored into the
+// deprecated `monitor` (both are 1:1 with audio::MonitorMode); its per-track
+// recSource is read back from the engine. The engine also owns the song clip
+// lanes, captured in track order; song.sections, song.lengthBars and song.grid
+// stay app-owned, as do the other app-owned sections (click, midimap, takes,
+// punch, cue, sends, mainComp, isTemplate); the app fills them before save().
+// mixer.tracks is likewise app-owned while the engine has no dynamic track
+// list: capture() reports allSlots() (the legacy layout), and the app
+// overwrites it with its live list. The per-track FX rack is engine state
+// (audio wave 11): capture()
 // reads both slots back and apply() forwards them; a built-in id comes back
 // with the values the DSP holds, a CLAP id and its parameter vector verbatim
 // (the plugin owns its table). The deprecated `insert` is captured as the
@@ -513,11 +654,15 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
 // forwarded to the Router's generator/output-insert chains when their
 // destination is Pi-owned; a TRS destination belongs to the Pico and is left
 // for the link. A real port pair's pipe list stays app-owned, as before.
-// The app-owned sections (click, midimap, takes, punch, cue, sends,
-// mainComp, isTemplate, out34mode and the per-channel cue/out34 sends) are
-// not applied here; the app forwards them once the engine exposes them. The
-// same holds for mixer.tracks (dynamic track list) and the per-track FX rack
-// (mixer.channels[].fxSlots).
+// The app-owned sections (click, midimap, takes, punch, cue, sends, mainComp,
+// isTemplate, out34mode, the per-channel cue/out34 sends, and song.sections /
+// song.lengthBars / song.grid) are not applied here; the app forwards them
+// once the engine exposes them. mixer.tracks (dynamic track list) and the
+// per-track FX rack (mixer.channels[].fxSlots) are handled below. The track
+// mode IS applied, from the canonical `mode` field (the deprecated `monitor`
+// is its encoded view, not a second input), and so are the per-track
+// recSource and the song clip lanes: a load is authoritative, so an empty lane
+// clears the engine's lane for that track.
 void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine,
            std::span<FxSlotTarget*> fxSlots = {});
 

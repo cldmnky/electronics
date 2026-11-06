@@ -35,6 +35,8 @@ using mnky::session::MidiPipe;
 using mnky::session::MidiPipeType;
 using mnky::session::RouteState;
 using mnky::session::Snapshot;
+using mnky::session::SongClip;
+using mnky::session::SongState;
 
 int gFailures = 0;
 
@@ -158,6 +160,47 @@ void testRoundTrip() {
   region.fadeOutBeats = 1.0;
   region.normalize = true;
   original.takes.edit[1].push_back(region);
+
+  // Song: four sections, six placed clips, every clip field exercised and at
+  // least one clip with loop/muted set. The round-trip equality below is the
+  // strict check; the exact-key checks in testSongWireAndEmpty pin the wire.
+  original.song.sections = {{ "INTRO", 4 },
+                            { "VERSE A", 8 },
+                            { "CHORUS", 8 },
+                            { "OUTRO", 4 }};
+  const auto makeClip = [](int track, double start, std::string take,
+                           double offset, double length, float gainDb,
+                           double fadeIn, double fadeOut, bool normalize,
+                           bool loop, bool muted) {
+    mnky::session::SongClip clip;
+    clip.track = track;
+    clip.startBeats = start;
+    clip.take = std::move(take);
+    clip.offsetBeats = offset;
+    clip.lengthBeats = length;
+    clip.gainDb = gainDb;
+    clip.fadeInBeats = fadeIn;
+    clip.fadeOutBeats = fadeOut;
+    clip.normalize = normalize;
+    clip.loop = loop;
+    clip.muted = muted;
+    return clip;
+  };
+  original.song.clips = {
+      makeClip(0, 0.0, "01-drums-001.wav", 0.0, 16.0, 0.0f, 0.125, 0.25,
+               false, true, false),
+      makeClip(0, 16.0, "01-drums-002.wav", 4.0, 8.0, -3.5f, 0.0, 0.5, true,
+               false, false),
+      makeClip(2, 0.0, "02-bass-001.wav", 0.0, 0.0, 12.0f, 0.25, 0.25,
+               false, false, true),
+      makeClip(2, 24.5, "02-bass-002.wav", 1.5, 6.25, -96.0f, 0.0, 0.0,
+               false, false, false),
+      makeClip(9, 2.0, "09-keys-001.wav", 0.0, 12.0, 1.5f, 1.0, 1.0, true,
+               true, false),
+      makeClip(63, 30.75, "63-vox-001.wav", 2.0, 4.0, -6.0f, 0.5, 0.75,
+               false, false, false)};
+  original.song.lengthBars = 32;
+  original.song.grid = 2;
   original.punch.playFrom.enabled = true;
   original.punch.playFrom.measure = 5;
   original.punch.in.enabled = true;
@@ -173,9 +216,16 @@ void testRoundTrip() {
   original.mainComp.mode = 1;
   original.mixer.channels[2].cueSend = 0.75f;
   original.mixer.channels[2].out34Send = 0.5f;
+  // Track mode is canonical; the deprecated `monitor` must carry the same
+  // value in a canonical snapshot (decode() and capture() keep them in sync).
+  original.mixer.channels[2].mode = 2;
   original.mixer.channels[2].monitor = 2;
+  original.mixer.channels[3].mode = 0;
   original.mixer.channels[3].monitor = 0;
+  original.mixer.channels[4].mode = 3;
   original.mixer.channels[4].monitor = 3;
+  original.mixer.channels[2].recSource = mnky::session::kRecSourcePostFx;
+  original.mixer.channels[3].recSource = mnky::session::kRecSourcePost;
   original.mixer.channels[2].inCh = 5;
   original.mixer.channels[2].inPair = true;
   original.mixer.channels[2].outDst = 1;
@@ -252,6 +302,10 @@ void testRoundTrip() {
   // 18 slots in order, and every channel carries an empty (none) insert.
   CHECK(text.find("\"tracks\":[{\"slot\":0,\"name\":\"\"},"
                   "{\"slot\":1,\"name\":\"\"}") != std::string::npos);
+  // The canonical mode is encoded twice: `mode` plus the deprecated
+  // `monitor` old readers still use. recSource is per track.
+  CHECK(text.find("\"monitor\":2,\"mode\":2,\"recSource\":2") !=
+        std::string::npos);
   CHECK(text.find("\"insert\":{\"id\":\"\",\"bypass\":false,"
                   "\"params\":[]}") != std::string::npos);
 
@@ -1383,6 +1437,353 @@ void testPseudoSourceApplyCapture() {
 
 }
 
+// ------------------------------------------------------ track mode + rec source
+
+void testTrackModeAndRecSource() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("mode.json");
+  const auto loadText = [&](const std::string& text) {
+    CHECK(writeFile(path, text));
+    return mnky::session::load(path);
+  };
+
+  // Legacy files carry only "monitor": mode derives 1:1 from it (and the
+  // deprecated field comes back equal to the canonical one).
+  LoadResult result = loadText(
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"monitor":3},{"monitor":0},{"monitor":9},{"monitor":-4}]}})");
+  CHECK(result.ok);
+  CHECK(result.snapshot.mixer.channels[0].mode == 3);
+  CHECK(result.snapshot.mixer.channels[0].monitor == 3);
+  CHECK(result.snapshot.mixer.channels[1].mode == 0);
+  CHECK(result.snapshot.mixer.channels[2].mode == 3);  // clamped 0..3
+  CHECK(result.snapshot.mixer.channels[3].mode == 0);
+  CHECK(result.snapshot.mixer.channels[0].recSource ==
+        mnky::session::kRecSourcePre);  // legacy file = PRE
+
+  // "mode" is canonical: an absent "monitor" mirrors it, and a conflicting
+  // deprecated "monitor" loses to it (both fields are synced on load).
+  result = loadText(
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"mode":2},{"mode":9,"monitor":0}]}})");
+  CHECK(result.ok);
+  CHECK(result.snapshot.mixer.channels[0].mode == 2);
+  CHECK(result.snapshot.mixer.channels[0].monitor == 2);
+  CHECK(result.snapshot.mixer.channels[1].mode == 3);
+  CHECK(result.snapshot.mixer.channels[1].monitor == 3);
+
+  // REC SOURCE clamps to PRE..POSTFX; absent is PRE.
+  result = loadText(
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"recSource":2},{"recSource":9},{"recSource":-3},{}]}})");
+  CHECK(result.ok);
+  CHECK(result.snapshot.mixer.channels[0].recSource ==
+        mnky::session::kRecSourcePostFx);
+  CHECK(result.snapshot.mixer.channels[1].recSource ==
+        mnky::session::kRecSourcePostFx);
+  CHECK(result.snapshot.mixer.channels[2].recSource ==
+        mnky::session::kRecSourcePre);
+  CHECK(result.snapshot.mixer.channels[3].recSource ==
+        mnky::session::kRecSourcePre);
+
+  // Wrong-typed known fields reject with the field path in the reason.
+  result = loadText(
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"mode":"arm"}]}})");
+  CHECK(!result.ok);
+  CHECK(result.error.find("mixer.channels[0].mode") != std::string::npos);
+  CHECK(result.error.find("integer") != std::string::npos);
+  result = loadText(
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"recSource":true}]}})");
+  CHECK(!result.ok);
+  CHECK(result.error.find("mixer.channels[0].recSource") != std::string::npos);
+  result = loadText(
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"monitor":[]}]}})");
+  CHECK(!result.ok);
+  CHECK(result.error.find("mixer.channels[0].monitor") != std::string::npos);
+}
+
+void testTrackModeApplyCapture() {
+  Router router;
+  Engine engine;
+  Snapshot snapshot;
+  snapshot.mixer.channels[0].mode = 3;
+  snapshot.mixer.channels[0].monitor = 3;
+  snapshot.mixer.channels[1].mode = 0;
+  snapshot.mixer.channels[1].monitor = 0;
+  // The canonical field wins over a stale deprecated view.
+  snapshot.mixer.channels[2].mode = 2;
+  snapshot.mixer.channels[2].monitor = 1;
+  snapshot.mixer.channels[3].recSource = mnky::session::kRecSourcePostFx;
+  snapshot.song.sections = {{ "INTRO", 4 }};
+  SongClip clip;
+  clip.track = 3;
+  clip.startBeats = 8.0;
+  clip.take = "03-keys-001.wav";
+  clip.muted = true;
+  snapshot.song.clips.push_back(clip);
+
+  mnky::session::apply(snapshot, router, engine);
+  CHECK(engine.channel(0).monitor == mnky::audio::MonitorMode::InputOnly);
+  CHECK(engine.channel(1).monitor == mnky::audio::MonitorMode::Off);
+  CHECK(engine.channel(2).monitor == mnky::audio::MonitorMode::On);
+
+  const Snapshot captured = mnky::session::capture(router, engine);
+  CHECK(captured.mixer.channels[0].mode == 3);
+  CHECK(captured.mixer.channels[0].monitor == 3);
+  CHECK(captured.mixer.channels[1].mode == 0);
+  CHECK(captured.mixer.channels[1].monitor == 0);
+  CHECK(captured.mixer.channels[2].mode == 2);
+  CHECK(captured.mixer.channels[3].mode == 1);  // untouched strip = Auto/ARM
+  // The DAW engine wave added the two seams: REC SOURCE is engine strip state
+  // and the applied song lane is captured back. Sections/lengthBars/grid stay
+  // app-owned, so the one muted clip is the whole captured arrangement.
+  CHECK(engine.recSource(3) == mnky::audio::RecSource::PostFx);
+  CHECK(captured.mixer.channels[3].recSource ==
+        mnky::session::kRecSourcePostFx);
+  CHECK(captured.song.clips.size() == 1);
+  if (captured.song.clips.size() == 1) {
+    CHECK(captured.song.clips[0].track == 3);
+    CHECK(captured.song.clips[0].startBeats == 8.0);
+    CHECK(captured.song.clips[0].take == "03-keys-001.wav");
+    CHECK(captured.song.clips[0].muted);
+  }
+  CHECK(captured.song.sections.empty());
+  CHECK(captured.song.lengthBars == 0);
+  CHECK(captured.song.grid == 0);
+
+  // A load is authoritative: an empty snapshot clears the applied lane and
+  // resets the tap to PRE.
+  const Snapshot cleared;
+  mnky::session::apply(cleared, router, engine);
+  CHECK(engine.songClips(3).empty());
+  CHECK(engine.recSource(3) == mnky::audio::RecSource::Pre);
+  const Snapshot recovered = mnky::session::capture(router, engine);
+  CHECK(recovered.song.clips.empty());
+  CHECK(recovered.mixer.channels[3].recSource ==
+        mnky::session::kRecSourcePre);
+}
+
+// ------------------------------------------------------------ song section
+
+void testSongWireAndEmpty() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("song.json");
+  const auto loadText = [&](const std::string& text) {
+    CHECK(writeFile(path, text));
+    return mnky::session::load(path);
+  };
+
+  // A default snapshot writes an empty song; it loads back as the default and
+  // an explicit empty song is valid too.
+  const Snapshot empty;
+  CHECK(mnky::session::save(path, empty));
+  CHECK(readFile(path).find("\"song\":{\"sections\":[],\"clips\":[],"
+                            "\"lengthBars\":0,\"grid\":0}") !=
+        std::string::npos);
+  LoadResult result = mnky::session::load(path);
+  if (!result.ok) std::printf("FAIL song load: %s\n", result.error.c_str());
+  CHECK(result.ok);
+  CHECK(result.snapshot.song == SongState{});
+  CHECK(result.snapshot == Snapshot{});
+
+  result = loadText(
+      R"({"app":"mnkybox","session":2,"song":{},"takes":{"edit":{"0":[{"take":"a.wav"}]}}})");
+  CHECK(result.ok);
+  CHECK(result.snapshot.song.sections.empty());
+  CHECK(result.snapshot.song.clips.empty());
+  CHECK(result.snapshot.song.lengthBars == 0);
+  CHECK(result.snapshot.song.grid == 0);
+
+  // The exact wire keys for one populated song (the app and engine workers
+  // bind to this spelling).
+  Snapshot wire;
+  wire.song.sections = {{ "INTRO", 4 }};
+  SongClip clip;
+  clip.track = 0;
+  clip.take = "01-drums-001.wav";
+  wire.song.clips.push_back(clip);
+  wire.song.lengthBars = 8;
+  wire.song.grid = 3;
+  CHECK(mnky::session::save(path, wire));
+  const std::string text = readFile(path);
+  CHECK(text.find("\"song\":{\"sections\":[{\"name\":\"INTRO\",\"bars\":4}],"
+                  "\"clips\":[{\"track\":0,\"start\":0,"
+                  "\"take\":\"01-drums-001.wav\",\"offset\":0,"
+                  "\"length\":0,\"gainDb\":0,\"fadeIn\":0,"
+                  "\"fadeOut\":0,\"normalize\":false,\"loop\":false,"
+                  "\"muted\":false}],\"lengthBars\":8,\"grid\":3}") !=
+        std::string::npos);
+
+  // Unknown keys are ignored at every level.
+  result = loadText(
+      R"({"app":"mnkybox","session":2,"song":{"tempo":120,"sections":[{"name":"INTRO","bars":4,"color":"red"}],"clips":[{"track":1,"start":4,"take":"x.wav","note":3}],"grid":1,"extra":null}})");
+  CHECK(result.ok);
+  CHECK(result.snapshot.song.sections.size() == 1);
+  CHECK(result.snapshot.song.sections[0].name == "INTRO");
+  CHECK(result.snapshot.song.sections[0].bars == 4);
+  CHECK(result.snapshot.song.clips.size() == 1);
+  CHECK(result.snapshot.song.clips[0].track == 1);
+  CHECK(result.snapshot.song.clips[0].startBeats == 4.0);
+  CHECK(result.snapshot.song.clips[0].take == "x.wav");
+  CHECK(result.snapshot.song.grid == 1);
+}
+
+void testSongMigration() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("migrate.json");
+  const std::string legacy =
+      R"({"app":"mnkybox","session":2,"takes":{"edit":{"0":[{"take":"a.wav","offset":1,"length":2,"gainDb":-3,"fadeIn":0.5,"fadeOut":0.25,"normalize":true},{"take":"b.wav"}],"2":[{"take":"c.wav","length":4,"gainDb":3}]}}})";
+  CHECK(writeFile(path, legacy));
+
+  // No "song": the legacy region edit becomes clips on their tracks at
+  // startBeats 0, in file order, with every region field carried over.
+  LoadResult result = mnky::session::load(path);
+  if (!result.ok) std::printf("FAIL migrate: %s\n", result.error.c_str());
+  CHECK(result.ok);
+  CHECK(result.snapshot.takes.edit[0].size() == 2);  // no "active" needed
+  CHECK(result.snapshot.takes.edit[2].size() == 1);
+  CHECK(result.snapshot.song.clips.size() == 3);
+  const SongClip& first = result.snapshot.song.clips[0];
+  CHECK(first.track == 0);
+  CHECK(first.startBeats == 0.0);
+  CHECK(first.take == "a.wav");
+  CHECK(first.offsetBeats == 1.0);
+  CHECK(first.lengthBeats == 2.0);
+  CHECK(first.gainDb == -3.0f);
+  CHECK(first.fadeInBeats == 0.5);
+  CHECK(first.fadeOutBeats == 0.25);
+  CHECK(first.normalize);
+  CHECK(!first.loop);
+  CHECK(!first.muted);
+  CHECK(result.snapshot.song.clips[1].track == 0);
+  CHECK(result.snapshot.song.clips[1].startBeats == 0.0);
+  CHECK(result.snapshot.song.clips[1].take == "b.wav");
+  CHECK(result.snapshot.song.clips[2].track == 2);
+  CHECK(result.snapshot.song.clips[2].startBeats == 0.0);
+  CHECK(result.snapshot.song.clips[2].take == "c.wav");
+  CHECK(result.snapshot.song.clips[2].lengthBeats == 4.0);
+  CHECK(result.snapshot.song.clips[2].gainDb == 3.0f);
+  CHECK(result.snapshot.song.lengthBars == 0);
+  CHECK(result.snapshot.song.grid == 0);
+
+  // A file with "song" wins over takes.edit, even when the song is empty or
+  // carries its own clips.
+  const std::string withSong = legacy.substr(0, legacy.size() - 1) +
+      R"(,"song":{"clips":[{"track":1,"start":4,"take":"x.wav"}],"grid":1}})";
+  CHECK(writeFile(path, withSong));
+  result = mnky::session::load(path);
+  CHECK(result.ok);
+  CHECK(result.snapshot.song.clips.size() == 1);
+  CHECK(result.snapshot.song.clips[0].track == 1);
+  CHECK(result.snapshot.song.clips[0].startBeats == 4.0);
+  CHECK(result.snapshot.song.clips[0].take == "x.wav");
+  CHECK(result.snapshot.song.grid == 1);
+  CHECK(result.snapshot.takes.edit[0].size() == 2);  // kept, not migrated
+
+  const std::string emptySong = legacy.substr(0, legacy.size() - 1) +
+      R"(,"song":{}})";
+  CHECK(writeFile(path, emptySong));
+  result = mnky::session::load(path);
+  CHECK(result.ok);
+  CHECK(result.snapshot.song.clips.empty());
+}
+
+void testSongClampsAndRejects() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("song-corrupt.json");
+  const auto loadText = [&](const std::string& text) {
+    CHECK(writeFile(path, text));
+    return mnky::session::load(path);
+  };
+
+  // Negative beats, gain and length clamp; section bars and song length clamp
+  // to their documented minimums; grid clamps to 0..3.
+  LoadResult result = loadText(
+      R"({"app":"mnkybox","session":2,"song":{"sections":[{"name":"THIS NAME IS MUCH LONGER THAN 16","bars":0},{"name":"X","bars":-4}],"clips":[{"track":0,"start":-4,"take":"a.wav","offset":-1,"length":-2,"gainDb":-200,"fadeIn":-0.5,"fadeOut":-1,"normalize":true,"loop":true,"muted":true},{"track":63,"take":"b.wav","gainDb":40}],"lengthBars":-3,"grid":-1}})");
+  CHECK(result.ok);
+  CHECK(result.snapshot.song.sections.size() == 2);
+  CHECK(result.snapshot.song.sections[0].name.size() == 16);
+  CHECK(result.snapshot.song.sections[0].name == "THIS NAME IS MUC");
+  CHECK(result.snapshot.song.sections[0].bars == 1);
+  CHECK(result.snapshot.song.sections[1].bars == 1);
+  CHECK(result.snapshot.song.clips.size() == 2);
+  const SongClip& clamped = result.snapshot.song.clips[0];
+  CHECK(clamped.startBeats == 0.0);
+  CHECK(clamped.offsetBeats == 0.0);
+  CHECK(clamped.lengthBeats == 0.0);
+  CHECK(clamped.gainDb == -96.0f);
+  CHECK(clamped.fadeInBeats == 0.0);
+  CHECK(clamped.fadeOutBeats == 0.0);
+  CHECK(clamped.normalize);
+  CHECK(clamped.loop);
+  CHECK(clamped.muted);
+  CHECK(result.snapshot.song.clips[1].track == 63);  // kMaxTracks-1
+  CHECK(result.snapshot.song.clips[1].gainDb == 12.0f);
+  CHECK(result.snapshot.song.lengthBars == 0);
+  CHECK(result.snapshot.song.grid == 0);
+
+  result = loadText(
+      R"({"app":"mnkybox","session":2,"song":{"grid":9}})");
+  CHECK(result.ok);
+  CHECK(result.snapshot.song.grid == 3);
+
+  struct Reject {
+    const char* json;
+    const char* path;
+  };
+  const Reject rejects[] = {
+      {R"({"app":"mnkybox","session":2,"song":[]})", "song"},
+      {R"({"app":"mnkybox","session":2,"song":{"sections":{}}})",
+       "song.sections"},
+      {R"({"app":"mnkybox","session":2,"song":{"sections":[1]}})",
+       "song.sections[0]"},
+      {R"({"app":"mnkybox","session":2,"song":{"sections":[{"name":5}]}})",
+       "song.sections[0].name"},
+      {R"({"app":"mnkybox","session":2,"song":{"sections":[{"bars":"4"}]}})",
+       "song.sections[0].bars"},
+      {R"({"app":"mnkybox","session":2,"song":{"clips":{}}})",
+       "song.clips"},
+      {R"({"app":"mnkybox","session":2,"song":{"clips":[1]}})",
+       "song.clips[0]"},
+      {R"({"app":"mnkybox","session":2,"song":{"clips":[{"take":"a.wav"}]}})",
+       "song.clips[0]"},
+      {R"({"app":"mnkybox","session":2,"song":{"clips":[{"track":"0","take":"a.wav"}]}})",
+       "song.clips[0].track"},
+      {R"({"app":"mnkybox","session":2,"song":{"clips":[{"track":64,"take":"a.wav"}]}})",
+       "song.clips[0].track"},
+      {R"({"app":"mnkybox","session":2,"song":{"clips":[{"track":0}]}})",
+       "song.clips[0].take"},
+      {R"({"app":"mnkybox","session":2,"song":{"clips":[{"track":0,"take":"a","start":"x"}]}})",
+       "song.clips[0].start"},
+      {R"({"app":"mnkybox","session":2,"song":{"clips":[{"track":0,"take":"a","normalize":1}]}})",
+       "song.clips[0].normalize"},
+      {R"({"app":"mnkybox","session":2,"song":{"clips":[{"track":0,"take":"a","loop":"yes"}]}})",
+       "song.clips[0].loop"},
+      {R"({"app":"mnkybox","session":2,"song":{"clips":[{"track":0,"take":"a","muted":0}]}})",
+       "song.clips[0].muted"},
+      {R"({"app":"mnkybox","session":2,"song":{"lengthBars":"x"}})",
+       "song.lengthBars"},
+      {R"({"app":"mnkybox","session":2,"song":{"grid":1.5}})",
+       "song.grid"},
+  };
+  for (const Reject& reject : rejects) {
+    result = loadText(reject.json);
+    CHECK(!result.ok);
+    CHECK(result.error.find(reject.path) != std::string::npos);
+    CHECK(result.error.find("session:") != std::string::npos);
+  }
+  // The out-of-range track names the whole valid interval.
+  result = loadText(
+      R"({"app":"mnkybox","session":2,"song":{"clips":[{"track":64,"take":"a.wav"}]}})");
+  CHECK(!result.ok);
+  CHECK(result.error.find("outside 0..63") != std::string::npos);
+}
+
 void run(const char* name, void (*test)()) {
   const int before = gFailures;
   test();
@@ -1415,6 +1816,12 @@ int main() {
   run("per-track FX rack legacy end-to-end", testTrackFxRackLegacyEndToEnd);
   run("pseudo-source routes round-trip", testPseudoSourceRoutes);
   run("pseudo-source apply/capture", testPseudoSourceApplyCapture);
+  run("track mode derives from monitor (legacy), clamps, recSource",
+      testTrackModeAndRecSource);
+  run("track mode apply/capture", testTrackModeApplyCapture);
+  run("song wire keys, empty song, unknown keys", testSongWireAndEmpty);
+  run("song migration from takes.edit", testSongMigration);
+  run("song clamps and wrong-type rejects", testSongClampsAndRejects);
   run("save/load file errors", testFileErrors);
   if (gFailures != 0) {
     std::printf("FAIL %d check(s)\n", gFailures);
