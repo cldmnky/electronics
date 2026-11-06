@@ -3,10 +3,14 @@
 //
 // One session is one UTF-8 JSON file:
 //   {"app":"mnkybox","session":2,"template":false,
-//    "router":{"routes":[{"src":0,"dst":5,"on":true}],
+//    "router":{"routes":[{"src":0,"dst":5,"on":true,"pipes":[]},
+//                        {"src":-1,"dst":2,"on":true,"pipes":[]}],
 //              "channels":{"0":65535},"transpose":{"0":0}},
-//    "mixer":{"channels":[{"gain":1,"pan":0.5,"mute":false,"solo":false,
-//                          "arm":false,"send":[0,0],"cue":0,"out34":0} x18],
+//    "mixer":{"tracks":[{"slot":0,"name":"kick"},{"slot":1,"name":""}],
+//             "channels":[{"gain":1,"pan":0.5,"mute":false,"solo":false,
+//                          "arm":false,"send":[0,0],"cue":0,"out34":0,
+//                          "insert":{"id":"","bypass":false,
+//                                     "params":[]}} x audio::kMaxInputs],
 //             "master":1,"out34mode":0},
 //    "fx":{"bus":[{"id":"com.example.gain","params":[0.5],"bypass":false} x2]},
 //    "transport":{"bpm_x100":12000},
@@ -22,7 +26,16 @@
 //                  "releaseMs":100,"makeupDb":0,"mode":0}}
 // Port ids are midi::Port's underlying integers. FX ids are CLAP plugin ids or
 // "builtin.<name>"; parameter indices are the effect's stable order (owned and
-// documented by the FX team). "click", "midimap", "takes", "punch", "cue",
+// documented by the FX team). Three additive version-2 keys extend the layout
+// without a version bump, because their absence is exactly the legacy state:
+//   "mixer.tracks"   ordered list of the slots that exist (see MixerState);
+//                    absent = all audio::kMaxInputs slots in order.
+//   "mixer.channels[i].insert"  one per-track FX insert (see FxInsertState);
+//                    absent or empty id = no insert.
+//   "router.routes[i].src" -1 / -2  generator and output-insert chains (see
+//                    kSrcGenerator / kSrcOutputInsert); absent routes keep the
+//                    documented src 0..31 -> dst 0..31 port pairs.
+// "click", "midimap", "takes", "punch", "cue",
 // "sends" and "mainComp" are additive version-2 sections: capture() leaves
 // them at their defaults and apply() does not touch them, because the app
 // owns the metronome, take registry, punch points, monitor and bus-comp
@@ -48,6 +61,9 @@ inline constexpr int kVersion = 2;
 inline constexpr int kSessionMaxPorts = 32;
 // Lowest session version this build reads (v1 click maps to v2 fields).
 inline constexpr const char* kAppId = "mnkybox";
+// Track display names are short strings that also end up in take filenames;
+// the reader truncates longer ones at a UTF-8 boundary (bytes, not codepoints).
+inline constexpr std::size_t kMaxTrackNameBytes = 64;
 // Two FX send buses, matching audio::kNumSends.
 inline constexpr int kFxBuses = audio::kNumSends;
 
@@ -87,6 +103,24 @@ struct MidiPipe {
   std::vector<int> params;
   friend bool operator==(const MidiPipe&, const MidiPipe&) = default;
 };
+// Pseudo-sources for route kinds beyond src->dst pairs:
+//   kSrcGenerator (-1): chain emits from generator pipes (chain head must be
+//     generator-capable per pipes.json role); no input consumed. Target is a
+//     real output.
+//   kSrcOutputInsert (-2): every message routed to `dst` passes this chain
+//     first (an insert on the output; use for timing shifts on a sync
+//     channel etc.). Multiple inserts on one dst chain in route order.
+// Route endpoints are range-checked on read: src is one of the two pseudo
+// sources or a real port 0..kSessionMaxPorts-1 (so -2..31), dst is a real port
+// 0..kSessionMaxPorts-1. The router has no pseudo port: apply() forwards a
+// pseudo route to Router::setGenerator*/setOutputInsert* when its destination
+// is Pi-owned (USB) and skips it when the Pico owns that output (TRS), where
+// the link configures it over 0x18/0x19. capture() reads the enabled Pi-side
+// pseudo chains back; real port pairs stay as before (the app owns their
+// chains).
+inline constexpr int kSrcGenerator = -1;
+inline constexpr int kSrcOutputInsert = -2;
+
 struct RouteState {
   int src = 0;
   int dst = 0;
@@ -111,6 +145,17 @@ struct RouterState {
   friend bool operator==(const RouterState&, const RouterState&) = default;
 };
 
+// One per-track FX insert instance (see MixerChannelState::insert). The wire
+// form is an object like an fx.bus entry: "id" (CLAP id or "builtin.<name>",
+// empty = no insert), "bypass" and "params" (doubles in the effect's stable
+// order; extra saved params are ignored on load, exactly like fx.bus).
+struct FxInsertState {
+  std::string id;  // empty = none; "builtin.delay" | "builtin.reverb" | CLAP id
+  bool bypass = false;
+  std::vector<double> params;
+  friend bool operator==(const FxInsertState&, const FxInsertState&) = default;
+};
+
 struct MixerChannelState {
   float gain = 1.0f;
   float pan = 0.5f;
@@ -132,11 +177,53 @@ struct MixerChannelState {
   int inCh = 0;
   bool inPair = false;
   int outDst = 0;
+  // Per-track FX insert (v2): one effect instance with its own settings,
+  // post-EQ pre-fader per the engine placement. The global FX send buses
+  // stay as they are — this is the per-track instance path. Wire form is
+  // "insert":{"id","bypass","params"} exactly like an fx.bus entry, so an
+  // absent object or an empty id means "no insert" and params are doubles in
+  // the effect's stable order. Engine state as of audio wave 9: apply()
+  // forwards it to Engine::setTrackInsert() and capture() reads the applied
+  // values back; the app's mixer model still writes the snapshot before save
+  // (project_io.cpp), exactly like the dynamic track list (NOTES.md).
+  FxInsertState insert;
   friend bool operator==(const MixerChannelState&, const MixerChannelState&) = default;
 };
 
 struct MixerState {
+  // Per-slot configuration store (fixed capacity by design: the audio path
+  // never allocates). Which slots EXIST is dynamic: `tracks` is the ordered
+  // list of active slots; the mixer shows exactly these, in this order.
+  // Absent "tracks" (legacy sessions) = all slots active in order; an empty
+  // list is valid (new empty project).
+  struct TrackEntry {
+    int slot = 0;        // 0..audio::kMaxInputs-1
+    std::string name;    // display name (also embedded in take filenames)
+    friend bool operator==(const TrackEntry&, const TrackEntry&) = default;
+  };
+  // The identity list: slot i named "", i.e. the legacy full-capacity layout.
+  // It is both the default value of `tracks` and what an absent "tracks" key
+  // reads as, so a default MixerState is exactly a legacy session. The entry
+  // count follows audio::kMaxInputs, never a literal.
+  static std::vector<TrackEntry> allSlots() {
+    std::vector<TrackEntry> list;
+    list.reserve(static_cast<std::size_t>(audio::kMaxInputs));
+    for (int slot = 0; slot < audio::kMaxInputs; ++slot) {
+      list.push_back(TrackEntry{slot, {}});
+    }
+    return list;
+  }
   std::array<MixerChannelState, audio::kMaxInputs> channels{};
+  // Wire form: "tracks":[{"slot":n,"name":"..."},...]. An absent key keeps
+  // allSlots(); an empty array is a valid empty project. Slots are unique and
+  // inside 0..kMaxInputs-1: a repeated slot or an out-of-range one is a load
+  // error with a named reason, because a corrupt file must not silently drop
+  // or invent a track (the app's add-track operation is the idempotent side:
+  // adding a slot that is already listed keeps its first position). Names are
+  // truncated to kMaxTrackNameBytes. This list is ordering/visibility only:
+  // channels[] stays the fixed capacity store, so a hidden slot keeps its
+  // settings.
+  std::vector<TrackEntry> tracks = allSlots();
   float master = 1.0f;
   int out34Mode = 0;  // v2: 0 = OUT3&4 stereo pair, 1 = two mono sends
   friend bool operator==(const MixerState&, const MixerState&) = default;
@@ -372,19 +459,29 @@ class FxSlotTarget {
 };
 
 // Reads the live Router/Engine (and optional FX slots) into a session snapshot.
-// Ports 0..kPortCount-1 and all 18 mixer strips are always captured, so the
-// result is canonical and save/load round-trips exactly. The app-owned
+// Ports 0..kPortCount-1 and all audio::kMaxInputs mixer strips are always
+// captured, so the result is canonical and save/load round-trips exactly. The app-owned
 // sections (click, midimap, takes, punch, cue, sends, mainComp, isTemplate)
-// stay at their defaults; the app fills them before save().
+// stay at their defaults; the app fills them before save(). mixer.tracks is
+// likewise app-owned while the engine has no dynamic track list: capture()
+// reports allSlots() (the legacy layout), and the app overwrites it with its
+// live list. Per-track inserts are engine state (audio wave 9), so capture()
+// reads them back and apply() forwards them; a built-in id comes back with the
+// values the DSP holds, a CLAP id verbatim (the plugin owns its table).
 Snapshot capture(const midi::Router& router, const audio::Engine& engine,
                  std::span<FxSlotTarget*> fxSlots = {});
 
 // Applies a snapshot to the live objects. The router and mixer are replaced
 // wholesale (defaults for anything the snapshot omits); FX slots are updated
 // only when the effect id can be loaded. Invalid port/route ids are ignored.
+// The pseudo-source route kinds (kSrcGenerator, kSrcOutputInsert) are
+// forwarded to the Router's generator/output-insert chains when their
+// destination is Pi-owned; a TRS destination belongs to the Pico and is left
+// for the link. A real port pair's pipe list stays app-owned, as before.
 // The app-owned sections (click, midimap, takes, punch, cue, sends,
 // mainComp, isTemplate, out34mode and the per-channel cue/out34 sends) are
-// not applied here; the app forwards them once the engine exposes them.
+// not applied here; the app forwards them once the engine exposes them. The
+// same holds for mixer.tracks (dynamic track list).
 void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine,
            std::span<FxSlotTarget*> fxSlots = {});
 
@@ -399,8 +496,10 @@ struct LoadResult {
 
 // Reads and validates a session file. Versions 1 and 2 are accepted (v1
 // click enabled/level map onto the v2 mode/output/gainDb fields); anything
-// else is rejected, as is any malformed JSON or wrong-typed known field;
-// missing fields take defaults and unknown fields are ignored. Never throws.
+// else is rejected, as is any malformed JSON, wrong-typed known field or
+// out-of-range value of a known field (track slot, repeated track slot, route
+// endpoint). Missing fields take defaults - so a file without "tracks" loads as
+// the full slot list - and unknown fields are ignored. Never throws.
 LoadResult load(const std::string& path) noexcept;
 
 }  // namespace mnky::session

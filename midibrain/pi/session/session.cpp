@@ -1,5 +1,6 @@
 #include "session.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdio>
@@ -415,6 +416,112 @@ bool readOptionalBool(const JsonValue& object, const char* key, bool& out,
   return true;
 }
 
+// Track names are display strings that also end up in take filenames: keep
+// them short, and never cut a multi-byte UTF-8 sequence in half.
+void clampTrackName(std::string& name) {
+  if (name.size() <= kMaxTrackNameBytes) return;
+  std::size_t length = kMaxTrackNameBytes;
+  while (length > 0 &&
+         (static_cast<unsigned char>(name[length]) & 0xC0) == 0x80) {
+    --length;
+  }
+  name.resize(length);
+}
+
+// "mixer.tracks": the ordered list of slots that exist. Absent keeps the
+// default (every slot, the legacy layout); an empty array is a valid empty
+// project. Slots are unique by contract - the app's add-track operation is the
+// idempotent one (a slot that is already listed keeps its first position), so
+// a file that lists a slot twice is corrupt and names the offending entry
+// instead of silently dropping a track. A slot outside the fixed store is the
+// same kind of error, not something to clamp into a slot nobody asked for.
+bool decodeMixerTracks(const JsonValue& node, MixerState& out,
+                       std::string& error) {
+  const JsonValue* tracks = node.find("tracks");
+  if (tracks == nullptr) return true;
+  if (tracks->type != JsonValue::Type::Array) {
+    error = "session: \"mixer.tracks\" is not an array";
+    return false;
+  }
+  std::vector<MixerState::TrackEntry> decoded;
+  std::size_t index = 0;
+  for (const JsonValue& item : tracks->array) {
+    const std::string path = "mixer.tracks[" + std::to_string(index) + "]";
+    ++index;
+    if (item.type != JsonValue::Type::Object) {
+      error = "session: \"" + path + "\" is not an object";
+      return false;
+    }
+    const JsonValue* slotValue = item.find("slot");
+    if (slotValue == nullptr) {
+      error = "session: \"" + path + "\" needs slot";
+      return false;
+    }
+    MixerState::TrackEntry entry;
+    if (!readInt(*slotValue, entry.slot)) {
+      error = "session: \"" + path + ".slot\" is not an integer";
+      return false;
+    }
+    if (entry.slot < 0 || entry.slot >= audio::kMaxInputs) {
+      error = "session: \"" + path + ".slot\" is outside 0.." +
+              std::to_string(audio::kMaxInputs - 1);
+      return false;
+    }
+    if (const JsonValue* name = item.find("name")) {
+      if (!readString(*name, entry.name)) {
+        error = "session: \"" + path + ".name\" is not a string";
+        return false;
+      }
+      clampTrackName(entry.name);
+    }
+    for (const MixerState::TrackEntry& listed : decoded) {
+      if (listed.slot == entry.slot) {
+        error = "session: \"" + path + ".slot\" repeats slot " +
+                std::to_string(entry.slot);
+        return false;
+      }
+    }
+    decoded.push_back(std::move(entry));
+  }
+  out.tracks = std::move(decoded);
+  return true;
+}
+
+// One per-track FX insert: "insert":{"id","bypass","params"}, the same shape
+// as an fx.bus entry. An absent object or an empty id means "no insert".
+bool decodeInsert(const JsonValue& node, const std::string& path,
+                  FxInsertState& out, std::string& error) {
+  if (node.type != JsonValue::Type::Object) {
+    error = "session: \"" + path + "\" is not an object";
+    return false;
+  }
+  if (const JsonValue* id = node.find("id")) {
+    if (!readString(*id, out.id)) {
+      error = "session: \"" + path + ".id\" is not a string";
+      return false;
+    }
+  }
+  if (!readOptionalBool(node, "bypass", out.bypass, path, error)) return false;
+  if (const JsonValue* params = node.find("params")) {
+    if (params->type != JsonValue::Type::Array) {
+      error = "session: \"" + path + ".params\" is not an array";
+      return false;
+    }
+    std::size_t paramIndex = 0;
+    for (const JsonValue& value : params->array) {
+      double param = 0.0;
+      if (!readDouble(value, param)) {
+        error = "session: \"" + path + ".params[" +
+                std::to_string(paramIndex) + "]\" is not a number";
+        return false;
+      }
+      out.params.push_back(param);
+      ++paramIndex;
+    }
+  }
+  return true;
+}
+
 bool parsePortKey(const std::string& key, int& port) {
   if (key.empty()) return false;
   int parsed = 0;
@@ -448,6 +555,21 @@ bool decodeRouter(const JsonValue& node, RouterState& out, std::string& error) {
       if (!readOptionalInt(item, "src", route.src, path, error)) return false;
       if (!readOptionalInt(item, "dst", route.dst, path, error)) return false;
       if (!readOptionalBool(item, "on", route.on, path, error)) return false;
+      // src is a real port 0..kSessionMaxPorts-1 or one of the two pseudo
+      // sources; dst is always a real port. An out-of-range endpoint names the
+      // offending field instead of silently rerouting, the same way the
+      // midimap decoder rejects a cc outside 0..127.
+      if (route.src < kSrcOutputInsert || route.src >= kSessionMaxPorts) {
+        error = "session: \"" + path + ".src\" is outside " +
+                std::to_string(kSrcOutputInsert) + ".." +
+                std::to_string(kSessionMaxPorts - 1);
+        return false;
+      }
+      if (route.dst < 0 || route.dst >= kSessionMaxPorts) {
+        error = "session: \"" + path + ".dst\" is outside 0.." +
+                std::to_string(kSessionMaxPorts - 1);
+        return false;
+      }
       if (const JsonValue* pipes = item.find("pipes")) {
         if (pipes->type != JsonValue::Type::Array) {
           error = "session: \"" + path + ".pipes\" is not an array";
@@ -564,6 +686,7 @@ bool decodeRouter(const JsonValue& node, RouterState& out, std::string& error) {
 }
 
 bool decodeMixer(const JsonValue& node, MixerState& out, std::string& error) {
+  if (!decodeMixerTracks(node, out, error)) return false;
   if (const JsonValue* channels = node.find("channels")) {
     if (channels->type != JsonValue::Type::Array) {
       error = "session: \"mixer.channels\" is not an array";
@@ -623,6 +746,11 @@ bool decodeMixer(const JsonValue& node, MixerState& out, std::string& error) {
       if (outDst < 0) outDst = 0;
       if (outDst > 3) outDst = 3;
       channel.outDst = outDst;
+      if (const JsonValue* insert = item.find("insert")) {
+        if (!decodeInsert(*insert, path + ".insert", channel.insert, error)) {
+          return false;
+        }
+      }
       if (const JsonValue* send = item.find("send")) {
         if (send->type != JsonValue::Type::Array) {
           error = "session: \"" + path + ".send\" is not an array";
@@ -1524,7 +1652,17 @@ std::string encode(const Snapshot& snapshot) {
   }
   out += "}}";
 
-  out += ",\"mixer\":{\"channels\":[";
+  out += ",\"mixer\":{\"tracks\":[";
+  for (std::size_t index = 0; index < snapshot.mixer.tracks.size(); ++index) {
+    if (index != 0) out.push_back(',');
+    const MixerState::TrackEntry& track = snapshot.mixer.tracks[index];
+    out += "{\"slot\":";
+    appendNumber(out, track.slot);
+    out += ",\"name\":";
+    writeString(out, track.name);
+    out.push_back('}');
+  }
+  out += "],\"channels\":[";
   for (int index = 0; index < audio::kMaxInputs; ++index) {
     if (index != 0) out.push_back(',');
     const MixerChannelState& channel =
@@ -1555,6 +1693,17 @@ std::string encode(const Snapshot& snapshot) {
     appendBool(out, channel.inPair);
     out += ",\"outDst\":";
     appendNumber(out, channel.outDst);
+    out += ",\"insert\":{\"id\":";
+    writeString(out, channel.insert.id);
+    out += ",\"bypass\":";
+    appendBool(out, channel.insert.bypass);
+    out += ",\"params\":[";
+    for (std::size_t param = 0; param < channel.insert.params.size();
+         ++param) {
+      if (param != 0) out.push_back(',');
+      appendNumber(out, channel.insert.params[param]);
+    }
+    out += "]}";
     out += "}";
   }
   out += "],\"master\":";
@@ -1797,6 +1946,27 @@ std::string encode(const Snapshot& snapshot) {
   return out;
 }
 
+midi::PipeConfig toRouterPipe(const MidiPipe& pipe) {
+  midi::PipeConfig config;
+  config.type = static_cast<midi::PipeType>(static_cast<std::uint8_t>(pipe.type));
+  config.bypass = pipe.bypass;
+  config.chMask = pipe.chMask;
+  const std::size_t count = std::min<std::size_t>(
+      pipe.params.size(), static_cast<std::size_t>(midi::kMaxPipeParams));
+  config.paramCount = static_cast<std::uint8_t>(count);
+  for (std::size_t i = 0; i < count; ++i) config.params[i] = pipe.params[i];
+  return config;
+}
+
+MidiPipe fromRouterPipe(const midi::PipeConfig& config) {
+  MidiPipe pipe;
+  pipe.type = static_cast<MidiPipeType>(static_cast<std::uint8_t>(config.type));
+  pipe.bypass = config.bypass;
+  pipe.chMask = config.chMask;
+  pipe.params.assign(config.params.begin(),
+                     config.params.begin() + config.paramCount);
+  return pipe;
+}
 }  // namespace
 
 // ------------------------------------------------------------------- capture
@@ -1814,6 +1984,43 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
       if (router.routeEnabled(source, destination)) {
         snapshot.router.routes.push_back(RouteState{src, dst, true, {}});
       }
+    }
+  }
+  // Pseudo-source chains are Pi-owned only when their destination is a USB
+  // port; a TRS destination is configured on the Pico and not part of this
+  // snapshot's Router view. Insert slots are emitted in slot order, which is
+  // the order apply() maps back onto the slots.
+  for (int dst = 0; dst < midi::kPortCount; ++dst) {
+    const auto destination = static_cast<midi::Port>(dst);
+    if (!midi::isOutput(destination) ||
+        !midi::piOwnsPipeChain(midi::kSrcGenerator, destination))
+      continue;
+    if (router.generatorEnabled(destination)) {
+      std::array<midi::PipeConfig, midi::kMaxRoutePipes> configs{};
+      std::size_t count = 0;
+      RouteState route;
+      route.src = kSrcGenerator;
+      route.dst = dst;
+      route.on = true;
+      if (router.generatorPipes(destination, configs.data(), configs.size(), count)) {
+        for (std::size_t i = 0; i < count; ++i)
+          route.pipes.push_back(fromRouterPipe(configs[i]));
+      }
+      snapshot.router.routes.push_back(std::move(route));
+    }
+    for (std::size_t slot = 0; slot < midi::Router::kMaxOutputInserts; ++slot) {
+      if (!router.outputInsertEnabled(destination, slot)) continue;
+      std::array<midi::PipeConfig, midi::kMaxRoutePipes> configs{};
+      std::size_t count = 0;
+      RouteState route;
+      route.src = kSrcOutputInsert;
+      route.dst = dst;
+      route.on = true;
+      if (router.outputInsertPipes(destination, slot, configs.data(), configs.size(), count)) {
+        for (std::size_t i = 0; i < count; ++i)
+          route.pipes.push_back(fromRouterPipe(configs[i]));
+      }
+      snapshot.router.routes.push_back(std::move(route));
     }
   }
   for (int port = 0; port < midi::kPortCount; ++port) {
@@ -1848,9 +2055,21 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
     channel.inCh = engine.inputSource(index);
     channel.inPair = engine.inputPair(index);
     channel.outDst = static_cast<int>(engine.outputDestination(index));
+    // The per-track FX insert is engine state (audio wave 9): capture reads
+    // the applied id/bypass/params back, with the values the DSP actually
+    // holds (built-in ranges clamped, stepped selectors rounded).
+    const audio::TrackInsert insert = engine.trackInsert(index);
+    channel.insert.id = insert.id;
+    channel.insert.bypass = insert.bypass;
+    channel.insert.params = insert.params;
   }
   snapshot.mixer.master = engine.masterGain();
   snapshot.mixer.out34Mode = static_cast<int>(engine.out34Mode());
+  // The engine owns audio::kMaxInputs fixed strips and has no dynamic track
+  // list yet, so a capture reports the legacy layout (MixerState::allSlots(),
+  // the default
+  // value of mixer.tracks). The app overwrites it with its live ordered list
+  // before save(), exactly like click/midimap/takes.
 
   // Physical device output map: engine state since the native audio backend
   // wave, so a saved project round-trips which device pair carries Main,
@@ -1969,13 +2188,39 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
                       static_cast<midi::Port>(dst), false);
     }
   }
+  // Pseudo-source chains are the Pi engine's route kinds (owner exception:
+  // session apply/capture forwards them). A generator route is one chain per
+  // destination; kSrcOutputInsert entries map to insert slots in route order.
+  // A destination the Pico owns (a TRS output) is skipped: the link configures
+  // that side over 0x18/0x19. Only pseudo routes pass their pipes here; a
+  // real port pair's chain stays app-owned (MidiGlue), as before.
+  router.clearPseudoPipes();
+  std::array<int, kSessionMaxPorts> insertSlots{};
   for (const RouteState& route : snapshot.router.routes) {
-    if (route.src < 0 || route.src >= kSessionMaxPorts || route.dst < 0 ||
-        route.dst >= kSessionMaxPorts) {
+    if (route.dst < 0 || route.dst >= kSessionMaxPorts) continue;
+    const auto destination = static_cast<midi::Port>(route.dst);
+    if (route.src == kSrcGenerator) {
+      std::vector<midi::PipeConfig> configs;
+      configs.reserve(route.pipes.size());
+      for (const MidiPipe& pipe : route.pipes) configs.push_back(toRouterPipe(pipe));
+      if (!router.setGeneratorPipes(destination, configs.data(), configs.size()))
+        continue;
+      (void)router.setGenerator(destination, route.on);
       continue;
     }
-    router.setRoute(static_cast<midi::Port>(route.src),
-                    static_cast<midi::Port>(route.dst), route.on);
+    if (route.src == kSrcOutputInsert) {
+      const std::size_t slot = static_cast<std::size_t>(insertSlots[route.dst]++);
+      if (slot >= midi::Router::kMaxOutputInserts) continue;
+      std::vector<midi::PipeConfig> configs;
+      configs.reserve(route.pipes.size());
+      for (const MidiPipe& pipe : route.pipes) configs.push_back(toRouterPipe(pipe));
+      if (!router.setOutputInsertPipes(destination, slot, configs.data(), configs.size()))
+        continue;
+      (void)router.setOutputInsert(destination, slot, route.on);
+      continue;
+    }
+    if (route.src < 0 || route.src >= kSessionMaxPorts) continue;
+    router.setRoute(static_cast<midi::Port>(route.src), destination, route.on);
   }
   for (int port = 0; port < midi::kPortCount; ++port) {
     const auto value = static_cast<midi::Port>(port);
@@ -2008,6 +2253,14 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
     engine.setInputPair(index, state.inPair);
     engine.setOutputDestination(
         index, static_cast<audio::OutputDestination>(state.outDst));
+    // Per-track FX insert (audio wave 9): one instance per track, post-EQ and
+    // pre-fader. An empty id detaches; a changed id re-initializes only that
+    // track's instance and a parameter-only change is applied hot.
+    audio::TrackInsert insert;
+    insert.id = state.insert.id;
+    insert.bypass = state.insert.bypass;
+    insert.params = state.insert.params;
+    engine.setTrackInsert(index, insert);
   }
   engine.setMaster(snapshot.mixer.master);
   engine.setOut34Mode(

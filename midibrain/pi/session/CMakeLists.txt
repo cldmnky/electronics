@@ -33,10 +33,12 @@ target_compile_options(mnky_session PRIVATE ${MNKY_WARNINGS})
 if(TARGET mnky_audio)
   set(MNKY_SESSION_AUDIO mnky_audio)
 else()
-  # engine.cpp references TakePlayer/ClickSource: keep every audio TU the
-  # engine links against in this fallback list.
+  # engine.cpp references TakePlayer/ClickSource and the built-in insert FX
+  # (fx::Effect/Delay/Reverb): keep every audio TU the engine links against in
+  # this fallback list, mirroring pi/audio/CMakeLists.txt's mnky_audio sources.
   add_library(mnky_session_audio STATIC ../audio/engine.cpp ../audio/take_player.cpp
-                  ../audio/click.cpp)
+                  ../audio/click.cpp ../audio/fx/effect.cpp ../audio/fx/params.cpp
+                  ../audio/fx/delay.cpp ../audio/fx/reverb.cpp)
   target_include_directories(mnky_session_audio PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../audio)
   target_compile_features(mnky_session_audio PUBLIC cxx_std_20)

@@ -7,6 +7,7 @@
 // gate.
 #include <array>
 #include <cstdint>
+#include <utility>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -105,15 +106,17 @@ void testRoundTrip() {
   original.router.transpose[0] = -12;
   original.router.transpose[2] = 7;
 
+  // The last strip index comes from the capacity constant, never a literal.
+  const auto lastStrip = static_cast<std::size_t>(mnky::audio::kMaxInputs - 1);
   original.mixer.channels[0].gain = 0.125f;
   original.mixer.channels[0].pan = 0.0f;
   original.mixer.channels[0].mute = true;
   original.mixer.channels[0].send = {0.25f, 0.75f};
-  original.mixer.channels[17].gain = 1.5f;
-  original.mixer.channels[17].pan = 1.0f;
-  original.mixer.channels[17].solo = true;
-  original.mixer.channels[17].arm = true;
-  original.mixer.channels[17].send = {1.0f, 0.0f};
+  original.mixer.channels[lastStrip].gain = 1.5f;
+  original.mixer.channels[lastStrip].pan = 1.0f;
+  original.mixer.channels[lastStrip].solo = true;
+  original.mixer.channels[lastStrip].arm = true;
+  original.mixer.channels[lastStrip].send = {1.0f, 0.0f};
   original.mixer.master = 0.8f;
 
   original.fx.bus[0].id = "com.mnkygain";
@@ -245,6 +248,12 @@ void testRoundTrip() {
   CHECK(text.find("\"midimap\":[") != std::string::npos);
   CHECK(text.find("\"target\":\"mixer.ch3.gain\"") != std::string::npos);
   CHECK(text.find("\\\"slap\\\"") != std::string::npos);
+  // A snapshot that never touched the track list saves the legacy layout: all
+  // 18 slots in order, and every channel carries an empty (none) insert.
+  CHECK(text.find("\"tracks\":[{\"slot\":0,\"name\":\"\"},"
+                  "{\"slot\":1,\"name\":\"\"}") != std::string::npos);
+  CHECK(text.find("\"insert\":{\"id\":\"\",\"bypass\":false,"
+                  "\"params\":[]}") != std::string::npos);
 
   const LoadResult loaded = mnky::session::load(path);
   if (!loaded.ok) std::printf("FAIL load: %s\n", loaded.error.c_str());
@@ -386,7 +395,9 @@ void testMissingFields() {
   CHECK(result.snapshot.mixer.channels[0].gain == 1.0f);
   CHECK(result.snapshot.mixer.channels[1].gain == 0.25f);
   CHECK(result.snapshot.mixer.channels[1].pan == 0.5f);
-  CHECK(result.snapshot.mixer.channels[17].gain == 1.0f);
+  CHECK(result.snapshot.mixer.channels[static_cast<std::size_t>(
+            mnky::audio::kMaxInputs - 1)]
+            .gain == 1.0f);
 
   CHECK(writeFile(path,
                   R"({"app":"mnkybox","session":1,"click":{"enabled":true}})"));
@@ -518,7 +529,7 @@ void testApplyAndCapture() {
   const Channel channel7 = engine.channel(7);
   CHECK(channel7.gain == 1.2f);
   CHECK(channel7.solo);
-  const Channel untouched = engine.channel(17);
+  const Channel untouched = engine.channel(mnky::audio::kMaxInputs - 1);
   CHECK(untouched.gain == 1.0f);
   CHECK(untouched.pan == 0.5f);
   CHECK(engine.masterGain() == 0.7f);
@@ -645,6 +656,473 @@ void testFileErrors() {
   CHECK(!mnky::session::save(dir.file(""), snapshot));
 }
 
+// --------------------------------------------------------- dynamic track list
+
+void testTrackListRoundTrip() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("tracks.json");
+
+  // Custom order + names: the list defines which slots exist and their order.
+  // The last slot index comes from the capacity constant, never a literal.
+  const int lastSlot = mnky::audio::kMaxInputs - 1;
+  Snapshot original;
+  original.mixer.tracks = {{2, "Kick"}, {0, "Snare top"}, {lastSlot, "Vox \xC3\xA9"}};
+  original.mixer.channels[static_cast<std::size_t>(lastSlot)].gain = 0.25f;
+  CHECK(mnky::session::save(path, original));
+  const std::string text = readFile(path);
+  CHECK(text.find("\"tracks\":[{\"slot\":2,\"name\":\"Kick\"},"
+                  "{\"slot\":0,\"name\":\"Snare top\"},"
+                  "{\"slot\":" + std::to_string(lastSlot) +
+                  ",\"name\":\"Vox \xC3\xA9\"}]") != std::string::npos);
+  LoadResult loaded = mnky::session::load(path);
+  if (!loaded.ok) std::printf("FAIL tracks load: %s\n", loaded.error.c_str());
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot == original);
+  CHECK(loaded.snapshot.mixer.tracks.size() == 3);
+  CHECK(loaded.snapshot.mixer.tracks[0].slot == 2);
+  // The list is visibility/order only: a slot keeps its channel settings.
+  CHECK(loaded.snapshot.mixer.channels[static_cast<std::size_t>(lastSlot)].gain ==
+        0.25f);
+
+  // An empty list is a valid empty project, not the legacy default.
+  Snapshot empty;
+  empty.mixer.tracks.clear();
+  CHECK(mnky::session::save(path, empty));
+  CHECK(readFile(path).find("\"tracks\":[]") != std::string::npos);
+  loaded = mnky::session::load(path);
+  if (!loaded.ok) std::printf("FAIL empty tracks load: %s\n", loaded.error.c_str());
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot == empty);
+  CHECK(loaded.snapshot.mixer.tracks.empty());
+
+  // The default list (all slots) round-trips too.
+  Snapshot legacy;
+  CHECK(mnky::session::save(path, legacy));
+  loaded = mnky::session::load(path);
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot == legacy);
+  CHECK(loaded.snapshot.mixer.tracks.size() ==
+        static_cast<std::size_t>(mnky::audio::kMaxInputs));
+}
+
+void testTrackListLegacyDefault() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("legacy-tracks.json");
+
+  // A v1 and a v2 file without a "tracks" key load as all 18 slots in order.
+  const char* const files[] = {
+      R"({"app":"mnkybox","session":1,"mixer":{"master":0.5}})",
+      R"({"app":"mnkybox","session":2,"mixer":{"master":0.5}})"};
+  for (const char* text : files) {
+    CHECK(writeFile(path, text));
+    const LoadResult result = mnky::session::load(path);
+    if (!result.ok) {
+      std::printf("FAIL legacy tracks load: %s\n", result.error.c_str());
+    }
+    CHECK(result.ok);
+    CHECK(result.snapshot.mixer.tracks.size() ==
+          static_cast<std::size_t>(mnky::audio::kMaxInputs));
+    for (int slot = 0; slot < mnky::audio::kMaxInputs; ++slot) {
+      const auto index = static_cast<std::size_t>(slot);
+      CHECK(result.snapshot.mixer.tracks[index].slot == slot);
+      CHECK(result.snapshot.mixer.tracks[index].name.empty());
+    }
+    CHECK(result.snapshot.mixer.master == 0.5f);
+  }
+}
+
+void testTrackListCorrupt() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("tracks-corrupt.json");
+
+  struct Case {
+    std::string text;
+    std::string reason;
+  };
+  // The out-of-range slot is built from the capacity constant, and so is the
+  // reason it must produce: no test here depends on the current value of
+  // audio::kMaxInputs.
+  const std::string outsideReason =
+      ".slot\" is outside 0.." + std::to_string(mnky::audio::kMaxInputs - 1);
+  const Case cases[] = {
+      {R"({"app":"mnkybox","session":2,"mixer":{"tracks":{}}})",
+       "mixer.tracks\" is not an array"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"tracks":[1]}})",
+       "mixer.tracks[0]\" is not an object"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"tracks":[{"name":"kick"}]}})",
+       "needs slot"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"tracks":[{"slot":"3"}]}})",
+       ".slot\" is not an integer"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"tracks":[{"slot":1.5}]}})",
+       ".slot\" is not an integer"},
+      {"{\"app\":\"mnkybox\",\"session\":2,\"mixer\":{\"tracks\":"
+       "[{\"slot\":" +
+           std::to_string(mnky::audio::kMaxInputs) + "}]}}",
+       outsideReason},
+      {R"({"app":"mnkybox","session":2,"mixer":{"tracks":[{"slot":-1}]}})",
+       outsideReason},
+      {R"({"app":"mnkybox","session":2,"mixer":{"tracks":[{"slot":0,"name":7}]}})",
+       ".name\" is not a string"},
+      // A repeated slot is corrupt: the file must not silently drop a track.
+      {R"({"app":"mnkybox","session":2,"mixer":{"tracks":[{"slot":4,"name":"first"},{"slot":4,"name":"second"}]}})",
+       ".slot\" repeats slot 4"},
+  };
+  for (const Case& testCase : cases) {
+    CHECK(writeFile(path, testCase.text));
+    const LoadResult result = mnky::session::load(path);
+    if (result.ok) {
+      std::printf("FAIL corrupt tracks accepted: %s\n", testCase.text.c_str());
+    }
+    CHECK(!result.ok);
+    CHECK(result.error.find(testCase.reason) != std::string::npos);
+  }
+
+  // Names are clamped to kMaxTrackNameBytes without splitting a UTF-8
+  // sequence: 63 'a' + a 2-byte e-acute + "tail" cuts back to the 63 'a's.
+  std::string utf8Name(63, 'a');
+  utf8Name += "\xC3\xA9";
+  utf8Name += "tail";
+  CHECK(writeFile(path, "{\"app\":\"mnkybox\",\"session\":2,\"mixer\":"
+                        "{\"tracks\":[{\"slot\":0,\"name\":\"" +
+                            utf8Name + "\"}]}}"));
+  const LoadResult clampedUtf8 = mnky::session::load(path);
+  CHECK(clampedUtf8.ok);
+  CHECK(clampedUtf8.snapshot.mixer.tracks.size() == 1);
+  CHECK(clampedUtf8.snapshot.mixer.tracks[0].name == std::string(63, 'a'));
+
+  const std::string asciiName(100, 'b');
+  CHECK(writeFile(path, "{\"app\":\"mnkybox\",\"session\":2,\"mixer\":"
+                        "{\"tracks\":[{\"slot\":0,\"name\":\"" +
+                            asciiName + "\"}]}}"));
+  const LoadResult clampedAscii = mnky::session::load(path);
+  CHECK(clampedAscii.ok);
+  CHECK(clampedAscii.snapshot.mixer.tracks[0].name ==
+        std::string(mnky::session::kMaxTrackNameBytes, 'b'));
+}
+
+// ------------------------------------------------------------- per-track FX
+
+void testInsertRoundTrip() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("insert.json");
+
+  Snapshot original;
+  original.mixer.channels[0].insert.id = "builtin.delay";
+  original.mixer.channels[0].insert.bypass = true;
+  original.mixer.channels[0].insert.params = {0.25, 1200.0, -3.5, 1e-9};
+  original.mixer.channels[4].insert.id = "com.example.reverb";
+  original.mixer.channels[4].insert.params = {0.5};
+  original.mixer.channels[4].gain = 0.5f;
+  CHECK(mnky::session::save(path, original));
+  const std::string text = readFile(path);
+  CHECK(text.find("\"insert\":{\"id\":\"builtin.delay\",\"bypass\":true,"
+                  "\"params\":[0.25,1200,-3.5,") != std::string::npos);
+  // Channel 1 has no insert: the empty id is the "none" encoding.
+  CHECK(text.find("\"insert\":{\"id\":\"\",\"bypass\":false,"
+                  "\"params\":[]}") != std::string::npos);
+  LoadResult loaded = mnky::session::load(path);
+  if (!loaded.ok) std::printf("FAIL insert load: %s\n", loaded.error.c_str());
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot == original);
+  CHECK(loaded.snapshot.mixer.channels[0].insert.id == "builtin.delay");
+  CHECK(loaded.snapshot.mixer.channels[0].insert.bypass);
+  CHECK(loaded.snapshot.mixer.channels[0].insert.params.size() == 4);
+  CHECK(loaded.snapshot.mixer.channels[1].insert.id.empty());
+  CHECK(loaded.snapshot.mixer.channels[1].insert.params.empty());
+
+  // An absent "insert" object means no insert.
+  CHECK(writeFile(
+      path,
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"gain":0.5}]}})"));
+  loaded = mnky::session::load(path);
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot.mixer.channels[0].insert.id.empty());
+  CHECK(!loaded.snapshot.mixer.channels[0].insert.bypass);
+  CHECK(loaded.snapshot.mixer.channels[0].insert.params.empty());
+}
+
+void testInsertCorrupt() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("insert-corrupt.json");
+
+  struct Case {
+    const char* text;
+    const char* reason;
+  };
+  const Case cases[] = {
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"insert":[]}]}})",
+       ".insert\" is not an object"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"insert":{"id":7}}]}})",
+       ".insert.id\" is not a string"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"insert":{"bypass":"yes"}}]}})",
+       ".insert.bypass\" is not a boolean"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"insert":{"params":{}}}]}})",
+       ".insert.params\" is not an array"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"insert":{"params":[1,"two"]}}]}})",
+       ".insert.params[1]\" is not a number"},
+  };
+  for (const Case& testCase : cases) {
+    CHECK(writeFile(path, testCase.text));
+    const LoadResult result = mnky::session::load(path);
+    if (result.ok) std::printf("FAIL corrupt insert accepted: %s\n", testCase.text);
+    CHECK(!result.ok);
+    CHECK(result.error.find(testCase.reason) != std::string::npos);
+  }
+}
+
+// --------------------------------------------- per-track insert engine seam
+
+void testInsertApplyCapture() {
+  Router router;
+  Engine engine;
+
+  // A CLAP id is echoed verbatim (the plugin owns its parameter table), so the
+  // session values survive an apply() -> capture() round trip.
+  Snapshot snapshot;
+  snapshot.mixer.channels[3].insert.id = "com.example.gain";
+  snapshot.mixer.channels[3].insert.bypass = true;
+  snapshot.mixer.channels[3].insert.params = {0.5, -2.0, 3.25};
+  mnky::session::apply(snapshot, router, engine);
+  CHECK(engine.trackInsert(3).id == "com.example.gain");
+  CHECK(engine.trackInsert(3).bypass);
+  CHECK(engine.trackInsert(3).params ==
+        snapshot.mixer.channels[3].insert.params);
+  CHECK(engine.trackInsert(4).id.empty());
+
+  const Snapshot captured = mnky::session::capture(router, engine);
+  CHECK(captured.mixer.channels[3].insert.id == "com.example.gain");
+  CHECK(captured.mixer.channels[3].insert.bypass);
+  CHECK(captured.mixer.channels[3].insert.params ==
+        snapshot.mixer.channels[3].insert.params);
+  CHECK(captured.mixer.channels[4].insert.id.empty());
+  CHECK(captured.mixer.channels[4].insert.params.empty());
+
+  // A built-in id is captured as the state the DSP holds: the id survives and
+  // the params come back in the effect's stable order, clamped to its ranges.
+  Snapshot builtin;
+  builtin.mixer.channels[0].insert.id = "builtin.delay";
+  builtin.mixer.channels[0].insert.params = {0.25, 300.0};
+  mnky::session::apply(builtin, router, engine);
+  const mnky::audio::TrackInsert delay = engine.trackInsert(0);
+  CHECK(delay.id == "builtin.delay");
+  CHECK(delay.params.size() == 8);  // Delay's stable order
+  CHECK(delay.params[1] != 300.0);  // feedback is clamped by the effect
+  const Snapshot recaptured = mnky::session::capture(router, engine);
+  CHECK(recaptured.mixer.channels[0].insert.id == "builtin.delay");
+  CHECK(recaptured.mixer.channels[0].insert.params == delay.params);
+
+  // An empty id detaches every insert again.
+  const Snapshot none;
+  mnky::session::apply(none, router, engine);
+  CHECK(engine.trackInsert(0).id.empty());
+  CHECK(engine.trackInsert(3).id.empty());
+}
+
+// ------------------------------------------------------ pseudo-source routes
+
+void testPseudoSourceRoutes() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("pseudo-routes.json");
+
+  RouteState generator;
+  generator.src = mnky::session::kSrcGenerator;
+  generator.dst = static_cast<int>(Port::UsbOut);
+  generator.on = true;
+  MidiPipe arp;
+  arp.type = MidiPipeType::Arp;
+  arp.params = {2, 0, 2, 50, 70, 80};
+  MidiPipe repeater;
+  repeater.type = MidiPipeType::Repeater;
+  repeater.bypass = true;
+  repeater.chMask = 0x000F;
+  repeater.params = {1, 3, 40};
+  generator.pipes = {arp, repeater};
+
+  RouteState outputInsert;
+  outputInsert.src = mnky::session::kSrcOutputInsert;
+  outputInsert.dst = static_cast<int>(Port::TrsOut1);
+  outputInsert.on = true;
+  MidiPipe delay;
+  delay.type = MidiPipeType::MidiDelay;
+  delay.params = {120, 2, 50};
+  outputInsert.pipes = {delay};
+
+  // The highest legal endpoint pair, from the port constant (not a literal).
+  const int lastPort = mnky::session::kSessionMaxPorts - 1;
+  RouteState boundary;
+  boundary.src = lastPort;
+  boundary.dst = lastPort;
+  boundary.on = true;
+
+  Snapshot original;
+  original.router.routes = {generator, outputInsert, boundary};
+  CHECK(mnky::session::save(path, original));
+  const std::string text = readFile(path);
+  CHECK(text.find("\"src\":-1,") != std::string::npos);
+  CHECK(text.find("\"src\":-2,") != std::string::npos);
+  CHECK(text.find("\"src\":" + std::to_string(lastPort) + ",\"dst\":" +
+                  std::to_string(lastPort)) != std::string::npos);
+
+  const LoadResult loaded = mnky::session::load(path);
+  if (!loaded.ok) {
+    std::printf("FAIL pseudo route load: %s\n", loaded.error.c_str());
+  }
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot == original);
+  CHECK(loaded.snapshot.router.routes[0].src == mnky::session::kSrcGenerator);
+  CHECK(loaded.snapshot.router.routes[0].pipes.size() == 2);
+  CHECK(loaded.snapshot.router.routes[1].src ==
+        mnky::session::kSrcOutputInsert);
+  CHECK(loaded.snapshot.router.routes[1].pipes.size() == 1);
+
+  // apply() never turns a pseudo-source chain into a port-matrix route.
+  Snapshot chains;
+  chains.router.routes = {generator, outputInsert};
+  Router router;
+  Engine engine;
+  mnky::session::apply(chains, router, engine);
+  for (int src = 0; src < mnky::midi::kMaxPorts; ++src) {
+    for (int dst = 0; dst < mnky::midi::kMaxPorts; ++dst) {
+      CHECK(!router.routeEnabled(static_cast<Port>(src),
+                                 static_cast<Port>(dst)));
+    }
+  }
+
+  struct Case {
+    std::string text;
+    std::string reason;
+  };
+  // The legal endpoints and the reason strings come from the constants, so a
+  // port-capacity change updates the test instead of breaking it.
+  const std::string srcOutside =
+      ".src\" is outside " + std::to_string(mnky::session::kSrcOutputInsert) +
+      ".." + std::to_string(mnky::session::kSessionMaxPorts - 1);
+  const std::string dstOutside =
+      ".dst\" is outside 0.." + std::to_string(mnky::session::kSessionMaxPorts - 1);
+  const std::string tooLow = "{\"app\":\"mnkybox\",\"session\":2,\"router\":"
+                             "{\"routes\":[{\"src\":-3,\"dst\":5}]}}";
+  const std::string tooHigh =
+      "{\"app\":\"mnkybox\",\"session\":2,\"router\":{\"routes\":"
+      "[{\"src\":" + std::to_string(mnky::session::kSessionMaxPorts) +
+      ",\"dst\":5}]}}";
+  const Case cases[] = {
+      {tooLow, srcOutside},
+      {tooHigh, srcOutside},
+      {R"({"app":"mnkybox","session":2,"router":{"routes":[{"src":0,"dst":-1}]}})",
+       dstOutside},
+      {"{\"app\":\"mnkybox\",\"session\":2,\"router\":{\"routes\":"
+       "[{\"src\":0,\"dst\":" + std::to_string(mnky::session::kSessionMaxPorts) +
+           "}]}}",
+       dstOutside},
+  };
+  for (const Case& testCase : cases) {
+    CHECK(writeFile(path, testCase.text));
+    const LoadResult result = mnky::session::load(path);
+    if (result.ok) {
+      std::printf("FAIL bad route endpoint accepted: %s\n", testCase.text.c_str());
+    }
+    CHECK(!result.ok);
+    CHECK(result.error.find(testCase.reason) != std::string::npos);
+  }
+}
+
+// ------------------------------------------------- pseudo apply/capture seam
+
+void testPseudoSourceApplyCapture() {
+  Router router;
+  Engine engine;
+
+  RouteState generator;
+  generator.src = mnky::session::kSrcGenerator;
+  generator.dst = static_cast<int>(Port::UsbOut);
+  generator.on = true;
+  MidiPipe lfo;
+  lfo.type = MidiPipeType::CcLfo;
+  lfo.params = {1, 0, 2, 64, 64};  // CC1, 1/16 grid
+  generator.pipes = {lfo};
+
+  RouteState insert;
+  insert.src = mnky::session::kSrcOutputInsert;
+  insert.dst = static_cast<int>(Port::UsbOut);
+  insert.on = true;
+  MidiPipe transform;
+  transform.type = MidiPipeType::Transform;
+  transform.params = {1, 0, 127, 2, 5};  // CC -> PC5
+  insert.pipes = {transform};
+
+  Snapshot chains;
+  chains.router.routes = {generator, insert};
+  mnky::session::apply(chains, router, engine);
+
+  // Pi-owned destinations receive the chains; the generator is enabled and
+  // the insert takes slot 0 in route order.
+  CHECK(router.generatorEnabled(Port::UsbOut));
+  CHECK(router.generatorPipeCount(Port::UsbOut) == 1);
+  CHECK(router.outputInsertEnabled(Port::UsbOut, 0));
+  CHECK(router.outputInsertPipeCount(Port::UsbOut, 0) == 1);
+
+  // The generator emits from the clock grid with no input, and its output
+  // passes the output insert: CC1 becomes PC5 on UsbOut.
+  std::vector<std::pair<Port, mnky::midi::MidiEvent>> log;
+  const mnky::midi::DeliverFn capture = [&log](Port dst,
+                                               const mnky::midi::MidiEvent& ev) {
+    log.push_back({dst, ev});
+  };
+  router.clockTick(0, 1000, capture);
+  CHECK(log.empty());
+  router.clockTick(6, 1000, capture);
+  CHECK(log.size() == 1);
+  CHECK(log[0].first == Port::UsbOut);
+  CHECK(log[0].second.data[0] == 0xC0 && log[0].second.data[1] == 5);
+
+  // capture() reads the enabled Pi-side chains back, including their pipes.
+  const Snapshot captured = mnky::session::capture(router, engine);
+  bool saw_generator = false;
+  bool saw_insert = false;
+  for (const RouteState& route : captured.router.routes) {
+    if (route.src == mnky::session::kSrcGenerator &&
+        route.dst == static_cast<int>(Port::UsbOut)) {
+      saw_generator = true;
+      CHECK(route.on);
+      CHECK(route.pipes.size() == 1);
+      CHECK(route.pipes[0].type == MidiPipeType::CcLfo);
+      CHECK(route.pipes[0].params.size() == 5);
+    }
+    if (route.src == mnky::session::kSrcOutputInsert &&
+        route.dst == static_cast<int>(Port::UsbOut)) {
+      saw_insert = true;
+      CHECK(route.on);
+      CHECK(route.pipes.size() == 1);
+      CHECK(route.pipes[0].type == MidiPipeType::Transform);
+    }
+    CHECK(route.src >= mnky::session::kSrcOutputInsert);
+  }
+  CHECK(saw_generator);
+  CHECK(saw_insert);
+
+  // A TRS output belongs to the Pico: apply leaves it out of the Pi engine.
+  RouteState trsInsert = insert;
+  trsInsert.dst = static_cast<int>(Port::TrsOut1);
+  Snapshot trs;
+  trs.router.routes = {trsInsert};
+  Router trsRouter;
+  mnky::session::apply(trs, trsRouter, engine);
+  CHECK(!trsRouter.outputInsertEnabled(Port::TrsOut1, 0));
+
+}
+
 void run(const char* name, void (*test)()) {
   const int before = gFailures;
   test();
@@ -663,6 +1141,14 @@ int main() {
   run("unknown fields tolerated", testUnknownFields);
   run("apply/capture router+mixer", testApplyAndCapture);
   run("apply/capture FX slots", testFxSlots);
+  run("dynamic track list round-trip", testTrackListRoundTrip);
+  run("legacy files default to every slot", testTrackListLegacyDefault);
+  run("corrupt track list rejects with reason", testTrackListCorrupt);
+  run("per-track insert round-trip", testInsertRoundTrip);
+  run("corrupt per-track insert rejects with reason", testInsertCorrupt);
+  run("per-track insert apply/capture", testInsertApplyCapture);
+  run("pseudo-source routes round-trip", testPseudoSourceRoutes);
+  run("pseudo-source apply/capture", testPseudoSourceApplyCapture);
   run("save/load file errors", testFileErrors);
   if (gFailures != 0) {
     std::printf("FAIL %d check(s)\n", gFailures);
