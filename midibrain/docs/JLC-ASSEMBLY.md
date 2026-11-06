@@ -53,9 +53,14 @@ Expected raw source/BOM count: **43**. Expected SMT CPL count: **31**, all on
 The rear face carries the J5 THT body and solder tails, not SMT.
 
 THT exclusions: `J1`–`J4`, `SW1`–`SW6`, `U6`, `J5`. They remain in the bench/
-combined BOM. **U6 needs a qualified THT soldering process:** Bourns does not
-recommend hand soldering PEC11R. Its process, profile and inspection must be
-accepted before production; it stays out of the SMT CPL.
+combined BOM. `U6` is the Bourns PEC11R-4015F-S0024 (C143789), detentless
+24 PPR with two THT anchor lugs; the 2026-11-06 JLC/LCSC search found no SMD
+encoder with 0 detents, 24+ PPR and through-hole anchor lugs (the SMD
+anchor-lug families top out at 15 PPR), and a lug-less SMD knob encoder is
+not accepted. It stays THT and out of the SMT CPL: request JLCPCB THT/hand-
+solder assembly for it if offered, otherwise bench-qualify per
+[assembly.md](assembly.md). Bourns does not recommend hand soldering, so the
+process, profile and inspection must be accepted before production.
 
 ### Rear
 

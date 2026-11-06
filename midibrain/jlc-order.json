@@ -17,7 +17,7 @@
       "service": "JLCPCB SMT assembly",
       "sides": 1,
       "sides_reason": "All 31 SMT placements are on the top (panel side). The rear face carries only the J5 THT body and THT tails.",
-      "through_hole": "hand solder except U6: qualified process required",
+      "through_hole": "hand solder except U6: request JLCPCB THT/hand-solder assembly for U6 if offered, else bench-qualify per docs/assembly.md; the 2026-11-06 JLC/LCSC search found no SMD 0-detent 24 PPR encoder with THT anchor lugs, and a lug-less SMD knob encoder is NOT accepted",
       "through_hole_parts": [
         "J1",
         "J2",
@@ -44,7 +44,7 @@
         "cpl_smt_bottom": 0,
         "tht_excluded": 12
       },
-      "through_hole_note": "J1-J4 and SW1-SW6 are hand-solderable. U6 (Bourns PEC11R encoder) is not recommended for hand soldering: its row asks for a qualified THT process (selective/wave or validated manual) until acceptance item encoder_solder_process records the process. U6 stays out of the SMT CPL."
+      "through_hole_note": "J1-J4 and SW1-SW6 are hand-solderable. U6 is the Bourns PEC11R-4015F-S0024 (C143789), 0 detents / 24 pulses per revolution with push switch and two THT anchor lugs. The 2026-11-06 JLC/LCSC catalog search found no SMD encoder with 0 detents, 24+ PPR and through-hole anchor lugs: the SMD PEC11S/PEC11J/EC11J families are 30 detents / 15 pulses, the PEC11R K suffix is a knurled shaft rather than an SMD terminal, and a lug-less SMD knob encoder is not accepted. U6 therefore stays THT and out of the SMT CPL; its soldering process stays open until acceptance item encoder_solder_process records the qualified process."
     }
   },
   "rear": {

@@ -14,8 +14,10 @@ acceptance items remain pending.
 | Rear/base, 101.6 × 112 mm | Pico sockets, Pi/front ribbons, SPI buffers, reset and power branch | SMT on bottom/rear side; THT headers/sockets fitted separately. |
 | Panel, 26HP/3U | FR-4 1.6 mm, white legends, cutouts/light-pipe holes | No components or copper; no copper finish is required. Confirm no-solder-mask fabrication with JLCPCB. |
 
-The encoder is **not** an unconditional hand-solder line item: see its process
-requirement below. All THT parts stay out of the SMT CPL.
+The encoder is **not** an unconditional hand-solder line item: the selected
+THT part has no catalog SMD detentless 24 PPR equivalent, and Bourns does not
+recommend hand soldering it. See its process requirement below. All THT parts
+stay out of the SMT CPL.
 
 ## SMD candidates
 
@@ -52,7 +54,7 @@ still need qualification; do not reduce the 220 Ω input resistor casually.
 | --- | --- |
 | J1–J4 | XKB PJ-301M-3-B, C381127. Vertical TRS; 6.2 mm panel holes. Verify actual tip/ring/sleeve and bushing/nut retention. |
 | SW1–SW6 | Omron B3F-4055, C84931. SW5 is PLAY START; SW6 is SHIFT/EXIT. Through-panel actuators and reach are pending. |
-| U6 / encoder | Bourns PEC11R-4215F-S0024, C143790. **Qualified THT process required:** hand soldering is not recommended. Record a selective/wave or validated manual profile and inspection (`encoder_solder_process`). |
+| U6 / encoder | Bourns PEC11R-4015F-S0024, C143789. Detentless (0 detents), 24 pulses/rev, push switch, THT with two anchor lugs. **THT fallback:** the 2026-11-06 JLC/LCSC search found no SMD encoder with 0 detents, 24+ PPR and through-hole anchor lugs (the SMD PEC11S/PEC11J/EC11J families are 30 detents/15 pulses), and a lug-less SMD knob encoder is not accepted. Request JLCPCB THT/hand-solder assembly for U6 if offered; otherwise use the bench technique below. Bourns does not recommend hand soldering PEC11R, so the process is qualified rather than assumed. |
 | J_PI / J_FRONT / J5 | XFCN BH254V-40P / BH254V-26P. Use alternating IDC numbering and the exact body/keying represented by the selected imports; continuity-test the purchased ribbons. |
 | Pico sockets | Two removable 1×20, 2.54 mm sockets. Exact procurement and installed height must match the module and first article. |
 | Display | Waveshare 3.5inch DSI LCD (H), SKU 33087, with the included 12 cm 15-pin-to-Pi-5-22-pin DSI cable. |
@@ -70,6 +72,38 @@ See [MECHANICAL-VERIFICATION.md](MECHANICAL-VERIFICATION.md) for the primary
 lens/PCB/boss datums and [mechanical-stack.md](mechanical-stack.md) for the
 remaining physical checks. The panel aperture is 90.67 × 54.36 mm with explicit
 corner relief; it is still a provisional tolerance design.
+
+## U6 encoder: THT fallback and bench technique
+
+U6 is the Bourns PEC11R-4015F-S0024 (C143789): 0 detents, 24 pulses per 360°,
+push switch, THT signal pins and two THT anchor lugs. SMT panel controls are
+acceptable in principle - the NAV switch is SMT and takes repeated presses -
+but the knob applies torque. The 2026-11-06 JLC/LCSC catalog search found no SMD
+encoder with 0 detents, 24+ pulses/rev and through-hole anchor lugs: the SMD
+PEC11S, PEC11J and EC11J families are 30 detents/15 pulses, the PEC11R `K`
+suffix is a knurled shaft rather than an SMD terminal, and the `B2` EC11E
+variant is still THT. A pure-SMD knob encoder without anchor lugs is not
+accepted. U6 therefore stays THT; request JLCPCB THT/hand-solder assembly for it
+when offered and use the bench technique below only when that service is
+unavailable.
+
+Bourns does not recommend hand soldering the PEC11R, so the fallback is a
+qualified process, not an assumption:
+
+1. **Solder the two mounting lugs first** and treat them as the mechanical
+   anchor: full fillets on both lugs, inspected, before any signal pin is
+   touched. The lugs carry the knob's push and rotational loads, not the five
+   electrical pins.
+2. **Preheat the pad area** (hot plate or board preheater) and then solder the
+   three encoder signal pins and the two switch pins with short, quick joints.
+   Keep iron dwell minimal on each pin so the PBT housing never soaks heat; do
+   not reflow the part to reposition it.
+3. **Inspect for cold joints**, bridges and pin movement under magnification,
+   and recheck the lug fillets after the knob is fitted and cycled.
+4. `encoder_solder_process` in `hardware-acceptance.json` closes from this
+   first-article inspection: record the iron temperature, preheat setting, dwell
+   and inspection result in `docs/evidence/` against the hardware fingerprint.
+   Until that record exists the item stays open and no process is claimed.
 
 ## Cable and power sourcing
 
