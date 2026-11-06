@@ -29,8 +29,10 @@ the 6.4-compatible subset (guest is 6.4.2); 6.8-only APIs fail there.
 # sync (from macOS repo root; same excludes as the guest flow)
 rsync -az --delete --exclude=qemu --exclude=build --exclude=node_modules \
   --exclude=dist --exclude=fab --exclude=.git \
-  midibrain/pi midibrain/firmware magnus@studio:~/mnky/
-# build (ccache warm after the first run; -j4)
+  midibrain/pi midibrain/firmware midibrain/midifx magnus@studio:~/mnky/
+# build (ccache warm after the first run; -j4) — FAIL LOUDLY: use `set -e`
+# and AND-chained steps; a `;`-separated chain once masked a failed build
+# behind a stale-binary install.
 ssh magnus@studio "cd ~/mnky && cmake -S pi -B /tmp/pi-build \
   -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && cmake --build /tmp/pi-build -j4"
 # test + offscreen QML
