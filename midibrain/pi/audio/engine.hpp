@@ -16,8 +16,14 @@ namespace mnky::audio {
 // kMaxInputs) is documented in capacity.hpp: 18 device inputs, 64 mixer
 // tracks, 128 internal channels (two per stereo track).
 
-/// Auxiliary FX send buses fed from every channel.
+/// Legacy FX send-bus count. The buses are retired from the signal path (see
+/// Engine::process); the constant, Channel::send and the setFx()/setFxReturn()
+/// API stay for the app's remaining references. New work belongs in the
+/// per-track FX rack.
 inline constexpr int kNumSends = 2;
+
+/// Per-track FX rack: two series slots, FX1 -> FX2.
+inline constexpr int kTrackFxSlots = 2;
 /// Fixed ALSA processing block.
 inline constexpr int kBlockSize = 128;
 
@@ -38,8 +44,8 @@ enum class MonitorMode : uint8_t { Off = 0, Auto = 1, On = 2, InputOnly = 3 };
 
 /// Send-source stage for a destination. `PreFader` applies Channel::gain but
 /// not Channel::vol and is pre-pan (mono-centred); `PostFader` applies both and
-/// follows pan. Mute/solo still gate every send, matching the historical
-/// behaviour of the FX buses.
+/// follows pan. Mute/solo still gate every live send. The `Fx1`/`Fx2`
+/// selections are stored but inert: those global buses are retired.
 enum class SendSource : uint8_t { PreFader = 0, PostFader = 1 };
 
 /// Per-destination source selectors. `Rec` is stored for the recorder tap; the
@@ -152,11 +158,13 @@ struct OutputBuses {
 /// Mixer strip for one input. `gain` is a linear pre-pan gain, `vol` is the
 /// channel fader applied after `gain`; pre-fader sends use `gain` only and
 /// post-fader sends use both. `pan` runs from 0 (hard left) through 0.5
-/// (centre) to 1 (hard right) with a constant-power law. `send[s]` is an FX
-/// bus level, `cueSend` feeds the CUE/phones bus and `out34Send` feeds OUT3&4.
-/// `tapPoint` picks the recorder/monitor tap; the default keeps the post-gain
-/// behavior. `monitor` gates the live input contribution to Main/sends and, in
-/// InputOnly, the take voice too; the recorder tap is independent of it.
+/// (centre) to 1 (hard right) with a constant-power law. `send[s]` is the
+/// retired FX bus level: it is stored but no longer reaches a bus; the
+/// per-track FX rack (TrackFxSlot) is the FX path. `cueSend` feeds the
+/// CUE/phones bus and `out34Send` feeds OUT3&4. `tapPoint` picks the
+/// recorder/monitor tap; the default keeps the post-gain behavior. `monitor`
+/// gates the live input contribution to Main/sends and, in InputOnly, the take
+/// voice too; the recorder tap is independent of it.
 struct Channel {
     float gain = 1.0f;
     float vol = 1.0f;
@@ -182,14 +190,30 @@ struct IEffect {
     virtual void setSampleRate(double) {}
 };
 
-/// Per-track FX insert (session v2 `mixer.channels[].insert`): one effect
-/// instance per track with its own settings. `id` is empty (no insert), a
-/// built-in id (`builtin.delay`, `builtin.reverb`) or a CLAP plugin id;
-/// `params` are positional doubles in the effect's stable order (delay 8,
-/// reverb 6). Missing entries keep the current value (defaults after an id
-/// change), extra entries are ignored and the built-in effects clamp their
-/// own ranges. A non-built-in id runs the IEffect attached with
-/// setTrackInsertEffect() and passes the strip dry when nothing is attached.
+/// One per-track FX rack slot (session v2 `mixer.channels[].fxSlots[]`).
+/// `id` is empty (no effect), a built-in id (`builtin.delay`,
+/// `builtin.reverb`) or a CLAP plugin id; `params` are positional doubles in
+/// the effect's stable order (delay 8, reverb 6). Missing entries keep the
+/// current value (defaults after an id change), extra entries are ignored and
+/// the built-in effects clamp their own ranges. `bypass` is a hard dry switch.
+/// `wet` is the slot's dry/wet crossfade, 0..1: the slot output is
+/// `(1 - wet) * dry + wet * processed`, so wet = 0 skips the DSP entirely
+/// (bit-transparent) and wet = 1 is the processed signal. A non-built-in id
+/// runs the IEffect attached with setTrackFxSlotEffect() and passes the strip
+/// dry when nothing is attached.
+struct TrackFxSlot {
+    std::string id;
+    bool bypass = false;
+    float wet = 1.0f;
+    std::vector<double> params;
+    friend bool operator==(const TrackFxSlot&, const TrackFxSlot&) = default;
+};
+
+/// Legacy single-insert view of FX slot 0 (session v2
+/// `mixer.channels[].insert`). Kept for the app/session code that has not
+/// moved to the rack yet: setTrackInsert() writes slot 0 with wet = 1 and
+/// trackInsert() reads slot 0 back. `wet` has no legacy field; a slot-0 wet
+/// other than 1 is not representable through this view.
 struct TrackInsert {
     std::string id;
     bool bypass = false;
@@ -197,11 +221,11 @@ struct TrackInsert {
     friend bool operator==(const TrackInsert&, const TrackInsert&) = default;
 };
 
-/// One track's built-in insert instances (delay + reverb) plus the attached
-/// external effect. Defined in engine.cpp; the engine creates it on the first
-/// configured insert and keeps it until destruction, so process() only ever
-/// loads a pointer.
-class TrackInsertChain;
+/// One track's two FX slots, each with lazily created built-in delay/reverb
+/// instances plus an external effect. Defined in engine.cpp; the engine
+/// creates a rack on the first configured slot and keeps it until destruction,
+/// so process() only ever loads a pointer.
+class TrackFxRack;
 
 /// Mixer core: gain/vol/pan, per-strip and main four-band EQ, mute/solo,
 /// pre/post sends, FX returns, main compressor, click and monitor outputs.
@@ -313,34 +337,48 @@ public:
     void setMainEqBand(int band, const EqBand& value);
     EqBand mainEqBand(int band) const;
 
-    // --- per-track FX insert ----------------------------------------------
-    /// One insert instance per track, placed post-EQ, pre-fader and pre-sends
-    /// (see NOTES.md, "Engine wave 9"). An empty id detaches: the strip runs
-    /// no insert DSP and the block costs one pointer load. A built-in id
-    /// switches that track's instance (id change re-initializes only that
-    /// track: DSP state cleared, parameters back to defaults, then `params`
-    /// applied) while a same-id call applies the parameters hot through the
-    /// effect's 20 ms ramps, with no reset. `bypass` is a hard dry switch and
-    /// leaves the caller's buffers bit-exact. The recorder tap is upstream of
-    /// the insert, so a recording does not bake it.
-    void setTrackInsert(int track, const TrackInsert& insert);
-    /// Applied insert state (session capture); out-of-range reads as none.
-    TrackInsert trackInsert(int track) const;
-    /// CLAP attachment seam, parallel to setFx(): `effect` runs while the
-    /// track's insert id is neither empty nor a built-in id. The engine does
-    /// not load CLAP modules itself (dependency direction: mnky_clap links
+    // --- per-track FX rack (two series slots) -----------------------------
+    /// One rack per track, placed post-EQ, pre-fader and pre-sends (the old
+    /// per-track insert home; see NOTES.md, "Engine wave 11"). The slots run
+    /// in series, slot 0 then slot 1, each with its own dry/wet crossfade. An
+    /// empty id detaches a slot: no DSP runs, the block costs one atomic
+    /// pointer load plus one kind load, and the wet value is kept (the UI mix
+    /// knob and the legacy send-level migration store it before an effect is
+    /// assigned). A built-in id switches that slot's instance (an id change
+    /// re-initializes only that slot: DSP state cleared, parameters back to
+    /// defaults, then `params` applied) while a
+    /// same-id call applies the parameters hot through the effect's 20 ms
+    /// ramps, with no reset. `bypass` and `wet == 0` are hard dry switches and
+    /// leave the caller's buffers bit-exact. `wet` is clamped to 0..1 (NaN ->
+    /// 1). The recorder tap is upstream of the rack, so a recording does not
+    /// bake it. Out-of-range tracks/slots are ignored.
+    void setTrackFxSlot(int track, int slot, const TrackFxSlot& fxSlot);
+    /// Applied slot state (session capture); out-of-range reads as none.
+    TrackFxSlot trackFxSlot(int track, int slot) const;
+    /// CLAP attachment seam per slot, parallel to setFx(): `effect` runs while
+    /// the slot's id is neither empty nor a built-in id. The engine does not
+    /// load CLAP modules itself (dependency direction: mnky_clap links
     /// mnky_audio), so the app owns the host, loading, parameter mapping and
     /// lifetime; the engine forwards setSampleRate() and bypass, nothing else.
+    void setTrackFxSlotEffect(int track, int slot, IEffect* effect);
+
+    /// Legacy single-insert API: writes/reads FX slot 0 with wet = 1. Kept
+    /// while the app and session move to setTrackFxSlot()/trackFxSlot().
+    void setTrackInsert(int track, const TrackInsert& insert);
+    TrackInsert trackInsert(int track) const;
+    /// Legacy attachment seam for FX slot 0 (see setTrackFxSlotEffect).
     void setTrackInsertEffect(int track, IEffect* effect);
 
-    /// `send` is 0..kNumSends-1; nullptr detaches and passes the bus through.
+    /// Retired global FX send bus: the engine keeps the parameter and the
+    /// attached-effect pointer so the app still compiles, but process() no
+    /// longer feeds or returns the bus. Use the per-track FX rack.
     void setFx(int send, IEffect* fx);
     /// Control thread only. Forwards to attached FX (see IEffect), every EQ
-    /// insert and every track insert instance; engine processing itself is
+    /// insert and every track FX slot instance; engine processing itself is
     /// rate-agnostic except for the main compressor, click, EQ biquads and
     /// 48 kHz-only take playback.
     void setSampleRate(double sampleRate);
-    /// Linear return level applied to the FX bus after process().
+    /// Retired global FX send bus return level (stored, not applied).
     void setFxReturn(int send, float gain);
 
     // --- routing / monitor configuration ----------------------------------
@@ -480,11 +518,14 @@ private:
     EqInsert mTrackEq[kMaxTracks];
     EqInsert mMainEq;
 
-    // Per-track FX insert: the applied {id,bypass,params} is control-thread
-    // state (capture reads it), the chain pointer is published once per track
-    // and only read by the audio thread.
-    TrackInsert mInsertState[kMaxTracks];
-    std::atomic<TrackInsertChain*> mInsertChain[kMaxTracks] = {};
+    // Per-track FX rack: the applied {id,bypass,wet,params} per slot is
+    // control-thread state (capture reads it), the rack pointer is published
+    // once per track and only read by the audio thread. mFxDryL/R is the
+    // wet<1 crossfade scratch (only touched when 0 < wet < 1).
+    TrackFxSlot mFxSlotState[kMaxTracks][kTrackFxSlots];
+    std::atomic<TrackFxRack*> mFxRack[kMaxTracks] = {};
+    float mFxDryL[kBlockSize] = {};
+    float mFxDryR[kBlockSize] = {};
 
     // Device output map: control thread writes, the audio thread loads each
     // block. Atomic so a session load cannot tear a pair mid-block.

@@ -871,20 +871,23 @@ void testEngineSampleRate() {
     // Time-based FX must track the engine rate: a 10 ms delay echoes at 480
     // samples @48 kHz and at 441 samples @44.1 kHz. Without forwarding, the
     // delay line stays at its default allocation and the echo never moves.
+    // The retired FX send buses no longer reach Main, so this uses the
+    // per-track FX rack (FX1, fully wet) as the engine-FX seam.
     Engine engine;
-    Delay delay;
-    CHECK(delay.setParam(Delay::kBeatMode, 0.0));
-    CHECK(delay.setParam(Delay::kTimeMs, 10.0));
-    CHECK(delay.setParam(Delay::kFeedback, 0.0));
-    CHECK(delay.setParam(Delay::kMix, 1.0));
-    engine.setFx(0, &delay);
+    TrackFxSlot slot;
+    slot.id = "builtin.delay";
+    slot.wet = 1.0f;
+    slot.params = {10.0, 0.0, 1.0, 0.0, 3.0, 0.0, 20000.0, 0.1};
+    engine.setTrackFxSlot(0, 0, slot);
     Channel strip;
     strip.gain = 1.0f;
-    strip.send[0] = 1.0f;
+    strip.vol = 1.0f;
+    strip.pan = 0.0f;
+    strip.monitor = MonitorMode::On;
     engine.setChannel(0, strip);
 
-    // Returns the first echo position, skipping the dry impulse at index 0
-    // (the channel passes dry to master while the send bus carries wet).
+    // Returns the first echo position in Main L (the slot is fully wet, so
+    // there is no dry impulse to skip).
     auto echoAt = [&](double rate) {
         engine.setSampleRate(rate);
         int found = -1;

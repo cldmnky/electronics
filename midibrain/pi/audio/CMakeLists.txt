@@ -115,10 +115,12 @@ target_compile_options(test_audio_eq PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_audio_eq PRIVATE mnky_audio)
 add_test(NAME test_audio_eq COMMAND test_audio_eq)
 
-# Per-track FX insert (engine wave 9): one built-in delay/reverb instance per
-# track with its own settings, the post-EQ/pre-fader/pre-sends placement, hard
-# bypass, hot parameter application, the empty-id zero-cost path, the external
-# (CLAP) seam and the per-block CPU probe.
+# Per-track FX rack (engine wave 11): two series slots per track (FX1 -> FX2),
+# each a built-in delay/reverb instance with its own settings and dry/wet mix;
+# the post-EQ/pre-fader placement, hard bypass, hot parameter application, the
+# empty-slot zero-cost path, the per-slot external (CLAP) seam, the legacy
+# single-insert wrapper and the per-block CPU probe. Also proves the retired
+# global FX send buses are inert.
 add_executable(test_audio_insert test_audio_insert.cpp)
 target_compile_options(test_audio_insert PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_audio_insert PRIVATE mnky_audio)
@@ -142,11 +144,11 @@ if(MNKY_HAVE_PIPEWIRE OR MNKY_HAVE_ALSA)
   target_link_libraries(mnky_audio_probe PRIVATE mnky_audio)
 endif()
 
-# Engine capacity/real-time budget benchmark (audio wave 10): 64 stereo tracks
-# through gain/pan/4-band EQ/sends, the skip-inactive path and the per-track
-# insert limit, at 64- and 128-frame blocks. A measurement tool, not a CTest
-# gate: it prints a table and exits 0. Run it on the studio Pi before quoting
-# any number.
+# Engine capacity/real-time budget benchmark (audio wave 11): 64 stereo tracks
+# through gain/pan/4-band EQ/sends, the skip-inactive path and the per-track FX
+# rack (FX1/FX2 delay and reverb counts), at 64- and 128-frame blocks. A
+# measurement tool, not a CTest gate: it prints a table and exits 0. Run it on
+# the studio Pi before quoting any number.
 add_executable(mnky_audio_bench engine_bench.cpp)
 target_compile_options(mnky_audio_bench PRIVATE ${MNKY_WARNINGS})
 target_link_libraries(mnky_audio_bench PRIVATE mnky_audio)

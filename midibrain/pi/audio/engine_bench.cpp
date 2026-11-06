@@ -1,12 +1,13 @@
-// Engine capacity benchmark (audio wave 10): the real-time budget for 64
+// Engine capacity benchmark (audio wave 11): the real-time budget for 64
 // mixer tracks at 48 kHz. Measurement tool, not a test: it prints a table and
 // exits 0. Run it on the target (studio Pi 5, Cortex-A76) before quoting any
 // number; the numbers on a dev machine are not the product budget.
 //
 // Scenarios cover the mixing path the owner asked about (gain + pan + 4-band
-// EQ + sends), the skip-inactive fast path, and the per-track insert limit in
-// the 64-track context. Block sizes are the engine's supported 64 and 128
-// frames; the owner's 64-frame question is answered by the first column.
+// EQ + sends), the skip-inactive fast path, and the per-track FX rack worst
+// case (64 delay FX1 + 64 reverb FX2) in the 64-track context. Block sizes are
+// the engine's supported 64 and 128 frames; the owner's 64-frame question is
+// answered by the first column.
 //
 // Build: part of the audio module (mnky_audio_bench). Usage:
 //   mnky_audio_bench [blocks-per-row] [warmup-blocks]
@@ -51,26 +52,30 @@ struct Scenario {
     bool eq = true;
     bool sends = true;
     bool active = true;
-    int reverbs = 0;
-    int delays = 0;
+    int fx1Reverbs = 0;
+    int fx1Delays = 0;
+    int fx2Reverbs = 0;
+    int fx2Delays = 0;
 };
 
 struct Timing {
     double usPerBlock = 0.0;
 };
 
-TrackInsert delayInsert() {
-    TrackInsert insert;
-    insert.id = "builtin.delay";
-    insert.params = {250.0, 0.35, 0.3, 0.0, 3.0, 0.0, 2000.0, 1.0};
-    return insert;
+TrackFxSlot delaySlot() {
+    TrackFxSlot slot;
+    slot.id = "builtin.delay";
+    slot.wet = 1.0f;
+    slot.params = {250.0, 0.35, 0.3, 0.0, 3.0, 0.0, 2000.0, 1.0};
+    return slot;
 }
 
-TrackInsert reverbInsert() {
-    TrackInsert insert;
-    insert.id = "builtin.reverb";
-    insert.params = {20.0, 0.7, 0.5, 0.25, 0.0, 1.0};
-    return insert;
+TrackFxSlot reverbSlot() {
+    TrackFxSlot slot;
+    slot.id = "builtin.reverb";
+    slot.wet = 1.0f;
+    slot.params = {20.0, 0.7, 0.5, 0.25, 0.0, 1.0};
+    return slot;
 }
 
 void configureEq(Engine& engine, int track) {
@@ -134,10 +139,15 @@ Timing measure(const Scenario& scenario, int blockFrames, int blocks,
                        : (track % 3 == 1 ? OutputDestination::Phones
                                          : OutputDestination::Main));
         if (scenario.eq) configureEq(engine, track);
-        if (track < scenario.reverbs) {
-            engine.setTrackInsert(track, reverbInsert());
-        } else if (track < scenario.reverbs + scenario.delays) {
-            engine.setTrackInsert(track, delayInsert());
+        if (track < scenario.fx1Reverbs) {
+            engine.setTrackFxSlot(track, 0, reverbSlot());
+        } else if (track < scenario.fx1Reverbs + scenario.fx1Delays) {
+            engine.setTrackFxSlot(track, 0, delaySlot());
+        }
+        if (track < scenario.fx2Reverbs) {
+            engine.setTrackFxSlot(track, 1, reverbSlot());
+        } else if (track < scenario.fx2Reverbs + scenario.fx2Delays) {
+            engine.setTrackFxSlot(track, 1, delaySlot());
         }
     }
 
@@ -233,9 +243,10 @@ int main(int argc, char** argv) {
     printRow(idleConfigured, blocks, warmup);
 
     Scenario idleInserts;
-    idleInserts.name = "64 inactive + 64 reverb inserts (skip)";
+    idleInserts.name = "64 inactive + 128 FX slots (skip)";
     idleInserts.active = false;
-    idleInserts.reverbs = kMaxTracks;
+    idleInserts.fx1Delays = kMaxTracks;
+    idleInserts.fx2Reverbs = kMaxTracks;
     printRow(idleInserts, blocks, warmup);
 
     Scenario mono;
@@ -244,19 +255,32 @@ int main(int argc, char** argv) {
     printRow(mono, blocks, warmup);
 
     Scenario reverbs;
-    reverbs.name = "64 stereo active + 64 reverb inserts";
-    reverbs.reverbs = kMaxTracks;
+    reverbs.name = "64 active + 64 reverb FX1 slots";
+    reverbs.fx1Reverbs = kMaxTracks;
     printRow(reverbs, blocks, warmup);
 
     Scenario reverbs32;
-    reverbs32.name = "64 stereo active + 32 reverb inserts";
-    reverbs32.reverbs = 32;
+    reverbs32.name = "64 active + 32 reverb FX1 slots";
+    reverbs32.fx1Reverbs = 32;
     printRow(reverbs32, blocks, warmup);
 
     Scenario delays64;
-    delays64.name = "64 stereo active + 64 delay inserts";
-    delays64.delays = kMaxTracks;
+    delays64.name = "64 active + 64 delay FX1 slots";
+    delays64.fx1Delays = kMaxTracks;
     printRow(delays64, blocks, warmup);
+
+    // The wave-11 worst case: every track runs both rack slots at once.
+    Scenario rackWorst;
+    rackWorst.name = "64 active + 64 delay FX1 + 64 reverb FX2";
+    rackWorst.fx1Delays = kMaxTracks;
+    rackWorst.fx2Reverbs = kMaxTracks;
+    printRow(rackWorst, blocks, warmup);
+
+    Scenario rackDelayPair;
+    rackDelayPair.name = "64 active + 64 delay FX1 + 64 delay FX2";
+    rackDelayPair.fx1Delays = kMaxTracks;
+    rackDelayPair.fx2Delays = kMaxTracks;
+    printRow(rackDelayPair, blocks, warmup);
 
     return 0;
 }

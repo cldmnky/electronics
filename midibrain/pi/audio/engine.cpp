@@ -1,8 +1,10 @@
 #include "engine.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 
 #include "fx/delay.hpp"
 #include "fx/reverb.hpp"
@@ -87,17 +89,24 @@ MonitorMode sanitizeMonitor(MonitorMode mode) {
     return MonitorMode::Auto;
 }
 
-// Insert kinds published by TrackInsertChain. Plain ints so the audio thread
+// Slot kinds published by TrackFxSlotChain. Plain ints so the audio thread
 // reads one atomic word, not an enum whose storage the ABI leaves open.
-constexpr int kInsertNone = 0;
-constexpr int kInsertDelay = 1;
-constexpr int kInsertReverb = 2;
-constexpr int kInsertExternal = 3;
+constexpr int kFxNone = 0;
+constexpr int kFxDelay = 1;
+constexpr int kFxReverb = 2;
+constexpr int kFxExternal = 3;
 
-int insertKindForId(const std::string& id) {
-    if (id == "builtin.delay") return kInsertDelay;
-    if (id == "builtin.reverb") return kInsertReverb;
-    return kInsertExternal;  // any other id: the attached CLAP-seam effect
+// The global FX1/FX2 send buses are RETIRED from the signal path: the per-track
+// FX rack replaces them. The accumulation, bus-effect calls and Main return are
+// kept below as compiled-out code (not deleted) because the app still calls
+// setFx()/setFxReturn() and drives Channel::send during its own refactor. Do not
+// flip this back on: a migrated session must not hear both paths.
+constexpr bool kFxSendBusesRetired = true;
+
+int fxKindForId(const std::string& id) {
+    if (id == "builtin.delay") return kFxDelay;
+    if (id == "builtin.reverb") return kFxReverb;
+    return kFxExternal;  // any other id: the attached CLAP-seam effect
 }
 
 // Defaults of an effect's own parameter list, in stable index order. An id
@@ -133,21 +142,19 @@ void reinitialize(fx::Effect& effect, const std::vector<double>& params) {
 
 }  // namespace
 
-// One track's insert DSP. Both built-in instances exist for the track's whole
-// life (created on the first configured insert), so switching id never
-// allocates or frees on the audio path; the selected kind is one atomic word
-// and the parameters live in the effect objects, exactly like the send-bus
-// effects the app drives from the control thread.
-class TrackInsertChain final {
+// One rack slot's DSP. The built-in instance a slot selects is created on the
+// control thread at its first selection and kept for the engine's lifetime, so
+// process() never allocates, frees or takes a lock; the selected kind is one
+// atomic word and the parameters live in the effect objects, exactly like the
+// retired send-bus effects the app still drives from the control thread.
+class TrackFxSlotChain final {
 public:
-    explicit TrackInsertChain(double sampleRate) {
-        mDelay.setSampleRate(sampleRate);
-        mReverb.setSampleRate(sampleRate);
-    }
+    TrackFxSlotChain() = default;
 
     void setSampleRate(double sampleRate) {
-        mDelay.setSampleRate(sampleRate);
-        mReverb.setSampleRate(sampleRate);
+        mSampleRate = sampleRate;
+        if (mDelay != nullptr) mDelay->setSampleRate(sampleRate);
+        if (mReverb != nullptr) mReverb->setSampleRate(sampleRate);
         if (IEffect* effect = mExternal.load(std::memory_order_acquire)) {
             effect->setSampleRate(sampleRate);
         }
@@ -157,7 +164,17 @@ public:
         mExternal.store(effect, std::memory_order_release);
     }
 
+    /// Control thread only. Creates the selected built-in on first use, then
+    /// publishes the kind; process() loads the kind with acquire and can only
+    /// see a built-in after its allocation.
     void select(int kind) {
+        if (kind == kFxDelay && mDelay == nullptr) {
+            mDelay = std::make_unique<fx::Delay>();
+            mDelay->setSampleRate(mSampleRate);
+        } else if (kind == kFxReverb && mReverb == nullptr) {
+            mReverb = std::make_unique<fx::Reverb>();
+            mReverb->setSampleRate(mSampleRate);
+        }
         mKind.store(kind, std::memory_order_release);
     }
 
@@ -165,32 +182,84 @@ public:
         mBypass.store(bypass, std::memory_order_relaxed);
     }
 
-    fx::Delay& delay() { return mDelay; }
-    fx::Reverb& reverb() { return mReverb; }
+    void setWet(float wet) { mWet.store(wet, std::memory_order_relaxed); }
 
-    /// In-place stereo insert. Bypass and None return before touching the
-    /// buffers, so an inactive insert is bit-transparent and costs one load.
-    void process(float* left, float* right, int n) {
+    /// The selected built-in effect, or nullptr for none/external. Control
+    /// thread only (parameter application and state capture).
+    fx::Effect* builtin(int kind) {
+        if (kind == kFxDelay) return mDelay.get();
+        if (kind == kFxReverb) return mReverb.get();
+        return nullptr;
+    }
+
+    /// Stereo slot process with the slot's dry/wet crossfade. `dryLeft` /
+    /// `dryRight` are caller-owned scratch of at least `n` frames, used only
+    /// when 0 < wet < 1. Bypass, an empty slot and wet == 0 return before
+    /// touching the buffers, so the slot is bit-transparent and costs no DSP.
+    void process(float* left, float* right, int n, float* dryLeft,
+                 float* dryRight) {
         if (n <= 0 || left == nullptr || right == nullptr) return;
         if (mBypass.load(std::memory_order_relaxed)) return;
-        const int kind = mKind.load(std::memory_order_relaxed);
-        if (kind == kInsertNone) return;
-        float* buses[2] = {left, right};
-        if (kind == kInsertDelay) {
-            mDelay.process(buses, 2, n);
-        } else if (kind == kInsertReverb) {
-            mReverb.process(buses, 2, n);
-        } else if (IEffect* effect = mExternal.load(std::memory_order_acquire)) {
-            effect->process(buses, 2, n);
+        const int kind = mKind.load(std::memory_order_acquire);
+        if (kind == kFxNone) return;
+        const float wet = mWet.load(std::memory_order_relaxed);
+        if (!(wet > 0.0f)) return;
+        if (wet >= 1.0f || dryLeft == nullptr || dryRight == nullptr) {
+            run(kind, left, right, n);
+            return;
+        }
+        std::copy(left, left + n, dryLeft);
+        std::copy(right, right + n, dryRight);
+        run(kind, left, right, n);
+        // out = dry + wet * (processed - dry): the dry path is always present,
+        // wet = 1 is the processed signal and wet = 0 is the skip above.
+        for (int i = 0; i < n; ++i) {
+            left[i] = dryLeft[i] + wet * (left[i] - dryLeft[i]);
+            right[i] = dryRight[i] + wet * (right[i] - dryRight[i]);
         }
     }
 
 private:
-    fx::Delay mDelay;
-    fx::Reverb mReverb;
+    void run(int kind, float* left, float* right, int n) {
+        float* buses[2] = {left, right};
+        if (kind == kFxDelay && mDelay != nullptr) {
+            mDelay->process(buses, 2, n);
+        } else if (kind == kFxReverb && mReverb != nullptr) {
+            mReverb->process(buses, 2, n);
+        } else if (kind == kFxExternal) {
+            if (IEffect* effect = mExternal.load(std::memory_order_acquire)) {
+                effect->process(buses, 2, n);
+            }
+        }
+    }
+
+    std::unique_ptr<fx::Delay> mDelay;
+    std::unique_ptr<fx::Reverb> mReverb;
     std::atomic<IEffect*> mExternal{nullptr};
-    std::atomic<int> mKind{kInsertNone};
+    std::atomic<int> mKind{kFxNone};
     std::atomic<bool> mBypass{false};
+    std::atomic<float> mWet{1.0f};
+    double mSampleRate = 48000.0;
+};
+
+// One track's FX rack: two independent series slots. Created on the first
+// configured slot and kept until destruction.
+class TrackFxRack final {
+public:
+    explicit TrackFxRack(double sampleRate) {
+        for (TrackFxSlotChain& slot : mSlots) slot.setSampleRate(sampleRate);
+    }
+
+    void setSampleRate(double sampleRate) {
+        for (TrackFxSlotChain& slot : mSlots) slot.setSampleRate(sampleRate);
+    }
+
+    TrackFxSlotChain& slot(int index) {
+        return mSlots[static_cast<std::size_t>(index)];
+    }
+
+private:
+    std::array<TrackFxSlotChain, kTrackFxSlots> mSlots;
 };
 
 Engine::Engine() {
@@ -207,7 +276,7 @@ Engine::Engine() {
 Engine::~Engine() {
     // The audio thread is stopped before the engine is destroyed (the
     // caller's contract), so the published chains can be freed here.
-    for (auto& slot : mInsertChain) {
+    for (auto& slot : mFxRack) {
         delete slot.load(std::memory_order_relaxed);
     }
 }
@@ -248,10 +317,12 @@ void Engine::processBlock(const float* const* in, int nch, int n,
 
     float accL[kBlockSize] = {};
     float accR[kBlockSize] = {};
-    for (int s = 0; s < kNumSends; ++s) {
-        for (int i = 0; i < frames; ++i) {
-            mSendL[s][i] = 0.0f;
-            mSendR[s][i] = 0.0f;
+    if constexpr (!kFxSendBusesRetired) {
+        for (int s = 0; s < kNumSends; ++s) {
+            for (int i = 0; i < frames; ++i) {
+                mSendL[s][i] = 0.0f;
+                mSendR[s][i] = 0.0f;
+            }
         }
     }
     for (int i = 0; i < frames; ++i) {
@@ -282,11 +353,14 @@ void Engine::processBlock(const float* const* in, int nch, int n,
     }
 
     // The per-destination send stages are block state, not per-sample state.
-    bool sendPre[kNumSends] = {};
-    for (int s = 0; s < kNumSends; ++s) {
-        sendPre[s] =
-            mSendSource[static_cast<int>(SendDestination::Fx1) + s] ==
-            SendSource::PreFader;
+    // The FX1/FX2 stage is retired with the buses; CUE and OUT3&4 stay live.
+    [[maybe_unused]] bool sendPre[kNumSends] = {};
+    if constexpr (!kFxSendBusesRetired) {
+        for (int s = 0; s < kNumSends; ++s) {
+            sendPre[s] =
+                mSendSource[static_cast<int>(SendDestination::Fx1) + s] ==
+                SendSource::PreFader;
+        }
     }
     const bool cuePre =
         mSendSource[static_cast<int>(SendDestination::Cue)] ==
@@ -402,12 +476,16 @@ void Engine::processBlock(const float* const* in, int nch, int n,
             mStripR[i] = right * ch.gain;
         }
         if (eq.active()) eq.process(mStripL, mStripR, frames);
-        // Per-track FX insert: post-EQ, pre-fader (vol) and pre-sends, so every
-        // send stage and the dry destination hear the processed signal while
-        // the recorder tap above stays pre-insert (the tapPoint policy).
-        if (TrackInsertChain* insert =
-                mInsertChain[c].load(std::memory_order_relaxed)) {
-            insert->process(mStripL, mStripR, frames);
+        // Per-track FX rack: post-EQ, pre-fader (vol) and pre-sends, so every
+        // send stage and the dry destination hear the rack output while the
+        // recorder tap above stays pre-rack (the tapPoint policy). FX1 -> FX2
+        // is one series chain; each slot has its own dry/wet crossfade.
+        if (TrackFxRack* rack =
+                mFxRack[c].load(std::memory_order_relaxed)) {
+            for (int slot = 0; slot < kTrackFxSlots; ++slot) {
+                rack->slot(slot).process(mStripL, mStripR, frames, mFxDryL,
+                                         mFxDryR);
+            }
         }
 
         for (int i = 0; i < frames; ++i) {
@@ -440,10 +518,14 @@ void Engine::processBlock(const float* const* in, int nch, int n,
                     break;
             }
 
-            for (int s = 0; s < kNumSends; ++s) {
-                const float level = ch.send[s];
-                mSendL[s][i] += (sendPre[s] ? preFader : postL * gainL) * level;
-                mSendR[s][i] += (sendPre[s] ? preFader : postR * gainR) * level;
+            if constexpr (!kFxSendBusesRetired) {
+                for (int s = 0; s < kNumSends; ++s) {
+                    const float level = ch.send[s];
+                    mSendL[s][i] +=
+                        (sendPre[s] ? preFader : postL * gainL) * level;
+                    mSendR[s][i] +=
+                        (sendPre[s] ? preFader : postR * gainR) * level;
+                }
             }
 
             mCueL[i] += (cuePre ? preFader : postL * gainL) * cueLevel;
@@ -460,15 +542,19 @@ void Engine::processBlock(const float* const* in, int nch, int n,
         }
     }
 
-    for (int s = 0; s < kNumSends; ++s) {
-        if (mFx[s] != nullptr) {
-            float* buses[2] = {mSendL[s], mSendR[s]};
-            mFx[s]->process(buses, 2, frames);
-        }
-        const float ret = mFxReturn[s];
-        for (int i = 0; i < frames; ++i) {
-            accL[i] += mSendL[s][i] * ret;
-            accR[i] += mSendR[s][i] * ret;
+    // Retired global FX return: compiled but never run (see
+    // kFxSendBusesRetired). The per-track rack above is the only FX path.
+    if constexpr (!kFxSendBusesRetired) {
+        for (int s = 0; s < kNumSends; ++s) {
+            if (mFx[s] != nullptr) {
+                float* buses[2] = {mSendL[s], mSendR[s]};
+                mFx[s]->process(buses, 2, frames);
+            }
+            const float ret = mFxReturn[s];
+            for (int i = 0; i < frames; ++i) {
+                accL[i] += mSendL[s][i] * ret;
+                accR[i] += mSendR[s][i] * ret;
+            }
         }
     }
 
@@ -738,91 +824,117 @@ void Engine::setFx(int send, IEffect* fx) {
     mFx[send] = fx;
 }
 
-void Engine::setTrackInsert(int track, const TrackInsert& insert) {
-    if (!trackInRange(track)) return;
-    TrackInsert& state = mInsertState[track];
-    // The app re-applies its mixer snapshot every block; an unchanged insert
+void Engine::setTrackFxSlot(int track, int slot, const TrackFxSlot& fxSlot) {
+    if (!trackInRange(track) || slot < 0 || slot >= kTrackFxSlots) return;
+    TrackFxSlot next = fxSlot;
+    if (!std::isfinite(next.wet)) next.wet = 1.0f;
+    next.wet = std::clamp(next.wet, 0.0f, 1.0f);
+    TrackFxSlot& state = mFxSlotState[track][slot];
+    // The app re-applies its mixer snapshot every block; an unchanged slot
     // must cost nothing (and must not restart a parameter ramp).
-    if (state == insert) return;
-    if (insert.id.empty()) {
-        if (TrackInsertChain* chain =
-                mInsertChain[track].load(std::memory_order_acquire)) {
-            chain->select(kInsertNone);
+    if (state == next) return;
+    if (next.id.empty()) {
+        if (TrackFxRack* rack = mFxRack[track].load(std::memory_order_acquire)) {
+            rack->slot(slot).select(kFxNone);
         }
-        state = TrackInsert{};
+        // Keep the wet knob position on an empty slot: the UI binds its mix
+        // knob to wet, and the legacy send-level migration stores the value
+        // before the user assigns an effect. Only the effect state resets.
+        state = TrackFxSlot{};
+        state.wet = next.wet;
         return;
     }
 
-    TrackInsertChain* chain =
-        mInsertChain[track].load(std::memory_order_acquire);
-    if (chain == nullptr) {
-        // First configured insert on this track: the only allocation this
+    TrackFxRack* rack = mFxRack[track].load(std::memory_order_acquire);
+    if (rack == nullptr) {
+        // First configured slot on this track: the only track allocation this
         // control-thread call ever does, and never on the audio path.
-        chain = new TrackInsertChain(mSampleRate);
-        mInsertChain[track].store(chain, std::memory_order_release);
+        rack = new TrackFxRack(mSampleRate);
+        mFxRack[track].store(rack, std::memory_order_release);
     }
+    TrackFxSlotChain& chain = rack->slot(slot);
 
-    const int kind = insertKindForId(insert.id);
-    const bool idChanged = state.id != insert.id;
+    const int kind = fxKindForId(next.id);
+    const bool idChanged = state.id != next.id;
     if (idChanged) {
-        chain->select(kind);
-        state.id = insert.id;
+        chain.select(kind);
+        state.id = next.id;
         state.params.clear();
-        if (kind == kInsertDelay) {
-            reinitialize(chain->delay(), insert.params);
-        } else if (kind == kInsertReverb) {
-            reinitialize(chain->reverb(), insert.params);
+        if (fx::Effect* effect = chain.builtin(kind)) {
+            reinitialize(*effect, next.params);
         }
     }
-    chain->setBypass(insert.bypass);
-    state.bypass = insert.bypass;
+    chain.setBypass(next.bypass);
+    chain.setWet(next.wet);
+    state.bypass = next.bypass;
+    state.wet = next.wet;
 
-    if (kind == kInsertDelay || kind == kInsertReverb) {
-        fx::Effect& effect = kind == kInsertDelay
-                                 ? static_cast<fx::Effect&>(chain->delay())
-                                 : static_cast<fx::Effect&>(chain->reverb());
-        const int count = static_cast<int>(effect.params().size());
+    if (fx::Effect* effect = chain.builtin(kind)) {
+        const int count = static_cast<int>(effect->params().size());
         if (!idChanged) {
             // Hot parameter application: the effect ramps from its current
             // value over 20 ms and keeps its delay line / reverb tail. A value
             // that already is the effect's target is skipped, so a repeated
             // per-block apply never retargets a ramp that is still running.
-            const int given = static_cast<int>(insert.params.size());
+            const int given = static_cast<int>(next.params.size());
             for (int index = 0; index < count && index < given; ++index) {
-                const double value =
-                    insert.params[static_cast<std::size_t>(index)];
-                if (effect.param(index) == value) continue;
-                (void)effect.setParam(index, value);
+                const double value = next.params[static_cast<std::size_t>(index)];
+                if (effect->param(index) == value) continue;
+                (void)effect->setParam(index, value);
             }
         }
         // Capture reads back the values the DSP actually holds (the effect
         // clamps ranges and rounds stepped selectors).
         state.params.resize(static_cast<std::size_t>(count));
         for (int index = 0; index < count; ++index) {
-            state.params[static_cast<std::size_t>(index)] = effect.param(index);
+            state.params[static_cast<std::size_t>(index)] = effect->param(index);
         }
     } else {
         // The CLAP seam owns its own parameter table; the engine echoes the
         // session values so a load/save round-trip does not drop them.
-        state.params = insert.params;
+        state.params = next.params;
     }
+}
+
+TrackFxSlot Engine::trackFxSlot(int track, int slot) const {
+    if (!trackInRange(track) || slot < 0 || slot >= kTrackFxSlots) {
+        return TrackFxSlot{};
+    }
+    return mFxSlotState[track][slot];
+}
+
+void Engine::setTrackFxSlotEffect(int track, int slot, IEffect* effect) {
+    if (!trackInRange(track) || slot < 0 || slot >= kTrackFxSlots) return;
+    TrackFxRack* rack = mFxRack[track].load(std::memory_order_acquire);
+    if (rack == nullptr) {
+        if (effect == nullptr) return;
+        rack = new TrackFxRack(mSampleRate);
+        mFxRack[track].store(rack, std::memory_order_release);
+    }
+    rack->slot(slot).setExternal(effect);
+}
+
+void Engine::setTrackInsert(int track, const TrackInsert& insert) {
+    TrackFxSlot fxSlot;
+    fxSlot.id = insert.id;
+    fxSlot.bypass = insert.bypass;
+    fxSlot.wet = 1.0f;  // the legacy insert view is always fully processed
+    fxSlot.params = insert.params;
+    setTrackFxSlot(track, 0, fxSlot);
 }
 
 TrackInsert Engine::trackInsert(int track) const {
     if (!trackInRange(track)) return TrackInsert{};
-    return mInsertState[track];
+    const TrackFxSlot& fxSlot = mFxSlotState[track][0];
+    TrackInsert insert;
+    insert.id = fxSlot.id;
+    insert.bypass = fxSlot.bypass;
+    insert.params = fxSlot.params;
+    return insert;
 }
 
 void Engine::setTrackInsertEffect(int track, IEffect* effect) {
-    if (!trackInRange(track)) return;
-    TrackInsertChain* chain =
-        mInsertChain[track].load(std::memory_order_acquire);
-    if (chain == nullptr) {
-        if (effect == nullptr) return;
-        chain = new TrackInsertChain(mSampleRate);
-        mInsertChain[track].store(chain, std::memory_order_release);
-    }
-    chain->setExternal(effect);
+    setTrackFxSlotEffect(track, 0, effect);
 }
 
 void Engine::setFxReturn(int send, float gain) {
@@ -836,9 +948,9 @@ void Engine::setSampleRate(double sampleRate) {
     }
     for (EqInsert& eq : mTrackEq) eq.setSampleRate(sampleRate);
     mMainEq.setSampleRate(sampleRate);
-    for (auto& slot : mInsertChain) {
-        if (TrackInsertChain* chain = slot.load(std::memory_order_acquire)) {
-            chain->setSampleRate(sampleRate);
+    for (auto& slot : mFxRack) {
+        if (TrackFxRack* rack = slot.load(std::memory_order_acquire)) {
+            rack->setSampleRate(sampleRate);
         }
     }
     if (!(sampleRate > 0.0) || !std::isfinite(sampleRate)) return;

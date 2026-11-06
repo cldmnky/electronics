@@ -608,7 +608,9 @@ with `Engine::setTrackInsert()` / `trackInsert()` (session capture) and
 doubles in the effect's stable order (delay 8: `time_ms, feedback, mix,
 beat_mode, division, ping_pong, bp_cutoff_hz, bp_width_oct`; reverb 6:
 `predelay_ms, decay, damping, mix, model, size`). This is the per-track instance
-path; the mix-wide FX1/FX2 send buses and their returns are unchanged.
+path. (Superseded by engine wave 11: the per-track insert is now FX slot 0 of
+a two-slot rack, and the global FX1/FX2 send buses are retired from the signal
+path. The legacy single-insert API remains as a slot-0 wrapper.)
 
 **Placement (proven by signal injection in `test_audio_insert.cpp`).** The
 strip order is `live input (+ take voice) -> gain -> four-band EQ -> INSERT ->
@@ -755,3 +757,124 @@ asserts, default device mapping for 64 tracks, track 63 as an independent
 stereo pair, inactive-tap zeroing, recorder 64-bit arm mask writing ch63.wav,
 insert CPU probe at N = 1/18/64) plus the audio CTest suite on macOS and on the
 studio Pi (11/11 both), and `mnky_audio_bench` on the Pi (table above).
+
+## Engine wave 11: per-track FX rack (two slots), global send buses retired
+
+Works: every strip owns a two-slot FX rack, **FX1 -> FX2 in series**, with the
+old per-track insert's placement: `live input (+ take voice) -> gain -> 4-band
+EQ -> FX1 -> FX2 -> vol (fader) -> pan -> destination/CUE/OUT3&4`. The
+recorder/monitor tap stays upstream (pre-EQ, pre-rack), so a recording does not
+bake the rack. The global FX1/FX2 send buses are **retired from the signal
+path**; the app-facing symbols (`kNumSends`, `Channel::send`, `setFx()`,
+`setFxReturn()`, `SendDestination::Fx1/Fx2`) still compile and store values but
+no bus is fed, no bus effect runs and no return reaches Main/the CUE/OUT3&4.
+
+Per slot (`audio::TrackFxSlot`, `audio::kTrackFxSlots = 2`):
+
+| field | type | contract |
+| --- | --- | --- |
+| `id` | string | empty = none; `builtin.delay` / `builtin.reverb` / CLAP id |
+| `bypass` | bool | hard dry switch, bit-transparent (returns before any buffer touch) |
+| `wet` | float | 0..1 dry/wet crossfade, clamped; NaN -> 1; kept on an empty slot |
+| `params` | vector<double> | effect's stable order (delay 8, reverb 6); extra entries ignored, built-ins clamp |
+
+`Engine::setTrackFxSlot(track, slot, slotState)` / `trackFxSlot(track, slot)`
+are the rack API; `Engine::setTrackFxSlotEffect(track, slot, IEffect*)` is the
+per-slot external/CLAP seam. The deprecated single-insert API is a **slot-0
+wrapper**: `setTrackInsert()` writes FX1 with `wet = 1`, `trackInsert()` reads
+FX1, `setTrackInsertEffect()` attaches FX1. The wave-9 tests therefore keep
+their exact expected audio (wet 1 = the old in-place insert, bit for bit).
+
+**Wet math (series, dry always present).** Each slot's effect writes its own
+output in place; the engine then writes
+
+    out = dry + wet * (processed - dry)  =  (1 - wet) * dry + wet * processed
+
+per sample, so `wet = 0` skips the DSP entirely (bit-transparent, also for an
+empty slot or `bypass`) and `wet = 1` is the processed signal with no extra
+copy. `0 < wet < 1` uses the engine's two block scratch buffers and one 20 ms
+parameter ramp inside the effect still applies. FX2 sees FX1's crossfaded
+output: the crossfade is per slot, in series, not a parallel bus.
+
+**Instances and cost.** A rack is created on the first configured slot of a
+track; inside a slot the selected built-in (`fx::Delay` or `fx::Reverb`) is
+created on its first selection and kept for the engine's lifetime. All
+allocation happens in the control-thread setter, never in `process()`. An empty
+id costs one rack-pointer load per track plus one kind atomic per slot; `wet =
+0` and `bypass` cost the same and run no DSP (proven: a never-configured rack
+and both slots bypassed/wet-0 compare bit-identical). An id change re-initializes
+only that slot (DSP state cleared, defaults, then params, ramps snapped); a
+same-id parameter write is hot (20 ms ramp, delay/reverb tail survives, other
+slot untouched). Sample-rate changes forward to both built-in instances and the
+external effect. Memory is lazy: 768 KB per used 48 kHz delay and ~260 KB per
+used reverb; the 64-track / 64-delay + 64-reverb worst case is ~66 MB; a slot
+that has used both types keeps both (~131 MB for every slot in both types).
+
+**CPU on the studio Pi 5 (Cortex-A76, RelWithDebInfo, `nice`/`ionice`, 1000
+blocks/row, 48 kHz; budget 64 frames = 1333 us, 128 frames = 2667 us).**
+`mnky_audio_bench` (full 64-stereo-track engine: gain/pan/EQ/sends) and
+`test_audio_insert`'s rack probe (no EQ/sends, mono strips; keep the difference
+in mind) both measured on the target:
+
+| scenario | 64-frame block | 128-frame block |
+| --- | --- | --- |
+| 64 stereo active, gain+pan+EQ+sends (rack empty) | 220-222 us (16.5-16.7%) | 478-479 us (17.9%) |
+| 64 active + 32 reverb FX1 slots | 506-507 us (38.0%) | 1171-1173 us (43.9-44.0%) |
+| 64 active + 64 reverb FX1 slots | 797-798 us (59.8%) | 1864 us (69.9%) |
+| 64 active + 64 delay FX1 slots | 318 us (23.9%) | 697 us (26.1%) |
+| **64 active + 64 delay FX1 + 64 reverb FX2** | **934-935 us (70.0-70.1%)** | **2149-2156 us (80.6-80.8%)** |
+| 64 active + 64 delay FX1 + 64 delay FX2 | 439-440 us (32.9-33.0%) | 974 us (36.5%) |
+| 64 inactive + 128 configured FX slots (skip path) | 1.6 us (0.1%) | 2.5 us (0.1%) |
+| probe: 64 tracks x (delay FX1 + reverb FX2), no EQ/sends | 706.8 us (53.0%) | 1471.0 us (55.2%) |
+| probe: same, empty rack | 43.6 us (3.3%) | 84.5 us (3.2%) |
+
+The owner's worst case (64 delays + 64 reverbs simultaneously) **fits** on the
+Pi at both block sizes but the 128-frame figure leaves only ~19% headroom
+(80.6%). **Recommended maximum: 32 simultaneous reverbs** (with per-track
+delays) — 38.0% / 43.9-44.0% of the block budget; 48 reverbs is a 64-frame-only
+ceiling (~57% before other inserts), and 64 reverbs is possible but not a
+comfortable product limit. Reverb marginal cost measured ~9.2 us/block at 64
+frames and ~26 us/block at 128 frames; delay ~2.3 us/block at 64 frames. The
+skip path is unchanged: 128 configured slots on inactive tracks cost the same
+as an empty engine.
+
+**CLAP gap (named, not implemented in this wave).** Per-track CLAP **hosting**
+is absent: `mnky_audio` is the lower layer (`mnky_clap` links it), so the
+engine cannot own a `clap::Host`; the app-side adapter (`FxManager`/`FxSlot` in
+`pi/app`) is GUI-thread-owned and currently attaches only to the retired send
+buses. The engine side is ready: `setTrackFxSlotEffect(track, slot, effect)`
+runs an externally owned `IEffect` per slot, forwards sample-rate changes and
+honours `bypass`/`wet`; the engine persists a CLAP id and its parameter vector
+verbatim and passes the strip dry while nothing is attached (tested). The
+emulator's `fx-clap` stage now drives the real `mnkygain` CLAP plugin through
+FX1 and measures +12 dB -> 2.204x, -24 dB -> 0.063x, so the seam itself is
+proven; what is missing is product ownership: the app must keep one
+`clap::Host`/adapter per track slot (up to 128) and prove its block cost. The
+UI must keep the per-slot CLAP option greyed until that app wiring lands.
+
+**Session.** `session::apply()` forwards `mixer.channels[i].fxSlots[0..1]` to
+`Engine::setTrackFxSlot()` and `capture()` reads both slots back (built-in
+values clamped as the DSP holds them, wet clamped); the deprecated
+`mixer.channels[i].insert` is captured as the legacy FX1 view. Decoding a file
+without `fxSlots` migrates the old `insert` to FX1 and the old `send[i]` levels
+to each slot's `wet` (session worker's decoder); an in-memory snapshot that
+only carries the old `insert` still applies it to FX1 for compatibility.
+
+**Retired-bus test treatment.** The retirement necessarily changed three
+existing checks, each updated in place to assert the new truth rather than
+deleted: `test_audio.cpp` "sends and FX" (bus effect must not be called, no
+return), `test_audio_features.cpp` FX pre/post source block (send levels inert),
+`test_fx.cpp` engine sample-rate probe (now drives the rack FX1 instead of the
+retired bus), and `test_audio_insert.cpp` placement pre-sends (FX1/FX2 proven
+inert; CUE/OUT3&4 still prove the post-rack send placement). `pi/emulator`'s
+`fx-clap` self-test was retargeted to FX1 with supervisor approval (test-only
+change) so it tests the product path instead of the retired bus.
+
+Verified with: `test_audio_insert` (series order by impulse/probe, delay->reverb
+audibility, per-slot wet math, bypass bit-transparency, hot params, id-switch
+isolation, empty/zero-wet skip, per-slot external seam, legacy insert equals FX1
+bit-for-bit, sample-rate re-allocation, CPU probe) plus `test_session`
+(fxSlots apply/capture and legacy end-to-end), the audio CTest suite on macOS
+(11/11) and the studio Pi (11/11), `mnky_audio_bench` on the Pi (table above),
+and the root CTest suite (21/21 after the supervisor-approved, test-only
+emulator retarget from the retired send bus to FX1).

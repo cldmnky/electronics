@@ -880,6 +880,266 @@ void testInsertCorrupt() {
   }
 }
 
+// --------------------------------------------- per-track FX rack (FX1/FX2)
+
+void testTrackFxRackRoundTrip() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("fx-rack.json");
+
+  Snapshot original;
+  original.mixer.channels[0].gain = 0.5f;
+  original.mixer.channels[0].fxSlots[0].id = "builtin.delay";
+  original.mixer.channels[0].fxSlots[0].bypass = true;
+  original.mixer.channels[0].fxSlots[0].wet = 0.3f;
+  original.mixer.channels[0].fxSlots[0].params = {0.25, 1200.0, -3.5, 1e-9};
+  original.mixer.channels[0].fxSlots[1].id = "com.example.reverb";
+  original.mixer.channels[0].fxSlots[1].wet = 0.75f;
+  original.mixer.channels[0].fxSlots[1].params = {0.5, 2.0};
+  // The deprecated send[] still round-trips; it does not feed the rack once
+  // the file carries explicit fxSlots.
+  original.mixer.channels[4].send = {0.2f, 0.8f};
+  original.mixer.channels[4].fxSlots[1].id = "clap.example.space";
+  original.mixer.channels[4].fxSlots[1].wet = 0.0f;
+
+  CHECK(mnky::session::save(path, original));
+  const std::string text = readFile(path);
+  CHECK(text.find("\"fxSlots\":[{\"id\":\"builtin.delay\",\"bypass\":true,"
+                  "\"wet\":0.3,\"params\":[0.25,1200,-3.5,") !=
+        std::string::npos);
+  CHECK(text.find("{\"id\":\"com.example.reverb\",\"bypass\":false,"
+                  "\"wet\":0.75,\"params\":[0.5,2]}") != std::string::npos);
+  // A channel that never touched the rack saves two empty slots at wet 1.
+  CHECK(text.find("\"fxSlots\":[{\"id\":\"\",\"bypass\":false,\"wet\":1,"
+                  "\"params\":[]},{\"id\":\"\",\"bypass\":false,\"wet\":1,"
+                  "\"params\":[]}]") != std::string::npos);
+
+  const LoadResult loaded = mnky::session::load(path);
+  if (!loaded.ok) std::printf("FAIL fx rack load: %s\n", loaded.error.c_str());
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot == original);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[0].id == "builtin.delay");
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[0].bypass);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[0].wet == 0.3f);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[0].params.size() == 4);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[0].params[3] == 1e-9);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[1].id ==
+        "com.example.reverb");
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[1].wet == 0.75f);
+  CHECK(loaded.snapshot.mixer.channels[4].send[1] == 0.8f);
+
+  // wet is part of the value: a snapshot that differs only there is unequal.
+  Snapshot different = original;
+  different.mixer.channels[0].fxSlots[1].wet = 0.5f;
+  CHECK(!(different == original));
+}
+
+void testTrackFxRackLegacyMigration() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("fx-rack-legacy.json");
+
+  // An old file: one per-track insert plus the FX1/FX2 send levels, no
+  // fxSlots key. The insert becomes FX1; the sends become each slot's wet.
+  CHECK(writeFile(
+      path,
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"gain":0.5,"send":[0.25,0.75],"insert":{"id":"builtin.delay","bypass":true,"params":[0.5,250]}}]}})"));
+  LoadResult loaded = mnky::session::load(path);
+  if (!loaded.ok) std::printf("FAIL fx rack legacy load: %s\n",
+                              loaded.error.c_str());
+  CHECK(loaded.ok);
+  const auto& legacy = loaded.snapshot.mixer.channels[0];
+  CHECK(legacy.fxSlots[0].id == "builtin.delay");
+  CHECK(legacy.fxSlots[0].bypass);
+  CHECK(legacy.fxSlots[0].params.size() == 2);
+  CHECK(legacy.fxSlots[0].params[0] == 0.5);
+  CHECK(legacy.fxSlots[0].params[1] == 250.0);
+  CHECK(legacy.fxSlots[0].wet == 0.25f);
+  CHECK(legacy.fxSlots[1].id.empty());
+  CHECK(!legacy.fxSlots[1].bypass);
+  CHECK(legacy.fxSlots[1].params.empty());
+  CHECK(legacy.fxSlots[1].wet == 0.75f);
+  CHECK(legacy.send[0] == 0.25f);  // deprecated field still decodes
+  CHECK(legacy.send[1] == 0.75f);
+  CHECK(legacy.insert.id == "builtin.delay");
+
+  // A migrated snapshot saves the rack explicitly, so the next load no longer
+  // depends on the legacy fallbacks.
+  const Snapshot migrated = loaded.snapshot;
+  CHECK(mnky::session::save(path, migrated));
+  loaded = mnky::session::load(path);
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot == migrated);
+
+  // A legacy insert without a send array keeps the 1.0 wet default.
+  CHECK(writeFile(path,
+                  R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"insert":{"id":"builtin.reverb"}}]}})"));
+  loaded = mnky::session::load(path);
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[0].id == "builtin.reverb");
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[0].wet == 1.0f);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[1].wet == 1.0f);
+
+  // fxSlots present wins over a legacy insert in the same channel.
+  CHECK(writeFile(
+      path,
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"insert":{"id":"builtin.delay"},"fxSlots":[{"id":"builtin.reverb","wet":0.4}]}]}})"));
+  loaded = mnky::session::load(path);
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[0].id == "builtin.reverb");
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[0].wet == 0.4f);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[1].id.empty());
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[1].wet == 1.0f);
+  // The deprecated key is still decoded for old readers, never applied over
+  // the rack.
+  CHECK(loaded.snapshot.mixer.channels[0].insert.id == "builtin.delay");
+}
+
+void testTrackFxRackDefaults() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("fx-rack-defaults.json");
+
+  CHECK(writeFile(
+      path,
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"gain":0.5}]}})"));
+  LoadResult loaded = mnky::session::load(path);
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot.mixer.channels[0].gain == 0.5f);
+  for (int slot = 0; slot < mnky::session::kTrackFxSlots; ++slot) {
+    const auto& empty = loaded.snapshot.mixer.channels[0]
+                            .fxSlots[static_cast<std::size_t>(slot)];
+    CHECK(empty.id.empty());
+    CHECK(!empty.bypass);
+    CHECK(empty.wet == 1.0f);
+    CHECK(empty.params.empty());
+  }
+
+  // wet clamps to 0..1 instead of rejecting, like the other mixer levels.
+  CHECK(writeFile(
+      path,
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"fxSlots":[{"id":"builtin.delay","wet":1.5},{"wet":-0.5}]}]}})"));
+  loaded = mnky::session::load(path);
+  CHECK(loaded.ok);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[0].wet == 1.0f);
+  CHECK(loaded.snapshot.mixer.channels[0].fxSlots[1].wet == 0.0f);
+}
+
+void testTrackFxRackCorrupt() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("fx-rack-corrupt.json");
+
+  struct Case {
+    const char* text;
+    const char* reason;
+  };
+  const Case cases[] = {
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"fxSlots":{}}]}})",
+       ".fxSlots\" is not an array"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"fxSlots":[[]]}]}})",
+       ".fxSlots[0]\" is not an object"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"fxSlots":[{"id":7}]}]}})",
+       ".fxSlots[0].id\" is not a string"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"fxSlots":[{"bypass":"yes"}]}]}})",
+       ".fxSlots[0].bypass\" is not a boolean"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"fxSlots":[{"wet":"half"}]}]}})",
+       ".fxSlots[0].wet\" is not a number"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"fxSlots":[{"params":{}}]}]}})",
+       ".fxSlots[0].params\" is not an array"},
+      {R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"fxSlots":[{"params":[1,"two"]}]}]}})",
+       ".fxSlots[0].params[1]\" is not a number"},
+  };
+  for (const Case& testCase : cases) {
+    CHECK(writeFile(path, testCase.text));
+    const LoadResult result = mnky::session::load(path);
+    if (result.ok) {
+      std::printf("FAIL corrupt fx rack accepted: %s\n", testCase.text);
+    }
+    CHECK(!result.ok);
+    CHECK(result.error.find(testCase.reason) != std::string::npos);
+  }
+}
+
+// ------------------------------------- per-track FX rack engine seam
+
+void testTrackFxRackApplyCapture() {
+  Router router;
+  Engine engine;
+
+  Snapshot snapshot;
+  snapshot.mixer.channels[0].fxSlots[0].id = "builtin.delay";
+  snapshot.mixer.channels[0].fxSlots[0].wet = 0.4f;
+  snapshot.mixer.channels[0].fxSlots[0].params = {0.25, 250.0};
+  snapshot.mixer.channels[0].fxSlots[1].id = "com.example.space";
+  snapshot.mixer.channels[0].fxSlots[1].wet = 0.0f;
+  snapshot.mixer.channels[0].fxSlots[1].params = {0.5};
+  mnky::session::apply(snapshot, router, engine);
+
+  const mnky::audio::TrackFxSlot fx1 = engine.trackFxSlot(0, 0);
+  CHECK(fx1.id == "builtin.delay");
+  CHECK(fx1.wet == 0.4f);
+  CHECK(fx1.params.size() == 8);  // the effect's stable order
+  const mnky::audio::TrackFxSlot fx2 = engine.trackFxSlot(0, 1);
+  CHECK(fx2.id == "com.example.space");
+  CHECK(fx2.wet == 0.0f);
+  CHECK(fx2.params == std::vector<double>{0.5});
+
+  const Snapshot captured = mnky::session::capture(router, engine);
+  CHECK(captured.mixer.channels[0].fxSlots[0].id == "builtin.delay");
+  CHECK(captured.mixer.channels[0].fxSlots[0].wet == 0.4f);
+  CHECK(captured.mixer.channels[0].fxSlots[0].params == fx1.params);
+  CHECK(captured.mixer.channels[0].fxSlots[1].id == "com.example.space");
+  CHECK(captured.mixer.channels[0].fxSlots[1].wet == 0.0f);
+  // The deprecated insert stays the legacy view of FX1.
+  CHECK(captured.mixer.channels[0].insert.id == "builtin.delay");
+  CHECK(captured.mixer.channels[0].insert.bypass == fx1.bypass);
+  CHECK(captured.mixer.channels[0].insert.params == fx1.params);
+
+  // apply() is wholesale: two empty slots clear the engine rack.
+  const Snapshot empty;
+  mnky::session::apply(empty, router, engine);
+  CHECK(engine.trackFxSlot(0, 0).id.empty());
+  CHECK(engine.trackFxSlot(0, 1).id.empty());
+}
+
+void testTrackFxRackLegacyEndToEnd() {
+  TempDir dir;
+  CHECK(dir.ok());
+  if (!dir.ok()) return;
+  const std::string path = dir.file("fx-rack-legacy-engine.json");
+
+  // Old file: one insert plus FX1/FX2 send levels. The reader migrates the
+  // insert to FX1 and the sends to the two slots' wet levels; apply() then
+  // forwards the migrated rack to the engine and capture() reads it back.
+  CHECK(writeFile(
+      path,
+      R"({"app":"mnkybox","session":2,"mixer":{"channels":[{"send":[0.25,0.75],"insert":{"id":"builtin.delay","bypass":true,"params":[0.5,250]}}]}})"));
+  const LoadResult loaded = mnky::session::load(path);
+  if (!loaded.ok) std::printf("FAIL legacy rack load: %s\n", loaded.error.c_str());
+  CHECK(loaded.ok);
+
+  Router router;
+  Engine engine;
+  mnky::session::apply(loaded.snapshot, router, engine);
+  const mnky::audio::TrackFxSlot fx1 = engine.trackFxSlot(0, 0);
+  CHECK(fx1.id == "builtin.delay");
+  CHECK(fx1.bypass);
+  CHECK(fx1.wet == 0.25f);
+  CHECK(engine.trackFxSlot(0, 1).id.empty());
+  CHECK(engine.trackFxSlot(0, 1).wet == 0.75f);
+
+  const Snapshot captured = mnky::session::capture(router, engine);
+  CHECK(captured.mixer.channels[0].fxSlots[0].id == "builtin.delay");
+  CHECK(captured.mixer.channels[0].fxSlots[0].bypass);
+  CHECK(captured.mixer.channels[0].fxSlots[0].wet == 0.25f);
+  CHECK(captured.mixer.channels[0].fxSlots[1].wet == 0.75f);
+}
+
 // --------------------------------------------- per-track insert engine seam
 
 void testInsertApplyCapture() {
@@ -1147,6 +1407,12 @@ int main() {
   run("per-track insert round-trip", testInsertRoundTrip);
   run("corrupt per-track insert rejects with reason", testInsertCorrupt);
   run("per-track insert apply/capture", testInsertApplyCapture);
+  run("per-track FX rack round-trip", testTrackFxRackRoundTrip);
+  run("per-track FX rack legacy migration", testTrackFxRackLegacyMigration);
+  run("per-track FX rack defaults and clamps", testTrackFxRackDefaults);
+  run("corrupt per-track FX rack rejects with reason", testTrackFxRackCorrupt);
+  run("per-track FX rack apply/capture", testTrackFxRackApplyCapture);
+  run("per-track FX rack legacy end-to-end", testTrackFxRackLegacyEndToEnd);
   run("pseudo-source routes round-trip", testPseudoSourceRoutes);
   run("pseudo-source apply/capture", testPseudoSourceApplyCapture);
   run("save/load file errors", testFileErrors);

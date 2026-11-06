@@ -242,7 +242,8 @@ void testSendSourcesAndMonitors() {
     checkNear("muted strip out of cue", phonesL[0], 0.0f);
     checkNear("muted strip out of out34", out34L[0], 0.0f);
 
-    // FX pre/post source changes the bus level but keeps the default post path.
+    // FX1/FX2 send buses are RETIRED: the send level, source selector and
+    // return are stored but never reach Main. The dry fader path is unchanged.
     Engine fxEngine;
     Channel fxStrip;
     fxStrip.gain = 0.5f;
@@ -254,14 +255,12 @@ void testSendSourcesAndMonitors() {
     fxEngine.process(inputs, 1, kBlockSize, outputs);
     constexpr float kCentreGain = 0.70710678f;
     const float fxDry = 0.5f * 0.25f * kCentreGain;
-    const float fxPostSend = 0.5f * 0.25f * kCentreGain * 0.5f;
-    const float fxPreSend = 0.5f * 0.5f;
-    checkNear("default post-fader FX send L", mainL[0], fxDry + fxPostSend);
-    checkNear("default post-fader FX send R", mainR[0], fxDry + fxPostSend);
+    checkNear("retired FX send L leaves the dry path", mainL[0], fxDry);
+    checkNear("retired FX send R leaves the dry path", mainR[0], fxDry);
     fxEngine.setSendSource(SendDestination::Fx1, SendSource::PreFader);
     fxEngine.process(inputs, 1, kBlockSize, outputs);
-    checkNear("pre-fader FX send L", mainL[0], fxDry + fxPreSend);
-    checkNear("pre-fader FX send R", mainR[0], fxDry + fxPreSend);
+    checkNear("retired pre-fader FX send is inert L", mainL[0], fxDry);
+    checkNear("retired pre-fader FX send is inert R", mainR[0], fxDry);
 
     std::printf("PASS audio engine: cue/out34/FX send sources and monitor buses\n");
 }

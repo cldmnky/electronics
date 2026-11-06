@@ -239,8 +239,10 @@ float fxGainRatio(audio::IEffect& effect) {
   return static_cast<float>(rmsOf(left, n) / inputRms);
 }
 
-// Master RMS of the same sine through Engine with `effect` on send 0. A null
-// effect is the reference: the Engine passes the send bus through unprocessed.
+// Master RMS of the same sine through Engine with `effect` in per-track FX
+// slot 0 (fully wet). A null effect is the reference: the slot is configured
+// but has no attached effect, so the Engine passes the strip dry. The retired
+// global FX send buses are no longer a signal path.
 float engineMasterRms(audio::IEffect* effect) {
   const int n = audio::kBlockSize;
   SynthBank synth;
@@ -250,10 +252,12 @@ float engineMasterRms(audio::IEffect* effect) {
   audio::Channel strip;
   strip.gain = 1.0f;
   strip.pan = 0.5f;
-  strip.send[0] = 1.0f;
   engine.setChannel(0, strip);
-  engine.setFx(0, effect);
-  engine.setFxReturn(0, 1.0f);
+  engine.setTrackFxSlotEffect(0, 0, effect);
+  audio::TrackFxSlot slot;
+  slot.id = "emulator.fx-probe";
+  slot.wet = 1.0f;
+  engine.setTrackFxSlot(0, 0, slot);
   engine.setMaster(1.0f);
 
   float outL[audio::kBlockSize] = {};
@@ -640,7 +644,7 @@ StageResult runFxStage(const ScenarioOptions& options) {
   Checks checks;
   StageResult result;
 
-  // Send 0 unprocessed is the reference the FX has to move.
+  // FX slot 0 with no attached effect is the reference the FX has to move.
   const float referenceRms = engineMasterRms(nullptr);
 
   const bool haveModule = !options.pluginPath.empty() && std::filesystem::exists(options.pluginPath);
@@ -655,12 +659,13 @@ StageResult runFxStage(const ScenarioOptions& options) {
     checks.require(stubRatio > 0.20f && stubRatio < 0.30f,
                    "stub gain measured " + numberText(stubRatio, 3) + " (expected ~0.250)");
     checks.require(std::fabs(stubMasterRms - referenceRms) > 0.02f,
-                   "stub gain on send 0 did not change the Engine master output");
+                   "stub gain in FX slot 0 did not change the Engine master "
+                   "output");
     result.name = "fx-clap";
     result.status = checks.failed() ? StageStatus::Fail : StageStatus::Skip;
     result.detail = reason + "; stub-gain 0.25 measured " + numberText(stubRatio, 3) +
                     " (master rms " + numberText(stubMasterRms, 3) + " vs " +
-                    numberText(referenceRms, 3) + " send-only reference)";
+                    numberText(referenceRms, 3) + " FX1-slot reference)";
     return result;
   }
 
@@ -699,7 +704,8 @@ StageResult runFxStage(const ScenarioOptions& options) {
   checks.require(host.setParam(gainId, 12.0), "setParam(Gain, +12 dB) restore failed");
   const float fxMasterRms = engineMasterRms(&effect);
   checks.require(std::fabs(fxMasterRms - referenceRms) > 0.02f,
-                 "mnkygain on send 0 did not change the Engine master output");
+                 "mnkygain in FX slot 0 did not change the Engine master "
+                 "output");
 
   result.name = "fx-clap";
   if (checks.failed()) {
@@ -711,7 +717,7 @@ StageResult runFxStage(const ScenarioOptions& options) {
                     " params): gain +12 dB -> " + numberText(boostRatio, 3) + "x, -24 dB -> " +
                     numberText(cutRatio, 3) + "x, Engine master rms " +
                     numberText(fxMasterRms, 3) + " vs " + numberText(referenceRms, 3) +
-                    " send-only reference";
+                    " FX1-slot reference";
   }
   return result;
 }

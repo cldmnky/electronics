@@ -180,7 +180,7 @@ void testMuteSolo() {
     std::printf("PASS audio engine: mute/solo matrix\n");
 }
 
-// ------------------------------------------------------------ sends and FX
+// ------------------------------------------------- retired sends and FX
 
 class GainFx : public IEffect {
 public:
@@ -213,6 +213,9 @@ private:
 };
 
 void testSendsAndFx() {
+    // The global FX1/FX2 send buses are RETIRED from the signal path. The
+    // Channel::send levels and setFx()/setFxReturn() stay in the API for the
+    // app's refactor, but neither the bus effect nor its return may reach Main.
     Engine engine;
     float in[kBlockSize];
     fill(in, 1.0f);
@@ -233,46 +236,39 @@ void testSendsAndFx() {
     engine.setFxReturn(1, 0.0f);
 
     engine.process(inputs, 1, kBlockSize, outL, outR);
-    CHECK(gainFx.calls() == 1);
-    CHECK(gainFx.lastNch() == 2);
-    CHECK(gainFx.lastN() == kBlockSize);
-    CHECK(std::string(gainFx.name()) == "gain");
-    checkNear("FX bus receives post-fader send", gainFx.lastInput0(), 0.5f * kCentre);
-    // dry + 0.5 * 0.7071 (bus) * 2.0 (fx) * 0.25 (return)
-    const float dryAndFx0 = kCentre + 0.5f * kCentre * 2.0f * 0.25f;
-    checkNear("dry plus FX return L", outL[0], dryAndFx0);
-    checkNear("dry plus FX return R", outR[0], dryAndFx0);
+    CHECK(gainFx.calls() == 0);  // no bus process call at all
+    checkNear("retired FX send leaves dry L", outL[0], kCentre);
+    checkNear("retired FX send leaves dry R", outR[0], kCentre);
 
-    // Send 1 has no FX: the bus passes through at its return level.
+    // Send levels, the send source and every return level are inert.
     ch.send[1] = 1.0f;
     engine.setChannel(0, ch);
     engine.setFxReturn(1, 0.5f);
+    engine.setSendSource(SendDestination::Fx1, SendSource::PreFader);
     engine.process(inputs, 1, kBlockSize, outL, outR);
-    checkNear("unprocessed send bus at return", outL[0], dryAndFx0 + kCentre * 1.0f * 0.5f);
+    checkNear("retired FX send level is inert", outL[0], kCentre);
+    checkNear("retired FX return is inert", outR[0], kCentre);
 
-    // Mute closes both the dry path and the post-fader sends.
+    // Mute still closes the dry path.
     ch.mute = true;
     engine.setChannel(0, ch);
     engine.process(inputs, 1, kBlockSize, outL, outR);
     checkNear("muted strip sends nothing", outL[0], 0.0f);
-    checkNear("muted strip feeds a silent bus", gainFx.lastInput0(), 0.0f);
+    CHECK(gainFx.calls() == 0);
 
-    // Detaching the FX leaves a pass-through bus at the return level.
+    // Detaching or reattaching the bus effect cannot change the output.
     ch.mute = false;
-    ch.send[1] = 0.0f;
     engine.setChannel(0, ch);
     engine.setFx(0, nullptr);
     engine.setFxReturn(1, 0.0f);
     engine.process(inputs, 1, kBlockSize, outL, outR);
-    checkNear("detached FX passes bus", outL[0], kCentre + 0.5f * kCentre * 0.25f);
-
-    // FX return of zero drops the send entirely.
+    checkNear("detached FX is still dry", outL[0], kCentre);
     engine.setFx(0, &gainFx);
-    engine.setFxReturn(0, 0.0f);
+    engine.setFxReturn(0, 1.0f);
     engine.process(inputs, 1, kBlockSize, outL, outR);
-    checkNear("zero FX return is dry only", outL[0], kCentre);
+    checkNear("full FX return is still dry", outL[0], kCentre);
 
-    std::printf("PASS audio engine: sends and FX returns\n");
+    std::printf("PASS audio engine: retired FX send buses are inert\n");
 }
 
 // ------------------------------------------------------------------- taps

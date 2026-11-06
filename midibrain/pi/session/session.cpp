@@ -487,10 +487,14 @@ bool decodeMixerTracks(const JsonValue& node, MixerState& out,
   return true;
 }
 
-// One per-track FX insert: "insert":{"id","bypass","params"}, the same shape
-// as an fx.bus entry. An absent object or an empty id means "no insert".
-bool decodeInsert(const JsonValue& node, const std::string& path,
-                  FxInsertState& out, std::string& error) {
+// One FX slot object: "id", "bypass", "wet" and "params", the same shape as
+// an fx.bus entry plus the per-slot wet mix. A non-null `wetPresent` enables
+// the wet field and reports whether the object carried it, so the caller can
+// apply the legacy send[i] fallback only to a missing key. Pass nullptr for
+// the deprecated "insert" object, which has no wet field of its own.
+bool decodeFxInsert(const JsonValue& node, const std::string& path,
+                    FxInsertState& out, bool* wetPresent,
+                    std::string& error) {
   if (node.type != JsonValue::Type::Object) {
     error = "session: \"" + path + "\" is not an object";
     return false;
@@ -502,6 +506,16 @@ bool decodeInsert(const JsonValue& node, const std::string& path,
     }
   }
   if (!readOptionalBool(node, "bypass", out.bypass, path, error)) return false;
+  if (wetPresent != nullptr) {
+    *wetPresent = false;
+    if (const JsonValue* wet = node.find("wet")) {
+      if (!readFloat(*wet, out.wet)) {
+        error = "session: \"" + path + ".wet\" is not a number";
+        return false;
+      }
+      *wetPresent = true;
+    }
+  }
   if (const JsonValue* params = node.find("params")) {
     if (params->type != JsonValue::Type::Array) {
       error = "session: \"" + path + ".params\" is not an array";
@@ -747,10 +761,12 @@ bool decodeMixer(const JsonValue& node, MixerState& out, std::string& error) {
       if (outDst > 3) outDst = 3;
       channel.outDst = outDst;
       if (const JsonValue* insert = item.find("insert")) {
-        if (!decodeInsert(*insert, path + ".insert", channel.insert, error)) {
+        if (!decodeFxInsert(*insert, path + ".insert", channel.insert, nullptr,
+                            error)) {
           return false;
         }
       }
+      std::array<bool, audio::kNumSends> sendProvided{};
       if (const JsonValue* send = item.find("send")) {
         if (send->type != JsonValue::Type::Array) {
           error = "session: \"" + path + ".send\" is not an array";
@@ -764,8 +780,45 @@ bool decodeMixer(const JsonValue& node, MixerState& out, std::string& error) {
                     std::to_string(sendIndex) + "]\" is not a number";
             return false;
           }
+          sendProvided[sendIndex] = true;
           ++sendIndex;
         }
+      }
+      // Per-track FX rack. A file with "fxSlots" wins; a legacy file maps its
+      // single insert into FX1. A slot whose "wet" key is absent takes the
+      // legacy send[i] value when the channel carried one, else the 1.0
+      // default; every wet is clamped to 0..1 either way.
+      std::array<bool, kTrackFxSlots> wetPresent{};
+      if (const JsonValue* fxSlots = item.find("fxSlots")) {
+        if (fxSlots->type != JsonValue::Type::Array) {
+          error = "session: \"" + path + ".fxSlots\" is not an array";
+          return false;
+        }
+        std::size_t slotIndex = 0;
+        for (const JsonValue& slotItem : fxSlots->array) {
+          if (slotIndex >= static_cast<std::size_t>(kTrackFxSlots)) break;
+          const std::string slotPath =
+              path + ".fxSlots[" + std::to_string(slotIndex) + "]";
+          if (!decodeFxInsert(
+                  slotItem, slotPath,
+                  channel.fxSlots[slotIndex], &wetPresent[slotIndex], error)) {
+            return false;
+          }
+          ++slotIndex;
+        }
+      } else {
+        channel.fxSlots[0] = channel.insert;
+      }
+      for (int slot = 0; slot < kTrackFxSlots; ++slot) {
+        FxInsertState& fxSlot =
+            channel.fxSlots[static_cast<std::size_t>(slot)];
+        if (!wetPresent[static_cast<std::size_t>(slot)] &&
+            slot < audio::kNumSends &&
+            sendProvided[static_cast<std::size_t>(slot)]) {
+          fxSlot.wet = channel.send[static_cast<std::size_t>(slot)];
+        }
+        if (fxSlot.wet < 0.0f) fxSlot.wet = 0.0f;
+        if (fxSlot.wet > 1.0f) fxSlot.wet = 1.0f;
       }
       ++index;
     }
@@ -1704,6 +1757,25 @@ std::string encode(const Snapshot& snapshot) {
       appendNumber(out, channel.insert.params[param]);
     }
     out += "]}";
+    out += ",\"fxSlots\":[";
+    for (int slot = 0; slot < kTrackFxSlots; ++slot) {
+      if (slot != 0) out.push_back(',');
+      const FxInsertState& fxSlot =
+          channel.fxSlots[static_cast<std::size_t>(slot)];
+      out += "{\"id\":";
+      writeString(out, fxSlot.id);
+      out += ",\"bypass\":";
+      appendBool(out, fxSlot.bypass);
+      out += ",\"wet\":";
+      appendNumber(out, fxSlot.wet);
+      out += ",\"params\":[";
+      for (std::size_t param = 0; param < fxSlot.params.size(); ++param) {
+        if (param != 0) out.push_back(',');
+        appendNumber(out, fxSlot.params[param]);
+      }
+      out += "]}";
+    }
+    out.push_back(']');
     out += "}";
   }
   out += "],\"master\":";
@@ -2055,13 +2127,22 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
     channel.inCh = engine.inputSource(index);
     channel.inPair = engine.inputPair(index);
     channel.outDst = static_cast<int>(engine.outputDestination(index));
-    // The per-track FX insert is engine state (audio wave 9): capture reads
-    // the applied id/bypass/params back, with the values the DSP actually
-    // holds (built-in ranges clamped, stepped selectors rounded).
-    const audio::TrackInsert insert = engine.trackInsert(index);
-    channel.insert.id = insert.id;
-    channel.insert.bypass = insert.bypass;
-    channel.insert.params = insert.params;
+    // The per-track FX rack is engine state (audio wave 11): capture both
+    // slots with the values the DSP actually holds (built-in ranges clamped,
+    // stepped selectors rounded, wet clamped by the engine). The deprecated
+    // `insert` is the legacy view of FX1 so old readers keep working.
+    for (int slot = 0; slot < kTrackFxSlots; ++slot) {
+      const audio::TrackFxSlot fx =
+          engine.trackFxSlot(index, slot);
+      FxInsertState& state = channel.fxSlots[static_cast<std::size_t>(slot)];
+      state.id = fx.id;
+      state.bypass = fx.bypass;
+      state.wet = fx.wet;
+      state.params = fx.params;
+    }
+    channel.insert.id = channel.fxSlots[0].id;
+    channel.insert.bypass = channel.fxSlots[0].bypass;
+    channel.insert.params = channel.fxSlots[0].params;
   }
   snapshot.mixer.master = engine.masterGain();
   snapshot.mixer.out34Mode = static_cast<int>(engine.out34Mode());
@@ -2253,14 +2334,31 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
     engine.setInputPair(index, state.inPair);
     engine.setOutputDestination(
         index, static_cast<audio::OutputDestination>(state.outDst));
-    // Per-track FX insert (audio wave 9): one instance per track, post-EQ and
-    // pre-fader. An empty id detaches; a changed id re-initializes only that
-    // track's instance and a parameter-only change is applied hot.
-    audio::TrackInsert insert;
-    insert.id = state.insert.id;
-    insert.bypass = state.insert.bypass;
-    insert.params = state.insert.params;
-    engine.setTrackInsert(index, insert);
+    // Per-track FX rack (audio wave 11): two series slots, post-EQ and
+    // pre-fader. An empty id detaches a slot; a changed id re-initializes only
+    // that slot and a parameter-only change is applied hot.
+    for (int slot = 0; slot < kTrackFxSlots; ++slot) {
+      const FxInsertState& source =
+          state.fxSlots[static_cast<std::size_t>(slot)];
+      audio::TrackFxSlot fx;
+      fx.id = source.id;
+      fx.bypass = source.bypass;
+      fx.wet = source.wet;
+      fx.params = source.params;
+      engine.setTrackFxSlot(index, slot, fx);
+    }
+    // Compatibility for an in-memory snapshot built before the rack existed:
+    // both fxSlots empty but the deprecated insert set. Decoded files always
+    // populate fxSlots (the reader migrates), so this can never override a
+    // real rack; it keeps the old field's engine meaning for old callers.
+    if (state.fxSlots[0].id.empty() && state.fxSlots[1].id.empty() &&
+        !state.insert.id.empty()) {
+      audio::TrackInsert insert;
+      insert.id = state.insert.id;
+      insert.bypass = state.insert.bypass;
+      insert.params = state.insert.params;
+      engine.setTrackInsert(index, insert);
+    }
   }
   engine.setMaster(snapshot.mixer.master);
   engine.setOut34Mode(

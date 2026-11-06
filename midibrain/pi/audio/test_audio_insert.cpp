@@ -1,12 +1,15 @@
-// Assert-style acceptance tests for the per-track FX insert (engine wave 9):
-// one built-in delay/reverb instance per track with its own settings, placed
-// post-EQ, pre-fader and pre-sends, plus the external (CLAP) seam.
+// Assert-style acceptance tests for the per-track FX rack (engine wave 11):
+// two series slots (FX1 -> FX2) per track, each with its own built-in
+// delay/reverb instance, dry/wet mix and external (CLAP) seam. The legacy
+// single-insert API is tested as the wrapper for slot 0 (wave 9 behaviour is
+// bit-identical at wet = 1), and the retired global FX send buses are proven
+// inert.
 //
 // Build (from midibrain/pi/audio), one command:
 //   /usr/bin/c++ -std=c++20 -Wall -Wextra -Werror -I. test_audio_insert.cpp
-//     engine.cpp take_player.cpp click.cpp fx/effect.cpp fx/params.cpp
-//     fx/delay.cpp fx/reverb.cpp -pthread -o /tmp/t_audio_insert &&
-//     /tmp/t_audio_insert
+//     engine.cpp take_player.cpp click.cpp recorder.cpp fx/effect.cpp
+//     fx/params.cpp fx/delay.cpp fx/reverb.cpp -pthread -o /tmp/t_audio_insert
+//     && /tmp/t_audio_insert
 //
 // Every check injects a known signal and compares the engine output, so the
 // placement claims are proven by the audio path rather than by reading the
@@ -76,6 +79,22 @@ TrackInsert reverbInsert(double decay, double mix) {
     insert.id = "builtin.reverb";
     insert.params = {0.0, decay, 0.5, mix, 0.0, 1.0};
     return insert;
+}
+
+TrackFxSlot delaySlot(double timeMs, double feedback, double mix, float wet) {
+    TrackFxSlot slot;
+    slot.id = "builtin.delay";
+    slot.wet = wet;
+    slot.params = {timeMs, feedback, mix, 0.0, 3.0, 0.0, 20000.0, 0.1};
+    return slot;
+}
+
+TrackFxSlot reverbSlot(double decay, double mix, float wet) {
+    TrackFxSlot slot;
+    slot.id = "builtin.reverb";
+    slot.wet = wet;
+    slot.params = {0.0, decay, 0.5, mix, 0.0, 1.0};
+    return slot;
 }
 
 // Hard-left pan makes gainL exactly 1, so Main L is the strip signal at
@@ -514,18 +533,21 @@ void testPlacementPreFader() {
 }
 
 void testPlacementPreSends() {
-    // A 1 ms wet-only delay on an impulse: every send stage (FX1 pre and post
-    // fader, CUE, OUT3&4) must carry the delayed signal, never the dry one.
+    // A 1 ms wet-only delay on an impulse: the live CUE and OUT3&4 sends must
+    // carry the delayed signal, never the dry one. The FX1/FX2 send buses are
+    // RETIRED from the signal path: an attached bus effect must never be
+    // called and the send level must not reach Main.
     ProbeEffect fx1;
     Engine engine;
     configureStrip(engine, 0);
     Channel channel = engine.channel(0);
-    channel.send[0] = 1.0f;  // FX1
+    channel.send[0] = 1.0f;  // FX1 (retired)
+    channel.send[1] = 1.0f;  // FX2 (retired)
     channel.cueSend = 1.0f;
     channel.out34Send = 1.0f;
     engine.setChannel(0, channel);
     engine.setFx(0, &fx1);
-    engine.setFxReturn(0, 0.0f);  // keep the return out of the Main check
+    engine.setFxReturn(0, 1.0f);
     engine.setTrackInsert(0, delayInsert(1.0, 0.0, 1.0));
 
     std::vector<float> input(kBlockSize * 2, 0.0f);
@@ -533,36 +555,15 @@ void testPlacementPreSends() {
     const std::vector<const std::vector<float>*> inputs{&input};
     const Capture out = render(engine, inputs);
 
-    CHECK(!fx1.left.empty());
-    checkNear("post-fader FX1 send sees the insert at 48", fx1.left[48], 1.0,
-              1e-6);
-    checkNear("post-fader FX1 send has no dry at 0", fx1.left[0], 0.0, 1e-6);
+    CHECK(fx1.calls == 0);  // retired bus: no effect call at all
     checkNear("CUE send sees the insert at 48", out.phonesL[48], 1.0, 1e-6);
     checkNear("CUE send has no dry at 0", out.phonesL[0], 0.0, 1e-6);
     checkNear("OUT3&4 send sees the insert at 48", out.out34L[48], 1.0, 1e-6);
     checkNear("OUT3&4 send has no dry at 0", out.out34L[0], 0.0, 1e-6);
+    // Main has the rack output exactly once: no hidden FX send return.
     checkNear("dry destination sees the insert at 48", out.mainL[48], 1.0,
               1e-6);
-
-    // Pre-fader FX1 is upstream of the fader but still downstream of the
-    // insert: the delayed impulse is there and the dry one is not.
-    ProbeEffect fx1Pre;
-    Engine pre;
-    configureStrip(pre, 0);
-    Channel preChannel = pre.channel(0);
-    preChannel.send[0] = 1.0f;
-    pre.setChannel(0, preChannel);
-    pre.setSendSource(SendDestination::Fx1, SendSource::PreFader);
-    pre.setFx(0, &fx1Pre);
-    pre.setFxReturn(0, 0.0f);
-    pre.setTrackInsert(0, delayInsert(1.0, 0.0, 1.0));
-    (void)render(pre, inputs);
-    CHECK(!fx1Pre.left.empty());
-    checkNear("pre-fader FX1 send sees the insert at 48", fx1Pre.left[48], 1.0,
-              1e-6);
-    checkNear("pre-fader FX1 send has no dry at 0", fx1Pre.left[0], 0.0, 1e-6);
-    checkNear("pre-fader FX1 send is mono-centred", fx1Pre.right[48], 1.0,
-              1e-6);
+    checkNear("retired FX send adds no dry at 0", out.mainL[0], 0.0, 1e-6);
 }
 
 void testTapStaysPreInsert() {
@@ -774,6 +775,361 @@ void testCapacity() {
     std::filesystem::remove_all(root, ec);
 }
 
+// --------------------------------------------------------------- FX rack
+
+void testRackSeriesOrder() {
+    // FX1, then FX2. A 1 ms wet-only delay in FX1 and a recording probe in FX2
+    // proves the order: the probe sees the delayed impulse at frame 48 only
+    // when the delay is FX1. Swapping the slots makes it see the dry impulse
+    // at frame 0.
+    std::vector<float> input(kBlockSize * 2, 0.0f);
+    input[0] = 1.0f;
+    const std::vector<const std::vector<float>*> inputs{&input};
+    TrackFxSlot external;
+    external.id = "test.probe";
+
+    ProbeEffect afterDelay;
+    Engine forward;
+    configureStrip(forward, 0);
+    forward.setTrackFxSlot(0, 0, delaySlot(1.0, 0.0, 1.0, 1.0f));
+    forward.setTrackFxSlotEffect(0, 1, &afterDelay);
+    forward.setTrackFxSlot(0, 1, external);
+    (void)render(forward, inputs);
+    CHECK(afterDelay.calls > 0);
+    checkNear("FX1 delay feeds FX2 at frame 48", afterDelay.left[48], 1.0,
+              1e-6);
+    checkNear("FX2 does not see the dry impulse", afterDelay.left[0], 0.0,
+              1e-6);
+
+    ProbeEffect beforeDelay;
+    Engine reversed;
+    configureStrip(reversed, 0);
+    reversed.setTrackFxSlotEffect(0, 0, &beforeDelay);
+    reversed.setTrackFxSlot(0, 0, external);
+    reversed.setTrackFxSlot(0, 1, delaySlot(1.0, 0.0, 1.0, 1.0f));
+    (void)render(reversed, inputs);
+    CHECK(beforeDelay.calls > 0);
+    checkNear("FX1 probe sees the dry impulse", beforeDelay.left[0], 1.0, 1e-6);
+    checkNear("FX1 probe precedes the FX2 delay", beforeDelay.left[48], 0.0,
+              1e-6);
+}
+
+void testRackDelayThenReverb() {
+    // Delay in FX1, reverb in FX2, both fully wet: the reverb tail exists only
+    // because the delayed impulse reaches FX2, and the delayed impulse itself
+    // is gone (the reverb has no direct path).
+    std::vector<float> input(kBlockSize * 32, 0.0f);
+    input[0] = 1.0f;
+    const std::vector<const std::vector<float>*> inputs{&input};
+
+    Engine engine;
+    configureStrip(engine, 0);
+    engine.setTrackFxSlot(0, 0, delaySlot(1.0, 0.0, 1.0, 1.0f));
+    engine.setTrackFxSlot(0, 1, reverbSlot(0.7, 1.0, 1.0f));
+    const Capture out = render(engine, inputs);
+    checkNear("delay then reverb: no dry at frame 0", out.mainL[0], 0.0, 1e-6);
+    checkNear("delay then reverb: no bare delay at frame 48", out.mainL[48],
+              0.0, 1e-6);
+    double tail = 0.0;
+    for (std::size_t i = 1; i < out.mainL.size(); ++i) {
+        tail += std::fabs(out.mainL[i]);
+    }
+    CHECK(tail > 0.01);
+
+    // The same delay alone leaves only the bare echo at frame 48: the reverb
+    // in FX2 is audible and not a pass-through.
+    Engine delayOnly;
+    configureStrip(delayOnly, 0);
+    delayOnly.setTrackFxSlot(0, 0, delaySlot(1.0, 0.0, 1.0, 1.0f));
+    const Capture bare = render(delayOnly, inputs);
+    checkNear("FX1 delay alone keeps the echo", bare.mainL[48], 1.0, 1e-6);
+    CHECK(out.mainL != bare.mainL);
+}
+
+void testRackWet() {
+    // A 1 ms wet-only delay: effect output is the echo at frame 48 and no dry
+    // at frame 0, so the slot crossfade is directly readable.
+    std::vector<float> input(kBlockSize * 2, 0.0f);
+    input[0] = 1.0f;
+    const std::vector<const std::vector<float>*> inputs{&input};
+
+    Engine half;
+    configureStrip(half, 0);
+    half.setTrackFxSlot(0, 0, delaySlot(1.0, 0.0, 1.0, 0.5f));
+    const Capture mixed = render(half, inputs);
+    checkNear("wet 0.5 keeps half the dry", mixed.mainL[0], 0.5, 1e-6);
+    checkNear("wet 0.5 adds half the echo", mixed.mainL[48], 0.5, 1e-6);
+
+    Engine allWet;
+    configureStrip(allWet, 0);
+    allWet.setTrackFxSlot(0, 0, delaySlot(1.0, 0.0, 1.0, 1.0f));
+    const Capture wet = render(allWet, inputs);
+    checkNear("wet 1 drops the dry", wet.mainL[0], 0.0, 1e-6);
+    checkNear("wet 1 keeps the echo", wet.mainL[48], 1.0, 1e-6);
+
+    // wet 0 is the transparent skip: bit-identical to a never-configured rack
+    // and the attached external effect is never called.
+    const std::vector<float> noise = noiseBuffer(kBlockSize * 4, 0.25f);
+    const std::vector<const std::vector<float>*> noises{&noise};
+    Engine dry;
+    configureStrip(dry, 0);
+    const Capture reference = render(dry, noises);
+
+    Engine zero;
+    configureStrip(zero, 0);
+    ProbeEffect probe;
+    zero.setTrackFxSlotEffect(0, 1, &probe);
+    TrackFxSlot skipped = delaySlot(1.0, 0.5, 1.0, 0.0f);
+    zero.setTrackFxSlot(0, 0, skipped);
+    TrackFxSlot externalSkip;
+    externalSkip.id = "test.probe";
+    externalSkip.wet = 0.0f;
+    zero.setTrackFxSlot(0, 1, externalSkip);
+    const Capture out = render(zero, noises);
+    CHECK(probe.calls == 0);
+    checkIdentical("wet 0 is bit-transparent", out.mainL, reference.mainL);
+    // Out-of-range and NaN wet are sanitized (clamped / default unity).
+    TrackFxSlot invalid = delaySlot(1.0, 0.0, 1.0, 1.0f);
+    invalid.wet = std::nanf("");
+    zero.setTrackFxSlot(0, 0, invalid);
+    CHECK(zero.trackFxSlot(0, 0).wet == 1.0f);
+    invalid.wet = -3.0f;
+    zero.setTrackFxSlot(0, 0, invalid);
+    CHECK(zero.trackFxSlot(0, 0).wet == 0.0f);
+    invalid.wet = 3.0f;
+    zero.setTrackFxSlot(0, 0, invalid);
+    CHECK(zero.trackFxSlot(0, 0).wet == 1.0f);
+}
+
+void testRackBypass() {
+    const std::vector<float> input = noiseBuffer(kBlockSize * 4, 0.25f);
+    const std::vector<const std::vector<float>*> inputs{&input};
+    Engine dry;
+    configureStrip(dry, 0);
+    const Capture reference = render(dry, inputs);
+
+    Engine engine;
+    configureStrip(engine, 0);
+    TrackFxSlot bypassFirst = delaySlot(1.0, 0.5, 1.0, 1.0f);
+    bypassFirst.bypass = true;
+    TrackFxSlot bypassSecond = reverbSlot(0.7, 1.0, 1.0f);
+    bypassSecond.bypass = true;
+    engine.setTrackFxSlot(0, 0, bypassFirst);
+    engine.setTrackFxSlot(0, 1, bypassSecond);
+    const Capture out = render(engine, inputs);
+    checkIdentical("both bypassed slots are bit-transparent", out.mainL,
+                   reference.mainL);
+    checkIdentical("both bypassed slots are bit-transparent (right)", out.mainR,
+                   reference.mainR);
+
+    // Bypassing FX2 leaves FX1 running: the result is the FX1-only reference.
+    Engine delayOnly;
+    configureStrip(delayOnly, 0);
+    delayOnly.setTrackFxSlot(0, 0, delaySlot(1.0, 0.5, 1.0, 1.0f));
+    const Capture expected = render(delayOnly, inputs);
+    engine.setTrackFxSlot(0, 0, delaySlot(1.0, 0.5, 1.0, 1.0f));
+    const Capture fx1Only = render(engine, inputs);
+    checkIdentical("bypassed FX2 does not touch FX1 output", fx1Only.mainL,
+                   expected.mainL);
+
+    // Mid-stream bypass: no state leaks into the next block.
+    const std::vector<float> first = noiseBuffer(kBlockSize * 2, 0.25f, 7u);
+    const std::vector<float> second = noiseBuffer(kBlockSize * 2, 0.25f, 9u);
+    Engine mid;
+    configureStrip(mid, 0);
+    mid.setTrackFxSlot(0, 0, delaySlot(1.0, 0.7, 1.0, 1.0f));
+    const std::vector<const std::vector<float>*> firstInputs{&first};
+    (void)render(mid, firstInputs);
+    TrackFxSlot bypassed = delaySlot(1.0, 0.7, 1.0, 1.0f);
+    bypassed.bypass = true;
+    mid.setTrackFxSlot(0, 0, bypassed);
+    const std::vector<const std::vector<float>*> secondInputs{&second};
+    const Capture after = render(mid, secondInputs);
+    Engine drySecond;
+    configureStrip(drySecond, 0);
+    const Capture expectedSecond = render(drySecond, secondInputs);
+    checkIdentical("mid-stream slot bypass is bit-transparent", after.mainL,
+                   expectedSecond.mainL);
+}
+
+void testRackParamsHotApply() {
+    // Same-id parameter writes keep both slots' state: slot 0's delay line
+    // survives the mix change and slot 1's settings are untouched.
+    Engine engine;
+    configureStrip(engine, 0);
+    engine.setTrackFxSlot(0, 0, delaySlot(1.0, 0.5, 0.0, 1.0f));
+    engine.setTrackFxSlot(0, 1, delaySlot(2.0, 0.0, 1.0, 1.0f));
+    std::vector<float> input(16, 0.0f);
+    input[0] = 1.0f;
+    const std::vector<const std::vector<float>*> inputs{&input};
+    (void)render(engine, inputs);
+
+    const TrackFxSlot slot1Before = engine.trackFxSlot(0, 1);
+    engine.setTrackFxSlot(0, 0, delaySlot(1.0, 0.5, 1.0, 1.0f));
+    CHECK(engine.trackFxSlot(0, 1) == slot1Before);
+    const TrackFxSlot applied = engine.trackFxSlot(0, 0);
+    CHECK(applied.id == "builtin.delay");
+    CHECK(applied.params.size() == 8);
+    checkNear("hot apply: mix target", applied.params[2], 1.0, 1e-9);
+
+    std::vector<float> silence(kBlockSize, 0.0f);
+    const std::vector<const std::vector<float>*> after{&silence};
+    const Capture out = render(engine, after);
+    // The pre-write impulse survived in FX1: its echo is in the output (ramped
+    // and then passed through FX2's 2 ms delay). A reset would have erased it.
+    double energy = 0.0;
+    for (const float value : out.mainL) energy += std::fabs(value);
+    CHECK(energy > 1e-3);
+}
+
+void testRackIdSwitchIsolation() {
+    // FX1 switches delay -> reverb -> delay: only FX1 is re-initialized, FX2's
+    // settings and signal path are untouched. With feedback 0 both slots hold
+    // no future output after the first impulse block, so a second impulse must
+    // match a reference that never switched FX1, bit for bit.
+    std::vector<float> impulse(kBlockSize * 2, 0.0f);
+    impulse[0] = 1.0f;
+    const std::vector<const std::vector<float>*> impulses{&impulse};
+
+    Engine engine;
+    configureStrip(engine, 0);
+    engine.setTrackFxSlot(0, 0, delaySlot(1.0, 0.0, 1.0, 1.0f));
+    engine.setTrackFxSlot(0, 1, delaySlot(2.0, 0.0, 1.0, 1.0f));
+    (void)render(engine, impulses);
+    const TrackFxSlot slot1Before = engine.trackFxSlot(0, 1);
+
+    engine.setTrackFxSlot(0, 0, reverbSlot(0.7, 1.0, 1.0f));
+    engine.setTrackFxSlot(0, 0, delaySlot(1.0, 0.0, 1.0, 1.0f));
+    CHECK(engine.trackFxSlot(0, 1) == slot1Before);
+    const Capture out = render(engine, impulses);
+
+    Engine reference;
+    configureStrip(reference, 0);
+    reference.setTrackFxSlot(0, 0, delaySlot(1.0, 0.0, 1.0, 1.0f));
+    reference.setTrackFxSlot(0, 1, delaySlot(2.0, 0.0, 1.0, 1.0f));
+    (void)render(reference, impulses);
+    const Capture expected = render(reference, impulses);
+    checkIdentical("FX1 id switch leaves FX2 untouched", out.mainL,
+                   expected.mainL);
+
+    // A feedback tail in FX1 is cleared by the id switch, while FX2's tail
+    // keeps running: the reset scope is one slot, not the track rack.
+    Engine tails;
+    configureStrip(tails, 0);
+    tails.setTrackFxSlot(0, 0, delaySlot(1.0, 0.6, 1.0, 1.0f));
+    tails.setTrackFxSlot(0, 1, delaySlot(3.0, 0.6, 1.0, 1.0f));
+    (void)render(tails, impulses);
+    tails.setTrackFxSlot(0, 0, reverbSlot(0.7, 1.0, 1.0f));
+    tails.setTrackFxSlot(0, 0, delaySlot(1.0, 0.0, 1.0, 1.0f));
+    std::vector<float> silence(kBlockSize * 2, 0.0f);
+    const std::vector<const std::vector<float>*> quiet{&silence};
+    const Capture tailOut = render(tails, quiet);
+    double slot1Tail = 0.0;
+    for (const float value : tailOut.mainL) slot1Tail += std::fabs(value);
+    CHECK(slot1Tail > 1e-3);  // FX2's feedback tail survived FX1's reset
+
+    // FX1's own tail is gone: a rack whose only effect was the switched slot
+    // is silent after the same switch.
+    Engine onlySlot0;
+    configureStrip(onlySlot0, 0);
+    onlySlot0.setTrackFxSlot(0, 0, delaySlot(1.0, 0.6, 1.0, 1.0f));
+    (void)render(onlySlot0, impulses);
+    onlySlot0.setTrackFxSlot(0, 0, reverbSlot(0.7, 1.0, 1.0f));
+    onlySlot0.setTrackFxSlot(0, 0, delaySlot(1.0, 0.0, 1.0, 1.0f));
+    const Capture onlyTail = render(onlySlot0, quiet);
+    double slot0Tail = 0.0;
+    for (const float value : onlyTail.mainL) slot0Tail += std::fabs(value);
+    checkNear("FX1 id switch clears FX1's own tail", slot0Tail, 0.0, 1e-9);
+}
+
+void testRackEmptySlotSkip() {
+    const std::vector<float> input = noiseBuffer(kBlockSize * 4, 0.25f);
+    const std::vector<const std::vector<float>*> inputs{&input};
+    Engine dry;
+    configureStrip(dry, 0);
+    const Capture reference = render(dry, inputs);
+
+    Engine engine;
+    configureStrip(engine, 0);
+    ProbeEffect probe;
+    engine.setTrackFxSlotEffect(0, 1, &probe);
+    const Capture empty = render(engine, inputs);
+    CHECK(probe.calls == 0);
+    checkIdentical("empty slots are bit-transparent", empty.mainL,
+                   reference.mainL);
+    CHECK(engine.trackFxSlot(0, 0).id.empty());
+    CHECK(engine.trackFxSlot(0, 1).params.empty());
+
+    // A pass-through external effect in FX2 (FX1 empty) is called and leaves
+    // the strip bit-identical; clearing the id detaches it again.
+    TrackFxSlot external;
+    external.id = "test.probe";
+    engine.setTrackFxSlot(0, 1, external);
+    const Capture attached = render(engine, inputs);
+    CHECK(probe.calls > 0);
+    checkIdentical("pass-through FX2 leaves the strip unchanged",
+                   attached.mainL, reference.mainL);
+    const int calls = probe.calls;
+    engine.setTrackFxSlot(0, 1, TrackFxSlot{});
+    const Capture cleared = render(engine, inputs);
+    CHECK(probe.calls == calls);
+    checkIdentical("cleared slot is bit-transparent", cleared.mainL,
+                   reference.mainL);
+    CHECK(engine.trackFxSlot(0, 1).id.empty());
+}
+
+void testLegacyInsertMigration() {
+    // The legacy single insert is exactly FX slot 0 at wet = 1: bit-identical
+    // output, and the legacy getter mirrors slot 0.
+    const std::vector<float> input = noiseBuffer(kBlockSize * 4, 0.25f);
+    const std::vector<const std::vector<float>*> inputs{&input};
+    TrackInsert legacy = delayInsert(2.0, 0.4, 0.7);
+
+    Engine oldApi;
+    configureStrip(oldApi, 0);
+    oldApi.setTrackInsert(0, legacy);
+    const Capture oldOut = render(oldApi, inputs);
+
+    Engine newApi;
+    configureStrip(newApi, 0);
+    TrackFxSlot migrated;
+    migrated.id = legacy.id;
+    migrated.bypass = legacy.bypass;
+    migrated.wet = 1.0f;
+    migrated.params = legacy.params;
+    newApi.setTrackFxSlot(0, 0, migrated);
+    const Capture newOut = render(newApi, inputs);
+    checkIdentical("legacy insert equals FX1 at wet 1", oldOut.mainL,
+                   newOut.mainL);
+    CHECK(newApi.trackFxSlot(0, 0) == migrated);
+
+    const TrackInsert mirrored = newApi.trackInsert(0);
+    CHECK(mirrored.id == legacy.id);
+    CHECK(mirrored.bypass == legacy.bypass);
+    CHECK(mirrored.params == newApi.trackFxSlot(0, 0).params);
+
+    // The legacy attachment seam is slot 0.
+    Engine seam;
+    configureStrip(seam, 0);
+    GainEffect gain(0.5f);
+    seam.setTrackInsertEffect(0, &gain);
+    TrackInsert external;
+    external.id = "clap.example";
+    seam.setTrackInsert(0, external);
+    const Capture seamOut = render(seam, inputs);
+    CHECK(gain.calls > 0);
+    std::vector<float> expected = input;
+    for (float& value : expected) value *= 0.5f;
+    // gain 0.5 on a hard-left mono strip: Main L is the scaled input.
+    checkIdentical("legacy effect seam writes FX1", seamOut.mainL, expected);
+
+    // Out-of-range slot reads as none, writes are ignored.
+    CHECK(seam.trackFxSlot(0, -1).id.empty());
+    CHECK(seam.trackFxSlot(0, kTrackFxSlots).id.empty());
+    seam.setTrackFxSlot(0, kTrackFxSlots, migrated);
+    CHECK(seam.trackFxSlot(0, kTrackFxSlots).id.empty());
+}
+
 // ------------------------------------------------------------- CPU probe
 
 // Mean microseconds per 64-frame block for `tracks` strips with `insert`.
@@ -803,6 +1159,40 @@ double measureInsert(const TrackInsert& insert, int tracks, int blocks) {
     const auto start = std::chrono::steady_clock::now();
     for (int block = 0; block < blocks; ++block) {
         engine.process(pointers, tracks, kProbeFrames, outL.data(), outR.data());
+    }
+    const auto stop = std::chrono::steady_clock::now();
+    return std::chrono::duration<double>(stop - start).count() * 1e6 / blocks;
+}
+
+// Mean microseconds per block for `tracks` strips with both rack slots
+// configured. `blockFrames` is 64 or 128; the budget is derived per block.
+double measureRack(const TrackFxSlot& slot0, const TrackFxSlot& slot1,
+                   int tracks, int blockFrames, int blocks) {
+    Engine engine;
+    std::vector<std::vector<float>> input(
+        static_cast<std::size_t>(tracks),
+        std::vector<float>(static_cast<std::size_t>(blockFrames), 0.0f));
+    Noise noise(3u);
+    for (auto& buffer : input) {
+        for (float& value : buffer) value = 0.25f * noise.next();
+    }
+    for (int track = 0; track < tracks; ++track) {
+        configureStrip(engine, track);
+        engine.setTrackFxSlot(track, 0, slot0);
+        engine.setTrackFxSlot(track, 1, slot1);
+    }
+    const float* pointers[kMaxTracks] = {};
+    for (int track = 0; track < tracks; ++track) {
+        pointers[track] = input[static_cast<std::size_t>(track)].data();
+    }
+    std::vector<float> outL(static_cast<std::size_t>(blockFrames));
+    std::vector<float> outR(static_cast<std::size_t>(blockFrames));
+    for (int block = 0; block < 100; ++block) {
+        engine.process(pointers, tracks, blockFrames, outL.data(), outR.data());
+    }
+    const auto start = std::chrono::steady_clock::now();
+    for (int block = 0; block < blocks; ++block) {
+        engine.process(pointers, tracks, blockFrames, outL.data(), outR.data());
     }
     const auto stop = std::chrono::steady_clock::now();
     return std::chrono::duration<double>(stop - start).count() * 1e6 / blocks;
@@ -845,6 +1235,23 @@ void testCpuCost() {
     }
     std::printf("INFO insert cpu: %d tracks, no insert: %8.2f us/block\n",
                 kMaxTracks, emptyUs);
+
+    // Wave 11 worst case: every track runs both slots, delay in FX1 and reverb
+    // in FX2, at the two supported block sizes.
+    const TrackFxSlot delay = delaySlot(250.0, 0.35, 0.3, 1.0f);
+    const TrackFxSlot reverb = reverbSlot(0.7, 0.25, 1.0f);
+    const TrackFxSlot empty;
+    for (const int frames : {64, 128}) {
+        const double budget = frames / 48000.0 * 1e6;
+        const double both = measureRack(delay, reverb, kMaxTracks, frames, 300);
+        const double idle = measureRack(empty, empty, kMaxTracks, frames, 500);
+        std::printf(
+            "INFO rack cpu: %d tracks x (FX1 delay + FX2 reverb), %d-frame "
+            "blocks: %8.2f us/block (%.1f%% of %.0f us), empty rack "
+            "%8.2f us/block\n",
+            kMaxTracks, frames, both, 100.0 * both / budget, budget, idle);
+        CHECK(both > idle);
+    }
     // Marginal cost of one instance, from the N=1 and N=kMaxTracks rows.
     for (const char* name : {"delay", "reverb"}) {
         double one = 0.0;
@@ -885,6 +1292,14 @@ int main() {
     testExternalSeam();
     testSampleRate();
     testCapacity();
+    testRackSeriesOrder();
+    testRackDelayThenReverb();
+    testRackWet();
+    testRackBypass();
+    testRackParamsHotApply();
+    testRackIdSwitchIsolation();
+    testRackEmptySlotSkip();
+    testLegacyInsertMigration();
     testCpuCost();
     if (gFailures != 0) {
         std::printf("FAIL insert: %d assertion(s)\n", gFailures);

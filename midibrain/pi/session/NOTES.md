@@ -26,12 +26,24 @@ clearEffect / paramCount / paramValue / setParamValue / bypassed / setBypassed).
   capacity store, so a hidden slot keeps its settings. App-owned until the
   engine has a dynamic track list: `capture()` reports every slot, so the
   entry count follows audio::kMaxInputs.
-- `mixer.channels[i].insert` — `{"id","bypass","params"}`, the same shape as an
-  `fx.bus` entry (empty id = none, params are doubles in the effect's stable
-  order). Engine state as of audio wave 9: `apply()` forwards it to
-  `Engine::setTrackInsert()` and `capture()` reads the applied values back. The
-  app's mixer model still writes the snapshot before save (project_io.cpp),
-  like the dynamic track list.
+- `mixer.channels[i].fxSlots` — the per-track FX rack (`session::kTrackFxSlots` =
+  2): `[{"id","bypass","wet","params"}, {...}]`, index 0 = FX1, index 1 =
+  FX2, run in series post-EQ pre-fader. `wet` is a 0..1 wet/dry mix (clamped
+  on read, default 1.0); `params` are doubles in the effect's stable order,
+  the same contract as `fx.bus`. The encoder always writes both slots and
+  always writes `wet`, so a saved rack round-trips exactly.
+- `mixer.channels[i].insert` — DEPRECATED: the old single per-track insert
+  `{"id","bypass","params"}` (empty id = none, params are doubles in the
+  effect's stable order). A file without `fxSlots` reads it as FX1; a file
+  with `fxSlots` ignores it for the rack (the slot wins) and the key is kept
+  only for old files and old readers. Engine state as of audio wave 11:
+  `apply()` forwards both `fxSlots` to `Engine::setTrackFxSlot()` and
+  `capture()` reads both back (built-in values clamped as the DSP holds them,
+  wet clamped); the deprecated `insert` is captured as the legacy FX1 view and
+  still applies to FX1 for an in-memory snapshot that predates the rack.
+  `send` stays in the format and round-trips, but is also
+  deprecated: the FX1/FX2 knobs bind to `fxSlots[i].wet`, and a legacy file's
+  `send[i]` values migrate into those wet levels when `wet` is absent.
 - `router.routes[i].src` = -1 (`kSrcGenerator`, generator chain, no input) or -2
   (`kSrcOutputInsert`, chain in front of every message routed to `dst`). Route
   src is range-checked as -2..31, dst as 0..31. The router has no pseudo port:

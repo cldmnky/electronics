@@ -10,7 +10,11 @@
 //             "channels":[{"gain":1,"pan":0.5,"mute":false,"solo":false,
 //                          "arm":false,"send":[0,0],"cue":0,"out34":0,
 //                          "insert":{"id":"","bypass":false,
-//                                     "params":[]}} x audio::kMaxInputs],
+//                                     "params":[]},
+//                          "fxSlots":[{"id":"","bypass":false,"wet":1,
+//                                       "params":[]},
+//                                      {"id":"","bypass":false,"wet":1,
+//                                       "params":[]}]} x audio::kMaxInputs],
 //             "master":1,"out34mode":0},
 //    "fx":{"bus":[{"id":"com.example.gain","params":[0.5],"bypass":false} x2]},
 //    "transport":{"bpm_x100":12000},
@@ -26,12 +30,17 @@
 //                  "releaseMs":100,"makeupDb":0,"mode":0}}
 // Port ids are midi::Port's underlying integers. FX ids are CLAP plugin ids or
 // "builtin.<name>"; parameter indices are the effect's stable order (owned and
-// documented by the FX team). Three additive version-2 keys extend the layout
+// documented by the FX team). Additive version-2 keys extend the layout
 // without a version bump, because their absence is exactly the legacy state:
 //   "mixer.tracks"   ordered list of the slots that exist (see MixerState);
 //                    absent = all audio::kMaxInputs slots in order.
-//   "mixer.channels[i].insert"  one per-track FX insert (see FxInsertState);
-//                    absent or empty id = no insert.
+//   "mixer.channels[i].insert"  DEPRECATED legacy single per-track FX insert
+//                    (see FxInsertState): read as FX1 when "fxSlots" is absent
+//                    and kept for old files/old readers only.
+//   "mixer.channels[i].fxSlots"  the per-track FX rack: exactly two
+//                    FxInsertState objects, FX1 then FX2, post-EQ pre-fader and
+//                    in series (see the table below). Wins over "insert" when
+//                    a file carries both.
 //   "router.routes[i].src" -1 / -2  generator and output-insert chains (see
 //                    kSrcGenerator / kSrcOutputInsert); absent routes keep the
 //                    documented src 0..31 -> dst 0..31 port pairs.
@@ -66,6 +75,9 @@ inline constexpr const char* kAppId = "mnkybox";
 inline constexpr std::size_t kMaxTrackNameBytes = 64;
 // Two FX send buses, matching audio::kNumSends.
 inline constexpr int kFxBuses = audio::kNumSends;
+// Per-track FX rack size. Index 0 is FX1, index 1 is FX2; the engine runs
+// FX1 -> FX2 in series, post-EQ and pre-fader.
+inline constexpr int kTrackFxSlots = 2;
 
 // MIDI FX pipe types (stable ids; positional int params documented below).
 // Wave 1 (stateless): Filter..Transform. Wave 2 (clocked): Arp..MidiDelay.
@@ -145,13 +157,31 @@ struct RouterState {
   friend bool operator==(const RouterState&, const RouterState&) = default;
 };
 
-// One per-track FX insert instance (see MixerChannelState::insert). The wire
-// form is an object like an fx.bus entry: "id" (CLAP id or "builtin.<name>",
-// empty = no insert), "bypass" and "params" (doubles in the effect's stable
-// order; extra saved params are ignored on load, exactly like fx.bus).
+// One per-track FX insert instance. The same object is one slot of the
+// per-track FX rack (MixerChannelState::fxSlots) and the deprecated legacy
+// single insert (MixerChannelState::insert).
+//
+// FROZEN WIRE CONTRACT for the engine and UI workers:
+//   "fxSlots":[{"id":<string>,"bypass":<bool>,"wet":<0..1>,
+//                "params":[<double>...]}, {...}]   // FX1, FX2
+//   id      "" = no effect; "builtin.delay" | "builtin.reverb" | CLAP id
+//   bypass  hard dry switch for this slot, independent of wet
+//   wet     wet/dry mix for this slot, stored 0..1 (clamped on read, default
+//           1.0); the FX1/FX2 mix knobs bind to this field
+//   params  effect parameters, doubles in the effect's stable order (the same
+//           contract as fx.bus: extra saved params are ignored on load and
+//           the effect clamps its own ranges)
+// Decoding a file without "fxSlots" migrates the legacy single "insert" into
+// FX1 and the legacy per-track "send[i]" value into fxSlots[i].wet (a slot
+// whose "wet" key is absent uses that value when the channel has one,
+// otherwise 1.0); a file with "fxSlots" wins and its explicit wet is kept.
+// "send" stays in the format and still round-trips, but it is deprecated: the
+// FX1/FX2 knobs now bind to fxSlots[i].wet. apply() forwards both slots to
+// Engine::setTrackFxSlot() and capture() reads them back (audio wave 11).
 struct FxInsertState {
   std::string id;  // empty = none; "builtin.delay" | "builtin.reverb" | CLAP id
   bool bypass = false;
+  float wet = 1.0f;  // 0..1 wet/dry mix, clamped on read
   std::vector<double> params;
   friend bool operator==(const FxInsertState&, const FxInsertState&) = default;
 };
@@ -177,16 +207,18 @@ struct MixerChannelState {
   int inCh = 0;
   bool inPair = false;
   int outDst = 0;
-  // Per-track FX insert (v2): one effect instance with its own settings,
-  // post-EQ pre-fader per the engine placement. The global FX send buses
-  // stay as they are — this is the per-track instance path. Wire form is
-  // "insert":{"id","bypass","params"} exactly like an fx.bus entry, so an
-  // absent object or an empty id means "no insert" and params are doubles in
-  // the effect's stable order. Engine state as of audio wave 9: apply()
-  // forwards it to Engine::setTrackInsert() and capture() reads the applied
-  // values back; the app's mixer model still writes the snapshot before save
-  // (project_io.cpp), exactly like the dynamic track list (NOTES.md).
+  // DEPRECATED legacy per-track FX insert (v2): the old single effect
+  // instance. Its wire form "insert":{"id","bypass","params"} stays in the
+  // format for old files and old readers; a file without "fxSlots" reads it
+  // as FX1, and the engine seam still applies/captures it as of audio wave 9.
+  // New code must use `fxSlots`.
   FxInsertState insert;
+  // Per-track FX rack (v2): exactly kTrackFxSlots effects, FX1 then FX2, run
+  // in series post-EQ pre-fader by the engine. See FxInsertState for the
+  // frozen per-slot fields and the legacy migration rules. apply() forwards
+  // both slots to Engine::setTrackFxSlot() and capture() reads them back
+  // (audio wave 11); the deprecated `insert` is the legacy FX1 view.
+  std::array<FxInsertState, kTrackFxSlots> fxSlots;
   friend bool operator==(const MixerChannelState&, const MixerChannelState&) = default;
 };
 
@@ -465,9 +497,12 @@ class FxSlotTarget {
 // stay at their defaults; the app fills them before save(). mixer.tracks is
 // likewise app-owned while the engine has no dynamic track list: capture()
 // reports allSlots() (the legacy layout), and the app overwrites it with its
-// live list. Per-track inserts are engine state (audio wave 9), so capture()
-// reads them back and apply() forwards them; a built-in id comes back with the
-// values the DSP holds, a CLAP id verbatim (the plugin owns its table).
+// live list. The per-track FX rack is engine state (audio wave 11): capture()
+// reads both slots back and apply() forwards them; a built-in id comes back
+// with the values the DSP holds, a CLAP id and its parameter vector verbatim
+// (the plugin owns its table). The deprecated `insert` is captured as the
+// legacy FX1 view and still applies to FX1 for an in-memory snapshot that
+// predates the rack.
 Snapshot capture(const midi::Router& router, const audio::Engine& engine,
                  std::span<FxSlotTarget*> fxSlots = {});
 
@@ -481,7 +516,8 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
 // The app-owned sections (click, midimap, takes, punch, cue, sends,
 // mainComp, isTemplate, out34mode and the per-channel cue/out34 sends) are
 // not applied here; the app forwards them once the engine exposes them. The
-// same holds for mixer.tracks (dynamic track list).
+// same holds for mixer.tracks (dynamic track list) and the per-track FX rack
+// (mixer.channels[].fxSlots).
 void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine,
            std::span<FxSlotTarget*> fxSlots = {});
 
