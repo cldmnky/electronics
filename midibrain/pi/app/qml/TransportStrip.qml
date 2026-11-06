@@ -96,13 +96,15 @@ Rectangle {
             }
         }
         // A5: always available. The panel ring owns these stops only in
-        // no-Pico mode, where no panel exists to press them.
+        // no-Pico mode, where no panel exists to press them; the touch glyphs
+        // still carry a focus id in hardware mode so the tap gate (and a
+        // finger) can reach the same surface the panel uses.
         TransportGlyphButton {
             width: 44
             height: Style.touch
             glyph: "play"
             checked: app.rolling
-            focusId: app.noPicoMode ? "transport.play" : ""
+            focusId: "transport.play"
             onClicked: app.play()
         }
         TransportGlyphButton {
@@ -110,7 +112,7 @@ Rectangle {
             height: Style.touch
             glyph: "stop"
             checked: !app.rolling
-            focusId: app.noPicoMode ? "transport.stop" : ""
+            focusId: "transport.stop"
             onClicked: app.stop()
         }
         TransportGlyphButton {
@@ -121,7 +123,7 @@ Rectangle {
             recording: app.recording
             // W2: the long press opens the NOW/COUNT-IN/PUNCH picker; the
             // RECMODE readout beside the glyph is the focusable twin.
-            focusId: app.noPicoMode ? "transport.rec" : ""
+            focusId: "transport.rec"
             onClicked: app.recToggle()
             onLongPressed: app.openRecMode()
         }

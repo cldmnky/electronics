@@ -495,9 +495,12 @@ class AppController final : public QObject {
   double punchPlaceStartBeats_ = 0.0;
   bool punchEngaged_ = false;
   // Song transport seek rebasing: the raw Pico tick resets on START, so the
-  // displayed position is remembered across the transition.
+  // displayed position is remembered across the transition. A non-negative
+  // `transportZeroAnchorTick_` is the STOP-STOP return-to-zero anchor: the
+  // offset equals -anchor and is re-pinned while the transport stays stopped.
   bool lastRolling_ = false;
   std::uint32_t lastLinkTick_ = 0;
+  std::int64_t transportZeroAnchorTick_ = -1;
   // The name the NEW TRACK FROM TAKE keypad accepted, held until the MOVE /
   // KEEP ON SOURCE pick creates the track.
   QString pendingTrackFromTakeName_;

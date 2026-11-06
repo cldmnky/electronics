@@ -1,16 +1,22 @@
 #include "ui_tap_runner.hpp"
 
 #include <QCoreApplication>
+#include <QDataStream>
+#include <QDir>
+#include <QFile>
 #include <QMouseEvent>
+#include <QPointingDevice>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSet>
 #include <QTimer>
+#include <QTouchEvent>
 #include <QVariant>
 
 #include <algorithm>
 #include <cstdio>
 #include <utility>
+#include <vector>
 
 #include "app_controller.hpp"
 #include "mixer_view_model.hpp"
@@ -28,6 +34,42 @@ bool startsWithAny(const QString& id, const QStringList& prefixes) {
     if (id.startsWith(prefix)) return true;
   }
   return false;
+}
+
+// The owner's finger arrives as a touch point, not a synthesized mouse event.
+// The gate sends QTouchEvent by default so a handler that takes an exclusive
+// grab from a child (the dead EDIT/menu class) fails here; `MNKY_TAP_MOUSE=1`
+// keeps the older mouse pass for comparison.
+bool touchTaps() {
+  static const bool enabled = qEnvironmentVariableIsEmpty("MNKY_TAP_MOUSE");
+  return enabled;
+}
+
+// A synthetic touchscreen device: the event and every point carry the same
+// device, so the delivery agent treats the sequence as a real finger.
+QPointingDevice& tapTouchDevice() {
+  static QPointingDevice device(QStringLiteral("mnkybox-tap-touch"), 1,
+                                QInputDevice::DeviceType::TouchScreen,
+                                QPointingDevice::PointerType::Finger,
+                                QInputDevice::Capability::Position, 1, 0);
+  return device;
+}
+
+void sendTouch(QQuickWindow* window, QQuickItem* item, bool press,
+               const QPointF& scene) {
+  // QEventPoint's public constructor leaves `position()` at 0, which makes the
+  // delivery agent hit-test the window origin. Seed a mouse event at the same
+  // place and reuse its point: that carries position, scene and global
+  // positions, so the synthesized touch lands on the item a finger would hit.
+  const QPoint global = window->mapToGlobal(scene.toPoint());
+  QMouseEvent seed(press ? QEvent::MouseButtonPress : QEvent::MouseButtonRelease,
+                   scene, QPointF(global), Qt::LeftButton,
+                   press ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier,
+                   &tapTouchDevice());
+  QTouchEvent event(press ? QEvent::TouchBegin : QEvent::TouchEnd,
+                    &tapTouchDevice(), Qt::NoModifier, {seed.point(0)});
+  QCoreApplication::sendEvent(window, &event);
+  (void)item;
 }
 
 }  // namespace
@@ -64,6 +106,7 @@ void UiTapRunner::scheduleNext(int delayMs) {
 
 void UiTapRunner::closeOverlays() {
   controller_->configCancel();
+  controller_->closeChannel();
   controller_->closeTrackFx();
   controller_->confirmCancel();
   controller_->keypadCancel();
@@ -81,6 +124,33 @@ void UiTapRunner::closeOverlays() {
 }
 
 void UiTapRunner::buildScenarios() {
+  // The take-row scenarios below need a real list. The tap run owns a
+  // disposable HOME, so write one small 48 kHz mono WAV there (a valid
+  // nn-name-nnn take) instead of depending on a developer's take folder; the
+  // recorder rescans so the fixture is listed before the first scenario.
+  const QString takeDirectory = controller_->recorder()->takeDirectory();
+  QDir().mkpath(takeDirectory);
+  const QString fixture = takeDirectory + QStringLiteral("/00-fixture-001.wav");
+  if (!QFile::exists(fixture)) {
+    QFile file(fixture);
+    if (file.open(QIODevice::WriteOnly)) {
+      QDataStream out(&file);
+      out.setByteOrder(QDataStream::LittleEndian);
+      constexpr quint32 kFrames = 4800;  // 0.1 s at 48 kHz
+      constexpr quint32 kDataBytes = kFrames * 2;
+      out.writeRawData("RIFF", 4);
+      out << quint32(36 + kDataBytes);
+      out.writeRawData("WAVEfmt ", 8);
+      out << quint32(16) << quint16(1) << quint16(1) << quint32(48000)
+          << quint32(96000) << quint16(2) << quint16(16);
+      out.writeRawData("data", 4);
+      out << kDataBytes;
+      const std::vector<char> silence(kDataBytes, 0);
+      out.writeRawData(silence.data(), static_cast<int>(silence.size()));
+      file.close();
+      controller_->recorder()->takeStateChanged();
+    }
+  }
   // 1. The tab bar itself: this is the only QML path that calls setTab().
   scenarios_.push_back(Scenario{
       QStringLiteral("tabs"),
@@ -100,6 +170,38 @@ void UiTapRunner::buildScenarios() {
         controller_->setTab(0);
       },
       QStringLiteral("transport."), {}, {}, false, true});
+  // A2: STOP while already stopped returns the playhead to the start (the
+  // classic hardware STOP-STOP). SONG mode is the hard case: PLAY normally
+  // preserves the stopped position, so only the return-to-zero anchor makes
+  // the next start read bar 1.
+  const auto stoppedInSong = [this] {
+    closeOverlays();
+    controller_->showShiftFace(false);
+    controller_->setTab(0);
+    controller_->setSongMode(true);
+    // Park the playhead away from bar 1: only the STOP taps may bring it back,
+    // so the scenario cannot pass on the setup's own stop.
+    controller_->arrange()->seekToBeat(16.0);
+  };
+  scenarios_.push_back(Scenario{
+      QStringLiteral("transport.stopstop"), stoppedInSong, QString(), {}, {},
+      false, true, false, {},
+      {QStringLiteral("transport.stop"), QStringLiteral("transport.stop")},
+      [this] {
+        return !controller_->rolling() &&
+               controller_->positionText().startsWith(QStringLiteral("001:1:00"));
+      },
+      QStringLiteral("STOP twice did not return the position to 001:1:00")});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("transport.stopstop.play"), stoppedInSong, QString(), {},
+      {}, false, true, false, {},
+      {QStringLiteral("transport.stop"), QStringLiteral("transport.stop"),
+       QStringLiteral("transport.play")},
+      [this] {
+        return controller_->rolling() &&
+               controller_->positionText().startsWith(QStringLiteral("001:1:"));
+      },
+      QStringLiteral("PLAY after STOP-STOP did not start from bar 1")});
 
   const QStringList scaffoldExcluded = {
       QStringLiteral("tab."), QStringLiteral("transport."),
@@ -364,6 +466,63 @@ void UiTapRunner::buildScenarios() {
   // built-in effects, so every selector, the wet chips, the bypass chips and
   // the delay/reverb parameter cards are tapped. A second pass covers a slot
   // that is still NONE (the selector is the only control on that card).
+  // A3: selecting an effect into an empty slot must be audible at once, even
+  // when the slot carried the legacy send wet 0; each pick gets its own pass
+  // and asserts the model's wet plus (for a CLAP pick) that the instance is
+  // loaded rather than silently dry.
+  const auto openEmptyFxSlot = [this] {
+    closeOverlays();
+    controller_->showShiftFace(false);
+    controller_->setTab(0);
+    primeMixerTracks();
+    controller_->mixer()->selectTrackAt(1);
+    controller_->mixer()->setFxChoiceAt(1, 0, 0);
+    controller_->mixer()->setFxWetAt(1, 0, 0.0);
+    controller_->openChannel(1);
+    controller_->openFxSlot(0);
+  };
+  scenarios_.push_back(Scenario{
+      QStringLiteral("fxslot.delay.wet"), openEmptyFxSlot,
+      QStringLiteral("config.fxslot.1"), {},
+      {QStringLiteral("config.fxslot.1")}, true, true, false, {}, {},
+      [this] {
+        return controller_->mixer()->fxNameAt(1, 0) == QStringLiteral("DELAY") &&
+               controller_->mixer()->fxWetAt(1, 0) > 0.0;
+      },
+      QStringLiteral("DELAY into an empty slot did not start wet")});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("fxslot.reverb.wet"), openEmptyFxSlot,
+      QStringLiteral("config.fxslot.2"), {},
+      {QStringLiteral("config.fxslot.2")}, true, true, false, {}, {},
+      [this] {
+        return controller_->mixer()->fxNameAt(1, 0) == QStringLiteral("REVERB") &&
+               controller_->mixer()->fxWetAt(1, 0) > 0.0;
+      },
+      QStringLiteral("REVERB into an empty slot did not start wet")});
+  if (controller_->mixer()->fxChoiceLabels().size() >
+      MixerViewModel::kFxChoiceBuiltinCount) {
+    scenarios_.push_back(Scenario{
+        QStringLiteral("fxslot.plugin.wet"), openEmptyFxSlot,
+        QStringLiteral("config.fxslot.3"), {},
+        {QStringLiteral("config.fxslot.3")}, true, true, false, {}, {},
+        [this] {
+          const QString note = controller_->mixer()->fxSlotNote(1, 0);
+          return controller_->mixer()->fxNameAt(1, 0) != QStringLiteral("NONE") &&
+                 controller_->mixer()->fxWetAt(1, 0) > 0.0 &&
+                 !note.contains(QStringLiteral("NOT LOADED")) &&
+                 note.contains(QStringLiteral("active"));
+        },
+        QStringLiteral("a CLAP pick did not load or did not start wet")});
+  } else {
+    scenarios_.push_back(Scenario{
+        QStringLiteral("fxslot.noplugins"), openEmptyFxSlot, QString(), {}, {},
+        false, true, false, {}, {},
+        [this] {
+          return controller_->config()->fxSlotNote().contains(
+              QStringLiteral("no CLAP plugins found"));
+        },
+        QStringLiteral("a build without plugins did not say so")});
+  }
   scenarios_.push_back(Scenario{
       QStringLiteral("mixer.trackfx"),
       [this] {
@@ -454,6 +613,50 @@ void UiTapRunner::buildScenarios() {
                      << QStringLiteral("recorder.take.edit.")
                      << QStringLiteral("recorder.take.wave."),
       {}, false, true});
+  // The take-row buttons are separate 44 px surfaces on the same delegate. Each
+  // gets a one-tap pass that asserts the popup it names is actually open when
+  // the tap finishes: a dead EDIT/menu (the owner's Pi report) is a failure
+  // here, not just a quiet tap.
+  const auto openRecorderRows = [this] {
+    closeOverlays();
+    controller_->showShiftFace(false);
+    controller_->setTab(0);
+    primeMixerTracks();
+    activateRealTakes();
+    controller_->setTab(2);
+    controller_->recorder()->selectRow(0);
+  };
+  scenarios_.push_back(Scenario{
+      QStringLiteral("clips.recorder.edit"), openRecorderRows,
+      QStringLiteral("recorder.take.edit.0"), {},
+      {QStringLiteral("recorder.take.edit.0")}, true, true, false, {}, {},
+      [this] { return controller_->timeline()->editOpen(); },
+      QStringLiteral("EDIT did not open the take edit popup")});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("clips.recorder.menu"), openRecorderRows,
+      QStringLiteral("recorder.take.menu.0"), {},
+      {QStringLiteral("recorder.take.menu.0")}, true, true, false, {}, {},
+      [this] {
+        return controller_->config()->open() &&
+               controller_->config()->kind() == QStringLiteral("takeactions") &&
+               controller_->config()->takeTargetRow() == 0;
+      },
+      QStringLiteral("... did not open the take actions config")});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("clips.recorder.wave"), openRecorderRows,
+      QStringLiteral("recorder.take.wave.0"), {},
+      {QStringLiteral("recorder.take.wave.0")}, true, true, false, {}, {},
+      [this] { return controller_->timeline()->editOpen(); },
+      QStringLiteral("the row waveform did not open the take edit popup")});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("clips.recorder.row"), openRecorderRows,
+      QStringLiteral("recorder.take.0"), {},
+      {QStringLiteral("recorder.take.0")}, true, true, false, {}, {},
+      [this] {
+        return controller_->recorder()->selectedRow() == 0 &&
+               controller_->recorder()->activeTake() != QStringLiteral("LIVE INPUT");
+      },
+      QStringLiteral("the row body did not make the take ACTIVE")});
   // The take sheet itself: CLOSE is its own pass (it ends the sheet), and each
   // row gets a pass that ends on that row because a pick closes the sheet. A
   // folder with fewer rows simply has nothing to tap there, which is why these
@@ -475,16 +678,21 @@ void UiTapRunner::buildScenarios() {
     const QString rowId = QStringLiteral("take.sheet.row.%1").arg(row);
     scenarios_.push_back(Scenario{
         QStringLiteral("clips.takesheet.%1").arg(row), openTakeSheetNow, rowId,
-        {QStringLiteral("take.sheet.close")}, {rowId}, false, false});
+        {QStringLiteral("take.sheet.close")}, {rowId}, true, false});
   }
-  // The take sheet's EDIT column: a tap opens the edit popup for that row.
+  // The take sheet's EDIT column: a tap opens the edit popup for that row. The
+  // terminal id is matched exactly (a prefix would also tap row 10's EDIT).
   for (int row = 0; row < 4; ++row) {
     const QString editId = QStringLiteral("take.sheet.edit.%1").arg(row);
     scenarios_.push_back(Scenario{
         QStringLiteral("clips.takesheet.edit.%1").arg(row), openTakeSheetNow,
         editId,
         {QStringLiteral("take.sheet.close"), QStringLiteral("take.sheet.row.")},
-        {editId}, false, false});
+        {editId}, true, false, false, {}, {},
+        // A folder with fewer than four rows has no EDIT button to tap; only
+        // an existing button must open the popup.
+        [this] { return !scenarioSawTarget_ || controller_->timeline()->editOpen(); },
+        QStringLiteral("take-sheet EDIT did not open the take edit popup")});
   }
 
   // 3g. The take edit popup (plan W5): open it from the recorder's EDIT
@@ -923,6 +1131,7 @@ void UiTapRunner::beginScenario() {
   scenarioSawTarget_ = false;
   tapped_.clear();
   typingIndex_ = 0;
+  sequenceIndex_ = 0;
   scenarios_[scenarioIndex_].setup();
   std::printf("ui-taps: -- %s\n", qPrintable(scenarios_[scenarioIndex_].name));
   scheduleNext(kScenarioDelayMs);
@@ -968,11 +1177,6 @@ void UiTapRunner::collectTargets(QQuickItem* item, std::vector<Target>& targets)
 void UiTapRunner::typingNext() {
   auto& scenario = scenarios_[scenarioIndex_];
   if (typingIndex_ >= static_cast<int>(scenario.typing.size())) {
-    if (scenario.verify && !scenario.verify()) {
-      std::fprintf(stderr, "ui-taps: FAIL %s: %s\n", qPrintable(scenario.name),
-                   qPrintable(scenario.verifyFailure));
-      ++failures_;
-    }
     finishScenario();
     return;
   }
@@ -1050,6 +1254,10 @@ void UiTapRunner::press(QQuickWindow* window, QQuickItem* item) {
   if (window == nullptr || item == nullptr) return;
   const QPointF scene =
       item->mapToScene(QPointF(item->width() / 2.0, item->height() / 2.0));
+  if (touchTaps()) {
+    sendTouch(window, item, true, scene);
+    return;
+  }
   const QPoint global = window->mapToGlobal(scene.toPoint());
   QMouseEvent event(QEvent::MouseButtonPress, scene, QPointF(global),
                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
@@ -1060,6 +1268,10 @@ void UiTapRunner::release(QQuickWindow* window, QQuickItem* item) {
   if (window == nullptr || item == nullptr) return;
   const QPointF scene =
       item->mapToScene(QPointF(item->width() / 2.0, item->height() / 2.0));
+  if (touchTaps()) {
+    sendTouch(window, item, false, scene);
+    return;
+  }
   const QPoint global = window->mapToGlobal(scene.toPoint());
   QMouseEvent event(QEvent::MouseButtonRelease, scene, QPointF(global),
                     Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
@@ -1077,6 +1289,30 @@ void UiTapRunner::tapNext() {
   }
   if (!scenarios_[scenarioIndex_].typing.empty()) {
     typingNext();
+    return;
+  }
+  if (!scenarios_[scenarioIndex_].sequence.isEmpty()) {
+    auto& scenario = scenarios_[scenarioIndex_];
+    if (sequenceIndex_ >= scenario.sequence.size()) {
+      finishScenario();
+      return;
+    }
+    const QString id = scenario.sequence.at(sequenceIndex_);
+    QQuickItem* target = findFocusTarget(id);
+    if (target == nullptr) {
+      std::fprintf(stderr, "ui-taps: FAIL %s: no target %s\n",
+                   qPrintable(scenario.name), qPrintable(id));
+      ++failures_;
+      finishScenario();
+      return;
+    }
+    scenarioSawTarget_ = true;
+    ++sequenceIndex_;
+    tapped_.push_back(id);
+    ++taps_;
+    std::printf("ui-taps:    tap %s\n", qPrintable(id));
+    (void)tap(window_, target);
+    scheduleNext(kTapDelayMs);
     return;
   }
   if (tapped_.size() > kMaxTapsPerScenario) {
@@ -1160,6 +1396,13 @@ void UiTapRunner::finishScenario() {
                  qPrintable(scenario.name));
     ++failures_;
   }
+  // The assertion runs while the surface the taps produced is still open:
+  // closeOverlays() below tears every popup down before the next scenario.
+  if (scenario.verify && !scenario.verify()) {
+    std::fprintf(stderr, "ui-taps: FAIL %s: %s\n", qPrintable(scenario.name),
+                 qPrintable(scenario.verifyFailure));
+    ++failures_;
+  }
   std::printf("ui-taps: %s: %d tap(s)\n", qPrintable(scenario.name),
               static_cast<int>(tapped_.size()));
   scenarioStarted_ = false;
@@ -1184,6 +1427,20 @@ bool UiTapRunner::tap(QQuickWindow* window, QQuickItem* item, int dragPixels) {
   if (scene.x() < 0.0 || scene.y() < 0.0 || scene.x() >= window->width() ||
       scene.y() >= window->height()) {
     return false;
+  }
+  if (touchTaps()) {
+    sendTouch(window, item, true, scene);
+    if (dragPixels != 0) {
+      const QPointF end = scene + QPointF(dragPixels, 0);
+      const QPoint endGlobal = window->mapToGlobal(end.toPoint());
+      QMouseEvent seed(QEvent::MouseMove, end, QPointF(endGlobal), Qt::NoButton,
+                       Qt::LeftButton, Qt::NoModifier, &tapTouchDevice());
+      QTouchEvent move(QEvent::TouchUpdate, &tapTouchDevice(), Qt::NoModifier,
+                       {seed.point(0)});
+      QCoreApplication::sendEvent(window, &move);
+    }
+    sendTouch(window, item, false, scene + QPointF(dragPixels, 0));
+    return true;
   }
   const QPoint global = window->mapToGlobal(scene.toPoint());
   QMouseEvent press(QEvent::MouseButtonPress, scene, QPointF(global),

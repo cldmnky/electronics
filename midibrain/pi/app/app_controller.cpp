@@ -345,8 +345,23 @@ void AppController::stop() {
   pendingRec_ = false;
   cancelRecSchedule();
   chord_.reset();
-  link_.requestTransport(0);
-  if (audio_.recording()) stopTake();
+  const auto status = link_.status();
+  if (status.rolling || audio_.recording()) {
+    link_.requestTransport(0);
+    if (audio_.recording()) stopTake();
+    transportZeroAnchorTick_ = -1;
+    return;
+  }
+  // Classic hardware convention: STOP while already stopped returns the
+  // playhead to the start. The Pico owns the raw tick and keeps counting while
+  // stopped, so the signed offset cancels the tick at this press and the tick
+  // loop below re-anchors it until PLAY; SONG and free-take mode both start at
+  // bar 1 from here.
+  state_.transportOffsetTicks.store(transportZeroOffset(status.tick),
+                                   std::memory_order_relaxed);
+  transportZeroAnchorTick_ = static_cast<std::int64_t>(status.tick);
+  showNotice(NoticeInfo, QStringLiteral("BACK TO START"));
+  updateTransport();
 }
 
 void AppController::recToggle() {
@@ -1205,18 +1220,40 @@ void AppController::timerTick() {
 
   expirePendingRec();
   const auto status = link_.status();
+  // STOP-STOP return to zero: the Pico tick advances while stopped, so keep
+  // the signed offset pinned to the current raw tick until another seek or
+  // PLAY takes the seam. A different offset means ARRANGE seek / project load
+  // wrote it, so the anchor is stale and is dropped.
+  if (!status.rolling && transportZeroAnchorTick_ >= 0) {
+    const auto offset = state_.transportOffsetTicks.load(std::memory_order_relaxed);
+    if (offset == -transportZeroAnchorTick_) {
+      state_.transportOffsetTicks.store(transportZeroOffset(status.tick),
+                                       std::memory_order_relaxed);
+      transportZeroAnchorTick_ = static_cast<std::int64_t>(status.tick);
+    } else {
+      transportZeroAnchorTick_ = -1;
+    }
+  }
   // SONG transport seek (W4/W5): the Pico tick resets on START, so preserve
   // the displayed song position across the stopped -> rolling transition. Free
   // mode keeps its legacy "START begins at bar 1" behaviour.
-  if (settings_.songMode && status.rolling && !lastRolling_) {
-    // target = the song position the previous link tick represented. The START
-    // reset the raw tick to 0, so the offset absorbs the old link tick and the
-    // displayed position (seek point or stop point) is preserved.
-    const std::int64_t target =
-        state_.transportOffsetTicks.load(std::memory_order_relaxed) +
-        static_cast<std::int64_t>(lastLinkTick_);
-    state_.transportOffsetTicks.store(
-        target - static_cast<std::int64_t>(status.tick));
+  if (status.rolling && !lastRolling_) {
+    transportZeroAnchorTick_ = -1;
+    if (settings_.songMode) {
+      // target = the song position the previous link tick represented. The START
+      // reset the raw tick to 0, so the offset absorbs the old link tick and the
+      // displayed position (seek point or stop point) is preserved.
+      const std::int64_t target =
+          state_.transportOffsetTicks.load(std::memory_order_relaxed) +
+          static_cast<std::int64_t>(lastLinkTick_);
+      state_.transportOffsetTicks.store(
+          target - static_cast<std::int64_t>(status.tick),
+          std::memory_order_relaxed);
+    } else {
+      // Free mode starts at bar 1: the Pico resets the raw tick on START, so
+      // any offset left by a stopped seek must not delay the take.
+      state_.transportOffsetTicks.store(0, std::memory_order_relaxed);
+    }
   }
   lastRolling_ = status.rolling;
   lastLinkTick_ = status.tick;

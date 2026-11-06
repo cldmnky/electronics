@@ -197,55 +197,74 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
 
             delegate: Rectangle {
+                id: takeRow
                 width: ListView.view.width
                 height: Style.touch
                 radius: Style.corner
                 // The row body is the ACTIVE tap target and the panel ring stop;
-                // it carries the id as a property so the headless tap gate
-                // clicks exactly this surface (the owner's crash path).
-                property string focusId: "recorder.take." + index
+                // bodyLeft carries the id so the headless tap gate clicks the
+                // body surface, never a child button.
                 color: index === recorder.selectedRow ? Style.raised
                        : (index % 2 === 0 ? Style.panel : Style.panelDark)
-                border.width: app.focusId === focusId ? 2 : 0
+                border.width: app.focusId === ("recorder.take." + index) ? 2 : 0
                 border.color: Style.accent
 
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: 4
-                    radius: 2
-                    color: model.active ? Style.accent : "transparent"
-                }
-                Text {
-                    x: 10
-                    width: 56
+                // The row is split into non-overlapping 44 px tap surfaces:
+                // body (activate), mini-waveform (EDIT), EDIT button and "..."
+                // menu. A row-wide TapHandler used to sit under the child
+                // buttons and compete for the touch point; on the Pi's
+                // touchscreen that made EDIT/"..." look dead. Disjoint
+                // handlers mean a tap can only mean one thing.
+                Item {
+                    id: bodyLeft
+                    x: 0
+                    y: 0
+                    width: miniWave.x
                     height: parent.height
-                    text: model.active ? "ACTIVE" : ""
-                    color: Style.accent
-                    font.pixelSize: Style.fontSmall
-                    font.weight: Font.DemiBold
-                    verticalAlignment: Text.AlignVCenter
-                }
-                Text {
-                    x: 72
-                    width: parent.width * 0.30
-                    height: parent.height
-                    text: (model.imported ? "PTR  " : (model.master ? "MASTER  " : "")) + model.name
-                    color: Style.text
-                    font.pixelSize: Style.fontBody
-                    font.weight: Font.DemiBold
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideMiddle
+                    property string focusId: "recorder.take." + index
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 4
+                        radius: 2
+                        color: model.active ? Style.accent : "transparent"
+                    }
+                    Text {
+                        x: 10
+                        width: 56
+                        height: parent.height
+                        text: model.active ? "ACTIVE" : ""
+                        color: Style.accent
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    Text {
+                        x: 72
+                        width: takeRow.width * 0.30
+                        height: parent.height
+                        text: (model.imported ? "PTR  " : (model.master ? "MASTER  " : "")) + model.name
+                        color: Style.text
+                        font.pixelSize: Style.fontBody
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideMiddle
+                    }
+                    TapHandler {
+                        onTapped: app.activateTakeRow(index)
+                    }
                 }
                 // W5: the row's mini-waveform (44 px strip). Tapping it opens
                 // the take edit popup; the model carries the .peaks reduction,
-                // so the row paints without touching the disk.
+                // so the row paints without touching the disk. It owns the
+                // only tap between bodyLeft and bodyRight.
                 Item {
                     id: miniWave
-                    x: 72 + parent.width * 0.30 + 6
+                    x: 72 + takeRow.width * 0.30 + 6
                     width: 132
-                    height: Style.touch - 8
+                    height: Style.touch
                     anchors.verticalCenter: parent.verticalCenter
                     property string focusId: "recorder.take.wave." + index
 
@@ -259,17 +278,28 @@ Item {
                         onTapped: app.openTakeEdit(index)
                     }
                 }
-                Text {
-                    anchors.right: editButton.left
-                    anchors.rightMargin: 6
-                    width: Math.max(90, parent.width * 0.24)
+                Item {
+                    id: bodyRight
+                    x: miniWave.x + miniWave.width
+                    y: 0
+                    width: Math.max(0, editButton.x - x)
                     height: parent.height
-                    text: model.duration + "  -  " + model.bytes
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    horizontalAlignment: Text.AlignRight
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 6
+                        width: Math.max(90, takeRow.width * 0.24)
+                        height: parent.height
+                        text: model.duration + "  -  " + model.bytes
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSmall
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    TapHandler {
+                        onTapped: app.activateTakeRow(index)
+                    }
                 }
                 // W5: EDIT opens the take edit popup for this row.
                 Rectangle {
@@ -278,7 +308,7 @@ Item {
                     anchors.rightMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
                     width: 64
-                    height: Style.touch - 4
+                    height: Style.touch
                     radius: Style.corner
                     color: Style.panelDark
                     border.width: 1
@@ -296,11 +326,7 @@ Item {
                         onTapped: app.requestEditTake(index)
                     }
                 }
-                // A3: the row body loads the take; "..." opens the row actions
-                // (docs/daw-plan.md W4).
-                TapHandler {
-                    onTapped: app.activateTakeRow(index)
-                }
+                // A3: "..." opens the row actions (docs/daw-plan.md W4).
                 Rectangle {
                     id: selectTarget
                     width: Style.touch
@@ -754,7 +780,7 @@ Item {
                             anchors.rightMargin: 4
                             anchors.verticalCenter: parent.verticalCenter
                             width: 60
-                            height: Style.touch - 4
+                            height: Style.touch
                             radius: Style.corner
                             color: Style.panelDark
                             border.width: 1

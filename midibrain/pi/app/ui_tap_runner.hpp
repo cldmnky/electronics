@@ -3,11 +3,14 @@
 //
 // Visits every screen (primary and SHIFT faces), every ConfigPopup kind and the
 // shared TransportStrip, finds every visible QML item that carries a non-empty
-// `focusId`, and sends a real QMouseEvent press/release pair at its centre
-// through QQuickWindow. This is the in-process path a finger takes: a QML
-// handler that calls a missing Q_INVOKABLE (the setTab/setShiftPage class of
-// bug) fails at that tap. Any QML TypeError/ReferenceError/warning raised while
-// tapping is collected and makes the process exit non-zero.
+// `focusId`, and sends a real touch press/release pair at its centre through
+// QQuickWindow (the owner's finger path; `MNKY_TAP_MOUSE=1` selects the older
+// mouse pass). This is the in-process path a finger takes: a QML handler that
+// calls a missing Q_INVOKABLE (the setTab/setShiftPage class of bug) fails at
+// that tap, and the popup-open assertions catch a child button that never
+// reaches its handler (the dead EDIT/menu class). Any QML
+// TypeError/ReferenceError/warning raised while tapping is collected and makes
+// the process exit non-zero.
 //
 // The run is offscreen and isolated: main() points HOME at a temporary
 // directory first, so a tap on a PROJECTS/recorder control cannot touch the
@@ -67,6 +70,9 @@ class UiTapRunner final : public QObject {
     // buffer after each one. `verify` runs after the last step (e.g. the
     // committed model value).
     std::vector<TypeStep> typing{};
+    // Scripted tap order for scenarios whose meaning is the sequence (STOP,
+    // STOP, PLAY). Each id is found fresh before its tap.
+    QStringList sequence{};
     std::function<bool()> verify{};
     QString verifyFailure{};
   };
@@ -113,6 +119,7 @@ class UiTapRunner final : public QObject {
   int taps_ = 0;
   int failures_ = 0;
   int typingIndex_ = 0;
+  int sequenceIndex_ = 0;
   QtMessageHandler previousHandler_ = nullptr;
   static UiTapRunner* active_;
 };

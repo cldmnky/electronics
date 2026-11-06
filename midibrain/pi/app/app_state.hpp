@@ -12,6 +12,16 @@
 
 namespace mnky::app {
 
+// STOP-STOP return to zero: the signed app-side offset that cancels the raw
+// Pico tick, so the displayed position and the engine transport read 0. The
+// Pico tick keeps counting while stopped (firmware clock_tick), so the
+// controller re-applies this anchor every tick until PLAY or another seek.
+constexpr std::int64_t transportZeroOffset(std::uint32_t tick) {
+  return -static_cast<std::int64_t>(tick);
+}
+static_assert(transportZeroOffset(0) == 0 && transportZeroOffset(960) == -960,
+              "STOP-STOP return to zero cancels the raw Pico tick");
+
 class AppState {
  public:
   AppState();

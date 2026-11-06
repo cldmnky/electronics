@@ -996,6 +996,12 @@ void ConfigPopupModel::setFxSlotChoice(int value) {
   if (mixerVm_ == nullptr) return;
   const int maximum = std::max(0, static_cast<int>(fxSlotLabels().size()) - 1);
   value = std::clamp(value, 0, maximum);
+  // A slot that was NONE has no effect to remember a mix for. A project
+  // migrated from the retired send buses carries wet 0 (the legacy send
+  // default), so a freshly picked effect would run fully dry and read as a
+  // dead plugin. Selecting into an empty slot starts at full wet; switching
+  // between two effects keeps the user's wet knob.
+  const bool wasEmpty = mixerVm_->fxChoiceAt(fxTrackSlot_, fxSlotIndex_) == 0;
   if (!mixerVm_->setFxChoiceAt(fxTrackSlot_, fxSlotIndex_, value)) {
     // The rack refused (plugin cap, no host): keep the selector on the value
     // the slot actually holds and show the exact reason under it.
@@ -1003,6 +1009,9 @@ void ConfigPopupModel::setFxSlotChoice(int value) {
     fxSlotNote_ = mixerVm_->fxChoiceRefusal(fxTrackSlot_, fxSlotIndex_);
     emit changed();
     return;
+  }
+  if (wasEmpty && value > 0 && mixerVm_->fxWetAt(fxTrackSlot_, fxSlotIndex_) <= 0.0) {
+    mixerVm_->setFxWetAt(fxTrackSlot_, fxSlotIndex_, 1.0);
   }
   fxSlotChoice_ = value;
   fxSlotNote_.clear();
@@ -1012,6 +1021,12 @@ void ConfigPopupModel::setFxSlotChoice(int value) {
 QString ConfigPopupModel::fxSlotNote() const {
   if (!fxSlotNote_.isEmpty()) return fxSlotNote_;
   if (mixerVm_ == nullptr) return QString();
+  // No discovered CLAP module is a state, not a silent missing row: name it
+  // where the selector list would have shown the plugin entries.
+  if (fxSlotLabels().size() <= MixerViewModel::kFxChoiceBuiltinCount) {
+    return QStringLiteral("no CLAP plugins found - DELAY/REVERB only "
+                          "(set CLAP_PATH or install a .clap module)");
+  }
   return mixerVm_->fxSlotNote(fxTrackSlot_, fxSlotIndex_);
 }
 
