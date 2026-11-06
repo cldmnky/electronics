@@ -112,7 +112,7 @@ test("right-hand controls share one centreline with equal 19 mm spacing", () => 
   expect(rc.TEMPO.x).toBe(RIGHT_COLUMN.x)
   expect(rc.TEMPO.y - rc.NAV.y).toBe(RIGHT_COLUMN.pitch)
   expect(rc.NAV.y - rc.SHIFT_EXIT.y).toBe(RIGHT_COLUMN.pitch)
-  for (const [id, c] of [["TEMPO", rc.TEMPO], ["NAV", rc.NAV], ["SHIFT / EXIT", rc.SHIFT_EXIT]] as const) {
+  for (const [id, c] of [["VALUE", rc.TEMPO], ["NAV", rc.NAV], ["SHIFT / EXIT", rc.SHIFT_EXIT]] as const) {
     expect(point(id)).toMatchObject({ x: c.x, y: c.y })
   }
   // Right of the display, on the panel and the front board.

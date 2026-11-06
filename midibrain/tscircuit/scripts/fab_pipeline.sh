@@ -41,6 +41,17 @@ make -C "$ROOT" test
 # reports (via drill/pad and PTH ring above the published floor).
 python3 "$ROOT/tscircuit/scripts/fab_check.py" --strict-targets
 
+printf '\n########## verification summary ##########\n'
+# check_reports.ts (run by `make reports` above) leaves one line here: what the
+# placement check flags, how many pins the source declares intentionally open,
+# and the failure count. The detail above stays the evidence; nothing is
+# filtered, and a missing summary is a pipeline failure, not a pass.
+if [ ! -f "$ROOT/tscircuit/dist/reports-summary.txt" ]; then
+  printf '    FAILED: dist/reports-summary.txt missing (check_reports.ts did not run)\n' >&2
+  exit 1
+fi
+sed 's/^/    /' "$ROOT/tscircuit/dist/reports-summary.txt"
+
 printf '\n########## fab exports ##########\n'
 rm -rf "$FAB_DIR"
 mkdir -p "$FAB_DIR/front" "$FAB_DIR/rear" "$FAB_DIR/panel"

@@ -174,6 +174,12 @@ export const FINGERPRINT_FILES = [
   "tscircuit/lib/pin-map.ts",
   "tscircuit/lib/jack.tsx",
   "tscircuit/lib/panel-art.ts",
+  // Board silkscreen artwork prints on the PCB, so it is hardware definition
+  // for the same reason the panel artwork is: brand marks, hand-solder hints,
+  // pin-1 and polarity marks all reach the fabrication output.
+  "tscircuit/lib/silk.tsx",
+  "tscircuit/lib/oshw.ts",
+  "tscircuit/lib/oshw-outline.ts",
   "tscircuit/package.json",
   "tscircuit/bun.lock",
   // The canonical TS-to-CAD bridge and its generated layout are hardware

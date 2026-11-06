@@ -15,13 +15,14 @@
 // This is design/output consistency, not a measurement and not an approval.
 
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import {
   analyseCircuitJson,
   analyseReport,
   BOARD_RULES,
-  UNCONNECTED_ALLOWLIST,
+  DECLARED_UNCONNECTED,
+  parseFlaggedComponents,
   type CheckFormat,
   type JsonElement,
 } from "../lib/reports"
@@ -44,6 +45,8 @@ const FORMATS: CheckFormat[] = [
 
 let failures = 0
 let notes = 0
+let placementFlags = 0
+let declaredUnconnected = 0
 
 function fail(text: string): void {
   failures++
@@ -74,11 +77,12 @@ for (const board of BOARDS) {
     fail(`${board.key}: ${board.dist} is empty`)
     continue
   }
-  const outcome = analyseCircuitJson(json, UNCONNECTED_ALLOWLIST[board.key] ?? {})
+  const outcome = analyseCircuitJson(json, DECLARED_UNCONNECTED[board.key] ?? {})
+  declaredUnconnected += outcome.declaredUnconnected
   for (const text of outcome.notes) note(`${board.key}: ${text}`)
   for (const text of outcome.failures) fail(`${board.key}: ${text}`)
-  console.log(`PASS ${board.key}: built circuit JSON has no error element `
-    + `and no unexpected unconnected pin`)
+  console.log(`PASS ${board.key}: built circuit JSON has no error element, no undeclared `
+    + `unconnected pin, ${outcome.declaredUnconnected} declared do-not-connect`)
 }
 
 for (const board of BOARDS) {
@@ -103,6 +107,7 @@ for (const board of BOARDS) {
       continue
     }
     const outcome = analyseReport(format, output, run.status, rules)
+    if (format === "placement") placementFlags += parseFlaggedComponents(output).length
     for (const text of outcome.notes) note(`${board.key}: ${text}`)
     for (const text of outcome.failures) fail(`${board.key}/${format}: ${text}`)
     if (outcome.failures.length === 0) {
@@ -114,4 +119,18 @@ for (const board of BOARDS) {
 console.log(`\n${failures} failure(s), ${notes} note(s). `
   + `Known notes are pinned in lib/reports.ts; the upstream autorouting warning `
   + `stays a manufacturing acceptance item.`)
+
+// One line an order run can be read by: what was flagged, what the source
+// declares as intentionally open, and whether anything failed. The detail above
+// stays the evidence; nothing is filtered out of it.
+const summary = `SUMMARY  placement: ${placementFlags} flagged`
+  + ` · unconnected-by-design: ${declaredUnconnected} declared`
+  + ` · errors: ${failures}`
+console.log(summary)
+try {
+  writeFileSync(resolve(ROOT, "dist/reports-summary.txt"), `${summary}\n`)
+} catch (error) {
+  // The summary file is an order-run convenience; the checks above still decide.
+  console.log(`NOTE could not write dist/reports-summary.txt: ${String(error)}`)
+}
 process.exit(failures === 0 ? 0 : 1)

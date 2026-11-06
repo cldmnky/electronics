@@ -13,11 +13,11 @@ const marks = FRONT_CONCEPT.map(p => {
   const x = X(p.x), y = Y(p.y)
   let shape: string
   if (p.kind === "cable") shape = `<rect x="${x-5.5}" y="${y-2}" width="11" height="4" rx="0.8"/>`
-  else if (p.id === "TEMPO") shape = `<circle cx="${x}" cy="${y}" r="5.5"/><path d="M ${x} ${y-4.5} v 2.2" fill="none" stroke="#e0eae3" stroke-width="0.5"/>`
+  else if (p.id === "VALUE") shape = `<circle cx="${x}" cy="${y}" r="5.5"/><path d="M ${x} ${y-4.5} v 2.2" fill="none" stroke="#e0eae3" stroke-width="0.5"/>`
   else if (p.id === "NAV") shape = `<rect x="${x-5}" y="${y-5}" width="10" height="10" rx="0.7"/><circle cx="${x}" cy="${y}" r="0.8"/>`
   else if (p.kind === "button") shape = `<rect x="${x-3.2}" y="${y-2.6}" width="6.4" height="5.2" rx="0.5"/>`
   else shape = `<circle cx="${x}" cy="${y}" r="${p.kind === "led" ? 1 : p.kind === "jack" ? 3.2 : 3}"/>`
-  const labelY = y + (p.id === "TEMPO" || p.id === "NAV" ? 8 : p.kind === "led" ? 4 : 5)
+  const labelY = y + (p.id === "VALUE" || p.id === "NAV" ? 8 : p.kind === "led" ? 4 : 5)
   return `<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3">${shape}</g><text x="${x}" y="${labelY}" text-anchor="middle" font-size="1.55" fill="#d5e4da">${esc(p.id)}</text>`
 }).join("\n")
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PANEL.width + 16} ${PANEL.height + 20}">

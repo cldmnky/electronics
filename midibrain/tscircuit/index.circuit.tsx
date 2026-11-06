@@ -6,6 +6,7 @@ import { C8545_2N7002 } from "./imports/C8545_2N7002"
 import { SN74LVC1G126DBVR } from "./imports/SN74LVC1G126DBVR"
 import { BOARD_POLICY } from "./lib/electrical"
 import { FRONT_REAR_MOUNT, PI_HOLES, REAR_PCB } from "./lib/layout"
+import { RearSilk } from "./lib/silk"
 
 // REAR/BASE BOARD, 20HP x 112 mm. Prototype schematic/placement; not a
 // fabrication release. The Pi 5 is mounted on the rear side using its 58 x 49
@@ -76,6 +77,15 @@ const piHeader = {
   pin24: "net.SPI_CS_PI", pin25: "net.GND", pin30: "net.GND", pin34: "net.GND", pin39: "net.GND",
 } as const
 
+// Raspberry Pi 40-pin positions this module does not use. Kept as one named
+// declaration next to the used-pin table above, so "spare" is a stated design
+// fact and not an omission: every pin here is a Pi-side ground, power rail or
+// spare GPIO that this board deliberately leaves open.
+const SPARE_PI_PINS = Object.fromEntries(
+  [3, 5, 7, 8, 10, 11, 12, 13, 15, 16, 17, 26, 27, 28, 29, 31, 32, 33, 35, 36, 37, 38, 40]
+    .map(pin => [`pin${pin}`, { doNotConnect: true }]),
+) as Record<string, { doNotConnect: true }>
+
 // Front-board interconnect, 2 x 13. Both connectors (J_FRONT here and J5 on
 // the front board) use this table, so a straight 2x13 ribbon is pin-for-pin.
 const frontInterconnect = {
@@ -126,6 +136,11 @@ export default () => (
       schSectionName="headers"
       connections={picoLeft}
     />
+    {/* Pico polarity/label facts: physical pin 15 (GND on a Pico 2 pinout),
+        17 and 20 carry no net in this design - the Pico module sits on its own
+        contacts - so the ports are declared do-not-connect here rather than
+        left to print a missing-trace warning. A wired pin that loses its net
+        still prints and still fails the report check. */}
     <connector
       name="J_PICO_R"
       pinCount={20}
@@ -137,6 +152,7 @@ export default () => (
       layer="bottom"
       schSheetName="rear"
       schSectionName="headers"
+      pinAttributes={{ pin15: { doNotConnect: true }, pin17: { doNotConnect: true }, pin20: { doNotConnect: true } }}
       connections={picoRight}
     />
 
@@ -144,6 +160,12 @@ export default () => (
         Numbered pads: pin 1..40 alternate between the two rows, matching the
         Pi header. A generic 2x2.54 pinrow footprint numbers pads around the
         perimeter instead and would land every net on the wrong pin. */}
+    {/* Only the Pi header positions this module uses are wired (see
+        `piHeader`); the rest are spare GPIO/ground rails on the Pi side. They
+        are declared do-not-connect so the build reports the used set instead
+        of printing a warning for every spare pin. The declaration is data, not
+        a filter: wiring one of these later simply removes it from the list,
+        and losing a wired net still prints and still fails. */}
     <BH254V_40P
       name="J_PI"
       pcbX="0mm"
@@ -151,6 +173,7 @@ export default () => (
       layer="bottom"
       schSheetName="rear"
       schSectionName="headers"
+      pinAttributes={SPARE_PI_PINS}
       connections={piHeader}
     />
 
@@ -226,6 +249,10 @@ export default () => (
         scripts/check_electrical.py (limit 3 mm). */}
     <C name="C13" value="100nF" x="37.55mm" y="-10.45mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
     <C name="C14" value="100nF" x="37.55mm" y="-5.45mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+
+    {/* Silkscreen wave: brand lockup, hand-solder hints, pin-1 and polarity
+        marks. Every position and its clearance proof live in lib/silk.tsx. */}
+    <RearSilk />
 
     {/* Rear-side ground pour; all parts are on the bottom layer. */}
     <copperpour name="GND_POUR_TOP" layer="top" connectsTo="net.GND" boardEdgeMargin="0.3mm" />

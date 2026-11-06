@@ -4,14 +4,14 @@
 <text x="8" y="5" font-family="sans-serif" font-size="2.4" font-weight="bold" fill="#49544e">mnkybox — 26HP FRONT CONCEPT</text>
 <g transform="translate(8 8)" font-family="sans-serif">
 <rect width="132.08" height="128.5" rx="0.7" fill="#19211e"/>
-<rect x="4.440000000000005" y="25.1" width="89.2" height="56.3" fill="#080f0c" stroke="#829a8b" stroke-width="0.35"/>
-<rect x="7.705000000000005" y="30.07" width="76.8" height="46.36" fill="#112820"/>
+<rect x="3.7050000000000054" y="26.07" width="90.67" height="54.36" fill="#080f0c" stroke="#829a8b" stroke-width="0.35"/>
+<rect x="13.545000000000009" y="30.07" width="76.8" height="46.36" fill="#112820"/>
 <text x="49.040000000000006" y="51.25" text-anchor="middle" fill="#b8e5cf" font-size="2.4">3.5-inch 800 × 480 DSI / I²C TOUCH</text>
 <text x="49.040000000000006" y="55.25" text-anchor="middle" fill="#86bba1" font-size="1.8">PANEL CUTOUT 89.2 × 56.3 — ILLUSTRATIVE</text>
 <g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="22.540000000000006" y="8.75" width="11" height="4" rx="0.8"/></g><text x="28.040000000000006" y="15.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">USB-C POWER</text>
 <g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="55.540000000000006" y="8.75" width="11" height="4" rx="0.8"/></g><text x="61.040000000000006" y="15.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">UMC AUDIO USB</text>
 <g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="95.54" y="8.75" width="11" height="4" rx="0.8"/></g><text x="101.04" y="15.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI HUB USB</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="113.04" cy="34.25" r="5.5"/><path d="M 113.04 29.75 v 2.2" fill="none" stroke="#e0eae3" stroke-width="0.5"/></g><text x="113.04" y="42.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">TEMPO</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="113.04" cy="34.25" r="5.5"/><path d="M 113.04 29.75 v 2.2" fill="none" stroke="#e0eae3" stroke-width="0.5"/></g><text x="113.04" y="42.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">VALUE</text>
 <g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="108.04" y="48.25" width="10" height="10" rx="0.7"/><circle cx="113.04" cy="53.25" r="0.8"/></g><text x="113.04" y="61.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">NAV</text>
 <g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="109.84" y="69.65" width="6.4" height="5.2" rx="0.5"/></g><text x="113.04" y="77.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">SHIFT / EXIT</text>
 <g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="9.840000000000007" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="13.040000000000006" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">REC</text>

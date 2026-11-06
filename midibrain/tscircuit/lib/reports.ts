@@ -118,20 +118,36 @@ export interface BoardReportRules {
   markers: Partial<Record<CheckFormat, string>>
 }
 
-/** The nine passive-control warnings the front board prints today. */
-const PASSIVE_CONTROL_PIN_WARNINGS: RegExp[] = [
-  /^source_component_pins_underspecified_warning: All pins on (U5|U6|J5) are underspecified \(no pinAttributes set\)$/,
-  /^source_no_power_pin_defined_warning: (U5|U6|J5) has no pin with requires_power=true$/,
-  /^source_no_ground_pin_defined_warning: (U5|U6|J5) has no pin with requires_ground=true$/,
+/**
+ * No pin-specification warning is allowed on either board today. The former
+ * "underspecified / no power pin / no ground pin" lines came from modelling the
+ * electromechanical controls (U5, U6) as generic chips; they are now declared
+ * as switches with per-pin attributes, so an empty list is the honest floor.
+ * A new warning is a failure, not something to append here without a reason.
+ */
+const PASSIVE_CONTROL_PIN_WARNINGS: RegExp[] = []
+
+/**
+ * Warnings that report an environment outcome, not a design fact: the parts
+ * engine fetches datasheets over the network with a fixed 5 s timeout, so a slow
+ * or offline run reports `source_property_ignored_warning` for the same chips
+ * that pass on a good connection. They are listed as notes every time they
+ * appear (never deleted from the log) and cannot hide a design warning, because
+ * every other warning still fails. The pin data this board relies on is written
+ * in the sources, not fetched.
+ */
+export const ENVIRONMENTAL_WARNINGS: RegExp[] = [
+  /^source_property_ignored_warning: Datasheet information for chip "[^"]+" could not be fetched: Datasheet API did not respond within 5 seconds/,
 ]
 
 export const BOARD_RULES: Record<string, BoardReportRules> = {
   front: {
     counters: ["source", "pin_specification", "netlist", "placement"],
     allowedPinWarnings: PASSIVE_CONTROL_PIN_WARNINGS,
-    // Informational: the pads are joined on the far side. The build output and
-    // the placement consistency check own the real positions.
-    allowedPlacementRotations: ["C2", "R9", "R10"],
+    // Empty on purpose: C2, R9 and R10 were rotated 180 degrees in
+    // front.circuit.tsx on the earlier note, so `tsci check placement` reports
+    // "no placement issues". A flagged component is a failure again.
+    allowedPlacementRotations: [],
     markers: {
       shorts: "No shorts detected in front.circuit.tsx",
       "pcb-style": "No PCB style issues detected in front.circuit.tsx",
@@ -196,10 +212,14 @@ export function analyseReport(
         statusOk = false
       }
       if (format === "pin_specification") {
-        const allowed = parseWarningList(output).filter(
-          line => !rules.allowedPinWarnings.some(re => re.test(line)))
-        if (allowed.length > 0) {
-          failures.push(`${label}: ${allowed.length} unexpected warning(s): ${allowed.join(" | ")}`)
+        for (const line of parseWarningList(output)) {
+          if (ENVIRONMENTAL_WARNINGS.some(re => re.test(line))) {
+            // Kept visible, never counted as a pass for the design.
+            notes.push(`${label}: environmental (network), not a design finding: ${line}`)
+            continue
+          }
+          if (rules.allowedPinWarnings.some(re => re.test(line))) continue
+          failures.push(`${label}: unexpected warning: ${line}`)
           statusOk = false
         }
         if (counts.warnings > parseWarningList(output).length) {
@@ -207,9 +227,23 @@ export function analyseReport(
             + `${parseWarningList(output).length} line(s) were printed`)
           statusOk = false
         }
-      } else if (counts.warnings !== 0) {
-        failures.push(`${label}: ${counts.warnings} warning(s) reported`)
-        statusOk = false
+      } else if (counts.warnings > 0) {
+        // Bullet lines are warnings only when the counter reports some: the
+        // netlist format prints its whole readable netlist as "- " lines.
+        const printed = parseWarningList(output)
+        const environmental = printed.filter(line => ENVIRONMENTAL_WARNINGS.some(re => re.test(line)))
+        const designWarnings = printed.filter(line => !ENVIRONMENTAL_WARNINGS.some(re => re.test(line)))
+        for (const line of environmental) {
+          notes.push(`${label}: environmental (network), not a design finding: ${line}`)
+        }
+        if (designWarnings.length > 0) {
+          failures.push(`${label}: ${designWarnings.length} warning(s) reported: ${designWarnings.join(" | ")}`)
+          statusOk = false
+        } else if (counts.warnings !== environmental.length) {
+          failures.push(`${label}: counter says ${counts.warnings} warning(s) but `
+            + `${environmental.length} environmental line(s) were printed`)
+          statusOk = false
+        }
       }
     }
   } else {
@@ -273,18 +307,24 @@ export function analyseReport(
 // ---------------------------------------------------------------------------
 
 export interface JsonRules {
-  /** Pins that are intentionally unconnected, per board key. */
-  allowUnconnected: Record<string, string[]>
+  /**
+   * Pins that are intentionally unconnected, per board key, with the port name
+   * as the netlist sees it. These are declared IN THE SOURCE (`noConnect` on the
+   * pushbuttons, `pinAttributes.doNotConnect` on the connectors), so the build
+   * no longer prints a missing-trace line for them; this table is the review
+   * record of that decision and the tripwire that keeps it honest.
+   */
+  declaredUnconnected: Record<string, string[]>
 }
 
 /**
- * Pins the design leaves unconnected on purpose, with the port name as the
- * netlist sees it. Tactile switches pair pins 1-2 and 3-4 internally (so pin 2
- * and pin 4 need no net); the Pi and Pico headers carry unused GPIO and ground
- * pins. A pin that connects later simply disappears from this list. A *new*
- * unconnected pin fails the check, which is how a lost net is caught.
+ * Pins the design leaves open on purpose. Tactile switches pair pins 1-2 and
+ * 3-4 internally (so pin 2 and pin 4 need no net); the Pi and Pico headers
+ * carry unused GPIO and ground pins. A pin that is wired later must be removed
+ * from this table in the same change, and a pin silenced without an entry here
+ * fails the report check.
  */
-export const UNCONNECTED_ALLOWLIST: Record<string, Record<string, string[]>> = {
+export const DECLARED_UNCONNECTED: Record<string, Record<string, string[]>> = {
   front: {
     SW1: ["pin2", "pin4"],
     SW2: ["pin2", "pin4"],
@@ -292,6 +332,7 @@ export const UNCONNECTED_ALLOWLIST: Record<string, Record<string, string[]>> = {
     SW4: ["pin2", "pin4"],
     SW5: ["pin2", "pin4"],
     SW6: ["pin2", "pin4"],
+    SW7: ["pin2", "pin4"],
   },
   rear: {
     J_PICO_R: ["pin15", "pin17", "pin20"],
@@ -307,11 +348,24 @@ export interface JsonElement {
   [key: string]: unknown
 }
 
-/** Any emitted error element, plus pins without a trace outside the allowlist. */
+export interface JsonOutcome extends ReportOutcome {
+  /** Ports the source declares do-not-connect (counted for the order summary). */
+  declaredUnconnected: number
+}
+
+/**
+ * Judge the built circuit JSON: emitted error elements, missing-trace warnings
+ * and the do-not-connect declarations against `DECLARED_UNCONNECTED`.
+ *
+ * The rule is "declare, never filter": a pin without a net must be declared in
+ * the source, and the declaration is then checked here. A missing-trace warning
+ * is a failure no matter what, because the source should have declared it (and
+ * a declared pin never produces one).
+ */
 export function analyseCircuitJson(
   json: JsonElement[],
-  allowUnconnected: Record<string, string[]>,
-): ReportOutcome {
+  declared: Record<string, string[]>,
+): JsonOutcome {
   const failures: string[] = []
   const notes: string[] = []
 
@@ -326,16 +380,19 @@ export function analyseCircuitJson(
       components.set(element.source_component_id, String(element.name ?? element.source_component_id))
     }
   }
-  const ports = new Map<string, { ref: string; pin: string }>()
+  const ports = new Map<string, { ref: string; pin: string; doNotConnect: boolean }>()
   for (const element of json) {
     if (element.type !== "source_port" || typeof element.source_port_id !== "string") continue
     const ref = components.get(String(element.source_component_id)) ?? String(element.source_component_id)
     const hints = element.port_hints
     const firstHint = Array.isArray(hints) ? hints[0] : undefined
-    ports.set(element.source_port_id, { ref, pin: String(element.name ?? firstHint ?? "?") })
+    ports.set(element.source_port_id, {
+      ref,
+      pin: String(element.name ?? firstHint ?? "?"),
+      doNotConnect: element.do_not_connect === true,
+    })
   }
 
-  const unconnected: { ref: string; pin: string }[] = []
   for (const element of json) {
     if (element.type !== "source_pin_missing_trace_warning") continue
     const port = ports.get(String(element.source_port_id))
@@ -343,21 +400,36 @@ export function analyseCircuitJson(
       failures.push(`unconnected pin: port ${String(element.source_port_id)} is not in the JSON`)
       continue
     }
-    unconnected.push(port)
+    failures.push(`unconnected pin ${port.ref}.${port.pin} has no net and is not declared `
+      + `do-not-connect in the source (use noConnect / pinAttributes.doNotConnect, or wire it)`)
   }
-  for (const { ref, pin } of unconnected) {
-    const allowed = allowUnconnected[ref]
-    if (!allowed || !allowed.includes(pin)) {
-      failures.push(`unconnected pin ${ref}.${pin} outside the pinned allowlist `
-        + `(update UNCONNECTED_ALLOWLIST only for a documented design decision)`)
-      continue
+
+  const declaredNow = new Map<string, string[]>()
+  for (const port of ports.values()) {
+    if (!port.doNotConnect) continue
+    declaredNow.set(port.ref, [...(declaredNow.get(port.ref) ?? []), port.pin])
+  }
+  for (const [ref, pins] of declaredNow) {
+    const expected = declared[ref] ?? []
+    const extra = pins.filter(pin => !expected.includes(pin))
+    if (extra.length > 0) {
+      failures.push(`${ref}: declared do-not-connect without a documented decision: ${extra.sort().join(", ")} `
+        + `(update DECLARED_UNCONNECTED in lib/reports.ts only for a real design change)`)
     }
-    notes.push(`unconnected by design: ${ref}.${pin}`)
+    notes.push(`unconnected by design: ${ref} ${pins.sort().join(", ")}`)
   }
-  const seen = new Set(unconnected.map(u => `${u.ref}.${u.pin}`))
-  for (const [ref, pins] of Object.entries(allowUnconnected)) {
-    const left = pins.filter(pin => !seen.has(`${ref}.${pin}`))
-    if (left.length > 0) notes.push(`${ref}: allowlisted pins now connected: ${left.join(", ")}`)
+  for (const [ref, pins] of Object.entries(declared)) {
+    const now = declaredNow.get(ref) ?? []
+    const missing = pins.filter(pin => !now.includes(pin))
+    if (missing.length > 0) {
+      failures.push(`${ref}: no longer declared do-not-connect: ${missing.join(", ")} `
+        + `(if it is now wired, remove it from DECLARED_UNCONNECTED in lib/reports.ts)`)
+    }
   }
-  return { failures, notes }
+
+  return {
+    failures,
+    notes,
+    declaredUnconnected: [...declaredNow.values()].reduce((n, pins) => n + pins.length, 0),
+  }
 }

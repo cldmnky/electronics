@@ -30,7 +30,9 @@
         "SW5",
         "SW6",
         "U6",
-        "J5"
+        "J5",
+        "SW7",
+        "J_PWR"
       ],
       "files": {
         "gerbers": "fab/front/front-gerbers.zip",
@@ -38,13 +40,13 @@
         "cpl": "fab/front/front-cpl-jlc.csv"
       },
       "expected_counts": {
-        "bom_placements": 43,
+        "bom_placements": 45,
         "cpl_smt_placements": 31,
         "cpl_smt_top": 31,
         "cpl_smt_bottom": 0,
-        "tht_excluded": 12
+        "tht_excluded": 14
       },
-      "through_hole_note": "J1-J4 and SW1-SW6 are hand-solderable. U6 is the Bourns PEC11R-4015F-S0024 (C143789), 0 detents / 24 pulses per revolution with push switch and two THT anchor lugs. The 2026-11-06 JLC/LCSC catalog search found no SMD encoder with 0 detents, 24+ PPR and through-hole anchor lugs: the SMD PEC11S/PEC11J/EC11J families are 30 detents / 15 pulses, the PEC11R K suffix is a knurled shaft rather than an SMD terminal, and a lug-less SMD knob encoder is not accepted. U6 therefore stays THT and out of the SMT CPL; its soldering process stays open until acceptance item encoder_solder_process records the qualified process."
+      "through_hole_note": "J1-J4 and SW1-SW6 are hand-solderable. U6 is the Bourns PEC11R-4015F-S0024 (C143789), 0 detents / 24 pulses per revolution with push switch and two THT anchor lugs. The 2026-11-06 JLC/LCSC catalog search found no SMD encoder with 0 detents, 24+ PPR and through-hole anchor lugs: the SMD PEC11S/PEC11J/EC11J families are 30 detents / 15 pulses, the PEC11R K suffix is a knurled shaft rather than an SMD terminal, and a lug-less SMD knob encoder is not accepted. U6 therefore stays THT and out of the SMT CPL; its soldering process stays open until acceptance item encoder_solder_process records the qualified process. SW7 (panel POWER momentary, C84931) and J_PWR (generic 1x2 2.54 mm male header, no LCSC number) are hand-soldered THT added by the panel-power change; they take the front hand BOM from 12 to 14 exclusions and the combined BOM from 43 to 45 placements while the SMT CPL stays at 31. The two conductors leave on J_PWR to the owner's 6-inch F-F DuPont pair - no IDC conductor and no rear-board part."
     }
   },
   "rear": {

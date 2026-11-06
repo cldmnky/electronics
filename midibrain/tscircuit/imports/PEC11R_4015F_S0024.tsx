@@ -12,7 +12,7 @@ const pinLabels = {
 
 export const PEC11R_4015F_S0024 = (props: ChipProps<typeof pinLabels>) => {
   return (
-    <chip
+    <switch
       pinLabels={pinLabels}
       symbol={
         <symbol>

@@ -13,7 +13,7 @@ const pinLabels = {
 
 export const SKRHABE010 = (props: ChipProps<typeof pinLabels>) => {
   return (
-    <chip
+    <switch type="spst"
       pinLabels={pinLabels}
       supplierPartNumbers={{
   "jlcpcb": [

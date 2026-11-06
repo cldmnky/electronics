@@ -7,7 +7,7 @@ import {
   parseCounts,
   parseFlaggedComponents,
   parseWarningList,
-  UNCONNECTED_ALLOWLIST,
+  DECLARED_UNCONNECTED,
 } from "./reports"
 
 const PLACEMENT_LOG = `  worst issues:
@@ -87,11 +87,27 @@ describe("known upstream warning", () => {
   })
 })
 
+// The rotation allowance is empty for both real boards now (C2/R9/R10 were
+// rotated in the source), so the parser machinery is exercised through a rule
+// fixture and the real config is tested for "any flag fails".
+const ROTATION_ALLOWED = { ...BOARD_RULES.front, allowedPlacementRotations: ["C2", "R9", "R10"] }
+
 describe("analyseReport placement", () => {
-  test("exit 1 with only the pinned rotations passes", () => {
-    const r = analyseReport("placement", PLACEMENT_LOG, 1, BOARD_RULES.front)
+  test("a rotation allowance passes when the rule grants it", () => {
+    const r = analyseReport("placement", PLACEMENT_LOG, 1, ROTATION_ALLOWED)
     expect(r.failures).toEqual([])
     expect(r.notes.join("\n")).toContain("pinned informational notes")
+  })
+  test("the real front board config has no rotation allowance any more", () => {
+    expect(BOARD_RULES.front.allowedPlacementRotations).toEqual([])
+    const r = analyseReport("placement", PLACEMENT_LOG, 1, BOARD_RULES.front)
+    expect(r.failures.join(" ")).toContain("unexpected flagged component C2")
+  })
+  test("a clean placement report passes on the real config", () => {
+    const log = "placement summary: no placement issues\n\nboard-edge status:\n- J1: 0.72mm inside bottom edge\n\nErrors: 0\nWarnings: 0\n"
+    const r = analyseReport("placement", log, 0, BOARD_RULES.front)
+    expect(r.failures).toEqual([])
+    expect(parseFlaggedComponents(log)).toEqual([])
   })
   test("rear board has no allowed rotation", () => {
     const r = analyseReport("placement", PLACEMENT_LOG, 1, BOARD_RULES.rear)
@@ -102,7 +118,7 @@ describe("analyseReport placement", () => {
       "rotate R9 180 degrees.",
       "rotate R9 180 degrees. Pads overlap a via.",
     )
-    const r = analyseReport("placement", log, 1, BOARD_RULES.front)
+    const r = analyseReport("placement", log, 1, ROTATION_ALLOWED)
     expect(r.failures.join(" ")).toContain("unexpected issue")
   })
   test("a real error in the counters fails even when the exit code is 1", () => {
@@ -135,9 +151,27 @@ describe("analyseReport counters", () => {
     const r = analyseReport("source", "building...\n", 0, BOARD_RULES.front)
     expect(r.failures.join(" ")).toContain("no \"Errors:\"")
   })
-  test("a warning on a zero-warning format fails", () => {
-    const r = analyseReport("source", "Errors: 0\nWarnings: 1\n", 0, BOARD_RULES.front)
+  test("a design warning on any format fails", () => {
+    const r = analyseReport(
+      "source",
+      "Errors: 0\nWarnings: 1\n- source_property_ignored_warning: Datasheet information for chip \"U3\" could not be fetched: Datasheet API did not respond within 5 seconds\n"
+        .replace("source_property_ignored_warning: Datasheet", "source_component_duplicate_name_warning: Datasheet"),
+      0,
+      BOARD_RULES.front,
+    )
     expect(r.failures.join(" ")).toContain("1 warning(s) reported")
+  })
+  test("a datasheet fetch timeout is a visible note, not a failure", () => {
+    const line = "- source_property_ignored_warning: Datasheet information for chip "
+      + "\"U3\" could not be fetched: Datasheet API did not respond within 5 seconds; "
+      + "pin attributes may not be populated. Pin attributes may not be populated."
+    const r = analyseReport("source", `Errors: 0\nWarnings: 1\n${line}\n`, 0, BOARD_RULES.front)
+    expect(r.failures).toEqual([])
+    expect(r.notes.join(" ")).toContain("environmental (network)")
+  })
+  test("a counter that disagrees with the printed lines fails", () => {
+    const r = analyseReport("source", "Errors: 0\nWarnings: 1\n", 0, BOARD_RULES.front)
+    expect(r.failures.join(" ")).toContain("counter says 1 warning(s)")
   })
   test("nonzero exit on a counted format fails", () => {
     const r = analyseReport("netlist", "Errors: 0\nWarnings: 0\n", 1, BOARD_RULES.front)
@@ -146,14 +180,18 @@ describe("analyseReport counters", () => {
 })
 
 describe("analyseReport pin_specification", () => {
-  test("the nine known passive warnings pass", () => {
-    const r = analyseReport("pin_specification", PIN_LOG, 0, BOARD_RULES.front)
+  test("a clean pin report passes on the real config", () => {
+    const r = analyseReport("pin_specification", "Errors: 0\nWarnings: 0\n", 0, BOARD_RULES.front)
     expect(r.failures).toEqual([])
+    expect(BOARD_RULES.front.allowedPinWarnings).toEqual([])
   })
-  test("a subset (after a fix) still passes", () => {
-    const log = "Errors: 0\nWarnings: 1\n- source_no_ground_pin_defined_warning: J5 has no pin with requires_ground=true\n"
-    const r = analyseReport("pin_specification", log, 0, BOARD_RULES.front)
-    expect(r.failures).toEqual([])
+  test("the former passive-control warnings now fail on both boards", () => {
+    // U5/U6 are switches with declared passive pins, so these lines are noise
+    // the source no longer produces: any reappearance is a real finding.
+    for (const rules of [BOARD_RULES.front, BOARD_RULES.rear]) {
+      const r = analyseReport("pin_specification", PIN_LOG, 0, rules)
+      expect(r.failures.join(" ")).toContain("unexpected warning")
+    }
   })
   test("a new warning fails", () => {
     const log = PIN_LOG.replace(
@@ -187,42 +225,64 @@ describe("analyseReport markers", () => {
   })
 })
 
+const EXPECT_SW1 = { SW1: ["pin2", "pin4"] }
+
 describe("analyseCircuitJson", () => {
-  const board = (ref: string, pin: string) => {
-    const json = [
-      { type: "source_component", source_component_id: `c_${ref}`, name: ref },
-      { type: "source_port", source_port_id: `p_${ref}_${pin}`, source_component_id: `c_${ref}`, name: pin },
-      { type: "source_pin_missing_trace_warning", source_port_id: `p_${ref}_${pin}` },
-    ]
+  // A built board: one component, its ports, and the do-not-connect flag the
+  // source declaration produces.
+  const board = (ref: string, pins: { pin: string; doNotConnect?: boolean }[]) => {
+    const json: any[] = [{ type: "source_component", source_component_id: `c_${ref}`, name: ref }]
+    for (const { pin, doNotConnect } of pins) {
+      json.push({
+        type: "source_port",
+        source_port_id: `p_${ref}_${pin}`,
+        source_component_id: `c_${ref}`,
+        name: pin,
+        ...(doNotConnect ? { do_not_connect: true } : {}),
+      })
+    }
     return json
   }
 
-  test("allowlisted unconnected pin is a note", () => {
-    const r = analyseCircuitJson(board("SW1", "pin2"), UNCONNECTED_ALLOWLIST.front)
+  test("a declared open pin is a note and is counted", () => {
+    const r = analyseCircuitJson(
+      board("SW1", [{ pin: "pin2", doNotConnect: true }, { pin: "pin4", doNotConnect: true }]),
+      EXPECT_SW1,
+    )
     expect(r.failures).toEqual([])
-    expect(r.notes.join(" ")).toContain("SW1.pin2")
+    expect(r.notes.join(" ")).toContain("SW1 pin2")
+    expect(r.declaredUnconnected).toBe(2)
   })
-  test("a newly unconnected pin fails", () => {
-    const r = analyseCircuitJson(board("SW3", "pin1"), UNCONNECTED_ALLOWLIST.front)
-    expect(r.failures.join(" ")).toContain("SW3.pin1 outside the pinned allowlist")
+  test("a missing-trace warning fails even when it is a declared pin", () => {
+    // The source declaration is what silences the builder: a warning means the
+    // pin was never declared, so it fails rather than being filtered.
+    const json = [
+      ...board("SW1", [{ pin: "pin2" }, { pin: "pin4", doNotConnect: true }]),
+      { type: "source_pin_missing_trace_warning", source_port_id: "p_SW1_pin2" },
+    ]
+    const r = analyseCircuitJson(json, EXPECT_SW1)
+    expect(r.failures.join(" ")).toContain("SW1.pin2 has no net and is not declared")
+  })
+  test("a declaration without a documented decision fails", () => {
+    const r = analyseCircuitJson(board("SW3", [{ pin: "pin1", doNotConnect: true }]), { SW1: ["pin2", "pin4"] })
+    expect(r.failures.join(" ")).toContain("without a documented decision: pin1")
+  })
+  test("a declaration that disappeared fails", () => {
+    const r = analyseCircuitJson(board("SW1", [{ pin: "pin4", doNotConnect: true }]), EXPECT_SW1)
+    expect(r.failures.join(" ")).toContain("no longer declared do-not-connect: pin2")
   })
   test("an emitted error element fails", () => {
     const r = analyseCircuitJson(
       [{ type: "circuit_error", message: "net without a port" }],
-      UNCONNECTED_ALLOWLIST.front,
+      DECLARED_UNCONNECTED.front,
     )
     expect(r.failures.join(" ")).toContain("circuit_error")
   })
   test("a warning about an unknown port fails", () => {
     const r = analyseCircuitJson(
       [{ type: "source_pin_missing_trace_warning", source_port_id: "p_missing" }],
-      UNCONNECTED_ALLOWLIST.front,
+      DECLARED_UNCONNECTED.front,
     )
     expect(r.failures.join(" ")).toContain("not in the JSON")
-  })
-  test("a pin that became connected is only a note", () => {
-    const r = analyseCircuitJson([], UNCONNECTED_ALLOWLIST.rear)
-    expect(r.failures).toEqual([])
-    expect(r.notes.length).toBeGreaterThan(0)
   })
 })

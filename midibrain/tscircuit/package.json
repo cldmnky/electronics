@@ -13,7 +13,8 @@
     "pins": "bun run scripts/gen-pins.ts",
     "reports": "bun run scripts/check_reports.ts",
     "gate": "bun run scripts/release_gate.ts",
-    "release": "bash scripts/release.sh"
+    "release": "bash scripts/release.sh",
+    "render:boards": "bun run scripts/render_boards.ts"
   },
   "dependencies": {
     "@tscircuit/alphabet": "0.0.25",

@@ -37,8 +37,10 @@ export const C8545_2N7002 = (props: Props) => {
           <smtpad portHints={["pin2"]} pcbX="-1.1375mm" pcbY="-0.95mm" width="1.325mm" height="0.6mm" shape="rect" />
           <smtpad portHints={["pin3"]} pcbX="1.1375mm" pcbY="0mm" width="1.325mm" height="0.6mm" shape="rect" />
           <silkscreenpath route={[{ x: -0.7, y: 1.45 }, { x: 0.7, y: 1.45 }, { x: 0.7, y: -1.45 }, { x: -0.7, y: -1.45 }, { x: -0.7, y: 1.45 }]} />
-          {/* Pin 1 (gate) index mark, emitted for orientation checks. */}
-          <silkscreencircle pcbX="-1.9mm" pcbY="-1.2mm" radius="0.25mm" />
+          {/* No pin-1 dot here: the gate index mark is board silkscreen
+              (lib/silk.tsx PIN1) so both boards verify it against the built
+              pin-1 pad in one place. The old dot at (-1.9, -1.2) sat beside
+              pin 2, and this footprint is mirrored when the board is built. */}
           <courtyardrect pcbX="0mm" pcbY="0mm" width="4.1mm" height="3.0mm" />
         </footprint>
       }

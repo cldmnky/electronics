@@ -21,6 +21,8 @@ import {
   PANEL_LABELS,
   PANEL_TITLES,
   PLAY_START,
+  POWER_BUTTON,
+  POWER_HEADER,
   RAIL_HOLES,
   RIGHT_CONTROLS,
   TRANSPORT_Y,
@@ -111,6 +113,8 @@ const buttonOpenings = [
   ...FRONT_COLUMNS.map(c => ({ x: c.x, y: TRANSPORT_Y })),
   { x: PLAY_START.x, y: TRANSPORT_Y },
   { x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y },
+  // Panel POWER button, bottom-right corner away from the transport row.
+  { x: POWER_BUTTON.x, y: POWER_BUTTON.y },
 ]
 for (const p of buttonOpenings) {
   at(`panel: button opening Ø${PANEL_CUTOUTS.button}`, centre(circles(PANEL_CUTOUTS.button / 2).find(c => close(c.center.x, p.x) && close(c.center.y, p.y))), p)
@@ -201,7 +205,10 @@ for (const { sw, button } of TRANSPORT_SWITCHES) {
 }
 at("front: SW6 (SHIFT/EXIT)", comp("SW6"), RIGHT_CONTROLS.SHIFT_EXIT)
 at("front: U5 (NAV)", comp("U5"), RIGHT_CONTROLS.NAV)
-at("front: U6 (TEMPO)", comp("U6"), RIGHT_CONTROLS.TEMPO)
+at("front: U6 (value knob)", comp("U6"), RIGHT_CONTROLS.TEMPO)
+at("front: SW7 (panel POWER)", comp("SW7"), POWER_BUTTON)
+ok("front: SW7 rotated 90 deg to clear both corner holes", comp("SW7")?.rotation === POWER_BUTTON.rotation)
+at("front: J_PWR (Pi power-button header)", comp("J_PWR"), POWER_HEADER)
 
 // Jacks in the four shared columns; sleeve decoupling caps follow their jacks.
 for (const [i, c] of FRONT_COLUMNS.entries()) {

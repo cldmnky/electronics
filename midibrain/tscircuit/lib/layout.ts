@@ -510,9 +510,11 @@ export const mechanicalExport = () => ({
 // ---- Right-hand control column ----
 // The value knob, NAV and SHIFT/EXIT share one vertical centreline, right of
 // the display and below the USB feedthroughs, with equal 19 mm spacing. The
-// knob is context-aware (the Pi applies its delta to the focused control) and
-// its detentless, endless encoder keeps TEMPO as the home context, so the
-// layout key and the panel legend stay TEMPO.
+// knob is context-aware: the Pi applies its delta to the focused control, with
+// tempo as the home context (docs/decisions.md, value-knob row). The panel
+// legend therefore reads VALUE, not TEMPO - tempo is only what the knob edits
+// when nothing else has focus. `RIGHT_CONTROLS.TEMPO` stays the position key
+// so the mechanical layout data does not churn; it is the column, not a label.
 export const RIGHT_COLUMN = { x: 47, pitch: 19 } as const
 const RIGHT_TEMPO_Y = 30
 export const RIGHT_CONTROLS = {
@@ -524,6 +526,23 @@ export const RIGHT_CONTROLS = {
 // PLAY START completes the transport row inside the right-hand control column,
 // aligned beneath SHIFT/EXIT (no jack or LED in this column).
 export const PLAY_START = { button: "PLAY START", x: RIGHT_COLUMN.x } as const
+
+// ---- Panel POWER button (owner-approved 2026-11-06) ----
+// One B3F-4055-family momentary, bottom-right corner: it sits below and right
+// of PLAY START (11.4 mm centre-to-centre) so nothing in the transport row can
+// be pressed by accident, and it clears the M2.5 holes at (44, -52) and
+// (61, -53) and the board edge by the margins asserted in layout.test.ts.
+// The contact pair leaves the front board on a plain 1x2 2.54 mm male header
+// (J_PWR); the owner's 6-inch F-F DuPont jumpers go straight to the Pi 5
+// remote PWR connector. No power circuitry, no IDC conductor, no rear-board
+// part: the 2x13 ribbon keeps all three ground conductors.
+// Rotated 90 deg: the 15 x 12.5 mm B3F courtyard cannot fit between the
+// two M2.5 corner holes at (44, -52) and (61, -53) unrotated; at 90 deg it is
+// 12.5 mm wide and sits clear of both with no hole inside its courtyard.
+export const POWER_BUTTON = { x: 52.5, y: -48, rotation: 90 } as const
+export const POWER_HEADER = { x: 43, y: -48 } as const
+/** Panel label sits below the new cutout: PLAY START's label owns the row above. */
+export const POWER_LABEL_OFFSET_Y = -8.5
 
 // ---- Transport / MIDI columns under the display ----
 // Four equally spaced columns; each column shares its X between the transport
@@ -561,7 +580,8 @@ export const midiJackX = (jack: string): number => {
 // Front-board 2x13 interconnect (J5) to the rear-board J_FRONT. It sits in the
 // corridor between the display and the right-hand control column: the header's
 // ~41 mm courtyard cannot clear the column at the previous right-edge spot
-// (x = 58) once the column moved onto x = 47 (courtyard overlap with TEMPO,
+// (x = 58) once the column moved onto x = 47 (courtyard overlap with the value
+// knob,
 // SHIFT/EXIT and PLAY START). IDC plug height between the boards is unverified.
 export const FRONT_INTERCONNECT = { x: 34, y: 10, rotation: 90 } as const
 
@@ -571,7 +591,7 @@ export type FrontConceptKind = "cable" | "control" | "button" | "led" | "jack"
 export type FrontConceptPoint = { id: string; x: number; y: number; kind: FrontConceptKind }
 export const FRONT_CONCEPT: readonly FrontConceptPoint[] = [
   ...USB_FEEDTHROUGHS.map(f => ({ id: f.id, x: f.x, y: f.y, kind: "cable" as const })),
-  { id: "TEMPO", ...RIGHT_CONTROLS.TEMPO, kind: "control" },
+  { id: "VALUE", ...RIGHT_CONTROLS.TEMPO, kind: "control" },
   { id: "NAV", ...RIGHT_CONTROLS.NAV, kind: "control" },
   { id: "SHIFT / EXIT", ...RIGHT_CONTROLS.SHIFT_EXIT, kind: "button" },
   ...FRONT_COLUMNS.map(c => ({ id: c.button, x: c.x, y: TRANSPORT_Y, kind: "button" as const })),
@@ -610,7 +630,7 @@ const LABEL_OFFSET = {
   feedthrough: -9.5, // below the USB cutouts
   transport: -8,     // below the button cutouts, above the jack cutouts
   jack: -6.5,        // below the jack cutouts
-  above: 7,          // above the TEMPO / NAV cutouts
+  above: 7,          // above the VALUE / NAV cutouts
   below: -7.5,       // below the SHIFT/EXIT cutout
 }
 
@@ -635,9 +655,14 @@ export const panelTitleExtents = (t: { text: string; x: number; y: number; fontS
 export type PanelLabel = { text: string; x: number; y: number }
 export const PANEL_LABELS: readonly PanelLabel[] = [
   ...USB_FEEDTHROUGHS.map(f => ({ text: FEEDTHROUGH_LABEL[f.id] ?? f.id, x: f.x, y: f.y + LABEL_OFFSET.feedthrough })),
-  { text: "TEMPO", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y + LABEL_OFFSET.above },
+  // The knob is the generic value encoder (tempo only as its home context), so
+  // the legend names the control, not one of the things it can edit. "VALUE" at
+  // the 1.8 mm label font is 6.21 mm wide in a 19 mm column: no in-bounds risk.
+  { text: "VALUE", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y + LABEL_OFFSET.above },
   { text: "NAV", x: RIGHT_CONTROLS.NAV.x, y: RIGHT_CONTROLS.NAV.y + LABEL_OFFSET.above },
   { text: "SHIFT / EXIT", x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y + LABEL_OFFSET.below },
+  // POWER sits under its cutout: the +7 row above belongs to PLAY START.
+  { text: "POWER", x: POWER_BUTTON.x, y: POWER_BUTTON.y + POWER_LABEL_OFFSET_Y },
   ...FRONT_COLUMNS.map(c => ({ text: c.button, x: c.x, y: TRANSPORT_Y + LABEL_OFFSET.transport })),
   { text: PLAY_START.button, x: PLAY_START.x, y: TRANSPORT_Y + LABEL_OFFSET.transport },
   ...FRONT_COLUMNS.map(c => ({ text: JACK_LABEL[c.jack] ?? c.jack, x: c.x, y: JACK_Y + LABEL_OFFSET.jack })),

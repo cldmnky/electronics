@@ -27,3 +27,27 @@ Pico UART0: GP0/pin 1 TX → MIDI OUT 1; GP1/pin 2 RX ← isolated MIDI IN 1. UA
 Pico pins 39 (VSYS), 40 (VBUS), 36 (3V3 OUT), 37 (3V3_EN), 30 (RUN) are not generic IO. Pico is 3.3 V logic; do not apply 5 V to either board's GPIO or tie Pi 3.3 V to Pico 3.3 V OUT. USB programming vs Pi-powered branch requires isolated power-path design and an off-state GPIO injection audit. The Pico datasheet §4.5 describes diode/FET alternatives; none has been selected here.
 
 Connector part, mating-face pin order, wire length, shielding, decoupling and power branch protection remain open. Hardware pin mux and continuity must be tested with actual Pi OS/Pico SDK versions.
+
+## Panel POWER button (owner-approved 2026-11-06; pigtail amended 2026-11-06)
+
+A panel momentary switch (B3F-4055 family, same as the transport row) is
+wired to the **Pi 5's remote power-button connector** (the 2-pin header
+paralleling the onboard power button — no custom power logic):
+
+| Function | Path | Notes |
+|---|---|---|
+| POWER | front-board SW7 → front-board 1x2 2.54 mm male header J_PWR → 2x 6-inch 2.54 mm female-female DuPont jumpers (user-supplied) → Pi 5 PWR connector | off→press = power on; on→press = graceful shutdown request (OS handles clean halt); long-press = PMIC hard cut, last resort only |
+
+The jumpers are **ACC A-0270 stock 6-inch F-F DuPont** leads the owner already
+owns; they are not a board part. The earlier "front SW7 → 2 IDC conductors →
+rear J_PWR" route is superseded: the 2x13 front/rear IDC keeps every
+conductor it had (all three ground conductors stay ground), the rear board
+carries no power-button part, and no net in `frontInterconnect` changes.
+J_PWR is a plain 1x2 male pin header for those leads only — it has no
+connection to any power rail.
+
+Placement: away from the transport row (no accidental presses — panel
+corner, see layout). The app hooks the shutdown path: project flush +
+sync + `SAFE TO POWER OFF` before halt. Standby power (5V inlet live, Pico
+powered in soft-off) is accepted; a master switch at the inlet is a
+deferred option, not part of this change.

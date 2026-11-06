@@ -50,6 +50,9 @@ COLUMNS = ["Board", "Designators", "Quantity", "MPN", "LCSC", "Package",
 THT = {
     "front": {"J1", "J2", "J3", "J4",
               "SW1", "SW2", "SW3", "SW4", "SW5", "SW6",
+              # Panel POWER momentary and the 1x2 jumper header that takes the
+              # owner's 6-inch F-F DuPont pair to the Pi 5 PWR connector.
+              "SW7", "J_PWR",
               "U6", "J5"},
     "rear": {"J_PICO_L", "J_PICO_R", "J_PI", "J_FRONT"},
 }

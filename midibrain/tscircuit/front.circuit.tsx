@@ -8,6 +8,7 @@ import { BOARD_POLICY } from "./lib/electrical"
 import { MIDI_OUT_SERIES_OHM, MIDI_OUT_GATE_OHM, MIDI_RECEIVER_OHM } from "./lib/electrical-midi"
 import { FP_JACK_TRS } from "./lib/jack"
 import { SKRHABE010 } from "./imports/SKRHABE010"
+import { FrontSilk } from "./lib/silk"
 import { TLP2361_TPL_E } from "./imports/TLP2361_TPL_E"
 import {
   DISPLAY_ANNOTATIONS,
@@ -22,6 +23,8 @@ import {
   LCD_WINDOW,
   LED_Y,
   MOUNT_HOLE_DIAMETER,
+  POWER_BUTTON,
+  POWER_HEADER,
   midiJackX,
   RIGHT_CONTROLS,
   DISPLAY_CONCEPT,
@@ -69,14 +72,15 @@ const R = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot, sec,
   />
 )
 
-type CProps = { name: string; value: string; x: string; y: string; lcsc: string; mpn: string; p1: string; p2: string; footprint?: string; sec: string }
-const C = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", sec }: CProps) => (
+type CProps = { name: string; value: string; x: string; y: string; lcsc: string; mpn: string; p1: string; p2: string; footprint?: string; rot?: string; sec: string }
+const C = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot, sec }: CProps) => (
   <capacitor
     name={name}
     capacitance={value}
     footprint={footprint}
     pcbX={x}
     pcbY={y}
+    pcbRotation={rot}
     layer="top"
     schSheetName="front"
     schSectionName={sec}
@@ -141,7 +145,10 @@ const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: n
       />
       <R name={`R${ch}`} value={`${MIDI_RECEIVER_OHM}`} sec="midi_in" schX={ch === 1 ? "-21.5" : undefined} schY={ch === 1 ? "-1.3" : undefined} x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
       <R name={`R${ch + 2}`} value="2.2k" sec="midi_in" x={`${x + 8}mm`} y={`${y - 4}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={rxNet} p2="net.P3V3" />
-      <C name={`C${ch}`} value="100nF" sec="midi_in" x={`${jackX - 7}mm`} y={`${jackY + 5.5}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
+      {/* C2 carries the placement note ("connections cross the routing path
+          between its pads"), C1 does not; a 0603 X7R cap is non-polarized, so
+          rotating it moves no polarity mark. */}
+      <C name={`C${ch}`} value="100nF" sec="midi_in" x={`${jackX - 7}mm`} y={`${jackY + 5.5}mm`} rot={ch === 2 ? "180deg" : undefined} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
       <C name={`C${ch + 2}`} value="100nF" sec="midi_in" x={`${x + 4}mm`} y={`${y + 3}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
     </>
   )
@@ -185,7 +192,11 @@ const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: 
       />
       <R name={`R${ch + 4}`} value={`${MIDI_OUT_GATE_OHM.series}`} sec="midi_out" x={`${x - 2}mm`} y={`${y + 6}mm`} lcsc="C22775" mpn="0603WAF1000T5E" p1={tx} p2={gate} />
       <R name={`R${ch + 6}`} value={`${MIDI_OUT_GATE_OHM.pullup}`} sec="midi_out" x={`${x + 6}mm`} y={`${y + 6}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={gate} p2="net.P3V3" />
-      <R name={`R${ch + 8}`} value={`${MIDI_OUT_SERIES_OHM.ring}`} sec="midi_out" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C53728" mpn="25121WF330JT4E" footprint="2512" rot="90deg" p1={drain} p2={ring} />
+      {/* R9/R10 rotate 270 deg, not 0/90: `tsci check placement` flagged the
+          90 deg pads as "connections cross the routing path between its pads",
+          and 270 puts pad 1 on the routed side. Value, net and footprint are
+          unchanged. */}
+      <R name={`R${ch + 8}`} value={`${MIDI_OUT_SERIES_OHM.ring}`} sec="midi_out" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C53728" mpn="25121WF330JT4E" footprint="2512" rot="270deg" p1={drain} p2={ring} />
       <R name={`R${ch + 10}`} value={`${MIDI_OUT_SERIES_OHM.tip}`} sec="midi_out" x={`${x + 4.5}mm`} y={`${y - 6}mm`} lcsc="C118189" mpn="25121WF220JT4E" footprint="2512" p1={tip} p2="net.GND" />
     </>
   )
@@ -287,6 +298,11 @@ export default () => (
       schSectionName="controls"
       connections={{ A: "net.ENC_A", B: "net.ENC_B", C: "net.GND", pin1: "net.GND", pin2: "net.ENC_SW", MT1: "net.GND", MT2: "net.GND" }}
     />
+    {/* B3F-4055 is a 4-pin button with two internal contact pairs (1-2 and
+        3-4). Only pin1 (GND) and pin3 (signal) are wired; pin2/pin4 are the
+        duplicated contacts and are declared noConnect so the build does not
+        report a missing trace for a pin the circuit deliberately leaves open.
+        A real lost net still prints and still fails. */}
     {TRANSPORT_SWITCHES.map(sw => (
       <B3F_4055
         key={sw.name}
@@ -296,10 +312,11 @@ export default () => (
         layer="top"
         schSheetName="front"
         schSectionName="controls"
+        noConnect={["pin2", "pin4"]}
         connections={{ pin1: "net.GND", pin3: sw.net }}
       />
     ))}
-    <B3F_4055 name="SW6" pcbX={`${RIGHT_CONTROLS.SHIFT_EXIT.x}mm`} pcbY={`${RIGHT_CONTROLS.SHIFT_EXIT.y}mm`} layer="top" schSheetName="front" schSectionName="controls" connections={{ pin1: "net.GND", pin3: "net.SHIFT_EXIT" }} />
+    <B3F_4055 name="SW6" pcbX={`${RIGHT_CONTROLS.SHIFT_EXIT.x}mm`} pcbY={`${RIGHT_CONTROLS.SHIFT_EXIT.y}mm`} layer="top" schSheetName="front" schSectionName="controls" noConnect={["pin2", "pin4"]} connections={{ pin1: "net.GND", pin3: "net.SHIFT_EXIT" }} />
 
     {FRONT_LED_PARTS.map((led, i) => (
       <Fragment key={led.name}>
@@ -358,6 +375,42 @@ export default () => (
         pin26: "net.SHIFT_EXIT",
       }}
     />
+
+    {/* Panel POWER button (owner-approved): a plain momentary contact pair, no
+        power circuitry. The two INNER contacts (pin1/pin3) go to J_PWR; the
+        duplicated outer contacts (pin2/pin4) stay open and are declared
+        noConnect, exactly like the transport row. From J_PWR the owner's
+        6-inch F-F DuPont jumpers run straight to the Pi 5 remote PWR header,
+        so nothing here touches the 2x13 ribbon or the rear board. */}
+    <B3F_4055
+      name="SW7"
+      pcbX={`${POWER_BUTTON.x}mm`}
+      pcbY={`${POWER_BUTTON.y}mm`}
+      pcbRotation={`${POWER_BUTTON.rotation}deg`}
+      layer="top"
+      schSheetName="front"
+      schSectionName="controls"
+      noConnect={["pin2", "pin4"]}
+      connections={{ pin1: "net.PWR_SW_A", pin3: "net.PWR_SW_B" }}
+    />
+    {/* 1x2 2.54 mm male header, THT hand-solder: the front-board end of the
+        jumper pair. Generic part, no LCSC number (hand-soldered). */}
+    <connector
+      name="J_PWR"
+      pinCount={2}
+      footprint="pinrow2_p2.54mm"
+      manufacturerPartNumber="1x2 2.54 mm male pin header (generic)"
+      pcbX={`${POWER_HEADER.x}mm`}
+      pcbY={`${POWER_HEADER.y}mm`}
+      layer="top"
+      schSheetName="front"
+      schSectionName="headers"
+      connections={{ pin1: "net.PWR_SW_A", pin2: "net.PWR_SW_B" }}
+    />
+
+    {/* Silkscreen wave: brand lockup, hand-solder hints, pin-1 and polarity
+        marks. Every position and its clearance proof live in lib/silk.tsx. */}
+    <FrontSilk />
 
     {/* Panel-side ground pour. Every SMD part is on the top layer and J5 (THT)
         is on the bottom, so the free bottom copper is the ground plane. */}

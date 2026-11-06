@@ -14,6 +14,7 @@ import {
   PANEL_LCD_CUTOUT,
   PLAY_START,
   PANEL_TITLES,
+  POWER_BUTTON,
   RAIL_HOLES,
   RAIL_HOLE_DIAMETER,
   RIGHT_CONTROLS,
@@ -71,6 +72,9 @@ export default () => (
     ))}
     {/* Encoder and navigation switch in the right-hand control column */}
     <cutout shape="circle" radius={`${PANEL_CUTOUTS.control / 2}mm`} pcbX={`${RIGHT_CONTROLS.TEMPO.x}mm`} pcbY={`${RIGHT_CONTROLS.TEMPO.y}mm`} />
+    {/* Panel POWER button (owner-approved): same 12.4 mm B3F opening as the
+        transport row, in the bottom-right corner away from it. */}
+    <cutout shape="circle" radius={`${PANEL_CUTOUTS.button / 2}mm`} pcbX={`${POWER_BUTTON.x}mm`} pcbY={`${POWER_BUTTON.y}mm`} />
     <cutout shape="circle" radius={`${PANEL_CUTOUTS.control / 2}mm`} pcbX={`${RIGHT_CONTROLS.NAV.x}mm`} pcbY={`${RIGHT_CONTROLS.NAV.y}mm`} />
     {/* MIDI TRS jacks */}
     {jackCutouts.map((h, i) => (
