@@ -6,13 +6,21 @@
 //
 // No-Pico mode (LinkClient(midi, state, emulated, noPico = true)) is the bare-Pi
 // variant: no SPI transport, no PicoLink and no READY GPIO are constructed, so
-// there is no handshake, no reconnect state machine and no link-lost noise. It
-// still runs one thread, but only as a 1 ms clock/MIDI pump: the Pi free-runs
-// the USB clock (UsbClock free-run), the transport commands apply directly to
-// the local rolling state (no EV_TRANSPORT frames exist) and MidiGlue keeps
-// routing USB traffic. TRS sends and pipe chains are suppressed and logged
-// once; the Pico UARTs and panel hardware that would receive them are absent.
+// there is no handshake, no reconnect state machine and no link-lost noise. The
+// Pi free-runs the USB clock (UsbClock free-run), the transport commands apply
+// directly to the local rolling state (no EV_TRANSPORT frames exist) and
+// MidiGlue keeps routing USB traffic. TRS sends and pipe chains are suppressed
+// and logged once; the Pico UARTs and panel hardware that would receive them
+// are absent.
+//
+// On Linux a dedicated fine timer thread emits the due clock bytes against the
+// UsbClock phase (nextDueUs()/advanceFreeRun()), so a clock deadline is not
+// quantised to the pump's 1 ms tick. The pump keeps MIDI routing and the
+// transport bytes, and a lock orders START/CONTINUE/STOP against the clock
+// bytes. Other hosts keep the 1 ms pump as the only clock emitter: no fine
+// timer is started there.
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <deque>
 #include <memory>
@@ -121,6 +129,12 @@ class LinkClient {
   void runNoPico();
   void applyNoPicoCommands();
   void pumpNoPicoClock();
+  // Advances the free-run phase when due, emits the USB clock byte while the
+  // gate is open and returns the microseconds until the scheduler should look
+  // again. Called by the fine thread on Linux and by the pump elsewhere.
+  std::uint64_t serviceNoPicoClock();
+  void runNoPicoClockThread();
+  void wakeNoPicoClock();
 
   MidiGlue& midi_;
   AppState& state_;
@@ -145,6 +159,17 @@ class LinkClient {
   bool loggedNoPicoTrsSend_ = false;
   bool loggedNoPicoPipeChain_ = false;
   bool loggedNoPicoClockRoute_ = false;
+
+  // No-Pico emission/ordering. noPicoEmitLock_ is held across the phase
+  // decision and the sent byte, and by the pump's transport byte, so a clock
+  // byte can never overtake a STOP or START that was already applied.
+  // clockWakeLock_/clockWakeGeneration_ wake the fine thread when a command
+  // changes the phase, tempo, gates or rolling state.
+  std::mutex noPicoEmitLock_;
+  std::mutex clockWakeLock_;
+  std::condition_variable clockWake_;
+  std::uint64_t clockWakeGeneration_ = 0;
+  std::thread clockThread_;
 
   std::atomic<bool> exit_{false};
   std::thread thread_;

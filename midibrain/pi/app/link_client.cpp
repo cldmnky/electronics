@@ -16,6 +16,14 @@ namespace {
 constexpr std::size_t kMaxCommands = 64;
 constexpr std::uint64_t kReadyPollMs = 100;
 
+// No-Pico fine scheduler re-check intervals (microseconds). A due phase is
+// targeted exactly; these apply only when the phase has no known deadline:
+// stopped (nothing to advance, so wait for a command wake) or rolling with the
+// USB clock gate closed (advanceFreeRun() must keep the Pi tick moving, but
+// UsbClock::nextDueUs() deliberately reports nothing while gated).
+constexpr std::uint64_t kNoPicoGatedPollUs = 250;
+constexpr std::uint64_t kNoPicoStoppedPollUs = 50'000;
+
 std::uint64_t monotonicMs() {
   using namespace std::chrono;
   return static_cast<std::uint64_t>(
@@ -95,11 +103,17 @@ void LinkClient::start() {
       run();
     }
   });
+#if defined(__linux__)
+  // No-Pico only: the pump already emits the clock on other hosts.
+  if (noPico_) clockThread_ = std::thread([this] { runNoPicoClockThread(); });
+#endif
 }
 
 void LinkClient::stop() {
   exit_.store(true);
+  wakeNoPicoClock();
   if (thread_.joinable()) thread_.join();
+  if (clockThread_.joinable()) clockThread_.join();
 }
 
 LinkStatus LinkClient::status() const {
@@ -346,16 +360,31 @@ void LinkClient::runNoPico() {
     return false;
   };
 
-  log("link: no-Pico pump running (1 ms clock/MIDI tick, USB output only)");
+#if defined(__linux__)
+  log("link: no-Pico pump running (1 ms MIDI tick; clock bytes on a fine phase-timed thread)");
+#else
+  log("link: no-Pico pump running (1 ms clock/MIDI tick, USB output only; no fine timer on this host)");
+#endif
   while (!exit_.load(std::memory_order_relaxed)) {
     applyNoPicoCommands();
-    midi_.pump(trsSink);
+    {
+      // RtMidi's ALSA output backend keeps one encoder/buffer per port and is
+      // not safe for concurrent sendMessage(), so routed USB sends and the
+      // fine thread's clock bytes share the emission lock.
+      const std::lock_guard<std::mutex> emitLock(noPicoEmitLock_);
+      midi_.pump(trsSink);
+    }
+#if !defined(__linux__)
+    // Non-Linux hosts have no fine clock thread: the pump stays the clock
+    // emitter and keeps today's 1 ms scheduling granularity.
     pumpNoPicoClock();
+#endif
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 }
 
 void LinkClient::applyNoPicoCommands() {
+  bool applied = false;
   for (;;) {
     Command command;
     {
@@ -364,12 +393,14 @@ void LinkClient::applyNoPicoCommands() {
       command = commands_.front();
       commands_.pop_front();
     }
+    applied = true;
 
     switch (command.kind) {
       case Command::Kind::Tempo:
-        clock_.setTempo(command.value16);
         {
+          // The fine clock thread reads tempo/phase under statusLock_.
           const std::lock_guard<std::mutex> lock(statusLock_);
+          clock_.setTempo(command.value16);
           status_.tempoX100 = command.value16;
         }
         state_.tempoX100.store(command.value16);
@@ -379,6 +410,9 @@ void LinkClient::applyNoPicoCommands() {
         // State frames come from the Pico in hardware mode; no-Pico mode has no
         // Pico, so the command is the transport state change itself. START
         // resets the Pi tick exactly like the firmware's transport_cmd().
+        // The fine clock thread emits under this same lock, so the phase change
+        // and its transport byte are one step relative to clock emission.
+        const std::lock_guard<std::mutex> emitLock(noPicoEmitLock_);
         const auto now = midi::piNowUs();
         bool transportGate = true;
         std::uint32_t tick = 0;
@@ -439,6 +473,10 @@ void LinkClient::applyNoPicoCommands() {
 
       case Command::Kind::UsbClockGates:
         {
+          // Same lock order as the fine thread (emit, then status): a clock
+          // byte decided before this command lands before the gate closes, and
+          // nothing decided afterwards can slip out.
+          const std::lock_guard<std::mutex> emitLock(noPicoEmitLock_);
           const std::lock_guard<std::mutex> lock(statusLock_);
           clock_.setClockEnabled((command.value8 & 1) != 0);
           clock_.setTransportEnabled((command.value8 & 2) != 0);
@@ -455,11 +493,19 @@ void LinkClient::applyNoPicoCommands() {
         break;
     }
   }
+  if (applied) wakeNoPicoClock();
 }
 
-void LinkClient::pumpNoPicoClock() {
+void LinkClient::pumpNoPicoClock() { (void)serviceNoPicoClock(); }
+
+std::uint64_t LinkClient::serviceNoPicoClock() {
   const auto now = midi::piNowUs();
+  // Held across the phase decision and the byte: the pump's START/CONTINUE/
+  // STOP and gate commands take this lock too, so a clock byte is ordered
+  // against them even though it is no longer sent by the pump thread.
+  const std::lock_guard<std::mutex> emitLock(noPicoEmitLock_);
   bool emit = false;
+  std::uint64_t waitUs = kNoPicoStoppedPollUs;
   {
     const std::lock_guard<std::mutex> lock(statusLock_);
     clock_.setRolling(status_.rolling);
@@ -478,8 +524,54 @@ void LinkClient::pumpNoPicoClock() {
     status_.latencyUs = 0.0;
     status_.clockSkipped = clock_.skipped();
     status_.clockReordered = clock_.reordered();
+    if (status_.rolling) {
+      // While rolling, nextDueUs() is the phase itself; nullopt means the USB
+      // clock gate is closed, so poll at the fine cadence to keep the Pi tick
+      // advancing (the phase still moves by exactly one interval per pass).
+      const auto due = clock_.nextDueUs(now);
+      if (!due) {
+        waitUs = kNoPicoGatedPollUs;
+      } else if (*due <= now) {
+        waitUs = 1;  // due at/just after `now`: look again immediately
+      } else {
+        waitUs = *due - now;
+      }
+    }
   }
   if (emit) midi_.sendUsbClock(midi::kClockByte);
+  return waitUs;
+}
+
+void LinkClient::runNoPicoClockThread() {
+  // Wait for the exact phase deadline instead of polling on a fixed grid. The
+  // wake generation closes the race where a command lands between reading the
+  // state and blocking: if it already changed, wait_until returns at once and
+  // the next pass sees the new tempo/rolling/gate state.
+  for (;;) {
+    std::uint64_t generation = 0;
+    {
+      const std::lock_guard<std::mutex> lock(clockWakeLock_);
+      generation = clockWakeGeneration_;
+    }
+    if (exit_.load(std::memory_order_relaxed)) return;
+    const std::uint64_t waitUs = serviceNoPicoClock();
+    std::unique_lock<std::mutex> lock(clockWakeLock_);
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::microseconds(waitUs);
+    clockWake_.wait_until(lock, deadline, [this, generation] {
+      return exit_.load(std::memory_order_relaxed) ||
+             clockWakeGeneration_ != generation;
+    });
+    if (exit_.load(std::memory_order_relaxed)) return;
+  }
+}
+
+void LinkClient::wakeNoPicoClock() {
+  {
+    const std::lock_guard<std::mutex> lock(clockWakeLock_);
+    ++clockWakeGeneration_;
+  }
+  clockWake_.notify_all();
 }
 
 void LinkClient::drainEvents() {
