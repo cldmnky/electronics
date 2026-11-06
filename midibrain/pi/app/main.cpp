@@ -48,6 +48,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -274,51 +275,6 @@ class ScreenshotRunner final : public QObject {
                         controller_->hideValuePopup();
                         controller_->showShiftFace(true);
                         controller_->setTab(6);
-                      }});
-    steps_.push_back({"34-edit", [this] {
-                        controller_->configCancel();
-                        controller_->hideValuePopup();
-                        controller_->showShiftFace(false);
-                        // Adopt the first take of the sample tracks (the guest
-                        // take directory has ch00/ch01 files). Tracks without a
-                        // take keep the empty-lane placeholder.
-                        for (int track = 0; track < 6; ++track) {
-                          controller_->recorder()->setSelectedTrack(track);
-                          controller_->recorder()->selectRow(0);
-                          controller_->recorder()->activateSelected();
-                        }
-                        controller_->timeline()->refresh();
-                        // A real trim/split/gain chain so the lane shows ordered
-                        // region blocks and the undo stack has content.
-                        controller_->timeline()->setSelectedTrack(1);
-                        controller_->timeline()->beginSelection(1, 1.0);
-                        controller_->timeline()->updateSelection(17.0);
-                        controller_->timeline()->endSelection();
-                        (void)controller_->timeline()->applyOp(0, 0.0, 0.0, 0.0);
-                        controller_->timeline()->setCursorBeats(9.0);
-                        (void)controller_->timeline()->applyOp(1, 0.0, 0.0, 0.0);
-                        controller_->timeline()->beginSelection(1, 1.0);
-                        controller_->timeline()->updateSelection(5.0);
-                        controller_->timeline()->endSelection();
-                        (void)controller_->timeline()->applyOp(2, -3.0, 0.0, 0.0);
-                        controller_->recorder()->setSelectedTrack(1);
-                        controller_->recorder()->setLoopEnabled(true);
-                        controller_->recorder()->setLoopStartBeats(1.0);
-                        controller_->recorder()->setLoopEndBeats(5.0);
-                        controller_->session()->setPunchInEnabled(true);
-                        controller_->session()->setPunchInMeasure(3);
-                        controller_->session()->setPunchOutEnabled(true);
-                        controller_->session()->setPunchOutMeasure(7);
-                        controller_->timeline()->preparePeaksForDemo();
-                        controller_->timeline()->setPage(0);
-                        controller_->timeline()->setSelectedTrack(1);
-                        controller_->timeline()->setCursorBeats(3.0);
-                        controller_->setTab(8);
-                      }});
-    steps_.push_back({"34-ops", [this] {
-                        controller_->hideValuePopup();
-                        controller_->setTab(8);
-                        controller_->openConfig(QStringLiteral("timelineops"));
                       }});
     steps_.push_back({"34-pipes", [this] {
                         controller_->configCancel();
@@ -664,20 +620,6 @@ class ScreenshotRunner final : public QObject {
     steps_.push_back({"39-xy", [this] {
                         resetShot();
                         controller_->setTab(7);
-                      }});
-    steps_.push_back({"39-timeline", [this] {
-                        resetShot();
-                        for (int track = 0; track < 6; ++track) {
-                          controller_->recorder()->setSelectedTrack(track);
-                          controller_->recorder()->selectRow(0);
-                          controller_->recorder()->activateSelected();
-                        }
-                        controller_->timeline()->refresh();
-                        controller_->timeline()->preparePeaksForDemo();
-                        controller_->timeline()->setSelectedTrack(1);
-                        controller_->timeline()->setPage(0);
-                        controller_->timeline()->setCursorBeats(3.0);
-                        controller_->setTab(8);
                       }});
     steps_.push_back({"39-popup-comp", [this] {
                         resetShot();
@@ -1347,30 +1289,6 @@ class ScreenshotRunner final : public QObject {
                         controller_->selectStrip(1);
                         controller_->setTab(7);
                       }});
-    steps_.push_back({"44-timeline-empty", [this] {
-                        resetShot();
-                        primeMixerDemo();
-                        controller_->mixer()->setTrackMode(false);
-                        // One real take on track 2, so the other lanes show the
-                        // empty hint and the playing lane shows its TAKE chip.
-                        for (int track = 0; track < 6; ++track) {
-                          if (track != 1) {
-                            controller_->recorder()->setSelectedTrack(track);
-                            controller_->recorder()->clearActive();
-                          }
-                        }
-                        primeTakeFixture();
-                        controller_->timeline()->preparePeaksForDemo();
-                        controller_->timeline()->setSelectedTrack(1);
-                        controller_->timeline()->setPage(0);
-                        controller_->setTab(8);
-                      }});
-    steps_.push_back({"44-timeline-ops", [this] {
-                        resetShot();
-                        controller_->setTab(8);
-                        controller_->timeline()->clearSelection();
-                        controller_->openConfig(QStringLiteral("timelineops"));
-                      }});
     steps_.push_back({"44-nopico-popup", [this] {
                         resetShot();
                         controller_->showNoPicoInfo();
@@ -1580,8 +1498,109 @@ class ScreenshotRunner final : public QObject {
                         controller_->recorder()->setSelectedTrack(8);
                         controller_->setTab(2);
                       }});
+    // W5: EDIT tab retired - the take edit popup with the big waveform, its
+    // zoom levels, the ops strip and the live preview, plus the row/take-sheet
+    // mini-waveforms that open it.
+    steps_.push_back({"47-take-mini-waves", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->setTab(2);
+                      }});
+    steps_.push_back({"47-take-sheet", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->setTab(2);
+                        controller_->openTakeSheet(
+                            controller_->recorder()->selectedTrack());
+                      }});
+    // The popup fits the whole take: at this zoom the 256-frame buckets are
+    // denser than the pixels, so the waveform comes from the coarse level.
+    steps_.push_back({"47-edit-popup", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->setTab(2);
+                        controller_->requestEditTake(0);
+                        controller_->timeline()->setCursorBeats(6.0);
+                        controller_->timeline()->beginSelection(
+                            controller_->timeline()->selectedTrack(), 2.0);
+                        controller_->timeline()->updateSelection(14.0);
+                        controller_->timeline()->endSelection();
+                        controller_->timeline()->selectEditOp(2);  // GAIN
+                        controller_->timeline()->setEditGainDb(-6.0);
+                      }});
+    // Zoomed in past the coarse level: the fine 256-frame buckets are at least
+    // two columns wide, so the envelope is the take's own peak detail.
+    steps_.push_back({"47-edit-zoom-in", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->setTab(2);
+                        controller_->requestEditTake(0);
+                        controller_->timeline()->setCursorBeats(6.0);
+                        for (int i = 0; i < 5; ++i) controller_->timeline()->zoom(1);
+                        controller_->timeline()->beginSelection(
+                            controller_->timeline()->selectedTrack(), 5.5);
+                        controller_->timeline()->updateSelection(6.5);
+                        controller_->timeline()->endSelection();
+                      }});
+    // DELETE REGION selected: the op's preview marks the range it removes.
+    steps_.push_back({"47-edit-ops", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->setTab(2);
+                        controller_->requestEditTake(0);
+                        controller_->timeline()->beginSelection(
+                            controller_->timeline()->selectedTrack(), 4.0);
+                        controller_->timeline()->updateSelection(10.0);
+                        controller_->timeline()->endSelection();
+                        controller_->timeline()->selectEditOp(6);  // DELETE REGION
+                      }});
+    // FADE IN selected with a draft: BEFORE (stored shape, dim) against AFTER
+    // (the draft, accent) on the same waveform.
+    steps_.push_back({"47-edit-preview", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->setTab(2);
+                        controller_->requestEditTake(0);
+                        controller_->timeline()->beginSelection(
+                            controller_->timeline()->selectedTrack(), 0.0);
+                        controller_->timeline()->updateSelection(12.0);
+                        controller_->timeline()->endSelection();
+                        // The region already plays a 1-beat fade, so BEFORE
+                        // (1 beat, dim) and AFTER (4 beats, accent) differ.
+                        controller_->timeline()->selectEditOp(3);  // FADE IN
+                        controller_->timeline()->setEditFadeIn(1.0);
+                        controller_->timeline()->applyEditOp();
+                        controller_->timeline()->selectEditOp(3);
+                        controller_->timeline()->setEditFadeIn(4.0);
+                      }});
+    // APPLIED: one op on the stack, so UNDO is live and lastOp names the result.
+    steps_.push_back({"47-edit-applied", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->setTab(2);
+                        controller_->requestEditTake(0);
+                        controller_->timeline()->beginSelection(
+                            controller_->timeline()->selectedTrack(), 2.0);
+                        controller_->timeline()->updateSelection(10.0);
+                        controller_->timeline()->endSelection();
+                        controller_->timeline()->selectEditOp(2);  // GAIN
+                        controller_->timeline()->setEditGainDb(-3.0);
+                        controller_->timeline()->applyEditOp();
+                        controller_->hideValuePopup();
+                      }});
     // The mixer screens above show strips; the app's own default stays empty.
     primeMixerDemo();
+  }
+
+  // W5 shots: one audible take with its .peaks sidecar written synchronously
+  // and the recorder rows refreshed from it, so both the popup waveform and the
+  // 44 px row strips show real peaks.
+  void primeEditFixture() {
+    primeMixerDemo();
+    controller_->stop();
+    primeTakeFixture();
+    controller_->timeline()->preparePeaksForDemo();
+    controller_->recorder()->takeStateChanged();
   }
 
   // Screenshot fixture: the app starts with an empty mixer by owner contract,
@@ -1658,7 +1677,41 @@ class ScreenshotRunner final : public QObject {
     le16(32);
     tag("data");
     le32(dataBytes);
-    bytes.resize(bytes.size() + dataBytes, 0);
+    // A deterministic signal, not silence: four 2 s bars of a decaying 110 Hz
+    // tone with a per-beat accent, so the waveform shots and the mini strips
+    // show a real envelope (this is a screenshot fixture, not a take).
+    const std::size_t dataStart = bytes.size();
+    bytes.resize(dataStart + dataBytes, 0);
+    const std::uint32_t framesPerBar = frames / 4;
+    for (std::uint32_t frame = 0; frame < frames; ++frame) {
+      const double t = static_cast<double>(frame) / static_cast<double>(sampleRate);
+      const std::uint32_t bar = frame / framesPerBar;
+      const double barPhase = static_cast<double>(frame % framesPerBar) /
+                              static_cast<double>(framesPerBar);
+      const double decay = std::exp(-barPhase * 6.0);
+      const double tone = std::sin(2.0 * 3.14159265358979 * 110.0 *
+                                   (bar % 2 == 0 ? 1.0 : 1.5) * t);
+      const double accent = std::sin(2.0 * 3.14159265358979 * 2.0 *
+                                     static_cast<double>(frame) /
+                                     static_cast<double>(framesPerBar));
+      const float value = static_cast<float>(
+          0.55 * decay * tone * (0.4 + 0.6 * std::abs(accent)));
+      for (std::uint16_t channel = 0; channel < channels; ++channel) {
+        const auto offset = dataStart +
+                            static_cast<std::size_t>(frame) * channels * 4 +
+                            static_cast<std::size_t>(channel) * 4;
+        const std::uint32_t raw = [value] {
+          std::uint32_t bits = 0;
+          const float in = value;
+          std::memcpy(&bits, &in, sizeof bits);
+          return bits;
+        }();
+        for (int shift = 0; shift < 32; shift += 8) {
+          bytes[offset + static_cast<std::size_t>(shift / 8)] =
+              static_cast<unsigned char>((raw >> shift) & 0xFF);
+        }
+      }
+    }
     std::ofstream file(path, std::ios::binary);
     file.write(reinterpret_cast<const char*>(bytes.data()),
                static_cast<std::streamsize>(bytes.size()));
@@ -1710,6 +1763,7 @@ class ScreenshotRunner final : public QObject {
     controller_->closeTabGrid();
     controller_->closeBankGrid();
     controller_->closeTakeSheet();
+    controller_->closeTakeEdit();
     controller_->clearNotice();
     controller_->setFullscreen(false);
     controller_->showShiftFace(false);

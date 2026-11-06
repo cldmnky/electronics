@@ -2304,6 +2304,49 @@ void timelineAndPipeTests() {
             std::abs(wave[1] - 1.0f) < 1e-6,
         "peaks reduce to the requested waveform columns");
 
+  // EDIT popup (W5): the popup wave keeps polarity (lo, hi per column) and
+  // switches to the folded coarse level once the fine buckets are denser than
+  // the columns.
+  const auto pairs = reducePeakPairs(summary, 0.0, 4.0, 4.0, 2);
+  check(pairs.size() == 4 && std::abs(pairs[0] - 0.5f) < 1e-6 &&
+            std::abs(pairs[1] - 0.5f) < 1e-6 &&
+            std::abs(pairs[2] - 0.75f) < 1e-6 &&
+            std::abs(pairs[3] - 1.0f) < 1e-6,
+        "popup peaks keep the low/high pair for every column");
+  audio::PeakSummary coarseSummary;
+  coarseSummary.sourceFrames = 4096;
+  coarseSummary.bucketFrames = 256;
+  coarseSummary.coarseFactor = 4;
+  coarseSummary.buckets.assign(16, audio::PeakRange{0.0f, 0.1f});
+  coarseSummary.buckets[15] = audio::PeakRange{-0.9f, 0.9f};
+  coarseSummary.coarse = {audio::PeakRange{0.0f, 0.1f},
+                          audio::PeakRange{0.0f, 0.1f},
+                          audio::PeakRange{0.0f, 0.1f},
+                          audio::PeakRange{-0.9f, 0.9f}};
+  const auto coarsePairs = reducePeakPairs(coarseSummary, 0.0, 4.0, 4.0, 1);
+  check(coarsePairs.size() == 2 && std::abs(coarsePairs[0] - 0.9f) < 1e-6 &&
+            std::abs(coarsePairs[1] - 0.9f) < 1e-6,
+        "zoom plus coarse level reaches the take's own peak");
+  checkEqual(beatTextCompact(0.0), "1:1:00",
+             "popup footer beats are bar:beat:tick without padding");
+  checkEqual(beatTextCompact(4.5), "2:1:12",
+             "popup footer carries the sub-beat tick");
+  checkEqual(editOpName(EditOp::DeleteRegion), "DELETE REGION",
+             "the ops strip names the destructive verb");
+  check(editOpHasValue(EditOp::Gain) && editOpHasValue(EditOp::FadeOut) &&
+            !editOpHasValue(EditOp::Normalize),
+        "only GAIN and the fades carry a value knob");
+  check(editOpNeedsRange(EditOp::Trim) && editOpNeedsRange(EditOp::DeleteRegion) &&
+            !editOpNeedsRange(EditOp::Normalize),
+        "TRIM and DELETE REGION need IN..OUT");
+  EditOpRequest request;
+  check(editOpRequest(EditOp::FadeOut, 0.0f, 1.5, 0.75, &request) &&
+            request.op == TimelineOp::Fades && request.fadeInBeats == 0.0 &&
+            std::abs(request.fadeOutBeats - 0.75) < 1e-9,
+        "the FADE OUT card runs FADES with only the out ramp");
+  check(!editOpRequest(EditOp::Undo, 0.0f, 0.0, 0.0, &request),
+        "UNDO is an action, not a region op");
+
   check(pipeui::isKnown(1) && pipeui::isKnown(16) && !pipeui::isKnown(0) &&
             !pipeui::isKnown(17),
         "the generated schema defines the 16 pipe types");

@@ -12,6 +12,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,10 @@
 #include "session_settings.hpp"
 
 namespace mnky::app {
+
+// Mini-waveform resolution of one recorder take row (44 px strip, ~2 px per
+// column at the widest layout). One magnitude per column.
+inline constexpr int kTakeRowWaveColumns = 64;
 
 class RecorderArmModel final : public QAbstractListModel {
   Q_OBJECT
@@ -58,6 +63,7 @@ class RecorderTakeModel final : public QAbstractListModel {
     PathRole,
     ActiveRole,
     ImportedRole,
+    WaveRole,
   };
 
   struct Entry {
@@ -69,6 +75,10 @@ class RecorderTakeModel final : public QAbstractListModel {
     std::filesystem::path path;
     bool active = false;
     bool imported = false;
+    // Mini-waveform magnitudes (0..1, `kTakeRowWaveColumns` of them) reduced
+    // from the take's `.peaks` sidecar for the 44 px row strip; empty while the
+    // take has no sidecar yet (the row then draws its dotted baseline).
+    QVariantList wave;
   };
 
   explicit RecorderTakeModel(QObject* parent = nullptr);
@@ -189,6 +199,9 @@ class RecorderViewModel final : public QObject {
   Q_INVOKABLE QString renameSelected(const QString& name);
   // Display name of one take row, for the SHIFT face's selected-object line.
   Q_INVOKABLE QString takeNameAt(int row) const;
+  // The row's mini-waveform magnitudes (same data as the model's `wave` role,
+  // for surfaces that read the list by row instead of by delegate role).
+  Q_INVOKABLE QVariantList takeWave(int row) const;
   Q_INVOKABLE void deleteSelected();
   // REMOVE (docs/daw-plan.md W4): project only - the take file stays on disk,
   // the track simply stops pointing at it.
@@ -220,6 +233,10 @@ class RecorderViewModel final : public QObject {
 
  private:
   void scanTakes();
+  // Bytes, duration and the row mini-waveform for one take file. The wave comes
+  // from a cache keyed by the WAV size/mtime, so a rescan of an unchanged take
+  // folder does not re-read every sidecar.
+  void fillTakeMetrics(RecorderTakeModel::Entry& entry);
   void updateReadouts();
   std::filesystem::path selectedTakePath() const;
   std::string selectedTakeKey() const;
@@ -260,6 +277,12 @@ class RecorderViewModel final : public QObject {
   // The take name a running take will carry once it stops (the first recording
   // track's `<nn>-<name>-<n>` form), for the REC status line.
   QString recordingTakeName() const;
+  struct CachedWave {
+    std::uint64_t wavBytes = 0;
+    std::uint64_t wavMtime = 0;
+    QVariantList wave;
+  };
+  std::map<std::string, CachedWave> miniWaveCache_;
   struct ImportedTake {
     int track = 0;
     std::filesystem::path path;

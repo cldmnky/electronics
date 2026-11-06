@@ -50,6 +50,72 @@ const char* timelineOpName(TimelineOp op) {
 
 bool timelineOpAvailable(TimelineOp op) { return op != TimelineOp::Render; }
 
+const char* editOpName(EditOp op) {
+  switch (op) {
+    case EditOp::Trim:
+      return "TRIM";
+    case EditOp::Split:
+      return "SPLIT";
+    case EditOp::Gain:
+      return "GAIN";
+    case EditOp::FadeIn:
+      return "FADE IN";
+    case EditOp::FadeOut:
+      return "FADE OUT";
+    case EditOp::Normalize:
+      return "NORMALIZE";
+    case EditOp::DeleteRegion:
+      return "DELETE REGION";
+    case EditOp::Undo:
+      return "UNDO";
+  }
+  return "?";
+}
+
+bool editOpHasValue(EditOp op) {
+  return op == EditOp::Gain || op == EditOp::FadeIn || op == EditOp::FadeOut;
+}
+
+bool editOpNeedsRange(EditOp op) {
+  return op == EditOp::Trim || op == EditOp::DeleteRegion;
+}
+
+bool editOpRequest(EditOp op, float gainDb, double fadeInBeats,
+                   double fadeOutBeats, EditOpRequest* out) {
+  if (out == nullptr) return false;
+  EditOpRequest request;
+  switch (op) {
+    case EditOp::Undo:
+      return false;
+    case EditOp::Trim:
+      request.op = TimelineOp::Trim;
+      break;
+    case EditOp::Split:
+      request.op = TimelineOp::Split;
+      break;
+    case EditOp::Gain:
+      request.op = TimelineOp::Gain;
+      request.gainDb = gainDb;
+      break;
+    case EditOp::FadeIn:
+      request.op = TimelineOp::Fades;
+      request.fadeInBeats = fadeInBeats;
+      break;
+    case EditOp::FadeOut:
+      request.op = TimelineOp::Fades;
+      request.fadeOutBeats = fadeOutBeats;
+      break;
+    case EditOp::Normalize:
+      request.op = TimelineOp::Normalize;
+      break;
+    case EditOp::DeleteRegion:
+      request.op = TimelineOp::Delete;
+      break;
+  }
+  *out = request;
+  return true;
+}
+
 double clampBeat(double beats) {
   if (!std::isfinite(beats) || beats < 0.0) return 0.0;
   return std::min(beats, 100000.0);
@@ -70,6 +136,18 @@ std::string beatText(double beats) {
   const auto tick = static_cast<std::uint32_t>(
       std::llround(clamped * static_cast<double>(kTicksPerBeat)));
   return formatBarBeatTick(tick);
+}
+
+std::string beatTextCompact(double beats) {
+  const double clamped = clampBeat(beats);
+  const auto tick = static_cast<std::uint32_t>(
+      std::llround(clamped * static_cast<double>(kTicksPerBeat)));
+  const std::uint32_t bar = tick / kTicksPerBar + 1;
+  const std::uint32_t beat = (tick % kTicksPerBar) / kTicksPerBeat + 1;
+  const std::uint32_t sub = tick % kTicksPerBeat;
+  char buffer[32] = {};
+  std::snprintf(buffer, sizeof buffer, "%u:%u:%02u", bar, beat, sub);
+  return buffer;
 }
 
 double regionEndBeats(const session::TakeRegion& region,
@@ -259,6 +337,64 @@ std::vector<float> reducePeaks(const audio::PeakSummary& summary,
       peak = std::max(peak, std::max(std::abs(range.min), std::abs(range.max)));
     }
     out.push_back(std::clamp(peak, 0.0f, 1.0f));
+  }
+  return out;
+}
+
+std::vector<float> reducePeakPairs(const audio::PeakSummary& summary,
+                                   double startBeats, double endBeats,
+                                   double takeBeats, int columns) {
+  std::vector<float> out;
+  if (columns <= 0 || summary.buckets.empty() || summary.sourceFrames == 0 ||
+      !(takeBeats > 0.0)) {
+    return out;
+  }
+  const double start = std::clamp(std::min(startBeats, endBeats), 0.0, takeBeats);
+  const double end = std::clamp(std::max(startBeats, endBeats), 0.0, takeBeats);
+  if (!(end > start)) return out;
+  const double frames = static_cast<double>(summary.sourceFrames);
+  const double startFrame = start / takeBeats * frames;
+  const double endFrame = end / takeBeats * frames;
+  const double span = std::max(1.0, endFrame - startFrame);
+  const double bucketFrames =
+      static_cast<double>(std::max<std::uint32_t>(1, summary.bucketFrames));
+  // Level choice: the fine 256-frame buckets stay "one bucket >= 2 columns"
+  // down to half a column per bucket; below that the folded coarse level is the
+  // source, so a zoomed-out window never touches every fine bucket.
+  const bool fineIsWide = span / bucketFrames <= static_cast<double>(columns) * 0.5;
+  const bool useCoarse = !fineIsWide && !summary.coarse.empty();
+  const auto& level = useCoarse ? summary.coarse : summary.buckets;
+  const double levelFrames =
+      useCoarse ? bucketFrames * static_cast<double>(
+                                    std::max<std::uint32_t>(1, summary.coarseFactor))
+                : bucketFrames;
+  out.reserve(static_cast<std::size_t>(columns) * 2);
+  for (int column = 0; column < columns; ++column) {
+    const double from = startFrame + span * static_cast<double>(column) /
+                                         static_cast<double>(columns);
+    const double to = startFrame + span * static_cast<double>(column + 1) /
+                                       static_cast<double>(columns);
+    const auto first = static_cast<std::size_t>(
+        std::clamp<std::uint64_t>(
+            static_cast<std::uint64_t>(from / levelFrames), 0,
+            level.size() - 1));
+    // Half-open column window: the exclusive end loses one frame so a boundary
+    // entry does not leak into the previous column.
+    const double lastFrame = std::max(from, to - 1.0);
+    auto last = static_cast<std::size_t>(
+        std::clamp<std::uint64_t>(
+            static_cast<std::uint64_t>(lastFrame / levelFrames), 0,
+            level.size() - 1));
+    if (last < first) last = first;
+    float lo = 0.0f;
+    float hi = 0.0f;
+    for (std::size_t entry = first; entry <= last; ++entry) {
+      const auto& range = level[entry];
+      lo = std::max(lo, std::abs(range.min));
+      hi = std::max(hi, range.max);
+    }
+    out.push_back(std::clamp(lo, 0.0f, 1.0f));
+    out.push_back(std::clamp(hi, 0.0f, 1.0f));
   }
   return out;
 }

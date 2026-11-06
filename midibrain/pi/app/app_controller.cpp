@@ -17,14 +17,13 @@
 
 namespace mnky::app {
 namespace {
-// Tab order after the FX tab retired into the per-track rack popup:
-// 0 Mixer, 1 Routing, 2 Recorder, 3 System, 4 Projects, 5 Monitor, 6 EQ,
-// 7 X/Y, 8 EDIT (logic.hpp kScreenCount keeps the same count).
+// Tab order after the FX tab retired into the per-track rack popup and EDIT
+// retired into the take edit popup: 0 Mixer, 1 Routing, 2 Recorder, 3 System,
+// 4 Projects, 5 Monitor, 6 EQ, 7 X/Y (logic.hpp kScreenCount matches).
 constexpr int kProjectsTabIndex = 4;
 constexpr int kMonitorTabIndex = 5;
 constexpr int kEqTabIndex = 6;
 constexpr int kXyTabIndex = 7;
-constexpr int kEditTabIndex = 8;
 
 std::uint64_t nowMs() {
   using namespace std::chrono;
@@ -106,6 +105,10 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
           });
   connect(recorderVm_.get(), &RecorderViewModel::activeTakeChanged, mixerVm_.get(),
           &MixerViewModel::notifyActiveTakesChanged);
+  // The take edit popup is a modal: its own focus ring replaces the tab's the
+  // moment it opens or closes, so NAV can never walk behind it.
+  connect(timelineVm_.get(), &TimelineViewModel::editOpenChanged, this,
+          [this] { rebuildFocusIds(); });
   // Live device pickers: the audio layer falls back to a working backend when a
   // requested device cannot open. The screen keeps the fallback note and this
   // popup says what happened, so a pick never fails silently.
@@ -200,6 +203,7 @@ void AppController::setTab(int tab) {
   closeBankGrid();
   closeTempoPopup();
   closeTakeSheet();
+  closeTakeEdit();
   if (clamped == tab_) return;
   // D3: a tab without a second face leaves the SHIFT face instead of landing
   // in a dead state with an empty ring.
@@ -448,7 +452,7 @@ void AppController::chooseBankPage(int page) {
 }
 
 bool AppController::tabHasShiftFace(int tab) const {
-  // D3: tabs 5 (MIDI), 7 (XY) and 8 (EDIT) have no second face.
+  // D3: tabs 5 (MIDI) and 7 (XY) have no second face.
   return tab <= 3 || tab == kProjectsTabIndex || tab == kEqTabIndex;
 }
 
@@ -813,6 +817,38 @@ void AppController::chooseTakeRow(int row) {
   if (entry != nullptr) {
     showTextPopup(QStringLiteral("TAKE ACTIVE"), entry->name);
   }
+}
+
+void AppController::openTakeEdit(int row) {
+  const auto* entry = recorderVm_->takes()->entry(row);
+  if (entry == nullptr) {
+    showNotice(NoticeWarn, QStringLiteral("select a take row first (...)"));
+    return;
+  }
+  // Copy everything this call needs before the activation below rescans the
+  // take folder: the row storage is freed by that rescan (the SIGBUS class the
+  // clip-click tap gate covers).
+  const QString name = entry->name;
+  const bool active = entry->active;
+  const int track = recorderVm_->selectedTrack();
+  recorderVm_->selectRow(row);
+  if (!active) {
+    // Region edits are applied to the track's ACTIVE take, so the EDIT subject
+    // has to be the take the track plays. Activating is a pointer change: no
+    // file is written and UNDO/CANCEL never touch audio.
+    recorderVm_->activateSelected();
+  }
+  closeTakeSheet();
+  timelineVm_->openEdit(track);
+  showNotice(NoticeInfo,
+             QStringLiteral("EDIT %1 - non-destructive (RENDER writes a new take)")
+                 .arg(name));
+}
+
+void AppController::closeTakeEdit() {
+  if (timelineVm_ == nullptr || !timelineVm_->editOpen()) return;
+  timelineVm_->closeEdit();
+  rebuildFocusIds();
 }
 
 void AppController::chooseLiveInput() {
@@ -1369,14 +1405,14 @@ bool AppController::performGridEdit(const Intent& intent) {
                   timelineVm_->beatTextOf(timelineVm_->cursorBeats()));
     return true;
   }
-  if (id == QStringLiteral("timeline.in") || id == QStringLiteral("timeline.out")) {
+  if (id == QStringLiteral("timeline.in") || id == QStringLiteral("timeline.out") ||
+      id == QStringLiteral("edit.in") || id == QStringLiteral("edit.out")) {
     const double stepBeats = shiftHeld_ ? timeline::kStepCoarseBeats
                                         : timeline::kStepFineBeats;
-    const QString text = id == QStringLiteral("timeline.in")
-                             ? timelineVm_->nudgeIn(dx * stepBeats)
-                             : timelineVm_->nudgeOut(dx * stepBeats);
-    showTextPopup(id == QStringLiteral("timeline.in") ? QStringLiteral("REGION IN")
-                                                      : QStringLiteral("REGION OUT"),
+    const bool isIn = id.endsWith(QStringLiteral(".in"));
+    const QString text = isIn ? timelineVm_->nudgeIn(dx * stepBeats)
+                              : timelineVm_->nudgeOut(dx * stepBeats);
+    showTextPopup(isIn ? QStringLiteral("REGION IN") : QStringLiteral("REGION OUT"),
                   text);
     return true;
   }
@@ -1451,6 +1487,8 @@ void AppController::updateShiftState(const LinkStatus& status) {
         closeTabGrid();
       } else if (takeSheetOpen_) {
         closeTakeSheet();
+      } else if (timelineVm_->editOpen()) {
+        closeTakeEdit();
       } else if (panelMode_ == QStringLiteral("edit")) {
         setPanelMode(QStringLiteral("navigate"));
       }
@@ -1559,6 +1597,12 @@ bool AppController::isEditableFocus(const QString& focusId) const {
       id == QStringLiteral("timeline.out")) {
     return true;
   }
+  if (id == QStringLiteral("edit.in") || id == QStringLiteral("edit.out") ||
+      id == QStringLiteral("edit.value") || id == QStringLiteral("edit.op.0") ||
+      id == QStringLiteral("edit.op.1") || id == QStringLiteral("edit.op.2") ||
+      id == QStringLiteral("edit.op.3") || id == QStringLiteral("edit.op.4")) {
+    return true;
+  }
   return false;
 }
 
@@ -1567,6 +1611,57 @@ void AppController::activateFocus() {
   if (focusId.startsWith(QStringLiteral("shift."))) focusId = focusId.mid(6);
   if (focusId.isEmpty()) return;
   const auto parts = focusId.split(QLatin1Char('.'));
+
+  if (timelineVm_ != nullptr && timelineVm_->editOpen() && parts.size() >= 2 &&
+      parts[0] == QStringLiteral("edit")) {
+    const QString what = parts[1];
+    const int index = parts.size() >= 3 ? parts[2].toInt() : 0;
+    if (what == QStringLiteral("close")) {
+      closeTakeEdit();
+    } else if (what == QStringLiteral("zoom")) {
+      timelineVm_->zoom(parts.size() >= 3 && parts[2] == QStringLiteral("in") ? 1 : -1);
+    } else if (what == QStringLiteral("op")) {
+      timelineVm_->selectEditOp(index);
+      showTextPopup(QStringLiteral("REGION OP"), timelineVm_->editOpName());
+    } else if (what == QStringLiteral("in")) {
+      timelineVm_->setInAtCursor();
+      showTextPopup(QStringLiteral("REGION IN"),
+                    QString::fromStdString(timeline::beatTextCompact(
+                        timelineVm_->inBeats())));
+      setPanelMode(QStringLiteral("edit"));
+    } else if (what == QStringLiteral("out")) {
+      timelineVm_->setOutAtCursor();
+      showTextPopup(QStringLiteral("REGION OUT"),
+                    QString::fromStdString(timeline::beatTextCompact(
+                        timelineVm_->outBeats())));
+      setPanelMode(QStringLiteral("edit"));
+    } else if (what == QStringLiteral("value")) {
+      setPanelMode(QStringLiteral("edit"));
+    } else if (what == QStringLiteral("apply")) {
+      const QString error = timelineVm_->applyEditOp();
+      if (error.isEmpty()) {
+        showNotice(NoticeInfo, QStringLiteral("APPLIED %1 - %2 REGION(S)%3")
+                                   .arg(timelineVm_->editOpName())
+                                   .arg(timelineVm_->regionCount())
+                                   .arg(timelineVm_->canUndo()
+                                            ? QStringLiteral(" - UNDO available")
+                                            : QString()));
+      } else {
+        showNotice(NoticeWarn, error);
+        showTextPopup(QStringLiteral("NOT APPLIED"), error);
+      }
+    } else if (what == QStringLiteral("undo")) {
+      if (timelineVm_->undo()) {
+        showNotice(NoticeInfo, QStringLiteral("EDIT UNDO - %1 REGION(S)")
+                                   .arg(timelineVm_->regionCount()));
+      } else {
+        showNotice(NoticeWarn, QStringLiteral("EDIT UNDO - nothing to undo"));
+      }
+    } else if (what == QStringLiteral("render")) {
+      renderRegionToTrack();
+    }
+    return;
+  }
 
   if (fxVm_ && fxVm_->open() && parts.size() >= 2 &&
       parts[0] == QStringLiteral("trackfx")) {
@@ -2247,16 +2342,10 @@ void AppController::activateFocus() {
   }
 
   if (parts.size() >= 2 && parts[0] == QStringLiteral("timeline")) {
-    if (parts[1] == QStringLiteral("page") && parts.size() >= 3) {
-      if (parts[2] == QStringLiteral("prev")) timelineVm_->prevPage();
-      else timelineVm_->nextPage();
-    } else if (parts[1] == QStringLiteral("view") && parts.size() >= 3) {
+    if (parts[1] == QStringLiteral("view") && parts.size() >= 3) {
       timelineVm_->scrollView(parts[2] == QStringLiteral("prev") ? -1 : 1);
     } else if (parts[1] == QStringLiteral("zoom") && parts.size() >= 3) {
       timelineVm_->zoom(parts[2] == QStringLiteral("in") ? 1 : -1);
-    } else if (parts[1] == QStringLiteral("lane") && parts.size() >= 3) {
-      // A10: the lane label picks the take for that track.
-      openTakeSheet(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("cursor")) {
       setPanelMode(QStringLiteral("edit"));
       showTextPopup(QStringLiteral("TIMELINE CURSOR"),
@@ -2271,14 +2360,6 @@ void AppController::activateFocus() {
       setPanelMode(QStringLiteral("edit"));
       showTextPopup(QStringLiteral("REGION OUT"),
                     timelineVm_->beatTextOf(timelineVm_->outBeats()));
-    } else if (parts[1] == QStringLiteral("ops")) {
-      openConfig(QStringLiteral("timelineops"));
-    } else if (parts[1] == QStringLiteral("undo")) {
-      if (timelineVm_->undo()) {
-        showTextPopup(QStringLiteral("EDIT UNDO"), timelineVm_->undoText());
-      } else {
-        showTextPopup(QStringLiteral("EDIT UNDO"), QStringLiteral("nothing to undo"));
-      }
     }
     return;
   }
@@ -2303,6 +2384,62 @@ void AppController::adjustFocused(int detents, bool fine) {
   if (focusId.isEmpty() || detents == 0) return;
   const auto parts = focusId.split(QLatin1Char('.'));
   const double step = static_cast<double>(detents);
+
+  if (timelineVm_ != nullptr && timelineVm_->editOpen() && parts.size() >= 2 &&
+      parts[0] == QStringLiteral("edit")) {
+    // Panel parity in the popup: the knob moves whatever the ring stopped on -
+    // an edge handle, the focused op, the op's value, or the zoom level.
+    const QString what = parts[1];
+    if (what == QStringLiteral("in") || what == QStringLiteral("out")) {
+      const double stepBeats = step * (shiftHeld_ ? timeline::kStepCoarseBeats
+                                                  : timeline::kStepFineBeats);
+      if (what == QStringLiteral("in")) {
+        (void)timelineVm_->nudgeIn(stepBeats);
+      } else {
+        (void)timelineVm_->nudgeOut(stepBeats);
+      }
+      showTextPopup(what == QStringLiteral("in") ? QStringLiteral("REGION IN")
+                                                 : QStringLiteral("REGION OUT"),
+                    QString::fromStdString(timeline::beatTextCompact(
+                        what == QStringLiteral("in") ? timelineVm_->inBeats()
+                                                     : timelineVm_->outBeats())));
+    } else if (what == QStringLiteral("value")) {
+      const auto op = static_cast<timeline::EditOp>(timelineVm_->editOp());
+      if (op == timeline::EditOp::Gain) {
+        const double next =
+            timelineVm_->previewGainDb() + step * (fine ? 0.1 : 0.5);
+        timelineVm_->setEditGainDb(next);
+        showValuePopup(QStringLiteral("REGION GAIN"), QStringLiteral("db"),
+                       timelineVm_->previewGainDb());
+      } else if (op == timeline::EditOp::FadeIn) {
+        const double next =
+            timelineVm_->previewFadeInBeats() + step * (fine ? 0.1 : 0.25);
+        timelineVm_->setEditFadeIn(next);
+        showValuePopup(QStringLiteral("FADE IN"), QStringLiteral("generic"),
+                       timelineVm_->previewFadeInBeats());
+      } else if (op == timeline::EditOp::FadeOut) {
+        const double next =
+            timelineVm_->previewFadeOutBeats() + step * (fine ? 0.1 : 0.25);
+        timelineVm_->setEditFadeOut(next);
+        showValuePopup(QStringLiteral("FADE OUT"), QStringLiteral("generic"),
+                       timelineVm_->previewFadeOutBeats());
+      } else {
+        showTextPopup(QStringLiteral("REGION OP"),
+                      timelineVm_->editOpName() + QStringLiteral(" - APPLY runs it"));
+      }
+    } else if (what == QStringLiteral("op")) {
+      timelineVm_->selectEditOp(moveIndex(timelineVm_->editOp(),
+                                         detents > 0 ? 1 : -1,
+                                         timeline::kEditOpCount));
+      showTextPopup(QStringLiteral("REGION OP"), timelineVm_->editOpName());
+    } else if (what == QStringLiteral("zoom")) {
+      timelineVm_->zoom(detents > 0 ? 1 : -1);
+      showTextPopup(QStringLiteral("ZOOM"),
+                    QString::number(timelineVm_->viewBeats(), 'f', 2) +
+                        QStringLiteral(" beats across"));
+    }
+    return;
+  }
 
   if (parts.size() >= 3 && parts[0] == QStringLiteral("mixer") &&
       parts[1] == QStringLiteral("bank") && parts[2] == QStringLiteral("pages")) {
@@ -2855,6 +2992,22 @@ void AppController::rebuildFocusIds() {
                         .arg(page.value(QStringLiteral("index")).toInt()));
     }
     ids.push_back(QStringLiteral("bank.page.close"));
+  } else if (timelineVm_ != nullptr && timelineVm_->editOpen()) {
+    // EDIT popup: the modal traps NAV. The ring walks CLOSE, the two zoom
+    // verbs, the two edge handles, the eight op cards, the focused op's value
+    // chip and the three verbs (APPLY / UNDO / RENDER).
+    ids.push_back(QStringLiteral("edit.close"));
+    ids.push_back(QStringLiteral("edit.zoom.out"));
+    ids.push_back(QStringLiteral("edit.zoom.in"));
+    ids.push_back(QStringLiteral("edit.in"));
+    ids.push_back(QStringLiteral("edit.out"));
+    for (int op = 0; op < timeline::kEditOpCount; ++op) {
+      ids.push_back(QStringLiteral("edit.op.%1").arg(op));
+    }
+    ids.push_back(QStringLiteral("edit.value"));
+    ids.push_back(QStringLiteral("edit.apply"));
+    ids.push_back(QStringLiteral("edit.undo"));
+    ids.push_back(QStringLiteral("edit.render"));
   } else if (takeSheetOpen_) {
     ids.push_back(QStringLiteral("take.sheet.live"));
     for (int row = 0; row < recorderVm_->takes()->rowCount(); ++row) {
@@ -3338,27 +3491,6 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("xy.reverb.params"));
         break;
       }
-      case kEditTabIndex: {
-        // EDIT timeline: page/view/zoom, the six visible lanes, the panel
-        // cursor and the two region edges, then the ConfigPopup ops and undo.
-        ids.push_back(QStringLiteral("timeline.page.prev"));
-        ids.push_back(QStringLiteral("timeline.page.next"));
-        ids.push_back(QStringLiteral("timeline.view.prev"));
-        ids.push_back(QStringLiteral("timeline.view.next"));
-        ids.push_back(QStringLiteral("timeline.zoom.out"));
-        ids.push_back(QStringLiteral("timeline.zoom.in"));
-        for (int offset = 0; offset < timeline::kTracksPerPage; ++offset) {
-          const int track = timelineVm_->page() * timeline::kTracksPerPage + offset;
-          if (track >= kNumStrips) break;
-          ids.push_back(QStringLiteral("timeline.lane.%1").arg(track));
-        }
-        ids.push_back(QStringLiteral("timeline.cursor"));
-        ids.push_back(QStringLiteral("timeline.in"));
-        ids.push_back(QStringLiteral("timeline.out"));
-        ids.push_back(QStringLiteral("timeline.ops"));
-        ids.push_back(QStringLiteral("timeline.undo"));
-        break;
-      }
       default:
         break;
     }
@@ -3448,7 +3580,7 @@ void AppController::takeAction(int action) {
       showNotice(NoticeInfo, QStringLiteral("take %1 is ACTIVE").arg(
                                  recorderVm_->activeTake()));
       break;
-    case 1:  // EDIT
+    case 1:  // EDIT (the take edit popup, plan W5)
       requestEditTake(row);
       break;
     case 2:  // RENAME (file + mapping)
@@ -3486,11 +3618,9 @@ void AppController::openTakeActions(int row) {
 }
 
 void AppController::requestEditTake(int row) {
-  const auto* entry = recorderVm_->takes()->entry(row);
-  if (entry == nullptr) return;
-  recorderVm_->selectRow(row);
-  configVm_->setTakeTarget(row, entry->name);
-  openConfigInternal(QStringLiteral("takeedit"));
+  // Every EDIT affordance (take row button, "..." menu, take sheet) lands in
+  // the same popup; the placeholder config kind is gone with the EDIT tab.
+  openTakeEdit(row);
 }
 
 void AppController::requestRemoveTake() {
@@ -3970,6 +4100,13 @@ void AppController::hideValuePopup() {
   valuePopupVisible_ = false;
   valuePopupTimer_.stop();
   emit valuePopupChanged();
+}
+
+void AppController::announce(const QString& kind, const QString& text) {
+  const NoticeKind severity = kind == QStringLiteral("warn")   ? NoticeWarn
+                              : kind == QStringLiteral("error") ? NoticeError
+                                                                : NoticeInfo;
+  showNotice(severity, text);
 }
 
 void AppController::setTouchAnchorY(double y) {

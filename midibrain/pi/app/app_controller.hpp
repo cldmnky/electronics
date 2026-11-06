@@ -181,6 +181,11 @@ class AppController final : public QObject {
   Q_INVOKABLE void showValuePopup(const QString& label, const QString& kind,
                                   double value);
   Q_INVOKABLE void showTextPopup(const QString& label, const QString& text);
+  // The shared notice slot, callable from QML: `kind` is "info", "warn" or
+  // "error" (the same severity/expiry rules the controller uses internally).
+  // Screens and popups announce actions here instead of inventing local status
+  // lines, so every action lands in the one slot.
+  Q_INVOKABLE void announce(const QString& kind, const QString& text);
   Q_INVOKABLE void hideValuePopup();
 
   MixerViewModel* mixer() { return mixerVm_.get(); }
@@ -279,12 +284,17 @@ class AppController final : public QObject {
   // A4: rename a live track through the shared keypad. The strip name's 600 ms
   // long-press and the channel popout's RENAME button both land here.
   Q_INVOKABLE void requestRenameTrack(int slot);
-  // A10: EDIT lane label -> "TAKE FOR TRACK nn" sheet; choosing a row makes it
-  // ACTIVE and repaints the lanes.
+  // A10: the recorder header -> "TAKE FOR TRACK nn" sheet; choosing a row makes
+  // it ACTIVE and repaints the strip/waveforms.
   Q_INVOKABLE void openTakeSheet(int track);
   Q_INVOKABLE void closeTakeSheet();
   Q_INVOKABLE void chooseTakeRow(int row);
   Q_INVOKABLE void chooseLiveInput();
+  // W5: the take edit popup. Every EDIT affordance (recorder take row, the
+  // row's "..." menu, the take sheet) opens it for one take; opening makes that
+  // take ACTIVE because region edits are applied to the track's active take.
+  Q_INVOKABLE void openTakeEdit(int row);
+  Q_INVOKABLE void closeTakeEdit();
   // A9: arm a capture without a target, then pick the target by touching it.
   Q_INVOKABLE void armLearnTargetCapture();
   Q_INVOKABLE void learnTargetTouched(const QString& focusId);

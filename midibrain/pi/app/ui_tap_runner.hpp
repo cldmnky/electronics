@@ -54,6 +54,10 @@ class UiTapRunner final : public QObject {
     QStringList terminalIds;  // tapped only after every other target
     bool onlyTerminal = false;
     bool expectTargets = false;
+    // Drag the terminal targets by a few pixels before releasing, so a handler
+    // that only reacts to onPositionChanged (the EDIT edge handles) is covered
+    // by the run and not only by the press.
+    bool dragTerminal = false;
   };
 
   void buildScenarios();
@@ -76,7 +80,7 @@ class UiTapRunner final : public QObject {
   void scheduleNext(int delayMs);
   std::vector<Target> visibleTargets() const;
   static void collectTargets(QQuickItem* item, std::vector<Target>& targets);
-  static bool tap(QQuickWindow* window, QQuickItem* item);
+  static bool tap(QQuickWindow* window, QQuickItem* item, int dragPixels = 0);
   static bool isQmlWarning(const QMessageLogContext& context,
                            const QString& message);
   void recordQmlWarning(const QMessageLogContext& context, const QString& message);

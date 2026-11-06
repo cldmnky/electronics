@@ -2,10 +2,11 @@ import QtQuick
 import Mnkybox 1.0
 import "../components"
 
-// RECORDER primary: transport, track selection, arm/start and the take list.
-// SHIFT: take management (import/live/active/rename/delete), the take loop and
-// punch markers. The primary face keeps the take list and transport; every
-// management action lives on SHIFT.
+// RECORDER primary: transport, track selection, arm/start and the take list
+// with a 44 px mini-waveform per row and an EDIT affordance that opens the take
+// edit popup (plan W5). The ACTIVE readout opens TAKE FOR TRACK nn - the sheet
+// that used to live on the retired EDIT tab. SHIFT keeps take management
+// (import/live/active/rename/delete), the take loop and punch markers.
 Item {
     id: screen
 
@@ -36,6 +37,7 @@ Item {
                 elide: Text.ElideRight
             }
             Text {
+                id: activeReadout
                 width: parent.width - parent.width * 0.55 - Style.gap
                 height: parent.height
                 text: "ACTIVE  " + recorder.activeTake
@@ -45,6 +47,12 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideMiddle
+                // The take-sheet opener: the sheet left the retired EDIT tab and
+                // now lives here, on the surface that owns the takes.
+                property string focusId: "recorder.takesheet"
+                TapHandler {
+                    onTapped: app.openTakeSheet(recorder.selectedTrack)
+                }
             }
         }
 
@@ -221,7 +229,7 @@ Item {
                 }
                 Text {
                     x: 72
-                    width: parent.width * 0.44
+                    width: parent.width * 0.30
                     height: parent.height
                     text: (model.imported ? "PTR  " : "") + model.name
                     color: Style.text
@@ -230,10 +238,31 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideMiddle
                 }
+                // W5: the row's mini-waveform (44 px strip). Tapping it opens
+                // the take edit popup; the model carries the .peaks reduction,
+                // so the row paints without touching the disk.
+                Item {
+                    id: miniWave
+                    x: 72 + parent.width * 0.30 + 6
+                    width: 132
+                    height: Style.touch - 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    property string focusId: "recorder.take.wave." + index
+
+                    TimelineWave {
+                        anchors.fill: parent
+                        values: model.wave
+                        placeholderText: ""
+                        waveColor: model.active ? Style.accent : Style.textDim
+                    }
+                    TapHandler {
+                        onTapped: app.openTakeEdit(index)
+                    }
+                }
                 Text {
-                    anchors.right: parent.right
-                    anchors.rightMargin: 52
-                    width: parent.width * 0.30
+                    anchors.right: editButton.left
+                    anchors.rightMargin: 6
+                    width: Math.max(90, parent.width * 0.24)
                     height: parent.height
                     text: model.duration + "  -  " + model.bytes
                     color: Style.textDim
@@ -241,6 +270,31 @@ Item {
                     horizontalAlignment: Text.AlignRight
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
+                }
+                // W5: EDIT opens the take edit popup for this row.
+                Rectangle {
+                    id: editButton
+                    anchors.right: selectTarget.left
+                    anchors.rightMargin: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 64
+                    height: Style.touch - 4
+                    radius: Style.corner
+                    color: Style.panelDark
+                    border.width: 1
+                    border.color: Style.outline
+                    property string focusId: "recorder.take.edit." + index
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "EDIT"
+                        color: Style.accent
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
+                    }
+                    TapHandler {
+                        onTapped: app.requestEditTake(index)
+                    }
                 }
                 // A3: the row body loads the take; "..." opens the row actions
                 // (docs/daw-plan.md W4).
@@ -527,6 +581,200 @@ Item {
             height: parent.height - Style.touch * 3 - Style.gap * 3
             focusPrefix: "shift.punch"
             compact: true
+        }
+    }
+
+
+    // TAKE FOR TRACK nn (A10): the sheet that used to live on the EDIT tab. The
+    // ACTIVE readout opens it; a row makes that take ACTIVE, EDIT opens the take
+    // edit popup for it, and LIVE INPUT clears the pointer. Every row carries its
+    // own 44 px mini-waveform.
+    Rectangle {
+        id: takeSheet
+
+        visible: app.takeSheetOpen
+        anchors.fill: parent
+        color: "#cc000000"
+        z: 60
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {}
+        }
+
+        Rectangle {
+            width: Math.min(620, parent.width - 24)
+            height: Math.min(parent.height - 8, 24 + 16 + Style.touch + 8 +
+                            Math.min(5, recorder.takes.count) * Style.touch +
+                            Style.gap * 4)
+            anchors.centerIn: parent
+            color: Style.raised
+            radius: Style.cornerPanel
+            border.width: 2
+            border.color: Style.accent
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: Style.gap
+
+                Row {
+                    width: parent.width
+                    height: 24
+
+                    Text {
+                        width: parent.width - 92
+                        height: parent.height
+                        text: "TAKE FOR TRACK " +
+                              String(app.takeSheetTrack + 1).padStart(2, "0")
+                        color: Style.text
+                        font.pixelSize: Style.fontTitle
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TouchButton {
+                        width: 92
+                        height: parent.height
+                        text: "CLOSE"
+                        textSize: Style.fontSmall
+                        variant: "ghost"
+                        focusId: "take.sheet.close"
+                        onClicked: app.closeTakeSheet()
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: "tap a take to make it ACTIVE - EDIT opens the waveform"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: Style.touch
+                    radius: Style.corner
+                    property string focusId: "take.sheet.live"
+                    color: Style.panelDark
+                    border.width: app.focusId === focusId ? 2 : Style.outlineWidth
+                    border.color: app.focusId === focusId ? Style.accent : Style.outline
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8
+                        width: parent.width - 16
+                        height: parent.height
+                        text: "LIVE INPUT"
+                        color: Style.textDim
+                        font.pixelSize: Style.fontBody
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TapHandler {
+                        onTapped: app.chooseLiveInput()
+                    }
+                }
+
+                ListView {
+                    width: parent.width
+                    height: Math.min(5, recorder.takes.count) * Style.touch
+                    clip: true
+                    model: recorder.takes
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    delegate: Rectangle {
+                        width: ListView.view.width
+                        height: Style.touch
+                        radius: Style.corner
+                        color: model.active ? Style.raised : Style.panelDark
+                        border.width: model.active ? 2 : Style.outlineWidth
+                        border.color: model.active ? Style.accent : Style.outline
+
+                        // The pick target stops before EDIT, so a tap is never
+                        // both a pick and an edit.
+                        Item {
+                            x: 0
+                            y: 0
+                            width: parent.width - 68
+                            height: parent.height
+                            property string focusId: "take.sheet.row." + index
+
+                            Text {
+                                x: 10
+                                width: 64
+                                height: parent.height
+                                text: model.active ? "ACTIVE" : ""
+                                color: Style.accent
+                                font.pixelSize: Style.fontSmall
+                                font.weight: Font.DemiBold
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            Text {
+                                x: 78
+                                width: parent.width - 78 - 104
+                                height: parent.height
+                                text: model.name
+                                color: Style.text
+                                font.pixelSize: Style.fontBody
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideMiddle
+                            }
+                            Item {
+                                x: parent.width - 156
+                                width: 100
+                                height: Style.touch - 8
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                TimelineWave {
+                                    anchors.fill: parent
+                                    values: recorder.takeWave(index)
+                                    placeholderText: ""
+                                    waveColor: model.active ? Style.accent : Style.textDim
+                                }
+                            }
+                            Text {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 4
+                                width: 48
+                                height: parent.height
+                                text: model.duration
+                                color: Style.textDim
+                                font.pixelSize: Style.fontSmall
+                                horizontalAlignment: Text.AlignRight
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            TapHandler {
+                                onTapped: app.chooseTakeRow(index)
+                            }
+                        }
+                        Rectangle {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 4
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 60
+                            height: Style.touch - 4
+                            radius: Style.corner
+                            color: Style.panelDark
+                            border.width: 1
+                            border.color: Style.outline
+                            property string focusId: "take.sheet.edit." + index
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "EDIT"
+                                color: Style.accent
+                                font.pixelSize: Style.fontSmall
+                                font.weight: Font.DemiBold
+                            }
+                            TapHandler {
+                                onTapped: app.requestEditTake(index)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

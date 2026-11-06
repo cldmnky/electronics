@@ -8,9 +8,11 @@
 #include <system_error>
 #include <utility>
 
+#include "audio/peaks.hpp"
 #include "logic.hpp"
 #include "logging.hpp"
 #include "project_logic.hpp"
+#include "timeline_model.hpp"
 #include "wav_info.hpp"
 
 namespace mnky::app {
@@ -134,6 +136,8 @@ QVariant RecorderTakeModel::data(const QModelIndex& index, int role) const {
       return entry.active;
     case ImportedRole:
       return entry.imported;
+    case WaveRole:
+      return entry.wave;
     default:
       break;
   }
@@ -147,7 +151,8 @@ QHash<int, QByteArray> RecorderTakeModel::roleNames() const {
           {BytesRole, "bytes"},
           {PathRole, "path"},
           {ActiveRole, "active"},
-          {ImportedRole, "imported"}};
+          {ImportedRole, "imported"},
+          {WaveRole, "wave"}};
 }
 
 void RecorderTakeModel::setEntries(std::vector<Entry> entries) {
@@ -407,6 +412,11 @@ QString RecorderViewModel::importTake(const QString& path) {
   return {};
 }
 
+QVariantList RecorderViewModel::takeWave(int row) const {
+  const auto* entry = takes_.entry(row);
+  return entry == nullptr ? QVariantList() : entry->wave;
+}
+
 QString RecorderViewModel::takeNameAt(int row) const {
   const auto* entry = takes_.entry(row);
   return entry == nullptr ? QString() : entry->name;
@@ -619,6 +629,42 @@ void RecorderViewModel::resyncActiveTakes() {
   for (int track = 0; track < audio::kMaxTracks; ++track) syncActiveTake(track);
 }
 
+void RecorderViewModel::fillTakeMetrics(RecorderTakeModel::Entry& entry) {
+  std::error_code sizeError;
+  const auto size = std::filesystem::file_size(entry.path, sizeError);
+  if (!sizeError) entry.bytes = size;
+  entry.seconds = wavDurationSeconds(entry.path);
+  const std::string key = entry.path.string();
+  std::uint64_t mtime = 0;
+  std::error_code timeError;
+  const auto stamp = std::filesystem::last_write_time(entry.path, timeError);
+  if (!timeError) {
+    mtime = static_cast<std::uint64_t>(stamp.time_since_epoch().count());
+  }
+  if (const auto cached = miniWaveCache_.find(key); cached != miniWaveCache_.end()) {
+    if (cached->second.wavBytes == entry.bytes && cached->second.wavMtime == mtime) {
+      entry.wave = cached->second.wave;
+      return;
+    }
+  }
+  QVariantList wave;
+  const double beats =
+      timeline::takeLengthBeats(entry.seconds, state_.tempoX100.load());
+  audio::PeakSummary summary;
+  std::string error;
+  if (beats > 0.0 && audio::readPeaks(key, summary, &error)) {
+    // 64 columns is the row strip's resolution: one magnitude per ~2 px.
+    const auto reduced = timeline::reducePeaks(summary, 0.0, beats, beats,
+                                               kTakeRowWaveColumns);
+    wave.reserve(static_cast<int>(reduced.size()));
+    for (const float value : reduced) wave.push_back(value);
+  }
+  // Only a real reduction is cached: a missing sidecar must be retried on the
+  // next scan, because the edit popup's scan writes it without touching the WAV.
+  if (!wave.isEmpty()) miniWaveCache_[key] = CachedWave{entry.bytes, mtime, wave};
+  entry.wave = wave;
+}
+
 void RecorderViewModel::scanTakes() {
   const QString selectedKey = selectedTakeKey().empty()
                                   ? QString()
@@ -663,10 +709,7 @@ void RecorderViewModel::scanTakes() {
         entry.name = perTrack ? QString::fromStdString(fileName)
                               : QString::fromStdString(folderName + "/" + fileName);
         entry.active = entry.key.toStdString() == active;
-        std::error_code sizeError;
-        const auto size = std::filesystem::file_size(entry.path, sizeError);
-        if (!sizeError) entry.bytes = size;
-        entry.seconds = wavDurationSeconds(entry.path);
+        fillTakeMetrics(entry);
         entries.push_back(entry);
       }
     } else if (it->path().extension() == ".wav") {
@@ -677,10 +720,7 @@ void RecorderViewModel::scanTakes() {
       entry.key = QString::fromStdString(it->path().filename().string());
       entry.name = QString::fromStdString(it->path().filename().string());
       entry.active = entry.key.toStdString() == active;
-      std::error_code sizeError;
-      const auto size = std::filesystem::file_size(entry.path, sizeError);
-      if (!sizeError) entry.bytes = size;
-      entry.seconds = wavDurationSeconds(entry.path);
+      fillTakeMetrics(entry);
       entries.push_back(entry);
     }
   }
@@ -692,10 +732,7 @@ void RecorderViewModel::scanTakes() {
     entry.name = QString::fromStdString(imported.path.filename().string());
     entry.active = imported.key == active;
     entry.imported = true;
-    std::error_code sizeError;
-    const auto size = std::filesystem::file_size(entry.path, sizeError);
-    if (!sizeError) entry.bytes = size;
-    entry.seconds = wavDurationSeconds(entry.path);
+    fillTakeMetrics(entry);
     entries.push_back(entry);
   }
   // The track's ACTIVE take is always listed, whatever its file prefix says: the
@@ -717,10 +754,7 @@ void RecorderViewModel::scanTakes() {
       // PTR marks an external import (the session key is an absolute path), not
       // a take that merely lives in the absolute take folder.
       entry.imported = std::filesystem::path(active).is_absolute();
-      std::error_code sizeError;
-      const auto size = std::filesystem::file_size(entry.path, sizeError);
-      if (!sizeError) entry.bytes = size;
-      entry.seconds = wavDurationSeconds(entry.path);
+      fillTakeMetrics(entry);
       entries.push_back(entry);
     }
   }

@@ -71,6 +71,7 @@ void UiTapRunner::closeOverlays() {
   controller_->closeTabGrid();
   controller_->closeBankGrid();
   controller_->closeTakeSheet();
+  controller_->closeTakeEdit();
   controller_->hideValuePopup();
   controller_->setFullscreen(false);
   if (controller_->recording()) controller_->recToggle();
@@ -410,10 +411,12 @@ void UiTapRunner::buildScenarios() {
 
   // 3f. Clip-click pass (owner crash class: "clicking an audio clip" on the
   // Pi). Every surface that selects/loads a take is clicked: the recorder rows
-  // and their "..." menus, the EDIT lane labels, the region ops, and each row
-  // of the TAKE FOR TRACK sheet (the sheet closes on a pick, so every row gets
-  // its own pass). It runs on whatever the take folder holds - on the Pi that
-  // is the real session material - because the bug is about real files.
+  // and their "..." menus, the take-sheet opener, and each row of the TAKE FOR
+  // TRACK sheet (the sheet closes on a pick, so every row gets its own pass).
+  // It runs on whatever the take folder holds - on the Pi that is the real
+  // session material - because the bug is about real files. The EDIT affordances
+  // open the take edit popup, so they run in the edit scenarios below instead
+  // (an open popup would hide the rows this pass is about).
   scenarios_.push_back(Scenario{
       QStringLiteral("clips.recorder"),
       [this] {
@@ -426,39 +429,148 @@ void UiTapRunner::buildScenarios() {
         controller_->recorder()->refresh();
       },
       // The track selector row would walk to a take-less track and empty the
-      // list before its rows are reached; this pass is about the rows.
-      QString(), QStringList(scaffoldExcluded) << QStringLiteral("recorder.track."),
+      // list before its rows are reached; this pass is about the rows. The
+      // take-sheet opener and the EDIT affordances own their own passes.
+      QString(), QStringList(scaffoldExcluded)
+                     << QStringLiteral("recorder.track.")
+                     << QStringLiteral("recorder.takesheet")
+                     << QStringLiteral("recorder.take.edit.")
+                     << QStringLiteral("recorder.take.wave."),
       {}, false, true});
+  // The take sheet itself: CLOSE is its own pass (it ends the sheet), and each
+  // row gets a pass that ends on that row because a pick closes the sheet. A
+  // folder with fewer rows simply has nothing to tap there, which is why these
+  // passes do not require a target.
+  const auto openTakeSheetNow = [this] {
+    closeOverlays();
+    controller_->showShiftFace(false);
+    controller_->setTab(0);
+    primeMixerTracks();
+    activateRealTakes();
+    controller_->setTab(2);
+    controller_->openTakeSheet(controller_->recorder()->selectedTrack());
+  };
   scenarios_.push_back(Scenario{
-      QStringLiteral("clips.edit"),
+      QStringLiteral("clips.takesheet.close"), openTakeSheetNow,
+      QStringLiteral("take.sheet.close"), {},
+      {QStringLiteral("take.sheet.close")}, true, true});
+  for (int row = 0; row < 4; ++row) {
+    const QString rowId = QStringLiteral("take.sheet.row.%1").arg(row);
+    scenarios_.push_back(Scenario{
+        QStringLiteral("clips.takesheet.%1").arg(row), openTakeSheetNow, rowId,
+        {QStringLiteral("take.sheet.close")}, {rowId}, false, false});
+  }
+  // The take sheet's EDIT column: a tap opens the edit popup for that row.
+  for (int row = 0; row < 4; ++row) {
+    const QString editId = QStringLiteral("take.sheet.edit.%1").arg(row);
+    scenarios_.push_back(Scenario{
+        QStringLiteral("clips.takesheet.edit.%1").arg(row), openTakeSheetNow,
+        editId,
+        {QStringLiteral("take.sheet.close"), QStringLiteral("take.sheet.row.")},
+        {editId}, false, false});
+  }
+
+  // 3g. The take edit popup (plan W5): open it from the recorder's EDIT
+  // affordance, then walk every control. The handle pass drags the two edge
+  // targets by 24 px, so the drag path (not only the press) is exercised.
+  const auto openEditPopup = [this] {
+    closeOverlays();
+    controller_->showShiftFace(false);
+    controller_->setTab(0);
+    primeMixerTracks();
+    activateRealTakes();
+    controller_->setTab(2);
+    controller_->recorder()->selectRow(0);
+    controller_->requestEditTake(0);
+  };
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.popup"), openEditPopup, QStringLiteral("edit."),
+      {QStringLiteral("edit.in"), QStringLiteral("edit.out")},
+      {QStringLiteral("edit.close")}, false, true, false});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.handles"), openEditPopup, QStringLiteral("edit."), {},
+      {QStringLiteral("edit.in"), QStringLiteral("edit.out"),
+       QStringLiteral("edit.close")},
+      false, true, true});
+  // Op passes: each card is selected, its value dragged where it has one, and
+  // APPLY runs; UNDO/RENDER/CLOSE stay for the terminal taps of the main pass.
+  for (int op = 0; op < 8; ++op) {
+    const QString opId = QStringLiteral("edit.op.%1").arg(op);
+    scenarios_.push_back(Scenario{
+        QStringLiteral("edit.op.%1").arg(op),
+        [this, opId] {
+          closeOverlays();
+          controller_->showShiftFace(false);
+          controller_->setTab(0);
+          primeMixerTracks();
+          activateRealTakes();
+          controller_->setTab(2);
+          controller_->recorder()->selectRow(0);
+          controller_->requestEditTake(0);
+          controller_->timeline()->beginSelection(
+              controller_->timeline()->selectedTrack(), 1.0);
+          controller_->timeline()->updateSelection(5.0);
+          controller_->timeline()->endSelection();
+        },
+        opId, {}, {opId}, false, false});
+  }
+  // APPLY, UNDO and RENDER once each (they change the region list, so they get
+  // their own pass and every earlier scenario starts from a fresh popup).
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.apply"),
       [this] {
         closeOverlays();
         controller_->showShiftFace(false);
         controller_->setTab(0);
         primeMixerTracks();
         activateRealTakes();
-        controller_->setTab(8);  // EDIT tab (never seen: kScreenCount is 9)
-        controller_->timeline()->setSelectedTrack(0);
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        controller_->timeline()->beginSelection(
+            controller_->timeline()->selectedTrack(), 1.0);
+        controller_->timeline()->updateSelection(5.0);
+        controller_->timeline()->endSelection();
+        controller_->timeline()->selectEditOp(5);  // NORMALIZE
+        controller_->timeline()->applyEditOp();
       },
-      QString(), scaffoldExcluded, {}, false, true});
-  for (int row = 0; row < 4; ++row) {
-    // One pass per sheet row: the sheet closes on a pick, so each row needs its
-    // own pass. A folder with fewer rows simply has nothing to tap there, which
-    // is why these passes do not require a target.
-    const QString rowId = QStringLiteral("take.sheet.row.%1").arg(row);
-    scenarios_.push_back(Scenario{
-        QStringLiteral("clips.takesheet.%1").arg(row),
-        [this] {
-          closeOverlays();
-          controller_->showShiftFace(false);
-          controller_->setTab(0);
-          primeMixerTracks();
-          activateRealTakes();
-          controller_->setTab(8);  // EDIT tab (never seen: kScreenCount is 9)
-          controller_->openTakeSheet(controller_->recorder()->selectedTrack());
-        },
-        rowId, {}, {rowId}, false, false});
-  }
+      QStringLiteral("edit.apply"), {}, {QStringLiteral("edit.apply")}, false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.undo"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        controller_->timeline()->beginSelection(
+            controller_->timeline()->selectedTrack(), 1.0);
+        controller_->timeline()->updateSelection(5.0);
+        controller_->timeline()->endSelection();
+        controller_->timeline()->selectEditOp(5);
+        controller_->timeline()->applyEditOp();
+      },
+      QStringLiteral("edit.undo"), {}, {QStringLiteral("edit.undo")}, false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.render"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        controller_->timeline()->beginSelection(
+            controller_->timeline()->selectedTrack(), 1.0);
+        controller_->timeline()->updateSelection(3.0);
+        controller_->timeline()->endSelection();
+      },
+      QStringLiteral("edit.render"), {}, {QStringLiteral("edit.render")}, false, true});
 
   // 4. Every ConfigPopup kind. One pass taps all non-terminal controls and ends
   // with CANCEL; a second pass opens the same kind and taps OK, so both draft
@@ -470,7 +582,7 @@ void UiTapRunner::buildScenarios() {
       QStringLiteral("reverb"),    QStringLiteral("pipechannels"),
       QStringLiteral("timelineops"), QStringLiteral("trackmode"),
       QStringLiteral("recmode"),     QStringLiteral("takeactions"),
-      QStringLiteral("takeedit"),    QStringLiteral("trackfromtake"),
+      QStringLiteral("trackfromtake"),
       QStringLiteral("inputsource"), QStringLiteral("outputdest"),
       QStringLiteral("fxslot"),    QStringLiteral("addtrack"),
       QStringLiteral("delaydivision"), QStringLiteral("reverbmodel"),
@@ -767,7 +879,7 @@ void UiTapRunner::tapNext() {
         tapped_.push_back(target.focusId);
         ++taps_;
         std::printf("ui-taps:    tap %s\n", qPrintable(target.focusId));
-        (void)tap(window_, target.item);
+        (void)tap(window_, target.item, scenario.dragTerminal ? 24 : 0);
         scheduleNext(kTapDelayMs);
         return;
       }
@@ -790,7 +902,7 @@ void UiTapRunner::tapNext() {
         tapped_.push_back(target.focusId);
         ++taps_;
         std::printf("ui-taps:    tap %s\n", qPrintable(target.focusId));
-        (void)tap(window_, target.item);
+        (void)tap(window_, target.item, scenario.dragTerminal ? 24 : 0);
         scheduleNext(kTapDelayMs);
         return;
       }
@@ -835,7 +947,7 @@ void UiTapRunner::finish() {
   QCoreApplication::exit((failures_ == 0 && warnings_.isEmpty()) ? 0 : 1);
 }
 
-bool UiTapRunner::tap(QQuickWindow* window, QQuickItem* item) {
+bool UiTapRunner::tap(QQuickWindow* window, QQuickItem* item, int dragPixels) {
   if (window == nullptr || item == nullptr) return false;
   const QPointF scene =
       item->mapToScene(QPointF(item->width() / 2.0, item->height() / 2.0));
@@ -847,7 +959,18 @@ bool UiTapRunner::tap(QQuickWindow* window, QQuickItem* item) {
   QMouseEvent press(QEvent::MouseButtonPress, scene, QPointF(global),
                     Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
   QCoreApplication::sendEvent(window, &press);
-  QMouseEvent release(QEvent::MouseButtonRelease, scene, QPointF(global),
+  QPointF end = scene;
+  if (dragPixels != 0) {
+    // One move event is enough: the drag handlers clamp the beat and repaint on
+    // the first position change.
+    end = scene + QPointF(dragPixels, 0);
+    const QPoint moveGlobal = window->mapToGlobal(end.toPoint());
+    QMouseEvent move(QEvent::MouseMove, end, QPointF(moveGlobal), Qt::NoButton,
+                     Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &move);
+  }
+  const QPoint endGlobal = window->mapToGlobal(end.toPoint());
+  QMouseEvent release(QEvent::MouseButtonRelease, end, QPointF(endGlobal),
                       Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
   QCoreApplication::sendEvent(window, &release);
   return true;

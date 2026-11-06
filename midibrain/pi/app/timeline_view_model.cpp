@@ -115,6 +115,7 @@ void TimelineViewModel::refreshSources() {
         const auto info = readWavInfo(source.path);
         if (info.ok) {
           source.sampleRate = info.sampleRate;
+          source.channels = info.channels;
           source.frames = info.frames;
           source.seconds = info.sampleRate > 0
                                ? static_cast<double>(info.frames) /
@@ -126,6 +127,27 @@ void TimelineViewModel::refreshSources() {
       takeBeatsByKey_.clear();
     }
     auto& peak = peaks_[static_cast<std::size_t>(track)];
+    if (!source.path.empty() && peak.valid) {
+      // A take holds an immutable recording, but a take NAME can be recorded
+      // again (delete + re-record into the same slot). Compare the sidecar's
+      // recorded size/mtime with the file on disk and rescan when they differ,
+      // so the popup can never draw the previous take's peaks.
+      std::error_code sizeError;
+      const auto size = std::filesystem::file_size(source.path, sizeError);
+      std::error_code timeError;
+      const auto stamp = std::filesystem::last_write_time(source.path, timeError);
+      const auto mtime =
+          timeError ? 0u
+                    : static_cast<std::uint64_t>(static_cast<std::int64_t>(
+                          stamp.time_since_epoch().count()));
+      if (!sizeError &&
+          (static_cast<std::uint64_t>(size) != peak.summary.sourceBytes ||
+           mtime != peak.summary.sourceMtime)) {
+        peak = {};
+        sidecarCache_.erase(source.path.string());
+        queueScan(track);
+      }
+    }
     if (!source.path.empty() && !peak.valid && peak.path != source.path.string()) {
       audio::PeakSummary summary;
       std::string error;
@@ -158,6 +180,7 @@ void TimelineViewModel::pumpScanner() {
           peak.summary = *summary;
           peak.valid = true;
           sidecarCache_[peak.path] = peak.summary;
+          ++peakGeneration_;
         }
       }
     }
@@ -193,6 +216,7 @@ QString TimelineViewModel::preparePeaksForDemo() {
       peak.summary = *summary;
       peak.valid = true;
       sidecarCache_[peak.path] = peak.summary;
+      ++peakGeneration_;
       ++scanned;
     }
   }
@@ -260,32 +284,57 @@ void TimelineViewModel::setStatus(const QString& text) {
   emit statusChanged();
 }
 
-void TimelineViewModel::setPage(int page) {
-  const int clamped = std::clamp(page, 0, pageCount() - 1);
-  if (clamped == page_) return;
-  page_ = clamped;
-  emit pageChanged();
-  rebuildLanes();
+void TimelineViewModel::openEdit(int track) {
+  const int clamped = std::clamp(track, 0, audio::kMaxInputs - 1);
+  const bool trackChanged = clamped != selectedTrack_;
+  selectedTrack_ = clamped;
+  refreshSources();
+  if (trackChanged) emit selectedTrackChanged();
+  emit loopChanged();
+  rebuildPunch();
+  // Fit the view to the take: the popup edits one take from its start, not the
+  // whole session.
+  const double length = trackBeats_[static_cast<std::size_t>(selectedTrack_)];
+  viewStartBeats_ = 0.0;
+  viewBeats_ = length > 0.0 ? length : timeline::kMinViewBeats;
+  editPlayheadBeats_ = 0.0;
+  selection_ = {};
+  cursorBeats_ = 0.0;
+  editWaveSignature_.clear();
+  if (!editOpen_) {
+    editOpen_ = true;
+    emit editOpenChanged();
+  }
+  rebuildEditWave();
   rebuildPreview();
+  updateScanBadge();
+  emit viewChanged();
+  emit selectionChanged();
+  emit cursorChanged();
+  emit editChanged();
+  emit playheadChanged();
 }
 
-void TimelineViewModel::nextPage() { setPage(page_ + 1); }
-void TimelineViewModel::prevPage() { setPage(page_ - 1); }
+void TimelineViewModel::closeEdit() {
+  if (!editOpen_) return;
+  editOpen_ = false;
+  emit editOpenChanged();
+}
 
 void TimelineViewModel::setSelectedTrack(int track) {
   const int clamped = std::clamp(track, 0, audio::kMaxInputs - 1);
   if (clamped == selectedTrack_) return;
   selectedTrack_ = clamped;
-  const int wantedPage = clamped / timeline::kTracksPerPage;
-  if (wantedPage != page_) {
-    page_ = wantedPage;
-    emit pageChanged();
-  }
   emit selectedTrackChanged();
   emit loopChanged();
-  rebuildLanes();
   rebuildPreview();
   rebuildPunch();
+  if (editOpen_) {
+    editWaveSignature_.clear();
+    rebuildEditWave();
+    updateScanBadge();
+  }
+  emit editChanged();
 }
 
 QString TimelineViewModel::selectedTrackName() const {
@@ -294,12 +343,67 @@ QString TimelineViewModel::selectedTrackName() const {
       .arg(recorder_.trackDisplayName(selectedTrack_));
 }
 
+QString TimelineViewModel::editTrackText() const { return selectedTrackName(); }
+
+QString TimelineViewModel::editTitle() const {
+  const auto& source = sources_[static_cast<std::size_t>(selectedTrack_)];
+  if (source.path.empty()) return QStringLiteral("EDIT - no active take");
+  const int seconds = static_cast<int>(source.seconds + 0.5);
+  return QStringLiteral("EDIT %1  %2:%3")
+      .arg(takeLabel(source.path))
+      .arg(seconds / 60)
+      .arg(seconds % 60, 2, 10, QLatin1Char('0'));
+}
+
+QString TimelineViewModel::editMetaText() const {
+  const auto& source = sources_[static_cast<std::size_t>(selectedTrack_)];
+  if (source.path.empty()) return QStringLiteral("NO ACTIVE TAKE");
+  return QStringLiteral("%1 kHz - %2 ch - %3 beats")
+      .arg(source.sampleRate / 1000)
+      .arg(source.channels)
+      .arg(trackBeats_[static_cast<std::size_t>(selectedTrack_)], 0, 'f', 1);
+}
+
+void TimelineViewModel::selectEditOp(int op) {
+  const int clamped = std::clamp(op, 0, timeline::kEditOpCount - 1);
+  if (clamped != editOp_) {
+    editOp_ = clamped;
+    emit editOpChanged();
+  }
+  // A repeat tap on a value card re-arms the draft preview.
+  setPreviewDraft(previewGainDb_, previewFadeInBeats_, previewFadeOutBeats_);
+}
+
+QString TimelineViewModel::editOpName() const {
+  return textOf(timeline::editOpName(static_cast<timeline::EditOp>(editOp_)));
+}
+
+QString TimelineViewModel::editFooterText() const {
+  if (!selection_.active || selection_.span() <= 0.0) {
+    return QStringLiteral("NO IN/OUT - drag on the waveform or drag the edges");
+  }
+  return QStringLiteral("IN %1 OUT %2 (%3 beats)")
+      .arg(textOf(timeline::beatTextCompact(selection_.start())))
+      .arg(textOf(timeline::beatTextCompact(selection_.end())))
+      .arg(selection_.span(), 0, 'f', 2);
+}
+
+QString TimelineViewModel::editHintText() const {
+  if (sources_[static_cast<std::size_t>(selectedTrack_)].path.empty()) {
+    return QStringLiteral("track %1 has no ACTIVE take - pick one on RECORDER")
+        .arg(selectedTrack_ + 1, 2, 10, QLatin1Char('0'));
+  }
+  return QStringLiteral("TAP SETS THE PLAYHEAD - DRAG IN/OUT - THE PANEL KNOB MOVES THE FOCUSED CONTROL");
+}
+
 void TimelineViewModel::setViewStartBeats(double beats) {
-  const double maximum = std::max(0.0, totalBeats_ - viewBeats_);
+  const double total = editOpen_ ? takeBeats() : totalBeats_;
+  const double maximum = std::max(0.0, total - viewBeats_);
   const double clamped = clamp(beats, 0.0, maximum);
   if (std::abs(clamped - viewStartBeats_) < 1e-9) return;
   viewStartBeats_ = clamped;
   emit viewChanged();
+  rebuildEditWave();
 }
 
 void TimelineViewModel::scrollView(int direction) {
@@ -308,14 +412,41 @@ void TimelineViewModel::scrollView(int direction) {
 }
 
 void TimelineViewModel::zoom(int direction) {
-  const double factor = direction > 0 ? 0.5 : 2.0;
-  const double wanted = clamp(viewBeats_ * factor, timeline::kMinViewBeats,
-                              timeline::kMaxViewBeats);
+  zoomBy(direction > 0 ? 0.5 : 2.0);
+}
+
+void TimelineViewModel::zoomBy(double factor) {
+  if (!(factor > 0.0)) return;
+  const double length = editOpen_ ? takeBeats() : totalBeats_;
+  const double minimum = editOpen_ ? timeline::kEditMinViewBeats
+                                   : timeline::kMinViewBeats;
+  const double maximum = editOpen_ ? std::max(minimum, length)
+                                   : timeline::kMaxViewBeats;
+  const double wanted = clamp(viewBeats_ * factor, minimum, maximum);
   if (std::abs(wanted - viewBeats_) < 1e-9) return;
-  const double centre = viewStartBeats_ + viewBeats_ * 0.5;
+  // Zoom around the cursor when it is inside the window (a pinch then holds the
+  // point the finger is on), else around the window centre.
+  const double anchor =
+      editOpen_ && cursorBeats_ > viewStartBeats_ &&
+              cursorBeats_ < viewStartBeats_ + viewBeats_
+          ? cursorBeats_
+          : viewStartBeats_ + viewBeats_ * 0.5;
+  const double ratio = (anchor - viewStartBeats_) / viewBeats_;
   viewBeats_ = wanted;
-  setViewStartBeats(centre - viewBeats_ * 0.5);
+  viewStartBeats_ = 0.0;
+  setViewStartBeats(anchor - ratio * viewBeats_);
   emit viewChanged();
+  rebuildEditWave();
+}
+
+double TimelineViewModel::beatAtRatio(double ratio) const {
+  return timeline::clampBeat(viewStartBeats_ +
+                             clamp(ratio, 0.0, 1.0) * viewBeats_);
+}
+
+double TimelineViewModel::ratioOfBeat(double beats) const {
+  if (!(viewBeats_ > 0.0)) return 0.0;
+  return (beats - viewStartBeats_) / viewBeats_;
 }
 
 void TimelineViewModel::setCursorBeats(double beats) {
@@ -326,8 +457,39 @@ void TimelineViewModel::setCursorBeats(double beats) {
   rebuildPreview();
 }
 
+void TimelineViewModel::seekTo(double beats) {
+  // Bluebox rule: the touch point is the playhead from now on. The transport
+  // has no seek command in this build, so the popup playhead and the edit
+  // cursor move together and the next gesture starts from the touched point.
+  const double clamped = timeline::clampBeat(beats);
+  editPlayheadBeats_ = clamped;
+  setCursorBeats(clamped);
+  emit playheadChanged();
+  rebuildPreview();
+}
+
+double TimelineViewModel::setInBeats(double beats) {
+  const double total = takeBeats();
+  const double upper = selection_.active ? selection_.end() : total;
+  selection_.active = true;
+  selection_.in = std::min(timeline::clampBeat(beats), upper > 0.0 ? upper : total);
+  if (!(total > 0.0)) selection_.in = timeline::clampBeat(beats);
+  emit selectionChanged();
+  rebuildPreview();
+  return selection_.in;
+}
+
+double TimelineViewModel::setOutBeats(double beats) {
+  const double lower = selection_.active ? selection_.start() : 0.0;
+  selection_.active = true;
+  selection_.out = std::max(timeline::clampBeat(beats), lower);
+  emit selectionChanged();
+  rebuildPreview();
+  return selection_.out;
+}
+
 void TimelineViewModel::moveCursor(double beatDelta, int trackDelta) {
-  if (trackDelta != 0) setSelectedTrack(selectedTrack_ + trackDelta);
+  if (trackDelta != 0 && !editOpen_) setSelectedTrack(selectedTrack_ + trackDelta);
   setCursorBeats(cursorBeats_ + beatDelta);
 }
 
@@ -387,7 +549,6 @@ void TimelineViewModel::beginSelection(int track, double beat) {
   selection_.out = cursorBeats_;
   emit cursorChanged();
   emit selectionChanged();
-  rebuildLanes();
   rebuildPreview();
 }
 
@@ -549,6 +710,38 @@ void TimelineViewModel::setPreviewDraft(double gainDb, double fadeIn, double fad
   rebuildPreview();
 }
 
+QString TimelineViewModel::applyEditOp() {
+  const auto op = static_cast<timeline::EditOp>(editOp_);
+  if (op == timeline::EditOp::Undo) {
+    return undo() ? QString() : QStringLiteral("UNDO - nothing to undo");
+  }
+  timeline::EditOpRequest request;
+  if (!timeline::editOpRequest(op, static_cast<float>(previewGainDb_),
+                               previewFadeInBeats_, previewFadeOutBeats_,
+                               &request)) {
+    return QStringLiteral("unknown region op");
+  }
+  if (timeline::editOpNeedsRange(op) &&
+      !(selection_.active && selection_.span() > 0.0)) {
+    return QStringLiteral("set IN and OUT first (drag on the waveform)");
+  }
+  return applyOp(static_cast<int>(request.op), request.gainDb,
+                 request.fadeInBeats, request.fadeOutBeats);
+}
+
+void TimelineViewModel::setEditGainDb(double gainDb) {
+  const double clamped = std::clamp(gainDb, -24.0, 12.0);
+  setPreviewDraft(clamped, previewFadeInBeats_, previewFadeOutBeats_);
+}
+
+void TimelineViewModel::setEditFadeIn(double beats) {
+  setPreviewDraft(previewGainDb_, std::max(0.0, beats), previewFadeOutBeats_);
+}
+
+void TimelineViewModel::setEditFadeOut(double beats) {
+  setPreviewDraft(previewGainDb_, previewFadeInBeats_, std::max(0.0, beats));
+}
+
 bool TimelineViewModel::undo() {
   auto& stack = undo_[static_cast<std::size_t>(selectedTrack_)];
   if (stack.empty()) return false;
@@ -565,6 +758,23 @@ bool TimelineViewModel::undo() {
 }
 
 void TimelineViewModel::refreshViewWindow() {
+  if (editOpen_) {
+    // The popup owns the window: it is take-relative, so the session's total
+    // length and the punch/loop extents never push it around.
+    const double length = takeBeats();
+    totalBeats_ = std::max(length, timeline::kEditMinViewBeats);
+    const double minimum = timeline::kEditMinViewBeats;
+    const double maximum = std::max(minimum, totalBeats_);
+    const double clampedBeats = clamp(viewBeats_, minimum, maximum);
+    const double clampedStart =
+        clamp(viewStartBeats_, 0.0, std::max(0.0, totalBeats_ - clampedBeats));
+    const bool changed = std::abs(clampedBeats - viewBeats_) > 1e-9 ||
+                         std::abs(clampedStart - viewStartBeats_) > 1e-9;
+    viewBeats_ = clampedBeats;
+    viewStartBeats_ = clampedStart;
+    if (changed) emit viewChanged();
+    return;
+  }
   double total = 16.0;
   for (int track = 0; track < audio::kMaxInputs; ++track) {
     total = std::max(total, trackBeats_[static_cast<std::size_t>(track)]);
@@ -607,63 +817,68 @@ void TimelineViewModel::rebuildPunch() {
   add("OUT", settings_.punch.out);
   if (markers == punchMarkers_) return;
   punchMarkers_ = std::move(markers);
-  emit lanesChanged();
+  emit punchChanged();
 }
 
-void TimelineViewModel::rebuildLanes() {
-  QVariantList lanes;
-  const int first = page_ * timeline::kTracksPerPage;
-  lanes.reserve(timeline::kTracksPerPage);
-  for (int offset = 0; offset < timeline::kTracksPerPage; ++offset) {
-    const int track = first + offset;
-    if (track >= audio::kMaxInputs) break;
-    const auto& source = sources_[static_cast<std::size_t>(track)];
-    const auto& peak = peaks_[static_cast<std::size_t>(track)];
-    QVariantMap lane;
-    lane.insert(QStringLiteral("track"), track);
-    lane.insert(QStringLiteral("label"),
-                QStringLiteral("%1").arg(track + 1, 2, 10, QLatin1Char('0')));
-    lane.insert(QStringLiteral("name"), recorder_.trackDisplayName(track));
-    const auto& edits = editList(track);
-    lane.insert(QStringLiteral("take"), takeLabel(source.path));
-    lane.insert(QStringLiteral("hasTake"), !source.path.empty());
-    lane.insert(QStringLiteral("takeBeats"), trackBeats_[static_cast<std::size_t>(track)]);
-    lane.insert(QStringLiteral("hasPeaks"), peak.valid && !peak.summary.empty());
-    lane.insert(QStringLiteral("edits"), static_cast<int>(edits.size()));
-    QVariantList wave;
-    if (peak.valid) {
-      const double takeBeats = trackBeats_[static_cast<std::size_t>(track)];
-      const auto reduced = timeline::reducePeaks(peak.summary, 0.0, takeBeats,
-                                                 takeBeats, 96);
-      wave.reserve(static_cast<int>(reduced.size()));
-      for (const float value : reduced) wave.push_back(value);
-    }
-    lane.insert(QStringLiteral("wave"), wave);
-    QVariantList regions;
-    for (const auto& region : edits) {
-      QVariantMap entry;
-      const double end = timeline::regionEndBeats(region, lengthFnFor(track));
-      entry.insert(QStringLiteral("start"), region.offsetBeats);
-      entry.insert(QStringLiteral("length"), std::max(0.0, end - region.offsetBeats));
-      entry.insert(QStringLiteral("gainDb"), region.gainDb);
-      entry.insert(QStringLiteral("fadeIn"), region.fadeInBeats);
-      entry.insert(QStringLiteral("fadeOut"), region.fadeOutBeats);
-      entry.insert(QStringLiteral("normalize"), region.normalize);
-      entry.insert(QStringLiteral("take"), textOf(region.take));
-      regions.push_back(entry);
-    }
-    lane.insert(QStringLiteral("regions"), regions);
-    lane.insert(QStringLiteral("selected"), track == selectedTrack_);
-    const auto& loop = settings_.takeLoop[static_cast<std::size_t>(track)];
-    lane.insert(QStringLiteral("loopOn"), loop.enabled);
-    lane.insert(QStringLiteral("loopStart"), loop.startBeats);
-    lane.insert(QStringLiteral("loopEnd"), loop.endBeats);
-    lanes.push_back(lane);
+void TimelineViewModel::rebuildEditWave() {
+  if (!editOpen_) return;
+  const auto& source = sources_[static_cast<std::size_t>(selectedTrack_)];
+  const auto& peak = peaks_[static_cast<std::size_t>(selectedTrack_)];
+  // The popup waveform is 800 px wide; one peak pair per pixel keeps the paint
+  // pass a pure polyline (no reduction there).
+  constexpr int kColumns = 800;
+  const double viewEnd = viewStartBeats_ + viewBeats_;
+  const QString signature =
+      QStringLiteral("%1|%2|%3|%4|%5|%6")
+          .arg(QString::fromStdString(source.path.string()))
+          .arg(viewStartBeats_, 0, 'f', 6)
+          .arg(viewBeats_, 0, 'f', 6)
+          .arg(takeBeats(), 0, 'f', 6)
+          .arg(peakGeneration_)
+          .arg(peak.valid ? 1 : 0);
+  if (signature == editWaveSignature_) return;
+  editWaveSignature_ = signature;
+  QVariantList wave;
+  if (peak.valid && !peak.summary.empty()) {
+    const auto reduced = timeline::reducePeakPairs(
+        peak.summary, viewStartBeats_, viewEnd, takeBeats(), kColumns);
+    wave.reserve(static_cast<int>(reduced.size()));
+    for (const float value : reduced) wave.push_back(value);
   }
-  if (lanes != lanes_) {
-    lanes_ = std::move(lanes);
-    emit lanesChanged();
+  const bool columnsChanged = kColumns != editWaveColumns_;
+  editWaveColumns_ = kColumns;
+  if (wave == editWave_ && !columnsChanged) return;
+  editWave_ = std::move(wave);
+  emit editWaveChanged();
+}
+
+void TimelineViewModel::updateScanBadge() {
+  const auto& source = sources_[static_cast<std::size_t>(selectedTrack_)];
+  const bool missing =
+      editOpen_ && !source.path.empty() &&
+      !peaks_[static_cast<std::size_t>(selectedTrack_)].valid;
+  bool scanning = false;
+  QString text;
+  if (missing) {
+    if (scanningTrack_ == selectedTrack_ && !scanningPath_.empty()) {
+      if (scanner_) {
+        const int percent = static_cast<int>(scanner_->progress() * 100.0f);
+        text = QStringLiteral("SCANNING %1%").arg(std::clamp(percent, 0, 100));
+      } else {
+        text = QStringLiteral("SCANNING");
+      }
+      scanning = true;
+    } else {
+      // Queued or about to be: the badge states why the block is empty, so the
+      // popup never shows dead text while the scanner works.
+      text = QStringLiteral("SCANNING");
+      scanning = true;
+    }
   }
+  if (scanning == editScanning_ && text == editScanText_) return;
+  editScanning_ = scanning;
+  editScanText_ = text;
+  emit scanChanged();
 }
 
 void TimelineViewModel::rebuildPreview() {
@@ -751,11 +966,39 @@ void TimelineViewModel::rebuildPreview() {
                   QStringLiteral("/") + QString::number(fadeOut, 'f', 2);
   }
 
+  // BEFORE: the stored shape of the targeted region (what the take plays
+  // today). AFTER: the drafts above. The popup draws both over the waveform so
+  // an op preview is a comparison, not a guess.
+  const bool regionFound = selected != nullptr;
+  const double regionStart = regionFound ? selected->offsetBeats
+                                         : (selection_.active ? selection_.start() : 0.0);
+  const double regionLength =
+      regionFound ? std::max(0.0, timeline::regionEndBeats(*selected, lengthFn) -
+                                      selected->offsetBeats)
+                  : length;
+  const double regionGain = regionFound ? selected->gainDb : 0.0;
+  const double regionFadeIn = regionFound ? selected->fadeInBeats : 0.0;
+  const double regionFadeOut = regionFound ? selected->fadeOutBeats : 0.0;
+  const bool shapeChanged =
+      previewGainDb_ != gainDb || previewFadeInBeats_ != fadeIn ||
+      previewFadeOutBeats_ != fadeOut || previewLengthBeats_ != length ||
+      previewRegionFound_ != regionFound ||
+      previewRegionStartBeats_ != regionStart ||
+      previewRegionLengthBeats_ != regionLength ||
+      previewRegionGainDb_ != regionGain ||
+      previewRegionFadeInBeats_ != regionFadeIn ||
+      previewRegionFadeOutBeats_ != regionFadeOut;
   previewGainDb_ = gainDb;
   previewFadeInBeats_ = fadeIn;
   previewFadeOutBeats_ = fadeOut;
   previewLengthBeats_ = length;
-  if (wave == previewWave_ && previewText == previewText_) return;
+  previewRegionFound_ = regionFound;
+  previewRegionStartBeats_ = regionStart;
+  previewRegionLengthBeats_ = regionLength;
+  previewRegionGainDb_ = regionGain;
+  previewRegionFadeInBeats_ = regionFadeIn;
+  previewRegionFadeOutBeats_ = regionFadeOut;
+  if (wave == previewWave_ && previewText == previewText_ && !shapeChanged) return;
   previewWave_ = std::move(wave);
   previewText_ = previewText;
   emit previewChanged();
@@ -778,11 +1021,22 @@ void TimelineViewModel::refresh() {
   const auto status = link_.status();
   const double beats =
       static_cast<double>(status.tick) / static_cast<double>(kTicksPerBeat);
+  bool playheadMoved = false;
   if (std::abs(beats - playheadBeats_) > 1e-9) {
     playheadBeats_ = beats;
     playheadText_ = textOf(timeline::beatText(beats));
-    emit playheadChanged();
+    playheadMoved = true;
   }
+  if (editOpen_ && status.rolling) {
+    // While the transport rolls the popup playhead follows it, so the shaded
+    // part of the take is the part playback has already passed.
+    const double clamped = timeline::clampBeat(beats);
+    if (std::abs(clamped - editPlayheadBeats_) > 1e-9) {
+      editPlayheadBeats_ = clamped;
+      playheadMoved = true;
+    }
+  }
+  if (playheadMoved) emit playheadChanged();
 
   const auto signature = editSignature(settings_.takeEdit);
   if (signature != appliedEditSignature_) {
@@ -801,7 +1055,8 @@ void TimelineViewModel::refresh() {
   }
   refreshViewWindow();
   rebuildPunch();
-  rebuildLanes();
+  rebuildEditWave();
+  updateScanBadge();
   rebuildPreview();
 
   const auto& loop = settings_.takeLoop[static_cast<std::size_t>(selectedTrack_)];
@@ -834,6 +1089,10 @@ void TimelineViewModel::reloadFromSettings() {
   appliedEditSignature_.clear();
   appliedTempoX100_ = 0;
   previewDraftActive_ = false;
+  editWaveSignature_.clear();
+  editWave_ = {};
+  ++peakGeneration_;
+  emit editWaveChanged();
   emitUndo();
   refresh();
 }

@@ -6,9 +6,10 @@
 //
 // The region type is the frozen session v2 `takes.edit` entry
 // (pi/session/session.hpp TakeRegion, landed in 43130e8); the audio-side mirror
-// is pi/audio/take_player.hpp TakeRegion. Files are never rewritten here:
-// every op edits the region list, and RENDER is the explicit destructive op the
-// core API does not provide yet (see kRenderMissingApi).
+// is pi/audio/take_player.hpp TakeRegion. Files are never rewritten here: every
+// region op edits the region list. The one destructive path, RENDER REGION TO
+// TRACK, bakes IN..OUT into a new take and is a controller action
+// (Engine::renderRegionToTake + the take -> track flow), not a region op.
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -28,11 +29,12 @@ inline constexpr double kStepCoarseBeats = 1.0;
 inline constexpr double kCursorCoarseBeats = 4.0;
 inline constexpr double kMinViewBeats = 8.0;
 inline constexpr double kMaxViewBeats = 64.0;
-// The destructive render op has no core call yet: take_player.hpp documents
-// that render-to-new-take is "a later op that is not part of this API". The UI
-// names the missing call instead of faking a render.
-inline constexpr const char* kRenderMissingApi =
-    "audio::TakePlayer::renderRegionsToTake()";
+// EDIT popup zoom floor: the popup edits one take, so it zooms below the
+// whole-session floor down to a quarter beat across the screen.
+inline constexpr double kEditMinViewBeats = 0.25;
+// RENDER is not a region op: it writes a new take through
+// Engine::renderRegionToTake (AppController::renderRegionToTrack), so the id
+// stays in the enum for the session/IDL shape and the UI never offers it.
 
 enum class TimelineOp : std::uint8_t {
   Trim = 0,
@@ -46,10 +48,43 @@ enum class TimelineOp : std::uint8_t {
 };
 
 inline constexpr int kTimelineOpCount = 8;
-// Ops the UI offers. RENDER (op 7) has no core call, so the region-ops grid
-// and the panel ring stop before it instead of offering a button that can only
-// be refused (A14).
+// Ops the ConfigPopup region-ops grid offers; RENDER (op 7) is a controller
+// action (RENDER REGION TO TRACK), so the ring stops before it (A14).
 inline constexpr int kTimelineUiOpCount = 7;
+
+// The EDIT popup's ops strip (docs/daw-plan.md W5): TRIM, SPLIT, GAIN, FADE IN,
+// FADE OUT, NORMALIZE, DELETE REGION, UNDO - in that order. The two fade cards
+// both run TimelineOp::Fades, zeroing the other fade; UNDO is an action on the
+// undo stack, not a region op.
+enum class EditOp : std::uint8_t {
+  Trim = 0,
+  Split = 1,
+  Gain = 2,
+  FadeIn = 3,
+  FadeOut = 4,
+  Normalize = 5,
+  DeleteRegion = 6,
+  Undo = 7,
+};
+
+inline constexpr int kEditOpCount = 8;
+// Cards that run a region op (everything except UNDO).
+inline constexpr int kEditOpActionCount = 7;
+
+const char* editOpName(EditOp op);
+// GAIN and the two fade cards carry a value knob; the rest are verbs.
+bool editOpHasValue(EditOp op);
+// TRIM and DELETE REGION rewrite IN..OUT, so they need a real selection.
+bool editOpNeedsRange(EditOp op);
+// The region op one strip card runs, with its drafted values. False for UNDO.
+struct EditOpRequest {
+  TimelineOp op = TimelineOp::Trim;
+  float gainDb = 0.0f;
+  double fadeInBeats = 0.0;
+  double fadeOutBeats = 0.0;
+};
+bool editOpRequest(EditOp op, float gainDb, double fadeInBeats,
+                   double fadeOutBeats, EditOpRequest* out);
 
 const char* timelineOpName(TimelineOp op);
 // RENDER is refused until the core render call exists; the ops popup no longer
@@ -111,5 +146,19 @@ std::vector<session::TakeRegion> deleteRegions(
 std::vector<float> reducePeaks(const audio::PeakSummary& summary,
                                double startBeats, double endBeats,
                                double takeBeats, int columns);
+
+// Same window, but keeps the polarity: two entries per column
+// (`2 * columns` floats, lo then hi, both 0..1 magnitudes) so the EDIT popup
+// can draw an asymmetric mirrored envelope plus its peak-hold line. The fine
+// 256-frame buckets are used while a bucket is at least two columns wide
+// (half a column per bucket or coarser); past that the folded coarse level is
+// used, so a zoomed-out view never walks every fine bucket in the paint path.
+std::vector<float> reducePeakPairs(const audio::PeakSummary& summary,
+                                   double startBeats, double endBeats,
+                                   double takeBeats, int columns);
+
+// "bar:beat:tick" without the zero-padded bar, for the EDIT popup's footer
+// (plan W5: `IN 1:2:00 OUT 2:2:00`).
+std::string beatTextCompact(double beats);
 
 }  // namespace mnky::app::timeline

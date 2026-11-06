@@ -4,10 +4,11 @@ import Mnkybox 1.0
 import "components"
 import "overlays"
 
-// mnkybox shell: tab row, persistent transport strip, one of nine screens, and
-// the keypad/confirmation overlays. 800 x 480 landscape-first, resizable. The
-// global FX tab retired into the per-track FX rack popup (ChannelPopout >
-// TRACK FX), so the tab row is Mixer..EDIT with no FX entry.
+// mnkybox shell: tab row, persistent transport strip, one of eight screens, the
+// take edit popup and the keypad/confirmation overlays. 800 x 480
+// landscape-first, resizable. The global FX tab retired into the per-track FX
+// rack popup (ChannelPopout > TRACK FX) and EDIT retired into the take edit
+// popup (overlays/EditPopup.qml), so the tab row is Mixer..X/Y with neither.
 // Face switches (a tab tap or a SHIFT toggle) fade the screen host over 80 ms;
 // the popups own their 120 ms scale-fade from the summary button that opened
 // them.
@@ -25,7 +26,7 @@ Window {
     // B3/C8: tab 5 is PROJ and tab 6 is MIDI; "Monitor" named two other
     // surfaces (the per-track MON mark and the SYSTEM SHIFT OUTPUT page).
     readonly property var tabNames: ["Mixer", "Routing", "Recorder", "System",
-                                     "PROJ", "MIDI", "EQ", "XY", "EDIT"]
+                                     "PROJ", "MIDI", "EQ", "XY"]
 
     function screenSource() {
         switch (app.tab) {
@@ -37,7 +38,6 @@ Window {
         case 5: return "screens/MidiMonitorScreen.qml"
         case 6: return "screens/EqScreen.qml"
         case 7: return "screens/XyScreen.qml"
-        case 8: return "screens/TimelineScreen.qml"
         default: return ""
         }
     }
@@ -57,7 +57,7 @@ Window {
             visible: !app.fullscreen
 
             readonly property bool shiftMode: app.panelMode === "shift"
-            readonly property int tabCount: 9
+            readonly property int tabCount: 8
             // The single TAB ring stop is the row itself; its focus ring is the
             // accent border so a panel user sees where the ring is.
             readonly property bool tabStopFocused: app.focusId === "tab.menu"
@@ -213,6 +213,12 @@ Window {
     }
 
     TrackFxPopup {
+        anchors.fill: parent
+    }
+
+    // W5: the take edit popup (EDIT tab retired). It is above the screens and
+    // below the keypad/confirm modals.
+    EditPopup {
         anchors.fill: parent
     }
 

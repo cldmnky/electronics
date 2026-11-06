@@ -73,7 +73,7 @@ bool ConfigPopupModel::openKind(const QString& kind) {
       QStringLiteral("reverb"),    QStringLiteral("timelineops"),
       QStringLiteral("pipechannels"), QStringLiteral("trackmode"),
       QStringLiteral("recmode"),       QStringLiteral("takeactions"),
-      QStringLiteral("takeedit"),      QStringLiteral("trackfromtake"),
+      QStringLiteral("trackfromtake"),
       QStringLiteral("inputsource"), QStringLiteral("outputdest"),
       QStringLiteral("fxslot"),    QStringLiteral("addtrack"),
       QStringLiteral("delaydivision"), QStringLiteral("reverbmodel"),
@@ -113,7 +113,6 @@ bool ConfigPopupModel::openKind(const QString& kind) {
            : kind == QStringLiteral("trackmode") ? QStringLiteral("TRACK MODE")
            : kind == QStringLiteral("recmode") ? QStringLiteral("REC MODE")
            : kind == QStringLiteral("takeactions") ? takeTargetName_
-           : kind == QStringLiteral("takeedit") ? takeTargetName_
            : kind == QStringLiteral("trackfromtake") ? QStringLiteral("NEW TRACK FROM TAKE")
            : kind == QStringLiteral("inputsource") ? inputSourceTitle()
            : kind == QStringLiteral("outputdest") ? outputTitle()
@@ -909,8 +908,7 @@ QString ConfigPopupModel::acceptLabel() const {
   // An action menu changes nothing on OK/CANCEL, so the button says CLOSE and
   // the header repeats it.
   if (kind_ == QStringLiteral("takeactions") ||
-      kind_ == QStringLiteral("trackfromtake") ||
-      kind_ == QStringLiteral("takeedit")) {
+      kind_ == QStringLiteral("trackfromtake")) {
     return QStringLiteral("CLOSE");
   }
   return QStringLiteral("OK");

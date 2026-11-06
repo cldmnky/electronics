@@ -157,13 +157,13 @@ qt_add_resources(mnkybox "qml"
     qml/screens/SystemShiftFace.qml
     qml/screens/EqScreen.qml
     qml/screens/XyScreen.qml
-    qml/screens/TimelineScreen.qml
     qml/overlays/ChannelPopout.qml
     qml/overlays/TrackFxPopup.qml
     qml/overlays/ConfigPopup.qml
     qml/overlays/Keypad.qml
     qml/overlays/TempoPopup.qml
-    qml/overlays/ConfirmDialog.qml)
+    qml/overlays/ConfirmDialog.qml
+    qml/overlays/EditPopup.qml)
 
 # mnky_clap links mnky_audio PUBLIC (clap::Host implements audio::IEffect), so
 # libmnky_audio.a legitimately appears twice on the link line. Apple's ld calls
