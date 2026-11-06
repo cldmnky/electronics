@@ -502,6 +502,257 @@ class ScreenshotRunner final : public QObject {
                         controller_->setTab(1);
                         controller_->openConfig(QStringLiteral("pipechannels"));
                       }});
+
+    // ---- 39-*: wave-2 refresh set, every screen and both faces -----------
+    steps_.push_back({"39-mixer", [this] {
+                        resetShot();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->mixer()->clearClipDemo();
+                        controller_->mixer()->setMonitor(0, 0);
+                        controller_->mixer()->setMonitor(1, 1);
+                        controller_->mixer()->setMonitor(2, 2);
+                        controller_->selectStrip(1);
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"39-mixer-shift", [this] {
+                        resetShot();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(0);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"39-mixer-clip", [this] {
+                        resetShot();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->mixer()->showClipDemo();
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"39-track", [this] {
+                        resetShot();
+                        controller_->mixer()->clearClipDemo();
+                        controller_->mixer()->setTrackMode(true);
+                        controller_->mixer()->setTrackIndex(2);
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"39-track-shift", [this] {
+                        resetShot();
+                        controller_->mixer()->setTrackMode(true);
+                        controller_->mixer()->setTrackIndex(2);
+                        controller_->mixer()->setMonitor(2, 1);
+                        controller_->setTab(0);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"39-routing", [this] {
+                        resetShot();
+                        controller_->routing()->setSelectedInput(-1);
+                        controller_->setTab(1);
+                      }});
+    steps_.push_back({"39-routing-filter", [this] {
+                        resetShot();
+                        controller_->setTab(1);
+                        controller_->showShiftFace(true);
+                        controller_->routing()->setShiftPage(0);
+                      }});
+    steps_.push_back({"39-routing-pipes", [this] {
+                        resetShot();
+                        controller_->setTab(1);
+                        controller_->showShiftFace(true);
+                        controller_->routing()->setShiftPage(1);
+                        controller_->routing()->setPipeSource(0);
+                        controller_->routing()->setPipeDestination(2);
+                        if (!controller_->routing()->routeEnabled(0, 2)) {
+                          controller_->routing()->toggleRoute(0, 2);
+                        }
+                        if (controller_->routing()->pipeCount() == 0) {
+                          controller_->routing()->setAddTypeIndex(0);
+                          controller_->routing()->addPipe();
+                        }
+                        controller_->routing()->selectPipe(0);
+                        controller_->routing()->setSelectedPipeChannelMask(0x000F);
+                      }});
+    steps_.push_back({"39-fx", [this] {
+                        resetShot();
+                        controller_->setTab(2);
+                      }});
+    steps_.push_back({"39-fx-shift", [this] {
+                        resetShot();
+                        controller_->setTab(2);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"39-recorder", [this] {
+                        resetShot();
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->recorder()->selectRow(0);
+                        controller_->recorder()->activateSelected();
+                        controller_->setTab(3);
+                      }});
+    steps_.push_back({"39-recorder-shift", [this] {
+                        resetShot();
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->setTab(3);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"39-system", [this] {
+                        resetShot();
+                        controller_->setTab(4);
+                      }});
+    steps_.push_back({"39-system-monitor", [this] {
+                        resetShot();
+                        controller_->setTab(4);
+                        controller_->setSystemShiftPage(0);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"39-system-learn", [this] {
+                        resetShot();
+                        controller_->setTab(4);
+                        controller_->setSystemShiftPage(1);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"39-system-tools", [this] {
+                        resetShot();
+                        controller_->setTab(4);
+                        controller_->setSystemShiftPage(2);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"39-projects", [this] {
+                        resetShot();
+                        controller_->setTab(5);
+                      }});
+    steps_.push_back({"39-projects-shift", [this] {
+                        resetShot();
+                        controller_->setTab(5);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"39-monitor", [this] {
+                        resetShot();
+                        controller_->midiMonitor()->setHideClock(false);
+                        controller_->setTab(6);
+                      }});
+    steps_.push_back({"39-eq", [this] {
+                        resetShot();
+                        controller_->eq()->selectMain();
+                        eqBand(0, 2, 120.0, 4.0, 1.0);
+                        eqBand(1, 1, 80.0, 0.0, 1.0);
+                        eqBand(2, 3, 1000.0, -3.0, 1.4);
+                        eqBand(3, 4, 8000.0, 2.0, 1.0);
+                        controller_->eq()->selectBand(2);
+                        controller_->setTab(7);
+                        controller_->hideValuePopup();
+                      }});
+    steps_.push_back({"39-eq-shift", [this] {
+                        resetShot();
+                        controller_->eq()->selectMain();
+                        controller_->eq()->selectBand(2);
+                        controller_->eq()->selectType(3);
+                        controller_->setTab(7);
+                        controller_->showShiftFace(true);
+                        controller_->hideValuePopup();
+                      }});
+    steps_.push_back({"39-eq-full", [this] {
+                        resetShot();
+                        controller_->setTab(7);
+                        controller_->setFullscreen(true);
+                      }});
+    steps_.push_back({"39-xy", [this] {
+                        resetShot();
+                        controller_->setTab(8);
+                      }});
+    steps_.push_back({"39-timeline", [this] {
+                        resetShot();
+                        for (int track = 0; track < 6; ++track) {
+                          controller_->recorder()->setSelectedTrack(track);
+                          controller_->recorder()->selectRow(0);
+                          controller_->recorder()->activateSelected();
+                        }
+                        controller_->timeline()->refresh();
+                        controller_->timeline()->preparePeaksForDemo();
+                        controller_->timeline()->setSelectedTrack(1);
+                        controller_->timeline()->setPage(0);
+                        controller_->timeline()->setCursorBeats(3.0);
+                        controller_->setTab(9);
+                      }});
+    steps_.push_back({"39-popup-comp", [this] {
+                        resetShot();
+                        controller_->setTab(4);
+                        controller_->setSystemShiftPage(0);
+                        controller_->showShiftFace(true);
+                        controller_->openConfig(QStringLiteral("comp"));
+                      }});
+    steps_.push_back({"39-popup-trackmonitor", [this] {
+                        resetShot();
+                        controller_->mixer()->setTrackMode(true);
+                        controller_->mixer()->setTrackIndex(2);
+                        controller_->setTab(0);
+                        controller_->showShiftFace(true);
+                        controller_->openConfig(QStringLiteral("trackmonitor"));
+                      }});
+    steps_.push_back({"39-popup-pipechmask", [this] {
+                        resetShot();
+                        controller_->setTab(1);
+                        controller_->showShiftFace(true);
+                        controller_->routing()->setShiftPage(1);
+                        controller_->routing()->setPipeSource(0);
+                        controller_->routing()->setPipeDestination(2);
+                        if (!controller_->routing()->routeEnabled(0, 2)) {
+                          controller_->routing()->toggleRoute(0, 2);
+                        }
+                        if (controller_->routing()->pipeCount() == 0) {
+                          controller_->routing()->setAddTypeIndex(0);
+                          controller_->routing()->addPipe();
+                        }
+                        controller_->routing()->selectPipe(0);
+                        controller_->routing()->setSelectedPipeChannelMask(0x000F);
+                        controller_->openConfig(QStringLiteral("pipechannels"));
+                      }});
+    steps_.push_back({"39-value-popup", [this] {
+                        resetShot();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->setTab(0);
+                        controller_->setTouchAnchorY(300.0);
+                        controller_->showValuePopup(QStringLiteral("IN 02 GAIN"),
+                                                    QStringLiteral("db"), -6.0);
+                      }});
+    steps_.push_back({"39-popup-sends", [this] {
+                        resetShot();
+                        controller_->setTab(4);
+                        controller_->setSystemShiftPage(0);
+                        controller_->showShiftFace(true);
+                        controller_->openConfig(QStringLiteral("sends"));
+                      }});
+    steps_.push_back({"39-popup-eqtype", [this] {
+                        resetShot();
+                        controller_->eq()->selectMain();
+                        controller_->eq()->selectBand(2);
+                        controller_->setTab(7);
+                        controller_->openConfig(QStringLiteral("eqtype"));
+                      }});
+    steps_.push_back({"39-popup-timelineops", [this] {
+                        resetShot();
+                        controller_->timeline()->setSelectedTrack(1);
+                        controller_->timeline()->beginSelection(1, 1.0);
+                        controller_->timeline()->updateSelection(5.0);
+                        controller_->timeline()->endSelection();
+                        controller_->setTab(9);
+                        controller_->openConfig(QStringLiteral("timelineops"));
+                      }});
+    steps_.push_back({"39-transport", [this] {
+                        resetShot();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->setTab(0);
+                      }});
+  }
+
+  // Common reset before every 39-* refresh shot: no stale overlay, no
+  // fullscreen bridge, primary face.
+  void resetShot() {
+    controller_->hideValuePopup();
+    controller_->configCancel();
+    controller_->keypadCancel();
+    controller_->confirmCancel();
+    controller_->setFullscreen(false);
+    controller_->showShiftFace(false);
   }
 
   // Scripted absolute EQ band values: type 0..5, frequency, gain, Q.

@@ -126,6 +126,11 @@ qt_add_resources(mnkybox "qml"
     qml/TransportStrip.qml
     qml/components/TouchButton.qml
     qml/components/TouchSlider.qml
+    qml/components/TouchKnob.qml
+    qml/components/KnobDial.qml
+    qml/components/Meter.qml
+    qml/components/TransportGlyphButton.qml
+    qml/components/Wordmark.qml
     qml/components/MixerStrip.qml
     qml/components/MixerShiftStrip.qml
     qml/components/LearnPanel.qml

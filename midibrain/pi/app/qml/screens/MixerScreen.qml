@@ -4,8 +4,10 @@ import "../components"
 
 // Mixer screen with two views of the same strips: MIXER (one setting across
 // many tracks) and TRACK (one track with many settings). SHIFT switches to the
-// configure face: per-strip Gain/FX/CUE/OUT34/monitor for MIXER, and sends,
-// pre/post, monitor and (pending) assignment for TRACK.
+// configure face: per-strip Gain/FX/CUE/OUT34/monitor for MIXER, and the
+// TRACK I/O, sends and monitor summaries for TRACK. Selection groups of more
+// than two choices live in the shared ConfigPopup; the face shows the live
+// summary.
 Item {
     id: screen
 
@@ -14,12 +16,12 @@ Item {
     Column {
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 3
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 3
+            spacing: Style.gap
 
             TouchButton {
                 width: 96
@@ -39,8 +41,32 @@ Item {
                 focusId: "mixer.mode.1"
                 onClicked: mixer.trackMode = true
             }
+            Row {
+                width: screen.shiftFace && !mixer.trackMode ? 176 : 0
+                height: parent.height
+                spacing: Style.gapTight
+                visible: width > 0
+                TouchButton {
+                    width: (parent.width - Style.gapTight) / 2
+                    height: parent.height
+                    text: "1-9"
+                    textSize: Style.fontSmall
+                    checked: mixer.bank === 0
+                    focusId: "mixer.bank.0"
+                    onClicked: mixer.setBank(0)
+                }
+                TouchButton {
+                    width: (parent.width - Style.gapTight) / 2
+                    height: parent.height
+                    text: "10-18"
+                    textSize: Style.fontSmall
+                    checked: mixer.bank === 1
+                    focusId: "mixer.bank.1"
+                    onClicked: mixer.setBank(1)
+                }
+            }
             Text {
-                width: parent.width - 198
+                width: parent.width - 192 - (screen.shiftFace && !mixer.trackMode ? 184 : 0)
                 height: parent.height
                 text: (screen.shiftFace ? "SHIFT  " : "") +
                       (mixer.trackMode ? mixer.trackName : "one setting across tracks")
@@ -55,15 +81,15 @@ Item {
         Item {
             visible: !mixer.trackMode && !screen.shiftFace
             width: parent.width
-            height: parent.height - Style.touch - 3
+            height: parent.height - Style.touch - Style.gap
 
             Row {
                 anchors.fill: parent
-                spacing: 3
+                spacing: Style.gap
 
                 Item {
                     id: stripsArea
-                    width: parent.width - Style.masterWidth - 3
+                    width: parent.width - Style.masterWidth - Style.gap
                     height: parent.height
 
                     Repeater {
@@ -94,15 +120,15 @@ Item {
                 Column {
                     width: Style.masterWidth
                     height: parent.height
-                    spacing: 3
+                    spacing: Style.gap
 
                     Row {
                         width: parent.width
                         height: Style.touch
-                        spacing: 2
+                        spacing: Style.gapTight
 
                         TouchButton {
-                            width: (parent.width - 2) / 2
+                            width: (parent.width - Style.gapTight) / 2
                             height: parent.height
                             text: "1-9"
                             textSize: Style.fontSmall
@@ -111,7 +137,7 @@ Item {
                             onClicked: mixer.setBank(0)
                         }
                         TouchButton {
-                            width: (parent.width - 2) / 2
+                            width: (parent.width - Style.gapTight) / 2
                             height: parent.height
                             text: "10-18"
                             textSize: Style.fontSmall
@@ -123,16 +149,16 @@ Item {
 
                     Rectangle {
                         width: parent.width
-                        height: parent.height - Style.touch - 3
-                        color: Style.panelDark
-                        radius: Style.corner
+                        height: parent.height - Style.touch - Style.gap
+                        color: Style.panel
+                        radius: Style.cornerPanel
                         border.width: Style.outlineWidth
                         border.color: Style.outline
 
                         Column {
                             anchors.fill: parent
-                            anchors.margins: 5
-                            spacing: 4
+                            anchors.margins: 8
+                            spacing: Style.gapTight
 
                             Text {
                                 width: parent.width
@@ -140,14 +166,14 @@ Item {
                                 text: "MASTER"
                                 color: Style.text
                                 font.pixelSize: Style.fontTitle
-                                font.bold: true
+                                font.weight: Font.DemiBold
                                 horizontalAlignment: Text.AlignHCenter
                             }
 
                             TouchSlider {
                                 id: masterGain
                                 width: parent.width
-                                height: 112
+                                height: 108
                                 vertical: true
                                 minimumValue: -60
                                 maximumValue: 12
@@ -161,32 +187,17 @@ Item {
 
                             Row {
                                 width: parent.width
-                                height: Math.max(40, parent.height - 18 - 112 - 8)
+                                height: Math.max(48, parent.height - 18 - 108 - 8)
                                 spacing: 5
 
                                 Repeater {
                                     model: 2
-                                    delegate: Item {
+                                    delegate: Meter {
                                         width: (parent.width - 5) / 2
                                         height: parent.height
-
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            color: Style.panel
-                                            border.width: Style.outlineWidth
-                                            border.color: Style.outline
-                                        }
-                                        Rectangle {
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.bottom: parent.bottom
-                                            anchors.margins: 1
-                                            height: Math.max(0, (parent.height - 2) *
-                                                             (index === 0 ? meterFill(mixer.meterLeft)
-                                                                          : meterFill(mixer.meterRight)))
-                                            color: (index === 0 ? mixer.meterLeft : mixer.meterRight) > 0.95
-                                                   ? Style.record : Style.ok
-                                        }
+                                        level: index === 0 ? mixer.meterLeft : mixer.meterRight
+                                        clip: (index === 0 ? mixer.meterLeft : mixer.meterRight) > 0.95
+                                        vertical: true
                                     }
                                 }
                             }
@@ -200,48 +211,17 @@ Item {
         Item {
             visible: !mixer.trackMode && screen.shiftFace
             width: parent.width
-            height: parent.height - Style.touch - 3
+            height: parent.height - Style.touch - Style.gap
 
             Column {
                 width: parent.width
                 height: parent.height
-                spacing: 3
-
-                Row {
-                    width: parent.width
-                    height: Style.touch
-                    spacing: 3
-                    TouchButton {
-                        width: 96
-                        height: parent.height
-                        text: "1-9"
-                        textSize: Style.fontSmall
-                        checked: mixer.bank === 0
-                        onClicked: mixer.setBank(0)
-                    }
-                    TouchButton {
-                        width: 96
-                        height: parent.height
-                        text: "10-18"
-                        textSize: Style.fontSmall
-                        checked: mixer.bank === 1
-                        onClicked: mixer.setBank(1)
-                    }
-                    Text {
-                        width: parent.width - 198
-                        height: parent.height
-                        text: "SEND / MONITOR CONFIG"
-                        color: Style.accent
-                        font.pixelSize: Style.fontSmall
-                        font.bold: true
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                }
+                spacing: Style.gap
 
                 Item {
                     id: shiftStripsArea
                     width: parent.width
-                    height: parent.height - Style.touch - 3
+                    height: parent.height
 
                     Repeater {
                         model: mixer
@@ -262,12 +242,12 @@ Item {
         Item {
             visible: mixer.trackMode && !screen.shiftFace
             width: parent.width
-            height: parent.height - Style.touch - 3
+            height: parent.height - Style.touch - Style.gap
 
             Column {
                 width: parent.width
                 height: parent.height
-                spacing: 3
+                spacing: Style.gap
 
                 Item {
                     width: parent.width
@@ -313,10 +293,10 @@ Item {
                 Row {
                     width: parent.width
                     height: Style.touch
-                    spacing: 4
+                    spacing: Style.gap
 
                     TouchButton {
-                        width: (parent.width - 8) / 3
+                        width: (parent.width - Style.gap * 2) / 3
                         height: parent.height
                         text: "REC"
                         textSize: Style.fontSmall
@@ -326,22 +306,20 @@ Item {
                         onClicked: mixer.toggleArm(mixer.trackIndex)
                     }
                     TouchButton {
-                        width: (parent.width - 8) / 3
+                        width: (parent.width - Style.gap * 2) / 3
                         height: parent.height
                         text: "MUTE"
                         textSize: Style.fontSmall
                         checked: mixer.trackMute
-                        checkedColor: Style.muteOn
                         focusId: "track.mute"
                         onClicked: mixer.toggleMute(mixer.trackIndex)
                     }
                     TouchButton {
-                        width: (parent.width - 8) / 3
+                        width: (parent.width - Style.gap * 2) / 3
                         height: parent.height
                         text: "SOLO"
                         textSize: Style.fontSmall
                         checked: mixer.trackSolo
-                        checkedColor: Style.soloOn
                         focusId: "track.solo"
                         onClicked: mixer.toggleSolo(mixer.trackIndex)
                     }
@@ -349,16 +327,16 @@ Item {
             }
         }
 
-        // ---- TRACK SHIFT: configure + assignment stubs --------------------
+        // ---- TRACK SHIFT: configure + assignment --------------------------
         Item {
             visible: mixer.trackMode && screen.shiftFace
             width: parent.width
-            height: parent.height - Style.touch - 3
+            height: parent.height - Style.touch - Style.gap
 
             Column {
                 width: parent.width
                 height: parent.height
-                spacing: 3
+                spacing: Style.gap
 
                 // Per-track I/O assignment (session v2 inCh/inPair/outDst). The
                 // left picker walks none / IN 01..18 with the PAIR toggle for a
@@ -368,20 +346,20 @@ Item {
                 Row {
                     width: parent.width
                     height: Style.touch
-                    spacing: 8
+                    spacing: Style.gap
 
                     Row {
-                        width: (parent.width - 8) / 2
+                        width: (parent.width - Style.gap) / 2
                         height: parent.height
-                        spacing: 2
+                        spacing: Style.gapTight
 
                         Text {
-                            width: 40
+                            width: 44
                             height: parent.height
                             text: "INPUT"
                             color: Style.textDim
-                            font.pixelSize: 9
-                            font.bold: true
+                            font.pixelSize: Style.fontSmall
+                            font.weight: Font.DemiBold
                             verticalAlignment: Text.AlignVCenter
                         }
                         TouchButton {
@@ -396,11 +374,12 @@ Item {
                             }
                         }
                         TouchButton {
-                            width: parent.width - 40 - Style.touch * 2 - 70 - 8
+                            width: parent.width - 44 - Style.touch * 2 - 68 -
+                                   Style.gapTight * 3
                             height: parent.height
                             text: mixer.trackInputText
                             textSize: Style.fontSmall
-                            idleColor: Style.panelDark
+                            variant: "ghost"
                             focusId: "shift.track.input"
                             onClicked: {
                                 mixer.cycleTrackInCh(1)
@@ -419,10 +398,10 @@ Item {
                             }
                         }
                         TouchButton {
-                            width: 68
+                            width: 64
                             height: parent.height
                             text: mixer.trackInPair ? "PAIR" : "MONO"
-                            textSize: 9
+                            textSize: Style.fontSmall
                             checked: mixer.trackInPair
                             focusId: "shift.track.input.pair"
                             onClicked: {
@@ -433,17 +412,18 @@ Item {
                     }
 
                     Row {
-                        width: (parent.width - 8) / 2
+                        width: (parent.width - Style.gap) / 2
                         height: parent.height
-                        spacing: 2
+                        spacing: Style.gapTight
 
                         Text {
-                            width: 46
+                            width: 52
                             height: parent.height
                             text: "OUTPUT"
                             color: Style.textDim
-                            font.pixelSize: 9
-                            font.bold: true
+                            font.pixelSize: Style.fontSmall
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
                             verticalAlignment: Text.AlignVCenter
                         }
                         TouchButton {
@@ -458,11 +438,12 @@ Item {
                             }
                         }
                         TouchButton {
-                            width: parent.width - 46 - Style.touch * 2 - 6
+                            width: parent.width - 52 - Style.touch * 2 -
+                                   Style.gapTight * 2
                             height: parent.height
                             text: mixer.trackOutputText
                             textSize: Style.fontSmall
-                            idleColor: Style.panelDark
+                            variant: "ghost"
                             focusId: "shift.track.output"
                             onClicked: {
                                 mixer.cycleTrackOutDst(1)
@@ -486,10 +467,10 @@ Item {
                 Row {
                     width: parent.width
                     height: Style.touch * 5
-                    spacing: 6
+                    spacing: Style.gap
 
                     Column {
-                        width: (parent.width - 6) / 2
+                        width: (parent.width - Style.gap) / 2
                         height: parent.height
                         spacing: 0
                         TrackSliderRow {
@@ -537,105 +518,43 @@ Item {
                     }
 
                     Column {
-                        width: (parent.width - 6) / 2
+                        width: (parent.width - Style.gap) / 2
                         height: parent.height
-                        spacing: 0
-                        SendSourceRow {
-                            width: parent.width
-                            label: "CUE"
-                            source: session.sendCue
-                            focusPrefix: "shift.monitor.send.cue"
-                            onPicked: (value) => session.sendCue = value
-                        }
-                        SendSourceRow {
-                            width: parent.width
-                            label: "FX1"
-                            source: session.sendFx1
-                            focusPrefix: "shift.monitor.send.fx1"
-                            onPicked: (value) => session.sendFx1 = value
-                        }
-                        SendSourceRow {
-                            width: parent.width
-                            label: "FX2"
-                            source: session.sendFx2
-                            focusPrefix: "shift.monitor.send.fx2"
-                            onPicked: (value) => session.sendFx2 = value
-                        }
-                        SendSourceRow {
-                            width: parent.width
-                            label: "OUT34"
-                            source: session.sendOut34
-                            focusPrefix: "shift.monitor.send.out34"
-                            onPicked: (value) => session.sendOut34 = value
-                        }
-                        SendSourceRow {
-                            width: parent.width
-                            label: "REC"
-                            source: session.sendRec
-                            focusPrefix: "shift.monitor.send.rec"
-                            onPicked: (value) => session.sendRec = value
-                        }
-                    }
-                }
+                        spacing: Style.gap
 
-                Row {
-                    width: parent.width
-                    height: Style.touch
-                    spacing: 3
-                    Text {
-                        width: 76
-                        height: parent.height
-                        text: "INPUT MON"
-                        color: Style.textDim
-                        font.pixelSize: Style.fontSmall
-                        font.bold: true
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    TouchButton {
-                        width: (parent.width - 82) / 4
-                        height: parent.height
-                        text: "PLAY"
-                        textSize: 9
-                        checked: mixer.trackMonitor === 0
-                        checkedColor: Style.record
-                        focusId: "shift.track.monitor.0"
-                        onClicked: mixer.setTrackMonitor(0)
-                    }
-                    TouchButton {
-                        width: (parent.width - 82) / 4
-                        height: parent.height
-                        text: "AUTO"
-                        textSize: 9
-                        checked: mixer.trackMonitor === 1
-                        focusId: "shift.track.monitor.1"
-                        onClicked: mixer.setTrackMonitor(1)
-                    }
-                    TouchButton {
-                        width: (parent.width - 82) / 4
-                        height: parent.height
-                        text: "BOTH"
-                        textSize: 9
-                        checked: mixer.trackMonitor === 2
-                        checkedColor: Style.ok
-                        focusId: "shift.track.monitor.2"
-                        onClicked: mixer.setTrackMonitor(2)
-                    }
-                    TouchButton {
-                        width: (parent.width - 82) / 4
-                        height: parent.height
-                        text: "MON"
-                        textSize: 9
-                        checked: mixer.trackMonitor === 3
-                        checkedColor: Style.accent
-                        focusId: "shift.track.monitor.3"
-                        onClicked: mixer.setTrackMonitor(3)
+                        TouchButton {
+                            width: parent.width
+                            height: Style.touch
+                            text: "SENDS  " + config.sendSummary
+                            textSize: Style.fontSmall
+                            focusId: "shift.monitor.sends"
+                            onClicked: app.openConfigFrom("sends", this)
+                        }
+                        TouchButton {
+                            width: parent.width
+                            height: Style.touch
+                            text: "MONITOR   " + ["PLAY", "AUTO", "BOTH", "MON"][mixer.trackMonitor]
+                            textSize: Style.fontSmall
+                            focusId: "shift.track.monitor"
+                            onClicked: app.openConfigFrom("trackmonitor", this)
+                        }
+                        Text {
+                            width: parent.width
+                            text: "Send source is PRE (before the fader) or POST (after gain + fader). " +
+                                  "Input monitor is the same four-way choice as the TRACK strip."
+                            color: Style.textDim
+                            font.pixelSize: Style.fontSmall
+                            wrapMode: Text.Wrap
+                        }
                     }
                 }
             }
         }
     }
 
-    // Label + horizontal slider row used by the TRACK views.
+    // Label + horizontal slider row used by the TRACK views. Faders stay
+    // faders on the mixer/track surface; the popup/knob language is for
+    // parameters on the FX, EQ and comp faces.
     component TrackSliderRow: Row {
         property string label: ""
         property real value: 0.0
@@ -646,7 +565,7 @@ Item {
         signal moved(real value)
 
         height: Style.touch
-        spacing: 3
+        spacing: Style.gap
 
         Text {
             width: 46
@@ -654,12 +573,12 @@ Item {
             text: parent.label
             color: Style.textDim
             font.pixelSize: Style.fontSmall
-            font.bold: true
+            font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
         TouchSlider {
             id: trackSlider
-            width: parent.width - 49
+            width: parent.width - 54
             height: parent.height
             minimumValue: parent.minimumValue
             maximumValue: parent.maximumValue
@@ -670,50 +589,5 @@ Item {
             Binding on value { value: trackSlider.parent.value; when: !trackSlider.dragging }
             onMoved: (value) => parent.moved(value)
         }
-    }
-
-    component SendSourceRow: Row {
-        property string label: ""
-        property int source: 1
-        property string focusPrefix: ""
-        signal picked(int value)
-
-        height: Style.touch
-        spacing: 2
-        Text {
-            width: 52
-            height: parent.height
-            text: parent.label
-            color: Style.text
-            font.pixelSize: Style.fontSmall
-            font.bold: true
-            verticalAlignment: Text.AlignVCenter
-        }
-        TouchButton {
-            width: (parent.width - 56) / 2
-            height: parent.height
-            text: "PRE"
-            textSize: 9
-            checked: parent.source === 0
-            focusId: parent.focusPrefix + ".pre"
-            onClicked: parent.picked(0)
-        }
-        TouchButton {
-            width: (parent.width - 56) / 2
-            height: parent.height
-            text: "POST"
-            textSize: 9
-            checked: parent.source === 1
-            focusId: parent.focusPrefix + ".post"
-            onClicked: parent.picked(1)
-        }
-    }
-
-    // Meter fill in dB, floored at -48 dB like the engine meter mapping.
-    function meterFill(peak) {
-        if (!(peak > 0)) return 0
-        const db = 20 * Math.log(peak) / Math.LN10
-        if (db <= -48) return 0
-        return Math.min(1, (db + 48) / 48)
     }
 }

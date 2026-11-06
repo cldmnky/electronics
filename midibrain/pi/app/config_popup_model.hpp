@@ -44,6 +44,9 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(double compReleaseMs READ compReleaseMs WRITE setCompReleaseMs NOTIFY changed)
   Q_PROPERTY(double compMakeupDb READ compMakeupDb WRITE setCompMakeupDb NOTIFY changed)
   Q_PROPERTY(int compMode READ compMode WRITE setCompMode NOTIFY changed)
+  // TRACK SHIFT INPUT MON: the four-way selector collapsed into a summary
+  // button. The popup edits a draft of the selected track's monitor mode.
+  Q_PROPERTY(int trackMonitor READ trackMonitor WRITE setTrackMonitor NOTIFY changed)
   Q_PROPERTY(QString metronomeSummary READ metronomeSummary NOTIFY summariesChanged)
   Q_PROPERTY(QString sendSummary READ sendSummary NOTIFY summariesChanged)
   Q_PROPERTY(QString monitorSummary READ monitorSummary NOTIFY summariesChanged)
@@ -103,6 +106,7 @@ class ConfigPopupModel final : public QObject {
   double compReleaseMs() const { return compReleaseMs_; }
   double compMakeupDb() const { return compMakeupDb_; }
   int compMode() const { return compMode_; }
+  int trackMonitor() const { return trackMonitor_; }
   QString metronomeSummary() const { return metronomeSummary_; }
   QString sendSummary() const { return sendSummary_; }
   QString monitorSummary() const { return monitorSummary_; }
@@ -148,6 +152,7 @@ class ConfigPopupModel final : public QObject {
   void setCompReleaseMs(double value);
   void setCompMakeupDb(double value);
   void setCompMode(int value);
+  void setTrackMonitor(int value);
   void setEqType(int value);
   void setDelayBeat(int value);
   void setDelayPing(int value);
@@ -173,6 +178,9 @@ class ConfigPopupModel final : public QObject {
   // Set once by AppController; the pipe-scope popup reads and writes the
   // selected pipe's chMask through this view model.
   void setRouting(RoutingViewModel* routing) { routing_ = routing; }
+  // AppController points the INPUT MON popup at the TRACK screen's selected
+  // strip before openKind("trackmonitor"); MixerModel itself is index-free.
+  void setTrackMonitorIndex(int index) { trackMonitorIndex_ = index; }
 
   // AppController entry points.
   bool openKind(const QString& kind);
@@ -218,6 +226,8 @@ class ConfigPopupModel final : public QObject {
   double compReleaseMs_ = 100.0;
   double compMakeupDb_ = 0.0;
   int compMode_ = 0;
+  int trackMonitor_ = 1;
+  int trackMonitorIndex_ = 0;
   QString metronomeSummary_;
   QString sendSummary_;
   QString monitorSummary_;

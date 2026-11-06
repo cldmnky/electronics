@@ -11,12 +11,12 @@ Item {
     Column {
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 3
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             TouchButton {
                 width: 150
@@ -46,7 +46,7 @@ Item {
                 onClicked: app.setToolsPage(2)
             }
             Text {
-                width: parent.width - 462
+                width: parent.width - 478
                 height: parent.height
                 text: app.toolsPage === 0 ? "transport markers"
                        : (app.toolsPage === 1 ? "session v2 monitor config" : "disk / screen / versions")
@@ -60,7 +60,7 @@ Item {
 
         Loader {
             width: parent.width
-            height: parent.height - Style.touch - 3
+            height: parent.height - Style.touch - Style.gap
             source: {
                 switch (app.toolsPage) {
                 case 0: return "PunchScreen.qml"

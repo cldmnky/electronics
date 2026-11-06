@@ -18,6 +18,7 @@ ComboBox {
 
     background: Rectangle {
         color: Style.panelDark
+        radius: Style.corner
         border.width: (app.focusId === root.focusId && root.focusId !== "") ? 2
                                                                              : Style.outlineWidth
         border.color: (app.focusId === root.focusId && root.focusId !== "")
@@ -40,7 +41,7 @@ ComboBox {
         text: "v"
         color: Style.textDim
         font.pixelSize: Style.fontSmall
-        font.bold: true
+        font.weight: Font.DemiBold
     }
 
     delegate: ItemDelegate {
@@ -69,6 +70,7 @@ ComboBox {
         }
         background: Rectangle {
             color: highlighted ? Style.accent : Style.panelDark
+            radius: Style.corner
             border.width: Style.outlineWidth
             border.color: Style.outline
         }

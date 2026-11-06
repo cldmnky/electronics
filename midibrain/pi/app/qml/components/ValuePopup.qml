@@ -40,8 +40,8 @@ Rectangle {
     z: 120
     width: Math.max(210, Math.min(440, valueText.implicitWidth + 56))
     height: 58
-    radius: Style.corner
-    color: Style.panel
+    radius: Style.cornerPanel
+    color: Style.raised
     border.width: 2
     border.color: Style.accent
     opacity: popupVisible ? 1.0 : 0.0
@@ -49,7 +49,7 @@ Rectangle {
     y: placementY
 
     Behavior on opacity {
-        NumberAnimation { duration: 120 }
+        NumberAnimation { duration: Style.motionValue }
     }
 
     Column {
@@ -63,7 +63,7 @@ Rectangle {
             text: root.popupLabel
             color: Style.textDim
             font.pixelSize: Style.fontSmall
-            font.bold: true
+            font.weight: Font.DemiBold
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
         }
@@ -73,8 +73,8 @@ Rectangle {
             height: 30
             text: root.popupText
             color: Style.text
-            font.pixelSize: 22
-            font.bold: true
+            font.pixelSize: Style.fontDisplay
+            font.weight: Font.DemiBold
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight

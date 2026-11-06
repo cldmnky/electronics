@@ -23,12 +23,12 @@ Item {
         visible: screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 4
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             Text {
                 width: 64
@@ -36,12 +36,12 @@ Item {
                 text: "RET A"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
             }
             TouchSlider {
                 id: returnA
-                width: parent.width - 68
+                width: parent.width - 72
                 height: parent.height
                 minimumValue: -60
                 maximumValue: 12
@@ -56,7 +56,7 @@ Item {
 
         FxSlotPanel {
             width: parent.width
-            height: parent.height - Style.touch - 4
+            height: parent.height - Style.touch - Style.gap
             slot: fx.slotB
             slotLetter: "B"
             focusPrefix: "shift.fx"

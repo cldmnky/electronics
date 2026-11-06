@@ -12,13 +12,13 @@ Item {
 
     Column {
         width: parent.width
-        spacing: 4
+        spacing: Style.gapTight
 
         Rectangle {
             width: parent.width
-            height: 48
+            height: 44
             visible: tools.lowSpace
-            color: "#4a1f1e"
+            color: Style.dangerFill
             border.width: 1
             border.color: Style.record
             Text {
@@ -27,7 +27,7 @@ Item {
                 text: tools.bannerText
                 color: Style.text
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 wrapMode: Text.Wrap
                 verticalAlignment: Text.AlignVCenter
             }
@@ -39,7 +39,7 @@ Item {
             text: "TAKE VOLUME"
             color: Style.textDim
             font.pixelSize: Style.fontSmall
-            font.bold: true
+            font.weight: Font.DemiBold
         }
         Text {
             width: parent.width
@@ -47,7 +47,7 @@ Item {
             text: tools.diskText
             color: tools.lowSpace ? Style.record : Style.text
             font.pixelSize: Style.fontTitle
-            font.bold: true
+            font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
         Text {
@@ -55,7 +55,7 @@ Item {
             height: 16
             text: tools.takeDirectoryText
             color: Style.textDim
-            font.pixelSize: 10
+            font.pixelSize: Style.fontSmall
             elide: Text.ElideMiddle
         }
 
@@ -71,7 +71,7 @@ Item {
             text: "SCREEN BRIGHTNESS"
             color: Style.textDim
             font.pixelSize: Style.fontSmall
-            font.bold: true
+            font.weight: Font.DemiBold
         }
         Row {
             width: parent.width
@@ -97,7 +97,7 @@ Item {
                 text: tools.brightness + " %"
                 color: tools.brightnessAvailable ? Style.text : Style.textDim
                 font.pixelSize: Style.fontBody
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: Text.AlignRight
             }
@@ -107,7 +107,7 @@ Item {
             height: 30
             text: tools.brightnessNote
             color: Style.textDim
-            font.pixelSize: 10
+            font.pixelSize: Style.fontSmall
             wrapMode: Text.Wrap
         }
 
@@ -123,7 +123,7 @@ Item {
             text: "VERSIONS"
             color: Style.textDim
             font.pixelSize: Style.fontSmall
-            font.bold: true
+            font.weight: Font.DemiBold
         }
         Text {
             width: parent.width
@@ -139,7 +139,7 @@ Item {
             height: 20
             text: "FIRMWARE " + tools.firmwareVersion
             color: Style.text
-            font.pixelSize: 11
+            font.pixelSize: Style.fontSmall
             font.family: "monospace"
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight

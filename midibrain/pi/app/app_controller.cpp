@@ -1,5 +1,7 @@
 #include "app_controller.hpp"
 
+#include <QQuickItem>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -465,6 +467,33 @@ void AppController::injectDemoTrsMidi(int port, int status, int data1, int data2
 }
 
 void AppController::openConfig(const QString& kind) {
+  // A panel/keyboard path has no summary button to grow from: use the panel
+  // centre so a later openConfigFrom() origin cannot leak into this popup.
+  configOriginX_ = -1.0;
+  configOriginY_ = -1.0;
+  emit configOriginChanged();
+  openConfigInternal(kind);
+}
+
+void AppController::openConfigFrom(const QString& kind, QObject* item) {
+  auto* quick = qobject_cast<QQuickItem*>(item);
+  if (quick != nullptr) {
+    const QPointF centre =
+        quick->mapToScene(QPointF(quick->width() / 2.0, quick->height() / 2.0));
+    configOriginX_ = centre.x();
+    configOriginY_ = centre.y();
+  } else {
+    configOriginX_ = -1.0;
+    configOriginY_ = -1.0;
+  }
+  emit configOriginChanged();
+  openConfigInternal(kind);
+}
+
+void AppController::openConfigInternal(const QString& kind) {
+  if (kind == QStringLiteral("trackmonitor")) {
+    configVm_->setTrackMonitorIndex(mixerVm_->trackIndex());
+  }
   if (!configVm_->openKind(kind)) return;
   // A popup opened from the SHIFT face keeps that face underneath it; the
   // popup's own focus trap replaces the ring while it is open, and CANCEL puts
@@ -947,6 +976,8 @@ void AppController::activateFocus() {
       configVm_->setCueStyle(index);
     } else if (parts[1] == QStringLiteral("out34")) {
       configVm_->setOut34Mode(index);
+    } else if (parts[1] == QStringLiteral("trackmonitor")) {
+      configVm_->setTrackMonitor(index);
     } else if (parts[1] == QStringLiteral("on")) {
       configVm_->setCompOn(!configVm_->compOn());
     } else if (parts[1] == QStringLiteral("send") && parts.size() >= 4) {
@@ -1029,8 +1060,12 @@ void AppController::activateFocus() {
       mixerVm_->toggleMute(mixerVm_->trackIndex());
     } else if (parts[1] == QStringLiteral("solo")) {
       mixerVm_->toggleSolo(mixerVm_->trackIndex());
-    } else if (parts[1] == QStringLiteral("monitor") && parts.size() >= 3) {
-      mixerVm_->setTrackMonitor(parts[2].toInt());
+    } else if (parts[1] == QStringLiteral("monitor")) {
+      if (parts.size() >= 3) {
+        mixerVm_->setTrackMonitor(parts[2].toInt());
+      } else {
+        openConfig(QStringLiteral("trackmonitor"));
+      }
     } else if (parts[1] == QStringLiteral("input")) {
       if (parts.size() >= 3 && parts[2] == QStringLiteral("pair")) {
         mixerVm_->setTrackInPair(!mixerVm_->trackInPair());
@@ -1135,6 +1170,8 @@ void AppController::activateFocus() {
     const int index = parts.size() >= 3 ? parts[2].toInt() : 0;
     if (parts[1] == QStringLiteral("summary") && parts.size() >= 3) {
       openConfig(parts[2]);
+    } else if (parts[1] == QStringLiteral("sends")) {
+      openConfig(QStringLiteral("sends"));
     } else if (parts[1] == QStringLiteral("clickmode")) {
       sessionVm_->setClickMode(index);
     } else if (parts[1] == QStringLiteral("clickout")) {
@@ -2042,6 +2079,10 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("config.send.%1.pre").arg(QLatin1String(row)));
         ids.push_back(QStringLiteral("config.send.%1.post").arg(QLatin1String(row)));
       }
+    } else if (kind == QStringLiteral("trackmonitor")) {
+      for (int mode = 0; mode < 4; ++mode) {
+        ids.push_back(QStringLiteral("config.trackmonitor.%1").arg(mode));
+      }
     } else if (kind == QStringLiteral("monitor")) {
       ids.push_back(QStringLiteral("config.phones.0"));
       ids.push_back(QStringLiteral("config.phones.1"));
@@ -2106,13 +2147,8 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("shift.track.fx2"));
           ids.push_back(QStringLiteral("shift.track.cue"));
           ids.push_back(QStringLiteral("shift.track.out34"));
-          for (const char* destination : {"cue", "fx1", "fx2", "out34", "rec"}) {
-            ids.push_back(QStringLiteral("shift.monitor.send.%1.pre").arg(QLatin1String(destination)));
-            ids.push_back(QStringLiteral("shift.monitor.send.%1.post").arg(QLatin1String(destination)));
-          }
-          for (int mode = 0; mode < 4; ++mode) {
-            ids.push_back(QStringLiteral("shift.track.monitor.%1").arg(mode));
-          }
+          ids.push_back(QStringLiteral("shift.monitor.sends"));
+          ids.push_back(QStringLiteral("shift.track.monitor"));
         } else {
           const int first = mixerVm_->bank() * kStripsPerBank;
           for (int i = 0; i < kStripsPerBank; ++i) {
@@ -2234,9 +2270,7 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("shift.eq.band.gain"));
         ids.push_back(QStringLiteral("shift.eq.band.q"));
         ids.push_back(QStringLiteral("shift.eq.band.freq"));
-        for (int type = 0; type < EqModel::kTypeCount; ++type) {
-          ids.push_back(QStringLiteral("shift.eq.type.%1").arg(type));
-        }
+        ids.push_back(QStringLiteral("shift.eq.band.type"));
         break;
       }
       case 5:

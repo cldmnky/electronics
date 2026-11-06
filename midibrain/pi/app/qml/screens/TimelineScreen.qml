@@ -25,13 +25,13 @@ Item {
 
     Column {
         anchors.fill: parent
-        anchors.margins: Style.margin
-        spacing: 3
+        anchors.margins: Style.marginCompact
+        spacing: Style.gapHair
 
         Row {
             width: parent.width
             height: 20
-            spacing: 6
+            spacing: Style.gap
 
             Text {
                 width: parent.width * 0.34
@@ -39,7 +39,7 @@ Item {
                 text: timeline.selectedTrackName
                 color: Style.text
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
@@ -49,7 +49,7 @@ Item {
                 text: timeline.selectionText
                 color: timeline.selectionActive ? Style.accent : Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
@@ -58,7 +58,7 @@ Item {
                 height: parent.height
                 text: timeline.opsText
                 color: Style.textDim
-                font.pixelSize: 10
+                font.pixelSize: Style.fontSmall
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
@@ -68,7 +68,7 @@ Item {
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 3
+            spacing: Style.gapHair
 
             TouchButton {
                 width: (parent.width - 27) / 10
@@ -154,7 +154,8 @@ Item {
                 width: (parent.width - 27) / 10
                 height: parent.height
                 text: "UNDO"
-                textSize: 9
+                textSize: Style.fontSmall
+                variant: "ghost"
                 active: timeline.canUndo
                 focusId: "timeline.undo"
                 onClicked: {
@@ -193,7 +194,7 @@ Item {
                     if (!marker.enabled) continue
                     const x = (marker.beat - timeline.viewStartBeats) / timeline.viewBeats * width
                     if (x < -1 || x > width + 1) continue
-                    ctx.fillStyle = marker.label === "IN" ? Style.record : Style.soloOn
+                    ctx.fillStyle = marker.label === "IN" ? Style.record : Style.accent
                     ctx.fillRect(x - 1, 0, 3, height)
                     ctx.fillText(marker.label, x + 2, height - 2)
                 }
@@ -203,7 +204,7 @@ Item {
         Item {
             id: laneArea
             width: parent.width
-            height: parent.height - 20 - Style.touch - 16 - 14 - 12
+            height: parent.height - 20 - Style.touch - 16 - 14 - Style.gapHair * 4
 
             Column {
                 anchors.fill: parent
@@ -215,6 +216,7 @@ Item {
                         width: laneArea.width
                         height: screen.laneHeight
                         color: modelData.selected ? Style.panel : Style.panelDark
+                        radius: Style.corner
                         border.width: modelData.selected ? 2 : Style.outlineWidth
                         border.color: modelData.selected ? Style.accent : Style.outline
                         clip: true
@@ -224,8 +226,8 @@ Item {
                             height: parent.height
                             text: modelData.label + "\n" + modelData.name
                             color: modelData.selected ? Style.accent : Style.textDim
-                            font.pixelSize: 9
-                            font.bold: true
+                            font.pixelSize: Style.fontSmall
+                            font.weight: Font.DemiBold
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                             wrapMode: Text.NoWrap
@@ -246,6 +248,9 @@ Item {
                                 values: modelData.wave
                                 placeholderText: modelData.hasTake ? "NO PEAKS" : "NO ACTIVE TAKE"
                                 waveColor: modelData.selected ? Style.accent : Style.textDim
+                                playheadRatio: timeline.viewBeats > 0
+                                               ? (timeline.playheadBeats - timeline.viewStartBeats) /
+                                                 timeline.viewBeats : -1
                             }
 
                             Repeater {
@@ -261,7 +266,7 @@ Item {
                                     visible: x + width > 0 && x < waveArea.width
                                     color: Qt.rgba(0.31, 0.76, 0.97, 0.14)
                                     border.width: 1
-                                    border.color: modelData.normalize ? Style.soloOn : Style.accent
+                                    border.color: modelData.normalize ? Style.accent : Style.accent
                                 }
                             }
                         }
@@ -314,7 +319,7 @@ Item {
                         const marker = punches[i]
                         if (!marker.enabled) continue
                         const x = xOf(marker.beat)
-                        ctx.strokeStyle = marker.label === "IN" ? Style.record : Style.soloOn
+                        ctx.strokeStyle = marker.label === "IN" ? Style.record : Style.accent
                         ctx.lineWidth = 2
                         ctx.beginPath()
                         ctx.moveTo(x, 0)
@@ -357,7 +362,11 @@ Item {
                     // Playhead.
                     const playX = xOf(timeline.playheadBeats)
                     if (playX >= screen.labelWidth && playX <= width) {
-                        ctx.strokeStyle = Style.record
+                        // Playhead shade: the part of the take still ahead of
+                        // the transport reads dimmer than the played part.
+                        ctx.fillStyle = Qt.rgba(0.02, 0.03, 0.04, 0.35)
+                        ctx.fillRect(playX, 0, Math.max(0, width - playX), height)
+                        ctx.strokeStyle = Style.accent
                         ctx.lineWidth = 2
                         ctx.beginPath()
                         ctx.moveTo(playX, 0)
@@ -393,7 +402,7 @@ Item {
             height: 14
             text: "DRAG A REGION  -  IN/OUT SET THE EDGE AT THE CURSOR  -  SHIFT = COARSE  -  OPS PREVIEWS BEFORE OK"
             color: Style.textDim
-            font.pixelSize: 9
+            font.pixelSize: Style.fontSmall
             elide: Text.ElideRight
         }
     }

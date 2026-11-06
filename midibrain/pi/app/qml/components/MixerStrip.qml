@@ -1,9 +1,10 @@
 import QtQuick
 import Mnkybox 1.0
 
-// One banked mixer strip: gain fader, pan, two sends and MUTE/SOLO/ARM. The
-// outer border is the selected-strip indicator; every control carries a panel
-// focus id.
+// One banked mixer strip: gain fader, pan, input source and the three track
+// switches. The outer border is the selected-strip indicator; every control
+// carries a panel focus id. The meter is the shared gradient/peak-hold/clip
+// component so the primary face stays perform-only.
 Rectangle {
     id: root
 
@@ -40,31 +41,31 @@ Rectangle {
 
         Item {
             width: parent.width
-            height: 12
+            height: 14
             Text {
                 anchors.left: parent.left
                 text: root.stripName
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
             }
             Text {
                 anchors.right: parent.right
                 text: root.panText
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
             }
         }
 
         Row {
             width: parent.width
-            height: Math.max(Style.touch, root.height - 12 - 5 * Style.touch)
+            height: Math.max(Style.touch, root.height - 14 - 5 * Style.touch)
             spacing: 2
 
             TouchSlider {
                 id: gain
-                width: parent.width - 16
+                width: parent.width - 18
                 height: parent.height
                 vertical: true
                 minimumValue: -60
@@ -77,52 +78,34 @@ Rectangle {
                 onMoved: (value) => mixer.setGainDb(root.stripIndex, value)
             }
 
-            // Per-strip meter with a clip-hold LED. The level is the post-gain
-            // engine tap mapped to dB; the LED latches a full-scale block.
+            // Per-strip post-gain meter with a latched clip crown. The shared
+            // component owns the dB taper, the 10 ms peak hold and the crown.
             Item {
                 id: meter
-                width: 14
+                width: 16
                 height: parent.height
 
-                Rectangle {
-                    anchors.fill: parent
-                    color: Style.panelDark
-                    border.width: Style.outlineWidth
-                    border.color: Style.outline
-                }
-                Rectangle {
+                Meter {
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    anchors.margins: 1
-                    height: Math.max(0, (parent.height - 2) *
-                                     Math.max(0, Math.min(1, root.level)))
-                    color: root.level > 0.95 ? Style.record : Style.ok
-                }
-                Rectangle {
-                    id: clipLed
                     anchors.top: parent.top
-                    anchors.right: parent.right
-                    anchors.margins: 1
-                    width: 8
-                    height: 6
-                    radius: 1
-                    color: root.clip ? Style.record : Style.outline
-                    border.width: Style.outlineWidth
-                    border.color: Style.panelDark
+                    anchors.bottom: mark.top
+                    level: root.level
+                    clip: root.clip
+                    vertical: true
                 }
                 // Per-track input monitoring: PLAY/BOTH/MON always, AUTO only
                 // when an active take makes Auto choose the take over live input.
                 Text {
-                    anchors.top: clipLed.bottom
-                    anchors.topMargin: 1
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: root.monitorMark
-                    color: root.monitor === 0 ? Style.record
-                           : (root.monitor === 1 ? Style.soloOn
-                              : (root.monitor === 2 ? Style.ok : Style.accent))
-                    font.pixelSize: 7
-                    font.bold: true
+                    id: mark
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 10
+                    text: root.monitorMark.charAt(0)
+                    color: root.monitor === 1 ? Style.textDim : Style.accent
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
                     horizontalAlignment: Text.AlignHCenter
                 }
             }
@@ -152,7 +135,7 @@ Rectangle {
             height: Style.touch
             text: root.inputText
             textSize: Style.fontSmall
-            idleColor: Style.panelDark
+            variant: "ghost"
             focusId: "mixer.in." + root.stripIndex
             onClicked: app.showTextPopup(root.stripName + " INPUT",
                                          mixer.cycleInSource(root.stripIndex, 1))
@@ -165,7 +148,6 @@ Rectangle {
             height: Style.touch
             text: "M"
             checked: root.mute
-            checkedColor: Style.muteOn
             focusId: "mixer.mute." + root.stripIndex
             onClicked: mixer.toggleMute(root.stripIndex)
         }
@@ -175,7 +157,6 @@ Rectangle {
             height: Style.touch
             text: "S"
             checked: root.solo
-            checkedColor: Style.soloOn
             focusId: "mixer.solo." + root.stripIndex
             onClicked: mixer.toggleSolo(root.stripIndex)
         }

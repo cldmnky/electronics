@@ -47,15 +47,15 @@ Rectangle {
         width: Math.min(760, root.width - 24)
         height: Math.min(392, root.height - 12)
         anchors.centerIn: parent
-        color: Style.panel
-        radius: Style.corner
-        border.width: 1
+        color: Style.raised
+        radius: Style.cornerPanel
+        border.width: Style.outlineWidth
         border.color: Style.outline
 
         Column {
             anchors.fill: parent
             anchors.margins: 12
-            spacing: 4
+            spacing: Style.gapTight
 
             Text {
                 width: parent.width
@@ -63,7 +63,7 @@ Rectangle {
                 text: app.keypadTitle
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
             }
 
@@ -81,8 +81,8 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.buffer === "" ? "type a name" : root.buffer
                     color: root.buffer === "" ? Style.textDim : Style.text
-                    font.pixelSize: 18
-                    font.bold: true
+                    font.pixelSize: Style.fontTitle
+                    font.weight: Font.DemiBold
                     elide: Text.ElideRight
                     width: parent.width - 20
                 }
@@ -108,7 +108,7 @@ Rectangle {
                 text: app.keypadError
                 color: Style.record
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 elide: Text.ElideRight
             }
 
@@ -177,29 +177,29 @@ Rectangle {
                     width: actionRow.unit
                     height: actionRow.height
                     text: "BACK"
-                    textSize: 10
+                    textSize: Style.fontSmall
                     onClicked: root.backspace()
                 }
                 TouchButton {
                     width: actionRow.unit
                     height: actionRow.height
                     text: "CLEAR"
-                    textSize: 10
+                    textSize: Style.fontSmall
                     onClicked: { root.buffer = ""; root.cursor = 0 }
                 }
                 TouchButton {
                     width: actionRow.unit
                     height: actionRow.height
                     text: "CANCEL"
-                    textSize: 10
+                    textSize: Style.fontSmall
+                    variant: "ghost"
                     onClicked: app.keypadCancel()
                 }
                 TouchButton {
                     width: actionRow.unit
                     height: actionRow.height
                     text: "OK"
-                    checked: true
-                    checkedColor: Style.accent
+                    variant: "primary"
                     textSize: Style.fontBody
                     onClicked: app.keypadAccept(root.buffer)
                 }

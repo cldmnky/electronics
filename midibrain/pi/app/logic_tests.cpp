@@ -1674,20 +1674,28 @@ void styleTests() {
     colours.insert_or_assign(match.captured(1), QColor(match.captured(2)));
   }
   check(colours.count("background") == 1 && colours.count("panel") == 1 &&
-            colours.count("text") == 1 && colours.count("textDim") == 1 &&
-            colours.count("accent") == 1,
+            colours.count("raised") == 1 && colours.count("text") == 1 &&
+            colours.count("textDim") == 1 && colours.count("accent") == 1 &&
+            colours.count("record") == 1,
         "Style.qml defines the measured colour tokens");
 
   const auto background = colours["background"];
   const auto panel = colours["panel"];
+  const auto raised = colours["raised"];
   const auto text = colours["text"];
   const auto textDim = colours["textDim"];
   const auto accent = colours["accent"];
+  const auto record = colours["record"];
   check(luminance(background) <= 0.03, "surfaces stay near-black (luminance <= 0.03)");
   check(luminance(panel) <= 0.03, "panel surface stays near-black");
+  check(luminance(raised) <= 0.03, "raised surface stays near-black");
   check(contrast(text, background) >= 7.0, "primary text contrast >= 7:1");
+  check(contrast(text, raised) >= 7.0, "primary text on raised >= 7:1");
   check(contrast(textDim, background) >= 4.5, "dim text contrast >= 4.5:1");
+  check(contrast(textDim, raised) >= 4.5, "dim text on raised >= 4.5:1");
   check(contrast(accent, background) >= 4.5, "accent contrast >= 4.5:1");
+  check(contrast(accent, raised) >= 4.5, "accent on raised >= 4.5:1");
+  check(contrast(record, raised) >= 4.5, "danger text on raised >= 4.5:1");
   check(contrast(accent, panel) >= 3.0, "selected accent vs idle panel >= 3:1");
 
   QRegularExpression touchPattern(QStringLiteral("property\\s+int\\s+touch\\s*:\\s*(\\d+)"));

@@ -83,6 +83,11 @@ class AppController final : public QObject {
   // under it, so a readout is never under the finger. Touch controls set and
   // clear it, the panel EDIT path never does, so it always keeps the top band.
   Q_PROPERTY(double touchAnchorY READ touchAnchorY WRITE setTouchAnchorY NOTIFY touchAnchorChanged)
+  // Window coordinates of the summary button that opened the last config
+  // popup. ConfigPopup scales/fades from this point (120 ms); -1 means the
+  // caller had no anchor and the popup grows from its centre.
+  Q_PROPERTY(double configOriginX READ configOriginX NOTIFY configOriginChanged)
+  Q_PROPERTY(double configOriginY READ configOriginY NOTIFY configOriginChanged)
 
  public:
   explicit AppController(bool emulator, bool noPico, QObject* parent = nullptr);
@@ -135,6 +140,8 @@ class AppController final : public QObject {
   QString valuePopupText() const { return valuePopupText_; }
   double touchAnchorY() const { return touchAnchorY_; }
   void setTouchAnchorY(double y);
+  double configOriginX() const { return configOriginX_; }
+  double configOriginY() const { return configOriginY_; }
 
   // Transient control-value readout. `kind` selects the formatting (pan, db,
   // percent, ratio, ms, bpm, int, generic). Called by every TouchSlider and by
@@ -197,6 +204,9 @@ class AppController final : public QObject {
   // a MIDI source. port 0/1 = TRS IN1/IN2; the message is always 3 bytes.
   void injectDemoTrsMidi(int port, int status, int data1, int data2);
   Q_INVOKABLE void openConfig(const QString& kind);
+  // Open a config popup from a summary button: `item` is the button (a
+  // QQuickItem) and its centre becomes the popup's scale origin.
+  Q_INVOKABLE void openConfigFrom(const QString& kind, QObject* item);
   Q_INVOKABLE void configAccept();
   Q_INVOKABLE void configCancel();
 
@@ -216,6 +226,7 @@ class AppController final : public QObject {
   void confirmChanged();
   void valuePopupChanged();
   void touchAnchorChanged();
+  void configOriginChanged();
 
  private:
   void timerTick();
@@ -228,6 +239,7 @@ class AppController final : public QObject {
   void adjustFocused(int detents, bool fine);
   bool isEditableFocus(const QString& id) const;
   void rebuildFocusIds();
+  void openConfigInternal(const QString& kind);
   void setPanelMode(const QString& mode);
   void updateShiftState(const LinkStatus& status);
   void updateTransport();
@@ -335,6 +347,8 @@ class AppController final : public QObject {
   QString valuePopupLabel_;
   QString valuePopupText_;
   double touchAnchorY_ = -1.0;
+  double configOriginX_ = -1.0;
+  double configOriginY_ = -1.0;
 
   bool started_ = false;
   // --no-pico: LinkClient has no SPI transport or PicoLink and the Pi owns the

@@ -25,34 +25,54 @@ Rectangle {
         width: Math.min(744, root.width - 16)
         height: Math.min(430, root.height - 8)
         anchors.centerIn: parent
-        color: Style.panel
-        radius: Style.corner
+        color: Style.raised
+        radius: Style.cornerPanel
         border.width: 2
         border.color: Style.accent
 
+        // 120 ms scale-fade from the summary button that opened the popup.
+        // A direct controller call (screenshot runner, panel path) has no
+        // anchor and grows from the panel centre instead.
+        property real popScale: config.open ? 1.0 : 0.94
+        opacity: config.open ? 1.0 : 0.0
+        transform: Scale {
+            origin.x: app.configOriginX >= 0 ? (app.configOriginX - panel.x)
+                                             : panel.width / 2
+            origin.y: app.configOriginY >= 0 ? (app.configOriginY - panel.y)
+                                             : panel.height / 2
+            xScale: panel.popScale
+            yScale: panel.popScale
+        }
+        Behavior on popScale {
+            NumberAnimation { duration: Style.motionPopup; easing.type: Easing.OutCubic }
+        }
+        Behavior on opacity {
+            NumberAnimation { duration: Style.motionPopup; easing.type: Easing.OutCubic }
+        }
+
         Column {
             anchors.fill: parent
-            anchors.margins: 10
-            spacing: 4
+            anchors.margins: 12
+            spacing: Style.gap
 
             Row {
                 width: parent.width
                 height: 24
                 Text {
-                    width: parent.width - 120
+                    width: parent.width - 190
                     height: parent.height
                     text: config.title
                     color: Style.text
                     font.pixelSize: Style.fontTitle
-                    font.bold: true
+                    font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
                 }
                 Text {
-                    width: 120
+                    width: 190
                     height: parent.height
-                    text: "OK applies - EXIT cancels"
+                    text: "OK APPLIES - EXIT CANCELS"
                     color: Style.textDim
-                    font.pixelSize: 9
+                    font.pixelSize: Style.fontSmall
                     horizontalAlignment: Text.AlignRight
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -64,7 +84,7 @@ Rectangle {
                 width: parent.width
                 spacing: 4
 
-                Text { width: parent.width; height: 16; text: "MODE"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.bold: true }
+                Text { width: parent.width; height: 16; text: "MODE"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold }
                 Row {
                     width: parent.width
                     height: Style.touch
@@ -73,7 +93,7 @@ Rectangle {
                     TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "REC"; checked: config.clickMode === 1; focusId: "config.mode.1"; onClicked: config.clickMode = 1 }
                     TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "ON PLAY"; checked: config.clickMode === 2; focusId: "config.mode.2"; onClicked: config.clickMode = 2 }
                 }
-                Text { width: parent.width; height: 16; text: "OUTPUT"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.bold: true }
+                Text { width: parent.width; height: 16; text: "OUTPUT"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold }
                 Row {
                     width: parent.width
                     height: Style.touch
@@ -97,16 +117,16 @@ Rectangle {
                     width: parent.width
                     height: Style.touch
                     spacing: 4
-                    Text { width: 70; height: parent.height; text: "BARS"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.bold: true; verticalAlignment: Text.AlignVCenter }
+                    Text { width: 70; height: parent.height; text: "BARS"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold; verticalAlignment: Text.AlignVCenter }
                     TouchButton { width: 60; height: parent.height; text: "-"; textSize: 20; onClicked: config.clickBars = Math.max(1, config.clickBars - 1) }
-                    Text { width: 100; height: parent.height; text: config.clickBars + " bar"; color: Style.text; font.pixelSize: Style.fontBody; font.bold: true; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter }
+                    Text { width: 100; height: parent.height; text: config.clickBars + " bar"; color: Style.text; font.pixelSize: Style.fontBody; font.weight: Font.DemiBold; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter }
                     TouchButton { width: 60; height: parent.height; text: "+"; textSize: 20; focusId: "config.bars"; onClicked: config.clickBars = Math.min(8, config.clickBars + 1) }
                 }
                 Text {
                     width: parent.width
                     text: "On play = click while the transport rolls; Record = only while recording. The output choice feeds the engine click bus."
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                 }
             }
@@ -121,7 +141,7 @@ Rectangle {
                     height: 18
                     text: "PRE = gain before the fader; POST = after gain + fader. One choice per destination."
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                 }
                 ConfigSendRow { width: parent.width; label: "CUE"; source: config.sendCue; focusPrefix: "config.send.cue"; onPicked: (v) => config.sendCue = v }
@@ -129,6 +149,40 @@ Rectangle {
                 ConfigSendRow { width: parent.width; label: "FX2"; source: config.sendFx2; focusPrefix: "config.send.fx2"; onPicked: (v) => config.sendFx2 = v }
                 ConfigSendRow { width: parent.width; label: "OUT34"; source: config.sendOut34; focusPrefix: "config.send.out34"; onPicked: (v) => config.sendOut34 = v }
                 ConfigSendRow { width: parent.width; label: "REC"; source: config.sendRec; focusPrefix: "config.send.rec"; onPicked: (v) => config.sendRec = v }
+            }
+
+            // ---- INPUT MONITOR (TRACK SHIFT summary) ----------------------
+            Column {
+                visible: config.kind === "trackmonitor"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Text {
+                    width: parent.width
+                    height: 18
+                    text: "Track " + String(mixer.trackIndex + 1).padStart(2, "0") +
+                          " input monitoring"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "PLAY"; checked: config.trackMonitor === 0; focusId: "config.trackmonitor.0"; onClicked: config.trackMonitor = 0 }
+                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "AUTO"; checked: config.trackMonitor === 1; focusId: "config.trackmonitor.1"; onClicked: config.trackMonitor = 1 }
+                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "BOTH"; checked: config.trackMonitor === 2; focusId: "config.trackmonitor.2"; onClicked: config.trackMonitor = 2 }
+                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "MON"; checked: config.trackMonitor === 3; focusId: "config.trackmonitor.3"; onClicked: config.trackMonitor = 3 }
+                }
+                Text {
+                    width: parent.width
+                    text: "PLAY monitors the active take only; AUTO switches to live input when the track is armed or has no take; BOTH layers live input over the take; MON monitors live input only."
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    wrapMode: Text.Wrap
+                }
             }
 
             // ---- MONITOR ---------------------------------------------------
@@ -143,7 +197,7 @@ Rectangle {
                     width: parent.width
                     text: "Phones selects the CUE bus or the compressed Main duplicate. CUE style switches the per-track CUE send between a level fader and a >0 toggle. OUT3&4 is the uncompressed monitor bus."
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                 }
             }
@@ -161,16 +215,77 @@ Rectangle {
                     TouchButton { width: (parent.width - 118) / 2; height: parent.height; text: "PEAK"; textSize: Style.fontSmall; checked: config.compMode === 0; focusId: "config.mode.0"; onClicked: config.compMode = 0 }
                     TouchButton { width: (parent.width - 118) / 2; height: parent.height; text: "RMS"; textSize: Style.fontSmall; checked: config.compMode === 1; focusId: "config.mode.1"; onClicked: config.compMode = 1 }
                 }
-                ConfigSlider { width: parent.width; label: "THRESH"; value: config.compThreshDb; minimumValue: -48; maximumValue: 0; suffix: " dB"; popupKind: "db"; focusId: "config.thresh"; onMoved: (v) => config.compThreshDb = v }
-                ConfigSlider { width: parent.width; label: "RATIO"; value: config.compRatio; minimumValue: 1; maximumValue: 100; suffix: ":1"; popupKind: "ratio"; focusId: "config.ratio"; onMoved: (v) => config.compRatio = v }
-                ConfigSlider { width: parent.width; label: "ATTACK"; value: config.compAttackMs; minimumValue: 0; maximumValue: 1000; suffix: " ms"; popupKind: "ms"; focusId: "config.attack"; onMoved: (v) => config.compAttackMs = v }
-                ConfigSlider { width: parent.width; label: "RELEASE"; value: config.compReleaseMs; minimumValue: 0; maximumValue: 1000; suffix: " ms"; popupKind: "ms"; focusId: "config.release"; onMoved: (v) => config.compReleaseMs = v }
-                ConfigSlider { width: parent.width; label: "MAKEUP"; value: config.compMakeupDb; minimumValue: -36; maximumValue: 36; suffix: " dB"; popupKind: "db"; focusId: "config.makeup"; onMoved: (v) => config.compMakeupDb = v }
+                Row {
+                    width: parent.width
+                    height: 84
+                    spacing: Style.gapTight
+
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 4) / 5
+                        height: parent.height
+                        label: "THRESH"
+                        value: config.compThreshDb
+                        minimumValue: -48
+                        maximumValue: 0
+                        suffix: " dB"
+                        popupKind: "db"
+                        focusId: "config.thresh"
+                        onMoved: (v) => config.compThreshDb = v
+                    }
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 4) / 5
+                        height: parent.height
+                        label: "RATIO"
+                        value: config.compRatio
+                        minimumValue: 1
+                        maximumValue: 100
+                        suffix: ":1"
+                        popupKind: "ratio"
+                        focusId: "config.ratio"
+                        onMoved: (v) => config.compRatio = v
+                    }
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 4) / 5
+                        height: parent.height
+                        label: "ATTACK"
+                        value: config.compAttackMs
+                        minimumValue: 0
+                        maximumValue: 1000
+                        suffix: " ms"
+                        popupKind: "ms"
+                        focusId: "config.attack"
+                        onMoved: (v) => config.compAttackMs = v
+                    }
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 4) / 5
+                        height: parent.height
+                        label: "RELEASE"
+                        value: config.compReleaseMs
+                        minimumValue: 0
+                        maximumValue: 1000
+                        suffix: " ms"
+                        popupKind: "ms"
+                        focusId: "config.release"
+                        onMoved: (v) => config.compReleaseMs = v
+                    }
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 4) / 5
+                        height: parent.height
+                        label: "MAKEUP"
+                        value: config.compMakeupDb
+                        minimumValue: -36
+                        maximumValue: 36
+                        suffix: " dB"
+                        popupKind: "db"
+                        focusId: "config.makeup"
+                        onMoved: (v) => config.compMakeupDb = v
+                    }
+                }
                 Text {
                     width: parent.width
                     text: "Main-bus compressor; never applied to OUT3&4. Threshold is dBFS, attack/release are milliseconds, makeup is output gain."
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                 }
             }
@@ -200,7 +315,7 @@ Rectangle {
                     width: parent.width
                     text: "None passes the band; LCut and HCut are cut filters with no gain; the shelves and Param use gain, frequency and Q."
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                 }
             }
@@ -231,7 +346,7 @@ Rectangle {
                     width: parent.width
                     text: "The grid owns cutoff (X) and width (Y). These are the delay's other controls: Beat syncs Time to the clock and Division picks the note value."
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                 }
             }
@@ -241,7 +356,7 @@ Rectangle {
                 visible: config.kind === "reverb"
                 width: parent.width
                 spacing: 4
-                Text { width: parent.width; height: 16; text: "MODEL (applies its preset)"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.bold: true }
+                Text { width: parent.width; height: 16; text: "MODEL (applies its preset)"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold }
                 Row {
                     width: parent.width
                     height: Style.touch
@@ -258,7 +373,7 @@ Rectangle {
                     width: parent.width
                     text: "The grid owns size (X) and level (Y). Freeze is the panel/touch macro: longest decay, fully wet, no damping, largest size; releasing restores these values."
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                 }
             }
@@ -274,7 +389,7 @@ Rectangle {
                     text: config.pipeScopeContext
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
-                    font.bold: true
+                    font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
                 Text {
@@ -283,7 +398,7 @@ Rectangle {
                     text: "SCOPE  " + config.pipeChannelText
                     color: Style.text
                     font.pixelSize: Style.fontTitle
-                    font.bold: true
+                    font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
                 }
                 Repeater {
@@ -308,22 +423,22 @@ Rectangle {
                         }
                     }
                 }
-                Text { width: parent.width; height: 14; text: "PRESETS"; color: Style.textDim; font.pixelSize: 9; font.bold: true }
+                Text { width: parent.width; height: 14; text: "PRESETS"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold }
                 Row {
                     width: parent.width
                     height: Style.touch
                     spacing: 3
-                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "ALL"; textSize: 9; focusId: "config.pipe.preset.0"; onClicked: config.setPipeChannelPreset(0) }
-                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "1-4"; textSize: 9; focusId: "config.pipe.preset.1"; onClicked: config.setPipeChannelPreset(1) }
-                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "5-8"; textSize: 9; focusId: "config.pipe.preset.2"; onClicked: config.setPipeChannelPreset(2) }
-                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "9-12"; textSize: 9; focusId: "config.pipe.preset.3"; onClicked: config.setPipeChannelPreset(3) }
-                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "13-16"; textSize: 9; focusId: "config.pipe.preset.4"; onClicked: config.setPipeChannelPreset(4) }
+                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "ALL"; textSize: Style.fontSmall; focusId: "config.pipe.preset.0"; onClicked: config.setPipeChannelPreset(0) }
+                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "1-4"; textSize: Style.fontSmall; focusId: "config.pipe.preset.1"; onClicked: config.setPipeChannelPreset(1) }
+                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "5-8"; textSize: Style.fontSmall; focusId: "config.pipe.preset.2"; onClicked: config.setPipeChannelPreset(2) }
+                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "9-12"; textSize: Style.fontSmall; focusId: "config.pipe.preset.3"; onClicked: config.setPipeChannelPreset(3) }
+                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "13-16"; textSize: Style.fontSmall; focusId: "config.pipe.preset.4"; onClicked: config.setPipeChannelPreset(4) }
                 }
                 Text {
                     width: parent.width
                     text: "The pipe processes only the selected MIDI channels; every other channel passes that pipe unchanged. 0xFFFF is all channels and is what a new pipe starts with."
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                 }
             }
@@ -350,7 +465,7 @@ Rectangle {
                     TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "NORM"; textSize: Style.fontSmall; checked: config.timelineOp === 4; focusId: "config.timeline.op.4"; onClicked: config.timelineOp = 4 }
                     TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "DELETE"; textSize: Style.fontSmall; checked: config.timelineOp === 5; focusId: "config.timeline.op.5"; onClicked: config.timelineOp = 5 }
                     TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "CLEAR"; textSize: Style.fontSmall; checked: config.timelineOp === 6; focusId: "config.timeline.op.6"; onClicked: config.timelineOp = 6 }
-                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "RENDER"; textSize: 9; checked: config.timelineOp === 7; focusId: "config.timeline.op.7"; onClicked: config.timelineOp = 7 }
+                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "RENDER"; textSize: Style.fontSmall; checked: config.timelineOp === 7; focusId: "config.timeline.op.7"; onClicked: config.timelineOp = 7 }
                 }
                 ConfigSlider {
                     width: parent.width
@@ -366,9 +481,9 @@ Rectangle {
                 Row {
                     width: parent.width
                     height: Style.touch
-                    spacing: 2
+                    spacing: Style.gapTight
                     ConfigSlider {
-                        width: (parent.width - 2) / 2
+                        width: (parent.width - Style.gapTight) / 2
                         label: "FADE IN"
                         value: config.timelineFadeInBeats
                         minimumValue: 0
@@ -379,7 +494,7 @@ Rectangle {
                         onMoved: (value) => config.timelineFadeInBeats = value
                     }
                     ConfigSlider {
-                        width: (parent.width - 2) / 2
+                        width: (parent.width - Style.gapTight) / 2
                         label: "FADE OUT"
                         value: config.timelineFadeOutBeats
                         minimumValue: 0
@@ -418,7 +533,7 @@ Rectangle {
                     height: 14
                     text: timeline.previewText
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     elide: Text.ElideRight
                 }
                 Text {
@@ -427,7 +542,7 @@ Rectangle {
                     visible: config.timelineError !== ""
                     text: config.timelineError
                     color: Style.record
-                    font.pixelSize: 9
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                     elide: Text.ElideRight
                 }
@@ -436,7 +551,7 @@ Rectangle {
                     height: 16
                     text: "TRIM/DELETE use IN..OUT. RENDER is explicit and refused: audio::TakePlayer::renderRegionsToTake() is missing."
                     color: Style.textDim
-                    font.pixelSize: 9
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                     elide: Text.ElideRight
                 }
@@ -449,22 +564,80 @@ Rectangle {
                 height: Style.touch
                 spacing: 4
                 TouchButton {
-                    width: (parent.width - 4) / 2
+                    width: (parent.width - Style.gapTight) / 2
                     height: parent.height
                     text: "CANCEL"
+                    variant: "danger"
                     focusId: "config.cancel"
-                    idleColor: "#5b2222"
                     onClicked: app.configCancel()
                 }
                 TouchButton {
-                    width: (parent.width - 4) / 2
+                    width: (parent.width - Style.gapTight) / 2
                     height: parent.height
                     text: "OK"
-                    checked: true
+                    variant: "primary"
                     focusId: "config.ok"
                     onClicked: app.configAccept()
                 }
             }
+        }
+    }
+
+    component ConfigKnob: Item {
+        id: knobRoot
+        property string label: ""
+        property real value: 0
+        property real minimumValue: 0
+        property real maximumValue: 1
+        property string suffix: ""
+        property string popupKind: "generic"
+        property string focusId: ""
+        signal moved(real value)
+
+        readonly property bool focused: app.focusId === focusId && focusId !== ""
+
+        Rectangle {
+            anchors.fill: parent
+            color: Style.panel
+            radius: Style.corner
+            border.width: parent.focused ? 2 : Style.outlineWidth
+            border.color: parent.focused ? Style.accent : Style.outline
+        }
+        TouchKnob {
+            id: compDial
+            anchors.top: parent.top
+            anchors.topMargin: 4
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: 46
+            height: 46
+            showText: false
+            value: parent.value
+            minimumValue: parent.minimumValue
+            maximumValue: parent.maximumValue
+            focusId: ""
+            popupLabel: parent.label
+            popupKind: parent.popupKind
+            Binding on value { value: knobRoot.value; when: !compDial.dragging }
+            onMoved: (value) => parent.moved(value)
+        }
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: valueLabel.top
+            text: parent.label
+            color: Style.textDim
+            font.pixelSize: Style.fontSmall
+            font.weight: Font.DemiBold
+        }
+        Text {
+            id: valueLabel
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 2
+            text: (parent.maximumValue > 20 ? Number(parent.value).toFixed(0)
+                                            : Number(parent.value).toFixed(1)) + parent.suffix
+            color: Style.text
+            font.pixelSize: Style.fontSmall
+            font.weight: Font.DemiBold
         }
     }
 
@@ -480,7 +653,7 @@ Rectangle {
 
         height: Style.touch
         spacing: 3
-        Text { width: 64; height: parent.height; text: parent.label; color: Style.textDim; font.pixelSize: Style.fontSmall; font.bold: true; verticalAlignment: Text.AlignVCenter }
+        Text { width: 64; height: parent.height; text: parent.label; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold; verticalAlignment: Text.AlignVCenter }
         TouchSlider {
             id: popupSlider
             width: parent.width - 132
@@ -500,7 +673,7 @@ Rectangle {
             text: (parent.maximumValue > 20 ? Number(parent.value).toFixed(0)
                                             : Number(parent.value).toFixed(1)) + parent.suffix
             color: Style.text
-            font.pixelSize: 10
+            font.pixelSize: Style.fontSmall
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
         }
@@ -514,7 +687,7 @@ Rectangle {
 
         height: Style.touch
         spacing: 3
-        Text { width: 64; height: parent.height; text: parent.label; color: Style.text; font.pixelSize: Style.fontBody; font.bold: true; verticalAlignment: Text.AlignVCenter }
+        Text { width: 64; height: parent.height; text: parent.label; color: Style.text; font.pixelSize: Style.fontBody; font.weight: Font.DemiBold; verticalAlignment: Text.AlignVCenter }
         TouchButton { width: (parent.width - 68) / 2; height: parent.height; text: "PRE"; checked: parent.source === 0; focusId: parent.focusPrefix + ".pre"; onClicked: parent.picked(0) }
         TouchButton { width: (parent.width - 68) / 2; height: parent.height; text: "POST"; checked: parent.source === 1; focusId: parent.focusPrefix + ".post"; onClicked: parent.picked(1) }
     }
@@ -529,7 +702,7 @@ Rectangle {
 
         height: Style.touch
         spacing: 3
-        Text { width: 84; height: parent.height; text: parent.label; color: Style.textDim; font.pixelSize: Style.fontSmall; font.bold: true; verticalAlignment: Text.AlignVCenter }
+        Text { width: 84; height: parent.height; text: parent.label; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold; verticalAlignment: Text.AlignVCenter }
         TouchButton { width: (parent.width - 88) / 2; height: parent.height; text: parent.first; checked: parent.selected === 0; focusId: parent.focusPrefix + ".0"; onClicked: parent.picked(0) }
         TouchButton { width: (parent.width - 88) / 2; height: parent.height; text: parent.second; checked: parent.selected === 1; focusId: parent.focusPrefix + ".1"; onClicked: parent.picked(1) }
     }

@@ -17,16 +17,16 @@ Item {
 
     Column {
         anchors.fill: parent
-        anchors.margins: Style.margin
-        spacing: 4
+        anchors.margins: screen.shiftFace ? Style.marginCompact : Style.margin
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 6
+            spacing: Style.gap
 
             Text {
-                width: parent.width - (screen.shiftFace ? (routing.shiftPage === 0 && routing.filterPageCount > 1 ? 414 : 270) : 220)
+                width: parent.width - (screen.shiftFace ? (routing.shiftPage === 0 && routing.filterPageCount > 1 ? 424 : 284) : 220)
                 height: parent.height
                 text: (screen.shiftFace
                        ? (screen.pipesPage ? "SHIFT  MIDI FX PIPES - one ordered chain per route"
@@ -35,7 +35,7 @@ Item {
                       + (routing.noPicoMode ? "  -  NO PICO: TRS UNAVAILABLE" : "")
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
@@ -44,7 +44,7 @@ Item {
                 height: parent.height
                 visible: screen.shiftFace
                 text: "FILTER"
-                textSize: 9
+                textSize: Style.fontSmall
                 checked: routing.shiftPage === 0
                 focusId: "shift.routing.page.0"
                 onClicked: routing.setShiftPage(0)
@@ -69,7 +69,7 @@ Item {
                     width: Style.touch
                     height: parent.height
                     text: "<"
-                    textSize: 14
+                    textSize: Style.fontTab
                     focusId: "shift.routing.filter.prev"
                     onClicked: routing.setFilterPage(routing.filterPage - 1)
                 }
@@ -78,7 +78,7 @@ Item {
                     height: parent.height
                     text: (routing.filterPage + 1) + "/" + routing.filterPageCount
                     color: Style.textDim
-                    font.pixelSize: 9
+                    font.pixelSize: Style.fontSmall
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -86,7 +86,7 @@ Item {
                     width: Style.touch
                     height: parent.height
                     text: ">"
-                    textSize: 14
+                    textSize: Style.fontTab
                     focusId: "shift.routing.filter.next"
                     onClicked: routing.setFilterPage(routing.filterPage + 1)
                 }
@@ -100,8 +100,8 @@ Item {
                 height: parent.height
                 visible: !screen.shiftFace
                 text: "SHIFT PIPES"
-                textSize: 9
-                idleColor: Style.panelDark
+                textSize: Style.fontSmall
+                variant: "ghost"
                 focusId: "routing.shiftpipes"
                 onClicked: {
                     app.showShiftFace(true)
@@ -114,6 +114,7 @@ Item {
                 height: parent.height
                 visible: !screen.pipesPage
                 text: "RESET"
+                variant: "danger"
                 focusId: screen.shiftFace ? "shift.routing.reset" : "routing.reset"
                 onClicked: routing.reset()
             }
@@ -123,7 +124,7 @@ Item {
             id: patchFlick
             width: parent.width
             visible: !screen.pipesPage
-            height: screen.shiftFace ? Math.max(88, screen.height - Style.margin * 2 - Style.touch * 6 - 16) : Math.max(120, screen.height - Style.margin * 2 - Style.touch - 4)
+            height: screen.shiftFace ? Math.max(88, screen.height - Style.marginCompact * 2 - Style.touch * 6 - Style.gap * 2) : Math.max(120, screen.height - Style.margin * 2 - Style.touch - Style.gap)
             contentWidth: width
             contentHeight: Math.max(height, screen.patchRows * Style.touch)
             clip: true
@@ -136,8 +137,8 @@ Item {
 
                 Rectangle {
                     anchors.fill: parent
-                    color: Style.panelDark
-                    radius: Style.corner
+                    color: Style.panel
+                    radius: Style.cornerPanel
                     border.width: Style.outlineWidth
                     border.color: Style.outline
                 }
@@ -231,8 +232,8 @@ Item {
                                 text: modelData.name
                                 color: !available ? Style.textDim
                                                   : (routing.selectedInput === nodeIndex ? Style.panelDark : Style.text)
-                                font.pixelSize: modelData.dynamic ? 10 : 12
-                                font.bold: true
+                                font.pixelSize: Style.fontSmall
+                                font.weight: Font.DemiBold
                                 horizontalAlignment: Text.AlignHCenter
                                 elide: Text.ElideRight
                             }
@@ -240,28 +241,28 @@ Item {
                                 visible: !available
                                 text: "UNAVAILABLE (NO PICO)"
                                 color: Style.record
-                                font.pixelSize: 8
+                                font.pixelSize: Style.fontSmall
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }
                             Text {
                                 visible: available && !modelData.dynamic && modelData.port === 2
                                 text: "VIRTUAL PORT"
                                 color: routing.selectedInput === nodeIndex ? Style.panelDark : Style.textDim
-                                font.pixelSize: 9
+                                font.pixelSize: Style.fontSmall
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }
                             Text {
                                 visible: modelData.dynamic && !modelData.connected
                                 text: "DORMANT"
                                 color: Style.record
-                                font.pixelSize: 8
+                                font.pixelSize: Style.fontSmall
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }
                             Text {
                                 visible: modelData.dynamic && modelData.connected
                                 text: "#" + modelData.port
                                 color: routing.selectedInput === nodeIndex ? Style.panelDark : Style.textDim
-                                font.pixelSize: 8
+                                font.pixelSize: Style.fontSmall
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }
                         }
@@ -297,8 +298,8 @@ Item {
                                 width: parent.parent.width - 8
                                 text: modelData.name
                                 color: available ? Style.text : Style.textDim
-                                font.pixelSize: modelData.dynamic ? 10 : 12
-                                font.bold: true
+                                font.pixelSize: Style.fontSmall
+                                font.weight: Font.DemiBold
                                 horizontalAlignment: Text.AlignHCenter
                                 elide: Text.ElideRight
                             }
@@ -306,28 +307,28 @@ Item {
                                 visible: !available
                                 text: "UNAVAILABLE (NO PICO)"
                                 color: Style.record
-                                font.pixelSize: 8
+                                font.pixelSize: Style.fontSmall
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }
                             Text {
                                 visible: available && !modelData.dynamic && modelData.port === 5
                                 text: routing.usbOutputs + (routing.usbOutputs === 1 ? " PORT" : " PORTS")
                                 color: Style.textDim
-                                font.pixelSize: 9
+                                font.pixelSize: Style.fontSmall
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }
                             Text {
                                 visible: modelData.dynamic && !modelData.connected
                                 text: "DORMANT"
                                 color: Style.record
-                                font.pixelSize: 8
+                                font.pixelSize: Style.fontSmall
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }
                             Text {
                                 visible: modelData.dynamic && modelData.connected
                                 text: "#" + modelData.port
                                 color: Style.textDim
-                                font.pixelSize: 8
+                                font.pixelSize: Style.fontSmall
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }
                         }
@@ -375,15 +376,15 @@ Item {
                         spacing: 0
 
                         Text {
-                            width: 76
+                            width: 62
                             height: parent.height
                             text: modelData.name
                             color: routing.inputAvailable(sourceIndex) ? Style.text : Style.textDim
                             font.pixelSize: Style.fontSmall
-                            font.bold: true
+                            font.weight: Font.DemiBold
                             elide: Text.ElideRight
                             verticalAlignment: Text.AlignVCenter
-                            leftPadding: 4
+                            leftPadding: 2
                         }
 
                         Repeater {
@@ -416,12 +417,12 @@ Item {
                             spacing: 2
 
                             Text {
-                                width: 74
+                                width: 64
                                 height: parent.height
                                 text: modelData.name
                                 color: Style.textDim
                                 font.pixelSize: Style.fontSmall
-                                font.bold: true
+                                font.weight: Font.DemiBold
                                 elide: Text.ElideRight
                                 verticalAlignment: Text.AlignVCenter
                             }
@@ -433,7 +434,7 @@ Item {
                                 onClicked: routing.adjustTranspose(sourceIndex, -1)
                             }
                             Rectangle {
-                                width: Math.max(Style.touch, parent.width - 2 * Style.touch - 6 - 74)
+                                width: Math.max(Style.touch, parent.width - 2 * Style.touch - 6 - 64)
                                 height: Style.touch
                                 color: Style.panelDark
                                 border.width: app.focusId === ("shift.routing.transpose." + sourceIndex) ? 2 : Style.outlineWidth
@@ -444,7 +445,7 @@ Item {
                                     text: (routing.transposes[sourceIndex] || 0) + " st"
                                     color: Style.text
                                     font.pixelSize: Style.fontBody
-                                    font.bold: true
+                                    font.weight: Font.DemiBold
                                 }
                             }
                             TouchButton {
@@ -475,20 +476,20 @@ Item {
                             spacing: 2
 
                             Text {
-                                width: 74
+                                width: 64
                                 height: parent.height
                                 text: screen.outputNames[index]
                                 color: Style.textDim
                                 font.pixelSize: Style.fontSmall
-                                font.bold: true
+                                font.weight: Font.DemiBold
                                 elide: Text.ElideRight
                                 verticalAlignment: Text.AlignVCenter
                             }
                             TouchButton {
-                                width: (parent.width - 80) / 2
+                                width: (parent.width - 68) / 2
                                 height: Style.touch
                                 text: "CLOCK"
-                                textSize: 9
+                                textSize: Style.fontSmall
                                 active: !routing.noPicoMode || index === 2
                                 checked: index === 0 ? session.trs1Clock
                                         : (index === 1 ? session.trs2Clock : session.usbClock)
@@ -502,10 +503,10 @@ Item {
                                 }
                             }
                             TouchButton {
-                                width: (parent.width - 80) / 2
+                                width: (parent.width - 68) / 2
                                 height: Style.touch
                                 text: "TRANSP"
-                                textSize: 9
+                                textSize: Style.fontSmall
                                 active: !routing.noPicoMode || index === 2
                                 checked: index === 0 ? session.trs1Transport
                                         : (index === 1 ? session.trs2Transport : session.usbTransport)
@@ -547,8 +548,8 @@ Item {
                         height: parent.height
                         text: "FROM"
                         color: Style.textDim
-                        font.pixelSize: 9
-                        font.bold: true
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
                         verticalAlignment: Text.AlignVCenter
                     }
                     TouchButton {
@@ -563,7 +564,7 @@ Item {
                         width: (parent.width - 40 - 24 - Style.touch * 4 - 18) / 2
                         height: parent.height
                         text: routing.pipeSourceName
-                        textSize: 10
+                        textSize: Style.fontSmall
                         checked: true
                         focusId: "shift.routing.pipes.src.name"
                         onClicked: routing.cyclePipeSource(1)
@@ -581,8 +582,8 @@ Item {
                         height: parent.height
                         text: "TO"
                         color: Style.textDim
-                        font.pixelSize: 9
-                        font.bold: true
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -598,7 +599,7 @@ Item {
                         width: (parent.width - 40 - 24 - Style.touch * 4 - 18) / 2
                         height: parent.height
                         text: routing.pipeDestinationName
-                        textSize: 10
+                        textSize: Style.fontSmall
                         checked: true
                         focusId: "shift.routing.pipes.dst.name"
                         onClicked: routing.cyclePipeDestination(1)
@@ -618,7 +619,7 @@ Item {
                     height: 14
                     text: routing.pipeStatusText
                     color: Style.textDim
-                    font.pixelSize: 9
+                    font.pixelSize: Style.fontSmall
                     elide: Text.ElideRight
                 }
 
@@ -632,8 +633,8 @@ Item {
                         height: parent.height
                         text: "ADD"
                         color: Style.textDim
-                        font.pixelSize: 9
-                        font.bold: true
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
                         verticalAlignment: Text.AlignVCenter
                     }
                     TouchButton {
@@ -670,19 +671,19 @@ Item {
                         onClicked: routing.addPipe()
                     }
                     TouchButton {
-                        width: 92
+                        width: 104
                         height: parent.height
-                        text: "CH SCOPE"
-                        textSize: 9
+                        text: "SCOPE  " + routing.selectedPipeScopeText
+                        textSize: Style.fontSmall
                         focusId: "shift.routing.pipes.scope"
-                        onClicked: app.openConfig("pipechannels")
+                        onClicked: app.openConfigFrom("pipechannels", this)
                     }
                     Text {
-                        width: parent.width - 40 - Style.touch * 2 - 220 - 110 - 92 - 18
+                        width: parent.width - 40 - Style.touch * 2 - 220 - 110 - 104 - Style.gapTight * 5
                         height: parent.height
                         text: routing.pipeRows.length + " / 8 PIPES"
                         color: Style.textDim
-                        font.pixelSize: 9
+                        font.pixelSize: Style.fontSmall
                         horizontalAlignment: Text.AlignRight
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -704,7 +705,7 @@ Item {
                             width: 132
                             height: parent.height
                             text: (index + 1) + ". " + modelData.typeName
-                            textSize: 9
+                            textSize: Style.fontSmall
                             checked: routing.selectedPipe === index
                             focusId: "shift.routing.pipes.select." + index
                             onClicked: routing.selectPipe(index)
@@ -713,9 +714,9 @@ Item {
                             width: 158
                             height: parent.height
                             text: modelData.status
-                            color: modelData.clocked ? Style.soloOn : Style.textDim
-                            font.pixelSize: 9
-                            font.bold: modelData.clocked
+                            color: modelData.clocked ? Style.accent : Style.textDim
+                            font.pixelSize: Style.fontSmall
+                            font.weight: modelData.clocked ? Font.DemiBold : Font.Normal
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                         }
@@ -723,7 +724,7 @@ Item {
                             width: 54
                             height: parent.height
                             text: "BYP"
-                            textSize: 9
+                            textSize: Style.fontSmall
                             checked: modelData.bypass
                             focusId: "shift.routing.pipes.bypass." + index
                             onClicked: routing.setPipeBypass(index, !modelData.bypass)
@@ -749,7 +750,7 @@ Item {
                             height: parent.height
                             text: "X"
                             textSize: Style.fontSmall
-                            idleColor: "#5b2222"
+                    variant: "danger"
                             focusId: "shift.routing.pipes.remove." + index
                             onClicked: routing.removePipe(index)
                         }
@@ -758,7 +759,7 @@ Item {
                             height: parent.height
                             text: modelData.paramCount + " PARAMS"
                             color: Style.textDim
-                            font.pixelSize: 9
+                            font.pixelSize: Style.fontSmall
                             horizontalAlignment: Text.AlignRight
                             verticalAlignment: Text.AlignVCenter
                         }
@@ -775,15 +776,15 @@ Item {
                         height: parent.height
                         text: "PARAM"
                         color: Style.textDim
-                        font.pixelSize: 9
-                        font.bold: true
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
                         verticalAlignment: Text.AlignVCenter
                     }
                     TouchButton {
                         width: 40
                         height: parent.height
                         text: "<"
-                        textSize: 12
+                        textSize: Style.fontBody
                         focusId: "shift.routing.pipes.param.page.prev"
                         onClicked: routing.setParamPage(routing.paramPage - 1)
                     }
@@ -792,7 +793,7 @@ Item {
                         height: parent.height
                         text: (routing.paramPage + 1) + " / " + routing.paramPageCount
                         color: Style.text
-                        font.pixelSize: 9
+                        font.pixelSize: Style.fontSmall
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -800,7 +801,7 @@ Item {
                         width: 40
                         height: parent.height
                         text: ">"
-                        textSize: 12
+                        textSize: Style.fontBody
                         focusId: "shift.routing.pipes.param.page.next"
                         onClicked: routing.setParamPage(routing.paramPage + 1)
                     }
@@ -811,7 +812,7 @@ Item {
                               ? "EDIT PARAMS OF PIPE " + (routing.selectedPipe + 1)
                               : "ADD A PIPE TO EDIT PARAMS"
                         color: Style.textDim
-                        font.pixelSize: 9
+                        font.pixelSize: Style.fontSmall
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                     }

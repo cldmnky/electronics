@@ -14,7 +14,28 @@ Item {
         visible: !screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 4
+        spacing: Style.gap
+
+        Row {
+            width: parent.width
+            height: 28
+            spacing: Style.gap
+            Wordmark {
+                width: 118
+                height: parent.height
+            }
+            Text {
+                width: parent.width - 126
+                height: parent.height
+                text: "SYSTEM  -  link, clock, audio devices"
+                color: Style.textDim
+                font.pixelSize: Style.fontSmall
+                font.weight: Font.DemiBold
+                verticalAlignment: Text.AlignVCenter
+                horizontalAlignment: Text.AlignRight
+                elide: Text.ElideRight
+            }
+        }
 
         // No-Pico banner: which subsystems are live on a bare Pi and which are
         // physically absent (Pico-owned TRS/panel/LEDs). Hidden in hardware
@@ -22,9 +43,9 @@ Item {
         Rectangle {
             id: noPicoBanner
             width: parent.width
-            height: system.noPicoMode ? 46 : 0
+            height: system.noPicoMode ? 58 : 0
             visible: system.noPicoMode
-            color: Style.panelDark
+            color: Style.panel
             border.width: Style.outlineWidth
             border.color: Style.record
             radius: Style.corner
@@ -34,8 +55,8 @@ Item {
                 anchors.margins: 5
                 text: system.noPicoText
                 color: Style.record
-                font.pixelSize: 10
-                font.bold: true
+                font.pixelSize: Style.fontSmall
+                font.weight: Font.DemiBold
                 wrapMode: Text.WordWrap
                 elide: Text.ElideRight
                 maximumLineCount: 3
@@ -45,12 +66,13 @@ Item {
 
         Row {
             width: parent.width
-            height: parent.height - (noPicoBanner.visible ? noPicoBanner.height + 4 : 0)
-            spacing: 6
+            height: parent.height - 28 - Style.gap -
+                    (noPicoBanner.visible ? noPicoBanner.height + Style.gap : 0)
+            spacing: Style.gap
         Flickable {
             id: systemLeft
             objectName: "systemLeft"
-            width: (parent.width - 6) * 0.48
+            width: (parent.width - Style.gap) * 0.48
             height: parent.height
             clip: true
             contentWidth: width
@@ -73,7 +95,7 @@ Item {
                     text: "AUDIO BACKEND"
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
-                    font.bold: true
+                    font.weight: Font.DemiBold
                 }
 
                 Text {
@@ -81,7 +103,7 @@ Item {
                     height: 12
                     text: "OUTPUT DEVICE - name / backend / channels"
                     color: Style.textDim
-                    font.pixelSize: 9
+                    font.pixelSize: Style.fontSmall
                 }
 
                 DeviceComboBox {
@@ -121,6 +143,7 @@ Item {
                         width: (parent.width - 4) / 2
                         height: parent.height
                         text: "APPLY"
+                        variant: "primary"
                         focusId: "system.apply"
                         onClicked: system.apply()
                     }
@@ -143,7 +166,7 @@ Item {
                     text: "DEVICE OUT CHANNELS"
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
-                    font.bold: true
+                    font.weight: Font.DemiBold
                 }
 
                 Row {
@@ -157,7 +180,7 @@ Item {
                         text: "MAIN 1&2"
                         color: Style.text
                         font.pixelSize: Style.fontSmall
-                        font.bold: true
+                        font.weight: Font.DemiBold
                         elide: Text.ElideRight
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -187,7 +210,7 @@ Item {
                         text: "OUT3&4"
                         color: Style.text
                         font.pixelSize: Style.fontSmall
-                        font.bold: true
+                        font.weight: Font.DemiBold
                         elide: Text.ElideRight
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -216,7 +239,7 @@ Item {
                         text: "PHONES"
                         color: Style.text
                         font.pixelSize: Style.fontSmall
-                        font.bold: true
+                        font.weight: Font.DemiBold
                         elide: Text.ElideRight
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -239,7 +262,7 @@ Item {
                     height: 26
                     text: "Saved with the project (session deviceOut). The audio backend does not map these pairs onto the interface channels yet."
                     color: Style.textDim
-                    font.pixelSize: 9
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                     maximumLineCount: 2
                     elide: Text.ElideRight
@@ -258,7 +281,7 @@ Item {
                     height: 34
                     text: system.noteText
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                     maximumLineCount: 2
                     elide: Text.ElideRight
@@ -268,14 +291,14 @@ Item {
                     width: parent.width
                     text: system.backendHint
                     color: Style.textDim
-                    font.pixelSize: 9
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                 }
             }
         }
 
         Column {
-            width: parent.width - (parent.width - 6) * 0.48 - 6
+            width: parent.width - (parent.width - Style.gap) * 0.48 - Style.gap
             height: parent.height
             spacing: 3
 
@@ -285,7 +308,7 @@ Item {
                 text: "LINK / CLOCK / TRANSPORT"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
             }
             TextArea {
                 width: parent.width
@@ -294,11 +317,12 @@ Item {
                 text: system.statsText
                 color: Style.text
                 font.family: "monospace"
-                font.pixelSize: 11
+                font.pixelSize: Style.fontSmall
                 wrapMode: TextEdit.NoWrap
                 clip: true
                 background: Rectangle {
                     color: Style.panelDark
+                    radius: Style.corner
                     border.width: Style.outlineWidth
                     border.color: Style.outline
                 }
@@ -309,7 +333,7 @@ Item {
                 text: "LOG (last 120 lines)"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
             }
             TextArea {
                 width: parent.width
@@ -318,11 +342,12 @@ Item {
                 text: system.logText
                 color: Style.textDim
                 font.family: "monospace"
-                font.pixelSize: 10
+                font.pixelSize: Style.fontSmall
                 wrapMode: TextEdit.NoWrap
                 clip: true
                 background: Rectangle {
                     color: Style.panelDark
+                    radius: Style.corner
                     border.width: Style.outlineWidth
                     border.color: Style.outline
                 }

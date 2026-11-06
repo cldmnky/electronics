@@ -3,7 +3,8 @@ import Mnkybox 1.0
 import "../components"
 
 // PROJECTS primary: project list plus save/load. SHIFT: new/rename/delete and
-// template operations (session v2 isTemplate).
+// template operations (session v2 isTemplate). The header carries the mnkybox
+// wordmark; the list is the only primary content.
 Item {
     id: screen
 
@@ -13,18 +14,19 @@ Item {
         visible: !screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 3
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             TouchButton {
                 id: saveButton
                 width: 100
                 height: parent.height
                 text: "SAVE"
+                variant: "primary"
                 focusId: "projects.save"
                 onClicked: projects.saveProject()
             }
@@ -37,13 +39,18 @@ Item {
                 radius: 4
                 color: Style.accent
             }
+            Wordmark {
+                width: 118
+                height: parent.height
+            }
             Text {
-                width: parent.width - 210
+                width: parent.width - 100 - 118 - 100 - Style.gap * 3
                 height: parent.height
                 text: "SHIFT: manage + templates"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
             }
             Text {
                 width: 100
@@ -51,7 +58,7 @@ Item {
                 text: projects.isTemplate ? "TEMPLATE" : ""
                 color: Style.accent
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
             }
@@ -62,8 +69,8 @@ Item {
             height: 18
             text: "project: " + projects.currentName
             color: Style.text
-            font.pixelSize: Style.fontBody
-            font.bold: true
+            font.pixelSize: Style.fontTitle
+            font.weight: Font.DemiBold
             elide: Text.ElideRight
         }
         Text {
@@ -75,52 +82,50 @@ Item {
             elide: Text.ElideRight
         }
 
-        Item {
+        ListView {
+            id: projectList
             width: parent.width
-            height: Math.max(0, screen.height - Style.margin * 2 - Style.touch - 34 - 9)
+            height: Math.max(0, screen.height - Style.margin * 2 - Style.touch -
+                                18 - 16 - Style.gap * 4)
+            clip: true
+            model: projects.model
+            boundsBehavior: Flickable.StopAtBounds
 
-            ListView {
-                id: projectList
-                anchors.fill: parent
-                clip: true
-                model: projects.model
-                boundsBehavior: Flickable.StopAtBounds
+            delegate: Rectangle {
+                width: ListView.view.width
+                height: Style.touch
+                radius: Style.corner
+                color: index === projects.selectedRow ? Style.raised
+                       : (index % 2 === 0 ? Style.panel : Style.panelDark)
+                border.width: app.focusId === ("projects.row." + index) ? 2 : 0
+                border.color: Style.accent
 
-                delegate: Rectangle {
-                    width: ListView.view.width
-                    height: Style.touch
-                    color: index === projects.selectedRow ? Style.outline
-                           : (index % 2 === 0 ? Style.panel : Style.panelDark)
-                    border.width: app.focusId === ("projects.row." + index) ? 2 : 0
-                    border.color: Style.accent
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 8
-                        width: parent.width / 2
-                        height: parent.height
-                        text: model.name
-                        color: model.current ? Style.accent : Style.text
-                        font.pixelSize: Style.fontBody
-                        font.bold: true
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    Text {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 8
-                        width: parent.width / 2
-                        height: parent.height
-                        text: "session  -  " + model.modified + (model.current ? "  -  current" : "")
-                        color: Style.textDim
-                        font.pixelSize: Style.fontSmall
-                        horizontalAlignment: Text.AlignRight
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    TapHandler {
-                        onTapped: app.requestLoadProject(index)
-                    }
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    width: parent.width / 2
+                    height: parent.height
+                    text: model.name
+                    color: model.current ? Style.accent : Style.text
+                    font.pixelSize: Style.fontBody
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                Text {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    width: parent.width / 2
+                    height: parent.height
+                    text: "session  -  " + model.modified + (model.current ? "  -  current" : "")
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    horizontalAlignment: Text.AlignRight
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                TapHandler {
+                    onTapped: app.requestLoadProject(index)
                 }
             }
 
@@ -141,21 +146,31 @@ Item {
         visible: screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 3
+        spacing: Style.gap
 
-        Text {
+        Row {
             width: parent.width
-            height: 16
-            text: "SHIFT  PROJECT MANAGEMENT / TEMPLATES"
-            color: Style.accent
-            font.pixelSize: Style.fontSmall
-            font.bold: true
+            height: 28
+            spacing: Style.gap
+            Text {
+                width: parent.width - 118 - Style.gap
+                height: parent.height
+                text: "SHIFT  PROJECT MANAGEMENT / TEMPLATES"
+                color: Style.accent
+                font.pixelSize: Style.fontSmall
+                font.weight: Font.DemiBold
+                verticalAlignment: Text.AlignVCenter
+            }
+            Wordmark {
+                width: 118
+                height: parent.height
+            }
         }
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             TouchButton {
                 width: 92
@@ -179,12 +194,12 @@ Item {
                 text: "DELETE"
                 textSize: Style.fontSmall
                 active: projects.selectedRow >= 0
-                idleColor: "#5b2222"
+                variant: "danger"
                 focusId: "shift.projects.delete"
                 onClicked: app.requestDeleteProject(projects.selectedRow)
             }
             Text {
-                width: parent.width - 300
+                width: parent.width - 300 - Style.gap * 3
                 height: parent.height
                 text: projects.isTemplate ? "current project is a template"
                                           : "current project is a normal session"
@@ -197,7 +212,7 @@ Item {
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             TouchButton {
                 width: 150
@@ -231,7 +246,7 @@ Item {
                   "Loading a template keeps the current take registry unless the " +
                   "template file carries one."
             color: Style.textDim
-            font.pixelSize: 10
+            font.pixelSize: Style.fontSmall
             wrapMode: Text.Wrap
         }
     }

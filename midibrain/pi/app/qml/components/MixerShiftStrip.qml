@@ -25,7 +25,7 @@ Rectangle {
             text: "IN " + String(root.stripIndex + 1).padStart(2, "0")
             color: Style.textDim
             font.pixelSize: Style.fontSmall
-            font.bold: true
+            font.weight: Font.DemiBold
             horizontalAlignment: Text.AlignHCenter
         }
 
@@ -77,10 +77,8 @@ Rectangle {
             text: root.monitor === 0 ? "M PLAY"
                   : (root.monitor === 1 ? "M AUTO"
                      : (root.monitor === 2 ? "M BOTH" : "M MON"))
-            textSize: 9
+            textSize: Style.fontSmall
             checked: root.monitor !== 1
-            checkedColor: root.monitor === 0 ? Style.record
-                          : (root.monitor === 2 ? Style.ok : Style.accent)
             focusId: "shift.mixer.monitor." + root.stripIndex
             onClicked: mixer.setMonitor(root.stripIndex, (root.monitor + 1) % 4)
         }
@@ -99,17 +97,17 @@ Rectangle {
         spacing: 0
 
         Text {
-            width: 24
+            width: 30
             height: parent.height
             text: parent.label
             color: Style.textDim
-            font.pixelSize: 8
-            font.bold: true
+            font.pixelSize: Style.fontSmall
+            font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
         TouchSlider {
             id: shiftSlider
-            width: parent.width - 24
+            width: parent.width - 30
             height: parent.height
             minimumValue: parent.minimumValue
             maximumValue: parent.maximumValue

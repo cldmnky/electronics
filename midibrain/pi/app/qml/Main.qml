@@ -6,6 +6,9 @@ import "overlays"
 
 // mnkybox shell: tab row, persistent transport strip, one of ten screens, and
 // the keypad/confirmation overlays. 800 x 480 landscape-first, resizable.
+// Face switches (a tab tap or a SHIFT toggle) fade the screen host over 80 ms;
+// the popups own their 120 ms scale-fade from the summary button that opened
+// them.
 Window {
     id: window
 
@@ -19,6 +22,22 @@ Window {
 
     readonly property var tabNames: ["Mixer", "Routing", "FX", "Recorder", "System",
                                      "Projects", "Monitor", "EQ", "XY", "EDIT"]
+
+    function screenSource() {
+        switch (app.tab) {
+        case 0: return "screens/MixerScreen.qml"
+        case 1: return "screens/RoutingScreen.qml"
+        case 2: return "screens/FxScreen.qml"
+        case 3: return "screens/RecorderScreen.qml"
+        case 4: return "screens/SystemScreen.qml"
+        case 5: return "screens/ProjectsScreen.qml"
+        case 6: return "screens/MidiMonitorScreen.qml"
+        case 7: return "screens/EqScreen.qml"
+        case 8: return "screens/XyScreen.qml"
+        case 9: return "screens/TimelineScreen.qml"
+        default: return ""
+        }
+    }
 
     Column {
         anchors.fill: parent
@@ -37,29 +56,36 @@ Window {
 
             Row {
                 anchors.fill: parent
+                anchors.leftMargin: Style.marginCompact
+                anchors.rightMargin: Style.marginCompact
+                anchors.topMargin: 4
+                anchors.bottomMargin: 4
+                spacing: Style.gapTight
 
                 Repeater {
                     model: tabBar.tabCount
                     delegate: Rectangle {
-                        width: tabBar.width / tabBar.tabCount
-                        height: tabBar.height
-                        color: app.tab === index ? Style.accent : Style.panelDark
+                        width: (parent.width - Style.gapTight * (tabBar.tabCount - 1)) /
+                               tabBar.tabCount
+                        height: parent.height
+                        radius: Style.corner
+                        color: app.tab === index ? Style.accent : Style.panel
                         // "tab.N" is a panel focus stop (AppController's ring);
                         // carrying it here makes the ring visible and lets the
                         // --ui-taps runner exercise setTab through QML.
                         property string focusId: "tab." + index
                         border.width: app.focusId === focusId ? 2
-                                     : (tabBar.shiftMode ? (app.tab === index ? 2 : 1) : 0)
+                                     : (tabBar.shiftMode ? 1 : 0)
                         border.color: app.focusId === focusId ? Style.accent
-                                     : (tabBar.shiftMode ? Style.accent : Style.text)
+                                     : (tabBar.shiftMode ? Style.accent : Style.outline)
 
                         Text {
                             anchors.centerIn: parent
                             width: parent.width - 8
                             text: window.tabNames[index]
                             color: app.tab === index ? Style.panelDark : Style.text
-                            font.pixelSize: 14
-                            font.bold: true
+                            font.pixelSize: Style.fontTab
+                            font.weight: Font.DemiBold
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
@@ -70,17 +96,19 @@ Window {
                             anchors.top: parent.top
                             anchors.left: parent.left
                             anchors.right: parent.right
-                            height: 3
+                            anchors.margins: 6
+                            height: 2
+                            radius: 1
                             color: Style.accent
                         }
 
                         Rectangle {
                             visible: index === 5 && app.dirty
-                            x: parent.width - 14
-                            y: 8
-                            width: 7
-                            height: 7
-                            radius: 4
+                            x: parent.width - 12
+                            y: parent.height - 10
+                            width: 6
+                            height: 6
+                            radius: 3
                             color: Style.accent
                         }
 
@@ -129,20 +157,29 @@ Window {
             width: parent.width
             height: parent.height - (tabBar.visible ? tabBar.height : 0)
                     - (transport.visible ? Style.transportHeight : 0)
-            source: {
-                switch (app.tab) {
-                case 0: return "screens/MixerScreen.qml"
-                case 1: return "screens/RoutingScreen.qml"
-                case 2: return "screens/FxScreen.qml"
-                case 3: return "screens/RecorderScreen.qml"
-                case 4: return "screens/SystemScreen.qml"
-                case 5: return "screens/ProjectsScreen.qml"
-                case 6: return "screens/MidiMonitorScreen.qml"
-                case 7: return "screens/EqScreen.qml"
-                case 8: return "screens/XyScreen.qml"
-                case 9: return "screens/TimelineScreen.qml"
-                default: return ""
-                }
+            source: window.screenSource()
+            opacity: 1.0
+
+            NumberAnimation {
+                id: faceFade
+                target: screenLoader
+                property: "opacity"
+                to: 1.0
+                duration: Style.motionFace
+                easing.type: Easing.OutCubic
+            }
+
+            // A tab tap or a SHIFT toggle is a face switch: dip the new face in
+            // over 80 ms so the change reads as a transition, not a jump.
+            function crossfade() {
+                opacity = 0.0
+                faceFade.restart()
+            }
+            onSourceChanged: crossfade()
+
+            Connections {
+                target: app
+                function onPanelModeChanged() { screenLoader.crossfade() }
             }
         }
     }

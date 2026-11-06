@@ -201,7 +201,7 @@ void UiTapRunner::buildScenarios() {
       QStringLiteral("monitor"),   QStringLiteral("comp"),
       QStringLiteral("eqtype"),    QStringLiteral("delay"),
       QStringLiteral("reverb"),    QStringLiteral("pipechannels"),
-      QStringLiteral("timelineops")};
+      QStringLiteral("timelineops"), QStringLiteral("trackmonitor")};
   for (const auto& kind : configKinds) {
     const QString openConfig = kind;
     scenarios_.push_back(Scenario{

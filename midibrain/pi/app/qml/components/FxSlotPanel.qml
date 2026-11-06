@@ -3,7 +3,9 @@ import QtQuick.Controls
 import Mnkybox 1.0
 
 // One CLAP send slot: identity/load/eject/state buttons, return level, bypass
-// and the plugin's own parameters in a touch-scrollable list.
+// and the plugin's own parameters. Parameters are circular knobs (the return
+// stays a fader); the list scrolls at 56 px rows so every knob keeps a 44 px
+// touch target.
 Rectangle {
     id: root
 
@@ -13,19 +15,19 @@ Rectangle {
     property bool showReturn: true
 
     color: Style.panel
-    radius: Style.corner
+    radius: Style.cornerPanel
     border.width: Style.outlineWidth
     border.color: Style.outline
 
     Column {
         anchors.fill: parent
-        anchors.margins: 4
-        spacing: 3
+        anchors.margins: 8
+        spacing: Style.gapTight
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 3
+            spacing: Style.gapTight
 
             Text {
                 width: 64
@@ -33,15 +35,16 @@ Rectangle {
                 text: "SEND " + root.slotLetter
                 color: Style.text
                 font.pixelSize: Style.fontTitle
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
             }
             TouchButton {
-                width: Math.max(Style.touch, parent.width - 64 - 4 * 56 - 12)
+                width: Math.max(Style.touch, parent.width - 64 - 3 * 56 - 12)
                 height: parent.height
                 text: root.slot && root.slot.pluginName !== "" ? root.slot.pluginName
                                                               : "pick plugin"
                 textSize: Style.fontSmall
+                variant: "ghost"
                 focusId: root.focusPrefix + "." + root.slotLetter + ".plugin"
                 onClicked: root.slot.loadDefault()
             }
@@ -50,6 +53,7 @@ Rectangle {
                 height: parent.height
                 text: "EJECT"
                 textSize: Style.fontSmall
+                variant: "ghost"
                 focusId: root.focusPrefix + "." + root.slotLetter + ".eject"
                 onClicked: root.slot.eject()
             }
@@ -58,6 +62,7 @@ Rectangle {
                 height: parent.height
                 text: "SAVE"
                 textSize: Style.fontSmall
+                variant: "ghost"
                 focusId: root.focusPrefix + "." + root.slotLetter + ".save"
                 onClicked: root.slot.saveState()
             }
@@ -66,6 +71,7 @@ Rectangle {
                 height: parent.height
                 text: "LOAD"
                 textSize: Style.fontSmall
+                variant: "ghost"
                 focusId: root.focusPrefix + "." + root.slotLetter + ".load"
                 onClicked: root.slot.loadState()
             }
@@ -75,7 +81,7 @@ Rectangle {
             visible: root.showReturn
             width: parent.width
             height: visible ? Style.touch : 0
-            spacing: 4
+            spacing: Style.gapTight
 
             Text {
                 width: 56
@@ -83,7 +89,7 @@ Rectangle {
                 text: "RETURN"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
             }
             TouchSlider {
@@ -105,7 +111,6 @@ Rectangle {
                 text: "BYPASS"
                 textSize: Style.fontSmall
                 checked: root.slot ? root.slot.bypassed : false
-                checkedColor: Style.soloOn
                 focusId: root.focusPrefix + "." + root.slotLetter + ".bypass"
                 onClicked: root.slot.toggleBypass()
             }
@@ -120,9 +125,13 @@ Rectangle {
             elide: Text.ElideRight
         }
 
-        ListView {
+        Item {
             width: parent.width
-            height: Math.max(0, parent.height - Style.touch - (root.showReturn ? Style.touch : 0) - 3 * 3 - 15)
+            height: Math.max(0, parent.height - Style.touch - (root.showReturn ? Style.touch : 0) - 3 * Style.gapTight - 15)
+
+        ListView {
+            id: paramList
+            anchors.fill: parent
             clip: true
             model: root.slot ? root.slot.params : null
             boundsBehavior: Flickable.StopAtBounds
@@ -134,34 +143,51 @@ Rectangle {
 
             delegate: Row {
                 width: ListView.view.width
-                height: Style.touch
-                spacing: 4
+                height: 56
+                spacing: Style.gapTight
 
                 Text {
-                    width: 82
+                    width: 86
                     height: parent.height
                     text: model.name
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
-                    font.bold: true
+                    font.weight: Font.DemiBold
                     elide: Text.ElideRight
                     verticalAlignment: Text.AlignVCenter
                 }
 
-                TouchSlider {
-                    id: paramSlider
-                    width: parent.width - 86
-                    height: Style.touch
+                TouchKnob {
+                    id: paramKnob
+                    width: parent.width - 90
+                    height: parent.height
+                    showText: true
+                    dialSize: 44
                     minimumValue: model.minimum
                     maximumValue: model.maximum
                     value: model.value
+                    label: ""
+                    valueText: Number(model.value).toFixed(2)
                     focusId: root.focusPrefix + "." + root.slotLetter + ".param." + index
                     popupLabel: model.name
                     popupKind: "generic"
-                    Binding on value { value: model.value; when: !paramSlider.dragging }
+                    Binding on value { value: model.value; when: !paramKnob.dragging }
                     onMoved: (value) => root.slot.setParam(index, value)
                 }
             }
+
+        }
+
+        Text {
+            visible: paramList.count === 0
+            anchors.centerIn: parent
+            width: parent.width - 20
+            text: "no plugin loaded - tap pick plugin"
+            color: Style.textDim
+            font.pixelSize: Style.fontSmall
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+        }
         }
     }
 }

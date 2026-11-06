@@ -13,7 +13,7 @@ Item {
 
     Column {
         width: parent.width
-        spacing: 6
+        spacing: page.compact ? Style.gapTight : Style.gap
 
         Text {
             width: parent.width
@@ -21,7 +21,8 @@ Item {
             text: "PUNCH MARKERS  -  measures are 1-based, persisted in session v2 punch"
             color: Style.textDim
             font.pixelSize: Style.fontSmall
-            font.bold: true
+            font.weight: Font.DemiBold
+            elide: Text.ElideRight
         }
 
         PunchRow {
@@ -54,14 +55,14 @@ Item {
 
         Text {
             width: parent.width
-            height: 40
+            height: page.compact ? 0 : 40
             text: page.compact ? "" :
                   "PLAY FROM starts playback at the marker; PUNCH IN arms recording and " +
                   "PUNCH OUT disarms it. The session keeps the points; the engine exposes " +
                   "the transport position, but automatic punch scheduling is not wired yet."
             visible: !page.compact
             color: Style.textDim
-            font.pixelSize: 10
+            font.pixelSize: Style.fontSmall
             wrapMode: Text.Wrap
         }
     }
@@ -74,8 +75,8 @@ Item {
         signal toggled()
         signal measureMoved(int value)
 
-        height: page.compact ? 52 : 72
-        spacing: 6
+        height: page.compact ? 50 : 64
+        spacing: Style.gap
 
         TouchButton {
             width: 110
@@ -92,7 +93,7 @@ Item {
             text: parent.label
             color: Style.text
             font.pixelSize: Style.fontTitle
-            font.bold: true
+            font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
         TouchButton {
@@ -107,6 +108,7 @@ Item {
             width: 120
             height: parent.height
             color: Style.panelDark
+            radius: Style.corner
             border.width: app.focusId === (parent.focusPrefix + ".measure") ? 2 : Style.outlineWidth
             border.color: app.focusId === (parent.focusPrefix + ".measure") ? Style.accent
                                                                            : Style.outline
@@ -115,7 +117,7 @@ Item {
                 text: "MEASURE " + parent.parent.measure
                 color: Style.text
                 font.pixelSize: Style.fontTitle
-                font.bold: true
+                font.weight: Font.DemiBold
             }
         }
         TouchButton {

@@ -1,7 +1,7 @@
 import QtQuick
 import Mnkybox 1.0
 
-// Touch-first slider: a 44 px hit area around a 5 px track and a 22 px thumb.
+// Touch-first slider: a 44 px hit area around a 6 px track and a 22 px thumb.
 // `dragging` lets a screen bind model values without fighting the finger. The
 // focus ring is the panel NAV focus.
 Item {
@@ -64,7 +64,7 @@ Item {
         height: Style.thumb
         radius: width / 2
         color: root.active ? Style.text : Style.textDim
-        border.color: Style.panelDark
+        border.color: Style.panel
         border.width: 2
         x: root.vertical ? (track.x + track.width / 2 - width / 2)
                          : (track.x + root.fraction * track.width - width / 2)

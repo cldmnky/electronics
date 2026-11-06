@@ -4,25 +4,41 @@ import "../components"
 
 // EQ: log-frequency x gain grid with four draggable nodes (the selected one is
 // pink), the summed response curve, and the selected band's Gain/Q/Frequency/
-// Type corners. Track selector plus MAIN picks the subject; FULL hides the
-// shell's tab row and transport strip (app.fullscreen). SHIFT is the explicit
-// band editor: sliders for the focused band and the six band types.
+// Type parameter chips. Track selector plus MAIN picks the subject; FULL hides
+// the shell's tab row and transport strip (app.fullscreen). SHIFT is the
+// explicit band editor: knob arcs for the focused band and one band-type
+// summary that opens the shared ConfigPopup.
 Item {
     id: screen
 
     readonly property bool shiftFace: app.panelMode === "shift"
+
+    function logFraction(value, minimum, maximum) {
+        if (!(value > 0)) return 0
+        return Math.max(0, Math.min(1, Math.log(value / minimum) / Math.log(maximum / minimum)))
+    }
+    function gainFraction() {
+        if (eq.cutBand) return 0
+        return Math.max(0, Math.min(1, (parseFloat(eq.gainText) + 24) / 48))
+    }
+    function qFraction() {
+        return logFraction(parseFloat(eq.qText), 0.1, 10)
+    }
+    function freqFraction() {
+        return logFraction(parseFloat(eq.freqText), 20, 20000)
+    }
 
     // ---- normal face ------------------------------------------------------
     Column {
         visible: !screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 4
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             Text {
                 width: 58
@@ -30,7 +46,7 @@ Item {
                 text: "SUBJECT"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
             }
             TouchButton {
@@ -60,7 +76,7 @@ Item {
                     text: eq.subjectText
                     color: Style.text
                     font.pixelSize: Style.fontBody
-                    font.bold: true
+                    font.weight: Font.DemiBold
                 }
                 TapHandler {
                     onTapped: app.showTextPopup("EQ SUBJECT", eq.subjectText)
@@ -83,10 +99,12 @@ Item {
                 onClicked: eq.stepBand(1)
             }
             TouchButton {
-                width: parent.width - 58 - 74 - 44 - 96 - 44 - 168 - 28
+                width: parent.width - 58 - 74 - Style.touch * 2 - 96 - 168 -
+                       Style.gap * 6
                 height: parent.height
                 text: app.fullscreen ? "EXIT FULL" : "FULLSCREEN"
                 textSize: Style.fontSmall
+                variant: "ghost"
                 checked: app.fullscreen
                 focusId: "eq.fullscreen"
                 onClicked: app.setFullscreen(!app.fullscreen)
@@ -96,12 +114,12 @@ Item {
         Item {
             id: grid
             width: parent.width
-            height: parent.height - Style.touch * 2 - 8
+            height: parent.height - Style.touch * 2 - Style.gap * 2
 
             Rectangle {
                 anchors.fill: parent
-                color: Style.panelDark
-                radius: Style.corner
+                color: Style.panel
+                radius: Style.cornerPanel
                 border.width: app.focusId === "eq.node." + eq.band ? 2 : Style.outlineWidth
                 border.color: app.focusId === "eq.node." + eq.band ? Style.accent : Style.outline
             }
@@ -152,7 +170,7 @@ Item {
                     const curve = eq.curve
                     if (curve.length > 1) {
                         ctx.beginPath()
-                        ctx.strokeStyle = Style.text.toString()
+                        ctx.strokeStyle = Style.accent.toString()
                         ctx.lineWidth = 2
                         for (let i = 0; i < curve.length; ++i) {
                             const x = i / (curve.length - 1) * width
@@ -164,14 +182,14 @@ Item {
                     }
                     // Frequency labels along the bottom edge.
                     ctx.fillStyle = Style.textDim.toString()
-                    ctx.font = "9px sans-serif"
+                    ctx.font = "11px sans-serif"
                     for (let i = 0; i < ticks.length; ++i) {
                         const x = Math.log(ticks[i] / 20) / Math.log(1000) * width
                         const label = ticks[i] >= 1000 ? (ticks[i] / 1000) + "k"
                                                        : String(ticks[i])
                         ctx.fillText(label, Math.min(width - 22, x + 2), height - 3)
                     }
-                    ctx.fillText("+24", 3, 11)
+                    ctx.fillText("+24", 3, 12)
                     ctx.fillText("-24", 3, height - 14)
                 }
             }
@@ -190,15 +208,15 @@ Item {
                     y: (1.0 - modelData.y) * grid.height - height / 2
                     color: selected ? Style.nodePink : Style.panel
                     border.width: selected ? 3 : 2
-                    border.color: selected ? Style.nodePink : Style.text
+                    border.color: selected ? Style.nodePink : Style.textDim
                     opacity: modelData.type === 0 ? 0.55 : 1.0
 
                     Text {
                         anchors.centerIn: parent
                         text: parent.bandIndex + 1
                         color: parent.selected ? Style.panelDark : Style.text
-                        font.pixelSize: 11
-                        font.bold: true
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
                     }
                 }
             }
@@ -240,44 +258,49 @@ Item {
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             CornerChip {
-                width: (parent.width - 12) / 4
+                width: (parent.width - Style.gap * 3) / 4
                 height: parent.height
                 label: "GAIN"
                 value: eq.cutBand ? "-- (cut)" : eq.gainText
+                knobFraction: screen.gainFraction()
                 focusId: "eq.band.gain"
                 onMinus: eq.adjustGain(-0.5)
                 onPlus: eq.adjustGain(0.5)
             }
             CornerChip {
-                width: (parent.width - 12) / 4
+                width: (parent.width - Style.gap * 3) / 4
                 height: parent.height
                 label: "Q"
                 value: eq.qText
+                knobFraction: screen.qFraction()
                 focusId: "eq.band.q"
                 onMinus: eq.adjustQ(-0.05)
                 onPlus: eq.adjustQ(0.05)
             }
             CornerChip {
-                width: (parent.width - 12) / 4
+                width: (parent.width - Style.gap * 3) / 4
                 height: parent.height
-                label: "FREQUENCY"
-                value: eq.freqText
+                label: "FREQ"
+                value: eq.freqText.replace(" kHz", "k")
+                knobFraction: screen.freqFraction()
                 focusId: "eq.band.freq"
                 onMinus: eq.adjustFreq(-1.0 / 12.0)
                 onPlus: eq.adjustFreq(1.0 / 12.0)
             }
             CornerChip {
-                width: (parent.width - 12) / 4
+                width: (parent.width - Style.gap * 3) / 4
                 height: parent.height
                 label: "TYPE"
                 value: eq.typeText
+                knobFraction: eq.nodes.length > eq.band
+                              ? eq.nodes[eq.band].type / 5 : 0
                 focusId: "eq.band.type"
                 onMinus: eq.cycleType(-1)
                 onPlus: eq.cycleType(1)
-                onPick: app.openConfig("eqtype")
+                onPick: app.openConfigFrom("eqtype", this)
             }
         }
     }
@@ -287,20 +310,20 @@ Item {
         visible: screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 4
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             Text {
-                width: parent.width - 256
+                width: parent.width - 256 - Style.gap
                 height: parent.height
                 text: "SHIFT - " + eq.subjectText + " " + eq.bandText
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
@@ -325,124 +348,116 @@ Item {
 
         ConfigRow {
             width: parent.width
-            height: Style.touch
+            height: 52
             label: "GAIN"
             value: eq.cutBand ? "-- (cut)" : eq.gainText
+            knobFraction: screen.gainFraction()
             shadowFocusId: "shift.eq.band.gain"
             onMinus: eq.adjustGain(-0.5)
             onPlus: eq.adjustGain(0.5)
         }
         ConfigRow {
             width: parent.width
-            height: Style.touch
+            height: 52
             label: "Q"
             value: eq.qText
+            knobFraction: screen.qFraction()
             shadowFocusId: "shift.eq.band.q"
             onMinus: eq.adjustQ(-0.05)
             onPlus: eq.adjustQ(0.05)
         }
         ConfigRow {
             width: parent.width
-            height: Style.touch
+            height: 52
             label: "FREQUENCY"
             value: eq.freqText
+            knobFraction: screen.freqFraction()
             shadowFocusId: "shift.eq.band.freq"
             onMinus: eq.adjustFreq(-1.0 / 12.0)
             onPlus: eq.adjustFreq(1.0 / 12.0)
         }
 
-        Text {
-            width: parent.width
-            height: 16
-            text: "BAND TYPE - cut filters have no gain"
-            color: Style.textDim
-            font.pixelSize: Style.fontSmall
-            font.bold: true
-            verticalAlignment: Text.AlignVCenter
-        }
-        Row {
+        TouchButton {
             width: parent.width
             height: Style.touch
-            spacing: 4
-
-            Repeater {
-                model: 6
-                delegate: TouchButton {
-                    width: (parent.width - 20) / 6
-                    height: parent.height
-                    text: ["NONE", "LCUT", "LSHELF", "PARAM", "HSHELF", "HCUT"][index]
-                    textSize: Style.fontSmall
-                    checked: eq.nodes[eq.band].type === index
-                    focusId: "shift.eq.type." + index
-                    onClicked: eq.selectType(index)
-                }
-            }
+            text: "BAND TYPE   " + eq.typeText
+            textSize: Style.fontSmall
+            focusId: "shift.eq.band.type"
+            onClicked: app.openConfigFrom("eqtype", this)
         }
 
         Text {
             width: parent.width
-            text: "Drag a node on the grid; the panel's directions move the selected node in EDIT (SHIFT = coarse frequency / Q on a cut band). The A-button and the BAND chip step bands."
+            text: "Drag a node on the grid; the panel's directions move the selected node in EDIT (SHIFT = coarse frequency / Q on a cut band). Cut filters have no gain."
             color: Style.textDim
-            font.pixelSize: 10
+            font.pixelSize: Style.fontSmall
             wrapMode: Text.Wrap
         }
     }
 
-    // One shared corner/row shape: label, value, and -/+ steppers. Tapping the
-    // TYPE chip opens the band-type ConfigPopup (secondary parameter picker).
+    // One shared chip: label, value, a circular value arc and -/+ steppers.
+    // Tapping the TYPE chip opens the band-type ConfigPopup.
     component CornerChip: Rectangle {
         id: chip
         property string label: ""
         property string value: ""
+        property real knobFraction: 0.0
         property string focusId: ""
         signal minus()
         signal plus()
         signal pick()
 
-        color: Style.panelDark
+        color: Style.panel
         radius: Style.corner
         border.width: app.focusId === chip.focusId ? 2 : Style.outlineWidth
         border.color: app.focusId === chip.focusId ? Style.accent : Style.outline
 
-        Text {
-            x: 6
-            y: 3
-            text: chip.label
-            color: Style.textDim
-            font.pixelSize: 9
-            font.bold: true
-        }
-        Text {
+        KnobDial {
             x: 6
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - 74
+            width: 24
+            height: 24
+            fraction: chip.knobFraction
+        }
+        Text {
+            x: 34
+            y: 2
+            text: chip.label
+            color: Style.textDim
+            font.pixelSize: Style.fontSmall
+            font.weight: Font.DemiBold
+        }
+        Text {
+            x: 34
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - 34 - 96
             text: chip.value
             color: Style.text
             font.pixelSize: Style.fontBody
-            font.bold: true
+            font.weight: Font.DemiBold
             elide: Text.ElideRight
         }
         Text {
             anchors.right: parent.right
-            anchors.rightMargin: 4
+            anchors.rightMargin: 6
             y: 3
             text: "..."
             color: Style.textDim
-            font.pixelSize: 10
+            font.pixelSize: Style.fontSmall
             visible: chip.focusId === "eq.band.type"
         }
         TouchButton {
-            width: 30
+            width: Style.touch
             height: parent.height
-            x: parent.width - 68
+            x: parent.width - Style.touch * 2
             text: "-"
             textSize: 16
             onClicked: chip.minus()
         }
         TouchButton {
-            width: 30
+            width: Style.touch
             height: parent.height
-            x: parent.width - 34
+            x: parent.width - Style.touch
             text: "+"
             textSize: 16
             onClicked: chip.plus()
@@ -458,23 +473,31 @@ Item {
         id: row
         property string label: ""
         property string value: ""
+        property real knobFraction: 0.0
         property string shadowFocusId: ""
         signal minus()
         signal plus()
 
-        spacing: 4
+        spacing: Style.gap
         Text {
             width: 92
             height: parent.height
             text: row.label
             color: Style.textDim
             font.pixelSize: Style.fontSmall
-            font.bold: true
+            font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
+        KnobDial {
+            anchors.verticalCenter: parent.verticalCenter
+            width: 44
+            height: 44
+            fraction: row.knobFraction
+        }
         Rectangle {
-            width: parent.width - 92 - 145
-            height: parent.height
+            width: parent.width - 92 - 44 - 145 - Style.gap * 3
+            height: 44
+            anchors.verticalCenter: parent.verticalCenter
             color: Style.panelDark
             radius: Style.corner
             border.width: app.focusId === row.shadowFocusId ? 2 : Style.outlineWidth
@@ -484,19 +507,19 @@ Item {
                 text: row.value
                 color: Style.text
                 font.pixelSize: Style.fontBody
-                font.bold: true
+                font.weight: Font.DemiBold
             }
         }
         TouchButton {
             width: 68
-            height: parent.height
+            height: Style.touch
             text: "-"
             textSize: 18
             onClicked: row.minus()
         }
         TouchButton {
             width: 69
-            height: parent.height
+            height: Style.touch
             text: "+"
             textSize: 18
             onClicked: row.plus()

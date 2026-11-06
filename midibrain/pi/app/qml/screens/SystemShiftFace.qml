@@ -10,12 +10,12 @@ Item {
     Column {
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 3
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             TouchButton {
                 width: 132
@@ -49,17 +49,17 @@ Item {
                 height: parent.height
                 text: "PANIC"
                 textSize: Style.fontSmall
-                idleColor: "#5b2222"
+                    variant: "danger"
                 focusId: "shift.system.panic"
                 onClicked: app.shiftAction(1)
             }
             Text {
-                width: parent.width - 500
+                width: parent.width - 520
                 height: parent.height
                 text: "SHIFT  configure"
                 color: Style.accent
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
             }
@@ -67,7 +67,7 @@ Item {
 
         Loader {
             width: parent.width
-            height: parent.height - Style.touch - 3
+            height: parent.height - Style.touch - Style.gap
             source: {
                 switch (app.systemShiftPage) {
                 case 0: return "MonitorScreen.qml"

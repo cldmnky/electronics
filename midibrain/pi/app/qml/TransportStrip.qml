@@ -4,12 +4,13 @@ import "components"
 
 // Persistent transport strip directly under the tab row: rolling/REC state,
 // bar:beat plus elapsed time, BPM, the metronome toggle and the dirty dot.
-// No-Pico mode adds the touch transport (PLAY/STOP/REC) because the panel buttons
-// live on the absent Pico. In hardware mode the physical panel owns them.
+// No-Pico mode adds the touch transport because the panel buttons live on the
+// absent Pico. The touch buttons are drawn glyphs, and REC pulses while the
+// engine is actually recording. In hardware mode the physical panel owns them.
 Rectangle {
     id: root
 
-    color: Style.panelDark
+    color: Style.panel
     border.width: 0
 
     Rectangle {
@@ -24,26 +25,26 @@ Rectangle {
         id: stripRow
 
         anchors.fill: parent
-        anchors.leftMargin: 6
-        anchors.rightMargin: 6
-        spacing: 8
+        anchors.leftMargin: Style.marginCompact
+        anchors.rightMargin: Style.marginCompact
+        spacing: Style.gap
 
         // Every width is fixed except the notice, so the row computes the
         // leftover instead of overlapping the touch transport in no-Pico mode.
-        readonly property int baseWidth: 48 + (app.noPicoMode ? 150 : 190) +
-                                         (app.noPicoMode ? 76 : 90) + 76 + 10 +
-                                         (app.noPicoMode ? 0 : 14)
-        readonly property int noPicoWidth: app.noPicoMode ? 60 + 3 * 50 : 0
+        readonly property int baseWidth: 44 + (app.noPicoMode ? 150 : 190) +
+                                         (app.noPicoMode ? 84 : 90) +
+                                         (app.noPicoMode ? 56 : 0) + 72 + 10
+        readonly property int noPicoWidth: app.noPicoMode ? 3 * 48 : 0
         readonly property int itemCount: app.noPicoMode ? 10 : 6
 
         Text {
-            width: 48
+            width: 44
             height: parent.height
             text: app.transportState
             color: app.transportState === "REC" ? Style.record
                    : (app.transportState === "ROLL" ? Style.accent : Style.textDim)
-            font.pixelSize: 12
-            font.bold: true
+            font.pixelSize: Style.fontSmall
+            font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
         Text {
@@ -52,59 +53,54 @@ Rectangle {
             text: app.positionText
             color: Style.text
             font.pixelSize: Style.fontBody
-            font.bold: true
+            font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
         Text {
-            width: app.noPicoMode ? 76 : 90
+            width: app.noPicoMode ? 84 : 90
             height: parent.height
             text: app.tempoText
             color: Style.textDim
-            font.pixelSize: 12
+            font.pixelSize: Style.fontSmall
             verticalAlignment: Text.AlignVCenter
         }
         Text {
             // Persistent bare-Pi marker: the mixer/transport shots must show
             // that this run has no Pico even when the System screen is closed.
-            width: app.noPicoMode ? 60 : 0
+            width: app.noPicoMode ? 56 : 0
             height: parent.height
             visible: app.noPicoMode
             text: "NO PICO"
             color: Style.record
-            font.pixelSize: 11
-            font.bold: true
+            font.pixelSize: Style.fontSmall
+            font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
-        TouchButton {
-            // Touch transport, NO PICO mode only: the hardware PLAY/STOP/REC buttons
-            // and the REC chord are panel inputs on the Pico.
-            width: app.noPicoMode ? 50 : 0
+        TransportGlyphButton {
+            width: app.noPicoMode ? 48 : 0
             height: Style.touch
             visible: app.noPicoMode
-            text: "PLAY"
-            textSize: 9
+            glyph: "play"
             checked: app.rolling
             focusId: "transport.play"
             onClicked: app.play()
         }
-        TouchButton {
-            width: app.noPicoMode ? 50 : 0
+        TransportGlyphButton {
+            width: app.noPicoMode ? 48 : 0
             height: Style.touch
             visible: app.noPicoMode
-            text: "STOP"
-            textSize: 9
+            glyph: "stop"
             checked: !app.rolling
             focusId: "transport.stop"
             onClicked: app.stop()
         }
-        TouchButton {
-            width: app.noPicoMode ? 50 : 0
+        TransportGlyphButton {
+            width: app.noPicoMode ? 48 : 0
             height: Style.touch
             visible: app.noPicoMode
-            text: "REC"
-            textSize: 9
+            glyph: "rec"
             checked: app.recording
-            checkedColor: Style.record
+            recording: app.recording
             focusId: "transport.rec"
             onClicked: app.recToggle()
         }
@@ -115,16 +111,17 @@ Rectangle {
             height: parent.height
             text: app.noticeText
             color: Style.accent
-            font.pixelSize: 11
+            font.pixelSize: Style.fontSmall
             elide: Text.ElideRight
             verticalAlignment: Text.AlignVCenter
         }
         TouchButton {
-            width: 76
+            width: 72
             height: Style.touch
             anchors.verticalCenter: parent.verticalCenter
             text: "CLICK"
             textSize: Style.fontSmall
+            variant: "ghost"
             checked: app.clickEnabled
             focusId: "transport.click"
             onClicked: app.setClickEnabled(!app.clickEnabled)

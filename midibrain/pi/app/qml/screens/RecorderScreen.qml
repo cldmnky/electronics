@@ -3,7 +3,9 @@ import Mnkybox 1.0
 import "../components"
 
 // RECORDER primary: transport, track selection, arm/start and the take list.
-// SHIFT: take management (import/live/active/rename/delete) and punch markers.
+// SHIFT: take management (import/live/active/rename/delete), the take loop and
+// punch markers. The primary face keeps the take list and transport; every
+// management action lives on SHIFT.
 Item {
     id: screen
 
@@ -13,12 +15,12 @@ Item {
         visible: !screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 3
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 6
+            spacing: Style.gap
 
             Text {
                 width: parent.width * 0.55
@@ -26,17 +28,18 @@ Item {
                 text: recorder.transportText
                 color: recorder.recording ? Style.record
                        : (app.rolling ? Style.accent : Style.text)
-                font.pixelSize: 22
-                font.bold: true
+                font.pixelSize: Style.fontDisplay
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
             }
             Text {
-                width: parent.width - parent.width * 0.55 - 6
+                width: parent.width - parent.width * 0.55 - Style.gap
                 height: parent.height
                 text: "ACTIVE  " + recorder.activeTake
                 color: recorder.activeTake === "LIVE INPUT" ? Style.textDim : Style.accent
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideMiddle
@@ -66,7 +69,7 @@ Item {
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 3
+            spacing: Style.gap
 
             Text {
                 width: 120
@@ -74,7 +77,7 @@ Item {
                 text: recorder.trackName
                 color: Style.text
                 font.pixelSize: Style.fontBody
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
@@ -93,12 +96,12 @@ Item {
                 height: parent.height
                 text: recorder.buttonText
                 textSize: Style.fontSmall
-                idleColor: "#7f2b2a"
+                variant: "danger"
                 focusId: "recorder.start"
                 onClicked: recorder.startStop()
             }
             Text {
-                width: parent.width - 330
+                width: parent.width - 120 - 70 - 140 - Style.gap * 3
                 height: parent.height
                 text: "SHIFT: takes + punch"
                 color: Style.textDim
@@ -121,13 +124,15 @@ Item {
             height: 14
             text: recorder.diskText + "  -  " + recorder.takeDirectory
             color: Style.textDim
-            font.pixelSize: 10
+            font.pixelSize: Style.fontSmall
             elide: Text.ElideMiddle
         }
 
         ListView {
+            id: takeList
             width: parent.width
-            height: Math.max(0, screen.height - Style.margin * 2 - 44 - 88 - 44 - 34 - 15)
+            height: Math.max(0, screen.height - Style.margin * 2 - Style.touch * 4 -
+                                16 - 14 - Style.gap * 5)
             clip: true
             model: recorder.takes
             boundsBehavior: Flickable.StopAtBounds
@@ -135,7 +140,8 @@ Item {
             delegate: Rectangle {
                 width: ListView.view.width
                 height: Style.touch
-                color: index === recorder.selectedRow ? Style.outline
+                radius: Style.corner
+                color: index === recorder.selectedRow ? Style.raised
                        : (index % 2 === 0 ? Style.panel : Style.panelDark)
                 border.width: app.focusId === ("recorder.take." + index) ? 2 : 0
                 border.color: Style.accent
@@ -144,7 +150,8 @@ Item {
                     anchors.left: parent.left
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    width: 5
+                    width: 4
+                    radius: 2
                     color: model.active ? Style.accent : "transparent"
                 }
                 Text {
@@ -153,8 +160,8 @@ Item {
                     height: parent.height
                     text: model.active ? "ACTIVE" : ""
                     color: Style.accent
-                    font.pixelSize: 10
-                    font.bold: true
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
                 }
                 Text {
@@ -164,7 +171,7 @@ Item {
                     text: (model.imported ? "PTR  " : "") + model.name
                     color: Style.text
                     font.pixelSize: Style.fontBody
-                    font.bold: true
+                    font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideMiddle
                 }
@@ -184,6 +191,16 @@ Item {
                     onTapped: recorder.selectRow(index)
                 }
             }
+
+            Text {
+                visible: takeList.count === 0
+                anchors.centerIn: parent
+                width: parent.width - 20
+                text: "no takes yet - press START TAKE"
+                color: Style.textDim
+                font.pixelSize: Style.fontBody
+                horizontalAlignment: Text.AlignHCenter
+            }
         }
     }
 
@@ -196,15 +213,15 @@ Item {
         signal step(real delta)
 
         height: Style.touch
-        spacing: 2
+        spacing: Style.gapTight
 
         Text {
             width: 50
             height: parent.height
             text: parent.label
             color: Style.textDim
-            font.pixelSize: 9
-            font.bold: true
+            font.pixelSize: Style.fontSmall
+            font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
         TouchButton {
@@ -216,9 +233,10 @@ Item {
             onClicked: parent.step(-0.25)
         }
         Rectangle {
-            width: parent.width - 50 - Style.touch * 2 - 6
+            width: parent.width - 50 - Style.touch * 2 - Style.gapTight * 3
             height: parent.height
             color: Style.panelDark
+            radius: Style.corner
             border.width: app.focusId === parent.focusId ? 2 : Style.outlineWidth
             border.color: app.focusId === parent.focusId ? Style.accent : Style.outline
             Text {
@@ -226,7 +244,7 @@ Item {
                 text: parent.parent.valueText + " b"
                 color: Style.text
                 font.pixelSize: Style.fontBody
-                font.bold: true
+                font.weight: Font.DemiBold
             }
         }
         TouchButton {
@@ -239,17 +257,17 @@ Item {
         }
     }
 
-    // SHIFT: management + punch
+    // SHIFT: management + loop + punch
     Column {
         visible: screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 3
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 3
+            spacing: Style.gap
 
             Text {
                 width: 108
@@ -257,14 +275,14 @@ Item {
                 text: "TAKES + PUNCH"
                 color: Style.accent
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
             }
             TouchButton {
                 width: 76
                 height: parent.height
                 text: "IMPORT"
-                textSize: 10
+                textSize: Style.fontSmall
                 focusId: "shift.recorder.import"
                 onClicked: app.requestImportTake()
             }
@@ -272,7 +290,7 @@ Item {
                 width: 64
                 height: parent.height
                 text: "LIVE"
-                textSize: 10
+                textSize: Style.fontSmall
                 checked: recorder.activeTake === "LIVE INPUT"
                 focusId: "shift.recorder.live"
                 onClicked: recorder.clearActive()
@@ -281,7 +299,7 @@ Item {
                 width: 74
                 height: parent.height
                 text: "ACTIVE"
-                textSize: 10
+                textSize: Style.fontSmall
                 active: recorder.selectedRow >= 0
                 focusId: "shift.recorder.activate"
                 onClicked: recorder.activateSelected()
@@ -290,7 +308,7 @@ Item {
                 width: 74
                 height: parent.height
                 text: "RENAME"
-                textSize: 10
+                textSize: Style.fontSmall
                 active: !recorder.recording && recorder.selectedRow >= 0
                 focusId: "shift.recorder.rename"
                 onClicked: app.requestRenameTake()
@@ -299,9 +317,9 @@ Item {
                 width: 68
                 height: parent.height
                 text: "DELETE"
-                textSize: 10
+                textSize: Style.fontSmall
                 active: !recorder.recording && recorder.selectedRow >= 0
-                idleColor: "#5b2222"
+                variant: "danger"
                 focusId: "shift.recorder.delete"
                 onClicked: app.requestDeleteTake()
             }
@@ -312,13 +330,13 @@ Item {
         // whole active take, which is what the hint line says.
         Column {
             width: parent.width
-            height: Style.touch * 2 + 3
-            spacing: 3
+            height: Style.touch * 2 + Style.gap
+            spacing: Style.gap
 
             Row {
                 width: parent.width
                 height: Style.touch
-                spacing: 3
+                spacing: Style.gap
 
                 Text {
                     width: 96
@@ -326,7 +344,7 @@ Item {
                     text: "LOOP  " + String(recorder.selectedTrack + 1).padStart(2, "0")
                     color: recorder.loopEnabled ? Style.accent : Style.textDim
                     font.pixelSize: Style.fontSmall
-                    font.bold: true
+                    font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
                 }
                 TouchButton {
@@ -342,12 +360,12 @@ Item {
                     }
                 }
                 Text {
-                    width: parent.width - 96 - 76 - 6
+                    width: parent.width - 96 - 76 - Style.gap * 2
                     height: parent.height
                     text: recorder.loopText + "   -   beats from the take start; " +
                           "end <= start loops the whole take"
                     color: Style.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     wrapMode: Text.WordWrap
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -356,10 +374,10 @@ Item {
             Row {
                 width: parent.width
                 height: Style.touch
-                spacing: 6
+                spacing: Style.gap
 
                 LoopBeatField {
-                    width: (parent.width - 6) / 2
+                    width: (parent.width - Style.gap) / 2
                     height: parent.height
                     label: "START"
                     valueText: recorder.loopStartText
@@ -370,7 +388,7 @@ Item {
                     }
                 }
                 LoopBeatField {
-                    width: (parent.width - 6) / 2
+                    width: (parent.width - Style.gap) / 2
                     height: parent.height
                     label: "END"
                     valueText: recorder.loopEndText
@@ -385,7 +403,7 @@ Item {
 
         PunchScreen {
             width: parent.width
-            height: parent.height - Style.touch * 3 - 9
+            height: parent.height - Style.touch * 3 - Style.gap * 3
             focusPrefix: "shift.punch"
             compact: true
         }

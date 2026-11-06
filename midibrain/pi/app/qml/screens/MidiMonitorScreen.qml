@@ -15,13 +15,13 @@ Item {
     Column {
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 2
+        spacing: Style.gapTight
 
         Row {
             width: parent.width
-            height: parent.height - 12
+            height: parent.height - 14 - Style.gapTight
 
-            spacing: 6
+            spacing: Style.gap
 
             // ---- counters --------------------------------------------------
             Column {
@@ -40,7 +40,7 @@ Item {
                         text: "PORTS  n / cc / clk / other"
                         color: Style.accent
                         font.pixelSize: Style.fontSmall
-                        font.bold: true
+                        font.weight: Font.DemiBold
                         verticalAlignment: Text.AlignVCenter
                     }
                     TouchButton {
@@ -64,7 +64,7 @@ Item {
 
                 ListView {
                     width: parent.width
-                    height: parent.height - Style.touch - 3
+                    height: parent.height - Style.touch - Style.gap
                     clip: true
                     model: midimon.ports
                     boundsBehavior: Flickable.StopAtBounds
@@ -85,7 +85,7 @@ Item {
                             text: model.name
                             color: model.direction === "IN" ? Style.text : Style.textDim
                             font.pixelSize: Style.fontSmall
-                            font.bold: true
+                            font.weight: Font.DemiBold
                             verticalAlignment: Text.AlignVCenter
                         }
                         Text {
@@ -126,14 +126,18 @@ Item {
                     text: midimon.headerText
                     color: Style.accent
                     font.pixelSize: Style.fontSmall
-                    font.bold: true
+                    font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
 
-                ListView {
+                Item {
                     width: parent.width
-                    height: parent.height - Style.touch - 3
+                    height: parent.height - Style.touch - Style.gap
+
+                ListView {
+                    id: eventList
+                    anchors.fill: parent
                     clip: true
                     model: midimon.events
                     boundsBehavior: Flickable.StopAtBounds
@@ -149,8 +153,8 @@ Item {
                             height: parent.height
                             text: midimon.portName(model.port)
                             color: model.kind === "IN" ? Style.text : Style.textDim
-                            font.pixelSize: 10
-                            font.bold: true
+                            font.pixelSize: Style.fontSmall
+                            font.weight: Font.DemiBold
                             verticalAlignment: Text.AlignVCenter
                         }
                         Text {
@@ -170,23 +174,36 @@ Item {
                             height: parent.height
                             text: model.age
                             color: Style.textDim
-                            font.pixelSize: 10
+                            font.pixelSize: Style.fontSmall
                             horizontalAlignment: Text.AlignRight
                             verticalAlignment: Text.AlignVCenter
                         }
                     }
+                }
+
+                Text {
+                    visible: eventList.count === 0
+                    anchors.centerIn: parent
+                    width: parent.width - 20
+                    text: midimon.hideClock
+                          ? "clock messages hidden - tap NO CLK to show them"
+                          : "no MIDI yet - play a note or move a control"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    horizontalAlignment: Text.AlignHCenter
+                }
                 }
             }
         }
 
         Text {
             width: parent.width
-            height: 12
+            height: 14
             text: midimon.noPicoMode
                   ? "NO PICO: TRS IN/OUT and their clock are unavailable; USB MIDI and the Pi clock mirror are live"
                   : "Pi-side view - Pico-generated TRS OUT clock/transport is not echoed back over the link"
             color: Style.textDim
-            font.pixelSize: 9
+            font.pixelSize: Style.fontSmall
             elide: Text.ElideRight
         }
     }

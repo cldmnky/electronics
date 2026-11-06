@@ -47,7 +47,7 @@ bool ConfigPopupModel::openKind(const QString& kind) {
       kind != QStringLiteral("monitor") && kind != QStringLiteral("comp") &&
       kind != QStringLiteral("eqtype") && kind != QStringLiteral("delay") &&
       kind != QStringLiteral("reverb") && kind != QStringLiteral("timelineops") &&
-      kind != QStringLiteral("pipechannels")) {
+      kind != QStringLiteral("pipechannels") && kind != QStringLiteral("trackmonitor")) {
     return false;
   }
   if (kind == QStringLiteral("timelineops") && timeline_ == nullptr) return false;
@@ -63,6 +63,7 @@ bool ConfigPopupModel::openKind(const QString& kind) {
            : kind == QStringLiteral("reverb")    ? QStringLiteral("REVERB")
            : kind == QStringLiteral("timelineops") ? QStringLiteral("REGION OPS")
            : kind == QStringLiteral("pipechannels") ? QStringLiteral("PIPE CHANNEL SCOPE")
+           : kind == QStringLiteral("trackmonitor") ? QStringLiteral("INPUT MONITOR")
                                                  : QStringLiteral("MAIN COMP");
   loadDraft();
   open_ = true;
@@ -91,6 +92,7 @@ void ConfigPopupModel::loadDraft() {
   compReleaseMs_ = settings_.mainComp.releaseMs;
   compMakeupDb_ = settings_.mainComp.makeupDb;
   compMode_ = settings_.mainComp.mode;
+  trackMonitor_ = clampChoice(mixer_.monitor(trackMonitorIndex_), 3);
   eqType_ = eq_.type(eq_.band());
   const int delayGrid = PerformanceModel::kDelayGrid;
   const int reverbGrid = PerformanceModel::kReverbGrid;
@@ -196,6 +198,9 @@ void ConfigPopupModel::commitDraft() {
   settings_.mainComp.mode = clampBoolChoice(compMode_);
   // Only the open popup's own drafts are written: an OK on the metronome popup
   // must not push a stale EQ/delay/reverb draft back into the models.
+  if (kind_ == QStringLiteral("trackmonitor")) {
+    mixer_.setMonitor(trackMonitorIndex_, clampChoice(trackMonitor_, 3));
+  }
   if (kind_ == QStringLiteral("eqtype")) {
     eq_.setType(eq_.band(), eqType_);
   } else if (kind_ == QStringLiteral("delay")) {
@@ -462,6 +467,13 @@ void ConfigPopupModel::setCompMakeupDb(double value) {
   compMakeupDb_ = value;
   emit changed();
 }
+void ConfigPopupModel::setTrackMonitor(int value) {
+  const int next = clampChoice(value, 3);
+  if (next == trackMonitor_) return;
+  trackMonitor_ = next;
+  emit changed();
+}
+
 void ConfigPopupModel::setCompMode(int value) {
   compMode_ = clampBoolChoice(value);
   emit changed();

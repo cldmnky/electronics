@@ -9,7 +9,7 @@ Item {
 
     Column {
         width: parent.width
-        spacing: 3
+        spacing: Style.gapTight
 
         Text {
             width: parent.width
@@ -17,13 +17,13 @@ Item {
             text: "MIDI LEARN - capture a control change"
             color: Style.textDim
             font.pixelSize: Style.fontSmall
-            font.bold: true
+            font.weight: Font.DemiBold
         }
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gapTight
 
             TouchComboBox {
                 id: learnTarget
@@ -47,14 +47,14 @@ Item {
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gapTight
 
             Text {
                 width: parent.width - 88
                 height: parent.height
                 text: learn.statusText
                 color: Style.textDim
-                font.pixelSize: 10
+                font.pixelSize: Style.fontSmall
                 elide: Text.ElideRight
                 verticalAlignment: Text.AlignVCenter
             }
@@ -62,7 +62,8 @@ Item {
                 width: 84
                 height: parent.height
                 text: "CLEAR"
-                textSize: 10
+                textSize: Style.fontSmall
+                variant: "ghost"
                 focusId: root.focusPrefix + ".clear"
                 onClicked: learn.clearAll()
             }
@@ -76,14 +77,14 @@ Item {
             delegate: Row {
                 width: ListView.view.width
                 height: Style.touch
-                spacing: 4
+                spacing: Style.gapTight
 
                 Text {
                     width: parent.width - 92
                     height: parent.height
                     text: modelData
                     color: Style.text
-                    font.pixelSize: 10
+                    font.pixelSize: Style.fontSmall
                     elide: Text.ElideRight
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -91,7 +92,7 @@ Item {
                     width: 88
                     height: parent.height
                     text: "REMOVE"
-                    textSize: 10
+                    textSize: Style.fontSmall
                     focusId: root.focusPrefix + ".binding." + index
                     onClicked: learn.removeBinding(index)
                 }

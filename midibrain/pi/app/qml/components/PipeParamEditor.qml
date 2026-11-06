@@ -25,8 +25,8 @@ Item {
         height: parent.height
         text: param.name
         color: Style.textDim
-        font.pixelSize: 10
-        font.bold: true
+        font.pixelSize: Style.fontSmall
+        font.weight: Font.DemiBold
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }
@@ -102,7 +102,7 @@ Item {
                 text: param.valueText
                 color: Style.text
                 font.pixelSize: Style.fontBody
-                font.bold: true
+                font.weight: Font.DemiBold
             }
         }
         TouchButton {
@@ -137,7 +137,7 @@ Item {
             height: parent.height
             text: param.valueText
             color: Style.text
-            font.pixelSize: 10
+            font.pixelSize: Style.fontSmall
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
         }

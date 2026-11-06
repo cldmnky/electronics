@@ -21,23 +21,23 @@ Rectangle {
         width: Math.min(560, root.width - 60)
         height: Math.min(200, root.height - 80)
         anchors.centerIn: parent
-        color: Style.panel
-        radius: Style.corner
-        border.width: 1
+        color: Style.raised
+        radius: Style.cornerPanel
+        border.width: Style.outlineWidth
         border.color: Style.outline
 
         Column {
             anchors.fill: parent
             anchors.margins: 16
-            spacing: 8
+            spacing: Style.gap
 
             Text {
                 width: parent.width
                 height: 26
                 text: app.confirmTitle
                 color: Style.text
-                font.pixelSize: 17
-                font.bold: true
+                font.pixelSize: Style.fontTitle
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
@@ -61,7 +61,7 @@ Rectangle {
                     width: 150
                     height: parent.height
                     text: app.confirmLabel
-                    idleColor: "#7f2b2a"
+                    variant: "danger"
                     onClicked: app.confirmAccept()
                 }
                 TouchButton {

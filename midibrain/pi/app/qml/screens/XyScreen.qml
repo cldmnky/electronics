@@ -14,12 +14,12 @@ Item {
     Column {
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: 4
+        spacing: Style.gap
 
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             Text {
                 width: parent.width - 376
@@ -27,7 +27,7 @@ Item {
                 text: "X/Y PERFORMANCE - one finger per grid, both at once"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
@@ -42,8 +42,8 @@ Item {
                     anchors.centerIn: parent
                     text: xy.touchText
                     color: xy.touchCount > 0 ? Style.text : Style.textDim
-                    font.pixelSize: 10
-                    font.bold: true
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
                 }
             }
             TouchButton {
@@ -52,7 +52,6 @@ Item {
                 text: xy.freezeText
                 textSize: Style.fontSmall
                 checked: xy.frozen
-                checkedColor: Style.nodePink
                 focusId: "xy.freeze"
                 onClicked: xy.toggleFreeze()
             }
@@ -60,11 +59,11 @@ Item {
 
         Row {
             width: parent.width
-            height: parent.height - Style.touch * 2 - 8
-            spacing: 4
+            height: parent.height - Style.touch * 2 - Style.gap * 2
+            spacing: Style.gap
 
             XyGrid {
-                width: (parent.width - 4) / 2
+                width: (parent.width - Style.gap) / 2
                 height: parent.height
                 gridIndex: 0
                 title: "DELAY"
@@ -78,7 +77,7 @@ Item {
                 frozenGrid: false
             }
             XyGrid {
-                width: (parent.width - 4) / 2
+                width: (parent.width - Style.gap) / 2
                 height: parent.height
                 gridIndex: 1
                 title: "REVERB"
@@ -96,7 +95,7 @@ Item {
         Row {
             width: parent.width
             height: Style.touch
-            spacing: 4
+            spacing: Style.gap
 
             TouchButton {
                 width: (parent.width - 8) / 2
@@ -138,8 +137,8 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            color: Style.panelDark
-            radius: Style.corner
+            color: Style.panel
+            radius: Style.cornerPanel
             border.width: app.focusId === gridItem.focusId ? 2 : Style.outlineWidth
             border.color: app.focusId === gridItem.focusId ? Style.accent : Style.outline
         }
@@ -178,7 +177,7 @@ Item {
             text: gridItem.title
             color: Style.textDim
             font.pixelSize: Style.fontSmall
-            font.bold: true
+            font.weight: Font.DemiBold
         }
 
         Rectangle {
@@ -188,7 +187,7 @@ Item {
             radius: 15
             x: gridItem.inset + gridItem.px * (gridItem.width - 2 * gridItem.inset) - width / 2
             y: gridItem.inset + (1.0 - gridItem.py) * (gridItem.height - 2 * gridItem.inset) - height / 2
-            color: gridItem.frozenGrid ? Style.nodePink : Style.accent
+            color: Style.accent
             border.width: 2
             border.color: Style.panelDark
             opacity: 0.9
@@ -200,13 +199,13 @@ Item {
             width: 116
             height: 26
             radius: Style.corner
-            color: Style.nodePink
+            color: Style.accent
             Text {
                 anchors.centerIn: parent
                 text: "FROZEN"
                 color: Style.panelDark
                 font.pixelSize: Style.fontSmall
-                font.bold: true
+                font.weight: Font.DemiBold
             }
         }
 
@@ -221,16 +220,16 @@ Item {
                 height: parent.height
                 text: gridItem.axisX + " " + gridItem.xValue
                 color: Style.text
-                font.pixelSize: 10
-                font.bold: true
+                font.pixelSize: Style.fontSmall
+                font.weight: Font.DemiBold
             }
             Text {
                 width: parent.width / 2
                 height: parent.height
                 text: gridItem.axisY + " " + gridItem.yValue
                 color: Style.text
-                font.pixelSize: 10
-                font.bold: true
+                font.pixelSize: Style.fontSmall
+                font.weight: Font.DemiBold
                 horizontalAlignment: Text.AlignRight
             }
         }
