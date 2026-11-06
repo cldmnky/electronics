@@ -3,9 +3,11 @@
 //        engine.cpp take_player.cpp recorder.cpp click.cpp -o /tmp/t_play -pthread
 //
 // Covers per-track selection, the newest-wins overlap rule with synthetic
-// float32 WAVs, the disarmed/armed input-path rule, the 48 kHz refusal, and
-// per-track take looping (beat-mapped range loops, the end<=start whole-take
-// rule, the seam-declick timing, loop+overlap and loop+monitor behaviour).
+// float32 WAVs, the disarmed/armed input-path rule, the 48 kHz refusal, the
+// monitor off/auto/on/input-only policy (including the suppressed take that
+// keeps tracking position), and per-track take looping (beat-mapped range
+// loops, the end<=start whole-take rule, the seam-declick timing, loop+overlap
+// and loop+monitor behaviour).
 
 #include <cmath>
 #include <cstdint>
@@ -423,6 +425,253 @@ void testMonitorModes() {
     std::printf("PASS take playback: monitor off/auto/on policy\n");
 }
 
+// --------------------------------------------------- monitor-only (InputOnly)
+
+void testMonitorInputOnly() {
+    const std::filesystem::path root = testRoot();
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root, ec);
+    CHECK(!ec);
+
+    // The constant take is long enough for the transition walk, the ramp take
+    // makes a stale or reset playback position show up immediately, and the
+    // two overlap takes prove every suppressed layer keeps advancing.
+    const std::string longTake = (root / "long.wav").string();
+    const std::string rampTake = (root / "ramp.wav").string();
+    const std::string olderTake = (root / "older.wav").string();
+    const std::string newerTake = (root / "newer.wav").string();
+    const std::vector<float> rampMaterial = ramp(8 * kBlockSize, 0.001f);
+    CHECK(writeWav(longTake, 48000, 1, constant(8 * kBlockSize, 0.5f)));
+    CHECK(writeWav(rampTake, 48000, 1, rampMaterial));
+    CHECK(writeWav(olderTake, 48000, 1, constant(2 * kBlockSize, 0.25f)));
+    CHECK(writeWav(newerTake, 48000, 1, constant(kBlockSize, 0.75f)));
+
+    const auto prepare = [](Engine& engine, const std::string& take) {
+        Channel strip;
+        strip.gain = 1.0f;
+        strip.vol = 1.0f;
+        strip.pan = 0.0f;  // hard left: the strip level is directly readable
+        engine.setChannel(0, strip);
+        engine.setTransport(true, 0, 24, 12000);
+        CHECK(engine.setActiveTake(0, take, nullptr));
+    };
+
+    std::vector<float> live(static_cast<std::size_t>(kBlockSize), 0.9f);
+    float outL[kBlockSize] = {};
+    float outR[kBlockSize] = {};
+
+    // The 0..3 matrix: the live input (0.9) and the take voice (0.5) per mode.
+    // Auto stays take-only, i.e. the live input is not doubled on top.
+    struct ModeRow {
+        MonitorMode mode;
+        const char* name;
+        float withTake;
+        float withoutTake;
+    };
+    const ModeRow rows[] = {
+        {MonitorMode::Off, "off", 0.5f, 0.0f},
+        {MonitorMode::Auto, "auto", 0.5f, 0.9f},
+        {MonitorMode::On, "on", 1.4f, 0.9f},
+        {MonitorMode::InputOnly, "input-only", 0.9f, 0.9f},
+    };
+    for (const ModeRow& row : rows) {
+        Engine engine;
+        prepare(engine, longTake);
+        engine.setMonitorMode(0, row.mode);
+        CHECK(engine.monitorMode(0) == row.mode);
+        processLive(engine, live.data(), outL, outR);
+        const std::string withLabel =
+            std::string("mode ") + row.name + " with a take";
+        checkNear(withLabel.c_str(), outL[0], row.withTake);
+        const float* tap = engine.tap(0);
+        CHECK(tap != nullptr);
+        if (tap != nullptr) {
+            const std::string tapLabel =
+                std::string("mode ") + row.name + " keeps the tap live";
+            checkNear(tapLabel.c_str(), tap[0], 0.9f);
+        }
+        engine.clearActiveTake(0);
+        processLive(engine, live.data(), outL, outR);
+        const std::string withoutLabel =
+            std::string("mode ") + row.name + " without a take";
+        checkNear(withoutLabel.c_str(), outL[0], row.withoutTake);
+    }
+
+    // The session wire value is the enum value (session.hpp: 3 = monitor only).
+    CHECK(static_cast<int>(MonitorMode::InputOnly) == 3);
+
+    // Transition walk on one engine: the mode is per strip, every switch lands
+    // on the next block, and the take position survives the walk.
+    {
+        Engine engine;
+        prepare(engine, longTake);
+        const MonitorMode walk[] = {MonitorMode::Off, MonitorMode::Auto,
+                                    MonitorMode::On, MonitorMode::InputOnly,
+                                    MonitorMode::Off};
+        const char* names[] = {"off", "auto", "on", "input-only", "off"};
+        const float expected[] = {0.5f, 0.5f, 1.4f, 0.9f, 0.5f};
+        for (int i = 0; i < 5; ++i) {
+            engine.setMonitorMode(0, walk[i]);
+            processLive(engine, live.data(), outL, outR);
+            const std::string label =
+                std::string("transition to ") + names[i];
+            checkNear(label.c_str(), outL[0], expected[i]);
+        }
+        CHECK(engine.monitorMode(0) == MonitorMode::Off);
+        engine.setMonitorMode(0, static_cast<MonitorMode>(4));
+        CHECK(engine.monitorMode(0) == MonitorMode::Auto);
+    }
+
+    // Mute/solo still win over InputOnly; the tap stays the live input.
+    {
+        Engine engine;
+        prepare(engine, longTake);
+        engine.setMonitorMode(0, MonitorMode::InputOnly);
+        Channel strip = engine.channel(0);
+        strip.mute = true;
+        engine.setChannel(0, strip);
+        processLive(engine, live.data(), outL, outR);
+        checkNear("input-only mute is silent", outL[0], 0.0f);
+        const float* tap = engine.tap(0);
+        CHECK(tap != nullptr);
+        if (tap != nullptr) {
+            checkNear("input-only mute keeps the tap live", tap[0], 0.9f);
+        }
+
+        strip.mute = false;
+        engine.setChannel(0, strip);
+        Channel soloStrip;
+        soloStrip.pan = 0.0f;
+        soloStrip.solo = true;
+        engine.setChannel(1, soloStrip);
+        std::vector<float> stripOne(static_cast<std::size_t>(kBlockSize), 0.25f);
+        const float* inputs[kMaxInputs] = {};
+        inputs[0] = live.data();
+        inputs[1] = stripOne.data();
+        engine.process(inputs, 2, kBlockSize, outL, outR);
+        checkNear("input-only does not defeat solo", outL[0], 0.25f);
+    }
+
+    // InputOnly suppresses the take voice while the take still advances: with
+    // no live input the strip is silent for those blocks, and switching back to
+    // Off ("playback") resumes at the frame the take reached meanwhile.
+    {
+        Engine engine;
+        prepare(engine, rampTake);
+        engine.setMonitorMode(0, MonitorMode::InputOnly);
+        std::vector<float> out;
+        renderMain(engine, nullptr, 2 * kBlockSize, out);
+        CHECK(engine.takeUnderruns() == 0);
+        for (int i = 0; i < 2 * kBlockSize; ++i) {
+            if (out[static_cast<std::size_t>(i)] == 0.0f) continue;
+            std::printf("FAIL input-only leaked the take at frame %d: %.9g\n", i,
+                        out[static_cast<std::size_t>(i)]);
+            ++gFailures;
+            break;
+        }
+        engine.setMonitorMode(0, MonitorMode::Off);
+        renderMain(engine, nullptr, kBlockSize, out);
+        checkNear("input-only suppressed take resumes in place", out[0],
+                  rampMaterial[static_cast<std::size_t>(2 * kBlockSize)], 1e-6f);
+        checkNear("input-only suppressed take resumes sample-exact",
+                  out[static_cast<std::size_t>(kBlockSize - 1)],
+                  rampMaterial[static_cast<std::size_t>(3 * kBlockSize - 1)],
+                  1e-6f);
+    }
+
+    // Newest-wins overlap: every layer is suppressed while all layers keep
+    // running, so Off resumes the older layer at its next frame instead of
+    // replaying the block it would have had.
+    {
+        Engine engine;
+        Channel strip;
+        strip.gain = 1.0f;
+        strip.vol = 1.0f;
+        strip.pan = 0.0f;
+        engine.setChannel(0, strip);
+        engine.setTransport(true, 0, 24, 12000);
+        engine.setMonitorMode(0, MonitorMode::InputOnly);
+        CHECK(engine.setActiveTakes(0, {olderTake, newerTake}, nullptr));
+        processLive(engine, live.data(), outL, outR);
+        checkNear("input-only suppresses the newest take layer", outL[0], 0.9f);
+        processLive(engine, live.data(), outL, outR);
+        checkNear("input-only suppresses the older layer after the newest ends",
+                  outL[0], 0.9f);
+        engine.setMonitorMode(0, MonitorMode::Off);
+        processLive(engine, live.data(), outL, outR);
+        checkNear("suppressed overlap layers keep their position", outL[0],
+                  0.0f);
+    }
+
+    std::filesystem::remove_all(root, ec);
+    std::printf("PASS take playback: monitor-only (InputOnly) policy\n");
+}
+
+// ------------------------------------------------ monitor-only on a stereo pair
+
+void testMonitorInputOnlyPair() {
+    const std::filesystem::path root = testRoot();
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root, ec);
+    CHECK(!ec);
+
+    const std::string take = (root / "pair.wav").string();
+    CHECK(writeWav(take, 48000, 1, constant(2 * kBlockSize, 0.5f)));
+
+    // Strip 3 claims device channels 4/5 as one stereo pair, so it carries one
+    // arm/monitor/take set and the mode governs both sides at once. Every other
+    // strip is muted: identity strips 4 and 5 would otherwise duplicate the
+    // pair's device channels on Main.
+    Engine engine;
+    for (int c = 0; c < kMaxInputs; ++c) {
+        if (c == 3) continue;
+        Channel silent;
+        silent.mute = true;
+        engine.setChannel(c, silent);
+    }
+    Channel strip;
+    strip.gain = 1.0f;
+    strip.vol = 1.0f;
+    strip.pan = 0.5f;  // balance centre: both pair sides at unity
+    engine.setChannel(3, strip);
+    engine.setInputSource(3, 4);
+    engine.setInputPair(3, true);
+    engine.setTransport(true, 0, 24, 12000);
+    CHECK(engine.setActiveTake(3, take, nullptr));
+    engine.setMonitorMode(3, MonitorMode::InputOnly);
+    CHECK(engine.monitorMode(3) == MonitorMode::InputOnly);
+    CHECK(engine.inputPair(3));
+
+    std::vector<float> liveL(static_cast<std::size_t>(kBlockSize), 0.5f);
+    std::vector<float> liveR(static_cast<std::size_t>(kBlockSize), 0.25f);
+    const float* inputs[kMaxInputs] = {};
+    inputs[4] = liveL.data();
+    inputs[5] = liveR.data();
+    float outL[kBlockSize] = {};
+    float outR[kBlockSize] = {};
+
+    engine.process(inputs, 6, kBlockSize, outL, outR);
+    checkNear("input-only pair passes the live L side", outL[0], 0.5f);
+    checkNear("input-only pair passes the live R side", outR[0], 0.25f);
+    const float* tap = engine.tap(3);
+    CHECK(tap != nullptr);
+    if (tap != nullptr) {
+        checkNear("input-only pair tap averages the pair", tap[0], 0.375f);
+    }
+
+    // On is the contrast: the one take voice joins the centre of both sides.
+    // There is no separate R-strip mode to set, by the pairing contract.
+    engine.setMonitorMode(3, MonitorMode::On);
+    engine.process(inputs, 6, kBlockSize, outL, outR);
+    checkNear("pair on layers the take once (L)", outL[0], 1.0f);
+    checkNear("pair on layers the take once (R)", outR[0], 0.75f);
+
+    std::filesystem::remove_all(root, ec);
+    std::printf("PASS take playback: monitor-only shares a stereo pair\n");
+}
+
 // ------------------------------------------------------ range loop timing
 
 void testRangeLoopWrapTiming() {
@@ -757,6 +1006,23 @@ void testLoopWithMonitorModes() {
                   out[static_cast<std::size_t>(frames + 64)], 1.4f, 1e-6f);
     }
 
+    // InputOnly: the looping take is suppressed, live input passes alone.
+    {
+        Engine engine;
+        prepare(engine);
+        engine.setMonitorMode(0, MonitorMode::InputOnly);
+        renderMain(engine, live.data(), 4 * kBlockSize, out);
+        checkNear("input-only suppresses the looping take", out[64], 0.9f, 1e-6f);
+        checkNear("input-only suppresses the looping take after the wrap",
+                  out[static_cast<std::size_t>(frames + 64)], 0.9f, 1e-6f);
+        const float* tap = engine.tap(0);
+        CHECK(tap != nullptr);
+        if (tap != nullptr) {
+            checkNear("input-only keeps the looping take's tap live", tap[0],
+                      0.9f, 1e-6f);
+        }
+    }
+
     // Armed: the take and its loop are ignored, live input passes.
     {
         Engine engine;
@@ -779,7 +1045,7 @@ void testLoopWithMonitorModes() {
     }
 
     std::filesystem::remove_all(root, ec);
-    std::printf("PASS take looping: monitor off/auto/on unchanged\n");
+    std::printf("PASS take looping: monitor modes unchanged\n");
 }
 
 }  // namespace
@@ -790,6 +1056,8 @@ int main() {
     testNon48kRefused();
     testStereoDownmix();
     testMonitorModes();
+    testMonitorInputOnly();
+    testMonitorInputOnlyPair();
     testRangeLoopWrapTiming();
     testWholeTakeLoop();
     testDisabledLoopIsLinear();

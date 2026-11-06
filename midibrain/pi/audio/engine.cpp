@@ -76,6 +76,7 @@ MonitorMode sanitizeMonitor(MonitorMode mode) {
         case MonitorMode::Off:
         case MonitorMode::Auto:
         case MonitorMode::On:
+        case MonitorMode::InputOnly:
             return mode;
     }
     return MonitorMode::Auto;
@@ -182,8 +183,14 @@ void Engine::processBlock(const float* const* in, int nch, int n,
         const float* liveR =
             (in != nullptr && paired && device + 1 < inputs) ? in[device + 1]
                                                             : nullptr;
+        // InputOnly suppresses the take voice only at output: the take player
+        // below still renders and advances this track, so a later switch back
+        // to Off/Auto/On resumes exactly where playback would have been.
         const float* take =
-            (!ch.arm && mTakeActive[c]) ? mTakeBuffer[c] : nullptr;
+            (!ch.arm && mTakeActive[c] &&
+             ch.monitor != MonitorMode::InputOnly)
+                ? mTakeBuffer[c]
+                : nullptr;
         const bool preGain = ch.tapPoint == TapPoint::PreGain;
 
         // The recorder/monitor tap always sees the strip's selected live source
@@ -207,6 +214,10 @@ void Engine::processBlock(const float* const* in, int nch, int n,
                 liveAllowed = false;
                 break;
             case MonitorMode::On:
+                liveAllowed = true;
+                break;
+            case MonitorMode::InputOnly:
+                // "Just monitoring": the live input is the strip's only voice.
                 liveAllowed = true;
                 break;
             case MonitorMode::Auto:

@@ -1838,6 +1838,8 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
     }
     channel.cueSend = live.cueSend;
     channel.out34Send = live.out34Send;
+    // The engine enum values are the frozen session wire values (0..3), so
+    // capture returns monitor-only (3) unchanged.
     channel.monitor = static_cast<int>(live.monitor);
     // Input source and output destination are routing state, not Channel
     // fields. A fresh engine is the identity mapping (strip N <- device N) with
@@ -1998,6 +2000,8 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
     }
     channel.cueSend = state.cueSend;
     channel.out34Send = state.out34Send;
+    // 1:1 with the frozen wire value; setChannel() maps anything outside the
+    // documented 0..3 back to Auto.
     channel.monitor = static_cast<audio::MonitorMode>(state.monitor);
     engine.setChannel(index, channel);
     engine.setInputSource(index, state.inCh);

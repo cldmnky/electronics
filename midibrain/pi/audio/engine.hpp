@@ -26,8 +26,12 @@ enum class TapPoint : uint8_t { PreGain, PostGain };
 /// Per-track input monitoring. `Off` never passes live input to Main/sends
 /// (take playback is unaffected); `Auto` passes live input when the track is
 /// armed or no take is currently playing; `On` always passes live input so a
-/// take and the live source can be layered intentionally. Mute/solo always win.
-enum class MonitorMode : uint8_t { Off = 0, Auto = 1, On = 2 };
+/// take and the live source can be layered intentionally; `InputOnly` (the MPC
+/// "just monitoring" mode) always passes live input and never plays the
+/// track's take. The take stack keeps running while it is suppressed, so
+/// switching back to `Off`/`Auto`/`On` resumes at the position it would have
+/// reached anyway. Mute/solo always win.
+enum class MonitorMode : uint8_t { Off = 0, Auto = 1, On = 2, InputOnly = 3 };
 
 /// Send-source stage for a destination. `PreFader` applies Channel::gain but
 /// not Channel::vol and is pre-pan (mono-centred); `PostFader` applies both and
@@ -148,8 +152,8 @@ struct OutputBuses {
 /// (centre) to 1 (hard right) with a constant-power law. `send[s]` is an FX
 /// bus level, `cueSend` feeds the CUE/phones bus and `out34Send` feeds OUT3&4.
 /// `tapPoint` picks the recorder/monitor tap; the default keeps the post-gain
-/// behavior. `monitor` controls only the live input contribution to Main/sends;
-/// the take voice and recorder tap are independent of it.
+/// behavior. `monitor` gates the live input contribution to Main/sends and, in
+/// InputOnly, the take voice too; the recorder tap is independent of it.
 struct Channel {
     float gain = 1.0f;
     float vol = 1.0f;
