@@ -533,11 +533,11 @@ void testClamps() {
     const EqBand untouched = engine.trackEqBand(3, 1);
     CHECK(untouched == EqBand{});
     engine.setTrackEqBand(-1, 0, band(3, 1000.0f, 6.0f, 1.0f));
-    engine.setTrackEqBand(kMaxInputs, 0, band(3, 1000.0f, 6.0f, 1.0f));
+    engine.setTrackEqBand(kMaxTracks, 0, band(3, 1000.0f, 6.0f, 1.0f));
     engine.setTrackEqBand(0, -1, band(3, 1000.0f, 6.0f, 1.0f));
     engine.setTrackEqBand(0, 4, band(3, 1000.0f, 6.0f, 1.0f));
     CHECK(engine.trackEqBand(-1, 0) == EqBand{});
-    CHECK(engine.trackEqBand(kMaxInputs, 0) == EqBand{});
+    CHECK(engine.trackEqBand(kMaxTracks, 0) == EqBand{});
     CHECK(engine.trackEqBand(0, -1) == EqBand{});
     CHECK(engine.trackEqBand(0, 4) == EqBand{});
     engine.setMainEqBand(-1, band(3, 1000.0f, 6.0f, 1.0f));

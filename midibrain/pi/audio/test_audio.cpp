@@ -306,7 +306,7 @@ void testTapProvenance() {
     CHECK(tap1 != nullptr);
     CHECK(tap2 != nullptr);
     CHECK(engine.tap(-1) == nullptr);
-    CHECK(engine.tap(kMaxInputs) == nullptr);
+    CHECK(engine.tap(kMaxTracks) == nullptr);
     if (tap0 != nullptr && tap1 != nullptr && tap2 != nullptr) {
         for (int i = 0; i < kBlockSize; ++i) {
             checkNear("tap 0 is post-gain", tap0[i], in0[i] * 0.5f);

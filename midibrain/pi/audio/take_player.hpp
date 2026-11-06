@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 
+#include "capacity.hpp"
 #include "wav.hpp"
 
 namespace mnky::audio {
@@ -80,8 +81,8 @@ inline constexpr float kNormalizePeakDbfs = -1.0f;
 /// stack.
 class TakePlayer {
 public:
-    /// Must match Engine's kMaxInputs; engine.cpp asserts this.
-    static constexpr int kMaxTracks = 18;
+    /// Mixer tracks; engine.cpp asserts this matches audio::kMaxTracks.
+    static constexpr int kMaxTracks = mnky::audio::kMaxTracks;
     static constexpr int kMaxTakesPerTrack = 4;
     /// ~171 ms at 48 kHz. A selection primes half of it synchronously so the
     /// first block after setTakes() normally has data.

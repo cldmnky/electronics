@@ -115,6 +115,15 @@ target_compile_options(test_audio_eq PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_audio_eq PRIVATE mnky_audio)
 add_test(NAME test_audio_eq COMMAND test_audio_eq)
 
+# Per-track FX insert (engine wave 9): one built-in delay/reverb instance per
+# track with its own settings, the post-EQ/pre-fader/pre-sends placement, hard
+# bypass, hot parameter application, the empty-id zero-cost path, the external
+# (CLAP) seam and the per-block CPU probe.
+add_executable(test_audio_insert test_audio_insert.cpp)
+target_compile_options(test_audio_insert PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
+target_link_libraries(test_audio_insert PRIVATE mnky_audio)
+add_test(NAME test_audio_insert COMMAND test_audio_insert)
+
 # Native device layer: exact sample-format conversion (S32/S24_3/S24_32/S16/
 # F32), the 18-in -> strips -> 20-out deviceOut mapping, the capture pump, the
 # buffer-size chunking and a fake period-based PCM device.
@@ -132,6 +141,15 @@ if(MNKY_HAVE_PIPEWIRE OR MNKY_HAVE_ALSA)
   target_compile_options(mnky_audio_probe PRIVATE ${MNKY_WARNINGS})
   target_link_libraries(mnky_audio_probe PRIVATE mnky_audio)
 endif()
+
+# Engine capacity/real-time budget benchmark (audio wave 10): 64 stereo tracks
+# through gain/pan/4-band EQ/sends, the skip-inactive path and the per-track
+# insert limit, at 64- and 128-frame blocks. A measurement tool, not a CTest
+# gate: it prints a table and exits 0. Run it on the studio Pi before quoting
+# any number.
+add_executable(mnky_audio_bench engine_bench.cpp)
+target_compile_options(mnky_audio_bench PRIVATE ${MNKY_WARNINGS})
+target_link_libraries(mnky_audio_bench PRIVATE mnky_audio)
 
 # pi/CMakeLists.txt already builds test_audio from test_audio.cpp through
 # mnky_module_tests(), so only the standalone build creates the target here.

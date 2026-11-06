@@ -4,10 +4,15 @@
 #include <cmath>
 #include <cstdio>
 
+#include "fx/delay.hpp"
+#include "fx/reverb.hpp"
+
 namespace mnky::audio {
 
-static_assert(TakePlayer::kMaxTracks == kMaxInputs,
-              "take playback track count must match the engine input count");
+static_assert(TakePlayer::kMaxTracks == kMaxTracks,
+              "take playback track count must match the engine track count");
+static_assert(kMaxChannels == 2 * kMaxTracks,
+              "the per-channel map covers two channels per track");
 
 namespace {
 
@@ -82,13 +87,129 @@ MonitorMode sanitizeMonitor(MonitorMode mode) {
     return MonitorMode::Auto;
 }
 
+// Insert kinds published by TrackInsertChain. Plain ints so the audio thread
+// reads one atomic word, not an enum whose storage the ABI leaves open.
+constexpr int kInsertNone = 0;
+constexpr int kInsertDelay = 1;
+constexpr int kInsertReverb = 2;
+constexpr int kInsertExternal = 3;
+
+int insertKindForId(const std::string& id) {
+    if (id == "builtin.delay") return kInsertDelay;
+    if (id == "builtin.reverb") return kInsertReverb;
+    return kInsertExternal;  // any other id: the attached CLAP-seam effect
+}
+
+// Defaults of an effect's own parameter list, in stable index order. An id
+// change re-initializes the instance from these, so a stale setting from an
+// earlier selection cannot leak into the new one.
+std::vector<double> insertDefaults(const fx::Effect& effect) {
+    const std::vector<fx::Param>& params = effect.params();
+    std::vector<double> values(params.size());
+    for (std::size_t index = 0; index < params.size(); ++index) {
+        values[index] = params[index].def;
+    }
+    return values;
+}
+
+// Id change: clear the DSP state and restore the effect's own defaults, then
+// apply the given parameters. applyState() snaps every ramp, so the newly
+// selected instance is audible from its first block instead of sweeping from
+// the settings of an earlier selection; non-finite entries are dropped and
+// leave the default in place.
+void reinitialize(fx::Effect& effect, const std::vector<double>& params) {
+    fx::EffectState fresh;
+    fresh.id = effect.id();
+    fresh.version = effect.version();
+    fresh.params = insertDefaults(effect);
+    const std::size_t given = std::min(params.size(), fresh.params.size());
+    for (std::size_t index = 0; index < given; ++index) {
+        if (std::isfinite(params[index])) fresh.params[index] = params[index];
+    }
+    fresh.bypass = false;  // bypass is the engine's chain-level switch
+    (void)effect.applyState(fresh);
+    effect.reset();
+}
+
 }  // namespace
 
+// One track's insert DSP. Both built-in instances exist for the track's whole
+// life (created on the first configured insert), so switching id never
+// allocates or frees on the audio path; the selected kind is one atomic word
+// and the parameters live in the effect objects, exactly like the send-bus
+// effects the app drives from the control thread.
+class TrackInsertChain final {
+public:
+    explicit TrackInsertChain(double sampleRate) {
+        mDelay.setSampleRate(sampleRate);
+        mReverb.setSampleRate(sampleRate);
+    }
+
+    void setSampleRate(double sampleRate) {
+        mDelay.setSampleRate(sampleRate);
+        mReverb.setSampleRate(sampleRate);
+        if (IEffect* effect = mExternal.load(std::memory_order_acquire)) {
+            effect->setSampleRate(sampleRate);
+        }
+    }
+
+    void setExternal(IEffect* effect) {
+        mExternal.store(effect, std::memory_order_release);
+    }
+
+    void select(int kind) {
+        mKind.store(kind, std::memory_order_release);
+    }
+
+    void setBypass(bool bypass) {
+        mBypass.store(bypass, std::memory_order_relaxed);
+    }
+
+    fx::Delay& delay() { return mDelay; }
+    fx::Reverb& reverb() { return mReverb; }
+
+    /// In-place stereo insert. Bypass and None return before touching the
+    /// buffers, so an inactive insert is bit-transparent and costs one load.
+    void process(float* left, float* right, int n) {
+        if (n <= 0 || left == nullptr || right == nullptr) return;
+        if (mBypass.load(std::memory_order_relaxed)) return;
+        const int kind = mKind.load(std::memory_order_relaxed);
+        if (kind == kInsertNone) return;
+        float* buses[2] = {left, right};
+        if (kind == kInsertDelay) {
+            mDelay.process(buses, 2, n);
+        } else if (kind == kInsertReverb) {
+            mReverb.process(buses, 2, n);
+        } else if (IEffect* effect = mExternal.load(std::memory_order_acquire)) {
+            effect->process(buses, 2, n);
+        }
+    }
+
+private:
+    fx::Delay mDelay;
+    fx::Reverb mReverb;
+    std::atomic<IEffect*> mExternal{nullptr};
+    std::atomic<int> mKind{kInsertNone};
+    std::atomic<bool> mBypass{false};
+};
+
 Engine::Engine() {
-    // Identity input mapping: strip N listens to device N until reconfigured.
-    for (int c = 0; c < kMaxInputs; ++c) mInputSource[c] = c;
+    // Identity input mapping for the device inputs: track N listens to device
+    // N until reconfigured. Tracks without a device input (18..63) start with
+    // no live source; their audio comes from takes or an explicit selection.
+    for (int c = 0; c < kMaxTracks; ++c) {
+        mInputSource[c] = c < kMaxDeviceInputs ? c : kNoInputSource;
+    }
     updateCompressor();
     mClick = ClickSource(mSampleRate);
+}
+
+Engine::~Engine() {
+    // The audio thread is stopped before the engine is destroyed (the
+    // caller's contract), so the published chains can be freed here.
+    for (auto& slot : mInsertChain) {
+        delete slot.load(std::memory_order_relaxed);
+    }
 }
 
 void Engine::process(const float* const* in, int nch, int n, float* outL,
@@ -115,13 +236,13 @@ void Engine::processBlock(const float* const* in, int nch, int n,
                           const OutputBuses& outputs) {
     const int frames = n < kBlockSize ? n : kBlockSize;
     int inputs = nch < 0 ? 0 : nch;
-    if (inputs > kMaxInputs) inputs = kMaxInputs;
+    if (inputs > kMaxDeviceInputs) inputs = kMaxDeviceInputs;
 
     // Take playback is a 48 kHz float path. At another engine rate the take
     // strips stay selected but silent: no hidden resampling and no live-input
     // leak through a disarmed strip.
-    float* takeBuffers[kMaxInputs] = {};
-    for (int c = 0; c < kMaxInputs; ++c) takeBuffers[c] = mTakeBuffer[c];
+    float* takeBuffers[kMaxTracks] = {};
+    for (int c = 0; c < kMaxTracks; ++c) takeBuffers[c] = mTakeBuffer[c];
     mTakePlayer.render(mTransport.rolling && mSampleRate == 48000.0, frames,
                        takeBuffers, mTakeActive, mTakePlaying);
 
@@ -141,22 +262,24 @@ void Engine::processBlock(const float* const* in, int nch, int n,
         mOut34Mono[i] = 0.0f;
     }
 
-    // Resolve each strip's live source for this block. A pair is always
-    // (even, even+1): an odd selection clamps down and the top channel pairs
-    // with the one below it, so the render never reads past kMaxInputs and the
-    // stored selection stays exactly what the session applied.
-    int sourceDevice[kMaxInputs] = {};
-    bool sourcePaired[kMaxInputs] = {};
-    for (int c = 0; c < kMaxInputs; ++c) {
+    // Resolve each track's live source into the per-channel map for this
+    // block. Track t owns internal channels 2t (primary/left) and 2t+1
+    // (secondary/right). A pair is always (even, even+1): an odd selection
+    // clamps down and the top channel pairs with the one below it, so the
+    // render never reads past kMaxDeviceInputs and the stored selection stays
+    // exactly what the session applied. kNoInputSource (-1) stays silent.
+    for (int c = 0; c < kMaxTracks; ++c) {
         int device = mInputSource[c];
         const bool paired = mInputPair[c] && device >= 0;
-        if (paired) device = std::min(device & ~1, kMaxInputs - 2);
-        sourceDevice[c] = device;  // kNoInputSource stays -1: a silent strip
-        sourcePaired[c] = paired;
+        if (paired) device = std::min(device & ~1, kMaxDeviceInputs - 2);
+        mChannelDevice[2 * c] = device;
+        mChannelDevice[2 * c + 1] = paired ? device + 1 : kNoInputSource;
     }
 
     bool anySolo = false;
-    for (int c = 0; c < kMaxInputs; ++c) anySolo = anySolo || mChannels[c].solo;
+    for (int c = 0; c < kMaxTracks; ++c) {
+        anySolo = anySolo || mChannels[c].solo;
+    }
 
     // The per-destination send stages are block state, not per-sample state.
     bool sendPre[kNumSends] = {};
@@ -173,16 +296,18 @@ void Engine::processBlock(const float* const* in, int nch, int n,
         SendSource::PreFader;
     const bool dualMono = mOut34Mode == Out34Mode::DualMono;
 
-    for (int c = 0; c < kMaxInputs; ++c) {
+    for (int c = 0; c < kMaxTracks; ++c) {
         const Channel& ch = mChannels[c];
-        const int device = sourceDevice[c];
-        const bool paired = sourcePaired[c];
+        const int deviceL = mChannelDevice[2 * c];
+        const int deviceR = mChannelDevice[2 * c + 1];
+        const bool paired = deviceR >= 0;
         const float* liveL =
-            (in != nullptr && device >= 0 && device < inputs) ? in[device]
-                                                             : nullptr;
+            (in != nullptr && deviceL >= 0 && deviceL < inputs) ? in[deviceL]
+                                                               : nullptr;
         const float* liveR =
-            (in != nullptr && paired && device + 1 < inputs) ? in[device + 1]
-                                                            : nullptr;
+            (in != nullptr && paired && deviceR < inputs) ? in[deviceR]
+                                                          : nullptr;
+        const bool hasLive = liveL != nullptr || liveR != nullptr;
         // InputOnly suppresses the take voice only at output: the take player
         // below still renders and advances this track, so a later switch back
         // to Off/Auto/On resumes exactly where playback would have been.
@@ -193,19 +318,32 @@ void Engine::processBlock(const float* const* in, int nch, int n,
                 : nullptr;
         const bool preGain = ch.tapPoint == TapPoint::PreGain;
 
-        // The recorder/monitor tap always sees the strip's selected live source
+        // The recorder/monitor tap always sees the track's selected live source
         // at its tapPoint; a pair is averaged to mono. Monitor mode, the take
-        // voice and the output destination never change it.
-        for (int i = 0; i < frames; ++i) {
-            float mono = 0.0f;
-            if (paired) {
-                if (liveL != nullptr) mono += 0.5f * liveL[i];
-                if (liveR != nullptr) mono += 0.5f * liveR[i];
-            } else if (liveL != nullptr) {
-                mono = liveL[i];
+        // voice and the output destination never change it. A track that just
+        // lost its live source zeroes the tap once (see mTapLive).
+        if (hasLive) {
+            for (int i = 0; i < frames; ++i) {
+                float mono = 0.0f;
+                if (paired) {
+                    if (liveL != nullptr) mono += 0.5f * liveL[i];
+                    if (liveR != nullptr) mono += 0.5f * liveR[i];
+                } else if (liveL != nullptr) {
+                    mono = liveL[i];
+                }
+                mTap[c][i] = preGain ? mono : mono * ch.gain;
             }
-            mTap[c][i] = preGain ? mono : mono * ch.gain;
+            mTapLive[c] = true;
+        } else if (mTapLive[c]) {
+            for (int i = 0; i < frames; ++i) mTap[c][i] = 0.0f;
+            mTapLive[c] = false;
         }
+
+        // Skip-inactive fast path: no live source and no take voice means the
+        // track produces nothing, so the EQ, insert, pan and send matrix are
+        // skipped entirely (an empty insert included). With 64 tracks and 18
+        // device inputs this is what keeps an idle project cheap.
+        if (!hasLive && take == nullptr) continue;
 
         if (!audible(ch, anySolo)) continue;
         bool liveAllowed = false;
@@ -264,6 +402,13 @@ void Engine::processBlock(const float* const* in, int nch, int n,
             mStripR[i] = right * ch.gain;
         }
         if (eq.active()) eq.process(mStripL, mStripR, frames);
+        // Per-track FX insert: post-EQ, pre-fader (vol) and pre-sends, so every
+        // send stage and the dry destination hear the processed signal while
+        // the recorder tap above stays pre-insert (the tapPoint policy).
+        if (TrackInsertChain* insert =
+                mInsertChain[c].load(std::memory_order_relaxed)) {
+            insert->process(mStripL, mStripR, frames);
+        }
 
         for (int i = 0; i < frames; ++i) {
             // Unpanned pre-fader stage (mono sum: the pair average plus the
@@ -462,12 +607,12 @@ void Engine::renderClick(int n) {
 }
 
 const float* Engine::tap(int ch) const {
-    if (ch < 0 || ch >= kMaxInputs) return nullptr;
+    if (ch < 0 || ch >= kMaxTracks) return nullptr;
     return mTap[ch];
 }
 
 void Engine::setChannel(int index, Channel ch) {
-    if (index < 0 || index >= kMaxInputs) return;
+    if (index < 0 || index >= kMaxTracks) return;
     ch.cueSend = clamp01(ch.cueSend);
     ch.out34Send = clamp01(ch.out34Send);
     ch.monitor = sanitizeMonitor(ch.monitor);
@@ -475,63 +620,64 @@ void Engine::setChannel(int index, Channel ch) {
 }
 
 void Engine::setCueSend(int index, float level) {
-    if (index < 0 || index >= kMaxInputs) return;
+    if (index < 0 || index >= kMaxTracks) return;
     mChannels[index].cueSend = clamp01(level);
 }
 
 float Engine::cueSend(int index) const {
-    if (index < 0 || index >= kMaxInputs) return 0.0f;
+    if (index < 0 || index >= kMaxTracks) return 0.0f;
     return mChannels[index].cueSend;
 }
 
 void Engine::setOut34Send(int index, float level) {
-    if (index < 0 || index >= kMaxInputs) return;
+    if (index < 0 || index >= kMaxTracks) return;
     mChannels[index].out34Send = clamp01(level);
 }
 
 float Engine::out34Send(int index) const {
-    if (index < 0 || index >= kMaxInputs) return 0.0f;
+    if (index < 0 || index >= kMaxTracks) return 0.0f;
     return mChannels[index].out34Send;
 }
 
 void Engine::setMonitorMode(int index, MonitorMode mode) {
-    if (index < 0 || index >= kMaxInputs) return;
+    if (index < 0 || index >= kMaxTracks) return;
     mChannels[index].monitor = sanitizeMonitor(mode);
 }
 
 MonitorMode Engine::monitorMode(int index) const {
-    if (index < 0 || index >= kMaxInputs) return MonitorMode::Auto;
+    if (index < 0 || index >= kMaxTracks) return MonitorMode::Auto;
     return mChannels[index].monitor;
 }
 
 void Engine::setInputSource(int index, int deviceChannel) {
-    if (index < 0 || index >= kMaxInputs) return;
+    if (index < 0 || index >= kMaxTracks) return;
     if (deviceChannel < 0) {
         mInputSource[index] = kNoInputSource;
         return;
     }
     mInputSource[index] =
-        deviceChannel < kMaxInputs ? deviceChannel : kMaxInputs - 1;
+        deviceChannel < kMaxDeviceInputs ? deviceChannel
+                                         : kMaxDeviceInputs - 1;
 }
 
 int Engine::inputSource(int index) const {
-    if (index < 0 || index >= kMaxInputs) return kNoInputSource;
+    if (index < 0 || index >= kMaxTracks) return kNoInputSource;
     return mInputSource[index];
 }
 
 void Engine::setInputPair(int index, bool paired) {
-    if (index < 0 || index >= kMaxInputs) return;
+    if (index < 0 || index >= kMaxTracks) return;
     mInputPair[index] = paired;
 }
 
 bool Engine::inputPair(int index) const {
-    if (index < 0 || index >= kMaxInputs) return false;
+    if (index < 0 || index >= kMaxTracks) return false;
     return mInputPair[index];
 }
 
 void Engine::setOutputDestination(int index,
                                   OutputDestination destination) {
-    if (index < 0 || index >= kMaxInputs) return;
+    if (index < 0 || index >= kMaxTracks) return;
     const int value = static_cast<int>(destination);
     mOutputDestination[index] = value >= 0 && value < kNumOutputDestinations
                                     ? destination
@@ -539,7 +685,7 @@ void Engine::setOutputDestination(int index,
 }
 
 OutputDestination Engine::outputDestination(int index) const {
-    if (index < 0 || index >= kMaxInputs) return OutputDestination::Main;
+    if (index < 0 || index >= kMaxTracks) return OutputDestination::Main;
     return mOutputDestination[index];
 }
 
@@ -592,6 +738,93 @@ void Engine::setFx(int send, IEffect* fx) {
     mFx[send] = fx;
 }
 
+void Engine::setTrackInsert(int track, const TrackInsert& insert) {
+    if (!trackInRange(track)) return;
+    TrackInsert& state = mInsertState[track];
+    // The app re-applies its mixer snapshot every block; an unchanged insert
+    // must cost nothing (and must not restart a parameter ramp).
+    if (state == insert) return;
+    if (insert.id.empty()) {
+        if (TrackInsertChain* chain =
+                mInsertChain[track].load(std::memory_order_acquire)) {
+            chain->select(kInsertNone);
+        }
+        state = TrackInsert{};
+        return;
+    }
+
+    TrackInsertChain* chain =
+        mInsertChain[track].load(std::memory_order_acquire);
+    if (chain == nullptr) {
+        // First configured insert on this track: the only allocation this
+        // control-thread call ever does, and never on the audio path.
+        chain = new TrackInsertChain(mSampleRate);
+        mInsertChain[track].store(chain, std::memory_order_release);
+    }
+
+    const int kind = insertKindForId(insert.id);
+    const bool idChanged = state.id != insert.id;
+    if (idChanged) {
+        chain->select(kind);
+        state.id = insert.id;
+        state.params.clear();
+        if (kind == kInsertDelay) {
+            reinitialize(chain->delay(), insert.params);
+        } else if (kind == kInsertReverb) {
+            reinitialize(chain->reverb(), insert.params);
+        }
+    }
+    chain->setBypass(insert.bypass);
+    state.bypass = insert.bypass;
+
+    if (kind == kInsertDelay || kind == kInsertReverb) {
+        fx::Effect& effect = kind == kInsertDelay
+                                 ? static_cast<fx::Effect&>(chain->delay())
+                                 : static_cast<fx::Effect&>(chain->reverb());
+        const int count = static_cast<int>(effect.params().size());
+        if (!idChanged) {
+            // Hot parameter application: the effect ramps from its current
+            // value over 20 ms and keeps its delay line / reverb tail. A value
+            // that already is the effect's target is skipped, so a repeated
+            // per-block apply never retargets a ramp that is still running.
+            const int given = static_cast<int>(insert.params.size());
+            for (int index = 0; index < count && index < given; ++index) {
+                const double value =
+                    insert.params[static_cast<std::size_t>(index)];
+                if (effect.param(index) == value) continue;
+                (void)effect.setParam(index, value);
+            }
+        }
+        // Capture reads back the values the DSP actually holds (the effect
+        // clamps ranges and rounds stepped selectors).
+        state.params.resize(static_cast<std::size_t>(count));
+        for (int index = 0; index < count; ++index) {
+            state.params[static_cast<std::size_t>(index)] = effect.param(index);
+        }
+    } else {
+        // The CLAP seam owns its own parameter table; the engine echoes the
+        // session values so a load/save round-trip does not drop them.
+        state.params = insert.params;
+    }
+}
+
+TrackInsert Engine::trackInsert(int track) const {
+    if (!trackInRange(track)) return TrackInsert{};
+    return mInsertState[track];
+}
+
+void Engine::setTrackInsertEffect(int track, IEffect* effect) {
+    if (!trackInRange(track)) return;
+    TrackInsertChain* chain =
+        mInsertChain[track].load(std::memory_order_acquire);
+    if (chain == nullptr) {
+        if (effect == nullptr) return;
+        chain = new TrackInsertChain(mSampleRate);
+        mInsertChain[track].store(chain, std::memory_order_release);
+    }
+    chain->setExternal(effect);
+}
+
 void Engine::setFxReturn(int send, float gain) {
     if (send < 0 || send >= kNumSends) return;
     mFxReturn[send] = gain;
@@ -603,6 +836,11 @@ void Engine::setSampleRate(double sampleRate) {
     }
     for (EqInsert& eq : mTrackEq) eq.setSampleRate(sampleRate);
     mMainEq.setSampleRate(sampleRate);
+    for (auto& slot : mInsertChain) {
+        if (TrackInsertChain* chain = slot.load(std::memory_order_acquire)) {
+            chain->setSampleRate(sampleRate);
+        }
+    }
     if (!(sampleRate > 0.0) || !std::isfinite(sampleRate)) return;
     if (sampleRate == mSampleRate) return;
     mSampleRate = sampleRate;
@@ -710,7 +948,7 @@ void Engine::setTransport(bool rolling, std::uint32_t tick,
 
 bool Engine::setActiveTakes(int track, const std::vector<std::string>& paths,
                             std::string* error) {
-    if (track < 0 || track >= kMaxInputs) {
+    if (track < 0 || track >= kMaxTracks) {
         if (error != nullptr) *error = "track is out of range";
         return false;
     }
@@ -720,7 +958,7 @@ bool Engine::setActiveTakes(int track, const std::vector<std::string>& paths,
 
 bool Engine::setTakeRegions(int track, const std::vector<TakeRegion>& regions,
                             std::string* error) {
-    if (track < 0 || track >= kMaxInputs) {
+    if (track < 0 || track >= kMaxTracks) {
         if (error != nullptr) *error = "track is out of range";
         return false;
     }
@@ -740,19 +978,19 @@ bool Engine::setTakeRegions(int track, const std::vector<TakeRegion>& regions,
 }
 
 void Engine::clearTakeRegions(int track) {
-    if (track < 0 || track >= kMaxInputs) return;
+    if (track < 0 || track >= kMaxTracks) return;
     mTakeRegions[track].clear();
     mTakePlayer.clearRegions(track);
 }
 
 std::vector<TakeRegion> Engine::takeRegions(int track) const {
-    if (track < 0 || track >= kMaxInputs) return {};
+    if (track < 0 || track >= kMaxTracks) return {};
     return mTakeRegions[track];
 }
 
 bool Engine::setActiveTake(int track, const std::string& path,
                            std::string* error) {
-    if (track < 0 || track >= kMaxInputs) {
+    if (track < 0 || track >= kMaxTracks) {
         if (error != nullptr) *error = "track is out of range";
         return false;
     }
@@ -764,12 +1002,12 @@ bool Engine::setActiveTake(int track, const std::string& path,
 }
 
 void Engine::clearActiveTake(int track) {
-    if (track < 0 || track >= kMaxInputs) return;
+    if (track < 0 || track >= kMaxTracks) return;
     mTakePlayer.clearTrack(track);
 }
 
 void Engine::setTakeLoop(int track, const TakeLoop& loop) {
-    if (track < 0 || track >= kMaxInputs) return;
+    if (track < 0 || track >= kMaxTracks) return;
     const double bpm = static_cast<double>(mTransport.bpmX100) / 100.0;
     const double framesPerBeat = bpm > 0.0 ? mSampleRate * 60.0 / bpm : 0.0;
     mTakeLoop[track] = loop;

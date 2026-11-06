@@ -70,14 +70,17 @@ public:
     Recorder& operator=(const Recorder&) = delete;
 
     /// Creates `dir/take-<utc>/` (`-N` suffix on a same-second collision) and
-    /// opens `chNN.wav` for every bit set in `armMask`, plus `master.wav` when
-    /// `masterArm` is true (the default). With `masterArm == false` the master
-    /// bus is not recorded and the take reports only the channel files.
-    /// Returns false when a take is already running, `armMask` is empty, or the
-    /// directory/files cannot be created.
-    bool startTake(const std::string& dir, uint32_t armMask, uint32_t sampleRate = 48000,
+    /// opens `chNN.wav` for every bit set in `armMask` (one bit per mixer
+    /// track, up to kMaxTracks = 64), plus `master.wav` when `masterArm` is
+    /// true (the default). With `masterArm == false` the master bus is not
+    /// recorded and the take reports only the channel files. Returns false when
+    /// a take is already running, `armMask` is empty, or the directory/files
+    /// cannot be created.
+    bool startTake(const std::string& dir, uint64_t armMask, uint32_t sampleRate = 48000,
                    bool masterArm = true);
-    /// Queues one block (`n` <= kBlockSize) of channel taps and the master bus.
+    /// Queues one block (`n` <= kBlockSize) of per-track taps and the master
+    /// bus. Only armed tracks are read from `taps`, so a caller may pass an
+    /// array shorter than kMaxTracks as long as its arm mask stays inside it.
     /// Never blocks on disk and never allocates.
     void writeBlock(const float* const* taps, const float* masterL, const float* masterR, int n);
     /// Stops the writer, drains the queue, closes the WAVs and reports the take.
@@ -91,7 +94,7 @@ private:
     struct Block {
         int n = 0;
         float master[2][kBlockSize] = {};
-        float ch[kMaxInputs][kBlockSize] = {};
+        float ch[kMaxTracks][kBlockSize] = {};
     };
 
     void writerLoop();
@@ -107,13 +110,13 @@ private:
     int mTail = 0;
     int mCount = 0;
     bool mStop = false;
-    uint32_t mArmMask = 0;
+    uint64_t mArmMask = 0;
     bool mMasterArm = true;
     std::string mTakeDir;
     std::atomic<bool> mRunning{false};
     std::atomic<uint64_t> mDrops{0};
     std::atomic<uint64_t> mFrames{0};
-    WavFileWriter mChannelFile[kMaxInputs];
+    WavFileWriter mChannelFile[kMaxTracks];
     WavFileWriter mMasterFile;
 };
 

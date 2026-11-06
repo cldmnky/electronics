@@ -99,7 +99,7 @@ void testTapPointProvenance() {
     engine.process(empty, 0, kBlockSize, outL, outR);
     if (tap != nullptr) checkNear("missing channel taps silence", tap[0], 0.0f);
     CHECK(engine.tap(-1) == nullptr);
-    CHECK(engine.tap(kMaxInputs) == nullptr);
+    CHECK(engine.tap(kMaxTracks) == nullptr);
 
     std::printf("PASS audio engine: tap provenance pre vs post gain\n");
 }

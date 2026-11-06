@@ -598,3 +598,160 @@ drop, the 18-in -> strips -> 20-out path through a real `Engine` at 64/128/256/
 audio/session targets and `mnkybox --unittests` (404 checks). Pi:
 `ctest` 18/18 and `--unittests` 404/404; `mnky_audio_probe list`, `take` and the
 `screenshots-live` runs above.
+
+## Engine wave 9: per-track FX insert (one instance per track)
+
+Works: every strip has its own insert slot — `TrackInsert {id, bypass, params}`
+with `Engine::setTrackInsert()` / `trackInsert()` (session capture) and
+`setTrackInsertEffect()` for an externally owned effect. `id` is empty (none),
+`builtin.delay`, `builtin.reverb` or a CLAP plugin id; `params` are positional
+doubles in the effect's stable order (delay 8: `time_ms, feedback, mix,
+beat_mode, division, ping_pong, bp_cutoff_hz, bp_width_oct`; reverb 6:
+`predelay_ms, decay, damping, mix, model, size`). This is the per-track instance
+path; the mix-wide FX1/FX2 send buses and their returns are unchanged.
+
+**Placement (proven by signal injection in `test_audio_insert.cpp`).** The
+strip order is `live input (+ take voice) -> gain -> four-band EQ -> INSERT ->
+vol (fader) -> pan -> destination and sends`:
+- post-EQ: the insert input is bit-identical to the EQ-only engine output, and
+  a +6 dB low-shelf is present at the insert;
+- pre-fader: a fader move (vol) scales the insert *output* and leaves its input
+  bit-identical;
+- pre-sends: FX1 (pre- and post-fader source), CUE and OUT3&4 all carry the
+  insert output (a wet-only 1 ms delay puts the impulse at frame 48 on every
+  send, never the dry impulse at frame 0);
+- the recorder/monitor tap stays **pre-insert** (and pre-EQ): `tap()` is the
+  strip's selected live source at its `tapPoint`, so a recording does not bake
+  the insert — the same policy the EQ insert already documents.
+
+**Instances and cost.** Each track lazily creates one `fx::Delay` and one
+`fx::Reverb` on its first configured insert and keeps both for the engine's
+lifetime (an id change re-initializes only that track: DSP state cleared,
+parameters back to their defaults, the new `params` applied and ramps snapped).
+18 independent instances are therefore possible: the delay line is 2 s stereo
+float (768 KB at 48 kHz) and the reverb allocates its maximum-size network
+(~180 KB), so all 18 tracks having used both costs ~17 MB. An empty id detaches
+the insert: no DSP runs, and the only cost is one atomic pointer load per track
+per block. `bypass` returns before any processing, so the strip is bit-exact
+(the tests compare whole buffers against a never-inserted engine). Same-id
+parameter writes go through `Effect::setParam()`: 20 ms ramps, no reset, the
+delay line / reverb tail survives (tested). The app re-applies its mixer
+snapshot every block; an unchanged `{id,bypass,params}` is a no-op and a value
+that already is the effect's target is skipped, so a running ramp is never
+retargeted. Like the EQ and the sends, the insert runs only for strips that
+pass the mute/solo and monitor/take gates; a gated strip freezes its insert
+tail instead of leaking it into the sends.
+
+**CPU probe (this macOS/Apple-silicon host, RelWithDebInfo build, 48 kHz,
+64-frame blocks; budget 1333 us/block).** Measured by `test_audio_insert` with
+18 strips fed noise; the probe runs with the same optimization flags as the
+library, so an unoptimized build measures several times higher:
+
+| insert | N=1 | N=6 | N=18 |
+| --- | --- | --- | --- |
+| none | — | — | 3.8-4.4 us/block |
+| builtin.delay | 4.4-4.7 us (0.33-0.36%) | 6.0-6.1 us (0.45%) | 9.4-9.7 us (0.70-0.73%) |
+| builtin.reverb | 4.7-5.0 us (0.35-0.37%) | 8.2-8.4 us (0.61-0.62%) | 15.8-16.2 us (1.18-1.22%) |
+
+Marginal per-instance cost is 0.28-0.31 us/block (delay) and 0.65-0.66 us/block
+(reverb). All 18 tracks, the architectural limit, cost 0.7% (delay) or 1.2%
+(reverb) of the 48k/64 block budget on this host; extrapolating at 50% of the
+budget gives ~2100-2400 delay or ~1000 reverb instances, so the track count,
+not the CPU, is the limit here. This is **not** a Pi 5 number: the target must
+re-measure with the same probe (same build type) before any limit is claimed.
+
+**CLAP gap (named).** The engine does not load CLAP modules. `mnky_audio` is
+the lower layer (`mnky_clap` links `mnky_audio`, and the existing
+`clap::Host`/`app::FxSlot` adapter is GUI-thread-owned and single-threaded by
+contract), so a per-track CLAP insert would invert the dependency and need 18
+host instances with a per-block try-lock — unproven within the block budget
+above. The engine therefore accepts and persists a CLAP id and its parameter
+vector but runs only the effect attached with `setTrackInsertEffect()`; with
+nothing attached the strip passes dry. Wiring one app `FxSlot` per track (load,
+parameter mapping, session state) remains the app layer's follow-up.
+
+**Session.** `mixer.channels[].insert` forwards both ways at the engine seam:
+`session::apply()` calls `Engine::setTrackInsert()` for all 18 slots and
+`session::capture()` reads `Engine::trackInsert()` back (clamped/stepped values
+as the DSP holds them). The JSON shape is the session team's
+(`{"id","bypass","params"}`, empty id = none).
+
+Verified with: `test_audio_insert` (per-id dry/processed paths, two-track
+independence, bypass bit-transparency, hot parameter ramps and delay-line
+survival, id-change re-initialization scoped to one track, the placement
+injections above, empty-id zero processing, the external seam, sample-rate
+re-allocation, CPU probe) plus the untouched `test_audio`, `test_fx`,
+`test_audio_eq` and the rest of the audio CTest suite.
+
+## Engine wave 10: 64-track / 128-channel capacity and the Pi budget
+
+Works: the engine's capacity is the product target — **64 mixer tracks**, each
+mono or stereo, **128 internal channels** (track t owns channels 2t and 2t+1).
+`capacity.hpp` is the single source of the taxonomy: `kMaxDeviceInputs` (18:
+UMC1820 16 analog + 2 S/PDIF, the width `process()` reads), `kMaxTracks` (64),
+`kMaxChannels` (128) and the legacy `kMaxInputs` (18, the device width every
+existing device/tap call site and test already means). Every per-track array
+(`Channel`, input selection/pair, output destination, EQ band settings, insert,
+take selection/loop/region, take voice, recorder tap) is `kMaxTracks`; the
+per-channel arrays are the input map (`mChannelDevice[kMaxChannels]`: device
+input per internal channel, -1 for the unused right channel of a mono track)
+and the EQ filter state (two channels inside each of the 64 `EqInsert`s).
+Tracks 0..17 default to the identity device input; tracks 18..63 default to
+`kNoInputSource` (silent until a take or an explicit source is selected), so a
+fresh engine is the historical 18-strip behaviour plus 46 idle tracks.
+
+Skip-inactive-tracks: a track with no live source and no take voice is skipped
+before any per-sample work (EQ, insert, pan, sends and the destination are all
+bypassed); its tap is zeroed once when it loses its source (`mTapLive`) rather
+than every block. Measures 1.9 us per 64-frame block for all 64 tracks inactive
+— including configured EQ, sends and 64 configured reverb inserts — versus
+240 us for the full active mixing path.
+
+Recorder: the arm mask is `uint64_t` (one bit per track, up to 64) and
+`writeBlock()` reads only armed tracks, so an existing 18-entry tap array stays
+safe. The take layout is unchanged: one mono `chNN.wav` per armed track (the
+tap is the track's mono/averaged live source) plus `master.wav`. Take playback
+(`TakePlayer::kMaxTracks = 64`) follows the engine capacity.
+
+**Pi 5 budget (studio Pi, Cortex-A76, 2.4 GHz, g++ 14, RelWithDebInfo, pinned
+core 2, 1500 blocks/row, 3 runs; budget 1333 us at 64 frames, 2667 us at 128
+frames).** `mnky_audio_bench` (built by the audio module) prints the same table
+on any target:
+
+| scenario (48 kHz) | 64-frame block | 128-frame block |
+| --- | --- | --- |
+| 18 stereo active, gain+pan+4-band EQ+sends | 69-73 us (5.2-5.4%) | 150-158 us (5.6-5.9%) |
+| 64 stereo active, gain+pan+4-band EQ+sends | 240-253 us (18-19%) | 525-553 us (20-21%) |
+| 64 stereo active, gain+pan+sends (no EQ) | 62-65 us (4.6-4.9%) | 121-127 us (4.5-4.8%) |
+| 64 mono active, gain+pan+4-band EQ+sends | 238-251 us (18-19%) | 504-532 us (19-20%) |
+| 64 inactive (skip path, EQ+sends+inserts configured) | 1.9-2.0 us (0.1-0.2%) | 2.9-3.1 us (0.1%) |
+| 64 stereo active + 32 reverb inserts | 531-592 us (40-44%) | 1247-1335 us (47-50%) |
+| 64 stereo active + 64 reverb inserts | 837-897 us (63-67%) | 1963-2117 us (74-79%) |
+| 64 stereo active + 64 delay inserts | 341-364 us (26-27%) | 749-800 us (28-30%) |
+
+So the **64-frame block fits the product target with the scalar path**: the
+full 64-stereo-track mixing path (gain + balance/pan + 4 bands + all sends) uses
+18-19% of one core, and even all 64 tracks carrying a reverb insert fits at
+63-67% (32 reverbs: 40-44%; 64 delays: 26-27%). The 128-frame block also fits
+but is relatively worse (20-21% mixing, 74-79% with 64 reverbs), so the
+recommendation is to keep `kBlockSize = 128` as the engine maximum and run
+**64-frame device periods** (the UMC1820 period is configurable; the engine
+already accepts any n <= 128). Nothing measured exceeds the 64-frame budget:
+the insert ceiling is 64 simultaneous reverbs (63-67% of one core), with ~32
+reverbs (40-44%) as the comfortable limit; delay inserts are cheap (64 =
+26-27%). NEON was **not** implemented: the parent's condition ("NEON biquad if
+the scalar budget misses") is not met — the scalar mixing path has ~5x headroom
+and the EQ is 176 us of the 240 us total, so a vector biquad would buy headroom
+the product does not need at 64 tracks.
+
+Migration status: the engine and the audio module are at 64 tracks; `pi/session`
+and `pi/app` still size their channel/mixer arrays from the legacy `kMaxInputs`
+(18) until their workers migrate to `kMaxTracks`, so the shipped session format
+and UI still address 18 tracks. The recorder's `adoptRecordedTake` path lives in
+`pi/app` and still takes a 32-bit mask (app worker).
+
+Verified with: `test_audio_insert` (new capacity checks: taxonomy static
+asserts, default device mapping for 64 tracks, track 63 as an independent
+stereo pair, inactive-tap zeroing, recorder 64-bit arm mask writing ch63.wav,
+insert CPU probe at N = 1/18/64) plus the audio CTest suite on macOS and on the
+studio Pi (11/11 both), and `mnky_audio_bench` on the Pi (table above).

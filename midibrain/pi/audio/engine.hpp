@@ -5,14 +5,17 @@
 #include <string>
 #include <vector>
 
+#include "capacity.hpp"
 #include "click.hpp"
 #include "eq_insert.hpp"
 #include "take_player.hpp"
 
 namespace mnky::audio {
 
-/// UMC1820 + ADA8200 capture width: 16 analog inputs plus 2 S/PDIF channels.
-inline constexpr int kMaxInputs = 18;
+// Capacity taxonomy (kMaxDeviceInputs / kMaxTracks / kMaxChannels /
+// kMaxInputs) is documented in capacity.hpp: 18 device inputs, 64 mixer
+// tracks, 128 internal channels (two per stereo track).
+
 /// Auxiliary FX send buses fed from every channel.
 inline constexpr int kNumSends = 2;
 /// Fixed ALSA processing block.
@@ -179,15 +182,38 @@ struct IEffect {
     virtual void setSampleRate(double) {}
 };
 
+/// Per-track FX insert (session v2 `mixer.channels[].insert`): one effect
+/// instance per track with its own settings. `id` is empty (no insert), a
+/// built-in id (`builtin.delay`, `builtin.reverb`) or a CLAP plugin id;
+/// `params` are positional doubles in the effect's stable order (delay 8,
+/// reverb 6). Missing entries keep the current value (defaults after an id
+/// change), extra entries are ignored and the built-in effects clamp their
+/// own ranges. A non-built-in id runs the IEffect attached with
+/// setTrackInsertEffect() and passes the strip dry when nothing is attached.
+struct TrackInsert {
+    std::string id;
+    bool bypass = false;
+    std::vector<double> params;
+    friend bool operator==(const TrackInsert&, const TrackInsert&) = default;
+};
+
+/// One track's built-in insert instances (delay + reverb) plus the attached
+/// external effect. Defined in engine.cpp; the engine creates it on the first
+/// configured insert and keeps it until destruction, so process() only ever
+/// loads a pointer.
+class TrackInsertChain;
+
 /// Mixer core: gain/vol/pan, per-strip and main four-band EQ, mute/solo,
 /// pre/post sends, FX returns, main compressor, click and monitor outputs.
 /// Everything runs in the caller's (audio) thread and never allocates.
 class Engine {
 public:
     Engine();
+    ~Engine();
 
-    /// `n` must be <= kBlockSize. `in` holds `nch` (<= kMaxInputs) channel
-    /// pointers; missing or null channels are silent. `outL`/`outR` receive the
+    /// `n` must be <= kBlockSize. `in` holds `nch` (<= kMaxDeviceInputs)
+    /// device channel pointers; missing or null channels are silent.
+    /// `outL`/`outR` receive the
     /// main-bus result. This historical call writes only Main 1&2; the
     /// extended overload below also produces Phones and OUT3&4.
     void process(const float* const* in, int nch, int n, float* outL,
@@ -199,12 +225,12 @@ public:
     void process(const float* const* in, int nch, int n,
                  const OutputBuses& outputs);
 
-    /// Mono tap of one strip at its Channel::tapPoint, valid until the next
+    /// Mono tap of one track at its Channel::tapPoint, valid until the next
     /// process() call: the raw input for PreGain, `in * gain` for the default
-    /// PostGain. The tap is the strip's *selected* live source and never take
-    /// playback; a stereo pair is averaged to mono (`0.5 * (L + R)`), because
-    /// the recorder writes one mono file per armed strip. nullptr when `ch` is
-    /// outside 0..kMaxInputs-1. Mute, solo, pan, vol, monitor, the output
+    /// PostGain. The tap is the track's *selected* live source and never take
+    /// playback; a stereo track is averaged to mono (`0.5 * (L + R)`), because
+    /// the recorder writes one mono file per armed track. nullptr when `track`
+    /// is outside 0..kMaxTracks-1. Mute, solo, pan, vol, monitor, the output
     /// destination and master do not affect the tap.
     const float* tap(int ch) const;
 
@@ -216,7 +242,7 @@ public:
     void setChannel(int index, Channel ch);
     /// Live strip state (session capture); out-of-range returns a default strip.
     Channel channel(int index) const {
-        return index >= 0 && index < kMaxInputs ? mChannels[index] : Channel{};
+        return index >= 0 && index < kMaxTracks ? mChannels[index] : Channel{};
     }
     /// Per-track CUE send level, clamped to 0..1 (NaN -> 0).
     void setCueSend(int index, float level);
@@ -228,14 +254,15 @@ public:
     void setMonitorMode(int index, MonitorMode mode);
     MonitorMode monitorMode(int index) const;
 
-    // --- per-strip input source / output destination -----------------------
-    /// Select strip `index`'s live input source: a device channel 0..17 (higher
-    /// values clamp) or kNoInputSource (-1) for silence. The default is
-    /// identity, strip N <- device N. The recorder tap carries the selected
-    /// source instead of the strip's own device index; the take voice, the pan
-    /// and the output destination keep applying to the strip, and a
-    /// silent-source strip keeps playing its own take voice (the monitor rule:
-    /// silence is about live input only).
+    // --- per-track input source / output destination -----------------------
+    /// Select track `index`'s live input source: a device channel 0..17
+    /// (higher values clamp) or kNoInputSource (-1) for silence. Tracks
+    /// 0..kMaxDeviceInputs-1 default to identity (track N <- device N);
+    /// tracks without a device input (18..63) default to kNoInputSource. The
+    /// recorder tap carries the selected source instead of the track's own
+    /// device index; the take voice, the pan and the output destination keep
+    /// applying to the track, and a silent-source track keeps playing its own
+    /// take voice (the monitor rule: silence is about live input only).
     void setInputSource(int index, int deviceChannel);
     /// Selected device channel, kNoInputSource for a silent strip or when
     /// `index` is out of range.
@@ -285,11 +312,33 @@ public:
     /// not. Same clamps and None rule as the per-strip insert.
     void setMainEqBand(int band, const EqBand& value);
     EqBand mainEqBand(int band) const;
+
+    // --- per-track FX insert ----------------------------------------------
+    /// One insert instance per track, placed post-EQ, pre-fader and pre-sends
+    /// (see NOTES.md, "Engine wave 9"). An empty id detaches: the strip runs
+    /// no insert DSP and the block costs one pointer load. A built-in id
+    /// switches that track's instance (id change re-initializes only that
+    /// track: DSP state cleared, parameters back to defaults, then `params`
+    /// applied) while a same-id call applies the parameters hot through the
+    /// effect's 20 ms ramps, with no reset. `bypass` is a hard dry switch and
+    /// leaves the caller's buffers bit-exact. The recorder tap is upstream of
+    /// the insert, so a recording does not bake it.
+    void setTrackInsert(int track, const TrackInsert& insert);
+    /// Applied insert state (session capture); out-of-range reads as none.
+    TrackInsert trackInsert(int track) const;
+    /// CLAP attachment seam, parallel to setFx(): `effect` runs while the
+    /// track's insert id is neither empty nor a built-in id. The engine does
+    /// not load CLAP modules itself (dependency direction: mnky_clap links
+    /// mnky_audio), so the app owns the host, loading, parameter mapping and
+    /// lifetime; the engine forwards setSampleRate() and bypass, nothing else.
+    void setTrackInsertEffect(int track, IEffect* effect);
+
     /// `send` is 0..kNumSends-1; nullptr detaches and passes the bus through.
     void setFx(int send, IEffect* fx);
-    /// Control thread only. Forwards to attached FX (see IEffect) and to every
-    /// EQ insert; engine processing itself is rate-agnostic except for the main
-    /// compressor, click, EQ biquads and 48 kHz-only take playback.
+    /// Control thread only. Forwards to attached FX (see IEffect), every EQ
+    /// insert and every track insert instance; engine processing itself is
+    /// rate-agnostic except for the main compressor, click, EQ biquads and
+    /// 48 kHz-only take playback.
     void setSampleRate(double sampleRate);
     /// Linear return level applied to the FX bus after process().
     void setFxReturn(int send, float gain);
@@ -378,7 +427,7 @@ public:
 
 private:
     static bool trackInRange(int track) {
-        return track >= 0 && track < kMaxInputs;
+        return track >= 0 && track < kMaxTracks;
     }
     void processBlock(const float* const* in, int nch, int n,
                       const OutputBuses& outputs);
@@ -386,25 +435,35 @@ private:
     void updateCompressor();
     void renderClick(int n);
 
-    Channel mChannels[kMaxInputs];
+    Channel mChannels[kMaxTracks];
     // Routing state kept out of Channel so a default-constructed strip means
     // identity input and a Main destination (the historical behaviour).
-    int mInputSource[kMaxInputs] = {};  // identity 0..17, set in the ctor
-    bool mInputPair[kMaxInputs] = {};
-    OutputDestination mOutputDestination[kMaxInputs] = {};
+    // Tracks 0..17 default to the identity device input; tracks without a
+    // device input (18..63) default to kNoInputSource (silent until a take or
+    // an explicit source is selected).
+    int mInputSource[kMaxTracks] = {};
+    bool mInputPair[kMaxTracks] = {};
+    OutputDestination mOutputDestination[kMaxTracks] = {};
     IEffect* mFx[kNumSends] = {nullptr, nullptr};
     float mFxReturn[kNumSends] = {1.0f, 1.0f};
     float mMaster = 1.0f;
-    float mTap[kMaxInputs][kBlockSize] = {};
+    float mTap[kMaxTracks][kBlockSize] = {};
+    // Per-channel input map: track t uses internal channels 2t and 2t+1; the
+    // second is kNoInputSource for a mono track. Rebuilt from the per-track
+    // selection at the top of every block.
+    int mChannelDevice[kMaxChannels] = {};
+    // True while a track's tap holds live data, so an inactive track zeroes it
+    // once instead of every block (the skip-inactive fast path).
+    bool mTapLive[kMaxTracks] = {};
     float mSendL[kNumSends][kBlockSize] = {};
     float mSendR[kNumSends][kBlockSize] = {};
 
     TakePlayer mTakePlayer;
-    TakeLoop mTakeLoop[kMaxInputs]{};
-    std::vector<TakeRegion> mTakeRegions[kMaxInputs];
-    float mTakeBuffer[kMaxInputs][kBlockSize] = {};
-    bool mTakeActive[kMaxInputs] = {};
-    bool mTakePlaying[kMaxInputs] = {};
+    TakeLoop mTakeLoop[kMaxTracks]{};
+    std::vector<TakeRegion> mTakeRegions[kMaxTracks];
+    float mTakeBuffer[kMaxTracks][kBlockSize] = {};
+    bool mTakeActive[kMaxTracks] = {};
+    bool mTakePlaying[kMaxTracks] = {};
     float mCueL[kBlockSize] = {};
     float mCueR[kBlockSize] = {};
     float mOut34L[kBlockSize] = {};
@@ -415,8 +474,17 @@ private:
     float mClickBuffer[kBlockSize] = {};
     ClickSource mClick;
 
-    EqInsert mTrackEq[kMaxInputs];
+    // One EqInsert per track: the band settings are per track, the biquad
+    // state is per internal channel (two per insert), so 64 inserts hold the
+    // 128 channel filter states the taxonomy describes.
+    EqInsert mTrackEq[kMaxTracks];
     EqInsert mMainEq;
+
+    // Per-track FX insert: the applied {id,bypass,params} is control-thread
+    // state (capture reads it), the chain pointer is published once per track
+    // and only read by the audio thread.
+    TrackInsert mInsertState[kMaxTracks];
+    std::atomic<TrackInsertChain*> mInsertChain[kMaxTracks] = {};
 
     // Device output map: control thread writes, the audio thread loads each
     // block. Atomic so a session load cannot tear a pair mid-block.

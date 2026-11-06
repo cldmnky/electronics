@@ -48,8 +48,9 @@ std::string channelFileName(int index) {
     return name;
 }
 
-bool armed(uint32_t mask, int channel) {
-    return (mask & (1u << static_cast<unsigned>(channel))) != 0;
+bool armed(uint64_t mask, int channel) {
+    return channel >= 0 && channel < kMaxTracks &&
+           (mask & (uint64_t{1} << static_cast<unsigned>(channel))) != 0;
 }
 
 }  // namespace
@@ -126,12 +127,16 @@ Recorder::~Recorder() {
     if (mThread.joinable()) mThread.join();
 }
 
-bool Recorder::startTake(const std::string& dir, uint32_t armMask, uint32_t sampleRate,
+bool Recorder::startTake(const std::string& dir, uint64_t armMask, uint32_t sampleRate,
                          bool masterArm) {
     std::lock_guard<std::mutex> lock(mMutex);
     if (mRunning.load(std::memory_order_acquire)) return false;
     if (dir.empty() || sampleRate == 0) return false;
-    const uint32_t mask = armMask & ((1u << static_cast<unsigned>(kMaxInputs)) - 1u);
+    // One bit per track; the mask is the full 64-bit track mask. A capacity
+    // above 64 would need a wider type, so fail loudly rather than silently
+    // dropping tracks.
+    static_assert(kMaxTracks <= 64, "arm mask is one uint64_t");
+    const uint64_t mask = armMask;
     if (mask == 0) return false;
 
     std::error_code ec;
@@ -152,7 +157,7 @@ bool Recorder::startTake(const std::string& dir, uint32_t armMask, uint32_t samp
     if (takeDir.empty()) return false;
 
     bool opened = true;
-    for (int c = 0; c < kMaxInputs && opened; ++c) {
+    for (int c = 0; c < kMaxTracks && opened; ++c) {
         if (!armed(mask, c)) continue;
         opened = mChannelFile[c].open((std::filesystem::path(takeDir) / channelFileName(c)).string(), 1, sampleRate);
     }
@@ -160,7 +165,7 @@ bool Recorder::startTake(const std::string& dir, uint32_t armMask, uint32_t samp
              (!masterArm ||
               mMasterFile.open((std::filesystem::path(takeDir) / "master.wav").string(), 2, sampleRate));
     if (!opened) {
-        for (int c = 0; c < kMaxInputs; ++c) {
+        for (int c = 0; c < kMaxTracks; ++c) {
             if (armed(mask, c)) mChannelFile[c].close();
         }
         mMasterFile.close();
@@ -197,7 +202,7 @@ void Recorder::writeBlock(const float* const* taps, const float* masterL, const 
             block.master[0][i] = masterL[i];
             block.master[1][i] = masterR[i];
         }
-        for (int c = 0; c < kMaxInputs; ++c) {
+        for (int c = 0; c < kMaxTracks; ++c) {
             if (!armed(mArmMask, c)) continue;
             const float* src = taps != nullptr ? taps[c] : nullptr;
             float* dst = block.ch[c];
@@ -221,7 +226,7 @@ Recorder::Take Recorder::stopTake() {
     if (mThread.joinable()) mThread.join();
 
     int files = 0;
-    for (int c = 0; c < kMaxInputs; ++c) {
+    for (int c = 0; c < kMaxTracks; ++c) {
         if (armed(mArmMask, c) && mChannelFile[c].close()) ++files;
     }
     if (mMasterArm && mMasterFile.close()) ++files;
@@ -250,7 +255,7 @@ void Recorder::writerLoop() {
 
 void Recorder::writeBlockToDisk(const Block& block) {
     const int frames = block.n;
-    for (int c = 0; c < kMaxInputs; ++c) {
+    for (int c = 0; c < kMaxTracks; ++c) {
         if (!armed(mArmMask, c)) continue;
         // A write failure is surfaced through the take's file data size, not drops.
         (void)mChannelFile[c].writeFrames(block.ch[c], frames);

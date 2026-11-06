@@ -552,8 +552,9 @@ int main(int argc, char** argv) {
     std::printf("open failed: %s\n", error.c_str());
     return 1;
   }
-  const int armMask = (1 << kMaxInputs) - 1;
-  if (!recorder.startTake(options.directory, static_cast<std::uint32_t>(armMask), 48000, true)) {
+  // One bit per track: the probe records the device-input tracks 0..17.
+  const std::uint64_t armMask = (std::uint64_t{1} << kMaxDeviceInputs) - 1;
+  if (!recorder.startTake(options.directory, armMask, 48000, true)) {
     std::printf("recorder startTake failed for %s\n", options.directory.c_str());
     backend->close();
     return 1;
