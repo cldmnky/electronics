@@ -110,15 +110,19 @@ Item {
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
+            // W1: the mode word replaces the ARM toggle (ARM is a mode, not a
+            // hidden switch). Tap cycles PLAY -> ARM -> OVERDUB -> LIVE; a long
+            // press picks from the list.
             TouchButton {
-                width: 70
+                width: 78
                 height: parent.height
-                text: "ARM"
+                text: recorder.trackModeWord
                 textSize: Style.fontSmall
                 checked: recorder.trackArm
                 checkedColor: Style.record
-                focusId: "recorder.arm"
-                onClicked: mixer.toggleArm(recorder.selectedTrack)
+                focusId: "recorder.mode"
+                onClicked: app.cycleTrackMode(recorder.selectedTrack)
+                onLongClicked: app.openTrackMode(recorder.selectedTrack)
             }
             TouchButton {
                 width: 140
@@ -129,14 +133,30 @@ Item {
                 focusId: "recorder.start"
                 onClicked: recorder.startStop()
             }
+            // W2b: the tap point the take captures, beside the mode word.
             Text {
-                width: parent.width - 120 - 70 - 140 - Style.gap * 3
+                width: 76
+                height: parent.height
+                text: "SRC " + recorder.trackRecSourceText
+                color: recorder.trackRecSourceText === "PRE" ? Style.textDim
+                                                             : Style.accent
+                font.pixelSize: Style.fontSmall
+                horizontalAlignment: Text.AlignRight
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+                TapHandler {
+                    onTapped: app.openTrackMode(recorder.selectedTrack)
+                }
+            }
+            Text {
+                width: parent.width - 120 - 78 - 76 - 140 - Style.gap * 4
                 height: parent.height
                 text: "SHIFT > takes + punch"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
             }
         }
 
@@ -172,9 +192,13 @@ Item {
                 width: ListView.view.width
                 height: Style.touch
                 radius: Style.corner
+                // The row body is the ACTIVE tap target and the panel ring stop;
+                // it carries the id as a property so the headless tap gate
+                // clicks exactly this surface (the owner's crash path).
+                property string focusId: "recorder.take." + index
                 color: index === recorder.selectedRow ? Style.raised
                        : (index % 2 === 0 ? Style.panel : Style.panelDark)
-                border.width: app.focusId === ("recorder.take." + index) ? 2 : 0
+                border.width: app.focusId === focusId ? 2 : 0
                 border.color: Style.accent
 
                 Rectangle {
@@ -211,7 +235,6 @@ Item {
                     anchors.rightMargin: 52
                     width: parent.width * 0.30
                     height: parent.height
-                    visible: !(model.active && recorder.trackArmMutesTake)
                     text: model.duration + "  -  " + model.bytes
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
@@ -219,38 +242,8 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
-                // A1: the take is ACTIVE but the armed strip mutes it. The chip
-                // disarms and says what plays next.
-                Rectangle {
-                    visible: model.active && recorder.trackArmMutesTake
-                    anchors.right: selectTarget.left
-                    anchors.rightMargin: 6
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 150
-                    height: Style.touch
-                    radius: Style.corner
-                    color: Style.panelDark
-                    border.width: 1
-                    border.color: Style.record
-
-                    Text {
-                        anchors.fill: parent
-                        text: "ARMED - MUTES TAKE"
-                        color: Style.record
-                        font.pixelSize: Style.fontSmall
-                        font.weight: Font.DemiBold
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    TapHandler {
-                        onTapped: {
-                            mixer.toggleArm(recorder.selectedTrack)
-                            app.showTextPopup("ARM OFF", "playing " + model.name)
-                        }
-                    }
-                }
-                // A3: the row body loads the take; "..." only selects it.
+                // A3: the row body loads the take; "..." opens the row actions
+                // (docs/daw-plan.md W4).
                 TapHandler {
                     onTapped: app.activateTakeRow(index)
                 }
@@ -272,8 +265,15 @@ Item {
                         font.pixelSize: Style.fontBody
                         font.weight: Font.DemiBold
                     }
+                    Rectangle {
+                        // W4: the row's action menu target ("..." = 44 px).
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: "transparent"
+                        property string focusId: "recorder.take.menu." + index
+                    }
                     TapHandler {
-                        onTapped: app.selectTakeRow(index)
+                        onTapped: app.openTakeActions(index)
                     }
                 }
             }
@@ -402,6 +402,15 @@ Item {
                     }
                     app.requestRenameTake()
                 }
+            }
+            TouchButton {
+                width: 96
+                height: parent.height
+                text: "MODE " + recorder.trackModeWord
+                textSize: 10
+                chevron: "down"
+                focusId: "shift.recorder.mode"
+                onClicked: app.openTrackMode(recorder.selectedTrack)
             }
             TouchButton {
                 width: 68

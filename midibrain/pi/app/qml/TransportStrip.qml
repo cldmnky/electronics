@@ -38,8 +38,8 @@ Rectangle {
         readonly property int positionWidth: app.noPicoMode ? 132 : 148
         readonly property int fixedWidth: 36 + positionWidth + 96 +
                                           (app.noPicoMode ? 52 : 0) + 3 * 44 +
-                                          88 + 62 + 8
-        readonly property int itemCount: app.noPicoMode ? 10 : 9
+                                          74 + 88 + 62 + 8
+        readonly property int itemCount: app.noPicoMode ? 11 : 10
 
         Text {
             width: 36
@@ -119,8 +119,28 @@ Rectangle {
             glyph: "rec"
             checked: app.recording
             recording: app.recording
+            // W2: the long press opens the NOW/COUNT-IN/PUNCH picker; the
+            // RECMODE readout beside the glyph is the focusable twin.
             focusId: app.noPicoMode ? "transport.rec" : ""
             onClicked: app.recToggle()
+            onLongPressed: app.openRecMode()
+        }
+        // W2 readout: which RECMODE is armed, next to the REC glyph.
+        Text {
+            width: 74
+            height: parent.height
+            // Panel focus stop: PRESS opens the RECMODE picker (the REC glyph's
+            // long press is the touch gesture for the same popup).
+            property string focusId: "transport.recmode"
+            text: app.recModeText
+            color: app.recModeText === "NOW" ? Style.textDim : Style.accent
+            font.pixelSize: Style.fontSmall
+            font.weight: Font.DemiBold
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            TapHandler {
+                onTapped: app.openRecMode()
+            }
         }
         // C6: the slot is an inset well with severity colour, not a floating
         // label. B6: an ordinary value readout renders here (accent, right

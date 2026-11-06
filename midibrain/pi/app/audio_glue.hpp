@@ -100,6 +100,19 @@ class AudioGlue final : private audio::DeviceClient {
   // Control-thread monitor/compressor configuration. The audio callback copies
   // these atomics into the engine every block.
   void applyMonitorSettings(const SessionSettings& settings);
+  // Control-thread REC SOURCE (docs/daw-plan.md W2b): forwards one track's
+  // PRE / POST / POST+FX tap choice to Engine::setRecSource. Pushed with the
+  // monitor settings once per tick, so a strip edit lands like every other
+  // mixer value.
+  void applyRecSource(int track, int source);
+  int recSource(int track) const;  // what the engine holds for that track
+  // RENDER REGION TO TRACK (docs/daw-plan.md W3): bakes the active take's
+  // [inBeats, outBeats) into a new `<nn>-<name>-<NNN>.wav` in the take folder
+  // through Engine::renderRegionToTake, then reports the path. Refusals come
+  // back as a reason (no active take, tempo missing, unwritable file).
+  bool renderRegionToTake(int track, const std::string& takeKey, double inBeats,
+                          double outBeats, const std::string& name,
+                          std::filesystem::path* out, std::string* error);
   // Control-thread take-loop configuration (session v2 takes.loop). Calls
   // Engine::setTakeLoop for every track slot, which maps the beat window to take
   // frames with the transport tempo of that moment, so the caller re-applies it
@@ -231,6 +244,7 @@ class AudioGlue final : private audio::DeviceClient {
 
   mutable std::mutex takeLock_;
   audio::Recorder::Take lastTake_;
+
 };
 
 }  // namespace mnky::app

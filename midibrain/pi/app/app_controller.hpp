@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <filesystem>
 #include <memory>
 #include <vector>
 
@@ -82,6 +83,8 @@ class AppController final : public QObject {
   Q_PROPERTY(QString panelMode READ panelMode NOTIFY panelModeChanged)
   Q_PROPERTY(QString focusId READ focusId NOTIFY focusChanged)
   Q_PROPERTY(int focusCount READ focusCount NOTIFY focusChanged)
+  // RECMODE summary for the transport strip: NOW / COUNT-IN n BARS / PUNCH.
+  Q_PROPERTY(QString recModeText READ recModeText NOTIFY recModeChanged)
   Q_PROPERTY(QStringList shiftActions READ shiftActions CONSTANT)
   Q_PROPERTY(double masterPeakLeft READ masterPeakLeft NOTIFY metersChanged)
   Q_PROPERTY(double masterPeakRight READ masterPeakRight NOTIFY metersChanged)
@@ -201,6 +204,25 @@ class AppController final : public QObject {
   Q_INVOKABLE void stop();
   Q_INVOKABLE void recToggle();
   Q_INVOKABLE void toggleOverdub();
+  // RECMODE (docs/daw-plan.md W2): the transport's long-press REC opens the
+  // NOW / COUNT-IN n bars / PUNCH picker; `recModeText` is the transport strip's
+  // one-line readout of the current choice.
+  Q_INVOKABLE void openRecMode();
+  QString recModeText() const;
+  // TRACK MODE (docs/daw-plan.md W1): tap a strip's (or the recorder's) mode
+  // pill to cycle, long-press to pick. Both land on the selected track's mode.
+  Q_INVOKABLE void cycleTrackMode(int slot);
+  Q_INVOKABLE void openTrackMode(int slot);
+  // REC SOURCE (W2b): the chosen tap point of one track, for the status line
+  // and the popups.
+  Q_INVOKABLE int trackRecSource(int slot) const;
+  // TAKE row actions (W4) and NEW TRACK FROM THIS TAKE (W3).
+  Q_INVOKABLE void openTakeActions(int row);
+  Q_INVOKABLE void requestRemoveTake();
+  Q_INVOKABLE void requestNewTrackFromTake(int row);
+  Q_INVOKABLE void requestEditTake(int row);
+  // RENDER REGION TO TRACK from the region-ops popup (W3).
+  Q_INVOKABLE void renderRegionToTrack();
   Q_INVOKABLE void selectStrip(int index);
   Q_INVOKABLE void shiftAction(int index);
   Q_INVOKABLE void tapTempo();
@@ -325,6 +347,7 @@ class AppController final : public QObject {
   void keypadAcceptRequested();
   void panelModeChanged();
   void focusChanged();
+  void recModeChanged();
   void metersChanged();
   void keypadChanged();
   void confirmChanged();
@@ -350,6 +373,16 @@ class AppController final : public QObject {
   void updateDirtyState();
   void updatePanelLeds();
   void expirePendingRec();
+  // COUNT-IN / PUNCH scheduling: armed by toggleTake(), consumed once per tick
+  // by timerTick() at the measure boundary the schedule names.
+  void armRecSchedule();
+  void pollRecSchedule(const LinkStatus& status);
+  void cancelRecSchedule();
+  // Track mode changes: auto-PLAY after a take, the notice, and the strip
+  // repaint.
+  void applyTakeModeAfterStop(MixerModel::TrackMask recorded);
+  void createTrackFromTake(int row, const QString& name, bool move);
+  void takeAction(int action);
   void toggleTake();
   void stopTake();
   void startTakeNow();
@@ -409,6 +442,21 @@ class AppController final : public QObject {
 
   DirtyTracker dirtyTracker_;
   ChordDetector chord_;
+  // COUNT-IN / PUNCH: what the schedule waits for. None = nothing pending.
+  enum class RecSchedule { None, CountIn, PunchIn };
+  RecSchedule recSchedule_ = RecSchedule::None;
+  int recPunchOutBar_ = 0;
+  // True once the schedule's transport START has been observed rolling; a stop
+  // after that cancels the schedule, a stop before it is the queued-start gap.
+  bool recScheduleSawRolling_ = false;
+  // The RECMODE value the transport strip last showed (change detection).
+  int lastRecMode_ = 0;
+  int lastCountInBars_ = 2;
+  // The name the NEW TRACK FROM TAKE keypad accepted, held until the MOVE /
+  // KEEP ON SOURCE pick creates the track.
+  QString pendingTrackFromTakeName_;
+  // The file RENDER REGION TO TRACK baked, waiting for the new track's name.
+  std::filesystem::path pendingRenderPath_;
   bool pendingRec_ = false;
   std::uint64_t pendingRecMs_ = 0;
   MixerModel::TrackMask takeArmMask_ = 0;

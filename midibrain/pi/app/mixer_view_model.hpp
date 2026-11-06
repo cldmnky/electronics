@@ -60,7 +60,14 @@ class MixerViewModel final : public QAbstractListModel {
   Q_PROPERTY(bool trackArm READ trackArm WRITE setTrackArm NOTIFY trackChanged)
   Q_PROPERTY(double trackLevel READ trackLevel NOTIFY metersChanged)
   Q_PROPERTY(bool trackClip READ trackClip NOTIFY metersChanged)
-  Q_PROPERTY(int trackMonitor READ trackMonitor WRITE setTrackMonitor NOTIFY trackChanged)
+  // The selected strip's mode (docs/daw-plan.md W1) and REC SOURCE (W2b): the
+  // TRACK screen and the channel popout select LIVE/PLAY/ARM/OVERDUB and
+  // PRE/POST/POST+FX through these. (`trackMode` above is the MIXER/TRACK screen
+  // toggle, so the per-track value is named selected*.)
+  Q_PROPERTY(int selectedMode READ selectedMode WRITE setSelectedMode NOTIFY trackChanged)
+  Q_PROPERTY(QString selectedModeWord READ selectedModeWord NOTIFY trackChanged)
+  Q_PROPERTY(int selectedRecSource READ selectedRecSource WRITE setSelectedRecSource NOTIFY trackChanged)
+  Q_PROPERTY(QString selectedRecSourceText READ selectedRecSourceText NOTIFY trackChanged)
   Q_PROPERTY(QString trackInputText READ trackInputText NOTIFY trackChanged)
   Q_PROPERTY(QString trackOutputText READ trackOutputText NOTIFY trackChanged)
   Q_PROPERTY(bool trackInPair READ trackInPair WRITE setTrackInPair NOTIFY trackChanged)
@@ -93,8 +100,9 @@ class MixerViewModel final : public QAbstractListModel {
     ArmRole,
     LevelRole,
     ClipRole,
-    MonitorRole,
-    MonitorMarkRole,
+    // Track mode: the value (0..3) and its word (LIVE/PLAY/ARM/OVERDUB).
+    ModeRole,
+    ModeWordRole,
     InputTextRole,
     OutputTextRole,
     SelectedRole,
@@ -104,11 +112,6 @@ class MixerViewModel final : public QAbstractListModel {
     Fx2WetRole,
     Fx1NameRole,
     Fx2NameRole,
-    // A1: the strip is armed and has an active take, so ARM mutes the take.
-    // BadgeRole is the same state for the 8 s after a take stops, when the
-    // strip spells the warning out instead of showing the monitor letter.
-    ArmMutesTakeRole,
-    ArmMutesBadgeRole,
   };
 
   MixerViewModel(MixerModel& model, SessionSettings& settings, EqModel& eq,
@@ -154,7 +157,9 @@ class MixerViewModel final : public QAbstractListModel {
   Q_INVOKABLE QString panTextAt(int slot) const;
   Q_INVOKABLE double cueAt(int slot) const { return model_.cueSend(slot); }
   Q_INVOKABLE double out34At(int slot) const { return model_.out34Send(slot); }
-  Q_INVOKABLE int monitorAt(int slot) const { return model_.monitor(slot); }
+  Q_INVOKABLE int modeAt(int slot) const { return model_.mode(slot); }
+  Q_INVOKABLE QString modeWordAt(int slot) const;
+  Q_INVOKABLE void cycleMode(int slot);
   double trackCue() const { return model_.cueSend(trackIndex_); }
   Q_INVOKABLE void setTrackCue(double level);
   double trackOut34() const { return model_.out34Send(trackIndex_); }
@@ -167,9 +172,14 @@ class MixerViewModel final : public QAbstractListModel {
   Q_INVOKABLE void setTrackArm(bool arm);
   double trackLevel() const { return stripLevel(trackIndex_); }
   bool trackClip() const { return stripClip(trackIndex_); }
-  int trackMonitor() const { return model_.monitor(trackIndex_); }
-  Q_INVOKABLE void setTrackMonitor(int mode);
-  Q_INVOKABLE void setMonitor(int slot, int mode);
+  int selectedMode() const { return model_.mode(trackIndex_); }
+  QString selectedModeWord() const;
+  Q_INVOKABLE void setSelectedMode(int mode);
+  Q_INVOKABLE void setMode(int slot, int mode);
+  int selectedRecSource() const { return model_.recSource(trackIndex_); }
+  QString selectedRecSourceText() const;
+  Q_INVOKABLE void setSelectedRecSource(int source);
+  Q_INVOKABLE void setRecSource(int slot, int source);
   // Per-track I/O assignment (session v2 inCh/inPair/outDst). MixerModel holds
   // the values and forwards them to the engine; the TRACK SHIFT pickers, the
   // strip selector popup and the channel popout are the writers.
@@ -218,13 +228,11 @@ class MixerViewModel final : public QAbstractListModel {
   Q_INVOKABLE int positionOf(int slot) const { return model_.positionOfSlot(slot); }
   // Session load: replaces the ordered list and resets the model.
   void reloadTracks();
-  // Re-evaluate the Auto marker after an active-take change (Auto shows only
-  // when a take makes it choose the take over the live input).
+  // Re-evaluate the mode word after an active-take change (the strip shows the
+  // mode, which does not depend on takes any more - kept for one emit point).
   void notifyActiveTakesChanged();
-  // A take just stopped: every armed strip with an active take spells out
-  // "ARM MUTES TAKE" for 8 s, then falls back to the monitor letter.
-  void notifyTakeStopped();
-  // Number of armed strips whose active take is muted by the arm (A1 play()).
+  // Number of ARM-mode strips with an active take: the play() warning names
+  // them, because ARM suppresses the take voice by contract.
   int armedWithActiveTakeCount() const;
   // A track rename: every strip re-reads its name (A4/C2).
   void notifyTrackNamesChanged();
@@ -319,7 +327,6 @@ class MixerViewModel final : public QAbstractListModel {
  private:
   double stripLevel(int slot) const;
   bool stripClip(int slot) const;
-  QString monitorMark(int slot) const;
   void clampSelection();
   void updateChannelSummary();
   void notifyFxChanged(int slot);
@@ -345,7 +352,6 @@ class MixerViewModel final : public QAbstractListModel {
   // one meter without ending the whole screenshot fixture.
   std::array<bool, audio::kMaxTracks> clipDemoCleared_{};
   bool clipDemo_ = false;
-  std::uint64_t armMutesUntilMs_ = 0;
 };
 
 }  // namespace mnky::app

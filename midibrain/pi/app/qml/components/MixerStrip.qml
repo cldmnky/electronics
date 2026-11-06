@@ -18,15 +18,13 @@ Rectangle {
     property real pan: 0.5
     property real level: 0.0
     property bool clip: false
-    property int monitor: 1
-    property string monitorMark: ""
+    // Track mode (docs/daw-plan.md W1): 0 PLAY, 1 ARM, 2 OVERDUB, 3 LIVE, and
+    // the word the pill shows. One tap cycles, a long press picks from the list.
+    property int mode: 1
+    property string modeWord: "ARM"
     property bool mute: false
     property bool solo: false
     property bool arm: false
-    // A1: armed + active take (ARM mutes the take). The badge spells it out
-    // for the 8 s after a take stops, then the monitor letter returns.
-    property bool armMutesTake: false
-    property bool armMutesBadge: false
     property bool selected: false
     // Current input source of this strip: "NONE", "IN 03" or a stereo pair
     // "IN 03/04" (session inCh/inPair through MixerViewModel).
@@ -135,36 +133,13 @@ Rectangle {
             }
         }
 
-        // A1: full-width 20 px strip under the meter while the post-take ARM
-        // warning is live (8 s after a take stops).
-        Rectangle {
-            visible: root.armMutesBadge
-            width: parent.width
-            height: visible ? 20 : 0
-            radius: 3
-            color: Style.panelDark
-            border.width: Style.outlineWidth
-            border.color: Style.record
-
-            Text {
-                anchors.fill: parent
-                anchors.leftMargin: 4
-                text: "ARM MUTES TAKE"
-                color: Style.record
-                font.pixelSize: Style.fontSmall
-                font.weight: Font.DemiBold
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
-            }
-        }
-
         Row {
             width: parent.width
             height: Style.touch
             spacing: 2
 
             KnobChip {
-                width: parent.width - 46
+                width: parent.width - 68
                 height: parent.height
                 label: "PAN"
                 value: root.pan
@@ -176,32 +151,37 @@ Rectangle {
                 popupKind: "pan"
                 onMoved: (value) => mixer.setPan(root.stripIndex, value)
             }
-            // B4: the one-letter monitor mark is a 44 px pill with the word.
-            // A 140 px strip still fits "BOTH" at 11 px; narrower strips fall
-            // back to the letter so the control never clips its label.
+            // W1: the track mode is a word + a colour, never a letter. The pill
+            // is 66 x 44 px, wide enough for OVERDUB at 9 px, and stays a 44 px
+            // tall touch target so the mode is always readable on the strip.
             Rectangle {
-                width: 44
+                width: 66
                 height: Style.touch
                 radius: Style.corner
                 color: Style.panelDark
                 border.width: 1
-                border.color: root.monitor === 1 ? Style.outline : Style.accent
+                border.color: root.mode === 1 ? Style.record
+                              : (root.mode === 0 ? Style.outline : Style.accent)
+                // Panel focus stop for the pill (it is a tap/long-press target).
+                property string focusId: "mixer.trackmode." + root.stripIndex
 
                 Text {
                     anchors.fill: parent
-                    text: root.width >= 140
-                          ? ["PLAY", "AUTO", "BOTH", "MON"][Math.max(0, Math.min(3, root.monitor))]
-                          : root.monitorMark.charAt(0)
-                    color: root.monitor === 1 ? Style.textDim : Style.accent
-                    font.pixelSize: root.width >= 140 ? 10 : Style.fontSmall
+                    text: root.modeWord
+                    color: root.mode === 1 ? Style.record
+                           : (root.mode === 0 ? Style.textDim : Style.accent)
+                    font.pixelSize: root.modeWord.length > 4 ? 9 : Style.fontSmall
                     font.weight: Font.DemiBold
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
                 TapHandler {
-                    onTapped: app.showTextPopup("MONITOR",
-                        "MON input - AUTO smart - BOTH layer - PLAY take")
+                    onTapped: app.cycleTrackMode(root.stripIndex)
+                }
+                TapHandler {
+                    // Long press picks from the list instead of cycling.
+                    onLongPressed: app.openTrackMode(root.stripIndex)
                 }
             }
         }

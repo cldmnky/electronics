@@ -13,11 +13,6 @@
 
 namespace mnky::app {
 namespace {
-std::uint64_t steadyMs() {
-  using namespace std::chrono;
-  return static_cast<std::uint64_t>(
-      duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
-}
 
 QString panText(double pan) {
   const int percent = static_cast<int>(std::lround((pan - 0.5) * 200.0));
@@ -121,16 +116,18 @@ bool MixerViewModel::stripClip(int slot) const {
   return clipHolds_[static_cast<std::size_t>(slot)].clipped();
 }
 
-QString MixerViewModel::monitorMark(int slot) const {
-  const int mode = model_.monitor(slot);
-  // MPC parity names: PLAY = take only, AUTO = smart, BOTH = input + take,
-  // MON = input always / take never.
-  if (mode == 0) return QStringLiteral("PLAY");
-  if (mode == 2) return QStringLiteral("BOTH");
-  if (mode == 3) return QStringLiteral("MON");
-  // Auto is the default; only show it when an active take makes Auto choose
-  // the take over the live input, i.e. when the mark carries information.
-  return settings_.hasActiveTake(slot) ? QStringLiteral("A") : QString();
+QString MixerViewModel::modeWordAt(int slot) const {
+  return QString::fromStdString(trackModeWord(model_.mode(slot)));
+}
+
+QString MixerViewModel::selectedModeWord() const { return modeWordAt(trackIndex_); }
+
+QString MixerViewModel::selectedRecSourceText() const {
+  return QString::fromStdString(recSourceText(model_.recSource(trackIndex_)));
+}
+
+void MixerViewModel::cycleMode(int slot) {
+  setMode(slot, nextTrackMode(model_.mode(slot)));
 }
 
 QVariant MixerViewModel::data(const QModelIndex& index, int role) const {
@@ -169,21 +166,16 @@ QVariant MixerViewModel::data(const QModelIndex& index, int role) const {
       return stripLevel(slot);
     case ClipRole:
       return stripClip(slot);
-    case MonitorRole:
-      return model_.monitor(slot);
-    case MonitorMarkRole:
-      return monitorMark(slot);
+    case ModeRole:
+      return model_.mode(slot);
+    case ModeWordRole:
+      return modeWordAt(slot);
     case InputTextRole:
       return inputText(model_.inCh(slot), model_.inPair(slot));
     case OutputTextRole:
       return outputText(model_.outDst(slot));
     case SelectedRole:
       return slot == selectedStrip_;
-    case ArmMutesTakeRole:
-      return model_.arm(slot) && settings_.hasActiveTake(slot);
-    case ArmMutesBadgeRole:
-      return model_.arm(slot) && settings_.hasActiveTake(slot) &&
-             steadyMs() < armMutesUntilMs_;
     default:
       break;
   }
@@ -198,10 +190,9 @@ QHash<int, QByteArray> MixerViewModel::roleNames() const {
           {Fx1NameRole, "fx1Name"},       {Fx2NameRole, "fx2Name"},
           {MuteRole, "mute"},             {SoloRole, "solo"},
           {ArmRole, "arm"},               {LevelRole, "level"},
-          {ClipRole, "clip"},             {MonitorRole, "monitor"},
-          {MonitorMarkRole, "monitorMark"}, {InputTextRole, "inputText"},
-          {OutputTextRole, "outputText"}, {SelectedRole, "selected"},
-          {ArmMutesTakeRole, "armMutesTake"}, {ArmMutesBadgeRole, "armMutesBadge"}};
+          {ClipRole, "clip"},             {ModeRole, "mode"},
+          {ModeWordRole, "modeWord"},     {InputTextRole, "inputText"},
+          {OutputTextRole, "outputText"}, {SelectedRole, "selected"}};
 }
 
 void MixerViewModel::setBank(int bank) {
@@ -320,19 +311,31 @@ void MixerViewModel::setTrackSolo(bool solo) {
 void MixerViewModel::setTrackArm(bool arm) {
   model_.setArm(trackIndex_, arm);
   const int row = model_.positionOfSlot(trackIndex_);
-  if (row >= 0) emit dataChanged(index(row, 0), index(row, 0), {ArmRole});
+  if (row >= 0) {
+    emit dataChanged(index(row, 0), index(row, 0), {ArmRole, ModeRole, ModeWordRole});
+  }
   emit trackChanged();
 }
 
-void MixerViewModel::setTrackMonitor(int mode) { setMonitor(trackIndex_, mode); }
+void MixerViewModel::setSelectedMode(int mode) { setMode(trackIndex_, mode); }
 
-void MixerViewModel::setMonitor(int slot, int mode) {
+void MixerViewModel::setMode(int slot, int mode) {
   if (slot < 0 || slot >= audio::kMaxTracks) return;
-  model_.setMonitor(slot, mode);
+  model_.setMode(slot, mode);
   const int row = model_.positionOfSlot(slot);
   if (row >= 0) {
-    emit dataChanged(index(row, 0), index(row, 0), {MonitorRole, MonitorMarkRole});
+    // The mode decides the record arm too, so the strip's ARM fill follows it.
+    emit dataChanged(index(row, 0), index(row, 0), {ModeRole, ModeWordRole, ArmRole});
   }
+  if (slot == trackIndex_) emit trackChanged();
+}
+
+void MixerViewModel::setSelectedRecSource(int source) {
+  setRecSource(trackIndex_, source);
+}
+
+void MixerViewModel::setRecSource(int slot, int source) {
+  model_.setRecSource(slot, source);
   if (slot == trackIndex_) emit trackChanged();
 }
 
@@ -866,21 +869,17 @@ void MixerViewModel::notifyFxChanged(int slot) {
 
 void MixerViewModel::notifyActiveTakesChanged() {
   if (rowCount() == 0) return;
-  emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
-                   {MonitorMarkRole, ArmMutesTakeRole, ArmMutesBadgeRole});
-}
-
-void MixerViewModel::notifyTakeStopped() {
-  armMutesUntilMs_ = steadyMs() + 8000;
-  if (rowCount() == 0) return;
-  emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
-                   {ArmMutesTakeRole, ArmMutesBadgeRole});
+  emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {ModeRole, ModeWordRole});
 }
 
 int MixerViewModel::armedWithActiveTakeCount() const {
   int count = 0;
   for (int slot = 0; slot < audio::kMaxTracks; ++slot) {
-    if (model_.arm(slot) && settings_.hasActiveTake(slot)) ++count;
+    // ARM only: an ARM strip suppresses its own take voice (Auto monitor while
+    // armed), while OVERDUB keeps the take playing under the live layer.
+    if (model_.mode(slot) == kTrackModeArm && settings_.hasActiveTake(slot)) {
+      ++count;
+    }
   }
   return count;
 }

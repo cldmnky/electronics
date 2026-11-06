@@ -23,7 +23,24 @@
 #include "performance_model.hpp"
 #include "session_settings.hpp"
 
+// The app's names for the frozen session wire values must stay identical to the
+// session constants: the mixer model stores the session value and the UI only
+// adds the word (docs/daw-plan.md W1/W2b).
 namespace mnky::app::project {
+namespace {
+// The app's names for the frozen session wire values must stay identical to the
+// session constants: the mixer model stores the session value and the UI only
+// adds the word (docs/daw-plan.md W1/W2b).
+static_assert(kTrackModePlay == session::kTrackModePlay &&
+                  kTrackModeArm == session::kTrackModeArm &&
+                  kTrackModeOverdub == session::kTrackModeOverdub &&
+                  kTrackModeLive == session::kTrackModeLive,
+              "track mode values are the frozen session values");
+static_assert(kRecSourcePre == session::kRecSourcePre &&
+                  kRecSourcePost == session::kRecSourcePost &&
+                  kRecSourcePostFx == session::kRecSourcePostFx,
+              "REC SOURCE values are the frozen session values");
+}  // namespace
 namespace {
 
 void appendInt(std::string& out, const char* tag, long long value) {
@@ -123,6 +140,16 @@ session::Snapshot captureSnapshot(const AppContext& context) {
   // EQ bands and X/Y performance positions live in the session fx section
   // (v2: Snapshot::fx.eq / fx.xy); they are app-owned, so they are filled here
   // rather than by session::capture().
+  // REC SOURCE is app state (the engine tap point is the audio wave's), so the
+  // per-track choice is filled here: session::capture() has no engine field
+  // for it and would otherwise save the default PRE for every track.
+  for (int track = 0;
+       track < static_cast<int>(snapshot.mixer.channels.size()) &&
+       track < audio::kMaxTracks;
+       ++track) {
+    snapshot.mixer.channels[static_cast<std::size_t>(track)].recSource =
+        context.mixer.recSource(track);
+  }
   snapshot.fx.eq = context.eq.capture();
   snapshot.fx.xy = context.performance.capture();
   snapshot.transport.bpmX100 = context.state.tempoX100.load();
@@ -250,13 +277,20 @@ void applyMixer(const AppContext& context, const session::MixerState& mixer) {
     context.mixer.setPan(index, channel.pan);
     context.mixer.setMute(index, channel.mute);
     context.mixer.setSolo(index, channel.solo);
-    context.mixer.setArm(index, channel.arm);
+    // Track mode (frozen W1 wire contract): `mode` is canonical, `monitor` its
+    // deprecated spelling (the reader keeps them equal). An armed legacy
+    // channel that still reads PLAY becomes ARM, so a take-armed strip loads
+    // armed as the mode word says.
+    context.mixer.setMode(index, channel.mode);
+    context.mixer.setRecSource(index, channel.recSource);
+    if (channel.arm && context.mixer.mode(index) == kTrackModePlay) {
+      context.mixer.setMode(index, kTrackModeArm);
+    }
     for (int send = 0; send < audio::kNumSends; ++send) {
       context.mixer.setSend(index, send, channel.send[static_cast<std::size_t>(send)]);
     }
     context.mixer.setCueSend(index, channel.cueSend);
     context.mixer.setOut34Send(index, channel.out34Send);
-    context.mixer.setMonitor(index, channel.monitor);
     context.mixer.setInCh(index, channel.inCh);
     context.mixer.setInPair(index, channel.inPair);
     context.mixer.setOutDst(index, channel.outDst);
@@ -520,7 +554,10 @@ std::string fingerprint(const AppContext& context) {
   for (int index = 0; index < audio::kMaxTracks; ++index) {
     appendFloat(out, "cue", context.mixer.cueSend(index));
     appendFloat(out, "o34s", context.mixer.out34Send(index));
-    appendInt(out, "mon", context.mixer.monitor(index));
+    // `mon` is the deprecated monitor spelling of the same 0..3 mode value, so
+    // the mode change and a REC SOURCE pick both move the fingerprint.
+    appendInt(out, "mon", context.mixer.mode(index));
+    appendInt(out, "rs", context.mixer.recSource(index));
     out += "ta=" + context.settings.activeTake(index) + ";";
     appendInt(out, "in", context.mixer.inCh(index));
     appendInt(out, "ip", context.mixer.inPair(index) ? 1 : 0);

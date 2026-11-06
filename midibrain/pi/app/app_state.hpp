@@ -39,6 +39,14 @@ class AppState {
   std::atomic<int> clickOutput{0};
   std::atomic<float> clickGainDb{-6.0f};
   std::atomic<int> clickBars{1};
+  // RECMODE (docs/daw-plan.md W2): 0 = NOW (record on the press), 1 = COUNT-IN
+  // n bars (roll, engage at the downbeat), 2 = PUNCH (roll, engage between the
+  // PUNCH IN/OUT measures). `recScheduled` is true from the REC press until the
+  // boundary the schedule waits for arrives or the schedule is cancelled, so
+  // the recorder status can name what will happen and when.
+  std::atomic<int> recMode{0};
+  std::atomic<int> countInBars{2};
+  std::atomic<bool> recScheduled{false};
   // Sticky project dirty flag: set by the controller's state fingerprint,
   // cleared only by save/load/new.
   std::atomic<bool> dirty{false};

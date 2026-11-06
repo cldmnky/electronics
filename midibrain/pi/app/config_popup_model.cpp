@@ -71,7 +71,9 @@ bool ConfigPopupModel::openKind(const QString& kind) {
       QStringLiteral("monitor"),   QStringLiteral("comp"),
       QStringLiteral("eqtype"),    QStringLiteral("delay"),
       QStringLiteral("reverb"),    QStringLiteral("timelineops"),
-      QStringLiteral("pipechannels"), QStringLiteral("trackmonitor"),
+      QStringLiteral("pipechannels"), QStringLiteral("trackmode"),
+      QStringLiteral("recmode"),       QStringLiteral("takeactions"),
+      QStringLiteral("takeedit"),      QStringLiteral("trackfromtake"),
       QStringLiteral("inputsource"), QStringLiteral("outputdest"),
       QStringLiteral("fxslot"),    QStringLiteral("addtrack"),
       QStringLiteral("delaydivision"), QStringLiteral("reverbmodel"),
@@ -108,7 +110,11 @@ bool ConfigPopupModel::openKind(const QString& kind) {
            : kind == QStringLiteral("reverb")    ? QStringLiteral("REVERB")
            : kind == QStringLiteral("timelineops") ? QStringLiteral("REGION OPS")
            : kind == QStringLiteral("pipechannels") ? QStringLiteral("MIDI CHANNEL FILTER")
-           : kind == QStringLiteral("trackmonitor") ? QStringLiteral("INPUT MONITOR")
+           : kind == QStringLiteral("trackmode") ? QStringLiteral("TRACK MODE")
+           : kind == QStringLiteral("recmode") ? QStringLiteral("REC MODE")
+           : kind == QStringLiteral("takeactions") ? takeTargetName_
+           : kind == QStringLiteral("takeedit") ? takeTargetName_
+           : kind == QStringLiteral("trackfromtake") ? QStringLiteral("NEW TRACK FROM TAKE")
            : kind == QStringLiteral("inputsource") ? inputSourceTitle()
            : kind == QStringLiteral("outputdest") ? outputTitle()
            : kind == QStringLiteral("fxslot")     ? fxSlotTitle()
@@ -149,7 +155,10 @@ void ConfigPopupModel::loadDraft() {
   compReleaseMs_ = settings_.mainComp.releaseMs;
   compMakeupDb_ = settings_.mainComp.makeupDb;
   compMode_ = settings_.mainComp.mode;
-  trackMonitor_ = clampChoice(mixer_.monitor(trackMonitorSlot_), 3);
+  trackMode_ = clampTrackMode(mixer_.mode(trackModeSlot_));
+  trackRecSource_ = clampRecSource(mixer_.recSource(trackModeSlot_));
+  recMode_ = clampRecMode(state_.recMode.load());
+  countInBars_ = clampCountInBars(state_.countInBars.load());
   eqType_ = eq_.type(eq_.band());
   // The X/Y parameter kinds edit the rack slot AppController pointed them at.
   delayBeat_ = static_cast<int>(
@@ -348,7 +357,10 @@ void ConfigPopupModel::captureRestore() {
   restore.compReleaseMs = settings_.mainComp.releaseMs;
   restore.compMakeupDb = settings_.mainComp.makeupDb;
   restore.compMode = settings_.mainComp.mode;
-  restore.trackMonitor = mixer_.monitor(trackMonitorSlot_);
+  restore.trackMode = mixer_.mode(trackModeSlot_);
+  restore.trackRecSource = mixer_.recSource(trackModeSlot_);
+  restore.recMode = state_.recMode.load();
+  restore.countInBars = state_.countInBars.load();
   restore.eqBand = eq_.band();
   restore.eqType = eq_.type(eq_.band());
   restore.pipeMask =
@@ -395,8 +407,12 @@ void ConfigPopupModel::restoreRestore() {
     settings_.mainComp.releaseMs = restore.compReleaseMs;
     settings_.mainComp.makeupDb = restore.compMakeupDb;
     settings_.mainComp.mode = restore.compMode;
-  } else if (kind_ == QStringLiteral("trackmonitor")) {
-    mixer_.setMonitor(trackMonitorSlot_, restore.trackMonitor);
+  } else if (kind_ == QStringLiteral("trackmode")) {
+    mixer_.setMode(trackModeSlot_, restore.trackMode);
+    mixer_.setRecSource(trackModeSlot_, restore.trackRecSource);
+  } else if (kind_ == QStringLiteral("recmode")) {
+    state_.recMode.store(restore.recMode);
+    state_.countInBars.store(restore.countInBars);
   } else if (kind_ == QStringLiteral("eqtype")) {
     eq_.setType(restore.eqBand, restore.eqType);
   } else if (kind_ == QStringLiteral("delay") ||
@@ -475,8 +491,12 @@ void ConfigPopupModel::applyDraft() {
     settings_.mainComp.makeupDb =
         static_cast<float>(std::clamp(compMakeupDb_, -36.0, 36.0));
     settings_.mainComp.mode = clampBoolChoice(compMode_);
-  } else if (kind_ == QStringLiteral("trackmonitor")) {
-    mixer_.setMonitor(trackMonitorSlot_, clampChoice(trackMonitor_, 3));
+  } else if (kind_ == QStringLiteral("trackmode")) {
+    mixer_.setMode(trackModeSlot_, clampTrackMode(trackMode_));
+    mixer_.setRecSource(trackModeSlot_, clampRecSource(trackRecSource_));
+  } else if (kind_ == QStringLiteral("recmode")) {
+    state_.recMode.store(clampRecMode(recMode_));
+    state_.countInBars.store(clampCountInBars(countInBars_));
   } else if (kind_ == QStringLiteral("eqtype")) {
     eq_.setType(eq_.band(), eqType_);
   } else if (kind_ == QStringLiteral("delay")) {
@@ -795,11 +815,68 @@ void ConfigPopupModel::setCompMakeupDb(double value) {
   compMakeupDb_ = value;
   changedLive();
 }
-void ConfigPopupModel::setTrackMonitor(int value) {
-  const int next = clampChoice(value, 3);
-  if (next == trackMonitor_) return;
-  trackMonitor_ = next;
+void ConfigPopupModel::setTrackMode(int value) {
+  const int next = clampTrackMode(value);
+  if (next == trackMode_) return;
+  trackMode_ = next;
   changedLive();
+}
+
+void ConfigPopupModel::setTrackRecSource(int value) {
+  const int next = clampRecSource(value);
+  if (next == trackRecSource_) return;
+  trackRecSource_ = next;
+  changedLive();
+}
+
+QString ConfigPopupModel::trackRecSourceText() const {
+  return QString::fromStdString(recSourceText(trackRecSource_));
+}
+
+void ConfigPopupModel::setRecMode(int value) {
+  const int next = clampRecMode(value);
+  if (next == recMode_) return;
+  recMode_ = next;
+  changedLive();
+}
+
+void ConfigPopupModel::setCountInBars(int value) {
+  const int next = clampCountInBars(value);
+  if (next == countInBars_) return;
+  countInBars_ = next;
+  changedLive();
+}
+
+QStringList ConfigPopupModel::takeActions() const {
+  return {QStringLiteral("ACTIVE"),   QStringLiteral("EDIT"),
+          QStringLiteral("RENAME"),   QStringLiteral("DELETE"),
+          QStringLiteral("REMOVE"),   QStringLiteral("IMPORT"),
+          QStringLiteral("NEW TRACK FROM THIS TAKE")};
+}
+
+QStringList ConfigPopupModel::trackFromTakeChoices() const {
+  return {QStringLiteral("MOVE"), QStringLiteral("KEEP ON SOURCE")};
+}
+
+QString ConfigPopupModel::recModeSummary() const {
+  // The one-line readout under the three choice rows: what the pick does when
+  // REC is pressed.
+  switch (clampRecMode(recMode_)) {
+    case kRecModeCountIn:
+      return QStringLiteral("ROLLS THE CLICK - RECORDING STARTS AT THE DOWNBEAT");
+    case kRecModePunch:
+      return QStringLiteral("ROLLS FROM PLAY FROM - RECORDS BETWEEN PUNCH IN AND OUT");
+    default:
+      return QStringLiteral("RECORDS THE MOMENT YOU PRESS REC");
+  }
+}
+
+void ConfigPopupModel::chooseTakeAction(int action) {
+  if (takeActionSink_) takeActionSink_(action);
+}
+
+void ConfigPopupModel::chooseTrackFromTake(int choice) {
+  if (trackFromTakeSink_) trackFromTakeSink_(choice);
 }
 
 void ConfigPopupModel::setCompMode(int value) {
@@ -817,6 +894,10 @@ QString ConfigPopupModel::footerHint() const {
   if (kind_ == QStringLiteral("timelineops")) {
     return acceptLabel() + QStringLiteral(" - CANCEL KEEPS EDITS");
   }
+  if (kind_ == QStringLiteral("takeactions") ||
+      kind_ == QStringLiteral("trackfromtake")) {
+    return QStringLiteral("TAP AN ACTION - CLOSE CHANGES NOTHING");
+  }
   return QStringLiteral("LIVE - EVERY CHANGE APPLIES - CANCEL RESTORES");
 }
 
@@ -824,6 +905,13 @@ QString ConfigPopupModel::acceptLabel() const {
   if (kind_ == QStringLiteral("addtrack")) return QStringLiteral("ADD TRACK");
   if (kind_ == QStringLiteral("timelineops")) {
     return QStringLiteral("APPLY ") + timelineOpName();
+  }
+  // An action menu changes nothing on OK/CANCEL, so the button says CLOSE and
+  // the header repeats it.
+  if (kind_ == QStringLiteral("takeactions") ||
+      kind_ == QStringLiteral("trackfromtake") ||
+      kind_ == QStringLiteral("takeedit")) {
+    return QStringLiteral("CLOSE");
   }
   return QStringLiteral("OK");
 }

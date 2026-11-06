@@ -79,6 +79,9 @@ class RecorderTakeModel final : public QAbstractListModel {
   QHash<int, QByteArray> roleNames() const override;
 
   void setEntries(std::vector<Entry> entries);
+  // Valid only until the next setEntries()/rescan: the model owns its rows and
+  // a take-folder rescan replaces (and frees) them. Copy what you need before
+  // any call that can rescan (docs/daw-plan.md W4 clip-click crash class).
   const Entry* entry(int row) const;
 
  signals:
@@ -99,10 +102,15 @@ class RecorderViewModel final : public QObject {
   // True while statusText is the post-take ARM warning, so QML paints it in
   // the record colour over two 16 px lines (A1).
   Q_PROPERTY(bool statusWarning READ statusWarning NOTIFY readoutsChanged)
-  // The selected track is armed and has an active take: ARM mutes the take.
-  Q_PROPERTY(bool trackArmMutesTake READ trackArmMutesTake NOTIFY readoutsChanged)
-  // Arm state of the recorder's selected track (the ARM button's fill).
+  // Arm state of the recorder's selected track: derived from its mode (ARM and
+  // OVERDUB record), so the mode word and the picker can never disagree.
   Q_PROPERTY(bool trackArm READ trackArm NOTIFY readoutsChanged)
+  // Track mode of the selected track (docs/daw-plan.md W1): the word the
+  // recorder's mode button shows. `trackRecSourceText` is the tap point the
+  // header names beside it (W2b).
+  Q_PROPERTY(QString trackModeWord READ trackModeWord NOTIFY readoutsChanged)
+  // REC SOURCE of the selected track (docs/daw-plan.md W2b).
+  Q_PROPERTY(QString trackRecSourceText READ trackRecSourceText NOTIFY readoutsChanged)
   Q_PROPERTY(QString diskText READ diskText NOTIFY readoutsChanged)
   Q_PROPERTY(QString buttonText READ buttonText NOTIFY readoutsChanged)
   Q_PROPERTY(QString takeDirectory READ takeDirectory NOTIFY readoutsChanged)
@@ -129,8 +137,9 @@ class RecorderViewModel final : public QObject {
   QString clockText() const { return clockText_; }
   QString statusText() const { return statusText_; }
   bool statusWarning() const { return statusWarning_; }
-  bool trackArmMutesTake() const;
   bool trackArm() const { return mixer_.arm(selectedTrack_); }
+  QString trackModeWord() const;
+  QString trackRecSourceText() const;
   QString diskText() const { return diskText_; }
   QString buttonText() const { return buttonText_; }
   QString takeDirectory() const { return takeDirectory_; }
@@ -165,6 +174,12 @@ class RecorderViewModel final : public QObject {
   Q_INVOKABLE void startStop();
   Q_INVOKABLE void selectRow(int row);
   Q_INVOKABLE void activateSelected();
+  // Row-body tap: select + activate one row and return the activated take's
+  // display name as a value. The name is copied before the rescan, because
+  // activating rescans the list and frees the row storage (the pointer a
+  // caller might hold is invalid from then on - this is the crash class the
+  // clip-click tap gate covers).
+  QString activateRow(int row);
   Q_INVOKABLE void clearActive();
   Q_INVOKABLE QString importTake(const QString& path);
   // D7: the pre-accept preview/refusal of an import path. Returns
@@ -175,6 +190,9 @@ class RecorderViewModel final : public QObject {
   // Display name of one take row, for the SHIFT face's selected-object line.
   Q_INVOKABLE QString takeNameAt(int row) const;
   Q_INVOKABLE void deleteSelected();
+  // REMOVE (docs/daw-plan.md W4): project only - the take file stays on disk,
+  // the track simply stops pointing at it.
+  Q_INVOKABLE void removeSelected();
   Q_INVOKABLE void refresh();
 
   // Re-scan the take directory (after a take stops or the directory changes).
@@ -183,9 +201,12 @@ class RecorderViewModel final : public QObject {
   // the header without touching the take list (A4 + C2).
   void tracksChanged();
   // Rename the just-recorded `chNN.wav` files to the session-v2 per-track form
-  // and make each armed track's new take active. Returns the number renamed.
+  // and make each armed track's new take active. Returns the number renamed;
+  // `lastKey` receives the last adopted take key (the take the TAKE SAVED
+  // notice names).
   int adoptRecordedTake(const std::string& takeDirectoryPath,
-                        MixerModel::TrackMask armMask);
+                        MixerModel::TrackMask armMask,
+                        std::string* lastKey = nullptr);
   // Push the session active-take pointers into the engine take player after a
   // project load (or at startup). Missing files clear the track.
   void resyncActiveTakes();
@@ -227,6 +248,18 @@ class RecorderViewModel final : public QObject {
   QString diskText_;
   QString buttonText_;
   QString takeDirectory_;
+  // Whole-project take totals for the disk line ("N takes - X MiB"), filled by
+  // scanTakes.
+  int projectTakes_ = 0;
+  std::uint64_t projectBytes_ = 0;
+  // Take start time for the REC mm:ss readout while a take runs.
+  std::uint64_t recStartMs_ = 0;
+  // The take the last stop adopted, for the TAKE SAVED status line; cleared as
+  // soon as the next take starts recording.
+  QString lastAdoptedKey_;
+  // The take name a running take will carry once it stops (the first recording
+  // track's `<nn>-<name>-<n>` form), for the REC status line.
+  QString recordingTakeName() const;
   struct ImportedTake {
     int track = 0;
     std::filesystem::path path;

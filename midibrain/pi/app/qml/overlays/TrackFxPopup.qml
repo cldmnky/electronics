@@ -117,6 +117,37 @@ Rectangle {
                     slot: 1
                 }
             }
+
+            // W2b: the rack's neighbour - where the recorder taps this channel.
+            // Setting it here keeps REC SOURCE next to the FX it can print.
+            Row {
+                width: parent.width
+                height: Style.touch
+                spacing: Style.gapTight
+
+                TouchButton {
+                    width: 132
+                    height: parent.height
+                    text: "REC SRC  " + mixer.selectedRecSourceText
+                    textSize: Style.fontSmall
+                    chevron: "down"
+                    focusId: "trackfx.recsource"
+                    onClicked: app.openTrackMode(fx.track)
+                }
+                Text {
+                    width: parent.width - 136
+                    height: parent.height
+                    text: mixer.selectedRecSourceText === "POST+FX"
+                          ? "THE TAKE PRINTS THE CHANNEL SOUND - EQ, FX RACK AND FADER"
+                          : (mixer.selectedRecSourceText === "POST"
+                             ? "THE TAKE PRINTS EQ AND FADER, WITHOUT THE FX RACK"
+                             : "THE TAKE IS THE DRY CAPTURE AFTER GAIN, BEFORE EQ")
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+            }
         }
     }
 

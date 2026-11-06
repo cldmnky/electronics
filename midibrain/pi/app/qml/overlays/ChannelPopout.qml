@@ -119,9 +119,13 @@ Rectangle {
                             Text {
                                 width: parent.width
                                 height: 14
-                                text: ["PLAY", "AUTO", "BOTH", "MON"][mixer.trackMonitor].charAt(0)
-                                color: mixer.trackMonitor === 1 ? Style.textDim : Style.accent
-                                font.pixelSize: Style.fontSmall
+                                // W1: the mode word, never a bare letter on the
+                                // channel itself (the strip column keeps the
+                                // three-letter form because it is 44 px).
+                                text: mixer.selectedModeWord.substring(0, 3)
+                                color: mixer.selectedMode === 1 ? Style.record
+                                       : (mixer.selectedMode === 0 ? Style.textDim : Style.accent)
+                                font.pixelSize: 9
                                 horizontalAlignment: Text.AlignHCenter
                             }
                         }
@@ -293,7 +297,7 @@ Rectangle {
                         Text {
                             width: parent.width
                             height: 16
-                            text: "INPUT MONITOR"
+                            text: "TRACK MODE"
                             color: Style.textDim
                             font.pixelSize: Style.fontSmall
                             font.weight: Font.DemiBold
@@ -302,10 +306,36 @@ Rectangle {
                             width: parent.width
                             height: Style.touch
                             spacing: 4
-                            TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "PLAY"; textSize: Style.fontSmall; checked: mixer.trackMonitor === 0; focusId: "channel.monitor"; onClicked: mixer.setTrackMonitor(0) }
-                            TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "AUTO"; textSize: Style.fontSmall; checked: mixer.trackMonitor === 1; onClicked: mixer.setTrackMonitor(1) }
-                            TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "BOTH"; textSize: Style.fontSmall; checked: mixer.trackMonitor === 2; onClicked: mixer.setTrackMonitor(2) }
-                            TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "MON"; textSize: Style.fontSmall; checked: mixer.trackMonitor === 3; onClicked: mixer.setTrackMonitor(3) }
+                            TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "PLAY"; textSize: Style.fontSmall; checked: mixer.selectedMode === 0; focusId: "channel.mode.0"; onClicked: mixer.setSelectedMode(0) }
+                            TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "ARM"; textSize: Style.fontSmall; checked: mixer.selectedMode === 1; checkedColor: Style.record; focusId: "channel.mode.1"; onClicked: mixer.setSelectedMode(1) }
+                            TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "OVERDUB"; textSize: 10; checked: mixer.selectedMode === 2; focusId: "channel.mode.2"; onClicked: mixer.setSelectedMode(2) }
+                            TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "LIVE"; textSize: Style.fontSmall; checked: mixer.selectedMode === 3; focusId: "channel.mode.3"; onClicked: mixer.setSelectedMode(3) }
+                        }
+                        // REC SOURCE (W2b): the ARM-area selector names where the
+                        // take taps the channel; PRE is the dry capture.
+                        Row {
+                            width: parent.width
+                            height: Style.touch
+                            spacing: 4
+                            TouchButton {
+                                width: 96
+                                height: parent.height
+                                text: "REC SRC"
+                                textSize: Style.fontSmall
+                                variant: "ghost"
+                                chevron: "down"
+                                focusId: "channel.recsource"
+                                onClicked: app.openTrackMode(mixer.trackIndex)
+                            }
+                            Text {
+                                width: parent.width - 100
+                                height: parent.height
+                                text: "RECORDING TAPS " + mixer.selectedRecSourceText
+                                color: Style.textDim
+                                font.pixelSize: Style.fontSmall
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
+                            }
                         }
 
                         Row {

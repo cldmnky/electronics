@@ -385,4 +385,133 @@ inline std::string formatChannelMask(std::uint16_t mask) {
   return out;
 }
 
+// --- track modes (docs/daw-plan.md W1) -------------------------------------
+// One word per track state. The number is the frozen session-v2
+// `mixer.channels[].mode` value (`session::kTrackMode*`; project_io asserts the
+// two agree) and, by the same contract, the engine's `MonitorMode` number 1:1:
+// PLAY = Off (take only), ARM = Auto (live when armed or no take), OVERDUB = On
+// (live layered over the take), LIVE = InputOnly (live only, never the take).
+inline constexpr int kTrackModePlay = 0;
+inline constexpr int kTrackModeArm = 1;
+inline constexpr int kTrackModeOverdub = 2;
+inline constexpr int kTrackModeLive = 3;
+inline constexpr int kTrackModeCount = 4;
+
+inline int clampTrackMode(int mode) {
+  if (mode < kTrackModePlay) return kTrackModeArm;  // 0..3, default Auto/ARM
+  return mode > kTrackModeLive ? kTrackModeLive : mode;
+}
+
+inline std::string trackModeWord(int mode) {
+  switch (clampTrackMode(mode)) {
+    case kTrackModePlay:
+      return "PLAY";
+    case kTrackModeOverdub:
+      return "OVERDUB";
+    case kTrackModeLive:
+      return "LIVE";
+    default:
+      return "ARM";
+  }
+}
+
+// ARM and OVERDUB are the recording modes (W8: nothing armed, nothing
+// recorded); PLAY and LIVE never record.
+inline bool trackModeRecords(int mode) {
+  const int clamped = clampTrackMode(mode);
+  return clamped == kTrackModeArm || clamped == kTrackModeOverdub;
+}
+
+// One-tap cycle in the natural order: PLAY -> ARM -> OVERDUB -> LIVE -> PLAY,
+// so the first tap on a fresh track (PLAY after auto-PLAY) is ARM (W1 step 2).
+inline int nextTrackMode(int mode) {
+  return (clampTrackMode(mode) + 1) % kTrackModeCount;
+}
+
+// --- REC SOURCE (docs/daw-plan.md W2b) -------------------------------------
+// Where in the strip chain the recorder taps: PRE (after gain, today's
+// default), POST (through EQ + fader, before the FX rack) or POST+FX (through
+// EQ, FX1/FX2 and the fader).
+inline constexpr int kRecSourcePre = 0;
+inline constexpr int kRecSourcePost = 1;
+inline constexpr int kRecSourcePostFx = 2;
+inline constexpr int kRecSourceCount = 3;
+
+inline int clampRecSource(int source) {
+  if (source < kRecSourcePre) return kRecSourcePre;
+  return source >= kRecSourceCount ? kRecSourcePostFx : source;
+}
+
+inline std::string recSourceText(int source) {
+  switch (clampRecSource(source)) {
+    case kRecSourcePost:
+      return "POST";
+    case kRecSourcePostFx:
+      return "POST+FX";
+    default:
+      return "PRE";
+  }
+}
+
+// --- RECMODE (docs/daw-plan.md W2) -----------------------------------------
+// NOW records on the REC press; COUNT-IN rolls the click for n bars and
+// engages the recording at the downbeat; PUNCH rolls and records between the
+// PUNCH IN/OUT measures.
+inline constexpr int kRecModeNow = 0;
+inline constexpr int kRecModeCountIn = 1;
+inline constexpr int kRecModePunch = 2;
+inline constexpr int kRecModeCount = 3;
+
+inline int clampRecMode(int mode) {
+  if (mode < kRecModeNow) return kRecModeNow;
+  return mode >= kRecModeCount ? kRecModePunch : mode;
+}
+
+inline int clampCountInBars(int bars) {
+  if (bars < 1) return 1;
+  return bars > 8 ? 8 : bars;
+}
+
+// Compact readout for the transport strip (74 px), so it states the mode and,
+// for a count-in, how many bars roll before the recording starts.
+inline std::string recModeText(int mode, int countInBars) {
+  switch (clampRecMode(mode)) {
+    case kRecModeCountIn:
+      return "COUNT-IN " + std::to_string(clampCountInBars(countInBars));
+    case kRecModePunch:
+      return "PUNCH";
+    default:
+      return "NOW";
+  }
+}
+
+// The status line that states exactly what a scheduled recording will do and
+// when (plan §W2). Empty when no schedule is pending: NOW records on the
+// press and needs no explanation, and a finished punch hands back to the
+// ordinary transport status.
+//
+// `bar` is the bar the recording engages at (1 after a transport START, which
+// zeroes the tick); `punchIn`/`punchOut` are the 1-based PUNCH IN/OUT
+// measures from session v2 punch.
+inline std::string recScheduleStatus(int mode, int countInBars, bool scheduled,
+                                    int bar, int punchIn, int punchOut) {
+  if (!scheduled) return {};
+  const int busyAt = bar < 1 ? 1 : bar;
+  switch (clampRecMode(mode)) {
+    case kRecModeCountIn:
+      return "COUNT-IN " + std::to_string(clampCountInBars(countInBars)) +
+             " bars - recording at bar " + std::to_string(busyAt);
+    case kRecModePunch:
+      return "PUNCH - recording at bar " + std::to_string(punchIn < 1 ? 1 : punchIn) +
+             " of " + std::to_string(punchOut < 1 ? 1 : punchOut);
+    default:
+      return {};
+  }
+}
+
+// The bar a 0-based transport tick is in (1-based).
+inline int barOfTick(std::uint32_t tick) {
+  return static_cast<int>(tick / static_cast<std::uint32_t>(kTicksPerBar)) + 1;
+}
+
 }  // namespace mnky::app

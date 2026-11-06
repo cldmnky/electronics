@@ -67,6 +67,7 @@ class UiTapRunner final : public QObject {
   // scenarios seed a small track list so the strip controls exist; the empty
   // mixer is its own scenario.
   void primeMixerTracks();
+  void activateRealTakes();
   void clearMixerTracks();
   void beginScenario();
   void tapNext();

@@ -69,6 +69,20 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
   configVm_->setTimeline(timelineVm_.get());
   configVm_->setRouting(routingVm_.get());
   configVm_->setMixer(mixerVm_.get());
+  // The TAKE "..." menu and NEW TRACK FROM TAKE both need keypad/confirm flows
+  // and notices, which belong to the controller, so the popup reports the pick.
+  configVm_->setTakeActionSink([this](int action) {
+    configCancel();
+    takeAction(action);
+  });
+  configVm_->setTrackFromTakeSink([this](int choice) {
+    const int row = configVm_->trackFromTakeRow();
+    configCancel();
+    // The keypad already accepted the name; it is held in the keypad action's
+    // last accepted text.
+    createTrackFromTake(row, pendingTrackFromTakeName_, /*move=*/choice == 0);
+    pendingTrackFromTakeName_.clear();
+  });
   eqVm_ = std::make_unique<EqViewModel>(eqModel_, mixer_);
   xyVm_ = std::make_unique<XyViewModel>(mixer_, *mixerVm_);
   // Every EQ/XY screen change shows one transient readout, the same single
@@ -283,6 +297,7 @@ void AppController::playStart() {
 
 void AppController::stop() {
   pendingRec_ = false;
+  cancelRecSchedule();
   chord_.reset();
   link_.requestTransport(0);
   if (audio_.recording()) stopTake();
@@ -454,6 +469,56 @@ void AppController::keypadAccept(const QString& text) {
     error = projectsVm_->renameSelected(text);
   } else if (keypadAction_ == QStringLiteral("take-rename")) {
     error = recorderVm_->renameSelected(text);
+  } else if (keypadAction_ == QStringLiteral("render-region")) {
+    // RENDER REGION TO TRACK: the baked file becomes the new track's ACTIVE
+    // take. The source track keeps its take, because the render wrote a new
+    // file instead of moving one.
+    error = QString::fromStdString(validateProjectName(text.toStdString()));
+    if (error.isEmpty()) {
+      const int slot = mixer_.firstInactiveSlot();
+      if (slot < 0 || pendingRenderPath_.empty()) {
+        error = QStringLiteral("no free track slot");
+      } else {
+        const QString key = QString::fromStdString(pendingRenderPath_.string());
+        if (!mixerVm_->addTrack(slot, text, -1, false, 0)) {
+          error = QStringLiteral("could not add the track");
+        } else {
+          mixerVm_->setMode(slot, kTrackModePlay);
+          settings_.setActiveTake(slot, key.toStdString());
+          recorderVm_->resyncActiveTakes();
+          mixerVm_->refresh();
+          recorderVm_->tracksChanged();
+          timelineVm_->refresh();
+          pendingRenderPath_.clear();
+          showNotice(NoticeInfo, QStringLiteral("track %1 %2 - rendered take")
+                                     .arg(slot + 1, 2, 10, QLatin1Char('0'))
+                                     .arg(text));
+        }
+      }
+    }
+  } else if (keypadAction_ == QStringLiteral("new-track-from-take")) {
+    // The name is accepted here; the MOVE / KEEP choice is the next popup.
+    error = QString::fromStdString(validateProjectName(text.toStdString()));
+    if (error.isEmpty()) {
+      const auto* entry = recorderVm_->takes()->entry(keypadIndex_);
+      const int slot = mixer_.firstInactiveSlot();
+      if (entry == nullptr || slot < 0) {
+        error = QStringLiteral("no free track slot");
+      } else {
+        pendingTrackFromTakeName_ = text;
+        configVm_->setTrackFromTakeTarget(
+            keypadIndex_,
+            QStringLiteral("%1  ->  TRACK %2 %3")
+                .arg(entry->name)
+                .arg(slot + 1, 2, 10, QLatin1Char('0'))
+                .arg(text.toUpper()));
+        keypadOpen_ = false;
+        keypadError_.clear();
+        emit keypadChanged();
+        openConfigInternal(QStringLiteral("trackfromtake"));
+        return;
+      }
+    }
   } else if (keypadAction_ == QStringLiteral("take-import")) {
     // D7: the header is read before anything is imported. A 48 kHz violation
     // keeps the keypad open with the refusal; a good file shows its duration
@@ -541,6 +606,15 @@ void AppController::confirmAccept() {
     projectsVm_->deleteSelected();
   } else if (action == QStringLiteral("take-delete")) {
     recorderVm_->deleteSelected();
+    timelineVm_->refresh();
+    mixerVm_->notifyActiveTakesChanged();
+  } else if (action == QStringLiteral("take-remove")) {
+    // Project only: the take file stays on disk.
+    recorderVm_->removeSelected();
+    timelineVm_->refresh();
+    mixerVm_->notifyActiveTakesChanged();
+    showNotice(NoticeInfo, QStringLiteral("take removed from the project - "
+                                           "the file stays on disk"));
   } else if (action == QStringLiteral("remove-track")) {
     mixerVm_->removeTrack(index);
   } else if (action == QStringLiteral("routing-reset")) {
@@ -598,12 +672,13 @@ void AppController::selectTakeRow(int row) {
 }
 
 void AppController::activateTakeRow(int row) {
-  // A3/A10: the row body loads the take (ACTIVE + waveform).
-  recorderVm_->selectRow(row);
-  const auto* entry = recorderVm_->takes()->entry(row);
-  recorderVm_->activateSelected();
-  if (entry != nullptr) {
-    showTextPopup(QStringLiteral("TAKE ACTIVE"), entry->name);
+  // A3/A10: the row body loads the take (ACTIVE + waveform). The name comes
+  // back as a value, never as a pointer into the take list: activating rescans
+  // that list, and a pointer held across the rescan is a use-after-free (the
+  // SIGBUS a clip tap used to cause on the Pi).
+  const QString name = recorderVm_->activateRow(row);
+  if (!name.isEmpty()) {
+    showTextPopup(QStringLiteral("TAKE ACTIVE"), name);
   }
 }
 
@@ -646,10 +721,11 @@ void AppController::requestDeleteTake() {
     showNotice(NoticeWarn, QStringLiteral("select a row first (...)"));
     return;
   }
+  // W4: the confirmation names the file it removes, verbatim per the plan.
+  const QString file = QString::fromStdString(entry->path.filename().string());
   requestConfirm(QStringLiteral("DELETE TAKE ") + entry->name,
-                 QStringLiteral("Delete ") + entry->name +
-                     QStringLiteral("? The WAV file is removed from the take folder. This "
-                                    "cannot be undone."),
+                 QStringLiteral("DELETE ") + file +
+                     QStringLiteral(" from disk? This cannot be undone."),
                  QStringLiteral("DELETE"), QStringLiteral("take-delete"), row);
 }
 
@@ -920,9 +996,6 @@ void AppController::openPipeParam(int pipe, int param, QObject* item) {
 }
 
 void AppController::openConfigInternal(const QString& kind) {
-  if (kind == QStringLiteral("trackmonitor")) {
-    configVm_->setTrackMonitorIndex(mixerVm_->trackIndex());
-  }
   // A card always names its parameter; this is the panel/keyboard path, where
   // the ring points at the selected pipe's first positional parameter.
   if (kind == QStringLiteral("pipeparam")) {
@@ -973,6 +1046,13 @@ void AppController::timerTick() {
 
   expirePendingRec();
   const auto status = link_.status();
+  pollRecSchedule(status);
+  if (state_.recMode.load() != lastRecMode_ ||
+      state_.countInBars.load() != lastCountInBars_) {
+    lastRecMode_ = state_.recMode.load();
+    lastCountInBars_ = state_.countInBars.load();
+    emit recModeChanged();
+  }
   state_.rolling.store(status.rolling);
   state_.tempoX100.store(status.tempoX100);
   if (status.tempoX100 != loopTempoX100_) {
@@ -1490,6 +1570,10 @@ void AppController::activateFocus() {
 
   if (fxVm_ && fxVm_->open() && parts.size() >= 2 &&
       parts[0] == QStringLiteral("trackfx")) {
+    if (parts[1] == QStringLiteral("recsource")) {
+      openTrackMode(fxVm_->track());
+      return;
+    }
     // PRESS on a rack control gives the encoder its directions; the slot
     // selector is a real tap (it opens the list) so it is handled in QML.
     const QString what = parts[2];
@@ -1522,8 +1606,17 @@ void AppController::activateFocus() {
       configVm_->setCueStyle(index);
     } else if (parts[1] == QStringLiteral("out34")) {
       configVm_->setOut34Mode(index);
-    } else if (parts[1] == QStringLiteral("trackmonitor")) {
-      configVm_->setTrackMonitor(index);
+    } else if (parts[1] == QStringLiteral("trackmode")) {
+      configVm_->setTrackMode(index);
+    } else if (parts[1] == QStringLiteral("recsource")) {
+      configVm_->setTrackRecSource(index);
+    } else if (parts[1] == QStringLiteral("recmode")) {
+      configVm_->setRecMode(index);
+    } else if (parts[1] == QStringLiteral("takeaction")) {
+      // TAKE row menu: PRESS runs the action the ring points at.
+      configVm_->chooseTakeAction(index);
+    } else if (parts[1] == QStringLiteral("trackfromtake")) {
+      configVm_->chooseTrackFromTake(index);
     } else if (parts[1] == QStringLiteral("on")) {
       configVm_->setCompOn(!configVm_->compOn());
     } else if (parts[1] == QStringLiteral("send") && parts.size() >= 4) {
@@ -1638,6 +1731,21 @@ void AppController::activateFocus() {
     }
     return;
   }
+  if (focusId.startsWith(QStringLiteral("take.sheet."))) {
+    // The take sheet traps the ring, so its rows must be pressable.
+    if (focusId == QStringLiteral("take.sheet.close")) {
+      closeTakeSheet();
+    } else if (focusId == QStringLiteral("take.sheet.live")) {
+      chooseLiveInput();
+    } else {
+      chooseTakeRow(focusId.mid(16).toInt());
+    }
+    return;
+  }
+  if (focusId == QStringLiteral("transport.recmode")) {
+    openRecMode();
+    return;
+  }
   if (focusId == QStringLiteral("transport.click")) {
     setClickEnabled(!clickEnabled());
     return;
@@ -1651,11 +1759,11 @@ void AppController::activateFocus() {
     return;
   }
   if (focusId == QStringLiteral("mixer.mode.0")) {
-    mixerVm_->setTrackMode(false);
+    mixerVm_->setSelectedMode(false);
     return;
   }
   if (focusId == QStringLiteral("mixer.mode.1")) {
-    mixerVm_->setTrackMode(true);
+    mixerVm_->setSelectedMode(true);
     return;
   }
 
@@ -1668,11 +1776,11 @@ void AppController::activateFocus() {
       mixerVm_->toggleMute(mixerVm_->trackIndex());
     } else if (parts[1] == QStringLiteral("solo")) {
       mixerVm_->toggleSolo(mixerVm_->trackIndex());
-    } else if (parts[1] == QStringLiteral("monitor")) {
+    } else if (parts[1] == QStringLiteral("mode")) {
       if (parts.size() >= 3) {
-        mixerVm_->setTrackMonitor(parts[2].toInt());
+        mixerVm_->setSelectedMode(parts[2].toInt());
       } else {
-        openConfig(QStringLiteral("trackmonitor"));
+        openTrackMode(mixerVm_->trackIndex());
       }
     } else if (parts[1] == QStringLiteral("input")) {
       if (parts.size() >= 3 && parts[2] == QStringLiteral("pair")) {
@@ -1861,16 +1969,10 @@ void AppController::activateFocus() {
       mixerVm_->toggleSolo(strip);
     } else if (what == QStringLiteral("arm")) {
       mixerVm_->toggleArm(strip);
-    } else if (what == QStringLiteral("monitor")) {
-      const int next = (mixerVm_->monitorAt(strip) + 1) % 4;
-      mixerVm_->setMonitor(strip, next);
-      // MPC parity: PLAY = take only, AUTO = smart, BOTH = input + take,
-      // MON = input always / take never (session::MixerChannelState::monitor).
-      showTextPopup(QStringLiteral("INPUT MON"),
-                    next == 0 ? QStringLiteral("Play")
-                    : (next == 1 ? QStringLiteral("Auto")
-                                 : (next == 2 ? QStringLiteral("Both")
-                                              : QStringLiteral("Mon"))));
+    } else if (what == QStringLiteral("trackmode")) {
+      // One tap cycles the mode (W1); the word says what the strip does now.
+      mixerVm_->setMode(strip, nextTrackMode(mixerVm_->modeAt(strip)));
+      showTextPopup(QStringLiteral("TRACK MODE"), mixerVm_->modeWordAt(strip));
     } else if (what == QStringLiteral("in")) {
       // Tap-to-open selector list: the strip's input source opens the same
       // popup the touch surface uses, so there is no cycle-stepper to learn.
@@ -1899,14 +2001,9 @@ void AppController::activateFocus() {
       mixerVm_->setTrackSolo(!mixerVm_->trackSolo());
     } else if (what == QStringLiteral("arm")) {
       mixerVm_->setTrackArm(!mixerVm_->trackArm());
-    } else if (what == QStringLiteral("monitor")) {
-      const int next = (mixerVm_->trackMonitor() + 1) % 4;
-      mixerVm_->setTrackMonitor(next);
-      showTextPopup(QStringLiteral("INPUT MON"),
-                    next == 0 ? QStringLiteral("Play")
-                    : (next == 1 ? QStringLiteral("Auto")
-                                 : (next == 2 ? QStringLiteral("Both")
-                                              : QStringLiteral("Mon"))));
+    } else if (what == QStringLiteral("mode")) {
+      mixerVm_->setSelectedMode(nextTrackMode(mixerVm_->selectedMode()));
+      showTextPopup(QStringLiteral("TRACK MODE"), mixerVm_->selectedModeWord());
     } else if (what == QStringLiteral("gain") || what == QStringLiteral("trim") ||
                what == QStringLiteral("pan") || what == QStringLiteral("fx1") ||
                what == QStringLiteral("fx2") || what == QStringLiteral("cue") ||
@@ -2218,6 +2315,10 @@ void AppController::adjustFocused(int detents, bool fine) {
 
   if (fxVm_ && fxVm_->open() && parts.size() >= 2 &&
       parts[0] == QStringLiteral("trackfx")) {
+    if (parts[1] == QStringLiteral("recsource")) {
+      openTrackMode(fxVm_->track());
+      return;
+    }
     // PRESS on a rack control gives the encoder its directions; the slot
     // selector is a real tap (it opens the list) so it is handled in QML.
     const QString what = parts[2];
@@ -2776,10 +2877,27 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("config.send.%1.pre").arg(QLatin1String(row)));
         ids.push_back(QStringLiteral("config.send.%1.post").arg(QLatin1String(row)));
       }
-    } else if (kind == QStringLiteral("trackmonitor")) {
-      for (int mode = 0; mode < 4; ++mode) {
-        ids.push_back(QStringLiteral("config.trackmonitor.%1").arg(mode));
+    } else if (kind == QStringLiteral("trackmode")) {
+      for (int mode = 0; mode < kTrackModeCount; ++mode) {
+        ids.push_back(QStringLiteral("config.trackmode.%1").arg(mode));
       }
+      for (int source = 0; source < kRecSourceCount; ++source) {
+        ids.push_back(QStringLiteral("config.recsource.%1").arg(source));
+      }
+    } else if (kind == QStringLiteral("recmode")) {
+      for (int mode = 0; mode < kRecModeCount; ++mode) {
+        ids.push_back(QStringLiteral("config.recmode.%1").arg(mode));
+      }
+      ids.push_back(QStringLiteral("config.countin"));
+    } else if (kind == QStringLiteral("takeactions")) {
+      for (int action = 0; action < configVm_->takeActions().size(); ++action) {
+        ids.push_back(QStringLiteral("config.takeaction.%1").arg(action));
+      }
+    } else if (kind == QStringLiteral("trackfromtake")) {
+      ids.push_back(QStringLiteral("config.trackfromtake.0"));
+      ids.push_back(QStringLiteral("config.trackfromtake.1"));
+    } else if (kind == QStringLiteral("takeedit")) {
+      ids.push_back(QStringLiteral("config.ok"));
     } else if (kind == QStringLiteral("monitor")) {
       ids.push_back(QStringLiteral("config.phones.0"));
       ids.push_back(QStringLiteral("config.phones.1"));
@@ -2904,6 +3022,8 @@ void AppController::rebuildFocusIds() {
                           .arg(entry.toMap().value(QStringLiteral("index")).toInt()));
       }
     }
+    // The rack's REC SOURCE neighbour (W2b).
+    ids.push_back(QStringLiteral("trackfx.recsource"));
   } else if (mixerVm_->channelOpen()) {
     // Full channel popout: it traps the ring like the config popup, so the
     // panel can reach every control of the channel it shows.
@@ -2927,7 +3047,7 @@ void AppController::rebuildFocusIds() {
   } else if (shiftFace_) {
     switch (tab_) {
       case 0:
-        if (mixerVm_->trackMode()) {
+        if (mixerVm_->selectedMode()) {
           ids.push_back(QStringLiteral("shift.track.input"));
           ids.push_back(QStringLiteral("shift.track.input.pair"));
           ids.push_back(QStringLiteral("shift.track.output"));
@@ -2937,7 +3057,7 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("shift.track.cue"));
           ids.push_back(QStringLiteral("shift.track.out34"));
           ids.push_back(QStringLiteral("shift.monitor.sends"));
-          ids.push_back(QStringLiteral("shift.track.monitor"));
+          ids.push_back(QStringLiteral("shift.track.mode"));
           ids.push_back(QStringLiteral("shift.track.fx"));
         } else {
           const int first = mixerVm_->bank() * kStripsPerBank;
@@ -3092,11 +3212,12 @@ void AppController::rebuildFocusIds() {
       ids.push_back(QStringLiteral("transport.rec"));
     }
     ids.push_back(QStringLiteral("transport.click"));
+    ids.push_back(QStringLiteral("transport.recmode"));
     switch (tab_) {
       case 0: {
         ids.push_back(QStringLiteral("mixer.mode.0"));
         ids.push_back(QStringLiteral("mixer.mode.1"));
-        if (mixerVm_->trackMode()) {
+        if (mixerVm_->selectedMode()) {
           // Only the current page of four is on screen; the header page buttons
           // walk the same list the MIXER face banks.
           const int first = mixerVm_->bank() * kStripsPerBank;
@@ -3109,6 +3230,7 @@ void AppController::rebuildFocusIds() {
           }
           ids.push_back(QStringLiteral("track.gain"));
           ids.push_back(QStringLiteral("track.pan"));
+          ids.push_back(QStringLiteral("track.mode"));
           ids.push_back(QStringLiteral("track.arm"));
           ids.push_back(QStringLiteral("track.mute"));
           ids.push_back(QStringLiteral("track.solo"));
@@ -3121,6 +3243,7 @@ void AppController::rebuildFocusIds() {
                                                 MixerViewModel::SlotRole);
             const int strip = slot.toInt();
             ids.push_back(QStringLiteral("mixer.expand.%1").arg(strip));
+            ids.push_back(QStringLiteral("mixer.trackmode.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.select.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.in.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.gain.%1").arg(strip));
@@ -3154,10 +3277,11 @@ void AppController::rebuildFocusIds() {
         for (int track = 0; track < kNumStrips; ++track) {
           ids.push_back(QStringLiteral("recorder.track.%1").arg(track));
         }
-        ids.push_back(QStringLiteral("recorder.arm"));
+        ids.push_back(QStringLiteral("recorder.mode"));
         ids.push_back(QStringLiteral("recorder.start"));
         for (int row = 0; row < recorderVm_->takes()->rowCount(); ++row) {
           ids.push_back(QStringLiteral("recorder.take.%1").arg(row));
+          ids.push_back(QStringLiteral("recorder.take.menu.%1").arg(row));
         }
         break;
       }
@@ -3260,6 +3384,212 @@ void AppController::expirePendingRec() {
   if (!audio_.recording()) toggleTake();
 }
 
+QString AppController::recModeText() const {
+  return QString::fromStdString(
+      ::mnky::app::recModeText(state_.recMode.load(), state_.countInBars.load()));
+}
+
+void AppController::openRecMode() {
+  if (recording()) {
+    // Changing the schedule mid-take would silently rewrite what the running
+    // take means; stop first and say so.
+    showNotice(NoticeWarn, QStringLiteral("stop the take before changing RECMODE"));
+    return;
+  }
+  configVm_->setTrackModeIndex(mixerVm_->trackIndex());
+  openConfigInternal(QStringLiteral("recmode"));
+}
+
+int AppController::trackRecSource(int slot) const { return mixer_.recSource(slot); }
+
+void AppController::cycleTrackMode(int slot) {
+  if (slot < 0 || slot >= audio::kMaxTracks) return;
+  const int next = nextTrackMode(mixer_.mode(slot));
+  mixerVm_->setMode(slot, next);
+  showTextPopup(QStringLiteral("TRACK %1 MODE").arg(slot + 1, 2, 10, QLatin1Char('0')),
+                QString::fromStdString(trackModeWord(next)));
+  if (trackModeRecords(next)) {
+    showNotice(NoticeInfo,
+               QStringLiteral("TRACK %1 %2 - input %3")
+                   .arg(slot + 1, 2, 10, QLatin1Char('0'))
+                   .arg(QString::fromStdString(trackModeWord(next)))
+                   .arg(mixerVm_->inSourceText(slot)));
+  }
+}
+
+void AppController::openTrackMode(int slot) {
+  if (slot < 0 || slot >= audio::kMaxTracks) slot = mixerVm_->trackIndex();
+  configVm_->setTrackModeIndex(slot);
+  openConfigInternal(QStringLiteral("trackmode"));
+}
+
+void AppController::applyTakeModeAfterStop(MixerModel::TrackMask recorded) {
+  for (int track = 0; track < audio::kMaxTracks && track < MixerModel::kMaskBits;
+       ++track) {
+    if ((recorded & (MixerModel::TrackMask{1} << static_cast<unsigned>(track))) == 0) {
+      continue;
+    }
+    // ARM recorded and is done, so it falls back to PLAY (take audible, live
+    // input off). OVERDUB keeps layering: the user chose that mode.
+    if (mixer_.mode(track) == kTrackModeArm) {
+      mixerVm_->setMode(track, kTrackModePlay);
+    }
+  }
+}
+
+void AppController::takeAction(int action) {
+  const int row = configVm_->takeTargetRow();
+  switch (action) {
+    case 0:  // ACTIVE
+      recorderVm_->selectRow(row);
+      recorderVm_->activateSelected();
+      mixerVm_->notifyActiveTakesChanged();
+      timelineVm_->refresh();
+      showNotice(NoticeInfo, QStringLiteral("take %1 is ACTIVE").arg(
+                                 recorderVm_->activeTake()));
+      break;
+    case 1:  // EDIT
+      requestEditTake(row);
+      break;
+    case 2:  // RENAME (file + mapping)
+      recorderVm_->selectRow(row);
+      requestRenameTake();
+      break;
+    case 3:  // DELETE (disk + project)
+      recorderVm_->selectRow(row);
+      requestDeleteTake();
+      break;
+    case 4:  // REMOVE (project only)
+      recorderVm_->selectRow(row);
+      requestRemoveTake();
+      break;
+    case 5:  // IMPORT
+      requestImportTake();
+      break;
+    case 6:  // NEW TRACK FROM THIS TAKE
+      requestNewTrackFromTake(row);
+      break;
+    default:
+      break;
+  }
+}
+
+void AppController::openTakeActions(int row) {
+  if (recorderVm_->takes()->count() == 0) {
+    showNotice(NoticeWarn, QStringLiteral("no takes yet - tap START TAKE"));
+    return;
+  }
+  const int clamped = std::clamp(row, 0, recorderVm_->takes()->count() - 1);
+  recorderVm_->selectRow(clamped);
+  configVm_->setTakeTarget(clamped, recorderVm_->takeNameAt(clamped));
+  openConfigInternal(QStringLiteral("takeactions"));
+}
+
+void AppController::requestEditTake(int row) {
+  const auto* entry = recorderVm_->takes()->entry(row);
+  if (entry == nullptr) return;
+  recorderVm_->selectRow(row);
+  configVm_->setTakeTarget(row, entry->name);
+  openConfigInternal(QStringLiteral("takeedit"));
+}
+
+void AppController::requestRemoveTake() {
+  const int row = recorderVm_->selectedRow();
+  const auto* entry = recorderVm_->takes()->entry(row);
+  if (entry == nullptr) {
+    showNotice(NoticeWarn, QStringLiteral("select a row first (...)"));
+    return;
+  }
+  requestConfirm(QStringLiteral("REMOVE TAKE ") + entry->name,
+                 QStringLiteral("Remove from project? The file stays on disk."),
+                 QStringLiteral("REMOVE"), QStringLiteral("take-remove"), row);
+}
+
+void AppController::requestNewTrackFromTake(int row) {
+  const auto* entry = recorderVm_->takes()->entry(row);
+  if (entry == nullptr) {
+    showNotice(NoticeWarn, QStringLiteral("select a row first (...)"));
+    return;
+  }
+  recorderVm_->selectRow(row);
+  // Default name = the take stem (the `<name>` part of `<nn>-<name>-<n>`), so
+  // the drums case reads `beat` without typing.
+  const auto parts = parseTakeFileName(entry->path.filename().string());
+  const QString initial =
+      parts.valid && !parts.name.empty()
+          ? QString::fromStdString(parts.name)
+          : QString::fromStdString(entry->path.stem().string());
+  requestKeypad(QStringLiteral("NEW TRACK FROM TAKE"), initial,
+                QStringLiteral("new-track-from-take"), row);
+}
+
+void AppController::createTrackFromTake(int row, const QString& name, bool move) {
+  const auto* entry = recorderVm_->takes()->entry(row);
+  if (entry == nullptr) return;
+  const QString takeKey = entry->key;
+  const QString takeName = entry->name;
+  const int slot = mixer_.firstInactiveSlot();
+  if (slot < 0) {
+    showNotice(NoticeError, QStringLiteral("no free track slot"));
+    return;
+  }
+  // W3: input NONE, output MAIN, mode PLAY, ACTIVE = the take. The take file
+  // keeps its name: the `NN-` prefix is convention, not binding.
+  if (!mixerVm_->addTrack(slot, name, -1, false, 0)) {
+    showNotice(NoticeError, QStringLiteral("could not add the track"));
+    return;
+  }
+  mixerVm_->setMode(slot, kTrackModePlay);
+  settings_.setActiveTake(slot, takeKey.toStdString());
+  if (move) settings_.setActiveTake(recorderVm_->selectedTrack(), {});
+  recorderVm_->resyncActiveTakes();
+  mixerVm_->refresh();
+  recorderVm_->tracksChanged();
+  timelineVm_->refresh();
+  if (move) {
+    showNotice(NoticeInfo, QStringLiteral("track %1 %2 - TAKE %3")
+                               .arg(slot + 1, 2, 10, QLatin1Char('0'))
+                               .arg(name, takeName));
+  } else {
+    showNotice(NoticeInfo, QStringLiteral("track %1 %2 - TAKE %3 kept on track %4")
+                               .arg(slot + 1, 2, 10, QLatin1Char('0'))
+                               .arg(name, takeName)
+                               .arg(recorderVm_->selectedTrack() + 1));
+  }
+}
+
+void AppController::renderRegionToTrack() {
+  const int track = timelineVm_->selectedTrack();
+  if (!timelineVm_->selectionActive() ||
+      timelineVm_->outBeats() <= timelineVm_->inBeats()) {
+    showNotice(NoticeWarn,
+               QStringLiteral("set IN and OUT before RENDER REGION TO TRACK"));
+    return;
+  }
+  // The take the region is cut from is the session's active take for the track;
+  // the engine resolves the key against the take folder.
+  const auto takeKey = settings_.activeTake(track);
+  if (takeKey.empty()) {
+    showNotice(NoticeWarn, QStringLiteral("no active take to render"));
+    return;
+  }
+  const auto parts = parseTakeFileName(std::filesystem::path(takeKey).filename().string());
+  const std::string name =
+      parts.valid && !parts.name.empty() ? parts.name : "region";
+  std::filesystem::path path;
+  std::string error;
+  if (!audio_.renderRegionToTake(track, takeKey, timelineVm_->inBeats(),
+                                 timelineVm_->outBeats(), name, &path, &error)) {
+    // A refusal names its reason instead of faking a take.
+    showNotice(NoticeError, QString::fromStdString(error));
+    return;
+  }
+  pendingRenderPath_ = path;
+  requestKeypad(QStringLiteral("NEW TRACK FROM RENDER"),
+                QString::fromStdString(path.stem().string()),
+                QStringLiteral("render-region"), -1);
+}
+
 void AppController::startTakeNow() {
   pendingRec_ = false;
   chord_.reset();
@@ -3269,6 +3599,19 @@ void AppController::startTakeNow() {
 void AppController::toggleTake() {
   if (audio_.recording()) {
     stopTake();
+    return;
+  }
+  // W2: a COUNT-IN or PUNCH press does not write yet - the schedule starts the
+  // transport (which zeroes the tick, so the count-in engages at bar 1) and
+  // pollRecSchedule() opens the take on the measure boundary it names.
+  const int recMode = clampRecMode(state_.recMode.load());
+  if (recMode != kRecModeNow && !link_.status().rolling) {
+    if (mixer_.armMask() == 0) {
+      showNotice(NoticeError,
+                 QStringLiteral("take refused (arm at least one strip)"));
+      return;
+    }
+    armRecSchedule();
     return;
   }
   takeArmMask_ = mixer_.armMask();
@@ -3284,6 +3627,77 @@ void AppController::toggleTake() {
   updatePanelLeds();
 }
 
+void AppController::armRecSchedule() {
+  const int recMode = clampRecMode(state_.recMode.load());
+  if (recMode == kRecModeCountIn) {
+    recSchedule_ = RecSchedule::CountIn;
+  } else {
+    // PUNCH records between PUNCH IN and PUNCH OUT; a disabled marker is a
+    // no-op boundary, so the punch runs from the press to the OUT measure (or
+    // to the stop).
+    recSchedule_ = RecSchedule::PunchIn;
+    recPunchOutBar_ = settings_.punch.out.enabled ? settings_.punch.out.measure : 0;
+  }
+  state_.recScheduled.store(true);
+  recScheduleSawRolling_ = false;
+  clearNotice();
+  // START (command 1) resets the tick, so the roll begins at bar 1 exactly as
+  // the status line states.
+  link_.requestTransport(1);
+  updateTransport();
+}
+
+void AppController::cancelRecSchedule() {
+  if (recSchedule_ == RecSchedule::None) return;
+  recSchedule_ = RecSchedule::None;
+  recPunchOutBar_ = 0;
+  state_.recScheduled.store(false);
+  updateTransport();
+}
+
+void AppController::pollRecSchedule(const LinkStatus& status) {
+  if (recSchedule_ == RecSchedule::None) return;
+  if (!status.rolling) {
+    // The transport START is a queued command, so the first polls after the REC
+    // press still read "stopped". Only a roll that has started and then stopped
+    // cancels the schedule.
+    if (recScheduleSawRolling_) cancelRecSchedule();
+    return;
+  }
+  recScheduleSawRolling_ = true;
+  const int bar = barOfTick(status.tick);
+  if (recSchedule_ == RecSchedule::CountIn) {
+    // The click rolls from bar 1 for n bars with the recorder silent; the take
+    // then opens at bar 1 of the recorded timeline, which is what the status
+    // line promises. The tick cannot go negative, so the recorded bar 1 is
+    // reached by restarting the transport on the boundary (same tempo, same
+    // click phase) instead of pre-rolling to bar -n.
+    const int engageBar = clampCountInBars(state_.countInBars.load()) + 1;
+    if (bar < engageBar) return;
+    recSchedule_ = RecSchedule::None;
+    state_.recScheduled.store(false);
+    link_.requestTransport(0);
+    link_.requestTransport(1);
+    toggleTake();
+    return;
+  }
+  const int punchIn = settings_.punch.in.enabled ? settings_.punch.in.measure : 1;
+  if (!audio_.recording()) {
+    if (bar >= punchIn) {
+      recSchedule_ = RecSchedule::None;
+      state_.recScheduled.store(false);
+      toggleTake();
+    }
+    return;
+  }
+  if (recPunchOutBar_ > 0 && bar >= recPunchOutBar_) {
+    // PUNCH OUT: the take stops writing, the transport keeps rolling so the
+    // performance can continue past the punch.
+    stopTake();
+    cancelRecSchedule();
+  }
+}
+
 void AppController::stopTake() {
   const auto take = audio_.stopTake();
   state_.recording.store(false);
@@ -3292,9 +3706,23 @@ void AppController::stopTake() {
   // names before the take list rescans. This is the app-side name policy; a
   // future Recorder API can take the template directly.
   if (take.files > 0 && !take.path.empty()) {
-    recorderVm_->adoptRecordedTake(take.path, takeArmMask_);
-    // A1: the strips spell out "ARM MUTES TAKE" for 8 s after the take stops.
-    mixerVm_->notifyTakeStopped();
+    std::string lastKey;
+    recorderVm_->adoptRecordedTake(take.path, takeArmMask_, &lastKey);
+    // W1 step 4: the recorded tracks switch to PLAY and the notice names the
+    // take and the way to hear it. OVERDUB stays in OVERDUB (§9 decision): it
+    // is a layering mode the user asked for, not a one-shot arm.
+    applyTakeModeAfterStop(takeArmMask_);
+    if (!lastKey.empty()) {
+      // The notice names the take without its extension, exactly as the plan
+      // writes it: `TAKE SAVED 02-bass-001 - mode PLAY to hear it`.
+      std::string stem = std::filesystem::path(lastKey).filename().string();
+      if (stem.size() > 4 && stem.compare(stem.size() - 4, 4, ".wav") == 0) {
+        stem.resize(stem.size() - 4);
+      }
+      showNotice(NoticeInfo, QStringLiteral("TAKE SAVED ") +
+                                 QString::fromStdString(stem) +
+                                 QStringLiteral(" - mode PLAY to hear it"));
+    }
   }
   recorderVm_->takeStateChanged();
   if (take.files > 0) {

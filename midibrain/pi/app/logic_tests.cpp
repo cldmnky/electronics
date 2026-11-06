@@ -373,17 +373,26 @@ void mixerTests() {
   checkNear(engine.channel(3).gain, dbToGain(-6.0f), 1e-6, "mixer snapshot gain");
   checkNear(engine.channel(3).pan, 0.25, 1e-6, "mixer snapshot pan");
   checkNear(engine.channel(3).send[1], 0.5, 1e-6, "mixer snapshot send");
-  // MPC parity monitor: 0 PLAY, 1 AUTO, 2 BOTH, 3 MON. The engine enum binds
-  // 3 to audio::MonitorMode::InputOnly.
-  model.setMonitor(3, 3);
-  check(model.monitor(3) == 3, "monitor-only mode is stored unclamped");
+  // Track modes (docs/daw-plan.md W1): 0 PLAY, 1 ARM, 2 OVERDUB, 3 LIVE. The
+  // number is the engine's MonitorMode value 1:1, so 3 binds to InputOnly.
+  model.setMode(3, 3);
+  check(model.mode(3) == 3, "LIVE mode is stored unclamped");
   check(model.channel(3).monitor == audio::MonitorMode::InputOnly,
-        "monitor-only mode reaches the engine snapshot as InputOnly");
-  model.setMonitor(3, 9);
-  check(model.monitor(3) == 3, "monitor mode clamps to 0..3");
-  model.setMonitor(3, 1);
+        "LIVE mode reaches the engine snapshot as InputOnly");
+  model.setMode(3, 9);
+  check(model.mode(3) == 3, "track mode clamps to 0..3");
+  model.setMode(3, 1);
   check(static_cast<int>(model.channel(3).monitor) == 1,
-        "auto monitor mode stays Auto");
+        "ARM mode stays Auto");
+  check(model.arm(3), "ARM records (derived arm)");
+  check(model.channel(3).arm, "ARM arms the engine strip so its take stays muted");
+  model.setMode(3, 2);
+  check(model.arm(3), "OVERDUB records too (W2b: ARM and OVERDUB record)");
+  check(!model.channel(3).arm,
+        "OVERDUB does not arm the engine strip, so the take keeps playing");
+  model.setMode(3, 0);
+  check(!model.arm(3), "PLAY never records");
+  model.setMode(3, 1);
   // Input source, pair flag and output destination are separate engine routing
   // state (Engine::setChannel leaves them alone), so the same snapshot carries
   // them and a strip picker is live on the next block.
@@ -396,15 +405,18 @@ void mixerTests() {
   check(engine.inputSource(4) == 9 && engine.inputPair(5) &&
             engine.outputDestination(6) == audio::OutputDestination::Phones,
         "the mixer snapshot carries input source, pair and output destination");
-  model.setMonitor(3, 2);
+  model.setMode(3, 2);
   model.applyTo(engine);
   check(engine.channel(3).monitor == audio::MonitorMode::On,
-        "mixer snapshot carries per-track monitor mode");
-  model.setMonitor(3, 0);
+        "mixer snapshot carries OVERDUB as the On monitor mode");
+  model.setMode(3, 0);
   model.applyTo(engine);
   check(engine.channel(3).monitor == audio::MonitorMode::Off,
-        "per-track monitor mode off reaches the engine");
-  check((model.armMask() & (1u << 3)) != 0, "arm mask carries the armed strip");
+        "PLAY reaches the engine as Off (take only)");
+  check((model.armMask() & (1u << 3)) == 0,
+        "a PLAY track drops out of the arm mask");
+  model.setMode(3, 1);
+  check((model.armMask() & (1u << 3)) != 0, "arm mask carries the ARM track");
   model.setPan(3, 2.0f);
   checkNear(model.pan(3), 1.0, 1e-6, "pan clamps at the top");
   model.setPan(3, 0.49f);
@@ -1091,9 +1103,9 @@ void projectRoundTripTests() {
   mixer.setCueSend(2, 0.4f);
   mixer.setOut34Send(2, 0.75f);
   mixer.setOut34Mode(1);
-  mixer.setMonitor(2, 0);
-  mixer.setMonitor(3, 2);
-  mixer.setMonitor(4, 3);
+  mixer.setMode(2, 0);
+  mixer.setMode(3, 2);
+  mixer.setMode(4, 3);
   settings.punch.playFrom = session::PunchPoint{true, 1};
   settings.punch.in = session::PunchPoint{true, 5};
   settings.punch.out = session::PunchPoint{true, 9};
@@ -1228,9 +1240,9 @@ void projectRoundTripTests() {
   mixer.setCueSend(2, 0.0f);
   mixer.setOut34Send(2, 0.0f);
   mixer.setOut34Mode(0);
-  mixer.setMonitor(2, 1);
-  mixer.setMonitor(3, 1);
-  mixer.setMonitor(4, 1);
+  mixer.setMode(2, 1);
+  mixer.setMode(3, 1);
+  mixer.setMode(4, 1);
   settings.reset();
   eq.setSubject(1);
   eq.setType(0, 0);
@@ -1263,8 +1275,8 @@ void projectRoundTripTests() {
   checkNear(mixer.cueSend(2), 0.4, 1e-6, "project load restores the cue send");
   checkNear(mixer.out34Send(2), 0.75, 1e-6, "project load restores the OUT3&4 send");
   check(mixer.out34Mode() == 1, "project load restores the OUT3&4 mode");
-  check(mixer.monitor(2) == 0 && mixer.monitor(3) == 2 && mixer.monitor(4) == 3,
-        "project load restores per-track monitor modes");
+  check(mixer.mode(2) == 0 && mixer.mode(3) == 2 && mixer.mode(4) == 3,
+        "project load restores per-track modes");
   check(settings.punch.in.enabled && settings.punch.in.measure == 5 &&
             settings.punch.out.measure == 9,
         "project load restores the punch section");
@@ -2889,6 +2901,70 @@ void noPicoModeTests() {
         "hardware mode keeps the TRS monitor rows available");
 }
 
+// docs/daw-plan.md W1/W2/W2b: the mode words, the record-source names and the
+// scheduled-recording status strings are UI law, so they are asserted verbatim.
+void trackModeTests() {
+  check(trackModeWord(0) == "PLAY" && trackModeWord(1) == "ARM" &&
+            trackModeWord(2) == "OVERDUB" && trackModeWord(3) == "LIVE",
+        "mode words are LIVE/PLAY/ARM/OVERDUB");
+  check(trackModeWord(-4) == "ARM" && trackModeWord(99) == "LIVE",
+        "an out-of-range mode clamps to the 0..3 store");
+  // The 7-tap first recording needs PLAY -> ARM in one tap.
+  check(nextTrackMode(kTrackModePlay) == kTrackModeArm,
+        "one tap on a PLAY track selects ARM");
+  check(nextTrackMode(kTrackModeLive) == kTrackModePlay,
+        "the cycle wraps LIVE -> PLAY");
+  check(trackModeRecords(kTrackModeArm) && trackModeRecords(kTrackModeOverdub) &&
+            !trackModeRecords(kTrackModePlay) && !trackModeRecords(kTrackModeLive),
+        "ARM and OVERDUB record, PLAY and LIVE do not (W8)");
+
+  check(recSourceText(0) == "PRE" && recSourceText(1) == "POST" &&
+            recSourceText(2) == "POST+FX",
+        "REC SOURCE names PRE / POST / POST+FX");
+  check(recSourceText(clampRecSource(-1)) == "PRE" &&
+            recSourceText(clampRecSource(9)) == "POST+FX",
+        "REC SOURCE clamps to 0..2");
+
+  MixerModel modeModel;
+  modeModel.addTrack(0, "drums");
+  modeModel.addTrack(1, "bass");
+  check(modeModel.recSource(0) == kRecSourcePre, "a new track records PRE");
+  modeModel.setRecSource(0, 2);
+  check(modeModel.recSource(0) == kRecSourcePostFx,
+        "the per-track REC SOURCE is stored");
+  modeModel.setMode(0, kTrackModeArm);
+  modeModel.setMode(1, kTrackModeOverdub);
+  auto mask = modeModel.armMask();
+  check((mask & 1u) != 0 && (mask & 2u) != 0,
+        "the arm mask carries ARM and OVERDUB tracks");
+  modeModel.setMode(0, kTrackModePlay);
+  mask = modeModel.armMask();
+  check((mask & 1u) == 0, "a PLAY track is never in the arm mask");
+  modeModel.setArm(0, true);
+  check(modeModel.mode(0) == kTrackModeArm, "ARM (the button) maps onto the ARM mode");
+  modeModel.setArm(0, false);
+  check(modeModel.mode(0) == kTrackModePlay, "disarming maps onto PLAY");
+
+  // W2 status strings: exactly what will happen and when.
+  check(recScheduleStatus(kRecModeCountIn, 2, true, 1, 9, 13) ==
+            "COUNT-IN 2 bars - recording at bar 1",
+        "the count-in status names the bars and the engage bar");
+  check(recScheduleStatus(kRecModePunch, 2, true, 1, 9, 13) ==
+            "PUNCH - recording at bar 9 of 13",
+        "the punch status names PUNCH IN of PUNCH OUT");
+  check(recScheduleStatus(kRecModeNow, 2, false, 1, 9, 13).empty(),
+        "NOW needs no schedule line");
+  check(recModeText(kRecModeNow, 2) == "NOW" &&
+            recModeText(kRecModeCountIn, 2) == "COUNT-IN 2" &&
+            recModeText(kRecModePunch, 2) == "PUNCH",
+        "the transport strip readout names the armed RECMODE");
+  check(clampCountInBars(0) == 1 && clampCountInBars(99) == 8,
+        "the count-in is 1..8 bars");
+  check(barOfTick(0) == 1 && barOfTick(kTicksPerBar) == 2 &&
+            barOfTick(kTicksPerBar * 8) == 9,
+        "the measure boundary maps ticks to 1-based bars");
+}
+
 void styleTests() {
   QFile file(QStringLiteral(":/qml/Style.qml"));
   check(file.open(QIODevice::ReadOnly | QIODevice::Text), "QML Style resource opens");
@@ -2975,6 +3051,7 @@ int runAll() {
   pipeLinkTests();
   eqForwardingTests();
   noPicoModeTests();
+  trackModeTests();
   styleTests();
   std::printf("%s mnkybox app logic: %d checks, %d failures\n",
               gFailures == 0 ? "PASS" : "FAIL", gChecks, gFailures);

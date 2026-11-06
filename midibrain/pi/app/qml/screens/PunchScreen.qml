@@ -59,7 +59,7 @@ Item {
             text: page.compact ? "" :
                   "PLAY FROM starts playback at the marker; PUNCH IN arms recording and " +
                   "PUNCH OUT disarms it. The session keeps the points; the engine exposes " +
-                  "the transport position, but automatic punch scheduling is not wired yet."
+                  "the transport position. RECMODE PUNCH (long-press REC) writes between PUNCH IN and PUNCH OUT."
             visible: !page.compact
             color: Style.textDim
             font.pixelSize: Style.fontSmall

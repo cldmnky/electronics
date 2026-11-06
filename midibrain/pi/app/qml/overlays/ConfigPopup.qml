@@ -182,8 +182,13 @@ Rectangle {
             }
 
             // ---- INPUT MONITOR (TRACK SHIFT summary) ----------------------
+            // ---- TRACK MODE (W1) + REC SOURCE (W2b) ------------------------
+            // The mode words replace the old monitor letters: LIVE processes the
+            // input, PLAY plays the take, ARM records and waits, OVERDUB layers
+            // the live input over the take. REC SOURCE names where the take
+            // taps the channel. Both write immediately (house rule: no apply).
             Column {
-                visible: config.kind === "trackmonitor"
+                visible: config.kind === "trackmode"
                 width: parent.width
                 spacing: Style.gapTight
 
@@ -191,7 +196,7 @@ Rectangle {
                     width: parent.width
                     height: 18
                     text: "Track " + String(mixer.trackIndex + 1).padStart(2, "0") +
-                          " input monitoring"
+                          " mode"
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     font.weight: Font.DemiBold
@@ -201,14 +206,170 @@ Rectangle {
                     width: parent.width
                     height: Style.touch
                     spacing: Style.gapTight
-                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "PLAY"; checked: config.trackMonitor === 0; focusId: "config.trackmonitor.0"; onClicked: config.trackMonitor = 0 }
-                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "AUTO"; checked: config.trackMonitor === 1; focusId: "config.trackmonitor.1"; onClicked: config.trackMonitor = 1 }
-                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "BOTH"; checked: config.trackMonitor === 2; focusId: "config.trackmonitor.2"; onClicked: config.trackMonitor = 2 }
-                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "MON"; checked: config.trackMonitor === 3; focusId: "config.trackmonitor.3"; onClicked: config.trackMonitor = 3 }
+                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "PLAY"; textSize: Style.fontSmall; checked: config.trackMode === 0; focusId: "config.trackmode.0"; onClicked: config.trackMode = 0 }
+                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "ARM"; textSize: Style.fontSmall; checked: config.trackMode === 1; checkedColor: Style.record; focusId: "config.trackmode.1"; onClicked: config.trackMode = 1 }
+                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "OVERDUB"; textSize: 10; checked: config.trackMode === 2; focusId: "config.trackmode.2"; onClicked: config.trackMode = 2 }
+                    TouchButton { width: (parent.width - Style.gapTight * 3) / 4; height: parent.height; text: "LIVE"; textSize: Style.fontSmall; checked: config.trackMode === 3; focusId: "config.trackmode.3"; onClicked: config.trackMode = 3 }
                 }
                 Text {
                     width: parent.width
-                    text: "PLAY monitors the active take only; AUTO switches to live input when the track is armed or has no take; BOTH layers live input over the take; MON monitors live input only."
+                    text: "LIVE is input only, PLAY is the take, ARM records and waits for REC, OVERDUB records the live layer over the take. ARM and OVERDUB record; nothing armed means nothing is recorded."
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    wrapMode: Text.Wrap
+                }
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: "REC SOURCE  " + config.trackRecSourceText
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+                    TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "PRE"; textSize: Style.fontSmall; checked: config.trackRecSource === 0; focusId: "config.recsource.0"; onClicked: config.trackRecSource = 0 }
+                    TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "POST"; textSize: Style.fontSmall; checked: config.trackRecSource === 1; focusId: "config.recsource.1"; onClicked: config.trackRecSource = 1 }
+                    TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "POST+FX"; textSize: Style.fontSmall; checked: config.trackRecSource === 2; focusId: "config.recsource.2"; onClicked: config.trackRecSource = 2 }
+                }
+                // The one-line monitor legend (plan §5): the MPC source names
+                // stay documented even though the face now speaks mode words.
+                Text {
+                    width: parent.width
+                    text: "MON input / AUTO smart / BOTH layer / PLAY takes"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    wrapMode: Text.Wrap
+                }
+            }
+
+            // ---- REC MODE (W2) ---------------------------------------------
+            Column {
+                visible: config.kind === "recmode"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+                    TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "NOW"; textSize: Style.fontSmall; checked: config.recMode === 0; focusId: "config.recmode.0"; onClicked: config.recMode = 0 }
+                    TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "COUNT-IN"; textSize: Style.fontSmall; checked: config.recMode === 1; focusId: "config.recmode.1"; onClicked: config.recMode = 1 }
+                    TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "PUNCH"; textSize: Style.fontSmall; checked: config.recMode === 2; focusId: "config.recmode.2"; onClicked: config.recMode = 2 }
+                }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+                    visible: config.recMode === 1
+                    TouchButton { width: Style.touch; height: parent.height; text: "-"; textSize: 18; onClicked: config.countInBars = Math.max(1, config.countInBars - 1) }
+                    KnobChip {
+                        width: parent.width - Style.touch * 2 - Style.gapTight * 3
+                        height: parent.height
+                        label: "COUNT-IN"
+                        value: config.countInBars
+                        valueText: config.countInBars + " bars"
+                        minimumValue: 1
+                        maximumValue: 8
+                        stepSize: 1
+                        dialScale: 8
+                        popupLabel: "COUNT-IN"
+                        popupKind: "int"
+                        focusId: "config.countin"
+                        onMoved: (value) => config.countInBars = Math.round(value)
+                    }
+                    TouchButton { width: Style.touch; height: parent.height; text: "+"; textSize: 18; onClicked: config.countInBars = Math.min(8, config.countInBars + 1) }
+                }
+                Text {
+                    width: parent.width
+                    text: config.recModeSummary
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    wrapMode: Text.Wrap
+                }
+            }
+
+            // ---- TAKE row actions (W4) -------------------------------------
+            Column {
+                visible: config.kind === "takeactions"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: "TAP A ROW TO RUN IT - THE TAKE STAYS SELECTED"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
+                }
+                Grid {
+                    width: parent.width
+                    columns: 2
+                    spacing: Style.gapTight
+                    Repeater {
+                        model: config.takeActions
+                        delegate: TouchButton {
+                            width: (parent.width - Style.gapTight) / 2
+                            height: Style.touch
+                            text: modelData
+                            textSize: Style.fontSmall
+                            variant: modelData === "DELETE" ? "danger" : "secondary"
+                            focusId: "config.takeaction." + index
+                            onClicked: config.chooseTakeAction(index)
+                        }
+                    }
+                }
+            }
+
+            // ---- EDIT a take: the W5 popup lands next wave -------------------
+            Column {
+                visible: config.kind === "takeedit"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Text {
+                    width: parent.width
+                    text: "edit popup lands in the next wave"
+                    color: Style.text
+                    font.pixelSize: Style.fontBody
+                    wrapMode: Text.Wrap
+                }
+                Text {
+                    width: parent.width
+                    text: "The take is unchanged. TRIM/SPLIT/GAIN/FADE/NORMALIZE with the big waveform arrive with the EDIT popup (plan W5)."
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    wrapMode: Text.Wrap
+                }
+            }
+
+            // ---- NEW TRACK FROM TAKE (W3): MOVE / KEEP ON SOURCE --------------
+            Column {
+                visible: config.kind === "trackfromtake"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Text {
+                    width: parent.width
+                    text: config.trackFromTakeText
+                    color: Style.text
+                    font.pixelSize: Style.fontBody
+                    wrapMode: Text.Wrap
+                }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+                    TouchButton { width: (parent.width - Style.gapTight) / 2; height: parent.height; text: "MOVE"; textSize: Style.fontSmall; variant: "primary"; focusId: "config.trackfromtake.0"; onClicked: config.chooseTrackFromTake(0) }
+                    TouchButton { width: (parent.width - Style.gapTight) / 2; height: parent.height; text: "KEEP ON SOURCE"; textSize: Style.fontSmall; focusId: "config.trackfromtake.1"; onClicked: config.chooseTrackFromTake(1) }
+                }
+                Text {
+                    width: parent.width
+                    text: "MOVE is the default: the new track plays the take and the source track stops. KEEP ON SOURCE leaves both tracks pointing at the same file."
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
@@ -1231,6 +1392,19 @@ Rectangle {
                     font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap
                     elide: Text.ElideRight
+                }
+                // W3: bake IN..OUT into a new take and drop it on a new track.
+                TouchButton {
+                    width: parent.width
+                    height: Style.touch
+                    text: "RENDER REGION TO TRACK"
+                    textSize: Style.fontSmall
+                    active: config.regionApplies
+                    focusId: "config.renderregion"
+                    onClicked: {
+                        app.configCancel()
+                        app.renderRegionToTrack()
+                    }
                 }
             }
 

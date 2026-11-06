@@ -632,6 +632,51 @@ void AudioGlue::applyMonitorSettings(const SessionSettings& settings) {
   compReleaseMs_.store(settings.mainComp.releaseMs);
   compMakeupDb_.store(settings.mainComp.makeupDb);
   compMode_.store(settings.mainComp.mode);
+  // REC SOURCE travels with the monitor settings: one push per tick like the
+  // values above, so a strip edit lands without a per-control callback.
+  for (int track = 0; track < audio::kMaxTracks; ++track) {
+    applyRecSource(track, mixer_.recSource(track));
+  }
+}
+
+void AudioGlue::applyRecSource(int track, int source) {
+  if (track < 0 || track >= audio::kMaxTracks) return;
+  engine_.setRecSource(track, static_cast<audio::RecSource>(clampRecSource(source)));
+}
+
+int AudioGlue::recSource(int track) const {
+  if (track < 0 || track >= audio::kMaxTracks) return kRecSourcePre;
+  return static_cast<int>(engine_.recSource(track));
+}
+
+bool AudioGlue::renderRegionToTake(int track, const std::string& takeKey,
+                                   double inBeats, double outBeats,
+                                   const std::string& name,
+                                   std::filesystem::path* out, std::string* error) {
+  if (out != nullptr) out->clear();
+  if (takeKey.empty()) {
+    if (error != nullptr) *error = "no active take to render";
+    return false;
+  }
+  if (!(outBeats > inBeats)) {
+    if (error != nullptr) *error = "OUT must be after IN";
+    return false;
+  }
+  audio::TakeRegion region;
+  region.take = takeKey;
+  region.offsetBeats = inBeats < 0.0 ? 0.0 : inBeats;
+  region.lengthBeats = outBeats - region.offsetBeats;
+  audio::RenderedTake rendered;
+  // Control thread: the engine resolves the take key against the take folder
+  // and writes the new file; no audio callback state is touched.
+  if (!engine_.renderRegionToTake(region, state_.takeDirectory().string(), track, name,
+                                  rendered, error)) {
+    return false;
+  }
+  if (out != nullptr) *out = std::filesystem::path(rendered.path);
+  log("render region to take: " + rendered.path + " (" +
+      std::to_string(rendered.frames) + " frames)");
+  return true;
 }
 
 void AudioGlue::applyTakeLoops(const SessionSettings& settings) {

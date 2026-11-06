@@ -18,7 +18,7 @@ Rectangle {
     property string fx2Name: "NONE"
     readonly property string nameText: stripName !== "" ? stripName
                                                         : "IN " + String(stripIndex + 1).padStart(2, "0")
-    readonly property int monitor: mixer.monitorAt(stripIndex)
+    readonly property int monitor: mixer.modeAt(stripIndex)
 
     color: Style.panel
     radius: Style.corner
@@ -100,13 +100,12 @@ Rectangle {
         TouchButton {
             width: parent.width
             height: Style.touch
-            text: root.monitor === 0 ? "M PLAY"
-                  : (root.monitor === 1 ? "M AUTO"
-                     : (root.monitor === 2 ? "M BOTH" : "M MON"))
+            // W1: the shift row shows the same mode words as the strip pill.
+            text: "M " + ["PLAY", "ARM", "OVERDUB", "LIVE"][Math.max(0, Math.min(3, root.monitor))]
             textSize: Style.fontSmall
             checked: root.monitor !== 1
             focusId: "shift.mixer.monitor." + root.stripIndex
-            onClicked: mixer.setMonitor(root.stripIndex, (root.monitor + 1) % 4)
+            onClicked: mixer.setMode(root.stripIndex, (root.monitor + 1) % 4)
         }
     }
 }

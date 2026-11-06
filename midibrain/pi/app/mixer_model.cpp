@@ -165,20 +165,28 @@ audio::Channel MixerModel::channel(int index) const {
   out.pan = strip.pan.load(std::memory_order_relaxed);
   out.mute = strip.mute.load(std::memory_order_relaxed);
   out.solo = strip.solo.load(std::memory_order_relaxed);
-  out.arm = strip.arm.load(std::memory_order_relaxed);
+  const int modeValue = strip.mode.load(std::memory_order_relaxed);
+  // Only ARM arms the engine strip: an armed strip mutes its own take voice
+  // (the explicit ARM mode says so), while OVERDUB has to keep the take voice
+  // to layer the live input over it. OVERDUB still records (armMask below).
+  out.arm = modeValue == kTrackModeArm;
   for (int send = 0; send < audio::kNumSends; ++send) {
     out.send[send] = strip.send[send].load(std::memory_order_relaxed);
   }
   out.cueSend = strip.cueSend.load(std::memory_order_relaxed);
   out.out34Send = strip.out34Send.load(std::memory_order_relaxed);
-  const int monitor = strip.monitor.load(std::memory_order_relaxed);
-  // Session monitor values are the engine enum values: 0 Off (PLAY only),
-  // 1 Auto, 2 On (BOTH), 3 InputOnly (MON; live input always, take never).
-  // setChannel()/setMonitorMode() sanitize the same range on the engine side.
-  switch (monitor) {
-    case 0: out.monitor = audio::MonitorMode::Off; break;
-    case 2: out.monitor = audio::MonitorMode::On; break;
-    case 3: out.monitor = audio::MonitorMode::InputOnly; break;
+  // REC SOURCE (W2b): the app stores 0/1/2 and audio::RecSource is the same
+  // order (Pre/Post/PostFx), so the snapshot carries the tap point the strip
+  // chose; tapPoint stays the PRE variant selector (raw vs post-gain).
+  out.recSource =
+      static_cast<audio::RecSource>(clampRecSource(strip.recSource.load(std::memory_order_relaxed)));
+  // Session mode values are the engine enum values: 0 Off (PLAY only), 1 Auto
+  // (ARM), 2 On (OVERDUB layer), 3 InputOnly (LIVE). setChannel() /
+  // setMonitorMode() sanitize the same range on the engine side.
+  switch (modeValue) {
+    case kTrackModePlay: out.monitor = audio::MonitorMode::Off; break;
+    case kTrackModeOverdub: out.monitor = audio::MonitorMode::On; break;
+    case kTrackModeLive: out.monitor = audio::MonitorMode::InputOnly; break;
     default: out.monitor = audio::MonitorMode::Auto; break;
   }
   return out;
@@ -249,11 +257,29 @@ bool MixerModel::solo(int index) const {
 }
 
 void MixerModel::setArm(int index, bool arm) {
-  if (valid(index)) strips_[index].arm.store(arm, std::memory_order_relaxed);
+  setMode(index, arm ? kTrackModeArm : kTrackModePlay);
 }
 
-bool MixerModel::arm(int index) const {
-  return valid(index) && strips_[index].arm.load(std::memory_order_relaxed);
+bool MixerModel::arm(int index) const { return trackModeRecords(mode(index)); }
+
+void MixerModel::setMode(int index, int mode) {
+  if (!valid(index)) return;
+  strips_[index].mode.store(clampTrackMode(mode), std::memory_order_relaxed);
+}
+
+int MixerModel::mode(int index) const {
+  return valid(index) ? strips_[index].mode.load(std::memory_order_relaxed)
+                      : kTrackModeArm;
+}
+
+void MixerModel::setRecSource(int index, int source) {
+  if (!valid(index)) return;
+  strips_[index].recSource.store(clampRecSource(source), std::memory_order_relaxed);
+}
+
+int MixerModel::recSource(int index) const {
+  return valid(index) ? strips_[index].recSource.load(std::memory_order_relaxed)
+                      : kRecSourcePre;
 }
 
 void MixerModel::setSend(int index, int send, float level) {
@@ -293,16 +319,6 @@ void MixerModel::setOut34Send(int index, float level) {
 
 float MixerModel::out34Send(int index) const {
   return valid(index) ? strips_[index].out34Send.load(std::memory_order_relaxed) : 0.0f;
-}
-
-void MixerModel::setMonitor(int index, int mode) {
-  if (!valid(index)) return;
-  strips_[index].monitor.store(std::clamp(mode, 0, 3),
-                               std::memory_order_relaxed);
-}
-
-int MixerModel::monitor(int index) const {
-  return valid(index) ? strips_[index].monitor.load(std::memory_order_relaxed) : 1;
 }
 
 void MixerModel::setInCh(int index, int channel) {

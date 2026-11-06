@@ -141,13 +141,11 @@ Item {
                             inputText: model.inputText
                             level: model.level
                             clip: model.clip
-                            monitor: model.monitor
-                            monitorMark: model.monitorMark
+                            mode: model.mode
+                            modeWord: model.modeWord
                             mute: model.mute
                             solo: model.solo
                             arm: model.arm
-                            armMutesTake: model.armMutesTake
-                            armMutesBadge: model.armMutesBadge
                             selected: model.selected
                         }
                     }
@@ -552,11 +550,11 @@ Item {
                         TouchButton {
                             width: parent.width
                             height: Style.touch
-                            text: "MONITOR   " + ["PLAY", "AUTO", "BOTH", "MON"][mixer.trackMonitor]
+                            text: "MODE   " + mixer.selectedModeWord
                             textSize: Style.fontSmall
                             chevron: "down"
-                            focusId: "shift.track.monitor"
-                            onClicked: app.openConfigFrom("trackmonitor", this)
+                            focusId: "shift.track.mode"
+                            onClicked: app.openTrackMode(mixer.trackIndex)
                         }
                         TouchButton {
                             width: parent.width

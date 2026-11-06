@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "../audio/engine.hpp"
+#include "logic.hpp"
 
 namespace mnky::app {
 
@@ -62,6 +63,10 @@ class MixerModel {
   bool mute(int index) const;
   void setSolo(int index, bool solo);
   bool solo(int index) const;
+  // Record arm, derived from the track mode: ARM and OVERDUB record (W8:
+  // nothing armed, nothing recorded), PLAY and LIVE never do. Setting it maps
+  // true onto ARM and false onto PLAY, so the strip's ARM button and the mode
+  // selector can never disagree.
   void setArm(int index, bool arm);
   bool arm(int index) const;
   // DEPRECATED per-track FX send (session v2 mixer.channels[].send[i]). Engine
@@ -83,13 +88,21 @@ class MixerModel {
   float cueSend(int index) const;
   void setOut34Send(int index, float level);
   float out34Send(int index) const;
-  // Per-track input monitoring (session v2 mixer.channels[].monitor, MPC
-  // parity): 0 = PLAY (take only, never live input), 1 = AUTO (live when armed
-  // or no take), 2 = BOTH (live input layered over the take), 3 = MON (live
-  // input always, take never). Clamped to 0..3 and passed to
-  // audio::MonitorMode::InputOnly (Engine::setMonitorMode value 3).
-  void setMonitor(int index, int mode);
-  int monitor(int index) const;
+  // Per-track mode (session v2 mixer.channels[].mode, docs/daw-plan.md W1):
+  // 0 PLAY, 1 ARM, 2 OVERDUB, 3 LIVE. The number is the engine's MonitorMode
+  // value 1:1, so applyTo() forwards it as Channel::monitor: PLAY = take only,
+  // ARM = live when armed or no take, OVERDUB = live layered over the take,
+  // LIVE = live only. `arm` above is derived from it rather than stored, so
+  // there is one state per track. The app-side spelling is `mode`; the session
+  // wire field is `monitor` until the frozen `mode` field lands (project_io).
+  void setMode(int index, int mode);
+  int mode(int index) const;
+  // REC SOURCE (session v2 mixer.channels[].recSource, docs/daw-plan.md
+  // W2b): 0 PRE (after gain), 1 POST (EQ + fader, pre-FX) or 2 POST+FX (EQ +
+  // FX1/FX2 + fader). Default PRE. The engine tap does not read it yet (the
+  // audio wave owns Engine::setRecSource); AudioGlue keeps the named seam.
+  void setRecSource(int index, int source);
+  int recSource(int index) const;
   // Per-track I/O assignment (session v2 mixer.channels[].inCh/inPair/outDst):
   // `inCh` is the mono device channel 0..17 or -1 for none, `inPair` binds the
   // next channel as a stereo pair (inCh is forced even), `outDst` is
@@ -170,12 +183,12 @@ class MixerModel {
     std::atomic<float> pan{0.5f};
     std::atomic<bool> mute{false};
     std::atomic<bool> solo{false};
-    std::atomic<bool> arm{false};
     std::atomic<float> send[audio::kNumSends] = {};
     std::atomic<float> trimDb{0.0f};
     std::atomic<float> cueSend{0.0f};
     std::atomic<float> out34Send{0.0f};
-    std::atomic<int> monitor{1};
+    std::atomic<int> mode{kTrackModeArm};
+    std::atomic<int> recSource{kRecSourcePre};
     std::atomic<int> inCh{0};
     std::atomic<bool> inPair{false};
     std::atomic<int> outDst{0};

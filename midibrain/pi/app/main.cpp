@@ -28,6 +28,10 @@
 //                       TypeError/warning. Implies --emulator and forces the
 //                       offscreen platform. HOME is a temporary directory, so
 //                       project/take taps cannot touch real user data.
+//                       MNKYBOX_TAP_TAKES=<dir> symlinks that folder's real
+//                       takes (and .peaks sidecars) into the temporary HOME, so
+//                       the clip-click passes run on real multi-MB material
+//                       while every write still lands on the temporary paths.
 #include <QCoreApplication>
 #include <QDir>
 #include <QGuiApplication>
@@ -85,9 +89,9 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setTrackMode(false);
                         controller_->mixer()->setBank(0);
                         controller_->mixer()->clearClipDemo();
-                        controller_->mixer()->setMonitor(0, 0);
-                        controller_->mixer()->setMonitor(1, 1);
-                        controller_->mixer()->setMonitor(2, 2);
+                        controller_->mixer()->setMode(0, 0);
+                        controller_->mixer()->setMode(1, 1);
+                        controller_->mixer()->setMode(2, 2);
                         controller_->recorder()->setSelectedTrack(1);
                         controller_->recorder()->selectRow(0);
                         controller_->recorder()->activateSelected();
@@ -487,8 +491,8 @@ class ScreenshotRunner final : public QObject {
                         controller_->showShiftFace(false);
                         controller_->mixer()->setTrackMode(true);
                         controller_->mixer()->setTrackIndex(2);
-                        controller_->mixer()->setMonitor(2, 3);  // MON
-                        controller_->mixer()->setMonitor(1, 2);  // BOTH
+                        controller_->mixer()->setMode(2, 3);  // MON
+                        controller_->mixer()->setMode(1, 2);  // BOTH
                         controller_->setTab(0);
                         controller_->showShiftFace(true);
                       }});
@@ -520,9 +524,9 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setTrackMode(false);
                         controller_->mixer()->setBank(0);
                         controller_->mixer()->clearClipDemo();
-                        controller_->mixer()->setMonitor(0, 0);
-                        controller_->mixer()->setMonitor(1, 1);
-                        controller_->mixer()->setMonitor(2, 2);
+                        controller_->mixer()->setMode(0, 0);
+                        controller_->mixer()->setMode(1, 1);
+                        controller_->mixer()->setMode(2, 2);
                         controller_->selectStrip(1);
                         controller_->setTab(0);
                       }});
@@ -551,7 +555,7 @@ class ScreenshotRunner final : public QObject {
                         resetShot();
                         controller_->mixer()->setTrackMode(true);
                         controller_->mixer()->setTrackIndex(2);
-                        controller_->mixer()->setMonitor(2, 1);
+                        controller_->mixer()->setMode(2, 1);
                         controller_->setTab(0);
                         controller_->showShiftFace(true);
                       }});
@@ -688,7 +692,9 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setTrackIndex(2);
                         controller_->setTab(0);
                         controller_->showShiftFace(true);
-                        controller_->openConfig(QStringLiteral("trackmonitor"));
+                        // W1: the monitor popup is the TRACK MODE popup now (the
+                        // step keeps its name so the shot set stays stable).
+                        controller_->openConfig(QStringLiteral("trackmode"));
                       }});
     steps_.push_back({"39-popup-pipechmask", [this] {
                         resetShot();
@@ -817,10 +823,10 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setTrackMode(false);
                         controller_->mixer()->setBank(0);
                         controller_->mixer()->showClipDemo();
-                        controller_->mixer()->setMonitor(0, 0);
-                        controller_->mixer()->setMonitor(1, 1);
-                        controller_->mixer()->setMonitor(2, 2);
-                        controller_->mixer()->setMonitor(3, 3);
+                        controller_->mixer()->setMode(0, 0);
+                        controller_->mixer()->setMode(1, 1);
+                        controller_->mixer()->setMode(2, 2);
+                        controller_->mixer()->setMode(3, 3);
                         controller_->selectStrip(1);
                         controller_->setTab(0);
                       }});
@@ -1004,8 +1010,8 @@ class ScreenshotRunner final : public QObject {
                         controller_->recorder()->selectRow(0);
                         controller_->recorder()->activateSelected();
                         setStripArm(1, true);
-                        // A1: the 8 s post-take badge spells ARM MUTES TAKE.
-                        controller_->mixer()->notifyTakeStopped();
+                        // W1: ARM is an explicit mode word now; the strip shows
+                        // ARM in the record colour instead of a hazard badge.
                         controller_->mixer()->setTrackMode(false);
                         controller_->mixer()->setBank(0);
                         controller_->setTab(0);
@@ -1453,6 +1459,127 @@ class ScreenshotRunner final : public QObject {
                         primeGeneratorChain();
                       }});
 
+    // ---- 46-*: track modes, RECMODE, REC SOURCE, take manager, take->track --
+    // W1: the mode selector as a word + colour. TRACK 02 is ARM (record red),
+    // TRACK 03 is OVERDUB (accent), TRACK 04 is LIVE (accent), the rest PLAY
+    // (dim) - never a bare letter.
+    steps_.push_back({"46-track-modes", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setMode(1, 1);   // bass -> ARM
+                        controller_->mixer()->setMode(2, 2);   // keys -> OVERDUB
+                        controller_->mixer()->setMode(3, 3);   // gtr  -> LIVE
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(0);
+                      }});
+    // W1/W2b: the ARM-area popup - mode words plus the REC SOURCE selector.
+    steps_.push_back({"46-popup-track-mode", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setMode(1, 1);
+                        controller_->setTab(0);
+                        controller_->openChannel(1);
+                        controller_->openTrackMode(1);
+                      }});
+    // W2b: REC SOURCE picked on the Recorder's own mode popup (POST+FX).
+    steps_.push_back({"46-rec-source", [this] {
+                        resetShot();
+                        controller_->stop();
+                        primeMixerDemo();
+                        controller_->mixer()->setMode(1, 1);
+                        controller_->mixer()->setRecSource(1, 2);
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->setTab(2);
+                        controller_->openTrackMode(1);
+                      }});
+    // W2: COUNT-IN 2 bars armed and REC pressed - the roll runs, the recorder
+    // is silent, and the status line states exactly what will happen and when.
+    steps_.push_back({"46-recmode-countin", [this] {
+                        resetShot();
+                        controller_->stop();
+                        primeMixerDemo();
+                        controller_->mixer()->setMode(1, 1);
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->setTab(2);
+                        controller_->openRecMode();
+                        controller_->config()->setRecMode(1);
+                        controller_->config()->setCountInBars(2);
+                        controller_->configAccept();
+                        controller_->recToggle();
+                      },
+                      // The touch REC waits out the 300 ms chord window before
+                      // the schedule starts, so the grab happens mid-count-in.
+                      800});
+    // W2: the RECMODE picker itself, COUNT-IN selected with the bar stepper.
+    steps_.push_back({"46-popup-recmode", [this] {
+                        resetShot();
+                        controller_->stop();
+                        primeMixerDemo();
+                        controller_->setTab(2);
+                        controller_->openRecMode();
+                        controller_->config()->setRecMode(1);
+                        controller_->config()->setCountInBars(2);
+                      }});
+    // W2b: a running take names its REC SOURCE in the status line:
+    // `REC 00:00 - 02-bass-001 (POST+FX)`.
+    steps_.push_back({"46-rec-status", [this] {
+                        resetShot();
+                        controller_->stop();
+                        primeMixerDemo();
+                        // One armed track, so the status names one take and no
+                        // "+N"; earlier fixture steps leave their own arms.
+                        for (int slot = 0; slot < 8; ++slot) {
+                          controller_->mixer()->setMode(slot, 0);
+                        }
+                        controller_->mixer()->setMode(1, 1);
+                        controller_->mixer()->setRecSource(1, 2);
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->setTab(2);
+                        // A previous step may have armed COUNT-IN; record now.
+                        controller_->openRecMode();
+                        controller_->config()->setRecMode(0);
+                        controller_->configAccept();
+                        controller_->recToggle();
+                      },
+                      700});
+    // W4/W3: the take row "..." menu with ACTIVE/EDIT/RENAME/DELETE/REMOVE/
+    // IMPORT/NEW TRACK FROM THIS TAKE, for a real row.
+    steps_.push_back({"46-take-manager", [this] {
+                        resetShot();
+                        controller_->stop();
+                        primeMixerDemo();
+                        primeTakeFixture();
+                        controller_->setTab(2);
+                        controller_->openTakeActions(0);
+                      }});
+    // W4: the DELETE confirmation names the file it removes.
+    steps_.push_back({"46-take-delete-confirm", [this] {
+                        resetShot();
+                        controller_->stop();
+                        primeMixerDemo();
+                        primeTakeFixture();
+                        controller_->setTab(2);
+                        controller_->requestDeleteTake();
+                      }});
+    // W3: NEW TRACK FROM THIS TAKE - MOVE (default) or KEEP ON SOURCE after the
+    // name keypad.
+    steps_.push_back({"46-take-new-track", [this] {
+                        resetShot();
+                        controller_->stop();
+                        primeMixerDemo();
+                        primeTakeFixture();
+                        controller_->setTab(2);
+                        controller_->requestNewTrackFromTake(0);
+                        controller_->keypadAccept(QStringLiteral("beat"));
+                      }});
+    // W3 result: MOVE created TRACK 09 `beat` - input NONE, output MAIN, mode
+    // PLAY - and the take is ACTIVE on it while the source track let it go.
+    steps_.push_back({"46-take-new-track-result", [this] {
+                        controller_->config()->chooseTrackFromTake(0);
+                        controller_->recorder()->setSelectedTrack(8);
+                        controller_->setTab(2);
+                      }});
     // The mixer screens above show strips; the app's own default stays empty.
     primeMixerDemo();
   }
@@ -1906,6 +2033,40 @@ int main(int argc, char* argv[]) {
     } else {
       std::fprintf(stderr, "mnkybox: --ui-taps needs a temporary HOME\n");
       return 2;
+    }
+    // Read-only take seeding: MNKYBOX_TAP_TAKES points at a real take folder,
+    // whose files are symlinked into the disposable HOME. The app then clicks
+    // real multi-MB takes (and their .peaks sidecars) while every write, rename
+    // or delete still lands on the temporary paths - a rename retargets the
+    // link, it never touches the original file.
+    const QByteArray seedSource = qgetenv("MNKYBOX_TAP_TAKES");
+    if (!seedSource.isEmpty()) {
+      const QString source = QString::fromLocal8Bit(seedSource);
+      const QString target = tapHome->path() + QStringLiteral("/Music/mnkybox-takes");
+      QDir().mkpath(target);
+      const auto linkFiles = [](const QString& from, const QString& to) {
+        int linked = 0;
+        const auto entries = QDir(from).entryInfoList(
+            {QStringLiteral("*.wav"), QStringLiteral("*.peaks")}, QDir::Files);
+        for (const auto& entry : entries) {
+          const QString link = to + QLatin1Char('/') + entry.fileName();
+          QFile::remove(link);
+          if (QFile::link(entry.absoluteFilePath(), link)) ++linked;
+        }
+        return linked;
+      };
+      int linked = linkFiles(source, target);
+      // Takes that live inside a take-<utc> folder are the recorder's own form;
+      // mirror those folders too so the real list is reproduced.
+      const auto folders = QDir(source).entryInfoList(
+          {QStringLiteral("take-*")}, QDir::Dirs | QDir::NoDotAndDotDot);
+      for (const auto& folder : folders) {
+        const QString sub = target + QLatin1Char('/') + folder.fileName();
+        QDir().mkpath(sub);
+        linked += linkFiles(folder.absoluteFilePath(), sub);
+      }
+      std::printf("ui-taps: seeded %d real take file(s) from %s\n", linked,
+                  qPrintable(source));
     }
   }
   QGuiApplication app(argc, argv);

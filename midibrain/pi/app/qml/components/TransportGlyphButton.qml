@@ -14,6 +14,9 @@ Item {
     property string focusId: ""
 
     signal clicked()
+    // Long press: the REC glyph uses it for RECMODE (NOW / COUNT-IN / PUNCH),
+    // the same second-gesture pattern the SHIFT chip uses.
+    signal longPressed()
 
     implicitWidth: Style.touch
     implicitHeight: Style.touch
@@ -89,6 +92,14 @@ Item {
     TapHandler {
         id: tap
         enabled: root.active
-        onTapped: root.clicked()
+        // A long press fires longPressed() and the release that follows must not
+        // also fire clicked().
+        property bool heldLong: false
+        onPressedChanged: if (pressed) heldLong = false
+        onTapped: if (!heldLong) root.clicked()
+        onLongPressed: {
+            heldLong = true
+            root.longPressed()
+        }
     }
 }

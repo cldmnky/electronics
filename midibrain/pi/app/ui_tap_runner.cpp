@@ -408,6 +408,58 @@ void UiTapRunner::buildScenarios() {
       },
       QStringLiteral("xy."), {}, {}, false, true});
 
+  // 3f. Clip-click pass (owner crash class: "clicking an audio clip" on the
+  // Pi). Every surface that selects/loads a take is clicked: the recorder rows
+  // and their "..." menus, the EDIT lane labels, the region ops, and each row
+  // of the TAKE FOR TRACK sheet (the sheet closes on a pick, so every row gets
+  // its own pass). It runs on whatever the take folder holds - on the Pi that
+  // is the real session material - because the bug is about real files.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("clips.recorder"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->refresh();
+      },
+      // The track selector row would walk to a take-less track and empty the
+      // list before its rows are reached; this pass is about the rows.
+      QString(), QStringList(scaffoldExcluded) << QStringLiteral("recorder.track."),
+      {}, false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("clips.edit"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(8);  // EDIT tab (never seen: kScreenCount is 9)
+        controller_->timeline()->setSelectedTrack(0);
+      },
+      QString(), scaffoldExcluded, {}, false, true});
+  for (int row = 0; row < 4; ++row) {
+    // One pass per sheet row: the sheet closes on a pick, so each row needs its
+    // own pass. A folder with fewer rows simply has nothing to tap there, which
+    // is why these passes do not require a target.
+    const QString rowId = QStringLiteral("take.sheet.row.%1").arg(row);
+    scenarios_.push_back(Scenario{
+        QStringLiteral("clips.takesheet.%1").arg(row),
+        [this] {
+          closeOverlays();
+          controller_->showShiftFace(false);
+          controller_->setTab(0);
+          primeMixerTracks();
+          activateRealTakes();
+          controller_->setTab(8);  // EDIT tab (never seen: kScreenCount is 9)
+          controller_->openTakeSheet(controller_->recorder()->selectedTrack());
+        },
+        rowId, {}, {rowId}, false, false});
+  }
+
   // 4. Every ConfigPopup kind. One pass taps all non-terminal controls and ends
   // with CANCEL; a second pass opens the same kind and taps OK, so both draft
   // paths and every focus stop in the popup are exercised.
@@ -416,7 +468,9 @@ void UiTapRunner::buildScenarios() {
       QStringLiteral("monitor"),   QStringLiteral("comp"),
       QStringLiteral("eqtype"),    QStringLiteral("delay"),
       QStringLiteral("reverb"),    QStringLiteral("pipechannels"),
-      QStringLiteral("timelineops"), QStringLiteral("trackmonitor"),
+      QStringLiteral("timelineops"), QStringLiteral("trackmode"),
+      QStringLiteral("recmode"),     QStringLiteral("takeactions"),
+      QStringLiteral("takeedit"),    QStringLiteral("trackfromtake"),
       QStringLiteral("inputsource"), QStringLiteral("outputdest"),
       QStringLiteral("fxslot"),    QStringLiteral("addtrack"),
       QStringLiteral("delaydivision"), QStringLiteral("reverbmodel"),
@@ -582,6 +636,25 @@ void UiTapRunner::primePipeChain(int pipeIndex) {
   routing->setAddTypeIndex(11);  // ARP
   routing->addPipe();
   routing->selectPipe(pipeIndex);
+}
+
+// Activates the first take of every track that has one. On the Pi the take
+// folder holds the real session material, so the clip-click pass below runs on
+// real multi-MB files instead of fixtures.
+void UiTapRunner::activateRealTakes() {
+  int firstWithTakes = -1;
+  for (int track = 0; track < 8; ++track) {
+    controller_->recorder()->setSelectedTrack(track);
+    if (controller_->recorder()->takes()->count() == 0) continue;
+    if (firstWithTakes < 0) firstWithTakes = track;
+    controller_->recorder()->selectRow(0);
+    controller_->recorder()->activateSelected();
+  }
+  // Leave the recorder on a track that HAS takes, so the row surfaces exist for
+  // the clip-click pass (a seeded folder may only fill one track).
+  controller_->recorder()->setSelectedTrack(firstWithTakes < 0 ? 0 : firstWithTakes);
+  controller_->timeline()->setSelectedTrack(firstWithTakes < 0 ? 0 : firstWithTakes);
+  controller_->timeline()->refresh();
 }
 
 void UiTapRunner::primeMixerTracks() {

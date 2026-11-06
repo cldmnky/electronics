@@ -479,6 +479,11 @@ Item {
                     delegate: Item {
                         width: screen.labelWidth
                         height: screen.laneHeight
+                        // The clip/region label is a 44 px target: tapping it
+                        // opens TAKE FOR TRACK nn. It carries a focus id so the
+                        // headless tap gate clicks the exact surface the owner
+                        // clicks (the crash-class path lives behind it).
+                        property string focusId: "timeline.label." + modelData.track
                         TapHandler {
                             onTapped: app.openTakeSheet(modelData.track)
                         }
@@ -567,9 +572,10 @@ Item {
                     width: parent.width
                     height: Style.touch
                     radius: Style.corner
+                    property string focusId: "take.sheet.live"
                     color: Style.panelDark
-                    border.width: app.focusId === "take.sheet.live" ? 2 : Style.outlineWidth
-                    border.color: app.focusId === "take.sheet.live" ? Style.accent : Style.outline
+                    border.width: app.focusId === focusId ? 2 : Style.outlineWidth
+                    border.color: app.focusId === focusId ? Style.accent : Style.outline
 
                     Text {
                         anchors.left: parent.left
@@ -598,10 +604,11 @@ Item {
                         width: ListView.view.width
                         height: Style.touch
                         radius: Style.corner
+                        property string focusId: "take.sheet.row." + index
                         color: model.active ? Style.raised : Style.panelDark
-                        border.width: app.focusId === ("take.sheet.row." + index) ? 2
+                        border.width: app.focusId === focusId ? 2
                                      : (model.active ? 2 : Style.outlineWidth)
-                        border.color: app.focusId === ("take.sheet.row." + index) ||
+                        border.color: app.focusId === focusId ||
                                       model.active ? Style.accent : Style.outline
 
                         Text {

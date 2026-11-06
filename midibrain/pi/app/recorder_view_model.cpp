@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <system_error>
@@ -14,6 +15,12 @@
 
 namespace mnky::app {
 namespace {
+
+std::uint64_t steadyNowMs() {
+  using namespace std::chrono;
+  return static_cast<std::uint64_t>(
+      duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
 
 std::string channelFileName(int track) {
   int display = track;
@@ -223,8 +230,37 @@ QString RecorderViewModel::trackDisplayName(int track) const {
   return trackNameOf(mixer_, track);
 }
 
-bool RecorderViewModel::trackArmMutesTake() const {
-  return mixer_.arm(selectedTrack_) && settings_.hasActiveTake(selectedTrack_);
+QString RecorderViewModel::recordingTakeName() const {
+  const auto mask = mixer_.armMask();
+  const auto base = state_.takeDirectory();
+  int first = -1;
+  int count = 0;
+  for (int track = 0; track < audio::kMaxTracks && track < MixerModel::kMaskBits; ++track) {
+    if ((mask & (MixerModel::TrackMask{1} << static_cast<unsigned>(track))) == 0) continue;
+    if (first < 0) first = track;
+    ++count;
+  }
+  if (first < 0) return QStringLiteral("no armed track");
+  std::string name = takeFileName(first, mixer_.trackName(first),
+                                  nextTakeNumber(base, first) + 1);
+  // The status names the take without its extension, exactly as the plan
+  // writes it: `REC 00:04 - 02-bass-001 (POST+FX)`.
+  if (name.size() > 4 && name.compare(name.size() - 4, 4, ".wav") == 0) {
+    name.resize(name.size() - 4);
+  }
+  QString text = QString::fromStdString(name);
+  // Several tracks record one file each; the status names the first and counts
+  // the rest rather than inventing a combined name.
+  if (count > 1) text += QStringLiteral(" +%1").arg(count - 1);
+  return text;
+}
+
+QString RecorderViewModel::trackModeWord() const {
+  return QString::fromStdString(::mnky::app::trackModeWord(mixer_.mode(selectedTrack_)));
+}
+
+QString RecorderViewModel::trackRecSourceText() const {
+  return QString::fromStdString(recSourceText(mixer_.recSource(selectedTrack_)));
 }
 
 QString RecorderViewModel::activeTake() const {
@@ -298,6 +334,16 @@ void RecorderViewModel::activateSelected() {
   updateReadouts();
   emit trackChanged();
   emit activeTakeChanged();
+}
+
+QString RecorderViewModel::activateRow(int row) {
+  if (takes_.entry(row) == nullptr) return {};
+  selectRow(row);
+  // Copy the display name first: activateSelected() rescans the take folder and
+  // replaces the model's storage, so any Entry pointer is dangling afterwards.
+  const QString name = takeNameAt(row);
+  activateSelected();
+  return name;
 }
 
 void RecorderViewModel::clearActive() {
@@ -435,8 +481,26 @@ void RecorderViewModel::deleteSelected() {
   if (wasActive) emit activeTakeChanged();
 }
 
+void RecorderViewModel::removeSelected() {
+  const auto* entry = takes_.entry(selectedRow_);
+  if (entry == nullptr) return;
+  const bool wasActive = settings_.activeTake(selectedTrack_) == entry->key.toStdString();
+  if (wasActive) {
+    // Project-only removal: the file stays on disk, so nothing is deleted and
+    // the take list would still list it from the folder scan - clear the
+    // pointer and say what happened instead of pretending the row vanished.
+    settings_.setActiveTake(selectedTrack_, {});
+    syncActiveTake(selectedTrack_);
+  }
+  scanTakes();
+  updateReadouts();
+  emit trackChanged();
+  if (wasActive) emit activeTakeChanged();
+}
+
 int RecorderViewModel::adoptRecordedTake(const std::string& takeDirectoryPath,
-                                         MixerModel::TrackMask armMask) {
+                                         MixerModel::TrackMask armMask,
+                                         std::string* lastKey) {
   const std::filesystem::path folder(takeDirectoryPath);
   const auto base = state_.takeDirectory();
   int renamed = 0;
@@ -466,10 +530,12 @@ int RecorderViewModel::adoptRecordedTake(const std::string& takeDirectoryPath,
     // Session v2 stores the take file name stem; per-track names are unique
     // because nextTakeNumber scans the whole take directory.
     settings_.setActiveTake(track, target.filename().string());
+    if (lastKey != nullptr) *lastKey = target.filename().string();
     syncActiveTake(track);
     ++renamed;
   }
   if (renamed > 0) {
+    lastAdoptedKey_ = lastKey != nullptr ? QString::fromStdString(*lastKey) : QString();
     scanTakes();
     updateReadouts();
     emit trackChanged();
@@ -499,6 +565,11 @@ void RecorderViewModel::tracksChanged() {
 
 std::filesystem::path RecorderViewModel::resolveTakeKey(int track,
                                                         const std::string& key) const {
+  // The owning track is still the caller's question (the session stores one
+  // active take per track), but it no longer constrains the file name: the
+  // `NN-` prefix is convention only, so a take recorded on track 2 resolves on
+  // track 9 after NEW TRACK FROM TAKE.
+  (void)track;
   if (key.empty()) return {};
   const auto base = state_.takeDirectory();
   std::filesystem::path candidate(key);
@@ -519,8 +590,9 @@ std::filesystem::path RecorderViewModel::resolveTakeKey(int track,
     std::error_code regularError;
     if (!it->is_regular_file(regularError)) continue;
     if (it->path().filename().string() != key) continue;
-    const auto parts = parseTakeFileName(key);
-    if (parts.valid && parts.track != track) continue;
+    // The `NN-` file prefix is convention only (docs/daw-plan.md W3): the
+    // assignment is session state, so a take recorded on track 2 resolves on
+    // track 9 after NEW TRACK FROM TAKE.
     return it->path();
   }
   return {};
@@ -555,6 +627,10 @@ void RecorderViewModel::scanTakes() {
   const std::string active = settings_.activeTake(selectedTrack_);
   const std::string legacyName = channelFileName(selectedTrack_);
   std::vector<RecorderTakeModel::Entry> entries;
+  // Whole-project totals for the disk line: every take file in every take
+  // folder, not only the selected track's list.
+  int projectTakes = 0;
+  std::uint64_t projectBytes = 0;
   std::error_code error;
   for (std::filesystem::directory_iterator it(base, error), end; it != end;
        it.increment(error)) {
@@ -570,6 +646,10 @@ void RecorderViewModel::scanTakes() {
         std::error_code regularError;
         if (!file->is_regular_file(regularError)) continue;
         if (file->path().extension() != ".wav") continue;
+        ++projectTakes;
+        std::error_code projectSizeError;
+        const auto projectSize = std::filesystem::file_size(file->path(), projectSizeError);
+        if (!projectSizeError) projectBytes += projectSize;
         const auto fileName = file->path().filename().string();
         const auto parts = parseTakeFileName(fileName);
         const bool perTrack = parts.valid && parts.track == selectedTrack_;
@@ -618,23 +698,25 @@ void RecorderViewModel::scanTakes() {
     entry.seconds = wavDurationSeconds(entry.path);
     entries.push_back(entry);
   }
-  // A project can persist an absolute imported pointer; show it after a restart
-  // even though the in-memory import registry did not survive.
+  // The track's ACTIVE take is always listed, whatever its file prefix says: the
+  // `NN-` name is convention only (W3 NEW TRACK FROM TAKE hands a take to another
+  // track without renaming the file), and a project can persist an absolute
+  // imported pointer whose registry did not survive a restart.
   if (!active.empty()) {
-    const std::filesystem::path activePath(active);
     const bool listed = std::any_of(entries.begin(), entries.end(),
                                     [&](const RecorderTakeModel::Entry& entry) {
                                       return entry.key.toStdString() == active;
                                     });
-    std::error_code activeError;
-    if (!listed && activePath.is_absolute() &&
-        std::filesystem::is_regular_file(activePath, activeError)) {
+    const auto activePath = resolveTakeKey(selectedTrack_, active);
+    if (!listed && !activePath.empty()) {
       RecorderTakeModel::Entry entry;
       entry.path = activePath;
       entry.key = QString::fromStdString(active);
       entry.name = QString::fromStdString(activePath.filename().string());
       entry.active = true;
-      entry.imported = true;
+      // PTR marks an external import (the session key is an absolute path), not
+      // a take that merely lives in the absolute take folder.
+      entry.imported = std::filesystem::path(active).is_absolute();
       std::error_code sizeError;
       const auto size = std::filesystem::file_size(entry.path, sizeError);
       if (!sizeError) entry.bytes = size;
@@ -649,6 +731,8 @@ void RecorderViewModel::scanTakes() {
               return a.key > b.key;
             });
   takes_.setEntries(std::move(entries));
+  projectTakes_ = projectTakes;
+  projectBytes_ = projectBytes;
 
   int selection = -1;
   for (int row = 0; row < takes_.rowCount(); ++row) {
@@ -676,6 +760,13 @@ std::string RecorderViewModel::selectedTakeKey() const {
 void RecorderViewModel::updateReadouts() {
   const auto status = link_.status();
   const bool recording = audio_.recording();
+  if (recording) {
+    // A new take owns the REC clock and retires the previous TAKE SAVED line.
+    if (recStartMs_ == 0) recStartMs_ = steadyNowMs();
+    lastAdoptedKey_.clear();
+  } else {
+    recStartMs_ = 0;
+  }
 
   // A6: REC / PLAY / STOP only. "ROLLING" is studio jargon that collides with
   // REC on a recorder, so the state word and the colour are the answer.
@@ -688,12 +779,20 @@ void RecorderViewModel::updateReadouts() {
   // The dim second line says only what the state does not: a rolling transport
   // with the inputs still live is not recording them.
   const QString activeNow = activeTake();
-  const QString transportHint =
-      (status.rolling && !recording)
-          ? (activeNow == QStringLiteral("LIVE INPUT")
-                 ? QStringLiteral("not recording - tap START TAKE to capture these inputs")
-                 : QStringLiteral("playing take ") + activeNow)
-          : QString();
+  QString transportHint;
+  if (status.rolling && !recording) {
+    transportHint =
+        activeNow == QStringLiteral("LIVE INPUT")
+            ? QStringLiteral("not recording - tap START TAKE to capture these inputs")
+            : QStringLiteral("playing take ") + activeNow;
+  } else if (recording) {
+    // W2b: the tap point decides what the meter means. PRE is the dry capture,
+    // so the meter (which follows the mix) intentionally disagrees with the
+    // take; say it once, where the state is read.
+    if (mixer_.recSource(selectedTrack_) == kRecSourcePre) {
+      transportHint = QStringLiteral("meter shows the mix - recording is PRE");
+    }
+  }
   if (transportHint_ != transportHint) transportHint_ = transportHint;
 
   QString clock = QString::fromStdString(formatTempo(status.tempoX100)) +
@@ -713,16 +812,27 @@ void RecorderViewModel::updateReadouts() {
   const QString active = activeTake();
   QString statusText;
   statusWarning_ = false;
-  if (recording) {
-    statusText = QStringLiteral("recording take  -  ") +
-                 QString::fromStdString(state_.takeDirectory().string());
-  } else if (take.files > 0 && mixer_.armMask() != 0) {
-    // A1: the take exists but every armed strip monitors its input, so PLAY
-    // would replay the room, not the take. Say it and name the fix.
-    statusText = QStringLiteral(
-        "TAKE SAVED - ARM is still on, so this track monitors the input. "
-        "Disarm (tap ARM) to hear the take.");
-    statusWarning_ = true;
+  const int mode = mixer_.mode(selectedTrack_);
+  const bool scheduled = state_.recScheduled.load();
+  if (scheduled) {
+    // W2: state exactly what the schedule will do and when. A transport START
+    // zeroes the tick, so a count-in always engages at bar 1; PUNCH names the
+    // PUNCH IN/OUT measures it will record between.
+    const std::string text =
+        recScheduleStatus(state_.recMode.load(), state_.countInBars.load(), true, 1,
+                          settings_.punch.in.measure, settings_.punch.out.measure);
+    statusText = QString::fromStdString(text);
+  } else if (recording) {
+    // W2b status: `REC 00:04 - 02-bass-001 (POST+FX)`.
+    const double elapsed = static_cast<double>(steadyNowMs() - recStartMs_) / 1000.0;
+    statusText = QStringLiteral("REC %1 - %2 (%3)")
+                     .arg(QString::fromStdString(formatDuration(elapsed)),
+                          recordingTakeName(), trackRecSourceText());
+  } else if (take.files > 0 && !lastAdoptedKey_.isEmpty()) {
+    // W1 step 4: the take landed and the track switched to PLAY, so the status
+    // names the take and the way to hear it.
+    statusText = QStringLiteral("TAKE SAVED %1 - mode PLAY to hear it")
+                     .arg(lastAdoptedKey_);
   } else if (take.files > 0) {
     const double seconds = audio_.sampleRate() > 0.0
                                ? static_cast<double>(take.frames) / audio_.sampleRate()
@@ -732,6 +842,11 @@ void RecorderViewModel::updateReadouts() {
                  QStringLiteral("  -  %1 files  -  %2")
                      .arg(take.files)
                      .arg(QString::fromStdString(formatDuration(seconds)));
+  } else if (mode == kTrackModeLive && settings_.activeTake(selectedTrack_).empty()) {
+    // plan §5: a LIVE track never plays a take, so say it instead of leaving a
+    // silent strip.
+    statusText = QStringLiteral("TRACK %1 is LIVE - no take is active")
+                     .arg(selectedTrack_ + 1, 2, 10, QLatin1Char('0'));
   } else if (active != QStringLiteral("LIVE INPUT")) {
     statusText = QStringLiteral("ACTIVE take  -  ") + active;
   } else {
@@ -743,14 +858,18 @@ void RecorderViewModel::updateReadouts() {
   std::error_code spaceError;
   const auto space = std::filesystem::space(directory, spaceError);
   QString disk;
+  const QString used = QStringLiteral("%1 takes  -  %2")
+                           .arg(projectTakes_)
+                           .arg(QString::fromStdString(
+                               formatBytes(static_cast<std::int64_t>(projectBytes_))));
   if (!spaceError) {
-    disk = QStringLiteral("disk %1 free  -  drops %2")
+    // W4 disk line: `177.6 GiB free - 4 takes - 12.4 MiB`.
+    disk = QStringLiteral("%1 free  -  %2")
                .arg(QString::fromStdString(
-                   formatBytes(static_cast<std::int64_t>(space.available))))
-               .arg(static_cast<qulonglong>(audio_.drops()));
+                        formatBytes(static_cast<std::int64_t>(space.available))),
+                    used);
   } else {
-    disk = QStringLiteral("disk unavailable  -  drops %1")
-               .arg(static_cast<qulonglong>(audio_.drops()));
+    disk = QStringLiteral("disk unavailable  -  ") + used;
   }
   if (diskText_ != disk) diskText_ = disk;
 

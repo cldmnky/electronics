@@ -17,6 +17,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include "app_state.hpp"
@@ -54,9 +55,23 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(double compReleaseMs READ compReleaseMs WRITE setCompReleaseMs NOTIFY changed)
   Q_PROPERTY(double compMakeupDb READ compMakeupDb WRITE setCompMakeupDb NOTIFY changed)
   Q_PROPERTY(int compMode READ compMode WRITE setCompMode NOTIFY changed)
-  // TRACK SHIFT INPUT MON: the four-way selector collapsed into a summary
-  // button. The popup edits a draft of the selected track's monitor mode.
-  Q_PROPERTY(int trackMonitor READ trackMonitor WRITE setTrackMonitor NOTIFY changed)
+  // TRACK MODE (docs/daw-plan.md W1): the four mode words plus the track's REC
+  // SOURCE. Both are live, like every other value in this popup.
+  Q_PROPERTY(int trackMode READ trackMode WRITE setTrackMode NOTIFY changed)
+  Q_PROPERTY(int trackRecSource READ trackRecSource WRITE setTrackRecSource NOTIFY changed)
+  Q_PROPERTY(QString trackRecSourceText READ trackRecSourceText NOTIFY changed)
+  // RECMODE (docs/daw-plan.md W2): NOW / COUNT-IN n bars / PUNCH, written to
+  // AppState so the transport and the recorder status read one source.
+  Q_PROPERTY(int recMode READ recMode WRITE setRecMode NOTIFY changed)
+  Q_PROPERTY(int countInBars READ countInBars WRITE setCountInBars NOTIFY changed)
+  Q_PROPERTY(QString recModeSummary READ recModeSummary NOTIFY changed)
+  // TAKE row actions (docs/daw-plan.md W4): the header names the row and every
+  // pick runs an AppController action through the sink below.
+  Q_PROPERTY(QString takeTargetName READ takeTargetName NOTIFY changed)
+  // NEW TRACK FROM TAKE (docs/daw-plan.md W3): the two placement verbs.
+  Q_PROPERTY(QString trackFromTakeText READ trackFromTakeText NOTIFY changed)
+  Q_PROPERTY(QStringList takeActions READ takeActions CONSTANT)
+  Q_PROPERTY(QStringList trackFromTakeChoices READ trackFromTakeChoices CONSTANT)
   Q_PROPERTY(QString metronomeSummary READ metronomeSummary NOTIFY summariesChanged)
   Q_PROPERTY(QString sendSummary READ sendSummary NOTIFY summariesChanged)
   Q_PROPERTY(QString monitorSummary READ monitorSummary NOTIFY summariesChanged)
@@ -183,7 +198,19 @@ class ConfigPopupModel final : public QObject {
   double compReleaseMs() const { return compReleaseMs_; }
   double compMakeupDb() const { return compMakeupDb_; }
   int compMode() const { return compMode_; }
-  int trackMonitor() const { return trackMonitor_; }
+  int trackMode() const { return trackMode_; }
+  int trackRecSource() const { return trackRecSource_; }
+  QString trackRecSourceText() const;
+  int recMode() const { return recMode_; }
+  int countInBars() const { return countInBars_; }
+  QString recModeSummary() const;
+  QString takeTargetName() const { return takeTargetName_; }
+  // The TAKE row menu, in plan order (docs/daw-plan.md W4 + W3). The index the
+  // popup reports back is the position in this list.
+  QStringList takeActions() const;
+  // Labels of the two placement verbs of NEW TRACK FROM TAKE.
+  QStringList trackFromTakeChoices() const;
+  QString trackFromTakeText() const { return trackFromTakeText_; }
   QString metronomeSummary() const { return metronomeSummary_; }
   QString sendSummary() const { return sendSummary_; }
   QString monitorSummary() const { return monitorSummary_; }
@@ -282,7 +309,10 @@ class ConfigPopupModel final : public QObject {
   void setCompReleaseMs(double value);
   void setCompMakeupDb(double value);
   void setCompMode(int value);
-  void setTrackMonitor(int value);
+  void setTrackMode(int value);
+  void setTrackRecSource(int value);
+  void setRecMode(int value);
+  void setCountInBars(int value);
   void setEqType(int value);
   void setDelayBeat(int value);
   void setDelayPing(int value);
@@ -312,9 +342,36 @@ class ConfigPopupModel final : public QObject {
   // dynamic track list and write the strip they target through this view
   // model.
   void setMixer(MixerViewModel* mixer) { mixerVm_ = mixer; }
-  // AppController points the INPUT MON popup at the TRACK screen's selected
-  // strip before openKind("trackmonitor"); MixerModel itself is index-free.
-  void setTrackMonitorIndex(int index) { trackMonitorSlot_ = index; }
+  // AppController points the TRACK MODE popup at the strip it was opened from
+  // (strip/mode pill, channel popout, TRACK screen); MixerModel is index-free.
+  void setTrackModeIndex(int index) { trackModeSlot_ = index; }
+  int trackModeTarget() const { return trackModeSlot_; }
+  // TAKE actions: the row the "..." menu was opened on and its display name.
+  void setTakeTarget(int row, const QString& name) {
+    takeTargetRow_ = row;
+    takeTargetName_ = name;
+  }
+  int takeTargetRow() const { return takeTargetRow_; }
+  // NEW TRACK FROM TAKE: names the take and the slot the track will occupy, then
+  // hands the MOVE / KEEP choice to AppController.
+  void setTrackFromTakeTarget(int row, const QString& text) {
+    trackFromTakeRow_ = row;
+    trackFromTakeText_ = text;
+  }
+  int trackFromTakeRow() const { return trackFromTakeRow_; }
+  // One tap on a take action row: AppController owns keypad/confirm/notice, so
+  // the popup only reports the pick and closes.
+  using TakeActionSink = std::function<void(int action)>;
+  void setTakeActionSink(TakeActionSink sink) { takeActionSink_ = std::move(sink); }
+  // 0 = MOVE, 1 = KEEP ON SOURCE; AppController creates the track.
+  using TrackFromTakeSink = std::function<void(int choice)>;
+  void setTrackFromTakeSink(TrackFromTakeSink sink) {
+    trackFromTakeSink_ = std::move(sink);
+  }
+  Q_INVOKABLE void chooseTakeAction(int action);
+  // 0 = MOVE (default, the source track stops playing the take), 1 = KEEP ON
+  // SOURCE.
+  Q_INVOKABLE void chooseTrackFromTake(int choice);
   // AppController points a selector popup at the strip it was opened from.
   void setInputTarget(int slot) { inputTargetSlot_ = slot; }
   void setOutputTarget(int slot) { outputTargetSlot_ = slot; }
@@ -375,7 +432,10 @@ class ConfigPopupModel final : public QObject {
     float compReleaseMs = 100.0f;
     float compMakeupDb = 0.0f;
     int compMode = 0;
-    int trackMonitor = 1;
+    int trackMode = 1;
+    int trackRecSource = 0;
+    int recMode = 0;
+    int countInBars = 2;
     int eqType = 0;
     int eqBand = 0;
     int delayChoice[3] = {0, 0, 3};
@@ -421,8 +481,17 @@ class ConfigPopupModel final : public QObject {
   double compReleaseMs_ = 100.0;
   double compMakeupDb_ = 0.0;
   int compMode_ = 0;
-  int trackMonitor_ = 1;
-  int trackMonitorSlot_ = 0;
+  int trackMode_ = 1;
+  int trackRecSource_ = 0;
+  int trackModeSlot_ = 0;
+  int recMode_ = 0;
+  int countInBars_ = 2;
+  int takeTargetRow_ = -1;
+  QString takeTargetName_;
+  int trackFromTakeRow_ = -1;
+  QString trackFromTakeText_;
+  TakeActionSink takeActionSink_;
+  TrackFromTakeSink trackFromTakeSink_;
   QString metronomeSummary_;
   QString sendSummary_;
   QString monitorSummary_;
