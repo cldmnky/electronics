@@ -7,6 +7,12 @@
 | RtMidi | 6.1.0 | Vendored `rtmidi/RtMidi.{h,cpp}` from `thestk/rtmidi` tag 6.1.0 | MIT (see header comments in the files) |
 
 Rules: pin exact versions here and in CMake; never float on a branch.
+JSON in C++: use **nlohmann/json** (single header `json.hpp`, MIT) if a JSON
+parser/writer is needed — pin an exact release in the table above before first
+use. Do not hand-roll new JSON code. (`session/session.cpp` predates this rule
+and keeps its minimal writer/parser for the frozen session format; its known
+failure mode was escaping C++ string literals in test fixtures, not the JSON
+layer itself.)
 Compile RtMidi with `__MACOSX_CORE__` on macOS, `__LINUX_ALSA__` on Linux.
 Qt Multimedia connects to PipeWire through its PulseAudio backend
 (`pipewire-pulse` on the image) — no JACK-API code anywhere; see
