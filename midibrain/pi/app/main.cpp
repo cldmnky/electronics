@@ -41,6 +41,8 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <string>
@@ -1200,6 +1202,210 @@ class ScreenshotRunner final : public QObject {
                         controller_->setTab(7);
                       }});
 
+    // ---- 44-*: review wave 2 (remaining findings) -----------------------
+    // Each shot is the proof for one changed surface: renamed tabs, the
+    // pager grid, clip clear, PLAY wording, hold-to-reset, the pipe footer,
+    // one dirty indicator, the OUTPUT page + clock source, the EQ subject row,
+    // the X/Y mode label, the EDIT lane hint, the import preview and the verbs.
+    steps_.push_back({"44-tabs", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"44-mixer", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        setStripArm(1, true);
+                        controller_->mixer()->showClipDemo();
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"44-mixer-bankgrid", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(0);
+                        controller_->openBankGrid();
+                      }});
+    steps_.push_back({"44-mixer-clip-cleared", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->mixer()->showClipDemo();
+                        const int firstSlot =
+                            controller_->mixer()
+                                ->data(controller_->mixer()->index(0, 0),
+                                       mnky::app::MixerViewModel::SlotRole)
+                                .toInt();
+                        controller_->mixer()->clearClip(firstSlot);
+                        controller_->showTextPopup(QStringLiteral("CLIP"),
+                                                   QStringLiteral("CLIP CLEARED"));
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"44-recorder-play", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        primeTakeFixture();
+                        controller_->play();
+                        controller_->setTab(2);
+                      }});
+    steps_.push_back({"44-recorder-import", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->setTab(2);
+                        const auto path = writeWavFixture(48000);
+                        controller_->requestConfirm(
+                            QStringLiteral("IMPORT TAKE"),
+                            controller_->recorder()->takeImportPreview(
+                                QString::fromStdString(path.string())),
+                            QStringLiteral("IMPORT"),
+                            QStringLiteral("take-import"), -1);
+                      }});
+    steps_.push_back({"44-routing", [this] {
+                        resetShot();
+                        controller_->setTab(1);
+                      }});
+    // A13: GENERATOR is a source-less FROM. The primary patchbay shows its wire
+    // without any input being selected.
+    steps_.push_back({"44-routing-generator", [this] {
+                        resetShot();
+                        controller_->setTab(1);
+                        const int generator = generatorNode();
+                        const int usbOut = outputNodeFor(mnky::midi::Port::UsbOut);
+                        if (generator >= 0 && usbOut >= 0) {
+                          controller_->routing()->selectInput(generator);
+                          controller_->routing()->toggleRoute(generator, usbOut);
+                        }
+                      }});
+    steps_.push_back({"44-routing-pipes", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        controller_->routing()->selectPipe(0);
+                      }});
+    // A13: the pipe page with FROM = GENERATOR and no input source at all.
+    steps_.push_back({"44-pipes-generator", [this] {
+                        resetShot();
+                        primeGeneratorChain();
+                        controller_->routing()->setShiftPage(1);
+                        controller_->showShiftFace(true);
+                        controller_->routing()->selectPipe(0);
+                      }});
+    // The pending head's type list: only the generator role, with the header
+    // saying why (no modifier can start a chain that has no input).
+    steps_.push_back({"44-popup-pipetype-generator", [this] {
+                        resetShot();
+                        primeGeneratorChain(false);
+                        controller_->routing()->setShiftPage(1);
+                        controller_->showShiftFace(true);
+                        controller_->openConfig(QStringLiteral("pipetype"));
+                      }});
+    steps_.push_back({"44-projects-unsaved", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(4);
+                        controller_->mixer()->setGainDb(0, -3.0);
+                      }});
+    steps_.push_back({"44-system", [this] {
+                        resetShot();
+                        controller_->setTab(3);
+                      }});
+    steps_.push_back({"44-system-output", [this] {
+                        resetShot();
+                        controller_->setTab(3);
+                        controller_->setSystemShiftPage(0);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"44-eq-subject", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->eq()->selectSubject(1);
+                        eqBand(2, 3, 1000.0, -3.0, 1.4);
+                        controller_->eq()->selectBand(2);
+                        controller_->hideValuePopup();
+                        controller_->setTab(6);
+                      }});
+    steps_.push_back({"44-xy-mode", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        primeTrackFx(1);
+                        controller_->selectStrip(1);
+                        controller_->setTab(7);
+                      }});
+    steps_.push_back({"44-timeline-empty", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        // One real take on track 2, so the other lanes show the
+                        // empty hint and the playing lane shows its TAKE chip.
+                        for (int track = 0; track < 6; ++track) {
+                          if (track != 1) {
+                            controller_->recorder()->setSelectedTrack(track);
+                            controller_->recorder()->clearActive();
+                          }
+                        }
+                        primeTakeFixture();
+                        controller_->timeline()->preparePeaksForDemo();
+                        controller_->timeline()->setSelectedTrack(1);
+                        controller_->timeline()->setPage(0);
+                        controller_->setTab(8);
+                      }});
+    steps_.push_back({"44-timeline-ops", [this] {
+                        resetShot();
+                        controller_->setTab(8);
+                        controller_->timeline()->clearSelection();
+                        controller_->openConfig(QStringLiteral("timelineops"));
+                      }});
+    steps_.push_back({"44-nopico-popup", [this] {
+                        resetShot();
+                        controller_->showNoPicoInfo();
+                      }});
+    steps_.push_back({"44-nopico-chip", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(0);
+                      }});
+    // B6: an ordinary value readout lives in the transport notice slot.
+    steps_.push_back({"44-value-slot", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(0);
+                        controller_->showValuePopup(QStringLiteral("IN 02 GAIN"),
+                                                    QStringLiteral("db"), -6.0);
+                      }});
+    // B6: the fullscreen EQ face hides the strip, so there the readout floats.
+    steps_.push_back({"44-eq-full-value", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->eq()->selectBand(2);
+                        controller_->setTab(6);
+                        controller_->setFullscreen(true);
+                        controller_->showValuePopup(QStringLiteral("BAND 3 GAIN"),
+                                                    QStringLiteral("db"), -3.0);
+                      }});
+    // B13: the pipe scope popup names MIDI channels and states the bypass rule.
+    steps_.push_back({"44-popup-midi-filter", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        controller_->openConfig(QStringLiteral("pipechannels"));
+                      }});
+    steps_.push_back({"44-popup-add-track", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->setTab(0);
+                        controller_->requestAddTrack();
+                      }});
+
     // The mixer screens above show strips; the app's own default stays empty.
     primeMixerDemo();
   }
@@ -1218,6 +1424,71 @@ class ScreenshotRunner final : public QObject {
     }
     controller_->mixer()->setTrackIndex(2);
     controller_->selectStrip(1);
+  }
+
+  // One deterministic take in the real take directory for the PLAY wording and
+  // the EDIT lane chip. It carries a name no real session would use, so the
+  // fixture can never shadow a user's take.
+  void primeTakeFixture() {
+    const auto dir = std::filesystem::path(
+        controller_->recorder()->takeDirectory().toStdString());
+    writeWavFixture(48000, dir / "02-fixturetake-001.wav");
+    // takeStateChanged() rescans; refresh() only scans every 20th call.
+    controller_->recorder()->takeStateChanged();
+    controller_->recorder()->setSelectedTrack(1);
+    for (int row = 0; row < controller_->recorder()->takes()->count(); ++row) {
+      const auto* entry = controller_->recorder()->takes()->entry(row);
+      if (entry != nullptr && entry->name.contains(QStringLiteral("fixturetake"))) {
+        controller_->recorder()->selectRow(row);
+        break;
+      }
+    }
+    controller_->recorder()->activateSelected();
+    controller_->timeline()->refresh();
+  }
+
+  // D7 proof: a minimal 48 kHz / 2 ch float WAV written to the temp dir, so
+  // the import confirmation shows the duration/channel preview the recorder
+  // reads from the header.
+  std::filesystem::path writeWavFixture(int sampleRate,
+                                        const std::filesystem::path& target = {}) {
+    constexpr std::uint32_t frames = 576000;  // 12 s at 48 kHz
+    constexpr std::uint16_t channels = 2;
+    const auto path = target.empty() ? std::filesystem::temp_directory_path() /
+                                           "mnkybox-44-import-preview.wav"
+                                     : target;
+    std::vector<unsigned char> bytes;
+    const auto tag = [&bytes](const char* text) {
+      bytes.insert(bytes.end(), text, text + 4);
+    };
+    const auto le32 = [&bytes](std::uint32_t value) {
+      for (int shift = 0; shift < 32; shift += 8) {
+        bytes.push_back(static_cast<unsigned char>((value >> shift) & 0xFF));
+      }
+    };
+    const auto le16 = [&bytes](std::uint16_t value) {
+      bytes.push_back(static_cast<unsigned char>(value & 0xFF));
+      bytes.push_back(static_cast<unsigned char>((value >> 8) & 0xFF));
+    };
+    const std::uint32_t dataBytes = frames * channels * 4;
+    tag("RIFF");
+    le32(36 + dataBytes);
+    tag("WAVE");
+    tag("fmt ");
+    le32(16);
+    le16(3);  // IEEE float
+    le16(channels);
+    le32(static_cast<std::uint32_t>(sampleRate));
+    le32(static_cast<std::uint32_t>(sampleRate) * channels * 4);
+    le16(static_cast<std::uint16_t>(channels * 4));
+    le16(32);
+    tag("data");
+    le32(dataBytes);
+    bytes.resize(bytes.size() + dataBytes, 0);
+    std::ofstream file(path, std::ios::binary);
+    file.write(reinterpret_cast<const char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
+    return path;
   }
 
   // Deterministic arm state for the A1 shots: a previous step may have left
@@ -1263,6 +1534,7 @@ class ScreenshotRunner final : public QObject {
     controller_->confirmCancel();
     controller_->closeTempoPopup();
     controller_->closeTabGrid();
+    controller_->closeBankGrid();
     controller_->closeTakeSheet();
     controller_->clearNotice();
     controller_->setFullscreen(false);
@@ -1291,6 +1563,46 @@ class ScreenshotRunner final : public QObject {
     }
     controller_->routing()->selectPipe(0);
     controller_->routing()->setSelectedPipeChannelMask(0x000F);
+  }
+
+  int generatorNode() const {
+    for (const auto& row : controller_->routing()->inputNodes()) {
+      if (row.toMap().value(QStringLiteral("port")).toInt() == mnky::midi::kSrcGenerator) {
+        return row.toMap().value(QStringLiteral("nodeIndex")).toInt();
+      }
+    }
+    return -1;
+  }
+
+  int outputNodeFor(mnky::midi::Port port) const {
+    for (const auto& row : controller_->routing()->outputNodes()) {
+      if (row.toMap().value(QStringLiteral("port")).toInt() == mnky::midi::portId(port)) {
+        return row.toMap().value(QStringLiteral("nodeIndex")).toInt();
+      }
+    }
+    return -1;
+  }
+
+  // A13 fixture: FROM = GENERATOR (no input), TO = USB OUT, head = CC LFO.
+  void primeGeneratorChain(bool withHead = true) {
+    auto* routing = controller_->routing();
+    controller_->setTab(1);
+    controller_->showShiftFace(true);
+    routing->setShiftPage(1);
+    const int generator = generatorNode();
+    const int usbOut = outputNodeFor(mnky::midi::Port::UsbOut);
+    if (generator < 0 || usbOut < 0) return;
+    routing->setPipeSource(generator);
+    routing->setPipeDestination(usbOut);
+    while (routing->pipeCount() > 0) routing->removePipe(0);
+    if (!withHead) {
+      routing->setAddTypeIndex(0);
+      return;
+    }
+    routing->setAddTypeIndex(0);  // the filtered list's only entry: CC LFO
+    routing->addPipe();
+    routing->selectPipe(0);
+    routing->setSelectedPipeChannelMask(0x000F);
   }
 
   // Deterministic rack for the 43-* shots: both slots are cleared first, so a

@@ -71,6 +71,9 @@ class AppController final : public QObject {
   Q_PROPERTY(QString clickLabel READ clickLabel NOTIFY clickChanged)
   Q_PROPERTY(bool tempoPopupOpen READ tempoPopupOpen NOTIFY tempoPopupChanged)
   Q_PROPERTY(bool tabGridOpen READ tabGridOpen NOTIFY tabGridChanged)
+  // A11: the TRACKS n-m / N label opens a page grid; a page is a jump, the two
+  // arrows keep stepping one page.
+  Q_PROPERTY(bool bankGridOpen READ bankGridOpen NOTIFY bankGridChanged)
   Q_PROPERTY(bool takeSheetOpen READ takeSheetOpen NOTIFY takeSheetChanged)
   Q_PROPERTY(int takeSheetTrack READ takeSheetTrack NOTIFY takeSheetChanged)
   // MIDI-learn target capture: while true every learnable control is outlined
@@ -142,6 +145,7 @@ class AppController final : public QObject {
   QString clickLabel() const;
   bool tempoPopupOpen() const { return tempoPopupOpen_; }
   bool tabGridOpen() const { return tabGridOpen_; }
+  bool bankGridOpen() const { return bankGridOpen_; }
   bool takeSheetOpen() const { return takeSheetOpen_; }
   int takeSheetTrack() const { return takeSheetTrack_; }
   bool learnArmed() const;
@@ -211,6 +215,9 @@ class AppController final : public QObject {
   // tabs; picking one navigates and closes it.
   Q_INVOKABLE void openTabGrid();
   Q_INVOKABLE void closeTabGrid();
+  Q_INVOKABLE void openBankGrid();
+  Q_INVOKABLE void closeBankGrid();
+  Q_INVOKABLE void chooseBankPage(int page);
   // D3: only tabs 0,1,2,3,4,5,7 have a SHIFT face.
   Q_INVOKABLE bool tabHasShiftFace(int tab) const;
 
@@ -277,6 +284,8 @@ class AppController final : public QObject {
   Q_INVOKABLE void openChannel(int slot);
   Q_INVOKABLE void closeChannel();
 
+  // B5: the NO PICO badge opens this explanation with an OPEN SYSTEM action.
+  Q_INVOKABLE void showNoPicoInfo();
   // Screenshot runner helper: force an overlay state for a deterministic grab.
   Q_INVOKABLE void openDemoKeypad();
   // Screenshot runner helper: force the SHIFT face (the panel reaches it with a
@@ -307,6 +316,7 @@ class AppController final : public QObject {
   void noticeChanged();
   void tempoPopupChanged();
   void tabGridChanged();
+  void bankGridChanged();
   void takeSheetChanged();
   void learnChanged();
   // The keypad buffer and cursor live in QML; the panel path asks it to move
@@ -414,6 +424,10 @@ class AppController final : public QObject {
   QTimer noticeTimer_;
   bool tempoPopupOpen_ = false;
   bool tabGridOpen_ = false;
+  bool bankGridOpen_ = false;
+  // D7: the import preview asked for confirmation; this is the path it will add
+  // when the confirmation accepts.
+  QString pendingImportPath_;
   bool takeSheetOpen_ = false;
   int takeSheetTrack_ = -1;
   // Last non-Off metronome mode: enabling CLICK from Off restores it instead

@@ -4,8 +4,8 @@
 
 namespace mnky::app {
 
-EqViewModel::EqViewModel(EqModel& model, QObject* parent)
-    : QObject(parent), model_(model) {}
+EqViewModel::EqViewModel(EqModel& model, MixerModel& mixer, QObject* parent)
+    : QObject(parent), model_(model), mixer_(mixer) {}
 
 QVariantList EqViewModel::nodes() const {
   QVariantList list;
@@ -33,13 +33,28 @@ QVariantList EqViewModel::curve() const {
 }
 
 QString EqViewModel::subjectText() const {
-  return QString::fromStdString(EqModel::subjectName(model_.subject()));
+  const int subject = model_.subject();
+  if (subject >= EqModel::kTrackCount) return QStringLiteral("Main");
+  // B14: the EQ subject is an input channel, so show the track that reads it
+  // when one exists: "02 bass" instead of a bare "IN 02". No track keeps the
+  // channel label, and MAIN stays Main.
+  for (int track = 0; track < mixer_.trackCount(); ++track) {
+    if (mixer_.inCh(track) != subject) continue;
+    const std::string name = mixer_.trackName(track);
+    if (name.empty()) break;
+    return QStringLiteral("%1 %2")
+        .arg(subject + 1, 2, 10, QLatin1Char('0'))
+        .arg(QString::fromStdString(name));
+  }
+  return QString::fromStdString(EqModel::subjectName(subject));
 }
 
 QString EqViewModel::bandText() const {
   return QStringLiteral("BAND ") + QString::number(model_.band() + 1) +
-         QStringLiteral(" ") + typeText();
+         QStringLiteral(" / ") + QString::number(EqModel::kBandCount);
 }
+
+void EqViewModel::tracksChanged() { emitChanged(); }
 
 QString EqViewModel::typeText() const {
   return QString::fromStdString(EqModel::typeShortName(model_.type(model_.band())));
@@ -62,8 +77,8 @@ bool EqViewModel::cutBand() const {
 }
 
 QString EqViewModel::summaryText() const {
-  return subjectText() + QStringLiteral(" - ") + bandText() + QStringLiteral(" - ") +
-         freqText() +
+  return subjectText() + QStringLiteral(" - ") + bandText() + QStringLiteral(" ") +
+         typeText() + QStringLiteral(" - ") + freqText() +
          (cutBand() ? QString() : QStringLiteral(" - ") + gainText()) +
          QStringLiteral(" - ") + qText();
 }

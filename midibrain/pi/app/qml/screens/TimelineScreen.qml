@@ -228,18 +228,50 @@ Item {
                         border.color: modelData.selected ? Style.accent : Style.outline
                         clip: true
 
-                        Text {
+                        // D9: the lane label carries a TAKE chip when the lane
+                        // plays a take, so the label answers "active or live
+                        // input?" without opening the chooser.
+                        Column {
+                            x: 0
                             width: screen.labelWidth
-                            height: parent.height
-                            text: modelData.label + "\n" + modelData.name
-                            color: modelData.selected ? Style.accent : Style.textDim
-                            font.pixelSize: Style.fontSmall
-                            font.weight: Font.DemiBold
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            wrapMode: Text.NoWrap
-                            elide: Text.ElideRight
-                            lineHeight: 0.8
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 0
+
+                            Text {
+                                width: screen.labelWidth
+                                text: modelData.label
+                                color: modelData.selected ? Style.accent : Style.textDim
+                                font.pixelSize: Style.fontSmall
+                                font.weight: Font.DemiBold
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                width: screen.labelWidth
+                                text: modelData.name
+                                color: modelData.selected ? Style.accent : Style.textDim
+                                font.pixelSize: Style.fontSmall
+                                font.weight: Font.DemiBold
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                            }
+                            Rectangle {
+                                visible: modelData.hasTake
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: 30
+                                height: 11
+                                radius: 2
+                                color: Style.panelDark
+                                border.width: 1
+                                border.color: Style.accent
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "TAKE"
+                                    color: Style.accent
+                                    font.pixelSize: 8
+                                    font.weight: Font.DemiBold
+                                }
+                            }
                         }
 
                         Item {
@@ -253,7 +285,11 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: 1
                                 values: modelData.wave
-                                placeholderText: modelData.hasTake ? "NO PEAKS" : "NO ACTIVE TAKE"
+                                // D9: the empty lane names the action, not
+                                // just the state.
+                                placeholderText: modelData.hasTake
+                                                 ? "NO PEAKS"
+                                                 : "NO ACTIVE TAKE - tap the lane label to pick a take"
                                 waveColor: modelData.selected ? Style.accent : Style.textDim
                                 playheadRatio: timeline.viewBeats > 0
                                                ? (timeline.playheadBeats - timeline.viewStartBeats) /

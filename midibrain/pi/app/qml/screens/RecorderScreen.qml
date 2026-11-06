@@ -22,12 +22,14 @@ Item {
             height: Style.touch
             spacing: Style.gap
 
+            // A6: REC / PLAY / STOP only, in the state's colour. The dim line
+            // below says what the state does not (playing a take / inputs live).
             Text {
                 width: parent.width * 0.55
                 height: parent.height
                 text: recorder.transportText
                 color: recorder.recording ? Style.record
-                       : (app.rolling ? Style.accent : Style.text)
+                       : (app.rolling ? Style.accent : Style.textDim)
                 font.pixelSize: Style.fontDisplay
                 font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
@@ -44,6 +46,16 @@ Item {
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideMiddle
             }
+        }
+
+        Text {
+            width: parent.width
+            height: recorder.transportHint !== "" ? 14 : 0
+            visible: recorder.transportHint !== ""
+            text: recorder.transportHint
+            color: Style.textDim
+            font.pixelSize: Style.fontSmall
+            elide: Text.ElideRight
         }
 
         Item {
@@ -151,7 +163,7 @@ Item {
             id: takeList
             width: parent.width
             height: Math.max(0, screen.height - Style.margin * 2 - Style.touch * 4 -
-                                16 - 14 - Style.gap * 5)
+                                16 - 14 - 18 - Style.gap * 6)
             clip: true
             model: recorder.takes
             boundsBehavior: Flickable.StopAtBounds

@@ -16,7 +16,6 @@ Rectangle {
     property string stripName: ""
     property real gainDb: 0.0
     property real pan: 0.5
-    property string panText: "C"
     property real level: 0.0
     property bool clip: false
     property int monitor: 1
@@ -54,7 +53,7 @@ Rectangle {
 
             Text {
                 id: nameText
-                width: parent.width - Style.touch - 30
+                width: parent.width - Style.touch - 2
                 height: parent.height
                 text: root.nameText
                 color: Style.text
@@ -70,16 +69,6 @@ Rectangle {
                     onLongPressed: app.requestRenameTrack(root.stripIndex)
                 }
             }
-            Text {
-                width: 28
-                height: parent.height
-                text: root.panText
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
-                font.weight: Font.DemiBold
-                horizontalAlignment: Text.AlignRight
-                verticalAlignment: Text.AlignVCenter
-            }
             TouchButton {
                 width: Style.touch
                 height: parent.height
@@ -88,13 +77,18 @@ Rectangle {
                 variant: "ghost"
                 focusId: "mixer.expand." + root.stripIndex
                 onClicked: app.openChannel(root.stripIndex)
+                // B2: the chevron states its payoff without stealing the tap.
+                onLongClicked: app.showTextPopup(
+                    "CHANNEL", "fader, pan, sends, monitor, I/O, insert, EQ")
             }
         }
 
         Row {
             width: parent.width
-            height: Math.max(Style.touch, root.height - Style.touch * 4 -
-                                         (root.armMutesBadge ? 30 : 8))
+            // Six 44 px rows plus the 2 px gaps and the 3 px margins must fit
+            // inside the strip, so the fader takes what is left over.
+            height: Math.max(Style.touch, root.height - Style.touch * 4 - 24 -
+                                         (root.armMutesBadge ? 24 : 0))
             spacing: 3
 
             TouchSlider {
@@ -120,33 +114,23 @@ Rectangle {
                 height: parent.height
 
                 Meter {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.bottom: mark.top
+                    anchors.fill: parent
                     level: root.level
                     clip: root.clip
                     vertical: true
                 }
-                // Per-track input monitoring: PLAY/BOTH/MON always, AUTO only
-                // when an active take makes Auto choose the take over live input.
-                Text {
-                    id: mark
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    height: 10
-                    text: root.monitorMark.charAt(0)
-                    color: root.monitor === 1 ? Style.textDim : Style.accent
-                    font.pixelSize: Style.fontSmall
-                    font.weight: Font.DemiBold
-                    horizontalAlignment: Text.AlignHCenter
-                }
-                // The letter is the four-mode legend's entry point; the whole
-                // meter column is the touch target so a finger can hit it.
+                // B7: the crown is a control. A tap drops the latch and says
+                // so; without a latch the same tap explains the crown.
                 TapHandler {
-                    onTapped: app.showTextPopup("MONITOR",
-                        "MON input - AUTO smart - BOTH layer - PLAY take")
+                    onTapped: {
+                        if (root.clip) {
+                            mixer.clearClip(root.stripIndex)
+                            app.showTextPopup("CLIP", "CLIP CLEARED")
+                        } else {
+                            app.showTextPopup("METER",
+                                "the crown latches when the strip hits full scale - tap it to clear")
+                        }
+                    }
                 }
             }
         }
@@ -174,18 +158,52 @@ Rectangle {
             }
         }
 
-        KnobChip {
+        Row {
             width: parent.width
             height: Style.touch
-            label: "PAN"
-            value: root.pan
-            valueText: mixer.panTextAt(root.stripIndex)
-            minimumValue: 0
-            maximumValue: 1
-            focusId: "mixer.pan." + root.stripIndex
-            popupLabel: root.nameText + " PAN"
-            popupKind: "pan"
-            onMoved: (value) => mixer.setPan(root.stripIndex, value)
+            spacing: 2
+
+            KnobChip {
+                width: parent.width - 46
+                height: parent.height
+                label: "PAN"
+                value: root.pan
+                valueText: mixer.panTextAt(root.stripIndex)
+                minimumValue: 0
+                maximumValue: 1
+                focusId: "mixer.pan." + root.stripIndex
+                popupLabel: root.nameText + " PAN"
+                popupKind: "pan"
+                onMoved: (value) => mixer.setPan(root.stripIndex, value)
+            }
+            // B4: the one-letter monitor mark is a 44 px pill with the word.
+            // A 140 px strip still fits "BOTH" at 11 px; narrower strips fall
+            // back to the letter so the control never clips its label.
+            Rectangle {
+                width: 44
+                height: Style.touch
+                radius: Style.corner
+                color: Style.panelDark
+                border.width: 1
+                border.color: root.monitor === 1 ? Style.outline : Style.accent
+
+                Text {
+                    anchors.fill: parent
+                    text: root.width >= 140
+                          ? ["PLAY", "AUTO", "BOTH", "MON"][Math.max(0, Math.min(3, root.monitor))]
+                          : root.monitorMark.charAt(0)
+                    color: root.monitor === 1 ? Style.textDim : Style.accent
+                    font.pixelSize: root.width >= 140 ? 10 : Style.fontSmall
+                    font.weight: Font.DemiBold
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                TapHandler {
+                    onTapped: app.showTextPopup("MONITOR",
+                        "MON input - AUTO smart - BOTH layer - PLAY take")
+                }
+            }
         }
 
         // Input-source selector: the list of none, mono IN 01..18 and the nine

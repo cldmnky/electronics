@@ -641,8 +641,10 @@ Rectangle {
                 Text {
                     width: parent.width
                     height: 16
-                    text: "PIPE TYPE - ADD APPENDS THE HIGHLIGHTED TYPE TO THE CHAIN"
-                    color: Style.textDim
+                    text: config.pipeTypeHeadOnly
+                          ? "GENERATOR HEAD - ONLY A GENERATOR TYPE CAN START A SOURCE-LESS CHAIN"
+                          : "PIPE TYPE - ADD APPENDS THE HIGHLIGHTED TYPE TO THE CHAIN"
+                    color: config.pipeTypeHeadOnly ? Style.accent : Style.textDim
                     font.pixelSize: Style.fontSmall
                     elide: Text.ElideRight
                 }
@@ -1006,6 +1008,14 @@ Rectangle {
                 }
                 Text {
                     width: parent.width
+                    height: 16
+                    text: "messages on other channels bypass this pipe"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
                     height: 26
                     text: "SCOPE  " + config.pipeChannelText
                     color: Style.text
@@ -1061,6 +1071,27 @@ Rectangle {
                 width: parent.width
                 spacing: 2
 
+                // D5: the op's range and its validity are read before the run,
+                // not reported as a refusal after it.
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: config.regionLine
+                    color: Style.text
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    height: visible ? 16 : 0
+                    visible: !config.regionApplies
+                    text: config.regionReason
+                    color: Style.record
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
+                }
+
                 Row {
                     width: parent.width
                     height: Style.touch
@@ -1078,12 +1109,13 @@ Rectangle {
                     TouchButton { width: (parent.width - 6) / 3; height: parent.height; text: "DELETE"; textSize: Style.fontSmall; checked: config.timelineOp === 5; focusId: "config.timeline.op.5"; onClicked: config.timelineOp = 5 }
                     TouchButton { width: (parent.width - 6) / 3; height: parent.height; text: "CLEAR"; textSize: Style.fontSmall; checked: config.timelineOp === 6; focusId: "config.timeline.op.6"; onClicked: config.timelineOp = 6 }
                 }
+                // Only the fields the chosen op reads are shown.
                 Row {
                     width: parent.width
-                    height: 84
-                    spacing: Style.gapTight
+                    height: config.showGainField ? 84 : 0
+                    visible: config.showGainField
                     ConfigKnob {
-                        width: (parent.width - Style.gapTight * 2) / 3
+                        width: parent.width
                         height: parent.height
                         label: "GAIN"
                         value: config.timelineGainDb
@@ -1094,8 +1126,14 @@ Rectangle {
                         focusId: "config.timeline.gain"
                         onMoved: (value) => config.timelineGainDb = value
                     }
+                }
+                Row {
+                    width: parent.width
+                    height: config.showFadeFields ? 84 : 0
+                    visible: config.showFadeFields
+                    spacing: Style.gapTight
                     ConfigKnob {
-                        width: (parent.width - Style.gapTight * 2) / 3
+                        width: (parent.width - Style.gapTight) / 2
                         height: parent.height
                         label: "FADE IN"
                         value: config.timelineFadeInBeats
@@ -1107,7 +1145,7 @@ Rectangle {
                         onMoved: (value) => config.timelineFadeInBeats = value
                     }
                     ConfigKnob {
-                        width: (parent.width - Style.gapTight * 2) / 3
+                        width: (parent.width - Style.gapTight) / 2
                         height: parent.height
                         label: "FADE OUT"
                         value: config.timelineFadeOutBeats
@@ -1121,7 +1159,8 @@ Rectangle {
                 }
                 Item {
                     width: parent.width
-                    height: 64
+                    height: config.showRegionPreview ? 64 : 0
+                    visible: config.showRegionPreview
                     Rectangle {
                         visible: timeline.previewWave.length > 0
                         anchors.fill: parent
@@ -1195,12 +1234,15 @@ Rectangle {
                     focusId: "config.cancel"
                     onClicked: app.configCancel()
                 }
+                // C9: the button is its verb; the header repeats it. D5: a
+                // region op with an unusable range is dimmed and says why
+                // above instead of failing after the tap.
                 TouchButton {
                     width: (parent.width - Style.gapTight) / 2
                     height: parent.height
-                    text: config.kind === "addtrack" ? "ADD TRACK"
-                          : (config.kind === "timelineops" ? "RUN" : "OK")
+                    text: config.acceptLabel
                     variant: "primary"
+                    active: config.kind !== "timelineops" || config.regionApplies
                     focusId: "config.ok"
                     onClicked: app.configAccept()
                 }

@@ -51,6 +51,13 @@ class SessionViewModel final : public QObject {
   Q_PROPERTY(bool usbClock READ usbClock WRITE setUsbClock NOTIFY clockChanged)
   Q_PROPERTY(bool usbTransport READ usbTransport WRITE setUsbTransport NOTIFY clockChanged)
   Q_PROPERTY(QString clockText READ clockText NOTIFY clockChanged)
+  // D8: the clock-source choice on SYSTEM SHIFT > OUTPUT. 0 internal, 1 follow
+  // TRS IN1, 2 follow USB. USB is not a clock source in this engine (the Pico
+  // has no USB-device view), so choice 2 sets transportFollow[2] only and
+  // leaves the generator internal; the row says so.
+  Q_PROPERTY(int clockSourceChoice READ clockSourceChoice WRITE setClockSourceChoice NOTIFY clockChanged)
+  Q_PROPERTY(QString clockSourceText READ clockSourceText NOTIFY clockChanged)
+  Q_PROPERTY(QString clockSourceNote READ clockSourceNote CONSTANT)
   // Device output routing (session v2 deviceOut): the pair index of the device
   // channels that carry Main 1&2, OUT3&4 and the phones bus. A pair index p is
   // the device channels 2p and 2p+1 (0-based), so 0 = 1&2, 1 = 3&4, 2 = 5&6.
@@ -99,6 +106,11 @@ class SessionViewModel final : public QObject {
   // One-line summary of what the gates do and what cannot be sent: the wire's
   // EV_CLOCK_ROUTE carries only the clock and transport bits.
   QString clockText() const;
+  int clockSourceChoice() const;
+  QString clockSourceText() const;
+  // What the choice can and cannot do in this build: the session carries it,
+  // the Pico follow command is not part of the app's link seam yet.
+  QString clockSourceNote() const;
   // "1&2" .. "31&32": the pair labels the three device-out pickers offer.
   QStringList deviceOutPairLabels() const;
   int deviceOutMain() const { return deviceOutPair(settings_.deviceOut.main); }
@@ -138,6 +150,7 @@ class SessionViewModel final : public QObject {
   void setDeviceOutMain(int pair);
   void setDeviceOutOut34(int pair);
   void setDeviceOutPhones(int pair);
+  void setClockSourceChoice(int choice);
 
   // Project load replaced the settings object wholesale.
   Q_INVOKABLE void refresh();

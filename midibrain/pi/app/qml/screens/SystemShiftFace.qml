@@ -2,7 +2,7 @@ import QtQuick
 import Mnkybox 1.0
 import "../components"
 
-// SYSTEM SHIFT face: metronome/monitor configuration, MIDI learn and TOOLS.
+// SYSTEM SHIFT face: OUTPUT (metronome/cue/comp/clock), MIDI learn and TOOLS.
 // The primary face stays status + backend selection.
 Item {
     id: root
@@ -17,10 +17,12 @@ Item {
             height: Style.touch
             spacing: Style.gap
 
+            // B3: this page is output/phones/cue/comp - OUTPUT, not MONITOR.
+            // MON stays the per-track input-monitor mark on the mixer.
             TouchButton {
                 width: 132
                 height: parent.height
-                text: "MONITOR"
+                text: "OUTPUT"
                 textSize: Style.fontSmall
                 checked: app.systemShiftPage === 0
                 focusId: "shift.system.page.0"

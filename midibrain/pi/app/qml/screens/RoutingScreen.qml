@@ -15,6 +15,63 @@ Item {
     readonly property int patchRows: Math.max(1, Math.max(routing.inputCount,
                                                            routing.outputCount))
 
+    // A12: press-and-hold RESET. The fill shows the remaining 800 ms; an early
+    // release says why nothing happened instead of wiping silently.
+    component HoldResetButton: Rectangle {
+        id: hold
+
+        property string focusId: ""
+        property real progress: 0.0
+        signal activated()
+
+        readonly property bool focused: app.focusId === focusId && focusId !== ""
+
+        color: Style.dangerFill
+        radius: Style.corner
+        border.width: hold.focused ? 2 : 1
+        border.color: hold.focused ? Style.accent : Style.record
+
+        Rectangle {
+            width: parent.width * hold.progress
+            height: parent.height
+            radius: Style.corner
+            color: Qt.rgba(0.949, 0.42, 0.42, 0.35)
+        }
+        Text {
+            anchors.centerIn: parent
+            text: "HOLD TO RESET"
+            color: Style.record
+            font.pixelSize: Style.fontSmall
+            font.weight: Font.DemiBold
+        }
+        Timer {
+            id: holdTimer
+            interval: 16
+            repeat: true
+            onTriggered: {
+                hold.progress = Math.min(1.0, hold.progress + 16.0 / 800.0)
+                if (hold.progress >= 1.0) {
+                    holdTimer.stop()
+                    hold.activated()
+                }
+            }
+        }
+        TapHandler {
+            onPressedChanged: {
+                if (pressed) {
+                    hold.progress = 0.0
+                    holdTimer.restart()
+                } else {
+                    holdTimer.stop()
+                    if (hold.progress < 1.0) {
+                        app.showTextPopup("RESET", "RESET requires a hold")
+                    }
+                    hold.progress = 0.0
+                }
+            }
+        }
+    }
+
     Column {
         anchors.fill: parent
         anchors.margins: screen.shiftFace ? Style.marginCompact : Style.margin
@@ -30,8 +87,8 @@ Item {
                 // length, which side evaluates it and any clocked-pipe caveat.
                 width: parent.width - (screen.pipesPage ? 156
                                        : (screen.shiftFace
-                                          ? (routing.shiftPage === 0 && routing.filterPageCount > 1 ? 424 : 284)
-                                          : 220))
+                                          ? (routing.shiftPage === 0 && routing.filterPageCount > 1 ? 444 : 304)
+                                          : 244))
                 height: parent.height
                 text: (screen.pipesPage ? routing.pipeStatusText
                        : (screen.shiftFace
@@ -114,14 +171,15 @@ Item {
                     app.showTextPopup("SHIFT PIPES", "MIDI FX chains")
                 }
             }
-            TouchButton {
-                width: 112
+            // A12: a patchbay is ten minutes of work, so touch resets only on
+            // an 800 ms hold with a fill; the panel asks for confirmation (the
+            // focus press has no duration).
+            HoldResetButton {
+                width: 132
                 height: parent.height
                 visible: !screen.pipesPage
-                text: "RESET"
-                variant: "danger"
                 focusId: screen.shiftFace ? "shift.routing.reset" : "routing.reset"
-                onClicked: routing.reset()
+                onActivated: routing.reset()
             }
         }
 
@@ -565,6 +623,17 @@ Item {
                                 }
                             }
                         }
+                        // USB OUT is the Pi mirror: it has clock/transport gates
+                        // only. The tempo divider and sync delay are firmware
+                        // adjustments on the Pico's TRS outputs.
+                        Text {
+                            width: parent.width
+                            height: 14
+                            text: "USB OUT: gates only - clock adjustments apply to the Pico outputs"
+                            color: Style.textDim
+                            font.pixelSize: Style.fontSmall
+                            elide: Text.ElideRight
+                        }
                     }
                 }
             }
@@ -656,7 +725,7 @@ Item {
                     TouchButton {
                         width: 168
                         height: parent.height
-                        text: "SCOPE  " + routing.selectedPipeScopeText
+                        text: "MIDI " + routing.selectedPipeScopeText + " >"
                         textSize: Style.fontSmall
                         focusId: "shift.routing.pipes.scope"
                         onClicked: app.openConfigFrom("pipechannels", this)
@@ -836,6 +905,20 @@ Item {
                     font.pixelSize: Style.fontSmall
                     font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
+                }
+                // A13: naming truth. GENERATOR is a first-class, source-less
+                // FROM (head = CC LFO, the schema's generator role); output
+                // inserts still have no rows in this build. The refusal line
+                // replaces the hint when ADD rejects a non-generator head.
+                Text {
+                    width: parent.width
+                    height: 14
+                    text: routing.addHint !== ""
+                          ? routing.addHint
+                          : "GENERATOR needs no input (head = CC LFO) - output inserts are engine-ready but not selectable here"
+                    color: routing.addHint !== "" ? Style.record : Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
                 }
                 ListView {
                     id: paramList

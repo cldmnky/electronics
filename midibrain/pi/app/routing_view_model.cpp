@@ -49,6 +49,10 @@ std::vector<RoutingNode> routingInputNodes(
                             true));
   nodes.push_back(fixedNode(midi::portId(midi::Port::UsbIn), "USB IN", "USB",
                             true));
+  // A13: the generator is a source-less route kind, listed beside the TRS/USB
+  // sources. Its chain head emits on the clock grid; nothing downstream may ask
+  // it for an input channel.
+  nodes.push_back(fixedNode(midi::kSrcGenerator, "GENERATOR", "GEN", true));
   for (const auto& info : ports) {
     if (!info.input) continue;
     RoutingNode node;
@@ -154,6 +158,9 @@ bool RoutingViewModel::routeEnabled(int source, int destination) const {
       destination >= static_cast<int>(outputs_.size())) {
     return false;
   }
+  if (inputs_[static_cast<std::size_t>(source)].port == midi::kSrcGenerator) {
+    return midi_.generatorRouteEnabled(portForOutput(destination));
+  }
   return midi_.routeEnabled(portForInput(source), portForOutput(destination));
 }
 
@@ -164,6 +171,17 @@ void RoutingViewModel::toggleRoute(int source, int destination) {
   }
   const auto input = portForInput(source);
   const auto output = portForOutput(destination);
+  if (inputs_[static_cast<std::size_t>(source)].port == midi::kSrcGenerator) {
+    // Generator route: no input exists, so the wire is the chain's own gate.
+    const bool enabled = !midi_.generatorRouteEnabled(output);
+    midi_.setGeneratorRoute(output, enabled);
+    log(std::string("routing: GENERATOR -> ") +
+        outputs_[static_cast<std::size_t>(destination)].name.toStdString() +
+        (enabled ? " ON" : " OFF"));
+    refreshRoutes();
+    refreshPipes();
+    return;
+  }
   const bool enabled = !midi_.routeEnabled(input, output);
   midi_.setRoute(input, output, enabled);
   const bool trsRoute = input == midi::Port::TrsIn1 || input == midi::Port::TrsIn2 ||
@@ -175,11 +193,15 @@ void RoutingViewModel::toggleRoute(int source, int destination) {
       (enabled ? " ON" : " OFF") +
       ((noPico_ && trsRoute) ? " (no-pico: stored but INERT, no Pico)" : ""));
   refreshRoutes();
+  refreshPipes();
 }
 
 bool RoutingViewModel::inputAvailable(int source) const {
   if (source < 0 || source >= static_cast<int>(inputs_.size())) return false;
   const auto& node = inputs_[static_cast<std::size_t>(source)];
+  // The generator is Pi- or Pico-generated depending on its destination, never
+  // dependent on a TRS input receiver.
+  if (node.port == midi::kSrcGenerator) return true;
   if (node.dynamic || !node.input) return true;
   // Fixed TRS inputs are Pico-owned; the merged USB input is Pi-owned.
   return !noPico_ || node.port == midi::portId(midi::Port::UsbIn);
@@ -230,6 +252,7 @@ void RoutingViewModel::setMaskBit(int source, int channel, bool enabled) {
       channel >= 16) {
     return;
   }
+  if (inputs_[static_cast<std::size_t>(source)].port == midi::kSrcGenerator) return;
   auto mask = midi_.channelMask(portForInput(source));
   const auto bit = static_cast<std::uint16_t>(1u << static_cast<unsigned>(channel));
   mask = enabled ? static_cast<std::uint16_t>(mask | bit)
@@ -240,6 +263,7 @@ void RoutingViewModel::setMaskBit(int source, int channel, bool enabled) {
 
 void RoutingViewModel::setTranspose(int source, int semitones) {
   if (source < 0 || source >= static_cast<int>(inputs_.size())) return;
+  if (inputs_[static_cast<std::size_t>(source)].port == midi::kSrcGenerator) return;
   midi_.setTranspose(portForInput(source), std::max(-24, std::min(24, semitones)));
   refreshFilters();
 }
@@ -260,6 +284,7 @@ void RoutingViewModel::reset() {
       midi_.setRoute(from, to, false);
     }
   }
+  midi_.clearGeneratorRoutes();
   for (int source = 0; source < routing::kInputCount; ++source) {
     for (int destination = 0; destination < routing::kOutputCount; ++destination) {
       midi_.setRoute(routing::kInputs[source], routing::kOutputs[destination],
@@ -319,9 +344,19 @@ void RoutingViewModel::setFilterPage(int page) {
   refreshFilters();
 }
 
+QVariantList RoutingViewModel::filterTabRows() const {
+  QVariantList rows;
+  for (std::size_t index = 0; index < inputs_.size(); ++index) {
+    if (inputs_[index].port == midi::kSrcGenerator) continue;
+    rows.push_back(nodeRow(inputs_[index], static_cast<int>(index)));
+  }
+  return rows;
+}
+
 int RoutingViewModel::filterPageCount() const {
-  return std::max(1, (static_cast<int>(inputs_.size()) + kFilterRowsPerPage - 1) /
-                         kFilterRowsPerPage);
+  return std::max(1,
+                  (static_cast<int>(filterTabRows().size()) + kFilterRowsPerPage - 1) /
+                      kFilterRowsPerPage);
 }
 
 void RoutingViewModel::setPipeSource(int source) {
@@ -349,7 +384,7 @@ QString RoutingViewModel::pipeSourceName() const {
 }
 
 QString RoutingViewModel::selectedPipeName() const {
-  const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
+  const auto pipes = currentPipes();
   if (selectedPipe_ < 0 || selectedPipe_ >= static_cast<int>(pipes.size())) return {};
   return pipeui::pipeName(static_cast<int>(pipes[static_cast<std::size_t>(selectedPipe_)].type));
 }
@@ -376,10 +411,14 @@ void RoutingViewModel::cycleSelectedPipe(int delta) {
 }
 
 void RoutingViewModel::setAddTypeIndex(int index) {
-  const int count = static_cast<int>(mnky::midifx::generated::kPipeCount);
-  const int clamped = std::clamp(index, 0, count - 1);
+  // The list can be the generator-head subset, so map through the id instead of
+  // storing the list index.
+  const int labels = std::max(1, static_cast<int>(addTypeLabels().size()));
+  const int id = addTypeIdAt(std::clamp(index, 0, labels - 1));
+  const int clamped = id - 1;
   if (clamped == addTypeIndex_) return;
   addTypeIndex_ = clamped;
+  addHint_.clear();
   emit addTypeChanged();
 }
 
@@ -395,8 +434,31 @@ midi::Port RoutingViewModel::pipeOutput() const {
   return portForOutput(pipeDestination_);
 }
 
+int RoutingViewModel::pipeSourceId() const {
+  if (pipeSource_ < 0 || pipeSource_ >= static_cast<int>(inputs_.size())) return -1;
+  return inputs_[static_cast<std::size_t>(pipeSource_)].port;
+}
+
+bool RoutingViewModel::generatorSelected() const {
+  return pipeSourceId() == midi::kSrcGenerator;
+}
+
+bool RoutingViewModel::generatorHeadPending() const {
+  return generatorSelected() && currentPipes().empty();
+}
+
+bool RoutingViewModel::pipeRouteEnabled() const {
+  return generatorSelected() ? midi_.generatorRouteEnabled(pipeOutput())
+                             : midi_.routeEnabled(pipeInput(), pipeOutput());
+}
+
+std::vector<session::MidiPipe> RoutingViewModel::currentPipes() const {
+  return generatorSelected() ? midi_.generatorPipes(pipeOutput())
+                             : midi_.routePipes(pipeInput(), pipeOutput());
+}
+
 int RoutingViewModel::pipeCount() const {
-  return static_cast<int>(midi_.routePipes(pipeInput(), pipeOutput()).size());
+  return static_cast<int>(currentPipes().size());
 }
 
 QString RoutingViewModel::pipeRouteText() const {
@@ -404,20 +466,26 @@ QString RoutingViewModel::pipeRouteText() const {
 }
 
 QString RoutingViewModel::selectedPipeScopeText() const {
-  return QString::fromStdString(formatChannelMask(
-      midi_.routePipeChannelMask(pipeInput(), pipeOutput(), selectedPipe_)));
+  return QString::fromStdString(
+      formatChannelMask(static_cast<std::uint16_t>(selectedPipeChannelMask())));
 }
 
 int RoutingViewModel::selectedPipeChannelMask() const {
-  return midi_.routePipeChannelMask(pipeInput(), pipeOutput(), selectedPipe_);
+  return generatorSelected()
+             ? midi_.generatorPipeChannelMask(pipeOutput(), selectedPipe_)
+             : midi_.routePipeChannelMask(pipeInput(), pipeOutput(), selectedPipe_);
 }
 
 void RoutingViewModel::setSelectedPipeChannelMask(int mask) {
   if (mask < 0) mask = 0;
   if (mask > 0xFFFF) mask = 0xFFFF;
   const auto value = static_cast<std::uint16_t>(mask);
-  if (!midi_.setRoutePipeChannelMask(pipeInput(), pipeOutput(), selectedPipe_,
-                                     value)) {
+  const bool stored =
+      generatorSelected()
+          ? midi_.setGeneratorPipeChannelMask(pipeOutput(), selectedPipe_, value)
+          : midi_.setRoutePipeChannelMask(pipeInput(), pipeOutput(), selectedPipe_,
+                                          value);
+  if (!stored) {
     return;
   }
   log(std::string("routing: pipe scope ") + pipeRouteText().toStdString() + " #" +
@@ -428,10 +496,20 @@ void RoutingViewModel::setSelectedPipeChannelMask(int mask) {
 QString RoutingViewModel::pipeStatusText() const {
   const auto route = pipeRouteText();
   const int count = pipeCount();
-  if (count == 0) return route + QStringLiteral(" - NO PIPES");
-  const bool piOwned = midi::piOwnsPipeChain(pipeInput(), pipeOutput());
+  const bool generator = generatorSelected();
+  if (count == 0) {
+    return route +
+           (generator ? QStringLiteral(" - NO PIPES - GENERATOR NEEDS NO INPUT")
+                      : QStringLiteral(" - NO PIPES"));
+  }
+  const bool piOwned = midi::piOwnsPipeChain(pipeSourceId(), pipeOutput());
   QString status = route + QStringLiteral(" - ") + QString::number(count) +
                    (count == 1 ? QStringLiteral(" PIPE - ") : QStringLiteral(" PIPES - "));
+  if (generator && !piOwned) {
+    // The router can only own USB-side chains; a TRS generator route belongs to
+    // the Pico and this build's link seam does not carry pseudo-source frames.
+    status += QStringLiteral("PICO-OWNED - NOT SENT BY THIS BUILD");
+  } else {
   // Engine split, stated as the code is: a route touching USB (fixed or a
   // per-device registry id) is evaluated by the Pi through the shared midifx
   // core, which implements all 16 types; a TRS->TRS chain is configured on the
@@ -441,12 +519,13 @@ QString RoutingViewModel::pipeStatusText() const {
   // runs (NoteLength, MidiDelay, the stateless pipes) while the 24-PPQN grid
   // pass that steps an arp/repeater/LFO has no Pi-side caller yet: a clocked
   // pipe on a Pi-owned route holds its notes instead of generating steps.
-  status += piOwned ? QStringLiteral("PI ENGINE")
-                    : QStringLiteral("PICO 0x1A CHAIN (mask -> transpose -> chain)");
-  if (noPico_ && !piOwned) {
-    status += QStringLiteral(" - INERT (NO PICO; 0x18/0x19/0x1A not sent)");
+    status += piOwned ? QStringLiteral("PI ENGINE")
+                      : QStringLiteral("PICO 0x1A CHAIN (mask -> transpose -> chain)");
+    if (noPico_ && !piOwned) {
+      status += QStringLiteral(" - INERT (NO PICO; 0x18/0x19/0x1A not sent)");
+    }
   }
-  const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
+  const auto pipes = currentPipes();
   bool clocked = false;
   int bypassed = 0;
   for (const auto& pipe : pipes) {
@@ -455,7 +534,7 @@ QString RoutingViewModel::pipeStatusText() const {
   }
   if (clocked && piOwned) {
     status += QStringLiteral(" - CLOCKED PIPE: PI HAS NO 24-PPQN TICK");
-  } else if (clocked && !(noPico_ && !piOwned)) {
+  } else if (clocked && !(noPico_ && !piOwned) && !generator) {
     status += QStringLiteral(" - CLOCKED PIPE LIVE (Pico clockTick)");
   }
   if (bypassed > 0) {
@@ -468,9 +547,7 @@ QString RoutingViewModel::pipeStatusText() const {
               QString::fromStdString(formatChannelMask(
                   static_cast<std::uint16_t>(scope)));
   }
-  if (!midi_.routeEnabled(pipeInput(), pipeOutput())) {
-    status += QStringLiteral(" - ROUTE OFF");
-  }
+  if (!pipeRouteEnabled()) status += QStringLiteral(" - ROUTE OFF");
   return status;
 }
 
@@ -478,9 +555,27 @@ void RoutingViewModel::addPipe() {
   const int typeId = addTypeIndex_ + 1;
   if (!pipeui::isKnown(typeId)) return;
   const auto type = static_cast<session::MidiPipeType>(typeId);
-  if (!midi_.addRoutePipe(pipeInput(), pipeOutput(), type)) {
-    log(std::string("routing: pipe add refused for ") + pipeRouteText().toStdString());
+  const bool generator = generatorSelected();
+  const bool added =
+      generator ? midi_.addGeneratorPipe(pipeOutput(), type)
+                : midi_.addRoutePipe(pipeInput(), pipeOutput(), type);
+  if (!added) {
+    log(std::string("routing: pipe add refused for ") + pipeRouteText().toStdString() +
+        (generator ? " (a generator chain's head must be a generator type)"
+                   : ""));
+    if (generator) {
+      addHint_ = QStringLiteral(
+          "GENERATOR HEAD MUST BE A GENERATOR TYPE (CC LFO) - PICK IT IN THE ADD LIST");
+      emit addTypeChanged();
+    }
     return;
+  }
+  // A generator route has no source to gate; building its chain is the act
+  // that puts it on the air, so the first ADD opens the route gate.
+  if (generator && !pipeRouteEnabled()) midi_.setGeneratorRoute(pipeOutput(), true);
+  if (!addHint_.isEmpty()) {
+    addHint_.clear();
+    emit addTypeChanged();
   }
   selectedPipe_ = pipeCount() - 1;
   log(std::string("routing: pipe added to ") + pipeRouteText().toStdString() + ": " +
@@ -489,13 +584,21 @@ void RoutingViewModel::addPipe() {
 }
 
 void RoutingViewModel::removeSelectedPipe() {
-  if (!midi_.removeRoutePipe(pipeInput(), pipeOutput(), selectedPipe_)) return;
+  const bool removed =
+      generatorSelected()
+          ? midi_.removeGeneratorPipe(pipeOutput(), selectedPipe_)
+          : midi_.removeRoutePipe(pipeInput(), pipeOutput(), selectedPipe_);
+  if (!removed) return;
   selectedPipe_ = std::max(0, std::min(selectedPipe_, pipeCount() - 1));
   refreshPipes();
 }
 
 void RoutingViewModel::moveSelectedPipe(int delta) {
-  if (!midi_.moveRoutePipe(pipeInput(), pipeOutput(), selectedPipe_, delta)) return;
+  const bool moved =
+      generatorSelected()
+          ? midi_.moveGeneratorPipe(pipeOutput(), selectedPipe_, delta)
+          : midi_.moveRoutePipe(pipeInput(), pipeOutput(), selectedPipe_, delta);
+  if (!moved) return;
   selectedPipe_ = std::clamp(selectedPipe_ + (delta < 0 ? -1 : 1), 0,
                              std::max(0, pipeCount() - 1));
   refreshPipes();
@@ -503,7 +606,11 @@ void RoutingViewModel::moveSelectedPipe(int delta) {
 
 void RoutingViewModel::movePipe(int index, int delta) {
   if (index < 0 || index >= pipeCount()) return;
-  if (midi_.moveRoutePipe(pipeInput(), pipeOutput(), index, delta)) {
+  const bool moved =
+      generatorSelected()
+          ? midi_.moveGeneratorPipe(pipeOutput(), index, delta)
+          : midi_.moveRoutePipe(pipeInput(), pipeOutput(), index, delta);
+  if (moved) {
     selectedPipe_ = std::clamp(index + (delta < 0 ? -1 : 1), 0,
                                std::max(0, pipeCount() - 1));
   } else {
@@ -514,35 +621,43 @@ void RoutingViewModel::movePipe(int index, int delta) {
 
 void RoutingViewModel::removePipe(int index) {
   if (index < 0 || index >= pipeCount()) return;
-  if (!midi_.removeRoutePipe(pipeInput(), pipeOutput(), index)) return;
+  const bool removed =
+      generatorSelected()
+          ? midi_.removeGeneratorPipe(pipeOutput(), index)
+          : midi_.removeRoutePipe(pipeInput(), pipeOutput(), index);
+  if (!removed) return;
   selectedPipe_ = std::max(0, std::min(index, pipeCount() - 1));
   refreshPipes();
 }
 
 void RoutingViewModel::toggleSelectedPipeBypass() {
-  const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
+  const auto pipes = currentPipes();
   if (selectedPipe_ < 0 || selectedPipe_ >= static_cast<int>(pipes.size())) return;
-  if (!midi_.setRoutePipeBypass(pipeInput(), pipeOutput(), selectedPipe_,
-                                !pipes[static_cast<std::size_t>(selectedPipe_)].bypass)) {
-    return;
-  }
-  refreshPipes();
+  setPipeBypass(selectedPipe_,
+                !pipes[static_cast<std::size_t>(selectedPipe_)].bypass);
 }
 
 void RoutingViewModel::setPipeBypass(int index, bool bypass) {
-  if (!midi_.setRoutePipeBypass(pipeInput(), pipeOutput(), index, bypass)) return;
+  const bool stored =
+      generatorSelected()
+          ? midi_.setGeneratorPipeBypass(pipeOutput(), index, bypass)
+          : midi_.setRoutePipeBypass(pipeInput(), pipeOutput(), index, bypass);
+  if (!stored) return;
   refreshPipes();
 }
 
 void RoutingViewModel::setPipeParam(int pipeIndex, int param, int value) {
-  if (!midi_.setRoutePipeParam(pipeInput(), pipeOutput(), pipeIndex, param, value)) {
-    return;
-  }
+  const bool stored =
+      generatorSelected()
+          ? midi_.setGeneratorPipeParam(pipeOutput(), pipeIndex, param, value)
+          : midi_.setRoutePipeParam(pipeInput(), pipeOutput(), pipeIndex, param,
+                                    value);
+  if (!stored) return;
   refreshPipes();
 }
 
 QString RoutingViewModel::pipeParamValueText(int param, int value) const {
-  const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
+  const auto pipes = currentPipes();
   if (selectedPipe_ < 0 || selectedPipe_ >= static_cast<int>(pipes.size())) return {};
   const int typeId =
       static_cast<int>(pipes[static_cast<std::size_t>(selectedPipe_)].type);
@@ -551,8 +666,9 @@ QString RoutingViewModel::pipeParamValueText(int param, int value) const {
 
 QString RoutingViewModel::defaultChainName() const {
   return QStringLiteral("chain-%1-%2")
-      .arg(static_cast<int>(pipeInput()))
-      .arg(static_cast<int>(pipeOutput()));
+      .arg(generatorSelected() ? QStringLiteral("gen")
+                               : QString::number(midi::portId(pipeInput())))
+      .arg(midi::portId(pipeOutput()));
 }
 
 QString RoutingViewModel::exportPipeChain(const QString& target,
@@ -560,7 +676,7 @@ QString RoutingViewModel::exportPipeChain(const QString& target,
   std::filesystem::path file;
   const QString resolved = pipe_preset::resolvePath(target, projectDirectory, file);
   if (!resolved.isEmpty()) return resolved;
-  const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
+  const auto pipes = currentPipes();
   if (pipes.empty()) return QStringLiteral("the selected route has no pipes to export");
   pipe_preset::ChainFile chain;
   chain.name = QString::fromStdString(file.stem().string());
@@ -580,9 +696,11 @@ QString RoutingViewModel::importPipeChain(const QString& target,
   pipe_preset::ChainFile chain;
   const QString error = pipe_preset::read(file, chain);
   if (!error.isEmpty()) return error;
-  if (!midi_.setRoutePipes(pipeInput(), pipeOutput(), chain.pipes)) {
-    return QStringLiteral("the router refused the chain");
-  }
+  const bool stored =
+      generatorSelected()
+          ? midi_.setGeneratorPipes(pipeOutput(), chain.pipes)
+          : midi_.setRoutePipes(pipeInput(), pipeOutput(), chain.pipes);
+  if (!stored) return QStringLiteral("the router refused the chain");
   selectedPipe_ = 0;
   log(std::string("routing: imported ") + std::to_string(chain.pipes.size()) +
       " pipe(s) into " + pipeRouteText().toStdString() + " from " + file.string());
@@ -590,18 +708,53 @@ QString RoutingViewModel::importPipeChain(const QString& target,
   return {};
 }
 
+int RoutingViewModel::addTypeIdAt(int index) const {
+  const int count = static_cast<int>(mnky::midifx::generated::kPipeCount);
+  if (!generatorHeadPending()) return std::clamp(index, 0, count - 1) + 1;
+  // Only a generator-role pipe may head a source-less route, so the pending
+  // list is the generator-role subset (today just CC LFO).
+  int filtered = 0;
+  for (int id = 1; id <= count; ++id) {
+    if (pipeui::pipeRoleName(id) != QStringLiteral("GENERATOR")) continue;
+    if (filtered == index) return id;
+    ++filtered;
+  }
+  for (int id = 1; id <= count; ++id) {
+    if (pipeui::pipeRoleName(id) == QStringLiteral("GENERATOR")) return id;
+  }
+  return 1;
+}
+
+int RoutingViewModel::addTypeIndexInList() const {
+  const QStringList labels = addTypeLabels();
+  for (int index = 0; index < labels.size(); ++index) {
+    if (addTypeIdAt(index) == addTypeIndex_ + 1) return index;
+  }
+  return 0;
+}
+
 QStringList RoutingViewModel::addTypeLabels() const {
   QStringList labels;
   const int count = static_cast<int>(mnky::midifx::generated::kPipeCount);
   labels.reserve(count);
+  const bool headOnly = generatorHeadPending();
   for (int index = 0; index < count; ++index) {
-    labels << pipeui::pipeName(index + 1);
+    const int id = index + 1;
+    if (headOnly && pipeui::pipeRoleName(id) != QStringLiteral("GENERATOR")) continue;
+    labels << pipeui::pipeName(id);
   }
   return labels;
 }
 
 void RoutingViewModel::refreshPipes() {
-  const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
+  const auto pipes = currentPipes();
+  // A generator route with an empty chain may only add a generator-role head,
+  // so the armed type follows the filtered list instead of a stale modifier.
+  if (generatorSelected() && pipes.empty() &&
+      pipeui::pipeRoleName(addTypeIndex_ + 1) != QStringLiteral("GENERATOR")) {
+    addTypeIndex_ = addTypeIdAt(0) - 1;
+    emit addTypeChanged();
+  }
   if (selectedPipe_ >= static_cast<int>(pipes.size())) {
     selectedPipe_ = pipes.empty() ? 0 : static_cast<int>(pipes.size()) - 1;
   }
@@ -623,11 +776,15 @@ void RoutingViewModel::refreshPipes() {
     row.insert(QStringLiteral("chMask"), static_cast<int>(pipe.chMask));
     row.insert(QStringLiteral("scopeText"),
                QString::fromStdString(formatChannelMask(pipe.chMask)));
-    const bool piOwned = midi::piOwnsPipeChain(pipeInput(), pipeOutput());
+    const bool piOwned = midi::piOwnsPipeChain(pipeSourceId(), pipeOutput());
+    const bool generatorHead = generatorSelected() && !piOwned;
     QString rowStatus = QStringLiteral("ACTIVE");
     bool warning = false;
     if (pipe.bypass) {
       rowStatus = QStringLiteral("BYPASS");
+    } else if (generatorHead) {
+      rowStatus = QStringLiteral("NOT SENT (PICO-OWNED)");
+      warning = true;
     } else if (noPico_ && !piOwned) {
       rowStatus = QStringLiteral("INERT (NO PICO)");
       warning = true;
@@ -645,7 +802,8 @@ void RoutingViewModel::refreshPipes() {
     }
     row.insert(QStringLiteral("status"), rowStatus);
     row.insert(QStringLiteral("warning"), warning);
-    row.insert(QStringLiteral("inert"), noPico_ && !piOwned && !pipe.bypass);
+    row.insert(QStringLiteral("inert"),
+               (generatorHead || (noPico_ && !piOwned)) && !pipe.bypass);
     rows.push_back(row);
   }
 
@@ -703,6 +861,13 @@ void RoutingViewModel::refreshFilters() {
   QVariantList masks;
   QVariantList transposes;
   for (const auto& node : inputs_) {
+    if (node.port == midi::kSrcGenerator) {
+      // A generator has no input channel to filter or transpose; keep the
+      // arrays index-aligned with the node list but inert.
+      masks.push_back(0xFFFF);
+      transposes.push_back(0);
+      continue;
+    }
     const auto port = static_cast<midi::Port>(node.port);
     masks.push_back(static_cast<int>(midi_.channelMask(port)));
     transposes.push_back(midi_.transpose(port));
@@ -715,13 +880,16 @@ void RoutingViewModel::refreshFilters() {
 
   // The SHIFT filter page shows at most three source rows at a time; a device
   // list longer than that is paged so every row keeps its 44 px touch height.
+  // The filter page lists every real input source, never the generator
+  // pseudo-source (it has no input channel to filter).
+  const QVariantList filterable = filterTabRows();
   filterPage_ = std::clamp(filterPage_, 0, filterPageCount() - 1);
   QVariantList rows;
   const int first = filterPage_ * kFilterRowsPerPage;
-  const int last = std::min(static_cast<int>(inputs_.size()),
+  const int last = std::min(static_cast<int>(filterable.size()),
                             first + kFilterRowsPerPage);
   for (int index = first; index < last; ++index) {
-    rows.push_back(nodeRow(inputs_[static_cast<std::size_t>(index)], index));
+    rows.push_back(filterable[static_cast<std::size_t>(index)]);
   }
   if (rows != filterPageRows_) {
     filterPageRows_ = std::move(rows);

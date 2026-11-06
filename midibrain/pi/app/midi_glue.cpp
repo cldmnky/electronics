@@ -79,6 +79,13 @@ bool routerPipes(const std::vector<session::MidiPipe>& pipes,
   return true;
 }
 
+// A generator chain's head must have the schema role generator; Router enforces
+// the same rule, so refuse it here before storing a chain the engine rejects.
+bool generatorHeadAllowed(session::MidiPipeType type) {
+  return mnky::midifx::generated::pipeIsGenerator(
+      static_cast<std::uint8_t>(static_cast<int>(type)));
+}
+
 // Fills a stored pipe's positional parameters from the descriptor defaults so
 // an editor write to a later parameter does not silently inherit a different
 // fallback than the UI shows.
@@ -296,6 +303,20 @@ session::RouterState MidiGlue::captureSessionRouter() const {
     state.channels[static_cast<std::size_t>(port)] = router_.channelMask(id);
     state.transpose[static_cast<std::size_t>(port)] = router_.transpose(id);
   }
+  // Generator routes carry no input, so they are captured straight from the
+  // pseudo-source store (the loop above only sees real input->output pairs).
+  for (int destination = 0; destination < midi::kMaxPorts; ++destination) {
+    const auto dst = static_cast<midi::Port>(destination);
+    if (!midi::isOutput(dst)) continue;
+    if (!generatorEnabled_[static_cast<std::size_t>(destination)] &&
+        generatorPipes_[static_cast<std::size_t>(destination)].empty()) {
+      continue;
+    }
+    state.routes.push_back(session::RouteState{
+        session::kSrcGenerator, destination,
+        generatorEnabled_[static_cast<std::size_t>(destination)],
+        generatorPipes_[static_cast<std::size_t>(destination)]});
+  }
   state.devices = registry_.sessionDevices();
   return state;
 }
@@ -312,7 +333,30 @@ void MidiGlue::applySessionRouter(const session::RouterState& input) {
       }
     }
     router_.clearPipes();
+    generatorPipes_ = {};
+    generatorEnabled_ = {};
     for (const auto& route : state.routes) {
+      if (route.src == session::kSrcGenerator) {
+        // Generator routes have no input port. Store the chain for both engine
+        // owners; only a Pi-owned destination can be applied to Router here.
+        const auto destination = static_cast<midi::Port>(route.dst);
+        if (!midi::isOutput(destination)) continue;
+        const auto index = static_cast<std::size_t>(route.dst);
+        std::vector<session::MidiPipe> pipes;
+        if (!sanitizePipes(route.pipes, pipes)) pipes.clear();
+        generatorPipes_[index] = std::move(pipes);
+        generatorEnabled_[index] = route.on;
+        if (midi::piOwnsPipeChain(session::kSrcGenerator, destination)) {
+          (void)router_.setGenerator(destination, route.on);
+          std::array<midi::PipeConfig, midi::kMaxRoutePipes> configs;
+          std::size_t count = 0;
+          if (routerPipes(generatorPipes_[index], configs, count)) {
+            (void)router_.setGeneratorPipes(destination, configs.data(), count);
+          }
+        }
+        continue;
+      }
+      if (route.src == session::kSrcOutputInsert) continue;  // not exposed yet
       const auto source = static_cast<midi::Port>(route.src);
       const auto destination = static_cast<midi::Port>(route.dst);
       (void)router_.setRoute(source, destination, route.on);
@@ -619,12 +663,159 @@ std::uint16_t MidiGlue::routePipeChannelMask(midi::Port source,
   return pipes[static_cast<std::size_t>(index)].chMask;
 }
 
+bool MidiGlue::generatorRouteEnabled(midi::Port destination) const {
+  if (!midi::isOutput(destination)) return false;
+  const std::lock_guard<std::mutex> lock(lock_);
+  return generatorEnabled_[static_cast<std::size_t>(midi::portId(destination))];
+}
+
+bool MidiGlue::setGeneratorRoute(midi::Port destination, bool enabled) {
+  if (!midi::isOutput(destination)) return false;
+  const auto index = static_cast<std::size_t>(midi::portId(destination));
+  {
+    const std::lock_guard<std::mutex> lock(lock_);
+    generatorEnabled_[index] = enabled;
+    if (midi::piOwnsPipeChain(session::kSrcGenerator, destination)) {
+      (void)router_.setGenerator(destination, enabled);
+    }
+  }
+  return true;
+}
+
+std::vector<session::MidiPipe> MidiGlue::generatorPipes(
+    midi::Port destination) const {
+  if (!midi::isOutput(destination)) return {};
+  const std::lock_guard<std::mutex> lock(lock_);
+  return generatorPipes_[static_cast<std::size_t>(midi::portId(destination))];
+}
+
+bool MidiGlue::setGeneratorPipes(midi::Port destination,
+                                 const std::vector<session::MidiPipe>& pipes) {
+  if (!midi::isOutput(destination)) return false;
+  std::vector<session::MidiPipe> sanitized;
+  if (!sanitizePipes(pipes, sanitized)) return false;
+  if (!sanitized.empty() && !generatorHeadAllowed(sanitized.front().type)) {
+    return false;
+  }
+  std::array<midi::PipeConfig, midi::kMaxRoutePipes> configs;
+  std::size_t count = 0;
+  if (!routerPipes(sanitized, configs, count)) return false;
+  {
+    const std::lock_guard<std::mutex> lock(lock_);
+    if (midi::piOwnsPipeChain(session::kSrcGenerator, destination)) {
+      if (!router_.setGeneratorPipes(destination, configs.data(), count)) {
+        return false;
+      }
+    }
+    // A Pico-owned destination keeps the chain in the session store only; the
+    // link seam does not carry pseudo-source chains in this build.
+    generatorPipes_[static_cast<std::size_t>(midi::portId(destination))] =
+        std::move(sanitized);
+  }
+  return true;
+}
+
+bool MidiGlue::addGeneratorPipe(midi::Port destination,
+                                session::MidiPipeType type) {
+  const auto* spec = pipeui::pipeSpec(static_cast<int>(type));
+  if (spec == nullptr) return false;
+  auto pipes = generatorPipes(destination);
+  if (pipes.size() >= midi::kMaxRoutePipes) return false;
+  if (pipes.empty() && !generatorHeadAllowed(type)) return false;
+  session::MidiPipe pipe;
+  pipe.type = type;
+  pipe.params.reserve(spec->paramCount);
+  for (std::size_t index = 0; index < spec->paramCount; ++index) {
+    pipe.params.push_back(spec->params[index].defaultValue);
+  }
+  pipes.push_back(std::move(pipe));
+  return setGeneratorPipes(destination, pipes);
+}
+
+bool MidiGlue::removeGeneratorPipe(midi::Port destination, int index) {
+  auto pipes = generatorPipes(destination);
+  if (index < 0 || index >= static_cast<int>(pipes.size())) return false;
+  pipes.erase(pipes.begin() + index);
+  return setGeneratorPipes(destination, pipes);
+}
+
+bool MidiGlue::moveGeneratorPipe(midi::Port destination, int index, int delta) {
+  auto pipes = generatorPipes(destination);
+  if (index < 0 || index >= static_cast<int>(pipes.size())) return false;
+  const int target = index + (delta < 0 ? -1 : 1);
+  if (target < 0 || target >= static_cast<int>(pipes.size())) return false;
+  std::swap(pipes[static_cast<std::size_t>(index)],
+            pipes[static_cast<std::size_t>(target)]);
+  return setGeneratorPipes(destination, pipes);
+}
+
+bool MidiGlue::setGeneratorPipeBypass(midi::Port destination, int index,
+                                      bool bypass) {
+  auto pipes = generatorPipes(destination);
+  if (index < 0 || index >= static_cast<int>(pipes.size())) return false;
+  pipes[static_cast<std::size_t>(index)].bypass = bypass;
+  return setGeneratorPipes(destination, pipes);
+}
+
+bool MidiGlue::setGeneratorPipeParam(midi::Port destination, int index,
+                                     int param, int value) {
+  auto pipes = generatorPipes(destination);
+  if (index < 0 || index >= static_cast<int>(pipes.size())) return false;
+  auto& pipe = pipes[static_cast<std::size_t>(index)];
+  const auto* spec = pipeui::pipeSpec(static_cast<int>(pipe.type));
+  if (spec == nullptr || param < 0 ||
+      param >= static_cast<int>(spec->paramCount)) {
+    return false;
+  }
+  fillDefaults(pipe);
+  pipe.params[static_cast<std::size_t>(param)] =
+      pipeui::clamp(spec->params[static_cast<std::size_t>(param)], value);
+  return setGeneratorPipes(destination, pipes);
+}
+
+bool MidiGlue::setGeneratorPipeChannelMask(midi::Port destination, int index,
+                                           std::uint16_t mask) {
+  auto pipes = generatorPipes(destination);
+  if (index < 0 || index >= static_cast<int>(pipes.size())) return false;
+  pipes[static_cast<std::size_t>(index)].chMask = mask;
+  return setGeneratorPipes(destination, pipes);
+}
+
+std::uint16_t MidiGlue::generatorPipeChannelMask(midi::Port destination,
+                                                 int index) const {
+  const auto pipes = generatorPipes(destination);
+  if (index < 0 || index >= static_cast<int>(pipes.size())) return 0xFFFF;
+  return pipes[static_cast<std::size_t>(index)].chMask;
+}
+
+void MidiGlue::clearGeneratorRoutes() {
+  {
+    const std::lock_guard<std::mutex> lock(lock_);
+    generatorPipes_ = {};
+    generatorEnabled_ = {};
+    router_.clearPseudoPipes();
+  }
+  log("midi: generator routes cleared");
+}
+
 void MidiGlue::setRoutePipeLists(const std::vector<session::RouteState>& routes) {
   {
     const std::lock_guard<std::mutex> lock(lock_);
     for (auto& list : routePipes_) list.clear();
     dynamicRoutePipes_.clear();
+    generatorPipes_ = {};
+    generatorEnabled_ = {};
     for (const auto& route : routes) {
+      if (route.src == session::kSrcGenerator) {
+        if (!midi::isOutput(static_cast<midi::Port>(route.dst))) continue;
+        std::vector<session::MidiPipe> sanitized;
+        if (!sanitizePipes(route.pipes, sanitized)) continue;
+        const auto index = static_cast<std::size_t>(route.dst);
+        generatorPipes_[index] = std::move(sanitized);
+        generatorEnabled_[index] = route.on;
+        continue;
+      }
+      if (route.src == session::kSrcOutputInsert) continue;
       const auto source = static_cast<midi::Port>(route.src);
       const auto destination = static_cast<midi::Port>(route.dst);
       const int slot = routeSlot(source, destination);

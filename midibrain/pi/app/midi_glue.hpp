@@ -141,6 +141,35 @@ class MidiGlue {
   // lists to the Router snapshot before swapping it in (session::apply() does
   // not apply RouteState::pipes).
   void setRoutePipeLists(const std::vector<session::RouteState>& routes);
+
+  // --- generator routes (session kSrcGenerator, -1) ------------------------
+  // A generator route consumes no input: its chain emits from a generator head
+  // (pipes.json role, today only CC LFO) on the clock grid. The chain is stored
+  // per output destination and captured as RouteState{src = -1}. A Pi-owned
+  // destination (USB OUT or a dynamic USB endpoint) is applied to Router and
+  // audibly evaluated there; a TRS destination's chain is Pico-owned and the
+  // app's link seam does not carry pseudo-source chains yet, so it is stored and
+  // shown as not sent instead of pretending to play. No route enable bit or
+  // chain entry ever requires an input port.
+  bool generatorRouteEnabled(midi::Port destination) const;
+  bool setGeneratorRoute(midi::Port destination, bool enabled);
+  std::vector<session::MidiPipe> generatorPipes(midi::Port destination) const;
+  // Replaces the chain. The first pipe must have the schema's generator role
+  // (Router::setGeneratorPipes enforces the same rule); an empty chain is
+  // allowed and parks the route.
+  bool setGeneratorPipes(midi::Port destination,
+                         const std::vector<session::MidiPipe>& pipes);
+  bool addGeneratorPipe(midi::Port destination, session::MidiPipeType type);
+  bool removeGeneratorPipe(midi::Port destination, int index);
+  bool moveGeneratorPipe(midi::Port destination, int index, int delta);
+  bool setGeneratorPipeBypass(midi::Port destination, int index, bool bypass);
+  bool setGeneratorPipeParam(midi::Port destination, int index, int param,
+                             int value);
+  bool setGeneratorPipeChannelMask(midi::Port destination, int index,
+                                   std::uint16_t mask);
+  std::uint16_t generatorPipeChannelMask(midi::Port destination, int index) const;
+  // Matrix RESET: drop every generator route and chain.
+  void clearGeneratorRoutes();
   // Dotted LearnEngine paths for every positional parameter of every stored
   // chain, in route/pipe/param order.
   std::vector<std::string> routePipeLearnTargets() const;
@@ -249,6 +278,9 @@ class MidiGlue {
   // setRoutePipes() and captured into session::RouteState::pipes by project_io.
   std::array<std::vector<session::MidiPipe>, 9> routePipes_{};
   std::map<int, std::vector<session::MidiPipe>> dynamicRoutePipes_{};
+  // Generator chains and their route gate, indexed by output destination id.
+  std::array<std::vector<session::MidiPipe>, midi::kMaxPorts> generatorPipes_{};
+  std::array<bool, midi::kMaxPorts> generatorEnabled_{};
   midi::UsbMidi usb_;
   // Dynamic USB device endpoints (ids 6..31), guarded by lock_. Ports are
   // reopened on an inventory change but the registry never frees an id while

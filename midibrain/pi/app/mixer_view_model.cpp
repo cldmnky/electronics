@@ -55,6 +55,28 @@ int MixerViewModel::pageCount() const {
   return (count + kStripsPerBank - 1) / kStripsPerBank;
 }
 
+QVariantList MixerViewModel::bankPages() const {
+  // A fixed 4x4 grid over the capacity: a page past the track list stays
+  // visible but dimmed, so "there is no track 17 yet" is legible instead of the
+  // grid silently shrinking.
+  constexpr int kPages =
+      (audio::kMaxTracks + kStripsPerBank - 1) / kStripsPerBank;
+  QVariantList pages;
+  const int count = model_.trackCount();
+  for (int page = 0; page < kPages; ++page) {
+    const int first = page * kStripsPerBank + 1;
+    const int last = first + kStripsPerBank - 1;
+    QVariantMap row;
+    row.insert(QStringLiteral("index"), page);
+    row.insert(QStringLiteral("label"),
+               QStringLiteral("%1-%2").arg(first).arg(last));
+    row.insert(QStringLiteral("empty"), first > count);
+    row.insert(QStringLiteral("current"), page == bank_);
+    pages.append(row);
+  }
+  return pages;
+}
+
 QString MixerViewModel::bankText() const {
   const int count = model_.trackCount();
   if (count == 0) return QStringLiteral("NO TRACKS");
@@ -70,8 +92,10 @@ double MixerViewModel::stripLevel(int slot) const {
 
 bool MixerViewModel::stripClip(int slot) const {
   if (slot < 0 || slot >= audio::kMaxTracks) return false;
-  if (clipDemo_) return model_.positionOfSlot(slot) >= 0 &&
-                        model_.positionOfSlot(slot) < 6;
+  if (clipDemo_) {
+    return model_.positionOfSlot(slot) >= 0 && model_.positionOfSlot(slot) < 6 &&
+           !clipDemoCleared_[static_cast<std::size_t>(slot)];
+  }
   return clipHolds_[static_cast<std::size_t>(slot)].clipped();
 }
 
@@ -805,6 +829,7 @@ void MixerViewModel::setStripMeters(const std::array<double, audio::kMaxTracks>&
 
 void MixerViewModel::showClipDemo() {
   clipDemo_ = true;
+  clipDemoCleared_.fill(false);
   for (int strip = 0; strip < audio::kMaxTracks; ++strip) {
     const int position = model_.positionOfSlot(strip);
     stripLevels_[static_cast<std::size_t>(strip)] =
@@ -818,9 +843,19 @@ void MixerViewModel::showClipDemo() {
   }
 }
 
+void MixerViewModel::clearClip(int slot) {
+  if (slot < 0 || slot >= audio::kMaxTracks) return;
+  clipHolds_[static_cast<std::size_t>(slot)].clear();
+  clipDemoCleared_[static_cast<std::size_t>(slot)] = true;
+  const int row = model_.positionOfSlot(slot);
+  if (row >= 0) emit dataChanged(index(row, 0), index(row, 0), {ClipRole});
+  emit metersChanged();
+}
+
 void MixerViewModel::clearClipDemo() {
   if (!clipDemo_) return;
   clipDemo_ = false;
+  clipDemoCleared_.fill(false);
   if (rowCount() > 0) {
     emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {ClipRole});
     emit metersChanged();

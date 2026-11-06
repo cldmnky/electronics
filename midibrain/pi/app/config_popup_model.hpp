@@ -81,6 +81,17 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(double timelineFadeInBeats READ timelineFadeInBeats WRITE setTimelineFadeInBeats NOTIFY changed)
   Q_PROPERTY(double timelineFadeOutBeats READ timelineFadeOutBeats WRITE setTimelineFadeOutBeats NOTIFY changed)
   Q_PROPERTY(QString timelineOpName READ timelineOpName NOTIFY changed)
+  // D5: the region the op will use and whether APPLY can run. The header line
+  // names IN/OUT; an invalid range disables the verb and states the reason
+  // inline instead of leaving a live button that can only fail.
+  Q_PROPERTY(QString regionLine READ regionLine NOTIFY changed)
+  Q_PROPERTY(bool regionApplies READ regionApplies NOTIFY changed)
+  Q_PROPERTY(QString regionReason READ regionReason NOTIFY changed)
+  // Only the fields the chosen op reads are shown (GAIN for GAIN, the fades
+  // for FADES); the waveform preview follows the same rule.
+  Q_PROPERTY(bool showGainField READ showGainField NOTIFY changed)
+  Q_PROPERTY(bool showFadeFields READ showFadeFields NOTIFY changed)
+  Q_PROPERTY(bool showRegionPreview READ showRegionPreview NOTIFY changed)
   Q_PROPERTY(QString timelineError READ timelineError NOTIFY changed)
   // Per-pipe MIDI channel scope (session::MidiPipe::chMask, kind
   // "pipechannels"): a draft 16-bit mask plus the live compact readout. The
@@ -91,6 +102,9 @@ class ConfigPopupModel final : public QObject {
   // Footer text: the popup states its own OK/CANCEL contract (live values vs
   // the add-track create and the region-op run).
   Q_PROPERTY(QString footerHint READ footerHint NOTIFY openChanged)
+  // C9: the primary button states its verb (ADD TRACK, APPLY TRIM, ...); the
+  // header repeats it. Only a pure settings popup keeps OK.
+  Q_PROPERTY(QString acceptLabel READ acceptLabel NOTIFY changed)
   // ---- selector popups (tap-to-open lists) -------------------------------
   // INPUT SOURCE: 0 = none, 1..18 mono device channels, 19..27 stereo pairs.
   // Every pick writes MixerModel the moment it is tapped.
@@ -126,7 +140,12 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(QStringList pipeDestLabels READ pipeDestLabels NOTIFY changed)
   Q_PROPERTY(int pipeDestIndex READ pipeDestIndex WRITE setPipeDestIndex NOTIFY changed)
   Q_PROPERTY(QStringList pipeTypeLabels READ pipeTypeLabels CONSTANT)
-  Q_PROPERTY(QStringList pipeTypeRoles READ pipeTypeRoles CONSTANT)
+  // Roles of the current type list (generator-filtered while a generator route
+  // waits for its head), so a row's role always matches its label.
+  Q_PROPERTY(QStringList pipeTypeRoles READ pipeTypeRoles NOTIFY changed)
+  // True while the route is a generator with no head yet; the type list then
+  // contains only generator-role pipes.
+  Q_PROPERTY(bool pipeTypeHeadOnly READ pipeTypeHeadOnly NOTIFY changed)
   Q_PROPERTY(QString pipeTypeDocs READ pipeTypeDocs NOTIFY changed)
   Q_PROPERTY(int pipeTypeIndex READ pipeTypeIndex WRITE setPipeTypeIndex NOTIFY changed)
   // One bool/enum pipe parameter (kind "pipeparam"): the parameter card's
@@ -185,11 +204,18 @@ class ConfigPopupModel final : public QObject {
   double timelineFadeInBeats() const { return timelineFadeInBeats_; }
   double timelineFadeOutBeats() const { return timelineFadeOutBeats_; }
   QString timelineOpName() const;
+  QString regionLine() const;
+  bool regionApplies() const;
+  QString regionReason() const;
+  bool showGainField() const { return timelineOp_ == 2; }
+  bool showFadeFields() const { return timelineOp_ == 3; }
+  bool showRegionPreview() const { return showGainField() || showFadeFields(); }
   QString timelineError() const { return timelineError_; }
   int pipeChannelMask() const { return pipeChannelMask_; }
   QString pipeChannelText() const;
   QString pipeScopeContext() const { return pipeScopeContext_; }
   QString footerHint() const;
+  QString acceptLabel() const;
   QString inputSourceTitle() const;
   QStringList inputSourceLabels() const;
   int inputSourceIndex() const { return inputSourceIndex_; }
@@ -222,6 +248,7 @@ class ConfigPopupModel final : public QObject {
   void setPipeDestIndex(int value);
   QStringList pipeTypeLabels() const;
   QStringList pipeTypeRoles() const;
+  bool pipeTypeHeadOnly() const;
   QString pipeTypeDocs() const;
   int pipeTypeIndex() const { return pipeTypeIndex_; }
   void setPipeTypeIndex(int value);

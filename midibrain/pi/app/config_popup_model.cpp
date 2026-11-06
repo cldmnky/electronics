@@ -97,12 +97,12 @@ bool ConfigPopupModel::openKind(const QString& kind) {
   kind_ = kind;
   title_ = kind == QStringLiteral("metronome")   ? QStringLiteral("METRONOME")
            : kind == QStringLiteral("sends")     ? QStringLiteral("SEND SOURCE")
-           : kind == QStringLiteral("monitor")   ? QStringLiteral("MONITOR")
+           : kind == QStringLiteral("monitor")   ? QStringLiteral("OUTPUT")
            : kind == QStringLiteral("eqtype")    ? QStringLiteral("EQ BAND TYPE")
            : kind == QStringLiteral("delay")     ? QStringLiteral("DELAY")
            : kind == QStringLiteral("reverb")    ? QStringLiteral("REVERB")
            : kind == QStringLiteral("timelineops") ? QStringLiteral("REGION OPS")
-           : kind == QStringLiteral("pipechannels") ? QStringLiteral("PIPE CHANNEL SCOPE")
+           : kind == QStringLiteral("pipechannels") ? QStringLiteral("MIDI CHANNEL FILTER")
            : kind == QStringLiteral("trackmonitor") ? QStringLiteral("INPUT MONITOR")
            : kind == QStringLiteral("inputsource") ? inputSourceTitle()
            : kind == QStringLiteral("outputdest") ? outputTitle()
@@ -198,23 +198,13 @@ void ConfigPopupModel::loadDraft() {
         pipeDestPorts_.push_back(map.value(QStringLiteral("port")).toInt());
       }
     }
-    pipeSourceIndex_ = 0;
-    pipeDestIndex_ = 0;
-    if (routing_ != nullptr) {
-      for (std::size_t index = 0; index < pipeSourcePorts_.size(); ++index) {
-        if (pipeSourcePorts_[index] == routing_->pipeSource()) {
-          pipeSourceIndex_ = static_cast<int>(index);
-        }
-      }
-      for (std::size_t index = 0; index < pipeDestPorts_.size(); ++index) {
-        if (pipeDestPorts_[index] == routing_->pipeDestination()) {
-          pipeDestIndex_ = static_cast<int>(index);
-        }
-      }
-    }
+    // The lists are built in node order, so the node index is the list index
+    // (a port-id comparison would misplace the source-less GENERATOR node).
+    pipeSourceIndex_ = routing_ == nullptr ? 0 : routing_->pipeSource();
+    pipeDestIndex_ = routing_ == nullptr ? 0 : routing_->pipeDestination();
   }
   if (kind_ == QStringLiteral("pipetype")) {
-    pipeTypeIndex_ = routing_ == nullptr ? 0 : routing_->addTypeIndex();
+    pipeTypeIndex_ = routing_ == nullptr ? 0 : routing_->addTypeIndexInList();
   }
   if (kind_ == QStringLiteral("pipeparam")) {
     pipeParamChoices_.clear();
@@ -286,6 +276,11 @@ void ConfigPopupModel::accept() {
   }
   if (kind_ == QStringLiteral("timelineops")) {
     if (timeline_ == nullptr) return;
+    if (!regionApplies()) {
+      timelineError_ = regionReason();
+      changedLive();
+      return;
+    }
     const QString error = timeline_->applyOp(timelineOp_, timelineGainDb_,
                                              timelineFadeInBeats_,
                                              timelineFadeOutBeats_);
@@ -808,13 +803,53 @@ void ConfigPopupModel::setCompMode(int value) {
 #undef CONFIG_SETTER
 
 QString ConfigPopupModel::footerHint() const {
+  // C9: the header repeats the button's verb, so the two can never disagree.
   if (kind_ == QStringLiteral("addtrack")) {
-    return QStringLiteral("OK ADDS THE TRACK - CANCEL ADDS NOTHING");
+    return QStringLiteral("ADD TRACK - CANCEL ADDS NOTHING");
   }
   if (kind_ == QStringLiteral("timelineops")) {
-    return QStringLiteral("OK RUNS THE REGION OP - CANCEL CLOSES");
+    return acceptLabel() + QStringLiteral(" - CANCEL KEEPS EDITS");
   }
   return QStringLiteral("LIVE - EVERY CHANGE APPLIES - CANCEL RESTORES");
+}
+
+QString ConfigPopupModel::acceptLabel() const {
+  if (kind_ == QStringLiteral("addtrack")) return QStringLiteral("ADD TRACK");
+  if (kind_ == QStringLiteral("timelineops")) {
+    return QStringLiteral("APPLY ") + timelineOpName();
+  }
+  return QStringLiteral("OK");
+}
+
+QString ConfigPopupModel::regionLine() const {
+  if (timeline_ == nullptr) return {};
+  if (!timeline_->selectionActive()) {
+    return QStringLiteral("NO IN/OUT - set them with the cursor");
+  }
+  const double in = timeline_->inBeats();
+  const double out = timeline_->outBeats();
+  const double beats = out - in;
+  return QStringLiteral("IN %1 -> OUT %2  (%3 beats)")
+      .arg(timeline_->beatTextOf(in), timeline_->beatTextOf(out))
+      .arg(beats, 0, 'f', 2);
+}
+
+bool ConfigPopupModel::regionApplies() const {
+  if (timeline_ == nullptr) return false;
+  // TRIM and DELETE rewrite the selected range, so they need a real IN..OUT.
+  // The other ops either use the cursor (SPLIT), the whole take (GAIN, FADES,
+  // NORM) or no range (CLEAR).
+  const bool needsRange = timelineOp_ == 0 || timelineOp_ == 5;
+  if (!needsRange) return true;
+  return timeline_->selectionActive() && timeline_->outBeats() > timeline_->inBeats();
+}
+
+QString ConfigPopupModel::regionReason() const {
+  if (regionApplies()) return {};
+  if (timeline_ == nullptr || !timeline_->selectionActive()) {
+    return QStringLiteral("select a region with a drag or IN/OUT first");
+  }
+  return QStringLiteral("OUT must be after IN");
 }
 
 QString ConfigPopupModel::inputSourceTitle() const {
@@ -948,14 +983,21 @@ void ConfigPopupModel::setPipeTypeIndex(int value) {
 QStringList ConfigPopupModel::pipeTypeRoles() const {
   QStringList roles;
   if (routing_ == nullptr) return roles;
-  const int count = static_cast<int>(mnky::midifx::generated::kPipeCount);
-  roles.reserve(count);
-  for (int id = 1; id <= count; ++id) roles << pipeui::pipeRoleName(id);
+  const QStringList labels = routing_->addTypeLabels();
+  roles.reserve(labels.size());
+  for (int index = 0; index < labels.size(); ++index) {
+    roles << pipeui::pipeRoleName(routing_->addTypeIdAt(index));
+  }
   return roles;
 }
 
+bool ConfigPopupModel::pipeTypeHeadOnly() const {
+  return routing_ != nullptr && routing_->generatorHeadPending();
+}
+
 QString ConfigPopupModel::pipeTypeDocs() const {
-  return pipeui::pipeDocs(pipeTypeIndex_ + 1);
+  if (routing_ == nullptr) return {};
+  return pipeui::pipeDocs(routing_->addTypeIdAt(pipeTypeIndex_));
 }
 
 void ConfigPopupModel::setPipeParamTarget(int pipe, int param) {

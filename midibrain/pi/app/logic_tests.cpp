@@ -256,18 +256,21 @@ void routingTests() {
       {8, "Synth Out", "usb:Synth Out", false, true, true}};
   const auto inputs = routingInputNodes(ports);
   const auto outputs = routingOutputNodes(ports);
-  check(inputs.size() == 5 && inputs[0].port == 0 && inputs[1].port == 1 &&
+  check(inputs.size() == 6 && inputs[0].port == 0 && inputs[1].port == 1 &&
             inputs[2].port == 2,
         "routing input nodes keep the three fixed ports first");
-  check(inputs[3].port == 6 && inputs[3].name == QStringLiteral("Studio Keys") &&
-            inputs[3].connected,
+  check(inputs[3].port == midi::kSrcGenerator &&
+            inputs[3].name == QStringLiteral("GENERATOR") && !inputs[3].dynamic,
+        "GENERATOR is a fixed source-less node, listed with the fixed sources");
+  check(inputs[4].port == 6 && inputs[4].name == QStringLiteral("Studio Keys") &&
+            inputs[4].connected,
         "a connected per-device USB input becomes its own node");
-  check(inputs[4].port == 7 && !inputs[4].connected &&
-            inputs[4].dynamic,
+  check(inputs[5].port == 7 && !inputs[5].connected &&
+            inputs[5].dynamic,
         "a dormant per-device reservation stays visible");
   check(outputs.size() == 5 && outputs[3].port == 6 && outputs[4].port == 8,
         "per-device output nodes use the same stable registry id");
-  check(inputs[3].input && outputs[3].dynamic,
+  check(inputs[4].input && outputs[3].dynamic,
         "a bidirectional device appears once on each side");
 
   const auto wide = routing::layoutFor(788.0f, 220.0f, 5, 5);
@@ -586,7 +589,29 @@ void dynamicMixerViewModelTests() {
         "stepping the bank reaches the second page");
   view.stepBank(1);
   check(view.bank() == 1, "the bank cannot step past the last page");
+  // A11: the pager grid is a fixed 4x4 over the capacity; pages past the track
+  // list stay visible but empty, and the current page is marked.
+  const auto pages = view.bankPages();
+  check(pages.size() == 16, "the pager grid covers the 64-track capacity");
+  check(pages.value(0).toMap().value(QStringLiteral("label")).toString() == "1-4",
+        "the first page reads 1-4");
+  check(!pages.value(1).toMap().value(QStringLiteral("empty")).toBool(),
+        "a page with tracks is selectable");
+  check(pages.value(3).toMap().value(QStringLiteral("empty")).toBool(),
+        "a page past the track list is empty");
+  check(pages.value(1).toMap().value(QStringLiteral("current")).toBool(),
+        "the grid marks the current page");
   view.stepBank(-1);
+  // B7: a tap clears one meter's latch without ending the demo fixture.
+  const auto clipAt = [&view](int row) {
+    return view.data(view.index(row, 0), MixerViewModel::ClipRole).toBool();
+  };
+  view.showClipDemo();
+  check(clipAt(0) && clipAt(1), "the clip demo latches crowns");
+  view.clearClip(view.data(view.index(0, 0), MixerViewModel::SlotRole).toInt());
+  check(!clipAt(0) && clipAt(1),
+        "clearClip drops one crown and leaves its neighbour");
+  view.clearClipDemo();
 
   view.setGainDb(1, -6.0);
   view.removeTrack(1);
@@ -837,6 +862,14 @@ void wavTests() {
         "WAV format fields");
   check(info.frames == frames, "WAV frame count");
   checkNear(wavDurationSeconds(path), 0.01, 1e-9, "WAV duration");
+  // D7: the import rule is a header check, and its refusal names the rate.
+  check(importSampleRateError(48000).empty(),
+        "48 kHz is the import rate");
+  check(importSampleRateError(44100) ==
+            "import refused: 44.1 kHz file - convert to 48 kHz first",
+        "a 44.1 kHz file is refused with the conversion hint");
+  check(importSampleRateError(0).find("no readable WAV header") != std::string::npos,
+        "an unreadable header is refused before the rate rule");
   std::error_code error;
   std::filesystem::remove(path, error);
 }
@@ -1811,6 +1844,27 @@ void clockGateTests() {
   session.pushClockToLink();
   check(session.trs1Clock() && session.trs1Transport(),
         "pushClockToLink re-reads the session gates");
+
+  // D8: the CLOCK SOURCE choice writes session clock.source + transportFollow.
+  check(session.clockSourceChoice() == 0 && session.clockSourceText() == "INTERNAL",
+        "the clock source defaults to the internal generator");
+  session.setClockSourceChoice(1);
+  check(settings.clock.source == 1 && settings.clock.transportFollow[0] &&
+            !settings.clock.transportFollow[1] &&
+            !settings.clock.transportFollow[2],
+        "FOLLOW TRS selects TRS IN1 and its transport follow");
+  check(session.clockSourceText().contains("TRS IN1"),
+        "the choice readout names the followed input");
+  session.setClockSourceChoice(2);
+  check(settings.clock.source == 0 && settings.clock.transportFollow[2] &&
+            !settings.clock.transportFollow[0],
+        "FOLLOW USB keeps the generator internal and follows USB transport");
+  check(session.clockSourceText().contains("USB"),
+        "the USB choice is named as transport, not as a clock source");
+  session.setClockSourceChoice(0);
+  check(settings.clock.source == 0 && !settings.clock.transportFollow[0] &&
+            !settings.clock.transportFollow[2],
+        "INTERNAL clears every transport follow");
 }
 
 // Device output routing (session v2 deviceOut): the System pickers write the
@@ -2213,6 +2267,104 @@ void timelineAndPipeTests() {
 // The app half of the 0x1A split: only a TRS->TRS pair is mirrored to the Pico,
 // a Pi-owned pair never is, and Router::tick is pumped so NoteLength offs are
 // flushed without waiting for another input event.
+// A13 + the owner clarification: a generator route consumes no input. Its
+// chain is stored per output, its head must carry the schema's generator role,
+// building the chain opens the route gate, and the session round-trip keeps it.
+void generatorRouteTests() {
+  MidiGlue midi(false);
+  session::MidiPipe ccLfo;
+  ccLfo.type = session::MidiPipeType::CcLfo;
+  ccLfo.params = {74, 0, 0, 0, 64, 64};
+  session::MidiPipe filter;
+  filter.type = session::MidiPipeType::Filter;
+
+  check(!midi.addGeneratorPipe(midi::Port::UsbOut, session::MidiPipeType::Filter),
+        "a modifier cannot head a generator chain (needs incoming notes)");
+  check(midi.generatorPipes(midi::Port::UsbOut).empty(),
+        "a refused head stores nothing");
+  check(midi.addGeneratorPipe(midi::Port::UsbOut, session::MidiPipeType::CcLfo),
+        "CC LFO heads a generator chain with no input set");
+  check(midi.generatorPipes(midi::Port::UsbOut).size() == 1,
+        "the generator chain stores without any input port");
+  check(!midi.generatorRouteEnabled(midi::Port::UsbOut),
+        "adding a chain does not silently enable the route in the glue");
+
+  // Session round-trip: capture includes src=-1 even with the route disabled.
+  auto captured = midi.captureSessionRouter();
+  bool sawGenerator = false;
+  for (const auto& route : captured.routes) {
+    if (route.src == session::kSrcGenerator &&
+        route.dst == midi::portId(midi::Port::UsbOut)) {
+      sawGenerator = route.pipes.size() == 1 && !route.on;
+    }
+  }
+  check(sawGenerator, "capture writes the generator route as src = -1");
+  MidiGlue restored(false);
+  restored.applySessionRouter(captured);
+  check(restored.generatorPipes(midi::Port::UsbOut).size() == 1 &&
+            !restored.generatorRouteEnabled(midi::Port::UsbOut),
+        "project load restores the generator chain and its gate");
+
+  // A TRS destination is Pico-owned: the chain is stored for the session and
+  // reports honestly that this build does not send it.
+  check(midi.setGeneratorPipes(midi::Port::TrsOut1, {ccLfo, filter}),
+        "a TRS generator chain stores (Pico-owned)");
+  check(midi.generatorPipes(midi::Port::TrsOut1).size() == 2,
+        "the TRS generator chain is kept for the session");
+  midi.setGeneratorRoute(midi::Port::TrsOut1, true);
+  check(midi.generatorRouteEnabled(midi::Port::TrsOut1),
+        "the TRS generator route gate is stored");
+  midi.clearGeneratorRoutes();
+  check(midi.generatorPipes(midi::Port::UsbOut).empty() &&
+            midi.generatorPipes(midi::Port::TrsOut1).empty() &&
+            !midi.generatorRouteEnabled(midi::Port::TrsOut1),
+        "matrix RESET clears every generator route");
+
+  // The pipe page itself: FROM = GENERATOR needs no selected input, the ADD
+  // list is the generator-role head only while the chain is empty, and the
+  // first ADD opens the gate.
+  MidiGlue page(false);
+  RoutingViewModel routing(page, false);
+  int generatorNode = -1;
+  int usbOutNode = -1;
+  for (const auto& row : routing.inputNodes()) {
+    if (row.toMap().value(QStringLiteral("port")).toInt() == midi::kSrcGenerator) {
+      generatorNode = row.toMap().value(QStringLiteral("nodeIndex")).toInt();
+    }
+  }
+  for (const auto& row : routing.outputNodes()) {
+    if (row.toMap().value(QStringLiteral("port")).toInt() ==
+        midi::portId(midi::Port::UsbOut)) {
+      usbOutNode = row.toMap().value(QStringLiteral("nodeIndex")).toInt();
+    }
+  }
+  check(generatorNode >= 0 && usbOutNode >= 0,
+        "GENERATOR and USB OUT are selectable pipe endpoints");
+  routing.setPipeSource(generatorNode);
+  routing.setPipeDestination(usbOutNode);
+  check(routing.generatorSelected() && routing.generatorHeadPending(),
+        "GENERATOR is selected with no input and no head");
+  check(routing.addTypeLabels().size() == 1 &&
+            routing.addTypeLabels().first().contains(QStringLiteral("LFO")),
+        "a pending generator head lists only the generator role");
+  routing.setAddTypeIndex(0);
+  routing.addPipe();
+  check(routing.pipeCount() == 1,
+        "ADD PIPE works on a generator route without any input source");
+  check(routing.routeEnabled(generatorNode, usbOutNode),
+        "building the generator chain opens its own route gate");
+  routing.addPipe();
+  check(routing.pipeCount() == 2 && routing.addTypeLabels().size() > 1,
+        "after the head the full modifier list returns");
+  check(routing.pipeStatusText().contains(QStringLiteral("GENERATOR")),
+        "the status names the source-less route");
+  routing.removePipe(1);
+  routing.removePipe(0);
+  check(routing.pipeCount() == 0, "the generator chain can be emptied");
+  check(routing.pipeStatusText().contains(QStringLiteral("NEEDS NO INPUT")),
+        "an empty generator route still says it needs no input");
+}
+
 void pipeLinkTests() {
   MidiGlue midi(false);
   struct Sync {
@@ -2551,6 +2703,7 @@ int runAll() {
   configLiveTests();
   systemDeviceRowTests();
   timelineAndPipeTests();
+  generatorRouteTests();
   pipeLinkTests();
   eqForwardingTests();
   noPicoModeTests();

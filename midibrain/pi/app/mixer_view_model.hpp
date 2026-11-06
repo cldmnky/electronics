@@ -37,6 +37,9 @@ class MixerViewModel final : public QAbstractListModel {
   Q_PROPERTY(int pageCount READ pageCount NOTIFY tracksChanged)
   Q_PROPERTY(bool empty READ empty NOTIFY tracksChanged)
   Q_PROPERTY(QString bankText READ bankText NOTIFY tracksChanged)
+  // A11: one row per four-track page, for the pager grid ({index, label,
+  // empty, current}). A page is empty when its first slot is past the list.
+  Q_PROPERTY(QVariantList bankPages READ bankPages NOTIFY tracksChanged)
   Q_PROPERTY(bool trackMode READ trackMode WRITE setTrackMode NOTIFY trackModeChanged)
   Q_PROPERTY(int trackIndex READ trackIndex WRITE setTrackIndex NOTIFY trackChanged)
   Q_PROPERTY(QString trackName READ trackName NOTIFY trackChanged)
@@ -121,6 +124,7 @@ class MixerViewModel final : public QAbstractListModel {
   int pageCount() const;
   bool empty() const { return model_.trackCount() == 0; }
   QString bankText() const;
+  QVariantList bankPages() const;
   bool trackMode() const { return trackMode_; }
   Q_INVOKABLE void setTrackMode(bool enabled);
   int trackIndex() const { return trackIndex_; }
@@ -283,6 +287,8 @@ class MixerViewModel final : public QAbstractListModel {
   // Deterministic clip/meter demo for the offscreen screenshot run.
   Q_INVOKABLE void showClipDemo();
   Q_INVOKABLE void clearClipDemo();
+  // B7: a tap on a meter drops its latch (and its demo crown).
+  Q_INVOKABLE void clearClip(int slot);
   // Re-reads every value (project load, MIDI learn writes).
   void refresh();
 
@@ -319,6 +325,9 @@ class MixerViewModel final : public QAbstractListModel {
   double meterRight_ = 0.0;
   std::array<double, audio::kMaxTracks> stripLevels_{};
   std::array<ClipHold, audio::kMaxTracks> clipHolds_{};
+  // Per-strip dismissals of the deterministic demo crowns, so one tap clears
+  // one meter without ending the whole screenshot fixture.
+  std::array<bool, audio::kMaxTracks> clipDemoCleared_{};
   bool clipDemo_ = false;
   std::uint64_t armMutesUntilMs_ = 0;
 };

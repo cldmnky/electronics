@@ -22,8 +22,10 @@ Window {
     title: "mnkybox"
     color: Style.background
 
+    // B3/C8: tab 5 is PROJ and tab 6 is MIDI; "Monitor" named two other
+    // surfaces (the per-track MON mark and the SYSTEM SHIFT OUTPUT page).
     readonly property var tabNames: ["Mixer", "Routing", "Recorder", "System",
-                                     "Projects", "Monitor", "EQ", "XY", "EDIT"]
+                                     "PROJ", "MIDI", "EQ", "XY", "EDIT"]
 
     function screenSource() {
         switch (app.tab) {
@@ -116,15 +118,6 @@ Window {
                             color: Style.accent
                         }
 
-                        Rectangle {
-                            visible: index === 4 && app.dirty
-                            x: parent.width - 12
-                            y: parent.height - 10
-                            width: 6
-                            height: 6
-                            radius: 3
-                            color: Style.accent
-                        }
 
                         TapHandler {
                             // Short tap: navigate to the tab (leaves a shift face).
@@ -204,7 +197,9 @@ Window {
         // that band (fullscreen EQ grid), so the readout is never under the
         // touch point. The panel EDIT path has no anchor and keeps the band.
         anchorY: app.touchAnchorY
-        popupVisible: app.valuePopupVisible
+        // B6: the transport strip owns ordinary value readouts; the floating
+        // band exists only on the fullscreen EQ face, which hides the strip.
+        popupVisible: app.valuePopupVisible && app.fullscreen
         popupLabel: app.valuePopupLabel
         popupText: app.valuePopupText
     }

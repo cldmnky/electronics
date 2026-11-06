@@ -58,7 +58,8 @@ QtObject {
     readonly property int fontBody: 13
     readonly property int fontTitle: 16
     readonly property int fontDisplay: 22
-    readonly property int fontTab: 14
+    // C8: tab labels fit with margin at 13 px (MIDI/PROJ carry the renames).
+    readonly property int fontTab: 13
 
     readonly property int motionPopup: 120
     readonly property int motionFace: 80

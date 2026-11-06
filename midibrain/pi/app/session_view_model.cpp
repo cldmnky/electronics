@@ -231,6 +231,41 @@ void SessionViewModel::setDeviceOutMain(int pair) { setDeviceOutPair(0, pair); }
 void SessionViewModel::setDeviceOutOut34(int pair) { setDeviceOutPair(1, pair); }
 void SessionViewModel::setDeviceOutPhones(int pair) { setDeviceOutPair(2, pair); }
 
+int SessionViewModel::clockSourceChoice() const {
+  if (settings_.clock.transportFollow[2]) return 2;
+  if (settings_.clock.source == 1) return 1;
+  return 0;
+}
+
+QString SessionViewModel::clockSourceText() const {
+  switch (clockSourceChoice()) {
+    case 1: return QStringLiteral("FOLLOW TRS IN1");
+    case 2: return QStringLiteral("FOLLOW USB TRANSPORT");
+    default: return QStringLiteral("INTERNAL");
+  }
+}
+
+QString SessionViewModel::clockSourceNote() const {
+  return QStringLiteral(
+      "saved in the session; this build does not send the Pico follow command yet - "
+      "USB follows transport only");
+}
+
+void SessionViewModel::setClockSourceChoice(int choice) {
+  const int clamped = std::clamp(choice, 0, 2);
+  const int previous = clockSourceChoice();
+  if (clamped == previous) return;
+  settings_.clock.transportFollow = {false, false, false};
+  settings_.clock.source = 0;
+  if (clamped == 1) {
+    settings_.clock.source = 1;
+    settings_.clock.transportFollow[0] = true;
+  } else if (clamped == 2) {
+    settings_.clock.transportFollow[2] = true;
+  }
+  emit clockChanged();
+}
+
 QString SessionViewModel::clockText() const {
   const auto gate = [](bool on) { return on ? QStringLiteral("on") : QStringLiteral("off"); };
   const auto& trs1 = settings_.clock.trs[0];

@@ -69,6 +69,7 @@ void UiTapRunner::closeOverlays() {
   controller_->keypadCancel();
   controller_->closeTempoPopup();
   controller_->closeTabGrid();
+  controller_->closeBankGrid();
   controller_->closeTakeSheet();
   controller_->hideValuePopup();
   controller_->setFullscreen(false);
@@ -112,6 +113,11 @@ void UiTapRunner::buildScenarios() {
       // "routing.shiftpipes" navigates away from the primary face; tap it in
       // its own scenario so the node/route controls are all reached first.
       excluded << QStringLiteral("routing.shiftpipes");
+    }
+    if (tab == 0) {
+      // A11: the pager grid owns its own scenario, so the screen pass keeps
+      // walking the strips instead of opening an overlay over them.
+      excluded << QStringLiteral("mixer.bank.pages");
     }
     scenarios_.push_back(Scenario{
         QStringLiteral("screen.%1").arg(tab),
@@ -168,6 +174,18 @@ void UiTapRunner::buildScenarios() {
         },
         QStringLiteral("shift."), shiftExcluded, {}, false, false});
   }
+  // D8: the OUTPUT page's clock-source choices. The page-switch pass changes
+  // pages before its content, so the row gets its own scenario.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("shift.3.output"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(3);
+        controller_->setSystemShiftPage(0);
+        controller_->showShiftFace(true);
+      },
+      QStringLiteral("shift.monitor.clocksource."), {}, {}, false, true});
   scenarios_.push_back(Scenario{
       QStringLiteral("shift.0.track"),
       [this] {
@@ -231,6 +249,30 @@ void UiTapRunner::buildScenarios() {
         prefix, shiftExcluded, {prefix}, true, true});
   }
 
+  // A13: the source-less generator route on the pipe page: FROM = GENERATOR,
+  // TO = USB OUT, head = CC LFO, no input selected anywhere.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("shift.1.pipes.generator"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(1);
+        primeGeneratorChain();
+      },
+      QStringLiteral("shift.routing.pipes."),
+      QStringList(shiftExcluded) << QStringLiteral("shift.routing.pipes.chain."),
+      {}, false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("config.pipetype.generator"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(1);
+        primeGeneratorChain();
+        controller_->openConfig(QStringLiteral("pipetype"));
+      },
+      QStringLiteral("config.pipetype."), {},
+      {QStringLiteral("config.cancel")}, false, true});
   // 3b. The generated parameter cards, one pass per card family: the FILTER
   // pipe is all bool chips (each opens its choice list), the ARP pipe mixes a
   // numeric arc-dial card with chips. Same generic card, no per-type QML.
@@ -262,7 +304,22 @@ void UiTapRunner::buildScenarios() {
         clearMixerTracks();
         controller_->mixer()->setTrackMode(false);
       },
-      QStringLiteral("mixer."), {}, {}, false, true});
+      QStringLiteral("mixer."), {QStringLiteral("mixer.bank.pages")}, {}, false,
+      true});
+  // A11: the page grid itself: every non-empty page cell plus CLOSE.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("mixer.bankgrid"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        controller_->mixer()->setTrackMode(false);
+        controller_->mixer()->setBank(0);
+        controller_->openBankGrid();
+      },
+      QStringLiteral("bank.page."), {},
+      {QStringLiteral("bank.page.close")}, false, true});
   scenarios_.push_back(Scenario{
       QStringLiteral("mixer.channel"),
       [this] {
@@ -482,6 +539,33 @@ void UiTapRunner::buildScenarios() {
         QStringLiteral("config."), {}, {QStringLiteral("config.ok")},
         true, true});
   }
+}
+
+void UiTapRunner::primeGeneratorChain() {
+  auto* routing = controller_->routing();
+  controller_->showShiftFace(true);
+  controller_->setTab(1);
+  routing->setShiftPage(1);
+  int generator = -1;
+  for (const auto& row : routing->inputNodes()) {
+    if (row.toMap().value(QStringLiteral("port")).toInt() == midi::kSrcGenerator) {
+      generator = row.toMap().value(QStringLiteral("nodeIndex")).toInt();
+    }
+  }
+  int usbOut = -1;
+  for (const auto& row : routing->outputNodes()) {
+    if (row.toMap().value(QStringLiteral("port")).toInt() ==
+        midi::portId(midi::Port::UsbOut)) {
+      usbOut = row.toMap().value(QStringLiteral("nodeIndex")).toInt();
+    }
+  }
+  if (generator < 0 || usbOut < 0) return;
+  routing->setPipeSource(generator);
+  routing->setPipeDestination(usbOut);
+  while (routing->pipeCount() > 0) routing->removePipe(0);
+  routing->setAddTypeIndex(0);
+  routing->addPipe();
+  routing->selectPipe(0);
 }
 
 void UiTapRunner::primePipeChain(int pipeIndex) {

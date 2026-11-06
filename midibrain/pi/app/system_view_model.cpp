@@ -69,8 +69,10 @@ QStringList SystemViewModel::backendLabels() const { return rowLabels(outputRows
 QStringList SystemViewModel::inputLabels() const { return rowLabels(inputRows_); }
 
 SystemViewModel::SystemViewModel(LinkClient& link, AudioGlue& audio, MidiGlue& midi,
-                                 FxManager& fx, AppState& state, QObject* parent)
-    : QObject(parent), link_(link), audio_(audio), midi_(midi), fx_(fx), state_(state) {
+                                 FxManager& fx, AppState& state, SessionSettings& settings,
+                                 QObject* parent)
+    : QObject(parent), link_(link), audio_(audio), midi_(midi), fx_(fx), state_(state),
+      settings_(settings) {
   noPico_ = link_.noPico();
   backendHint_ = QStringLiteral(
       "Qt Multimedia: PulseAudio/PipeWire on Linux, CoreAudio on macOS. JACK device "
@@ -203,6 +205,21 @@ void SystemViewModel::refreshDevices() {
   emit selectionChanged();
 }
 
+QString SystemViewModel::clockSourceLine() const {
+  const QString source = settings_.clock.transportFollow[2]
+                             ? QStringLiteral("FOLLOW USB TRANSPORT")
+                             : (settings_.clock.source == 1
+                                    ? QStringLiteral("FOLLOW TRS IN1")
+                                    : QStringLiteral("INTERNAL"));
+  const QString follow = settings_.clock.transportFollow[0] ||
+                                 settings_.clock.transportFollow[1] ||
+                                 settings_.clock.transportFollow[2]
+                             ? QStringLiteral("transport follow on")
+                             : QStringLiteral("transport follow off");
+  return source + QStringLiteral(" (session; follow command not sent by this build) - ") +
+         follow;
+}
+
 void SystemViewModel::refresh() {
   const auto status = link_.status();
   const auto stats = status.stats;
@@ -219,7 +236,8 @@ void SystemViewModel::refresh() {
     stream << "CLOCK     " << QString::fromStdString(formatTempo(status.tempoX100))
            << "   " << (status.rolling ? "rolling" : "stopped") << "   "
            << (status.clockPrimed ? "free-run armed" : "free-run cold") << "\n";
-    stream << "          local Pi phase; clock-source follow off\n";
+    stream << "          local Pi phase; clock source "
+           << clockSourceLine() << "\n";
     stream << "TRANSPORT tick " << static_cast<qulonglong>(status.tick) << "   "
            << QString::fromStdString(formatBarBeatTick(status.tick))
            << "   owned by the Pi (NO PICO)\n";
@@ -243,6 +261,7 @@ void SystemViewModel::refresh() {
     stream << "CLOCK     " << QString::fromStdString(formatTempo(status.tempoX100)) << "   "
            << (status.rolling ? "rolling" : "stopped") << "   "
            << (status.clockPrimed ? "primed" : "cold") << "\n";
+    stream << "          source " << clockSourceLine() << "\n";
     stream << "          offset " << QString::number(status.offsetUs, 'f', 1) << " us   latency "
            << QString::number(status.latencyUs, 'f', 1) << " us   skipped "
            << static_cast<qulonglong>(status.clockSkipped) << "   reordered "

@@ -225,10 +225,12 @@ Rectangle {
                     variant: "ghost"
                     onClicked: app.keypadCancel()
                 }
+                // C9: button = verb. The keypad's action is named by its title
+                // (RENAME TRACK 02, IMPORT TAKE); the accept button is DONE.
                 TouchButton {
                     width: actionRow.unit
                     height: actionRow.height
-                    text: "OK"
+                    text: "DONE"
                     variant: "primary"
                     textSize: Style.fontBody
                     onClicked: app.keypadAccept(root.buffer)

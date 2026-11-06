@@ -29,7 +29,10 @@ Item {
             Text {
                 width: parent.width - 376
                 height: parent.height
-                text: "X/Y - " + xy.trackName + " - FX1 then FX2, one finger per grid"
+                // B12: the mode is named in words. This build always exposes
+                // both grids (FX1 and FX2 of the selected track) and tracks one
+                // finger per grid, so there is no single-grid mode to select.
+                text: "X/Y - " + xy.trackName + " - MODE: BOTH GRIDS - one finger per grid"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold
@@ -89,8 +92,12 @@ Item {
                 model: mixer
                 delegate: TouchButton {
                     readonly property int stripSlot: model.slot
+                    // The page readout at the row's end needs its own width,
+                    // so four strips never push it off the screen.
                     width: visible ? (screen.width - Style.margin * 2 - Style.touch * 2 -
-                                      Style.gapTight * 5) / mixer.stripsPerBank : 0
+                                      Style.gapTight * 6 -
+                                      (mixer.pageCount > 1 ? 64 : 0)) /
+                                     mixer.stripsPerBank : 0
                     height: Style.touch
                     visible: index >= mixer.bank * mixer.stripsPerBank &&
                              index < (mixer.bank + 1) * mixer.stripsPerBank

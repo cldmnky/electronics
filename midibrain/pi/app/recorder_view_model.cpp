@@ -309,6 +309,29 @@ void RecorderViewModel::clearActive() {
   emit activeTakeChanged();
 }
 
+QString RecorderViewModel::takeImportPreview(const QString& path) const {
+  if (path.trimmed().isEmpty()) return QStringLiteral("enter a WAV path");
+  std::filesystem::path candidate(path.toStdString());
+  if (candidate.is_relative()) candidate = state_.takeDirectory() / candidate;
+  std::error_code error;
+  if (!std::filesystem::is_regular_file(candidate, error)) {
+    return QStringLiteral("no such file: ") + QString::fromStdString(candidate.string());
+  }
+  if (!isWavFile(candidate)) return QStringLiteral("import needs a .wav file");
+  const WavInfo info = readWavInfo(candidate);
+  const std::string rateError = importSampleRateError(info.ok ? info.sampleRate : 0);
+  if (!rateError.empty()) return QString::fromStdString(rateError);
+  if (info.channels == 0) return QStringLiteral("import refused: 0 channels");
+  const double seconds = info.sampleRate > 0
+                             ? static_cast<double>(info.frames) /
+                                   static_cast<double>(info.sampleRate)
+                             : 0.0;
+  return QString::fromStdString(candidate.filename().string()) +
+         QStringLiteral(" - 48 kHz - %1 ch - %2")
+             .arg(info.channels)
+             .arg(QString::fromStdString(formatDuration(seconds)));
+}
+
 QString RecorderViewModel::importTake(const QString& path) {
   if (path.trimmed().isEmpty()) return QStringLiteral("enter a WAV path");
   std::filesystem::path candidate(path.toStdString());
@@ -654,12 +677,24 @@ void RecorderViewModel::updateReadouts() {
   const auto status = link_.status();
   const bool recording = audio_.recording();
 
+  // A6: REC / PLAY / STOP only. "ROLLING" is studio jargon that collides with
+  // REC on a recorder, so the state word and the colour are the answer.
   const QString transport =
       QString(recording ? QStringLiteral("REC ")
-                        : (status.rolling ? QStringLiteral("ROLLING ")
-                                          : QStringLiteral("STOPPED "))) +
+                        : (status.rolling ? QStringLiteral("PLAY ")
+                                          : QStringLiteral("STOP "))) +
       QString::fromStdString(formatBarBeatTick(status.tick));
   if (transportText_ != transport) transportText_ = transport;
+  // The dim second line says only what the state does not: a rolling transport
+  // with the inputs still live is not recording them.
+  const QString activeNow = activeTake();
+  const QString transportHint =
+      (status.rolling && !recording)
+          ? (activeNow == QStringLiteral("LIVE INPUT")
+                 ? QStringLiteral("not recording - tap START TAKE to capture these inputs")
+                 : QStringLiteral("playing take ") + activeNow)
+          : QString();
+  if (transportHint_ != transportHint) transportHint_ = transportHint;
 
   QString clock = QString::fromStdString(formatTempo(status.tempoX100)) +
                   QStringLiteral("  -  tick %1").arg(static_cast<qulonglong>(status.tick));

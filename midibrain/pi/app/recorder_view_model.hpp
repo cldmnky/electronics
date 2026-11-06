@@ -91,6 +91,9 @@ class RecorderTakeModel final : public QAbstractListModel {
 class RecorderViewModel final : public QObject {
   Q_OBJECT
   Q_PROPERTY(QString transportText READ transportText NOTIFY readoutsChanged)
+  // A6: the dim second line under the REC/PLAY/STOP header. Empty when the
+  // state needs no explanation (stopped, or recording a take).
+  Q_PROPERTY(QString transportHint READ transportHint NOTIFY readoutsChanged)
   Q_PROPERTY(QString clockText READ clockText NOTIFY readoutsChanged)
   Q_PROPERTY(QString statusText READ statusText NOTIFY readoutsChanged)
   // True while statusText is the post-take ARM warning, so QML paints it in
@@ -122,6 +125,7 @@ class RecorderViewModel final : public QObject {
                     LinkClient& link, SessionSettings& settings, QObject* parent = nullptr);
 
   QString transportText() const { return transportText_; }
+  QString transportHint() const { return transportHint_; }
   QString clockText() const { return clockText_; }
   QString statusText() const { return statusText_; }
   bool statusWarning() const { return statusWarning_; }
@@ -163,6 +167,10 @@ class RecorderViewModel final : public QObject {
   Q_INVOKABLE void activateSelected();
   Q_INVOKABLE void clearActive();
   Q_INVOKABLE QString importTake(const QString& path);
+  // D7: the pre-accept preview/refusal of an import path. Returns
+  // "name - 48 kHz - 2 ch - 0:12" when the file may be imported, else a first
+  // line starting with "import refused:" (48 kHz rule) or a path error.
+  Q_INVOKABLE QString takeImportPreview(const QString& path) const;
   Q_INVOKABLE QString renameSelected(const QString& name);
   // Display name of one take row, for the SHIFT face's selected-object line.
   Q_INVOKABLE QString takeNameAt(int row) const;
@@ -212,6 +220,7 @@ class RecorderViewModel final : public QObject {
   int selectedRow_ = -1;
   int refreshCounter_ = 0;
   QString transportText_;
+  QString transportHint_;
   QString clockText_;
   QString statusText_;
   bool statusWarning_ = false;

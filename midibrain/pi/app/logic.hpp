@@ -271,6 +271,16 @@ inline std::string formatBytes(std::int64_t bytes) {
   return buffer;
 }
 
+// D7 import rule (USER-MANUAL section 16): 48 kHz only, refused with a reason
+// instead of silently converted. Empty means the header may be imported.
+inline std::string importSampleRateError(std::uint32_t sampleRate) {
+  if (sampleRate == 0) return "import refused: no readable WAV header";
+  if (sampleRate == 48000) return {};
+  char rate[16] = {};
+  std::snprintf(rate, sizeof rate, "%g", static_cast<double>(sampleRate) / 1000.0);
+  return std::string("import refused: ") + rate + " kHz file - convert to 48 kHz first";
+}
+
 inline std::string formatDuration(double seconds) {
   if (!(seconds > 0.0)) seconds = 0.0;
   const auto total = static_cast<std::uint64_t>(seconds + 0.5);

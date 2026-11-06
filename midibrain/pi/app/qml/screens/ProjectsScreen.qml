@@ -30,15 +30,6 @@ Item {
                 focusId: "projects.save"
                 onClicked: projects.saveProject()
             }
-            Rectangle {
-                visible: app.dirty
-                x: saveButton.x + saveButton.width - 13
-                y: 5
-                width: 8
-                height: 8
-                radius: 4
-                color: Style.accent
-            }
             Wordmark {
                 width: 118
                 height: parent.height
@@ -64,14 +55,40 @@ Item {
             }
         }
 
-        Text {
+        // C5: one dirty indicator, next to the thing it describes. The tab dot
+        // and the transport dot are gone.
+        Row {
             width: parent.width
             height: 18
-            text: "project: " + projects.currentName
-            color: Style.text
-            font.pixelSize: Style.fontTitle
-            font.weight: Font.DemiBold
-            elide: Text.ElideRight
+            spacing: 6
+
+            Text {
+                width: Math.min(implicitWidth,
+                                parent.width - (app.dirty ? 92 : 0))
+                height: parent.height
+                text: "project: " + projects.currentName
+                color: Style.text
+                font.pixelSize: Style.fontTitle
+                font.weight: Font.DemiBold
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+            Rectangle {
+                visible: app.dirty
+                anchors.verticalCenter: parent.verticalCenter
+                width: 8
+                height: 8
+                radius: 4
+                color: Style.accent
+            }
+            Text {
+                visible: app.dirty
+                anchors.verticalCenter: parent.verticalCenter
+                text: "unsaved"
+                color: Style.accent
+                font.pixelSize: Style.fontSmall
+                font.weight: Font.DemiBold
+            }
         }
         Text {
             width: parent.width

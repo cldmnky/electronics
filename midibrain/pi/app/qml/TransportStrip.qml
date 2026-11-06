@@ -46,7 +46,7 @@ Rectangle {
             height: parent.height
             text: app.transportState
             color: app.transportState === "REC" ? Style.record
-                   : (app.transportState === "ROLL" ? Style.accent : Style.textDim)
+                   : (app.transportState === "PLAY" ? Style.accent : Style.textDim)
             font.pixelSize: Style.fontSmall
             font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
@@ -72,17 +72,28 @@ Rectangle {
             focusId: "transport.tempo"
             onClicked: app.openTempoPopup()
         }
-        Text {
-            // Persistent bare-Pi marker: the mixer/transport shots must show
-            // that this run has no Pico even when the System screen is closed.
+        // B5: the bare-Pi marker is a chip, not a badge. Tapping it explains
+        // what is absent and what stays live, with an OPEN SYSTEM action.
+        Rectangle {
             width: app.noPicoMode ? 52 : 0
-            height: parent.height
+            height: Style.touch
             visible: app.noPicoMode
-            text: "NO PICO"
-            color: Style.record
-            font.pixelSize: Style.fontSmall
-            font.weight: Font.DemiBold
-            verticalAlignment: Text.AlignVCenter
+            radius: Style.corner
+            color: Style.panelDark
+            border.width: Style.outlineWidth
+            border.color: Style.record
+            property string focusId: "transport.nopico"
+
+            Text {
+                anchors.centerIn: parent
+                text: "NO PICO"
+                color: Style.record
+                font.pixelSize: Style.fontSmall
+                font.weight: Font.DemiBold
+            }
+            TapHandler {
+                onTapped: app.showNoPicoInfo()
+            }
         }
         // A5: always available. The panel ring owns these stops only in
         // no-Pico mode, where no panel exists to press them.
@@ -111,18 +122,37 @@ Rectangle {
             focusId: app.noPicoMode ? "transport.rec" : ""
             onClicked: app.recToggle()
         }
-        Text {
+        // C6: the slot is an inset well with severity colour, not a floating
+        // label. B6: an ordinary value readout renders here (accent, right
+        // aligned, 1.5 s TTL from the controller); the floating band is kept
+        // for the fullscreen EQ face, which has no strip.
+        Rectangle {
             width: Math.max(0, stripRow.width - stripRow.fixedWidth -
                                stripRow.spacing * (stripRow.itemCount - 1))
-            height: parent.height
-            text: app.noticeText
-            // D2 severity: info is accent, warn and error are record red. The
-            // text itself expires in the controller (6 s / 10 s / until the
-            // next successful action), so the slot never turns into a label.
-            color: app.noticeKind === "info" ? Style.accent : Style.record
-            font.pixelSize: Style.fontSmall
-            elide: Text.ElideRight
-            verticalAlignment: Text.AlignVCenter
+            height: Style.touch
+            radius: Style.corner
+            color: Style.panelDark
+            border.width: Style.outlineWidth
+            border.color: Style.outline
+
+            readonly property bool showingValue: app.valuePopupVisible
+
+            Text {
+                anchors.fill: parent
+                anchors.leftMargin: 11
+                anchors.rightMargin: 11
+                text: parent.showingValue
+                      ? (app.valuePopupLabel + "  " + app.valuePopupText)
+                      : app.noticeText
+                color: parent.showingValue ? Style.accent
+                       : (app.noticeKind === "info" ? Style.accent : Style.record)
+                font.pixelSize: Style.fontSmall
+                font.weight: parent.showingValue ? Font.DemiBold : Font.Normal
+                horizontalAlignment: parent.showingValue ? Text.AlignRight
+                                                         : Text.AlignLeft
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
         }
         // B1: the SHIFT face is reachable by touch. Dimmed on a tab without a
         // second face, and a tap there names the reason (D3).
@@ -149,17 +179,11 @@ Rectangle {
             // A8: a long press opens the metronome popup; a tap only toggles.
             onLongClicked: app.openConfig("metronome")
         }
+        // C5: the dirty indicator lives once, next to the project name; the
+        // transport strip keeps the 8 px end margin only.
         Item {
             width: 8
             height: parent.height
-            Rectangle {
-                visible: app.dirty
-                anchors.centerIn: parent
-                width: 8
-                height: 8
-                radius: 4
-                color: Style.accent
-            }
         }
     }
 }

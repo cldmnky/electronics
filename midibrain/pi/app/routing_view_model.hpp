@@ -72,6 +72,7 @@ class RoutingViewModel final : public QObject {
   Q_PROPERTY(QVariantList pipeParams READ pipeParams NOTIFY pipesChanged)
   Q_PROPERTY(QString pipeRouteText READ pipeRouteText NOTIFY pipeRouteChanged)
   Q_PROPERTY(QString pipeStatusText READ pipeStatusText NOTIFY pipesChanged)
+  Q_PROPERTY(QString addHint READ addHint NOTIFY addTypeChanged)
   Q_PROPERTY(QString selectedPipeScopeText READ selectedPipeScopeText NOTIFY pipesChanged)
   // No-Pico mode: no Pico, so TRS nodes and TRS->TRS pipe chains are inert. The
   // matrix still edits (it is project data) but the UI labels the rows
@@ -152,6 +153,19 @@ class RoutingViewModel final : public QObject {
                                       const QString& projectDirectory);
   // Default export name for the selected route, e.g. "chain-1-3".
   Q_INVOKABLE QString defaultChainName() const;
+  // A13 generator routes: FROM may be the source-less GENERATOR node. On an
+  // empty generator chain only generator-role types may be added, so the type
+  // list is filtered until the head exists; the ADD itself never asks for an
+  // input port.
+  bool generatorSelected() const;
+  bool generatorHeadPending() const;
+  int addTypeIdAt(int index) const;
+  // Position of the armed add type inside the (possibly generator-filtered)
+  // type list.
+  int addTypeIndexInList() const;
+  // Last ADD refusal (illegal generator head, chain limit); empty when the last
+  // add succeeded. Shown on the pipes page instead of failing silently.
+  QString addHint() const { return addHint_; }
   // Every selectable pipe type, in add order, for the tap-to-open type list.
   Q_INVOKABLE QStringList addTypeLabels() const;
   Q_INVOKABLE void cycleSelectedPipe(int delta);
@@ -202,6 +216,11 @@ class RoutingViewModel final : public QObject {
   int outputNodeForPort(int port) const;
   midi::Port pipeInput() const;
   midi::Port pipeOutput() const;
+  int pipeSourceId() const;
+  bool pipeRouteEnabled() const;
+  std::vector<session::MidiPipe> currentPipes() const;
+  // Input rows of the channel-filter page: every real source, never GENERATOR.
+  QVariantList filterTabRows() const;
 
   MidiGlue& midi_;
   const bool noPico_;
@@ -227,6 +246,7 @@ class RoutingViewModel final : public QObject {
   QVariantList pipeParams_;
   QString pipeRouteText_;
   QString pipeStatusText_;
+  QString addHint_;
 };
 
 }  // namespace mnky::app

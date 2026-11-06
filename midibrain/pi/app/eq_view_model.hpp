@@ -8,6 +8,7 @@
 #include <QVariantList>
 
 #include "eq_model.hpp"
+#include "mixer_model.hpp"
 
 namespace mnky::app {
 
@@ -30,7 +31,7 @@ class EqViewModel final : public QObject {
   Q_PROPERTY(QString summaryText READ summaryText NOTIFY changed)
 
  public:
-  explicit EqViewModel(EqModel& model, QObject* parent = nullptr);
+  EqViewModel(EqModel& model, MixerModel& mixer, QObject* parent = nullptr);
 
   QVariantList nodes() const;
   QVariantList curve() const;
@@ -45,6 +46,8 @@ class EqViewModel final : public QObject {
   QString qText() const;
   bool cutBand() const;
   QString summaryText() const;
+  // A rename can change the subject label ("02 bass"); the screen re-reads it.
+  void tracksChanged();
 
   // Touch / QML actions.
   Q_INVOKABLE void selectSubject(int subject);
@@ -79,6 +82,7 @@ class EqViewModel final : public QObject {
   void popupForBand(int band);
 
   EqModel& model_;
+  MixerModel& mixer_;
 };
 
 }  // namespace mnky::app

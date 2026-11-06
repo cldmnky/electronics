@@ -57,6 +57,17 @@ Item {
                 focusId: "eq.subject.main"
                 onClicked: eq.selectMain()
             }
+            // B14: the steppers belong to TRACK, so they say so; the readout
+            // names the subject ("Main" or "02 bass"), not a second MAIN.
+            Text {
+                width: 44
+                height: parent.height
+                text: "TRACK"
+                color: Style.textDim
+                font.pixelSize: Style.fontSmall
+                font.weight: Font.DemiBold
+                verticalAlignment: Text.AlignVCenter
+            }
             TouchButton {
                 width: Style.touch
                 height: parent.height
@@ -89,18 +100,21 @@ Item {
                 textSize: 20
                 onClicked: eq.stepSubject(1)
             }
+            // The band chip steps with a tap and opens the type list on a hold.
             TouchButton {
-                width: 168
+                width: 176
                 height: parent.height
-                text: eq.bandText
+                text: eq.bandText + "  " + eq.typeText
                 textSize: Style.fontSmall
                 checked: false
+                chevron: "down"
                 focusId: "eq.band.select"
                 onClicked: eq.stepBand(1)
+                onLongClicked: app.openConfigFrom("eqtype", this)
             }
             TouchButton {
-                width: parent.width - 58 - 74 - Style.touch * 2 - 96 - 168 -
-                       Style.gap * 6
+                width: parent.width - 58 - 74 - 44 - Style.touch * 2 - 96 - 176 -
+                       Style.gap * 7
                 height: parent.height
                 text: app.fullscreen ? "EXIT FULL" : "FULLSCREEN"
                 textSize: Style.fontSmall
@@ -111,10 +125,19 @@ Item {
             }
         }
 
+        Text {
+            width: parent.width
+            height: 14
+            text: "band chip: tap = next band - hold = type  -  drag a node to move it"
+            color: Style.textDim
+            font.pixelSize: Style.fontSmall
+            elide: Text.ElideRight
+        }
+
         Item {
             id: grid
             width: parent.width
-            height: parent.height - Style.touch * 2 - Style.gap * 2
+            height: parent.height - Style.touch * 2 - 14 - Style.gap * 3
 
             Rectangle {
                 anchors.fill: parent
@@ -446,18 +469,20 @@ Item {
             font.pixelSize: Style.fontSmall
             visible: chip.focusId === "eq.band.type"
         }
+        // C7: 48 px per stepper, so the EQ corners meet the same target rule
+        // as every other control (the value field gives up the width).
         TouchButton {
-            width: Style.touch
+            width: 48
             height: parent.height
-            x: parent.width - Style.touch * 2
+            x: parent.width - 96
             text: "-"
             textSize: 16
             onClicked: chip.minus()
         }
         TouchButton {
-            width: Style.touch
+            width: 48
             height: parent.height
-            x: parent.width - Style.touch
+            x: parent.width - 48
             text: "+"
             textSize: 16
             onClicked: chip.plus()

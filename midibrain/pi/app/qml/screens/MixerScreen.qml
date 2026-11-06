@@ -43,7 +43,7 @@ Item {
                 onClicked: mixer.trackMode = true
             }
             Row {
-                width: 196
+                width: 232
                 height: parent.height
                 spacing: Style.gapTight
 
@@ -55,16 +55,17 @@ Item {
                     focusId: "mixer.bank.0"
                     onClicked: mixer.stepBank(-1)
                 }
-                Text {
+                // A11: the label is the pager. It opens the page grid so page
+                // 16 is one tap away; the arrows keep stepping one page.
+                TouchButton {
                     width: parent.width - Style.touch * 2 - Style.gapTight * 2
                     height: parent.height
                     text: mixer.bankText
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    font.weight: Font.DemiBold
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
+                    textSize: Style.fontSmall
+                    variant: "ghost"
+                    chevron: "down"
+                    focusId: "mixer.bank.pages"
+                    onClicked: app.openBankGrid()
                 }
                 TouchButton {
                     width: Style.touch
@@ -85,12 +86,12 @@ Item {
                 onClicked: app.requestAddTrack()
             }
             Text {
-                width: parent.width - 84 - 84 - 196 - 110 - Style.gap * 4
+                width: parent.width - 84 - 84 - 232 - 110 - Style.gap * 4
                 height: parent.height
                 text: screen.shiftFace ? "SHIFT  configure"
-                      : (mixer.trackMode ? mixer.trackName
+                      : (mixer.trackMode ? mixer.trackName + "  -  ^ = full channel"
                                          : (mixer.empty ? "no tracks yet"
-                                                        : "tap ^ = channel - hold the name = rename"))
+                                                        : "tap ^ in a strip header for the full channel"))
                 color: screen.shiftFace ? Style.accent : Style.textDim
                 font.pixelSize: Style.fontSmall
                 verticalAlignment: Text.AlignVCenter
@@ -117,7 +118,7 @@ Item {
                         visible: mixer.empty
                         anchors.centerIn: parent
                         width: parent.width - 40
-                        text: "EMPTY MIXER - PRESS ADD TRACK"
+                        text: "EMPTY MIXER - tap ADD TRACK to create your first channel"
                         color: Style.textDim
                         font.pixelSize: Style.fontBody
                         font.weight: Font.DemiBold
@@ -137,7 +138,6 @@ Item {
                             stripName: model.name
                             gainDb: model.gainDb
                             pan: model.pan
-                            panText: model.panText
                             inputText: model.inputText
                             level: model.level
                             clip: model.clip
@@ -229,7 +229,7 @@ Item {
                         visible: index >= mixer.bank * mixer.stripsPerBank &&
                                  index < (mixer.bank + 1) * mixer.stripsPerBank
                         width: visible ? shiftStripsArea.width / mixer.stripsPerBank : 0
-                        height: shiftStripsArea.height - 18
+                        height: shiftStripsArea.height - 34
                         x: visible ? (index % mixer.stripsPerBank) * width : 0
                         stripIndex: model.slot
                         stripName: model.name
@@ -245,11 +245,14 @@ Item {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
-                    height: 16
-                    text: "solo green - mute gray - arm red - MON input - AUTO smart - BOTH layer - PLAY take"
+                    height: 30
+                    text: "solo green - mute gray - arm red - MON input - AUTO smart - BOTH layer - PLAY take" +
+                          "  -  tap a meter to clear its clip hold"
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
+                    wrapMode: Text.Wrap
                     elide: Text.ElideRight
+                    maximumLineCount: 2
                 }
             }
         }
@@ -271,12 +274,15 @@ Item {
 
                     // The selector is the current page of four: the header's
                     // page buttons walk the same list the MIXER face banks.
+                    readonly property int selectWidth: mixer.empty ? width
+                                                                    : width - Style.touch -
+                                                                      Style.gapTight
                     Repeater {
                         model: mixer
                         delegate: TouchButton {
                             visible: index >= mixer.bank * mixer.stripsPerBank &&
                                      index < (mixer.bank + 1) * mixer.stripsPerBank
-                            width: visible ? parent.width / mixer.stripsPerBank : 0
+                            width: visible ? parent.selectWidth / mixer.stripsPerBank : 0
                             height: Style.touch
                             x: visible ? (index % mixer.stripsPerBank) * width : 0
                             text: model.name
@@ -285,6 +291,23 @@ Item {
                             focusId: "track.select." + model.slot
                             onClicked: mixer.setTrackIndex(model.slot)
                         }
+                    }
+
+                    // B2: the same channel entry point as a strip header, with
+                    // its payoff named by the header hint.
+                    TouchButton {
+                        visible: !mixer.empty
+                        width: Style.touch
+                        height: parent.height
+                        anchors.right: parent.right
+                        text: ""
+                        chevron: "up"
+                        variant: "ghost"
+                        focusId: "track.expand"
+                        onClicked: app.openChannel(mixer.trackIndex)
+                        onLongClicked: app.showTextPopup(
+                            "CHANNEL",
+                            "fader, pan, sends, monitor, I/O, insert, EQ")
                     }
 
                     Text {
@@ -329,11 +352,11 @@ Item {
                     TouchButton {
                         width: (parent.width - Style.gap * 2) / 3
                         height: parent.height
-                        text: "REC"
+                        text: "ARM"
                         textSize: Style.fontSmall
                         checked: mixer.trackArm
                         checkedColor: Style.record
-                        focusId: "track.rec"
+                        focusId: "track.arm"
                         onClicked: mixer.setTrackArm(!mixer.trackArm)
                     }
                     TouchButton {
@@ -551,6 +574,97 @@ Item {
                             color: Style.textDim
                             font.pixelSize: Style.fontSmall
                             wrapMode: Text.Wrap
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // A11: the page grid. One 44 px cell per page, current page outlined, a
+    // page past the track list dimmed and unselectable. Arrows keep stepping.
+    Rectangle {
+        id: bankGrid
+
+        visible: app.bankGridOpen
+        anchors.fill: parent
+        color: "#9e000000"
+        z: 70
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {}
+        }
+
+        Rectangle {
+            width: 236
+            height: 44 + Style.gap + 4 * Style.touch + 3 * Style.gapTight + 12
+            anchors.centerIn: parent
+            color: Style.raised
+            radius: Style.cornerPanel
+            border.width: 2
+            border.color: Style.accent
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: Style.gapTight
+
+                Row {
+                    width: parent.width
+                    height: 34
+
+                    Text {
+                        width: parent.width - 92
+                        height: parent.height
+                        text: "MIXER PAGE"
+                        color: Style.text
+                        font.pixelSize: Style.fontTitle
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TouchButton {
+                        width: 92
+                        height: 34
+                        text: "CLOSE"
+                        textSize: Style.fontSmall
+                        variant: "ghost"
+                        focusId: "bank.page.close"
+                        onClicked: app.closeBankGrid()
+                    }
+                }
+
+                Grid {
+                    width: parent.width
+                    columns: 4
+                    spacing: Style.gapTight
+
+                    Repeater {
+                        model: mixer.bankPages
+                        delegate: Rectangle {
+                            readonly property bool current: modelData.current
+                            width: (parent.width - Style.gapTight * 3) / 4
+                            height: Style.touch
+                            radius: Style.corner
+                            color: current ? Style.accent
+                                           : (modelData.empty ? Style.panelDark : Style.panel)
+                            border.width: current ? 2 : Style.outlineWidth
+                            border.color: current ? Style.accent : Style.outline
+                            opacity: modelData.empty ? 0.4 : 1.0
+                            property string focusId: modelData.empty
+                                                    ? "" : "bank.page." + modelData.index
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: parent.current ? Style.panelDark : Style.text
+                                font.pixelSize: Style.fontSmall
+                                font.weight: Font.DemiBold
+                            }
+                            TapHandler {
+                                enabled: !modelData.empty
+                                onTapped: app.chooseBankPage(modelData.index)
+                            }
                         }
                     }
                 }

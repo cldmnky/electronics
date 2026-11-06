@@ -25,14 +25,26 @@ Item {
                 height: parent.height
             }
             Text {
-                width: parent.width - 126
+                width: parent.width - 126 - 250 - Style.gap
                 height: parent.height
                 text: "SYSTEM  -  link, clock, audio devices"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+            // B10: the primary face names what its SHIFT face holds, so the
+            // metronome, MIDI learn and TOOLS are not a hidden second screen.
+            Text {
+                width: 250
+                height: parent.height
+                text: "SHIFT > metronome - MIDI learn - TOOLS"
+                color: Style.accent
+                font.pixelSize: Style.fontSmall
+                font.weight: Font.DemiBold
                 horizontalAlignment: Text.AlignRight
+                verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
         }
@@ -167,13 +179,38 @@ Item {
                 // channel pair carries Main 1&2, OUT3&4 and the phones bus.
                 // Defaults 1&2, 3&4, 5&6. The pairs are saved with the project;
                 // the audio backend does not map them onto the interface yet.
-                Text {
+                // D6: the three picks are stored, not applied. The badge says
+                // so once and explains it on tap instead of hiding the caveat
+                // in a 10 px note.
+                Row {
                     width: parent.width
-                    height: 16
-                    text: "DEVICE OUT CHANNELS"
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    font.weight: Font.DemiBold
+                    height: Style.touch
+                    spacing: Style.gapTight
+
+                    Text {
+                        width: parent.width - 116 - Style.gapTight
+                        height: parent.height
+                        text: "DEVICE OUT CHANNELS"
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    TouchButton {
+                        width: 116
+                        height: Style.touch
+                        text: "SAVED ONLY"
+                        textSize: Style.fontSmall
+                        variant: "secondary"
+                        focusId: "system.devout.saved"
+                        onClicked: app.showTextPopup(
+                            "DEVICE OUT CHANNELS",
+                            "Saved with the project (session deviceOut) and reloaded unchanged. " +
+                            "The audio backend does not map these pairs onto the interface " +
+                            "channels yet, so Main 1&2, OUT3&4 and the phones bus keep the " +
+                            "device default.")
+                    }
                 }
 
                 Row {
@@ -193,6 +230,7 @@ Item {
                     }
                     TouchComboBox {
                         id: devoutMainBox
+                        opacity: 0.55
                         objectName: "systemDevoutList"
                         width: parent.width - 88
                         height: parent.height
@@ -223,6 +261,7 @@ Item {
                     }
                     TouchComboBox {
                         id: devoutOut34Box
+                        opacity: 0.55
                         width: parent.width - 88
                         height: parent.height
                         model: session.deviceOutPairLabels
@@ -252,6 +291,7 @@ Item {
                     }
                     TouchComboBox {
                         id: devoutPhonesBox
+                        opacity: 0.55
                         width: parent.width - 88
                         height: parent.height
                         model: session.deviceOutPairLabels
@@ -266,12 +306,10 @@ Item {
 
                 Text {
                     width: parent.width
-                    height: 26
-                    text: "Saved with the project (session deviceOut). The audio backend does not map these pairs onto the interface channels yet."
+                    height: 16
+                    text: "session deviceOut - tap SAVED ONLY for what the backend does"
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
-                    wrapMode: Text.Wrap
-                    maximumLineCount: 2
                     elide: Text.ElideRight
                 }
 

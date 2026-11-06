@@ -15,6 +15,7 @@
 #include "fx_slot.hpp"
 #include "link_client.hpp"
 #include "midi_glue.hpp"
+#include "session_settings.hpp"
 
 namespace mnky::app {
 
@@ -48,7 +49,8 @@ class SystemViewModel final : public QObject {
 
  public:
   SystemViewModel(LinkClient& link, AudioGlue& audio, MidiGlue& midi, FxManager& fx,
-                  AppState& state, QObject* parent = nullptr);
+                  AppState& state, SessionSettings& settings,
+                  QObject* parent = nullptr);
 
   QString statsText() const { return statsText_; }
   QString liveText() const { return liveText_; }
@@ -93,12 +95,14 @@ class SystemViewModel final : public QObject {
  private:
   void rebuildChoices();
   AudioBackendChoice pendingChoice() const;
+  QString clockSourceLine() const;
 
   LinkClient& link_;
   AudioGlue& audio_;
   MidiGlue& midi_;
   FxManager& fx_;
   AppState& state_;
+  SessionSettings& settings_;
   QString statsText_;
   QString liveText_;
   QString noteText_;

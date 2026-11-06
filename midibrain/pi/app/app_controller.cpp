@@ -1,5 +1,6 @@
 #include "app_controller.hpp"
 
+#include <QFileInfo>
 #include <QQuickItem>
 
 #include <algorithm>
@@ -56,7 +57,8 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
                                                     link_, settings_);
   projectsVm_ = std::make_unique<ProjectsViewModel>(
       *context_, [this] { projectStateChanged(); });
-  systemVm_ = std::make_unique<SystemViewModel>(link_, audio_, midi_, fx_, state_);
+  systemVm_ = std::make_unique<SystemViewModel>(link_, audio_, midi_, fx_, state_,
+                                                settings_);
   learnVm_ = std::make_unique<LearnViewModel>(midi_);
   sessionVm_ = std::make_unique<SessionViewModel>(state_, mixer_, link_, settings_);
   midiMonitorVm_ = std::make_unique<MidiMonitorViewModel>(midi_, noPico_);
@@ -66,7 +68,7 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
   configVm_->setTimeline(timelineVm_.get());
   configVm_->setRouting(routingVm_.get());
   configVm_->setMixer(mixerVm_.get());
-  eqVm_ = std::make_unique<EqViewModel>(eqModel_);
+  eqVm_ = std::make_unique<EqViewModel>(eqModel_, mixer_);
   xyVm_ = std::make_unique<XyViewModel>(mixer_, *mixerVm_);
   // Every EQ/XY screen change shows one transient readout, the same single
   // popup instance the sliders and the panel EDIT path drive.
@@ -180,6 +182,7 @@ void AppController::shutdown() {
 void AppController::setTab(int tab) {
   const int clamped = std::clamp(tab, 0, kScreenCount - 1);
   closeTabGrid();
+  closeBankGrid();
   closeTempoPopup();
   closeTakeSheet();
   if (clamped == tab_) return;
@@ -408,6 +411,26 @@ void AppController::closeTabGrid() {
   rebuildFocusIds();
 }
 
+void AppController::openBankGrid() {
+  if (bankGridOpen_) return;
+  bankGridOpen_ = true;
+  emit bankGridChanged();
+  rebuildFocusIds();
+}
+
+void AppController::closeBankGrid() {
+  if (!bankGridOpen_) return;
+  bankGridOpen_ = false;
+  emit bankGridChanged();
+  rebuildFocusIds();
+}
+
+void AppController::chooseBankPage(int page) {
+  mixerVm_->setBank(page);
+  showTextPopup(QStringLiteral("MIXER PAGE"), mixerVm_->bankText());
+  closeBankGrid();
+}
+
 bool AppController::tabHasShiftFace(int tab) const {
   // D3: tabs 5 (MIDI), 7 (XY) and 8 (EDIT) have no second face.
   return tab <= 3 || tab == kProjectsTabIndex || tab == kEqTabIndex;
@@ -431,7 +454,24 @@ void AppController::keypadAccept(const QString& text) {
   } else if (keypadAction_ == QStringLiteral("take-rename")) {
     error = recorderVm_->renameSelected(text);
   } else if (keypadAction_ == QStringLiteral("take-import")) {
-    error = recorderVm_->importTake(text);
+    // D7: the header is read before anything is imported. A 48 kHz violation
+    // keeps the keypad open with the refusal; a good file shows its duration
+    // and channel count and asks once before it becomes ACTIVE.
+    const QString preview = recorderVm_->takeImportPreview(text);
+    if (preview.startsWith(QStringLiteral("import refused")) ||
+        preview.startsWith(QStringLiteral("no such file")) ||
+        preview.startsWith(QStringLiteral("import needs")) ||
+        preview.startsWith(QStringLiteral("enter a WAV"))) {
+      error = preview;
+    } else {
+      pendingImportPath_ = text;
+      keypadOpen_ = false;
+      keypadError_.clear();
+      emit keypadChanged();
+      requestConfirm(QStringLiteral("IMPORT TAKE"), preview,
+                     QStringLiteral("IMPORT"), QStringLiteral("take-import"), -1);
+      return;
+    }
   } else if (keypadAction_ == QStringLiteral("pipe-chain-export")) {
     error = routingVm_->exportPipeChain(
         text, QString::fromStdString(state_.currentProject().string()));
@@ -447,6 +487,7 @@ void AppController::keypadAccept(const QString& text) {
       mixerVm_->notifyTrackNamesChanged();
       recorderVm_->tracksChanged();
       timelineVm_->refresh();
+      eqVm_->tracksChanged();
       showTextPopup(QStringLiteral("TRACK RENAMED"), text);
     }
   } else if (keypadAction_ == QStringLiteral("add-track-name")) {
@@ -501,6 +542,21 @@ void AppController::confirmAccept() {
     recorderVm_->deleteSelected();
   } else if (action == QStringLiteral("remove-track")) {
     mixerVm_->removeTrack(index);
+  } else if (action == QStringLiteral("routing-reset")) {
+    routingVm_->reset();
+    showNotice(NoticeInfo, QStringLiteral("routing reset to TRS IN 1/2 -> USB OUT"));
+  } else if (action == QStringLiteral("take-import")) {
+    const QString path = pendingImportPath_;
+    pendingImportPath_.clear();
+    const QString error = recorderVm_->importTake(path);
+    if (!error.isEmpty()) {
+      showNotice(NoticeError, error);
+    } else {
+      showTextPopup(QStringLiteral("TAKE IMPORTED"),
+                    QFileInfo(path).fileName() + QStringLiteral(" is ACTIVE"));
+    }
+  } else if (action == QStringLiteral("open-system")) {
+    setTab(3);
   }
 }
 
@@ -594,6 +650,14 @@ void AppController::requestDeleteTake() {
                      QStringLiteral("? The WAV file is removed from the take folder. This "
                                     "cannot be undone."),
                  QStringLiteral("DELETE"), QStringLiteral("take-delete"), row);
+}
+
+void AppController::showNoPicoInfo() {
+  requestConfirm(
+      QStringLiteral("NO PICO"),
+      QStringLiteral("TRS MIDI, TRS clock, panel switches and LEDs are absent. "
+                     "USB MIDI, USB clock, audio, takes and projects stay live."),
+      QStringLiteral("OPEN SYSTEM"), QStringLiteral("open-system"), -1);
 }
 
 void AppController::requestImportTake() {
@@ -1593,7 +1657,7 @@ void AppController::activateFocus() {
   if (parts.size() >= 2 && parts[0] == QStringLiteral("track")) {
     if (parts[1] == QStringLiteral("select") && parts.size() >= 3) {
       mixerVm_->setTrackIndex(parts[2].toInt());
-    } else if (parts[1] == QStringLiteral("rec")) {
+    } else if (parts[1] == QStringLiteral("arm")) {
       mixerVm_->toggleArm(mixerVm_->trackIndex());
     } else if (parts[1] == QStringLiteral("mute")) {
       mixerVm_->toggleMute(mixerVm_->trackIndex());
@@ -1764,8 +1828,12 @@ void AppController::activateFocus() {
   if (parts.size() >= 3 && parts[0] == QStringLiteral("mixer")) {
     const QString what = parts[1];
     if (what == QStringLiteral("bank")) {
-      // The two page buttons step one page; the id keeps its historical name.
-      mixerVm_->stepBank(parts[2].toInt() == 0 ? -1 : 1);
+      // The two page buttons step one page; the TRACKS label opens the grid.
+      if (parts[2] == QStringLiteral("pages")) {
+        openBankGrid();
+      } else {
+        mixerVm_->stepBank(parts[2].toInt() == 0 ? -1 : 1);
+      }
       return;
     }
     if (what == QStringLiteral("expand")) {
@@ -1900,7 +1968,13 @@ void AppController::activateFocus() {
       }
       rebuildFocusIds();
     } else if (parts[1] == QStringLiteral("reset")) {
-      routingVm_->reset();
+      // A12: a patchbay can be ten minutes of routing. The panel asks once;
+      // touch holds the button for 800 ms instead (RoutingScreen HoldButton).
+      requestConfirm(
+          QStringLiteral("RESET ROUTING?"),
+          QStringLiteral("Every wire and channel filter returns to "
+                         "TRS IN 1/2 -> USB OUT."),
+          QStringLiteral("RESET"), QStringLiteral("routing-reset"), -1);
     } else if (parts[1] == QStringLiteral("node") && parts.size() >= 4) {
       // The focus id carries the stable midi::Port id (0..5 fixed, 6..31 per
       // device), so the panel ring keeps its stop when the device list changes.
@@ -2127,6 +2201,15 @@ void AppController::adjustFocused(int detents, bool fine) {
   if (focusId.isEmpty() || detents == 0) return;
   const auto parts = focusId.split(QLatin1Char('.'));
   const double step = static_cast<double>(detents);
+
+  if (parts.size() >= 3 && parts[0] == QStringLiteral("mixer") &&
+      parts[1] == QStringLiteral("bank") && parts[2] == QStringLiteral("pages")) {
+    // A11: the panel focuses the label and the encoder still walks pages, so
+    // a long turn stays a valid way to reach page 16 without the grid.
+    mixerVm_->stepBank(detents > 0 ? 1 : -1);
+    showTextPopup(QStringLiteral("MIXER PAGE"), mixerVm_->bankText());
+    return;
+  }
 
   if (fxVm_ && fxVm_->open() && parts.size() >= 2 &&
       parts[0] == QStringLiteral("trackfx")) {
@@ -2658,6 +2741,14 @@ void AppController::rebuildFocusIds() {
     for (int i = 0; i < kScreenCount; ++i) {
       ids.push_back(QStringLiteral("tabgrid.") + QString::number(i));
     }
+  } else if (bankGridOpen_) {
+    for (const auto& row : mixerVm_->bankPages()) {
+      const auto page = row.toMap();
+      if (page.value(QStringLiteral("empty")).toBool()) continue;
+      ids.push_back(QStringLiteral("bank.page.%1")
+                        .arg(page.value(QStringLiteral("index")).toInt()));
+    }
+    ids.push_back(QStringLiteral("bank.page.close"));
   } else if (takeSheetOpen_) {
     ids.push_back(QStringLiteral("take.sheet.live"));
     for (int row = 0; row < recorderVm_->takes()->rowCount(); ++row) {
@@ -2994,7 +3085,7 @@ void AppController::rebuildFocusIds() {
           }
           ids.push_back(QStringLiteral("track.gain"));
           ids.push_back(QStringLiteral("track.pan"));
-          ids.push_back(QStringLiteral("track.rec"));
+          ids.push_back(QStringLiteral("track.arm"));
           ids.push_back(QStringLiteral("track.mute"));
           ids.push_back(QStringLiteral("track.solo"));
         } else {
@@ -3017,6 +3108,7 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("mixer.add"));
           ids.push_back(QStringLiteral("mixer.master"));
           ids.push_back(QStringLiteral("mixer.bank.0"));
+          ids.push_back(QStringLiteral("mixer.bank.pages"));
           ids.push_back(QStringLiteral("mixer.bank.1"));
         }
         break;
@@ -3190,8 +3282,10 @@ void AppController::stopTake() {
 
 void AppController::updateTransport() {
   const auto status = link_.status();
+  // A6/D1: one transport vocabulary - REC / PLAY / STOP. The strip used to say
+  // ROLL while the recorder said ROLLING; both now name the musical state.
   const QString state = recording() ? QStringLiteral("REC")
-                        : (status.rolling ? QStringLiteral("ROLL")
+                        : (status.rolling ? QStringLiteral("PLAY")
                                           : QStringLiteral("STOP"));
   const QString position =
       QString::fromStdString(formatBarBeatTick(status.tick)) + QStringLiteral(" / ") +

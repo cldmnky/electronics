@@ -62,6 +62,7 @@ class UiTapRunner final : public QObject {
   // caller wants to finger; the generated editors only exist while a pipe is
   // selected, and the row taps above remove pipes.
   void primePipeChain(int pipeIndex);
+  void primeGeneratorChain();
   // The mixer is a dynamic list that starts empty (owner contract). The mixer
   // scenarios seed a small track list so the strip controls exist; the empty
   // mixer is its own scenario.
