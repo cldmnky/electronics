@@ -878,3 +878,118 @@ bit-for-bit, sample-rate re-allocation, CPU probe) plus `test_session`
 (11/11) and the studio Pi (11/11), `mnky_audio_bench` on the Pi (table above),
 and the root CTest suite (21/21 after the supervisor-approved, test-only
 emulator retarget from the retired send bus to FX1).
+
+## DAW engine wave: REC SOURCE, region render, song clips, RENDER SONG
+
+**REC SOURCE (`Channel::recSource`, session wire 0/1/2).** The recorder tap is
+now a per-track choice of where in the live-input chain `Engine::tap()` reads.
+The tap stays LIVE-INPUT-ONLY: take and clip audio never enter a recording (no
+bounce-into-self; the explicit render paths below are how material is baked).
+
+| value | tap point | what it runs |
+| --- | --- | --- |
+| 0 `PRE` (default) | post-gain, pre-EQ | the historical tap; `Channel::tapPoint` still selects PreGain (raw) vs PostGain (default). Bit-identical to the old engine. |
+| 1 `POST` | post-EQ + fader, pre-FX-rack, pre-pan | live input through gain, the strip EQ mirrored into a dedicated `EqInsert`, then `vol`. |
+| 2 `POSTFX` | post-FX rack + fader | POST plus this track's FX1 -> FX2 rack, wet included, from a dedicated tap rack. |
+
+POST/POSTFX cannot reuse the strip's EQ/rack buffers: those carry the take/clip
+voice too, and feeding the strip EQ twice would double-advance its biquad state.
+The engine therefore keeps a mirrored live-only EQ per track (`mTapEq`) and,
+for POSTFX, a second `TrackFxRack` (`mTapFxRack`) configured from the same slot
+state. Cost is paid only by tracks that select POST/POSTFX and have a live
+input; PRE runs the old loop verbatim. Built-in delay/reverb get independent tap
+instances. An app-owned CLAP slot has one `IEffect*` seam, so POSTFX reuses
+that instance in both chains - a named limitation, not a silent one. `setChannel`
+and `setRecSource` sanitize out-of-range values to PRE. Mute/solo/pan/monitor/
+master still do not affect the tap; gain, EQ, rack and `vol` do, which is the
+point of the three settings. Session `MixerChannelState::recSource` is forwarded
+by `apply()` through `Channel` and captured back from `Engine::recSource()`.
+
+**RENDER REGION TO TRACK (`TakePlayer::renderRegionToTake`,
+`Engine::renderRegionToTake`).** Bakes one `TakeRegion` to a new 48 kHz mono
+float WAV named `NN-<name>-<NNN>.wav`: `NN` is track+1 (two digits), the name is
+the app's `sanitizeTrackName` spelling (lowercase ASCII, dashes, <= 20 chars)
+and the number is the next free three-digit counter for that track/name in the
+directory. Offset/length/gain/fades/normalize use exactly the region-edit
+resolver, so a rendered take matches what the editor previews; the normalize
+peak is -1 dBFS (`kNormalizePeakDbfs`). Writes happen on the calling (control)
+thread and a failed write leaves no partial file.
+
+**SONG clip scheduler.** `Engine::setSongMode(true)` swaps the take voice to the
+per-track song lanes; `false` leaves the legacy Active-take/loops path exactly
+as it was (and the song readers idle). `Engine::setSongClips(track, clips)` /
+`TakePlayer::setSongClips(...)` resolve beat fields to 48 kHz frames at the
+engine's current tempo and start frame, sort by `startBeats`, drop `muted`
+clips from the rendered lane (kept for capture), refuse an unreadable or
+non-48 kHz take for the whole lane, and log/clamp overlaps. A clip's play span
+ends at its region end, or at the next clip's start when `loop` repeats it in
+place; a trailing loop clip plays its region once because nothing defines a
+stop. The 5 ms `kSongAutoFadeSeconds` declick is applied at a span's start and
+end when the clip does not set a fade; a loop seam uses the same 64-frame ramp
+as take looping.
+
+Each lane with clips owns one reader thread that fills an absolute-song-frame
+ring (`kRingFrames`, ~85 ms lookahead); the audio thread only copies from the
+ring. Gaps are consumed like audio, so the reader pre-produces the next clip
+and a clip boundary never needs a seek. A transport jump asks the reader for a
+seek and renders one aligned block of silence. Lanes are immutable objects in a
+4-slot pool published by one atomic pointer; a slot is rewritten only after
+`waitSongQuiescent()`, so an app edit while playing never stops the audio path
+and takes effect within one ring lookahead. The mixer follows: `active` is true
+while a track has a rendered lane (the clip voice owns the strip) and `playing`
+only while a clip covers the position, so a gap still passes live input per the
+monitor mode and an empty lane contributes silence only.
+
+**RENDER SONG (`Engine::renderSong(path, lengthBars, out)`).** Writes a stereo
+48 kHz float master WAV of `lengthBars` bars (4/4, so `bars * 4 * framesPerBeat`
+frames). It is not a separate mix engine: every block goes through the ordinary
+strip path with live input silent and the clip voice injected as the take voice,
+so the file includes per-track gain, EQ, FX1/FX2 rack, fader, pan, destination
+routing, mute/solo, master gain, the main compressor and the Main EQ exactly as
+the console is set. A strip routed to OUT3&4 or Phones does not reach the main
+bus and therefore is not in the file - that is the current routing, stated
+honestly. Arm keeps its usual meaning (an armed strip suppresses its clip
+voice). The click is forced off for the render and restored afterwards: a
+metronome is not mix content. The main compressor IS included because it is a
+Main-bus insert; the file is what the master output sounds like. The render is
+control-thread only (audio callback stopped/paused), refuses a non-48 kHz
+engine, a non-positive bar count, or a lane resolved at a different tempo
+(re-apply the clips at the current tempo, exactly like `setTakeRegions`).
+
+**Session seam (narrow exception).** `session::apply()` forwards
+`mixer.channels[i].recSource` through the strip and re-applies `song.clips` per
+track with `Engine::setSongClips()`; `capture()` reads `Engine::recSource()` and
+`Engine::songClips()` back. `song.sections`, `song.lengthBars` and `song.grid`
+stay app-owned. The engine resolves beats with its current tempo, so the app
+must apply the transport tempo before (or re-apply) a loaded song. The
+session.hpp function comments that still call recSource/song app-owned predate
+this seam and are being updated by the session owner.
+
+**Tests and CPU.** `test_daw_song` covers the tap matrix at all three points
+(the PRE bit-identical default, EQ/fader placement, rack placement, mute
+independence, and a loud take proving the live-only invariant), region renders
+(offset, gain, fade ramps, normalize, naming), the scheduler (boundary timing,
+5 ms declick max step, loop-in-place, muted, empty, edit-while-running with no
+silent block), RENDER SONG (levels through fader/rack/pan, mute, length, click
+excluded), a clip-voice CPU probe and a tap-chain CPU probe.
+
+Studio Pi 5 (Cortex-A76, RelWithDebInfo, `nice -n 19`/`ionice -c3`, 64-frame
+blocks, budget 1333 us; three runs, load 1.0-1.3 from other build users):
+
+| scenario (audio-thread cost only) | us/block | % of 64-frame budget |
+| --- | --- | --- |
+| 1 clip lane | 2.1-2.3 | 0.16-0.17% |
+| 8 clip lanes | 5.6-5.9 | 0.42-0.45% |
+| 64 clip lanes | 35-56 | 2.7-4.2% |
+| 64 clip lanes, clip boundary on every block | 36-38 | 2.7-2.9% |
+| 64 live taps, REC SOURCE PRE | 11-12 | 0.8-0.9% |
+| 64 live taps, POST (mirrored 4-band EQ) | 67 | 5.0% |
+| 64 live taps, POSTFX + one delay per track | 149-151 | 11.2-11.3% |
+
+The clip numbers include only the audio thread (ring copy, covering-clip lookup
+and transport advance); the reader threads and disk are outside the callback
+and must be budgeted separately. The boundary-every-block case is not more
+expensive on the audio thread because the reader resolves the clip before the
+samples land in the ring. Host (macOS arm64) numbers were 1.0-1.2 / 2.8-3.0 /
+8.9-9.4 us for 1/8/64 clip lanes and 1.7 / 31 / 51 us for the PRE/POST/POSTFX
+tap probes; quote the Pi table, not this host, for product limits.

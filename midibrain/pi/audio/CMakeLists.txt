@@ -94,6 +94,14 @@ target_compile_options(test_take_edit PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
 target_link_libraries(test_take_edit PRIVATE mnky_audio)
 add_test(NAME test_take_edit COMMAND test_take_edit)
 
+# DAW engine wave: REC SOURCE PRE/POST/POSTFX tap matrix, RENDER REGION TO
+# TRACK, the SONG clip scheduler (boundary declick, loop-in-place, muted,
+# edits while running) and RENDER SONG, plus a clip-voice CPU probe.
+add_executable(test_daw_song test_daw_song.cpp)
+target_compile_options(test_daw_song PRIVATE ${MNKY_WARNINGS} -UNDEBUG)
+target_link_libraries(test_daw_song PRIVATE mnky_audio)
+add_test(NAME test_daw_song COMMAND test_daw_song)
+
 # Background peak scanner: 256-frame min/max buckets, the coarse fold, the
 # `.peaks` sidecar round-trip, mtime/size invalidation and worker-thread progress.
 add_executable(test_peaks test_peaks.cpp)

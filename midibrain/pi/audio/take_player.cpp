@@ -1,11 +1,16 @@
 #include "take_player.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <limits>
+#include <system_error>
+
+#include "recorder.hpp"
 
 namespace mnky::audio {
 namespace {
@@ -15,6 +20,55 @@ constexpr int kReadChunkFrames = 256;
 constexpr std::uint64_t kMinLoopFrames = 4;
 
 float dbToLinear(float db) { return std::pow(10.0f, db / 20.0f); }
+
+/// Beat length in frames, rounded like the region edit. Non-positive or
+/// non-finite beats are 0; the result is capped far below uint64 overflow.
+std::uint64_t beatFrames(double framesPerBeat, double beats) {
+    if (!std::isfinite(beats) || beats <= 0.0) return 0;
+    const double frames = std::floor(beats * framesPerBeat + 0.5);
+    if (!(frames > 0.0)) return 0;
+    const double limit =
+        static_cast<double>(std::numeric_limits<std::uint64_t>::max() / 8);
+    if (frames > limit) return static_cast<std::uint64_t>(limit);
+    return static_cast<std::uint64_t>(frames);
+}
+
+/// The app's per-track take name component: lowercase ASCII letters/digits,
+/// runs of other characters folded to one '-', at most 20 characters.
+/// project_logic.cpp owns this rule for the app; audio keeps the same spelling
+/// so a rendered take is found by the same take-list parse.
+std::string sanitizeTakeName(const std::string& name) {
+    std::string out;
+    out.reserve(name.size());
+    bool lastDash = false;
+    for (char character : name) {
+        const auto value = static_cast<unsigned char>(character);
+        if (value < 0x20 || value > 0x7e) continue;
+        const char lower = static_cast<char>(std::tolower(value));
+        const bool keep = (lower >= 'a' && lower <= 'z') ||
+                          (lower >= '0' && lower <= '9');
+        if (keep) {
+            out.push_back(lower);
+            lastDash = false;
+        } else if (!out.empty() && !lastDash) {
+            out.push_back('-');
+            lastDash = true;
+        }
+    }
+    while (!out.empty() && out.back() == '-') out.pop_back();
+    if (out.empty()) out = "track";
+    if (out.size() > 20) out.resize(20);
+    return out;
+}
+
+/// `NN-` prefix for a track index (1-based, two digits).
+std::string trackPrefix(int track) {
+    int display = track + 1;
+    if (display < 1) display = 1;
+    std::string out = std::to_string(display);
+    if (out.size() < 2) out.insert(out.begin(), '0');
+    return out;
+}
 
 }  // namespace
 
@@ -353,6 +407,18 @@ void TakePlayer::clearAll() {
     enterControl();
     for (int track = 0; track < kMaxTracks; ++track) clearTrackLocked(track);
     leaveControl();
+    // Song lanes are independent of the take stack: unpublish them, then let
+    // any in-flight reader finish before joining it and freeing the slots.
+    for (int track = 0; track < kMaxTracks; ++track) {
+        mSongLane[track].store(nullptr, std::memory_order_release);
+    }
+    waitSongQuiescent();
+    for (int track = 0; track < kMaxTracks; ++track) {
+        stopSongStreamLocked(track);
+        mTracks[track].songEdits.clear();
+        mTracks[track].songFramesPerBeat = 0.0;
+        for (auto& slot : mSongLaneSlots[track]) slot.reset();
+    }
 }
 
 int TakePlayer::takeCount(int track) const {
@@ -441,6 +507,99 @@ bool TakePlayer::regionPeak(const std::string& path, const WavInfo& info,
     return true;
 }
 
+bool TakePlayer::resolveRegion(const TakeRegion& region,
+                                   const std::string& where,
+                                   double framesPerBeat, Region& resolved,
+                                   bool& skip, std::string* error) {
+    skip = false;
+    if (region.take.empty()) {
+        note(where + " names no take; skipped");
+        skip = true;
+        return true;
+    }
+    WavInfo info;
+    std::string reason;
+    if (!inspectTakeWav(region.take, info, reason)) {
+        refuse(where + ": " + reason, error);
+        return false;
+    }
+    const std::uint64_t sourceFrames = info.frames();
+    std::uint64_t sliceStart = 0;
+    if (!std::isfinite(region.offsetBeats) || region.offsetBeats < 0.0) {
+        note(where +
+             " has a negative or non-finite offset; starting at the take "
+             "start");
+    } else {
+        sliceStart = beatFrames(framesPerBeat, region.offsetBeats);
+    }
+    if (sliceStart >= sourceFrames) {
+        note(where + " starts at or past the end of " +
+             wav_detail::quoted(region.take) + "; skipped");
+        skip = true;
+        return true;
+    }
+    std::uint64_t sliceFrames = sourceFrames - sliceStart;
+    if (region.lengthBeats > 0.0) {
+        const std::uint64_t wanted =
+            beatFrames(framesPerBeat, region.lengthBeats);
+        if (wanted > sliceFrames) {
+            note(where + " is longer than the rest of " +
+                 wav_detail::quoted(region.take) +
+                 "; clamped to the take end");
+        } else {
+            sliceFrames = wanted;
+        }
+    }
+    if (sliceFrames == 0) {
+        note(where + " is shorter than one frame; skipped");
+        skip = true;
+        return true;
+    }
+    std::uint64_t fadeIn = beatFrames(framesPerBeat, region.fadeInBeats);
+    if (fadeIn > sliceFrames) {
+        note(where +
+             " fade-in is longer than the region; clamped to the region");
+        fadeIn = sliceFrames;
+    }
+    std::uint64_t fadeOut = beatFrames(framesPerBeat, region.fadeOutBeats);
+    if (fadeOut > sliceFrames) {
+        note(where +
+             " fade-out is longer than the region; clamped to the region");
+        fadeOut = sliceFrames;
+    }
+    resolved.path = region.take;
+    resolved.info = info;
+    resolved.sourceStart = sliceStart;
+    resolved.frames = sliceFrames;
+    resolved.fadeInFrames = fadeIn;
+    resolved.fadeOutFrames = fadeOut;
+    float gainDb = std::isfinite(region.gainDb) ? region.gainDb : 0.0f;
+    gainDb = std::clamp(gainDb, -96.0f, 12.0f);
+    resolved.gain = dbToLinear(gainDb);
+    if (region.normalize) {
+        float peak = 0.0f;
+        if (!regionPeak(resolved.path, resolved.info, resolved.sourceStart,
+                        resolved.frames, peak, reason)) {
+            refuse(where + ": " + reason, error);
+            return false;
+        }
+        // One peak pass per region, scaled to kNormalizePeakDbfs. A region
+        // with no signal has no peak to scale to, so its gain is unchanged.
+        if (peak > 0.0f) {
+            const float normalize = dbToLinear(kNormalizePeakDbfs) / peak;
+            if (std::isfinite(normalize) &&
+                std::isfinite(resolved.gain * normalize)) {
+                resolved.gain *= normalize;
+            } else {
+                note(where +
+                     " peak is below the float range; normalize left the "
+                     "gain unchanged");
+            }
+        }
+    }
+    return true;
+}
+
 bool TakePlayer::setRegions(int track, const std::vector<TakeRegion>& regions,
                             double framesPerBeat, std::uint64_t startFrame,
                             std::string* error) {
@@ -458,16 +617,6 @@ bool TakePlayer::setRegions(int track, const std::vector<TakeRegion>& regions,
                error);
         return false;
     }
-    const auto beatFrames = [framesPerBeat](double beats) {
-        if (!std::isfinite(beats) || beats <= 0.0) return std::uint64_t{0};
-        const double frames = std::floor(beats * framesPerBeat + 0.5);
-        if (!(frames > 0.0)) return std::uint64_t{0};
-        const double limit = static_cast<double>(
-            std::numeric_limits<std::uint64_t>::max() / 8);
-        if (frames > limit) return static_cast<std::uint64_t>(limit);
-        return static_cast<std::uint64_t>(frames);
-    };
-
     // Resolve the whole list before touching the live voice: a refused take
     // must leave the previous state intact, and the normalize peak pass belongs
     // at load/apply time, not in the reader thread.
@@ -479,88 +628,13 @@ bool TakePlayer::setRegions(int track, const std::vector<TakeRegion>& regions,
         const std::string where =
             "track " + std::to_string(track) + " region " +
             std::to_string(index);
-        if (region.take.empty()) {
-            note(where + " names no take; skipped");
-            continue;
-        }
-        WavInfo info;
-        std::string reason;
-        if (!inspectTakeWav(region.take, info, reason)) {
-            refuse(where + ": " + reason, error);
+        Region resolved;
+        bool skip = false;
+        if (!resolveRegion(region, where, framesPerBeat, resolved, skip,
+                           error)) {
             return false;
         }
-        const std::uint64_t sourceFrames = info.frames();
-        std::uint64_t sliceStart = 0;
-        if (!std::isfinite(region.offsetBeats) || region.offsetBeats < 0.0) {
-            note(where +
-                 " has a negative or non-finite offset; starting at the take "
-                 "start");
-        } else {
-            sliceStart = beatFrames(region.offsetBeats);
-        }
-        if (sliceStart >= sourceFrames) {
-            note(where + " starts at or past the end of " +
-                 wav_detail::quoted(region.take) + "; skipped");
-            continue;
-        }
-        std::uint64_t sliceFrames = sourceFrames - sliceStart;
-        if (region.lengthBeats > 0.0) {
-            const std::uint64_t wanted = beatFrames(region.lengthBeats);
-            if (wanted > sliceFrames) {
-                note(where + " is longer than the rest of " +
-                     wav_detail::quoted(region.take) +
-                     "; clamped to the take end");
-            } else {
-                sliceFrames = wanted;
-            }
-        }
-        if (sliceFrames == 0) {
-            note(where + " is shorter than one frame; skipped");
-            continue;
-        }
-        std::uint64_t fadeIn = beatFrames(region.fadeInBeats);
-        if (fadeIn > sliceFrames) {
-            note(where +
-                 " fade-in is longer than the region; clamped to the region");
-            fadeIn = sliceFrames;
-        }
-        std::uint64_t fadeOut = beatFrames(region.fadeOutBeats);
-        if (fadeOut > sliceFrames) {
-            note(where +
-                 " fade-out is longer than the region; clamped to the region");
-            fadeOut = sliceFrames;
-        }
-        Region resolved;
-        resolved.path = region.take;
-        resolved.info = info;
-        resolved.sourceStart = sliceStart;
-        resolved.frames = sliceFrames;
-        resolved.fadeInFrames = fadeIn;
-        resolved.fadeOutFrames = fadeOut;
-        float gainDb = std::isfinite(region.gainDb) ? region.gainDb : 0.0f;
-        gainDb = std::clamp(gainDb, -96.0f, 12.0f);
-        resolved.gain = dbToLinear(gainDb);
-        if (region.normalize) {
-            float peak = 0.0f;
-            if (!regionPeak(resolved.path, resolved.info, resolved.sourceStart,
-                            resolved.frames, peak, reason)) {
-                refuse(where + ": " + reason, error);
-                return false;
-            }
-            // One peak pass per region, scaled to kNormalizePeakDbfs. A region
-            // with no signal has no peak to scale to, so its gain is unchanged.
-            if (peak > 0.0f) {
-                const float normalize = dbToLinear(kNormalizePeakDbfs) / peak;
-                if (std::isfinite(normalize) &&
-                    std::isfinite(resolved.gain * normalize)) {
-                    resolved.gain *= normalize;
-                } else {
-                    note(where +
-                         " peak is below the float range; normalize left the "
-                         "gain unchanged");
-                }
-            }
-        }
+        if (skip) continue;
         resolved.streamStart = cursor;
         cursor += resolved.frames;
         plan.push_back(std::move(resolved));
@@ -1078,6 +1152,667 @@ void TakePlayer::render(bool rolling, int n, float* const* monoOut,
         }
     }
     mActiveRenderers.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+
+// ------------------------------------------------------- RENDER REGION TO TRACK
+
+std::string TakePlayer::nextRenderedTakePath(const std::string& directory,
+                                             int track,
+                                             const std::string& name) {
+    const std::string prefix =
+        trackPrefix(track) + "-" + sanitizeTakeName(name) + "-";
+    int maximum = 0;
+    std::error_code error;
+    for (std::filesystem::directory_iterator it(directory, error), end;
+         !error && it != end; it.increment(error)) {
+        std::error_code typeError;
+        if (!it->is_regular_file(typeError)) continue;
+        const std::string file = it->path().filename().string();
+        if (file.size() <= prefix.size() + 4) continue;
+        if (file.compare(0, prefix.size(), prefix) != 0) continue;
+        if (file.substr(file.size() - 4) != ".wav") continue;
+        const std::string number =
+            file.substr(prefix.size(), file.size() - prefix.size() - 4);
+        if (number.size() != 3) continue;
+        bool digits = true;
+        for (char character : number) {
+            if (character < '0' || character > '9') digits = false;
+        }
+        if (!digits) continue;
+        maximum = std::max(maximum, std::stoi(number));
+    }
+    std::string number = std::to_string(maximum + 1);
+    while (number.size() < 3) number.insert(number.begin(), '0');
+    return (std::filesystem::path(directory) / (prefix + number + ".wav"))
+        .string();
+}
+
+bool TakePlayer::renderRegionToTake(const TakeRegion& region,
+                                    double framesPerBeat,
+                                    const std::string& directory, int track,
+                                    const std::string& name, RenderedTake& out,
+                                    std::string* error) {
+    out = RenderedTake{};
+    if (!std::isfinite(framesPerBeat) || framesPerBeat <= 0.0) {
+        refuse("region render needs a tempo to map beats to frames", error);
+        return false;
+    }
+    const std::string where = "track " + std::to_string(track) + " render";
+    Region resolved;
+    bool skip = false;
+    if (!resolveRegion(region, where, framesPerBeat, resolved, skip, error)) {
+        return false;
+    }
+    if (skip || resolved.frames == 0) {
+        refuse(where + " resolves to no frames", error);
+        return false;
+    }
+    std::error_code createError;
+    if (!directory.empty()) {
+        std::filesystem::create_directories(directory, createError);
+    }
+    if (createError) {
+        refuse("cannot create the take directory " +
+                   wav_detail::quoted(directory),
+               error);
+        return false;
+    }
+    const std::string path = nextRenderedTakePath(directory, track, name);
+    WavFileWriter writer;
+    if (!writer.open(path, 1, kTakeSampleRate)) {
+        refuse("cannot open " + wav_detail::quoted(path) + " for writing",
+               error);
+        return false;
+    }
+    std::FILE* file = std::fopen(resolved.path.c_str(), "rb");
+    bool ok = file != nullptr;
+    if (ok) {
+        const std::uint64_t offset =
+            resolved.info.dataOffset +
+            resolved.sourceStart * resolved.info.frameBytes();
+        ok = offset <= static_cast<std::uint64_t>(LONG_MAX) &&
+             std::fseek(file, static_cast<long>(offset), SEEK_SET) == 0;
+    }
+    std::vector<float> chunk(kReadChunkFrames);
+    std::uint64_t position = 0;
+    while (ok && position < resolved.frames) {
+        const int want = static_cast<int>(
+            std::min<std::uint64_t>(static_cast<std::uint64_t>(kReadChunkFrames),
+                                    resolved.frames - position));
+        const int got = decodeTakeFrames(
+            file, resolved.info.channels, resolved.info.bits / 8u,
+            resolved.info.floatSamples(), chunk.data(), want);
+        if (got <= 0) {
+            ok = false;
+            break;
+        }
+        for (int i = 0; i < got; ++i) {
+            chunk[static_cast<std::size_t>(i)] *=
+                resolved.gainAt(position + static_cast<std::uint64_t>(i));
+        }
+        ok = writer.writeFrames(chunk.data(), got);
+        if (got < want) ok = false;  // shorter than its header claims
+        position += static_cast<std::uint64_t>(got);
+    }
+    if (file != nullptr) std::fclose(file);
+    const bool closed = writer.close();
+    if (!ok || !closed) {
+        std::error_code removeError;
+        std::filesystem::remove(path, removeError);
+        refuse("cannot write the rendered region " + wav_detail::quoted(path),
+               error);
+        return false;
+    }
+    out.path = path;
+    out.frames = resolved.frames;
+    return true;
+}
+
+// ---------------------------------------------------------- song clip scheduler
+
+constexpr std::uint64_t kNoSongFrame =
+    std::numeric_limits<std::uint64_t>::max();
+
+float TakePlayer::SongClipPlan::gainAt(std::uint64_t position) const {
+    const std::uint64_t play = endFrame > startFrame ? endFrame - startFrame : 0;
+    if (position >= play) return 0.0f;
+    float value = gain;
+    if (fadeInFrames > 0 && position < fadeInFrames) {
+        value *= static_cast<float>(position) /
+                 static_cast<float>(fadeInFrames);
+    }
+    if (fadeOutFrames > 0) {
+        const std::uint64_t tail = play - 1 - position;
+        if (tail < fadeOutFrames) {
+            value *= static_cast<float>(tail) /
+                     static_cast<float>(fadeOutFrames);
+        }
+    }
+    // A loop clip wraps its region in place; each seam gets the same short
+    // ramp the take loop uses, so the recorded edge is not a hard cut.
+    if (loop && regionFrames >= kMinLoopFrames) {
+        const std::uint64_t inRegion = position % regionFrames;
+        const std::uint64_t seam = loopSeamFade(regionFrames);
+        if (inRegion < seam) {
+            value *= static_cast<float>(inRegion) / static_cast<float>(seam);
+        } else if (inRegion + seam >= regionFrames) {
+            value *= static_cast<float>(regionFrames - 1 - inRegion) /
+                     static_cast<float>(seam);
+        }
+    }
+    return value;
+}
+
+int TakePlayer::SongLane::covering(std::uint64_t frame) const {
+    if (clips.empty()) return -1;
+    std::size_t low = 0;
+    std::size_t high = clips.size();
+    while (low < high) {
+        const std::size_t middle = low + (high - low) / 2;
+        if (clips[middle].startFrame <= frame) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    if (low == 0) return -1;
+    const std::size_t index = low - 1;
+    return frame < clips[index].endFrame ? static_cast<int>(index) : -1;
+}
+
+bool TakePlayer::resolveSongLane(int track, const std::vector<SongClip>& clips,
+                                 double framesPerBeat, SongLane& lane,
+                                 std::string* error) {
+    lane.clips.clear();
+    lane.framesPerBeat = framesPerBeat;
+    lane.id = mSongLaneSerial.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (!std::isfinite(framesPerBeat) || framesPerBeat <= 0.0) {
+        refuse("track " + std::to_string(track) +
+                   " song lane needs a tempo to map beats to frames",
+               error);
+        return false;
+    }
+    const std::uint64_t autoFade = static_cast<std::uint64_t>(std::llround(
+        kSongAutoFadeSeconds * static_cast<double>(kTakeSampleRate)));
+
+    std::vector<SongClip> ordered;
+    ordered.reserve(clips.size());
+    for (const SongClip& clip : clips) {
+        if (clip.muted) continue;  // kept in songEdits, never rendered
+        ordered.push_back(clip);
+    }
+    std::stable_sort(ordered.begin(), ordered.end(),
+                     [](const SongClip& left, const SongClip& right) {
+                         return left.startBeats < right.startBeats;
+                     });
+
+    std::vector<SongClipPlan> plans;
+    plans.reserve(ordered.size());
+    for (std::size_t index = 0; index < ordered.size(); ++index) {
+        const SongClip& clip = ordered[index];
+        const std::string where = "track " + std::to_string(track) + " clip " +
+                                  std::to_string(index);
+        if (!std::isfinite(clip.startBeats) || clip.startBeats < 0.0) {
+            note(where + " has a negative or non-finite start; skipped");
+            continue;
+        }
+        TakeRegion region;
+        region.take = clip.take;
+        region.offsetBeats = clip.offsetBeats;
+        region.lengthBeats = clip.lengthBeats;
+        region.gainDb = clip.gainDb;
+        region.fadeInBeats = clip.fadeInBeats;
+        region.fadeOutBeats = clip.fadeOutBeats;
+        region.normalize = clip.normalize;
+        Region resolved;
+        bool skip = false;
+        if (!resolveRegion(region, where, framesPerBeat, resolved, skip,
+                           error)) {
+            return false;
+        }
+        if (skip || resolved.frames == 0) continue;
+        SongClipPlan plan;
+        plan.path = resolved.path;
+        plan.info = resolved.info;
+        plan.startFrame = beatFrames(framesPerBeat, clip.startBeats);
+        plan.sourceStart = resolved.sourceStart;
+        plan.regionFrames = resolved.frames;
+        plan.gain = resolved.gain;
+        plan.loop = clip.loop && resolved.frames >= kMinLoopFrames;
+        plan.fadeInFrames = clip.fadeInBeats > 0.0
+                                ? beatFrames(framesPerBeat, clip.fadeInBeats)
+                                : autoFade;
+        plan.fadeOutFrames =
+            clip.fadeOutBeats > 0.0
+                ? beatFrames(framesPerBeat, clip.fadeOutBeats)
+                : autoFade;
+        plans.push_back(std::move(plan));
+    }
+
+    // Drop duplicate starts (clips never overlap; the later one is ignored)
+    // before the neighbor clamp, so the play span always ends at the next kept
+    // clip.
+    std::vector<SongClipPlan> kept;
+    kept.reserve(plans.size());
+    for (SongClipPlan& plan : plans) {
+        if (!kept.empty() && plan.startFrame <= kept.back().startFrame) {
+            note("track " + std::to_string(track) +
+                 " has two clips at or before the same start frame; the later "
+                 "one is skipped");
+            continue;
+        }
+        kept.push_back(std::move(plan));
+    }
+    lane.clips.reserve(kept.size());
+    for (std::size_t index = 0; index < kept.size(); ++index) {
+        SongClipPlan plan = std::move(kept[index]);
+        const std::uint64_t regionEnd = plan.startFrame + plan.regionFrames;
+        std::uint64_t end = regionEnd;
+        if (plan.loop && index + 1 < kept.size()) {
+            // Loop in place until the next clip starts.
+            end = kept[index + 1].startFrame;
+        }
+        if (index + 1 < kept.size() &&
+            kept[index + 1].startFrame < end) {
+            if (!plan.loop) {
+                note("track " + std::to_string(track) + " clip " +
+                     std::to_string(index) +
+                     " overlaps the next clip; clamped to its start");
+            }
+            end = kept[index + 1].startFrame;
+        }
+        if (end <= plan.startFrame) continue;  // defensive zero-length span
+        plan.endFrame = end;
+        const std::uint64_t play = end - plan.startFrame;
+        if (plan.fadeInFrames > play) plan.fadeInFrames = play;
+        if (plan.fadeOutFrames > play) plan.fadeOutFrames = play;
+        lane.clips.push_back(std::move(plan));
+    }
+    return true;
+}
+
+void TakePlayer::waitSongQuiescent() {
+    for (;;) {
+        if (mActiveRenderers.load(std::memory_order_acquire) == 0 &&
+            mSongReadersActive.load(std::memory_order_acquire) == 0) {
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(50));
+    }
+}
+
+void TakePlayer::closeSongReadState(SongReadState& state) {
+    if (state.file != nullptr) {
+        std::fclose(state.file);
+        state.file = nullptr;
+    }
+    state.laneId = 0;
+    state.clip = -1;
+    state.sourceFrame = 0;
+    state.shortRead = false;
+}
+
+void TakePlayer::startSongStreamLocked(int track, const SongLane* lane,
+                                       std::uint64_t startFrame) {
+    SongStream& stream = mTracks[track].songStream;
+    stopSongStreamLocked(track);
+    stream.readFrame.store(startFrame, std::memory_order_relaxed);
+    stream.writeFrame.store(startFrame, std::memory_order_relaxed);
+    stream.seekFrame.store(kNoSongFrame, std::memory_order_relaxed);
+    if (lane == nullptr || lane->clips.empty()) return;
+
+    // Prime half the ring so the first block after setSongClips() has data.
+    float scratch[kReadChunkFrames] = {};
+    const std::uint64_t target = static_cast<std::uint64_t>(kRingFrames) / 2;
+    std::uint64_t primed = 0;
+    while (primed < target) {
+        const int want = static_cast<int>(std::min<std::uint64_t>(
+            kReadChunkFrames, target - primed));
+        const int got = readSongFrames(*lane, stream.state, startFrame + primed,
+                                       scratch, want);
+        if (got <= 0) break;
+        for (int i = 0; i < got; ++i) {
+            stream.ring[static_cast<std::size_t>(
+                (startFrame + primed + static_cast<std::uint64_t>(i)) &
+                static_cast<std::uint64_t>(kRingFrames - 1))] = scratch[i];
+        }
+        primed += static_cast<std::uint64_t>(got);
+    }
+    stream.writeFrame.store(startFrame + primed, std::memory_order_release);
+    stream.running.store(true, std::memory_order_release);
+    stream.thread = std::thread(&TakePlayer::songReadLoop, this, track);
+}
+
+void TakePlayer::stopSongStreamLocked(int track) {
+    SongStream& stream = mTracks[track].songStream;
+    stream.running.store(false, std::memory_order_release);
+    stream.stop.store(true, std::memory_order_release);
+    if (stream.thread.joinable()) stream.thread.join();
+    stream.stop.store(false, std::memory_order_relaxed);
+    closeSongReadState(stream.state);
+    stream.writeFrame.store(0, std::memory_order_relaxed);
+    stream.readFrame.store(0, std::memory_order_relaxed);
+    stream.seekFrame.store(kNoSongFrame, std::memory_order_relaxed);
+}
+
+void TakePlayer::songReadLoop(int track) {
+    SongStream& stream = mTracks[track].songStream;
+    float scratch[kReadChunkFrames] = {};
+    constexpr std::uint64_t kHalfRing =
+        static_cast<std::uint64_t>(kRingFrames) / 2;
+    while (!stream.stop.load(std::memory_order_acquire)) {
+        const std::uint64_t seek =
+            stream.seekFrame.exchange(kNoSongFrame, std::memory_order_acq_rel);
+        if (seek != kNoSongFrame) {
+            closeSongReadState(stream.state);
+            stream.writeFrame.store(seek, std::memory_order_release);
+        }
+        const std::uint64_t read =
+            stream.readFrame.load(std::memory_order_acquire);
+        std::uint64_t write = stream.writeFrame.load(std::memory_order_relaxed);
+        if (write < read) {
+            // The transport moved past what was produced; restart from the
+            // audio thread's position instead of lapping the ring.
+            write = read;
+            stream.writeFrame.store(write, std::memory_order_release);
+            closeSongReadState(stream.state);
+        }
+        const std::uint64_t used = write - read;
+        if (used >= kHalfRing) {
+            // The ring holds ~85 ms of lookahead; a 5 ms poll keeps a paused
+            // song mode cheap (64 lanes do not spin the CPU at 5 kHz each).
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            continue;
+        }
+        const int want = static_cast<int>(std::min<std::uint64_t>(
+            static_cast<std::uint64_t>(kReadChunkFrames), kHalfRing - used));
+        mSongReadersActive.fetch_add(1, std::memory_order_acq_rel);
+        const SongLane* lane = mSongLane[track].load(std::memory_order_acquire);
+        int got = 0;
+        if (lane != nullptr && !lane->clips.empty()) {
+            got = readSongFrames(*lane, stream.state, write, scratch, want);
+        }
+        mSongReadersActive.fetch_sub(1, std::memory_order_acq_rel);
+        if (got <= 0) {
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+            continue;
+        }
+        for (int i = 0; i < got; ++i) {
+            stream.ring[static_cast<std::size_t>(
+                (write + static_cast<std::uint64_t>(i)) &
+                static_cast<std::uint64_t>(kRingFrames - 1))] = scratch[i];
+        }
+        stream.writeFrame.store(write + static_cast<std::uint64_t>(got),
+                                std::memory_order_release);
+    }
+}
+
+int TakePlayer::readSongFrames(const SongLane& lane, SongReadState& state,
+                               std::uint64_t position, float* mono,
+                               int frames) {
+    if (mono == nullptr || frames <= 0) return 0;
+    if (state.laneId != lane.id) {
+        closeSongReadState(state);
+        state.laneId = lane.id;
+    }
+    int produced = 0;
+    while (produced < frames) {
+        const std::uint64_t at = position + static_cast<std::uint64_t>(produced);
+        const int index = lane.covering(at);
+        if (index < 0) {
+            // Silence until the next clip start (or the end of the request).
+            std::size_t low = 0;
+            std::size_t high = lane.clips.size();
+            while (low < high) {
+                const std::size_t middle = low + (high - low) / 2;
+                if (lane.clips[middle].startFrame <= at) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            }
+            std::uint64_t nextStart = std::numeric_limits<std::uint64_t>::max();
+            if (low < lane.clips.size()) nextStart = lane.clips[low].startFrame;
+            const std::uint64_t available =
+                nextStart > at
+                    ? nextStart - at
+                    : static_cast<std::uint64_t>(frames - produced);
+            const int count = static_cast<int>(std::min<std::uint64_t>(
+                static_cast<std::uint64_t>(frames - produced), available));
+            for (int i = 0; i < count; ++i) mono[produced + i] = 0.0f;
+            produced += count;
+            continue;
+        }
+        const SongClipPlan& plan = lane.clips[static_cast<std::size_t>(index)];
+        int count = static_cast<int>(std::min<std::uint64_t>(
+            static_cast<std::uint64_t>(frames - produced),
+            plan.endFrame > at ? plan.endFrame - at : 0));
+        if (count <= 0) {
+            mono[produced++] = 0.0f;
+            continue;
+        }
+        const std::uint64_t inClip = at - plan.startFrame;
+        std::uint64_t sourceFrame = plan.sourceStart + inClip;
+        if (plan.loop) {
+            const std::uint64_t inRegion = inClip % plan.regionFrames;
+            sourceFrame = plan.sourceStart + inRegion;
+            count = static_cast<int>(std::min<std::uint64_t>(
+                static_cast<std::uint64_t>(count),
+                plan.regionFrames - inRegion));
+        }
+        if (state.clip != index) {
+            if (state.file != nullptr) {
+                std::fclose(state.file);
+                state.file = nullptr;
+            }
+            state.clip = index;
+            state.file = std::fopen(plan.path.c_str(), "rb");
+            if (state.file == nullptr) {
+                if (!state.shortRead) {
+                    note("song clip cannot open " +
+                         wav_detail::quoted(plan.path) + "; rendering "
+                         "silence");
+                    state.shortRead = true;
+                }
+                for (int i = 0; i < count; ++i) mono[produced + i] = 0.0f;
+                produced += count;
+                state.clip = -1;
+                continue;
+            }
+            state.sourceFrame = sourceFrame;
+            const std::uint64_t offset =
+                plan.info.dataOffset + sourceFrame * plan.info.frameBytes();
+            if (offset > static_cast<std::uint64_t>(LONG_MAX) ||
+                std::fseek(state.file, static_cast<long>(offset), SEEK_SET) !=
+                    0) {
+                std::fclose(state.file);
+                state.file = nullptr;
+                state.clip = -1;
+                for (int i = 0; i < count; ++i) mono[produced + i] = 0.0f;
+                produced += count;
+                continue;
+            }
+        } else if (state.sourceFrame != sourceFrame) {
+            const std::uint64_t offset =
+                plan.info.dataOffset + sourceFrame * plan.info.frameBytes();
+            if (offset > static_cast<std::uint64_t>(LONG_MAX) ||
+                std::fseek(state.file, static_cast<long>(offset), SEEK_SET) !=
+                    0) {
+                for (int i = 0; i < count; ++i) mono[produced + i] = 0.0f;
+                produced += count;
+                continue;
+            }
+            state.sourceFrame = sourceFrame;
+        }
+        const int got = decodeTakeFrames(
+            state.file, plan.info.channels, plan.info.bits / 8u,
+            plan.info.floatSamples(), mono + produced, count);
+        for (int i = 0; i < got; ++i) {
+            mono[produced + i] *=
+                plan.gainAt(inClip + static_cast<std::uint64_t>(i));
+        }
+        if (got < count) {
+            // The take is shorter than its header claims: silence the gap so
+            // the absolute cursor stays exact, and note it once.
+            if (!state.shortRead) {
+                note("song clip " + wav_detail::quoted(plan.path) +
+                     " is shorter than its header claims; rendering silence");
+                state.shortRead = true;
+            }
+            for (int i = got; i < count; ++i) mono[produced + i] = 0.0f;
+        }
+        state.sourceFrame += static_cast<std::uint64_t>(std::max(got, 0));
+        produced += count;
+    }
+    return produced;
+}
+
+bool TakePlayer::setSongClips(int track, const std::vector<SongClip>& clips,
+                              double framesPerBeat, std::uint64_t startFrame,
+                              std::string* error) {
+    if (track < 0 || track >= kMaxTracks) {
+        refuse("track " + std::to_string(track) + " is out of range", error);
+        return false;
+    }
+    if (clips.empty()) {
+        clearSongClips(track);
+        return true;
+    }
+    SongLane lane;
+    if (!resolveSongLane(track, clips, framesPerBeat, lane, error)) {
+        return false;
+    }
+    const int slot = mSongLaneNext[track] % kSongLaneSlots;
+    mSongLaneNext[track] = (slot + 1) % kSongLaneSlots;
+    // A slot is rewritten only when no render/reader can still hold its old
+    // lane; the audio path is never stopped (the current lane stays published
+    // until the new pointer is stored).
+    waitSongQuiescent();
+    mSongLaneSlots[track][slot] = std::make_unique<SongLane>(std::move(lane));
+    const SongLane* published = mSongLaneSlots[track][slot].get();
+    mSongLane[track].store(published, std::memory_order_release);
+
+    Track& state = mTracks[track];
+    state.songEdits = clips;
+    for (SongClip& clip : state.songEdits) clip.track = track;
+    state.songFramesPerBeat = framesPerBeat;
+    const bool running =
+        state.songStream.running.load(std::memory_order_acquire);
+    if (published->clips.empty()) {
+        if (running) {
+            // An in-flight render may still be copying this stream's ring;
+            // quiesce before the join/reset below.
+            waitSongQuiescent();
+            stopSongStreamLocked(track);
+        }
+    } else if (!running) {
+        startSongStreamLocked(track, published, startFrame);
+    }
+    return true;
+}
+
+void TakePlayer::clearSongClips(int track) {
+    if (track < 0 || track >= kMaxTracks) return;
+    const bool hasLane = mSongLane[track].load(std::memory_order_acquire) != nullptr;
+    const bool running =
+        mTracks[track].songStream.running.load(std::memory_order_acquire);
+    if (!hasLane && !running && mTracks[track].songEdits.empty()) return;
+    mSongLane[track].store(nullptr, std::memory_order_release);
+    waitSongQuiescent();
+    stopSongStreamLocked(track);
+    mTracks[track].songEdits.clear();
+    mTracks[track].songFramesPerBeat = 0.0;
+    for (auto& slot : mSongLaneSlots[track]) slot.reset();
+}
+
+int TakePlayer::songClipCount(int track) const {
+    if (track < 0 || track >= kMaxTracks) return 0;
+    return static_cast<int>(mTracks[track].songEdits.size());
+}
+
+std::vector<SongClip> TakePlayer::songClips(int track) const {
+    if (track < 0 || track >= kMaxTracks) return {};
+    return mTracks[track].songEdits;
+}
+
+double TakePlayer::songFramesPerBeat(int track) const {
+    if (track < 0 || track >= kMaxTracks) return 0.0;
+    return mTracks[track].songFramesPerBeat;
+}
+
+void TakePlayer::renderSong(bool rolling, int n, std::uint64_t songFrame,
+                            float* const* monoOut, bool* active, bool* playing) {
+    const int frames = std::min(n, kReadChunkFrames);
+    mActiveRenderers.fetch_add(1, std::memory_order_acq_rel);
+    for (int track = 0; track < kMaxTracks; ++track) {
+        const SongLane* lane = mSongLane[track].load(std::memory_order_acquire);
+        const bool hasClips = lane != nullptr && !lane->clips.empty();
+        if (active != nullptr) active[track] = hasClips;
+        const bool covers = hasClips && lane->covering(songFrame) >= 0;
+        if (playing != nullptr) playing[track] = rolling && covers;
+        float* out = monoOut != nullptr ? monoOut[track] : nullptr;
+        if (out == nullptr) continue;
+        for (int i = 0; i < frames; ++i) out[i] = 0.0f;
+        if (!hasClips || !rolling || frames <= 0) continue;
+        SongStream& stream = mTracks[track].songStream;
+        if (!stream.running.load(std::memory_order_acquire)) continue;
+        const std::uint64_t read =
+            stream.readFrame.load(std::memory_order_relaxed);
+        if (read != songFrame) {
+            // Transport jump/start: hand the position to the reader and render
+            // one aligned block of silence instead of a wrong-position block.
+            // The read cursor still advances by the block, so the next block
+            // lines up with the transport even if the reader needs longer.
+            stream.seekFrame.store(songFrame, std::memory_order_release);
+            stream.readFrame.store(songFrame + static_cast<std::uint64_t>(frames),
+                                   std::memory_order_relaxed);
+            continue;
+        }
+        const std::uint64_t write =
+            stream.writeFrame.load(std::memory_order_acquire);
+        const std::uint64_t available =
+            write > songFrame
+                ? std::min<std::uint64_t>(static_cast<std::uint64_t>(frames),
+                                          write - songFrame)
+                : 0;
+        for (std::uint64_t i = 0; i < available; ++i) {
+            out[i] = stream.ring[static_cast<std::size_t>(
+                (songFrame + i) &
+                static_cast<std::uint64_t>(kRingFrames - 1))];
+        }
+        if (available < static_cast<std::uint64_t>(frames)) {
+            mUnderruns.fetch_add(
+                static_cast<std::uint64_t>(frames) - available,
+                std::memory_order_relaxed);
+        }
+        stream.readFrame.store(songFrame + static_cast<std::uint64_t>(frames),
+                               std::memory_order_release);
+    }
+    mActiveRenderers.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+void TakePlayer::beginSongRender() {
+    for (SongReadState& state : mSongRenderState) closeSongReadState(state);
+}
+
+bool TakePlayer::renderSongTrack(int track, std::uint64_t songFrame,
+                                 int frames, float* mono) {
+    if (track < 0 || track >= kMaxTracks || mono == nullptr || frames <= 0) {
+        return false;
+    }
+    const SongLane* lane = mSongLane[track].load(std::memory_order_acquire);
+    if (lane == nullptr || lane->clips.empty()) {
+        for (int i = 0; i < frames; ++i) mono[i] = 0.0f;
+        return false;
+    }
+    const bool covers = lane->covering(songFrame) >= 0;
+    readSongFrames(*lane, mSongRenderState[track], songFrame, mono, frames);
+    return covers;
+}
+
+void TakePlayer::endSongRender() {
+    for (SongReadState& state : mSongRenderState) closeSongReadState(state);
 }
 
 }  // namespace mnky::audio

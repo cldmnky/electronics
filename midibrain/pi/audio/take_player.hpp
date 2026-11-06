@@ -1,8 +1,11 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -45,6 +48,40 @@ struct TakeRegion {
 /// scale so a normalised region leaves headroom for gain staging downstream
 /// instead of landing on 0 dBFS.
 inline constexpr float kNormalizePeakDbfs = -1.0f;
+
+/// One take region placed on a song track (session::SongClip is the serialized
+/// spelling of exactly these fields). `startBeats` is the song position;
+/// `lengthBeats` 0 means "to the end of the take"; `loop` repeats the region in
+/// place until the next clip on the track starts (a trailing clip with no
+/// successor plays its region once, because nothing defines where it would
+/// stop); `muted` skips the clip. Clips on one track must not overlap - the
+/// scheduler clamps a defensive overlap to the next clip start and logs it.
+struct SongClip {
+    int track = 0;
+    double startBeats = 0.0;
+    std::string take;
+    double offsetBeats = 0.0;
+    double lengthBeats = 0.0;
+    float gainDb = 0.0f;  // -96..+12
+    double fadeInBeats = 0.0;
+    double fadeOutBeats = 0.0;
+    bool normalize = false;
+    bool loop = false;
+    bool muted = false;
+    friend bool operator==(const SongClip&, const SongClip&) = default;
+};
+
+/// Auto declick at a clip edge when the clip sets no fade: 5 ms. It is applied
+/// at the rendered span's start and end, and the loop-in-place seam uses the
+/// shorter kLoopFadeFrames seam ramp instead (the same rule as take looping).
+inline constexpr double kSongAutoFadeSeconds = 0.005;
+
+/// Result of TakePlayer::renderRegionToTake()/Engine::renderRegionToTake():
+/// the new `NN-<name>-<n>.wav` and its length in 48 kHz frames.
+struct RenderedTake {
+    std::string path;
+    std::uint64_t frames = 0;
+};
 
 /// Streamed take playback for the engine's disarmed input strips.
 ///
@@ -154,6 +191,68 @@ public:
     /// Path of layer `layer` (0 = oldest); empty for an invalid track/layer.
     std::string takePath(int track, int layer) const;
 
+    // --- RENDER REGION TO TRACK -------------------------------------------
+    /// Bakes one region (the TakeRegion fields) to a new 48 kHz mono float WAV
+    /// `directory/NN-<name>-<NNN>.wav` (the app's per-track take convention:
+    /// track+1 as two digits, the sanitized lowercase name and the next free
+    /// three-digit number for that track/name). Offsets, length, gain, fades and
+    /// normalize behave exactly like the region edit in setRegions(); `track`
+    /// only forms the file name and names the log line. The write happens on
+    /// this (control) thread, never in process(). Returns false with a reason
+    /// for an unreadable take, a region that resolves to no frames or an I/O
+    /// failure, and leaves no partial file behind. This is the renderer behind
+    /// RENDER REGION TO TRACK and RENDER SONG's take material.
+    bool renderRegionToTake(const TakeRegion& region, double framesPerBeat,
+                            const std::string& directory, int track,
+                            const std::string& name, RenderedTake& out,
+                            std::string* error = nullptr);
+
+    // --- SONG clip scheduler ----------------------------------------------
+    /// Replaces `track`'s song lane with `clips` (sorted internally by
+    /// startBeats; muted clips are kept for capture but render nothing).
+    /// `framesPerBeat` maps the beat fields to 48 kHz frames exactly like
+    /// setRegions(); `startFrame` is the transport frame the lane starts
+    /// streaming from. A lane with clips gets one reader thread that fills an
+    /// absolute-frame ring; the audio thread only copies from the ring, so
+    /// process() never opens a file or allocates. The lane is published with an
+    /// atomic pointer swap: an edit while playing takes effect within one ring
+    /// lookahead (about 85 ms) and never stops or restarts the audio path.
+    /// Unreadable/non-48 kHz takes refuse the whole list and leave the previous
+    /// lane untouched; an overlap with the next clip is clamped to that clip's
+    /// start and logged. Re-apply after a tempo change, like setRegions().
+    bool setSongClips(int track, const std::vector<SongClip>& clips,
+                      double framesPerBeat, std::uint64_t startFrame,
+                      std::string* error = nullptr);
+    /// Drops the song lane and stops its reader thread.
+    void clearSongClips(int track);
+    /// Applied (not muted-filtered) clip count, 0 for an empty lane.
+    int songClipCount(int track) const;
+    /// Applied clip list in start order (capture reads this back).
+    std::vector<SongClip> songClips(int track) const;
+    /// Beat length the lane was resolved with; 0 when no clips are applied.
+    double songFramesPerBeat(int track) const;
+
+    /// Audio-thread SONG entry point: renders the song lane of every track at
+    /// absolute song frame `songFrame` (the transport's frame). `active[t]` is
+    /// true while the track has clips (the clip voice owns the strip);
+    /// `playing[t]` is true while a clip actually covers the position, so the
+    /// engine's Auto monitor keeps passing live input through a gap. The ring
+    /// is consumed on every rolling block, gaps included, so the reader can
+    /// pre-produce the next clip and a boundary never needs a seek; a transport
+    /// jump asks the reader for a seek and renders one silent block.
+    void renderSong(bool rolling, int n, std::uint64_t songFrame,
+                    float* const* monoOut, bool* active, bool* playing);
+
+    /// Offline RENDER SONG reader: fills `mono` with the song lane at
+    /// `songFrame` straight from the take files (no ring, no reader thread).
+    /// Control thread only, for Engine::renderSong(). Returns true when a clip
+    /// covers the block. beginSongRender()/endSongRender() reset and close the
+    /// offline file handles.
+    void beginSongRender();
+    bool renderSongTrack(int track, std::uint64_t songFrame, int frames,
+                         float* mono);
+    void endSongRender();
+
     /// Audio-thread entry point. `monoOut[t]` receives the newest-wins mix for
     /// track t and is zeroed even when the transport is stopped. `active[t]`
     /// is true while a take stack is selected; `playing[t]` is true only while
@@ -251,6 +350,67 @@ private:
         std::thread thread;
     };
 
+    /// One resolved song clip: the take slice, its song-frame placement and the
+    /// render envelope. Resolved on the control thread; immutable while the
+    /// lane is published.
+    struct SongClipPlan {
+        std::string path;
+        WavInfo info;
+        std::uint64_t startFrame = 0;   // song frame of the clip start
+        std::uint64_t endFrame = 0;     // song frame where the clip stops
+        std::uint64_t sourceStart = 0;  // first take frame of the region
+        std::uint64_t regionFrames = 0; // slice length
+        std::uint64_t fadeInFrames = 0;
+        std::uint64_t fadeOutFrames = 0;
+        float gain = 1.0f;              // gainDb and normalize combined
+        bool loop = false;
+
+        /// Render gain at `position` song frames after the clip start: the
+        /// region gain, the linear fades over the clip's play span and - for a
+        /// loop clip - the seam ramp around every wrap of the region.
+        float gainAt(std::uint64_t position) const;
+    };
+
+    /// An immutable song lane. `id` lets a reader detect a lane swap and reopen
+    /// its take file; the clip list is sorted by startFrame and the spans never
+    /// overlap.
+    struct SongLane {
+        std::uint64_t id = 0;
+        double framesPerBeat = 0.0;
+        std::vector<SongClipPlan> clips;
+
+        /// Index of the clip covering `frame`, or -1 in a gap.
+        int covering(std::uint64_t frame) const;
+    };
+
+    /// Reader-thread state for one song stream: the open take file and the
+    /// next source frame to decode. Reset whenever the lane id changes.
+    struct SongReadState {
+        std::uint64_t laneId = 0;
+        std::FILE* file = nullptr;
+        int clip = -1;
+        std::uint64_t sourceFrame = 0;
+        bool shortRead = false;
+    };
+
+    /// One track's song stream: an absolute-song-frame ring plus the reader
+    /// thread that keeps it about half full. `readFrame` is the audio thread's
+    /// next song frame, `writeFrame` the reader's; `seekFrame` is a transport
+    /// jump request (kNoSongFrame when none).
+    struct SongStream {
+        SongStream() : ring(kRingFrames, 0.0f) {}
+
+        std::vector<float> ring;
+        std::atomic<std::uint64_t> writeFrame{0};
+        std::atomic<std::uint64_t> readFrame{0};
+        std::atomic<std::uint64_t> seekFrame{
+            std::numeric_limits<std::uint64_t>::max()};
+        std::atomic<bool> stop{false};
+        std::atomic<bool> running{false};
+        std::thread thread;
+        SongReadState state;
+    };
+
     struct Track {
         Layer layers[kMaxTakesPerTrack];
         std::atomic<int> count{0};
@@ -271,6 +431,12 @@ private:
         std::uint64_t editFrames = 0;
         std::uint64_t editStartFrame = 0;
         EditStream editStream;
+        // Song lane (control-thread edits) and the reader thread that streams
+        // it. The atomic lane pointer is the only scheduler state the audio
+        // thread loads besides this stream's ring.
+        std::vector<SongClip> songEdits;
+        double songFramesPerBeat = 0.0;
+        SongStream songStream;
     };
 
     static bool inspectWav(const std::string& path, WavInfo& info,
@@ -311,8 +477,53 @@ private:
     static bool regionPeak(const std::string& path, const WavInfo& info,
                            std::uint64_t startFrame, std::uint64_t frames,
                            float& peak, std::string& error);
+    /// Resolves one TakeRegion to its slice, gain/fades and normalize gain.
+    /// `skip` reports a logged clamp/skip (the caller keeps going); false is a
+    /// hard error (unreadable take, unreadable normalize pass).
+    bool resolveRegion(const TakeRegion& region, const std::string& where,
+                       double framesPerBeat, Region& resolved, bool& skip,
+                       std::string* error);
+
+    // --- song scheduler internals ----------------------------------------
+    static constexpr int kSongLaneSlots = 4;
+    /// Resolves `clips` into a new lane (peak passes, clamping, sorting).
+    bool resolveSongLane(int track, const std::vector<SongClip>& clips,
+                         double framesPerBeat, SongLane& lane,
+                         std::string* error);
+    /// Waits until no audio render and no song reader holds a lane pointer, so
+    /// a lane slot can be rewritten or freed safely. Never called by the audio
+    /// thread.
+    void waitSongQuiescent();
+    void startSongStreamLocked(int track, const SongLane* lane,
+                               std::uint64_t startFrame);
+    void stopSongStreamLocked(int track);
+    void songReadLoop(int track);
+    /// Produces up to `frames` song frames at absolute `position` from `lane`.
+    /// Gaps render zeros; the function always returns `frames` so a reader can
+    /// keep its absolute cursor exact. Used by the reader thread, the priming
+    /// pass and the offline renderer.
+    int readSongFrames(const SongLane& lane, SongReadState& state,
+                       std::uint64_t position, float* mono, int frames);
+    static void closeSongReadState(SongReadState& state);
+
+    /// New `NN-<name>-<NNN>.wav` path for renderRegionToTake(), scanning
+    /// `directory` for the next free number of that track/name.
+    static std::string nextRenderedTakePath(const std::string& directory,
+                                            int track, const std::string& name);
 
     Track mTracks[kMaxTracks];
+    // Song lanes: per track a small pool of immutable lanes, published with one
+    // atomic pointer store. A slot is rewritten only after waitSongQuiescent(),
+    // so a reader that loaded the previous pointer can finish first.
+    std::array<std::array<std::unique_ptr<SongLane>, kSongLaneSlots>, kMaxTracks>
+        mSongLaneSlots;
+    std::atomic<const SongLane*> mSongLane[kMaxTracks] = {};
+    int mSongLaneNext[kMaxTracks] = {};
+    std::atomic<std::uint64_t> mSongLaneSerial{0};
+    std::atomic<int> mSongReadersActive{0};
+    // Offline render cursors (RENDER SONG), control thread only.
+    SongReadState mSongRenderState[kMaxTracks];
+
     std::atomic<std::uint64_t> mUnderruns{0};
     // Selection hand-off: render() backs out while a control thread mutates a
     // stack, and the control thread waits for an in-flight render to finish.

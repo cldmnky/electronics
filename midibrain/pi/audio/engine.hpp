@@ -29,8 +29,20 @@ inline constexpr int kBlockSize = 128;
 
 /// Where Engine::tap() reads a strip. `PostGain` is the historical
 /// `in * gain` tap; `PreGain` is the raw device input and ignores the strip's
-/// gain.
+/// gain. `tapPoint` is the PRE stage's legacy variant; the three-point
+/// RecSource selection below is what a session/UI chooses.
 enum class TapPoint : uint8_t { PreGain, PostGain };
+
+/// REC SOURCE (W2b): where Engine::tap() captures the track's LIVE INPUT.
+/// `Pre` is the historical tap (post-gain, pre-EQ; Channel::tapPoint still
+/// picks PreGain/PostGain inside it) and the default, so a session that never
+/// chose a source is bit-identical to the old engine. `Post` is post-EQ plus
+/// the channel fader (vol), pre-FX-rack. `PostFx` is post-FX rack (both slots,
+/// wet included) plus the fader. Both processed taps run a dedicated live-only
+/// chain: take/clip audio never enters a recording, and the strip's own EQ and
+/// rack state is untouched by the tap.
+enum class RecSource : uint8_t { Pre = 0, Post = 1, PostFx = 2 };
+inline constexpr int kNumRecSources = 3;
 
 /// Per-track input monitoring. `Off` never passes live input to Main/sends
 /// (take playback is unaffected); `Auto` passes live input when the track is
@@ -62,6 +74,12 @@ inline constexpr int kNumSendDestinations = 5;
 /// OUT3&4 output format. `Stereo` follows each track's pan; `DualMono` sums
 /// each OUT3&4 send before pan and writes the same mono mix to both outputs.
 enum class Out34Mode : uint8_t { Stereo = 0, DualMono = 1 };
+
+/// Result of Engine::renderSong(): the written master file and its length.
+struct RenderSongResult {
+    std::string path;
+    std::uint64_t frames = 0;
+};
 
 /// Per-strip output destination: where the strip's dry (post-fader, post-pan)
 /// signal lands. Sends (FX1/FX2, CUE, OUT3&4) and the recorder tap are
@@ -161,10 +179,12 @@ struct OutputBuses {
 /// (centre) to 1 (hard right) with a constant-power law. `send[s]` is the
 /// retired FX bus level: it is stored but no longer reaches a bus; the
 /// per-track FX rack (TrackFxSlot) is the FX path. `cueSend` feeds the
-/// CUE/phones bus and `out34Send` feeds OUT3&4. `tapPoint` picks the
-/// recorder/monitor tap; the default keeps the post-gain behavior. `monitor`
-/// gates the live input contribution to Main/sends and, in InputOnly, the take
-/// voice too; the recorder tap is independent of it.
+/// CUE/phones bus and `out34Send` feeds OUT3&4. `tapPoint` picks the PRE
+/// recorder/monitor tap variant (raw vs post-gain) and `recSource` picks the
+/// three-point chain tap (PRE/POST/POSTFX); the default keeps the post-gain
+/// PRE tap bit-identical to the historical engine. `monitor` gates the live
+/// input contribution to Main/sends and, in InputOnly, the take voice too; the
+/// recorder tap is independent of it.
 struct Channel {
     float gain = 1.0f;
     float vol = 1.0f;
@@ -177,6 +197,7 @@ struct Channel {
     float cueSend = 0.0f;
     float out34Send = 0.0f;
     TapPoint tapPoint = TapPoint::PostGain;
+    RecSource recSource = RecSource::Pre;
 };
 
 /// Stereo in-place FX unit hosted on a send bus. `ch` holds `nch` block pointers
@@ -249,13 +270,23 @@ public:
     void process(const float* const* in, int nch, int n,
                  const OutputBuses& outputs);
 
-    /// Mono tap of one track at its Channel::tapPoint, valid until the next
-    /// process() call: the raw input for PreGain, `in * gain` for the default
-    /// PostGain. The tap is the track's *selected* live source and never take
-    /// playback; a stereo track is averaged to mono (`0.5 * (L + R)`), because
-    /// the recorder writes one mono file per armed track. nullptr when `track`
-    /// is outside 0..kMaxTracks-1. Mute, solo, pan, vol, monitor, the output
-    /// destination and master do not affect the tap.
+    /// Mono tap of one track at its Channel::recSource, valid until the next
+    /// process() call. PRE is the historical live tap (raw input for
+    /// TapPoint::PreGain, `in * gain` for the default PostGain); POST is the
+    /// live input through gain, the strip EQ and the fader (pre-FX-rack,
+    /// pre-pan); POSTFX additionally runs the live input through this track's
+    /// FX1 -> FX2 rack (wet included) before the fader. The tap is always the
+    /// track's *selected* live source and never take or clip playback; a
+    /// stereo track is averaged to mono (`0.5 * (L + R)`), because the recorder
+    /// writes one mono file per armed track. nullptr when `track` is outside
+    /// 0..kMaxTracks-1. Mute, solo, pan, monitor, the output destination and
+    /// master do not affect the tap; POST/POSTFX do follow gain, EQ, the rack
+    /// and vol. POST/POSTFX cost a second live-only EQ (and, for POSTFX, a
+    /// second FX rack instance) for that track; PRE costs nothing extra. The
+    /// tap rack's built-in delay/reverb instances are independent. An
+    /// app-owned CLAP effect has one IEffect seam, so POSTFX reuses that
+    /// instance in both chains (a named limitation: a stateful CLAP effect
+    /// advances once per chain).
     const float* tap(int ch) const;
 
     /// Out-of-range indices are ignored, so a UI can push all 18 strips blindly.
@@ -277,6 +308,11 @@ public:
     /// Per-track live-input monitoring mode; out-of-range values map to Auto.
     void setMonitorMode(int index, MonitorMode mode);
     MonitorMode monitorMode(int index) const;
+    /// Per-track REC SOURCE (see RecSource); out-of-range values map to Pre.
+    /// Selecting POSTFX publishes the track's FX rack to the live-only tap
+    /// chain (a second rack instance with the same slots).
+    void setRecSource(int index, RecSource source);
+    RecSource recSource(int index) const;
 
     // --- per-track input source / output destination -----------------------
     /// Select track `index`'s live input source: a device channel 0..17
@@ -460,15 +496,68 @@ public:
     void clearTakeRegions(int track);
     /// The applied region list; empty when the track plays its take stack.
     std::vector<TakeRegion> takeRegions(int track) const;
-    /// Ring samples that were not ready in time and rendered as silence.
+    /// Ring samples that were not ready in time and rendered as silence; in
+    /// SONG mode this includes clip-stream underruns.
     std::uint64_t takeUnderruns() const { return mTakePlayer.underruns(); }
+
+    // --- song mode / clip scheduler / RENDER SONG --------------------------
+    /// SONG mode selection: while on, the per-track clip lanes drive the take
+    /// voice and the legacy Active-take/loops path is untouched but silent.
+    /// While off (default) the scheduler contributes nothing. Audio-thread
+    /// safe (one atomic load per block).
+    void setSongMode(bool on);
+    bool songMode() const { return mSongMode.load(std::memory_order_relaxed); }
+    /// Applies `track`'s song lane. Beats map to frames with the engine's
+    /// current tempo (`setTransport`), and the lane starts streaming at the
+    /// current transport frame; re-apply after a tempo change. An unreadable
+    /// or non-48 kHz take refuses the whole list and leaves the previous lane
+    /// untouched; an empty list clears the lane. Control thread only.
+    bool setSongClips(int track, const std::vector<SongClip>& clips,
+                      std::string* error = nullptr);
+    void clearSongClips(int track);
+    int songClipCount(int track) const;
+    /// Applied lane, start order (session capture reads it back).
+    std::vector<SongClip> songClips(int track) const;
+    /// RENDER SONG: writes a stereo 48 kHz float master WAV of the first
+    /// `lengthBars` bars (4/4, so bars * 4 beats) from the applied clip lanes.
+    /// Every block runs the ordinary strip path with live input silent: clip
+    /// voice -> gain -> EQ -> FX1/FX2 rack -> fader/pan -> Main, then master
+    /// gain, the main compressor, the Main EQ and mute/solo exactly as set.
+    /// The click is forced off for the render (a metronome is not part of the
+    /// mix) and restored afterwards; the main compressor IS included because
+    /// it is a Main-bus insert, so the file is what the master output sounds
+    /// like. Arm has the engine's usual meaning (an armed strip suppresses its
+    /// take/clip voice). Refuses a non-48 kHz engine, a non-positive bar count,
+    /// or a lane resolved at a different tempo (re-apply the clips first).
+    /// Control thread only: the audio callback must be stopped or paused.
+    bool renderSong(const std::string& path, int lengthBars,
+                    RenderSongResult& out, std::string* error = nullptr);
+    /// RENDER REGION TO TRACK: bakes one take region to a new
+    /// `NN-<name>-<NNN>.wav` in `directory` (mono 48 kHz float) with the
+    /// region's offset/length/gain/fades/normalize, using the current tempo.
+    bool renderRegionToTake(const TakeRegion& region,
+                            const std::string& directory, int track,
+                            const std::string& name, RenderedTake& out,
+                            std::string* error = nullptr);
 
 private:
     static bool trackInRange(int track) {
         return track >= 0 && track < kMaxTracks;
     }
+    /// Per-block take voice override for RENDER SONG: the engine skips the
+    /// TakePlayer's live path and uses these mono buffers. A null voice means
+    /// the normal take/song render.
+    struct TakeVoice {
+        const float* const* buffers = nullptr;
+        const bool* active = nullptr;
+        const bool* playing = nullptr;
+    };
     void processBlock(const float* const* in, int nch, int n,
-                      const OutputBuses& outputs);
+                      const OutputBuses& outputs,
+                      const TakeVoice* takeVoice = nullptr);
+    /// Builds the live-only tap rack for POSTFX on first selection and replays
+    /// the applied slot state into it, so the tap chain matches the strip.
+    void ensureTapRack(int track);
     void applyMainComp(float* left, float* right, int n);
     void updateCompressor();
     void renderClick(int n);
@@ -486,6 +575,15 @@ private:
     float mFxReturn[kNumSends] = {1.0f, 1.0f};
     float mMaster = 1.0f;
     float mTap[kMaxTracks][kBlockSize] = {};
+    // Live-only POST/POSTFX tap chain scratch: the strip EQ and rack state are
+    // never used for the tap, so a take/clip voice cannot leak into a take and
+    // the main path stays bit-identical. mTapEq mirrors the strip EQ settings;
+    // the tap rack is created only for a track that selects POSTFX.
+    EqInsert mTapEq[kMaxTracks];
+    std::atomic<TrackFxRack*> mTapFxRack[kMaxTracks] = {};
+    TrackFxSlot mTapFxSlotState[kMaxTracks][kTrackFxSlots];
+    float mTapL[kBlockSize] = {};
+    float mTapR[kBlockSize] = {};
     // Per-channel input map: track t uses internal channels 2t and 2t+1; the
     // second is kNoInputSource for a mono track. Rebuilt from the per-track
     // selection at the top of every block.
@@ -500,8 +598,7 @@ private:
     TakeLoop mTakeLoop[kMaxTracks]{};
     std::vector<TakeRegion> mTakeRegions[kMaxTracks];
     float mTakeBuffer[kMaxTracks][kBlockSize] = {};
-    bool mTakeActive[kMaxTracks] = {};
-    bool mTakePlaying[kMaxTracks] = {};
+    std::atomic<bool> mSongMode{false};
     float mCueL[kBlockSize] = {};
     float mCueR[kBlockSize] = {};
     float mOut34L[kBlockSize] = {};

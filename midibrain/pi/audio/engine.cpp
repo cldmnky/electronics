@@ -5,9 +5,11 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
+#include <vector>
 
 #include "fx/delay.hpp"
 #include "fx/reverb.hpp"
+#include "recorder.hpp"
 
 namespace mnky::audio {
 
@@ -89,6 +91,16 @@ MonitorMode sanitizeMonitor(MonitorMode mode) {
     return MonitorMode::Auto;
 }
 
+RecSource sanitizeRecSource(RecSource source) {
+    switch (source) {
+        case RecSource::Pre:
+        case RecSource::Post:
+        case RecSource::PostFx:
+            return source;
+    }
+    return RecSource::Pre;
+}
+
 // Slot kinds published by TrackFxSlotChain. Plain ints so the audio thread
 // reads one atomic word, not an enum whose storage the ABI leaves open.
 constexpr int kFxNone = 0;
@@ -162,6 +174,11 @@ public:
 
     void setExternal(IEffect* effect) {
         mExternal.store(effect, std::memory_order_release);
+    }
+
+    /// Attached CLAP-seam effect (control thread; the tap mirror copies it).
+    IEffect* external() const {
+        return mExternal.load(std::memory_order_acquire);
     }
 
     /// Control thread only. Creates the selected built-in on first use, then
@@ -258,9 +275,60 @@ public:
         return mSlots[static_cast<std::size_t>(index)];
     }
 
+    IEffect* external(int index) const {
+        return mSlots[static_cast<std::size_t>(index)].external();
+    }
+
 private:
     std::array<TrackFxSlotChain, kTrackFxSlots> mSlots;
 };
+
+// Applies one slot state to one rack chain and keeps `state` as the resolved
+// (clamped) view the caller captures. Used for the strip rack and, mirrored,
+// for the live-only POSTFX tap rack, so both hear exactly the same settings.
+void configureTrackFxChain(TrackFxSlotChain& chain, TrackFxSlot& state,
+                           const TrackFxSlot& next) {
+    const int kind = fxKindForId(next.id);
+    const bool idChanged = state.id != next.id;
+    if (idChanged) {
+        chain.select(kind);
+        state.id = next.id;
+        state.params.clear();
+        if (fx::Effect* effect = chain.builtin(kind)) {
+            reinitialize(*effect, next.params);
+        }
+    }
+    chain.setBypass(next.bypass);
+    chain.setWet(next.wet);
+    state.bypass = next.bypass;
+    state.wet = next.wet;
+
+    if (fx::Effect* effect = chain.builtin(kind)) {
+        const int count = static_cast<int>(effect->params().size());
+        if (!idChanged) {
+            // Hot parameter application: the effect ramps from its current
+            // value over 20 ms and keeps its delay line / reverb tail. A value
+            // that already is the effect's target is skipped, so a repeated
+            // per-block apply never retargets a ramp that is still running.
+            const int given = static_cast<int>(next.params.size());
+            for (int index = 0; index < count && index < given; ++index) {
+                const double value = next.params[static_cast<std::size_t>(index)];
+                if (effect->param(index) == value) continue;
+                (void)effect->setParam(index, value);
+            }
+        }
+        // Capture reads back the values the DSP actually holds (the effect
+        // clamps ranges and rounds stepped selectors).
+        state.params.resize(static_cast<std::size_t>(count));
+        for (int index = 0; index < count; ++index) {
+            state.params[static_cast<std::size_t>(index)] = effect->param(index);
+        }
+    } else {
+        // The CLAP seam owns its own parameter table; the engine echoes the
+        // session values so a load/save round-trip does not drop them.
+        state.params = next.params;
+    }
+}
 
 Engine::Engine() {
     // Identity input mapping for the device inputs: track N listens to device
@@ -277,6 +345,9 @@ Engine::~Engine() {
     // The audio thread is stopped before the engine is destroyed (the
     // caller's contract), so the published chains can be freed here.
     for (auto& slot : mFxRack) {
+        delete slot.load(std::memory_order_relaxed);
+    }
+    for (auto& slot : mTapFxRack) {
         delete slot.load(std::memory_order_relaxed);
     }
 }
@@ -302,18 +373,41 @@ void Engine::process(const float* const* in, int nch, int n,
 }
 
 void Engine::processBlock(const float* const* in, int nch, int n,
-                          const OutputBuses& outputs) {
+                          const OutputBuses& outputs,
+                          const TakeVoice* takeVoice) {
     const int frames = n < kBlockSize ? n : kBlockSize;
     int inputs = nch < 0 ? 0 : nch;
     if (inputs > kMaxDeviceInputs) inputs = kMaxDeviceInputs;
 
     // Take playback is a 48 kHz float path. At another engine rate the take
     // strips stay selected but silent: no hidden resampling and no live-input
-    // leak through a disarmed strip.
+    // leak through a disarmed strip. SONG mode swaps the clip scheduler in for
+    // the legacy stack/loop path; RENDER SONG passes its own synchronous
+    // buffers (the live song reader threads are bypassed).
     float* takeBuffers[kMaxTracks] = {};
-    for (int c = 0; c < kMaxTracks; ++c) takeBuffers[c] = mTakeBuffer[c];
-    mTakePlayer.render(mTransport.rolling && mSampleRate == 48000.0, frames,
-                       takeBuffers, mTakeActive, mTakePlaying);
+    bool takeActive[kMaxTracks] = {};
+    bool takePlaying[kMaxTracks] = {};
+    if (takeVoice != nullptr) {
+        for (int c = 0; c < kMaxTracks; ++c) {
+            takeBuffers[c] = takeVoice->buffers != nullptr
+                                 ? const_cast<float*>(takeVoice->buffers[c])
+                                 : nullptr;
+            takeActive[c] = takeVoice->active != nullptr && takeVoice->active[c];
+            takePlaying[c] =
+                takeVoice->playing != nullptr && takeVoice->playing[c];
+        }
+    } else {
+        for (int c = 0; c < kMaxTracks; ++c) takeBuffers[c] = mTakeBuffer[c];
+        const bool rolling = mTransport.rolling && mSampleRate == 48000.0;
+        if (mSongMode.load(std::memory_order_relaxed)) {
+            mTakePlayer.renderSong(
+                rolling, frames, mTransport.valid ? mTransport.frame : 0,
+                takeBuffers, takeActive, takePlaying);
+        } else {
+            mTakePlayer.render(rolling, frames, takeBuffers, takeActive,
+                               takePlaying);
+        }
+    }
 
     float accL[kBlockSize] = {};
     float accR[kBlockSize] = {};
@@ -386,26 +480,55 @@ void Engine::processBlock(const float* const* in, int nch, int n,
         // below still renders and advances this track, so a later switch back
         // to Off/Auto/On resumes exactly where playback would have been.
         const float* take =
-            (!ch.arm && mTakeActive[c] &&
+            (!ch.arm && takeActive[c] && takeBuffers[c] != nullptr &&
              ch.monitor != MonitorMode::InputOnly)
-                ? mTakeBuffer[c]
+                ? takeBuffers[c]
                 : nullptr;
         const bool preGain = ch.tapPoint == TapPoint::PreGain;
 
-        // The recorder/monitor tap always sees the track's selected live source
-        // at its tapPoint; a pair is averaged to mono. Monitor mode, the take
-        // voice and the output destination never change it. A track that just
-        // lost its live source zeroes the tap once (see mTapLive).
+        // The recorder/monitor tap always sees the track's selected LIVE source
+        // at its recSource; a pair is averaged to mono. Monitor mode, the take
+        // voice and the output destination never change it. PRE is the
+        // historical gain-only tap (bit-identical); POST and POSTFX run a
+        // dedicated live-only chain (never the strip buffers, so take/clip
+        // audio cannot enter a recording) through the mirrored EQ and, for
+        // POSTFX, the tap rack. A track that just lost its live source zeroes
+        // the tap once (see mTapLive).
         if (hasLive) {
-            for (int i = 0; i < frames; ++i) {
-                float mono = 0.0f;
-                if (paired) {
-                    if (liveL != nullptr) mono += 0.5f * liveL[i];
-                    if (liveR != nullptr) mono += 0.5f * liveR[i];
-                } else if (liveL != nullptr) {
-                    mono = liveL[i];
+            const RecSource recSource = ch.recSource;
+            if (recSource == RecSource::Pre) {
+                for (int i = 0; i < frames; ++i) {
+                    float mono = 0.0f;
+                    if (paired) {
+                        if (liveL != nullptr) mono += 0.5f * liveL[i];
+                        if (liveR != nullptr) mono += 0.5f * liveR[i];
+                    } else if (liveL != nullptr) {
+                        mono = liveL[i];
+                    }
+                    mTap[c][i] = preGain ? mono : mono * ch.gain;
                 }
-                mTap[c][i] = preGain ? mono : mono * ch.gain;
+            } else {
+                for (int i = 0; i < frames; ++i) {
+                    const float left = liveL != nullptr ? liveL[i] : 0.0f;
+                    const float right = paired
+                                            ? (liveR != nullptr ? liveR[i] : 0.0f)
+                                            : left;
+                    mTapL[i] = left * ch.gain;
+                    mTapR[i] = right * ch.gain;
+                }
+                if (mTapEq[c].active()) mTapEq[c].process(mTapL, mTapR, frames);
+                if (recSource == RecSource::PostFx) {
+                    if (TrackFxRack* rack =
+                            mTapFxRack[c].load(std::memory_order_relaxed)) {
+                        for (int slot = 0; slot < kTrackFxSlots; ++slot) {
+                            rack->slot(slot).process(mTapL, mTapR, frames,
+                                                     mFxDryL, mFxDryR);
+                        }
+                    }
+                }
+                for (int i = 0; i < frames; ++i) {
+                    mTap[c][i] = 0.5f * (mTapL[i] + mTapR[i]) * ch.vol;
+                }
             }
             mTapLive[c] = true;
         } else if (mTapLive[c]) {
@@ -435,7 +558,7 @@ void Engine::processBlock(const float* const* in, int nch, int n,
             case MonitorMode::Auto:
                 // Armed tracks always monitor; a disarmed track drops the
                 // live feed only while its take voice is actually playing.
-                liveAllowed = ch.arm || !mTakePlaying[c];
+                liveAllowed = ch.arm || !takePlaying[c];
                 break;
         }
         if (!liveAllowed && take == nullptr) continue;
@@ -702,7 +825,11 @@ void Engine::setChannel(int index, Channel ch) {
     ch.cueSend = clamp01(ch.cueSend);
     ch.out34Send = clamp01(ch.out34Send);
     ch.monitor = sanitizeMonitor(ch.monitor);
+    ch.recSource = sanitizeRecSource(ch.recSource);
     mChannels[index] = ch;
+    // Selecting POSTFX needs the second rack instance before the audio thread
+    // can load it; setChannel is the session-load path that may carry it.
+    if (ch.recSource == RecSource::PostFx) ensureTapRack(index);
 }
 
 void Engine::setCueSend(int index, float level) {
@@ -733,6 +860,18 @@ void Engine::setMonitorMode(int index, MonitorMode mode) {
 MonitorMode Engine::monitorMode(int index) const {
     if (index < 0 || index >= kMaxTracks) return MonitorMode::Auto;
     return mChannels[index].monitor;
+}
+
+void Engine::setRecSource(int index, RecSource source) {
+    if (index < 0 || index >= kMaxTracks) return;
+    const RecSource sanitized = sanitizeRecSource(source);
+    mChannels[index].recSource = sanitized;
+    if (sanitized == RecSource::PostFx) ensureTapRack(index);
+}
+
+RecSource Engine::recSource(int index) const {
+    if (index < 0 || index >= kMaxTracks) return RecSource::Pre;
+    return mChannels[index].recSource;
 }
 
 void Engine::setInputSource(int index, int deviceChannel) {
@@ -806,6 +945,9 @@ void Engine::setMaster(float gain) {
 void Engine::setTrackEqBand(int track, int band, const EqBand& value) {
     if (!trackInRange(track)) return;
     mTrackEq[track].setBand(band, value);
+    // Mirror to the live-only POST tap chain; it is only processed while the
+    // track's recSource is POST/POSTFX, so PRE keeps today's cost and signal.
+    mTapEq[track].setBand(band, value);
 }
 
 EqBand Engine::trackEqBand(int track, int band) const {
@@ -837,11 +979,16 @@ void Engine::setTrackFxSlot(int track, int slot, const TrackFxSlot& fxSlot) {
         if (TrackFxRack* rack = mFxRack[track].load(std::memory_order_acquire)) {
             rack->slot(slot).select(kFxNone);
         }
+        if (TrackFxRack* tap =
+                mTapFxRack[track].load(std::memory_order_acquire)) {
+            tap->slot(slot).select(kFxNone);
+        }
         // Keep the wet knob position on an empty slot: the UI binds its mix
         // knob to wet, and the legacy send-level migration stores the value
         // before the user assigns an effect. Only the effect state resets.
         state = TrackFxSlot{};
         state.wet = next.wet;
+        mTapFxSlotState[track][slot] = state;
         return;
     }
 
@@ -852,50 +999,33 @@ void Engine::setTrackFxSlot(int track, int slot, const TrackFxSlot& fxSlot) {
         rack = new TrackFxRack(mSampleRate);
         mFxRack[track].store(rack, std::memory_order_release);
     }
-    TrackFxSlotChain& chain = rack->slot(slot);
-
-    const int kind = fxKindForId(next.id);
-    const bool idChanged = state.id != next.id;
-    if (idChanged) {
-        chain.select(kind);
-        state.id = next.id;
-        state.params.clear();
-        if (fx::Effect* effect = chain.builtin(kind)) {
-            reinitialize(*effect, next.params);
-        }
-    }
-    chain.setBypass(next.bypass);
-    chain.setWet(next.wet);
-    state.bypass = next.bypass;
-    state.wet = next.wet;
-
-    if (fx::Effect* effect = chain.builtin(kind)) {
-        const int count = static_cast<int>(effect->params().size());
-        if (!idChanged) {
-            // Hot parameter application: the effect ramps from its current
-            // value over 20 ms and keeps its delay line / reverb tail. A value
-            // that already is the effect's target is skipped, so a repeated
-            // per-block apply never retargets a ramp that is still running.
-            const int given = static_cast<int>(next.params.size());
-            for (int index = 0; index < count && index < given; ++index) {
-                const double value = next.params[static_cast<std::size_t>(index)];
-                if (effect->param(index) == value) continue;
-                (void)effect->setParam(index, value);
-            }
-        }
-        // Capture reads back the values the DSP actually holds (the effect
-        // clamps ranges and rounds stepped selectors).
-        state.params.resize(static_cast<std::size_t>(count));
-        for (int index = 0; index < count; ++index) {
-            state.params[static_cast<std::size_t>(index)] = effect->param(index);
-        }
-    } else {
-        // The CLAP seam owns its own parameter table; the engine echoes the
-        // session values so a load/save round-trip does not drop them.
-        state.params = next.params;
+    configureTrackFxChain(rack->slot(slot), state, next);
+    // A POSTFX tap owns a second rack instance with the same slots; mirror the
+    // resolved state so the recorded channel sound matches the mix path.
+    if (TrackFxRack* tap = mTapFxRack[track].load(std::memory_order_acquire)) {
+        configureTrackFxChain(tap->slot(slot), mTapFxSlotState[track][slot],
+                              state);
     }
 }
 
+void Engine::ensureTapRack(int track) {
+    if (!trackInRange(track)) return;
+    if (mTapFxRack[track].load(std::memory_order_acquire) != nullptr) return;
+    TrackFxRack* rack = new TrackFxRack(mSampleRate);
+    for (int slot = 0; slot < kTrackFxSlots; ++slot) {
+        const TrackFxSlot& state = mFxSlotState[track][slot];
+        if (state.id.empty()) {
+            rack->slot(slot).select(kFxNone);
+        } else {
+            configureTrackFxChain(rack->slot(slot),
+                                  mTapFxSlotState[track][slot], state);
+        }
+        if (TrackFxRack* main = mFxRack[track].load(std::memory_order_acquire)) {
+            rack->slot(slot).setExternal(main->external(slot));
+        }
+    }
+    mTapFxRack[track].store(rack, std::memory_order_release);
+}
 TrackFxSlot Engine::trackFxSlot(int track, int slot) const {
     if (!trackInRange(track) || slot < 0 || slot >= kTrackFxSlots) {
         return TrackFxSlot{};
@@ -912,6 +1042,12 @@ void Engine::setTrackFxSlotEffect(int track, int slot, IEffect* effect) {
         mFxRack[track].store(rack, std::memory_order_release);
     }
     rack->slot(slot).setExternal(effect);
+    // The POSTFX tap owns a mirror rack. Built-in delay/reverb are per-rack
+    // instances; an app-owned CLAP effect has no duplicate seam, so this one
+    // pointer feeds both chains (documented limitation of POSTFX + CLAP).
+    if (TrackFxRack* tap = mTapFxRack[track].load(std::memory_order_acquire)) {
+        tap->slot(slot).setExternal(effect);
+    }
 }
 
 void Engine::setTrackInsert(int track, const TrackInsert& insert) {
@@ -947,8 +1083,14 @@ void Engine::setSampleRate(double sampleRate) {
         if (fx != nullptr) fx->setSampleRate(sampleRate);
     }
     for (EqInsert& eq : mTrackEq) eq.setSampleRate(sampleRate);
+    for (EqInsert& eq : mTapEq) eq.setSampleRate(sampleRate);
     mMainEq.setSampleRate(sampleRate);
     for (auto& slot : mFxRack) {
+        if (TrackFxRack* rack = slot.load(std::memory_order_acquire)) {
+            rack->setSampleRate(sampleRate);
+        }
+    }
+    for (auto& slot : mTapFxRack) {
         if (TrackFxRack* rack = slot.load(std::memory_order_acquire)) {
             rack->setSampleRate(sampleRate);
         }
@@ -1134,6 +1276,188 @@ std::string Engine::activeTake(int track) const {
     const int count = mTakePlayer.takeCount(track);
     if (count <= 0) return {};
     return mTakePlayer.takePath(track, count - 1);
+}
+
+void Engine::setSongMode(bool on) {
+    mSongMode.store(on, std::memory_order_relaxed);
+}
+
+bool Engine::setSongClips(int track, const std::vector<SongClip>& clips,
+                          std::string* error) {
+    if (!trackInRange(track)) {
+        if (error != nullptr) *error = "track is out of range";
+        return false;
+    }
+    if (mSampleRate != 48000.0) {
+        if (error != nullptr) *error = "song clips require a 48000 Hz engine";
+        return false;
+    }
+    if (clips.empty()) {
+        mTakePlayer.clearSongClips(track);
+        return true;
+    }
+    const double bpm = static_cast<double>(mTransport.bpmX100) / 100.0;
+    const double framesPerBeat = bpm > 0.0 ? mSampleRate * 60.0 / bpm : 0.0;
+    if (!(framesPerBeat > 0.0)) {
+        if (error != nullptr) {
+            *error = "song clips need a tempo to map beats to frames";
+        }
+        return false;
+    }
+    std::vector<SongClip> normalized = clips;
+    for (SongClip& clip : normalized) clip.track = track;
+    return mTakePlayer.setSongClips(
+        track, normalized, framesPerBeat,
+        mTransport.valid ? mTransport.frame : 0, error);
+}
+
+void Engine::clearSongClips(int track) {
+    if (!trackInRange(track)) return;
+    mTakePlayer.clearSongClips(track);
+}
+
+int Engine::songClipCount(int track) const {
+    return mTakePlayer.songClipCount(track);
+}
+
+std::vector<SongClip> Engine::songClips(int track) const {
+    return mTakePlayer.songClips(track);
+}
+
+bool Engine::renderRegionToTake(const TakeRegion& region,
+                                const std::string& directory, int track,
+                                const std::string& name, RenderedTake& out,
+                                std::string* error) {
+    if (!trackInRange(track)) {
+        if (error != nullptr) *error = "track is out of range";
+        return false;
+    }
+    const double bpm = static_cast<double>(mTransport.bpmX100) / 100.0;
+    const double framesPerBeat = bpm > 0.0 ? mSampleRate * 60.0 / bpm : 0.0;
+    if (!(framesPerBeat > 0.0)) {
+        if (error != nullptr) {
+            *error = "region render needs a tempo to map beats to frames";
+        }
+        return false;
+    }
+    return mTakePlayer.renderRegionToTake(region, framesPerBeat, directory,
+                                          track, name, out, error);
+}
+
+bool Engine::renderSong(const std::string& path, int lengthBars,
+                        RenderSongResult& out, std::string* error) {
+    out = RenderSongResult{};
+    if (mSampleRate != 48000.0) {
+        if (error != nullptr) {
+            *error = "RENDER SONG requires a 48000 Hz engine";
+        }
+        return false;
+    }
+    if (lengthBars <= 0) {
+        if (error != nullptr) *error = "RENDER SONG needs at least one bar";
+        return false;
+    }
+    const double bpm = static_cast<double>(mTransport.bpmX100) / 100.0;
+    const double framesPerBeat = bpm > 0.0 ? mSampleRate * 60.0 / bpm : 0.0;
+    if (!(framesPerBeat > 0.0)) {
+        if (error != nullptr) *error = "RENDER SONG needs a tempo";
+        return false;
+    }
+    // A lane resolved at another tempo would silently stretch; refuse like the
+    // take-region edit does and let the caller re-apply at the current tempo.
+    for (int track = 0; track < kMaxTracks; ++track) {
+        if (mTakePlayer.songClipCount(track) == 0) continue;
+        const double laneTempo = mTakePlayer.songFramesPerBeat(track);
+        if (std::fabs(laneTempo - framesPerBeat) > 1e-6) {
+            if (error != nullptr) {
+                *error =
+                    "song clips were resolved at a different tempo; re-apply "
+                    "them before RENDER SONG";
+            }
+            return false;
+        }
+    }
+    const double totalFrames =
+        std::llround(static_cast<double>(lengthBars) * 4.0 * framesPerBeat);
+    if (totalFrames <= 0.0) {
+        if (error != nullptr) *error = "RENDER SONG length is empty";
+        return false;
+    }
+    const std::uint64_t total = static_cast<std::uint64_t>(totalFrames);
+    WavFileWriter writer;
+    if (!writer.open(path, 2, kTakeSampleRate)) {
+        if (error != nullptr) *error = "cannot open " + path + " for writing";
+        return false;
+    }
+
+    // The render is the master bus as the console is set: clip voice through
+    // gain/EQ/rack/fader/pan, master gain, main compressor and main EQ. The
+    // click is a metronome, not mix content, so it is forced off and restored.
+    // Live input is silent (no device channels are supplied).
+    const ClickMode savedClick = mClickMode;
+    const TransportPosition savedTransport = mTransport;
+    mClickMode = ClickMode::Off;
+    mTakePlayer.beginSongRender();
+
+    std::vector<float> trackBuffers[kMaxTracks];
+    float* pointers[kMaxTracks] = {};
+    bool active[kMaxTracks] = {};
+    for (int track = 0; track < kMaxTracks; ++track) {
+        trackBuffers[track].assign(static_cast<std::size_t>(kBlockSize), 0.0f);
+        pointers[track] = trackBuffers[track].data();
+        active[track] = mTakePlayer.songClipCount(track) > 0;
+    }
+    std::vector<float> left(static_cast<std::size_t>(kBlockSize));
+    std::vector<float> right(static_cast<std::size_t>(kBlockSize));
+    std::vector<float> interleaved(static_cast<std::size_t>(2 * kBlockSize));
+    bool ok = true;
+    std::uint64_t songFrame = 0;
+    const std::uint32_t ticksPerBeat =
+        savedTransport.ticksPerBeat > 0 ? savedTransport.ticksPerBeat : 480;
+    while (songFrame < total && ok) {
+        const int frames = static_cast<int>(
+            std::min<std::uint64_t>(static_cast<std::uint64_t>(kBlockSize),
+                                    total - songFrame));
+        bool playing[kMaxTracks] = {};
+        for (int track = 0; track < kMaxTracks; ++track) {
+            std::fill_n(trackBuffers[track].begin(), frames, 0.0f);
+            playing[track] = mTakePlayer.renderSongTrack(
+                track, songFrame, frames, trackBuffers[track].data());
+        }
+        // Keep the block transport coherent for the (disabled) click and any
+        // strip logic that reads it; positions are driven by `songFrame`.
+        const double beats =
+            static_cast<double>(songFrame) / framesPerBeat;
+        mTransport.rolling = true;
+        mTransport.valid = true;
+        mTransport.frame = songFrame;
+        mTransport.ticksPerBeat = ticksPerBeat;
+        mTransport.tick = static_cast<std::uint32_t>(std::llround(
+            beats * static_cast<double>(ticksPerBeat)));
+        const TakeVoice voice{pointers, active, playing};
+        OutputBuses outputs;
+        outputs.mainL = left.data();
+        outputs.mainR = right.data();
+        processBlock(nullptr, 0, frames, outputs, &voice);
+        for (int i = 0; i < frames; ++i) {
+            interleaved[static_cast<std::size_t>(2 * i)] = left[i];
+            interleaved[static_cast<std::size_t>(2 * i + 1)] = right[i];
+        }
+        ok = writer.writeFrames(interleaved.data(), frames);
+        songFrame += static_cast<std::uint64_t>(frames);
+    }
+    mTakePlayer.endSongRender();
+    mClickMode = savedClick;
+    mTransport = savedTransport;
+    const bool closed = writer.close();
+    if (!ok || !closed) {
+        if (error != nullptr) *error = "RENDER SONG write failed";
+        std::remove(path.c_str());
+        return false;
+    }
+    out.path = path;
+    out.frames = writer.frames();
+    return true;
 }
 
 }  // namespace mnky::audio
