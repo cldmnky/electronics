@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "midi_glue.hpp"
-#include "pipe_params.hpp"
 #include "routing_model.hpp"
 
 namespace mnky::app {
@@ -146,6 +145,19 @@ class RoutingViewModel final : public QObject {
   Q_INVOKABLE void toggleSelectedPipeBypass();
   Q_INVOKABLE void setPipeBypass(int index, bool bypass);
   Q_INVOKABLE void setPipeParam(int pipeIndex, int param, int value);
+  // Value text of one positional parameter of the selected pipe with its schema
+  // unit ("50%", "250 ms", "+4 st", "C4"); the knob editor's value popup.
+  Q_INVOKABLE QString pipeParamValueText(int param, int value) const;
+  // Chain preset files (phase 4): the selected route's ordered chain as one
+  // JSON file. A value without '/' resolves against projectDirectory (a bare
+  // preset name); the .json extension is added. Empty result = success, else a
+  // one-line reason the keypad shows without closing.
+  Q_INVOKABLE QString exportPipeChain(const QString& target,
+                                      const QString& projectDirectory);
+  Q_INVOKABLE QString importPipeChain(const QString& target,
+                                      const QString& projectDirectory);
+  // Default export name for the selected route, e.g. "chain-1-3".
+  Q_INVOKABLE QString defaultChainName() const;
   Q_INVOKABLE void cycleAddType(int delta);
   Q_INVOKABLE void cycleSelectedPipe(int delta);
   Q_INVOKABLE void setParamPage(int page);

@@ -191,7 +191,55 @@ void UiTapRunner::buildScenarios() {
         }
         controller_->routing()->selectPipe(0);
       },
-      QStringLiteral("shift.routing.pipes."), shiftExcluded, {}, false, true});
+      QStringLiteral("shift.routing.pipes."),
+      QStringList(shiftExcluded) << QStringLiteral("shift.routing.pipes.chain."), {},
+      false, true});
+  // Chain preset files open the shared path-entry keypad, which covers the
+  // page: one scenario per button so each one is measured on its own.
+  for (const char* action : {"export", "import"}) {
+    const QString prefix = QStringLiteral("shift.routing.pipes.chain.") +
+                           QLatin1String(action);
+    scenarios_.push_back(Scenario{
+        QStringLiteral("shift.1.chain.%1").arg(QLatin1String(action)),
+        [this] {
+          closeOverlays();
+          controller_->showShiftFace(false);
+          controller_->setTab(1);
+          controller_->showShiftFace(true);
+          controller_->routing()->setShiftPage(1);
+          controller_->routing()->setPipeSource(0);
+          controller_->routing()->setPipeDestination(2);
+          if (!controller_->routing()->routeEnabled(0, 2)) {
+            controller_->routing()->toggleRoute(0, 2);
+          }
+          if (controller_->routing()->pipeCount() == 0) {
+            controller_->routing()->setAddTypeIndex(0);
+            controller_->routing()->addPipe();
+          }
+          controller_->routing()->selectPipe(0);
+        },
+        prefix, shiftExcluded, {prefix}, true, true});
+  }
+
+  // 3b. The generated parameter editors, one pass per editor family: the FILTER
+  // page is all bool toggles, the ARP page 2 is a plain stepper beside an arc
+  // knob with a unit value popup. Same generic row component, no per-type QML.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("shift.1.pipes.editors.toggle"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        primePipePage(0, 0);
+      },
+      QStringLiteral("shift.routing.pipes.param."), shiftExcluded, {}, false, true});
+  scenarios_.push_back(Scenario{
+      QStringLiteral("shift.1.pipes.editors.knob"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        primePipePage(1, 1);
+      },
+      QStringLiteral("shift.routing.pipes.param."), shiftExcluded, {}, false, true});
 
   // 4. Every ConfigPopup kind. One pass taps all non-terminal controls and ends
   // with CANCEL; a second pass opens the same kind and taps OK, so both draft
@@ -252,6 +300,23 @@ void UiTapRunner::buildScenarios() {
         QStringLiteral("config."), {}, {QStringLiteral("config.ok")},
         true, true});
   }
+}
+
+void UiTapRunner::primePipePage(int pipeIndex, int page) {
+  auto* routing = controller_->routing();
+  controller_->showShiftFace(true);
+  controller_->setTab(1);
+  routing->setShiftPage(1);
+  routing->setPipeSource(0);
+  routing->setPipeDestination(2);
+  if (!routing->routeEnabled(0, 2)) routing->toggleRoute(0, 2);
+  while (routing->pipeCount() > 0) routing->removePipe(0);
+  routing->setAddTypeIndex(0);  // FILTER
+  routing->addPipe();
+  routing->setAddTypeIndex(11);  // ARP
+  routing->addPipe();
+  routing->selectPipe(pipeIndex);
+  routing->setParamPage(page);
 }
 
 void UiTapRunner::beginScenario() {

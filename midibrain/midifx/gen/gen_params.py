@@ -7,12 +7,16 @@ Input, both human-owned:
 
 Output (committed, never hand-edited):
   midifx/gen/generated/midifx_params.hpp   constexpr tables for both builds
+  midifx/gen/generated/midifx_ui.hpp       host-only editor metadata (labels,
+                                           units, choices, editor kind)
   midifx/gen/generated/schema_tests.cpp    generated consistency tests
   midifx/gen/generated/pipes-docs.md       docs table fragments
 
 Usage:
   python3 midifx/gen/gen_params.py           # regenerate
   python3 midifx/gen/gen_params.py --check   # fail if the committed files are stale
+  python3 midifx/gen/gen_params.py --schema FILE --wire FILE --out DIR
+                                             # another schema, e.g. a test fixture
 
 Exit codes: 0 ok, 1 stale output (--check), 2 invalid schema/wire order.
 Python 3 standard library only; the firmware never parses JSON at runtime.
@@ -28,12 +32,12 @@ MIDIFX = Path(__file__).resolve().parent.parent
 PIPES_JSON = MIDIFX / "pipes.json"
 WIRE_ORDER = MIDIFX / "wire-order.txt"
 OUT_DIR = MIDIFX / "gen" / "generated"
-HEADER = OUT_DIR / "midifx_params.hpp"
-SCHEMA_TESTS = OUT_DIR / "schema_tests.cpp"
-DOCS = OUT_DIR / "pipes-docs.md"
 
 KINDS = {"int", "bool", "enum"}
 CATEGORIES = {"stateless", "clocked"}
+# Display-only hints. They shape the generated editor metadata and never reach
+# the 0x19 wire, so they are not part of the schema version.
+FORMATS = {"note"}
 MAX_PARAMS = 10
 FIRST_CLOCKED_ID = 12
 
@@ -50,28 +54,28 @@ class SchemaError(Exception):
     pass
 
 
-def load_wire_order() -> list[tuple[int, str, list[str]]]:
+def load_wire_order(path: Path) -> list[tuple[int, str, list[str]]]:
     rows: list[tuple[int, str, list[str]]] = []
-    for number, raw in enumerate(WIRE_ORDER.read_text(encoding="utf-8").splitlines(), 1):
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
         fields = line.split()
         if len(fields) < 2:
-            raise SchemaError(f"wire-order.txt:{number}: expected '<id> <pipe key> <param>...'")
+            raise SchemaError(f"{path.name}:{number}: expected '<id> <pipe key> <param>...'")
         try:
             pipe_id = int(fields[0])
         except ValueError as exc:
-            raise SchemaError(f"wire-order.txt:{number}: '{fields[0]}' is not a type id") from exc
+            raise SchemaError(f"{path.name}:{number}: '{fields[0]}' is not a type id") from exc
         rows.append((pipe_id, fields[1], fields[2:]))
     return rows
 
 
-def load_schema() -> dict:
+def load_schema(path: Path) -> dict:
     try:
-        return json.loads(PIPES_JSON.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise SchemaError(f"pipes.json: {exc}") from exc
+        raise SchemaError(f"{path.name}: {exc}") from exc
 
 
 def validate(schema: dict, wire: list[tuple[int, str, list[str]]]) -> None:
@@ -176,6 +180,10 @@ def validate(schema: dict, wire: list[tuple[int, str, list[str]]]) -> None:
                             f"{pwhere}: enum default {default!r} is not a choice index")
             unit = param.get("unit", "")
             require(isinstance(unit, str), f"{pwhere}: unit must be a string")
+            if "format" in param:
+                require(param["format"] in FORMATS,
+                        f"{pwhere}: format must be one of {sorted(FORMATS)}")
+                require(kind == "int", f"{pwhere}: format only applies to int params")
 
         if index < len(wire):
             wire_id, wire_key, wire_params = wire[index]
@@ -421,7 +429,8 @@ def render_schema_tests(schema: dict) -> str:
     out.append("  check(kChannelScope.min <= kChannelScope.defaultValue &&")
     out.append("            kChannelScope.defaultValue <= kChannelScope.max,")
     out.append("        \"channel-scope default is inside its range\");")
-    out.append("  check(pipeSpecById(0) == nullptr && pipeSpecById(17) == nullptr,")
+    out.append("  check(pipeSpecById(0) == nullptr && "
+               f"pipeSpecById({len(pipes) + 1}) == nullptr,")
     out.append("        \"unknown pipe ids have no spec\");")
     out.append("  return failures;")
     out.append("}")
@@ -481,28 +490,166 @@ def render_docs(schema: dict) -> str:
     return "\n".join(out)
 
 
-def outputs() -> dict[Path, str]:
-    schema = load_schema()
-    wire = load_wire_order()
+def param_format(param: dict) -> str:
+    """Value display format for one positional parameter."""
+    if param["kind"] == "bool":
+        return "Bool"
+    if param["kind"] == "enum":
+        return "Choice"
+    if param.get("format") == "note":
+        return "Note"
+    unit = param.get("unit", "")
+    if unit == "%":
+        return "Percent"
+    if unit == "ms":
+        return "Milliseconds"
+    if unit == "st":
+        return "Semitones"
+    return "Plain"
+
+
+# One editor per value format: a flag is a toggle, an enum is a choice stepper,
+# a bounded value with a physical unit is an arc knob (its popup carries the
+# unit), and a plain integer keeps the precise -/+ stepper.
+EDITOR_BY_FORMAT = {
+    "Bool": "Toggle",
+    "Choice": "Choice",
+    "Percent": "Knob",
+    "Milliseconds": "Knob",
+    "Semitones": "Knob",
+    "Note": "Knob",
+    "Plain": "Stepper",
+}
+
+
+def render_ui_header(schema: dict) -> str:
+    """Host-only editor metadata: what the pipe editor renders, from the same
+    schema as the wire tables. Never compiled into the firmware."""
+    pipes = schema["pipes"]
+    out: list[str] = []
+    out.append("// GENERATED by midifx/gen/gen_params.py from midifx/pipes.json - do not edit.")
+    out.append("// Regenerate with:")
+    out.append("//   python3 midibrain/midifx/gen/gen_params.py")
+    out.append("//")
+    out.append("// Host-side editor metadata for the pipe screens. It is not part of the")
+    out.append("// firmware build: labels, units, choices, ranges and editor kinds are derived")
+    out.append("// from the same schema as midifx_params.hpp, so the wire tables and the")
+    out.append("// screen can never disagree and a new pipe type needs no UI code.")
+    out.append("#pragma once")
+    out.append("")
+    out.append("#include <cstddef>")
+    out.append("#include <cstdint>")
+    out.append("")
+    out.append("#include \"midifx_params.hpp\"")
+    out.append("")
+    out.append("namespace mnky::midifx::ui {")
+    out.append("")
+    out.append("// How a positional value is displayed: ON/OFF, the choice name, or the")
+    out.append("// number with the schema unit (\"%\", \" ms\", \" st\", a note name).")
+    out.append("enum class ValueFormat : std::uint8_t {")
+    out.append("  Plain = 0, Bool = 1, Choice = 2, Percent = 3, Milliseconds = 4, Semitones = 5, Note = 6,")
+    out.append("};")
+    out.append("")
+    out.append("// The widget the editor builds for that format: one 44 px row either way.")
+    out.append("enum class EditorKind : std::uint8_t {")
+    out.append("  Toggle = 0, Choice = 1, Knob = 2, Stepper = 3,")
+    out.append("};")
+    out.append("")
+    out.append("struct ParamUiSpec {")
+    out.append("  const generated::ParamSpec* param;  // key, label, range, default, unit, choices")
+    out.append("  ValueFormat format;")
+    out.append("  EditorKind editor;")
+    out.append("};")
+    out.append("")
+    for pipe in pipes:
+        name = f"kUi{c_ident(pipe['key'])}"
+        out.append(f"inline constexpr ParamUiSpec {name}[] = {{")
+        for index, param in enumerate(pipe["params"]):
+            value_format = param_format(param)
+            editor = EDITOR_BY_FORMAT[value_format]
+            out.append(
+                f"    {{&generated::kParams{c_ident(pipe['key'])}[{index}], "
+                f"ValueFormat::{value_format}, EditorKind::{editor}}},")
+        out.append("};")
+        out.append("")
+    out.append("// Parallel to generated::kPipes (same id order).")
+    out.append("struct PipeUiSpec {")
+    out.append("  const ParamUiSpec* params;")
+    out.append("  std::uint8_t paramCount;")
+    out.append("};")
+    out.append("")
+    out.append("inline constexpr PipeUiSpec kPipeUi[] = {")
+    for pipe in pipes:
+        out.append(f"    {{kUi{c_ident(pipe['key'])}, {len(pipe['params'])}}},")
+    out.append("};")
+    out.append("")
+    out.append(f"inline constexpr std::size_t kPipeUiCount = {len(pipes)};")
+    out.append("")
+    out.append("constexpr const PipeUiSpec* pipeUiSpec(std::uint8_t id) {")
+    out.append("  return id >= 1 && id <= kPipeUiCount ? &kPipeUi[id - 1] : nullptr;")
+    out.append("}")
+    out.append("")
+    out.append("constexpr const ParamUiSpec* uiParamSpec(std::uint8_t id, std::size_t index) {")
+    out.append("  const PipeUiSpec* pipe = pipeUiSpec(id);")
+    out.append("  if (pipe == nullptr || index >= pipe->paramCount) return nullptr;")
+    out.append("  return &pipe->params[index];")
+    out.append("}")
+    out.append("")
+    out.append("}  // namespace mnky::midifx::ui")
+    out.append("")
+    return "\n".join(out)
+
+
+def outputs(schema_path: Path, wire_path: Path, out_dir: Path) -> dict[Path, str]:
+    schema = load_schema(schema_path)
+    wire = load_wire_order(wire_path)
     validate(schema, wire)
     return {
-        HEADER: render_header(schema),
-        SCHEMA_TESTS: render_schema_tests(schema),
-        DOCS: render_docs(schema),
+        out_dir / "midifx_params.hpp": render_header(schema),
+        out_dir / "midifx_ui.hpp": render_ui_header(schema),
+        out_dir / "schema_tests.cpp": render_schema_tests(schema),
+        out_dir / "pipes-docs.md": render_docs(schema),
     }
 
 
 def main(argv: list[str]) -> int:
     check = "--check" in argv[1:]
-    unknown = [arg for arg in argv[1:] if arg != "--check"]
-    if unknown:
-        print(f"gen_params.py: unknown arguments: {' '.join(unknown)}", file=sys.stderr)
+    schema_path = PIPES_JSON
+    wire_path = WIRE_ORDER
+    out_dir = OUT_DIR
+    rest = argv[1:]
+    index = 0
+    while index < len(rest):
+        arg = rest[index]
+        if arg == "--check":
+            index += 1
+            continue
+        if arg in ("--schema", "--wire", "--out") and index + 1 < len(rest):
+            value = rest[index + 1]
+            if arg == "--schema":
+                schema_path = Path(value)
+            elif arg == "--wire":
+                wire_path = Path(value)
+            else:
+                out_dir = Path(value)
+            index += 2
+            continue
+        print(f"gen_params.py: unknown or incomplete argument: {arg}", file=sys.stderr)
         return 2
     try:
-        rendered = outputs()
+        rendered = outputs(schema_path, wire_path, out_dir)
     except SchemaError as exc:
         print("gen_params.py: schema is invalid:\n" + str(exc), file=sys.stderr)
         return 2
+    except FileNotFoundError as exc:
+        print(f"gen_params.py: {exc}", file=sys.stderr)
+        return 2
+
+    def shown(path: Path) -> str:
+        try:
+            return str(path.relative_to(MIDIFX))
+        except ValueError:
+            return str(path)
 
     if check:
         stale = False
@@ -510,24 +657,24 @@ def main(argv: list[str]) -> int:
             try:
                 current = path.read_text(encoding="utf-8")
             except FileNotFoundError:
-                print(f"STALE: {path.relative_to(MIDIFX)} is missing", file=sys.stderr)
+                print(f"STALE: {shown(path)} is missing", file=sys.stderr)
                 stale = True
                 continue
             if current != content:
-                print(f"STALE: {path.relative_to(MIDIFX)} does not match pipes.json/wire-order.txt; "
+                print(f"STALE: {shown(path)} does not match pipes.json/wire-order.txt; "
                       "regenerate with `python3 midifx/gen/gen_params.py` and commit the diff",
                       file=sys.stderr)
                 stale = True
         if stale:
             return 1
         print(f"gen_params.py --check: generated tables match pipes.json "
-              f"(schema v{load_schema()['schemaVersion']})")
+              f"(schema v{load_schema(schema_path)['schemaVersion']})")
         return 0
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     for path, content in rendered.items():
         path.write_text(content, encoding="utf-8")
-        print(f"wrote {path.relative_to(MIDIFX)}")
+        print(f"wrote {shown(path)}")
     return 0
 
 

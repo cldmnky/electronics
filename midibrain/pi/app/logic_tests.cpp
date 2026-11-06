@@ -37,7 +37,8 @@
 #include "mixer_model.hpp"
 #include "mixer_view_model.hpp"
 #include "performance_model.hpp"
-#include "pipe_params.hpp"
+#include "pipe_preset.hpp"
+#include "pipe_ui.hpp"
 #include "project_io.hpp"
 #include "project_logic.hpp"
 #include "recorder_view_model.hpp"
@@ -1357,19 +1358,176 @@ void timelineAndPipeTests() {
             std::abs(wave[1] - 1.0f) < 1e-6,
         "peaks reduce to the requested waveform columns");
 
-  check(pipeTypeSpecs().size() == 16, "all 16 MIDI pipe types have a descriptor");
-  check(pipeParamCount(session::MidiPipeType::Filter) == 8 &&
-            pipeParamCount(session::MidiPipeType::Arp) == 6,
-        "positional pipe parameter counts match the session table");
-  check(!isClockedPipeType(session::MidiPipeType::Transform) &&
-            isClockedPipeType(session::MidiPipeType::Arp) &&
-            isClockedPipeType(session::MidiPipeType::MidiDelay),
+  check(pipeui::isKnown(1) && pipeui::isKnown(16) && !pipeui::isKnown(0) &&
+            !pipeui::isKnown(17),
+        "the generated schema defines the 16 pipe types");
+  check(pipeui::paramCount(1) == 8 && pipeui::paramCount(12) == 6,
+        "positional pipe parameter counts come from the schema");
+  check(!pipeui::isClocked(11) && pipeui::isClocked(12) && pipeui::isClocked(16),
         "Wave-2 clocked types are marked configured-but-engine-pending");
-  checkEqual(pipeParamText(pipeParamSpecs(session::MidiPipeType::Filter)[0], 1), "ON",
+  checkEqual(pipeui::valueText(1, 0, 1).toStdString(), "ON",
              "toggle parameter formatting");
-  checkEqual(pipeNoteName(60), "C4", "MIDI note naming");
-  checkEqual(pipeLearnTargetPath(2, 1, 3, 4), "routing.pipe.2.1.3.4",
+  checkEqual(pipeui::valueText(2, 0, 60).toStdString(), "C4",
+             "note parameter formatting uses the schema format hint");
+  checkEqual(pipeui::valueText(12, 3, 50).toStdString(), "50%",
+             "percent parameter carries its unit");
+  checkEqual(pipeui::valueText(16, 0, 250).toStdString(), "250 ms",
+             "millisecond parameter carries its unit");
+  checkEqual(pipeui::valueText(15, 1, 4).toStdString(), "+4 st",
+             "semitone parameter is signed with its unit");
+  checkEqual(pipeui::noteName(60).toStdString(), "C4", "MIDI note naming");
+  checkEqual(pipeui::learnTargetPath(2, 1, 3, 4), "routing.pipe.2.1.3.4",
              "pipe parameter dotted learn path");
+  // Schema-driven editors: every type renders exactly as many editor rows as the
+  // schema declares parameters, and the editor kind follows the schema format.
+  for (int typeId = 1; typeId <= 16; ++typeId) {
+    const int count = pipeui::paramCount(typeId);
+    const auto rows = pipeui::editorRows(typeId, {}, 0, count);
+    check(rows.size() == count, "every schema parameter renders one editor row");
+    check(pipeui::pageCount(std::size_t(count), 2) >= 1 &&
+              pipeui::pageCount(std::size_t(count), 2) * 2 >= count,
+          "parameter pages cover every schema parameter");
+    for (const auto& row : rows) {
+      const auto map = row.toMap();
+      check(!map.value(QStringLiteral("name")).toString().isEmpty() &&
+                !map.value(QStringLiteral("editor")).toString().isEmpty() &&
+                !map.value(QStringLiteral("valueText")).toString().isEmpty(),
+            "each editor row has a schema label, editor kind and value text");
+      const QString editor = map.value(QStringLiteral("editor")).toString();
+      const int minimum = map.value(QStringLiteral("minimum")).toInt();
+      const int maximum = map.value(QStringLiteral("maximum")).toInt();
+      check(minimum <= map.value(QStringLiteral("value")).toInt() &&
+                map.value(QStringLiteral("value")).toInt() <= maximum,
+            "the row default is inside its schema range");
+      check(editor == "toggle" || editor == "choice" || editor == "knob" ||
+                editor == "stepper",
+            "the editor kind is one the generic row implements");
+    }
+  }
+
+  // The throwaway codegen fixture type (midifx/tests/fixtures/test-pipe-type.json,
+  // never shipped): five parameters, one of every editor format. The same
+  // generic row builder that serves the real schema renders its five editors,
+  // which is the phase-3 rule "N parameters = N editors, no per-type QML".
+  {
+    namespace generated = mnky::midifx::generated;
+    namespace ui = mnky::midifx::ui;
+    static constexpr const char* kTestShapeChoices[] = {"RAMP", "STEP", "SINE"};
+    static const generated::ParamSpec kTestParams[] = {
+        {"on", "TEST ON", generated::ParamKind::Bool, 0, 1, 1, "", nullptr, 0, 0},
+        {"shape", "TEST SHAPE", generated::ParamKind::Enum, 0, 2, 1, "",
+         kTestShapeChoices, 3, 1},
+        {"amount", "TEST AMOUNT", generated::ParamKind::Int, 0, 100, 25, "%",
+         nullptr, 0, 2},
+        {"offset", "TEST OFFSET", generated::ParamKind::Int, -24, 24, -2, "st",
+         nullptr, 0, 3},
+        {"rootNote", "TEST NOTE", generated::ParamKind::Int, 0, 127, 60, "",
+         nullptr, 0, 4},
+    };
+    static const ui::ParamUiSpec kTestUi[] = {
+        {&kTestParams[0], ui::ValueFormat::Bool, ui::EditorKind::Toggle},
+        {&kTestParams[1], ui::ValueFormat::Choice, ui::EditorKind::Choice},
+        {&kTestParams[2], ui::ValueFormat::Percent, ui::EditorKind::Knob},
+        {&kTestParams[3], ui::ValueFormat::Semitones, ui::EditorKind::Knob},
+        {&kTestParams[4], ui::ValueFormat::Note, ui::EditorKind::Knob},
+    };
+    const auto rows = pipeui::editorRowsFor(kTestParams, kTestUi, 5, {}, 0, 5);
+    check(rows.size() == 5, "a new five-parameter type renders five editors");
+    const auto editor = [&rows](int index) {
+      return rows[index].toMap().value(QStringLiteral("editor")).toString().toStdString();
+    };
+    const auto text = [&rows](int index) {
+      return rows[index].toMap().value(QStringLiteral("valueText")).toString().toStdString();
+    };
+    checkEqual(editor(0), "toggle", "the fixture bool is a toggle");
+    checkEqual(editor(1), "choice", "the fixture enum is a choice");
+    checkEqual(editor(2) + editor(3) + editor(4), "knobknobknob",
+               "the fixture unit values are arc knobs");
+    checkEqual(text(0), "ON", "the fixture bool formats as ON");
+    checkEqual(text(1), "STEP", "the fixture enum formats as its choice name");
+    checkEqual(text(2), "25%", "the fixture percent keeps its unit");
+    checkEqual(text(3), "-2 st", "the fixture offset keeps its sign and unit");
+    checkEqual(text(4), "C4", "the fixture note formats as a note name");
+    const auto laterPage = pipeui::editorRowsFor(kTestParams, kTestUi, 5, {}, 4, 5);
+    check(laterPage.size() == 1 &&
+              laterPage[0].toMap().value(QStringLiteral("param")).toInt() == 4,
+          "a later page renders the remaining positional parameter");
+  }
+
+  // Chain preset files (phase 4): export/import round-trip, schema version and
+  // the refusal reasons the keypad shows.
+  {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path directory = fs::temp_directory_path(ec) / "mnkybox-logic-chain";
+    fs::create_directories(directory, ec);
+    std::vector<session::MidiPipe> chain;
+    session::MidiPipe arp;
+    arp.type = session::MidiPipeType::Arp;
+    arp.chMask = 0x00FF;
+    arp.params = {1, 2, 3, 40, 20, 75};
+    chain.push_back(arp);
+    session::MidiPipe noteRange;
+    noteRange.type = session::MidiPipeType::NoteRange;
+    noteRange.bypass = true;
+    noteRange.params = {36, 96, 1, 127};
+    chain.push_back(noteRange);
+
+    pipe_preset::ChainFile exported;
+    exported.name = QStringLiteral("chain-0-2");
+    exported.pipes = chain;
+    const fs::path file = directory / "chain-0-2.json";
+    check(pipe_preset::write(file, exported).isEmpty(), "a chain exports to JSON");
+    pipe_preset::ChainFile imported;
+    check(pipe_preset::read(file, imported).isEmpty(), "an exported chain reads back");
+    check(imported.pipes == chain && imported.name == exported.name,
+          "the chain round-trips type, bypass, channel scope and params");
+
+    const fs::path missing = directory / "missing.json";
+    check(!pipe_preset::read(missing, imported).isEmpty(),
+          "a missing chain file is refused with a reason");
+
+    pipe_preset::ChainFile unknown;
+    QByteArray body = pipe_preset::encode(exported);
+    const int marker = body.indexOf("\"t\": 12");
+    check(marker > 0, "the exported type id is visible in the file");
+    body.replace(marker, 7, "\"t\": 99");
+    check(pipe_preset::decode(body, unknown).contains(QStringLiteral("unknown type id 99")),
+          "an unknown pipe type is refused by id");
+
+    pipe_preset::ChainFile newer;
+    QByteArray futureSchema = pipe_preset::encode(exported);
+    const QByteArray schemaField = "\"schema\": 1";
+    const int schemaAt = futureSchema.indexOf(schemaField);
+    check(schemaAt >= 0, "the exported schema version is visible in the file");
+    futureSchema.replace(schemaAt, schemaField.size(), "\"schema\": 9");
+    check(pipe_preset::decode(futureSchema, newer).contains(QStringLiteral("newer")),
+          "a chain file from a newer schema is refused");
+
+    pipe_preset::ChainFile clamped;
+    QByteArray outOfRange = pipe_preset::encode(exported);
+    check(pipe_preset::decode(outOfRange, clamped).isEmpty(),
+          "the exported body parses without a reason");
+    std::vector<session::MidiPipe> tooLong(9, session::MidiPipe{});
+    pipe_preset::ChainFile oversized;
+    oversized.pipes = tooLong;
+    check(pipe_preset::decode(pipe_preset::encode(oversized), clamped)
+              .contains(QStringLiteral("limit is 8")),
+          "a chain longer than the wire limit is refused");
+
+    fs::path resolved;
+    check(pipe_preset::resolvePath(QStringLiteral("take-style"),
+                                   QString::fromStdString(directory.string()), resolved)
+                  .isEmpty() &&
+              resolved == directory / "take-style.json",
+          "a bare preset name resolves inside the project folder");
+    check(!pipe_preset::resolvePath(QStringLiteral("take-style"), QString(), resolved)
+               .isEmpty(),
+          "a bare name without a project is refused instead of writing elsewhere");
+    check(!pipe_preset::validateName(QStringLiteral("../escape")).isEmpty(),
+          "a preset name may not contain a path separator");
+    fs::remove_all(directory, ec);
+  }
 
   MidiGlue midi(false);
   std::vector<session::MidiPipe> chain;

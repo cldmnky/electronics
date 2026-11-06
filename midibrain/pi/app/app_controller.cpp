@@ -10,6 +10,7 @@
 #include <string>
 
 #include "logging.hpp"
+#include "pipe_ui.hpp"
 #include "project_io.hpp"
 #include "routing_model.hpp"
 
@@ -331,6 +332,20 @@ void AppController::keypadAccept(const QString& text) {
     error = recorderVm_->renameSelected(text);
   } else if (keypadAction_ == QStringLiteral("take-import")) {
     error = recorderVm_->importTake(text);
+  } else if (keypadAction_ == QStringLiteral("pipe-chain-export")) {
+    error = routingVm_->exportPipeChain(
+        text, QString::fromStdString(state_.currentProject().string()));
+    if (error.isEmpty()) {
+      setNotice(QStringLiteral("pipe chain exported: ") + text);
+      showTextPopup(QStringLiteral("PIPE CHAIN EXPORTED"), text);
+    }
+  } else if (keypadAction_ == QStringLiteral("pipe-chain-import")) {
+    error = routingVm_->importPipeChain(
+        text, QString::fromStdString(state_.currentProject().string()));
+    if (error.isEmpty()) {
+      setNotice(QStringLiteral("pipe chain imported: ") + text);
+      showTextPopup(QStringLiteral("PIPE CHAIN IMPORTED"), text);
+    }
   }
   if (!error.isEmpty()) {
     keypadError_ = error;
@@ -442,6 +457,21 @@ void AppController::requestImportTake() {
                 QString::fromStdString(state_.takeDirectory().string()) +
                     QLatin1Char('/'),
                 QStringLiteral("take-import"), -1);
+}
+
+void AppController::requestExportPipeChain() {
+  requestKeypad(QStringLiteral("EXPORT PIPE CHAIN (NAME)"),
+                routingVm_->defaultChainName(), QStringLiteral("pipe-chain-export"),
+                -1);
+}
+
+void AppController::requestImportPipeChain() {
+  const std::string directory = state_.currentProject().string();
+  const QString initial =
+      directory.empty() ? QString()
+                        : QString::fromStdString(directory) + QLatin1Char('/');
+  requestKeypad(QStringLiteral("IMPORT PIPE CHAIN (NAME)"), initial,
+                QStringLiteral("pipe-chain-import"), -1);
 }
 
 void AppController::openDemoKeypad() {
@@ -2194,6 +2224,8 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("shift.routing.pipes.type.next"));
           ids.push_back(QStringLiteral("shift.routing.pipes.add"));
           ids.push_back(QStringLiteral("shift.routing.pipes.scope"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.chain.export"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.chain.import"));
           const int pipes = routingVm_->pipeRows().size();
           for (int pipe = 0; pipe < pipes; ++pipe) {
             ids.push_back(QStringLiteral("shift.routing.pipes.select.%1").arg(pipe));
@@ -2639,25 +2671,29 @@ void AppController::registerLearnTargets() {
   // MIDI FX pipe parameters. The path set is fixed (9 routes x 8 pipe slots x
   // 10 positional parameters); a setter is a no-op until that pipe/param exists,
   // so the LearnEngine can hold a binding across a chain edit. The value range
-  // comes from pipe_params.hpp at dispatch time, because a slot's pipe type can
-  // change after the binding was made.
+  // comes from the generated schema metadata (pipe_ui.hpp) at dispatch time,
+  // because a slot's pipe type can change after the binding was made.
   for (int source = 0; source < routing::kInputCount; ++source) {
     for (int destination = 0; destination < routing::kOutputCount; ++destination) {
       for (int pipe = 0; pipe < static_cast<int>(midi::kMaxRoutePipes); ++pipe) {
         for (int param = 0; param < static_cast<int>(midi::kMaxPipeParams); ++param) {
-          const auto path = pipeLearnTargetPath(source, destination, pipe, param);
+          const auto path = pipeui::learnTargetPath(source, destination, pipe, param);
           midi_.registerLearnTarget(path, [this, source, destination, pipe,
                                            param](double value) {
             const auto input = routing::kInputs[static_cast<std::size_t>(source)];
             const auto output = routing::kOutputs[static_cast<std::size_t>(destination)];
             const auto pipes = midi_.routePipes(input, output);
             if (pipe < 0 || pipe >= static_cast<int>(pipes.size())) return;
-            const auto specs = pipeParamSpecs(pipes[static_cast<std::size_t>(pipe)].type);
-            if (param < 0 || param >= static_cast<int>(specs.size())) return;
-            const auto& spec = specs[static_cast<std::size_t>(param)];
-            const int scaled = spec.minimum + static_cast<int>(std::lround(
+            const auto* spec =
+                pipeui::pipeSpec(static_cast<int>(pipes[static_cast<std::size_t>(pipe)].type));
+            if (spec == nullptr || param < 0 ||
+                param >= static_cast<int>(spec->paramCount)) {
+              return;
+            }
+            const auto& paramSpec = spec->params[static_cast<std::size_t>(param)];
+            const int scaled = paramSpec.min + static_cast<int>(std::lround(
                                                    std::clamp(value, 0.0, 1.0) *
-                                                   (spec.maximum - spec.minimum)));
+                                                   (paramSpec.max - paramSpec.min)));
             (void)midi_.setRoutePipeParam(input, output, pipe, param, scaled);
           });
         }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "MIDI FX pipe definitions shared by the Pico firmware and the Pi. Param order IS the 0x19 positional wire order; missing positional params use `default`, extra params are ignored. Generated C++ lives in gen/generated/ - edit this file (and the frozen wire order) instead.",
+  "description": "MIDI FX pipe definitions shared by the Pico firmware and the Pi. Param order IS the 0x19 positional wire order; missing positional params use `default`, extra params are ignored. Generated C++ lives in gen/generated/ - edit this file (and the frozen wire order) instead. `unit` and the display-only `format` (\"note\") drive the generated editor metadata; they never reach the wire.",
   "channelScope": {
     "key": "chMask",
     "docs": "Per-pipe channel scope: channel n (0-based) enters the pipe when bit n is set; every other message passes that pipe unchanged. 0xFFFF (default) = all messages, 0 = pipe inert. Sent on the 0x19 offset-0 chunk; a continuation chunk keeps the established scope.",
@@ -81,7 +81,8 @@
           "kind": "int",
           "min": 0,
           "max": 127,
-          "default": 0
+          "default": 0,
+          "format": "note"
         },
         {
           "key": "hi",
@@ -89,7 +90,8 @@
           "kind": "int",
           "min": 0,
           "max": 127,
-          "default": 127
+          "default": 127,
+          "format": "note"
         },
         {
           "key": "velLo",

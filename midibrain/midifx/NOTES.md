@@ -119,9 +119,10 @@ default (`route_pipe_channel_mask_default`) matches it.
   and every `ParamSpec::index` equals its array position. The frozen wire
   positions are pinned again in `tests/test_schema.cpp`.
 - Both builds read the same generated header. The firmware uses
-  `generated::pipeDefaultParam()` as the missing-param fallback; the Pi UI will
-  read `kPipes` for editors/labels/ranges in phase 3. The firmware never parses
-  JSON.
+  `generated::pipeDefaultParam()` as the missing-param fallback; the Pi UI reads
+  `generated::kPipes` plus the host-only `generated/midifx_ui.hpp` for
+  editors/labels/ranges/units. The firmware never parses JSON and never includes
+  the UI header.
 
 ## Schema vs source disagreements (findings)
 
@@ -188,7 +189,12 @@ That rejection disappears when `pi/midi` adopts the core.
   reported in status. The firmware reports it in the boot log; a real status
   field needs `protocol.hpp` + `pi/link` changes (read-only in this lane), so it
   is left for the Pi-link work item.
-- **`pipe_params.cpp` retirement** is phase 3 (schema-driven UI/learn paths).
+- **`pipe_params.cpp` is retired** (phase 3): `gen_params.py` emits
+  `generated/midifx_ui.hpp` (label, range, unit, choices, format, editor kind per
+  positional parameter) and `pi/app/pipe_ui.cpp` is a generic adapter over it, so
+  a new pipe type needs no app table and no QML. `tests/test_codegen.py` proves
+  that with a throwaway fixture type (`tests/fixtures/test-pipe-type.json`) that
+  is never shipped.
 - No behavior DSL (approved non-goal).
 
 ## Validation

@@ -526,8 +526,9 @@ Item {
         }
 
         // MIDI FX pipe page (Routing SHIFT > PIPES): per-route ordered chain,
-        // add/remove/reorder/bypass, and the per-type parameter editors that
-        // PipeParamEditor generates from pipe_params.cpp.
+        // add/remove/reorder/bypass, the parameter editors PipeParamEditor
+        // builds from the generated schema metadata, and the chain preset file
+        // actions (EXPORT/IMPORT) that travel inside the project folder.
         Item {
             visible: screen.pipesPage
             width: parent.width
@@ -646,7 +647,7 @@ Item {
                         onClicked: routing.cycleAddType(-1)
                     }
                     TouchButton {
-                        width: 220
+                        width: 140
                         height: parent.height
                         text: routing.addTypeName
                         textSize: Style.fontSmall
@@ -662,7 +663,7 @@ Item {
                         onClicked: routing.cycleAddType(1)
                     }
                     TouchButton {
-                        width: 110
+                        width: 96
                         height: parent.height
                         text: "ADD PIPE"
                         textSize: Style.fontSmall
@@ -678,8 +679,29 @@ Item {
                         focusId: "shift.routing.pipes.scope"
                         onClicked: app.openConfigFrom("pipechannels", this)
                     }
+                    // Chain preset file: the selected route's ordered chain as
+                    // one JSON file in the project folder (take-name style
+                    // entry, .json implied).
+                    TouchButton {
+                        width: 96
+                        height: parent.height
+                        text: "EXPORT"
+                        textSize: Style.fontSmall
+                        variant: "ghost"
+                        focusId: "shift.routing.pipes.chain.export"
+                        onClicked: app.requestExportPipeChain()
+                    }
+                    TouchButton {
+                        width: 96
+                        height: parent.height
+                        text: "IMPORT"
+                        textSize: Style.fontSmall
+                        variant: "ghost"
+                        focusId: "shift.routing.pipes.chain.import"
+                        onClicked: app.requestImportPipeChain()
+                    }
                     Text {
-                        width: parent.width - 40 - Style.touch * 2 - 220 - 110 - 104 - Style.gapTight * 5
+                        width: parent.width - 40 - Style.touch * 2 - 140 - 96 - 104 - 96 * 2 - Style.gapTight * 7
                         height: parent.height
                         text: routing.pipeRows.length + " / 8 PIPES"
                         color: Style.textDim

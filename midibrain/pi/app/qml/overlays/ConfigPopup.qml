@@ -23,7 +23,10 @@ Rectangle {
     Rectangle {
         id: panel
         width: Math.min(744, root.width - 16)
-        height: Math.min(430, root.height - 8)
+        // Content height, capped at the screen: a short kind (MAIN COMP) gets a
+        // short panel instead of an empty lower half, and OK/CANCEL stay the
+        // last row of the content, so they stay bottom-anchored in every kind.
+        height: Math.min(root.height - 8, content.implicitHeight + 24)
         anchors.centerIn: parent
         color: Style.raised
         radius: Style.cornerPanel
@@ -51,8 +54,10 @@ Rectangle {
         }
 
         Column {
-            anchors.fill: parent
-            anchors.margins: 12
+            id: content
+            x: 12
+            y: 12
+            width: panel.width - 24
             spacing: Style.gap
 
             Row {

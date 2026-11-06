@@ -486,9 +486,21 @@ pactl list short sink-inputs                                                 # o
 
 * One ordered chain per input->output pair (9 pairs). Add cycles all 16 session
   pipe types, rows select/bypass/move/remove, and the parameter page shows two
-  positional parameters at a time (16 px steppers, toggles, choices, note names,
-  dB/%/ms text) with the normal value popup on panel EDIT. The tables come from
-  `pipe_params.hpp` and mirror the frozen `session::MidiPipe` parameter order.
+  positional parameters at a time.
+* The parameter editors are **schema-driven** (midifx-library-plan phase 3).
+  `midifx/gen/gen_params.py` emits `midifx/gen/generated/midifx_ui.hpp` from
+  `midifx/pipes.json`: per positional parameter a label, range, default, unit,
+  choices and a display format. `pi/app/pipe_ui.cpp` is a generic adapter over
+  that table (no per-type rows, unlike the retired `pipe_params.*`): a bool is
+  an ON/OFF toggle, an enum a previous/name/next choice, a value with a unit an
+  arc `KnobDial` whose drag popup carries the unit ("50%", "250 ms", "+4 st",
+  "C4"), and a plain int the -/+ stepper. A new pipe type is a `pipes.json`
+  entry plus one regenerated header; `midifx/tests/test_codegen.py` proves it
+  with a throwaway fixture type that never ships.
+* Change discipline: edit `pipes.json` (and `wire-order.txt` when the positional
+  order really changes), run `python3 midifx/gen/gen_params.py`, commit the
+  regenerated files. `--check` fails on a stale or missing generated file, so
+  the screen cannot lag the schema.
 * `MidiGlue` owns the stored lists, keeps `Router::setPipes` in sync and is the
   only writer; `project_io` captures them into `RouteState::pipes` and applies
   them to a router snapshot on load (`session::apply()` ignores that field).
@@ -507,9 +519,19 @@ pactl list short sink-inputs                                                 # o
   another input message. A rejected Pi-side chain logs one line per new
   rejection (pipe index + static reason) instead of one per message.
 * Every configured pipe parameter is a MIDI-learn target
-  (`routing.pipe.<src>.<dst>.<pipe>.<param>`); the target list refreshes with
-  chain edits and an unset slot is a no-op, so a binding survives a chain change
-  until that pipe/param exists again.
+  (`routing.pipe.<src>.<dst>.<pipe>.<param>`); the target set is the generated
+  schema parameter count, the target list refreshes with chain edits and an
+  unset slot is a no-op, so a binding survives a chain change until that
+  pipe/param exists again. The path stays positional on purpose: the
+  LearnEngine's setter table is registered once (720 paths) and a key-suffixed
+  path would orphan every learned knob as soon as a pipe type changed.
+* Chain presets (midifx-library-plan phase 4): EXPORT/IMPORT on the pipe row
+  writes/reads one JSON file per route chain (`t`, `bypass`, `chm`, `params`
+  plus the generated schema version) inside the project folder, with the take
+  path entry for the name (`.json` implied). Import validates against the
+  schema - a pipe type outside 1..16, a chain longer than 8 pipes, more params
+  than the type defines or a newer schema version is refused with the reason in
+  the keypad instead of being partially applied (`pi/app/pipe_preset.cpp`).
 
 ### Link 0x1A sender
 

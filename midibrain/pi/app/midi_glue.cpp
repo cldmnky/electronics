@@ -1,5 +1,7 @@
 #include "midi_glue.hpp"
 
+#include "pipe_ui.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <map>
@@ -49,7 +51,7 @@ bool sanitizePipes(const std::vector<session::MidiPipe>& input,
   output.clear();
   output.reserve(input.size());
   for (const auto& pipe : input) {
-    if (!isKnownPipeType(static_cast<int>(pipe.type))) return false;
+    if (!pipeui::isKnown(static_cast<int>(pipe.type))) return false;
     if (pipe.params.size() > midi::kMaxPipeParams) return false;
     output.push_back(pipe);
   }
@@ -62,7 +64,7 @@ bool routerPipes(const std::vector<session::MidiPipe>& pipes,
   count = pipes.size();
   for (std::size_t index = 0; index < pipes.size(); ++index) {
     const auto& pipe = pipes[index];
-    if (!isKnownPipeType(static_cast<int>(pipe.type))) return false;
+    if (!pipeui::isKnown(static_cast<int>(pipe.type))) return false;
     if (pipe.params.size() > midi::kMaxPipeParams) return false;
     auto& config = configs[index];
     config = midi::PipeConfig{};
@@ -81,16 +83,17 @@ bool routerPipes(const std::vector<session::MidiPipe>& pipes,
 // an editor write to a later parameter does not silently inherit a different
 // fallback than the UI shows.
 void fillDefaults(session::MidiPipe& pipe) {
-  const auto specs = pipeParamSpecs(pipe.type);
-  if (pipe.params.size() >= specs.size()) return;
-  pipe.params.resize(specs.size());
-  for (std::size_t index = 0; index < specs.size(); ++index) {
-    if (index >= pipe.params.size()) break;
-    if (pipe.params[index] == 0 && specs[index].defaultValue != 0) {
+  const auto* spec = pipeui::pipeSpec(static_cast<int>(pipe.type));
+  if (spec == nullptr) return;
+  const std::size_t count = spec->paramCount;
+  if (pipe.params.size() >= count) return;
+  pipe.params.resize(count);
+  for (std::size_t index = 0; index < count; ++index) {
+    if (pipe.params[index] == 0 && spec->params[index].defaultValue != 0) {
       // Only untouched trailing zeros are defaulted; an explicit 0 stays 0.
       // The stored vector has no "set" bitmap, so this mirrors how the session
       // reader treats missing trailing parameters and is documented in NOTES.
-      pipe.params[index] = specs[index].defaultValue;
+      pipe.params[index] = spec->params[index].defaultValue;
     }
   }
 }
@@ -544,14 +547,16 @@ bool MidiGlue::setRoutePipes(midi::Port source, midi::Port destination,
 
 bool MidiGlue::addRoutePipe(midi::Port source, midi::Port destination,
                             session::MidiPipeType type) {
-  if (!isKnownPipeType(static_cast<int>(type))) return false;
+  const auto* spec = pipeui::pipeSpec(static_cast<int>(type));
+  if (spec == nullptr) return false;
   auto pipes = routePipes(source, destination);
   if (pipes.size() >= midi::kMaxRoutePipes) return false;
   session::MidiPipe pipe;
   pipe.type = type;
-  const auto specs = pipeParamSpecs(type);
-  pipe.params.reserve(specs.size());
-  for (const auto& spec : specs) pipe.params.push_back(spec.defaultValue);
+  pipe.params.reserve(spec->paramCount);
+  for (std::size_t index = 0; index < spec->paramCount; ++index) {
+    pipe.params.push_back(spec->params[index].defaultValue);
+  }
   pipes.push_back(std::move(pipe));
   return setRoutePipes(source, destination, pipes);
 }
@@ -588,11 +593,13 @@ bool MidiGlue::setRoutePipeParam(midi::Port source, midi::Port destination,
   auto pipes = routePipes(source, destination);
   if (index < 0 || index >= static_cast<int>(pipes.size())) return false;
   auto& pipe = pipes[static_cast<std::size_t>(index)];
-  const auto specs = pipeParamSpecs(pipe.type);
-  if (param < 0 || param >= static_cast<int>(specs.size())) return false;
-  const auto& spec = specs[static_cast<std::size_t>(param)];
+  const auto* spec = pipeui::pipeSpec(static_cast<int>(pipe.type));
+  if (spec == nullptr || param < 0 || param >= static_cast<int>(spec->paramCount)) {
+    return false;
+  }
   fillDefaults(pipe);
-  pipe.params[static_cast<std::size_t>(param)] = clampPipeParam(spec, value);
+  pipe.params[static_cast<std::size_t>(param)] =
+      pipeui::clamp(spec->params[static_cast<std::size_t>(param)], value);
   return setRoutePipes(source, destination, pipes);
 }
 
@@ -677,10 +684,11 @@ std::vector<std::string> MidiGlue::routePipeLearnTargets() const {
     for (int destination = 0; destination < 3; ++destination) {
       const auto& pipes = routePipes_[static_cast<std::size_t>(source * 3 + destination)];
       for (std::size_t pipe = 0; pipe < pipes.size(); ++pipe) {
-        const auto specs = pipeParamSpecs(pipes[pipe].type);
-        for (std::size_t param = 0; param < specs.size(); ++param) {
-          targets.push_back(pipeLearnTargetPath(
-              source, destination, static_cast<int>(pipe), static_cast<int>(param)));
+        const int count =
+            pipeui::paramCount(static_cast<int>(pipes[pipe].type));
+        for (int param = 0; param < count; ++param) {
+          targets.push_back(pipeui::learnTargetPath(
+              source, destination, static_cast<int>(pipe), param));
         }
       }
     }

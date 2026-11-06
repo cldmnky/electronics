@@ -1,6 +1,10 @@
 #include "routing_view_model.hpp"
 
+#include "pipe_preset.hpp"
+#include "pipe_ui.hpp"
+
 #include <algorithm>
+#include <filesystem>
 #include <string>
 
 #include <QStringList>
@@ -381,9 +385,9 @@ void RoutingViewModel::cycleSelectedPipe(int delta) {
 int RoutingViewModel::paramPageCount() const {
   const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
   if (selectedPipe_ < 0 || selectedPipe_ >= static_cast<int>(pipes.size())) return 1;
-  const auto specs = pipeParamSpecs(pipes[static_cast<std::size_t>(selectedPipe_)].type);
-  return std::max(1, (static_cast<int>(specs.size()) + kPipeParamsPerPage - 1) /
-                         kPipeParamsPerPage);
+  const auto type = static_cast<int>(pipes[static_cast<std::size_t>(selectedPipe_)].type);
+  return pipeui::pageCount(static_cast<std::size_t>(pipeui::paramCount(type)),
+                           kPipeParamsPerPage);
 }
 
 void RoutingViewModel::setParamPage(int page) {
@@ -394,7 +398,7 @@ void RoutingViewModel::setParamPage(int page) {
 }
 
 void RoutingViewModel::setAddTypeIndex(int index) {
-  const int count = static_cast<int>(pipeTypeSpecs().size());
+  const int count = static_cast<int>(mnky::midifx::generated::kPipeCount);
   const int clamped = std::clamp(index, 0, count - 1);
   if (clamped == addTypeIndex_) return;
   addTypeIndex_ = clamped;
@@ -402,11 +406,7 @@ void RoutingViewModel::setAddTypeIndex(int index) {
 }
 
 QString RoutingViewModel::addTypeName() const {
-  const auto types = pipeTypeSpecs();
-  if (addTypeIndex_ < 0 || addTypeIndex_ >= static_cast<int>(types.size())) {
-    return {};
-  }
-  return QString::fromLatin1(types[static_cast<std::size_t>(addTypeIndex_)].name);
+  return pipeui::pipeName(addTypeIndex_ + 1);
 }
 
 midi::Port RoutingViewModel::pipeInput() const {
@@ -470,7 +470,7 @@ QString RoutingViewModel::pipeStatusText() const {
   int bypassed = 0;
   for (const auto& pipe : pipes) {
     if (pipe.bypass) ++bypassed;
-    if (!pipe.bypass && isClockedPipeType(pipe.type)) wave2 = true;
+    if (!pipe.bypass && pipeui::isClocked(static_cast<int>(pipe.type))) wave2 = true;
   }
   if (wave2 && piOwned) {
     status += QStringLiteral(" - WAVE 2 NOT IN PI ENGINE: midi::PipeChain::process() "
@@ -495,16 +495,16 @@ QString RoutingViewModel::pipeStatusText() const {
 }
 
 void RoutingViewModel::addPipe() {
-  const auto types = pipeTypeSpecs();
-  if (addTypeIndex_ < 0 || addTypeIndex_ >= static_cast<int>(types.size())) return;
-  const auto type = types[static_cast<std::size_t>(addTypeIndex_)].type;
+  const int typeId = addTypeIndex_ + 1;
+  if (!pipeui::isKnown(typeId)) return;
+  const auto type = static_cast<session::MidiPipeType>(typeId);
   if (!midi_.addRoutePipe(pipeInput(), pipeOutput(), type)) {
     log(std::string("routing: pipe add refused for ") + pipeRouteText().toStdString());
     return;
   }
   selectedPipe_ = pipeCount() - 1;
   log(std::string("routing: pipe added to ") + pipeRouteText().toStdString() + ": " +
-      types[static_cast<std::size_t>(addTypeIndex_)].name);
+      pipeui::pipeName(typeId).toStdString());
   refreshPipes();
 }
 
@@ -563,6 +563,56 @@ void RoutingViewModel::setPipeParam(int pipeIndex, int param, int value) {
   refreshPipes();
 }
 
+QString RoutingViewModel::pipeParamValueText(int param, int value) const {
+  const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
+  if (selectedPipe_ < 0 || selectedPipe_ >= static_cast<int>(pipes.size())) return {};
+  const int typeId =
+      static_cast<int>(pipes[static_cast<std::size_t>(selectedPipe_)].type);
+  return pipeui::valueText(typeId, param, value);
+}
+
+QString RoutingViewModel::defaultChainName() const {
+  return QStringLiteral("chain-%1-%2")
+      .arg(static_cast<int>(pipeInput()))
+      .arg(static_cast<int>(pipeOutput()));
+}
+
+QString RoutingViewModel::exportPipeChain(const QString& target,
+                                          const QString& projectDirectory) {
+  std::filesystem::path file;
+  const QString resolved = pipe_preset::resolvePath(target, projectDirectory, file);
+  if (!resolved.isEmpty()) return resolved;
+  const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
+  if (pipes.empty()) return QStringLiteral("the selected route has no pipes to export");
+  pipe_preset::ChainFile chain;
+  chain.name = QString::fromStdString(file.stem().string());
+  chain.pipes = pipes;
+  const QString error = pipe_preset::write(file, chain);
+  if (!error.isEmpty()) return error;
+  log(std::string("routing: exported ") + std::to_string(chain.pipes.size()) +
+      " pipe(s) from " + pipeRouteText().toStdString() + " to " + file.string());
+  return {};
+}
+
+QString RoutingViewModel::importPipeChain(const QString& target,
+                                          const QString& projectDirectory) {
+  std::filesystem::path file;
+  const QString resolved = pipe_preset::resolvePath(target, projectDirectory, file);
+  if (!resolved.isEmpty()) return resolved;
+  pipe_preset::ChainFile chain;
+  const QString error = pipe_preset::read(file, chain);
+  if (!error.isEmpty()) return error;
+  if (!midi_.setRoutePipes(pipeInput(), pipeOutput(), chain.pipes)) {
+    return QStringLiteral("the router refused the chain");
+  }
+  selectedPipe_ = 0;
+  paramPage_ = 0;
+  log(std::string("routing: imported ") + std::to_string(chain.pipes.size()) +
+      " pipe(s) into " + pipeRouteText().toStdString() + " from " + file.string());
+  refreshPipes();
+  return {};
+}
+
 void RoutingViewModel::cycleAddType(int delta) {
   setAddTypeIndex(addTypeIndex_ + (delta < 0 ? -1 : 1));
 }
@@ -576,18 +626,16 @@ void RoutingViewModel::refreshPipes() {
   rows.reserve(static_cast<int>(pipes.size()));
   for (std::size_t index = 0; index < pipes.size(); ++index) {
     const auto& pipe = pipes[index];
-    const auto* spec = pipeTypeSpec(pipe.type);
+    const int typeId = static_cast<int>(pipe.type);
+    const bool clocked = pipeui::isClocked(typeId);
     QVariantMap row;
     row.insert(QStringLiteral("index"), static_cast<int>(index));
-    row.insert(QStringLiteral("type"), static_cast<int>(pipe.type));
-    row.insert(QStringLiteral("typeName"),
-               spec == nullptr ? QStringLiteral("?") : QString::fromLatin1(spec->name));
-    row.insert(QStringLiteral("shortName"),
-               spec == nullptr ? QStringLiteral("?") : QString::fromLatin1(spec->shortName));
+    row.insert(QStringLiteral("type"), typeId);
+    row.insert(QStringLiteral("typeName"), pipeui::pipeName(typeId));
+    row.insert(QStringLiteral("shortName"), pipeui::pipeShortName(typeId));
     row.insert(QStringLiteral("bypass"), pipe.bypass);
-    row.insert(QStringLiteral("clocked"), spec != nullptr && spec->clocked);
-    row.insert(QStringLiteral("paramCount"),
-               spec == nullptr ? 0 : static_cast<int>(spec->params.size()));
+    row.insert(QStringLiteral("clocked"), clocked);
+    row.insert(QStringLiteral("paramCount"), pipeui::paramCount(typeId));
     row.insert(QStringLiteral("selected"), static_cast<int>(index) == selectedPipe_);
     row.insert(QStringLiteral("chMask"), static_cast<int>(pipe.chMask));
     row.insert(QStringLiteral("scopeText"),
@@ -598,7 +646,7 @@ void RoutingViewModel::refreshPipes() {
       rowStatus = QStringLiteral("BYPASS");
     } else if (noPico_ && !piOwned) {
       rowStatus = QStringLiteral("INERT (NO PICO)");
-    } else if (spec != nullptr && spec->clocked) {
+    } else if (clocked) {
       rowStatus = piOwned ? QStringLiteral("PI: NO WAVE-2 ENGINE")
                           : QStringLiteral("ACTIVE (PICO CLOCK)");
     }
@@ -614,43 +662,13 @@ void RoutingViewModel::refreshPipes() {
   QVariantList params;
   if (selectedPipe_ >= 0 && selectedPipe_ < static_cast<int>(pipes.size())) {
     const auto& pipe = pipes[static_cast<std::size_t>(selectedPipe_)];
-    const auto specs = pipeParamSpecs(pipe.type);
-    const int pageCount =
-        std::max(1, (static_cast<int>(specs.size()) + kPipeParamsPerPage - 1) /
-                        kPipeParamsPerPage);
-    paramPage_ = std::clamp(paramPage_, 0, pageCount - 1);
-    const std::size_t firstParam =
-        static_cast<std::size_t>(paramPage_ * kPipeParamsPerPage);
-    const std::size_t lastParam =
-        std::min(specs.size(), firstParam + static_cast<std::size_t>(kPipeParamsPerPage));
-    for (std::size_t index = firstParam; index < lastParam; ++index) {
-      const auto& spec = specs[index];
-      const int value = index < pipe.params.size()
-                            ? clampPipeParam(spec, pipe.params[index])
-                            : spec.defaultValue;
-      QStringList choices;
-      for (int choice = 0; choice < spec.choiceCount; ++choice) {
-        choices << QString::fromLatin1(spec.choices[choice]);
-      }
-      QString editor = QStringLiteral("stepper");
-      if (spec.editor == PipeParamEditor::Toggle) editor = QStringLiteral("toggle");
-      else if (spec.editor == PipeParamEditor::Choice) editor = QStringLiteral("choice");
-      else if (spec.editor == PipeParamEditor::Note) editor = QStringLiteral("note");
-      else if (spec.editor == PipeParamEditor::Level) editor = QStringLiteral("level");
-      else if (spec.editor == PipeParamEditor::Milliseconds) editor = QStringLiteral("ms");
-      else if (spec.editor == PipeParamEditor::Signed) editor = QStringLiteral("signed");
-      QVariantMap param;
-      param.insert(QStringLiteral("name"), QString::fromLatin1(spec.name));
-      param.insert(QStringLiteral("param"), static_cast<int>(index));
-      param.insert(QStringLiteral("minimum"), spec.minimum);
-      param.insert(QStringLiteral("maximum"), spec.maximum);
-      param.insert(QStringLiteral("value"), value);
-      param.insert(QStringLiteral("editor"), editor);
-      param.insert(QStringLiteral("choices"), choices);
-      param.insert(QStringLiteral("valueText"),
-                   QString::fromStdString(pipeParamText(spec, value)));
-      params.push_back(param);
-    }
+    const int typeId = static_cast<int>(pipe.type);
+    paramPage_ = std::clamp(
+        paramPage_, 0,
+        pipeui::pageCount(static_cast<std::size_t>(pipeui::paramCount(typeId)),
+                          kPipeParamsPerPage) - 1);
+    params = pipeui::editorRows(typeId, pipe.params, paramPage_ * kPipeParamsPerPage,
+                                (paramPage_ + 1) * kPipeParamsPerPage);
   }
 
   const QString routeText = pipeRouteText();

@@ -58,6 +58,10 @@ class UiTapRunner final : public QObject {
 
   void buildScenarios();
   void closeOverlays();
+  // Routes the pipe page at one FILTER + one ARP pipe and selects the page the
+  // caller wants to finger; the generated editors only exist while a pipe is
+  // selected, and the row taps above remove pipes.
+  void primePipePage(int pipeIndex, int page);
   void beginScenario();
   void tapNext();
   void finishScenario();

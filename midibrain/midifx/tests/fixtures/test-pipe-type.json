@@ -1,0 +1,53 @@
+{
+  "description": "THROWAWAY test-only pipe type, never shipped and never merged into pipes.json. midifx/tests/test_codegen.py appends it to the real schema and its params to the frozen wire order, regenerates into a temporary directory and asserts that the new type reaches both the wire tables and the generated editor metadata. It is the proof for the schema-driven UI rule: a pipe type with N params renders N editors with no per-type QML and no app-side table.",
+  "pipe": {
+    "id": 17,
+    "key": "testRamp",
+    "name": "TEST RAMP",
+    "short": "TST",
+    "category": "clocked",
+    "docs": "Throwaway fixture type (codegen test only): one of every editor format.",
+    "params": [
+      {
+        "key": "on",
+        "label": "TEST ON",
+        "kind": "bool",
+        "default": 1
+      },
+      {
+        "key": "shape",
+        "label": "TEST SHAPE",
+        "kind": "enum",
+        "choices": ["RAMP", "STEP", "SINE"],
+        "default": 1
+      },
+      {
+        "key": "amount",
+        "label": "TEST AMOUNT",
+        "kind": "int",
+        "min": 0,
+        "max": 100,
+        "default": 25,
+        "unit": "%"
+      },
+      {
+        "key": "offset",
+        "label": "TEST OFFSET",
+        "kind": "int",
+        "min": -24,
+        "max": 24,
+        "default": -2,
+        "unit": "st"
+      },
+      {
+        "key": "rootNote",
+        "label": "TEST NOTE",
+        "kind": "int",
+        "min": 0,
+        "max": 127,
+        "default": 60,
+        "format": "note"
+      }
+    ]
+  }
+}

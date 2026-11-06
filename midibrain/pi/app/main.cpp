@@ -742,6 +742,60 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setTrackMode(false);
                         controller_->setTab(0);
                       }});
+
+    // ---- 40-*: schema-driven pipe editors, chain presets, popup sizing ----
+    steps_.push_back({"40-routing-pipes", [this] {
+                        resetShot();
+                        primePipeChain(false);
+                        controller_->routing()->selectPipe(0);
+                        controller_->routing()->setParamPage(0);
+                      }});
+    steps_.push_back({"40-routing-pipes-knob", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        // The ARP pipe's page 2 is OCTAVES (stepper) and SWING
+                        // (arc knob with a "%" popup): generated editors in one
+                        // row, no per-type QML.
+                        controller_->routing()->selectPipe(1);
+                        controller_->routing()->setParamPage(1);
+                        controller_->showTextPopup(
+                            QStringLiteral("SWING"),
+                            controller_->routing()->pipeParamValueText(3, 50));
+                      }});
+    steps_.push_back({"40-chain-export", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        controller_->requestExportPipeChain();
+                      }});
+    steps_.push_back({"40-chain-import", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        controller_->requestImportPipeChain();
+                      }});
+    steps_.push_back({"40-chain-imported", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        // Real round trip: export the route's chain to a temp
+                        // file, replace it with a different chain, then import
+                        // the file back. The rows below are the imported ones.
+                        const QString file = QDir::tempPath() +
+                                             QStringLiteral("/mnkybox-40-chain.json");
+                        controller_->routing()->exportPipeChain(file, QString());
+                        controller_->routing()->setAddTypeIndex(15);
+                        controller_->routing()->addPipe();
+                        controller_->routing()->importPipeChain(file, QString());
+                        controller_->routing()->selectPipe(1);
+                        controller_->showTextPopup(
+                            QStringLiteral("PIPE CHAIN IMPORTED"),
+                            QStringLiteral("mnkybox-40-chain.json"));
+                      }});
+    steps_.push_back({"40-popup-comp", [this] {
+                        resetShot();
+                        controller_->setTab(4);
+                        controller_->setSystemShiftPage(0);
+                        controller_->showShiftFace(true);
+                        controller_->openConfig(QStringLiteral("comp"));
+                      }});
   }
 
   // Common reset before every 39-* refresh shot: no stale overlay, no
@@ -753,6 +807,30 @@ class ScreenshotRunner final : public QObject {
     controller_->confirmCancel();
     controller_->setFullscreen(false);
     controller_->showShiftFace(false);
+  }
+
+  // Routing SHIFT > PIPES fixture for the 40-* set: one route, a FILTER plus an
+  // ARP pipe so the page shows a bool row set and a knob/stepper page.
+  void primePipeChain(bool withArp) {
+    controller_->setTab(1);
+    controller_->showShiftFace(true);
+    controller_->routing()->setShiftPage(1);
+    controller_->routing()->setPipeSource(0);
+    controller_->routing()->setPipeDestination(2);
+    if (!controller_->routing()->routeEnabled(0, 2)) {
+      controller_->routing()->toggleRoute(0, 2);
+    }
+    while (controller_->routing()->pipeCount() > 0) {
+      controller_->routing()->removePipe(0);
+    }
+    controller_->routing()->setAddTypeIndex(0);  // FILTER (schema id 1)
+    controller_->routing()->addPipe();
+    if (withArp) {
+      controller_->routing()->setAddTypeIndex(11);  // ARP (schema id 12)
+      controller_->routing()->addPipe();
+    }
+    controller_->routing()->selectPipe(0);
+    controller_->routing()->setSelectedPipeChannelMask(0x000F);
   }
 
   // Scripted absolute EQ band values: type 0..5, frequency, gain, Q.

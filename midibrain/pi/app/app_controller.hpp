@@ -193,6 +193,12 @@ class AppController final : public QObject {
   Q_INVOKABLE void requestRenameTake();
   Q_INVOKABLE void requestDeleteTake();
   Q_INVOKABLE void requestImportTake();
+  // Pipe-chain preset files on the Routing SHIFT > PIPES page. Both reuse the
+  // take path entry: EXPORT asks for a name (or path), IMPORT for an existing
+  // file. The project folder is the default location and the .json extension is
+  // implied; a validation failure keeps the keypad open with the reason.
+  Q_INVOKABLE void requestExportPipeChain();
+  Q_INVOKABLE void requestImportPipeChain();
 
   // Screenshot runner helper: force an overlay state for a deterministic grab.
   Q_INVOKABLE void openDemoKeypad();

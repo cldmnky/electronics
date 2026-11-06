@@ -19,7 +19,6 @@
 #include "../midi/router.hpp"
 #include "../midi/usb.hpp"
 #include "../session/session.hpp"
-#include "pipe_params.hpp"
 
 namespace mnky::app {
 

@@ -35,7 +35,8 @@ set(MNKY_APP_SOURCES
   mixer_model.cpp
   mixer_view_model.cpp
   performance_model.cpp
-  pipe_params.cpp
+  pipe_preset.cpp
+  pipe_ui.cpp
   project_io.cpp
   project_logic.cpp
   projects_view_model.cpp
@@ -72,7 +73,8 @@ set(MNKY_APP_HEADERS
   mixer_model.hpp
   mixer_view_model.hpp
   performance_model.hpp
-  pipe_params.hpp
+  pipe_preset.hpp
+  pipe_ui.hpp
   project_io.hpp
   project_logic.hpp
   projects_view_model.hpp
