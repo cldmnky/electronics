@@ -508,8 +508,11 @@ export const mechanicalExport = () => ({
 })
 
 // ---- Right-hand control column ----
-// TEMPO, NAV and SHIFT/EXIT share one vertical centreline, right of the
-// display and below the USB feedthroughs, with equal 19 mm spacing.
+// The value knob, NAV and SHIFT/EXIT share one vertical centreline, right of
+// the display and below the USB feedthroughs, with equal 19 mm spacing. The
+// knob is context-aware (the Pi applies its delta to the focused control) and
+// its detentless, endless encoder keeps TEMPO as the home context, so the
+// layout key and the panel legend stay TEMPO.
 export const RIGHT_COLUMN = { x: 47, pitch: 19 } as const
 const RIGHT_TEMPO_Y = 30
 export const RIGHT_CONTROLS = {
@@ -583,7 +586,7 @@ export const FRONT_CONCEPT: readonly FrontConceptPoint[] = [
 export const PANEL_CUTOUTS = {
   button: 12.4, // B3F-4055 transport button, circular opening
   led: 4.0,     // Bivar PLP2-400-C light pipe over the 0805 LED
-  control: 7.2, // PEC11R shaft / SKRHABE010 nav actuator
+  control: 7.2, // PEC11R M7 x 0.75 bushing (7.0 mm thread) / SKRHABE010 nav actuator
   jack: 6.2,    // PJ-301M-3-B barrel
 } as const
 

@@ -89,14 +89,17 @@ you touch the meter — staging 18 channels is a glance, not a chore.
   first, 80 ms after) for scrolling lists and slewing values.
 - **SHIFT/EXIT**: short press = back / dismiss / leave EDIT; hold ≈0.5 s
   = SHIFT modifier for alternate faces and coarse adjust.
-- **TEMPO**: tap repeatedly to tap-tempo (4 taps set it); SHIFT+TEMPO
-  nudges ±1 BPM; hold to open the tempo popup. Beat-synced delay,
-  metronome and punch measures follow instantly.
-- **Encoder**: edits whatever has focus (the Q-Link habit: focus a
-  control, turn the knob). SHIFT+encoder = fine steps. Four assignable
-  macro slots per project bind the encoder to any parameter — filter
-  cutoff for a build, cue level for a gig — with the binding shown
-  beside the tempo.
+- **Value knob (TEMPO)**: smooth and endless — no detents, no end stops. It
+  edits whatever has focus (the Q-Link habit: focus a control, turn the
+  knob); with no panel open the same turn trims tempo and shows the bpm
+  popup. A slow turn moves one step per encoder pulse; a fast flick
+  multiplies the step. SHIFT held = fine: one step per pulse, no
+  acceleration. The push switch confirms the focused element (EDIT
+  enter/confirm). Tap tempo is the SHIFT-face `Tap` action (three or more
+  taps). Four assignable macro slots per project bind the knob to any
+  parameter — filter cutoff for a build, cue level for a gig — with the
+  binding shown beside the tempo. Beat-synced delay, metronome and punch
+  measures follow tempo instantly.
 - **Transport**: REC, OVERDUB, STOP, PLAY, PLAY START. REC+PLAY rolls
   recording on armed tracks. LEDs: REC/OVERDUB blink armed-stopped,
   solid armed-recording; PLAY lit while rolling.

@@ -3,7 +3,7 @@ import { A_1N4148WS } from "./imports/A_1N4148WS"
 import { C15127_AO3401A } from "./imports/C15127_AO3401A"
 import { B3F_4055 } from "./imports/B3F_4055"
 import { BH254V_26P } from "./imports/BH254V_26P"
-import { PEC11R_4215F_S0024 } from "./imports/PEC11R_4215F_S0024"
+import { PEC11R_4015F_S0024 } from "./imports/PEC11R_4015F_S0024"
 import { BOARD_POLICY } from "./lib/electrical"
 import { MIDI_OUT_SERIES_OHM, MIDI_OUT_GATE_OHM, MIDI_RECEIVER_OHM } from "./lib/electrical-midi"
 import { FP_JACK_TRS } from "./lib/jack"
@@ -273,14 +273,19 @@ export default () => (
       schSectionName="controls"
       connections={{ COM: "net.GND", A: "net.NAV_UP", B: "net.NAV_DOWN", C: "net.NAV_LEFT", D: "net.NAV_RIGHT", CEN: "net.NAV_PRESS", pin7: "net.GND", pin8: "net.GND" }}
     />
-    <PEC11R_4215F_S0024
+    {/* Value knob U6: Bourns PEC11R-4015F-S0024, LCSC C143789 - the detentless
+        member of the PEC11R family (0 detents, 24 pulses/rev, 360 deg
+        continuous, push switch), same 4xxxF-Sxxxx body and pad field as the
+        24-detent part it replaces. Hand-soldered THT (the datasheet does not
+        recommend hand soldering; acceptance item encoder_solder_process). */}
+    <PEC11R_4015F_S0024
       name="U6"
       pcbX={`${RIGHT_CONTROLS.TEMPO.x}mm`}
       pcbY={`${RIGHT_CONTROLS.TEMPO.y}mm`}
       layer="top"
       schSheetName="front"
       schSectionName="controls"
-      connections={{ A: "net.ENC_A", B: "net.ENC_B", C: "net.GND", pin4: "net.GND", pin5: "net.ENC_SW", pin7: "net.GND", pin8: "net.GND" }}
+      connections={{ A: "net.ENC_A", B: "net.ENC_B", C: "net.GND", pin1: "net.GND", pin2: "net.ENC_SW", MT1: "net.GND", MT2: "net.GND" }}
     />
     {TRANSPORT_SWITCHES.map(sw => (
       <B3F_4055
