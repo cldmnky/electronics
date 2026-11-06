@@ -38,11 +38,16 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: Style.corner
+        // A5 state contract: play is accent-filled while rolling, stop is an
+        // accent outline while the transport is stopped (never a filled tile),
+        // rec is record red and pulses while the engine records.
         color: tap.pressed ? Qt.lighter(Style.raised, 1.08)
-                           : (root.checked ? Qt.rgba(root.tone.r, root.tone.g, root.tone.b, 0.16)
-                                           : Style.panel)
+                           : (root.checked && root.glyph !== "stop"
+                              ? Qt.rgba(root.tone.r, root.tone.g, root.tone.b, 0.16)
+                              : Style.panel)
         border.width: root.focused ? 2 : Style.outlineWidth
-        border.color: root.focused ? Style.accent : Style.outline
+        border.color: root.focused ? Style.accent
+                     : (root.checked && root.glyph === "stop" ? Style.accent : Style.outline)
     }
 
     Canvas {

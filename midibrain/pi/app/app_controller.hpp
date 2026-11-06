@@ -59,7 +59,22 @@ class AppController final : public QObject {
   Q_PROPERTY(QString transportState READ transportState NOTIFY transportChanged)
   Q_PROPERTY(QString positionText READ positionText NOTIFY transportChanged)
   Q_PROPERTY(QString tempoText READ tempoText NOTIFY transportChanged)
+  // Numeric tempo for the touch TEMPO popup slider (40..240 BPM).
+  Q_PROPERTY(double tempoBpm READ tempoBpm NOTIFY transportChanged)
   Q_PROPERTY(QString noticeText READ noticeText NOTIFY noticeChanged)
+  // Severity of the notice slot: "info" / "warn" / "error". Info expires
+  // after 6 s, warn after 10 s, error stays until the next successful action
+  // of its domain calls clearNotice().
+  Q_PROPERTY(QString noticeKind READ noticeKind NOTIFY noticeChanged)
+  // Metronome button label: CLICK / CLICK REC / CLICK OFF (mode-aware).
+  Q_PROPERTY(QString clickLabel READ clickLabel NOTIFY clickChanged)
+  Q_PROPERTY(bool tempoPopupOpen READ tempoPopupOpen NOTIFY tempoPopupChanged)
+  Q_PROPERTY(bool tabGridOpen READ tabGridOpen NOTIFY tabGridChanged)
+  Q_PROPERTY(bool takeSheetOpen READ takeSheetOpen NOTIFY takeSheetChanged)
+  Q_PROPERTY(int takeSheetTrack READ takeSheetTrack NOTIFY takeSheetChanged)
+  // MIDI-learn target capture: while true every learnable control is outlined
+  // and the next touched one becomes the capture target (A9 arm-then-touch).
+  Q_PROPERTY(bool learnArmed READ learnArmed NOTIFY learnChanged)
   Q_PROPERTY(QString panelMode READ panelMode NOTIFY panelModeChanged)
   Q_PROPERTY(QString focusId READ focusId NOTIFY focusChanged)
   Q_PROPERTY(int focusCount READ focusCount NOTIFY focusChanged)
@@ -120,7 +135,15 @@ class AppController final : public QObject {
   QString transportState() const { return transportState_; }
   QString positionText() const { return positionText_; }
   QString tempoText() const { return tempoText_; }
+  double tempoBpm() const { return state_.tempoX100.load() / 100.0; }
   QString noticeText() const { return noticeText_; }
+  QString noticeKind() const { return noticeKind_; }
+  QString clickLabel() const;
+  bool tempoPopupOpen() const { return tempoPopupOpen_; }
+  bool tabGridOpen() const { return tabGridOpen_; }
+  bool takeSheetOpen() const { return takeSheetOpen_; }
+  int takeSheetTrack() const { return takeSheetTrack_; }
+  bool learnArmed() const;
   QString panelMode() const { return panelMode_; }
   QString focusId() const { return focusId_; }
   int focusCount() const { return static_cast<int>(focusIds_.size()); }
@@ -176,6 +199,19 @@ class AppController final : public QObject {
   Q_INVOKABLE void selectStrip(int index);
   Q_INVOKABLE void shiftAction(int index);
   Q_INVOKABLE void tapTempo();
+  // Touch tempo popup (A7): 40..240 BPM slider, +-1 buttons and TAP.
+  Q_INVOKABLE void openTempoPopup();
+  // D2: an error notice stays until the next successful action of its domain
+  // clears it; a screen/screenshot reset uses the same call.
+  Q_INVOKABLE void clearNotice();
+  Q_INVOKABLE void closeTempoPopup();
+  Q_INVOKABLE void setTempoBpm(int bpm);
+  // Tab grid (C3): the ring's single TAB stop expands a 2x5 grid of the ten
+  // tabs; picking one navigates and closes it.
+  Q_INVOKABLE void openTabGrid();
+  Q_INVOKABLE void closeTabGrid();
+  // D3: only tabs 0,1,2,3,4,5,7 have a SHIFT face.
+  Q_INVOKABLE bool tabHasShiftFace(int tab) const;
 
   // Keypad / confirmation overlays.
   Q_INVOKABLE void requestKeypad(const QString& title, const QString& initial,
@@ -188,6 +224,10 @@ class AppController final : public QObject {
   Q_INVOKABLE void confirmAccept();
   Q_INVOKABLE void confirmCancel();
   Q_INVOKABLE void requestLoadProject(int row);
+  // A3: the 44x44 "..." target selects without loading; the row body loads.
+  Q_INVOKABLE void selectProjectRow(int row);
+  Q_INVOKABLE void selectTakeRow(int row);
+  Q_INVOKABLE void activateTakeRow(int row);
   Q_INVOKABLE void requestDeleteProject(int row);
   Q_INVOKABLE void requestRenameProject();
   Q_INVOKABLE void requestRenameTake();
@@ -206,6 +246,19 @@ class AppController final : public QObject {
   // configuration, name and takes in the project, so a re-add restores them.
   Q_INVOKABLE void requestAddTrack();
   Q_INVOKABLE void requestRemoveTrack(int slot);
+  // A4: rename a live track through the shared keypad. The strip name's 600 ms
+  // long-press and the channel popout's RENAME button both land here.
+  Q_INVOKABLE void requestRenameTrack(int slot);
+  // A10: EDIT lane label -> "TAKE FOR TRACK nn" sheet; choosing a row makes it
+  // ACTIVE and repaints the lanes.
+  Q_INVOKABLE void openTakeSheet(int track);
+  Q_INVOKABLE void closeTakeSheet();
+  Q_INVOKABLE void chooseTakeRow(int row);
+  Q_INVOKABLE void chooseLiveInput();
+  // A9: arm a capture without a target, then pick the target by touching it.
+  Q_INVOKABLE void armLearnTargetCapture();
+  Q_INVOKABLE void learnTargetTouched(const QString& focusId);
+  Q_INVOKABLE bool isLearnableFocus(const QString& focusId) const;
   // The add-track popup's NAME button opens the shared keypad; accepting writes
   // the name back into the live popup draft.
   Q_INVOKABLE void requestAddTrackName();
@@ -246,6 +299,14 @@ class AppController final : public QObject {
   void toolsPageChanged();
   void systemShiftPageChanged();
   void noticeChanged();
+  void tempoPopupChanged();
+  void tabGridChanged();
+  void takeSheetChanged();
+  void learnChanged();
+  // The keypad buffer and cursor live in QML; the panel path asks it to move
+  // the cursor or accept through these two signals (A2 modal trap).
+  void keypadCursorMoveRequested(int delta);
+  void keypadAcceptRequested();
   void panelModeChanged();
   void focusChanged();
   void metersChanged();
@@ -278,7 +339,9 @@ class AppController final : public QObject {
   void startTakeNow();
   void projectStateChanged();
   void registerLearnTargets();
-  void setNotice(const QString& notice);
+  enum NoticeKind { NoticeInfo, NoticeWarn, NoticeError };
+  void showNotice(NoticeKind kind, const QString& notice);
+  void setTakeSheetTrack(int track);
   void popupGain(const QString& label, int strip);
   void popupPan(const QString& label, int strip);
   void popupSend(const QString& label, int strip, int send);
@@ -339,6 +402,15 @@ class AppController final : public QObject {
   QString positionText_ = QStringLiteral("001:1:00 / 00:00");
   QString tempoText_ = QStringLiteral("120.00 BPM");
   QString noticeText_;
+  QString noticeKind_ = QStringLiteral("info");
+  QTimer noticeTimer_;
+  bool tempoPopupOpen_ = false;
+  bool tabGridOpen_ = false;
+  bool takeSheetOpen_ = false;
+  int takeSheetTrack_ = -1;
+  // Last non-Off metronome mode: enabling CLICK from Off restores it instead
+  // of silently rewriting the configured mode (A8).
+  int lastNonZeroClickMode_ = 0;
   // Engine take loops are mapped with the transport tempo at apply time, so a
   // tempo change re-applies them (Engine::setTakeLoop contract).
   int loopTempoX100_ = 0;

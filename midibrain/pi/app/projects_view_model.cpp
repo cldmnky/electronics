@@ -54,6 +54,7 @@ void ProjectsModel::setEntries(std::vector<Entry> entries) {
   beginResetModel();
   entries_ = std::move(entries);
   endResetModel();
+  emit countChanged();
 }
 
 const ProjectsModel::Entry* ProjectsModel::entry(int row) const {

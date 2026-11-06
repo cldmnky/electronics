@@ -648,7 +648,7 @@ void ConfigPopupModel::setReverbDamping(double value) {
 
 QStringList ConfigPopupModel::timelineOps() const {
   QStringList ops;
-  for (int op = 0; op < timeline::kTimelineOpCount; ++op) {
+  for (int op = 0; op < timeline::kTimelineUiOpCount; ++op) {
     ops << QString::fromLatin1(
         timeline::timelineOpName(static_cast<timeline::TimelineOp>(op)));
   }
@@ -662,7 +662,7 @@ QString ConfigPopupModel::timelineOpName() const {
 }
 
 void ConfigPopupModel::setTimelineOp(int value) {
-  timelineOp_ = std::clamp(value, 0, timeline::kTimelineOpCount - 1);
+  timelineOp_ = std::clamp(value, 0, timeline::kTimelineUiOpCount - 1);
   timelineError_.clear();
   if (timeline_ != nullptr) {
     timeline_->setPreviewDraft(timelineGainDb_, timelineFadeInBeats_,

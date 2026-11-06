@@ -10,6 +10,14 @@ std::string targetPath(int strip, const char* parameter) {
   std::snprintf(buffer, sizeof buffer, "mixer.ch%02d.%s", strip + 1, parameter);
   return buffer;
 }
+
+QString parameterLabel(const QString& parameter) {
+  if (parameter == QStringLiteral("gain")) return QStringLiteral("GAIN");
+  if (parameter == QStringLiteral("pan")) return QStringLiteral("PAN");
+  if (parameter == QStringLiteral("sendA")) return QStringLiteral("SEND A");
+  if (parameter == QStringLiteral("sendB")) return QStringLiteral("SEND B");
+  return parameter.toUpper();
+}
 }  // namespace
 
 LearnViewModel::LearnViewModel(MidiGlue& midi, QObject* parent)
@@ -33,24 +41,87 @@ void LearnViewModel::setTargetIndex(int index) {
   emit targetChanged();
 }
 
+QStringList LearnViewModel::targetLabels() const {
+  QStringList labels;
+  labels.reserve(targets_.size());
+  for (const auto& target : targets_) labels << humanTarget(target);
+  return labels;
+}
+
+QString LearnViewModel::captureTargetLabel() const {
+  return captureTarget_.isEmpty() ? QString() : humanTarget(captureTarget_);
+}
+
+QString LearnViewModel::humanTarget(const QString& path) {
+  if (path.startsWith(QStringLiteral("mixer.ch")) && path.count(QLatin1Char('.')) == 2) {
+    const QString number = path.mid(8, 2);
+    const QString parameter = path.section(QLatin1Char('.'), 2, 2);
+    return QStringLiteral("Mixer %1 %2").arg(number, parameterLabel(parameter));
+  }
+  if (path == QStringLiteral("mixer.master.gain")) return QStringLiteral("Master GAIN");
+  if (path == QStringLiteral("click.level")) return QStringLiteral("Click level");
+  if (path.startsWith(QStringLiteral("routing.pipe."))) {
+    // routing.pipe.<source>.<destination>.<pipe>.<param>
+    const QStringList parts = path.split(QLatin1Char('.'));
+    if (parts.size() == 6) {
+      return QStringLiteral("Pipe %1>%2 #%3 P%4")
+          .arg(parts.at(2), parts.at(3), parts.at(4), parts.at(5));
+    }
+  }
+  return path;
+}
+
+void LearnViewModel::armTargetCapture() {
+  midi_.armLearnCapture(false);
+  capturing_ = false;
+  captureTarget_.clear();
+  targetArmed_ = true;
+  statusText_ = QStringLiteral("touch a control to choose the target");
+  emit targetArmedChanged();
+  emit captureChanged();
+  emit statusChanged();
+}
+
+void LearnViewModel::setTargetByPath(const QString& path) {
+  if (!targetArmed_ || path.isEmpty()) return;
+  targetArmed_ = false;
+  captureTarget_ = path;
+  midi_.armLearnCapture(false);
+  lastCaptureSeq_ = midi_.learnCapture().seq;
+  midi_.armLearnCapture(true);
+  lastCaptureSeq_ = midi_.learnCapture().seq;
+  capturing_ = true;
+  statusText_ = QStringLiteral("target ") + humanTarget(path) +
+                QStringLiteral(" - move a control on your controller");
+  emit targetArmedChanged();
+  emit captureChanged();
+  emit statusChanged();
+}
+
 void LearnViewModel::startCapture() {
   if (targets_.isEmpty()) return;
+  targetArmed_ = false;
   captureTarget_ = targets_.value(targetIndex_);
   midi_.armLearnCapture(false);
   lastCaptureSeq_ = midi_.learnCapture().seq;
   midi_.armLearnCapture(true);
   lastCaptureSeq_ = midi_.learnCapture().seq;
   capturing_ = true;
-  statusText_ = QStringLiteral("move a control to learn -> ") + captureTarget_;
+  statusText_ = QStringLiteral("move a control to learn -> ") +
+                humanTarget(captureTarget_);
+  emit targetArmedChanged();
   emit captureChanged();
   emit statusChanged();
 }
 
 void LearnViewModel::cancelCapture() {
-  if (!capturing_) return;
+  if (!capturing_ && !targetArmed_) return;
   midi_.armLearnCapture(false);
   capturing_ = false;
+  targetArmed_ = false;
+  captureTarget_.clear();
   statusText_ = QStringLiteral("capture off");
+  emit targetArmedChanged();
   emit captureChanged();
   emit statusChanged();
 }
@@ -89,7 +160,7 @@ void LearnViewModel::poll() {
                     ? QStringLiteral("learned CC %1 / ch %2 -> %3")
                           .arg(capture.cc)
                           .arg(capture.ch)
-                          .arg(captureTarget_)
+                          .arg(humanTarget(captureTarget_))
                     : QStringLiteral("learn failed for CC %1 / ch %2")
                           .arg(capture.cc)
                           .arg(capture.ch);
@@ -124,10 +195,10 @@ void LearnViewModel::refreshBindings() {
   QStringList lines;
   lines.reserve(static_cast<int>(bindingRows_.size()));
   for (const auto& binding : bindingRows_) {
-    lines << QStringLiteral("CC %1 / ch %2 -> %3")
+    lines << QStringLiteral("CC %1 ch%2 -> %3")
                  .arg(binding.cc)
                  .arg(binding.ch)
-                 .arg(QString::fromStdString(binding.target));
+                 .arg(humanTarget(QString::fromStdString(binding.target)));
   }
   if (lines == bindings_) return;
   bindings_ = lines;

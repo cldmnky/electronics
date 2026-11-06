@@ -44,7 +44,7 @@ Rectangle {
                 spacing: Style.gapTight
 
                 Text {
-                    width: parent.width - 120
+                    width: parent.width - 120 - 92 - Style.gapTight * 2
                     height: parent.height
                     text: "CHANNEL  " + mixer.trackName
                     color: Style.text
@@ -52,6 +52,17 @@ Rectangle {
                     font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
+                }
+                // A4 entry point 1: the visible rename affordance, right of the
+                // name. The strip's 600 ms name hold is the fast path.
+                TouchButton {
+                    width: 92
+                    height: parent.height
+                    text: "RENAME"
+                    textSize: Style.fontSmall
+                    variant: "ghost"
+                    focusId: "channel.rename"
+                    onClicked: app.requestRenameTrack(mixer.channelSlot)
                 }
                 TouchButton {
                     width: 120
@@ -154,6 +165,8 @@ Rectangle {
                             text: "MUTE"
                             textSize: Style.fontSmall
                             checked: mixer.trackMute
+                            checkedColor: Style.textDim
+                            checkedTextColor: Style.text
                             focusId: "channel.mute"
                             onClicked: mixer.setTrackMute(!mixer.trackMute)
                         }
@@ -163,6 +176,8 @@ Rectangle {
                             text: "SOLO"
                             textSize: Style.fontSmall
                             checked: mixer.trackSolo
+                            checkedColor: Style.ok
+                            checkedTextColor: Style.panelDark
                             focusId: "channel.solo"
                             onClicked: mixer.setTrackSolo(!mixer.trackSolo)
                         }

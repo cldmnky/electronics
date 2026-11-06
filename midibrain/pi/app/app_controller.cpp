@@ -92,7 +92,7 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
   // popup says what happened, so a pick never fails silently.
   connect(systemVm_.get(), &SystemViewModel::applyNotice, this,
           [this](const QString& note) {
-            setNotice(QStringLiteral("audio: ") + note);
+            showNotice(NoticeWarn, QStringLiteral("audio: ") + note);
             showTextPopup(QStringLiteral("AUDIO DEVICE"), note);
           });
 
@@ -114,6 +114,14 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
   valuePopupTimer_.setInterval(1500);
   connect(&valuePopupTimer_, &QTimer::timeout, this,
           [this] { hideValuePopup(); });
+  noticeTimer_.setSingleShot(true);
+  connect(&noticeTimer_, &QTimer::timeout, this, [this] { clearNotice(); });
+  // MIDI-learn arm-then-touch: the target outline lives on the controls, so a
+  // target change has to repaint every control that binds app.learnArmed.
+  connect(learnVm_.get(), &LearnViewModel::targetArmedChanged, this,
+          [this] { emit learnChanged(); });
+  connect(learnVm_.get(), &LearnViewModel::captureChanged, this,
+          [this] { emit learnChanged(); });
   rebuildFocusIds();
 }
 
@@ -170,7 +178,17 @@ void AppController::shutdown() {
 
 void AppController::setTab(int tab) {
   const int clamped = std::clamp(tab, 0, kScreenCount - 1);
+  closeTabGrid();
+  closeTempoPopup();
+  closeTakeSheet();
   if (clamped == tab_) return;
+  // D3: a tab without a second face leaves the SHIFT face instead of landing
+  // in a dead state with an empty ring.
+  if (shiftFace_ && !tabHasShiftFace(clamped)) {
+    shiftFace_ = false;
+    panelMode_ = QStringLiteral("navigate");
+    emit panelModeChanged();
+  }
   // Fullscreen belongs to the EQ grid; any tab change brings the bridge back so
   // the other screens keep their tab row and transport strip.
   if (fullscreen_ && clamped != kEqTabIndex) setFullscreen(false);
@@ -191,9 +209,21 @@ void AppController::setFullscreen(bool fullscreen) {
 }
 
 void AppController::setClickEnabled(bool enabled) {
-  state_.clickMode.store(enabled ? 2 : 0);
+  if (enabled == state_.clickEnabled.load()) return;
   state_.clickEnabled.store(enabled);
+  // A8: the button flips only the enable flag. A configured REC ONLY click
+  // stays REC ONLY; only an Off mode falls back to the last configured mode
+  // (On play when the session has never had one).
+  if (enabled && state_.clickMode.load() == 0) {
+    state_.clickMode.store(lastNonZeroClickMode_ != 0 ? lastNonZeroClickMode_ : 2);
+  }
   emit clickChanged();
+}
+
+QString AppController::clickLabel() const {
+  if (!state_.clickEnabled.load()) return QStringLiteral("CLICK OFF");
+  if (state_.clickMode.load() == 1) return QStringLiteral("CLICK REC");
+  return QStringLiteral("CLICK");
 }
 
 void AppController::setClickLevel(double level) {
@@ -224,6 +254,15 @@ void AppController::setSystemShiftPage(int page) {
 }
 
 void AppController::play() {
+  // A1: an armed strip with an active take monitors its input, so PLAY would
+  // replay the room instead of the take. Say it in the notice slot.
+  const int muted = mixerVm_->armedWithActiveTakeCount();
+  if (muted > 0) {
+    showNotice(NoticeWarn,
+               QStringLiteral("playback: %1 armed track(s) monitor input, not their "
+                              "takes")
+                   .arg(muted));
+  }
   if (!link_.status().rolling) {
     if (chord_.onPress(ChordDetector::Button::Play, static_cast<std::uint32_t>(nowMs()))) {
       startTakeNow();
@@ -283,7 +322,8 @@ void AppController::shiftAction(int index) {
       break;
     case 1:
       midi_.panic();
-      setNotice(QStringLiteral("panic: CC123 sent on all 16 channels"));
+      showNotice(NoticeInfo,
+                 QStringLiteral("PANIC sent (CC123, all 16 channels)"));
       break;
     case 2:
       tapTempo();
@@ -301,11 +341,14 @@ void AppController::tapTempo() {
   tapTimes_.push_back(now);
   while (!tapTimes_.empty() && now - tapTimes_.front() > 2000) tapTimes_.pop_front();
   if (tapTimes_.size() < 3) {
-    setNotice(QStringLiteral("tap tempo: %1/3 taps").arg(static_cast<int>(tapTimes_.size())));
+    showNotice(NoticeInfo,
+               QStringLiteral("tap tempo: %1/3 taps")
+                   .arg(static_cast<int>(tapTimes_.size())));
     return;
   }
-  // Average the last four intervals so one late tap does not dominate.
-  const std::size_t count = std::min<std::size_t>(tapTimes_.size(), 5);
+  // Three-tap average: the last three taps give the two intervals the tempo
+  // is averaged over, so the hint (TAP three times) and the math agree.
+  const std::size_t count = std::min<std::size_t>(tapTimes_.size(), 3);
   const std::size_t start = tapTimes_.size() - count;
   double total = 0.0;
   for (std::size_t i = start + 1; i < tapTimes_.size(); ++i) {
@@ -318,9 +361,56 @@ void AppController::tapTempo() {
   state_.tempoX100.store(bpmX100);
   link_.requestTempo(static_cast<std::uint16_t>(bpmX100));
   showValuePopup(QStringLiteral("TEMPO"), QStringLiteral("bpm"), bpmX100);
-  setNotice(QStringLiteral("tap tempo: ") +
-            QString::fromStdString(formatTempo(bpmX100)));
+  showNotice(NoticeInfo, QStringLiteral("tap tempo: ") +
+                             QString::fromStdString(formatTempo(bpmX100)));
   updateTransport();
+}
+
+void AppController::openTempoPopup() {
+  if (tempoPopupOpen_) return;
+  tempoPopupOpen_ = true;
+  emit tempoPopupChanged();
+  rebuildFocusIds();
+}
+
+void AppController::closeTempoPopup() {
+  if (!tempoPopupOpen_) return;
+  tempoPopupOpen_ = false;
+  emit tempoPopupChanged();
+  rebuildFocusIds();
+}
+
+void AppController::setTempoBpm(int bpm) {
+  const int tempo = clampTempoX100(std::clamp(bpm, 40, 240) * 100);
+  if (tempo == state_.tempoX100.load()) {
+    showValuePopup(QStringLiteral("TEMPO"), QStringLiteral("bpm"), tempo);
+    return;
+  }
+  state_.tempoX100.store(tempo);
+  link_.requestTempo(static_cast<std::uint16_t>(tempo));
+  showValuePopup(QStringLiteral("TEMPO"), QStringLiteral("bpm"), tempo);
+  updateTransport();
+}
+
+void AppController::openTabGrid() {
+  if (tabGridOpen_) return;
+  tabGridOpen_ = true;
+  focusIndex_ = tab_;
+  emit tabGridChanged();
+  rebuildFocusIds();
+}
+
+void AppController::closeTabGrid() {
+  if (!tabGridOpen_) return;
+  tabGridOpen_ = false;
+  emit tabGridChanged();
+  rebuildFocusIds();
+}
+
+bool AppController::tabHasShiftFace(int tab) const {
+  // D3: tabs 6 (MIDI), 8 (XY) and 9 (EDIT) have no second face.
+  return tab == 0 || tab == 1 || tab == 2 || tab == 3 || tab == 4 ||
+         tab == kProjectsTabIndex || tab == kEqTabIndex;
 }
 
 void AppController::requestKeypad(const QString& title, const QString& initial,
@@ -346,8 +436,18 @@ void AppController::keypadAccept(const QString& text) {
     error = routingVm_->exportPipeChain(
         text, QString::fromStdString(state_.currentProject().string()));
     if (error.isEmpty()) {
-      setNotice(QStringLiteral("pipe chain exported: ") + text);
+      showNotice(NoticeInfo, QStringLiteral("pipe chain exported: ") + text);
       showTextPopup(QStringLiteral("PIPE CHAIN EXPORTED"), text);
+    }
+  } else if (keypadAction_ == QStringLiteral("track-rename")) {
+    // Same 48-character printable-ASCII rule as a project name.
+    error = QString::fromStdString(validateProjectName(text.toStdString()));
+    if (error.isEmpty()) {
+      mixer_.setTrackName(keypadIndex_, text.toStdString());
+      mixerVm_->notifyTrackNamesChanged();
+      recorderVm_->tracksChanged();
+      timelineVm_->refresh();
+      showTextPopup(QStringLiteral("TRACK RENAMED"), text);
     }
   } else if (keypadAction_ == QStringLiteral("add-track-name")) {
     configVm_->setAddTrackName(text);
@@ -355,7 +455,7 @@ void AppController::keypadAccept(const QString& text) {
     error = routingVm_->importPipeChain(
         text, QString::fromStdString(state_.currentProject().string()));
     if (error.isEmpty()) {
-      setNotice(QStringLiteral("pipe chain imported: ") + text);
+      showNotice(NoticeInfo, QStringLiteral("pipe chain imported: ") + text);
       showTextPopup(QStringLiteral("PIPE CHAIN IMPORTED"), text);
     }
   }
@@ -421,9 +521,38 @@ void AppController::requestLoadProject(int row) {
   projectsVm_->loadRow(row);
 }
 
+void AppController::selectProjectRow(int row) {
+  // A3: the row's "..." target selects without loading, so RENAME/DELETE on
+  // the SHIFT face can act on a visible row without discarding the session.
+  projectsVm_->selectRow(row);
+  const QString name = projectsVm_->projectName(row);
+  if (!name.isEmpty()) {
+    showTextPopup(QStringLiteral("SELECTED"),
+                  name + QStringLiteral(" - tap the row to load"));
+  }
+}
+
+void AppController::selectTakeRow(int row) {
+  recorderVm_->selectRow(row);
+  const auto* entry = recorderVm_->takes()->entry(row);
+  if (entry != nullptr) {
+    showTextPopup(QStringLiteral("SELECTED"), entry->name);
+  }
+}
+
+void AppController::activateTakeRow(int row) {
+  // A3/A10: the row body loads the take (ACTIVE + waveform).
+  recorderVm_->selectRow(row);
+  const auto* entry = recorderVm_->takes()->entry(row);
+  recorderVm_->activateSelected();
+  if (entry != nullptr) {
+    showTextPopup(QStringLiteral("TAKE ACTIVE"), entry->name);
+  }
+}
+
 void AppController::requestDeleteProject(int row) {
   projectsVm_->selectRow(row);
-  requestConfirm(QStringLiteral("DELETE PROJECT"),
+  requestConfirm(QStringLiteral("DELETE PROJECT ") + projectsVm_->projectName(row),
                  QStringLiteral("Delete ") + projectsVm_->projectName(row) +
                      QStringLiteral("? The folder and its project.mnkybox are removed. "
                                     "This cannot be undone."),
@@ -433,10 +562,11 @@ void AppController::requestDeleteProject(int row) {
 void AppController::requestRenameProject() {
   const int row = projectsVm_->selectedRow();
   if (row < 0) {
-    setNotice(QStringLiteral("select a project to rename"));
+    showNotice(NoticeWarn, QStringLiteral("select a row first (...)"));
     return;
   }
-  requestKeypad(QStringLiteral("RENAME PROJECT"), projectsVm_->projectName(row),
+  requestKeypad(QStringLiteral("RENAME PROJECT ") + projectsVm_->projectName(row),
+                projectsVm_->projectName(row),
                 QStringLiteral("project-rename"), row);
 }
 
@@ -444,10 +574,10 @@ void AppController::requestRenameTake() {
   const int row = recorderVm_->selectedRow();
   const auto* entry = recorderVm_->takes()->entry(row);
   if (entry == nullptr) {
-    setNotice(QStringLiteral("select a take to rename"));
+    showNotice(NoticeWarn, QStringLiteral("select a row first (...)"));
     return;
   }
-  requestKeypad(QStringLiteral("RENAME TAKE"),
+  requestKeypad(QStringLiteral("RENAME TAKE ") + entry->name,
                 QString::fromStdString(entry->path.filename().string()),
                 QStringLiteral("take-rename"), row);
 }
@@ -456,10 +586,10 @@ void AppController::requestDeleteTake() {
   const int row = recorderVm_->selectedRow();
   const auto* entry = recorderVm_->takes()->entry(row);
   if (entry == nullptr) {
-    setNotice(QStringLiteral("select a take to delete"));
+    showNotice(NoticeWarn, QStringLiteral("select a row first (...)"));
     return;
   }
-  requestConfirm(QStringLiteral("DELETE TAKE"),
+  requestConfirm(QStringLiteral("DELETE TAKE ") + entry->name,
                  QStringLiteral("Delete ") + entry->name +
                      QStringLiteral("? The WAV file is removed from the take folder. This "
                                     "cannot be undone."),
@@ -493,14 +623,112 @@ void AppController::requestAddTrack() {
 }
 
 void AppController::requestRemoveTrack(int slot) {
-  const QString name = mixerVm_->suggestedTrackName(slot);
-  requestConfirm(
+  const QString name = mixerVm_->suggestedTrackName(slot);  requestConfirm(
       QStringLiteral("REMOVE TRACK"),
       QStringLiteral("Remove %1 from the mixer? Its input, sends, insert and "
                      "takes stay in the project, so re-adding the track "
                      "restores them.")
           .arg(name.toUpper()),
       QStringLiteral("REMOVE"), QStringLiteral("remove-track"), slot);
+}
+
+void AppController::requestRenameTrack(int slot) {
+  if (!mixerVm_->trackSlotActive(slot)) return;
+  requestKeypad(QStringLiteral("RENAME TRACK %1").arg(slot + 1, 2, 10, QLatin1Char('0')),
+                QString::fromStdString(mixer_.trackName(slot)),
+                QStringLiteral("track-rename"), slot);
+}
+
+void AppController::openTakeSheet(int track) {
+  setTakeSheetTrack(track);
+}
+
+void AppController::closeTakeSheet() {
+  if (!takeSheetOpen_) return;
+  takeSheetOpen_ = false;
+  emit takeSheetChanged();
+  rebuildFocusIds();
+}
+
+void AppController::setTakeSheetTrack(int track) {
+  const int clamped = std::clamp(track, 0, kNumStrips - 1);
+  // The sheet lists the recorder's per-track take list, so the recorder's
+  // selected track follows the lane the sheet was opened from.
+  recorderVm_->setSelectedTrack(clamped);
+  timelineVm_->setSelectedTrack(clamped);
+  takeSheetTrack_ = clamped;
+  takeSheetOpen_ = true;
+  emit takeSheetChanged();
+  rebuildFocusIds();
+}
+
+void AppController::chooseTakeRow(int row) {
+  if (takeSheetTrack_ < 0) return;
+  recorderVm_->selectRow(row);
+  recorderVm_->activateSelected();
+  const auto* entry = recorderVm_->takes()->entry(row);
+  closeTakeSheet();
+  timelineVm_->refresh();
+  if (entry != nullptr) {
+    showTextPopup(QStringLiteral("TAKE ACTIVE"), entry->name);
+  }
+}
+
+void AppController::chooseLiveInput() {
+  if (takeSheetTrack_ < 0) return;
+  recorderVm_->clearActive();
+  closeTakeSheet();
+  timelineVm_->refresh();
+  showTextPopup(QStringLiteral("TAKE"), QStringLiteral("LIVE INPUT"));
+}
+
+bool AppController::learnArmed() const {
+  return learnVm_ != nullptr && learnVm_->targetArmed();
+}
+
+void AppController::armLearnTargetCapture() {
+  learnVm_->armTargetCapture();
+  emit learnChanged();
+}
+
+bool AppController::isLearnableFocus(const QString& focusId) const {
+  // The registered learn targets (AppController::registerLearnTargets) are the
+  // mixer gain/pan/sends, the master gain and the click level. A control id
+  // maps to one of those paths only when the id names the same parameter.
+  QString id = focusId;
+  if (id.startsWith(QStringLiteral("shift."))) id = id.mid(6);
+  if (id.startsWith(QStringLiteral("mixer.gain.")) ||
+      id.startsWith(QStringLiteral("mixer.pan.")) ||
+      id.startsWith(QStringLiteral("mixer.fx1.")) ||
+      id.startsWith(QStringLiteral("mixer.fx2."))) {
+    return true;
+  }
+  return id == QStringLiteral("mixer.master");
+}
+
+void AppController::learnTargetTouched(const QString& focusId) {
+  if (!learnArmed()) return;
+  QString id = focusId;
+  if (id.startsWith(QStringLiteral("shift."))) id = id.mid(6);
+  QString path;
+  if (id == QStringLiteral("mixer.master")) {
+    path = QStringLiteral("mixer.master.gain");
+  } else if (id.startsWith(QStringLiteral("mixer.gain."))) {
+    path = QString::fromStdString(
+        learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "gain"));
+  } else if (id.startsWith(QStringLiteral("mixer.pan."))) {
+    path = QString::fromStdString(
+        learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "pan"));
+  } else if (id.startsWith(QStringLiteral("mixer.fx1."))) {
+    path = QString::fromStdString(
+        learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "sendA"));
+  } else if (id.startsWith(QStringLiteral("mixer.fx2."))) {
+    path = QString::fromStdString(
+        learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "sendB"));
+  }
+  if (path.isEmpty()) return;
+  learnVm_->setTargetByPath(path);
+  showTextPopup(QStringLiteral("LEARN TARGET"), LearnViewModel::humanTarget(path));
 }
 
 void AppController::requestAddTrackName() {
@@ -539,6 +767,18 @@ void AppController::openDemoKeypad() {
 }
 
 void AppController::showShiftFace(bool on) {
+  // D3: a tab without a second face never enters a dead SHIFT state.
+  if (on && !tabHasShiftFace(tab_)) {
+    showNotice(NoticeWarn, QStringLiteral("NO SHIFT FACE ON THIS TAB"));
+    showTextPopup(QStringLiteral("SHIFT"),
+                  QStringLiteral("NO SHIFT FACE ON THIS TAB"));
+    return;
+  }
+  if (on) {
+    closeTabGrid();
+    closeTempoPopup();
+    closeTakeSheet();
+  }
   shiftFace_ = on;
   setPanelMode(on ? QStringLiteral("shift") : QStringLiteral("navigate"));
   rebuildFocusIds();
@@ -685,7 +925,14 @@ void AppController::perform(const Intent& intent) {
       performPanelFocus(intent);
       break;
     case Intent::Kind::EncoderTurn:
-      if (configVm_ && configVm_->open()) {
+      if (keypadOpen_) {
+        // A2: the encoder moves the keypad cursor, never a hidden control.
+        emit keypadCursorMoveRequested(intent.amount);
+      } else if (confirmOpen_) {
+        // The confirmation owns the panel; the encoder does nothing.
+      } else if (tempoPopupOpen_) {
+        setTempoBpm(state_.tempoX100.load() / 100 + intent.amount);
+      } else if (configVm_ && configVm_->open()) {
         adjustFocused(intent.amount, shiftHeld_);
       } else if (panelMode_ == QStringLiteral("edit")) {
         adjustFocused(intent.amount, shiftHeld_);
@@ -736,6 +983,56 @@ void AppController::perform(const Intent& intent) {
 }
 
 void AppController::performPanelFocus(const Intent& intent) {
+  // A2: the keypad and the confirmation trap the panel. NAV is inert, PRESS
+  // accepts, the encoder moves the keypad cursor (perform()), and the short
+  // EXIT press cancels (updateShiftState). Nothing behind the modal can be
+  // activated: rebuildFocusIds() returns an empty ring while one is open.
+  if (keypadOpen_ || confirmOpen_) {
+    switch (intent.kind) {
+      case Intent::Kind::NavPress:
+      case Intent::Kind::EncoderSw:
+        if (keypadOpen_) {
+          emit keypadAcceptRequested();
+        } else {
+          confirmAccept();
+        }
+        break;
+      default:
+        break;
+    }
+    return;
+  }
+  if (tempoPopupOpen_ || tabGridOpen_ || takeSheetOpen_) {
+    const bool grid = tabGridOpen_;
+    switch (intent.kind) {
+      case Intent::Kind::NavUp:
+        moveFocus(grid ? -5 : -1);
+        break;
+      case Intent::Kind::NavDown:
+        moveFocus(grid ? 5 : 1);
+        break;
+      case Intent::Kind::NavLeft:
+        moveFocus(-1);
+        break;
+      case Intent::Kind::NavRight:
+        moveFocus(1);
+        break;
+      case Intent::Kind::NavPress:
+      case Intent::Kind::EncoderSw:
+        if (tempoPopupOpen_) {
+          closeTempoPopup();
+        } else if (tabGridOpen_) {
+          activateFocus();
+        } else {
+          activateFocus();
+        }
+        break;
+      default:
+        break;
+    }
+    rebuildFocusIds();
+    return;
+  }
   if (configVm_ && configVm_->open()) {
     switch (intent.kind) {
       case Intent::Kind::NavUp:
@@ -932,6 +1229,11 @@ void AppController::moveFocus(int delta) {
 
 void AppController::setPanelMode(const QString& mode) {
   if (mode == panelMode_) return;
+  // D3: refuse the SHIFT face on a tab that has none.
+  if (mode == QStringLiteral("shift") && !tabHasShiftFace(tab_)) {
+    showNotice(NoticeWarn, QStringLiteral("NO SHIFT FACE ON THIS TAB"));
+    return;
+  }
   panelMode_ = mode;
   if (mode == QStringLiteral("shift")) {
     shiftFace_ = true;
@@ -967,6 +1269,12 @@ void AppController::updateShiftState(const LinkStatus& status) {
         confirmCancel();
       } else if (keypadOpen_) {
         keypadCancel();
+      } else if (tempoPopupOpen_) {
+        closeTempoPopup();
+      } else if (tabGridOpen_) {
+        closeTabGrid();
+      } else if (takeSheetOpen_) {
+        closeTakeSheet();
       } else if (panelMode_ == QStringLiteral("edit")) {
         setPanelMode(QStringLiteral("navigate"));
       }
@@ -1199,8 +1507,38 @@ void AppController::activateFocus() {
     setTab(parts[1].toInt());
     return;
   }
+  if (focusId == QStringLiteral("tab.menu")) {
+    // C3: the single TAB stop expands the 2x5 grid; the next PRESS picks.
+    openTabGrid();
+    return;
+  }
+  if (parts.size() == 2 && parts[0] == QStringLiteral("tabgrid")) {
+    const int index = parts[1].toInt();
+    closeTabGrid();
+    setTab(index);
+    return;
+  }
+  if (focusId == QStringLiteral("tempo.done")) {
+    closeTempoPopup();
+    return;
+  }
+  if (parts.size() >= 3 && parts[0] == QStringLiteral("take") &&
+      parts[1] == QStringLiteral("sheet")) {
+    if (parts[2] == QStringLiteral("live")) {
+      chooseLiveInput();
+    } else if (parts[2] == QStringLiteral("close")) {
+      closeTakeSheet();
+    } else if (parts[2] == QStringLiteral("row") && parts.size() >= 4) {
+      chooseTakeRow(parts[3].toInt());
+    }
+    return;
+  }
   if (focusId == QStringLiteral("transport.click")) {
     setClickEnabled(!clickEnabled());
+    return;
+  }
+  if (focusId == QStringLiteral("channel.rename")) {
+    requestRenameTrack(mixerVm_->channelSlot());
     return;
   }
   if (focusId == QStringLiteral("mixer.add")) {
@@ -1746,8 +2084,8 @@ void AppController::activateFocus() {
     } else if (parts[1] == QStringLiteral("zoom") && parts.size() >= 3) {
       timelineVm_->zoom(parts[2] == QStringLiteral("in") ? 1 : -1);
     } else if (parts[1] == QStringLiteral("lane") && parts.size() >= 3) {
-      timelineVm_->setSelectedTrack(parts[2].toInt());
-      timelineVm_->setCursorBeats(timelineVm_->cursorBeats());
+      // A10: the lane label picks the take for that track.
+      openTakeSheet(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("cursor")) {
       setPanelMode(QStringLiteral("edit"));
       showTextPopup(QStringLiteral("TIMELINE CURSOR"),
@@ -1775,7 +2113,16 @@ void AppController::activateFocus() {
   }
 
   if (parts.size() >= 2 && parts[0] == QStringLiteral("learn")) {
-    if (parts[1] == QStringLiteral("target")) setPanelMode(QStringLiteral("edit"));
+    if (parts[1] == QStringLiteral("target")) {
+      setPanelMode(QStringLiteral("edit"));
+    } else if (parts[1] == QStringLiteral("arm")) {
+      // A9: PRESS on ARM CAPTURE arms the target capture (no pre-picked id).
+      armLearnTargetCapture();
+    } else if (parts[1] == QStringLiteral("clear")) {
+      learnVm_->clearAll();
+    } else if (parts[1] == QStringLiteral("binding") && parts.size() >= 3) {
+      learnVm_->removeBinding(parts[2].toInt());
+    }
   }
 }
 
@@ -2350,13 +2697,28 @@ void AppController::adjustFocused(int detents, bool fine) {
     const int count = learnVm_->targets().size();
     learnVm_->setTargetIndex(moveIndex(learnVm_->targetIndex(), detents > 0 ? 1 : -1, count));
     showTextPopup(QStringLiteral("LEARN TARGET"),
-                  learnVm_->targets().value(learnVm_->targetIndex()));
+                  LearnViewModel::humanTarget(learnVm_->targets().value(learnVm_->targetIndex())));
   }
 }
 
 void AppController::rebuildFocusIds() {
   std::vector<QString> ids;
-  if (configVm_ && configVm_->open()) {
+  if (keypadOpen_ || confirmOpen_) {
+    // A2 modal trap: an open keypad or confirmation has no panel focus ring,
+    // so NAV/PRESS/encoder can never reach a control behind it.
+  } else if (tabGridOpen_) {
+    for (int i = 0; i < kScreenCount; ++i) {
+      ids.push_back(QStringLiteral("tabgrid.") + QString::number(i));
+    }
+  } else if (takeSheetOpen_) {
+    ids.push_back(QStringLiteral("take.sheet.live"));
+    for (int row = 0; row < recorderVm_->takes()->rowCount(); ++row) {
+      ids.push_back(QStringLiteral("take.sheet.row.%1").arg(row));
+    }
+    ids.push_back(QStringLiteral("take.sheet.close"));
+  } else if (tempoPopupOpen_) {
+    ids.push_back(QStringLiteral("tempo.done"));
+  } else if (configVm_ && configVm_->open()) {
     const QString kind = configVm_->kind();
     if (kind == QStringLiteral("metronome")) {
       for (int mode = 0; mode < 3; ++mode) {
@@ -2401,7 +2763,7 @@ void AppController::rebuildFocusIds() {
       ids.push_back(QStringLiteral("config.reverb.decay"));
       ids.push_back(QStringLiteral("config.reverb.damping"));
     } else if (kind == QStringLiteral("timelineops")) {
-      for (int op = 0; op < timeline::kTimelineOpCount; ++op) {
+      for (int op = 0; op < timeline::kTimelineUiOpCount; ++op) {
         ids.push_back(QStringLiteral("config.timeline.op.%1").arg(op));
       }
       ids.push_back(QStringLiteral("config.timeline.gain"));
@@ -2482,6 +2844,7 @@ void AppController::rebuildFocusIds() {
     // Full channel popout: it traps the ring like the config popup, so the
     // panel can reach every control of the channel it shows.
     ids.push_back(QStringLiteral("channel.close"));
+    ids.push_back(QStringLiteral("channel.rename"));
     ids.push_back(QStringLiteral("channel.gain"));
     ids.push_back(QStringLiteral("channel.trim"));
     ids.push_back(QStringLiteral("channel.pan"));
@@ -2650,8 +3013,15 @@ void AppController::rebuildFocusIds() {
         break;
     }
   } else {
-    for (int i = 0; i < kScreenCount; ++i) {
-      ids.push_back(QStringLiteral("tab.") + QString::number(i));
+    // C3 step 1: the tab row is one TAB stop, not ten ring stops. Pressing it
+    // expands the 2x5 grid above; the tab row itself stays a direct touch
+    // target (QML keeps its own focusId for the tap runner).
+    ids.push_back(QStringLiteral("tab.menu"));
+    if (noPico_) {
+      // A5: the touch transport is a panel stop only where there is no panel.
+      ids.push_back(QStringLiteral("transport.play"));
+      ids.push_back(QStringLiteral("transport.stop"));
+      ids.push_back(QStringLiteral("transport.rec"));
     }
     ids.push_back(QStringLiteral("transport.click"));
     switch (tab_) {
@@ -2858,10 +3228,11 @@ void AppController::toggleTake() {
   }
   takeArmMask_ = mixer_.armMask();
   if (!audio_.startTake(state_.takeDirectory())) {
-    setNotice(QStringLiteral("take refused (arm at least one strip)"));
+    showNotice(NoticeError, QStringLiteral("take refused (arm at least one strip)"));
     return;
   }
   state_.recording.store(true);
+  clearNotice();
   link_.requestTransport(1);
   recorderVm_->takeStateChanged();
   updateTransport();
@@ -2877,6 +3248,8 @@ void AppController::stopTake() {
   // future Recorder API can take the template directly.
   if (take.files > 0 && !take.path.empty()) {
     recorderVm_->adoptRecordedTake(take.path, takeArmMask_);
+    // A1: the strips spell out "ARM MUTES TAKE" for 8 s after the take stops.
+    mixerVm_->notifyTakeStopped();
   }
   recorderVm_->takeStateChanged();
   if (take.files > 0) {
@@ -2914,6 +3287,7 @@ void AppController::updateTransport() {
   const double level = state_.clickLevel.load();
   const int bars = state_.clickBars.load();
   const int mode = state_.clickMode.load();
+  if (mode != 0) lastNonZeroClickMode_ = mode;
   const int output = state_.clickOutput.load();
   const double gain = state_.clickGainDb.load();
   if (clickOn != lastClickEnabled_ || std::abs(level - lastClickLevel_) > 0.0001 ||
@@ -2968,6 +3342,7 @@ void AppController::projectStateChanged() {
   audio_.applyEq(eqModel_.capture());
   sessionVm_->pushClockToLink();
   toolsVm_->refresh();
+  clearNotice();
   state_.clearDirty();
   dirtyTracker_.clear(project::fingerprint(*context_));
   emit dirtyChanged();
@@ -3059,8 +3434,22 @@ void AppController::registerLearnTargets() {
   }
 }
 
-void AppController::setNotice(const QString& notice) {
+void AppController::showNotice(NoticeKind kind, const QString& notice) {
   noticeText_ = notice;
+  noticeKind_ = kind == NoticeInfo ? QStringLiteral("info")
+                : (kind == NoticeWarn ? QStringLiteral("warn") : QStringLiteral("error"));
+  noticeTimer_.stop();
+  // D2: info 6 s, warn 10 s, error until the next successful action of its
+  // domain calls clearNotice().
+  if (kind == NoticeInfo) noticeTimer_.start(6000);
+  else if (kind == NoticeWarn) noticeTimer_.start(10000);
+  emit noticeChanged();
+}
+
+void AppController::clearNotice() {
+  if (noticeText_.isEmpty()) return;
+  noticeTimer_.stop();
+  noticeText_.clear();
   emit noticeChanged();
 }
 

@@ -98,7 +98,7 @@ Rectangle {
                     height: Style.touch
                     spacing: 4
                     TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "OFF"; checked: config.clickMode === 0; focusId: "config.mode.0"; onClicked: config.clickMode = 0 }
-                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "REC"; checked: config.clickMode === 1; focusId: "config.mode.1"; onClicked: config.clickMode = 1 }
+                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "REC ONLY"; textSize: Style.fontSmall; checked: config.clickMode === 1; focusId: "config.mode.1"; onClicked: config.clickMode = 1 }
                     TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "ON PLAY"; checked: config.clickMode === 2; focusId: "config.mode.2"; onClicked: config.clickMode = 2 }
                 }
                 Text { width: parent.width; height: 16; text: "OUTPUT"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold }
@@ -108,7 +108,7 @@ Rectangle {
                     spacing: 4
                     TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "MAIN"; checked: config.clickOutput === 0; focusId: "config.out.0"; onClicked: config.clickOutput = 0 }
                     TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "PHONES"; checked: config.clickOutput === 1; focusId: "config.out.1"; onClicked: config.clickOutput = 1 }
-                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "OUT34"; checked: config.clickOutput === 2; focusId: "config.out.2"; onClicked: config.clickOutput = 2 }
+                    TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "OUT3&4"; checked: config.clickOutput === 2; focusId: "config.out.2"; onClicked: config.clickOutput = 2 }
                 }
                 Row {
                     width: parent.width
@@ -117,7 +117,7 @@ Rectangle {
                     ConfigKnob {
                         width: 120
                         height: parent.height
-                        label: "GAIN"
+                        label: "LEVEL"
                         value: config.clickGainDb
                         minimumValue: -60
                         maximumValue: 20
@@ -129,11 +129,11 @@ Rectangle {
                     ConfigKnob {
                         width: 120
                         height: parent.height
-                        label: "BARS"
+                        label: "COUNT-IN"
                         value: config.clickBars
                         minimumValue: 1
                         maximumValue: 8
-                        suffix: " bar"
+                        suffix: " bars"
                         decimals: 0
                         popupKind: "generic"
                         focusId: "config.bars"
@@ -1054,10 +1054,9 @@ Rectangle {
                     width: parent.width
                     height: Style.touch
                     spacing: 3
-                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "NORM"; textSize: Style.fontSmall; checked: config.timelineOp === 4; focusId: "config.timeline.op.4"; onClicked: config.timelineOp = 4 }
-                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "DELETE"; textSize: Style.fontSmall; checked: config.timelineOp === 5; focusId: "config.timeline.op.5"; onClicked: config.timelineOp = 5 }
-                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "CLEAR"; textSize: Style.fontSmall; checked: config.timelineOp === 6; focusId: "config.timeline.op.6"; onClicked: config.timelineOp = 6 }
-                    TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "RENDER"; textSize: Style.fontSmall; checked: config.timelineOp === 7; focusId: "config.timeline.op.7"; onClicked: config.timelineOp = 7 }
+                    TouchButton { width: (parent.width - 6) / 3; height: parent.height; text: "NORM"; textSize: Style.fontSmall; checked: config.timelineOp === 4; focusId: "config.timeline.op.4"; onClicked: config.timelineOp = 4 }
+                    TouchButton { width: (parent.width - 6) / 3; height: parent.height; text: "DELETE"; textSize: Style.fontSmall; checked: config.timelineOp === 5; focusId: "config.timeline.op.5"; onClicked: config.timelineOp = 5 }
+                    TouchButton { width: (parent.width - 6) / 3; height: parent.height; text: "CLEAR"; textSize: Style.fontSmall; checked: config.timelineOp === 6; focusId: "config.timeline.op.6"; onClicked: config.timelineOp = 6 }
                 }
                 Row {
                     width: parent.width
@@ -1104,6 +1103,7 @@ Rectangle {
                     width: parent.width
                     height: 64
                     Rectangle {
+                        visible: timeline.previewWave.length > 0
                         anchors.fill: parent
                         color: Style.panelDark
                         radius: Style.corner
@@ -1111,6 +1111,7 @@ Rectangle {
                         border.color: Style.outline
                     }
                     TimelineWave {
+                        visible: timeline.previewWave.length > 0
                         anchors.fill: parent
                         anchors.margins: 3
                         values: timeline.previewWave
@@ -1120,7 +1121,15 @@ Rectangle {
                                       ? config.timelineFadeInBeats / timeline.previewLengthBeats : 0
                         fadeOutRatio: timeline.previewLengthBeats > 0
                                       ? config.timelineFadeOutBeats / timeline.previewLengthBeats : 0
-                        placeholderText: "NO PEAKS - PREVIEW UNAVAILABLE"
+                    }
+                    // A14: a missing peaks sidecar is an action, not a dead
+                    // preview block.
+                    TouchButton {
+                        visible: timeline.previewWave.length === 0
+                        anchors.fill: parent
+                        text: "RENDER PEAKS"
+                        textSize: Style.fontSmall
+                        onClicked: app.showTextPopup("PEAKS", timeline.renderPeaks())
                     }
                 }
                 Text {
@@ -1144,7 +1153,7 @@ Rectangle {
                 Text {
                     width: parent.width
                     height: 16
-                    text: "TRIM/DELETE use IN..OUT. RENDER is explicit and refused: audio::TakePlayer::renderRegionsToTake() is missing."
+                    text: "TRIM/DELETE use IN..OUT. Preview needs a peaks sidecar."
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     wrapMode: Text.Wrap

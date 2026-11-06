@@ -1,12 +1,19 @@
 #include "mixer_view_model.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 #include "logic.hpp"
 
 namespace mnky::app {
 namespace {
+std::uint64_t steadyMs() {
+  using namespace std::chrono;
+  return static_cast<std::uint64_t>(
+      duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
+
 QString panText(double pan) {
   const int percent = static_cast<int>(std::lround((pan - 0.5) * 200.0));
   if (percent == 0) return QStringLiteral("C");
@@ -120,6 +127,11 @@ QVariant MixerViewModel::data(const QModelIndex& index, int role) const {
       return outputText(model_.outDst(slot));
     case SelectedRole:
       return slot == selectedStrip_;
+    case ArmMutesTakeRole:
+      return model_.arm(slot) && settings_.hasActiveTake(slot);
+    case ArmMutesBadgeRole:
+      return model_.arm(slot) && settings_.hasActiveTake(slot) &&
+             steadyMs() < armMutesUntilMs_;
     default:
       break;
   }
@@ -135,7 +147,8 @@ QHash<int, QByteArray> MixerViewModel::roleNames() const {
           {ArmRole, "arm"},               {LevelRole, "level"},
           {ClipRole, "clip"},             {MonitorRole, "monitor"},
           {MonitorMarkRole, "monitorMark"}, {InputTextRole, "inputText"},
-          {OutputTextRole, "outputText"}, {SelectedRole, "selected"}};
+          {OutputTextRole, "outputText"}, {SelectedRole, "selected"},
+          {ArmMutesTakeRole, "armMutesTake"}, {ArmMutesBadgeRole, "armMutesBadge"}};
 }
 
 void MixerViewModel::setBank(int bank) {
@@ -591,7 +604,29 @@ void MixerViewModel::setInsertBypassAt(int slot, bool bypass) {
 
 void MixerViewModel::notifyActiveTakesChanged() {
   if (rowCount() == 0) return;
-  emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {MonitorMarkRole});
+  emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
+                   {MonitorMarkRole, ArmMutesTakeRole, ArmMutesBadgeRole});
+}
+
+void MixerViewModel::notifyTakeStopped() {
+  armMutesUntilMs_ = steadyMs() + 8000;
+  if (rowCount() == 0) return;
+  emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
+                   {ArmMutesTakeRole, ArmMutesBadgeRole});
+}
+
+int MixerViewModel::armedWithActiveTakeCount() const {
+  int count = 0;
+  for (int slot = 0; slot < audio::kMaxTracks; ++slot) {
+    if (model_.arm(slot) && settings_.hasActiveTake(slot)) ++count;
+  }
+  return count;
+}
+
+void MixerViewModel::notifyTrackNamesChanged() {
+  if (rowCount() == 0) return;
+  emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {NameRole});
+  emit trackChanged();
 }
 
 void MixerViewModel::setMasterDb(double db) {

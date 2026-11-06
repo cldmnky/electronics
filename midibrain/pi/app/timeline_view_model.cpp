@@ -289,7 +289,7 @@ void TimelineViewModel::setSelectedTrack(int track) {
 }
 
 QString TimelineViewModel::selectedTrackName() const {
-  return QStringLiteral("TRACK %1  %2")
+  return QStringLiteral("TRACK %1 - %2")
       .arg(selectedTrack_ + 1, 2, 10, QLatin1Char('0'))
       .arg(recorder_.trackDisplayName(selectedTrack_));
 }
@@ -452,14 +452,22 @@ QString TimelineViewModel::nudgeOut(double deltaBeats) {
   return beatTextOf(selection_.out);
 }
 
+QString TimelineViewModel::renderPeaks() {
+  const auto& source = sources_[static_cast<std::size_t>(selectedTrack_)];
+  if (source.path.empty()) return QStringLiteral("no active take to scan");
+  auto& peak = peaks_[static_cast<std::size_t>(selectedTrack_)];
+  peak = {};
+  sidecarCache_.erase(source.path.string());
+  queueScan(selectedTrack_);
+  return QStringLiteral("scanning peaks: ") + takeLabel(source.path);
+}
+
 QString TimelineViewModel::applyOp(int op, double gainDb, double fadeIn,
                                    double fadeOut) {
-  if (op < 0 || op >= timeline::kTimelineOpCount) return QStringLiteral("unknown op");
+  if (op < 0 || op >= timeline::kTimelineUiOpCount) return QStringLiteral("unknown op");
   const auto operation = static_cast<timeline::TimelineOp>(op);
   if (!timeline::timelineOpAvailable(operation)) {
-    return QStringLiteral("RENDER blocked: ") +
-           QString::fromLatin1(timeline::kRenderMissingApi) +
-           QStringLiteral(" is missing; edits never rewrite a take file");
+    return QStringLiteral("render is not available in this build");
   }
   std::vector<session::TakeRegion> current = editList(selectedTrack_);
   if (current.empty()) {

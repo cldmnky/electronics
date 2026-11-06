@@ -56,7 +56,7 @@ Item {
             Text {
                 width: parent.width - 520
                 height: parent.height
-                text: "SHIFT  configure"
+                text: "SHIFT > MIDI learn - metronome - tools"
                 color: Style.accent
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold

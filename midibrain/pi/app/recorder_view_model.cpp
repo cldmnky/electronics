@@ -23,10 +23,8 @@ std::string channelFileName(int track) {
   return "ch" + out + ".wav";
 }
 
-QString displayTrackName(int track) {
-  return QStringLiteral("IN %1  %2")
-      .arg(track + 1, 2, 10, QLatin1Char('0'))
-      .arg(QString::fromStdString(defaultTrackName(track)));
+QString trackNameOf(const MixerModel& mixer, int track) {
+  return QString::fromStdString(mixer.trackName(track));
 }
 
 std::string keyForPath(const std::filesystem::path& file,
@@ -67,7 +65,10 @@ bool isWavFile(const std::filesystem::path& path) {
 
 RecorderArmModel::RecorderArmModel(MixerModel& mixer, QObject* parent)
     : QAbstractListModel(parent), mixer_(mixer) {
-  for (int i = 0; i < kNumStrips; ++i) armed_[static_cast<std::size_t>(i)] = mixer_.arm(i);
+  for (int i = 0; i < kNumStrips; ++i) {
+    armed_[static_cast<std::size_t>(i)] = mixer_.arm(i);
+    names_[static_cast<std::size_t>(i)] = trackNameOf(mixer_, i);
+  }
 }
 
 int RecorderArmModel::rowCount(const QModelIndex& parent) const {
@@ -78,19 +79,23 @@ QVariant RecorderArmModel::data(const QModelIndex& index, int role) const {
   if (!index.isValid() || index.row() < 0 || index.row() >= kNumStrips) return {};
   if (role == IndexRole) return index.row();
   if (role == ArmedRole) return armed_[static_cast<std::size_t>(index.row())];
+  if (role == NameRole) return names_[static_cast<std::size_t>(index.row())];
   return {};
 }
 
 QHash<int, QByteArray> RecorderArmModel::roleNames() const {
-  return {{IndexRole, "index"}, {ArmedRole, "armed"}};
+  return {{IndexRole, "index"}, {ArmedRole, "armed"}, {NameRole, "name"}};
 }
 
 void RecorderArmModel::refresh() {
   for (int i = 0; i < kNumStrips; ++i) {
     const bool armed = mixer_.arm(i);
-    if (armed_[static_cast<std::size_t>(i)] != armed) {
+    const QString name = trackNameOf(mixer_, i);
+    if (armed_[static_cast<std::size_t>(i)] != armed ||
+        names_[static_cast<std::size_t>(i)] != name) {
       armed_[static_cast<std::size_t>(i)] = armed;
-      emit dataChanged(index(i, 0), index(i, 0), {ArmedRole});
+      names_[static_cast<std::size_t>(i)] = name;
+      emit dataChanged(index(i, 0), index(i, 0), {ArmedRole, NameRole});
     }
   }
 }
@@ -142,6 +147,7 @@ void RecorderTakeModel::setEntries(std::vector<Entry> entries) {
   beginResetModel();
   entries_ = std::move(entries);
   endResetModel();
+  emit countChanged();
 }
 
 const RecorderTakeModel::Entry* RecorderTakeModel::entry(int row) const {
@@ -190,7 +196,11 @@ void RecorderViewModel::selectRow(int row) {
   emit selectionChanged();
 }
 
-QString RecorderViewModel::trackName() const { return displayTrackName(selectedTrack_); }
+QString RecorderViewModel::trackName() const {
+  return QStringLiteral("TRACK %1 - %2")
+      .arg(selectedTrack_ + 1, 2, 10, QLatin1Char('0'))
+      .arg(trackDisplayName(selectedTrack_));
+}
 
 QString RecorderViewModel::activeTakePath(int track) const {
   if (track < 0 || track >= audio::kMaxTracks) return {};
@@ -208,7 +218,13 @@ std::filesystem::path RecorderViewModel::takePathForKey(int track,
 
 QString RecorderViewModel::trackDisplayName(int track) const {
   if (track < 0 || track >= audio::kMaxTracks) return {};
-  return QString::fromStdString(defaultTrackName(track));
+  // One identity everywhere (C2): the mixer's user name, with the default
+  // chNN name as the fallback for an unnamed slot.
+  return trackNameOf(mixer_, track);
+}
+
+bool RecorderViewModel::trackArmMutesTake() const {
+  return mixer_.arm(selectedTrack_) && settings_.hasActiveTake(selectedTrack_);
 }
 
 QString RecorderViewModel::activeTake() const {
@@ -322,6 +338,11 @@ QString RecorderViewModel::importTake(const QString& path) {
   return {};
 }
 
+QString RecorderViewModel::takeNameAt(int row) const {
+  const auto* entry = takes_.entry(row);
+  return entry == nullptr ? QString() : entry->name;
+}
+
 QString RecorderViewModel::renameSelected(const QString& name) {
   if (audio_.recording()) return QStringLiteral("stop the take before renaming");
   const auto* entry = takes_.entry(selectedRow_);
@@ -407,11 +428,14 @@ int RecorderViewModel::adoptRecordedTake(const std::string& takeDirectoryPath,
     std::error_code existsError;
     if (!std::filesystem::is_regular_file(source, existsError)) continue;
     int number = nextTakeNumber(base, track) + 1;
-    std::filesystem::path target = folder / takeFileName(track, defaultTrackName(track), number);
+    // The user's track name travels into the take file name (C2); chNN stays
+    // the fallback for an unnamed slot.
+    const std::string takeName = mixer_.trackName(track);
+    std::filesystem::path target = folder / takeFileName(track, takeName, number);
     std::error_code targetError;
     while (std::filesystem::exists(target, targetError)) {
       ++number;
-      target = folder / takeFileName(track, defaultTrackName(track), number);
+      target = folder / takeFileName(track, takeName, number);
     }
     std::error_code moveError;
     std::filesystem::rename(source, target, moveError);
@@ -442,6 +466,12 @@ void RecorderViewModel::refresh() {
 void RecorderViewModel::takeStateChanged() {
   scanTakes();
   updateReadouts();
+}
+
+void RecorderViewModel::tracksChanged() {
+  arms_.refresh();
+  updateReadouts();
+  emit trackChanged();
 }
 
 std::filesystem::path RecorderViewModel::resolveTakeKey(int track,
@@ -647,9 +677,17 @@ void RecorderViewModel::updateReadouts() {
   const auto take = audio_.lastTake();
   const QString active = activeTake();
   QString statusText;
+  statusWarning_ = false;
   if (recording) {
     statusText = QStringLiteral("recording take  -  ") +
                  QString::fromStdString(state_.takeDirectory().string());
+  } else if (take.files > 0 && mixer_.armMask() != 0) {
+    // A1: the take exists but every armed strip monitors its input, so PLAY
+    // would replay the room, not the take. Say it and name the fix.
+    statusText = QStringLiteral(
+        "TAKE SAVED - ARM is still on, so this track monitors the input. "
+        "Disarm (tap ARM) to hear the take.");
+    statusWarning_ = true;
   } else if (take.files > 0) {
     const double seconds = audio_.sampleRate() > 0.0
                                ? static_cast<double>(take.frames) / audio_.sampleRate()

@@ -46,9 +46,14 @@ enum class TimelineOp : std::uint8_t {
 };
 
 inline constexpr int kTimelineOpCount = 8;
+// Ops the UI offers. RENDER (op 7) has no core call, so the region-ops grid
+// and the panel ring stop before it instead of offering a button that can only
+// be refused (A14).
+inline constexpr int kTimelineUiOpCount = 7;
 
 const char* timelineOpName(TimelineOp op);
-// RENDER is refused until the core render call exists; the ops popup shows this.
+// RENDER is refused until the core render call exists; the ops popup no longer
+// offers it, and this guard keeps a stale id from writing anything.
 bool timelineOpAvailable(TimelineOp op);
 
 using TakeLengthFn = std::function<double(const std::string& take)>;

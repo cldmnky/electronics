@@ -23,6 +23,10 @@ Item {
     implicitHeight: vertical ? 100 : Style.touch
     opacity: active ? 1.0 : 0.45
 
+    // A9: while a MIDI-learn target capture is armed, a learnable control is
+    // outlined and the next touch on it picks it as the capture target.
+    readonly property bool learnOutline: app.learnArmed && app.isLearnableFocus(focusId)
+
     readonly property real fraction: maximumValue > minimumValue
                                      ? Math.max(0, Math.min(1,
                                            (value - minimumValue) / (maximumValue - minimumValue)))
@@ -33,7 +37,7 @@ Item {
         anchors.fill: parent
         color: "transparent"
         radius: Style.corner
-        border.width: (app.focusId === focusId && focusId !== "") ? 2 : 0
+        border.width: (app.focusId === focusId && focusId !== "") || root.learnOutline ? 2 : 0
         border.color: Style.accent
     }
 
@@ -77,18 +81,26 @@ Item {
         anchors.fill: parent
         enabled: root.active
         preventStealing: true
+        property bool pickOnly: false
         onPressed: (mouse) => {
+            if (root.learnOutline) {
+                pickOnly = true
+                app.learnTargetTouched(root.focusId)
+                return
+            }
             root.dragging = true
             root.trackFinger(mouse.x, mouse.y)
             root.applyPointer(mouse.x, mouse.y)
         }
         onPositionChanged: (mouse) => {
+            if (pickOnly) return
             if (pressed) {
                 root.trackFinger(mouse.x, mouse.y)
                 root.applyPointer(mouse.x, mouse.y)
             }
         }
         onReleased: {
+            pickOnly = false
             root.dragging = false
             app.touchAnchorY = -1
         }

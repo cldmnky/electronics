@@ -14,6 +14,13 @@ Item {
     readonly property int labelWidth: 62
 
     Connections {
+        target: app
+        // C4: the lane and cursor focus stops are visible now, so a NAV step
+        // never lands on an invisible control.
+        function onFocusChanged() { overlay.requestPaint() }
+    }
+
+    Connections {
         target: timeline
         function onLanesChanged() { ruler.requestPaint(); overlay.requestPaint() }
         function onSelectionChanged() { overlay.requestPaint() }
@@ -347,6 +354,32 @@ Item {
                                            screen.laneHeight)
                         }
                     }
+                    // C4: the panel ring on a lane is a 2 px accent border
+                    // around the whole lane; the cursor stop is a dashed box
+                    // around the cursor column.
+                    if (app.focusId.indexOf("timeline.lane.") === 0) {
+                        const focusTrack = Number(app.focusId.substring(14))
+                        const focusLane = focusTrack - timeline.page * timeline.tracksPerPage
+                        if (focusLane >= 0 && focusLane < timeline.tracksPerPage) {
+                            ctx.strokeStyle = Style.accent
+                            ctx.lineWidth = 2
+                            ctx.strokeRect(1, focusLane * screen.laneHeight + 1,
+                                           width - 2, screen.laneHeight - 2)
+                        }
+                    }
+                    if (app.focusId === "timeline.cursor") {
+                        const boxX = xOf(timeline.cursorBeats)
+                        ctx.strokeStyle = Style.accent
+                        ctx.lineWidth = 2
+                        for (let y = 0; y < height; y += 8) {
+                            ctx.beginPath()
+                            ctx.moveTo(boxX - 3, y)
+                            ctx.lineTo(boxX - 3, y + 4)
+                            ctx.moveTo(boxX + 3, y)
+                            ctx.lineTo(boxX + 3, y + 4)
+                            ctx.stroke()
+                        }
+                    }
                     // Panel cursor: a dashed tick column.
                     const cursorX = xOf(timeline.cursorBeats)
                     if (cursorX >= screen.labelWidth && cursorX <= width) {
@@ -395,15 +428,183 @@ Item {
                 }
                 onReleased: timeline.endSelection()
             }
+
+            // A10: the lane label is its own 44 px target above the drag area.
+            // Tapping it opens "TAKE FOR TRACK nn"; the drag area keeps the
+            // whole waveform width.
+            Column {
+                width: screen.labelWidth
+                anchors.left: parent.left
+                anchors.top: parent.top
+                spacing: 0
+
+                Repeater {
+                    model: timeline.lanes
+                    delegate: Item {
+                        width: screen.labelWidth
+                        height: screen.laneHeight
+                        TapHandler {
+                            onTapped: app.openTakeSheet(modelData.track)
+                        }
+                    }
+                }
+            }
         }
 
         Text {
             width: parent.width
             height: 14
-            text: "DRAG A REGION  -  IN/OUT SET THE EDGE AT THE CURSOR  -  SHIFT = COARSE  -  OPS PREVIEWS BEFORE OK"
+            text: "DRAG A REGION  -  IN/OUT SET THE EDGE AT THE CURSOR  -  TAP A LANE LABEL TO PICK ITS TAKE"
             color: Style.textDim
             font.pixelSize: Style.fontSmall
             elide: Text.ElideRight
+        }
+    }
+
+    // A10: TAKE FOR TRACK nn sheet. The lane label opens it; a row makes that
+    // take ACTIVE (the waveform repaints from its .peaks sidecar), and LIVE
+    // INPUT clears the pointer.
+    Rectangle {
+        id: takeSheet
+
+        visible: app.takeSheetOpen
+        anchors.fill: parent
+        color: "#cc000000"
+        z: 60
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {}
+        }
+
+        Rectangle {
+            width: Math.min(560, parent.width - 24)
+            height: Math.min(parent.height - 8, 24 + 16 + Style.touch + 8 +
+                            Math.min(5, recorder.takes.count) * Style.touch +
+                            Style.gap * 4)
+            anchors.centerIn: parent
+            color: Style.raised
+            radius: Style.cornerPanel
+            border.width: 2
+            border.color: Style.accent
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: Style.gap
+
+                Row {
+                    width: parent.width
+                    height: 24
+
+                    Text {
+                        width: parent.width - 92
+                        height: parent.height
+                        text: "TAKE FOR TRACK " +
+                              String(app.takeSheetTrack + 1).padStart(2, "0")
+                        color: Style.text
+                        font.pixelSize: Style.fontTitle
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TouchButton {
+                        width: 92
+                        height: parent.height
+                        text: "CLOSE"
+                        textSize: Style.fontSmall
+                        variant: "ghost"
+                        focusId: "take.sheet.close"
+                        onClicked: app.closeTakeSheet()
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: "tap a take to make it ACTIVE - the lane repaints from its peaks"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: Style.touch
+                    radius: Style.corner
+                    color: Style.panelDark
+                    border.width: app.focusId === "take.sheet.live" ? 2 : Style.outlineWidth
+                    border.color: app.focusId === "take.sheet.live" ? Style.accent : Style.outline
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8
+                        width: parent.width - 16
+                        height: parent.height
+                        text: "LIVE INPUT"
+                        color: Style.textDim
+                        font.pixelSize: Style.fontBody
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TapHandler {
+                        onTapped: app.chooseLiveInput()
+                    }
+                }
+
+                ListView {
+                    width: parent.width
+                    height: Math.min(5, recorder.takes.count) * Style.touch
+                    clip: true
+                    model: recorder.takes
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    delegate: Rectangle {
+                        width: ListView.view.width
+                        height: Style.touch
+                        radius: Style.corner
+                        color: model.active ? Style.raised : Style.panelDark
+                        border.width: app.focusId === ("take.sheet.row." + index) ? 2
+                                     : (model.active ? 2 : Style.outlineWidth)
+                        border.color: app.focusId === ("take.sheet.row." + index) ||
+                                      model.active ? Style.accent : Style.outline
+
+                        Text {
+                            x: 10
+                            width: 64
+                            height: parent.height
+                            text: model.active ? "ACTIVE" : ""
+                            color: Style.accent
+                            font.pixelSize: Style.fontSmall
+                            font.weight: Font.DemiBold
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        Text {
+                            x: 78
+                            width: parent.width - 78 - 90
+                            height: parent.height
+                            text: model.name
+                            color: Style.text
+                            font.pixelSize: Style.fontBody
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideMiddle
+                        }
+                        Text {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            width: 80
+                            height: parent.height
+                            text: model.duration
+                            color: Style.textDim
+                            font.pixelSize: Style.fontSmall
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        TapHandler {
+                            onTapped: app.chooseTakeRow(index)
+                        }
+                    }
+                }
+            }
         }
     }
 }

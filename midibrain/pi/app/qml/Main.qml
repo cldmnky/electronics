@@ -45,7 +45,9 @@ Window {
         Rectangle {
             id: tabBar
             width: parent.width
-            height: Style.tabHeight
+            // C3: the panel ring has one TAB stop, and pressing it expands the
+            // tab row into a 2x5 grid. The row grows by one 44 px cell row.
+            height: app.tabGridOpen ? Style.touch * 2 + 12 : Style.tabHeight
             color: Style.panelDark
             // EQ fullscreen hides the whole bridge (tab row + transport strip);
             // AppController::setTab restores it when another tab is picked.
@@ -53,30 +55,41 @@ Window {
 
             readonly property bool shiftMode: app.panelMode === "shift"
             readonly property int tabCount: 10
+            // The single TAB ring stop is the row itself; its focus ring is the
+            // accent border so a panel user sees where the ring is.
+            readonly property bool tabStopFocused: app.focusId === "tab.menu"
+            border.width: tabStopFocused ? 2 : 0
+            border.color: Style.accent
 
-            Row {
+            Item {
+                id: tabHost
                 anchors.fill: parent
                 anchors.leftMargin: Style.marginCompact
                 anchors.rightMargin: Style.marginCompact
                 anchors.topMargin: 4
                 anchors.bottomMargin: 4
-                spacing: Style.gapTight
 
                 Repeater {
                     model: tabBar.tabCount
                     delegate: Rectangle {
-                        width: (parent.width - Style.gapTight * (tabBar.tabCount - 1)) /
-                               tabBar.tabCount
-                        height: parent.height
+                        readonly property int columns: app.tabGridOpen ? 5 : tabBar.tabCount
+                        width: (parent.width - Style.gapTight * (columns - 1)) / columns
+                        height: app.tabGridOpen ? Style.touch
+                                                : parent.height
+                        x: (index % columns) * (width + Style.gapTight)
+                        y: Math.floor(index / columns) * (height + Style.gapTight)
                         radius: Style.corner
                         color: app.tab === index ? Style.accent : Style.panel
-                        // "tab.N" is a panel focus stop (AppController's ring);
-                        // carrying it here makes the ring visible and lets the
-                        // --ui-taps runner exercise setTab through QML.
+                        // "tab.N" stays the direct touch target and the
+                        // --ui-taps handle. The panel ring reaches the row
+                        // through the single "tab.menu" stop and, while the
+                        // grid is open, through "tabgrid.N".
                         property string focusId: "tab." + index
-                        border.width: app.focusId === focusId ? 2
+                        border.width: (app.focusId === focusId ||
+                                       app.focusId === ("tabgrid." + index)) ? 2
                                      : (tabBar.shiftMode ? 1 : 0)
-                        border.color: app.focusId === focusId ? Style.accent
+                        border.color: (app.focusId === focusId ||
+                                       app.focusId === ("tabgrid." + index)) ? Style.accent
                                      : (tabBar.shiftMode ? Style.accent : Style.outline)
 
                         Text {
@@ -128,8 +141,9 @@ Window {
                             onLongPressed: {
                                 heldShift = true
                                 app.setTab(index)
+                                // D3: a tab without a second face never enters
+                                // the dead SHIFT state; the controller says so.
                                 app.showShiftFace(true)
-                                app.showTextPopup("SHIFT", window.tabNames[index] + " shift face")
                             }
                         }
                     }
@@ -192,6 +206,10 @@ Window {
         popupVisible: app.valuePopupVisible
         popupLabel: app.valuePopupLabel
         popupText: app.valuePopupText
+    }
+
+    TempoPopup {
+        anchors.fill: parent
     }
 
     ChannelPopout {

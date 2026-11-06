@@ -15,6 +15,7 @@
 #include <QVariant>
 
 #include <array>
+#include <cstdint>
 
 #include "eq_model.hpp"
 #include "logic.hpp"
@@ -90,6 +91,11 @@ class MixerViewModel final : public QAbstractListModel {
     InputTextRole,
     OutputTextRole,
     SelectedRole,
+    // A1: the strip is armed and has an active take, so ARM mutes the take.
+    // BadgeRole is the same state for the 8 s after a take stops, when the
+    // strip spells the warning out instead of showing the monitor letter.
+    ArmMutesTakeRole,
+    ArmMutesBadgeRole,
   };
 
   MixerViewModel(MixerModel& model, SessionSettings& settings, EqModel& eq,
@@ -203,6 +209,13 @@ class MixerViewModel final : public QAbstractListModel {
   // Re-evaluate the Auto marker after an active-take change (Auto shows only
   // when a take makes it choose the take over the live input).
   void notifyActiveTakesChanged();
+  // A take just stopped: every armed strip with an active take spells out
+  // "ARM MUTES TAKE" for 8 s, then falls back to the monitor letter.
+  void notifyTakeStopped();
+  // Number of armed strips whose active take is muted by the arm (A1 play()).
+  int armedWithActiveTakeCount() const;
+  // A track rename: every strip re-reads its name (A4/C2).
+  void notifyTrackNamesChanged();
   int selectedStrip() const { return selectedStrip_; }
   void setSelectedStrip(int slot);
   double masterDb() const { return model_.masterDb(); }
@@ -291,6 +304,7 @@ class MixerViewModel final : public QAbstractListModel {
   std::array<double, audio::kMaxTracks> stripLevels_{};
   std::array<ClipHold, audio::kMaxTracks> clipHolds_{};
   bool clipDemo_ = false;
+  std::uint64_t armMutesUntilMs_ = 0;
 };
 
 }  // namespace mnky::app

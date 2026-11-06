@@ -35,6 +35,20 @@ Rectangle {
                 root.cursor = root.buffer.length
             }
         }
+        // A2: the keypad traps the panel. The encoder moves the cursor and a
+        // panel PRESS accepts; the buffer stays here, in QML.
+        function onKeypadCursorMoveRequested(delta) {
+            if (!app.keypadOpen) return
+            if (delta === 0) {
+                root.buffer = ""
+                root.cursor = 0
+                return
+            }
+            root.cursor = Math.max(0, Math.min(root.buffer.length, root.cursor + delta))
+        }
+        function onKeypadAcceptRequested() {
+            if (app.keypadOpen) app.keypadAccept(root.buffer)
+        }
     }
 
     MouseArea {
@@ -139,6 +153,15 @@ Rectangle {
                                     root.insert(character)
                                 }
                             }
+                            // A2: a held < or > steps twice per repeat.
+                            onLongClicked: {
+                                const character = keyRow.rowText.charAt(index)
+                                if (character === "<") {
+                                    root.cursor = Math.max(0, root.cursor - 2)
+                                } else if (character === ">") {
+                                    root.cursor = Math.min(root.buffer.length, root.cursor + 2)
+                                }
+                            }
                         }
                     }
                 }
@@ -165,6 +188,7 @@ Rectangle {
                     text: "<"
                     textSize: 18
                     onClicked: if (root.cursor > 0) root.cursor -= 1
+                    onLongClicked: root.cursor = Math.max(0, root.cursor - 2)
                 }
                 TouchButton {
                     width: actionRow.unit
@@ -172,6 +196,7 @@ Rectangle {
                     text: ">"
                     textSize: 18
                     onClicked: if (root.cursor < root.buffer.length) root.cursor += 1
+                    onLongClicked: root.cursor = Math.min(root.buffer.length, root.cursor + 2)
                 }
                 TouchButton {
                     width: actionRow.unit
@@ -179,6 +204,11 @@ Rectangle {
                     text: "BACK"
                     textSize: Style.fontSmall
                     onClicked: root.backspace()
+                    // A2: 600 ms on BACK clears the whole buffer.
+                    onLongClicked: {
+                        root.buffer = ""
+                        root.cursor = 0
+                    }
                 }
                 TouchButton {
                     width: actionRow.unit

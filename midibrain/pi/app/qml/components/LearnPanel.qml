@@ -2,6 +2,11 @@ import QtQuick
 import Mnkybox 1.0
 
 // MIDI-learn capture panel used by the SYSTEM SHIFT face.
+// A9: the primary flow is arm-then-touch. ARM CAPTURE arms the target capture
+// with no target; every learnable control outlines in the accent colour and
+// the next one touched becomes the target, then the next incoming CC completes
+// the binding. Picking an internal id by hand is the secondary path, labelled
+// PICK TARGET MANUALLY; binding rows use human names only.
 Item {
     id: root
 
@@ -14,10 +19,11 @@ Item {
         Text {
             width: parent.width
             height: 16
-            text: "MIDI LEARN - capture a control change"
+            text: "MIDI LEARN - arm, then touch the control you want to map"
             color: Style.textDim
             font.pixelSize: Style.fontSmall
             font.weight: Font.DemiBold
+            elide: Text.ElideRight
         }
 
         Row {
@@ -25,22 +31,62 @@ Item {
             height: Style.touch
             spacing: Style.gapTight
 
+            TouchButton {
+                width: 200
+                height: parent.height
+                text: learn.capturing ? "WAIT FOR CC"
+                      : (learn.targetArmed ? "TOUCH A CONTROL" : "ARM CAPTURE")
+                textSize: Style.fontSmall
+                checked: learn.capturing || learn.targetArmed
+                focusId: root.focusPrefix + ".arm"
+                onClicked: {
+                    if (learn.capturing || learn.targetArmed) {
+                        learn.cancelCapture()
+                        return
+                    }
+                    // With the manual picker open the picked id is the target;
+                    // otherwise arm the touch-to-pick flow.
+                    if (manualRow.expanded) learn.startCapture()
+                    else app.armLearnTargetCapture()
+                }
+            }
+            Text {
+                width: parent.width - 200 - Style.gapTight
+                height: parent.height
+                text: learn.statusText
+                color: learn.capturing || learn.targetArmed ? Style.accent : Style.textDim
+                font.pixelSize: Style.fontSmall
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+
+        // Secondary path: pick an id by hand. Demoted below the arm-then-touch
+        // flow and collapsed by default.
+        Row {
+            id: manualRow
+            width: parent.width
+            height: Style.touch
+            spacing: Style.gapTight
+            property bool expanded: false
+
+            TouchButton {
+                width: 200
+                height: parent.height
+                text: manualRow.expanded ? "PICK TARGET MANUALLY <" : "PICK TARGET MANUALLY >"
+                textSize: Style.fontSmall
+                variant: "ghost"
+                focusId: root.focusPrefix + ".target"
+                onClicked: manualRow.expanded = !manualRow.expanded
+            }
             TouchComboBox {
                 id: learnTarget
-                width: parent.width - 148
-                model: learn.targets
-                focusId: root.focusPrefix + ".target"
+                visible: manualRow.expanded
+                width: parent.width - 200 - Style.gapTight
+                height: parent.height
+                model: learn.targetLabels
                 onActivated: (index) => learn.targetIndex = index
                 Binding on currentIndex { value: learn.targetIndex; when: !learnTarget.popup.visible }
-            }
-            TouchButton {
-                width: 144
-                height: parent.height
-                text: learn.capturing ? "WAIT FOR CC" : "ARM CAPTURE"
-                textSize: Style.fontSmall
-                checked: learn.capturing
-                focusId: root.focusPrefix + ".arm"
-                onClicked: learn.capturing ? learn.cancelCapture() : learn.startCapture()
             }
         }
 
@@ -52,7 +98,9 @@ Item {
             Text {
                 width: parent.width - 88
                 height: parent.height
-                text: learn.statusText
+                text: learn.bindings.length > 0
+                      ? learn.bindings.length + " binding(s)"
+                      : "no bindings - ARM CAPTURE, then move a knob on your controller"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 elide: Text.ElideRight
@@ -71,7 +119,7 @@ Item {
 
         ListView {
             width: parent.width
-            height: Math.max(0, root.height - Style.touch * 2 - 19)
+            height: Math.max(0, root.height - Style.touch * 3 - 16 - Style.gapTight * 3)
             model: learn.bindings
             clip: true
             delegate: Row {

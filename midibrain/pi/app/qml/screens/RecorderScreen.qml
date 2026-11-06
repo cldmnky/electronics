@@ -50,7 +50,7 @@ Item {
             width: parent.width
             // One row of nine per line; the row count and the arm state come
             // from the recorder's own arm model, not a literal.
-            height: Math.ceil(recorder.arms.rowCount / 9) * Style.touch
+            height: Math.ceil(recorder.arms.count / 9) * Style.touch
 
             Repeater {
                 model: recorder.arms
@@ -64,6 +64,21 @@ Item {
                     checked: index === recorder.selectedTrack
                     focusId: "recorder.track." + index
                     onClicked: recorder.setSelectedTrack(index)
+
+                    // C2: one track identity - the mixer's name on a second
+                    // 9 px line, so the selector and the strip agree.
+                    Text {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: 12
+                        text: model.name
+                        color: index === recorder.selectedTrack ? Style.panelDark
+                                                                : Style.textDim
+                        font.pixelSize: 9
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                    }
                 }
             }
         }
@@ -88,7 +103,7 @@ Item {
                 height: parent.height
                 text: "ARM"
                 textSize: Style.fontSmall
-                checked: mixer.trackArm
+                checked: recorder.trackArm
                 checkedColor: Style.record
                 focusId: "recorder.arm"
                 onClicked: mixer.toggleArm(recorder.selectedTrack)
@@ -105,7 +120,7 @@ Item {
             Text {
                 width: parent.width - 120 - 70 - 140 - Style.gap * 3
                 height: parent.height
-                text: "SHIFT: takes + punch"
+                text: "SHIFT > takes + punch"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 horizontalAlignment: Text.AlignRight
@@ -115,10 +130,12 @@ Item {
 
         Text {
             width: parent.width
-            height: 16
+            height: recorder.statusWarning ? 34 : 16
             text: recorder.statusText
-            color: Style.textDim
-            font.pixelSize: Style.fontSmall
+            color: recorder.statusWarning ? Style.record : Style.textDim
+            font.pixelSize: recorder.statusWarning ? 16 : Style.fontSmall
+            font.weight: recorder.statusWarning ? Font.DemiBold : Font.Normal
+            wrapMode: Text.WordWrap
             elide: Text.ElideRight
         }
         Text {
@@ -168,7 +185,7 @@ Item {
                 }
                 Text {
                     x: 72
-                    width: parent.width * 0.52
+                    width: parent.width * 0.44
                     height: parent.height
                     text: (model.imported ? "PTR  " : "") + model.name
                     color: Style.text
@@ -179,9 +196,10 @@ Item {
                 }
                 Text {
                     anchors.right: parent.right
-                    anchors.rightMargin: 8
-                    width: parent.width * 0.38
+                    anchors.rightMargin: 52
+                    width: parent.width * 0.30
                     height: parent.height
+                    visible: !(model.active && recorder.trackArmMutesTake)
                     text: model.duration + "  -  " + model.bytes
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
@@ -189,8 +207,62 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
+                // A1: the take is ACTIVE but the armed strip mutes it. The chip
+                // disarms and says what plays next.
+                Rectangle {
+                    visible: model.active && recorder.trackArmMutesTake
+                    anchors.right: selectTarget.left
+                    anchors.rightMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 150
+                    height: Style.touch
+                    radius: Style.corner
+                    color: Style.panelDark
+                    border.width: 1
+                    border.color: Style.record
+
+                    Text {
+                        anchors.fill: parent
+                        text: "ARMED - MUTES TAKE"
+                        color: Style.record
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    TapHandler {
+                        onTapped: {
+                            mixer.toggleArm(recorder.selectedTrack)
+                            app.showTextPopup("ARM OFF", "playing " + model.name)
+                        }
+                    }
+                }
+                // A3: the row body loads the take; "..." only selects it.
                 TapHandler {
-                    onTapped: recorder.selectRow(index)
+                    onTapped: app.activateTakeRow(index)
+                }
+                Rectangle {
+                    id: selectTarget
+                    width: Style.touch
+                    height: Style.touch
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    radius: Style.corner
+                    color: index === recorder.selectedRow ? Style.raised : Style.panelDark
+                    border.width: 2
+                    border.color: index === recorder.selectedRow ? Style.accent : Style.outline
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "..."
+                        color: Style.textDim
+                        font.pixelSize: Style.fontBody
+                        font.weight: Font.DemiBold
+                    }
+                    TapHandler {
+                        onTapped: app.selectTakeRow(index)
+                    }
                 }
             }
 
@@ -198,7 +270,7 @@ Item {
                 visible: takeList.count === 0
                 anchors.centerIn: parent
                 width: parent.width - 20
-                text: "no takes yet - press START TAKE"
+                text: "no takes yet - tap START TAKE"
                 color: Style.textDim
                 font.pixelSize: Style.fontBody
                 horizontalAlignment: Text.AlignHCenter
@@ -294,28 +366,60 @@ Item {
                 height: parent.height
                 text: "ACTIVE"
                 textSize: Style.fontSmall
-                active: recorder.selectedRow >= 0
+                opacity: recorder.selectedRow >= 0 ? 1.0 : 0.4
                 focusId: "shift.recorder.activate"
-                onClicked: recorder.activateSelected()
+                onClicked: {
+                    if (recorder.selectedRow < 0) {
+                        app.showTextPopup("ACTIVE TAKE", "select a row first (...)")
+                        return
+                    }
+                    recorder.activateSelected()
+                }
             }
             TouchButton {
                 width: 74
                 height: parent.height
                 text: "RENAME"
                 textSize: Style.fontSmall
-                active: !recorder.recording && recorder.selectedRow >= 0
+                opacity: (!recorder.recording && recorder.selectedRow >= 0) ? 1.0 : 0.4
                 focusId: "shift.recorder.rename"
-                onClicked: app.requestRenameTake()
+                onClicked: {
+                    if (recorder.selectedRow < 0) {
+                        app.showTextPopup("RENAME TAKE", "select a row first (...)")
+                        return
+                    }
+                    app.requestRenameTake()
+                }
             }
             TouchButton {
                 width: 68
                 height: parent.height
                 text: "DELETE"
                 textSize: Style.fontSmall
-                active: !recorder.recording && recorder.selectedRow >= 0
                 variant: "danger"
+                opacity: (!recorder.recording && recorder.selectedRow >= 0) ? 1.0 : 0.4
                 focusId: "shift.recorder.delete"
-                onClicked: app.requestDeleteTake()
+                onClicked: {
+                    if (recorder.selectedRow < 0) {
+                        app.showTextPopup("DELETE TAKE", "select a row first (...)")
+                        return
+                    }
+                    app.requestDeleteTake()
+                }
+            }
+            // A3: the destructive buttons act on this row; name it here.
+            Text {
+                width: parent.width - 108 - 76 - 64 - 74 - 74 - 68 - Style.gap * 6
+                height: parent.height
+                text: recorder.selectedRow >= 0
+                      ? "SELECTED  " + recorder.takeNameAt(recorder.selectedRow)
+                      : "no take selected"
+                color: Style.textDim
+                font.pixelSize: Style.fontSmall
+                opacity: 0.8
+                horizontalAlignment: Text.AlignRight
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideMiddle
             }
         }
 

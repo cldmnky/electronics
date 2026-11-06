@@ -931,10 +931,38 @@ void learnCaptureTests() {
   learn.poll();
   check(!learn.capturing(), "one control change completes the capture");
   check(learn.bindings().size() == 1, "captured CC creates one learn binding");
-  check(learn.bindings().value(0).contains(QStringLiteral("mixer.ch01.gain")),
-        "captured CC binds the selected target");
+  check(learn.bindings().value(0).contains(QStringLiteral("Mixer 01 GAIN")),
+        "captured CC binds the selected target under its human name");
+  check(!learn.bindings().value(0).contains(QStringLiteral("mixer.ch01.gain")),
+        "binding rows never show the internal learn path");
   learn.removeBinding(0);
   check(learn.bindings().isEmpty(), "learn binding removal");
+}
+
+void learnTargetCaptureTests() {
+  MidiGlue midi(false);
+  LearnViewModel learn(midi);
+  // A9 arm-then-touch: ARM CAPTURE with no target waits for a touch, and the
+  // touched control becomes the capture target before any CC arrives.
+  learn.armTargetCapture();
+  check(learn.targetArmed(), "ARM CAPTURE without a target arms the touch pick");
+  check(!learn.capturing(), "the CC capture does not start before a target");
+  learn.setTargetByPath(QStringLiteral("mixer.ch02.gain"));
+  check(!learn.targetArmed(), "picking a target ends the touch pick");
+  check(learn.capturing(), "the CC capture starts once the target is picked");
+  check(learn.captureTargetLabel() == QStringLiteral("Mixer 02 GAIN"),
+        "the picked target reads as a human name");
+  midi::MidiEvent event;
+  event.size = 3;
+  event.data[0] = 0xB0;  // channel 1
+  event.data[1] = 21;
+  event.data[2] = 64;
+  midi.handleInput(event);
+  learn.poll();
+  check(learn.bindings().size() == 1, "the touched target binds the next CC");
+  check(learn.bindings().value(0).contains(QStringLiteral("CC 21 ch1 -> Mixer 02 GAIN")),
+        "the binding row names the CC and the human target");
+  learn.removeBinding(0);
 }
 
 void projectRoundTripTests() {
@@ -2328,6 +2356,7 @@ int runAll() {
   takeNameTests();
   meterAndSpaceTests();
   learnCaptureTests();
+  learnTargetCaptureTests();
   projectRoundTripTests();
   loopAndIoTests();
   eqAndXyTests();

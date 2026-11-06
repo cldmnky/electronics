@@ -20,23 +20,37 @@ namespace mnky::app {
 class LearnViewModel final : public QObject {
   Q_OBJECT
   Q_PROPERTY(QStringList targets READ targets NOTIFY targetsChanged)
+  // The same list with human names (never the internal dotted path).
+  Q_PROPERTY(QStringList targetLabels READ targetLabels NOTIFY targetsChanged)
   Q_PROPERTY(QStringList bindings READ bindings NOTIFY bindingsChanged)
   Q_PROPERTY(QString statusText READ statusText NOTIFY statusChanged)
   Q_PROPERTY(QString captureTarget READ captureTarget NOTIFY captureChanged)
   Q_PROPERTY(int targetIndex READ targetIndex WRITE setTargetIndex NOTIFY targetChanged)
   Q_PROPERTY(bool capturing READ capturing NOTIFY captureChanged)
+  // Arm-then-touch (A9): ARM CAPTURE without a target outlines every learnable
+  // control; the next touched one becomes the capture target.
+  Q_PROPERTY(bool targetArmed READ targetArmed NOTIFY targetArmedChanged)
+  Q_PROPERTY(QString captureTargetLabel READ captureTargetLabel NOTIFY captureChanged)
 
  public:
   explicit LearnViewModel(MidiGlue& midi, QObject* parent = nullptr);
 
   QStringList targets() const { return targets_; }
+  QStringList targetLabels() const;
   QStringList bindings() const { return bindings_; }
   QString statusText() const { return statusText_; }
   QString captureTarget() const { return captureTarget_; }
   int targetIndex() const { return targetIndex_; }
   void setTargetIndex(int index);
   bool capturing() const { return capturing_; }
+  bool targetArmed() const { return targetArmed_; }
+  QString captureTargetLabel() const;
+  // Human name of a learn path, e.g. mixer.ch01.gain -> "Mixer 02 GAIN".
+  // The UI never shows the internal dotted path.
+  static QString humanTarget(const QString& path);
 
+  Q_INVOKABLE void armTargetCapture();
+  Q_INVOKABLE void setTargetByPath(const QString& path);
   Q_INVOKABLE void startCapture();
   Q_INVOKABLE void cancelCapture();
   Q_INVOKABLE void removeBinding(int index);
@@ -52,6 +66,7 @@ class LearnViewModel final : public QObject {
   void statusChanged();
   void captureChanged();
   void targetChanged();
+  void targetArmedChanged();
 
  private:
   void refreshBindings();
@@ -66,6 +81,7 @@ class LearnViewModel final : public QObject {
   QString captureTarget_;
   int targetIndex_ = 0;
   bool capturing_ = false;
+  bool targetArmed_ = false;
   std::uint64_t lastCaptureSeq_ = 0;
 };
 

@@ -19,6 +19,8 @@ namespace mnky::app {
 
 class ProjectsModel final : public QAbstractListModel {
   Q_OBJECT
+  // QML cannot read rowCount() as a property; list heights use this.
+  Q_PROPERTY(int count READ count NOTIFY countChanged)
  public:
   enum Roles {
     NameRole = Qt::UserRole + 1,
@@ -37,11 +39,15 @@ class ProjectsModel final : public QAbstractListModel {
   explicit ProjectsModel(QObject* parent = nullptr);
 
   int rowCount(const QModelIndex& parent = QModelIndex()) const override;
+  int count() const { return static_cast<int>(entries_.size()); }
   QVariant data(const QModelIndex& index, int role) const override;
   QHash<int, QByteArray> roleNames() const override;
 
   void setEntries(std::vector<Entry> entries);
   const Entry* entry(int row) const;
+
+ signals:
+  void countChanged();
 
  private:
   std::vector<Entry> entries_;

@@ -25,12 +25,16 @@ namespace mnky::app {
 
 class RecorderArmModel final : public QAbstractListModel {
   Q_OBJECT
+  // QML cannot read rowCount() as a property; the selector row sizes itself
+  // from this.
+  Q_PROPERTY(int count READ count CONSTANT)
  public:
-  enum Roles { IndexRole = Qt::UserRole + 1, ArmedRole };
+  enum Roles { IndexRole = Qt::UserRole + 1, ArmedRole, NameRole };
 
   explicit RecorderArmModel(MixerModel& mixer, QObject* parent = nullptr);
 
   int rowCount(const QModelIndex& parent = QModelIndex()) const override;
+  int count() const { return kNumStrips; }
   QVariant data(const QModelIndex& index, int role) const override;
   QHash<int, QByteArray> roleNames() const override;
   void refresh();
@@ -38,10 +42,13 @@ class RecorderArmModel final : public QAbstractListModel {
  private:
   MixerModel& mixer_;
   std::array<bool, kNumStrips> armed_{};
+  std::array<QString, kNumStrips> names_{};
 };
 
 class RecorderTakeModel final : public QAbstractListModel {
   Q_OBJECT
+  // QML cannot read rowCount() as a property; sheet heights use this.
+  Q_PROPERTY(int count READ count NOTIFY countChanged)
  public:
   enum Roles {
     NameRole = Qt::UserRole + 1,
@@ -67,11 +74,15 @@ class RecorderTakeModel final : public QAbstractListModel {
   explicit RecorderTakeModel(QObject* parent = nullptr);
 
   int rowCount(const QModelIndex& parent = QModelIndex()) const override;
+  int count() const { return static_cast<int>(entries_.size()); }
   QVariant data(const QModelIndex& index, int role) const override;
   QHash<int, QByteArray> roleNames() const override;
 
   void setEntries(std::vector<Entry> entries);
   const Entry* entry(int row) const;
+
+ signals:
+  void countChanged();
 
  private:
   std::vector<Entry> entries_;
@@ -82,6 +93,13 @@ class RecorderViewModel final : public QObject {
   Q_PROPERTY(QString transportText READ transportText NOTIFY readoutsChanged)
   Q_PROPERTY(QString clockText READ clockText NOTIFY readoutsChanged)
   Q_PROPERTY(QString statusText READ statusText NOTIFY readoutsChanged)
+  // True while statusText is the post-take ARM warning, so QML paints it in
+  // the record colour over two 16 px lines (A1).
+  Q_PROPERTY(bool statusWarning READ statusWarning NOTIFY readoutsChanged)
+  // The selected track is armed and has an active take: ARM mutes the take.
+  Q_PROPERTY(bool trackArmMutesTake READ trackArmMutesTake NOTIFY readoutsChanged)
+  // Arm state of the recorder's selected track (the ARM button's fill).
+  Q_PROPERTY(bool trackArm READ trackArm NOTIFY readoutsChanged)
   Q_PROPERTY(QString diskText READ diskText NOTIFY readoutsChanged)
   Q_PROPERTY(QString buttonText READ buttonText NOTIFY readoutsChanged)
   Q_PROPERTY(QString takeDirectory READ takeDirectory NOTIFY readoutsChanged)
@@ -106,6 +124,9 @@ class RecorderViewModel final : public QObject {
   QString transportText() const { return transportText_; }
   QString clockText() const { return clockText_; }
   QString statusText() const { return statusText_; }
+  bool statusWarning() const { return statusWarning_; }
+  bool trackArmMutesTake() const;
+  bool trackArm() const { return mixer_.arm(selectedTrack_); }
   QString diskText() const { return diskText_; }
   QString buttonText() const { return buttonText_; }
   QString takeDirectory() const { return takeDirectory_; }
@@ -143,11 +164,16 @@ class RecorderViewModel final : public QObject {
   Q_INVOKABLE void clearActive();
   Q_INVOKABLE QString importTake(const QString& path);
   Q_INVOKABLE QString renameSelected(const QString& name);
+  // Display name of one take row, for the SHIFT face's selected-object line.
+  Q_INVOKABLE QString takeNameAt(int row) const;
   Q_INVOKABLE void deleteSelected();
   Q_INVOKABLE void refresh();
 
   // Re-scan the take directory (after a take stops or the directory changes).
   void takeStateChanged();
+  // Track names live in the mixer; a rename refreshes the selector labels and
+  // the header without touching the take list (A4 + C2).
+  void tracksChanged();
   // Rename the just-recorded `chNN.wav` files to the session-v2 per-track form
   // and make each armed track's new take active. Returns the number renamed.
   int adoptRecordedTake(const std::string& takeDirectoryPath,
@@ -188,6 +214,7 @@ class RecorderViewModel final : public QObject {
   QString transportText_;
   QString clockText_;
   QString statusText_;
+  bool statusWarning_ = false;
   QString diskText_;
   QString buttonText_;
   QString takeDirectory_;

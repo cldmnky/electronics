@@ -28,6 +28,10 @@ QtObject {
     // Selected EQ node. USER-MANUAL section 9: "four nodes with the selected one
     // pink" -- the only non-role colour in the theme.
     readonly property color nodePink: "#f06292"
+    // The four-role switch legend (C1): SOLO fills with `ok` green and a dark
+    // label, MUTE fills with `textDim` and keeps `text` readable on it, ARM
+    // fills with `record` red, and the panel focus ring stays `accent`. The
+    // EQ node is the one non-role colour (pink).
     readonly property color gridLine: "#1b212a"
     // Danger fill for a destructive button that is not currently pressed.
     readonly property color dangerFill: "#3a1a1c"

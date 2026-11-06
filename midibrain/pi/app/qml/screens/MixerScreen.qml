@@ -87,10 +87,10 @@ Item {
             Text {
                 width: parent.width - 84 - 84 - 196 - 110 - Style.gap * 4
                 height: parent.height
-                text: (screen.shiftFace ? "SHIFT  " : "") +
-                      (mixer.trackMode ? mixer.trackName
-                                       : (mixer.empty ? "no tracks yet"
-                                                      : "tap ^ on a strip for the channel"))
+                text: screen.shiftFace ? "SHIFT  configure"
+                      : (mixer.trackMode ? mixer.trackName
+                                         : (mixer.empty ? "no tracks yet"
+                                                        : "tap ^ = channel - hold the name = rename"))
                 color: screen.shiftFace ? Style.accent : Style.textDim
                 font.pixelSize: Style.fontSmall
                 verticalAlignment: Text.AlignVCenter
@@ -146,6 +146,8 @@ Item {
                             mute: model.mute
                             solo: model.solo
                             arm: model.arm
+                            armMutesTake: model.armMutesTake
+                            armMutesBadge: model.armMutesBadge
                             selected: model.selected
                         }
                     }
@@ -227,11 +229,23 @@ Item {
                         visible: index >= mixer.bank * mixer.stripsPerBank &&
                                  index < (mixer.bank + 1) * mixer.stripsPerBank
                         width: visible ? shiftStripsArea.width / mixer.stripsPerBank : 0
-                        height: shiftStripsArea.height
+                        height: shiftStripsArea.height - 18
                         x: visible ? (index % mixer.stripsPerBank) * width : 0
                         stripIndex: model.slot
                         stripName: model.name
                     }
+                }
+
+                // C1: one colour legend for the three strip switches.
+                Text {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 16
+                    text: "solo green - mute gray - arm red - MON input - AUTO smart - BOTH layer - PLAY take"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
                 }
             }
         }
@@ -324,6 +338,8 @@ Item {
                         text: "MUTE"
                         textSize: Style.fontSmall
                         checked: mixer.trackMute
+                        checkedColor: Style.textDim
+                        checkedTextColor: Style.text
                         focusId: "track.mute"
                         onClicked: mixer.setTrackMute(!mixer.trackMute)
                     }
@@ -333,6 +349,8 @@ Item {
                         text: "SOLO"
                         textSize: Style.fontSmall
                         checked: mixer.trackSolo
+                        checkedColor: Style.ok
+                        checkedTextColor: Style.panelDark
                         focusId: "track.solo"
                         onClicked: mixer.setTrackSolo(!mixer.trackSolo)
                     }

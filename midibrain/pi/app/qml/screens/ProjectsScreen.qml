@@ -46,7 +46,7 @@ Item {
             Text {
                 width: parent.width - 100 - 118 - 100 - Style.gap * 3
                 height: parent.height
-                text: "SHIFT: manage + templates"
+                text: "tap loads - ... selects  -  SHIFT > manage + templates"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 verticalAlignment: Text.AlignVCenter
@@ -113,9 +113,9 @@ Item {
                     elide: Text.ElideRight
                 }
                 Text {
-                    anchors.right: parent.right
-                    anchors.rightMargin: 8
-                    width: parent.width / 2
+                    anchors.right: selectTarget.left
+                    anchors.rightMargin: 6
+                    width: parent.width / 2 - 50
                     height: parent.height
                     text: "session  -  " + model.modified + (model.current ? "  -  current" : "")
                     color: Style.textDim
@@ -124,8 +124,32 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
+                // A3: the row body loads; "..." only selects, so RENAME/DELETE
+                // can name a visible row without loading it first.
                 TapHandler {
                     onTapped: app.requestLoadProject(index)
+                }
+                Rectangle {
+                    id: selectTarget
+                    width: Style.touch
+                    height: Style.touch
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    radius: Style.corner
+                    color: index === projects.selectedRow ? Style.raised : Style.panelDark
+                    border.width: 2
+                    border.color: index === projects.selectedRow ? Style.accent : Style.outline
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "..."
+                        color: Style.textDim
+                        font.pixelSize: Style.fontBody
+                        font.weight: Font.DemiBold
+                    }
+                    TapHandler {
+                        onTapped: app.selectProjectRow(index)
+                    }
                 }
             }
 
@@ -133,7 +157,7 @@ Item {
                 visible: projectList.count === 0
                 anchors.centerIn: parent
                 width: parent.width - 20
-                text: "no projects yet - SHIFT/NEW creates one in ~/Music/mnkybox-projects"
+                text: "no projects yet - open SHIFT > and tap NEW"
                 color: Style.textDim
                 font.pixelSize: Style.fontBody
                 horizontalAlignment: Text.AlignHCenter
@@ -150,12 +174,12 @@ Item {
 
         Row {
             width: parent.width
-            height: 28
+            height: 20
             spacing: Style.gap
             Text {
                 width: parent.width - 118 - Style.gap
                 height: parent.height
-                text: "SHIFT  PROJECT MANAGEMENT / TEMPLATES"
+                text: "SHIFT  PROJECT MANAGEMENT / TEMPLATES  -  templates are settings-only session files"
                 color: Style.accent
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold
@@ -184,19 +208,31 @@ Item {
                 height: parent.height
                 text: "RENAME"
                 textSize: Style.fontSmall
-                active: projects.selectedRow >= 0
+                opacity: projects.selectedRow >= 0 ? 1.0 : 0.4
                 focusId: "shift.projects.rename"
-                onClicked: app.requestRenameProject()
+                onClicked: {
+                    if (projects.selectedRow < 0) {
+                        app.showTextPopup("RENAME PROJECT", "select a row first (...)")
+                        return
+                    }
+                    app.requestRenameProject()
+                }
             }
             TouchButton {
                 width: 100
                 height: parent.height
                 text: "DELETE"
                 textSize: Style.fontSmall
-                active: projects.selectedRow >= 0
                 variant: "danger"
+                opacity: projects.selectedRow >= 0 ? 1.0 : 0.4
                 focusId: "shift.projects.delete"
-                onClicked: app.requestDeleteProject(projects.selectedRow)
+                onClicked: {
+                    if (projects.selectedRow < 0) {
+                        app.showTextPopup("DELETE PROJECT", "select a row first (...)")
+                        return
+                    }
+                    app.requestDeleteProject(projects.selectedRow)
+                }
             }
             Text {
                 width: parent.width - 300 - Style.gap * 3
@@ -206,6 +242,52 @@ Item {
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 verticalAlignment: Text.AlignVCenter
+            }
+        }
+
+        // A3: the mirrored list names every row the destructive buttons can
+        // act on (five rows, 44 px, dimmed 0.8, selected row in accent).
+        ListView {
+            id: shiftList
+            width: parent.width
+            height: Math.min(5, projects.model.count) * Style.touch
+            clip: true
+            model: projects.model
+            boundsBehavior: Flickable.StopAtBounds
+            opacity: 0.8
+
+            delegate: Rectangle {
+                width: ListView.view.width
+                height: Style.touch
+                color: "transparent"
+                border.width: index === projects.selectedRow ? 2 : 0
+                border.color: Style.accent
+
+                Text {
+                    x: 8
+                    width: parent.width * 0.6
+                    height: parent.height
+                    text: model.name
+                    color: index === projects.selectedRow ? Style.accent : Style.text
+                    font.pixelSize: Style.fontBody
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                Text {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    width: parent.width * 0.36
+                    height: parent.height
+                    text: model.modified
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    horizontalAlignment: Text.AlignRight
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                TapHandler {
+                    onTapped: app.selectProjectRow(index)
+                }
             }
         }
 
@@ -240,14 +322,5 @@ Item {
             }
         }
 
-        Text {
-            width: parent.width
-            text: "Templates are settings-only session v2 files (isTemplate). " +
-                  "Loading a template keeps the current take registry unless the " +
-                  "template file carries one."
-            color: Style.textDim
-            font.pixelSize: Style.fontSmall
-            wrapMode: Text.Wrap
-        }
     }
 }

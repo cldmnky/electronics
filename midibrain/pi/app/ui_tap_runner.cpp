@@ -66,6 +66,9 @@ void UiTapRunner::closeOverlays() {
   controller_->configCancel();
   controller_->confirmCancel();
   controller_->keypadCancel();
+  controller_->closeTempoPopup();
+  controller_->closeTabGrid();
+  controller_->closeTakeSheet();
   controller_->hideValuePopup();
   controller_->setFullscreen(false);
   if (controller_->recording()) controller_->recToggle();

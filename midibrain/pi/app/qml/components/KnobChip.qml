@@ -37,12 +37,14 @@ Rectangle {
     readonly property real fraction: fullScale > 0
                                      ? Math.max(0, Math.min(1, value / fullScale)) : 0.0
     readonly property bool focused: app.focusId === focusId && focusId !== ""
+    // A9: outlined while a learn target capture waits for a touch.
+    readonly property bool learnOutline: app.learnArmed && app.isLearnableFocus(focusId)
 
     implicitHeight: Style.touch
     radius: Style.corner
     color: Style.panelDark
-    border.width: root.focused ? 2 : Style.outlineWidth
-    border.color: root.focused ? Style.accent : Style.outline
+    border.width: root.focused || root.learnOutline ? 2 : Style.outlineWidth
+    border.color: root.focused || root.learnOutline ? Style.accent : Style.outline
     opacity: active ? 1.0 : 0.55
 
     KnobDial {
@@ -93,13 +95,20 @@ Rectangle {
 
         property real pressY: 0
         property real pressValue: 0
+        property bool pickOnly: false
 
         onPressed: (mouse) => {
+            if (root.learnOutline) {
+                pickOnly = true
+                app.learnTargetTouched(root.focusId)
+                return
+            }
             pressY = mouse.y
             pressValue = root.value
             app.touchAnchorY = mapToItem(null, mouse.x, mouse.y).y
         }
         onPositionChanged: (mouse) => {
+            if (pickOnly) return
             if (!pressed) return
             let next
             if (root.stepSize > 0) {
@@ -118,7 +127,13 @@ Rectangle {
                                root.popupKind, next)
             root.moved(next)
         }
-        onReleased: app.touchAnchorY = -1
-        onCanceled: app.touchAnchorY = -1
+        onReleased: {
+            pickOnly = false
+            app.touchAnchorY = -1
+        }
+        onCanceled: {
+            pickOnly = false
+            app.touchAnchorY = -1
+        }
     }
 }

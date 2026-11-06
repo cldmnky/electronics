@@ -135,6 +135,9 @@ class TimelineViewModel final : public QObject {
   // missing, so the --screenshots run can show real waveforms. Not called by
   // the UI; the UI never waits for a scan.
   Q_INVOKABLE QString preparePeaksForDemo();
+  // A14: the ops popup's missing-peaks action. Rescans the active take and
+  // writes its .peaks sidecar (the same background scanner the lanes use).
+  Q_INVOKABLE QString renderPeaks();
 
   // Controller timer: re-reads take pointers/sidecars, updates the playhead and
   // re-applies region edits after a tempo change.

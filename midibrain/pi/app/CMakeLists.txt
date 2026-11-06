@@ -164,6 +164,7 @@ qt_add_resources(mnkybox "qml"
     qml/overlays/ChannelPopout.qml
     qml/overlays/ConfigPopup.qml
     qml/overlays/Keypad.qml
+    qml/overlays/TempoPopup.qml
     qml/overlays/ConfirmDialog.qml)
 
 # mnky_clap links mnky_audio PUBLIC (clap::Host implements audio::IEffect), so

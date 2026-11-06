@@ -985,6 +985,136 @@ class ScreenshotRunner final : public QObject {
                         controller_->openConfig(QStringLiteral("reverb"));
                       }});
 
+    // ---- 42-*: UI fix wave 1 (review A1/A3/A4/A5/A7/A8/A9/A10/A14/B1/C1/C4) --
+    steps_.push_back({"42-transport-tempo", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->setTab(0);
+                        // A7: the BPM button opens the touch tempo popup.
+                        controller_->openTempoPopup();
+                      }});
+    steps_.push_back({"42-transport-shift", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->setTab(0);
+                        // B1: the chip reads < PRIMARY and is checked while the
+                        // current tab's second face is up.
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"42-transport-no-shift", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        // D3/B1: tab 6 (MIDI) has no second face; the chip is
+                        // dimmed and the tab long-press cannot enter it.
+                        controller_->setTab(6);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"42-mixer-arm-mutes", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->recorder()->selectRow(0);
+                        controller_->recorder()->activateSelected();
+                        setStripArm(1, true);
+                        // A1: the 8 s post-take badge spells ARM MUTES TAKE.
+                        controller_->mixer()->notifyTakeStopped();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"42-mixer-shift-legend", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(0);
+                        // C1: solo green / mute gray / arm red plus the monitor
+                        // legend under the SHIFT strips.
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"42-recorder-arm-mutes", [this] {
+                        resetShot();
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->recorder()->selectRow(0);
+                        controller_->recorder()->activateSelected();
+                        setStripArm(1, true);
+                        controller_->setTab(3);
+                      }});
+    steps_.push_back({"42-recorder-shift-selected", [this] {
+                        resetShot();
+                        controller_->recorder()->setSelectedTrack(1);
+                        controller_->recorder()->selectRow(0);
+                        controller_->recorder()->activateSelected();
+                        controller_->setTab(3);
+                        // A3: the SHIFT face names the take its buttons act on.
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"42-projects-select", [this] {
+                        resetShot();
+                        controller_->setTab(5);
+                        // A deterministic row in the isolated HOME: the
+                        // capacity step above leaves 64 tracks, which the
+                        // session store refuses to save.
+                        clearMixerDemo();
+                        primeMixerDemo();
+                        controller_->projects()->saveProject();
+                        controller_->projects()->scanProjects();
+                        // A3: "..." selects without loading; the row body loads.
+                        controller_->selectProjectRow(0);
+                        controller_->hideValuePopup();
+                      }});
+    steps_.push_back({"42-projects-shift-mirror", [this] {
+                        resetShot();
+                        controller_->setTab(5);
+                        clearMixerDemo();
+                        primeMixerDemo();
+                        controller_->projects()->saveProject();
+                        controller_->projects()->scanProjects();
+                        controller_->selectProjectRow(0);
+                        controller_->hideValuePopup();
+                        // A3: the mirrored list on the destructive face.
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"42-timeline-take-sheet", [this] {
+                        resetShot();
+                        controller_->setTab(9);
+                        // A10: the lane label opens TAKE FOR TRACK nn.
+                        controller_->openTakeSheet(1);
+                      }});
+    steps_.push_back({"42-popup-timelineops", [this] {
+                        resetShot();
+                        controller_->setTab(9);
+                        // A14: seven ops (no RENDER), footer names the peaks
+                        // sidecar, missing peaks is a RENDER PEAKS action.
+                        controller_->openConfig(QStringLiteral("timelineops"));
+                      }});
+    steps_.push_back({"42-popup-metronome", [this] {
+                        resetShot();
+                        controller_->setTab(4);
+                        // A8: OFF / REC ONLY / ON PLAY, MAIN / PHONES / OUT3&4,
+                        // LEVEL and COUNT-IN.
+                        controller_->openConfig(QStringLiteral("metronome"));
+                      }});
+    steps_.push_back({"42-mixer-learn-armed", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(0);
+                        // A9: the learnable gain/pan/send controls outline in
+                        // the accent colour while the target capture waits.
+                        controller_->armLearnTargetCapture();
+                      }});
+    steps_.push_back({"42-system-learn", [this] {
+                        resetShot();
+                        controller_->setTab(4);
+                        controller_->setSystemShiftPage(1);
+                        controller_->showShiftFace(true);
+                        // A9: ARM CAPTURE with no target outlines every
+                        // learnable control and waits for a touch.
+                        controller_->armLearnTargetCapture();
+                      }});
+
     // The mixer screens above show strips; the app's own default stays empty.
     primeMixerDemo();
   }
@@ -1003,6 +1133,18 @@ class ScreenshotRunner final : public QObject {
     }
     controller_->mixer()->setTrackIndex(2);
     controller_->selectStrip(1);
+  }
+
+  // Deterministic arm state for the A1 shots: a previous step may have left
+  // the strip armed, and toggleArm() would then disarm it.
+  void setStripArm(int slot, bool armed) {
+    const int position = controller_->mixer()->positionOf(slot);
+    if (position < 0) return;
+    const bool current =
+        controller_->mixer()->data(controller_->mixer()->index(position, 0),
+                                   mnky::app::MixerViewModel::ArmRole)
+            .toBool();
+    if (current != armed) controller_->mixer()->toggleArm(slot);
   }
 
   void clearMixerDemo() {
@@ -1027,6 +1169,10 @@ class ScreenshotRunner final : public QObject {
     controller_->configCancel();
     controller_->keypadCancel();
     controller_->confirmCancel();
+    controller_->closeTempoPopup();
+    controller_->closeTabGrid();
+    controller_->closeTakeSheet();
+    controller_->clearNotice();
     controller_->setFullscreen(false);
     controller_->showShiftFace(false);
   }

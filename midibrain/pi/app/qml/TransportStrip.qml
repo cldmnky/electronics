@@ -3,10 +3,14 @@ import Mnkybox 1.0
 import "components"
 
 // Persistent transport strip directly under the tab row: rolling/REC state,
-// bar:beat plus elapsed time, BPM, the metronome toggle and the dirty dot.
-// No-Pico mode adds the touch transport because the panel buttons live on the
-// absent Pico. The touch buttons are drawn glyphs, and REC pulses while the
-// engine is actually recording. In hardware mode the physical panel owns them.
+// bar:beat plus elapsed time, the touch tempo button, the metronome toggle, the
+// SHIFT chip and the notice slot.
+// The play/stop/rec glyphs are always drawn: the panel owns them in hardware
+// mode (so they carry no focus id there), but every bench and QA session with
+// no panel harness still gets a touch transport. REC pulses while the engine is
+// actually recording. The SHIFT chip is the touch twin of the panel's SHIFT
+// key: it toggles the current tab's second face, and a tab without one renders
+// it dimmed and says so.
 Rectangle {
     id: root
 
@@ -27,18 +31,18 @@ Rectangle {
         anchors.fill: parent
         anchors.leftMargin: Style.marginCompact
         anchors.rightMargin: Style.marginCompact
-        spacing: Style.gap
+        spacing: Style.gapTight
 
         // Every width is fixed except the notice, so the row computes the
-        // leftover instead of overlapping the touch transport in no-Pico mode.
-        readonly property int baseWidth: 44 + (app.noPicoMode ? 150 : 190) +
-                                         (app.noPicoMode ? 84 : 90) +
-                                         (app.noPicoMode ? 56 : 0) + 72 + 10
-        readonly property int noPicoWidth: app.noPicoMode ? 3 * 48 : 0
-        readonly property int itemCount: app.noPicoMode ? 10 : 6
+        // leftover instead of overlapping a neighbour.
+        readonly property int positionWidth: app.noPicoMode ? 132 : 148
+        readonly property int fixedWidth: 36 + positionWidth + 96 +
+                                          (app.noPicoMode ? 52 : 0) + 3 * 44 +
+                                          88 + 62 + 8
+        readonly property int itemCount: app.noPicoMode ? 10 : 9
 
         Text {
-            width: 44
+            width: 36
             height: parent.height
             text: app.transportState
             color: app.transportState === "REC" ? Style.record
@@ -48,7 +52,7 @@ Rectangle {
             verticalAlignment: Text.AlignVCenter
         }
         Text {
-            width: app.noPicoMode ? 150 : 190
+            width: stripRow.positionWidth
             height: parent.height
             text: app.positionText
             color: Style.text
@@ -56,18 +60,22 @@ Rectangle {
             font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
-        Text {
-            width: app.noPicoMode ? 84 : 90
-            height: parent.height
+        // A7: tempo is a control, not a readout. The chevron opens the TEMPO
+        // popup (40..240 slider, +-1 buttons, TAP).
+        TouchButton {
+            width: 96
+            height: Style.touch
             text: app.tempoText
-            color: Style.textDim
-            font.pixelSize: Style.fontSmall
-            verticalAlignment: Text.AlignVCenter
+            textSize: Style.fontSmall
+            variant: "ghost"
+            chevron: "down"
+            focusId: "transport.tempo"
+            onClicked: app.openTempoPopup()
         }
         Text {
             // Persistent bare-Pi marker: the mixer/transport shots must show
             // that this run has no Pico even when the System screen is closed.
-            width: app.noPicoMode ? 56 : 0
+            width: app.noPicoMode ? 52 : 0
             height: parent.height
             visible: app.noPicoMode
             text: "NO PICO"
@@ -76,58 +84,73 @@ Rectangle {
             font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
+        // A5: always available. The panel ring owns these stops only in
+        // no-Pico mode, where no panel exists to press them.
         TransportGlyphButton {
-            width: app.noPicoMode ? 48 : 0
+            width: 44
             height: Style.touch
-            visible: app.noPicoMode
             glyph: "play"
             checked: app.rolling
-            focusId: "transport.play"
+            focusId: app.noPicoMode ? "transport.play" : ""
             onClicked: app.play()
         }
         TransportGlyphButton {
-            width: app.noPicoMode ? 48 : 0
+            width: 44
             height: Style.touch
-            visible: app.noPicoMode
             glyph: "stop"
             checked: !app.rolling
-            focusId: "transport.stop"
+            focusId: app.noPicoMode ? "transport.stop" : ""
             onClicked: app.stop()
         }
         TransportGlyphButton {
-            width: app.noPicoMode ? 48 : 0
+            width: 44
             height: Style.touch
-            visible: app.noPicoMode
             glyph: "rec"
             checked: app.recording
             recording: app.recording
-            focusId: "transport.rec"
+            focusId: app.noPicoMode ? "transport.rec" : ""
             onClicked: app.recToggle()
         }
         Text {
-            width: Math.max(0, stripRow.width - stripRow.baseWidth -
-                               stripRow.noPicoWidth -
+            width: Math.max(0, stripRow.width - stripRow.fixedWidth -
                                stripRow.spacing * (stripRow.itemCount - 1))
             height: parent.height
             text: app.noticeText
-            color: Style.accent
+            // D2 severity: info is accent, warn and error are record red. The
+            // text itself expires in the controller (6 s / 10 s / until the
+            // next successful action), so the slot never turns into a label.
+            color: app.noticeKind === "info" ? Style.accent : Style.record
             font.pixelSize: Style.fontSmall
             elide: Text.ElideRight
             verticalAlignment: Text.AlignVCenter
         }
+        // B1: the SHIFT face is reachable by touch. Dimmed on a tab without a
+        // second face, and a tap there names the reason (D3).
         TouchButton {
-            width: 72
+            width: 88
             height: Style.touch
-            anchors.verticalCenter: parent.verticalCenter
-            text: "CLICK"
+            text: app.panelMode === "shift" ? "< PRIMARY" : "SHIFT >"
+            textSize: Style.fontSmall
+            variant: "ghost"
+            checked: app.panelMode === "shift"
+            focusId: "transport.shift"
+            opacity: app.tabHasShiftFace(app.tab) ? 1.0 : 0.4
+            onClicked: app.showShiftFace(app.panelMode !== "shift")
+        }
+        TouchButton {
+            width: 62
+            height: Style.touch
+            text: app.clickLabel
             textSize: Style.fontSmall
             variant: "ghost"
             checked: app.clickEnabled
             focusId: "transport.click"
             onClicked: app.setClickEnabled(!app.clickEnabled)
+            // A8: a long press opens the metronome popup; a tap only toggles.
+            onLongClicked: app.openConfig("metronome")
         }
         Item {
-            width: 10
+            width: 8
             height: parent.height
             Rectangle {
                 visible: app.dirty
