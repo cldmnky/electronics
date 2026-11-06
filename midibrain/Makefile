@@ -1,4 +1,4 @@
-.PHONY: test release gate reports electrical mechanical mechanical-export host midifx spice panel-preview firmware
+.PHONY: test release gate reports electrical mechanical mechanical-export host midifx spice panel-preview firmware order
 
 # Defaults cover the setup in firmware/README.md; override on the command
 # line (PICO_SDK_PATH=/path/to/sdk make firmware) if yours lives elsewhere.
@@ -19,6 +19,14 @@ firmware:
 # then the fab exports. See tscircuit/scripts/release.sh and docs/acceptance.md.
 release:
 	cd tscircuit && bash scripts/release.sh
+
+# Ordering path: export the three boards with the shared fab pipeline (the same
+# steps `make release` runs after its gate) and print the JLCPCB order sheet.
+# Ordering is not blocked by the physical acceptance gate; `make release` keeps
+# tracking that evidence toward production.
+order:
+	cd tscircuit && bash scripts/fab_pipeline.sh
+	$(PYTHON) tscircuit/scripts/order_sheet.py
 
 # The gate alone: prints the physical acceptance state and the hardware
 # fingerprint. `--fingerprint` only prints the hash.

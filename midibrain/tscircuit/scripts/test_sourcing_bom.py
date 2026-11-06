@@ -388,6 +388,33 @@ class PanelTest(unittest.TestCase):
     def test_empty_panel_passes(self):
         sb.verify_panel_empty([], [])
 
+    def test_zero_byte_panel_csv_is_read_as_empty(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            z = pathlib.Path(tmp) / "panel-gerbers.zip"
+            with zipfile.ZipFile(z, "w") as zf:
+                zf.writestr("bom.csv", "")
+                zf.writestr("pick_and_place.csv", "")
+            with zipfile.ZipFile(z) as zf:
+                self.assertEqual(
+                    sb.read_zip_csv(zf, "bom.csv", "panel", allow_empty=True),
+                    ([], []))
+                self.assertEqual(
+                    sb.read_zip_csv(zf, "pick_and_place.csv", "panel",
+                                    allow_empty=True), ([], []))
+
+    def test_zero_byte_order_csv_still_fails_for_front(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmp:
+            z = pathlib.Path(tmp) / "front-gerbers.zip"
+            with zipfile.ZipFile(z, "w") as zf:
+                zf.writestr("bom.csv", "")
+            with zipfile.ZipFile(z) as zf:
+                with self.assertRaises(sb.SourcingError) as ctx:
+                    sb.read_zip_csv(zf, "bom.csv", "front",
+                                    sb.BOM_REQUIRED_COLUMNS)
+            self.assertIn("is empty", str(ctx.exception))
+
     def test_panel_with_parts_fails(self):
         with self.assertRaises(sb.SourcingError):
             sb.verify_panel_empty([{"Designator": "C1"}], [])

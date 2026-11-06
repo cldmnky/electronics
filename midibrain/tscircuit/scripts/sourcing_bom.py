@@ -153,10 +153,20 @@ def norm(row: dict[str, str], key: str) -> str:
 
 
 def read_zip_csv(zf: zipfile.ZipFile, member: str, name: str,
-                 required: Sequence[str] = ()) -> tuple[list[str], list[dict[str, str]]]:
+                 required: Sequence[str] = (),
+                 allow_empty: bool = False) -> tuple[list[str], list[dict[str, str]]]:
+    """Read a CSV from a gerbers zip.
+
+    ``allow_empty`` exists for the panel only: the exporter writes zero-byte
+    ``bom.csv``/``pick_and_place.csv`` for a board with no components. Front
+    and rear must still fail on an empty file, because their BOM/CPL are the
+    order input.
+    """
     if member not in set(zf.namelist()):
         raise SourcingError(f"{name}: no {member} in the gerbers zip")
     text = zf.read(member).decode("utf-8")
+    if allow_empty and not text.strip():
+        return [], []
     try:
         rows = list(csv.reader(io.StringIO(text), strict=True))
     except csv.Error as exc:
@@ -422,8 +432,12 @@ def main(argv: Sequence[str]) -> int:
 
         pd = fab / "panel"
         with zipfile.ZipFile(pd / "panel-gerbers.zip") as zf:
-            _, panel_bom = read_zip_csv(zf, "bom.csv", "panel")
-            _, panel_pnp = read_zip_csv(zf, "pick_and_place.csv", "panel")
+            # The panel has no components, so the exporter emits zero-byte
+            # bom.csv/pick_and_place.csv. That is the documented shape; any
+            # parsed row still fails verify_panel_empty below.
+            _, panel_bom = read_zip_csv(zf, "bom.csv", "panel", allow_empty=True)
+            _, panel_pnp = read_zip_csv(zf, "pick_and_place.csv", "panel",
+                                        allow_empty=True)
         verify_panel_empty(panel_bom, panel_pnp)
         print("    panel: no components (fabrication only, no BOM/CPL)")
 
