@@ -134,17 +134,17 @@ Rectangle {
             }
         }
 
-        TouchSlider {
-            id: panSlider
+        KnobChip {
             width: parent.width
             height: Style.touch
+            label: "PAN"
+            value: root.pan
+            valueText: mixer.panTextAt(root.stripIndex)
             minimumValue: 0
             maximumValue: 1
-            value: root.pan
             focusId: "mixer.pan." + root.stripIndex
             popupLabel: root.nameText + " PAN"
             popupKind: "pan"
-            Binding on value { value: root.pan; when: !panSlider.dragging }
             onMoved: (value) => mixer.setPan(root.stripIndex, value)
         }
 

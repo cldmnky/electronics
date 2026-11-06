@@ -5,6 +5,7 @@
 
 #include "logic.hpp"
 #include "mixer_view_model.hpp"
+#include "pipe_ui.hpp"
 #include "routing_view_model.hpp"
 #include "timeline_model.hpp"
 #include "timeline_view_model.hpp"
@@ -54,11 +55,16 @@ bool ConfigPopupModel::openKind(const QString& kind) {
       QStringLiteral("insert"),    QStringLiteral("addtrack"),
       QStringLiteral("delaydivision"), QStringLiteral("reverbmodel"),
       QStringLiteral("pipesource"), QStringLiteral("pipedest"),
-      QStringLiteral("pipetype")};
+      QStringLiteral("pipetype"), QStringLiteral("pipeparam"),
+      QStringLiteral("chainmenu")};
   if (!kinds.contains(kind)) return false;
   if (kind == QStringLiteral("timelineops") && timeline_ == nullptr) return false;
   if (kind == QStringLiteral("pipechannels")) {
     if (routing_ == nullptr || routing_->pipeCount() == 0) return false;
+  }
+  if (kind == QStringLiteral("pipeparam") &&
+      (routing_ == nullptr || routing_->pipeCount() == 0)) {
+    return false;
   }
   if ((kind == QStringLiteral("inputsource") || kind == QStringLiteral("outputdest") ||
        kind == QStringLiteral("insert")) && mixerVm_ == nullptr) {
@@ -86,6 +92,8 @@ bool ConfigPopupModel::openKind(const QString& kind) {
            : kind == QStringLiteral("pipesource")  ? QStringLiteral("PIPE FROM")
            : kind == QStringLiteral("pipedest")    ? QStringLiteral("PIPE TO")
            : kind == QStringLiteral("pipetype")    ? QStringLiteral("ADD PIPE TYPE")
+           : kind == QStringLiteral("pipeparam")   ? QStringLiteral("PIPE PARAMETER")
+           : kind == QStringLiteral("chainmenu")   ? QStringLiteral("CHAIN")
                                                  : QStringLiteral("MAIN COMP");
   loadDraft();
   captureRestore();
@@ -187,6 +195,33 @@ void ConfigPopupModel::loadDraft() {
   }
   if (kind_ == QStringLiteral("pipetype")) {
     pipeTypeIndex_ = routing_ == nullptr ? 0 : routing_->addTypeIndex();
+  }
+  if (kind_ == QStringLiteral("pipeparam")) {
+    pipeParamChoices_.clear();
+    pipeParamContext_.clear();
+  }
+  if (kind_ == QStringLiteral("pipeparam") && routing_ != nullptr) {
+    // The choice list and the current value come from the same row the
+    // parameter card renders, and pipeParams() is the selected pipe's list, so
+    // the write target is that same pipe.
+    pipeParamSlot_ = routing_->selectedPipe();
+    for (const auto& entry : routing_->pipeParams()) {
+      const auto row = entry.toMap();
+      if (row.value(QStringLiteral("param")).toInt() != pipeParamIndex_) continue;
+      pipeParamMinimum_ = row.value(QStringLiteral("minimum")).toInt();
+      const int value = row.value(QStringLiteral("value")).toInt();
+      pipeParamChoice_ = value - pipeParamMinimum_;
+      for (const auto& choice : row.value(QStringLiteral("choices")).toStringList()) {
+        pipeParamChoices_ << choice;
+      }
+      pipeParamContext_ =
+          routing_->pipeRouteText() + QStringLiteral(" - PIPE ") +
+          QString::number(routing_->selectedPipe() + 1) + QStringLiteral(" ") +
+          routing_->selectedPipeName() + QStringLiteral(" - ") +
+          row.value(QStringLiteral("name")).toString() + QStringLiteral(" ") +
+          row.value(QStringLiteral("valueText")).toString();
+      break;
+    }
   }
   if (kind_ == QStringLiteral("addtrack") && mixerVm_ != nullptr) {
     // ADD TRACK appends the first free slot; its default name follows the take
@@ -316,6 +351,7 @@ void ConfigPopupModel::captureRestore() {
   restore.pipeSource = routing_ == nullptr ? 0 : routing_->pipeSource();
   restore.pipeDestination = routing_ == nullptr ? 0 : routing_->pipeDestination();
   restore.pipeType = routing_ == nullptr ? 0 : routing_->addTypeIndex();
+  restore.pipeParam = pipeParamMinimum_ + pipeParamChoice_;
   restore.inputSource =
       mixerVm_ == nullptr ? 0 : mixerVm_->inSourceState(inputTargetSlot_);
   restore.outputDst = mixerVm_ == nullptr ? 0 : mixerVm_->outDstOf(outputTargetSlot_);
@@ -385,6 +421,10 @@ void ConfigPopupModel::restoreRestore() {
     if (routing_ != nullptr) routing_->setPipeDestination(restore.pipeDestination);
   } else if (kind_ == QStringLiteral("pipetype")) {
     if (routing_ != nullptr) routing_->setAddTypeIndex(restore.pipeType);
+  } else if (kind_ == QStringLiteral("pipeparam")) {
+    if (routing_ != nullptr) {
+      routing_->setPipeParam(pipeParamSlot_, pipeParamIndex_, restore.pipeParam);
+    }
   } else if (kind_ == QStringLiteral("inputsource")) {
     if (mixerVm_ != nullptr) {
       mixerVm_->setInSourceState(inputTargetSlot_, restore.inputSource);
@@ -465,6 +505,11 @@ void ConfigPopupModel::applyDraft() {
     }
   } else if (kind_ == QStringLiteral("pipetype")) {
     if (routing_ != nullptr) routing_->setAddTypeIndex(pipeTypeIndex_);
+  } else if (kind_ == QStringLiteral("pipeparam")) {
+    if (routing_ != nullptr) {
+      routing_->setPipeParam(pipeParamSlot_, pipeParamIndex_,
+                             pipeParamMinimum_ + pipeParamChoice_);
+    }
   } else if (kind_ == QStringLiteral("inputsource")) {
     if (mixerVm_ != nullptr) {
       mixerVm_->setInSourceState(inputTargetSlot_, inputSourceIndex_);
@@ -865,6 +910,30 @@ void ConfigPopupModel::setPipeDestIndex(int value) {
 void ConfigPopupModel::setPipeTypeIndex(int value) {
   pipeTypeIndex_ =
       std::clamp(value, 0, std::max(0, static_cast<int>(pipeTypeLabels().size()) - 1));
+  changedLive();
+}
+
+QStringList ConfigPopupModel::pipeTypeRoles() const {
+  QStringList roles;
+  if (routing_ == nullptr) return roles;
+  const int count = static_cast<int>(mnky::midifx::generated::kPipeCount);
+  roles.reserve(count);
+  for (int id = 1; id <= count; ++id) roles << pipeui::pipeRoleName(id);
+  return roles;
+}
+
+QString ConfigPopupModel::pipeTypeDocs() const {
+  return pipeui::pipeDocs(pipeTypeIndex_ + 1);
+}
+
+void ConfigPopupModel::setPipeParamTarget(int pipe, int param) {
+  pipeParamSlot_ = pipe;
+  pipeParamIndex_ = param;
+}
+
+void ConfigPopupModel::setPipeParamChoice(int choice) {
+  if (pipeParamChoices_.isEmpty()) return;
+  pipeParamChoice_ = std::clamp(choice, 0, static_cast<int>(pipeParamChoices_.size()) - 1);
   changedLive();
 }
 

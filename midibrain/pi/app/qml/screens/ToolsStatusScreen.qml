@@ -77,29 +77,21 @@ Item {
             width: parent.width
             height: Style.touch
             spacing: 6
-            TouchSlider {
-                id: brightness
-                width: parent.width - 120
+            KnobChip {
+                width: parent.width
                 height: parent.height
+                label: "BRIGHTNESS"
+                value: tools.brightness
+                valueText: tools.brightness
+                suffix: " %"
+                decimals: 0
                 minimumValue: 5
                 maximumValue: 100
-                value: tools.brightness
                 active: tools.brightnessAvailable
                 focusId: page.focusPrefix + ".brightness"
                 popupLabel: "BRIGHTNESS"
                 popupKind: "percent"
-                Binding on value { value: tools.brightness; when: !brightness.dragging }
                 onMoved: (value) => tools.brightness = Math.round(value)
-            }
-            Text {
-                width: 114
-                height: parent.height
-                text: tools.brightness + " %"
-                color: tools.brightnessAvailable ? Style.text : Style.textDim
-                font.pixelSize: Style.fontBody
-                font.weight: Font.DemiBold
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: Text.AlignRight
             }
         }
         Text {

@@ -119,26 +119,17 @@ Rectangle {
                         width: parent.width
                         height: Style.touch
                         spacing: 4
-                        Text {
-                            width: 44
+                        KnobChip {
+                            width: parent.width - 54
                             height: parent.height
-                            text: "PAN"
-                            color: Style.textDim
-                            font.pixelSize: Style.fontSmall
-                            font.weight: Font.DemiBold
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        TouchSlider {
-                            id: channelPan
-                            width: parent.width - 98
-                            height: parent.height
+                            label: "PAN"
+                            value: mixer.trackPan
+                            valueText: mixer.trackPanText
                             minimumValue: 0
                             maximumValue: 1
-                            value: mixer.trackPan
                             focusId: "channel.pan"
                             popupLabel: mixer.trackName + " PAN"
                             popupKind: "pan"
-                            Binding on value { value: mixer.trackPan; when: !channelPan.dragging }
                             onMoved: (value) => mixer.setTrackPan(value)
                         }
                         Text {
@@ -191,26 +182,18 @@ Rectangle {
                         width: parent.width
                         height: Style.touch
                         spacing: 4
-                        Text {
-                            width: 44
+                        KnobChip {
+                            width: parent.width
                             height: parent.height
-                            text: "TRIM"
-                            color: Style.textDim
-                            font.pixelSize: Style.fontSmall
-                            font.weight: Font.DemiBold
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        TouchSlider {
-                            id: channelTrim
-                            width: parent.width - 44
-                            height: parent.height
+                            label: "TRIM"
+                            value: mixer.trackTrimDb
+                            valueText: Number(mixer.trackTrimDb).toFixed(1)
+                            suffix: " dB"
                             minimumValue: -24
                             maximumValue: 24
-                            value: mixer.trackTrimDb
                             focusId: "channel.trim"
                             popupLabel: mixer.trackName + " TRIM"
                             popupKind: "db"
-                            Binding on value { value: mixer.trackTrimDb; when: !channelTrim.dragging }
                             onMoved: (value) => mixer.setTrackTrimDb(value)
                         }
                     }
@@ -390,44 +373,14 @@ Rectangle {
         }
     }
 
-    component ChannelSliderRow: Row {
-        property string label: ""
-        property real value: 0
-        property string focusId: ""
-        signal moved(real value)
-
+    // A send level in a narrow sub-column: an arc-dial chip with its own
+    // readout, per the refresh law (no slider outside a wide fader).
+    component ChannelSliderRow: KnobChip {
         height: Style.touch
-        spacing: 4
-        Text {
-            width: 44
-            height: parent.height
-            text: parent.label
-            color: Style.textDim
-            font.pixelSize: Style.fontSmall
-            font.weight: Font.DemiBold
-            verticalAlignment: Text.AlignVCenter
-        }
-        TouchSlider {
-            id: rowSlider
-            width: parent.width - 44 - 48
-            height: parent.height
-            minimumValue: 0
-            maximumValue: 1
-            value: parent.value
-            focusId: parent.focusId
-            popupLabel: parent.label
-            popupKind: "percent"
-            Binding on value { value: rowSlider.parent.value; when: !rowSlider.dragging }
-            onMoved: (value) => parent.moved(value)
-        }
-        Text {
-            width: 40
-            height: parent.height
-            text: Math.round(parent.value * 100) + "%"
-            color: Style.text
-            font.pixelSize: Style.fontSmall
-            horizontalAlignment: Text.AlignRight
-            verticalAlignment: Text.AlignVCenter
-        }
+        valueText: Math.round(value * 100)
+        suffix: "%"
+        minimumValue: 0
+        maximumValue: 1
+        popupKind: "percent"
     }
 }

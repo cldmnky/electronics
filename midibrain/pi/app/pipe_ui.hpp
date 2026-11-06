@@ -6,11 +6,11 @@
 // the schema, so a new pipe type is a pipes.json entry plus one regenerated
 // header - no C++ table and no QML.
 //
-// Editor mapping (one 44 px row per positional parameter):
-//   ValueFormat::Bool        -> "toggle"  one ON/OFF button
-//   ValueFormat::Choice      -> "choice"  previous / name / next stepper
+// Editor mapping (one card per positional parameter):
+//   ValueFormat::Bool        -> "toggle"  label + ON/OFF chip (choice popup)
+//   ValueFormat::Choice      -> "choice"  label + choice-name chip (choice popup)
 //   value with a schema unit -> "knob"    arc dial + unit value popup
-//   ValueFormat::Plain       -> "stepper" -/+ over the schema range
+//   ValueFormat::Plain       -> "stepper" arc dial over the schema range
 //
 // Inline @p values are the stored positional parameters; indices past the stored
 // list use the generated schema default, exactly like the 0x19 wire reader.
@@ -37,6 +37,11 @@ bool isKnown(int typeId);
 bool isClocked(int typeId);
 QString pipeName(int typeId);
 QString pipeShortName(int typeId);
+// Schema role of the type, uppercase for the type list: "MODIFIER" (transforms
+// messages that already exist) or "GENERATOR" (emits on the clock grid).
+QString pipeRoleName(int typeId);
+// One-line schema doc of the type ("" when the id is unknown).
+QString pipeDocs(int typeId);
 
 int clamp(const ParamSpec& param, int value);
 // MIDI note name for 0..127 (C-1 .. G9).
@@ -48,9 +53,9 @@ QString valueText(int typeId, int index, int value);
 // "toggle" | "choice" | "knob" | "stepper".
 QString editorKind(const ParamUiSpec& ui);
 
-// QML editor rows for one page of a pipe's positional parameters. `first` and
-// `last` clip the positional range; a page that would exceed the pipe's
-// parameter count renders only the parameters it has.
+// QML editor rows for a positional range of a pipe's parameters. `first` and
+// `last` clip the range, so the caller asks for the whole schema (the parameter
+// grid shows every card) and the tests can ask for a slice.
 QVariantList editorRows(int typeId, const std::vector<int>& values, int first,
                         int last);
 // The same builder over an explicit spec pair. Tests use it with a synthetic
@@ -58,9 +63,6 @@ QVariantList editorRows(int typeId, const std::vector<int>& values, int first,
 QVariantList editorRowsFor(const ParamSpec* params, const ParamUiSpec* ui,
                            std::size_t count, const std::vector<int>& values,
                            int first, int last);
-
-// Pages needed for a pipe with `paramCount` parameters (at least 1).
-int pageCount(std::size_t paramCount, int perPage);
 
 // Dotted MIDI-learn path of one positional pipe parameter. The path stays
 // positional on purpose: a learned control must survive a chain edit, and the

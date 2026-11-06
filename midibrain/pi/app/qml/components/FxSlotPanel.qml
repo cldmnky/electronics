@@ -83,26 +83,19 @@ Rectangle {
             height: visible ? Style.touch : 0
             spacing: Style.gapTight
 
-            Text {
-                width: 56
-                height: parent.height
-                text: "RETURN"
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
-                font.weight: Font.DemiBold
-                verticalAlignment: Text.AlignVCenter
-            }
-            TouchSlider {
-                id: returnSlider
-                width: Math.max(120, parent.width - 56 - 88 - 8)
+            KnobChip {
+                width: Math.max(120, parent.width - 88 - 8)
                 height: Style.touch
+                label: "RETURN"
+                value: root.slot ? root.slot.returnDb : 0
+                valueText: Number(root.slot ? root.slot.returnDb : 0).toFixed(1)
+                suffix: " dB"
                 minimumValue: -60
                 maximumValue: 12
-                value: root.slot ? root.slot.returnDb : 0
+                active: root.slot !== null
                 focusId: root.focusPrefix + "." + root.slotLetter + ".return"
                 popupLabel: "SEND " + root.slotLetter + " RETURN"
                 popupKind: "db"
-                Binding on value { value: root.slot.returnDb; when: !returnSlider.dragging }
                 onMoved: (value) => root.slot.returnDb = value
             }
             TouchButton {

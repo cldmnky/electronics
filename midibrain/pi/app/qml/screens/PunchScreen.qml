@@ -96,6 +96,23 @@ Item {
             font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
+        // The measure is a tight numeric field: an arc-dial chip with the two
+        // fine-step buttons beside it, not a stepper readout (refresh law).
+        KnobChip {
+            width: parent.width - 110 - 130 - 60 * 2 - Style.gap * 4
+            height: parent.height
+            label: "MEASURE"
+            value: parent.measure
+            valueText: parent.measure
+            decimals: 0
+            stepSize: 1
+            minimumValue: 1
+            dialScale: Math.max(16, parent.measure)
+            popupLabel: "PUNCH MEASURE"
+            popupKind: "generic"
+            focusId: parent.focusPrefix + ".measure"
+            onMoved: (value) => parent.measureMoved(Math.max(1, Math.round(value)))
+        }
         TouchButton {
             width: 60
             height: parent.height
@@ -103,22 +120,6 @@ Item {
             textSize: 22
             focusId: parent.focusPrefix + ".measure.dec"
             onClicked: parent.measureMoved(parent.measure - 1)
-        }
-        Rectangle {
-            width: 120
-            height: parent.height
-            color: Style.panelDark
-            radius: Style.corner
-            border.width: app.focusId === (parent.focusPrefix + ".measure") ? 2 : Style.outlineWidth
-            border.color: app.focusId === (parent.focusPrefix + ".measure") ? Style.accent
-                                                                           : Style.outline
-            Text {
-                anchors.centerIn: parent
-                text: "MEASURE " + parent.parent.measure
-                color: Style.text
-                font.pixelSize: Style.fontTitle
-                font.weight: Font.DemiBold
-            }
         }
         TouchButton {
             width: 60

@@ -749,16 +749,14 @@ class ScreenshotRunner final : public QObject {
                         resetShot();
                         primePipeChain(false);
                         controller_->routing()->selectPipe(0);
-                        controller_->routing()->setParamPage(0);
                       }});
     steps_.push_back({"40-routing-pipes-knob", [this] {
                         resetShot();
                         primePipeChain(true);
-                        // The ARP pipe's page 2 is OCTAVES (stepper) and SWING
-                        // (arc knob with a "%" popup): generated editors in one
-                        // row, no per-type QML.
+                        // The ARP pipe's cards are DIVISION/TYPE (choice chips)
+                        // and OCTAVES/SWING (arc dials): generated cards, no
+                        // per-type QML.
                         controller_->routing()->selectPipe(1);
-                        controller_->routing()->setParamPage(1);
                         controller_->showTextPopup(
                             QStringLiteral("SWING"),
                             controller_->routing()->pipeParamValueText(3, 50));
@@ -872,6 +870,121 @@ class ScreenshotRunner final : public QObject {
                         controller_->openChannel(2);
                         controller_->openInsert(2);
                       }});
+    // ---- 41-*: pipes page declutter, popup selectors, knob-card params ----
+    steps_.push_back({"41-routing-pipes", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        // FILTER selected: one-line chain rows with the row
+                        // actions on the selected row only, and eight bool
+                        // parameters as popup-selector chips.
+                        controller_->routing()->selectPipe(0);
+                      }});
+    steps_.push_back({"41-routing-pipes-knob", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        // ARP selected: DIVISION/TYPE chips beside the OCTAVES
+                        // and SWING arc-dial cards, with the value readout in
+                        // the band below the bridge (never over the tab row).
+                        controller_->routing()->selectPipe(1);
+                        controller_->setTouchAnchorY(332.0);
+                        controller_->showTextPopup(
+                            QStringLiteral("SWING"),
+                            controller_->routing()->pipeParamValueText(3, 50));
+                      }});
+    steps_.push_back({"41-popup-pipetype", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        controller_->routing()->selectPipe(0);
+                        // The ADD type selector: every schema type with its role.
+                        controller_->openConfigFrom(QStringLiteral("pipetype"),
+                                                    nullptr);
+                      }});
+    steps_.push_back({"41-popup-pipeparam", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        controller_->routing()->selectPipe(1);
+                        // ARP DIVISION (a schema enum) as the choice list its
+                        // card opens.
+                        controller_->openPipeParam(1, 0, nullptr);
+                      }});
+    steps_.push_back({"41-popup-metronome", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        controller_->routing()->selectPipe(0);
+                        // The sweep's numeric steppers are knob cards now: the
+                        // click BARS value is the metronome's.
+                        controller_->setTab(4);
+                        controller_->setSystemShiftPage(0);
+                        controller_->showShiftFace(true);
+                        controller_->openConfig(QStringLiteral("metronome"));
+                      }});
+    steps_.push_back({"41-popup-delay", [this] {
+                        resetShot();
+                        // The delay DIVISION is a full choice row instead of a
+                        // prev/name/next stepper.
+                        controller_->setTab(8);
+                        controller_->openConfig(QStringLiteral("delay"));
+                      }});
+    steps_.push_back({"41-chain-menu", [this] {
+                        resetShot();
+                        primePipeChain(true);
+                        controller_->routing()->selectPipe(0);
+                        controller_->openConfigFrom(QStringLiteral("chainmenu"),
+                                                    nullptr);
+                      }});
+
+    // ---- 41-* sweep: tight-space values are dial chips, never sliders ------
+    steps_.push_back({"41-mixer-shift", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->clearClipDemo();
+                        controller_->mixer()->setTrackMode(false);
+                        controller_->mixer()->setBank(0);
+                        controller_->setTab(0);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"41-mixer-track", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->clearClipDemo();
+                        controller_->mixer()->setTrackMode(true);
+                        controller_->mixer()->setTrackIndex(2);
+                        controller_->setTab(0);
+                      }});
+    steps_.push_back({"41-channel-popout", [this] {
+                        resetShot();
+                        primeMixerDemo();
+                        controller_->mixer()->clearClipDemo();
+                        controller_->setTab(0);
+                        controller_->openChannel(2);
+                      }});
+    steps_.push_back({"41-fx-builtin", [this] {
+                        resetShot();
+                        controller_->setTab(2);
+                      }});
+    steps_.push_back({"41-fx-shift", [this] {
+                        resetShot();
+                        controller_->setTab(2);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"41-recorder-shift", [this] {
+                        resetShot();
+                        controller_->setTab(3);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"41-system-tools", [this] {
+                        resetShot();
+                        controller_->setTab(4);
+                        controller_->setSystemShiftPage(1);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"41-popup-reverb", [this] {
+                        resetShot();
+                        // The X/Y reverb secondary parameters: one row of cards.
+                        controller_->setTab(8);
+                        controller_->openConfig(QStringLiteral("reverb"));
+                      }});
+
     // The mixer screens above show strips; the app's own default stays empty.
     primeMixerDemo();
   }

@@ -302,6 +302,51 @@ void routingTests() {
   popup.accept();
   check(scopeRouting.selectedPipeChannelMask() == 0x000F,
         "OK writes the draft chMask through to MidiGlue");
+
+  // The parameter choice popup: a bool parameter's list is OFF/ON, an enum's
+  // list is its schema choices, a tap writes the positional parameter live and
+  // CANCEL restores what the popup opened with.
+  check(scopeRouting.pipeParams().size() == 8,
+        "the selected pipe exposes every schema parameter (no paging)");
+  popup.setPipeParamTarget(0, 0);
+  check(popup.openKind(QStringLiteral("pipeparam")),
+        "the pipe parameter choice popup opens for a bool parameter");
+  check(popup.pipeParamChoices() == QStringList({QStringLiteral("OFF"), QStringLiteral("ON")}),
+        "a bool parameter offers OFF and ON");
+  check(popup.pipeParamChoice() == 1, "the bool parameter opens on its value (ON)");
+  popup.setPipeParamChoice(0);
+  check(scopeRouting.pipeParams().value(0).toMap().value(QStringLiteral("value")).toInt() == 0,
+        "a choice tap writes the pipe parameter immediately");
+  popup.cancel();
+  check(scopeRouting.pipeParams().value(0).toMap().value(QStringLiteral("value")).toInt() == 1,
+        "CANCEL restores the pipe parameter the popup opened with");
+  // ARP's DIVISION is a schema enum: four divisions, the first one selected.
+  scopeRouting.setAddTypeIndex(11);
+  scopeRouting.addPipe();
+  scopeRouting.selectPipe(1);
+  popup.setPipeParamTarget(1, 0);
+  check(popup.openKind(QStringLiteral("pipeparam")),
+        "the pipe parameter choice popup opens for an enum parameter");
+  check(popup.pipeParamChoices().size() == 4, "an enum offers its schema choices");
+  check(popup.pipeParamChoice() == 0, "the enum opens on its stored choice");
+  popup.setPipeParamChoice(2);
+  checkEqual(scopeRouting.pipeParamValueText(0, scopeRouting.pipeParams()
+                                                    .value(0).toMap()
+                                                    .value(QStringLiteral("value")).toInt())
+                 .toStdString(),
+             "1/16",
+             "the enum pick reaches the same formatter the card shows");
+  popup.accept();
+
+  // The type picker carries the schema role and doc of each type, so the list
+  // can state what a type does instead of only its name.
+  check(popup.openKind(QStringLiteral("pipetype")), "the pipe type list opens");
+  check(popup.pipeTypeRoles().size() == popup.pipeTypeLabels().size(),
+        "every pipe type row has a schema role");
+  popup.setPipeTypeIndex(11);
+  check(popup.pipeTypeDocs().startsWith(QStringLiteral("Arpeggiator")),
+        "the type list shows the selected type's schema doc");
+  popup.cancel();
 }
 
 void mixerTests() {
@@ -1726,7 +1771,13 @@ void timelineAndPipeTests() {
   check(pipeui::paramCount(1) == 8 && pipeui::paramCount(12) == 6,
         "positional pipe parameter counts come from the schema");
   check(!pipeui::isClocked(11) && pipeui::isClocked(12) && pipeui::isClocked(16),
-        "Wave-2 clocked types are marked configured-but-engine-pending");
+        "the schema marks the clocked (Wave 2) types");
+  checkEqual(pipeui::pipeRoleName(1).toStdString(), "MODIFIER",
+             "a stateless pipe reports its schema role");
+  checkEqual(pipeui::pipeRoleName(12).toStdString(), "MODIFIER",
+             "the arp is a modifier: it transforms incoming notes");
+  check(pipeui::pipeDocs(1).startsWith(QStringLiteral("Per-message-kind pass gate")),
+        "the pipe type list carries the schema doc line");
   checkEqual(pipeui::valueText(1, 0, 1).toStdString(), "ON",
              "toggle parameter formatting");
   checkEqual(pipeui::valueText(2, 0, 60).toStdString(), "C4",
@@ -1745,10 +1796,7 @@ void timelineAndPipeTests() {
   for (int typeId = 1; typeId <= 16; ++typeId) {
     const int count = pipeui::paramCount(typeId);
     const auto rows = pipeui::editorRows(typeId, {}, 0, count);
-    check(rows.size() == count, "every schema parameter renders one editor row");
-    check(pipeui::pageCount(std::size_t(count), 2) >= 1 &&
-              pipeui::pageCount(std::size_t(count), 2) * 2 >= count,
-          "parameter pages cover every schema parameter");
+    check(rows.size() == count, "every schema parameter renders one card");
     for (const auto& row : rows) {
       const auto map = row.toMap();
       check(!map.value(QStringLiteral("name")).toString().isEmpty() &&
@@ -1810,10 +1858,10 @@ void timelineAndPipeTests() {
     checkEqual(text(2), "25%", "the fixture percent keeps its unit");
     checkEqual(text(3), "-2 st", "the fixture offset keeps its sign and unit");
     checkEqual(text(4), "C4", "the fixture note formats as a note name");
-    const auto laterPage = pipeui::editorRowsFor(kTestParams, kTestUi, 5, {}, 4, 5);
-    check(laterPage.size() == 1 &&
-              laterPage[0].toMap().value(QStringLiteral("param")).toInt() == 4,
-          "a later page renders the remaining positional parameter");
+    const auto tail = pipeui::editorRowsFor(kTestParams, kTestUi, 5, {}, 4, 5);
+    check(tail.size() == 1 &&
+              tail[0].toMap().value(QStringLiteral("param")).toInt() == 4,
+          "a clipped range renders only the remaining positional parameter");
   }
 
   // Chain preset files (phase 4): export/import round-trip, schema version and
@@ -1917,6 +1965,42 @@ void timelineAndPipeTests() {
         "pipe reorder changes the ordered list");
   check(midi.removeRoutePipe(midi::Port::TrsIn1, midi::Port::UsbOut, 0),
         "pipe remove succeeds");
+
+  // The engine-split readout states what the code does. The shared core
+  // implements all 16 types and no longer rejects the clocked ids; the missing
+  // piece Pi-side is the 24-PPQN grid pass (MidiGlue::pump calls Router::tick,
+  // not Router::clockTick), and the readout says exactly that.
+  {
+    MidiGlue sweepMidi(false);
+    RoutingViewModel sweep(sweepMidi, false);
+    sweep.setPipeSource(0);
+    sweep.setPipeDestination(2);  // TRS IN 1 -> USB OUT: Pi-owned
+    sweep.setAddTypeIndex(11);    // ARP (clocked, schema id 12)
+    sweep.addPipe();
+    const QString status = sweep.pipeStatusText();
+    check(!status.contains(QStringLiteral("rejects")),
+          "the retired Wave-2 rejection is not claimed any more");
+    check(status.contains(QStringLiteral("PI ENGINE")),
+          "a USB-touching chain reports the Pi engine");
+    check(status.contains(QStringLiteral("NO 24-PPQN TICK")),
+          "a clocked pipe on a Pi-owned route names the missing grid pass");
+    const auto statusRow = sweep.pipeRows().value(0).toMap();
+    checkEqual(statusRow.value(QStringLiteral("status")).toString().toStdString(),
+               "NO PI CLOCK TICK",
+               "the clocked chain row carries the warning chip");
+    check(statusRow.value(QStringLiteral("warning")).toBool(),
+          "the clocked row is flagged for the warning tone");
+
+    // The same pipe on a TRS->TRS route belongs to the Pico, whose route engine
+    // drives clockTick(): there the clock is live.
+    sweep.setPipeDestination(0);
+    sweep.setAddTypeIndex(11);
+    sweep.addPipe();
+    check(sweep.pipeStatusText().contains(QStringLiteral("PICO 0x1A CHAIN")),
+          "a TRS->TRS chain reports the Pico chain");
+    check(sweep.pipeStatusText().contains(QStringLiteral("CLOCKED PIPE LIVE")),
+          "the Pico chain runs the clocked pipe on its own tick grid");
+  }
 }
 
 // The app half of the 0x1A split: only a TRS->TRS pair is mirrored to the Pico,

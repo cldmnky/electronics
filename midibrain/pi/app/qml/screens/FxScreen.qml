@@ -64,33 +64,19 @@ Item {
         anchors.margins: Style.margin
         spacing: Style.gap
 
-        Row {
+        KnobChip {
             width: parent.width
             height: Style.touch
-            spacing: Style.gap
-
-            Text {
-                width: 64
-                height: parent.height
-                text: "RET A"
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
-                font.weight: Font.DemiBold
-                verticalAlignment: Text.AlignVCenter
-            }
-            TouchSlider {
-                id: returnA
-                width: parent.width - 72
-                height: parent.height
-                minimumValue: -60
-                maximumValue: 12
-                value: fx.slotA.returnDb
-                focusId: "shift.fx.A.return"
-                popupLabel: "SEND A RETURN"
-                popupKind: "db"
-                Binding on value { value: fx.slotA.returnDb; when: !returnA.dragging }
-                onMoved: (value) => fx.slotA.returnDb = value
-            }
+            label: "RET A"
+            value: fx.slotA.returnDb
+            valueText: Number(fx.slotA.returnDb).toFixed(1)
+            suffix: " dB"
+            minimumValue: -60
+            maximumValue: 12
+            focusId: "shift.fx.A.return"
+            popupLabel: "SEND A RETURN"
+            popupKind: "db"
+            onMoved: (value) => fx.slotA.returnDb = value
         }
 
         FxSlotPanel {

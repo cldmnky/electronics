@@ -1,10 +1,10 @@
 import QtQuick
 import Mnkybox 1.0
 
-// Compact parameter knob for the built-in FX panels: a dial with the parameter
-// name above the value so five of them fit one row. Drag semantics and the
-// value popup are the shared TouchKnob's, so the panel and the popup editors
-// behave the same.
+// Compact parameter knob for the built-in FX panels: the comp-popup card
+// layout (framed cell, arc dial, parameter name, value) so five of them fit one
+// row. Drag semantics and the value popup are the shared TouchKnob's, so the
+// panel and the popup editors behave the same.
 Item {
     id: root
 
@@ -23,10 +23,12 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "transparent"
+        color: Style.panelDark
         radius: Style.corner
-        border.width: (app.focusId === root.focusId && root.focusId !== "") ? 2 : 0
-        border.color: Style.accent
+        border.width: (app.focusId === root.focusId && root.focusId !== "") ? 2
+                      : Style.outlineWidth
+        border.color: (app.focusId === root.focusId && root.focusId !== "")
+                      ? Style.accent : Style.outline
     }
 
     TouchKnob {

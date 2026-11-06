@@ -26,13 +26,18 @@ Item {
             spacing: Style.gap
 
             Text {
-                width: parent.width - (screen.shiftFace ? (routing.shiftPage === 0 && routing.filterPageCount > 1 ? 424 : 284) : 220)
+                // On the pipes page this line is the route readout: chain
+                // length, which side evaluates it and any clocked-pipe caveat.
+                width: parent.width - (screen.pipesPage ? 156
+                                       : (screen.shiftFace
+                                          ? (routing.shiftPage === 0 && routing.filterPageCount > 1 ? 424 : 284)
+                                          : 220))
                 height: parent.height
-                text: (screen.shiftFace
-                       ? (screen.pipesPage ? "SHIFT  MIDI FX PIPES - one ordered chain per route"
-                                           : "SHIFT  FILTER / TRANSPOSE / CLOCK OUT")
-                       : "ROUTING - tap a wire, or an input then an output")
-                      + (routing.noPicoMode ? "  -  NO PICO: TRS UNAVAILABLE" : "")
+                text: (screen.pipesPage ? routing.pipeStatusText
+                       : (screen.shiftFace
+                          ? "SHIFT  FILTER / TRANSPOSE / CLOCK OUT"
+                          : "ROUTING - tap a wire, or an input then an output"
+                            + (routing.noPicoMode ? "  -  NO PICO: TRS UNAVAILABLE" : "")))
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold
@@ -417,7 +422,7 @@ Item {
                             spacing: 2
 
                             Text {
-                                width: 64
+                                width: 56
                                 height: parent.height
                                 text: modelData.name
                                 color: Style.textDim
@@ -426,34 +431,74 @@ Item {
                                 elide: Text.ElideRight
                                 verticalAlignment: Text.AlignVCenter
                             }
-                            TouchButton {
-                                width: Style.touch
-                                height: Style.touch
-                                text: "-"
-                                textSize: 20
-                                onClicked: routing.adjustTranspose(sourceIndex, -1)
-                            }
-                            Rectangle {
-                                width: Math.max(Style.touch, parent.width - 2 * Style.touch - 6 - 64)
-                                height: Style.touch
-                                color: Style.panelDark
-                                border.width: app.focusId === ("shift.routing.transpose." + sourceIndex) ? 2 : Style.outlineWidth
-                                border.color: app.focusId === ("shift.routing.transpose." + sourceIndex)
-                                              ? Style.accent : Style.outline
+                            // Transpose as an arc dial: the panel encoder and a
+                            // vertical drag move the same value, and the value
+                            // commits on release so the rebuilt row cannot cut
+                            // the drag short.
+                            Item {
+                                id: transposeCard
+                                width: parent.width - 56
+                                height: parent.height
+                                property int dialValue: routing.transposes[sourceIndex] || 0
+                                property string focusId: "shift.routing.transpose." + sourceIndex
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: Style.corner
+                                    color: Style.panelDark
+                                    border.width: app.focusId === transposeCard.focusId ? 2
+                                                  : Style.outlineWidth
+                                    border.color: app.focusId === transposeCard.focusId
+                                                  ? Style.accent : Style.outline
+                                }
+                                KnobDial {
+                                    width: Style.touch - 4
+                                    height: Style.touch - 4
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 2
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    fraction: (transposeCard.dialValue + 24) / 48
+                                }
                                 Text {
-                                    anchors.centerIn: parent
-                                    text: (routing.transposes[sourceIndex] || 0) + " st"
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: Style.touch + 2
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 4
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: transposeCard.dialValue + " st"
                                     color: Style.text
                                     font.pixelSize: Style.fontBody
                                     font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
                                 }
-                            }
-                            TouchButton {
-                                width: Style.touch
-                                height: Style.touch
-                                text: "+"
-                                textSize: 20
-                                onClicked: routing.adjustTranspose(sourceIndex, 1)
+                                MouseArea {
+                                    anchors.fill: parent
+                                    preventStealing: true
+
+                                    property int pressY: 0
+                                    property int pressValue: 0
+
+                                    onPressed: (mouse) => {
+                                        pressY = mouse.y
+                                        pressValue = transposeCard.dialValue
+                                        app.touchAnchorY = mapToItem(null, mouse.x, mouse.y).y
+                                    }
+                                    onPositionChanged: (mouse) => {
+                                        if (!pressed) return
+                                        const next = Math.max(-24, Math.min(24,
+                                                    pressValue + Math.round((pressY - mouse.y) / 6)))
+                                        transposeCard.dialValue = next
+                                        app.touchAnchorY = mapToItem(null, mouse.x, mouse.y).y
+                                        app.showTextPopup("TRANSPOSE " + modelData.name,
+                                                          next + " st")
+                                    }
+                                    onReleased: {
+                                        app.touchAnchorY = -1
+                                        if (transposeCard.dialValue !== (routing.transposes[sourceIndex] || 0)) {
+                                            routing.setTranspose(sourceIndex, transposeCard.dialValue)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -525,131 +570,72 @@ Item {
             }
         }
 
-        // MIDI FX pipe page (Routing SHIFT > PIPES): per-route ordered chain,
-        // add/remove/reorder/bypass, the parameter editors PipeParamEditor
-        // builds from the generated schema metadata, and the chain preset file
-        // actions (EXPORT/IMPORT) that travel inside the project folder.
+        // MIDI FX pipe page (Routing SHIFT > PIPES): one ordered chain per
+        // route. Every selection is a popup selector (FROM, TO, pipe type,
+        // parameter choices, chain menu) so no row carries a prev/next stepper;
+        // the chain itself is one compact line per pipe and the selected pipe's
+        // parameters are the same arc-dial cards the comp popup uses.
         Item {
+            id: pipesPage
             visible: screen.pipesPage
             width: parent.width
-            height: Math.max(280, parent.height - Style.touch - 4)
+            // The header row above and the outer column's gap are already
+            // spoken for; everything left belongs to this page.
+            height: Math.max(280, parent.height - Style.touch - Style.gap)
+
+            // Two chain rows stay visible; the parameters below them show four
+            // cards (two columns) and scroll for a longer schema.
+            readonly property int chainListHeight: Style.touch * 2
+            readonly property int paramAreaHeight: Math.max(Style.touch,
+                                                            height - Style.touch * 2
+                                                            - chainListHeight
+                                                            - Style.gapTight * 3)
+            readonly property int cardHeight: Math.max(Style.touch,
+                                                       Math.floor((paramAreaHeight
+                                                                   - Style.gapTight) / 2))
 
             Column {
                 width: parent.width
                 height: parent.height
-                spacing: 2
+                spacing: Style.gapTight
 
+                // ROUTE ROW: the two live readouts that open the port lists.
                 Row {
                     width: parent.width
                     height: Style.touch
-                    spacing: 3
+                    spacing: Style.gapTight
 
-                    Text {
-                        width: 40
-                        height: parent.height
-                        text: "FROM"
-                        color: Style.textDim
-                        font.pixelSize: Style.fontSmall
-                        font.weight: Font.DemiBold
-                        verticalAlignment: Text.AlignVCenter
-                    }
                     TouchButton {
-                        width: Style.touch
+                        width: (parent.width - Style.gapTight) / 2
                         height: parent.height
-                        text: "<"
-                        textSize: 16
-                        focusId: "shift.routing.pipes.src.prev"
-                        onClicked: routing.cyclePipeSource(-1)
-                    }
-                    TouchButton {
-                        width: (parent.width - 40 - 24 - Style.touch * 4 - 18) / 2
-                        height: parent.height
-                        text: routing.pipeSourceName
-                        textSize: Style.fontSmall
+                        text: "FROM  " + routing.pipeSourceName
+                        textSize: Style.fontBody
                         variant: "ghost"
                         chevron: "down"
                         focusId: "shift.routing.pipes.src.name"
                         onClicked: app.openConfigFrom("pipesource", this)
                     }
                     TouchButton {
-                        width: Style.touch
+                        width: (parent.width - Style.gapTight) / 2
                         height: parent.height
-                        text: ">"
-                        textSize: 16
-                        focusId: "shift.routing.pipes.src.next"
-                        onClicked: routing.cyclePipeSource(1)
-                    }
-                    Text {
-                        width: 24
-                        height: parent.height
-                        text: "TO"
-                        color: Style.textDim
-                        font.pixelSize: Style.fontSmall
-                        font.weight: Font.DemiBold
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    TouchButton {
-                        width: Style.touch
-                        height: parent.height
-                        text: "<"
-                        textSize: 16
-                        focusId: "shift.routing.pipes.dst.prev"
-                        onClicked: routing.cyclePipeDestination(-1)
-                    }
-                    TouchButton {
-                        width: (parent.width - 40 - 24 - Style.touch * 4 - 18) / 2
-                        height: parent.height
-                        text: routing.pipeDestinationName
-                        textSize: Style.fontSmall
+                        text: "TO  " + routing.pipeDestinationName
+                        textSize: Style.fontBody
                         variant: "ghost"
                         chevron: "down"
                         focusId: "shift.routing.pipes.dst.name"
                         onClicked: app.openConfigFrom("pipedest", this)
                     }
-                    TouchButton {
-                        width: Style.touch
-                        height: parent.height
-                        text: ">"
-                        textSize: 16
-                        focusId: "shift.routing.pipes.dst.next"
-                        onClicked: routing.cyclePipeDestination(1)
-                    }
                 }
 
-                Text {
-                    width: parent.width
-                    height: 14
-                    text: routing.pipeStatusText
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    elide: Text.ElideRight
-                }
-
+                // ADD ROW: type selector, ADD, the selected pipe's channel-scope
+                // chip and the chain menu that owns the preset file actions.
                 Row {
                     width: parent.width
                     height: Style.touch
-                    spacing: 3
+                    spacing: Style.gapTight
 
-                    Text {
-                        width: 40
-                        height: parent.height
-                        text: "ADD"
-                        color: Style.textDim
-                        font.pixelSize: Style.fontSmall
-                        font.weight: Font.DemiBold
-                        verticalAlignment: Text.AlignVCenter
-                    }
                     TouchButton {
-                        width: Style.touch
-                        height: parent.height
-                        text: "<"
-                        textSize: 16
-                        focusId: "shift.routing.pipes.type.prev"
-                        onClicked: routing.cycleAddType(-1)
-                    }
-                    TouchButton {
-                        width: 140
+                        width: 236
                         height: parent.height
                         text: routing.addTypeName
                         textSize: Style.fontSmall
@@ -659,198 +645,247 @@ Item {
                         onClicked: app.openConfigFrom("pipetype", this)
                     }
                     TouchButton {
-                        width: Style.touch
+                        width: 88
                         height: parent.height
-                        text: ">"
-                        textSize: 16
-                        focusId: "shift.routing.pipes.type.next"
-                        onClicked: routing.cycleAddType(1)
-                    }
-                    TouchButton {
-                        width: 96
-                        height: parent.height
-                        text: "ADD PIPE"
-                        textSize: Style.fontSmall
-                        checked: true
+                        text: "ADD"
+                        textSize: Style.fontBody
+                        variant: "primary"
                         focusId: "shift.routing.pipes.add"
                         onClicked: routing.addPipe()
                     }
                     TouchButton {
-                        width: 104
+                        width: 168
                         height: parent.height
                         text: "SCOPE  " + routing.selectedPipeScopeText
                         textSize: Style.fontSmall
                         focusId: "shift.routing.pipes.scope"
                         onClicked: app.openConfigFrom("pipechannels", this)
                     }
-                    // Chain preset file: the selected route's ordered chain as
-                    // one JSON file in the project folder (take-name style
-                    // entry, .json implied).
                     TouchButton {
-                        width: 96
+                        width: 92
                         height: parent.height
-                        text: "EXPORT"
+                        text: "CHAIN"
                         textSize: Style.fontSmall
                         variant: "ghost"
-                        focusId: "shift.routing.pipes.chain.export"
-                        onClicked: app.requestExportPipeChain()
-                    }
-                    TouchButton {
-                        width: 96
-                        height: parent.height
-                        text: "IMPORT"
-                        textSize: Style.fontSmall
-                        variant: "ghost"
-                        focusId: "shift.routing.pipes.chain.import"
-                        onClicked: app.requestImportPipeChain()
+                        chevron: "down"
+                        focusId: "shift.routing.pipes.chain"
+                        onClicked: app.openConfigFrom("chainmenu", this)
                     }
                     Text {
-                        width: parent.width - 40 - Style.touch * 2 - 140 - 96 - 104 - 96 * 2 - Style.gapTight * 7
+                        width: parent.width - 236 - 88 - 168 - 92 - Style.gapTight * 4
                         height: parent.height
                         text: routing.pipeRows.length + " / 8 PIPES"
                         color: Style.textDim
                         font.pixelSize: Style.fontSmall
                         horizontalAlignment: Text.AlignRight
                         verticalAlignment: Text.AlignVCenter
-                    }
-                }
-
-                ListView {
-                    width: parent.width
-                    height: 88
-                    clip: true
-                    model: routing.pipeRows
-                    boundsBehavior: Flickable.StopAtBounds
-
-                    delegate: Row {
-                        width: parent.width
-                        height: Style.touch
-                        spacing: 3
-
-                        TouchButton {
-                            width: 132
-                            height: parent.height
-                            text: (index + 1) + ". " + modelData.typeName
-                            textSize: Style.fontSmall
-                            checked: routing.selectedPipe === index
-                            focusId: "shift.routing.pipes.select." + index
-                            onClicked: routing.selectPipe(index)
-                        }
-                        Text {
-                            width: 158
-                            height: parent.height
-                            text: modelData.status
-                            color: modelData.clocked ? Style.accent : Style.textDim
-                            font.pixelSize: Style.fontSmall
-                            font.weight: modelData.clocked ? Font.DemiBold : Font.Normal
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                        }
-                        TouchButton {
-                            width: 54
-                            height: parent.height
-                            text: "BYP"
-                            textSize: Style.fontSmall
-                            checked: modelData.bypass
-                            focusId: "shift.routing.pipes.bypass." + index
-                            onClicked: routing.setPipeBypass(index, !modelData.bypass)
-                        }
-                        TouchButton {
-                            width: Style.touch
-                            height: parent.height
-                            text: "^"
-                            textSize: 16
-                            focusId: "shift.routing.pipes.up." + index
-                            onClicked: routing.movePipe(index, -1)
-                        }
-                        TouchButton {
-                            width: Style.touch
-                            height: parent.height
-                            text: "v"
-                            textSize: 16
-                            focusId: "shift.routing.pipes.down." + index
-                            onClicked: routing.movePipe(index, 1)
-                        }
-                        TouchButton {
-                            width: Style.touch
-                            height: parent.height
-                            text: "X"
-                            textSize: Style.fontSmall
-                    variant: "danger"
-                            focusId: "shift.routing.pipes.remove." + index
-                            onClicked: routing.removePipe(index)
-                        }
-                        Text {
-                            width: parent.width - 132 - 158 - 54 - Style.touch * 3 - 18
-                            height: parent.height
-                            text: modelData.paramCount + " PARAMS"
-                            color: Style.textDim
-                            font.pixelSize: Style.fontSmall
-                            horizontalAlignment: Text.AlignRight
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                    }
-                }
-
-                Row {
-                    width: parent.width
-                    height: 22
-                    spacing: 3
-
-                    Text {
-                        width: 60
-                        height: parent.height
-                        text: "PARAM"
-                        color: Style.textDim
-                        font.pixelSize: Style.fontSmall
-                        font.weight: Font.DemiBold
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    TouchButton {
-                        width: 40
-                        height: parent.height
-                        text: "<"
-                        textSize: Style.fontBody
-                        focusId: "shift.routing.pipes.param.page.prev"
-                        onClicked: routing.setParamPage(routing.paramPage - 1)
-                    }
-                    Text {
-                        width: 88
-                        height: parent.height
-                        text: (routing.paramPage + 1) + " / " + routing.paramPageCount
-                        color: Style.text
-                        font.pixelSize: Style.fontSmall
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    TouchButton {
-                        width: 40
-                        height: parent.height
-                        text: ">"
-                        textSize: Style.fontBody
-                        focusId: "shift.routing.pipes.param.page.next"
-                        onClicked: routing.setParamPage(routing.paramPage + 1)
-                    }
-                    Text {
-                        width: parent.width - 240
-                        height: parent.height
-                        text: routing.selectedPipe >= 0 && routing.pipeRows.length > 0
-                              ? "EDIT PARAMS OF PIPE " + (routing.selectedPipe + 1)
-                              : "ADD A PIPE TO EDIT PARAMS"
-                        color: Style.textDim
-                        font.pixelSize: Style.fontSmall
-                        verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                     }
                 }
 
-                Repeater {
-                    model: routing.pipeParams
-                    delegate: PipeParamEditor {
-                        width: parent.width
+                // CHAIN: one line per pipe. Tapping a row selects it for
+                // parameter editing; the bypass/move/remove buttons belong to
+                // the selected row only, so an idle chain stays quiet.
+                ListView {
+                    id: chainList
+                    width: parent.width
+                    // The panel ring can land on a row that is scrolled out of
+                    // view; bring it back instead of hiding the focus.
+                    function syncToFocus() {
+                        const prefix = "shift.routing.pipes.select."
+                        if (!app.focusId.startsWith(prefix)) return
+                        const row = Number(app.focusId.substring(prefix.length))
+                        if (row >= 0 && row < count) positionViewAtIndex(row, ListView.Contain)
+                    }
+                    Connections {
+                        target: app
+                        function onFocusChanged() { chainList.syncToFocus() }
+                    }
+                    // A short chain does not reserve the two-row height: the
+                    // parameter cards stay right under it.
+                    height: Math.min(pipesPage.chainListHeight,
+                                     Math.max(Style.touch,
+                                              routing.pipeRows.length * Style.touch))
+                    clip: true
+                    cacheBuffer: 0
+                    model: routing.pipeRows
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    delegate: Rectangle {
+                        id: chainRow
+                        readonly property bool selected: routing.selectedPipe === index
+                        width: chainList.width
                         height: Style.touch
-                        pipeIndex: routing.selectedPipe
-                        param: modelData
+                        radius: Style.corner
+                        color: selected ? Style.accent : Style.panel
+                        border.width: app.focusId === focusId ? 2 : Style.outlineWidth
+                        border.color: app.focusId === focusId ? Style.accent : Style.outline
+                        property string focusId: "shift.routing.pipes.select." + index
+
+                        TapHandler {
+                            onTapped: routing.selectPipe(index)
+                        }
+
+                        Row {
+                            anchors.fill: parent
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 4
+                            spacing: Style.gapTight
+
+                            Text {
+                                width: 132
+                                height: parent.height
+                                text: (index + 1) + ". " + modelData.typeName
+                                color: chainRow.selected ? Style.panelDark : Style.text
+                                font.pixelSize: Style.fontBody
+                                font.weight: Font.DemiBold
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
+                            }
+                            Rectangle {
+                                width: parent.width - 132 - 58
+                                       - (actions.visible ? actions.width + Style.gapTight * 3
+                                                          : Style.gapTight * 2)
+                                height: 26
+                                anchors.verticalCenter: parent.verticalCenter
+                                radius: 4
+                                color: Style.panelDark
+                                border.width: 1
+                                border.color: modelData.warning ? Style.record
+                                              : (modelData.clocked ? Style.accent : Style.outline)
+
+                                Text {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 6
+                                    anchors.rightMargin: 6
+                                    text: modelData.status
+                                    color: modelData.warning ? Style.record
+                                           : (modelData.bypass ? Style.textDim
+                                              : (modelData.clocked ? Style.accent
+                                                                   : Style.textDim))
+                                    font.pixelSize: Style.fontSmall
+                                    font.weight: Font.DemiBold
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            Row {
+                                id: actions
+                                width: Style.touch * 4 + Style.gapHair * 3
+                                height: parent.height
+                                spacing: Style.gapHair
+                                visible: chainRow.selected
+
+                                TouchButton {
+                                    width: Style.touch
+                                    height: parent.height
+                                    text: "BYP"
+                                    textSize: Style.fontSmall
+                                    checked: modelData.bypass
+                                    focusId: "shift.routing.pipes.bypass." + index
+                                    onClicked: routing.setPipeBypass(index, !modelData.bypass)
+                                }
+                                TouchButton {
+                                    width: Style.touch
+                                    height: parent.height
+                                    text: "^"
+                                    textSize: 16
+                                    focusId: "shift.routing.pipes.up." + index
+                                    onClicked: routing.movePipe(index, -1)
+                                }
+                                TouchButton {
+                                    width: Style.touch
+                                    height: parent.height
+                                    text: "v"
+                                    textSize: 16
+                                    focusId: "shift.routing.pipes.down." + index
+                                    onClicked: routing.movePipe(index, 1)
+                                }
+                                TouchButton {
+                                    width: Style.touch
+                                    height: parent.height
+                                    text: "X"
+                                    textSize: Style.fontSmall
+                                    variant: "danger"
+                                    focusId: "shift.routing.pipes.remove." + index
+                                    onClicked: routing.removePipe(index)
+                                }
+                            }
+                            Text {
+                                width: 58
+                                height: parent.height
+                                text: modelData.paramCount + " PAR"
+                                color: chainRow.selected ? Style.panelDark : Style.textDim
+                                font.pixelSize: Style.fontSmall
+                                horizontalAlignment: Text.AlignRight
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                    }
+                }
+
+                // PARAM AREA: the selected pipe's schema parameters as two
+                // columns of arc-dial cards; a bool/enum parameter is a chip
+                // that opens its choice list. Four cards fit, the rest scroll.
+                Text {
+                    width: parent.width
+                    height: pipesPage.paramAreaHeight
+                    visible: routing.pipeParams.length === 0
+                    text: "NO PIPE SELECTED - PICK A TYPE AND PRESS ADD"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                }
+                ListView {
+                    id: paramList
+                    width: parent.width
+                    height: pipesPage.paramAreaHeight
+                    visible: routing.pipeParams.length > 0
+                    clip: true
+                    cacheBuffer: 0
+                    model: Math.ceil(routing.pipeParams.length / 2)
+                    boundsBehavior: Flickable.StopAtBounds
+                    spacing: Style.gapTight
+                    // Same for the parameter cards: the ring reaches every
+                    // schema parameter, so scroll to the focused card's row.
+                    function syncToFocus() {
+                        const prefix = "shift.routing.pipes.param."
+                        if (!app.focusId.startsWith(prefix)) return
+                        const rest = app.focusId.substring(prefix.length)
+                        const dot = rest.indexOf(".")
+                        if (dot < 0) return
+                        if (Number(rest.substring(0, dot)) !== routing.selectedPipe) return
+                        const row = Math.floor(Number(rest.substring(dot + 1)) / 2)
+                        if (row >= 0 && row < count) positionViewAtIndex(row, ListView.Contain)
+                    }
+                    Connections {
+                        target: app
+                        function onFocusChanged() { paramList.syncToFocus() }
+                    }
+
+                    delegate: Row {
+                        readonly property int first: index * 2
+                        readonly property bool hasFirst: first < routing.pipeParams.length
+                        readonly property bool hasSecond: first + 1 < routing.pipeParams.length
+                        width: parent.width
+                        height: pipesPage.cardHeight
+                        spacing: Style.gapTight
+
+                        PipeParamCard {
+                            width: (parent.width - Style.gapTight) / 2
+                            height: parent.height
+                            visible: hasFirst
+                            param: hasFirst ? routing.pipeParams[first] : ({})
+                            pipeIndex: routing.selectedPipe
+                        }
+                        PipeParamCard {
+                            width: (parent.width - Style.gapTight) / 2
+                            height: parent.height
+                            visible: hasSecond
+                            param: hasSecond ? routing.pipeParams[first + 1] : ({})
+                            pipeIndex: routing.selectedPipe
+                        }
                     }
                 }
             }

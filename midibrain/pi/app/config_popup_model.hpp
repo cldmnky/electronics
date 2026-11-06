@@ -113,13 +113,23 @@ class ConfigPopupModel final : public QObject {
   // width, so a wider device registry grows the grid without a QML edit.
   Q_PROPERTY(int addTrackChannelCount READ addTrackChannelCount CONSTANT)
   // Pipe chain selectors on the Routing SHIFT > PIPES face: FROM/TO/ADD type
-  // are tap-to-open lists instead of prev/next steppers.
+  // are tap-to-open lists instead of prev/next steppers. The type list carries
+  // the generated schema role per type and the selected type's one-line doc.
   Q_PROPERTY(QStringList pipeSourceLabels READ pipeSourceLabels NOTIFY changed)
   Q_PROPERTY(int pipeSourceIndex READ pipeSourceIndex WRITE setPipeSourceIndex NOTIFY changed)
   Q_PROPERTY(QStringList pipeDestLabels READ pipeDestLabels NOTIFY changed)
   Q_PROPERTY(int pipeDestIndex READ pipeDestIndex WRITE setPipeDestIndex NOTIFY changed)
   Q_PROPERTY(QStringList pipeTypeLabels READ pipeTypeLabels CONSTANT)
+  Q_PROPERTY(QStringList pipeTypeRoles READ pipeTypeRoles CONSTANT)
+  Q_PROPERTY(QString pipeTypeDocs READ pipeTypeDocs NOTIFY changed)
   Q_PROPERTY(int pipeTypeIndex READ pipeTypeIndex WRITE setPipeTypeIndex NOTIFY changed)
+  // One bool/enum pipe parameter (kind "pipeparam"): the parameter card's
+  // choice list. A tap writes the positional parameter through RoutingViewModel
+  // (live, like every selector popup); CANCEL restores what the popup opened
+  // with.
+  Q_PROPERTY(QStringList pipeParamChoices READ pipeParamChoices NOTIFY changed)
+  Q_PROPERTY(int pipeParamChoice READ pipeParamChoice NOTIFY changed)
+  Q_PROPERTY(QString pipeParamContext READ pipeParamContext NOTIFY changed)
 
  public:
   ConfigPopupModel(AppState& state, MixerModel& mixer, SessionSettings& settings,
@@ -205,8 +215,19 @@ class ConfigPopupModel final : public QObject {
   int pipeDestIndex() const { return pipeDestIndex_; }
   void setPipeDestIndex(int value);
   QStringList pipeTypeLabels() const;
+  QStringList pipeTypeRoles() const;
+  QString pipeTypeDocs() const;
   int pipeTypeIndex() const { return pipeTypeIndex_; }
   void setPipeTypeIndex(int value);
+  // The card that opens the choice list names the pipe slot and positional
+  // parameter it edits; AppController points the popup at it before openKind().
+  void setPipeParamTarget(int pipe, int param);
+  int pipeParamSlot() const { return pipeParamSlot_; }
+  int pipeParamIndex() const { return pipeParamIndex_; }
+  QStringList pipeParamChoices() const { return pipeParamChoices_; }
+  int pipeParamChoice() const { return pipeParamChoice_; }
+  QString pipeParamContext() const { return pipeParamContext_; }
+  Q_INVOKABLE void setPipeParamChoice(int choice);
 
   void setClickMode(int value);
   void setClickOutput(int value);
@@ -328,6 +349,7 @@ class ConfigPopupModel final : public QObject {
     int pipeSource = 0;
     int pipeDestination = 0;
     int pipeType = 0;
+    int pipeParam = 0;
     int inputSource = 0;
     int outputDst = 0;
     int insertChoice = 0;
@@ -402,6 +424,14 @@ class ConfigPopupModel final : public QObject {
   int pipeSourceIndex_ = 0;
   int pipeDestIndex_ = 0;
   int pipeTypeIndex_ = 0;
+  // The bool/enum parameter the choice popup edits, its choices and the
+  // current choice index (value - schema minimum).
+  int pipeParamSlot_ = 0;
+  int pipeParamIndex_ = 0;
+  int pipeParamMinimum_ = 0;
+  int pipeParamChoice_ = 0;
+  QStringList pipeParamChoices_;
+  QString pipeParamContext_;
   QString pipeScopeContext_;
   int timelineOp_ = 0;
   double timelineGainDb_ = 0.0;

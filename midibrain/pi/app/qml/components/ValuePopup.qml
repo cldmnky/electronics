@@ -6,13 +6,15 @@ import Mnkybox 1.0
 // path feeds the app popup state, so the component never steals focus and does
 // not add hit-testable pixels: it has no MouseArea and is disabled.
 //
-// Placement is the fixed top band, like the Bluebox transient readout: the tab
-// row is the screen area the finger never works in, so a readout there can
-// never sit under the control being changed. The one case that band would cover
-// the finger is a control at the very top of the panel (the fullscreen EQ grid
-// reaches y = 0); then the readout moves below the touch point instead. `anchorY`
-// is that touch point in window coordinates, -1 when the panel EDIT path owns
-// the readout and there is no finger.
+// Placement is the band just below the persistent bridge (tab row + transport
+// strip), like the Bluebox transient readout: the bridge is the screen area the
+// finger never works in, so a readout there can never sit under the control
+// being changed, and it never covers the tab row itself. Fullscreen faces have
+// no bridge, so there the band starts at the page margin. The one case the band
+// would cover the finger is a control at the very top of the page (the
+// fullscreen EQ grid reaches y = 0); then the readout moves below the touch
+// point instead. `anchorY` is that touch point in window coordinates, -1 when
+// the panel EDIT path owns the readout and there is no finger.
 Rectangle {
     id: root
 
@@ -21,7 +23,11 @@ Rectangle {
     property string popupText: ""
     property real anchorY: -1
 
-    readonly property real topMargin: Style.margin
+    // The tab row and the transport strip are hidden in a fullscreen face.
+    readonly property real bridgeHeight: app.fullscreen
+                                          ? 0 : Style.tabHeight + Style.transportHeight
+    readonly property real topMargin: bridgeHeight > 0 ? bridgeHeight + Style.gap
+                                                        : Style.margin
     // A finger covers roughly this much above and below the touch point, so the
     // band counts as covered while the point is within a finger radius of it.
     readonly property real fingerRadius: Style.touch / 2

@@ -71,3 +71,11 @@ Primary faces keep: meters, faders, transport, take list, wires, grids.
 
 macOS build + tests + --ui-taps clean + offscreen 39-*.png set; one Pi
 pass for real-render sanity (offscreen only — never the live desktop).
+
+## 6. The slider law (owner rule, 2026-11-06)
+
+**Tight space => knob card or popup chip, never a slider.** Sliders exist
+only for dedicated wide faders (mixer strip fader, master fader, channel
+popout gain). Every other numeric value in a tight cell uses `KnobChip`
+(arc + label + value) or a popup-edited value chip; enum/bool values use
+popup selectors. `ConfigSlider` is deleted and must not return.

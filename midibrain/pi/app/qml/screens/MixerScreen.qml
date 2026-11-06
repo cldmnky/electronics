@@ -283,6 +283,8 @@ Item {
                     width: parent.width
                     label: "VOL"
                     value: mixer.trackGainDb
+                    valueText: Number(mixer.trackGainDb).toFixed(1)
+                    suffix: " dB"
                     minimumValue: -60
                     maximumValue: 12
                     popupKind: "db"
@@ -293,6 +295,7 @@ Item {
                     width: parent.width
                     label: "PAN"
                     value: mixer.trackPan
+                    valueText: mixer.trackPanText
                     minimumValue: 0
                     maximumValue: 1
                     popupKind: "pan"
@@ -435,6 +438,8 @@ Item {
                             width: parent.width
                             label: "GAIN"
                             value: mixer.trackTrimDb
+                            valueText: Number(mixer.trackTrimDb).toFixed(1)
+                            suffix: " dB"
                             minimumValue: -24
                             maximumValue: 24
                             popupKind: "db"
@@ -445,6 +450,8 @@ Item {
                             width: parent.width
                             label: "FX1"
                             value: mixer.trackSendA
+                            valueText: Math.round(mixer.trackSendA * 100)
+                            suffix: "%"
                             popupKind: "percent"
                             focusId: "shift.track.fx1"
                             onMoved: (value) => mixer.setTrackSendA(value)
@@ -453,6 +460,8 @@ Item {
                             width: parent.width
                             label: "FX2"
                             value: mixer.trackSendB
+                            valueText: Math.round(mixer.trackSendB * 100)
+                            suffix: "%"
                             popupKind: "percent"
                             focusId: "shift.track.fx2"
                             onMoved: (value) => mixer.setTrackSendB(value)
@@ -461,6 +470,8 @@ Item {
                             width: parent.width
                             label: "CUE"
                             value: mixer.trackCue
+                            valueText: Math.round(mixer.trackCue * 100)
+                            suffix: "%"
                             popupKind: "percent"
                             focusId: "shift.track.cue"
                             onMoved: (value) => mixer.setTrackCue(value)
@@ -469,6 +480,8 @@ Item {
                             width: parent.width
                             label: "OUT34"
                             value: mixer.trackOut34
+                            valueText: Math.round(mixer.trackOut34 * 100)
+                            suffix: "%"
                             popupKind: "percent"
                             focusId: "shift.track.out34"
                             onMoved: (value) => mixer.setTrackOut34(value)
@@ -521,42 +534,10 @@ Item {
         }
     }
 
-    // Label + horizontal slider row used by the TRACK views. Faders stay
-    // faders on the mixer/track surface; the popup/knob language is for
-    // parameters on the FX, EQ and comp faces.
-    component TrackSliderRow: Row {
-        property string label: ""
-        property real value: 0.0
-        property real minimumValue: 0.0
-        property real maximumValue: 1.0
-        property string popupKind: "db"
-        property string focusId: ""
-        signal moved(real value)
-
+    // Label + value row used by the TRACK views: an arc-dial chip, because the
+    // refresh law keeps sliders for the dedicated wide faders (the strip and
+    // master faders). The call site supplies the readout and moved().
+    component TrackSliderRow: KnobChip {
         height: Style.touch
-        spacing: Style.gap
-
-        Text {
-            width: 46
-            height: parent.height
-            text: parent.label
-            color: Style.textDim
-            font.pixelSize: Style.fontSmall
-            font.weight: Font.DemiBold
-            verticalAlignment: Text.AlignVCenter
-        }
-        TouchSlider {
-            id: trackSlider
-            width: parent.width - 54
-            height: parent.height
-            minimumValue: parent.minimumValue
-            maximumValue: parent.maximumValue
-            value: parent.value
-            focusId: parent.focusId
-            popupLabel: parent.label
-            popupKind: parent.popupKind
-            Binding on value { value: trackSlider.parent.value; when: !trackSlider.dragging }
-            onMoved: (value) => parent.moved(value)
-        }
     }
 }

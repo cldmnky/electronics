@@ -129,6 +129,7 @@ qt_add_resources(mnkybox "qml"
     qml/components/TouchButton.qml
     qml/components/TouchSlider.qml
     qml/components/TouchKnob.qml
+    qml/components/KnobChip.qml
     qml/components/KnobDial.qml
     qml/components/Meter.qml
     qml/components/TransportGlyphButton.qml
@@ -144,7 +145,7 @@ qt_add_resources(mnkybox "qml"
     qml/components/DeviceComboBox.qml
     qml/components/ValuePopup.qml
     qml/components/TimelineWave.qml
-    qml/components/PipeParamEditor.qml
+    qml/components/PipeParamCard.qml
     qml/screens/MixerScreen.qml
     qml/screens/RoutingScreen.qml
     qml/screens/FxScreen.qml

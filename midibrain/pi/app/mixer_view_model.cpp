@@ -232,6 +232,8 @@ void MixerViewModel::setTrackPan(double pan) { setPan(trackIndex_, pan); }
 
 QString MixerViewModel::trackPanText() const { return panText(model_.pan(trackIndex_)); }
 
+QString MixerViewModel::panTextAt(int slot) const { return panText(model_.pan(slot)); }
+
 void MixerViewModel::setTrackSendA(double level) { setSend(trackIndex_, 0, level); }
 void MixerViewModel::setTrackSendB(double level) { setSend(trackIndex_, 1, level); }
 

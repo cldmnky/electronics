@@ -129,6 +129,9 @@ class MixerViewModel final : public QAbstractListModel {
   double out34Send(int slot) const { return model_.out34Send(slot); }
   Q_INVOKABLE double gainDbAt(int slot) const { return model_.gainDb(slot); }
   Q_INVOKABLE double panAt(int slot) const { return model_.pan(slot); }
+  // Compact pan readout of any strip ("C", "L50", "R32"), the same text the
+  // model's PanTextRole carries.
+  Q_INVOKABLE QString panTextAt(int slot) const;
   Q_INVOKABLE double sendAt(int slot, int send) const { return model_.send(slot, send); }
   Q_INVOKABLE double cueAt(int slot) const { return model_.cueSend(slot); }
   Q_INVOKABLE double out34At(int slot) const { return model_.out34Send(slot); }

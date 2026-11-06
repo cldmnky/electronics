@@ -206,10 +206,12 @@ Item {
         }
     }
 
-    // Beat stepper for the take loop: -/+ in 0.25-beat steps, value readout
-    // with the panel focus ring. The panel EDIT path adjusts the same field.
+    // Beat field for the take loop: an arc-dial chip (drag nudges it in
+    // 0.25-beat steps, the panel encoder drives the same value) with the two
+    // fine-step buttons beside it. No slider: the law keeps those for faders.
     component LoopBeatField: Row {
         property string label: ""
+        property real beats: 0.0
         property string valueText: "0.00"
         property string focusId: ""
         signal step(real delta)
@@ -217,14 +219,19 @@ Item {
         height: Style.touch
         spacing: Style.gapTight
 
-        Text {
-            width: 50
+        KnobChip {
+            width: parent.width - Style.touch * 2 - Style.gapTight * 2
             height: parent.height
-            text: parent.label
-            color: Style.textDim
-            font.pixelSize: Style.fontSmall
-            font.weight: Font.DemiBold
-            verticalAlignment: Text.AlignVCenter
+            label: parent.label
+            value: parent.beats
+            valueText: parent.valueText
+            suffix: " b"
+            stepSize: 0.25
+            dialScale: Math.max(8, Math.ceil(parent.beats))
+            popupLabel: "LOOP " + parent.label
+            popupKind: "generic"
+            focusId: parent.focusId
+            onMoved: (value) => parent.step(value - parent.beats)
         }
         TouchButton {
             width: Style.touch
@@ -233,21 +240,6 @@ Item {
             textSize: 18
             focusId: parent.focusId + ".dec"
             onClicked: parent.step(-0.25)
-        }
-        Rectangle {
-            width: parent.width - 50 - Style.touch * 2 - Style.gapTight * 3
-            height: parent.height
-            color: Style.panelDark
-            radius: Style.corner
-            border.width: app.focusId === parent.focusId ? 2 : Style.outlineWidth
-            border.color: app.focusId === parent.focusId ? Style.accent : Style.outline
-            Text {
-                anchors.centerIn: parent
-                text: parent.parent.valueText + " b"
-                color: Style.text
-                font.pixelSize: Style.fontBody
-                font.weight: Font.DemiBold
-            }
         }
         TouchButton {
             width: Style.touch
@@ -382,6 +374,7 @@ Item {
                     width: (parent.width - Style.gap) / 2
                     height: parent.height
                     label: "START"
+                    beats: recorder.loopStartBeats
                     valueText: recorder.loopStartText
                     focusId: "shift.loop.start"
                     onStep: (delta) => {
@@ -393,6 +386,7 @@ Item {
                     width: (parent.width - Style.gap) / 2
                     height: parent.height
                     label: "END"
+                    beats: recorder.loopEndBeats
                     valueText: recorder.loopEndText
                     focusId: "shift.loop.end"
                     onStep: (delta) => {

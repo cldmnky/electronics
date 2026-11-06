@@ -484,17 +484,22 @@ pactl list short sink-inputs                                                 # o
 
 ### Routing SHIFT: MIDI FX pipe chains (`PIPES` page)
 
-* One ordered chain per input->output pair (9 pairs). Add cycles all 16 session
-  pipe types, rows select/bypass/move/remove, and the parameter page shows two
-  positional parameters at a time.
+* One ordered chain per input->output pair (9 pairs). The page is popup
+  selectors: FROM and TO are two live readouts that open the port lists, the ADD
+  row carries the type selector, ADD, the `SCOPE CH n` chip (the chMask popup)
+  and one `CHAIN` button, and the chain preset file actions live in that chain
+  menu popup. The chain itself is one line per pipe; tapping a row selects it and
+  only the selected row carries the small BYP/up/down/remove buttons.
 * The parameter editors are **schema-driven** (midifx-library-plan phase 3).
   `midifx/gen/gen_params.py` emits `midifx/gen/generated/midifx_ui.hpp` from
   `midifx/pipes.json`: per positional parameter a label, range, default, unit,
   choices and a display format. `pi/app/pipe_ui.cpp` is a generic adapter over
-  that table (no per-type rows, unlike the retired `pipe_params.*`): a bool is
-  an ON/OFF toggle, an enum a previous/name/next choice, a value with a unit an
-  arc `KnobDial` whose drag popup carries the unit ("50%", "250 ms", "+4 st",
-  "C4"), and a plain int the -/+ stepper. A new pipe type is a `pipes.json`
+  that table (no per-type rows, unlike the retired `pipe_params.*`): every
+  positional parameter is one card in a two-column grid (`PipeParamCard.qml`),
+  four cards visible and the rest scrolled. A value with a unit or a plain int is
+  an arc `KnobDial` whose drag popup carries the unit ("50%", "250 ms", "+4 st",
+  "C4"); a bool or an enum is a label + value chip that opens the `pipeparam`
+  ConfigPopup with the schema choices (OFF/ON for a bool). A new pipe type is a `pipes.json`
   entry plus one regenerated header; `midifx/tests/test_codegen.py` proves it
   with a throwaway fixture type that never ships.
 * Change discipline: edit `pipes.json` (and `wire-order.txt` when the positional
@@ -504,20 +509,26 @@ pactl list short sink-inputs                                                 # o
 * `MidiGlue` owns the stored lists, keeps `Router::setPipes` in sync and is the
   only writer; `project_io` captures them into `RouteState::pipes` and applies
   them to a router snapshot on load (`session::apply()` ignores that field).
-* Engine split is shown, not hidden: a route touching USB is Pi-owned and runs
-  Wave 1 only. `midi::PipeChain::process()` rejects the clocked ids 12..16, so a
-  Wave-2 row on such a route says `PI: NO WAVE-2 ENGINE` and the header names
-  the rejecting call. A TRS->TRS chain is mirrored to the Pico with
+* Engine split is shown, not hidden, and stated as the code is: a route touching
+  USB is Pi-owned and evaluates all 16 types through the shared midifx core (the
+  old `process()` rejection of ids 12..16 is gone). What the Pi app does not
+  drive is the 24-PPQN grid pass: `MidiGlue::pump` calls `Router::tick`
+  (milliseconds: NoteLength, MidiDelay and the stateless pipes) and nothing
+  calls `Router::clockTick`, so a clocked pipe on a Pi-owned route holds its
+  notes instead of generating steps. Its row says `NO PI CLOCK TICK` and the
+  header says `CLOCKED PIPE: PI HAS NO 24-PPQN TICK`. A TRS->TRS chain is
+  mirrored to the Pico with
   `EV_MIDI_ROUTE`/`EV_MIDI_ROUTE_PIPE` (0x18/0x19) on every edit/project load,
-  and routed TRS bytes are sent with `EV_MIDI_ROUTE_SEND` (0x1A) so both waves
-  run on the firmware. The Pi applies the channel mask and its source
+  and routed TRS bytes are sent with `EV_MIDI_ROUTE_SEND` (0x1A) so every pipe
+  type runs there on the firmware's own `clockTick` grid. The Pi applies the
+  channel mask and its source
   transpose before that send, so the TRS->TRS order is openly
   mask -> transpose -> Pico chain (the USB route keeps mask -> pipes ->
   transpose).
 * `MidiGlue::pump` calls `Router::tick` on the same millisecond time base as the
   routed events, so NoteLength (type 10) pending offs are flushed even without
-  another input message. A rejected Pi-side chain logs one line per new
-  rejection (pipe index + static reason) instead of one per message.
+  another input message. `Router::clockTick` has no Pi-side caller, which is what
+  the clocked-pipe status line reports.
 * Every configured pipe parameter is a MIDI-learn target
   (`routing.pipe.<src>.<dst>.<pipe>.<param>`); the target set is the generated
   schema parameter count, the target list refreshes with chain edits and an
@@ -595,7 +606,7 @@ Implemented in `AppController` with a focus ring per screen and IDs such as
 | MIDI-learn capture mode | **works** (target picker, arm, next CC binds, remove/clear; persisted in `midimap`) |
 | EQ grid: 4 nodes, response curve, corners, track+Main, fullscreen | **works**; every edit is forwarded live to `Engine::setTrackEqBand`/`setMainEqBand`, and a loaded Q > 10 is normalized to 10 with a log note |
 | EDIT timeline: 18 tracks (6/page), `.peaks` thumbnails, IN/OUT, ops, undo, loop brace, punch markers | **works**; regions are session v2 `takes.edit` applied through `Engine::setTakeRegions`; RENDER is refused naming the missing core call |
-| Routing SHIFT pipe chains: 16 types, add/remove/reorder/bypass, params, MIDI learn | **works**; Pi-owned routes run Wave 1 on the Pi, TRS->TRS chains mirror to the Pico (0x18/0x19) and routed bytes go out 0x1A |
+| Routing SHIFT pipe chains: 16 types, add/remove/reorder/bypass, params, MIDI learn | **works**; Pi-owned routes run every type on the Pi through the shared core, with no 24-PPQN grid pass yet (a clocked pipe there says `NO PI CLOCK TICK`), TRS->TRS chains mirror to the Pico (0x18/0x19) and routed bytes go out 0x1A |
 | X/Y performance grids, multitouch, panel path, freeze | **works**; built-in delay/reverb run on the FX1/FX2 sends ahead of the CLAP slots; freeze is a parameter macro |
 
 ### Explicitly dropped / changed from the JUCE app
@@ -706,7 +717,7 @@ macOS (Qt 6.12.0, AppleClang, clean directory `/tmp/pi-nopico-final`):
   (`--screenshots /tmp/nopico-default-shots --emulator`) produces **26/26
   steps** (no 35-* steps), `31-mixer.png` has no NO PICO badge and no touch
   PLAY/STOP/REC, and `34-pipes.png` still shows `ACTIVE` / `ACTIVE (PICO
-  CLOCK)` / `WAVE 2 LIVE (Pico clocked chain)`. The flag is the only switch.
+  CLOCK)` / `CLOCKED PIPE LIVE (Pico clockTick)`. The flag is the only switch.
 
 Raspberry Pi 5 (studio, Debian 13 trixie arm64, Qt 6.8.2, native build):
 
@@ -863,6 +874,76 @@ The FX insert's audio path, and a written track name in a legacy project (the
 take naming keeps the `chNN` default when the name is empty), remain explicit
 limits of this wave.
 
+### Wave 9 run (pipes declutter, popup selectors, knob-card parameters)
+
+Owner direction: "the midi pipes is a bit cluttered"; "< name > buttons" must
+become popup selectors; "make use of encoders in more places" (the arc-dial card
+from the comp popup). Implementation:
+
+* Routing SHIFT > PIPES is rebuilt around popup selectors. FROM and TO are two
+  live readouts that open the port lists (`pipesource` / `pipedest`); the ADD row
+  is the type selector (`pipetype`), a compact ADD, the `SCOPE CH n` chip
+  (`pipechannels`) and one `CHAIN` button. EXPORT/IMPORT moved into that chain
+  menu popup (`chainmenu`), which frees the row. Both `< >` stepper pairs, the
+  type stepper and the parameter pager are gone, along with
+  `RoutingViewModel::paramPage/setParamPage/cyclePipeSource/cyclePipeDestination/
+  cycleAddType` and `pipeui::pageCount`.
+* The type popup is a scrolled list of the 16 schema types with each type's
+  schema role and the selected type's doc line (`pipeui::pipeRoleName` /
+  `pipeDocs`), so a pick is made from the description.
+* The chain is one compact line per pipe (index + name + status chip + parameter
+  count). A tap selects the row for parameter editing; BYP/up/down/remove exist
+  on the selected row only, and the focus ring stops there too.
+* Parameters are `PipeParamCard.qml` cards in a two-column grid: an arc dial
+  with label and value for a numeric parameter (drag or panel encoder), a
+  label + value chip that opens the `pipeparam` ConfigPopup for a bool/enum
+  parameter. Four cards fit; a longer schema scrolls. Every card carries
+  `shift.routing.pipes.param.<pipe>.<param>` so panel EDIT/encoder drives it.
+* Value popup placement: the readout now clamps below the persistent bridge
+  (tab row + transport strip) instead of covering the tab row (`ValuePopup.qml`),
+  and stays at the page margin in a fullscreen face.
+* Stepper sweep: the routing transposes on the FILTER page are arc-dial cards
+  (`shift.routing.transpose.<n>` preserved), the click BARS value is a
+  `ConfigKnob` card, and the delay DIVISION is a full eight-button choice row
+  instead of a prev/name/next stepper.
+* Engine split corrected against the code: the shared midifx core implements all
+  16 types and no longer rejects ids 12..16, which the old status line claimed.
+  What is still missing Pi-side is the 24-PPQN grid pass (`MidiGlue::pump`
+  drives `Router::tick` only; nothing calls `Router::clockTick`), so a clocked
+  pipe on a Pi-owned route now reads `NO PI CLOCK TICK` on its row and
+  `CLOCKED PIPE: PI HAS NO 24-PPQN TICK` in the header; a TRS->TRS chain reports
+  `CLOCKED PIPE LIVE (Pico clockTick)`.
+
+Verification (macOS, Qt 6.12.0, clean directory `/tmp/pi-build-ui41-final`):
+
+* fresh `cmake -S midibrain/pi -B /tmp/pi-build-ui41-final
+  -DCMAKE_PREFIX_PATH=$(brew --prefix qt)` + `cmake --build ... -j14`:
+  **exit 0, zero warnings**.
+* `ctest --test-dir /tmp/pi-build-ui41-final --output-on-failure`: **21/21
+  passed**; `mnkybox_app_logic` prints **841 checks, 0 failures** (new coverage:
+  the parameter choice popup for a bool and an enum, its live write and CANCEL
+  restore, the type list's roles/docs, and the corrected engine-split readout).
+* `QT_QPA_PLATFORM=offscreen ./app/mnkybox --ui-taps`: **532 taps, 0 QML
+  warnings, 0 failures**, including the two card-family passes
+  (`shift.1.pipes.cards.toggle`, `.knob`), the generic pipes pass, the two chain
+  menu scenarios and the new `config.pipeparam` / `config.chainmenu` kinds.
+* `./app/mnkybox --screenshots /tmp/ui41-shots`: **89/89 PNGs**, 0 failures. The
+  wave-9 proof set copied into `pi/qemu/screenshots/`: `41-routing-pipes.png`,
+  `41-routing-pipes-knob.png`, `41-popup-pipetype.png`,
+  `41-popup-pipeparam.png`, `41-chain-menu.png`, `41-popup-metronome.png`,
+  `41-popup-delay.png`. The 39-*/40-* files stay untouched as the before set: a
+  full re-run rewrites those names with the new layout.
+* Raspberry Pi 5 (studio, Debian trixie arm64, Qt 6.8.2, offscreen only, under
+  `nice`/`ionice`): incremental build of the synced tree **exit 0, zero
+  warnings**, `--ui-taps` **550 taps, 0 QML warnings, 0 failures**,
+  `--screenshots` **89/89, 0 failures**; the 41-* render matches the macOS set.
+
+Named tap-driver limits: the parameter grid scrolls, so each card scenario
+reaches the four visible cards only (all cards keep their focus ids in the ring);
+the chain menu's EXPORT/IMPORT keep their historical
+`shift.routing.pipes.chain.*` ids, so the generic `config.` passes do not tap them
+and the two dedicated chain scenarios do. No hardware, touch or timing claim.
+
 ## Capacity (64 tracks / 128 channels, 2026-11-06)
 
 Named capacities from `audio/capacity.hpp` everywhere in the app path:
@@ -878,3 +959,13 @@ the session store fails CLOSED with an explicit reason instead of writing an
 unloadable file. Assumption: the engine-side capacity raise (done in
 pi/audio/capacity.hpp by the engine wave) keeps `kMaxInputs` as the
 legacy device-width name; session entry counts follow `audio::kMaxInputs`.
+
+## Wave 9: slider law + knob chips (2026-11-06)
+
+Owner rule: tight space => KnobChip, never a slider (spec §6). KnobChip.qml =
+framed arc dial + label + value with drag, panel-encoder via focusId and
+value-popup during drag. Converted: mixer shift sends, strip PAN, TRACK
+rows, channel popout sends, FX returns, brightness, loop/punch fields, and
+all ConfigPopup params (ConfigSlider deleted). Kept: strip/master/popout
+gain faders. 41-* screenshots cover the converted surfaces; --ui-taps 547
+clean, 841 app checks.

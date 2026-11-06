@@ -579,9 +579,20 @@ void AppController::openConfigFrom(const QString& kind, QObject* item) {
   openConfigInternal(kind);
 }
 
+void AppController::openPipeParam(int pipe, int param, QObject* item) {
+  configVm_->setPipeParamTarget(pipe, param);
+  openConfigFrom(QStringLiteral("pipeparam"), item);
+}
+
 void AppController::openConfigInternal(const QString& kind) {
   if (kind == QStringLiteral("trackmonitor")) {
     configVm_->setTrackMonitorIndex(mixerVm_->trackIndex());
+  }
+  // A card always names its parameter; this is the panel/keyboard path, where
+  // the ring points at the selected pipe's first positional parameter.
+  if (kind == QStringLiteral("pipeparam")) {
+    configVm_->setPipeParamTarget(routingVm_->selectedPipe(),
+                                  configVm_->pipeParamIndex());
   }
   // A selector popup opened without an explicit strip (panel/keyboard path)
   // targets the TRACK screen's strip, which is where the ring points.
@@ -968,6 +979,7 @@ bool AppController::isEditableFocus(const QString& focusId) const {
   if (id.startsWith(QStringLiteral("shift."))) id = id.mid(6);
   if (id.startsWith(QStringLiteral("config."))) {
     return id == QStringLiteral("config.gain") || id == QStringLiteral("config.bars") ||
+           id.startsWith(QStringLiteral("config.pipeparam.")) ||
            id.startsWith(QStringLiteral("config.mode.")) ||
            id.startsWith(QStringLiteral("config.out.")) ||
            id.startsWith(QStringLiteral("config.phones.")) ||
@@ -1080,6 +1092,8 @@ void AppController::activateFocus() {
       configAccept();
     } else if (parts[1] == QStringLiteral("cancel")) {
       configCancel();
+    } else if (parts[1] == QStringLiteral("pipeparam")) {
+      configVm_->setPipeParamChoice(index);
     } else if (parts[1] == QStringLiteral("mode")) {
       if (configVm_->kind() == QStringLiteral("metronome")) {
         configVm_->setClickMode(index);
@@ -1158,6 +1172,8 @@ void AppController::activateFocus() {
       } else if (parts[2] == QStringLiteral("out") && parts.size() >= 4) {
         configVm_->setAddTrackOutput(parts[3].toInt());
       }
+    } else if (parts[1] == QStringLiteral("pipeparam") && parts.size() >= 3) {
+      configVm_->setPipeParamChoice(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("pipe") && parts.size() >= 4) {
       if (parts[2] == QStringLiteral("ch")) {
         configVm_->togglePipeChannel(parts[3].toInt());
@@ -1496,34 +1512,19 @@ void AppController::activateFocus() {
       rebuildFocusIds();
     } else if (parts[1] == QStringLiteral("pipes") && parts.size() >= 3) {
       const QString what = parts[2];
-      if (what == QStringLiteral("src") && parts.size() >= 4) {
-        if (parts[3] == QStringLiteral("prev")) {
-          routingVm_->cyclePipeSource(-1);
-        } else if (parts[3] == QStringLiteral("next") ||
-                   parts[3] == QStringLiteral("name")) {
-          routingVm_->cyclePipeSource(1);
-        } else {
-          routingVm_->setPipeSource(parts[3].toInt());
-        }
-        showTextPopup(QStringLiteral("PIPE FROM"), routingVm_->pipeSourceName());
-      } else if (what == QStringLiteral("dst") && parts.size() >= 4) {
-        if (parts[3] == QStringLiteral("prev")) {
-          routingVm_->cyclePipeDestination(-1);
-        } else if (parts[3] == QStringLiteral("next") ||
-                   parts[3] == QStringLiteral("name")) {
-          routingVm_->cyclePipeDestination(1);
-        } else {
-          routingVm_->setPipeDestination(parts[3].toInt());
-        }
-        showTextPopup(QStringLiteral("PIPE TO"), routingVm_->pipeDestinationName());
+      if (what == QStringLiteral("src") && parts.size() >= 4 &&
+          parts[3] == QStringLiteral("name")) {
+        openConfig(QStringLiteral("pipesource"));
+      } else if (what == QStringLiteral("dst") && parts.size() >= 4 &&
+                 parts[3] == QStringLiteral("name")) {
+        openConfig(QStringLiteral("pipedest"));
       } else if (what == QStringLiteral("scope")) {
         openConfig(QStringLiteral("pipechannels"));
-      } else if (what == QStringLiteral("type")) {
-        routingVm_->cycleAddType(parts.size() >= 4 && parts[3] == QStringLiteral("prev") ? -1 : 1);
       } else if (what == QStringLiteral("add") && parts.size() >= 4 &&
                  parts[3] == QStringLiteral("type")) {
-        routingVm_->cycleAddType(1);
-        showTextPopup(QStringLiteral("PIPE TYPE"), routingVm_->addTypeName());
+        openConfig(QStringLiteral("pipetype"));
+      } else if (what == QStringLiteral("chain")) {
+        openConfig(QStringLiteral("chainmenu"));
       } else if (what == QStringLiteral("add")) {
         routingVm_->addPipe();
         showTextPopup(QStringLiteral("PIPE ADDED"), routingVm_->addTypeName());
@@ -1542,16 +1543,7 @@ void AppController::activateFocus() {
         routingVm_->selectPipe(parts[3].toInt());
         routingVm_->removeSelectedPipe();
       } else if (what == QStringLiteral("param")) {
-        if (parts.size() >= 4 && parts[3] == QStringLiteral("page")) {
-          const int delta = parts.size() >= 5 && parts[4] == QStringLiteral("prev") ? -1 : 1;
-          routingVm_->setParamPage(routingVm_->paramPage() + delta);
-          showTextPopup(QStringLiteral("PIPE PARAMS"),
-                        QStringLiteral("page %1 / %2")
-                            .arg(routingVm_->paramPage() + 1)
-                            .arg(routingVm_->paramPageCount()));
-        } else {
-          setPanelMode(QStringLiteral("edit"));
-        }
+        setPanelMode(QStringLiteral("edit"));
       }
       rebuildFocusIds();
     } else if (parts[1] == QStringLiteral("reset")) {
@@ -1804,6 +1796,8 @@ void AppController::adjustFocused(int detents, bool fine) {
       configVm_->setClickBars(configVm_->clickBars() + detents);
       showValuePopup(QStringLiteral("CLICK BARS"), QStringLiteral("int"),
                      configVm_->clickBars());
+    } else if (parts[1] == QStringLiteral("pipeparam")) {
+      configVm_->setPipeParamChoice(configVm_->pipeParamChoice() + detents);
     } else if (parts[1] == QStringLiteral("mode")) {
       if (configVm_->kind() == QStringLiteral("metronome")) {
         configVm_->setClickMode(moveIndex(configVm_->clickMode(), detents > 0 ? 1 : -1, 3));
@@ -2394,9 +2388,9 @@ void AppController::rebuildFocusIds() {
     } else if (kind == QStringLiteral("delay")) {
       ids.push_back(QStringLiteral("config.delay.beat"));
       ids.push_back(QStringLiteral("config.delay.ping"));
-      ids.push_back(QStringLiteral("config.delay.div.prev"));
-      ids.push_back(QStringLiteral("config.delay.division"));
-      ids.push_back(QStringLiteral("config.delay.div.next"));
+      for (int division = 0; division < audio::fx::Delay::kDivCount; ++division) {
+        ids.push_back(QStringLiteral("config.delaydivision.%1").arg(division));
+      }
       ids.push_back(QStringLiteral("config.delay.feedback"));
       ids.push_back(QStringLiteral("config.delay.mix"));
     } else if (kind == QStringLiteral("reverb")) {
@@ -2439,6 +2433,13 @@ void AppController::rebuildFocusIds() {
       for (int index = 0; index < types; ++index) {
         ids.push_back(QStringLiteral("config.pipetype.%1").arg(index));
       }
+    } else if (kind == QStringLiteral("pipeparam")) {
+      for (int choice = 0; choice < configVm_->pipeParamChoices().size(); ++choice) {
+        ids.push_back(QStringLiteral("config.pipeparam.%1").arg(choice));
+      }
+    } else if (kind == QStringLiteral("chainmenu")) {
+      ids.push_back(QStringLiteral("shift.routing.pipes.chain.export"));
+      ids.push_back(QStringLiteral("shift.routing.pipes.chain.import"));
     } else if (kind == QStringLiteral("delaydivision")) {
       for (int division = 0; division < audio::fx::Delay::kDivCount; ++division) {
         ids.push_back(QStringLiteral("config.delaydivision.%1").arg(division));
@@ -2549,30 +2550,26 @@ void AppController::rebuildFocusIds() {
             ids.push_back(QStringLiteral("shift.clock.transport.%1").arg(output));
           }
         } else {
-          ids.push_back(QStringLiteral("shift.routing.pipes.src.prev"));
+          // The pipe page's selectors: every one of them opens a list. The
+          // row actions exist on the selected row only, so the ring stops
+          // there too.
           ids.push_back(QStringLiteral("shift.routing.pipes.src.name"));
-          ids.push_back(QStringLiteral("shift.routing.pipes.src.next"));
-          ids.push_back(QStringLiteral("shift.routing.pipes.dst.prev"));
           ids.push_back(QStringLiteral("shift.routing.pipes.dst.name"));
-          ids.push_back(QStringLiteral("shift.routing.pipes.dst.next"));
-          ids.push_back(QStringLiteral("shift.routing.pipes.type.prev"));
           ids.push_back(QStringLiteral("shift.routing.pipes.add.type"));
-          ids.push_back(QStringLiteral("shift.routing.pipes.type.next"));
           ids.push_back(QStringLiteral("shift.routing.pipes.add"));
           ids.push_back(QStringLiteral("shift.routing.pipes.scope"));
-          ids.push_back(QStringLiteral("shift.routing.pipes.chain.export"));
-          ids.push_back(QStringLiteral("shift.routing.pipes.chain.import"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.chain"));
           const int pipes = routingVm_->pipeRows().size();
           for (int pipe = 0; pipe < pipes; ++pipe) {
             ids.push_back(QStringLiteral("shift.routing.pipes.select.%1").arg(pipe));
-            ids.push_back(QStringLiteral("shift.routing.pipes.bypass.%1").arg(pipe));
-            ids.push_back(QStringLiteral("shift.routing.pipes.up.%1").arg(pipe));
-            ids.push_back(QStringLiteral("shift.routing.pipes.down.%1").arg(pipe));
-            ids.push_back(QStringLiteral("shift.routing.pipes.remove.%1").arg(pipe));
           }
-          ids.push_back(QStringLiteral("shift.routing.pipes.param.page.prev"));
-          ids.push_back(QStringLiteral("shift.routing.pipes.param.page.next"));
           const int selected = routingVm_->selectedPipe();
+          if (selected >= 0 && selected < pipes) {
+            ids.push_back(QStringLiteral("shift.routing.pipes.bypass.%1").arg(selected));
+            ids.push_back(QStringLiteral("shift.routing.pipes.up.%1").arg(selected));
+            ids.push_back(QStringLiteral("shift.routing.pipes.down.%1").arg(selected));
+            ids.push_back(QStringLiteral("shift.routing.pipes.remove.%1").arg(selected));
+          }
           const auto params = routingVm_->pipeParams();
           for (const auto& entry : params) {
             ids.push_back(QStringLiteral("shift.routing.pipes.param.%1.%2")

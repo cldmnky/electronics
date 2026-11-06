@@ -329,7 +329,6 @@ void RoutingViewModel::setPipeSource(int source) {
   if (clamped == pipeSource_) return;
   pipeSource_ = clamped;
   selectedPipe_ = 0;
-  paramPage_ = 0;
   emit pipeRouteChanged();
   refreshPipes();
 }
@@ -340,24 +339,19 @@ void RoutingViewModel::setPipeDestination(int destination) {
   if (clamped == pipeDestination_) return;
   pipeDestination_ = clamped;
   selectedPipe_ = 0;
-  paramPage_ = 0;
   emit pipeRouteChanged();
   refreshPipes();
-}
-
-void RoutingViewModel::cyclePipeSource(int delta) {
-  setPipeSource(moveIndex(pipeSource_, delta < 0 ? -1 : 1,
-                          static_cast<int>(inputs_.size())));
-}
-
-void RoutingViewModel::cyclePipeDestination(int delta) {
-  setPipeDestination(moveIndex(pipeDestination_, delta < 0 ? -1 : 1,
-                               static_cast<int>(outputs_.size())));
 }
 
 QString RoutingViewModel::pipeSourceName() const {
   if (pipeSource_ < 0 || pipeSource_ >= static_cast<int>(inputs_.size())) return {};
   return inputs_[static_cast<std::size_t>(pipeSource_)].name;
+}
+
+QString RoutingViewModel::selectedPipeName() const {
+  const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
+  if (selectedPipe_ < 0 || selectedPipe_ >= static_cast<int>(pipes.size())) return {};
+  return pipeui::pipeName(static_cast<int>(pipes[static_cast<std::size_t>(selectedPipe_)].type));
 }
 
 QString RoutingViewModel::pipeDestinationName() const {
@@ -373,28 +367,12 @@ void RoutingViewModel::selectPipe(int index) {
   const int clamped = count == 0 ? 0 : std::clamp(index, 0, count - 1);
   if (clamped == selectedPipe_) return;
   selectedPipe_ = clamped;
-  paramPage_ = 0;
   refreshPipes();
 }
 
 void RoutingViewModel::cycleSelectedPipe(int delta) {
   if (pipeCount() == 0) return;
   selectPipe(selectedPipe_ + (delta < 0 ? -1 : 1));
-}
-
-int RoutingViewModel::paramPageCount() const {
-  const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
-  if (selectedPipe_ < 0 || selectedPipe_ >= static_cast<int>(pipes.size())) return 1;
-  const auto type = static_cast<int>(pipes[static_cast<std::size_t>(selectedPipe_)].type);
-  return pipeui::pageCount(static_cast<std::size_t>(pipeui::paramCount(type)),
-                           kPipeParamsPerPage);
-}
-
-void RoutingViewModel::setParamPage(int page) {
-  const int clamped = std::clamp(page, 0, paramPageCount() - 1);
-  if (clamped == paramPage_) return;
-  paramPage_ = clamped;
-  refreshPipes();
 }
 
 void RoutingViewModel::setAddTypeIndex(int index) {
@@ -454,29 +432,31 @@ QString RoutingViewModel::pipeStatusText() const {
   const bool piOwned = midi::piOwnsPipeChain(pipeInput(), pipeOutput());
   QString status = route + QStringLiteral(" - ") + QString::number(count) +
                    (count == 1 ? QStringLiteral(" PIPE - ") : QStringLiteral(" PIPES - "));
-  // Engine split is explicit: a route touching USB (fixed or a per-device
-  // registry id) is evaluated by the Pi (Wave 1 only; midifx process() rejects
-  // the clocked ids); a TRS->TRS chain is configured on the Pico (0x18/0x19)
-  // and its bytes go out with 0x1A, where the firmware evaluates both waves.
-  // The Pi applies the channel mask and its source transpose before the 0x1A
-  // send, so that route's effective order is mask -> transpose -> Pico chain.
-  status += piOwned ? QStringLiteral("PI ENGINE (WAVE 1)")
+  // Engine split, stated as the code is: a route touching USB (fixed or a
+  // per-device registry id) is evaluated by the Pi through the shared midifx
+  // core, which implements all 16 types; a TRS->TRS chain is configured on the
+  // Pico (0x18/0x19) and evaluated by the firmware, whose route_chain drives
+  // the same core's clockTick() from its alarm ticks. The Pi pump
+  // (MidiGlue::pump) calls Router::tick() only, so the Pi's millisecond pass
+  // runs (NoteLength, MidiDelay, the stateless pipes) while the 24-PPQN grid
+  // pass that steps an arp/repeater/LFO has no Pi-side caller yet: a clocked
+  // pipe on a Pi-owned route holds its notes instead of generating steps.
+  status += piOwned ? QStringLiteral("PI ENGINE")
                     : QStringLiteral("PICO 0x1A CHAIN (mask -> transpose -> chain)");
   if (noPico_ && !piOwned) {
     status += QStringLiteral(" - INERT (NO PICO; 0x18/0x19/0x1A not sent)");
   }
   const auto pipes = midi_.routePipes(pipeInput(), pipeOutput());
-  bool wave2 = false;
+  bool clocked = false;
   int bypassed = 0;
   for (const auto& pipe : pipes) {
     if (pipe.bypass) ++bypassed;
-    if (!pipe.bypass && pipeui::isClocked(static_cast<int>(pipe.type))) wave2 = true;
+    if (!pipe.bypass && pipeui::isClocked(static_cast<int>(pipe.type))) clocked = true;
   }
-  if (wave2 && piOwned) {
-    status += QStringLiteral(" - WAVE 2 NOT IN PI ENGINE: midi::PipeChain::process() "
-                             "rejects ids 12..16");
-  } else if (wave2 && !(noPico_ && !piOwned)) {
-    status += QStringLiteral(" - WAVE 2 LIVE (Pico clocked chain)");
+  if (clocked && piOwned) {
+    status += QStringLiteral(" - CLOCKED PIPE: PI HAS NO 24-PPQN TICK");
+  } else if (clocked && !(noPico_ && !piOwned)) {
+    status += QStringLiteral(" - CLOCKED PIPE LIVE (Pico clockTick)");
   }
   if (bypassed > 0) {
     status += QStringLiteral(" - ") + QString::number(bypassed) +
@@ -529,7 +509,6 @@ void RoutingViewModel::movePipe(int index, int delta) {
   } else {
     selectedPipe_ = index;
   }
-  paramPage_ = 0;
   refreshPipes();
 }
 
@@ -537,7 +516,6 @@ void RoutingViewModel::removePipe(int index) {
   if (index < 0 || index >= pipeCount()) return;
   if (!midi_.removeRoutePipe(pipeInput(), pipeOutput(), index)) return;
   selectedPipe_ = std::max(0, std::min(index, pipeCount() - 1));
-  paramPage_ = 0;
   refreshPipes();
 }
 
@@ -606,7 +584,6 @@ QString RoutingViewModel::importPipeChain(const QString& target,
     return QStringLiteral("the router refused the chain");
   }
   selectedPipe_ = 0;
-  paramPage_ = 0;
   log(std::string("routing: imported ") + std::to_string(chain.pipes.size()) +
       " pipe(s) into " + pipeRouteText().toStdString() + " from " + file.string());
   refreshPipes();
@@ -621,10 +598,6 @@ QStringList RoutingViewModel::addTypeLabels() const {
     labels << pipeui::pipeName(index + 1);
   }
   return labels;
-}
-
-void RoutingViewModel::cycleAddType(int delta) {
-  setAddTypeIndex(addTypeIndex_ + (delta < 0 ? -1 : 1));
 }
 
 void RoutingViewModel::refreshPipes() {
@@ -652,33 +625,37 @@ void RoutingViewModel::refreshPipes() {
                QString::fromStdString(formatChannelMask(pipe.chMask)));
     const bool piOwned = midi::piOwnsPipeChain(pipeInput(), pipeOutput());
     QString rowStatus = QStringLiteral("ACTIVE");
+    bool warning = false;
     if (pipe.bypass) {
       rowStatus = QStringLiteral("BYPASS");
     } else if (noPico_ && !piOwned) {
       rowStatus = QStringLiteral("INERT (NO PICO)");
+      warning = true;
     } else if (clocked) {
-      rowStatus = piOwned ? QStringLiteral("PI: NO WAVE-2 ENGINE")
-                          : QStringLiteral("ACTIVE (PICO CLOCK)");
+      if (piOwned) {
+        rowStatus = QStringLiteral("NO PI CLOCK TICK");
+        warning = true;
+      } else {
+        rowStatus = QStringLiteral("ACTIVE (PICO CLOCK)");
+      }
     }
     if (pipe.chMask != 0xFFFF) {
       rowStatus += QStringLiteral(" ") +
                    QString::fromStdString(formatChannelMask(pipe.chMask));
     }
     row.insert(QStringLiteral("status"), rowStatus);
+    row.insert(QStringLiteral("warning"), warning);
     row.insert(QStringLiteral("inert"), noPico_ && !piOwned && !pipe.bypass);
     rows.push_back(row);
   }
 
+  // Every positional parameter of the selected pipe: the screen pages nothing,
+  // it shows the whole schema and scrolls when the cards do not fit.
   QVariantList params;
   if (selectedPipe_ >= 0 && selectedPipe_ < static_cast<int>(pipes.size())) {
     const auto& pipe = pipes[static_cast<std::size_t>(selectedPipe_)];
     const int typeId = static_cast<int>(pipe.type);
-    paramPage_ = std::clamp(
-        paramPage_, 0,
-        pipeui::pageCount(static_cast<std::size_t>(pipeui::paramCount(typeId)),
-                          kPipeParamsPerPage) - 1);
-    params = pipeui::editorRows(typeId, pipe.params, paramPage_ * kPipeParamsPerPage,
-                                (paramPage_ + 1) * kPipeParamsPerPage);
+    params = pipeui::editorRows(typeId, pipe.params, 0, pipeui::paramCount(typeId));
   }
 
   const QString routeText = pipeRouteText();

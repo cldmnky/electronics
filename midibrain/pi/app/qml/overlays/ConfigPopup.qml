@@ -110,25 +110,44 @@ Rectangle {
                     TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "PHONES"; checked: config.clickOutput === 1; focusId: "config.out.1"; onClicked: config.clickOutput = 1 }
                     TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: "OUT34"; checked: config.clickOutput === 2; focusId: "config.out.2"; onClicked: config.clickOutput = 2 }
                 }
-                ConfigSlider {
-                    width: parent.width
-                    label: "GAIN"
-                    value: config.clickGainDb
-                    minimumValue: -60
-                    maximumValue: 20
-                    suffix: " dB"
-                    popupKind: "db"
-                    focusId: "config.gain"
-                    onMoved: (value) => config.clickGainDb = value
-                }
                 Row {
                     width: parent.width
-                    height: Style.touch
-                    spacing: 4
-                    Text { width: 70; height: parent.height; text: "BARS"; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold; verticalAlignment: Text.AlignVCenter }
-                    TouchButton { width: 60; height: parent.height; text: "-"; textSize: 20; onClicked: config.clickBars = Math.max(1, config.clickBars - 1) }
-                    Text { width: 100; height: parent.height; text: config.clickBars + " bar"; color: Style.text; font.pixelSize: Style.fontBody; font.weight: Font.DemiBold; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter }
-                    TouchButton { width: 60; height: parent.height; text: "+"; textSize: 20; focusId: "config.bars"; onClicked: config.clickBars = Math.min(8, config.clickBars + 1) }
+                    height: 84
+                    spacing: Style.gapTight
+                    ConfigKnob {
+                        width: 120
+                        height: parent.height
+                        label: "GAIN"
+                        value: config.clickGainDb
+                        minimumValue: -60
+                        maximumValue: 20
+                        suffix: " dB"
+                        popupKind: "db"
+                        focusId: "config.gain"
+                        onMoved: (value) => config.clickGainDb = value
+                    }
+                    ConfigKnob {
+                        width: 120
+                        height: parent.height
+                        label: "BARS"
+                        value: config.clickBars
+                        minimumValue: 1
+                        maximumValue: 8
+                        suffix: " bar"
+                        decimals: 0
+                        popupKind: "generic"
+                        focusId: "config.bars"
+                        onMoved: (v) => config.clickBars = Math.round(v)
+                    }
+                    Text {
+                        width: parent.width - 252
+                        height: parent.height
+                        text: "GAIN IS THE CLICK LEVEL; BARS IS ITS LENGTH WHILE THE TRANSPORT ROLLS."
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSmall
+                        wrapMode: Text.Wrap
+                        verticalAlignment: Text.AlignVCenter
+                    }
                 }
                 Text {
                     width: parent.width
@@ -534,10 +553,9 @@ Rectangle {
                 }
             }
 
-            // ---- PIPE CHAIN SELECTORS -------------------------------------
+            // ---- PIPE CHAIN PORT SELECTORS ---------------------------------
             Column {
-                visible: config.kind === "pipesource" || config.kind === "pipedest" ||
-                         config.kind === "pipetype"
+                visible: config.kind === "pipesource" || config.kind === "pipedest"
                 width: parent.width
                 spacing: Style.gapTight
 
@@ -546,9 +564,7 @@ Rectangle {
                     height: 16
                     text: config.kind === "pipesource"
                           ? "CHAIN SOURCE - EVERY MESSAGE FROM THIS PORT RUNS THE CHAIN"
-                          : (config.kind === "pipedest"
-                             ? "CHAIN TARGET - THE SELECTED PORT RECEIVES THE CHAIN OUTPUT"
-                             : "PIPE TYPE - ADD PIPE APPENDS THIS TYPE TO THE CHAIN")
+                          : "CHAIN TARGET - THE SELECTED PORT RECEIVES THE CHAIN OUTPUT"
                     color: Style.textDim
                     font.pixelSize: Style.fontSmall
                     elide: Text.ElideRight
@@ -591,24 +607,178 @@ Rectangle {
                         }
                     }
                 }
-                Grid {
-                    visible: config.kind === "pipetype"
-                    width: parent.width
-                    columns: 4
-                    spacing: Style.gapTight
+            }
 
-                    Repeater {
-                        model: config.pipeTypeLabels
-                        delegate: TouchButton {
-                            width: (parent.width - Style.gapTight * 3) / 4
-                            height: Style.touch
+            // ---- PIPE TYPE: name plus the schema role of every type -------
+            // The list scrolls: the schema owns 16 types and each row states
+            // what the type does in the chain (schema "role"), so the pick is
+            // made from the description, not from a remembered order.
+            Column {
+                visible: config.kind === "pipetype"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: "PIPE TYPE - ADD APPENDS THE HIGHLIGHTED TYPE TO THE CHAIN"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
+                }
+                ListView {
+                    id: pipeTypeList
+                    width: parent.width
+                    height: Math.min(contentHeight, Style.touch * 6 + Style.gapHair * 5)
+                    clip: true
+                    cacheBuffer: 0
+                    model: config.pipeTypeLabels
+                    boundsBehavior: Flickable.StopAtBounds
+                    spacing: Style.gapHair
+                    // The armed type is somewhere in the 16 rows: open the list
+                    // on it instead of on the top of the schema.
+                    onVisibleChanged: if (visible) positionViewAtIndex(
+                                          config.pipeTypeIndex, ListView.Center)
+
+                    delegate: Row {
+                        width: pipeTypeList.width
+                        height: Style.touch
+                        spacing: Style.gapTight
+
+                        TouchButton {
+                            width: 240
+                            height: parent.height
                             text: modelData
                             textSize: Style.fontSmall
                             checked: index === config.pipeTypeIndex
                             focusId: "config.pipetype." + index
                             onClicked: config.pipeTypeIndex = index
                         }
+                        Text {
+                            width: parent.width - 248
+                            height: parent.height
+                            text: config.pipeTypeRoles[index] !== undefined
+                                  ? config.pipeTypeRoles[index] : ""
+                            color: Style.textDim
+                            font.pixelSize: Style.fontSmall
+                            font.weight: Font.DemiBold
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
                     }
+                }
+                Text {
+                    width: parent.width
+                    height: 28
+                    text: config.pipeTypeDocs
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+            }
+
+            // ---- PIPE PARAMETER CHOICE ------------------------------------
+            // A bool/enum pipe parameter opens this list; the tap writes the
+            // parameter, so OK/CANCEL behave like every other selector popup.
+            Column {
+                visible: config.kind === "pipeparam"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: config.pipeParamContext
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+                Grid {
+                    id: pipeParamGrid
+                    readonly property int choiceColumns: Math.max(1,
+                                                                 Math.min(4, config.pipeParamChoices.length))
+                    width: parent.width
+                    columns: pipeParamGrid.choiceColumns
+                    spacing: Style.gapTight
+
+                    Repeater {
+                        model: config.pipeParamChoices
+                        delegate: TouchButton {
+                            width: (parent.width - Style.gapTight * (pipeParamGrid.choiceColumns - 1))
+                                   / pipeParamGrid.choiceColumns
+                            height: Style.touch
+                            text: modelData
+                            textSize: Style.fontSmall
+                            checked: index === config.pipeParamChoice
+                            focusId: "config.pipeparam." + index
+                            onClicked: config.setPipeParamChoice(index)
+                        }
+                    }
+                }
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: "TAP A CHOICE - OK KEEPS IT, CANCEL RESTORES THE PIPE PARAMETER"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
+                }
+            }
+
+            // ---- CHAIN MENU ------------------------------------------------
+            // The selected route's chain preset file actions; they live here
+            // so the pipe row keeps one selector, ADD, the scope chip and this
+            // button.
+            Column {
+                visible: config.kind === "chainmenu"
+                width: parent.width
+                spacing: Style.gapTight
+
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: routing.pipeRouteText + " - " + routing.pipeCount + " PIPE(S) IN THE CHAIN"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: Style.gapTight
+
+                    TouchButton {
+                        width: (parent.width - Style.gapTight) / 2
+                        height: parent.height
+                        text: "EXPORT CHAIN"
+                        focusId: "shift.routing.pipes.chain.export"
+                        onClicked: {
+                            app.configCancel()
+                            app.requestExportPipeChain()
+                        }
+                    }
+                    TouchButton {
+                        width: (parent.width - Style.gapTight) / 2
+                        height: parent.height
+                        text: "IMPORT CHAIN"
+                        focusId: "shift.routing.pipes.chain.import"
+                        onClicked: {
+                            app.configCancel()
+                            app.requestImportPipeChain()
+                        }
+                    }
+                }
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: "ONE JSON FILE PER ROUTE CHAIN, NAMED WITH THE SHARED KEYPAD"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    elide: Text.ElideRight
                 }
             }
 
@@ -669,17 +839,65 @@ Rectangle {
                     spacing: 4
                     TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: config.delayBeat ? "BEAT ON" : "BEAT OFF"; checked: config.delayBeat === 1; focusId: "config.delay.beat"; onClicked: config.delayBeat = config.delayBeat ? 0 : 1 }
                     TouchButton { width: (parent.width - 8) / 3; height: parent.height; text: config.delayPing ? "PING ON" : "PING OFF"; checked: config.delayPing === 1; focusId: "config.delay.ping"; onClicked: config.delayPing = config.delayPing ? 0 : 1 }
-                    Row {
+                    Text {
                         width: (parent.width - 8) / 3
                         height: parent.height
-                        spacing: 2
-                        TouchButton { width: Style.touch; height: parent.height; text: "-"; textSize: 18; focusId: "config.delay.div.prev"; onClicked: config.delayDivision = Math.max(0, config.delayDivision - 1) }
-                        TouchButton { width: parent.width - Style.touch * 2 - 4; height: parent.height; text: config.divisionText; textSize: Style.fontSmall; focusId: "config.delay.division"; onClicked: config.delayDivision = (config.delayDivision + 1) % 8 }
-                        TouchButton { width: Style.touch; height: parent.height; text: "+"; textSize: 18; focusId: "config.delay.div.next"; onClicked: config.delayDivision = Math.min(7, config.delayDivision + 1) }
+                        text: "DIV  " + config.divisionText
+                        color: Style.text
+                        font.pixelSize: Style.fontBody
+                        font.weight: Font.DemiBold
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
                     }
                 }
-                ConfigSlider { width: parent.width; label: "FEEDBACK"; value: config.delayFeedback; minimumValue: 0; maximumValue: 0.95; suffix: ""; popupKind: "percent"; focusId: "config.delay.feedback"; onMoved: (v) => config.delayFeedback = v }
-                ConfigSlider { width: parent.width; label: "MIX"; value: config.delayMix; minimumValue: 0; maximumValue: 1; suffix: ""; popupKind: "percent"; focusId: "config.delay.mix"; onMoved: (v) => config.delayMix = v }
+                // The division is a list, not a prev/next stepper: every note
+                // value is one tap away.
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 2
+
+                    Repeater {
+                        model: 8
+                        delegate: TouchButton {
+                            width: (parent.width - 14) / 8
+                            height: Style.touch
+                            text: ["1/32", "1/16", "1/8", "1/4", "1/2", "1/1", "2/1", "4/1"][index]
+                            textSize: Style.fontSmall
+                            checked: index === config.delayDivision
+                            focusId: "config.delaydivision." + index
+                            onClicked: config.delayDivision = index
+                        }
+                    }
+                }
+                Row {
+                    width: parent.width
+                    height: 84
+                    spacing: Style.gapTight
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight) / 2
+                        height: parent.height
+                        label: "FEEDBACK"
+                        value: config.delayFeedback
+                        minimumValue: 0
+                        maximumValue: 0.95
+                        popupKind: "percent"
+                        focusId: "config.delay.feedback"
+                        onMoved: (v) => config.delayFeedback = v
+                    }
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight) / 2
+                        height: parent.height
+                        label: "MIX"
+                        value: config.delayMix
+                        minimumValue: 0
+                        maximumValue: 1
+                        popupKind: "percent"
+                        focusId: "config.delay.mix"
+                        onMoved: (v) => config.delayMix = v
+                    }
+                }
                 Text {
                     width: parent.width
                     text: "The grid owns cutoff (X) and width (Y). These are the delay's other controls: Beat syncs Time to the clock and Division picks the note value."
@@ -704,9 +922,45 @@ Rectangle {
                     TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "HALL"; checked: config.reverbModel === 2; focusId: "config.reverb.model.2"; onClicked: config.reverbModel = 2 }
                     TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "PLATE"; checked: config.reverbModel === 3; focusId: "config.reverb.model.3"; onClicked: config.reverbModel = 3 }
                 }
-                ConfigSlider { width: parent.width; label: "PREDELAY"; value: config.reverbPredelayMs; minimumValue: 0; maximumValue: 200; suffix: " ms"; popupKind: "ms"; focusId: "config.reverb.predelay"; onMoved: (v) => config.reverbPredelayMs = v }
-                ConfigSlider { width: parent.width; label: "DECAY"; value: config.reverbDecay; minimumValue: 0; maximumValue: 0.98; suffix: ""; popupKind: "generic"; focusId: "config.reverb.decay"; onMoved: (v) => config.reverbDecay = v }
-                ConfigSlider { width: parent.width; label: "DAMPING"; value: config.reverbDamping; minimumValue: 0; maximumValue: 1; suffix: ""; popupKind: "generic"; focusId: "config.reverb.damping"; onMoved: (v) => config.reverbDamping = v }
+                Row {
+                    width: parent.width
+                    height: 84
+                    spacing: Style.gapTight
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 2) / 3
+                        height: parent.height
+                        label: "PREDELAY"
+                        value: config.reverbPredelayMs
+                        minimumValue: 0
+                        maximumValue: 200
+                        suffix: " ms"
+                        popupKind: "ms"
+                        focusId: "config.reverb.predelay"
+                        onMoved: (v) => config.reverbPredelayMs = v
+                    }
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 2) / 3
+                        height: parent.height
+                        label: "DECAY"
+                        value: config.reverbDecay
+                        minimumValue: 0
+                        maximumValue: 0.98
+                        popupKind: "generic"
+                        focusId: "config.reverb.decay"
+                        onMoved: (v) => config.reverbDecay = v
+                    }
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 2) / 3
+                        height: parent.height
+                        label: "DAMPING"
+                        value: config.reverbDamping
+                        minimumValue: 0
+                        maximumValue: 1
+                        popupKind: "generic"
+                        focusId: "config.reverb.damping"
+                        onMoved: (v) => config.reverbDamping = v
+                    }
+                }
                 Text {
                     width: parent.width
                     text: "The grid owns size (X) and level (Y). Freeze is the panel/touch macro: longest decay, fully wet, no damping, largest size; releasing restores these values."
@@ -805,23 +1059,25 @@ Rectangle {
                     TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "CLEAR"; textSize: Style.fontSmall; checked: config.timelineOp === 6; focusId: "config.timeline.op.6"; onClicked: config.timelineOp = 6 }
                     TouchButton { width: (parent.width - 9) / 4; height: parent.height; text: "RENDER"; textSize: Style.fontSmall; checked: config.timelineOp === 7; focusId: "config.timeline.op.7"; onClicked: config.timelineOp = 7 }
                 }
-                ConfigSlider {
-                    width: parent.width
-                    label: "GAIN"
-                    value: config.timelineGainDb
-                    minimumValue: -96
-                    maximumValue: 12
-                    suffix: " dB"
-                    popupKind: "db"
-                    focusId: "config.timeline.gain"
-                    onMoved: (value) => config.timelineGainDb = value
-                }
                 Row {
                     width: parent.width
-                    height: Style.touch
+                    height: 84
                     spacing: Style.gapTight
-                    ConfigSlider {
-                        width: (parent.width - Style.gapTight) / 2
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 2) / 3
+                        height: parent.height
+                        label: "GAIN"
+                        value: config.timelineGainDb
+                        minimumValue: -96
+                        maximumValue: 12
+                        suffix: " dB"
+                        popupKind: "db"
+                        focusId: "config.timeline.gain"
+                        onMoved: (value) => config.timelineGainDb = value
+                    }
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 2) / 3
+                        height: parent.height
                         label: "FADE IN"
                         value: config.timelineFadeInBeats
                         minimumValue: 0
@@ -831,8 +1087,9 @@ Rectangle {
                         focusId: "config.timeline.fadein"
                         onMoved: (value) => config.timelineFadeInBeats = value
                     }
-                    ConfigSlider {
-                        width: (parent.width - Style.gapTight) / 2
+                    ConfigKnob {
+                        width: (parent.width - Style.gapTight * 2) / 3
+                        height: parent.height
                         label: "FADE OUT"
                         value: config.timelineFadeOutBeats
                         minimumValue: 0
@@ -931,6 +1188,9 @@ Rectangle {
         property string suffix: ""
         property string popupKind: "generic"
         property string focusId: ""
+        // Decimal places of the card's value text: an integer control (the
+        // click BARS) passes 0.
+        property int decimals: maximumValue > 20 ? 0 : 1
         signal moved(real value)
 
         readonly property bool focused: app.focusId === focusId && focusId !== ""
@@ -972,49 +1232,10 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 2
-            text: (parent.maximumValue > 20 ? Number(parent.value).toFixed(0)
-                                            : Number(parent.value).toFixed(1)) + parent.suffix
+            text: Number(parent.value).toFixed(parent.decimals) + parent.suffix
             color: Style.text
             font.pixelSize: Style.fontSmall
             font.weight: Font.DemiBold
-        }
-    }
-
-    component ConfigSlider: Row {
-        property string label: ""
-        property real value: 0
-        property real minimumValue: 0
-        property real maximumValue: 1
-        property string suffix: ""
-        property string popupKind: "generic"
-        property string focusId: ""
-        signal moved(real value)
-
-        height: Style.touch
-        spacing: 3
-        Text { width: 64; height: parent.height; text: parent.label; color: Style.textDim; font.pixelSize: Style.fontSmall; font.weight: Font.DemiBold; verticalAlignment: Text.AlignVCenter }
-        TouchSlider {
-            id: popupSlider
-            width: parent.width - 132
-            height: parent.height
-            minimumValue: parent.minimumValue
-            maximumValue: parent.maximumValue
-            value: parent.value
-            focusId: parent.focusId
-            popupLabel: parent.label
-            popupKind: parent.popupKind
-            Binding on value { value: popupSlider.parent.value; when: !popupSlider.dragging }
-            onMoved: (value) => parent.moved(value)
-        }
-        Text {
-            width: 62
-            height: parent.height
-            text: (parent.maximumValue > 20 ? Number(parent.value).toFixed(0)
-                                            : Number(parent.value).toFixed(1)) + parent.suffix
-            color: Style.text
-            font.pixelSize: Style.fontSmall
-            horizontalAlignment: Text.AlignRight
-            verticalAlignment: Text.AlignVCenter
         }
     }
 

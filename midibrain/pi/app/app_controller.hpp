@@ -231,6 +231,9 @@ class AppController final : public QObject {
   // Open a config popup from a summary button: `item` is the button (a
   // QQuickItem) and its centre becomes the popup's scale origin.
   Q_INVOKABLE void openConfigFrom(const QString& kind, QObject* item);
+  // Open the choice list of one bool/enum pipe parameter. The card supplies its
+  // pipe slot and positional parameter; `item` is the card (scale origin).
+  Q_INVOKABLE void openPipeParam(int pipe, int param, QObject* item);
   Q_INVOKABLE void configAccept();
   Q_INVOKABLE void configCancel();
 

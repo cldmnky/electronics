@@ -70,9 +70,6 @@ class RoutingViewModel final : public QObject {
   Q_PROPERTY(int pipeCount READ pipeCount NOTIFY pipesChanged)
   Q_PROPERTY(QVariantList pipeRows READ pipeRows NOTIFY pipesChanged)
   Q_PROPERTY(QVariantList pipeParams READ pipeParams NOTIFY pipesChanged)
-  Q_PROPERTY(int paramPage READ paramPage NOTIFY pipesChanged)
-  Q_PROPERTY(int paramPageCount READ paramPageCount NOTIFY pipesChanged)
-  Q_PROPERTY(int paramsPerPage READ paramsPerPage CONSTANT)
   Q_PROPERTY(QString pipeRouteText READ pipeRouteText NOTIFY pipeRouteChanged)
   Q_PROPERTY(QString pipeStatusText READ pipeStatusText NOTIFY pipesChanged)
   Q_PROPERTY(QString selectedPipeScopeText READ selectedPipeScopeText NOTIFY pipesChanged)
@@ -108,10 +105,10 @@ class RoutingViewModel final : public QObject {
   void setPipeSource(int source);
   int pipeDestination() const { return pipeDestination_; }
   void setPipeDestination(int destination);
-  Q_INVOKABLE void cyclePipeSource(int delta);
-  Q_INVOKABLE void cyclePipeDestination(int delta);
   QString pipeSourceName() const;
   QString pipeDestinationName() const;
+  // Type name of the selected pipe ("" when the route has no pipes).
+  QString selectedPipeName() const;
   int selectedPipe() const { return selectedPipe_; }
   Q_INVOKABLE void selectPipe(int index);
   int addTypeIndex() const { return addTypeIndex_; }
@@ -120,9 +117,6 @@ class RoutingViewModel final : public QObject {
   int pipeCount() const;
   QVariantList pipeRows() const { return pipeRows_; }
   QVariantList pipeParams() const { return pipeParams_; }
-  int paramPage() const { return paramPage_; }
-  int paramPageCount() const;
-  int paramsPerPage() const { return kPipeParamsPerPage; }
   QString pipeRouteText() const;
   QString pipeStatusText() const;
   QString selectedPipeScopeText() const;
@@ -158,11 +152,9 @@ class RoutingViewModel final : public QObject {
                                       const QString& projectDirectory);
   // Default export name for the selected route, e.g. "chain-1-3".
   Q_INVOKABLE QString defaultChainName() const;
-  Q_INVOKABLE void cycleAddType(int delta);
   // Every selectable pipe type, in add order, for the tap-to-open type list.
   Q_INVOKABLE QStringList addTypeLabels() const;
   Q_INVOKABLE void cycleSelectedPipe(int delta);
-  Q_INVOKABLE void setParamPage(int page);
   // Per-pipe channel scope (session::MidiPipe::chMask) of the selected pipe.
   // 0xFFFF = all channels; the engine only processes matching channels and
   // passes the rest through that pipe unchanged.
@@ -230,9 +222,7 @@ class RoutingViewModel final : public QObject {
   int pipeDestination_ = 2;  // default: the documented TRS IN1 -> USB OUT hub route
   int selectedPipe_ = 0;
   int addTypeIndex_ = 0;
-  static constexpr int kPipeParamsPerPage = 2;
   static constexpr int kFilterRowsPerPage = 3;
-  int paramPage_ = 0;
   QVariantList pipeRows_;
   QVariantList pipeParams_;
   QString pipeRouteText_;

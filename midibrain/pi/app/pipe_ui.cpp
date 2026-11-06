@@ -41,6 +41,19 @@ QString pipeShortName(int typeId) {
   return spec == nullptr ? QStringLiteral("?") : QString::fromLatin1(spec->shortName);
 }
 
+QString pipeRoleName(int typeId) {
+  const PipeSpec* spec = pipeSpec(typeId);
+  if (spec == nullptr) return {};
+  return spec->role == mnky::midifx::generated::PipeRole::Generator
+             ? QStringLiteral("GENERATOR")
+             : QStringLiteral("MODIFIER");
+}
+
+QString pipeDocs(int typeId) {
+  const PipeSpec* spec = pipeSpec(typeId);
+  return spec == nullptr ? QString() : QString::fromLatin1(spec->docs);
+}
+
 int clamp(const ParamSpec& param, int value) {
   return std::clamp(value, param.min, param.max);
 }
@@ -114,9 +127,14 @@ QVariantList editorRowsFor(const ParamSpec* params, const ParamUiSpec* ui,
     const int value = index < static_cast<int>(values.size())
                           ? clamp(param, values[static_cast<std::size_t>(index)])
                           : param.defaultValue;
+    // A bool has no schema choice table: its two states are the same OFF/ON
+    // labels valueText() prints, so a choice list can be built for it too.
     QStringList choices;
     for (int choice = 0; choice < param.choiceCount; ++choice) {
       choices << QString::fromLatin1(param.choices[choice]);
+    }
+    if (choices.isEmpty() && ui[index].format == ui::ValueFormat::Bool) {
+      choices << QStringLiteral("OFF") << QStringLiteral("ON");
     }
     QVariantMap row;
     row.insert(QStringLiteral("name"), QString::fromLatin1(param.label));
@@ -140,11 +158,6 @@ QVariantList editorRows(int typeId, const std::vector<int>& values, int first,
   if (pipe == nullptr || spec == nullptr) return {};
   return editorRowsFor(pipe->params, spec->params, spec->paramCount, values, first,
                        last);
-}
-
-int pageCount(std::size_t paramCount, int perPage) {
-  if (perPage <= 0) return 1;
-  return std::max(1, (static_cast<int>(paramCount) + perPage - 1) / perPage);
 }
 
 std::string learnTargetPath(int source, int destination, int pipe, int param) {
