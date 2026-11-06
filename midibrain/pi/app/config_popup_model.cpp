@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "logic.hpp"
+#include "routing_view_model.hpp"
 #include "timeline_model.hpp"
 #include "timeline_view_model.hpp"
 
@@ -45,10 +46,14 @@ bool ConfigPopupModel::openKind(const QString& kind) {
   if (kind != QStringLiteral("metronome") && kind != QStringLiteral("sends") &&
       kind != QStringLiteral("monitor") && kind != QStringLiteral("comp") &&
       kind != QStringLiteral("eqtype") && kind != QStringLiteral("delay") &&
-      kind != QStringLiteral("reverb") && kind != QStringLiteral("timelineops")) {
+      kind != QStringLiteral("reverb") && kind != QStringLiteral("timelineops") &&
+      kind != QStringLiteral("pipechannels")) {
     return false;
   }
   if (kind == QStringLiteral("timelineops") && timeline_ == nullptr) return false;
+  if (kind == QStringLiteral("pipechannels")) {
+    if (routing_ == nullptr || routing_->pipeCount() == 0) return false;
+  }
   kind_ = kind;
   title_ = kind == QStringLiteral("metronome")   ? QStringLiteral("METRONOME")
            : kind == QStringLiteral("sends")     ? QStringLiteral("SEND SOURCE")
@@ -57,6 +62,7 @@ bool ConfigPopupModel::openKind(const QString& kind) {
            : kind == QStringLiteral("delay")     ? QStringLiteral("DELAY")
            : kind == QStringLiteral("reverb")    ? QStringLiteral("REVERB")
            : kind == QStringLiteral("timelineops") ? QStringLiteral("REGION OPS")
+           : kind == QStringLiteral("pipechannels") ? QStringLiteral("PIPE CHANNEL SCOPE")
                                                  : QStringLiteral("MAIN COMP");
   loadDraft();
   open_ = true;
@@ -101,6 +107,16 @@ void ConfigPopupModel::loadDraft() {
   reverbPredelayMs_ = performance_.param(reverbGrid, audio::fx::Reverb::kPredelayMs);
   reverbDecay_ = performance_.param(reverbGrid, audio::fx::Reverb::kDecay);
   reverbDamping_ = performance_.param(reverbGrid, audio::fx::Reverb::kDamping);
+  if (kind_ == QStringLiteral("pipechannels")) {
+    pipeChannelMask_ = static_cast<std::uint16_t>(
+        routing_ == nullptr ? 0xFFFF : routing_->selectedPipeChannelMask());
+    pipeScopeContext_ =
+        routing_ == nullptr
+            ? QString()
+            : routing_->pipeRouteText() + QStringLiteral(" - PIPE ") +
+                  QString::number(routing_->selectedPipe() + 1) + QStringLiteral(" / ") +
+                  QString::number(routing_->pipeCount());
+  }
   if (kind_ == QStringLiteral("timelineops")) {
     timelineOp_ = 0;
     timelineGainDb_ = 0.0;
@@ -116,6 +132,14 @@ void ConfigPopupModel::loadDraft() {
 
 void ConfigPopupModel::accept() {
   if (!open_) return;
+  if (kind_ == QStringLiteral("pipechannels")) {
+    if (routing_ == nullptr) return;
+    routing_->setSelectedPipeChannelMask(pipeChannelMask_);
+    open_ = false;
+    emit openChanged();
+    refreshSummaries();
+    return;
+  }
   if (kind_ == QStringLiteral("timelineops")) {
     if (timeline_ == nullptr) return;
     const QString error = timeline_->applyOp(timelineOp_, timelineGainDb_,
@@ -229,6 +253,35 @@ void ConfigPopupModel::refreshSummaries() {
 
 QString ConfigPopupModel::divisionText() const {
   return QString::fromLatin1(audio::fx::Delay::divisionName(delayDivision_));
+}
+
+QString ConfigPopupModel::pipeChannelText() const {
+  return QString::fromStdString(formatChannelMask(pipeChannelMask_));
+}
+
+void ConfigPopupModel::togglePipeChannel(int channel) {
+  if (channel < 0 || channel >= 16) return;
+  const auto bit = static_cast<std::uint16_t>(1u << static_cast<unsigned>(channel));
+  pipeChannelMask_ = static_cast<std::uint16_t>(pipeChannelMask_ ^ bit);
+  emit changed();
+}
+
+void ConfigPopupModel::setPipeChannelMask(int mask) {
+  pipeChannelMask_ =
+      static_cast<std::uint16_t>(std::clamp(mask, 0, 0xFFFF));
+  emit changed();
+}
+
+void ConfigPopupModel::setPipeChannelPreset(int preset) {
+  switch (preset) {
+    case 0: pipeChannelMask_ = 0xFFFF; break;
+    case 1: pipeChannelMask_ = 0x000F; break;
+    case 2: pipeChannelMask_ = 0x00F0; break;
+    case 3: pipeChannelMask_ = 0x0F00; break;
+    case 4: pipeChannelMask_ = 0xF000; break;
+    default: return;
+  }
+  emit changed();
 }
 
 void ConfigPopupModel::setEqType(int value) {

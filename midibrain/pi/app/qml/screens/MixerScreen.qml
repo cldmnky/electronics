@@ -592,33 +592,43 @@ Item {
                         verticalAlignment: Text.AlignVCenter
                     }
                     TouchButton {
-                        width: (parent.width - 82) / 3
+                        width: (parent.width - 82) / 4
                         height: parent.height
-                        text: "OFF"
-                        textSize: Style.fontSmall
+                        text: "PLAY"
+                        textSize: 9
                         checked: mixer.trackMonitor === 0
                         checkedColor: Style.record
                         focusId: "shift.track.monitor.0"
                         onClicked: mixer.setTrackMonitor(0)
                     }
                     TouchButton {
-                        width: (parent.width - 82) / 3
+                        width: (parent.width - 82) / 4
                         height: parent.height
                         text: "AUTO"
-                        textSize: Style.fontSmall
+                        textSize: 9
                         checked: mixer.trackMonitor === 1
                         focusId: "shift.track.monitor.1"
                         onClicked: mixer.setTrackMonitor(1)
                     }
                     TouchButton {
-                        width: (parent.width - 82) / 3
+                        width: (parent.width - 82) / 4
                         height: parent.height
-                        text: "ON"
-                        textSize: Style.fontSmall
+                        text: "BOTH"
+                        textSize: 9
                         checked: mixer.trackMonitor === 2
                         checkedColor: Style.ok
                         focusId: "shift.track.monitor.2"
                         onClicked: mixer.setTrackMonitor(2)
+                    }
+                    TouchButton {
+                        width: (parent.width - 82) / 4
+                        height: parent.height
+                        text: "MON"
+                        textSize: 9
+                        checked: mixer.trackMonitor === 3
+                        checkedColor: Style.accent
+                        focusId: "shift.track.monitor.3"
+                        onClicked: mixer.setTrackMonitor(3)
                     }
                 }
             }

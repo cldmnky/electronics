@@ -74,12 +74,15 @@ Rectangle {
         TouchButton {
             width: parent.width
             height: Style.touch
-            text: root.monitor === 0 ? "M OFF" : (root.monitor === 2 ? "M ON" : "M AUTO")
+            text: root.monitor === 0 ? "M PLAY"
+                  : (root.monitor === 1 ? "M AUTO"
+                     : (root.monitor === 2 ? "M BOTH" : "M MON"))
             textSize: 9
-            checked: root.monitor === 0
-            checkedColor: Style.record
+            checked: root.monitor !== 1
+            checkedColor: root.monitor === 0 ? Style.record
+                          : (root.monitor === 2 ? Style.ok : Style.accent)
             focusId: "shift.mixer.monitor." + root.stripIndex
-            onClicked: mixer.setMonitor(root.stripIndex, (root.monitor + 1) % 3)
+            onClicked: mixer.setMonitor(root.stripIndex, (root.monitor + 1) % 4)
         }
     }
 

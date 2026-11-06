@@ -111,15 +111,16 @@ Rectangle {
                     border.width: Style.outlineWidth
                     border.color: Style.panelDark
                 }
-                // Per-track input monitoring: OFF/ON always, Auto only when an
-                // active take makes Auto choose the take over the live input.
+                // Per-track input monitoring: PLAY/BOTH/MON always, AUTO only
+                // when an active take makes Auto choose the take over live input.
                 Text {
                     anchors.top: clipLed.bottom
                     anchors.topMargin: 1
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: root.monitorMark
                     color: root.monitor === 0 ? Style.record
-                           : (root.monitor === 2 ? Style.ok : Style.soloOn)
+                           : (root.monitor === 1 ? Style.soloOn
+                              : (root.monitor === 2 ? Style.ok : Style.accent))
                     font.pixelSize: 7
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter

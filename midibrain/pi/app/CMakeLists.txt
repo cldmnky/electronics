@@ -45,6 +45,7 @@ set(MNKY_APP_SOURCES
   session_view_model.cpp
   system_view_model.cpp
   timeline_model.cpp
+  ui_tap_runner.cpp
   timeline_view_model.cpp
   tools_view_model.cpp
   wav_info.cpp
@@ -82,6 +83,7 @@ set(MNKY_APP_HEADERS
   session_view_model.hpp
   system_view_model.hpp
   text_buffer.hpp
+  ui_tap_runner.hpp
   timeline_model.hpp
   timeline_view_model.hpp
   tools_view_model.hpp

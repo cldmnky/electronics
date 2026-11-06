@@ -11,9 +11,9 @@ Item {
     readonly property bool shiftFace: app.panelMode === "shift"
     readonly property bool pipesPage: screen.shiftFace && routing.shiftPage === 1
     readonly property var inputNames: ["TRS IN 1", "TRS IN 2", "USB IN"]
-    readonly property var inputShort: ["TRS1", "TRS2", "USB"]
     readonly property var outputNames: ["TRS OUT 1", "TRS OUT 2", "USB OUT"]
-    readonly property var outputShort: ["TRS1", "TRS2", "USB"]
+    readonly property int patchRows: Math.max(1, Math.max(routing.inputCount,
+                                                           routing.outputCount))
 
     Column {
         anchors.fill: parent
@@ -26,7 +26,7 @@ Item {
             spacing: 6
 
             Text {
-                width: parent.width - (screen.shiftFace ? 270 : 220)
+                width: parent.width - (screen.shiftFace ? (routing.shiftPage === 0 && routing.filterPageCount > 1 ? 414 : 270) : 220)
                 height: parent.height
                 text: (screen.shiftFace
                        ? (screen.pipesPage ? "SHIFT  MIDI FX PIPES - one ordered chain per route"
@@ -59,6 +59,38 @@ Item {
                 focusId: "shift.routing.page.1"
                 onClicked: routing.setShiftPage(1)
             }
+            Row {
+                width: (screen.shiftFace && routing.shiftPage === 0 &&
+                        routing.filterPageCount > 1) ? 132 : 0
+                height: parent.height
+                spacing: 0
+                visible: width > 0
+                TouchButton {
+                    width: Style.touch
+                    height: parent.height
+                    text: "<"
+                    textSize: 14
+                    focusId: "shift.routing.filter.prev"
+                    onClicked: routing.setFilterPage(routing.filterPage - 1)
+                }
+                Text {
+                    width: 44
+                    height: parent.height
+                    text: (routing.filterPage + 1) + "/" + routing.filterPageCount
+                    color: Style.textDim
+                    font.pixelSize: 9
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                TouchButton {
+                    width: Style.touch
+                    height: parent.height
+                    text: ">"
+                    textSize: 14
+                    focusId: "shift.routing.filter.next"
+                    onClicked: routing.setFilterPage(routing.filterPage + 1)
+                }
+            }
             // The MIDI FX pipe chain lives on this tab's SHIFT face, which the
             // panel reaches with a SHIFT long-hold and touch with a long press
             // on the tab. This affordance names it on the primary face instead
@@ -87,187 +119,235 @@ Item {
             }
         }
 
-        Item {
-            id: patchbay
+        Flickable {
+            id: patchFlick
             width: parent.width
             visible: !screen.pipesPage
             height: screen.shiftFace ? Math.max(88, screen.height - Style.margin * 2 - Style.touch * 6 - 16) : Math.max(120, screen.height - Style.margin * 2 - Style.touch - 4)
+            contentWidth: width
+            contentHeight: Math.max(height, screen.patchRows * Style.touch)
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
 
-            Rectangle {
-                anchors.fill: parent
-                color: Style.panelDark
-                radius: Style.corner
-                border.width: Style.outlineWidth
-                border.color: Style.outline
-            }
+            Item {
+                id: patchbay
+                width: patchFlick.width
+                height: patchFlick.contentHeight
 
-            Canvas {
-                id: wires
-                anchors.fill: parent
-
-                Connections {
-                    target: routing
-                    function onRoutesChanged() { wires.requestPaint() }
-                    function onSelectedInputChanged() { wires.requestPaint() }
-                }
-
-                onPaint: {
-                    const ctx = getContext("2d")
-                    ctx.clearRect(0, 0, width, height)
-                    const nodeW = width * routing.nodeWidthFraction
-                    const handle = (width - 2 * nodeW) * routing.wireHandleFraction
-                    for (let s = 0; s < 3; ++s) {
-                        for (let d = 0; d < 3; ++d) {
-                            const enabled = routing.routes[s * 3 + d] === true
-                            const selected = routing.selectedInput === s
-                            const dimmed = routing.selectedInput >= 0 && !selected
-                            let color = Style.outline
-                            let thickness = Math.max(2, height * routing.nodeHeightFraction * 0.045)
-                            if (enabled) {
-                                color = dimmed ? Qt.rgba(0.31, 0.76, 0.97, 0.35) : Style.accent
-                                thickness *= selected ? 1.6 : 1.0
-                            } else if (dimmed) {
-                                color = Qt.rgba(0.18, 0.20, 0.24, 0.7)
-                                thickness *= 0.7
-                            } else if (selected) {
-                                color = Style.textDim
-                                thickness *= 0.8
-                            } else {
-                                thickness *= 0.7
-                            }
-                            const x0 = nodeW
-                            const y0 = height * (s + 0.5) / 3
-                            const x1 = width - nodeW
-                            const y1 = height * (d + 0.5) / 3
-                            ctx.beginPath()
-                            ctx.moveTo(x0, y0)
-                            ctx.bezierCurveTo(x0 + handle, y0, x1 - handle, y1, x1, y1)
-                            ctx.strokeStyle = color.toString()
-                            ctx.lineWidth = thickness
-                            ctx.lineCap = "round"
-                            ctx.stroke()
-                            if (enabled) {
-                                ctx.fillStyle = color.toString()
-                                ctx.beginPath()
-                                ctx.arc(x0, y0, thickness * 1.6, 0, Math.PI * 2)
-                                ctx.fill()
-                                ctx.beginPath()
-                                ctx.arc(x1, y1, thickness * 1.6, 0, Math.PI * 2)
-                                ctx.fill()
-                            }
-                        }
-                    }
-                }
-            }
-
-            Repeater {
-                model: 3
-                delegate: Rectangle {
-                    x: 0
-                    y: patchbay.height * (index + 0.5) / 3 - height / 2
-                    width: patchbay.width * routing.nodeWidthFraction
-                    height: patchbay.height * routing.nodeHeightFraction
+                Rectangle {
+                    anchors.fill: parent
+                    color: Style.panelDark
                     radius: Style.corner
-                    readonly property bool focused: app.focusId === ("routing.node.in." + index)
-                    readonly property bool available: routing.inputAvailable(index)
-                    color: !available ? Style.panelDark
-                                      : (routing.selectedInput === index ? Style.accent : Style.panel)
-                    border.width: (routing.selectedInput === index || focused) ? 2 : Style.outlineWidth
-                    border.color: (routing.selectedInput === index || focused)
-                                  ? Style.accent : Style.outline
+                    border.width: Style.outlineWidth
+                    border.color: Style.outline
+                }
 
-                    Column {
-                        anchors.centerIn: parent
-                        spacing: 1
-                        Text {
-                            text: screen.inputNames[index]
-                            color: !available ? Style.textDim
-                                              : (routing.selectedInput === index ? Style.panelDark : Style.text)
-                            font.pixelSize: 12
-                            font.bold: true
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
-                        Text {
-                            visible: !available
-                            text: "UNAVAILABLE (NO PICO)"
-                            color: Style.record
-                            font.pixelSize: 8
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
-                        Text {
-                            visible: available && index === 2
-                            text: routing.usbInputs + (routing.usbInputs === 1 ? " DEVICE" : " DEVICES")
-                            color: routing.selectedInput === index ? Style.panelDark : Style.textDim
-                            font.pixelSize: 10
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
+                Canvas {
+                    id: wires
+                    anchors.fill: parent
+
+                    Connections {
+                        target: routing
+                        function onRoutesChanged() { wires.requestPaint() }
+                        function onSelectedInputChanged() { wires.requestPaint() }
+                        function onDevicesChanged() { wires.requestPaint() }
                     }
 
-                    TapHandler {
-                        onTapped: routing.selectInput(index)
+                    onPaint: {
+                        const ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+                        const rows = Math.max(1, Math.max(routing.inputCount,
+                                                          routing.outputCount))
+                        const nodeW = width * routing.nodeWidthFraction
+                        const nodeH = height / rows
+                        const handle = (width - 2 * nodeW) * routing.wireHandleFraction
+                        for (let s = 0; s < routing.inputCount; ++s) {
+                            for (let d = 0; d < routing.outputCount; ++d) {
+                                const enabled = routing.routes[s * routing.outputCount + d] === true
+                                const selected = routing.selectedInput === s
+                                // Draw every route that is on, plus the possible
+                                // targets of the selected input. A long per-device
+                                // list would otherwise paint hundreds of idle grey
+                                // curves and bury the live wiring.
+                                if (!enabled && !selected) continue
+                                const dimmed = routing.selectedInput >= 0 && !selected
+                                let color = Style.outline
+                                let thickness = Math.max(2, nodeH * 0.045)
+                                if (enabled) {
+                                    color = dimmed ? Qt.rgba(0.31, 0.76, 0.97, 0.35) : Style.accent
+                                    thickness *= selected ? 1.6 : 1.0
+                                } else if (selected) {
+                                    color = Style.textDim
+                                    thickness *= 0.8
+                                }
+                                const x0 = nodeW
+                                const y0 = height * (s + 0.5) / rows
+                                const x1 = width - nodeW
+                                const y1 = height * (d + 0.5) / rows
+                                ctx.beginPath()
+                                ctx.moveTo(x0, y0)
+                                ctx.bezierCurveTo(x0 + handle, y0, x1 - handle, y1, x1, y1)
+                                ctx.strokeStyle = color.toString()
+                                ctx.lineWidth = thickness
+                                ctx.lineCap = "round"
+                                ctx.stroke()
+                                if (enabled) {
+                                    ctx.fillStyle = color.toString()
+                                    ctx.beginPath()
+                                    ctx.arc(x0, y0, thickness * 1.6, 0, Math.PI * 2)
+                                    ctx.fill()
+                                    ctx.beginPath()
+                                    ctx.arc(x1, y1, thickness * 1.6, 0, Math.PI * 2)
+                                    ctx.fill()
+                                }
+                            }
+                        }
                     }
                 }
-            }
 
-            Repeater {
-                model: 3
-                delegate: Rectangle {
-                    x: patchbay.width - width
-                    y: patchbay.height * (index + 0.5) / 3 - height / 2
-                    width: patchbay.width * routing.nodeWidthFraction
-                    height: patchbay.height * routing.nodeHeightFraction
-                    radius: Style.corner
-                    readonly property bool focused: app.focusId === ("routing.node.out." + index)
-                    readonly property bool available: routing.outputAvailable(index)
-                    color: available ? Style.panel : Style.panelDark
-                    border.width: ((routing.selectedInput >= 0 &&
-                                    routing.routes[routing.selectedInput * 3 + index] === true) ||
-                                   focused) ? 2 : Style.outlineWidth
-                    border.color: ((routing.selectedInput >= 0 &&
-                                    routing.routes[routing.selectedInput * 3 + index] === true) ||
-                                   focused) ? Style.accent : Style.outline
+                Repeater {
+                    model: routing.inputNodes
+                    delegate: Rectangle {
+                        readonly property int nodeIndex: modelData.nodeIndex
+                        readonly property bool available: routing.inputAvailable(nodeIndex)
+                        x: 0
+                        y: patchbay.height * (nodeIndex + 0.5) / screen.patchRows - height / 2
+                        width: patchbay.width * routing.nodeWidthFraction
+                        height: patchbay.height / screen.patchRows
+                        radius: Style.corner
+                        property string focusId: "routing.node.in." + modelData.port
+                        readonly property bool focused: app.focusId === focusId
+                        color: !available ? Style.panelDark
+                                          : (routing.selectedInput === nodeIndex ? Style.accent : Style.panel)
+                        border.width: (routing.selectedInput === nodeIndex || focused) ? 2 : Style.outlineWidth
+                        border.color: (routing.selectedInput === nodeIndex || focused)
+                                      ? Style.accent : Style.outline
 
-                    Column {
-                        anchors.centerIn: parent
-                        spacing: 1
-                        Text {
-                            text: screen.outputNames[index]
-                            color: available ? Style.text : Style.textDim
-                            font.pixelSize: 12
-                            font.bold: true
-                            anchors.horizontalCenter: parent.horizontalCenter
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 1
+                            Text {
+                                width: parent.parent.width - 8
+                                text: modelData.name
+                                color: !available ? Style.textDim
+                                                  : (routing.selectedInput === nodeIndex ? Style.panelDark : Style.text)
+                                font.pixelSize: modelData.dynamic ? 10 : 12
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                visible: !available
+                                text: "UNAVAILABLE (NO PICO)"
+                                color: Style.record
+                                font.pixelSize: 8
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                            Text {
+                                visible: available && !modelData.dynamic && modelData.port === 2
+                                text: "VIRTUAL PORT"
+                                color: routing.selectedInput === nodeIndex ? Style.panelDark : Style.textDim
+                                font.pixelSize: 9
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                            Text {
+                                visible: modelData.dynamic && !modelData.connected
+                                text: "DORMANT"
+                                color: Style.record
+                                font.pixelSize: 8
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                            Text {
+                                visible: modelData.dynamic && modelData.connected
+                                text: "#" + modelData.port
+                                color: routing.selectedInput === nodeIndex ? Style.panelDark : Style.textDim
+                                font.pixelSize: 8
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
                         }
-                        Text {
-                            visible: !available
-                            text: "UNAVAILABLE (NO PICO)"
-                            color: Style.record
-                            font.pixelSize: 8
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
-                        Text {
-                            visible: available && index === 2
-                            text: routing.usbOutputs + (routing.usbOutputs === 1 ? " PORT" : " PORTS")
-                            color: Style.textDim
-                            font.pixelSize: 10
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        }
-                    }
 
-                    TapHandler {
-                        onTapped: routing.selectOutput(index)
+                        TapHandler {
+                            onTapped: routing.selectInput(nodeIndex)
+                        }
                     }
                 }
-            }
 
-            TapHandler {
-                onTapped: (eventPoint) => {
-                    const p = eventPoint.position
-                    const code = routing.hitWireTest(p.x, p.y, patchbay.width, patchbay.height)
-                    if (code >= 0) {
-                        const source = Math.floor(code / 3)
-                        const destination = code % 3
-                        routing.selectedInput = source
-                        routing.toggleRoute(source, destination)
+                Repeater {
+                    model: routing.outputNodes
+                    delegate: Rectangle {
+                        readonly property int nodeIndex: modelData.nodeIndex
+                        readonly property bool available: routing.outputAvailable(nodeIndex)
+                        readonly property bool wired: routing.selectedInput >= 0 &&
+                                                      routing.routes[routing.selectedInput * routing.outputCount + nodeIndex] === true
+                        x: patchbay.width - width
+                        y: patchbay.height * (nodeIndex + 0.5) / screen.patchRows - height / 2
+                        width: patchbay.width * routing.nodeWidthFraction
+                        height: patchbay.height / screen.patchRows
+                        radius: Style.corner
+                        property string focusId: "routing.node.out." + modelData.port
+                        readonly property bool focused: app.focusId === focusId
+                        color: available ? Style.panel : Style.panelDark
+                        border.width: (wired || focused) ? 2 : Style.outlineWidth
+                        border.color: (wired || focused) ? Style.accent : Style.outline
+
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 1
+                            Text {
+                                width: parent.parent.width - 8
+                                text: modelData.name
+                                color: available ? Style.text : Style.textDim
+                                font.pixelSize: modelData.dynamic ? 10 : 12
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                visible: !available
+                                text: "UNAVAILABLE (NO PICO)"
+                                color: Style.record
+                                font.pixelSize: 8
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                            Text {
+                                visible: available && !modelData.dynamic && modelData.port === 5
+                                text: routing.usbOutputs + (routing.usbOutputs === 1 ? " PORT" : " PORTS")
+                                color: Style.textDim
+                                font.pixelSize: 9
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                            Text {
+                                visible: modelData.dynamic && !modelData.connected
+                                text: "DORMANT"
+                                color: Style.record
+                                font.pixelSize: 8
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                            Text {
+                                visible: modelData.dynamic && modelData.connected
+                                text: "#" + modelData.port
+                                color: Style.textDim
+                                font.pixelSize: 8
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                        }
+
+                        TapHandler {
+                            onTapped: routing.selectOutput(nodeIndex)
+                        }
+                    }
+                }
+
+                TapHandler {
+                    onTapped: (eventPoint) => {
+                        const p = eventPoint.position
+                        const code = routing.hitWireTest(p.x, p.y, patchbay.width, patchbay.height)
+                        if (code >= 0) {
+                            const destination = code % routing.outputCount
+                            const source = Math.floor(code / routing.outputCount)
+                            routing.selectedInput = source
+                            routing.toggleRoute(source, destination)
+                        }
                     }
                 }
             }
@@ -283,21 +363,25 @@ Item {
                 height: parent.height
                 spacing: 0
 
+                // One page shows three input nodes (fixed TRS/USB first, then
+                // per-device USB ports). The page is picked in the top row so
+                // every mask row keeps its full 44 px touch height.
                 Repeater {
-                    model: 3
+                    model: routing.filterPageRows
                     delegate: Row {
-                        property int sourceIndex: index
+                        property int sourceIndex: modelData.nodeIndex
                         width: parent.width
                         height: Style.touch
                         spacing: 0
 
                         Text {
-                            width: 84
+                            width: 76
                             height: parent.height
-                            text: screen.inputNames[index]
-                            color: Style.text
+                            text: modelData.name
+                            color: routing.inputAvailable(sourceIndex) ? Style.text : Style.textDim
                             font.pixelSize: Style.fontSmall
                             font.bold: true
+                            elide: Text.ElideRight
                             verticalAlignment: Text.AlignVCenter
                             leftPadding: 4
                         }
@@ -324,8 +408,9 @@ Item {
                     spacing: 4
 
                     Repeater {
-                        model: 3
+                        model: routing.filterPageRows
                         delegate: Row {
+                            property int sourceIndex: modelData.nodeIndex
                             width: (parent.width - 8) / 3
                             height: Style.touch
                             spacing: 2
@@ -333,7 +418,7 @@ Item {
                             Text {
                                 width: 74
                                 height: parent.height
-                                text: screen.inputNames[index]
+                                text: modelData.name
                                 color: Style.textDim
                                 font.pixelSize: Style.fontSmall
                                 font.bold: true
@@ -345,18 +430,18 @@ Item {
                                 height: Style.touch
                                 text: "-"
                                 textSize: 20
-                                onClicked: routing.adjustTranspose(index, -1)
+                                onClicked: routing.adjustTranspose(sourceIndex, -1)
                             }
                             Rectangle {
                                 width: Math.max(Style.touch, parent.width - 2 * Style.touch - 6 - 74)
                                 height: Style.touch
                                 color: Style.panelDark
-                                border.width: app.focusId === ("shift.routing.transpose." + index) ? 2 : Style.outlineWidth
-                                border.color: app.focusId === ("shift.routing.transpose." + index)
+                                border.width: app.focusId === ("shift.routing.transpose." + sourceIndex) ? 2 : Style.outlineWidth
+                                border.color: app.focusId === ("shift.routing.transpose." + sourceIndex)
                                               ? Style.accent : Style.outline
                                 Text {
                                     anchors.centerIn: parent
-                                    text: (routing.transposes[index] || 0) + " st"
+                                    text: (routing.transposes[sourceIndex] || 0) + " st"
                                     color: Style.text
                                     font.pixelSize: Style.fontBody
                                     font.bold: true
@@ -367,7 +452,7 @@ Item {
                                 height: Style.touch
                                 text: "+"
                                 textSize: 20
-                                onClicked: routing.adjustTranspose(index, 1)
+                                onClicked: routing.adjustTranspose(sourceIndex, 1)
                             }
                         }
                     }
@@ -375,7 +460,8 @@ Item {
 
                 // Per-output clock/transport gates (session v2 clock). TRS OUT1/2
                 // go to the Pico as EV_CLOCK_ROUTE; USB OUT gates the Pi-side
-                // mirror in UsbClock. The open gate is the bright one.
+                // mirror in UsbClock. The open gate is the bright one. Per-device
+                // USB clock gates are not part of the session clock format yet.
                 Row {
                     width: parent.width
                     height: Style.touch
@@ -465,17 +551,30 @@ Item {
                         font.bold: true
                         verticalAlignment: Text.AlignVCenter
                     }
-                    Repeater {
-                        model: 3
-                        delegate: TouchButton {
-                            width: (parent.width - 40 - 24 - 8) / 6
-                            height: parent.height
-                            text: screen.inputShort[index]
-                            textSize: 10
-                            checked: routing.pipeSource === index
-                            focusId: "shift.routing.pipes.src." + index
-                            onClicked: routing.pipeSource = index
-                        }
+                    TouchButton {
+                        width: Style.touch
+                        height: parent.height
+                        text: "<"
+                        textSize: 16
+                        focusId: "shift.routing.pipes.src.prev"
+                        onClicked: routing.cyclePipeSource(-1)
+                    }
+                    TouchButton {
+                        width: (parent.width - 40 - 24 - Style.touch * 4 - 18) / 2
+                        height: parent.height
+                        text: routing.pipeSourceName
+                        textSize: 10
+                        checked: true
+                        focusId: "shift.routing.pipes.src.name"
+                        onClicked: routing.cyclePipeSource(1)
+                    }
+                    TouchButton {
+                        width: Style.touch
+                        height: parent.height
+                        text: ">"
+                        textSize: 16
+                        focusId: "shift.routing.pipes.src.next"
+                        onClicked: routing.cyclePipeSource(1)
                     }
                     Text {
                         width: 24
@@ -487,17 +586,30 @@ Item {
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
-                    Repeater {
-                        model: 3
-                        delegate: TouchButton {
-                            width: (parent.width - 40 - 24 - 8) / 6
-                            height: parent.height
-                            text: screen.outputShort[index]
-                            textSize: 10
-                            checked: routing.pipeDestination === index
-                            focusId: "shift.routing.pipes.dst." + index
-                            onClicked: routing.pipeDestination = index
-                        }
+                    TouchButton {
+                        width: Style.touch
+                        height: parent.height
+                        text: "<"
+                        textSize: 16
+                        focusId: "shift.routing.pipes.dst.prev"
+                        onClicked: routing.cyclePipeDestination(-1)
+                    }
+                    TouchButton {
+                        width: (parent.width - 40 - 24 - Style.touch * 4 - 18) / 2
+                        height: parent.height
+                        text: routing.pipeDestinationName
+                        textSize: 10
+                        checked: true
+                        focusId: "shift.routing.pipes.dst.name"
+                        onClicked: routing.cyclePipeDestination(1)
+                    }
+                    TouchButton {
+                        width: Style.touch
+                        height: parent.height
+                        text: ">"
+                        textSize: 16
+                        focusId: "shift.routing.pipes.dst.next"
+                        onClicked: routing.cyclePipeDestination(1)
                     }
                 }
 
@@ -557,8 +669,16 @@ Item {
                         focusId: "shift.routing.pipes.add"
                         onClicked: routing.addPipe()
                     }
+                    TouchButton {
+                        width: 92
+                        height: parent.height
+                        text: "CH SCOPE"
+                        textSize: 9
+                        focusId: "shift.routing.pipes.scope"
+                        onClicked: app.openConfig("pipechannels")
+                    }
                     Text {
-                        width: parent.width - 40 - Style.touch * 2 - 220 - 110 - 15
+                        width: parent.width - 40 - Style.touch * 2 - 220 - 110 - 92 - 18
                         height: parent.height
                         text: routing.pipeRows.length + " / 8 PIPES"
                         color: Style.textDim
@@ -614,10 +734,7 @@ Item {
                             text: "^"
                             textSize: 16
                             focusId: "shift.routing.pipes.up." + index
-                            onClicked: {
-                                routing.selectPipe(index)
-                                routing.moveSelectedPipe(-1)
-                            }
+                            onClicked: routing.movePipe(index, -1)
                         }
                         TouchButton {
                             width: Style.touch
@@ -625,10 +742,7 @@ Item {
                             text: "v"
                             textSize: 16
                             focusId: "shift.routing.pipes.down." + index
-                            onClicked: {
-                                routing.selectPipe(index)
-                                routing.moveSelectedPipe(1)
-                            }
+                            onClicked: routing.movePipe(index, 1)
                         }
                         TouchButton {
                             width: Style.touch
@@ -637,10 +751,7 @@ Item {
                             textSize: Style.fontSmall
                             idleColor: "#5b2222"
                             focusId: "shift.routing.pipes.remove." + index
-                            onClicked: {
-                                routing.selectPipe(index)
-                                routing.removeSelectedPipe()
-                            }
+                            onClicked: routing.removePipe(index)
                         }
                         Text {
                             width: parent.width - 132 - 158 - 54 - Style.touch * 3 - 18

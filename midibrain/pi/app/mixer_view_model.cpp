@@ -40,8 +40,11 @@ bool MixerViewModel::stripClip(int index) const {
 
 QString MixerViewModel::monitorMark(int index) const {
   const int mode = model_.monitor(index);
-  if (mode == 0) return QStringLiteral("OFF");
-  if (mode == 2) return QStringLiteral("ON");
+  // MPC parity names: PLAY = take only, AUTO = smart, BOTH = input + take,
+  // MON = input always / take never.
+  if (mode == 0) return QStringLiteral("PLAY");
+  if (mode == 2) return QStringLiteral("BOTH");
+  if (mode == 3) return QStringLiteral("MON");
   // Auto is the default; only show it when an active take makes Auto choose
   // the take over the live input, i.e. when the mark carries information.
   return settings_.hasActiveTake(index) ? QStringLiteral("A") : QString();

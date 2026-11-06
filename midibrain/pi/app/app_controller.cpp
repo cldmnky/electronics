@@ -58,6 +58,7 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
   configVm_ =
       std::make_unique<ConfigPopupModel>(state_, mixer_, settings_, eqModel_, performance_);
   configVm_->setTimeline(timelineVm_.get());
+  configVm_->setRouting(routingVm_.get());
   eqVm_ = std::make_unique<EqViewModel>(eqModel_);
   xyVm_ = std::make_unique<XyViewModel>(performance_);
   // Every EQ/XY screen change shows one transient readout, the same single
@@ -465,7 +466,10 @@ void AppController::injectDemoTrsMidi(int port, int status, int data1, int data2
 
 void AppController::openConfig(const QString& kind) {
   if (!configVm_->openKind(kind)) return;
-  panelMode_ = QStringLiteral("navigate");
+  // A popup opened from the SHIFT face keeps that face underneath it; the
+  // popup's own focus trap replaces the ring while it is open, and CANCEL puts
+  // the shift stops back instead of dropping to the primary face.
+  panelMode_ = shiftFace_ ? QStringLiteral("shift") : QStringLiteral("navigate");
   focusIndex_ = 0;
   emit panelModeChanged();
   rebuildFocusIds();
@@ -504,6 +508,10 @@ void AppController::timerTick() {
   // itself, so they refresh every tick.
   if (refreshTicks_ % 15 == 0) mixerVm_->refresh();
   if (refreshTicks_ % 15 == 0) learnVm_->refresh();
+  // RtMidi/CoreMIDI/ALSA enumeration is cheap enough at this rate, and it is
+  // the only way a hot-plugged interface becomes a routable node: the registry
+  // keeps an id stable by identity across the unplug/replug.
+  if (refreshTicks_ % 30 == 0) midi_.refreshDevices();
   routingVm_->refresh();
   fxVm_->refresh();
   recorderVm_->refresh();
@@ -974,6 +982,12 @@ void AppController::activateFocus() {
       if (parts[2] == QStringLiteral("model")) {
         configVm_->setReverbModel(parts.size() >= 4 ? parts[3].toInt() : 0);
       }
+    } else if (parts[1] == QStringLiteral("pipe") && parts.size() >= 4) {
+      if (parts[2] == QStringLiteral("ch")) {
+        configVm_->togglePipeChannel(parts[3].toInt());
+      } else if (parts[2] == QStringLiteral("preset")) {
+        configVm_->setPipeChannelPreset(parts[3].toInt());
+      }
     } else if (parts[1] == QStringLiteral("delay") || parts[1] == QStringLiteral("reverb")) {
       setPanelMode(QStringLiteral("edit"));
     } else if (parts[1] == QStringLiteral("gain") || parts[1] == QStringLiteral("bars") ||
@@ -1193,11 +1207,15 @@ void AppController::activateFocus() {
       mixerVm_->toggleArm(strip);
     } else if (what == QStringLiteral("monitor")) {
       const int next = (mixerVm_->data(mixerVm_->index(strip),
-                                      MixerViewModel::MonitorRole).toInt() + 1) % 3;
+                                      MixerViewModel::MonitorRole).toInt() + 1) % 4;
       mixerVm_->setMonitor(strip, next);
+      // MPC parity: PLAY = take only, AUTO = smart, BOTH = input + take,
+      // MON = input always / take never (session::MixerChannelState::monitor).
       showTextPopup(QStringLiteral("INPUT MON"),
-                    next == 0 ? QStringLiteral("Off")
-                    : (next == 1 ? QStringLiteral("Auto") : QStringLiteral("On")));
+                    next == 0 ? QStringLiteral("Play")
+                    : (next == 1 ? QStringLiteral("Auto")
+                                 : (next == 2 ? QStringLiteral("Both")
+                                              : QStringLiteral("Mon"))));
     } else if (what == QStringLiteral("in")) {
       // Compact strip input source: EDIT steps it like the TRACK SHIFT picker.
       // MONO/PAIR stays on the TRACK SHIFT face (its own PAIR button) and on the
@@ -1221,12 +1239,38 @@ void AppController::activateFocus() {
       rebuildFocusIds();
       showTextPopup(QStringLiteral("SHIFT PIPES"),
                     QStringLiteral("MIDI FX chains - Routing SHIFT > PIPES"));
+    } else if (parts[1] == QStringLiteral("filter") && parts.size() >= 3) {
+      const int delta = parts[2] == QStringLiteral("prev") ? -1 : 1;
+      routingVm_->setFilterPage(routingVm_->filterPage() + delta);
+      showTextPopup(QStringLiteral("FILTER SOURCES"),
+                    QStringLiteral("page %1 / %2")
+                        .arg(routingVm_->filterPage() + 1)
+                        .arg(routingVm_->filterPageCount()));
+      rebuildFocusIds();
     } else if (parts[1] == QStringLiteral("pipes") && parts.size() >= 3) {
       const QString what = parts[2];
       if (what == QStringLiteral("src") && parts.size() >= 4) {
-        routingVm_->setPipeSource(parts[3].toInt());
+        if (parts[3] == QStringLiteral("prev")) {
+          routingVm_->cyclePipeSource(-1);
+        } else if (parts[3] == QStringLiteral("next") ||
+                   parts[3] == QStringLiteral("name")) {
+          routingVm_->cyclePipeSource(1);
+        } else {
+          routingVm_->setPipeSource(parts[3].toInt());
+        }
+        showTextPopup(QStringLiteral("PIPE FROM"), routingVm_->pipeSourceName());
       } else if (what == QStringLiteral("dst") && parts.size() >= 4) {
-        routingVm_->setPipeDestination(parts[3].toInt());
+        if (parts[3] == QStringLiteral("prev")) {
+          routingVm_->cyclePipeDestination(-1);
+        } else if (parts[3] == QStringLiteral("next") ||
+                   parts[3] == QStringLiteral("name")) {
+          routingVm_->cyclePipeDestination(1);
+        } else {
+          routingVm_->setPipeDestination(parts[3].toInt());
+        }
+        showTextPopup(QStringLiteral("PIPE TO"), routingVm_->pipeDestinationName());
+      } else if (what == QStringLiteral("scope")) {
+        openConfig(QStringLiteral("pipechannels"));
       } else if (what == QStringLiteral("type")) {
         routingVm_->cycleAddType(parts.size() >= 4 && parts[3] == QStringLiteral("prev") ? -1 : 1);
       } else if (what == QStringLiteral("add") && parts.size() >= 4 &&
@@ -1266,11 +1310,13 @@ void AppController::activateFocus() {
     } else if (parts[1] == QStringLiteral("reset")) {
       routingVm_->reset();
     } else if (parts[1] == QStringLiteral("node") && parts.size() >= 4) {
-      const int index = parts[3].toInt();
+      // The focus id carries the stable midi::Port id (0..5 fixed, 6..31 per
+      // device), so the panel ring keeps its stop when the device list changes.
+      const int port = parts[3].toInt();
       if (parts[2] == QStringLiteral("in")) {
-        routingVm_->selectInput(index);
+        routingVm_->selectInputPort(port);
       } else {
-        routingVm_->selectOutput(index);
+        routingVm_->selectOutputPort(port);
       }
     } else if (parts[1] == QStringLiteral("mask") && parts.size() >= 4) {
       const int source = parts[2].toInt();
@@ -2029,6 +2075,13 @@ void AppController::rebuildFocusIds() {
       ids.push_back(QStringLiteral("config.timeline.gain"));
       ids.push_back(QStringLiteral("config.timeline.fadein"));
       ids.push_back(QStringLiteral("config.timeline.fadeout"));
+    } else if (kind == QStringLiteral("pipechannels")) {
+      for (int channel = 0; channel < 16; ++channel) {
+        ids.push_back(QStringLiteral("config.pipe.ch.%1").arg(channel));
+      }
+      for (int preset = 0; preset < 5; ++preset) {
+        ids.push_back(QStringLiteral("config.pipe.preset.%1").arg(preset));
+      }
     } else {
       ids.push_back(QStringLiteral("config.on"));
       ids.push_back(QStringLiteral("config.mode.0"));
@@ -2057,9 +2110,9 @@ void AppController::rebuildFocusIds() {
             ids.push_back(QStringLiteral("shift.monitor.send.%1.pre").arg(QLatin1String(destination)));
             ids.push_back(QStringLiteral("shift.monitor.send.%1.post").arg(QLatin1String(destination)));
           }
-          ids.push_back(QStringLiteral("shift.track.monitor.0"));
-          ids.push_back(QStringLiteral("shift.track.monitor.1"));
-          ids.push_back(QStringLiteral("shift.track.monitor.2"));
+          for (int mode = 0; mode < 4; ++mode) {
+            ids.push_back(QStringLiteral("shift.track.monitor.%1").arg(mode));
+          }
         } else {
           const int first = mixerVm_->bank() * kStripsPerBank;
           for (int i = 0; i < kStripsPerBank; ++i) {
@@ -2078,12 +2131,15 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("shift.routing.page.0"));
         ids.push_back(QStringLiteral("shift.routing.page.1"));
         if (routingVm_->shiftPage() == 0) {
-          for (int source = 0; source < routing::kInputCount; ++source) {
+          if (routingVm_->filterPageCount() > 1) {
+            ids.push_back(QStringLiteral("shift.routing.filter.prev"));
+            ids.push_back(QStringLiteral("shift.routing.filter.next"));
+          }
+          for (const auto& row : routingVm_->filterPageRows()) {
+            const int source = row.toMap().value(QStringLiteral("nodeIndex")).toInt();
             for (int channel = 0; channel < 16; ++channel) {
               ids.push_back(QStringLiteral("shift.routing.mask.%1.%2").arg(source).arg(channel));
             }
-          }
-          for (int source = 0; source < routing::kInputCount; ++source) {
             ids.push_back(QStringLiteral("shift.routing.transpose.%1").arg(source));
           }
           for (int output = 0; output < 3; ++output) {
@@ -2091,16 +2147,17 @@ void AppController::rebuildFocusIds() {
             ids.push_back(QStringLiteral("shift.clock.transport.%1").arg(output));
           }
         } else {
-          for (int source = 0; source < routing::kInputCount; ++source) {
-            ids.push_back(QStringLiteral("shift.routing.pipes.src.%1").arg(source));
-          }
-          for (int destination = 0; destination < routing::kOutputCount; ++destination) {
-            ids.push_back(QStringLiteral("shift.routing.pipes.dst.%1").arg(destination));
-          }
+          ids.push_back(QStringLiteral("shift.routing.pipes.src.prev"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.src.name"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.src.next"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.dst.prev"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.dst.name"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.dst.next"));
           ids.push_back(QStringLiteral("shift.routing.pipes.type.prev"));
           ids.push_back(QStringLiteral("shift.routing.pipes.add.type"));
           ids.push_back(QStringLiteral("shift.routing.pipes.type.next"));
           ids.push_back(QStringLiteral("shift.routing.pipes.add"));
+          ids.push_back(QStringLiteral("shift.routing.pipes.scope"));
           const int pipes = routingVm_->pipeRows().size();
           for (int pipe = 0; pipe < pipes; ++pipe) {
             ids.push_back(QStringLiteral("shift.routing.pipes.select.%1").arg(pipe));
@@ -2232,11 +2289,13 @@ void AppController::rebuildFocusIds() {
       case 1: {
         ids.push_back(QStringLiteral("routing.reset"));
         ids.push_back(QStringLiteral("routing.shiftpipes"));
-        for (int source = 0; source < routing::kInputCount; ++source) {
-          ids.push_back(QStringLiteral("routing.node.in.%1").arg(source));
+        for (const auto& node : routingVm_->inputNodes()) {
+          ids.push_back(QStringLiteral("routing.node.in.%1")
+                            .arg(node.toMap().value(QStringLiteral("port")).toInt()));
         }
-        for (int destination = 0; destination < routing::kOutputCount; ++destination) {
-          ids.push_back(QStringLiteral("routing.node.out.%1").arg(destination));
+        for (const auto& node : routingVm_->outputNodes()) {
+          ids.push_back(QStringLiteral("routing.node.out.%1")
+                            .arg(node.toMap().value(QStringLiteral("port")).toInt()));
         }
         break;
       }

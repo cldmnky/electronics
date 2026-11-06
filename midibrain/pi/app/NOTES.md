@@ -722,3 +722,45 @@ No hardware, touch-panel, audio-timing, measured metronome-level or JACK/PipeWir
 routing test is claimed. The screenshots are offscreen software-renderer grabs,
 not photographs of the panel. Punch scheduling, independent VOL/GAIN session
 persistence and a firmware version readout remain explicitly unimplemented.
+
+### Wave 7 run (monitor parity, per-device routing, pipe scope, tap driver)
+
+macOS (Qt 6.12.0, AppleClang, clean directory `/tmp/pi-build-clean`):
+
+* `cmake -S pi -B /tmp/pi-build-clean -DCMAKE_PREFIX_PATH=$(brew --prefix qt)
+  -DCMAKE_CXX_COMPILER=/usr/bin/c++` + full `cmake --build ... -j8`: **exit 0,
+  zero warnings** (`-Wall -Wextra -Werror` on the app sources).
+* `ctest --test-dir /tmp/pi-build-clean --output-on-failure`: **20/20 passed**;
+  `mnkybox_app_logic` prints **433 checks, 0 failures**.
+* `QT_QPA_PLATFORM=offscreen ./app/mnkybox --screenshots pi/qemu/screenshots`:
+  **36/36 PNGs**, 0 failures. The wave-7 shots are
+  `38-monitor4.png` (MPC INPUT MON PLAY/AUTO/BOTH/MON),
+  `38-routing-devices.png` (the detected IAC Driver Bus 1 as a separate
+  input and output node beside TRS IN/OUT 1+2 and the merged USB IN/OUT), and
+  `38-pipechmask.png` (the 16-toggle pipe scope popup, preset row and
+  "SCOPE CH 1-4" readout).
+* `./app/mnkybox --ui-taps`: **375 taps, 0 QML warnings, 0 failures** in 29 s.
+  The runner walks the tab bar, transport strip, all ten primary screens, every
+  SHIFT face (both MIXER faces plus the Routing filter and pipe pages), and all
+  nine ConfigPopup kinds (every non-terminal control + CANCEL, then OK). It
+  caught two real defects: the new `togglePipeChannel` was not `Q_INVOKABLE`,
+  and the pipe row's up/down/remove handlers selected then mutated the chain
+  from a ListView delegate, which destroyed the delegate mid-handler
+  (`ReferenceError: routing is not defined`). Both are fixed; the row actions
+  are now single `movePipe` / `removePipe` calls.
+* Input monitoring is four-way end to end: `MixerModel` stores session
+  `monitor` 0..3, maps 3 to `audio::MonitorMode::InputOnly`, and the project
+  round trip (scratch Engine -> session capture -> load) preserves MON without
+  an app-side override. `Engine::setMonitorMode(InputOnly)` is the engine half.
+* Routing nodes are data-driven from `MidiGlue::usbPorts()`: fixed ports 0..5
+  stay first, registry ids 6..31 follow with their stable `"usb:<name>"`
+  identity, and route/pipe/channel-mask edits use the same views for both.
+  The channel-filter page pages in three source rows; the pipe page cycles the
+  FROM/TO node lists so a long device list never shrinks a touch target.
+* `project_io` now saves/loads the router through
+  `MidiGlue::captureSessionRouter()` / `applySessionRouter()`, so a per-device
+  route and its `MidiPipe::chMask` survive a project round trip (covered by the
+  unit test).
+
+No hardware or touch-panel measurement is claimed; the taps are in-process
+offscreen `QMouseEvent` pairs, not a real digitizer.

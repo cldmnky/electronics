@@ -44,9 +44,14 @@ Window {
                         width: tabBar.width / tabBar.tabCount
                         height: tabBar.height
                         color: app.tab === index ? Style.accent : Style.panelDark
-                        border.width: tabBar.shiftMode
-                                      ? (app.tab === index ? 2 : 1) : 0
-                        border.color: tabBar.shiftMode ? Style.accent : Style.text
+                        // "tab.N" is a panel focus stop (AppController's ring);
+                        // carrying it here makes the ring visible and lets the
+                        // --ui-taps runner exercise setTab through QML.
+                        property string focusId: "tab." + index
+                        border.width: app.focusId === focusId ? 2
+                                     : (tabBar.shiftMode ? (app.tab === index ? 2 : 1) : 0)
+                        border.color: app.focusId === focusId ? Style.accent
+                                     : (tabBar.shiftMode ? Style.accent : Style.text)
 
                         Text {
                             anchors.centerIn: parent

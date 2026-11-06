@@ -112,6 +112,12 @@ session::Snapshot captureSnapshot(const AppContext& context) {
   context.mixer.applyTo(scratch);
   SlotTargets targets(context);
   auto snapshot = session::capture(context.midi.routerSnapshot(), scratch, targets.pointers);
+  // The session core captures only the fixed 3x3 ports. Replace that block with
+  // the dynamic-aware snapshot: every per-device route (ids 6..31), all 32
+  // channel masks/transposes and the identity map that keeps those routes bound
+  // across replug order. `devices` includes dormant reservations, so an
+  // unplugged device's routes survive a save too.
+  snapshot.router = context.midi.captureSessionRouter();
   // EQ bands and X/Y performance positions live in the session fx section
   // (v2: Snapshot::fx.eq / fx.xy); they are app-owned, so they are filled here
   // rather than by session::capture().
@@ -154,12 +160,12 @@ session::Snapshot captureSnapshot(const AppContext& context) {
   // audio::Engine::setDeviceOut; the AudioGlue handoff is still missing, so the
   // pairs are carried by the session and not yet applied per block.
   snapshot.deviceOut = context.settings.deviceOut;
-  // MIDI FX pipe chains are app-owned in MidiGlue. session::capture() only
-  // emits enabled routes and carries no pipe lists, so attach the stored chain
-  // to its route here and add an entry for a chain whose route is off (the
-  // session format can carry it; the matrix on/off stays authoritative).
-  for (int source = 0; source < midi::kPortCount; ++source) {
-    for (int destination = 0; destination < midi::kPortCount; ++destination) {
+  // MIDI FX pipe chains are app-owned in MidiGlue. captureSessionRouter()
+  // already attaches the chain of every enabled route; this pass adds a route
+  // entry for a chain whose route is off (the session format can carry it; the
+  // matrix on/off stays authoritative) and covers dormant per-device ids.
+  for (int source = 0; source < midi::kMaxPorts; ++source) {
+    for (int destination = 0; destination < midi::kMaxPorts; ++destination) {
       const auto from = static_cast<midi::Port>(source);
       const auto to = static_cast<midi::Port>(destination);
       if (!midi::isInput(from) || !midi::isOutput(to)) continue;
@@ -281,29 +287,20 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
     return false;
   }
 
-  // Apply into a router copy and a scratch Engine: the guarded MidiGlue swap and
-  // the MixerModel sync below are what make the load visible to the audio/MIDI
-  // threads, never a half-written live object.
-  auto router = context.midi.routerSnapshot();
+  // Apply the engine half into a scratch Engine and a throwaway Router; the
+  // guarded MidiGlue load and the MixerModel sync below are what make the
+  // router/mixer visible to the audio/MIDI threads, never a half-written live
+  // object.
   audio::Engine scratch;
   SlotTargets targets(context);
-  session::apply(result.snapshot, router, scratch, targets.pointers);
-  // session::apply() copies routes/masks/transpose but not RouteState::pipes;
-  // apply the chains to the snapshot Router first, then hand the same lists to
-  // MidiGlue for capture and the Routing SHIFT pipe editor. setRoutePipeLists()
-  // re-pushes every TRS->TRS chain to the Pico (0x18/0x19), including an empty
-  // one, so a project load cannot leave a stale chain behind.
-  for (const auto& route : result.snapshot.router.routes) {
-    if (route.pipes.empty()) continue;
-    if (route.src < 0 || route.src >= midi::kPortCount || route.dst < 0 ||
-        route.dst >= midi::kPortCount) {
-      continue;
-    }
-    (void)applyRoutePipesToRouter(router, static_cast<midi::Port>(route.src),
-                                  static_cast<midi::Port>(route.dst), route.pipes);
-  }
-  context.midi.replaceRouter(router);
-  context.midi.setRoutePipeLists(result.snapshot.router.routes);
+  // The session core only knows the fixed 3x3 matrix; apply the engine half
+  // through a throwaway Router, then hand the router block to the dynamic-aware
+  // MidiGlue load: it binds per-device ids by identity, applies all 32 routes,
+  // masks, transposes and pipe chains, and re-pushes every TRS->TRS chain to the
+  // Pico (0x18/0x19) including an empty one, so no stale chain survives.
+  auto scratchRouter = context.midi.routerSnapshot();
+  session::apply(result.snapshot, scratchRouter, scratch, targets.pointers);
+  context.midi.applySessionRouter(result.snapshot.router);
   applyMixer(context, result.snapshot.mixer);
   const int normalizedEqQ = context.eq.apply(result.snapshot.fx.eq);
   if (normalizedEqQ > 0) {

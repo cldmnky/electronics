@@ -342,4 +342,29 @@ inline std::string formatQValue(double q) {
   return buffer;
 }
 
+// MIDI channel scope (MidiPipe::chMask) as a compact live readout: bit n is
+// channel n+1, so 0x000F reads "CH 1-4". Runs of adjacent channels collapse;
+// an empty mask reads CH NONE and 0xFFFF reads CH ALL.
+inline std::string formatChannelMask(std::uint16_t mask) {
+  if (mask == 0) return "CH NONE";
+  if (mask == 0xFFFFu) return "CH ALL";
+  std::string out = "CH ";
+  bool first = true;
+  int channel = 0;
+  while (channel < 16) {
+    if ((mask & (1u << channel)) == 0) {
+      ++channel;
+      continue;
+    }
+    const int start = channel;
+    while (channel + 1 < 16 && (mask & (1u << (channel + 1))) != 0) ++channel;
+    if (!first) out += ", ";
+    first = false;
+    out += std::to_string(start + 1);
+    if (channel > start) out += "-" + std::to_string(channel + 1);
+    ++channel;
+  }
+  return out;
+}
+
 }  // namespace mnky::app

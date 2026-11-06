@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <vector>
 
 #include "../midi/router.hpp"
 
@@ -70,10 +71,14 @@ struct Wire {
   Point end;
 };
 
+// A node list longer than the three fixed ports (per-device USB MIDI nodes) is
+// laid out by the same fraction rule: every row is `height / max(inputs,
+// outputs)` high, so the QML canvas and the C++ hit tests derive identical
+// geometry at any panel size and any node count.
 struct Layout {
-  Rect inputs[kInputCount];
-  Rect outputs[kOutputCount];
-  Wire wires[kInputCount][kOutputCount];
+  std::vector<Rect> inputs;
+  std::vector<Rect> outputs;
+  std::vector<std::vector<Wire>> wires;
   float nodeWidth = 0.0f;
   float nodeHeight = 0.0f;
   float wireThickness = 0.0f;
@@ -83,36 +88,56 @@ struct Layout {
 // Fractions of the patchbay area: 3 nodes at 33% height keep each touch area
 // at or above 44 px at the 800 x 480 panel size (the nodes just touch).
 inline constexpr float kNodeWidthFraction = 0.20f;
+// The three-row default keeps the historical 0.33 node height; dynamic node
+// lists use 1 / max(rows) so the same fraction describes the visible grid.
 inline constexpr float kNodeHeightFraction = 0.33f;
 inline constexpr float kWireThicknessFraction = 0.045f;
 inline constexpr float kWireHandleFraction = 0.45f;
 // Generous tap slop for a wire, in fractions of the node height.
 inline constexpr float kWireHitSlopFraction = 0.50f;
 
-inline Layout layoutFor(float width, float height) {
+inline Layout layoutFor(float width, float height,
+                         int inputCount = kInputCount,
+                         int outputCount = kOutputCount) {
   Layout layout;
-  if (width <= 0.0f || height <= 0.0f) return layout;
+  if (width <= 0.0f || height <= 0.0f || inputCount <= 0 || outputCount <= 0) {
+    return layout;
+  }
 
+  layout.inputs.resize(static_cast<std::size_t>(inputCount));
+  layout.outputs.resize(static_cast<std::size_t>(outputCount));
+  layout.wires.resize(static_cast<std::size_t>(inputCount),
+                      std::vector<Wire>(static_cast<std::size_t>(outputCount)));
+  const int rows = std::max(inputCount, outputCount);
   layout.nodeWidth = width * kNodeWidthFraction;
-  layout.nodeHeight = height * kNodeHeightFraction;
+  layout.nodeHeight = height / static_cast<float>(rows);
   layout.wireThickness = layout.nodeHeight * kWireThicknessFraction;
   layout.hitSlop = layout.nodeHeight * kWireHitSlopFraction;
 
-  for (int index = 0; index < kInputCount; ++index) {
+  for (int index = 0; index < inputCount; ++index) {
     const float centreY =
-        height * (static_cast<float>(index) + 0.5f) / static_cast<float>(kInputCount);
+        height * (static_cast<float>(index) + 0.5f) / static_cast<float>(rows);
     const float top = centreY - layout.nodeHeight * 0.5f;
-    layout.inputs[index] = {0.0f, top, layout.nodeWidth, layout.nodeHeight};
-    layout.outputs[index] = {width - layout.nodeWidth, top, layout.nodeWidth,
-                             layout.nodeHeight};
+    layout.inputs[static_cast<std::size_t>(index)] = {0.0f, top, layout.nodeWidth,
+                                                      layout.nodeHeight};
+  }
+  for (int index = 0; index < outputCount; ++index) {
+    const float centreY =
+        height * (static_cast<float>(index) + 0.5f) / static_cast<float>(rows);
+    const float top = centreY - layout.nodeHeight * 0.5f;
+    layout.outputs[static_cast<std::size_t>(index)] = {
+        width - layout.nodeWidth, top, layout.nodeWidth, layout.nodeHeight};
   }
 
-  for (int source = 0; source < kInputCount; ++source) {
-    for (int destination = 0; destination < kOutputCount; ++destination) {
-      const Point from{layout.inputs[source].right(), layout.inputs[source].centreY()};
-      const Point to{layout.outputs[destination].x, layout.outputs[destination].centreY()};
+  for (int source = 0; source < inputCount; ++source) {
+    for (int destination = 0; destination < outputCount; ++destination) {
+      const Point from{layout.inputs[static_cast<std::size_t>(source)].right(),
+                       layout.inputs[static_cast<std::size_t>(source)].centreY()};
+      const Point to{layout.outputs[static_cast<std::size_t>(destination)].x,
+                     layout.outputs[static_cast<std::size_t>(destination)].centreY()};
       const float handle = (to.x - from.x) * kWireHandleFraction;
-      auto& wire = layout.wires[source][destination];
+      auto& wire = layout.wires[static_cast<std::size_t>(source)]
+                               [static_cast<std::size_t>(destination)];
       wire.start = from;
       wire.control1 = {from.x + handle, from.y};
       wire.control2 = {to.x - handle, to.y};
@@ -163,13 +188,13 @@ inline float distanceToCubic(Point point, const Wire& wire, int samples = 24) {
 inline bool hitWire(const Layout& layout, Point point, int& source, int& destination) {
   bool found = false;
   float best = layout.hitSlop;
-  for (int s = 0; s < kInputCount; ++s) {
-    for (int d = 0; d < kOutputCount; ++d) {
+  for (std::size_t s = 0; s < layout.wires.size(); ++s) {
+    for (std::size_t d = 0; d < layout.wires[s].size(); ++d) {
       const float nearest = distanceToCubic(point, layout.wires[s][d]);
       if (nearest <= layout.hitSlop && (!found || nearest < best)) {
         best = nearest;
-        source = s;
-        destination = d;
+        source = static_cast<int>(s);
+        destination = static_cast<int>(d);
         found = true;
       }
     }
@@ -179,15 +204,18 @@ inline bool hitWire(const Layout& layout, Point point, int& source, int& destina
 
 // Node hit tests used by the tap handler before the wire test.
 inline int hitInputNode(const Layout& layout, Point point) {
-  for (int source = 0; source < kInputCount; ++source) {
-    if (layout.inputs[source].contains(point)) return source;
+  for (std::size_t source = 0; source < layout.inputs.size(); ++source) {
+    if (layout.inputs[source].contains(point)) return static_cast<int>(source);
   }
   return -1;
 }
 
 inline int hitOutputNode(const Layout& layout, Point point) {
-  for (int destination = 0; destination < kOutputCount; ++destination) {
-    if (layout.outputs[destination].contains(point)) return destination;
+  for (std::size_t destination = 0; destination < layout.outputs.size();
+       ++destination) {
+    if (layout.outputs[destination].contains(point)) {
+      return static_cast<int>(destination);
+    }
   }
   return -1;
 }

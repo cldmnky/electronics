@@ -42,9 +42,11 @@ class MixerModel {
   float cueSend(int index) const;
   void setOut34Send(int index, float level);
   float out34Send(int index) const;
-  // Per-track input monitoring (session v2 mixer.channels[].monitor):
-  // 0 = off (take only), 1 = auto (live when armed or no take), 2 = on (layer
-  // live input over a take). Clamped to 0..2.
+  // Per-track input monitoring (session v2 mixer.channels[].monitor, MPC
+  // parity): 0 = PLAY (take only, never live input), 1 = AUTO (live when armed
+  // or no take), 2 = BOTH (live input layered over the take), 3 = MON (live
+  // input always, take never). Clamped to 0..3 and passed to
+  // audio::MonitorMode::InputOnly (Engine::setMonitorMode value 3).
   void setMonitor(int index, int mode);
   int monitor(int index) const;
   // Per-track I/O assignment (session v2 mixer.channels[].inCh/inPair/outDst):

@@ -20,6 +20,12 @@
 //   --screenshots-live DIR
 //                       the same grab run but against the real audio backend
 //                       (used for the PipeWire/Pulse evidence run).
+//   --ui-taps           headless QML tap driver: load every screen and SHIFT
+//                       face, synthesize a real mouse press/release at every
+//                       visible control carrying a focusId, and fail on any QML
+//                       TypeError/warning. Implies --emulator and forces the
+//                       offscreen platform. HOME is a temporary directory, so
+//                       project/take taps cannot touch real user data.
 #include <QCoreApplication>
 #include <QDir>
 #include <QGuiApplication>
@@ -28,6 +34,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QUrl>
 
@@ -40,6 +47,7 @@
 
 #include "app_controller.hpp"
 #include "logging.hpp"
+#include "ui_tap_runner.hpp"
 
 namespace mnky::app {
 int runLogicUnitTests();
@@ -459,6 +467,41 @@ class ScreenshotRunner final : public QObject {
                           if (popup != nullptr) QMetaObject::invokeMethod(popup, "open");
                         }
                       }});
+    steps_.push_back({"38-monitor4", [this] {
+                        controller_->hideValuePopup();
+                        controller_->configCancel();
+                        controller_->keypadCancel();
+                        controller_->confirmCancel();
+                        controller_->setFullscreen(false);
+                        controller_->showShiftFace(false);
+                        controller_->mixer()->setTrackMode(true);
+                        controller_->mixer()->setTrackIndex(2);
+                        controller_->mixer()->setMonitor(2, 3);  // MON
+                        controller_->mixer()->setMonitor(1, 2);  // BOTH
+                        controller_->setTab(0);
+                        controller_->showShiftFace(true);
+                      }});
+    steps_.push_back({"38-routing-devices", [this] {
+                        controller_->hideValuePopup();
+                        controller_->showShiftFace(false);
+                        controller_->routing()->setSelectedInput(2);
+                        controller_->setTab(1);
+                      }});
+    steps_.push_back({"38-pipechmask", [this] {
+                        controller_->hideValuePopup();
+                        controller_->showShiftFace(true);
+                        controller_->routing()->setShiftPage(1);
+                        controller_->routing()->setPipeSource(0);
+                        controller_->routing()->setPipeDestination(2);
+                        if (controller_->routing()->pipeCount() == 0) {
+                          controller_->routing()->setAddTypeIndex(0);
+                          controller_->routing()->addPipe();
+                        }
+                        controller_->routing()->selectPipe(0);
+                        controller_->routing()->setSelectedPipeChannelMask(0x000F);
+                        controller_->setTab(1);
+                        controller_->openConfig(QStringLiteral("pipechannels"));
+                      }});
   }
 
   // Scripted absolute EQ band values: type 0..5, frequency, gain, Q.
@@ -556,21 +599,41 @@ int main(int argc, char* argv[]) {
   const bool liveScreenshots = arguments.contains(QStringLiteral("--screenshots-live"));
   const bool wantsScreenshots =
       arguments.contains(QStringLiteral("--screenshots")) || liveScreenshots;
-  if (wantsScreenshots) {
+  const bool wantsTaps = arguments.contains(QStringLiteral("--ui-taps"));
+  if (wantsScreenshots || wantsTaps) {
     // A headless proof must not depend on a GPU: the software renderer works
     // under QT_QPA_PLATFORM=offscreen on both the Mac and the Linux guest.
     qputenv("QT_QUICK_BACKEND", "software");
+  }
+  if (wantsTaps) {
+    // The tap driver is headless by contract: never attach to a real desktop
+    // (and never touch the owner's mouse) even if the caller exported a
+    // platform plugin for another tool.
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+  }
+  // A tap run presses PROJECTS SAVE, recorder START and the import keypad. Point
+  // HOME at a disposable directory before the app reads the take/project paths,
+  // so the runner can never overwrite the user's real projects or takes.
+  std::unique_ptr<QTemporaryDir> tapHome;
+  if (wantsTaps) {
+    tapHome = std::make_unique<QTemporaryDir>();
+    if (tapHome->isValid()) {
+      qputenv("HOME", tapHome->path().toLocal8Bit());
+    } else {
+      std::fprintf(stderr, "mnkybox: --ui-taps needs a temporary HOME\n");
+      return 2;
+    }
   }
   QGuiApplication app(argc, argv);
   QCoreApplication::setApplicationVersion(QStringLiteral(MNKY_APP_VERSION));
 
   mnky::app::AppLogger::instance();
   const bool emulator = arguments.contains(QStringLiteral("--emulator")) ||
-                        (wantsScreenshots && !liveScreenshots);
+                        (wantsScreenshots && !liveScreenshots) || wantsTaps;
   const bool noPico = arguments.contains(QStringLiteral("--no-pico"));
 
   std::unique_ptr<QLockFile> instanceLock;
-  if (!wantsScreenshots) {
+  if (!wantsScreenshots && !wantsTaps) {
     // One mnkybox per machine: the app owns the take directory, the audio
     // device and the single Pico SPI link. Keep the lock for the whole run.
     const QString lockPath =
@@ -628,6 +691,16 @@ int main(int argc, char* argv[]) {
   }
   window->setWidth(800);
   window->setHeight(480);
+
+  std::unique_ptr<mnky::app::UiTapRunner> taps;
+  if (wantsTaps) {
+    if (wantsScreenshots) {
+      std::fprintf(stderr, "mnkybox: --ui-taps and --screenshots are separate runs\n");
+      return 2;
+    }
+    taps = std::make_unique<mnky::app::UiTapRunner>(&controller, window);
+    taps->start();
+  }
 
   std::unique_ptr<ScreenshotRunner> screenshots;
   if (wantsScreenshots) {

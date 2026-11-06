@@ -263,6 +263,71 @@ Rectangle {
                 }
             }
 
+            // ---- PIPE CHANNEL SCOPE --------------------------------------
+            Column {
+                visible: config.kind === "pipechannels"
+                width: parent.width
+                spacing: 3
+                Text {
+                    width: parent.width
+                    height: 16
+                    text: config.pipeScopeContext
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    font.bold: true
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    height: 26
+                    text: "SCOPE  " + config.pipeChannelText
+                    color: Style.text
+                    font.pixelSize: Style.fontTitle
+                    font.bold: true
+                    verticalAlignment: Text.AlignVCenter
+                }
+                Repeater {
+                    model: 2
+                    delegate: Row {
+                        property int row: index
+                        width: parent.width
+                        height: Style.touch
+                        spacing: 2
+                        Repeater {
+                            model: 8
+                            delegate: TouchButton {
+                                property int channel: row * 8 + index
+                                width: (parent.width - 14) / 8
+                                height: parent.height
+                                text: String(channel + 1)
+                                textSize: Style.fontSmall
+                                checked: ((config.pipeChannelMask >> channel) & 1) === 1
+                                focusId: "config.pipe.ch." + channel
+                                onClicked: config.togglePipeChannel(channel)
+                            }
+                        }
+                    }
+                }
+                Text { width: parent.width; height: 14; text: "PRESETS"; color: Style.textDim; font.pixelSize: 9; font.bold: true }
+                Row {
+                    width: parent.width
+                    height: Style.touch
+                    spacing: 3
+                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "ALL"; textSize: 9; focusId: "config.pipe.preset.0"; onClicked: config.setPipeChannelPreset(0) }
+                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "1-4"; textSize: 9; focusId: "config.pipe.preset.1"; onClicked: config.setPipeChannelPreset(1) }
+                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "5-8"; textSize: 9; focusId: "config.pipe.preset.2"; onClicked: config.setPipeChannelPreset(2) }
+                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "9-12"; textSize: 9; focusId: "config.pipe.preset.3"; onClicked: config.setPipeChannelPreset(3) }
+                    TouchButton { width: (parent.width - 12) / 5; height: parent.height; text: "13-16"; textSize: 9; focusId: "config.pipe.preset.4"; onClicked: config.setPipeChannelPreset(4) }
+                }
+                Text {
+                    width: parent.width
+                    text: "The pipe processes only the selected MIDI channels; every other channel passes that pipe unchanged. 0xFFFF is all channels and is what a new pipe starts with."
+                    color: Style.textDim
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                }
+            }
+
             // ---- EDIT TIMELINE REGION OPS --------------------------------
             Column {
                 visible: config.kind === "timelineops"

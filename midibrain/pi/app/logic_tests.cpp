@@ -25,6 +25,7 @@
 #include "audio/engine.hpp"
 #include "audio_backend.hpp"
 #include "audio_glue.hpp"
+#include "config_popup_model.hpp"
 #include "eq_model.hpp"
 #include "learn_view_model.hpp"
 #include "link_client.hpp"
@@ -242,6 +243,64 @@ void routingTests() {
   check(routing::kInputs[2] == midi::Port::UsbIn &&
             routing::kOutputs[2] == midi::Port::UsbOut,
         "USB ports keep their documented patchbay position");
+
+  // Per-device nodes: ids 6..31 are separate nodes, both directions of one
+  // device share the stable id, and a dormant reservation keeps its identity.
+  std::vector<MidiGlue::UsbPortInfo> ports = {
+      {6, "Studio Keys", "usb:Studio Keys", true, true, true},
+      {7, "Pad Controller", "usb:Pad Controller", true, false, false},
+      {8, "Synth Out", "usb:Synth Out", false, true, true}};
+  const auto inputs = routingInputNodes(ports);
+  const auto outputs = routingOutputNodes(ports);
+  check(inputs.size() == 5 && inputs[0].port == 0 && inputs[1].port == 1 &&
+            inputs[2].port == 2,
+        "routing input nodes keep the three fixed ports first");
+  check(inputs[3].port == 6 && inputs[3].name == QStringLiteral("Studio Keys") &&
+            inputs[3].connected,
+        "a connected per-device USB input becomes its own node");
+  check(inputs[4].port == 7 && !inputs[4].connected &&
+            inputs[4].dynamic,
+        "a dormant per-device reservation stays visible");
+  check(outputs.size() == 5 && outputs[3].port == 6 && outputs[4].port == 8,
+        "per-device output nodes use the same stable registry id");
+  check(inputs[3].input && outputs[3].dynamic,
+        "a bidirectional device appears once on each side");
+
+  const auto wide = routing::layoutFor(788.0f, 220.0f, 5, 5);
+  check(wide.inputs.size() == 5 && wide.outputs.size() == 5 &&
+            wide.wires.size() == 5 && wide.wires[4].size() == 5,
+        "generic patchbay layout follows the dynamic node counts");
+  check(std::abs(wide.nodeHeight - 44.0f) < 1e-4f,
+        "five rows on 220 px keep the 44 px touch height");
+  check(routing::hitInputNode(wide, {10.0f, wide.inputs[4].centreY()}) == 4,
+        "a dynamic input node hit test is index-correct");
+  check(routing::hitOutputNode(wide, {780.0f, wide.outputs[4].centreY()}) == 4,
+        "a dynamic output node hit test is index-correct");
+
+  // The pipe-scope ConfigPopup writes session::MidiPipe::chMask through
+  // RoutingViewModel/MidiGlue; the draft is what the 16 toggles edit and OK
+  // commits, so the popup and the engine cannot disagree.
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  EqModel eq;
+  PerformanceModel performance;
+  MidiGlue scopeMidi(false);
+  RoutingViewModel scopeRouting(scopeMidi, true);
+  scopeRouting.setPipeSource(0);
+  scopeRouting.setPipeDestination(2);
+  scopeRouting.addPipe();
+  check(scopeRouting.pipeCount() == 1, "pipe scope test has a selected pipe");
+  ConfigPopupModel popup(state, mixer, settings, eq, performance);
+  popup.setRouting(&scopeRouting);
+  check(popup.openKind(QStringLiteral("pipechannels")),
+        "the pipe channel-scope popup opens for a selected pipe");
+  popup.setPipeChannelPreset(1);
+  check(popup.pipeChannelText() == QStringLiteral("CH 1-4"),
+        "the pipe scope readout is live ('CH 1-4')");
+  popup.accept();
+  check(scopeRouting.selectedPipeChannelMask() == 0x000F,
+        "OK writes the draft chMask through to MidiGlue");
 }
 
 void mixerTests() {
@@ -256,6 +315,17 @@ void mixerTests() {
   checkNear(engine.channel(3).gain, dbToGain(-6.0f), 1e-6, "mixer snapshot gain");
   checkNear(engine.channel(3).pan, 0.25, 1e-6, "mixer snapshot pan");
   checkNear(engine.channel(3).send[1], 0.5, 1e-6, "mixer snapshot send");
+  // MPC parity monitor: 0 PLAY, 1 AUTO, 2 BOTH, 3 MON. The engine enum binds
+  // 3 to audio::MonitorMode::InputOnly.
+  model.setMonitor(3, 3);
+  check(model.monitor(3) == 3, "monitor-only mode is stored unclamped");
+  check(model.channel(3).monitor == audio::MonitorMode::InputOnly,
+        "monitor-only mode reaches the engine snapshot as InputOnly");
+  model.setMonitor(3, 9);
+  check(model.monitor(3) == 3, "monitor mode clamps to 0..3");
+  model.setMonitor(3, 1);
+  check(static_cast<int>(model.channel(3).monitor) == 1,
+        "auto monitor mode stays Auto");
   // Input source, pair flag and output destination are separate engine routing
   // state (Engine::setChannel leaves them alone), so the same snapshot carries
   // them and a strip picker is live on the next block.
@@ -298,6 +368,13 @@ void valueFormatTests() {
   checkEqual(formatHzValue(80.0), "80 Hz", "Hz formatting below 1 kHz");
   checkEqual(formatHzValue(1200.0), "1.20 kHz", "kHz formatting above 1 kHz");
   checkEqual(formatQValue(1.5), "Q 1.50", "Q formatting");
+  checkEqual(formatChannelMask(0xFFFF), "CH ALL", "channel mask all");
+  checkEqual(formatChannelMask(0x0000), "CH NONE", "channel mask none");
+  checkEqual(formatChannelMask(0x000F), "CH 1-4", "channel mask 1-4");
+  checkEqual(formatChannelMask(0x00F0), "CH 5-8", "channel mask 5-8");
+  checkEqual(formatChannelMask(0x0F0F), "CH 1-4, 9-12", "channel mask ranges");
+  checkEqual(formatChannelMask(0x8001), "CH 1, 16", "channel mask reads bit order");
+  checkEqual(formatChannelMask(0x8003), "CH 1-2, 16", "channel mask mixed");
 }
 
 void learnTests() {
@@ -526,6 +603,7 @@ void projectRoundTripTests() {
   mixer.setOut34Mode(1);
   mixer.setMonitor(2, 0);
   mixer.setMonitor(3, 2);
+  mixer.setMonitor(4, 3);
   settings.punch.playFrom = session::PunchPoint{true, 1};
   settings.punch.in = session::PunchPoint{true, 5};
   settings.punch.out = session::PunchPoint{true, 9};
@@ -577,6 +655,17 @@ void projectRoundTripTests() {
   mixer.setInCh(3, -1);
   mixer.setOutDst(3, 3);
   midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, true);
+  // Per-device route and its scoped pipe chain: id 6 is a dynamic USB id, so
+  // this proves the project capture/load path covers ids 6..31, not only the
+  // fixed 3x3 matrix.
+  midi.setRoute(midi::dynamicPort(6), midi::Port::UsbOut, true);
+  check(midi.routeEnabled(midi::dynamicPort(6), midi::Port::UsbOut),
+        "project test stores a per-device route");
+  check(midi.setRoutePipes(midi::dynamicPort(6), midi::Port::UsbOut, pipeChain),
+        "project test stores a per-device pipe chain");
+  check(midi.setRoutePipeChannelMask(midi::dynamicPort(6), midi::Port::UsbOut, 0,
+                                     0x000F),
+        "project test scopes the per-device pipe to channels 1-4");
   check(midi.addLearnBinding(74, 2, "mixer.ch03.gain", 0),
         "project test learn binding");
 
@@ -614,6 +703,7 @@ void projectRoundTripTests() {
   mixer.setOut34Mode(0);
   mixer.setMonitor(2, 1);
   mixer.setMonitor(3, 1);
+  mixer.setMonitor(4, 1);
   settings.reset();
   eq.setSubject(1);
   eq.setType(0, 0);
@@ -626,6 +716,7 @@ void projectRoundTripTests() {
   performance.setPoint(PerformanceModel::kDelayGrid, 0.5, 0.5);
   performance.setPoint(PerformanceModel::kReverbGrid, 0.5, 0.5);
   midi.setRoute(midi::Port::TrsIn1, midi::Port::UsbOut, false);
+  midi.setRoute(midi::dynamicPort(6), midi::Port::UsbOut, false);
   midi.clearLearnBindings();
 
   check(project::load(context, directory, error), "project load applies the session file");
@@ -640,7 +731,7 @@ void projectRoundTripTests() {
   checkNear(mixer.cueSend(2), 0.4, 1e-6, "project load restores the cue send");
   checkNear(mixer.out34Send(2), 0.75, 1e-6, "project load restores the OUT3&4 send");
   check(mixer.out34Mode() == 1, "project load restores the OUT3&4 mode");
-  check(mixer.monitor(2) == 0 && mixer.monitor(3) == 2,
+  check(mixer.monitor(2) == 0 && mixer.monitor(3) == 2 && mixer.monitor(4) == 3,
         "project load restores per-track monitor modes");
   check(settings.punch.in.enabled && settings.punch.in.measure == 5 &&
             settings.punch.out.measure == 9,
@@ -672,6 +763,11 @@ void projectRoundTripTests() {
         "project load restores a disabled input source and the NONE destination");
   check(midi.routeEnabled(midi::Port::TrsIn1, midi::Port::UsbOut),
         "project load restores the routing matrix");
+  check(midi.routeEnabled(midi::dynamicPort(6), midi::Port::UsbOut),
+        "project load restores a per-device route");
+  check(midi.routePipeChannelMask(midi::dynamicPort(6), midi::Port::UsbOut, 0) ==
+            0x000F,
+        "project load restores the per-device pipe channel scope");
   check(midi.learnBindings().size() == 1 &&
             midi.learnBindings().front().target == "mixer.ch03.gain",
         "project load restores the MIDI-learn map");

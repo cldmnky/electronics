@@ -1,5 +1,7 @@
 #include "mixer_model.hpp"
 
+#include <algorithm>
+
 #include "logic.hpp"
 
 namespace mnky::app {
@@ -39,9 +41,15 @@ audio::Channel MixerModel::channel(int index) const {
   out.cueSend = strip.cueSend.load(std::memory_order_relaxed);
   out.out34Send = strip.out34Send.load(std::memory_order_relaxed);
   const int monitor = strip.monitor.load(std::memory_order_relaxed);
-  out.monitor = monitor == 0 ? audio::MonitorMode::Off
-                              : (monitor == 2 ? audio::MonitorMode::On
-                                              : audio::MonitorMode::Auto);
+  // Session monitor values are the engine enum values: 0 Off (PLAY only),
+  // 1 Auto, 2 On (BOTH), 3 InputOnly (MON; live input always, take never).
+  // setChannel()/setMonitorMode() sanitize the same range on the engine side.
+  switch (monitor) {
+    case 0: out.monitor = audio::MonitorMode::Off; break;
+    case 2: out.monitor = audio::MonitorMode::On; break;
+    case 3: out.monitor = audio::MonitorMode::InputOnly; break;
+    default: out.monitor = audio::MonitorMode::Auto; break;
+  }
   return out;
 }
 
@@ -152,8 +160,8 @@ float MixerModel::out34Send(int index) const {
 
 void MixerModel::setMonitor(int index, int mode) {
   if (!valid(index)) return;
-  strips_[index].monitor.store(mode <= 0 ? 0 : (mode >= 2 ? 2 : 1),
-                              std::memory_order_relaxed);
+  strips_[index].monitor.store(std::clamp(mode, 0, 3),
+                               std::memory_order_relaxed);
 }
 
 int MixerModel::monitor(int index) const {

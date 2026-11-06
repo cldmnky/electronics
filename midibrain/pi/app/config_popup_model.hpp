@@ -7,6 +7,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <cstdint>
+
 #include "app_state.hpp"
 #include "eq_model.hpp"
 #include "mixer_model.hpp"
@@ -15,6 +17,7 @@
 
 namespace mnky::app {
 
+class RoutingViewModel;
 class TimelineViewModel;
 
 class ConfigPopupModel final : public QObject {
@@ -66,6 +69,12 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(double timelineFadeOutBeats READ timelineFadeOutBeats WRITE setTimelineFadeOutBeats NOTIFY changed)
   Q_PROPERTY(QString timelineOpName READ timelineOpName NOTIFY changed)
   Q_PROPERTY(QString timelineError READ timelineError NOTIFY changed)
+  // Per-pipe MIDI channel scope (session::MidiPipe::chMask, kind
+  // "pipechannels"): a draft 16-bit mask plus the live compact readout. The
+  // popup edits the draft; OK writes it through RoutingViewModel/MidiGlue.
+  Q_PROPERTY(int pipeChannelMask READ pipeChannelMask NOTIFY changed)
+  Q_PROPERTY(QString pipeChannelText READ pipeChannelText NOTIFY changed)
+  Q_PROPERTY(QString pipeScopeContext READ pipeScopeContext NOTIFY changed)
 
  public:
   ConfigPopupModel(AppState& state, MixerModel& mixer, SessionSettings& settings,
@@ -116,6 +125,9 @@ class ConfigPopupModel final : public QObject {
   double timelineFadeOutBeats() const { return timelineFadeOutBeats_; }
   QString timelineOpName() const;
   QString timelineError() const { return timelineError_; }
+  int pipeChannelMask() const { return pipeChannelMask_; }
+  QString pipeChannelText() const;
+  QString pipeScopeContext() const { return pipeScopeContext_; }
 
   void setClickMode(int value);
   void setClickOutput(int value);
@@ -150,10 +162,17 @@ class ConfigPopupModel final : public QObject {
   void setTimelineGainDb(double value);
   void setTimelineFadeInBeats(double value);
   void setTimelineFadeOutBeats(double value);
+  Q_INVOKABLE void togglePipeChannel(int channel);
+  void setPipeChannelMask(int mask);
+  // Presets: 0 = all, 1 = CH 1-4, 2 = 5-8, 3 = 9-12, 4 = 13-16.
+  Q_INVOKABLE void setPipeChannelPreset(int preset);
 
   // Set once by AppController after both objects exist; the ops popup delegates
   // preview and the destructive-op refusal to the timeline model.
   void setTimeline(TimelineViewModel* timeline) { timeline_ = timeline; }
+  // Set once by AppController; the pipe-scope popup reads and writes the
+  // selected pipe's chMask through this view model.
+  void setRouting(RoutingViewModel* routing) { routing_ = routing; }
 
   // AppController entry points.
   bool openKind(const QString& kind);
@@ -215,6 +234,9 @@ class ConfigPopupModel final : public QObject {
   double reverbDecay_ = 0.7;
   double reverbDamping_ = 0.5;
   TimelineViewModel* timeline_ = nullptr;
+  RoutingViewModel* routing_ = nullptr;
+  std::uint16_t pipeChannelMask_ = 0xFFFF;
+  QString pipeScopeContext_;
   int timelineOp_ = 0;
   double timelineGainDb_ = 0.0;
   double timelineFadeInBeats_ = 0.0;
