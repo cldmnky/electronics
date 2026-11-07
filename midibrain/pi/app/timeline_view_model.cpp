@@ -304,6 +304,10 @@ void TimelineViewModel::openEdit(int track) {
     editOpen_ = true;
     emit editOpenChanged();
   }
+  // The undo stack is per take, so reopening the popup (on this track or
+  // another one) has to republish canUndo/undoText: the QML UNDO button binds
+  // `active` to them and would otherwise keep the previous take's state.
+  emitUndo();
   rebuildEditWave();
   rebuildPreview();
   updateScanBadge();
@@ -325,6 +329,9 @@ void TimelineViewModel::setSelectedTrack(int track) {
   if (clamped == selectedTrack_) return;
   selectedTrack_ = clamped;
   emit selectedTrackChanged();
+  // Undo is per take: switching tracks changes canUndo/undoText and the UNDO
+  // button's enabled state with it.
+  emitUndo();
   emit loopChanged();
   rebuildPreview();
   rebuildPunch();
@@ -739,6 +746,10 @@ QString TimelineViewModel::applyOp(int op, double gainDb, double fadeIn,
   previewDraftActive_ = false;
   lastOpText_ = textOf(timeline::timelineOpName(operation)) + QStringLiteral(" -> ") +
                 QString::number(regionCount()) + QStringLiteral(" REGION(S)");
+  // `lastOpText` is a NOTIFY statusChanged property and refresh() only emits
+  // when the region count/status text changes; an op that keeps the count has
+  // to refresh it here.
+  emit statusChanged();
   // The header meta (edited length) is a NOTIFY editChanged property; without
   // this emit the popup keeps the pre-apply text even though the region list
   // and the waveform already changed.
@@ -798,7 +809,9 @@ bool TimelineViewModel::undo() {
   lastOpText_ = QStringLiteral("UNDO -> ") + QString::number(regionCount()) +
                 QStringLiteral(" REGION(S)");
   emitUndo();
-  // Same reason as applyOp: the header states the edited length.
+  // Same reasons as applyOp: the last-op line has its own NOTIFY, and the
+  // header states the edited length.
+  emit statusChanged();
   emit editChanged();
   refresh();
   return true;

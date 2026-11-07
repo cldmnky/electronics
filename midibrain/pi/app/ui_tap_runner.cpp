@@ -949,10 +949,15 @@ void UiTapRunner::buildScenarios() {
       [this] {
         auto* timeline = controller_->timeline();
         QQuickItem* apply = findFocusTarget(QStringLiteral("edit.apply"));
+        QQuickItem* undo = findFocusTarget(QStringLiteral("edit.undo"));
         return timeline->regionCount() == 3 && timeline->canUndo() &&
                timeline->lastOpText().startsWith(QStringLiteral("GAIN")) &&
                apply != nullptr &&
-               apply->property("text").toString() == QStringLiteral("APPLY GAIN");
+               apply->property("text").toString() == QStringLiteral("APPLY GAIN") &&
+               // The UNDO button is live after an APPLY: enabled (`active`) and
+               // labelled with the real stack depth, not dimmed.
+               undo != nullptr && undo->property("active").toBool() &&
+               undo->property("text").toString() == timeline->undoText();
       },
       QStringLiteral("APPLY GAIN did not change the region list/undo state")});
   // The fullscreen surface must keep the same verbs on screen: the layout is
@@ -1050,6 +1055,10 @@ void UiTapRunner::buildScenarios() {
                apply->property("text").toString() == QStringLiteral("APPLY TRIM");
       },
       QStringLiteral("APPLY TRIM did not update the header's edited duration")});
+  // UNDO through the QML button: APPLY GAIN then tap UNDO, and the popup has to
+  // be back on the exact pre-apply take state (no regions, empty stack, header
+  // meta without an edited duration) with the UNDO button dimmed again. This is
+  // the owner's "undo for waveform editing" path, driven by real taps.
   scenarios_.push_back(Scenario{
       QStringLiteral("edit.undo"),
       [this] {
@@ -1061,14 +1070,57 @@ void UiTapRunner::buildScenarios() {
         controller_->setTab(2);
         controller_->recorder()->selectRow(0);
         controller_->requestEditTake(0);
+        // Drain any stack an earlier pass left behind, so "apply then undo"
+        // starts and ends on the unedited take (deterministic assertion).
+        for (int guard = 0; guard < 64 && controller_->timeline()->undo(); ++guard) {
+        }
+        const double length = controller_->timeline()->takeBeats();
         controller_->timeline()->beginSelection(
-            controller_->timeline()->selectedTrack(), 1.0);
-        controller_->timeline()->updateSelection(5.0);
+            controller_->timeline()->selectedTrack(), length * 0.25);
+        controller_->timeline()->updateSelection(length * 0.75);
         controller_->timeline()->endSelection();
-        controller_->timeline()->selectEditOp(5);
-        controller_->timeline()->applyEditOp();
+        controller_->timeline()->selectEditOp(2);  // GAIN
+        controller_->timeline()->setEditGainDb(-6.0);
       },
-      QStringLiteral("edit.undo"), {}, {QStringLiteral("edit.undo")}, false, true});
+      QStringLiteral("edit."), {}, {}, false, true, false, {}, 
+      {QStringLiteral("edit.apply"), QStringLiteral("edit.undo")},
+      [this] {
+        auto* timeline = controller_->timeline();
+        QQuickItem* undo = findFocusTarget(QStringLiteral("edit.undo"));
+        return timeline->regionCount() == 0 && !timeline->canUndo() &&
+               timeline->lastOpText().startsWith(QStringLiteral("UNDO")) &&
+               !timeline->editMetaText().contains(QStringLiteral("edited")) &&
+               undo != nullptr && !undo->property("active").toBool() &&
+               undo->property("text").toString() == timeline->undoText();
+      },
+      QStringLiteral("APPLY then UNDO did not restore the pre-edit take state")});
+  // Bottom of the stack through the same button: no state change, no QML
+  // warning, and the empty-stack label stays on screen.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.undo.empty"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        for (int guard = 0; guard < 64 && controller_->timeline()->undo(); ++guard) {
+        }
+      },
+      QStringLiteral("edit.undo"), {}, {QStringLiteral("edit.undo")}, false, true,
+      false, {}, {},
+      [this] {
+        auto* timeline = controller_->timeline();
+        QQuickItem* undo = findFocusTarget(QStringLiteral("edit.undo"));
+        return timeline->regionCount() == 0 && !timeline->canUndo() &&
+               undo != nullptr && !undo->property("active").toBool() &&
+               undo->property("text").toString() ==
+                   QStringLiteral("UNDO - empty");
+      },
+      QStringLiteral("UNDO at the bottom of the stack changed the take")});
   scenarios_.push_back(Scenario{
       QStringLiteral("edit.render"),
       [this] {

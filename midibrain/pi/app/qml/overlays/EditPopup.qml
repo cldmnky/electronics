@@ -610,10 +610,14 @@ Rectangle {
             }
             TouchButton {
                 id: undoButton
-                width: 96
+                // The label carries the stack depth (view model undoText) and
+                // `active` dims + disables the button at the bottom of the
+                // stack, so the shot shows whether UNDO is live instead of a
+                // control that silently does nothing.
+                width: 132
                 height: parent.height
-                text: "UNDO"
-                textSize: 16
+                text: timeline.undoText
+                textSize: 14
                 variant: "ghost"
                 active: timeline.canUndo
                 focusId: "edit.undo"

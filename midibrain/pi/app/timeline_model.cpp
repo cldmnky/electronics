@@ -252,8 +252,10 @@ std::vector<session::TakeRegion> gainRegions(
   std::vector<session::TakeRegion> out = regions;
   for (auto& region : out) {
     if (!regionOverlaps(region, range, length)) continue;
-    region.gainDb = std::clamp(region.gainDb + gainDb, kMinRegionGainDb,
-                               kMaxRegionGainDb);
+    // GAIN sets the region's gain (absolute, matching the value card and the
+    // live preview), it does not accumulate: applying GAIN -6 twice is a
+    // no-change, and every distinct apply is its own undo level.
+    region.gainDb = std::clamp(gainDb, kMinRegionGainDb, kMaxRegionGainDb);
   }
   return out;
 }

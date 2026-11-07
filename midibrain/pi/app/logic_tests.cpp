@@ -1194,6 +1194,154 @@ void takeEditViewModelTests() {
   check(timeline.regionCount() == beforeRefusal,
         "a refused DELETE leaves the region list untouched");
 
+  // ---- UNDO model -----------------------------------------------------
+  // The stack stores the region list as it was BEFORE each APPLY, so UNDO is an
+  // exact restore of the previous take state and not a reverse arithmetic. The
+  // checks below walk the whole op selector, the LIFO order, the bottom of the
+  // stack, the >=16 level depth and the popup/track lifetime.
+  using Regions = std::vector<session::TakeRegion>;
+  const auto sameRegions = [](const Regions& a, const Regions& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+      const auto& x = a[i];
+      const auto& y = b[i];
+      if (x.take != y.take || std::abs(x.offsetBeats - y.offsetBeats) > 1e-9 ||
+          std::abs(x.lengthBeats - y.lengthBeats) > 1e-9 ||
+          std::abs(x.gainDb - y.gainDb) > 1e-6 ||
+          std::abs(x.fadeInBeats - y.fadeInBeats) > 1e-9 ||
+          std::abs(x.fadeOutBeats - y.fadeOutBeats) > 1e-9 ||
+          x.normalize != y.normalize) {
+        return false;
+      }
+    }
+    return true;
+  };
+  const auto undoAll = [&timeline](int track) {
+    timeline.openEdit(track);
+    for (int guard = 0; guard < 64 && timeline.undo(); ++guard) {
+    }
+  };
+  check(TimelineViewModel::kUndoDepth >= 16,
+        "the per-take undo stack holds at least the 16 levels the owner asked for");
+
+  // Every op card is reversible: apply it, then UNDO restores the previous
+  // region list exactly. GAIN and the two fades need their drafted value; SPLIT
+  // cuts at the cursor and ignores the selection.
+  struct OpCase {
+    int op;
+    const char* name;
+  };
+  const OpCase opCases[] = {{0, "TRIM"},      {1, "SPLIT"},   {2, "GAIN"},
+                            {3, "FADE IN"},   {4, "FADE OUT"}, {5, "NORMALIZE"},
+                            {6, "DELETE"}};
+  for (const auto& opCase : opCases) {
+    undoAll(0);
+    if (opCase.op == 1) {
+      timeline.clearSelection();
+      timeline.setCursorBeats(4.0);
+    } else {
+      timeline.beginSelection(0, 2.0);
+      timeline.updateSelection(6.0);
+      timeline.endSelection();
+    }
+    timeline.selectEditOp(opCase.op);
+    if (opCase.op == 2) timeline.setEditGainDb(-6.0);
+    if (opCase.op == 3) timeline.setEditFadeIn(1.0);
+    if (opCase.op == 4) timeline.setEditFadeOut(1.0);
+    const Regions before = settings.takeEdit[0];
+    const QVariantList waveBefore = timeline.editWave();
+    check(timeline.applyEditOp().isEmpty(),
+          std::string("APPLY ") + opCase.name + " reports success");
+    check(!sameRegions(settings.takeEdit[0], before),
+          std::string("APPLY ") + opCase.name + " changes the take state");
+    const Regions applied = settings.takeEdit[0];
+    check(!applied.empty(),
+          std::string("APPLY ") + opCase.name + " leaves committed regions");
+    check(timeline.canUndo(),
+          std::string("APPLY ") + opCase.name + " pushes one undo level");
+    check(timeline.undo(),
+          std::string("UNDO after ") + opCase.name + " succeeds");
+    check(sameRegions(settings.takeEdit[0], before),
+          std::string("UNDO restores the exact state before ") + opCase.name);
+    check(!timeline.canUndo(),
+          std::string("UNDO after ") + opCase.name + " pops the only level");
+    if (opCase.op == 2) {
+      check(timeline.editWave() == waveBefore,
+            "UNDO repaints the waveform back to the pre-GAIN peaks");
+    }
+  }
+
+  // LIFO order: three stacked edits unwind newest first, and each level returns
+  // exactly the state the previous level pushed.
+  undoAll(0);
+  timeline.beginSelection(0, 2.0);
+  timeline.updateSelection(6.0);
+  timeline.endSelection();
+  timeline.selectEditOp(2);
+  timeline.setEditGainDb(-6.0);
+  check(timeline.applyEditOp().isEmpty(), "stacked op 1 (GAIN) applies");
+  const Regions afterGain = settings.takeEdit[0];
+  timeline.beginSelection(0, 3.0);
+  timeline.updateSelection(5.0);
+  timeline.endSelection();
+  timeline.selectEditOp(3);
+  timeline.setEditFadeIn(1.0);
+  check(timeline.applyEditOp().isEmpty(), "stacked op 2 (FADE IN) applies");
+  const Regions afterFade = settings.takeEdit[0];
+  timeline.beginSelection(0, 7.0);
+  timeline.updateSelection(8.0);
+  timeline.endSelection();
+  timeline.selectEditOp(6);  // DELETE REGION
+  check(timeline.applyEditOp().isEmpty(), "stacked op 3 (DELETE) applies");
+  check(timeline.undo() && sameRegions(settings.takeEdit[0], afterFade),
+        "the first UNDO pops the newest APPLY (DELETE restores FADE's state)");
+  check(timeline.undo() && sameRegions(settings.takeEdit[0], afterGain),
+        "the second UNDO restores the state after the first op");
+  check(timeline.undo() && settings.takeEdit[0].empty(),
+        "the third UNDO restores the unedited take");
+  check(!timeline.canUndo(), "the stack reports empty at the bottom");
+  check(!timeline.undo(), "UNDO at the bottom of the stack is a no-op");
+  check(settings.takeEdit[0].empty(),
+        "the bottom-of-stack no-op leaves the take untouched");
+
+  // Depth: 17 stacked GAIN applies (over the 16-level floor) all unwind.
+  undoAll(0);
+  timeline.beginSelection(0, 2.0);
+  timeline.updateSelection(6.0);
+  timeline.endSelection();
+  timeline.selectEditOp(2);
+  bool allApplied = true;
+  for (int step = 0; step < 17; ++step) {
+    timeline.setEditGainDb(-1.0 - static_cast<double>(step));
+    allApplied = allApplied && timeline.applyEditOp().isEmpty();
+  }
+  check(allApplied, "17 stacked GAIN applies all report success");
+  int undoneLevels = 0;
+  while (undoneLevels < 64 && timeline.undo()) ++undoneLevels;
+  check(undoneLevels == 17,
+        "17 UNDO presses walk the whole stack back (>= 16 levels kept)");
+  check(settings.takeEdit[0].empty() && !timeline.canUndo(),
+        "the 17-level walk ends on the unedited take with an empty stack");
+
+  // Lifetime: the stack belongs to the session take, so closing and reopening
+  // the popup keeps it; a different track has its own stack.
+  timeline.selectEditOp(2);
+  timeline.setEditGainDb(-3.0);
+  check(timeline.applyEditOp().isEmpty(), "lifetime GAIN applies");
+  timeline.closeEdit();
+  check(timeline.canUndo(), "the undo stack survives closing the EDIT popup");
+  timeline.openEdit(0);
+  check(timeline.canUndo(), "the undo stack survives reopening the EDIT popup");
+  check(timeline.undo() && settings.takeEdit[0].empty(),
+        "UNDO after reopening restores the pre-edit take");
+  // Track 1 still carries the TRIM from above: its stack is independent of the
+  // now-empty track 0 stack, and undoing it restores that track only.
+  timeline.openEdit(1);
+  check(timeline.canUndo(), "a different track keeps its own undo level");
+  check(timeline.undo(), "track 1's own level pops on its own stack");
+  check(settings.takeEdit[1].empty() && settings.takeEdit[0].empty(),
+        "track 1's UNDO restores only track 1 (track 0 stays popped)");
+
   std::filesystem::remove_all(base, error);
 }
 
