@@ -1,0 +1,23 @@
+{
+  "part": "Waveshare 4.3inch DSI LCD (SKU 16239)",
+  "wiki_url": "https://www.waveshare.com/wiki/4.3inch_DSI_LCD",
+  "archive_url": "https://www.waveshare.net/w/upload/2/28/4.3inch_DSI_LCD_Drawing.zip",
+  "retrieved_date": "2026-11-07",
+  "wiki_link_label": "4.3inch DSI LCD 3D diagram",
+  "archive_sha256": "f75cb7ad8c5ab00471d7dda22e5f11a85eacb78c63f4ac25836b6dc88a843646",
+  "original_filename": "4_3inch-dsi-lcd-V1.stp",
+  "step_sha256": "01eef9172ff4364691f4de37ff98f95437e96caa647b94b4bd4a1c54ac4519ed",
+  "conversion": "None. Original vendor STEP bytes retained; file renamed only.",
+  "units": "mm (CadQuery STEP import)",
+  "geometry_check": {
+    "tool": "CadQuery 2.8.0",
+    "valid": true,
+    "solids": 394,
+    "bounding_box_mm": [
+      106.1,
+      68.3629806886848,
+      13.820000920459002
+    ]
+  },
+  "status": "Vendor reference model; physical fit, revision match, clearances and mounting acceptance remain pending. No project placement or geometry changes."
+}
