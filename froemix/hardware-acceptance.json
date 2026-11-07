@@ -1,0 +1,102 @@
+{
+  "schema": "froemix-hardware-acceptance/1",
+  "note": "Physical acceptance state for the Froemix base board, euro board and panel. An item moves to \"accepted\" only with measured evidence in doc/evidence/ that names a reviewer, a date, at least one value with a unit, and the current hardware fingerprint. The fingerprint covers both boards' entry files, sections/ and lib/ trees, the panel and CAD algorithms, the packages and lock files, the JLCPCB order settings and the curated sourcing/part maps, so any hardware, algorithm, order-setting or part-selection change makes old evidence stale. Refresh hardware_fingerprint with `bun tools/release/gate.ts --fingerprint` after such a change; a documentation-only commit does not change it. There is no override, force, skip or waive key: unknown keys are errors. Every item is pending because no bench measurement has been recorded. See doc/acceptance.md.",
+  "hardware_fingerprint": "36f8a0e806977221357389808078e1c2d0e0a137f8ec2088efef37c95536dd17",
+  "items": [
+    {
+      "id": "stack_11mm",
+      "state": "pending",
+      "note": "Assembled base + euro board pair: 11 mm clear spacers, header shoulder and post contact engagement, front-board rear tails <= 1 mm and J1 + shunts <= 9.5 mm, with the installed depth measured."
+    },
+    {
+      "id": "daisy_socket",
+      "state": "pending",
+      "note": "Both 1x20 female Daisy sockets fitted: exact part identity, installed height, insert/remove force, clearance to the euro board and rack, and USB access with the Daisy seated."
+    },
+    {
+      "id": "fasteners",
+      "state": "pending",
+      "note": "The real screw-head and washer MPNs and their measured head/washer OD, with clearance to C25, CN1 and the J2 courtyard recorded; the 5 mm OD limit is a requirement until the actual hardware is measured."
+    },
+    {
+      "id": "nav_actuator",
+      "state": "pending",
+      "note": "NAV actuator reach through the panel, tilt/travel, retention and return force measured on the printed part and the fitted switch."
+    },
+    {
+      "id": "mode_switch",
+      "state": "pending",
+      "note": "MODE switch travel, preload, actuation force, cap fit and panel hole clearance measured on the real switch and cap."
+    },
+    {
+      "id": "jacks_pots",
+      "state": "pending",
+      "note": "Jack and pot bushing thread, panel hole fit, nut/washer seating and knob fit measured on the real parts, including the 3.5 mm jack nose length."
+    },
+    {
+      "id": "panel_rack",
+      "state": "pending",
+      "note": "20HP panel in a real 3U rack: rail engagement, screw positions, panel flatness and clearance to neighbouring modules measured."
+    },
+    {
+      "id": "oled_support",
+      "state": "pending",
+      "note": "OLED module identity, standoff height, window alignment, flex-cable path and clearance to U16 measured with the module fitted."
+    },
+    {
+      "id": "eu_hand_parts",
+      "state": "pending",
+      "note": "Every hand-soldered part and loose hardware item identified by an approved EU supplier (RS Components, Electrokit or DigiKey with EU sales) and the exact MPN; no LCSC reference number treated as an approved source."
+    },
+    {
+      "id": "p5v_rail",
+      "state": "pending",
+      "note": "P5V loaded measurement <= 300 mA, start-up and load-step transients, and U16 temperature at the recorded ambient and worst-case load."
+    },
+    {
+      "id": "cv_calibration",
+      "state": "pending",
+      "note": "CV in and CV out calibrated against a reference at the recorded points, with the firmware DAC output buffer confirmed DISABLED (unbuffered 0..VDDA) on the built unit."
+    },
+    {
+      "id": "cv_cable_load",
+      "state": "pending",
+      "note": "CV out full-scale step and sine response with <= 10 nF cable/load capacitance per output, with overshoot and settle time recorded."
+    },
+    {
+      "id": "mux_sync",
+      "state": "pending",
+      "note": "U1 mux and the sync input in every power order: powered, unpowered and back-fed, with no damage, latch-up or current into an unpowered rail, recorded per rail order."
+    },
+    {
+      "id": "midi_input",
+      "state": "pending",
+      "note": "Receiver threshold against the CA-033 receiver requirement, high-current input current and fault temperature measured at the recorded supply and ambient."
+    },
+    {
+      "id": "midi_output",
+      "state": "pending",
+      "note": "Transmitter current into legacy receiver loads, rise/fall edges and sustained ring/tip fault temperatures measured; CA-033 compliance is not inferred from a receiver-only calculation. The STM32H750 GPIO absolute limits and reset state must also be verified against a primary ST datasheet: the 20 mA per-pin limit, VOL 0.4 V, VOH and the reset state are explicit assumptions today, and a bench current measurement alone cannot prove an absolute rating."
+    },
+    {
+      "id": "ground_tie",
+      "state": "pending",
+      "note": "The single-point ground-to-chassis scheme decided and measured: tie point, tie resistance and the rack/chassis connection recorded."
+    },
+    {
+      "id": "esd",
+      "state": "pending",
+      "note": "ESD test on every exposed jack, panel opening and connector, with the applied level, the observed result and the protection parts recorded."
+    },
+    {
+      "id": "dfm_cpl",
+      "state": "pending",
+      "note": "DFM/CPL review of the exported gerbers, BOM and JLCPCB placement preview for the base board, the euro board and the panel, with findings recorded before any order."
+    },
+    {
+      "id": "first_article",
+      "state": "pending",
+      "note": "First-article boards and panel built, inspected and measured against the full acceptance list before any production order."
+    }
+  ]
+}

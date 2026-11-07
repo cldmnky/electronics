@@ -59,6 +59,15 @@
 *   NOTE the -10 V reference is ideal (VREF) here; ref_bias.cir covers the real
 *   LM4040. Its +/-0.5% initial accuracy only shifts the CV-IN offset (fixed,
 *   calibratable) -- it changes no scale factor.
+*   Unbuffered-DAC assumption (firmware contract, AGENTS.md §3 / doc/
+*   FRONTBOARD-INTERFACE.md §4): the STM32H750 DAC output buffer is DISABLED,
+*   so its source impedance is 10.3...16 kOhm. XOUT_DAC103 (10.3k) and
+*   XOUT_DAC16 (16k) bracket that range and XOUT_NOM is the buffered case
+*   (RS ~ 0). All three must land on the same jack level, because only the
+*   follower's input sees the source resistance. XOUT_NOBUF is the negative
+*   case with no follower: the 13k adds to R31 (33k + 13k = 46k), which costs
+*   28% (1.5121 -> 1.085). That is what the follower is for, and the checks
+*   assert both ends.
 *
 * --- CV OUT load-capacitance stability (C33/C34 100pF across R39/R40)
 *   R09 moved the CV-OUT feedback to the jack side of R45/R46, so the 1k and
@@ -74,7 +83,11 @@
 *   0.1V DAC (0.151V at the jack, the linear case) and 3.3V full scale.
 *   Expected: 0% overshoot at 1nF/10nF and ~1.5% at 100nF small signal; the
 *   full-scale 100nF step is limited by the opamp output clamp (the opamp has
-*   to charge 100nF through the 1k), which is why it still overshoots.
+*   to charge 100nF through the 1k), which is why it still overshoots. The
+*   checked SPEC is <=10nF of cable/load capacitance (AGENTS.md §3): with
+*   C33/C34 the 1nF and 10nF steps must stay under 2% overshoot, and the
+*   100nF full-scale step is the negative case that must exceed 30% -- it
+*   proves the limit is real and that the deck's clamp is not a fudge.
 *
 * Not modelled: opamp input offset voltage (MCP6002 Vos +/-4.5 mV -> a fixed
 * ~4.5 cent CV-IN offset, TL074 Vos up to 10 mV per stage in the CV-OUT path),
@@ -83,8 +96,9 @@
 * clamp is what bounds the full-scale 100nF step here.
 *
 * Run: ngspice -b cv_inout.cir   (or: bash run.sh, from this directory)
-* Raw output: out/cv_inout.log, out/cv_in_dc.dat, out/cv_out_dc.dat,
-*             out/cv_out_step_small.dat, out/cv_out_step_full.dat
+* Raw output: out/cv_inout.log, out/cv_in_dc.dat, out/cv_in_ac.dat,
+*             out/cv_out_dc.dat, out/cv_out_step_small.dat,
+*             out/cv_out_step_full.dat
 * =====================================================================
 
 * --- single-pole opamp: A0 = gm*RP, fp = GBW/A0, output clamped to the rails
@@ -137,8 +151,8 @@ VPIDEAL VPIDEAL 0 DC 100
 VMIDEAL VMIDEAL 0 DC -100
 
 * --- sources: the CV jack input and the Daisy DAC output
-VIN  J_CV_IN_1 0 DC 0
-VDAC CV_OUT_1  0 DC 0
+VIN  J_CV_IN_1 0 DC 0 AC 1
+VDAC CV_OUT_1  0 DC 0 AC 1
 
 * --- CV IN, intended mapping and tolerance (unclamped opamp)
 * Corner naming: P5/N5 = the Vin = +5 V / -5 V endpoint, HI/LO = the high and
@@ -168,6 +182,12 @@ XOUT_OPEN  CV_OUT_1 CVOUT_OPEN  VCC VEE CVOUT PARAMS: R1=33k     RF1=49.9k    R2
 XOUT_50K   CV_OUT_1 CVOUT_50K   VCC VEE CVOUT PARAMS: R1=33k     RF1=49.9k    R2=100k   RF2=100k RLOAD=50k
 XOUT_10K   CV_OUT_1 CVOUT_10K   VCC VEE CVOUT PARAMS: R1=33k     RF1=49.9k    R2=100k   RF2=100k RLOAD=10k
 XOUT_DAC13 CV_OUT_1 CVOUT_DAC13 VCC VEE CVOUT PARAMS: R1=33k     RF1=49.9k    R2=100k   RF2=100k RS=13k
+XOUT_DAC103 CV_OUT_1 CVOUT_DAC103 VCC VEE CVOUT PARAMS: R1=33k    RF1=49.9k    R2=100k   RF2=100k RS=10.3k
+XOUT_DAC16  CV_OUT_1 CVOUT_DAC16  VCC VEE CVOUT PARAMS: R1=33k    RF1=49.9k    R2=100k   RF2=100k RS=16k
+* --- negative case: no U11A/U11D follower, so the 13k DAC source adds to R31
+* --- (33k + 13k = 46k). Not fitted: it is the equivalent circuit of the
+* --- removed follower and must lose ~28% of the scale.
+XOUT_NOBUF  CV_OUT_1 CVOUT_NOBUF  VCC VEE CVOUT PARAMS: R1=46k     RF1=49.9k    R2=100k   RF2=100k RS=0.001
 XOUT_1MAX  CV_OUT_1 CVOUT_1MAX  VCC VEE CVOUT PARAMS: R1=32.67k  RF1=50.399k  R2=99k    RF2=101k
 XOUT_1MIN  CV_OUT_1 CVOUT_1MIN  VCC VEE CVOUT PARAMS: R1=33.33k  RF1=49.401k  R2=101k   RF2=99k
 XOUT_01MAX CV_OUT_1 CVOUT_01MAX VCC VEE CVOUT PARAMS: R1=32.967k RF1=49.9499k R2=99.9k RF2=100.1k
@@ -200,11 +220,36 @@ wrdata out/cv_in_dc.dat v(CVIN_IDEAL) v(CVIN1_N5HI) v(CVIN1_N5LO) v(CVIN1_P5HI) 
 * CV out: 0..3.3 V DAC swing. CVOUT_10K_xOP is the U12B output (before R46):
 * it rises with the load current, the jack voltage does not.
 dc VDAC 0 3.3 0.033
-wrdata out/cv_out_dc.dat v(CVOUT_NOM) v(CVOUT_OPEN) v(CVOUT_50K) v(CVOUT_10K) v(CVOUT_DAC13) v(CVOUT_1MAX) v(CVOUT_1MIN) v(CVOUT_01MAX) v(CVOUT_01MIN) v(XOUT_10K.NOUT)
+wrdata out/cv_out_dc.dat v(CVOUT_NOM) v(CVOUT_OPEN) v(CVOUT_50K) v(CVOUT_10K) v(CVOUT_DAC13) v(CVOUT_1MAX) v(CVOUT_1MIN) v(CVOUT_01MAX) v(CVOUT_01MIN) v(XOUT_10K.NOUT) v(CVOUT_DAC103) v(CVOUT_DAC16) v(CVOUT_NOBUF)
+* CV in, same sweep: the C16/R33 pole (1/(2*pi*30.1k*10n) = 529 Hz) -- the
+* ADC sees a slower CV than the jack, which is intended and must be bounded.
+ac dec 50 1 100k
+wrdata out/cv_in_ac.dat vdb(CVIN_IDEAL)
+meas ac cvin_gain_10hz FIND vdb(CVIN_IDEAL) AT=10
+meas ac cvin_gain_1k FIND vdb(CVIN_IDEAL) AT=1000
 * CV out load-cap stability: 0.1V and 3.3V DAC steps into 1n/10n/100n, with
 * CF=0 (old board) and CF=100p (C33/C34), from t=1us.
 tran 20n 600u
 wrdata out/cv_out_step_small.dat v(STEP_S_1N_0) v(STEP_S_1N_C) v(STEP_S_10N_0) v(STEP_S_10N_C) v(STEP_S_100N_0) v(STEP_S_100N_C)
 wrdata out/cv_out_step_full.dat v(STEP_F_1N_0) v(STEP_F_1N_C) v(STEP_F_10N_0) v(STEP_F_10N_C) v(STEP_F_100N_0) v(STEP_F_100N_C)
+meas tran peak_small_1n_noc MAX v(STEP_S_1N_0) FROM=2u TO=600u
+meas tran peak_small_10n_c MAX v(STEP_S_10N_C) FROM=2u TO=600u
+meas tran peak_small_100n_c MAX v(STEP_S_100N_C) FROM=2u TO=600u
+meas tran peak_full_10n_c MAX v(STEP_F_10N_C) FROM=2u TO=600u
+meas tran peak_full_100n_c MAX v(STEP_F_100N_C) FROM=2u TO=600u
+meas tran final_small_10n_c FIND v(STEP_S_10N_C) AT=599u
+* CV in / CV out endpoints, so a missing or clamped operating point cannot
+* hide behind a Python-side interpolation
+dc VIN -5 5 0.05
+* MAX is the Vin = -5 V endpoint (inverting summer), MIN the +5 V endpoint
+meas dc cvin_at_n5 MAX v(CVIN_IDEAL)
+meas dc cvin_at_p5 MIN v(CVIN_IDEAL)
+meas dc cvin_mcp_at_n5 MAX v(CVIN_MCP)
+meas dc cvin_mcp_at_p5 MIN v(CVIN_MCP)
+dc VDAC 0 3.3 0.033
+meas dc cvout_at_max MAX v(CVOUT_NOM)
+meas dc cvout_open_at_max MAX v(CVOUT_OPEN)
+meas dc cvout_10k_at_max MAX v(CVOUT_10K)
+quit
 .endc
 .end

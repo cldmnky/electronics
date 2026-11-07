@@ -14,8 +14,10 @@ Reads the BUILT circuit JSON of both boards and the panel:
    positions), connector faces and the four board-to-board standoffs agree.
 4. The board routed completely: 0 unconnected ports, 0 trace errors.
 
-Z/part identities are checked separately by mechanical_check.ts. Build BOTH
-boards first (`make build`); scripts/gate.sh builds the euro entries.
+Z/part identities are checked separately by mechanical_check.ts. The frozen
+panel holes are checked against fixtures/panel-baseline.json, so the hole count
+is read from the audited fixture and never assumed. Build BOTH boards first
+(`make build`); scripts/gate.sh builds the euro entries.
 """
 
 import argparse
@@ -125,6 +127,7 @@ def net_names(cj):
 
 base_nets, front_nets = net_names(base), net_names(board)
 print("mating sockets (bottom side, onto the base board headers):")
+mated_pads = 0
 for ref, spec in MATE.items():
     half = (spec["pins"] - 1) * PITCH / 2
     got = {}
@@ -139,6 +142,7 @@ for ref, spec in MATE.items():
     if len(got) != spec["pins"]:
         fail(f"{ref}: expected {spec['pins']} pads, found {len(got)}")
         continue
+    mated_pads += len(got)
     base_got = {p["name"]: p for p in base_ports.get(ref, [])}
     for pin in range(1, spec["pins"] + 1):
         want_x = spec["x"] - half + (pin - 1) * PITCH
@@ -158,6 +162,13 @@ for ref, spec in MATE.items():
         fail(f"{ref}: pads are not on one row (y = {sorted(ys)})")
     print(f"  {ref}: {spec['pins']} pads, pin1 x={got[1]['x']:.2f}, "
           f"pin{spec['pins']} x={got[spec['pins']]['x']:.2f}, y={spec['y']:.2f}")
+
+# The mated pad count is a contract number in its own right: a dropped or
+# split socket must not shrink it silently.
+MATED_PAD_CONTRACT = sum(spec["pins"] for spec in MATE.values())
+if mated_pads != MATED_PAD_CONTRACT:
+    fail(f"front board carries {mated_pads} mated pads, the contract has {MATED_PAD_CONTRACT}")
+print(f"  {mated_pads}/{MATED_PAD_CONTRACT} mated pads on the front board")
 
 # These are component faces, NOT the copper layers of through-hole pcb_ports.
 for cj, label, side in ((base, "base header", "top"), (board, "front socket", "bottom")):
@@ -181,6 +192,29 @@ for cj, label in ((base, "base"), (board, "front")):
 panel = load(PANEL)
 p_holes = [e for e in panel if e["type"] == "pcb_hole"]
 p_cut = [e for e in panel if e["type"] == "pcb_cutout"]
+
+# The frozen panel holes come from the audited fixture, not from a count in a
+# document (the 31-hole figure in older notes is stale: two mechanical
+# revisions changed one diameter and removed four obsolete audio LED holes).
+# The fixture is the authority, so its own count is what this prints.
+FIXTURE = os.path.join(HERE, "..", "fixtures", "panel-baseline.json")
+try:
+    with open(FIXTURE) as f:
+        frozen = json.load(f)
+except FileNotFoundError:
+    sys.exit(f"missing {FIXTURE}")
+frozen_holes = [(round(h["x"], 2), round(h["y"], 2), round(h["diameter"], 2)) for h in frozen["holes"]]
+built_holes = [(round(h["x"], 2), round(h["y"], 2), round(h["hole_diameter"], 2)) for h in p_holes]
+print(f"frozen panel holes ({len(frozen_holes)} in the fixture, OLED window is a separate cutout):")
+for hole in frozen_holes:
+    if hole not in built_holes:
+        fail(f"frozen panel hole {hole[2]}mm at ({hole[0]}, {hole[1]}) is missing or moved")
+for hole in built_holes:
+    if hole not in frozen_holes:
+        fail(f"panel has an unaudited hole {hole[2]}mm at ({hole[0]}, {hole[1]})")
+if len(built_holes) != len(frozen_holes):
+    fail(f"panel has {len(built_holes)} holes, the fixture has {len(frozen_holes)}")
+print(f"  {len(built_holes)} of {len(frozen_holes)} frozen holes present, diameters included")
 
 
 def hole_at(x, y, tol=0.01):
@@ -255,15 +289,36 @@ if led_at:
         fail("D1: panel indicator footprint origin does not match its hole")
     claimed.append((lx, ly))
 
-# Doepfer rail screws: 7.5mm in from each side, 3.0mm from top and bottom
+# Doepfer rail screws: 3.0mm from the top and bottom ends, and the horizontal
+# pair on a whole 5.08mm multiple. The audited fixture holds the approved
+# revision (2 x 43.18 = 86.36mm = 17 x 5.08mm); the old 86.60mm pair could not be
+# absorbed by two 3.2mm holes on nominal 3.0mm M3 screws (0.20mm take-up).
 panel_w = float(re.search(r"PANEL_W = ([\d.]+)", lay).group(1))
 panel_h = float(re.search(r"PANEL_H = ([\d.]+)", lay).group(1))
-rail_x, rail_y = panel_w / 2 - 7.5, panel_h / 2 - 3.0
-for rx in (-rail_x, rail_x):
-    for ry in (-rail_y, rail_y):
-        if not hole_at(rx, ry):
-            fail(f"no rail screw hole at ({rx:.2f}, {ry:.2f})")
-        claimed.append((rx, ry))
+rail_y = panel_h / 2 - 3.0
+rail_holes = [h for h in frozen["holes"]
+              if abs(h["diameter"] - 3.2) < 0.01 and abs(abs(h["y"]) - rail_y) < 0.01]
+if len(rail_holes) != 4:
+    fail(f"fixture has {len(rail_holes)} rail mounting holes, expected 4")
+else:
+    pitch = 2 * max(abs(h["x"]) for h in rail_holes)
+    steps = pitch / 5.08
+    if abs(steps - round(steps)) > 1e-6:
+        fail(f"rail mounting holes are {pitch:.2f}mm apart, not a whole 5.08mm multiple")
+    if abs(pitch - 2 * 43.18) > 1e-6:
+        fail(f"rail mounting holes are {pitch:.2f}mm apart, the approved revision says 86.36mm")
+    for h in rail_holes:
+        if not hole_at(h["x"], h["y"]):
+            fail(f"no rail screw hole at ({h['x']:.2f}, {h['y']:.2f})")
+        claimed.append((h["x"], h["y"]))
+    for rx in (-pitch / 2, pitch / 2):
+        for ry in (-rail_y, rail_y):
+            if not hole_at(rx, ry):
+                fail(f"no rail screw hole at ({rx:.2f}, {ry:.2f})")
+        claimed.append((rx, -rail_y))
+        claimed.append((rx, rail_y))
+    print(f"  rail screws: 4 holes, {pitch:.3f}mm pitch = {round(steps)} x 5.08mm, "
+          f"{panel_w / 2 - pitch / 2:.2f}mm from each side")
 
 orphans = [h for h in p_holes
            if not any(abs(h["x"] - cx) < 0.01 and abs(h["y"] - cy) < 0.01 for cx, cy in claimed)]

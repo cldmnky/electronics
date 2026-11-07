@@ -304,12 +304,20 @@
         ""
       ],
       [
-        "pin_not_driven|1320800|469900|acd5910e-3784-41b9-805c-6f3a01d37516|00000000-0000-0000-0000-000000000000|||",
-        "AUDIO_IN_1 driven through R9 1k from U2 opamp output; ERC cannot trace through passives"
+        "pin_not_driven|1320800|469900|9fa8d1d0-1624-495d-aafb-5aa21b2a6644|00000000-0000-0000-0000-000000000000|/c30dd0c3-4151-4ac7-b283-7a17031d588e|/c30dd0c3-4151-4ac7-b283-7a17031d588e|",
+        "DaisySeed1 pin 16 AUDIO_IN_1 (pin UUID 9fa8d1d0) driven through R9 1k from U2 opamp output; ERC cannot trace through passives. KiCad 10 per-pin marker identity; the same pin was approved under the pre-10 symbol-uuid form."
       ],
       [
-        "pin_not_driven|1320800|495300|acd5910e-3784-41b9-805c-6f3a01d37516|00000000-0000-0000-0000-000000000000|||",
-        "AUDIO_IN_2 driven through R10 1k from U2 opamp output; ERC cannot trace through passives"
+        "pin_not_driven|1320800|495300|bceb080a-5017-435e-90e0-3f6a66441efb|00000000-0000-0000-0000-000000000000|/c30dd0c3-4151-4ac7-b283-7a17031d588e|/c30dd0c3-4151-4ac7-b283-7a17031d588e|",
+        "DaisySeed1 pin 17 AUDIO_IN_2 (pin UUID bceb080a) driven through R10 1k from U2 opamp output; ERC cannot trace through passives. KiCad 10 per-pin marker identity; the same pin was approved under the pre-10 symbol-uuid form."
+      ],
+      [
+        "pin_not_driven|1320800|469900|9fa8d1d0-1624-495d-aafb-5aa21b2a6644|00000000-0000-0000-0000-000000000000|||",
+        "SAME approved pin as AUDIO_IN_1 above, KiCad 10 per-pin report form (pin UUID replaces the symbol UUID): driven through R9 1k from U2 opamp output; ERC cannot trace through passives"
+      ],
+      [
+        "pin_not_driven|1320800|495300|bceb080a-5017-435e-90e0-3f6a66441efb|00000000-0000-0000-0000-000000000000|||",
+        "SAME approved pin as AUDIO_IN_2 above, KiCad 10 per-pin report form (pin UUID replaces the symbol UUID): driven through R10 1k from U2 opamp output; ERC cannot trace through passives"
       ]
     ],
     "meta": {

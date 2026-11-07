@@ -20,9 +20,9 @@ export FROEMIX_BUILD_DATE ?= $(shell date -u +%F)
 BOARD      := froemix base board (80.9 x 128.5 mm, 4 layers, 16HP x 3U) + euro board (20HP front board + panel)
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev build gate release snapshots erc netlist footprints \
+.PHONY: help install dev build gate test release snapshots erc netlist footprints \
         parts decoupling sim sim-clean clean fab-clean distclean order assembly \
-        check-all
+        check-all acceptance acceptance-check unit-tests mechanical typecheck
 
 help: ## show this help
 	@printf '%s\n\n' "$(BOARD)"
@@ -40,10 +40,19 @@ install: ## install node dependencies for both boards (once)
 dev: ## base-board dev server (euro: `cd euro && bun run dev`)
 	cd $(TSCIRCUIT) && $(BUN) run dev
 
+typecheck: ## typecheck both designs without suppressing unsupported props
+	cd $(TSCIRCUIT) && $(BUN) run typecheck
+	cd $(EURO) && $(BUN) run typecheck
+
 build: ## compile both designs (base + euro board and panel)
 	cd $(TSCIRCUIT) && $(BUN) run build
 	cd $(EURO) && $(BUN) run build
 
+# Prototype verification. `make test` runs everything that can be checked without
+# a bench, and `make gate` is its shorter form. Neither is a physical approval:
+# the production release additionally requires every item in
+# hardware-acceptance.json to be accepted with recorded evidence (doc/acceptance.md).
+#
 # The gates are the regression contracts: base board ERC -> build -> netlist ->
 # footprints -> parts -> value literals -> tsci source/pin_spec/netlist/
 # placement/shorts/pcb-style -> silkscreen bounds -> snapshots (15 steps), then
@@ -51,11 +60,44 @@ build: ## compile both designs (base + euro board and panel)
 # mux-input contract, mechanical stack, panel artwork, regression tests, snapshots).
 # Euro's gate reads BOTH built boards: this target builds the base first; for a
 # standalone `cd euro && bun run gate`, run `make build` first.
-gate: ## full base-board (15 steps) + euro-board (11 steps) regression gates
+gate: ## prototype regression gates + physical acceptance state (NOT an approval)
 	cd $(TSCIRCUIT) && $(BUN) run gate
 	cd $(EURO) && $(BUN) run gate
+	$(BUN) tools/release/gate.ts --report
 
-release: ## gates + export ALL fab sets (base board, euro board, panel) into fab/
+test: ## prototype verification: gates, SPICE, mechanical, unit tests (NOT an approval)
+	@printf '\n== prototype verification only: no physical item is accepted ==\n'
+	@printf '== a release needs doc/acceptance.md evidence; see `make acceptance` ==\n\n'
+	$(MAKE) gate
+	$(MAKE) mechanical
+	$(MAKE) unit-tests
+	$(MAKE) sim
+
+# Offline tests only: no board build, no network, no KiCad. The silk unit test
+# and the euro panel/mechanical unit tests read the built circuits, so the gates
+# run them after `tsci build` instead. The JLC order tests (tools/release/
+# jlc-order.test.ts) count the BUILT designators, so run `make build` once if
+# `dist/index/circuit.json` is absent; `make test` has already done that.
+unit-tests: ## offline unit tests: tool CLIs, ERC checker, acceptance machinery
+	python3 -m unittest discover -s tools -p 'test_*.py'
+	python3 -m unittest discover -s tools/sim -p 'test_*.py'
+	$(BUN) test tools/release
+
+mechanical: ## mechanical-stack and panel checks that write nothing (needs `make build`)
+	cd $(EURO) && $(BUN) scripts/mechanical_check.ts
+	cd $(EURO) && $(BUN) scripts/panel_check.ts
+
+acceptance: ## print the physical acceptance state (NOT an approval; writes nothing)
+	$(BUN) tools/release/gate.ts --report
+
+acceptance-check: ## production gate: every physical item accepted (fail closed, writes nothing)
+	$(BUN) tools/release/gate.ts --check
+
+# PRODUCTION release: the physical acceptance gate runs FIRST, as a prerequisite,
+# so a pending or invalid item stops the release before any build, export or
+# deletion (scripts/release.sh and scripts/panel_release.ts repeat the guard for
+# direct use). No flag skips it.
+release: acceptance-check ## physical acceptance + gates + ALL fab sets into fab/
 	cd $(TSCIRCUIT) && $(BUN) run release
 	@cp jlc-order.json $(FAB)/jlc-order.json
 	cd $(EURO) && bash scripts/release.sh
@@ -79,7 +121,7 @@ parts: ## JLCPCB part numbers vs schematic (needs network)
 decoupling: ## cap -> IC routed-copper distances (informational)
 	python3 tools/report_decoupling.py --circuit $(TSCIRCUIT)/dist/index/circuit.json
 
-sim: ## run the four ngspice analog decks (needs ngspice)
+sim: ## assert fresh source-linked analog and MIDI SPICE runs (needs ngspice)
 	cd tools/sim && bash run.sh
 
 sim-clean: ## delete simulated output

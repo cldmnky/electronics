@@ -1,14 +1,19 @@
 * CV output final inverting stage: R37/R40=100k, C34=100p, R46=1k.
-* First gain stage is an ideal negative 4.99V step. Both loads are 100k||10nF;
-* LED side additionally carries 2.2k, diode, LED. Opposite channel symmetric.
+* First gain stage is an ideal negative 4.99V step. The modelled loads are
+* 100k||10nF (the <=10 nF cable/load spec, AGENTS.md §3); the LED side
+* additionally carries the front board's 2.2 k, diode and LED (euro
+* sections/jack-leds.tsx). The third case is the negative control: 100 nF,
+* above the spec, with the LED branch -- it must ring visibly.
 * The behavioral op-amp has voltage and bandwidth limits but NO output-current
 * limit or slew-rate model. LED models are illustrative, not supplier models.
-.subckt OPAMP INP INN OUT VP VM
+* These are illustrations, not measurements of the built boards.
+* parametric so models.py can check it against its provenance table
+.subckt OPAMP INP INN OUT VP VM PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
 RIN INP INN 1T
 G1 0 NI INP INN 1m
-RP NI 0 200meg
-CP NI 0 53.0516477p
-B1 OUT 0 V=max(min(V(NI),V(VP)-1.5),V(VM)+1.5)
+RP NI 0 {A0*1k}
+CP NI 0 {1m/(6.283185307*GBW)}
+B1 OUT 0 V=max(min(V(NI),V(VP)-HEAD),V(VM)+HEAD)
 .ends
 VP vp 0 12
 VM vm 0 -12
@@ -27,6 +32,18 @@ XOP2 0 s2 op2 vp vm OPAMP
 RS2 op2 jack2 1k
 RL2 jack2 0 100k
 CL2 jack2 0 10n
+* negative case: 100 nF at the jack, above the <=10 nF cable/load spec --
+* this channel has the LED branch as well, so it must be the worst case
+RIN3 vin s3 100k
+RF3 jack3 s3 100k
+CF3 jack3 s3 100p
+XOP3 0 s3 op3 vp vm OPAMP PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+RS3 op3 jack3 1k
+RL3 jack3 0 100k
+CL3 jack3 0 100n
+RLED3 jack3 diode3 2.2k
+D3 diode3 led3 D4148
+D4 led3 0 DLED
 RLED jack2 diode 2.2k
 D1 diode leda D4148
 D2 leda 0 DLED
@@ -37,7 +54,10 @@ set noaskquit
 set wr_singlescale
 set wr_vecnames
 tran 0.1u 1m
-wrdata out/front_cv_led.dat v(jack1) v(jack2) v(op2) v(diode)
+wrdata out/front_cv_led.dat v(jack1) v(jack2) v(op2) v(diode) v(jack3) v(led3)
+meas tran led_jack FIND v(jack2) AT=0.8m
+meas tran bare_jack FIND v(jack1) AT=0.8m
+meas tran over_spec_jack MAX v(jack3) FROM=0.1m TO=0.8m
 quit
 .endc
 .end

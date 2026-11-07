@@ -39,6 +39,13 @@ step() {
   local lenient=0
   if [ "$name" = "check placement" ]; then lenient=1; fi
   if "$@" >"$log" 2>&1 || { [ "$lenient" = 1 ] && grep -q "Errors: 0" "$log"; }; then
+    # An empty log is not a pass: a step that printed nothing did not check
+    # anything, whatever its exit status.
+    if [ ! -s "$log" ]; then
+      echo "  FAILED - exited 0 but printed nothing ($log)"
+      FAILED=1
+      return
+    fi
     echo "  ok"
   else
     echo "  FAILED - see $log"
@@ -47,7 +54,20 @@ step() {
   fi
 }
 
+step "typecheck"      bun run typecheck
 step "build"          npx tsci build
+# Every later step reads the built JSON; a missing file must stop the gate here
+# instead of producing seven confusing failures.
+for built in dist/index/circuit.json dist/panel/circuit.json; do
+  if [ ! -s "$built" ]; then
+    echo "FAILED: $built was not written by the build"
+    FAILED=1
+  fi
+done
+if [ "$FAILED" -ne 0 ]; then
+  echo "GATE FAILED: the build did not produce both circuits (logs in $LOG_DIR)"
+  exit 1
+fi
 step "check netlist"  npx tsci check netlist
 step "check placement" npx tsci check placement
 step "check shorts"   npx tsci check shorts

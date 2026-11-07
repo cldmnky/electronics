@@ -15,21 +15,26 @@
 * EXPECTED (analytic, ideal opamps):
 *   DC gain      = (-1) * (-0.1) = +0.1000  = -20.00 dB
 *                  (two inverting stages, so the sign is positive)
-*   -3 dB        = 28.4 kHz  -- single-pole estimate from the 10k || 560pF
-*                  stage (1/(2*pi*10k*560p) = 28.42 kHz), i.e. the figure the
-*                  design brief quotes
-*                = 19.9 kHz  -- cascade of BOTH poles: 1/(2*pi*100k*47p)
+*   -3 dB        = 19.9 kHz -- cascade of BOTH poles: 1/(2*pi*100k*47p)
 *                  = 33.86 kHz and 1/(2*pi*10k*560p) = 28.42 kHz
 *                  => (1+(f/33.86k)^2)(1+(f/28.42k)^2) = 2 at f = 19.9 kHz
-*   gain at 20 kHz  = 0.1 / sqrt((1+(20/33.86)^2)(1+(20/28.42)^2))
-*                  = 0.0704 (-23.05 dB) if the cascade figure is right
-*                  (the 10k || 560pF pole alone would give 0.0818, -21.75 dB)
-*   R9 1k into an open (Daisy ADC) load: no attenuation, gain unchanged
-*   Output headroom: 0.1 x a +/-10 V eurorack signal = +/-1 V, inside the
-*                  TL074 swing (+/-10 V) -- no clipping expected.
+*                  (the single-pole 10k || 560pF figure of 28.4 kHz that the
+*                  design brief quotes is WRONG for this cascade; see RESULTS.md)
+*   gain at 20 kHz  = 0.1 / sqrt((1+(20/33.86)^2)(1+(20/28.42)^2)) = 0.0704
+*   Headroom: 0.1 x a +/-10 V eurorack signal = +/-1 V, inside the TL074
+*                  swing -- no clipping expected.
+*   Source impedance: the 100k input resistor R1 is in series with the source,
+*                  so a 1k source gives 100k/101k = 0.9901 of the gain and a
+*                  10k source 100k/110k = 0.9091 (-0.83 dB). 0.99 / 0.91 are
+*                  the limits the checks assert; nothing here claims a source
+*                  impedance the jack does not see.
+*
+* This deck is a transcription, not a netlist export: source_link.py fails the
+* checks when a linked value or connection in sections/audio.tsx no longer
+* agrees with it, and models.py records where the op-amp model comes from.
 *
 * Run: ngspice -b audio_in.cir   (or: bash run.sh, from this directory)
-* Raw output: out/audio_in.log, out/audio_in_ac.dat
+* Raw output: out/audio_in_ac.dat, out/audio_in_src.dat, out/audio_in_tran.dat
 * =====================================================================
 
 * --- single-pole opamp: A0 = gm*RP, fp = GBW/A0, output clamped to the rails
@@ -46,8 +51,10 @@ B1    OUT 0   V = max(min(V(NI), V(VP)-HEAD), V(VM)+HEAD)
 VCC VCC 0 DC 12
 VEE VEE 0 DC -12
 
-* AC stimulus: 1 V so v(out) reads directly as the transfer function
-V1 J_AUDIO_IN_L 0 DC 0 AC 1
+* AC stimulus: 1 V so v(...) reads directly as the transfer function.
+* The same source carries a 10 V peak 1 kHz sine for the headroom run (a
+* full-scale eurorack signal); AC and SIN do not interact.
+V1 J_AUDIO_IN_L 0 DC 0 AC 1 SIN(0 10 1k)
 
 * stage 1: U2A, inverting x1, 47pF across the 100k feedback
 R1  J_AUDIO_IN_L U2A_IN_N 100k
@@ -64,9 +71,38 @@ XU2B 0 U2B_IN_N NET_C7_2 VCC VEE OPAMP
 * series output resistor into the Daisy Seed ADC (high-Z, modelled as open)
 R9  NET_C7_2 AUDIO_IN_L 1k
 
+* --- source-impedance cases: the same first stage behind a 1k / 10k source.
+* --- Not fitted parts: they model what a patched source impedance does to the
+* --- 100k input resistor. RSR1/RSR4/CSC2 repeat R1/R4/C2 so source drift is
+* --- caught here too (source_link.py links them by value).
+.subckt SRC_CASE IN OUT VP VM PARAMS: RS=0
+RSRC IN   SSUM  {RS}
+RSR1 SSUM SNODE 100k
+RSR4 SNODE OUT  100k
+CSC2 SNODE OUT  47p
+XSRC 0    SNODE OUT VP VM OPAMP PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+.ends
+
+VSRC SRC1 0 DC 0 AC 1
+XSRC1K  SRC1 C1K  VCC VEE SRC_CASE PARAMS: RS=1k
+XSRC10K SRC1 C10K VCC VEE SRC_CASE PARAMS: RS=10k
+
 .control
 set noaskquit
 ac dec 200 1 1meg
 wrdata out/audio_in_ac.dat vdb(AUDIO_IN_L) vdb(NET_C2_2)
+meas ac gain_1k FIND vdb(AUDIO_IN_L) AT=1000
+meas ac gain_20k FIND vdb(AUDIO_IN_L) AT=20000
+meas ac dc_gain FIND vdb(AUDIO_IN_L) AT=1
+meas ac stage1_dc FIND vdb(NET_C2_2) AT=1
+ac dec 20 1 100k
+wrdata out/audio_in_src.dat vdb(C1K) vdb(C10K)
+meas ac gain_src1k FIND vdb(C1K) AT=1000
+meas ac gain_src10k FIND vdb(C10K) AT=1000
+tran 1u 10m
+wrdata out/audio_in_tran.dat v(AUDIO_IN_L)
+meas tran headroom_max MAX v(AUDIO_IN_L) FROM=5m TO=10m
+meas tran headroom_min MIN v(AUDIO_IN_L) FROM=5m TO=10m
+quit
 .endc
 .end

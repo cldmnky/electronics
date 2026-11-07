@@ -2,7 +2,7 @@
 * froemix audio_out.cir -- AUDIO OUTPUT chain, left channel
 * =====================================================================
 * Source of truth: tscircuit/sections/audio.tsx. U3 = TL074, VCC = +12 V,
-* VEE = -12 V. The right channel (U3C/U3D, R12/R14/R15/R18/C9/C13) is
+* VEE = -12 V. The right channel (U3C/U3D, R12/R14/R15/R18/C13) is
 * identical; only the left channel is simulated.
 *
 *   AUDIO_OUT_L --R11 10k-- U3A_IN_N       inverting x3.3   (DESIGN-REVIEW R08)
@@ -14,25 +14,31 @@
 *
 * EXPECTED (analytic, ideal opamps):
 *   DC gain, open load = 3.3 * 1 = +3.300 = +10.37 dB
-*   DC gain, 100k load = 3.3 * 100k/(100k+1k) = +3.267 = +10.28 dB
-*                        (the 1k series R and the 100k input R form a divider)
+*   DC gain, 100k load = 3.3 * 100k/(100k+1k) = +3.2673 = +10.28 dB
 *   -3 dB: stage 1 pole 1/(2*pi*33k*47p) = 102.6 kHz, stage 2 pole
 *                  1/(2*pi*100k*47p) = 33.86 kHz; two DIFFERENT cascaded poles
 *                  put -3 dB at 30.9 kHz (not 0.6436 x the lower pole)
-*   gain at 20 kHz  = 3.267 / (sqrt(1+(20/102.6)^2)*sqrt(1+(20/33.86)^2))
-*                  = 2.76 (+8.82 dB); the fitted TL074 lands a little below
-*                  that because of its 3 MHz GBW
-*   Headroom (R08): a 1 Vrms full-scale Seed output is 3.267 x 1.414 =
+*   gain at 20 kHz  ~ 2.76 with ideal opamps; the fitted TL074 lands lower
+*                  because of its 3 MHz GBW
+*   Headroom (R08): a 1 Vrms full-scale Seed output is 3.2673 x 1.414 =
 *                  4.62 V peak at the jack into 100k, inside the TL074's
 *                  +/-10 V swing. The old 100k feedback asked for 14.1 V peak
-*                  and clipped at ~10.1 V. The chain is DC-coupled (R11 goes
-*                  straight to AUDIO_OUT_L, no series capacitor in the
-*                  netlist), so any DC offset on the Daisy codec output is
-*                  amplified 3.3x; V1 DC 0 assumes an offset-free source, which
-*                  is the only thing this deck claims.
+*                  and clipped at ~10.5 V -- the OLD_CHAIN case below shows it.
+*   Load sweep: with R19 outside the feedback the 1k and the load form a
+*                  divider: 100k -> 0.9901, 50k -> 0.9804, 10k -> 0.9091,
+*                  open -> 1.0000 of the stage-2 output.
+*   The chain is DC-coupled (R11 goes straight to AUDIO_OUT_L, no series
+*                  capacitor in the netlist), so any DC offset on the Daisy
+*                  codec output is amplified 3.3x; V1 DC 0 assumes an
+*                  offset-free source, which is the only thing this deck claims.
+*
+* This deck is a transcription, not a netlist export: source_link.py fails the
+* checks when a linked value or connection in sections/audio.tsx no longer
+* agrees with it, and models.py records where the op-amp model comes from.
 *
 * Run: ngspice -b audio_out.cir   (or: bash run.sh, from this directory)
-* Raw output: out/audio_out.log, out/audio_out_ac.dat
+* Raw output: out/audio_out_ac.dat, out/audio_out_load.dat,
+*             out/audio_out_tran.dat, out/audio_out_old.dat
 * =====================================================================
 
 * --- single-pole opamp: A0 = gm*RP, fp = GBW/A0, output clamped to the rails
@@ -48,8 +54,9 @@ B1    OUT 0   V = max(min(V(NI), V(VP)-HEAD), V(VM)+HEAD)
 VCC VCC 0 DC 12
 VEE VEE 0 DC -12
 
-* AC stimulus: 1 V so v(J_AUDIO_OUT_L) reads directly as the transfer function
-V1 AUDIO_OUT_L 0 DC 0 AC 1
+* AC stimulus: 1 V reads as the transfer function; the same source carries a
+* 1 Vrms (1.414 V peak) 1 kHz sine for the headroom run.
+V1 AUDIO_OUT_L 0 AC 1 SIN(0 1.414 1k)
 
 * stage 1: U3A, inverting x3.3, 47pF across the 33k feedback
 R11 AUDIO_OUT_L U3A_IN_N 10k
@@ -67,9 +74,63 @@ XU3B 0 U3B_IN_N NET_C12_2 VCC VEE OPAMP
 R19 NET_C12_2 J_AUDIO_OUT_L 1k
 RLOAD J_AUDIO_OUT_L 0 100k
 
+* --- load cases: the last stage plus R19 into 100k / 50k / 10k / open.
+* --- Not fitted parts (case loads); LR16/LR17/LC12/LRS repeat the fitted
+* --- values so source_link.py catches drift in the copies too.
+.subckt OUT_LOAD IN OUT VP VM PARAMS: RL=100k
+RLD16 IN   LSUM  100k
+RLD17 LSUM LNOUT 100k
+CLD12 LSUM LNOUT 47p
+XLDOP 0    LSUM  LNOUT VP VM OPAMP PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+RLDRS LNOUT OUT  1k
+RLDRL OUT  0     {RL}
+.ends
+
+VLOAD S_C8 0 AC 1
+XLOAD100 S_C8 L100K VCC VEE OUT_LOAD PARAMS: RL=100k
+XLOAD50  S_C8 L50K  VCC VEE OUT_LOAD PARAMS: RL=50k
+XLOAD10  S_C8 L10K  VCC VEE OUT_LOAD PARAMS: RL=10k
+XLOADOPEN S_C8 LOPEN VCC VEE OUT_LOAD PARAMS: RL=1G
+
+* --- OLD_CHAIN: the pre-R08 100k feedback (gain 10), a negative case that
+* --- proves the model clamps and that the R08 change is what prevents it.
+.subckt OLD_CHAIN IN OUT VP VM PARAMS: RF1=100k
+ROR11 IN    OSUM1  10k
+ROR13 OSUM1 ONOUT1 {RF1}
+COR8  OSUM1 ONOUT1 47p
+XOR1  0     OSUM1  ONOUT1 VP VM OPAMP PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+ROR16 ONOUT1 OSUM2 100k
+ROR17 OSUM2  ONOUT2 100k
+COR12 OSUM2  ONOUT2 47p
+XOR2  0      OSUM2 ONOUT2 VP VM OPAMP PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+ROR19 ONOUT2 OUT    1k
+RLDOLD OUT   0      100k
+.ends
+
+VOLDSRC S_OLD 0 SIN(0 1.414 1k)
+XOLD S_OLD OLD_OUT VCC VEE OLD_CHAIN PARAMS: RF1=100k
+
 .control
 set noaskquit
 ac dec 200 1 1meg
 wrdata out/audio_out_ac.dat vdb(J_AUDIO_OUT_L) vdb(NET_C12_2)
+meas ac gain_1k FIND vdb(J_AUDIO_OUT_L) AT=1000
+meas ac gain_20k FIND vdb(J_AUDIO_OUT_L) AT=20000
+meas ac dc_gain FIND vdb(J_AUDIO_OUT_L) AT=1
+meas ac dc_gain_pre FIND vdb(NET_C12_2) AT=1
+ac dec 20 1 100k
+wrdata out/audio_out_load.dat vdb(L100K) vdb(L50K) vdb(L10K) vdb(LOPEN) vdb(XLOAD10.LNOUT) vdb(XLOAD50.LNOUT) vdb(XLOAD100.LNOUT) vdb(XLOADOPEN.LNOUT)
+meas ac load100 FIND vdb(L100K) AT=1000
+meas ac load50 FIND vdb(L50K) AT=1000
+meas ac load10 FIND vdb(L10K) AT=1000
+meas ac loadopen FIND vdb(LOPEN) AT=1000
+tran 1u 10m
+wrdata out/audio_out_tran.dat v(J_AUDIO_OUT_L)
+meas tran peak_max MAX v(J_AUDIO_OUT_L) FROM=5m TO=10m
+meas tran peak_min MIN v(J_AUDIO_OUT_L) FROM=5m TO=10m
+wrdata out/audio_out_old.dat v(OLD_OUT)
+meas tran old_max MAX v(OLD_OUT) FROM=5m TO=10m
+meas tran old_min MIN v(OLD_OUT) FROM=5m TO=10m
+quit
 .endc
 .end

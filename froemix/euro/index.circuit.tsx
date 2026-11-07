@@ -11,6 +11,7 @@
 // Sides: TOP faces the panel (jacks, pots, OLED, LED). BOTTOM faces the base
 // board (the three 2.00mm sockets). Nothing tall on the bottom but the sockets.
 
+import { Fragment } from "react"
 import { BOARD_H, BOARD_W, BUTTON, STANDOFF_HOLES } from "./lib/layout"
 import { BOARD_REVISION, buildDate } from "./lib/build-info"
 import { Nets } from "./lib/nets"
@@ -43,7 +44,7 @@ export default () => (
 
     {/* M3 standoffs to the base board, at the base board's own hole positions */}
     {STANDOFF_HOLES.map((h, i) => (
-      <hole key={`standoff-${i}`} diameter="3.2mm" pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} />
+      <Fragment key={`standoff-${i}`}><hole diameter="3.2mm" pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
     ))}
 
     <MatingSockets />

@@ -19,6 +19,28 @@ PROJECT_DIR=$(pwd)
 FAB_DIR=$(cd .. && pwd)/fab
 ENTRY=index.circuit.tsx
 
+# ---------------------------------------------------------------------------
+# 0. Physical acceptance, fail closed and FIRST: nothing below this block may
+#    build, export or delete before every required physical item is accepted
+#    with recorded evidence. `$FAB_DIR` still exists afterwards with this
+#    revision's contents if the gate blocks, so a blocked release destroys
+#    nothing. See ../doc/acceptance.md.
+# ---------------------------------------------------------------------------
+if [ "${FROEMIX_SKIP_ERC:-0}" = "1" ]; then
+  printf '\nRELEASE REFUSED: FROEMIX_SKIP_ERC=1\n' >&2
+  printf 'An ERC skip is a prototype convenience. A production release must run ERC,\n' >&2
+  printf 'and physical acceptance cannot substitute for it. Nothing was built,\n' >&2
+  printf 'exported or deleted. Unset FROEMIX_SKIP_ERC to release.\n' >&2
+  exit 1
+fi
+printf '\n########## 0. physical acceptance (fail closed) ##########\n'
+if ! bun run ../tools/release/gate.ts --check; then
+  printf '\nRELEASE BLOCKED: physical acceptance is not complete.\n' >&2
+  printf 'Nothing was built, exported or deleted; %s is untouched.\n' "$FAB_DIR" >&2
+  printf 'A pending item is normal today: see ../doc/acceptance.md and ../doc/evidence/README.md.\n' >&2
+  exit 1
+fi
+
 printf '\n########## 1. gate ##########\n'
 bash "$PROJECT_DIR/scripts/gate.sh"
 
