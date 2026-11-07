@@ -38,6 +38,11 @@ class UiTapRunner final : public QObject {
   ~UiTapRunner() override;
 
   void start();
+  // `--panel-taps`: the mechanical panel-intent gate from
+  // docs/panel-parity-audit.md section 5. Runs synchronously after the window
+  // settles, injects Intents through AppController::perform (never mouse
+  // events) and exits with a non-zero status on any failure or QML warning.
+  void startPanelGate();
 
   // Installed for the whole run so QML errors are attributed to the tap that
   // raised them; restoring happens in the destructor.
@@ -75,9 +80,13 @@ class UiTapRunner final : public QObject {
     QStringList sequence{};
     std::function<bool()> verify{};
     QString verifyFailure{};
+    // The top-band regression requires the tapped control's centre to sit in
+    // the top 52 px band where modal taps used to leak to the tab row.
+    bool topBand = false;
   };
 
   void buildScenarios();
+  void runPanelGate();
   void closeOverlays();
   // Panel-intent parity for the crash/overlay gates: PRESS the ring's current
   // stop and run one short EXIT press, exactly the Pico path (updateShiftState).

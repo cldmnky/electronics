@@ -1,6 +1,10 @@
 #include "ui_tap_runner.hpp"
 
 #include <QCoreApplication>
+#include <QEventLoop>
+
+#include <chrono>
+#include <thread>
 #include <QDataStream>
 #include <QDir>
 #include <QFile>
@@ -164,7 +168,9 @@ void UiTapRunner::buildScenarios() {
       controller_->recorder()->takeStateChanged();
     }
   }
-  // 1. The tab bar itself: this is the only QML path that calls setTab().
+  // 1. The nav row itself: this is the only QML path that calls setTab().
+  // The fourth destination (More) opens the six-page grid; closeOverlays()
+  // closes it before the next scenario.
   scenarios_.push_back(Scenario{
       QStringLiteral("tabs"),
       [this] {
@@ -172,9 +178,31 @@ void UiTapRunner::buildScenarios() {
         controller_->showShiftFace(false);
         controller_->setTab(0);
       },
-      QStringLiteral("tab."), {}, {}, false, true});
+      QStringLiteral("nav."), {}, {}, false, true});
 
   // 2. Shared transport strip.
+  // Stage-1 regression for the top-band leak: the channel popout's header
+  // controls sit at y ~40, inside the top 52 px band that used to deliver the
+  // same tap to the tab row underneath. RENAME must reach its handler and the
+  // popup must survive; a leaked tab tap would navigate and tear it down.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("popup.topband"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        controller_->openChannel(0);
+      },
+      QString(), {}, {}, false, false, false, {},
+      {QStringLiteral("channel.rename")},
+      [this] {
+        return controller_->mixer()->channelOpen() && controller_->keypadOpen() &&
+               controller_->tab() == 0;
+      },
+      QStringLiteral("top-band tap leaked: channel popup closed or tab changed")});
+  scenarios_.back().topBand = true;
+
   scenarios_.push_back(Scenario{
       QStringLiteral("transport"),
       [this] {
@@ -217,11 +245,11 @@ void UiTapRunner::buildScenarios() {
       QStringLiteral("PLAY after STOP-STOP did not start from bar 1")});
 
   const QStringList scaffoldExcluded = {
-      QStringLiteral("tab."), QStringLiteral("transport."),
+      QStringLiteral("nav."), QStringLiteral("transport."),
       QStringLiteral("config."), QStringLiteral("keypad."),
       QStringLiteral("confirm."), QStringLiteral("shift.")};
   const QStringList shiftExcluded = {
-      QStringLiteral("tab."), QStringLiteral("transport."),
+      QStringLiteral("nav."), QStringLiteral("transport."),
       QStringLiteral("config."), QStringLiteral("keypad."),
       QStringLiteral("confirm.")};
 
@@ -1384,6 +1412,18 @@ void UiTapRunner::tapNext() {
     tapped_.push_back(id);
     ++taps_;
     std::printf("ui-taps:    tap %s\n", qPrintable(id));
+    if (scenarios_[scenarioIndex_].topBand) {
+      const QPointF centre =
+          target->mapToScene(QPointF(target->width() / 2.0, target->height() / 2.0));
+      std::printf("ui-taps:      centre y %.0f (top band <= 52)\n", centre.y());
+      if (centre.y() > 52.0) {
+        std::fprintf(stderr,
+                     "ui-taps: FAIL %s: %s is not in the top band (y %.0f)\n",
+                     qPrintable(scenarios_[scenarioIndex_].name), qPrintable(id),
+                     centre.y());
+        ++failures_;
+      }
+    }
     (void)tap(window_, target);
     scheduleNext(kTapDelayMs);
     return;
@@ -1482,6 +1522,349 @@ void UiTapRunner::finishScenario() {
   ++scenarioIndex_;
   closeOverlays();
   scheduleNext(kScenarioDelayMs);
+}
+
+void UiTapRunner::startPanelGate() {
+  std::setvbuf(stdout, nullptr, _IOLBF, 0);
+  previousHandler_ = qInstallMessageHandler(&UiTapRunner::messageHandler);
+  active_ = this;
+  std::printf("panel-taps: window %dx%d, in-process Intents (offscreen)\n",
+              window_->width(), window_->height());
+  QTimer::singleShot(500, this, &UiTapRunner::runPanelGate);
+}
+
+// --panel-taps: the mechanical panel-intent gate (docs/panel-parity-audit.md
+// section 5). It injects the same Intents the Pico sends, so a stop that no
+// widget implements, a ring that skips a visible control or an EXIT that does
+// not unwind fails here instead of on the owner's bench.
+void UiTapRunner::runPanelGate() {
+  int failures = 0;
+  int stops = 0;
+  QStringList rings;
+  const auto fail = [&](const QString& context, const QString& what) {
+    ++failures;
+    std::fprintf(stderr, "panel-taps: FAIL %s: %s\n", qPrintable(context),
+                 qPrintable(what));
+  };
+  const auto intent = [this](Intent::Kind kind, int amount = 0) {
+    Intent value;
+    value.kind = kind;
+    value.amount = amount;
+    controller_->perform(value);
+  };
+  // A busy wait, not an event loop: the 66 ms link poll carries shift=false
+  // and would release the synthetic SHIFT press mid-hold.
+  const auto waitMs = [](int ms) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+  };
+  const auto visibleIds = [this] {
+    QSet<QString> ids;
+    for (const auto& target : visibleTargets()) ids.insert(target.focusId);
+    return ids;
+  };
+  // Later redesign stages own these: mixer strip selectors, the channel
+  // monitor row, the EDIT value chip, the EQ SHIFT shadow ids and the MIDI
+  // port rows. They are reported as known gaps, not failures, so this gate
+  // locks in stage-1 parity without pretending to fix stage 2/5 work.
+  const QStringList knownGapPrefixes = {
+      QStringLiteral("mixer.select."), QStringLiteral("channel.monitor"),
+      QStringLiteral("edit.value"), QStringLiteral("shift.eq.band."),
+      QStringLiteral("midimon.port."),
+      // Stage 2 (G1): the MIXER/TRACK ring still keys on the selected track's
+      // mode, so one of the two views' stops is off-screen at a time.
+      QStringLiteral("track."),
+      // Stage 3/4/5 screens own these; the audit already lists them (EQ node
+      // visibility, ARRANGE toolbar, recorder punch rows, SYSTEM summaries).
+      QStringLiteral("eq.node."), QStringLiteral("eq.subject.track"),
+      QStringLiteral("arrange.addsection"), QStringLiteral("arrange.dupsection"),
+      QStringLiteral("arrange.loopsection"), QStringLiteral("arrange.length"),
+      QStringLiteral("arrange.grid."), QStringLiteral("shift.routing.reset"),
+      QStringLiteral("shift.punch."), QStringLiteral("shift.monitor.summary.")};
+  const auto isKnownGap = [&](const QString& id) {
+    for (const auto& prefix : knownGapPrefixes) {
+      if (id.startsWith(prefix)) return true;
+    }
+    return false;
+  };
+  std::printf("panel-taps: no-pico=%d, %d track(s) seeded\n",
+              controller_->noPicoMode() ? 1 : 0, controller_->mixer()->stripCount());
+
+  // The take/timeline fixtures live in buildScenarios(); reusing it here keeps
+  // the recorder take rows and the project rows non-empty without duplicating
+  // the WAV writer.
+  buildScenarios();
+  primeMixerTracks();
+
+  struct Context {
+    QString name;
+    std::function<void()> setup;
+    // The page grid is 3 columns wide: DOWN is +3 (a spatial step), so its
+    // permutation walk uses RIGHT to visit every stop.
+    Intent::Kind walkKind = Intent::Kind::NavDown;
+  };
+  std::vector<Context> contexts;
+  const auto reset = [this] {
+    closeOverlays();
+    controller_->showShiftFace(false);
+  };
+  for (int tab = 0; tab < kScreenCount; ++tab) {
+    Context context;
+    context.name = QStringLiteral("tab.%1").arg(tab);
+    context.setup = [this, reset, tab] {
+      reset();
+      controller_->setTab(tab);
+      if (tab == 0) {
+        controller_->mixer()->setTrackMode(false);
+        controller_->mixer()->setBank(0);
+        // G1 is stage 2: the ring still keys on the selected track's mode.
+        // Park the selected track in PLAY so this gate measures the MIXER
+        // view's stops rather than the stage-2 defect.
+        controller_->mixer()->setSelectedStrip(0);
+        controller_->mixer()->setSelectedMode(0);
+      }
+    };
+    contexts.push_back(context);
+  }
+  const auto faceReset = [this, reset](int tab) {
+    reset();
+    controller_->setTab(tab);
+    controller_->showShiftFace(true);
+  };
+  for (int tab = 0; tab < kScreenCount; ++tab) {
+    if (!controller_->tabHasShiftFace(tab)) continue;
+    Context context;
+    context.name = QStringLiteral("shift.%1").arg(tab);
+    context.setup = [faceReset, tab] { faceReset(tab); };
+    contexts.push_back(context);
+  }
+  {
+    Context context;
+    context.name = QStringLiteral("tabgrid");
+    context.setup = [this, reset] {
+      reset();
+      controller_->setTab(0);
+      controller_->openTabGrid();
+    };
+    context.walkKind = Intent::Kind::NavRight;
+    contexts.push_back(context);
+  }
+  {
+    Context context;
+    context.name = QStringLiteral("tempo");
+    context.setup = [this, reset] {
+      reset();
+      controller_->setTab(0);
+      controller_->openTempoPopup();
+    };
+    contexts.push_back(context);
+  }
+  {
+    Context context;
+    context.name = QStringLiteral("config.metronome");
+    context.setup = [this, reset] {
+      reset();
+      controller_->setTab(0);
+      controller_->openConfig(QStringLiteral("metronome"));
+    };
+    contexts.push_back(context);
+  }
+
+  // 1-2. Ring truth: non-empty, no duplicates, every stop has a visible widget.
+  // 3. Ring walk: NavDown n+1 times visits every stop once and wraps.
+  for (const auto& context : contexts) {
+    context.setup();
+    const std::vector<QString> ids = controller_->focusIds_;
+    const QString& name = context.name;
+    if (ids.empty()) {
+      // G2 (stage 5): the Projects SHIFT face builds an empty ring. Known gap,
+      // not a stage-1 failure; the fix stage must make this a hard failure.
+      std::printf("panel-taps: known-gap %s: empty face ring (G2, stage 5)\n",
+                  qPrintable(name));
+      continue;
+    }
+    QSet<QString> unique;
+    const QSet<QString> visible = visibleIds();
+    for (const auto& id : ids) {
+      if (id.isEmpty()) fail(name, QStringLiteral("empty focus id"));
+      if (unique.contains(id)) fail(name, QStringLiteral("duplicate %1").arg(id));
+      unique.insert(id);
+      if (!visible.contains(id) && !isKnownGap(id)) {
+        fail(name, QStringLiteral("ring id %1 has no visible widget").arg(id));
+      }
+    }
+    rings.push_back(name + QStringLiteral(": ") + QStringList(ids.begin(), ids.end()).join(QStringLiteral(", ")));
+    // Walk from index 0 and record what NAV reports.
+    controller_->focusIndex_ = 0;
+    controller_->focusId_ = ids.front();
+    QStringList walked;
+    const int count = static_cast<int>(ids.size());
+    walked.push_back(ids.front());
+    for (int step = 0; step < count; ++step) {
+      intent(context.walkKind);
+      walked.push_back(controller_->focusId_);
+    }
+    QSet<QString> seen;
+    for (int step = 0; step < count; ++step) {
+      if (seen.contains(walked[step])) {
+        fail(name, QStringLiteral("ring revisits %1 before the wrap").arg(walked[step]));
+      }
+      seen.insert(walked[step]);
+    }
+    if (walked.at(1 % count) != ids.at(1 % count)) {
+      fail(name, QStringLiteral("step 1 gave %1, expected %2")
+                      .arg(walked.at(1 % count), ids.at(1 % count)));
+    }
+    if (walked.back() != ids.front()) {
+      fail(name, QStringLiteral("ring did not wrap to %1 (got %2)")
+                      .arg(ids.front(), walked.back()));
+    }
+    // 4. PRESS every stop once from a fresh setup. A crash fails the process;
+    // visibility/activation contracts are asserted for the shell below.
+    for (int index = 0; index < count; ++index) {
+      context.setup();
+      if (static_cast<int>(controller_->focusIds_.size()) != count) continue;
+      controller_->focusIndex_ = index;
+      controller_->focusId_ = ids.at(index);
+      intent(Intent::Kind::NavPress);
+      ++stops;
+    }
+  }
+
+  // 4b. Shell activation contract: each shell stop performs its documented
+  // action (the touch gate proves the same handlers).
+  const auto shellSetup = [this, reset] {
+    reset();
+    controller_->setTab(0);
+  };
+  const auto focusAndPress = [this, intent, &fail](const QString& id) {
+    const auto& ids = controller_->focusIds_;
+    const auto found = std::find(ids.begin(), ids.end(), id);
+    if (found == ids.end()) {
+      fail(QStringLiteral("shell.press"), QStringLiteral("%1 not in ring").arg(id));
+      return;
+    }
+    controller_->focusIndex_ = static_cast<int>(std::distance(ids.begin(), found));
+    controller_->focusId_ = id;
+    intent(Intent::Kind::NavPress);
+  };
+  shellSetup();
+  focusAndPress(QStringLiteral("nav.recorder"));
+  if (controller_->tab() != 2) fail(QStringLiteral("shell.press"), QStringLiteral("nav.recorder did not select tab 2"));
+  shellSetup();
+  focusAndPress(QStringLiteral("nav.arrange"));
+  if (controller_->tab() != 8) fail(QStringLiteral("shell.press"), QStringLiteral("nav.arrange did not select tab 8"));
+  shellSetup();
+  focusAndPress(QStringLiteral("nav.more"));
+  if (!controller_->tabGridOpen()) fail(QStringLiteral("shell.press"), QStringLiteral("nav.more did not open the page grid"));
+  shellSetup();
+  focusAndPress(QStringLiteral("transport.tempo"));
+  if (!controller_->tempoPopupOpen()) fail(QStringLiteral("shell.press"), QStringLiteral("transport.tempo did not open the tempo popup"));
+  shellSetup();
+  focusAndPress(QStringLiteral("transport.shift"));
+  if (controller_->panelMode() != QStringLiteral("shift")) fail(QStringLiteral("shell.press"), QStringLiteral("transport.shift did not enter the SHIFT face"));
+  shellSetup();
+  focusAndPress(QStringLiteral("transport.recmode"));
+  if (!controller_->config()->open()) fail(QStringLiteral("shell.press"), QStringLiteral("transport.recmode did not open RECMODE"));
+  shellSetup();
+  const bool songBefore = controller_->songMode();
+  focusAndPress(QStringLiteral("transport.song"));
+  if (controller_->songMode() == songBefore) fail(QStringLiteral("shell.press"), QStringLiteral("transport.song did not toggle SONG"));
+  shellSetup();
+
+  // 5. Encoder: the focused value moves by one detent and comes back.
+  reset();
+  controller_->setTab(0);
+  controller_->openTempoPopup();
+  const int tempoBefore = static_cast<int>(controller_->tempoBpm());
+  intent(Intent::Kind::EncoderTurn, 1);
+  const int tempoUp = static_cast<int>(controller_->tempoBpm());
+  intent(Intent::Kind::EncoderTurn, -1);
+  const int tempoBack = static_cast<int>(controller_->tempoBpm());
+  if (tempoUp != tempoBefore + 1) fail(QStringLiteral("encoder"), QStringLiteral("EncoderTurn(+1) did not step the focused tempo"));
+  if (tempoBack != tempoBefore) fail(QStringLiteral("encoder"), QStringLiteral("EncoderTurn(-1) did not restore the tempo"));
+
+  // 6. SHIFT: a 600 ms held frame enters the face iff the tab has one; EXIT
+  // leaves it and never leaves a face tab with an empty ring.
+  for (int tab = 0; tab < kScreenCount; ++tab) {
+    reset();
+    controller_->setTab(tab);
+    LinkStatus held;
+    held.shift = true;
+    controller_->updateShiftState(held);
+    waitMs(600);
+    controller_->updateShiftState(held);
+    const bool entered = controller_->panelMode() == QStringLiteral("shift");
+    const bool expected = controller_->tabHasShiftFace(tab);
+    if (entered != expected) {
+      fail(QStringLiteral("shift.%1").arg(tab),
+           QStringLiteral("face %1, expected %2").arg(entered ? 1 : 0).arg(expected ? 1 : 0));
+    }
+    if (entered && controller_->focusIds_.empty() && tab != 4) {
+      // tab 4 is the documented G2 gap (stage 5); every other face must have
+      // a non-empty ring.
+      fail(QStringLiteral("shift.%1").arg(tab), QStringLiteral("empty face ring"));
+    }
+    LinkStatus released;
+    controller_->updateShiftState(released);
+    if (controller_->panelMode() == QStringLiteral("shift")) {
+      fail(QStringLiteral("shift.%1").arg(tab), QStringLiteral("EXIT left the face open"));
+    }
+  }
+
+  // 7. EXIT unwinds the overlays stage 1 owns (stage 2 adds channel/TRACK FX/
+  // bank grid, where the audit already documents the gaps).
+  const auto exitCloses = [this, &fail](const QString& name, const std::function<void()>& open,
+                                        const std::function<bool()>& closed) {
+    closeOverlays();
+    controller_->setTab(0);
+    open();
+    panelExitPress();
+    if (!closed()) fail(QStringLiteral("exit.%1").arg(name), QStringLiteral("EXIT did not close it"));
+  };
+  exitCloses(QStringLiteral("tabgrid"), [this] { controller_->openTabGrid(); },
+             [this] { return !controller_->tabGridOpen(); });
+  exitCloses(QStringLiteral("tempo"), [this] { controller_->openTempoPopup(); },
+             [this] { return !controller_->tempoPopupOpen(); });
+  exitCloses(QStringLiteral("config"),
+             [this] { controller_->openConfig(QStringLiteral("metronome")); },
+             [this] { return !controller_->config()->open(); });
+  exitCloses(QStringLiteral("keypad"),
+             [this] { controller_->requestKeypad(QStringLiteral("T"), QString(), QStringLiteral("test"), 0); },
+             [this] { return !controller_->keypadOpen(); });
+  exitCloses(QStringLiteral("confirm"),
+             [this] { controller_->requestConfirm(QStringLiteral("T"), QStringLiteral("M"), QStringLiteral("OK"), QStringLiteral("test"), 0); },
+             [this] { return !controller_->confirmOpen(); });
+
+  // 8. Three-band shell reconciliation: every visible control in the nav and
+  // transport bands is a ring stop (or an explicit touch duplicate).
+  closeOverlays();
+  controller_->setTab(0);
+  const QSet<QString> shellRing(controller_->focusIds_.begin(), controller_->focusIds_.end());
+  const QSet<QString> visible = visibleIds();
+  for (const auto& id : visible) {
+    if (!(id.startsWith(QStringLiteral("nav.")) ||
+          id.startsWith(QStringLiteral("transport.")))) {
+      continue;
+    }
+    if (shellRing.contains(id)) continue;
+    // The drawn transport glyphs stay tappable on hardware, where the panel
+    // owns the same verbs; the chip is touch-only.
+    if (!controller_->noPicoMode() &&
+        (id == QStringLiteral("transport.play") || id == QStringLiteral("transport.stop") ||
+         id == QStringLiteral("transport.rec"))) {
+      continue;
+    }
+    fail(QStringLiteral("shell.visible"),
+         QStringLiteral("%1 is visible but not in the shell ring").arg(id));
+  }
+
+  // 9. Report.
+  const int warnings = static_cast<int>(warnings_.size());
+  std::printf("panel-taps: %d context(s), %d stop(s), %d failure(s), %d QML warning(s)\n",
+              static_cast<int>(contexts.size()), stops, failures, warnings);
+  for (const auto& ring : rings) std::printf("panel-taps: ring %s\n", qPrintable(ring));
+  for (const auto& warning : warnings_) std::printf("panel-taps: QML: %s\n", qPrintable(warning));
+  QCoreApplication::exit((failures == 0 && warnings == 0) ? 0 : 1);
 }
 
 void UiTapRunner::finish() {

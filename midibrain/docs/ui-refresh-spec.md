@@ -79,3 +79,33 @@ only for dedicated wide faders (mixer strip fader, master fader, channel
 popout gain). Every other numeric value in a tight cell uses `KnobChip`
 (arc + label + value) or a popup-edited value chip; enum/bool values use
 popup selectors. `ConfigSlider` is deleted and must not return.
+
+## 7. Sizing policy (stage 1)
+
+The active area is ~75.8 x 45.36 mm at 800 x 480, so one logical pixel is
+~0.095 mm. A 44 px control is only ~4.2 mm - below a comfortable fingertip.
+The policy is measured in millimetres, not in "it fits":
+
+| Token | px | Physical | Role |
+|---|---|---|---|
+| `touchPrimary` | 64 | ~6.1 mm | frequent controls (transport, destination tiles, primary verbs) |
+| `touchSecondary` | 56 | ~5.3 mm | secondary controls and list/choice tiles where practical |
+| `touch` | 44 | ~4.2 mm | legacy floor only; screens must migrate, not stay here |
+| `gap` | 8 | ~0.76 mm | base grid between controls |
+| `fontLabel` | 17 | | primary labels, nav destinations |
+| `fontSecondary` | 14 | | secondary information, chips, feedback |
+| `fontValue` | 24 | | important transport/recording values (22-28 band) |
+
+Rule: **never solve overflow by shrinking an essential font.** Remove,
+group, or relocate a control first (into a sheet, a summary button or the
+options sheet). The stage-1 migration covers the four-destination nav row and
+the transport strip; every other screen keeps its existing fixed arithmetic
+and is migrated by its own redesign stage, so `Style.touch` is deliberately
+not raised globally.
+
+Destinations keep the existing tab identifiers: Mixer 0, Routing 1,
+Recorder 2, System 3, Projects 4, MIDI 5, EQ 6, XY 7, Arrange 8. The nav shows
+four persistent destinations (Mixer, Recorder, Arrange, More) and More opens
+the six remaining pages through the existing tab-grid mechanism. The panel
+ring is updated in the same change: `nav.*` replaces the dead `tab.N` touch
+ids, and `transport.tempo` / `transport.shift` join the shell ring.

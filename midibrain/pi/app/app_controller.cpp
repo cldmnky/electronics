@@ -476,7 +476,9 @@ void AppController::setTempoBpm(int bpm) {
 void AppController::openTabGrid() {
   if (tabGridOpen_) return;
   tabGridOpen_ = true;
-  focusIndex_ = tab_;
+  const QVariantList pages = morePageTabs();
+  const int position = pages.indexOf(tab_);
+  focusIndex_ = position >= 0 ? position : 0;
   emit tabGridChanged();
   rebuildFocusIds();
 }
@@ -1416,10 +1418,10 @@ void AppController::performPanelFocus(const Intent& intent) {
     const bool grid = tabGridOpen_;
     switch (intent.kind) {
       case Intent::Kind::NavUp:
-        moveFocus(grid ? -5 : -1);
+        moveFocus(grid ? -3 : -1);
         break;
       case Intent::Kind::NavDown:
-        moveFocus(grid ? 5 : 1);
+        moveFocus(grid ? 3 : 1);
         break;
       case Intent::Kind::NavLeft:
         moveFocus(-1);
@@ -2090,12 +2092,21 @@ void AppController::activateFocus() {
     return;
   }
 
-  if (parts.size() == 2 && parts[0] == QStringLiteral("tab")) {
-    setTab(parts[1].toInt());
+  // Stage 1 nav: four persistent destinations. More opens the 3x2 page grid;
+  // every grid id is still the unchanged setTab index.
+  if (focusId == QStringLiteral("nav.mixer")) {
+    setTab(0);
     return;
   }
-  if (focusId == QStringLiteral("tab.menu")) {
-    // C3: the single TAB stop expands the 2x5 grid; the next PRESS picks.
+  if (focusId == QStringLiteral("nav.recorder")) {
+    setTab(2);
+    return;
+  }
+  if (focusId == QStringLiteral("nav.arrange")) {
+    setTab(kArrangeTabIndex);
+    return;
+  }
+  if (focusId == QStringLiteral("nav.more")) {
     openTabGrid();
     return;
   }
@@ -2103,6 +2114,14 @@ void AppController::activateFocus() {
     const int index = parts[1].toInt();
     closeTabGrid();
     setTab(index);
+    return;
+  }
+  if (focusId == QStringLiteral("transport.tempo")) {
+    openTempoPopup();
+    return;
+  }
+  if (focusId == QStringLiteral("transport.shift")) {
+    showShiftFace(!shiftFace_);
     return;
   }
   if (focusId == QStringLiteral("tempo.done")) {
@@ -2133,10 +2152,6 @@ void AppController::activateFocus() {
   }
   if (focusId == QStringLiteral("transport.recmode")) {
     openRecMode();
-    return;
-  }
-  if (focusId == QStringLiteral("transport.click")) {
-    setClickEnabled(!clickEnabled());
     return;
   }
   if (focusId == QStringLiteral("transport.song")) {
@@ -3460,8 +3475,10 @@ void AppController::rebuildFocusIds() {
     // A2 modal trap: an open keypad or confirmation has no panel focus ring,
     // so NAV/PRESS/encoder can never reach a control behind it.
   } else if (tabGridOpen_) {
-    for (int i = 0; i < kScreenCount; ++i) {
-      ids.push_back(QStringLiteral("tabgrid.") + QString::number(i));
+    // More holds six pages in a 3x2 sheet; the id is the unchanged tab index,
+    // so a press still lands on the same screen mapping.
+    for (const QVariant& tab : morePageTabs()) {
+      ids.push_back(QStringLiteral("tabgrid.") + tab.toString());
     }
   } else if (bankGridOpen_) {
     for (const auto& row : mixerVm_->bankPages()) {
@@ -3864,19 +3881,25 @@ void AppController::rebuildFocusIds() {
         break;
     }
   } else {
-    // C3 step 1: the tab row is one TAB stop, not ten ring stops. Pressing it
-    // expands the 2x5 grid above; the tab row itself stays a direct touch
-    // target (QML keeps its own focusId for the tap runner).
-    ids.push_back(QStringLiteral("tab.menu"));
+    // Stage 1 nav: the four destinations are ring stops, so the panel can walk
+    // the row it sees instead of the retired nine-way tab row. More opens the
+    // same 3x2 page grid the touch sheet shows.
+    ids.push_back(QStringLiteral("nav.mixer"));
+    ids.push_back(QStringLiteral("nav.recorder"));
+    ids.push_back(QStringLiteral("nav.arrange"));
+    ids.push_back(QStringLiteral("nav.more"));
     if (noPico_) {
       // A5: the touch transport is a panel stop only where there is no panel.
       ids.push_back(QStringLiteral("transport.play"));
       ids.push_back(QStringLiteral("transport.stop"));
       ids.push_back(QStringLiteral("transport.rec"));
     }
-    ids.push_back(QStringLiteral("transport.click"));
+    // G12: tempo and the second-face toggle are visible controls; they join
+    // the shell ring so the panel can reach them.
+    ids.push_back(QStringLiteral("transport.tempo"));
     ids.push_back(QStringLiteral("transport.recmode"));
     ids.push_back(QStringLiteral("transport.song"));
+    ids.push_back(QStringLiteral("transport.shift"));
     switch (tab_) {
       case 0: {
         ids.push_back(QStringLiteral("mixer.mode.0"));
@@ -3894,7 +3917,8 @@ void AppController::rebuildFocusIds() {
           }
           ids.push_back(QStringLiteral("track.gain"));
           ids.push_back(QStringLiteral("track.pan"));
-          ids.push_back(QStringLiteral("track.mode"));
+          // G8: "track.mode" had no widget; the MODE control lives on the
+          // Recorder screen and in the mixer strip, so the dead stop is gone.
           ids.push_back(QStringLiteral("track.arm"));
           ids.push_back(QStringLiteral("track.mute"));
           ids.push_back(QStringLiteral("track.solo"));

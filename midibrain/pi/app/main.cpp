@@ -2116,12 +2116,15 @@ int main(int argc, char* argv[]) {
   const bool wantsScreenshots =
       arguments.contains(QStringLiteral("--screenshots")) || liveScreenshots;
   const bool wantsTaps = arguments.contains(QStringLiteral("--ui-taps"));
-  if (wantsScreenshots || wantsTaps) {
+  // --panel-taps is the headless panel-intent gate (docs/panel-parity-audit.md
+  // section 5). It shares the tap run's headless/isolated setup.
+  const bool wantsPanelTaps = arguments.contains(QStringLiteral("--panel-taps"));
+  if (wantsScreenshots || wantsTaps || wantsPanelTaps) {
     // A headless proof must not depend on a GPU: the software renderer works
     // under QT_QPA_PLATFORM=offscreen on both the Mac and the Linux guest.
     qputenv("QT_QUICK_BACKEND", "software");
   }
-  if (wantsTaps) {
+  if (wantsTaps || wantsPanelTaps) {
     // The tap driver is headless by contract: never attach to a real desktop
     // (and never touch the owner's mouse) even if the caller exported a
     // platform plugin for another tool.
@@ -2131,7 +2134,7 @@ int main(int argc, char* argv[]) {
   // HOME at a disposable directory before the app reads the take/project paths,
   // so the runner can never overwrite the user's real projects or takes.
   std::unique_ptr<QTemporaryDir> tapHome;
-  if (wantsTaps) {
+  if (wantsTaps || wantsPanelTaps) {
     tapHome = std::make_unique<QTemporaryDir>();
     if (tapHome->isValid()) {
       qputenv("HOME", tapHome->path().toLocal8Bit());
@@ -2179,11 +2182,12 @@ int main(int argc, char* argv[]) {
 
   mnky::app::AppLogger::instance();
   const bool emulator = arguments.contains(QStringLiteral("--emulator")) ||
-                        (wantsScreenshots && !liveScreenshots) || wantsTaps;
+                        (wantsScreenshots && !liveScreenshots) || wantsTaps ||
+                        wantsPanelTaps;
   const bool noPico = arguments.contains(QStringLiteral("--no-pico"));
 
   std::unique_ptr<QLockFile> instanceLock;
-  if (!wantsScreenshots && !wantsTaps) {
+  if (!wantsScreenshots && !wantsTaps && !wantsPanelTaps) {
     // One mnkybox per machine: the app owns the take directory, the audio
     // device and the single Pico SPI link. Keep the lock for the whole run.
     const QString lockPath =
@@ -2244,13 +2248,17 @@ int main(int argc, char* argv[]) {
   window->setHeight(480);
 
   std::unique_ptr<mnky::app::UiTapRunner> taps;
-  if (wantsTaps) {
-    if (wantsScreenshots) {
-      std::fprintf(stderr, "mnkybox: --ui-taps and --screenshots are separate runs\n");
+  if (wantsTaps || wantsPanelTaps) {
+    if (wantsScreenshots || (wantsTaps && wantsPanelTaps)) {
+      std::fprintf(stderr, "mnkybox: --ui-taps, --panel-taps and --screenshots are separate runs\n");
       return 2;
     }
     taps = std::make_unique<mnky::app::UiTapRunner>(&controller, window);
-    taps->start();
+    if (wantsPanelTaps) {
+      taps->startPanelGate();
+    } else {
+      taps->start();
+    }
   }
 
   std::unique_ptr<ScreenshotRunner> screenshots;

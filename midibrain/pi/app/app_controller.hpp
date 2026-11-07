@@ -76,6 +76,10 @@ class AppController final : public QObject {
   Q_PROPERTY(QString clickLabel READ clickLabel NOTIFY clickChanged)
   Q_PROPERTY(bool tempoPopupOpen READ tempoPopupOpen NOTIFY tempoPopupChanged)
   Q_PROPERTY(bool tabGridOpen READ tabGridOpen NOTIFY tabGridChanged)
+  // The six pages the four-destination nav shows behind More, in visual order.
+  // Main.qml binds the sheet to the same list the ring is built from, so the
+  // nav and the panel can never disagree.
+  Q_PROPERTY(QVariantList morePageTabs READ morePageTabs CONSTANT)
   // A11: the TRACKS n-m / N label opens a page grid; a page is a jump, the two
   // arrows keep stepping one page.
   Q_PROPERTY(bool bankGridOpen READ bankGridOpen NOTIFY bankGridChanged)
@@ -155,6 +159,7 @@ class AppController final : public QObject {
   QString clickLabel() const;
   bool tempoPopupOpen() const { return tempoPopupOpen_; }
   bool tabGridOpen() const { return tabGridOpen_; }
+  QVariantList morePageTabs() const { return {1, 4, 5, 6, 7, 3}; }
   bool bankGridOpen() const { return bankGridOpen_; }
   bool takeSheetOpen() const { return takeSheetOpen_; }
   int takeSheetTrack() const { return takeSheetTrack_; }

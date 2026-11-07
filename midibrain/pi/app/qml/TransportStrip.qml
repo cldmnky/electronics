@@ -2,20 +2,22 @@ import QtQuick
 import Mnkybox 1.0
 import "components"
 
-// Persistent transport strip directly under the tab row: rolling/REC state,
-// bar:beat plus elapsed time, the touch tempo button, the metronome toggle, the
-// SHIFT chip and the notice slot.
-// The play/stop/rec glyphs are always drawn: the panel owns them in hardware
-// mode (so they carry no focus id there), but every bench and QA session with
-// no panel harness still gets a touch transport. REC pulses while the engine is
-// actually recording. The SHIFT chip is the touch twin of the panel's SHIFT
-// key: it toggles the current tab's second face, and a tab without one renders
-// it dimmed and says so.
+// Persistent transport strip under the nav row. Stage 1 sizing policy: the
+// three transport verbs are 64 px (Style.touchPrimary, ~6.1 mm), the musical
+// position and tempo are read at Style.fontValue (24 px), and the feedback
+// readout has a defined width instead of competing for the row's leftover.
+// Recording mode, metronome and the rare choices moved into the transport
+// options sheet; RECMODE stays visible next to REC whenever it changes what
+// pressing REC will do. Configure is the touch twin of the panel SHIFT key and
+// toggles the current tab's second face.
 Rectangle {
     id: root
 
     color: Style.panel
     border.width: 0
+
+    // The options sheet is local touch-only state: it is not a panel context.
+    property bool optionsOpen: false
 
     Rectangle {
         anchors.left: parent.left
@@ -31,140 +33,143 @@ Rectangle {
         anchors.fill: parent
         anchors.leftMargin: Style.marginCompact
         anchors.rightMargin: Style.marginCompact
+        anchors.topMargin: 0
+        anchors.bottomMargin: 0
         spacing: Style.gapTight
 
-        // Every width is fixed except the notice, so the row computes the
-        // leftover instead of overlapping a neighbour.
-        readonly property int positionWidth: 118
-        readonly property int fixedWidth: 32 + positionWidth + 94 +
-                                          (app.noPicoMode ? 52 : 0) + 3 * 44 +
-                                          60 + 54 + 68 + 56
-        readonly property int itemCount: app.noPicoMode ? 12 : 11
+        readonly property int positionWidth: 108
+        readonly property int readoutWidth: 100
+        // Fixed widths only; the readout below claims readoutWidth and the
+        // row never needs to compute a shrinking remainder.
+        readonly property int fixedWidth: positionWidth + 84 + 3 * Style.touchPrimary +
+                                          44 + readoutWidth + 88 + 84 +
+                                          (app.noPicoMode ? 52 : 0)
 
-        Text {
-            width: 32
-            height: parent.height
-            text: app.transportState
-            color: app.transportState === "REC" ? Style.record
-                   : (app.transportState === "PLAY" ? Style.accent : Style.textDim)
-            font.pixelSize: Style.fontSmall
-            font.weight: Font.DemiBold
-            verticalAlignment: Text.AlignVCenter
-        }
-        Text {
+        // Musical position is the primary readout of the strip: bar:beat at
+        // 24 px, elapsed time as 14 px secondary information on the second
+        // line. The full controller string is "BARS:BEATS:TICKS / MM:SS".
+        Item {
             width: stripRow.positionWidth
             height: parent.height
-            text: app.positionText
-            color: Style.text
-            font.pixelSize: Style.fontBody
-            font.weight: Font.DemiBold
-            verticalAlignment: Text.AlignVCenter
+            readonly property var parts: app.positionText.split(" / ")
+
+            Column {
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
+                Text {
+                    width: parent.width
+                    text: parent.parent.parts[0]
+                    color: Style.text
+                    font.pixelSize: Style.fontValue - 2
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+                Row {
+                    width: parent.width
+                    spacing: 4
+                    Text {
+                        text: parent.parent.parent.parts.length > 1
+                              ? parent.parent.parent.parts[1] : ""
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSecondary
+                    }
+                    // SONG mode stays a permanent, visible indication; the
+                    // tag is the touch toggle and the panel's ring stop.
+                    Rectangle {
+                        width: 48
+                        height: 22
+                        radius: 4
+                        color: app.songMode ? Style.accent : Style.panelDark
+                        border.width: Style.outlineWidth
+                        border.color: app.songMode ? Style.accent : Style.outline
+                        property string focusId: "transport.song"
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "SONG"
+                            color: app.songMode ? Style.panelDark : Style.textDim
+                            font.pixelSize: Style.fontSmall
+                            font.weight: Font.DemiBold
+                        }
+                        TapHandler {
+                            onTapped: app.toggleSongMode()
+                        }
+                    }
+                }
+            }
         }
-        // A7: tempo is a control, not a readout. The chevron opens the TEMPO
+        // Tempo is a control, not a readout. The chevron opens the TEMPO
         // popup (40..240 slider, +-1 buttons, TAP).
         TouchButton {
-            width: 94
-            height: Style.touch
-            text: app.tempoText
-            textSize: Style.fontSmall
+            width: 84
+            height: Style.touchPrimary
+            // The strip shows the BPM value; the popup carries the full label.
+            text: app.tempoText.split(" ")[0]
+            textSize: Style.fontLabel
             variant: "ghost"
             chevron: "down"
             focusId: "transport.tempo"
             onClicked: app.openTempoPopup()
         }
-        // B5: the bare-Pi marker is a chip, not a badge. Tapping it explains
-        // what is absent and what stays live, with an OPEN SYSTEM action.
-        Rectangle {
-            width: app.noPicoMode ? 52 : 0
-            height: Style.touch
-            visible: app.noPicoMode
-            radius: Style.corner
-            color: Style.panelDark
-            border.width: Style.outlineWidth
-            border.color: Style.record
-            property string focusId: "transport.nopico"
-
-            Text {
-                anchors.centerIn: parent
-                text: "NO PICO"
-                color: Style.record
-                font.pixelSize: Style.fontSmall
-                font.weight: Font.DemiBold
-            }
-            TapHandler {
-                onTapped: app.showNoPicoInfo()
-            }
-        }
-        // A5: always available. The panel ring owns these stops only in
-        // no-Pico mode, where no panel exists to press them; the touch glyphs
-        // still carry a focus id in hardware mode so the tap gate (and a
-        // finger) can reach the same surface the panel uses.
         TransportGlyphButton {
-            width: 44
-            height: Style.touch
+            width: Style.touchPrimary
+            height: Style.touchPrimary
             glyph: "play"
             checked: app.rolling
             focusId: "transport.play"
             onClicked: app.play()
         }
         TransportGlyphButton {
-            width: 44
-            height: Style.touch
+            width: Style.touchPrimary
+            height: Style.touchPrimary
             glyph: "stop"
             checked: !app.rolling
             focusId: "transport.stop"
             onClicked: app.stop()
         }
         TransportGlyphButton {
-            width: 44
-            height: Style.touch
+            width: Style.touchPrimary
+            height: Style.touchPrimary
             glyph: "rec"
             checked: app.recording
             recording: app.recording
-            // W2: the long press opens the NOW/COUNT-IN/PUNCH picker; the
-            // RECMODE readout beside the glyph is the focusable twin.
             focusId: "transport.rec"
             onClicked: app.recToggle()
             onLongPressed: app.openRecMode()
         }
-        // W2 readout: which RECMODE is armed, next to the REC glyph.
-        Text {
-            width: 60
-            height: parent.height
-            // Panel focus stop: PRESS opens the RECMODE picker (the REC glyph's
-            // long press is the touch gesture for the same popup).
+        // RECMODE badge: always states what pressing REC will do. NOW is the
+        // default and stays dim; COUNT-IN and PUNCH are accent because they
+        // change the REC behaviour. Tap opens the picker.
+        Rectangle {
+            width: 44
+            height: Style.touchPrimary
+            radius: Style.corner
+            color: Style.panelDark
+            border.width: app.recModeText === "NOW" ? Style.outlineWidth : 2
+            border.color: app.recModeText === "NOW" ? Style.outline : Style.accent
             property string focusId: "transport.recmode"
-            text: app.recModeText
-            color: app.recModeText === "NOW" ? Style.textDim : Style.accent
-            font.pixelSize: Style.fontSmall
-            font.weight: Font.DemiBold
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
+            readonly property string shortText: app.recModeText === "COUNT-IN" ? "CIN"
+                                                : (app.recModeText === "PUNCH" ? "PCH" : "NOW")
+
+            Text {
+                anchors.centerIn: parent
+                width: parent.width - 4
+                text: parent.shortText
+                color: app.recModeText === "NOW" ? Style.textDim : Style.accent
+                font.pixelSize: Style.fontSecondary
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+            }
             TapHandler {
                 onTapped: app.openRecMode()
             }
         }
-        // W6: SONG mode governs playback - on = the ARRANGE clip lanes, off =
-        // the free Active-take path. Persisted per project; the panel ring stops
-        // here and the touch twin is the same button.
-        TouchButton {
-            width: 54
-            height: Style.touch
-            text: "SONG"
-            textSize: Style.fontSmall
-            variant: "ghost"
-            checked: app.songMode
-            focusId: "transport.song"
-            onClicked: app.toggleSongMode()
-        }
-        // C6: the slot is an inset well with severity colour, not a floating
-        // label. B6: an ordinary value readout renders here (accent, right
-        // aligned, 1.5 s TTL from the controller); the floating band is kept
-        // for the fullscreen EQ face, which has no strip.
+        // Defined feedback area: the controller's notice or the transient
+        // value readout replaces its content, never the row's layout.
         Rectangle {
-            width: Math.max(0, stripRow.width - stripRow.fixedWidth -
-                               stripRow.spacing * (stripRow.itemCount - 1))
-            height: Style.touch
+            width: stripRow.readoutWidth
+            height: Style.touchPrimary
             radius: Style.corner
             color: Style.panelDark
             border.width: Style.outlineWidth
@@ -174,14 +179,14 @@ Rectangle {
 
             Text {
                 anchors.fill: parent
-                anchors.leftMargin: 11
-                anchors.rightMargin: 11
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
                 text: parent.showingValue
                       ? (app.valuePopupLabel + "  " + app.valuePopupText)
                       : app.noticeText
                 color: parent.showingValue ? Style.accent
                        : (app.noticeKind === "info" ? Style.accent : Style.record)
-                font.pixelSize: Style.fontSmall
+                font.pixelSize: Style.fontSecondary
                 font.weight: parent.showingValue ? Font.DemiBold : Font.Normal
                 horizontalAlignment: parent.showingValue ? Text.AlignRight
                                                          : Text.AlignLeft
@@ -191,36 +196,64 @@ Rectangle {
                 elide: Text.ElideRight
             }
         }
-        // B1: the SHIFT face is reachable by touch. Dimmed on a tab without a
-        // second face, and a tap there names the reason (D3).
+        // Configure is the visible touch action that opens the second face.
+        // PRIMARY (not "< PRIMA...") is the return label: it fits in 84 px at
+        // 14 px and names the face it returns to.
         TouchButton {
-            width: 68
-            height: Style.touch
-            text: app.panelMode === "shift" ? "< PRIMARY" : "SHIFT >"
-            textSize: Style.fontSmall
+            width: 88
+            height: Style.touchPrimary
+            text: app.panelMode === "shift" ? "PRIMARY" : "Configure"
+            textSize: Style.fontSecondary
             variant: "ghost"
             checked: app.panelMode === "shift"
             focusId: "transport.shift"
             opacity: app.tabHasShiftFace(app.tab) ? 1.0 : 0.4
             onClicked: app.showShiftFace(app.panelMode !== "shift")
         }
+        // One clear affordance for the moved choices.
         TouchButton {
-            width: 56
-            height: Style.touch
-            text: app.clickLabel
-            textSize: Style.fontSmall
+            width: 84
+            height: Style.touchPrimary
+            text: "Options"
+            textSize: Style.fontSecondary
             variant: "ghost"
-            checked: app.clickEnabled
-            focusId: "transport.click"
-            onClicked: app.setClickEnabled(!app.clickEnabled)
-            // A8: a long press opens the metronome popup; a tap only toggles.
-            onLongClicked: app.openConfig("metronome")
+            chevron: root.optionsOpen ? "down" : "up"
+            onClicked: root.optionsOpen = !root.optionsOpen
         }
-        // C5: the dirty indicator lives once, next to the project name; the
-        // transport strip keeps the 8 px end margin only.
-        Item {
-            width: 0
-            height: parent.height
+        // B5: the bare-Pi marker is a chip, not a badge. Touch-only; it is not
+        // a panel stop (there is no panel in no-Pico mode), so it carries no
+        // focusId and the tap gate reaches it through its own scenario below.
+        Rectangle {
+            width: app.noPicoMode ? 52 : 0
+            height: Style.touchPrimary
+            visible: app.noPicoMode
+            radius: Style.corner
+            color: Style.panelDark
+            border.width: Style.outlineWidth
+            border.color: Style.record
+
+            // Two 11 px lines rather than one clipped "NO PICO": the chip is
+            // the at-a-glance bare-Pi marker, not a shrunken label.
+            Column {
+                anchors.centerIn: parent
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "NO"
+                    color: Style.record
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "PICO"
+                    color: Style.record
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
+                }
+            }
+            TapHandler {
+                onTapped: app.showNoPicoInfo()
+            }
         }
     }
 }
