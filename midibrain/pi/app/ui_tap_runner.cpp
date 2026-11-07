@@ -782,6 +782,50 @@ void UiTapRunner::buildScenarios() {
                controller_->config()->takeTargetRow() == 0;
       },
       QStringLiteral("... did not open the take actions config")});
+  // Owner bug B (physical path): the row "..." menu -> NEW TRACK FROM THIS
+  // TAKE -> keypad DONE -> MOVE must add a track, land the bank on the page
+  // that shows it and leave the take ACTIVE on the new strip.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("clips.recorder.newtrack"), openRecorderRows,
+      QStringLiteral("recorder.take.menu"), {}, {}, false, false, false, {},
+      {QStringLiteral("recorder.take.menu.0"),
+       QStringLiteral("config.takeaction.6"), QStringLiteral("keypad.done"),
+       QStringLiteral("config.trackfromtake.0")},
+      [this] {
+        return controller_->mixer()->stripCount() == 7 &&
+               controller_->mixer()->trackIndex() == 6 &&
+               controller_->mixer()->bank() == 2 &&
+               !controller_->recorder()->activeTakePath(6).isEmpty();
+      },
+      QStringLiteral("NEW TRACK FROM TAKE created no track, stayed on page 1 "
+                     "or lost the take")});
+  // Owner bug A (physical path): a discovered plugin row selected in the FX
+  // slot list must leave the slot with a live instance ("active" note), not a
+  // selected-but-dead entry. Only added when the build really has a plugin;
+  // a zero-CLAP device keeps the honest DELAY/REVERB-only list.
+  if (controller_->mixer()->fxChoiceLabels().size() >
+      MixerViewModel::kFxChoiceBuiltinCount) {
+    const auto openTrackFx = [this] {
+      closeOverlays();
+      controller_->showShiftFace(false);
+      controller_->setTab(0);
+      primeMixerTracks();
+      controller_->mixer()->setTrackIndex(0);
+      controller_->openChannel(0);
+      controller_->openTrackFx(0);
+    };
+    scenarios_.push_back(Scenario{
+        QStringLiteral("mixer.trackfx.plugin"), openTrackFx,
+        QStringLiteral("trackfx."), {}, {}, false, false, false, {},
+        {QStringLiteral("trackfx.fx1.select"),
+         QStringLiteral("config.fxslot.3"), QStringLiteral("config.ok")},
+        [this] {
+          return controller_->mixer()->fxNameAt(0, 0) != QStringLiteral("NONE") &&
+                 controller_->mixer()->fxSlotNote(0, 0).contains(
+                     QStringLiteral("active"));
+        },
+        QStringLiteral("selecting a discovered plugin left a dead FX slot")});
+  }
   scenarios_.push_back(Scenario{
       QStringLiteral("clips.recorder.wave"), openRecorderRows,
       QStringLiteral("recorder.take.wave.0"), {},

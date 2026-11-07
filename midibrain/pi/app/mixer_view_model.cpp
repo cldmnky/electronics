@@ -14,6 +14,12 @@
 namespace mnky::app {
 namespace {
 
+// The FxManager instance created for a retry when the slot names a plugin but
+// no host is live. AudioGlue loads at the device's actual rate on the normal
+// path; this retry only runs when that path produced no instance, so the
+// engine's 48 kHz project rate is the only value available here.
+constexpr double kClapSampleRate = 48000.0;
+
 QString panText(double pan) {
   const int percent = static_cast<int>(std::lround((pan - 0.5) * 200.0));
   if (percent == 0) return QStringLiteral("C");
@@ -688,7 +694,25 @@ bool MixerViewModel::setFxChoiceAt(int slot, int index, int choice) {
   if (pluginIndex >= plugins.size()) return false;
   const auto& plugin = plugins[pluginIndex];
   if (fx.id == plugin.id) {
-    // Re-selecting the same plugin is a no-op, not another instance.
+    if (clap_->trackEffectLoaded(slot, index)) {
+      // Re-selecting a live plugin is a no-op, not another instance.
+      notifyFxChanged(slot);
+      return true;
+    }
+    // The slot names this plugin but no instance is running (an earlier load
+    // failed, the host was torn down, the module was replaced on disk). The
+    // selector is the owner's enable affordance, so re-selecting the same
+    // entry must retry the instance instead of silently doing nothing.
+    if (!clap_->loadTrackEffect(slot, index, plugin.id, kClapSampleRate,
+                                audio::kBlockSize)) {
+      const std::string error = clap_->trackEffectError(slot, index);
+      fxChoiceRefusal_ =
+          QStringLiteral("NOT LOADED - ") +
+          (error.empty() ? QStringLiteral("plugin refused to load")
+                         : QString::fromStdString(error));
+      notifyFxChanged(slot);
+      return false;
+    }
     notifyFxChanged(slot);
     return true;
   }
@@ -709,7 +733,20 @@ bool MixerViewModel::setFxChoiceAt(int slot, int index, int choice) {
   fx.params.reserve(plugin.params.size());
   for (const auto& param : plugin.params) fx.params.push_back(param.value);
   fx.bypass = false;
+  const MixerModel::FxSlot previous = model_.fxSlot(slot, index);
   model_.setFxSlot(slot, index, std::move(fx));
+  // The sink instantiates the host synchronously (AudioGlue::applyTrackFxSlot).
+  // If that failed, the exact reason is recorded on the FxManager; put the
+  // previous slot back instead of leaving a selected-but-dead entry in the
+  // rack that reads as "can be selected but never activates".
+  const std::string loadError = clap_->trackEffectError(slot, index);
+  if (!clap_->trackEffectLoaded(slot, index) && !loadError.empty()) {
+    model_.setFxSlot(slot, index, previous);
+    fxChoiceRefusal_ = QStringLiteral("NOT LOADED - ") +
+                       QString::fromStdString(loadError);
+    notifyFxChanged(slot);
+    return false;
+  }
   notifyFxChanged(slot);
   return true;
 }

@@ -1230,3 +1230,53 @@ null` (the ArrangeScreen pattern, so Qt never scales/rotates the popup) and
 pins the rotation axis at zero. Only `onScaleChanged` calls `zoomBy`; a 2%
 threshold keeps finger jitter still and the inverse factor makes fingers-apart
 zoom in. Single-finger IN/OUT drags are untouched (a pinch needs two points).
+
+## Two physical bugs: FX activation + NEW TRACK FROM TAKE (fix/editor-pinch-apply-undo)
+
+**FX activation: a selected plugin entry can no longer stay dead.** The
+full-app probe (`appClapActivationAudioTests`) drives the real path - the
+`ConfigPopupModel` fxslot selector, the `MixerModel` sink and
+`AudioGlue`'s emulator driver - and measures the main-bus peak: selecting the
+discovered plugin and writing its Gain card to -24 dB drops the strip from
+0.0212 to <0.005, BYPASS restores it and un-bypassing re-engages the same
+instance. That path was already live; the owner's "can be selected but does
+nothing" state is the slot that names a plugin while no host instance exists
+(a load that failed earlier, a host teardown, a module replaced on disk).
+`MixerViewModel::setFxChoiceAt` used to treat re-selecting that same entry as a
+silent no-op, and a sink load failure still left the id selected. Now:
+re-selecting a plugin whose instance is not live retries `loadTrackEffect()`;
+a first selection that fails to instantiate (the sink records the exact
+`FxManager` error) is rolled back to the previous slot and the selector shows
+`NOT LOADED - <reason>`, so the picker cannot leave a selected-but-dead entry.
+Zero discovered plugins keeps the honest "no CLAP plugins found - DELAY/REVERB
+only" state and the built-in rack is unchanged (its audio test still passes).
+
+**NEW TRACK FROM TAKE: the track now lands in the mixer's view.** The action
+did create the track (count grew) but never selected it, so with
+`kStripsPerBank = 3` the mixer stayed on page 1 while the new strip appeared
+on a later page - reading as "no new track". `createTrackFromTake()` now calls
+`mixerVm_->setTrackIndex(slot)` after the add; `setSelectedStrip()` moves the
+bank to the row's page, so the strip the notice names is the strip on screen.
+The gate asserts stripCount + 1, selected slot 6, bank 2 and the take ACTIVE on
+the new track, and the ui-tap pass taps the whole owner path: row "...",
+`config.takeaction.6`, `keypad.done`, `config.trackfromtake.0`.
+
+Gates (macOS, Qt 6.12.0, clean `/tmp/e3-build`, `-Wall -Wextra -Werror`):
+configure+build exit 0, **zero warnings**; `ctest` **22/22**; app logic
+**1422 checks, 0 failures** (adds the two tests above); `--ui-taps`
+**714 taps, 0 QML warnings, 0 failures** (adds `clips.recorder.newtrack` and
+`mixer.trackfx.plugin`); `--panel-taps` **23 contexts / 349 stops, 0 failures**;
+`--screenshots /tmp/e3-shots` **166 steps, 0 failures**. Shots read:
+`45-track-fx-plugin.png` shows FX1 mnkygain "active" with its own four cards and
+FX2 REVERB; `45-popup-fxslot-plugin.png` shows MNKYGAIN checked in the slot
+list; `46-take-new-track(-result).png` show the MOVE/KEEP step and the recorder
+on TRACK 09 with the take ACTIVE.
+
+Physical checklist additions: (1) select the discovered plugin on a track whose
+take is playing, set WET 100 %, confirm its gain/param chip changes the sound
+and BYPASS mutes the effect; (2) with the plugin selected, re-open the slot list
+and tap the same plugin - the note must read "active", never "NOT LOADED", and
+a failed module must leave the selector on its previous entry with the exact
+reason; (3) on a 6+ track project tap row "..." > NEW TRACK FROM THIS TAKE >
+DONE > MOVE and confirm the transport notice names the same TRACK nn the mixer
+shows, with the take ACTIVE and the source track dry.

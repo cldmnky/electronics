@@ -25,6 +25,7 @@
 
 #include "../../session/session.hpp"
 #include "app_context.hpp"
+#include "app_controller.hpp"
 #include "app_state.hpp"
 #include "arrange_logic.hpp"
 #include "audio/engine.hpp"
@@ -77,6 +78,9 @@ void check(bool condition, const std::string& name) {
 void checkNear(double actual, double expected, double tolerance, const std::string& name) {
   check(std::abs(actual - expected) <= tolerance, name);
 }
+
+void appClapActivationAudioTests();
+void newTrackFromTakeTests();
 
 void checkEqual(const std::string& actual, const std::string& expected,
                 const std::string& name) {
@@ -3940,6 +3944,163 @@ void trackModeTests() {
         "the measure boundary maps ticks to 1-based bars");
 }
 
+// Owner bug A, physical path: selecting a discovered plugin in the FX popup
+// must instantiate it through the app's own rack sink and change the sound. The
+// probe renders through AudioGlue's emulator driver (the same Engine the device
+// runs) instead of attaching an effect to a bare Engine, which is why the old
+// tests could stay green while the app slot was silent.
+void appClapActivationAudioTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  FxManager fx;
+  PerformanceModel performance;
+  EqModel eq;
+  AudioGlue audio(mixer, fx, performance, state, true);
+  MixerViewModel view(mixer, settings, eq);
+  view.setClapHost(&fx);
+
+  const auto plugins = fx.plugins();
+  if (plugins.empty()) {
+    check(view.fxSlotNote(0, 0).isEmpty() ||
+              !view.fxSlotNote(0, 0).contains(QStringLiteral("NOT LOADED")),
+          "a zero-CLAP device offers no dead plugin row");
+    return;
+  }
+  const auto plugin = plugins.front();
+  if (plugin.id != "com.cldmnky.mnkygain") return;  // needs the reference gain DSP
+
+  check(view.addTrack(0, "drums", 0, false, 0), "the probe track exists");
+  mixer.setMode(0, kTrackModeLive);
+  mixer.setGainDb(0, 0.0f);
+  check(audio.start(), "the emulator backend starts");
+
+  // The peak meter is a read-and-decay hold. Drain the previous phase's hold
+  // until it falls under the current block level before measuring, or the dry
+  // peak would be read back as the wet one.
+  const auto settlePeak = [&audio] {
+    for (int i = 0; i < 24; ++i) {
+      (void)audio.peak(0);
+      std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    }
+  };
+  const auto samplePeak = [&audio] {
+    float peak = 0.0f;
+    for (int i = 0; i < 40; ++i) {
+      peak = std::max(peak, audio.peak(0));
+      std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    }
+    return peak;
+  };
+  const float dry = samplePeak();
+  check(dry > 0.01f, "the emulator input reaches the main bus before the FX");
+
+  ConfigPopupModel popup(state, mixer, settings, eq);
+  popup.setMixer(&view);
+  popup.setFxTarget(0, 0);
+  check(popup.openKind(QStringLiteral("fxslot")), "the FX slot list opens");
+  popup.setFxSlotChoice(MixerViewModel::kFxChoicePlugin);
+  check(view.fxSlotNote(0, 0).contains(QStringLiteral("active")),
+        "the plugin is instantiated when it is selected (not only at load)");
+  view.setFxParamAt(0, 0, 0, -24.0);
+  check(!view.fxParams(0, 0).isEmpty(),
+        "the reference plugin's own parameter cards are present");
+
+  settlePeak();
+  const float wet = samplePeak();
+  check(wet < dry * 0.25f,
+        "a selected plugin audibly processes the strip (gain -24 dB)");
+
+  view.setFxBypassAt(0, 0, true);
+  settlePeak();
+  const float bypassed = samplePeak();
+  check(bypassed > dry * 0.5f,
+        "BYPASS restores the dry strip while the instance stays loaded");
+  view.setFxBypassAt(0, 0, false);
+  settlePeak();
+  const float enabled = samplePeak();
+  check(enabled < dry * 0.25f,
+        "un-bypassing the slot re-engages the same plugin instance");
+  // A slot that names a plugin but holds no live instance (a failed earlier
+  // load, a host teardown) must retry when the owner selects the same entry
+  // again; the pre-fix no-op left the entry reading as selected but dead.
+  fx.unloadTrackEffect(0, 0);
+  check(!fx.trackEffectLoaded(0, 0), "the probe slot lost its instance");
+  const int choice = view.fxChoiceAt(0, 0);
+  check(choice >= MixerViewModel::kFxChoicePlugin,
+        "the slot still names the discovered plugin");
+  check(view.setFxChoiceAt(0, 0, choice),
+        "re-selecting the same plugin succeeds (it is not a silent no-op)");
+  check(fx.trackEffectLoaded(0, 0),
+        "re-selecting a dead plugin entry retries the host instance");
+  popup.cancel();
+  audio.stop();
+}
+
+// Owner bug B: NEW TRACK FROM TAKE must grow the mixer's track list, land the
+// bank on the new strip and keep the take ACTIVE on it. Drives the same public
+// controller/model calls the recorder's "..." menu and MOVE button use.
+void newTrackFromTakeTests() {
+  AppController controller(true, true);
+  MixerViewModel* mixer = controller.mixer();
+  const char* names[] = {"drums", "bass", "keys", "gtr", "vox", "perc"};
+  for (int slot = 0; slot < 6; ++slot) {
+    mixer->addTrack(slot, QString::fromLatin1(names[slot]), slot, false, 0);
+  }
+  mixer->setBank(0);
+  const int before = mixer->stripCount();
+  check(before == 6, "the fixture mixer has six tracks");
+
+  const auto base = std::filesystem::temp_directory_path() /
+                    ("mnkybox-new-track-take-" +
+                     std::to_string(std::chrono::steady_clock::now()
+                                        .time_since_epoch()
+                                        .count()));
+  std::error_code error;
+  std::filesystem::create_directories(base, error);
+  const auto wav = base / "beat.wav";
+  writeMinimalWav(wav);
+  check(controller.recorder()->importTake(QString::fromStdString(wav.string())).isEmpty(),
+        "the take fixture imports");
+  int row = -1;
+  for (int candidate = 0; candidate < controller.recorder()->takes()->count();
+       ++candidate) {
+    if (controller.recorder()->takeNameAt(candidate) == QStringLiteral("beat.wav")) {
+      row = candidate;
+      break;
+    }
+  }
+  check(row >= 0, "the imported take is listed");
+  if (row < 0) {
+    std::filesystem::remove_all(base, error);
+    return;
+  }
+
+  controller.openTakeActions(row);
+  controller.config()->chooseTakeAction(6);
+  check(controller.keypadOpen(), "NEW TRACK FROM THIS TAKE asks for a name");
+  controller.keypadAccept(QStringLiteral("beat"));
+  check(controller.config()->kind() == QStringLiteral("trackfromtake"),
+        "the MOVE / KEEP ON SOURCE step opens");
+  controller.config()->chooseTrackFromTake(0);
+
+  check(mixer->stripCount() == before + 1,
+        "NEW TRACK FROM TAKE creates a real track");
+  check(mixer->trackIndex() == 6, "the mixer selects the new track's slot");
+  check(mixer->bank() == 2,
+        "the mixer bank lands on the page that shows the new track");
+  check(mixer->index(0, 0).isValid() &&
+            mixer->data(mixer->index(6, 0), MixerViewModel::NameRole).toString() ==
+                QStringLiteral("beat"),
+        "the new track carries the keypad name");
+  const QString active = controller.recorder()->activeTakePath(6);
+  check(active.endsWith(QStringLiteral("beat.wav")),
+        "the new track plays the take (ACTIVE)");
+  check(controller.recorder()->activeTakePath(0).isEmpty(),
+        "MOVE leaves the source track without that take");
+  std::filesystem::remove_all(base, error);
+}
+
 void styleTests() {
   QFile file(QStringLiteral(":/qml/Style.qml"));
   check(file.open(QIODevice::ReadOnly | QIODevice::Text), "QML Style resource opens");
@@ -4104,6 +4265,8 @@ void arrangeTests() {
 }
 
 int runAll() {
+  appClapActivationAudioTests();
+  newTrackFromTakeTests();
   logicTests();
   textBufferTests();
   projectTests();

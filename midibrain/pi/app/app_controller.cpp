@@ -4626,6 +4626,10 @@ void AppController::createTrackFromTake(int row, const QString& name, bool move)
   if (move) settings_.setActiveTake(recorderVm_->selectedTrack(), {});
   recorderVm_->resyncActiveTakes();
   mixerVm_->refresh();
+  // Select the new strip: setSelectedStrip also lands the bank on the page
+  // that shows it. Without this the track exists but page 1 stays visible
+  // (kStripsPerBank = 3), so the owner's tap reads as "no track was created".
+  mixerVm_->setTrackIndex(slot);
   recorderVm_->tracksChanged();
   timelineVm_->refresh();
   if (move) {
