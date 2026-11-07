@@ -112,13 +112,28 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
   If every queued message is a Note Off (or already in flight), the new message
   is refused instead; a queued Note Off is never sacrificed. Realtime overflow
   drops the new realtime byte and counts it.
-- Clocked MIDI FX output (arp, repeater, LFO, generator chains, routed sends)
-  goes through the same `midi_emit()` path, so a clock-derived note cannot block
-  the clock path.
+- Clocked MIDI FX output (arp, repeater, LFO, delay taps, generator chains) is
+  TIMESTAMPED, not emitted at the main loop's convenience. The route engines
+  run in the main loop, but every event they generate carries the absolute grid
+  deadline (`clock_tick_deadline_ns`) of the tick being serviced and enters
+  `MidiTxScheduler::enqueueAt()`. The scheduler owns a third bounded queue (32
+  deadline-ordered messages per output, no heap) and a grid-time pump:
+  `releaseDue(grid_now_ns)` promotes each due event into the normal class ahead
+  of ordinary not-yet-started messages, but never ahead of a realtime byte.
+  `nextByte()` still selects realtime first, so F8/FA/FC/FB is never displaced
+  and a byte in flight is never cut. The clock alarm enqueues its F8 and then
+  pumps the queue with the same tick deadline, so a clock-derived note for tick
+  N can never run ahead of tick N's F8; the worst residual is the scheduler's
+  byte-boundary budget (tick byte + the remaining bytes of the one message
+  already on the wire, <= 3 byte times = 0.96 ms), not main-loop scheduling.
+  Realtime statuses are refused on the timed path. The shared `midifx` core is
+  untouched: only the emission timing changed.
 - Diagnostics: the 1 Hz `[stat]` line reports `mtx=n+r/n+r` (normal + realtime
-  depth for OUT1/OUT2), `mtxdrop` (whole normal messages dropped), `mtxrej`
-  (new messages refused because only Note Offs were queued), `mtxrt` (realtime
-  bytes dropped) and `miss` (clock grid ticks skipped).
+  depth for OUT1/OUT2), `fxq=n+n` (pending timed FX messages per output),
+  `fxdrop` (timed FX messages dropped/refused), `mtxdrop` (whole normal
+  messages dropped), `mtxrej` (new messages refused because only Note Offs were
+  queued), `mtxrt` (realtime bytes dropped) and `miss` (clock grid ticks
+  skipped).
 
 ## SPI link design (non-blocking)
 
@@ -175,11 +190,52 @@ full system (Pico + Pi + DAW + NVMe + SPI traffic).
 | 14 | Follow under wander | Tracks slow drift, phase bounded | Emulated +/-1.5 bpm sinusoid over 8 s | simulated: 0.455 ms max phase after 2 s |
 | 15 | Follow holdover | Frequency stable through a dropout, clock never stops | 550 ms hard dropout; count holdover pulses and interval error | simulated: 26 pulses, 0.0016 % error, no gap |
 | 16 | Follow smooth resync | Resync within a few beats, no time-skip on TRS | 121 bpm source returns after the dropout; time to 2 ms and max interval step | simulated: 0.02 beats, 0.196 ms max step, no gap |
+| 17 | Clocked FX timing parity | FX event released at its tick's grid deadline; F8 never displaced | Host harness: FX note stamped at tick N, F8 first; 2 h load matrix with FX traffic | simulated: note +0.320 ms (1 byte) typical, +1.320 ms structural worst (tick byte + 2 remaining bytes of an in-flight message), never early, F8 always first, 0 FX dropped |
+| 18 | Single-core full load | <= 1 ms clock error, 0 dropped F8, 0 lost FX | clock_sim one-core model, 2 h x 20/60/120/180/300 bpm x both outputs, note/CC + SPI churn (1 abort in 8) + clocked FX traffic | simulated: 0.360 ms max clock error, 0.0000 % tempo error, 0 dropped F8, 0 dropped FX |
+
+## DECISION: single core is sufficient, dual-core deferred (P2)
+
+The review's rule was "two cores only if load tests demand it". The full load
+matrix was run on ONE core's model (the same `clock_sim` alarm/UART/SPI models
+plus the firmware `MidiTxScheduler` timed-release path and clocked FX traffic):
+2 h per tempo, both TRS outputs, note/CC traffic every beat, a 32-byte SPI
+transaction every 50 ms with one aborted transfer in eight, and a clocked FX
+step (note-on + gate note-off, both timestamped) every eighth note. Virtual
+time, so every scenario is deterministic and exhaustive rather than sampled.
+
+```
+tempo  out  F8_pulses  tempo_err%  clock_max_ms  FX_msgs  fx_max_ms  fx_min_ms  F8_drop  FX_drop  verdict
+ 20.0  1        57601     0.0000       0.3602     9600     1.3202     0.3210        0        0  PASS
+ 20.0  2        57601     0.0000       0.3602     9600     1.3202     0.3210        0        0  PASS
+ 60.0  1       172801     0.0000       0.3602    28800     1.3202     0.3202        0        0  PASS
+ 60.0  2       172801     0.0000       0.3602    28800     1.3202     0.3202        0        0  PASS
+120.0  1       345601     0.0000       0.3602    57600     1.3202     0.3202        0        0  PASS
+120.0  2       345601     0.0000       0.3602    57600     1.3202     0.3202        0        0  PASS
+180.0  1       518401     0.0000       0.3602    86400     1.3202     0.3202        0        0  PASS
+180.0  2       518401     0.0000       0.3602    86400     1.3202     0.3202        0        0  PASS
+300.0  1       864001     0.0000       0.3602   144000     1.3202     0.3202        0        0  PASS
+300.0  2       864001     0.0000       0.3602   144000     1.3202     0.3202        0        0  PASS
+```
+
+Verdict: **single core sufficient - dual-core deferred.** Worst-case clock
+error is 0.360 ms (budget 1 ms) and 0 F8 were dropped; tempo error is 0.0000 %
+over 2 h. The FX column is the deadline-to-first-byte error of a clock-derived
+message: 0.320 ms typical (one tick byte ahead of it) and 1.320 ms worst case,
+which is exactly the byte-boundary budget (alarm phase + tick byte + the two
+remaining bytes of a 3-byte message already on the wire). It is a MIDI framing
+bound, not a second timing regime: no FX event was early, none was dropped, and
+the F8 for every tick was always ahead of its clock-derived events. The
+measured worst case leaves > 0.6 ms of margin on the clock budget, so a second
+core would add a queue/lock boundary to the hot path without buying accuracy.
+The `RP2350`'s second core stays unused; revisit only if a bench run with the
+real Pi, NVMe and USB stack shows `[stat] miss=` (skipped grid ticks) or clock
+error > 1 ms with `fxq` at its 32-message ceiling.
 
 Run the host side with `make host` (or `make test`) from `midibrain/`. The
 host test simulates 500,000 clock ticks at 120 bpm against the exact rational
-grid and exercises TX priority, realtime interleave and overflow in
-`protocol_test.cpp`.
+grid and exercises TX priority, realtime interleave, timed FX release and
+overflow in `protocol_test.cpp`. `fx_timing_test.cpp` measures the timestamped
+release against the virtual wire and runs the full-load matrix above
 
 See `docs/protocol.md` for the link contract, the CONTROL_EVENT registry and
 the prototype limitations (no SysEx forwarding, no scheduled-output timeline,

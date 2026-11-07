@@ -192,6 +192,11 @@ mb::ClockFollow clock_follow;
 mb::ClockScheduler clock_scheduler;
 volatile uint32_t clock_skipped = 0;
 uint32_t clock_ticks = 0;
+// Absolute grid deadline (ns) of the tick index currently in clock_ticks. The
+// clock alarm writes it before the main loop can service that tick, so a
+// clocked FX event generated in the main loop is stamped with the grid point
+// it belongs to rather than with the moment the loop happened to run.
+volatile uint64_t clock_tick_deadline_ns = 0;
 uint8_t led_mask = 0;
 // Record-arm state, toggled by REC/OVERDUB press edges (a rule the Pi shares:
 // both sides toggle on the same deduped press edge).
@@ -338,11 +343,48 @@ void midi_emit(uint8_t port, const uint8_t* data, uint32_t n) {
   restore_interrupts(saved);
 }
 
+// Grid-time pump: promotes every clocked FX event due at `grid_now_ns` into
+// the normal TX queue and makes sure the TX interrupt drains it. IRQs are
+// masked because the UART handler mutates the same queues.
+void midi_pump(uint8_t port, uint64_t grid_now_ns) {
+  if (port > 1) return;
+  const uint32_t saved = save_and_disable_interrupts();
+  midi_tx[port].releaseDue(grid_now_ns);
+  if (midi_tx[port].pending()) {
+    uart_set_irq_enables((port == 0) ? uart0 : uart1, true, true);
+  }
+  restore_interrupts(saved);
+}
+
+// Timed (clock-derived) enqueue: the event carries the absolute grid deadline
+// of the tick that generated it. The pump runs immediately after the enqueue
+// with the SAME grid time the clock alarm uses, so a due event reaches the
+// normal queue right after that tick's F8 was enqueued on the realtime class.
+// nextByte() still picks realtime first, so a clocked FX event can never
+// displace F8/FA/FB/FC and can never run ahead of the tick it belongs to.
+void midi_emit_at(uint8_t port, uint64_t deadline_ns, const uint8_t* data, uint32_t n) {
+  if (port > 1) return;
+  const uint32_t saved = save_and_disable_interrupts();
+  midi_tx[port].enqueueAt(deadline_ns, data, n);
+  restore_interrupts(saved);
+  midi_pump(port, clock_tick_deadline_ns);
+}
+
 // Emits the ordered result of one route evaluation to the physical output.
 void emit_pipe_output(uint8_t dst, const PipeOutput& out) {
   for (std::size_t i = 0; i < out.count; ++i) {
     if (out.events[i].size < 1 || out.events[i].size > 3) continue;
     midi_emit(dst, out.events[i].data, out.events[i].size);
+  }
+}
+
+// Clock-derived output (arp, repeater, LFO, delay taps, generator chains):
+// every event is timestamped with the grid deadline of the tick being
+// serviced and released by the TX scheduler at that grid point.
+void emit_clocked_output(uint8_t dst, const PipeOutput& out, uint64_t deadline_ns) {
+  for (std::size_t i = 0; i < out.count; ++i) {
+    if (out.events[i].size < 1 || out.events[i].size > 3) continue;
+    midi_emit_at(dst, deadline_ns, out.events[i].data, out.events[i].size);
   }
 }
 
@@ -353,9 +395,18 @@ void emit_pipe_output(uint8_t dst, const PipeOutput& out) {
 // engine (bounded to kMaxStepsPerCall steps, then it resyncs to the grid).
 void drain_route_engines() {
   const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
-  const uint32_t ticks = clock_ticks;
-  route_chains.service(ticks, now_ms, [](uint8_t dst, const PipeOutput& out) {
-    emit_pipe_output(dst, out);
+  uint32_t ticks;
+  uint64_t deadline_ns;
+  {
+    // Tick index and its grid deadline must belong to the same tick: the alarm
+    // increments clock_ticks and publishes the deadline together.
+    const uint32_t saved = save_and_disable_interrupts();
+    ticks = clock_ticks;
+    deadline_ns = clock_tick_deadline_ns;
+    restore_interrupts(saved);
+  }
+  route_chains.service(ticks, now_ms, [deadline_ns](uint8_t dst, const PipeOutput& out) {
+    emit_clocked_output(dst, out, deadline_ns);
   });
 }
 
@@ -381,6 +432,7 @@ int64_t clock_tick(alarm_id_t, void*) {
   // frame stay unconditional because they also drive the Pi timeline and USB
   // mirror. Only the clock byte enters the delay line; transport bytes are
   // emitted directly by transport_cmd.
+  const uint64_t tick_deadline_ns = clock_scheduler.nextDeadlineNs();
   const uint32_t stamp_us = static_cast<uint32_t>(clock_scheduler.nextDeadlineUs());
   const uint8_t tick = 0xF8;
   for (uint8_t port = 0; port < 2; ++port) {
@@ -392,6 +444,12 @@ int64_t clock_tick(alarm_id_t, void*) {
       clock_delay_drops = clock_delay_drops + 1u;
     }
   }
+  // The tick is now the grid's current time: publish it, then release every
+  // clocked FX event due at or before this point. F8 was enqueued above on the
+  // realtime class, so nextByte() emits it ahead of any FX byte. The pump masks
+  // interrupts because the UART TX handler drains the same normal queue.
+  clock_tick_deadline_ns = tick_deadline_ns;
+  for (uint8_t port = 0; port < 2; ++port) midi_pump(port, tick_deadline_ns);
   ++clock_ticks;
   queue_tick(clock_ticks, stamp_us);  // Pi USB-mirror + timeline mapping
   // The next pulse is the previous scheduled deadline + one exact period.
@@ -450,6 +508,7 @@ void clock_interval_refresh(bool announce) {
 
 void clock_arm() {
   clock_scheduler.reset(bpm_x100, time_us_64());
+  clock_tick_deadline_ns = clock_scheduler.nextDeadlineNs();
   add_alarm_at(from_us_since_boot(clock_scheduler.nextDeadlineUs()), clock_tick, nullptr, true);
 }
 
@@ -1096,7 +1155,8 @@ int main() {
     if (now_ms - last_stats >= 1000) {
       last_stats = now_ms;
       uint32_t mtx[4];
-      uint64_t mtx_drop, mtx_reject, mtx_rt_drop;
+      uint32_t fxq[2];
+      uint64_t mtx_drop, mtx_reject, mtx_rt_drop, fx_drop;
       uint32_t skipped;
       uint64_t spi_abort, spi_bad, spi_garbage, spi_ok, spi_ack, spi_ov;
       {
@@ -1105,6 +1165,10 @@ int main() {
         mtx[1] = midi_tx[0].realtimeDepth();
         mtx[2] = midi_tx[1].normalDepth();
         mtx[3] = midi_tx[1].realtimeDepth();
+        fxq[0] = midi_tx[0].timedDepth();
+        fxq[1] = midi_tx[1].timedDepth();
+        fx_drop = midi_tx[0].droppedTimed() + midi_tx[1].droppedTimed() +
+                  midi_tx[0].rejectedTimed() + midi_tx[1].rejectedTimed();
         mtx_drop = midi_tx[0].droppedNormal() + midi_tx[1].droppedNormal();
         mtx_reject = midi_tx[0].rejectedNormal() + midi_tx[1].rejectedNormal();
         mtx_rt_drop = midi_tx[0].droppedRealtime() + midi_tx[1].droppedRealtime();
@@ -1117,7 +1181,7 @@ int main() {
         spi_ov = spi_rx_overruns;
         restore_interrupts(saved);
       }
-      printf("[stat] link=%d bpm=%ld.%02ld run=%d ticks=%lu txq=%lu rxpend=%d/%d bad=%llu dup=%llu txov=%lu rxov=%lu/%lu mtx=%lu+%lu/%lu+%lu mtxdrop=%llu mtxrej=%llu mtxrt=%llu miss=%lu spiabort=%llu spibad=%llu spigarb=%llu spiok=%llu spiak=%llu spiov=%llu\n",
+      printf("[stat] link=%d bpm=%ld.%02ld run=%d ticks=%lu txq=%lu rxpend=%d/%d bad=%llu dup=%llu txov=%lu rxov=%lu/%lu mtx=%lu+%lu/%lu+%lu fxq=%lu+%lu fxdrop=%llu mtxdrop=%llu mtxrej=%llu mtxrt=%llu miss=%lu spiabort=%llu spibad=%llu spigarb=%llu spiok=%llu spiak=%llu spiov=%llu\n",
              hello_seen ? 1 : 0, static_cast<long>(bpm_x100 / 100), static_cast<long>(bpm_x100 % 100),
              transport_running ? 1 : 0, static_cast<unsigned long>(clock_ticks),
              static_cast<unsigned long>(txq.count), rxring[0].pending() ? 1 : 0,
@@ -1126,6 +1190,8 @@ int main() {
              static_cast<unsigned long>(rxring[0].overruns), static_cast<unsigned long>(rxring[1].overruns),
              static_cast<unsigned long>(mtx[0]), static_cast<unsigned long>(mtx[1]),
              static_cast<unsigned long>(mtx[2]), static_cast<unsigned long>(mtx[3]),
+             static_cast<unsigned long>(fxq[0]), static_cast<unsigned long>(fxq[1]),
+             static_cast<unsigned long long>(fx_drop),
              static_cast<unsigned long long>(mtx_drop),
              static_cast<unsigned long long>(mtx_reject),
              static_cast<unsigned long long>(mtx_rt_drop),

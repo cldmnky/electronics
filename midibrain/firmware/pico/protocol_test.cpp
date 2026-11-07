@@ -1149,7 +1149,77 @@ void run_midi_tx_scheduler_tests() {
   for (std::uint32_t i = 0; i < MidiTxScheduler::kRealtimeDepth; ++i)
     assert(rt.nextByte() == 0xF8);
 
-  std::printf("PASS: MIDI TX scheduler (clock priority, realtime interleave, whole-message overflow, Note Off kept)\n");
+  // Timed release: a clock-derived event waits for its absolute grid deadline,
+  // is promoted behind a realtime byte enqueued at the same grid point, and is
+  // ordered by deadline rather than by enqueue order. Realtime statuses are
+  // refused on the timed path, so FX can never mint a clock/transport byte.
+  MidiTxScheduler timed;
+  const std::uint8_t fxOn[3] = {0x90, 72, 100};
+  assert(timed.enqueueAt(1000, fxOn, 3));
+  assert(timed.timedDepth() == 1 && timed.timedDepth() == 1);
+  const std::uint8_t fxRt = 0xF8;
+  assert(!timed.enqueueAt(1000, &fxRt, 1));
+  assert(timed.releaseDue(999) == 0);
+  assert(timed.nextByte() == -1);  // nothing on the wire before the deadline
+  assert(timed.enqueueRealtime(0xF8));
+  assert(timed.releaseDue(1000) == 1);
+  assert(timed.nextByte() == 0xF8);  // the tick byte still goes first
+  assert(timed.nextByte() == 0x90);
+  assert(timed.nextByte() == 72);
+  assert(timed.nextByte() == 100);
+  assert(timed.nextByte() == -1);
+
+  // Deadline order with equal deadlines stable in generation order.
+  MidiTxScheduler ordered;
+  const std::uint8_t late[3] = {0x90, 60, 1};
+  const std::uint8_t early[3] = {0x90, 61, 2};
+  const std::uint8_t sameA[3] = {0x90, 62, 3};
+  const std::uint8_t sameB[3] = {0x90, 63, 4};
+  assert(ordered.enqueueAt(2000, late, 3));
+  assert(ordered.enqueueAt(1000, early, 3));
+  assert(ordered.enqueueAt(1000, sameA, 3));
+  assert(ordered.enqueueAt(1000, sameB, 3));
+  assert(ordered.releaseDue(2000) == 4);
+  assert(ordered.nextByte() == 0x90 && ordered.nextByte() == 61 && ordered.nextByte() == 2);
+  assert(ordered.nextByte() == 0x90 && ordered.nextByte() == 62 && ordered.nextByte() == 3);
+  assert(ordered.nextByte() == 0x90 && ordered.nextByte() == 63 && ordered.nextByte() == 4);
+  assert(ordered.nextByte() == 0x90 && ordered.nextByte() == 60 && ordered.nextByte() == 1);
+
+  // A due clock-derived event overtakes ordinary messages that have not
+  // started, but never interrupts one already on the wire: the worst extra
+  // delay is the remaining bytes of that one message.
+  MidiTxScheduler urgent;
+  const std::uint8_t bulk[3] = {0xB0, 7, 100};
+  assert(urgent.enqueue(bulk, 3));
+  assert(urgent.nextByte() == 0xB0);  // in flight
+  for (int i = 0; i < 5; ++i) {
+    const std::uint8_t queued[3] = {0x90, static_cast<std::uint8_t>(40 + i), 100};
+    assert(urgent.enqueue(queued, 3));
+  }
+  assert(urgent.enqueueAt(500, fxOn, 3));
+  assert(urgent.releaseDue(500) == 1);
+  assert(urgent.nextByte() == 7);  // finish the in-flight message
+  assert(urgent.nextByte() == 100);
+  assert(urgent.nextByte() == 0x90);  // then the due FX event, ahead of the queue
+  assert(urgent.nextByte() == 72 && urgent.nextByte() == 100);
+  assert(urgent.nextByte() == 0x90 && urgent.nextByte() == 40);
+
+  // Timed overflow never drops a Note Off; a new Note On is refused instead.
+  MidiTxScheduler timedOffs;
+  for (std::uint32_t i = 0; i < MidiTxScheduler::kTimedDepth; ++i) {
+    std::uint8_t off[3] = {0x80, static_cast<std::uint8_t>(i), 0};
+    assert(timedOffs.enqueueAt(1000, off, 3));
+  }
+  assert(!timedOffs.enqueueAt(1000, fxOn, 3));
+  assert(timedOffs.rejectedTimed() == 1 && timedOffs.droppedTimed() == 0);
+  assert(timedOffs.releaseDue(1000) == MidiTxScheduler::kTimedDepth);
+  std::uint32_t timedOffCount = 0;
+  for (int b = timedOffs.nextByte(); b >= 0; b = timedOffs.nextByte()) {
+    if ((b & 0xF0) == 0x80) ++timedOffCount;
+  }
+  assert(timedOffCount == MidiTxScheduler::kTimedDepth);
+
+  std::printf("PASS: MIDI TX scheduler (clock priority, realtime interleave, whole-message overflow, Note Off kept, timed FX release)\n");
 }
 
 void run_evidence() {
