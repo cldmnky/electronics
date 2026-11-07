@@ -987,6 +987,9 @@ void AppController::openOutputDest(int slot) {
 
 void AppController::openTrackFx(int slot) {
   fxVm_->openFor(mixerVm_->selectedStrip(), slot);
+  // The popup owns the ring while it is open; start it on CLOSE, exactly the
+  // stop the owner presses to dismiss the rack.
+  focusIndex_ = 0;
   rebuildFocusIds();
 }
 
@@ -1022,6 +1025,9 @@ void AppController::openFxSlotParams(int slot) {
 
 void AppController::openChannel(int slot) {
   mixerVm_->openChannel(slot);
+  // A newly opened overlay starts its ring at its own first stop (CLOSE), not
+  // at whatever index the strip screen happened to hold.
+  focusIndex_ = 0;
   rebuildFocusIds();
 }
 
@@ -1741,10 +1747,17 @@ void AppController::updateShiftState(const LinkStatus& status) {
         confirmCancel();
       } else if (keypadOpen_) {
         keypadCancel();
+      } else if (fxVm_ && fxVm_->open()) {
+        // TRACK FX sits above the channel popout; EXIT unwinds it first.
+        closeTrackFx();
+      } else if (mixerVm_->channelOpen()) {
+        closeChannel();
       } else if (tempoPopupOpen_) {
         closeTempoPopup();
       } else if (tabGridOpen_) {
         closeTabGrid();
+      } else if (bankGridOpen_) {
+        closeBankGrid();
       } else if (arrangeVm_ != nullptr && arrangeVm_->clipMenuOpen()) {
         arrangeVm_->closeClipMenu();
       } else if (arrangeVm_ != nullptr && arrangeVm_->lengthPopupOpen()) {
@@ -1939,12 +1952,19 @@ void AppController::activateFocus() {
 
   if (fxVm_ && fxVm_->open() && parts.size() >= 2 &&
       parts[0] == QStringLiteral("trackfx")) {
-    if (parts[1] == QStringLiteral("recsource")) {
+    if (parts.size() >= 2 && parts[1] == QStringLiteral("close")) {
+      closeTrackFx();
+      return;
+    }
+    if (parts.size() >= 2 && parts[1] == QStringLiteral("recsource")) {
       openTrackMode(fxVm_->track());
       return;
     }
     // PRESS on a rack control gives the encoder its directions; the slot
     // selector is a real tap (it opens the list) so it is handled in QML.
+    // A two-part id (trackfx.close) has no third field: read parts[2] only
+    // once the id actually names a card control.
+    if (parts.size() < 3) return;
     const QString what = parts[2];
     if (what == QStringLiteral("wet") || what == QStringLiteral("param")) {
       setPanelMode(QStringLiteral("edit"));
@@ -2061,7 +2081,7 @@ void AppController::activateFocus() {
                parts[1] == QStringLiteral("thresh") || parts[1] == QStringLiteral("ratio") ||
                parts[1] == QStringLiteral("attack") || parts[1] == QStringLiteral("release") ||
                parts[1] == QStringLiteral("makeup") ||
-               (parts[1] == QStringLiteral("timeline") &&
+               (parts.size() >= 3 && parts[1] == QStringLiteral("timeline") &&
                 (parts[2] == QStringLiteral("gain") ||
                  parts[2] == QStringLiteral("fadein") ||
                  parts[2] == QStringLiteral("fadeout")))) {
@@ -2416,7 +2436,7 @@ void AppController::activateFocus() {
       } else if (parts[2] == QStringLiteral("rec")) {
         sessionVm_->setSendRec(source);
       }
-    } else if (parts[1] == QStringLiteral("comp")) {
+    } else if (parts[1] == QStringLiteral("comp") && parts.size() >= 3) {
       if (parts[2] == QStringLiteral("on")) {
         sessionVm_->setCompOn(!sessionVm_->compOn());
       } else if (parts[2] == QStringLiteral("mode")) {
@@ -2648,7 +2668,7 @@ void AppController::activateFocus() {
                     sessionVm_->deviceOutPairLabels().value(pair));
     } else if (parts[1] == QStringLiteral("click")) {
       setClickEnabled(!clickEnabled());
-    } else if (parts[1] == QStringLiteral("learn")) {
+    } else if (parts[1] == QStringLiteral("learn") && parts.size() >= 3) {
       const QString what = parts[2];
       if (what == QStringLiteral("arm")) {
         if (learnVm_->capturing()) {
@@ -2908,12 +2928,15 @@ void AppController::adjustFocused(int detents, bool fine) {
 
   if (fxVm_ && fxVm_->open() && parts.size() >= 2 &&
       parts[0] == QStringLiteral("trackfx")) {
-    if (parts[1] == QStringLiteral("recsource")) {
+    if (parts.size() >= 2 && parts[1] == QStringLiteral("recsource")) {
       openTrackMode(fxVm_->track());
       return;
     }
     // PRESS on a rack control gives the encoder its directions; the slot
     // selector is a real tap (it opens the list) so it is handled in QML.
+    // A two-part id (trackfx.close) has no third field: read parts[2] only
+    // once the id actually names a card control.
+    if (parts.size() < 3) return;
     const QString what = parts[2];
     if (what == QStringLiteral("wet") || what == QStringLiteral("param")) {
       setPanelMode(QStringLiteral("edit"));

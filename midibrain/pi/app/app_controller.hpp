@@ -384,6 +384,10 @@ class AppController final : public QObject {
   void configOriginChanged();
 
  private:
+  // The headless tap runner drives the same panel intents (focus PRESS, EXIT)
+  // the Pico sends, so these private handlers can be regression-gated without
+  // exposing a test-only API to QML.
+  friend class UiTapRunner;
   void timerTick();
   void perform(const Intent& intent);
   void performPanelFocus(const Intent& intent);

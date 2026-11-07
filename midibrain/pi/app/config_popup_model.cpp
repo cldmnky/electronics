@@ -548,9 +548,12 @@ void ConfigPopupModel::applyDraft() {
   } else if (kind_ == QStringLiteral("outputdest")) {
     if (mixerVm_ != nullptr) mixerVm_->setOutDstOf(outputTargetSlot_, outputIndex_);
   } else if (kind_ == QStringLiteral("fxslot")) {
-    if (mixerVm_ != nullptr) {
-      (void)mixerVm_->setFxChoiceAt(fxTrackSlot_, fxSlotIndex_, fxSlotChoice_);
-    }
+    // The slot list is a live selector: setFxSlotChoice() writes the model at
+    // the tap. Re-applying the value openKind() just read would be a no-op for
+    // a real selection but is destructive for an unknown saved plugin id:
+    // fxChoiceAt() maps that id to the first discovered plugin, so opening the
+    // list would silently replace the session's plugin instead of naming the
+    // honest NOT LOADED state.
   } else if (kind_ == QStringLiteral("delaydivision")) {
     if (mixerVm_ != nullptr && fxTargetIs(mixer_, fxTrackSlot_, fxSlotIndex_, kFxIdDelay)) {
       mixerVm_->setFxParamAt(fxTrackSlot_, fxSlotIndex_,

@@ -123,6 +123,19 @@ void UiTapRunner::closeOverlays() {
   controller_->stop();
 }
 
+void UiTapRunner::panelPressFocused() {
+  controller_->activateFocus();
+}
+
+void UiTapRunner::panelExitPress() {
+  LinkStatus held;
+  held.shift = true;
+  controller_->updateShiftState(held);
+  LinkStatus released;
+  released.shift = false;
+  controller_->updateShiftState(released);
+}
+
 void UiTapRunner::buildScenarios() {
   // The take-row scenarios below need a real list. The tap run owns a
   // disposable HOME, so write one small 48 kHz mono WAV there (a valid
@@ -556,6 +569,66 @@ void UiTapRunner::buildScenarios() {
       },
       QStringLiteral("trackfx."), {}, {QStringLiteral("trackfx.close")}, false,
       true});
+  // Panel parity for the owner crash: the first ring stop of TRACK FX is
+  // CLOSE, and a PRESS on it must close the popup (the old dispatch read
+  // parts[2] of "trackfx.close" and segfaulted).
+  scenarios_.push_back(Scenario{
+      QStringLiteral("mixer.trackfx.panelclose"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        controller_->mixer()->selectTrackAt(1);
+        controller_->openChannel(1);
+        controller_->openTrackFx(0);
+        panelPressFocused();
+      },
+      QStringLiteral("nomatch."), {}, {}, false, false, false, {}, {},
+      [this] { return !controller_->fx()->open(); },
+      QStringLiteral("panel PRESS on trackfx.close did not close TRACK FX")});
+  // EXIT must unwind every overlay, not trap the panel behind the popout. A
+  // short press per overlay: channel popout, TRACK FX, bank grid, config,
+  // tempo, tab grid, and the deliberate keypad/confirm traps (which cancel by
+  // design). All must be closed at the end of the setup.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("panel.exit"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        controller_->mixer()->selectTrackAt(1);
+        controller_->openChannel(1);
+        panelExitPress();
+        controller_->openTrackFx(0);
+        panelExitPress();
+        controller_->openBankGrid();
+        panelExitPress();
+        controller_->openConfig(QStringLiteral("metronome"));
+        panelExitPress();
+        controller_->openTempoPopup();
+        panelExitPress();
+        controller_->openTabGrid();
+        panelExitPress();
+        controller_->requestKeypad(QStringLiteral("EXIT PROBE"), QString(),
+                                   QStringLiteral("probe"), 0);
+        panelExitPress();
+        controller_->requestConfirm(QStringLiteral("EXIT PROBE"),
+                                    QStringLiteral("probe"),
+                                    QStringLiteral("OK"),
+                                    QStringLiteral("probe"), -1);
+        panelExitPress();
+      },
+      QStringLiteral("nomatch."), {}, {}, false, false, false, {}, {},
+      [this] {
+        return !controller_->mixer()->channelOpen() && !controller_->fx()->open() &&
+               !controller_->bankGridOpen() &&
+               !controller_->config()->open() &&
+               !controller_->tempoPopupOpen() && !controller_->tabGridOpen() &&
+               !controller_->keypadOpen() && !controller_->confirmOpen();
+      },
+      QStringLiteral("a short EXIT press left an overlay open")});
   // 3e. X/Y per track: the grid ids exist on both a bound slot pair and an
   // empty one, and the track row selects the strip both grids bend.
   scenarios_.push_back(Scenario{

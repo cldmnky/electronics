@@ -8,6 +8,52 @@
 #include "logging.hpp"
 
 namespace mnky::app {
+namespace {
+
+// CLAP_PATH is the user's explicit search path (the same contract as PATH):
+// colon-separated entries, each either a plugin module or a directory of
+// modules. Empty entries are skipped so a trailing colon cannot scan cwd.
+std::vector<std::string> splitClapPath(const char* value) {
+  std::vector<std::string> entries;
+  if (value == nullptr) return entries;
+  const std::string text = value;
+  std::size_t start = 0;
+  while (start <= text.size()) {
+    const std::size_t end = text.find(':', start);
+    const std::string entry = text.substr(
+        start, end == std::string::npos ? std::string::npos : end - start);
+    if (!entry.empty()) entries.push_back(entry);
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return entries;
+}
+
+// One module (a .clap file or a macOS bundle directory) from `path`.
+void addClapModule(std::vector<std::string>& candidates, const std::string& path) {
+  if (path.empty()) return;
+  if (std::find(candidates.begin(), candidates.end(), path) == candidates.end()) {
+    candidates.push_back(path);
+  }
+}
+
+// Every .clap entry directly inside a search directory. Symlinks are followed
+// because distro packages often link /usr/lib/clap/<name>.clap into /usr/lib.
+void addClapDirectory(std::vector<std::string>& candidates,
+                      const std::filesystem::path& directory) {
+  std::error_code error;
+  if (!std::filesystem::is_directory(directory, error) || error) return;
+  for (std::filesystem::directory_iterator it(directory, error), end;
+       !error && it != end; it.increment(error)) {
+    if (it->path().extension() != ".clap") continue;
+    std::error_code typeError;
+    if (it->is_directory(typeError) || it->is_regular_file(typeError)) {
+      addClapModule(candidates, it->path().string());
+    }
+  }
+}
+
+}  // namespace
 
 class FxSlot::Adapter final : public audio::IEffect {
  public:
@@ -160,11 +206,23 @@ std::string FxSlot::defaultPluginPath() {
 
   std::filesystem::path home;
   if (const char* env = std::getenv("HOME")) home = env;
+  // CLAP_PATH is searched first: an explicit path always wins over an install.
+  for (const auto& entry : splitClapPath(std::getenv("CLAP_PATH"))) {
+    const std::filesystem::path path(entry);
+    std::error_code error;
+    if (std::filesystem::is_directory(path, error) && !error) {
+      candidates.push_back((path / "mnkygain.clap").string());
+    } else {
+      candidates.push_back(path.string());
+    }
+  }
   if (!home.empty()) {
     candidates.push_back((home / "Library/Audio/Plug-Ins/CLAP/mnkygain.clap").string());
     candidates.push_back((home / ".clap/mnkygain.clap").string());
   }
+  candidates.emplace_back("/Library/Audio/Plug-Ins/CLAP/mnkygain.clap");
   candidates.emplace_back("/usr/lib/clap/mnkygain.clap");
+  candidates.emplace_back("/usr/local/lib/clap/mnkygain.clap");
   candidates.emplace_back("mnkygain.clap");
 
   std::error_code error;
@@ -200,10 +258,7 @@ void FxManager::scanPlugins() {
 
   std::vector<std::string> candidates;
   const auto add = [&candidates](const std::string& path) {
-    if (path.empty()) return;
-    if (std::find(candidates.begin(), candidates.end(), path) == candidates.end()) {
-      candidates.push_back(path);
-    }
+    addClapModule(candidates, path);
   };
 #if defined(MNKY_DEFAULT_PLUGIN)
   add(MNKY_DEFAULT_PLUGIN);
@@ -211,28 +266,27 @@ void FxManager::scanPlugins() {
   if (const char* override = std::getenv("MNKY_PLUGIN_PATH")) add(override);
   add(FxSlot::defaultPluginPath());
 
-  std::filesystem::path home;
-  if (const char* env = std::getenv("HOME")) home = env;
-  std::vector<std::filesystem::path> directories;
-  if (!home.empty()) {
-    directories.push_back(home / "Library/Audio/Plug-Ins/CLAP");
-    directories.push_back(home / ".clap");
-  }
-  directories.emplace_back("/usr/lib/clap");
-  directories.emplace_back("/usr/local/lib/clap");
-  for (const auto& directory : directories) {
+  // CLAP_PATH: entries are modules or directories in the order the user gave.
+  // This is the canonical place a hand-installed plugin lives, so it is read
+  // before the distro-wide install directories.
+  for (const auto& entry : splitClapPath(std::getenv("CLAP_PATH"))) {
     std::error_code error;
-    if (!std::filesystem::is_directory(directory, error) || error) continue;
-    for (std::filesystem::directory_iterator it(directory, error), end;
-         !error && it != end; it.increment(error)) {
-      const auto extension = it->path().extension().string();
-      if (extension != ".clap") continue;
-      std::error_code typeError;
-      if (it->is_directory(typeError) || it->is_regular_file(typeError)) {
-        add(it->path().string());
-      }
+    if (std::filesystem::is_directory(entry, error) && !error) {
+      addClapDirectory(candidates, entry);
+    } else {
+      add(entry);
     }
   }
+
+  std::filesystem::path home;
+  if (const char* env = std::getenv("HOME")) home = env;
+  if (!home.empty()) {
+    addClapDirectory(candidates, home / "Library/Audio/Plug-Ins/CLAP");
+    addClapDirectory(candidates, home / ".clap");
+  }
+  addClapDirectory(candidates, "/Library/Audio/Plug-Ins/CLAP");
+  addClapDirectory(candidates, "/usr/lib/clap");
+  addClapDirectory(candidates, "/usr/local/lib/clap");
 
   std::set<std::string> seenIds;
   for (const auto& candidate : candidates) {
@@ -250,7 +304,7 @@ void FxManager::scanPlugins() {
     plugins_.push_back(std::move(info));
   }
   if (plugins_.empty()) {
-    log("clap: no plugin found (set MNKY_PLUGIN_PATH or install a .clap module)");
+    log("clap: no plugin found (set CLAP_PATH or install a .clap module)");
   }
 }
 

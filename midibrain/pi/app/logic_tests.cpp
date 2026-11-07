@@ -1926,6 +1926,301 @@ void clapTrackHostTests() {
   check(fx.trackInstanceCount() == 0, "every CLAP instance is torn down");
 }
 
+// CLAP audio path: a selected plugin is not merely an instance count. The
+// engine's external branch must actually process the strip (the owner bug was
+// "every plugin except DELAY/REVERB is silent"), and the slot wet must still
+// crossfade around it. The build's reference plugin (mnkygain) is the probe:
+// gain -24 dB must attenuate a steady input; a dry slot must not.
+void clapSlotAudioTests() {
+  FxManager fx;
+  const auto& plugins = fx.plugins();
+  if (plugins.empty()) return;
+  const auto plugin = plugins.front();
+  if (plugin.id != "com.cldmnky.mnkygain") return;  // needs the reference gain DSP
+
+  check(fx.loadTrackEffect(0, 0, plugin.id, 48000.0, audio::kBlockSize),
+        "the discovered plugin instantiates for a track slot");
+  check(fx.trackEffect(0, 0) != nullptr, "the loaded slot publishes its effect seam");
+
+  audio::Engine engine;
+  audio::Channel channel;
+  channel.gain = 1.0f;
+  channel.vol = 1.0f;
+  channel.pan = 0.0f;  // hard left: Main L is the strip at unity
+  channel.monitor = audio::MonitorMode::On;
+  engine.setChannel(0, channel);
+
+  audio::TrackFxSlot slot;
+  slot.id = plugin.id;
+  slot.wet = 1.0f;
+  for (const auto& param : plugin.params) slot.params.push_back(param.value);
+  engine.setTrackFxSlot(0, 0, slot);
+  engine.setTrackFxSlotEffect(0, 0, fx.trackEffect(0, 0));
+  // mnkygain's first parameter is Gain in dB; -24 dB is ~0.063x.
+  check(fx.setTrackParam(0, 0, 0, -24.0),
+        "a CLAP parameter write reaches the live instance");
+
+  std::vector<float> input(static_cast<std::size_t>(audio::kBlockSize), 0.25f);
+  std::vector<float> outL(static_cast<std::size_t>(audio::kBlockSize), 0.0f);
+  std::vector<float> outR(static_cast<std::size_t>(audio::kBlockSize), 0.0f);
+  const float* inputs[1] = {input.data()};
+  const auto render = [&]() {
+    for (int block = 0; block < 4; ++block) {
+      engine.process(inputs, 1, audio::kBlockSize, outL.data(), outR.data());
+    }
+    return outL[audio::kBlockSize - 1];
+  };
+
+  const float wet = render();
+  check(wet > 0.001f && wet < 0.05f,
+        "a wet CLAP slot processes the strip (gain -24 dB is audible)");
+
+  audio::TrackFxSlot dry = slot;
+  dry.wet = 0.0f;
+  engine.setTrackFxSlot(0, 0, dry);
+  checkNear(render(), 0.25, 1e-6,
+            "wet 0 leaves the CLAP slot bit-transparent (dry path)");
+}
+
+// A two-slot series probe with deterministic effects. FX1 runs first, then
+// FX2, and each slot's wet crossfade is `dry + wet * (processed - dry)`, so
+// the measured output is a direct proof of the documented mix math.
+void trackFxSeriesMathTests() {
+  struct AddOne final : audio::IEffect {
+    void process(float* const* ch, int nch, int n) override {
+      for (int channel = 0; channel < nch; ++channel) {
+        if (ch[channel] == nullptr) continue;
+        for (int i = 0; i < n; ++i) ch[channel][i] += 1.0f;
+      }
+    }
+    const char* name() const override { return "probe-add"; }
+  };
+  struct TimesTwo final : audio::IEffect {
+    void process(float* const* ch, int nch, int n) override {
+      for (int channel = 0; channel < nch; ++channel) {
+        if (ch[channel] == nullptr) continue;
+        for (int i = 0; i < n; ++i) ch[channel][i] *= 2.0f;
+      }
+    }
+    const char* name() const override { return "probe-mul"; }
+  };
+
+  AddOne add;
+  TimesTwo times;
+  audio::Engine engine;
+  audio::Channel channel;
+  channel.gain = 1.0f;
+  channel.vol = 1.0f;
+  channel.pan = 0.0f;
+  channel.monitor = audio::MonitorMode::On;
+  engine.setChannel(0, channel);
+
+  audio::TrackFxSlot first;
+  first.id = "test.add";
+  first.wet = 1.0f;
+  audio::TrackFxSlot second;
+  second.id = "test.times";
+  second.wet = 1.0f;
+  engine.setTrackFxSlot(0, 0, first);
+  engine.setTrackFxSlotEffect(0, 0, &add);
+  engine.setTrackFxSlot(0, 1, second);
+  engine.setTrackFxSlotEffect(0, 1, &times);
+
+  std::vector<float> input(static_cast<std::size_t>(audio::kBlockSize), 0.1f);
+  std::vector<float> outL(static_cast<std::size_t>(audio::kBlockSize), 0.0f);
+  std::vector<float> outR(static_cast<std::size_t>(audio::kBlockSize), 0.0f);
+  const float* inputs[1] = {input.data()};
+  const auto render = [&]() {
+    engine.process(inputs, 1, audio::kBlockSize, outL.data(), outR.data());
+    return outL[audio::kBlockSize - 1];
+  };
+
+  checkNear(render(), 2.2, 1e-5,
+            "FX1 (add) then FX2 (multiply) both process at wet 1");
+
+  // FX1 at 50%: dry + 0.5 * (processed - dry) = 0.1 + 0.5 * 1.0 = 0.6,
+  // then FX2 wet 1 doubles it.
+  audio::TrackFxSlot half = first;
+  half.wet = 0.5f;
+  engine.setTrackFxSlot(0, 0, half);
+  checkNear(render(), 1.2, 1e-5,
+            "a slot wet 0.5 crossfades before the next slot processes");
+
+  // FX1 bypassed: only FX2 runs -> 0.2. FX2 bypassed: only the half-wet FX1
+  // output survives -> 0.6.
+  audio::TrackFxSlot bypassFirst = half;
+  bypassFirst.bypass = true;
+  engine.setTrackFxSlot(0, 0, bypassFirst);
+  checkNear(render(), 0.2, 1e-5, "bypassing FX1 leaves FX2 in the chain");
+
+  engine.setTrackFxSlot(0, 0, half);
+  audio::TrackFxSlot bypassSecond = second;
+  bypassSecond.bypass = true;
+  engine.setTrackFxSlot(0, 1, bypassSecond);
+  checkNear(render(), 0.6, 1e-5, "bypassing FX2 leaves FX1's wet output");
+}
+
+// The owner's Pi may discover zero CLAP modules (the honest "no CLAP plugins
+// found" state). The rack's builtin slots are engine-owned, so DELAY and REVERB
+// must stay fully functional there: a wet-1 slot changes the strip, wet 0 is
+// bit-transparent, and FX1 -> FX2 runs both slots in series.
+void builtinTrackFxRackAudioTests() {
+  audio::Engine engine;
+  audio::Channel channel;
+  channel.gain = 1.0f;
+  channel.vol = 1.0f;
+  channel.pan = 0.0f;
+  channel.monitor = audio::MonitorMode::On;
+  engine.setChannel(0, channel);
+
+  std::vector<float> input(static_cast<std::size_t>(audio::kBlockSize), 0.25f);
+  std::vector<float> outL(static_cast<std::size_t>(audio::kBlockSize), 0.0f);
+  std::vector<float> outR(static_cast<std::size_t>(audio::kBlockSize), 0.0f);
+  const float* inputs[1] = {input.data()};
+  // 24 blocks = 64 ms at the engine's 48 kHz start rate: short of the delay's
+  // 250 ms default time, so the measured sample is the slot's own mix stage and
+  // not a note-feedback artefact.
+  const auto render = [&]() {
+    for (int block = 0; block < 24; ++block) {
+      engine.process(inputs, 1, audio::kBlockSize, outL.data(), outR.data());
+    }
+    return outL[audio::kBlockSize - 1];
+  };
+
+  checkNear(render(), 0.25, 1e-6, "an empty rack passes the strip unchanged");
+
+  audio::TrackFxSlot delay;
+  delay.id = kFxIdDelay;
+  delay.wet = 1.0f;
+  delay.params = fxDefaultParams(kFxIdDelay);
+  engine.setTrackFxSlot(0, 0, delay);
+  const float delayOnly = render();
+  check(std::isfinite(delayOnly) && std::abs(delayOnly - 0.25) > 1e-3,
+        "a wet-1 DELAY slot processes the strip without any CLAP module");
+
+  audio::TrackFxSlot quiet = delay;
+  quiet.wet = 0.0f;
+  engine.setTrackFxSlot(0, 0, quiet);
+  checkNear(render(), 0.25, 1e-6, "wet 0 leaves the DELAY slot bit-transparent");
+
+  audio::TrackFxSlot reverb;
+  reverb.id = kFxIdReverb;
+  reverb.wet = 1.0f;
+  reverb.params = fxDefaultParams(kFxIdReverb);
+  engine.setTrackFxSlot(0, 0, delay);
+  engine.setTrackFxSlot(0, 1, reverb);
+  const float series = render();
+  check(std::isfinite(series) && std::abs(series - delayOnly) > 1e-3,
+        "FX2's REVERB also processes FX1's DELAY output (series rack)");
+}
+
+// A device with no discoverable CLAP module is a state, not a broken popup: the
+// slot list must name it instead of showing an empty plugin section, and the
+// built-in choices must stay selectable. This is the owner's Pi if its plugin
+// search finds nothing.
+void fxSlotZeroClapStateTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  EqModel eq;
+  MixerViewModel view(mixer, settings, eq);  // no CLAP host at all
+  check(mixer.addTrack(0, "honest"), "the zero-CLAP probe track exists");
+  check(view.fxChoiceLabels() ==
+            QStringList{QStringLiteral("NONE"), QStringLiteral("DELAY"),
+                        QStringLiteral("REVERB")},
+        "zero discovered CLAPs leaves exactly the built-in choices");
+
+  ConfigPopupModel popup(state, mixer, settings, eq);
+  popup.setMixer(&view);
+  popup.setFxTarget(0, 0);
+  check(popup.openKind(QStringLiteral("fxslot")),
+        "the FX-slot popup opens without a plugin host");
+  check(popup.fxSlotNote().contains("no CLAP plugins found"),
+        "the FX-slot popup names the zero-CLAP state");
+  check(view.setFxChoiceAt(0, 0, 1) && mixer.fxSlot(0, 0).id == kFxIdDelay,
+        "DELAY stays selectable on a zero-CLAP device");
+  check(view.setFxChoiceAt(0, 0, 2) && mixer.fxSlot(0, 0).id == kFxIdReverb,
+        "REVERB stays selectable on a zero-CLAP device");
+  popup.cancel();
+}
+
+// Slot kind switching through the same UI path the FX popup uses: NONE /
+// DELAY / REVERB never allocate a CLAP host, a CLAP pick creates exactly one
+// instance, and each switch destroys the old instance before the new one is
+// selected. The instantiate-failure path must publish its reason (the popup
+// note) instead of leaving a silently dry slot.
+void trackFxKindSwitchTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  FxManager fx;
+  EqModel eq;
+  PerformanceModel performance;
+  AudioGlue audio(mixer, fx, performance, state, true);
+  MixerViewModel view(mixer, settings, eq);
+  view.setClapHost(&fx);
+  check(mixer.addTrack(0, "probe"), "the kind-switch probe track exists");
+
+  check(mixer.fxSlot(0, 0).id.empty(), "a new slot starts as NONE");
+  check(view.setFxChoiceAt(0, 0, 1), "NONE -> DELAY is accepted");
+  check(mixer.fxSlot(0, 0).id == "builtin.delay", "DELAY stores the built-in id");
+  check(mixer.fxSlot(0, 0).params.size() == fxParamTable("builtin.delay").size(),
+        "DELAY starts from its published parameter defaults");
+  check(fx.trackInstanceCount() == 0,
+        "a built-in slot never allocates a CLAP host instance");
+
+  check(view.setFxChoiceAt(0, 0, 2), "DELAY -> REVERB is accepted");
+  check(mixer.fxSlot(0, 0).id == "builtin.reverb", "REVERB replaces DELAY");
+  check(mixer.fxSlot(0, 0).params.size() == fxParamTable("builtin.reverb").size(),
+        "REVERB starts from its own defaults, not DELAY's vector");
+  check(view.setFxChoiceAt(0, 0, 0), "REVERB -> NONE is accepted");
+  check(mixer.fxSlot(0, 0).id.empty(), "NONE clears the built-in id");
+
+  const auto& plugins = fx.plugins();
+  if (!plugins.empty()) {
+    const auto plugin = plugins.front();
+    check(view.setFxChoiceAt(0, 0, MixerViewModel::kFxChoicePlugin),
+          "NONE -> CLAP is accepted");
+    check(mixer.fxSlot(0, 0).id == plugin.id, "the CLAP id is stored");
+    check(fx.trackEffectLoaded(0, 0) && fx.trackInstanceCount() == 1,
+          "the CLAP pick creates one live instance");
+
+    check(view.setFxChoiceAt(0, 0, 1), "CLAP -> DELAY is accepted");
+    check(mixer.fxSlot(0, 0).id == "builtin.delay", "DELAY replaces the CLAP id");
+    check(!fx.trackEffectLoaded(0, 0) && fx.trackInstanceCount() == 0,
+          "switching away from CLAP destroys its instance");
+
+    check(view.setFxChoiceAt(0, 0, MixerViewModel::kFxChoicePlugin),
+          "DELAY -> CLAP is accepted");
+    check(fx.trackEffectLoaded(0, 0) && fx.trackInstanceCount() == 1,
+          "the second CLAP pick recreates one instance");
+    check(!view.setFxChoiceAt(0, 0, 3 + static_cast<int>(plugins.size())),
+          "an out-of-range plugin choice is refused");
+
+    // The selection is accepted, but the instance cannot be created: the
+    // engine must fall back dry AND the popup must name the failure.
+    check(!fx.loadTrackEffect(0, 0, "test.missing", 48000.0, audio::kBlockSize),
+          "an unknown plugin id fails to instantiate");
+    check(!fx.trackEffectLoaded(0, 0), "a failed load leaves no live instance");
+    check(!fx.trackEffectError(0, 0).empty(),
+          "a failed load publishes its exact reason");
+    MixerModel::FxSlot failed;
+    failed.id = "test.missing";
+    failed.wet = 1.0f;
+    mixer.setFxSlot(0, 0, failed);
+    check(view.fxSlotNote(0, 0).contains("NOT LOADED"),
+          "the TRACK FX card note names the failed load");
+    ConfigPopupModel popup(state, mixer, settings, eq);
+    popup.setMixer(&view);
+    popup.setFxTarget(0, 0);
+    check(popup.openKind(QStringLiteral("fxslot")), "the FX-slot popup opens");
+    check(popup.fxSlotNote().contains("NOT LOADED"),
+          "the FX-slot popup shows the load failure while it is visible");
+    popup.cancel();
+    mixer.setFxSlot(0, 0, {});
+  }
+}
+
 // Output inserts: selecting USB OUT exposes an ordered chain list; add/remove/
 // reorder and the chain's pipes round-trip through the session router, and a
 // TRS output reports that inserts are Pi-owned only.
@@ -3309,6 +3604,11 @@ int runAll() {
   eqAndXyTests();
   trackFxRackTests();
   clapTrackHostTests();
+  clapSlotAudioTests();
+  trackFxSeriesMathTests();
+  builtinTrackFxRackAudioTests();
+  fxSlotZeroClapStateTests();
+  trackFxKindSwitchTests();
   outputInsertChainTests();
   sendChainTests();
   midiMonitorTests();

@@ -79,6 +79,10 @@ class UiTapRunner final : public QObject {
 
   void buildScenarios();
   void closeOverlays();
+  // Panel-intent parity for the crash/overlay gates: PRESS the ring's current
+  // stop and run one short EXIT press, exactly the Pico path (updateShiftState).
+  void panelPressFocused();
+  void panelExitPress();
   // Routes the pipe page at one FILTER + one ARP pipe and selects the page the
   // caller wants to finger; the generated editors only exist while a pipe is
   // selected, and the row taps above remove pipes.

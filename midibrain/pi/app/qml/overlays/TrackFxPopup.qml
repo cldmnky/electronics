@@ -230,7 +230,11 @@ Rectangle {
                 width: parent.width
                 height: 16
                 text: slotCard.card !== null ? slotCard.card.note : ""
-                color: Style.textDim
+                // A failed instantiate is a refused control, not decoration:
+                // the card says NOT LOADED in the record colour.
+                color: slotCard.card !== null &&
+                       slotCard.card.note.indexOf("NOT LOADED") >= 0
+                       ? Style.record : Style.textDim
                 font.pixelSize: Style.fontSmall
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
