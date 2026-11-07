@@ -62,6 +62,9 @@ struct LinkStatus {
   // 1 = OUT2). Bit0 = clock, bit1 = transport (mb::CLOCK_ROUTE_*).
   std::uint8_t clockRouteFlags[2] = {mb::CLOCK_ROUTE_DEFAULT,
                                      mb::CLOCK_ROUTE_DEFAULT};
+  // Last 0x21 STATUS_RESP overflow counters (0 until the first answer).
+  std::uint64_t txov = 0;
+  std::uint64_t rxov = 0;
   link::PicoLink::Stats stats{};
 };
 
@@ -82,6 +85,10 @@ class LinkClient {
   void requestTempo(std::uint16_t bpmX100);
   void requestTransport(std::uint8_t command);  // 0 stop, 1 start, 2 continue
   void requestLeds(std::uint8_t mask, std::uint8_t states);
+  // Immediate 3-byte UART emit (bench load generation). Uses the same
+  // PicoLink::sendMidi path the router uses; queued to the link thread.
+  void requestMidiSend(std::uint8_t port, std::uint8_t status, std::uint8_t data1,
+                       std::uint8_t data2);
   void requestManual(bool manual);
   // Per-output clock/transport gate (session v2 clock.trs[]). output 0/1 =
   // TRS OUT1/OUT2, flags bit0 = clock, bit1 = transport; delivered to the Pico
@@ -108,12 +115,14 @@ class LinkClient {
       Manual,
       ClockRoute,
       UsbClockGates,
-      MidiRoutePipes
+      MidiRoutePipes,
+      MidiSend
     };
     Kind kind = Kind::Tempo;
     std::uint16_t value16 = 0;
     std::uint8_t value8 = 0;
     std::uint8_t extra8 = 0;
+    std::uint8_t midi[3] = {};
     std::vector<session::MidiPipe> pipes;
   };
 

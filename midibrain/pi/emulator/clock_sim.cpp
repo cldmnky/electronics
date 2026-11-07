@@ -116,10 +116,10 @@ void AlarmModel::fire(Ps scheduledDeadline) {
 // ---------------------------------------------------------------------------
 // UART model
 // ---------------------------------------------------------------------------
-UartTxModel::UartTxModel(Scheduler& scheduler, std::uint8_t port, Mode mode,
+UartTxModel::UartTxModel(Scheduler& scheduler, std::uint8_t /*port*/,
+                         Mode mode,
                          std::size_t messageCapacityBytes)
     : scheduler_(scheduler),
-      port_(port),
       mode_(mode),
       capacity_(messageCapacityBytes) {}
 
@@ -640,7 +640,7 @@ MatrixRun runMatrixRow(std::uint16_t bpmX100) {
   SpiLinkModel spi(0x1234u);
   std::uint64_t spiIndex = 0;
   for (Ps at = 0; at < end; at += ms(50)) {
-    scheduler.scheduleAt(at, [&spi, &run, at, end, spiIndex] {
+    scheduler.scheduleAt(at, [&spi, &run, at, spiIndex] {
       spi.tick(at);
       SpiFrame frame;
       frame.type = 3;

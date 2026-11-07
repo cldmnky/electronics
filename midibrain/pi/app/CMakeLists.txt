@@ -53,7 +53,9 @@ set(MNKY_APP_SOURCES
   timeline_view_model.cpp
   tools_view_model.cpp
   wav_info.cpp
-  xy_view_model.cpp)
+  xy_view_model.cpp
+  ../bench/bench_clock.cpp
+  ../bench/pico_stat.cpp)
 
 set(MNKY_APP_HEADERS
   app_context.hpp
@@ -96,14 +98,17 @@ set(MNKY_APP_HEADERS
   timeline_view_model.hpp
   tools_view_model.hpp
   wav_info.hpp
-  xy_view_model.hpp)
+  xy_view_model.hpp
+  ../bench/bench_clock.hpp
+  ../bench/pico_stat.hpp)
 
 add_executable(mnkybox ${MNKY_APP_SOURCES} ${MNKY_APP_HEADERS})
 set_target_properties(mnkybox PROPERTIES AUTOMOC ON)
 target_compile_definitions(mnkybox PRIVATE MNKY_APP_VERSION="${PROJECT_VERSION}")
 target_include_directories(mnkybox PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
-  "${CMAKE_CURRENT_SOURCE_DIR}/..")
+  "${CMAKE_CURRENT_SOURCE_DIR}/.."
+  "${CMAKE_CURRENT_SOURCE_DIR}/../bench")
 target_compile_features(mnkybox PRIVATE cxx_std_20)
 
 # ARCHITECTURE.md acceptance: zero warnings on our sources. Qt's generated moc

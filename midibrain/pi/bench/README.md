@@ -41,3 +41,36 @@ human-readable statistics and `*.json` the same numbers machine-readably.
   under that bound are ALSA-sequencer/USB echo, not cable measurements.
 - Intervals longer than 1 s are transport gaps (a parked transport), reported
   separately and excluded from jitter statistics.
+
+## Automated clock acceptance (`--bench-clock`)
+
+`run/06-clock-acceptance.sh quick|full` drives the review's matrix against the
+real device from the app itself. `quick` spends 180 s per tempo (20/60/120/180/
+300 bpm, ~15 min total); `full` spends 2 h per tempo (~10 h, the owner's session).
+The app must be stopped first (SPI link and audio are exclusive) and the run
+writes no project or take: the driver refuses to start when a project has
+unsaved changes.
+
+What it does, all through existing app paths:
+
+- sets each tempo through the same link `requestTempo` path as the UI
+  (`AppController::benchSetTempoX100`, full 20-300 range);
+- generates note-on/note-off/CC traffic on TRS OUT1 every 250 ms and churns the
+  UI tabs every 2 s (MIDI + SPI + DAW/UI load);
+- samples the app-side clock observation (tick frames, Pico-stamp arrival
+  lateness, `clockSkipped`, link `bad`/`retries`/`noteOffDrops`/`overruns`)
+  every 50 ms;
+- reads the Pico USB CDC console (`MNKYBOX_PICO_CONSOLE`, default first
+  `/dev/ttyACM*`) and parses the 1 Hz `[stat]` line before/after each tempo;
+- prints timestamped `[bench] MARK iso=... mono_us=... event=tempo.begin|...`
+  lines for logic-analyser alignment, and a results table shaped like the
+  `clock_sim` matrix.
+
+Long run over SSH (nohup-safe; the log path is printed at start):
+
+```sh
+ssh magnus@studio 'cd ~/src/midibrain/pi/bench && nohup sh run/06-clock-acceptance.sh full >/dev/null 2>&1 &'
+```
+
+The TRS-vs-USB row sets this run feeds are in `docs/clock-bench.md`. The
+`[stat]` parser has its own host check: `make bench-test` (from `midibrain/`).

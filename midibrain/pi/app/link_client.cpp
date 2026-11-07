@@ -139,6 +139,18 @@ void LinkClient::requestTransport(std::uint8_t transportCommand) {
   commands_.push_back(command);
 }
 
+void LinkClient::requestMidiSend(std::uint8_t port, std::uint8_t status,
+                                 std::uint8_t data1, std::uint8_t data2) {
+  Command command;
+  command.kind = Command::Kind::MidiSend;
+  command.value8 = port;
+  command.midi[0] = status;
+  command.midi[1] = data1;
+  command.midi[2] = data2;
+  const std::lock_guard<std::mutex> lock(commandLock_);
+  commands_.push_back(command);
+}
+
 void LinkClient::requestLeds(std::uint8_t mask, std::uint8_t states) {
   Command command;
   command.kind = Command::Kind::Leds;
@@ -231,6 +243,11 @@ void LinkClient::run() {
     {
       const std::lock_guard<std::mutex> lock(statusLock_);
       status_.stats = link_->stats();
+      mb::LinkStatus picoStatus{};
+      if (link_->lastStatus(picoStatus)) {
+        status_.txov = picoStatus.txov;
+        status_.rxov = static_cast<std::uint64_t>(picoStatus.rxov);
+      }
       status_.linkUp = link_->linkUp();
       status_.picoSession = link_->session();
       status_.piSession = link_->piSession();
@@ -308,6 +325,9 @@ void LinkClient::applyCommands() {
         }
         break;
 
+      case Command::Kind::MidiSend:
+        link_->sendMidi(command.value8, command.midi, 3);
+        break;
       case Command::Kind::MidiRoutePipes: {
         // 0x18 begins a fresh chain (clears the Pico runtime state), then 0x19
         // carries each pipe in order; parameters go in chunks of the wire limit.
@@ -396,6 +416,8 @@ void LinkClient::applyNoPicoCommands() {
     applied = true;
 
     switch (command.kind) {
+      case Command::Kind::MidiSend:
+        break;  // no Pico: TRS output is absent
       case Command::Kind::Tempo:
         {
           // The fine clock thread reads tempo/phase under statusLock_.

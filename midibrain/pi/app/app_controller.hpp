@@ -308,6 +308,15 @@ class AppController final : public QObject {
   Q_INVOKABLE void clearNotice();
   Q_INVOKABLE void closeTempoPopup();
   Q_INVOKABLE void setTempoBpm(int bpm);
+  // --bench-clock only: the acceptance sweep needs the full firmware range
+  // (20..300 bpm) on the same requestTempo path; the touch popup stays 40..240.
+  // Not a QML API and never called outside bench mode.
+  void benchSetTempoX100(int bpmX100);
+  // One 3-byte message to the Pico UART (bench load generation; same link
+  // sendMidi path the router uses).
+  void benchSendMidi(int port, int status, int data1, int data2);
+  // Live link snapshot for the bench driver's counters (read-only copy).
+  LinkStatus benchLinkStatus() const { return link_.status(); }
   // Tab grid (C3): the ring's single TAB stop expands a 2x5 grid of the ten
   // tabs; picking one navigates and closes it.
   Q_INVOKABLE void openTabGrid();

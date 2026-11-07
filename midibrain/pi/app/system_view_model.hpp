@@ -22,6 +22,10 @@ namespace mnky::app {
 class SystemViewModel final : public QObject {
   Q_OBJECT
   Q_PROPERTY(QString statsText READ statsText NOTIFY statsChanged)
+  // Plain-language link health for System > DIAGNOSTICS. It names the counters
+  // that must stay at zero (note-offs dropped, overruns) instead of leaving the
+  // operator to decode the raw protocol dump.
+  Q_PROPERTY(QString linkHealthText READ linkHealthText NOTIFY statsChanged)
   Q_PROPERTY(QString liveText READ liveText NOTIFY audioStateChanged)
   Q_PROPERTY(QString noteText READ noteText NOTIFY audioStateChanged)
   Q_PROPERTY(QString logText READ logText NOTIFY logChanged)
@@ -53,7 +57,12 @@ class SystemViewModel final : public QObject {
                   QObject* parent = nullptr);
 
   QString statsText() const { return statsText_; }
+  QString linkHealthText() const { return linkHealthText_; }
   QString liveText() const { return liveText_; }
+  // Bench-only: the latest firmware [stat] line, read from the Pico USB CDC
+  // console by BenchClock. Empty outside bench mode: [stat] is not on the SPI
+  // link, and this app adds no protocol frame to fetch it.
+  void setPicoStatLine(const QString& line);
   QString noteText() const { return noteText_; }
   QString logText() const { return logText_; }
   QString backendHint() const { return backendHint_; }
@@ -104,6 +113,8 @@ class SystemViewModel final : public QObject {
   AppState& state_;
   SessionSettings& settings_;
   QString statsText_;
+  QString linkHealthText_;
+  QString picoStatLine_;
   QString liveText_;
   QString noteText_;
   QString logText_;

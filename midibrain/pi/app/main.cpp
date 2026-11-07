@@ -60,6 +60,7 @@
 
 #include <unistd.h>
 
+#include "../bench/bench_clock.hpp"
 #include "app_controller.hpp"
 #include "logging.hpp"
 #include "ui_tap_runner.hpp"
@@ -2156,6 +2157,32 @@ int main(int argc, char* argv[]) {
   // --panel-taps is the headless panel-intent gate (docs/panel-parity-audit.md
   // section 5). It shares the tap run's headless/isolated setup.
   const bool wantsPanelTaps = arguments.contains(QStringLiteral("--panel-taps"));
+  // --bench-clock <quick|full>: automated MIDI-clock acceptance run against the
+  // real Pico. It is a normal hardware run (never --emulator/--no-pico), writes
+  // no project or take, and exits when the matrix finishes.
+  bool benchClock = arguments.contains(QStringLiteral("--bench-clock"));
+  mnky::bench::BenchClock::Profile benchProfile = mnky::bench::BenchClock::Profile::Quick;
+  if (benchClock) {
+    const QString profile = argumentValue(arguments, QStringLiteral("--bench-clock"));
+    if (!mnky::bench::BenchClock::parseProfile(profile, benchProfile)) {
+      std::fprintf(stderr, "mnkybox: --bench-clock needs quick or full, got '%s'\n",
+                   qPrintable(profile));
+      return 2;
+    }
+    if (wantsScreenshots || wantsTaps || wantsPanelTaps) {
+      std::fprintf(stderr,
+                   "mnkybox: --bench-clock is a separate run from the tap and "
+                   "screenshot gates\n");
+      return 2;
+    }
+    if (arguments.contains(QStringLiteral("--emulator")) ||
+        arguments.contains(QStringLiteral("--no-pico"))) {
+      std::fprintf(stderr,
+                   "mnkybox: --bench-clock runs against the real Pico; it cannot "
+                   "combine with --emulator or --no-pico\n");
+      return 2;
+    }
+  }
   if (wantsScreenshots || wantsTaps || wantsPanelTaps) {
     // A headless proof must not depend on a GPU: the software renderer works
     // under QT_QPA_PLATFORM=offscreen on both the Mac and the Linux guest.
@@ -2296,6 +2323,65 @@ int main(int argc, char* argv[]) {
     } else {
       taps->start();
     }
+  }
+
+  // The bench driver starts after the UI is up and refuses to run with unsaved
+  // project state: this mode must never write the owner's projects or takes.
+  std::unique_ptr<mnky::bench::BenchClock> benchClockDriver;
+  if (benchClock) {
+    if (controller.dirty()) {
+      std::fprintf(stderr,
+                   "mnkybox: --bench-clock refuses to run with unsaved project "
+                   "changes; save or discard them first\n");
+      return 2;
+    }
+    mnky::bench::BenchClock::Hooks hooks;
+    hooks.setTempoX100 = [&controller](int bpmX100) {
+      controller.benchSetTempoX100(bpmX100);
+    };
+    hooks.snapshot = [&controller] {
+      const auto status = controller.benchLinkStatus();
+      mnky::bench::LinkSnapshot out;
+      out.linkUp = status.linkUp;
+      out.rolling = status.rolling;
+      out.tick = status.lastClockTick;
+      out.tempoX100 = status.tempoX100;
+      out.offsetUs = status.offsetUs;
+      out.latencyUs = status.latencyUs;
+      out.clockSkipped = status.clockSkipped;
+      out.clockReordered = status.clockReordered;
+      out.tx = status.stats.tx;
+      out.rx = status.stats.rx;
+      out.bad = status.stats.bad;
+      out.dup = status.stats.dup;
+      out.overruns = status.stats.overruns;
+      out.retries = status.stats.retries;
+      out.acks = status.stats.acks;
+      out.noteOffDrops = status.stats.noteOffDrops;
+      out.evicted = status.stats.evicted;
+      out.txov = status.txov;
+      out.rxov = status.rxov;
+      return out;
+    };
+    hooks.sendMidi = [&controller](int port, int status, int data1, int data2) {
+      controller.benchSendMidi(port, status, data1, data2);
+    };
+    hooks.churn = [&controller](int step) {
+      controller.setTab(step % 9);
+      controller.system()->refresh();
+    };
+    hooks.log = [](const std::string& line) { mnky::app::log(line); };
+    hooks.statLine = [&controller](const QString& line) {
+      controller.system()->setPicoStatLine(line);
+    };
+    benchClockDriver = std::make_unique<mnky::bench::BenchClock>(std::move(hooks),
+                                                                benchProfile);
+    QObject::connect(benchClockDriver.get(), &mnky::bench::BenchClock::finished, &app,
+                     [](int code) { QCoreApplication::exit(code); });
+    mnky::app::log("bench: --bench-clock " +
+                   mnky::bench::BenchClock::profileName(benchProfile).toStdString() +
+                   " starting (no project writes)");
+    benchClockDriver->start();
   }
 
   std::unique_ptr<ScreenshotRunner> screenshots;

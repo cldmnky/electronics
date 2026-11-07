@@ -16,11 +16,12 @@ Item {
         height: parent.height
         spacing: Style.gapTight
 
-        // The two dumps split whatever the three 18 px labels leave, so the page
-        // never grows past the face it is loaded into.
+        // The two dumps split whatever the four headings and the health block
+        // leave, so the page never grows past the face it is loaded into.
         readonly property real dumpHeight: height - audioHeading.height -
-                                           audioNote.height - statsHeading.height -
-                                           logHeading.height - Style.gapTight * 4
+                                           audioNote.height - healthHeading.height -
+                                           healthText.height - statsHeading.height -
+                                           logHeading.height - Style.gapTight * 6
 
         Text {
             id: audioHeading
@@ -41,6 +42,26 @@ Item {
             color: Style.text
             font.pixelSize: Style.fontSecondary
             elide: Text.ElideRight
+        }
+        Text {
+            id: healthHeading
+            width: parent.width
+            height: 18
+            text: "LINK HEALTH - must-stay-zero counters in plain language"
+            color: Style.textDim
+            font.pixelSize: Style.fontSecondary
+            font.weight: Font.DemiBold
+        }
+        Text {
+            id: healthText
+            width: parent.width
+            height: 54
+            text: system.linkHealthText
+            color: Style.text
+            font.family: "monospace"
+            font.pixelSize: Style.fontSmall
+            wrapMode: Text.Wrap
+            clip: true
         }
         Text {
             id: statsHeading

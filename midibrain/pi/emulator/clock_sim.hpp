@@ -208,7 +208,7 @@ class UartTxModel final : public seam::UartTx {
  public:
   enum class Mode { Blocking, Priority };
 
-  UartTxModel(Scheduler& scheduler, std::uint8_t port, Mode mode,
+  UartTxModel(Scheduler& scheduler, std::uint8_t, Mode mode,
               std::size_t messageCapacityBytes = 64);
   ~UartTxModel() override = default;
 
@@ -234,7 +234,6 @@ class UartTxModel final : public seam::UartTx {
   void record(std::uint8_t byte, Ps at, bool realtime);
 
   Scheduler& scheduler_;
-  std::uint8_t port_;
   Mode mode_;
   std::size_t capacity_;
   std::vector<TxByte> trace_;

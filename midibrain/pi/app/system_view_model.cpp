@@ -220,10 +220,45 @@ QString SystemViewModel::clockSourceLine() const {
          follow;
 }
 
+void SystemViewModel::setPicoStatLine(const QString& line) {
+  if (picoStatLine_ == line) return;
+  picoStatLine_ = line;
+  emit statsChanged();
+}
+
 void SystemViewModel::refresh() {
   const auto status = link_.status();
   const auto stats = status.stats;
   const auto audio = audio_.backendState();
+
+  // Plain-language link health for the DIAGNOSTICS page. These are the
+  // counters that decide whether a lost Note Off or a dead SPI frame is
+  // hiding behind a healthy-looking clock: `bad` is an aborted exchange that
+  // the retry recovered, `overruns` is the app giving up after repeated lost
+  // acks, and noteOffDrops must stay 0 for the whole session.
+  QString health;
+  QTextStream hs(&health);
+  if (status.noPico) {
+    hs << "NO PICO: no SPI link, no link counters (USB clock only)";
+  } else {
+    hs << (status.linkUp ? "link UP" : "link DOWN") << "   SPI ok "
+       << static_cast<qulonglong>(stats.tx) << "   aborts (recovered) "
+       << static_cast<qulonglong>(stats.bad) << "   duplicates "
+       << static_cast<qulonglong>(stats.dup) << "   app overruns "
+       << static_cast<qulonglong>(stats.overruns) << "\n";
+    hs << "retried messages " << static_cast<qulonglong>(stats.retries) << "   acks "
+       << static_cast<qulonglong>(stats.acks) << "   evicted (Note Off admitted) "
+       << static_cast<qulonglong>(stats.evicted) << "   NOTE-OFFS DROPPED "
+       << static_cast<qulonglong>(stats.noteOffDrops) << " (must be 0)\n";
+    hs << "Pico txq overflows " << status.txov << "   UART RX overruns " << status.rxov
+       << "   Pico [stat]: "
+       << (picoStatLine_.isEmpty()
+               ? QStringLiteral("not captured (USB CDC; --bench-clock reads it)")
+               : picoStatLine_);
+  }
+  if (linkHealthText_ != health) {
+    linkHealthText_ = health;
+  }
 
   QString text;
   QTextStream stream(&text);

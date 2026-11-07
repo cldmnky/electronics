@@ -557,6 +557,20 @@ void AppController::setTempoBpm(int bpm) {
   updateTransport();
 }
 
+void AppController::benchSetTempoX100(int bpmX100) {
+  const int tempo = clampTempoX100(bpmX100);
+  state_.tempoX100.store(tempo);
+  link_.requestTempo(static_cast<std::uint16_t>(tempo));
+  updateTransport();
+}
+
+void AppController::benchSendMidi(int port, int status, int data1, int data2) {
+  link_.requestMidiSend(static_cast<std::uint8_t>(port),
+                        static_cast<std::uint8_t>(status & 0xFF),
+                        static_cast<std::uint8_t>(data1 & 0x7F),
+                        static_cast<std::uint8_t>(data2 & 0x7F));
+}
+
 void AppController::openTabGrid() {
   if (tabGridOpen_) return;
   noteFocusReturn();

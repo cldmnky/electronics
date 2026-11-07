@@ -1,4 +1,4 @@
-.PHONY: test release gate reports electrical mechanical mechanical-export host midifx spice panel-preview firmware order
+.PHONY: test release gate reports electrical mechanical mechanical-export host midifx spice panel-preview firmware order bench-test bench-clock
 
 # Defaults cover the setup in firmware/README.md; override on the command
 # line (PICO_SDK_PATH=/path/to/sdk make firmware) if yours lives elsewhere.
@@ -124,3 +124,16 @@ spice:
 
 panel-preview:
 	cd tscircuit && $(BUN) run panel:preview
+
+# MIDI-clock bench automation (pi/bench): --bench-clock is the app's automated
+# acceptance run against the real device (see pi/bench/README.md). bench-test
+# compiles the [stat] parser the driver uses; the app itself is built by the
+# normal CMake flow (pi/README.md).
+bench-test:
+	@set -eu; exe=$$(mktemp "$${TMPDIR:-/tmp}/midibrain-bench.XXXXXX"); trap 'rm -f "$$exe"' EXIT; \
+	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic -Ipi/bench \
+	    pi/bench/pico_stat.cpp pi/bench/pico_stat_test.cpp -o "$$exe"; "$$exe"
+
+bench-clock:
+	@echo "usage: build mnkybox (cmake -S pi -B /tmp/pi-build && cmake --build /tmp/pi-build -j)"
+	@echo "       sh pi/bench/run/06-clock-acceptance.sh [quick|full]"
