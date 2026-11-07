@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -491,6 +492,33 @@ void UiTapRunner::buildScenarios() {
         controller_->openChannel(1);
       },
       QStringLiteral("channel."), {}, {QStringLiteral("channel.close")}, false, true});
+  // Stage 2 item 4h: riding a strip fader moves the value and never opens the
+  // channel sheet. The strip has three touch targets (name = select, CH =
+  // expand, fader = level); this pass drags the fader and asserts that the
+  // popout stayed closed while the gain actually moved.
+  {
+    auto faderBefore = std::make_shared<double>(0.0);
+    Scenario scenario{
+        QStringLiteral("mixer.fader-ride"),
+        [this, faderBefore] {
+          closeOverlays();
+          controller_->showShiftFace(false);
+          controller_->setTab(0);
+          primeMixerTracks();
+          controller_->mixer()->setTrackMode(false);
+          controller_->mixer()->setBank(0);
+          *faderBefore = controller_->mixer()->gainDbAt(0);
+        },
+        QStringLiteral("mixer.gain."), {}, {QStringLiteral("mixer.gain.0")}, true,
+        true, true};
+    scenario.verify = [this, faderBefore] {
+      return !controller_->mixer()->channelOpen() &&
+             controller_->mixer()->gainDbAt(0) != *faderBefore;
+    };
+    scenario.verifyFailure =
+        QStringLiteral("the fader ride opened the channel or moved no gain");
+    scenarios_.push_back(scenario);
+  }
   scenarios_.push_back(Scenario{
       QStringLiteral("mixer.addtrack"),
       [this] {
@@ -1567,12 +1595,8 @@ void UiTapRunner::runPanelGate() {
   // port rows. They are reported as known gaps, not failures, so this gate
   // locks in stage-1 parity without pretending to fix stage 2/5 work.
   const QStringList knownGapPrefixes = {
-      QStringLiteral("mixer.select."), QStringLiteral("channel.monitor"),
       QStringLiteral("edit.value"), QStringLiteral("shift.eq.band."),
       QStringLiteral("midimon.port."),
-      // Stage 2 (G1): the MIXER/TRACK ring still keys on the selected track's
-      // mode, so one of the two views' stops is off-screen at a time.
-      QStringLiteral("track."),
       // Stage 3/4/5 screens own these; the audit already lists them (EQ node
       // visibility, ARRANGE toolbar, recorder punch rows, SYSTEM summaries).
       QStringLiteral("eq.node."), QStringLiteral("eq.subject.track"),
@@ -1598,8 +1622,8 @@ void UiTapRunner::runPanelGate() {
   struct Context {
     QString name;
     std::function<void()> setup;
-    // The page grid is 3 columns wide: DOWN is +3 (a spatial step), so its
-    // permutation walk uses RIGHT to visit every stop.
+    // The page grid is four columns wide; NAV is a flat ring walk, so RIGHT
+    // visits every stop of the list the DB9 sends.
     Intent::Kind walkKind = Intent::Kind::NavDown;
   };
   std::vector<Context> contexts;
@@ -1616,11 +1640,7 @@ void UiTapRunner::runPanelGate() {
       if (tab == 0) {
         controller_->mixer()->setTrackMode(false);
         controller_->mixer()->setBank(0);
-        // G1 is stage 2: the ring still keys on the selected track's mode.
-        // Park the selected track in PLAY so this gate measures the MIXER
-        // view's stops rather than the stage-2 defect.
         controller_->mixer()->setSelectedStrip(0);
-        controller_->mixer()->setSelectedMode(0);
       }
     };
     contexts.push_back(context);
@@ -1628,6 +1648,10 @@ void UiTapRunner::runPanelGate() {
   const auto faceReset = [this, reset](int tab) {
     reset();
     controller_->setTab(tab);
+    if (tab == 0) {
+      controller_->mixer()->setTrackMode(false);
+      controller_->mixer()->setBank(0);
+    }
     controller_->showShiftFace(true);
   };
   for (int tab = 0; tab < kScreenCount; ++tab) {
@@ -1644,6 +1668,40 @@ void UiTapRunner::runPanelGate() {
       reset();
       controller_->setTab(0);
       controller_->openTabGrid();
+    };
+    context.walkKind = Intent::Kind::NavRight;
+    contexts.push_back(context);
+  }
+  {
+    Context context;
+    context.name = QStringLiteral("tab.0.track");
+    context.setup = [this, reset] {
+      reset();
+      controller_->setTab(0);
+      controller_->mixer()->setTrackMode(true);
+      controller_->mixer()->setBank(0);
+    };
+    contexts.push_back(context);
+  }
+  {
+    Context context;
+    context.name = QStringLiteral("shift.0.track");
+    context.setup = [this, faceReset] {
+      faceReset(0);
+      controller_->mixer()->setTrackMode(true);
+      controller_->mixer()->setBank(0);
+    };
+    contexts.push_back(context);
+  }
+  {
+    Context context;
+    context.name = QStringLiteral("bankgrid");
+    context.setup = [this, reset] {
+      reset();
+      controller_->setTab(0);
+      controller_->mixer()->setTrackMode(false);
+      controller_->mixer()->setBank(0);
+      controller_->openBankGrid();
     };
     context.walkKind = Intent::Kind::NavRight;
     contexts.push_back(context);

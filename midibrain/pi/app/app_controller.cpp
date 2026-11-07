@@ -109,6 +109,19 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
           });
   connect(recorderVm_.get(), &RecorderViewModel::activeTakeChanged, mixerVm_.get(),
           &MixerViewModel::notifyActiveTakesChanged);
+  // G1: the mixer ring is keyed by the MIXER/TRACK view and the bank page, not
+  // by the selected track's mode, and every change that swaps the visible
+  // strip set rebuilds it.
+  connect(mixerVm_.get(), &MixerViewModel::trackModeChanged, this,
+          [this] { rebuildFocusIds(); });
+  connect(mixerVm_.get(), &MixerViewModel::trackChanged, this,
+          [this] { rebuildFocusIds(); });
+  connect(mixerVm_.get(), &MixerViewModel::selectedStripChanged, this,
+          [this] { rebuildFocusIds(); });
+  connect(mixerVm_.get(), &MixerViewModel::tracksChanged, this,
+          [this] { rebuildFocusIds(); });
+  connect(mixerVm_.get(), &MixerViewModel::bankChanged, this,
+          [this] { rebuildFocusIds(); });
   // The take edit popup is a modal: its own focus ring replaces the tab's the
   // moment it opens or closes, so NAV can never walk behind it.
   connect(timelineVm_.get(), &TimelineViewModel::editOpenChanged, this,
@@ -944,7 +957,10 @@ bool AppController::isLearnableFocus(const QString& focusId) const {
       id.startsWith(QStringLiteral("mixer.fx2."))) {
     return true;
   }
-  return id == QStringLiteral("mixer.master");
+  // The channel popout carries the selected track's fader and pan now, so the
+  // strip's learn targets must stay reachable through the popout's controls.
+  return id == QStringLiteral("mixer.master") || id == QStringLiteral("channel.gain") ||
+         id == QStringLiteral("channel.pan");
 }
 
 void AppController::learnTargetTouched(const QString& focusId) {
@@ -960,6 +976,10 @@ void AppController::learnTargetTouched(const QString& focusId) {
   } else if (id.startsWith(QStringLiteral("mixer.pan."))) {
     path = QString::fromStdString(
         learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "pan"));
+  } else if (id == QStringLiteral("channel.gain")) {
+    path = QString::fromStdString(learnTarget(mixerVm_->trackIndex(), "gain"));
+  } else if (id == QStringLiteral("channel.pan")) {
+    path = QString::fromStdString(learnTarget(mixerVm_->trackIndex(), "pan"));
   } else if (id.startsWith(QStringLiteral("mixer.fx1."))) {
     path = QString::fromStdString(
         learnTarget(id.section(QLatin1Char('.'), 2, 2).toInt(), "fx1wet"));
@@ -1794,11 +1814,19 @@ bool AppController::isEditableFocus(const QString& focusId) const {
            id == QStringLiteral("config.timeline.fadeout");
   }
   if (id.startsWith(QStringLiteral("mixer."))) {
-    return id.contains(QStringLiteral("gain")) || id.contains(QStringLiteral("pan")) ||
-           id.contains(QStringLiteral("fx1")) || id.contains(QStringLiteral("fx2")) ||
-           id.contains(QStringLiteral("cue")) || id.contains(QStringLiteral("out34")) ||
-           id.startsWith(QStringLiteral("mixer.in.")) ||
-           id == QStringLiteral("mixer.master");
+    if (id == QStringLiteral("mixer.master")) return true;
+    // Structured match: mixer.<value>.<slot>. A substring test made
+    // "mixer.expand.3" editable because it contains "pan".
+    const QStringList parts = id.split(QLatin1Char('.'));
+    if (parts.size() != 3) return false;
+    bool slotOk = false;
+    parts[2].toInt(&slotOk);
+    if (!slotOk) return false;
+    const QString what = parts[1];
+    return what == QStringLiteral("gain") || what == QStringLiteral("pan") ||
+           what == QStringLiteral("fx1") || what == QStringLiteral("fx2") ||
+           what == QStringLiteral("cue") || what == QStringLiteral("out34") ||
+           what == QStringLiteral("in");
   }
   if (id.startsWith(QStringLiteral("track."))) {
     return id == QStringLiteral("track.gain") || id == QStringLiteral("track.trim") ||
@@ -1900,6 +1928,18 @@ void AppController::activateFocus() {
   if (focusId.startsWith(QStringLiteral("shift."))) focusId = focusId.mid(6);
   if (focusId.isEmpty()) return;
   const auto parts = focusId.split(QLatin1Char('.'));
+
+  // G3: the page grid is a modal with a ring, so PRESS must choose a page and
+  // CLOSE must close it; otherwise the panel is locked out.
+  if (parts.size() >= 3 && parts[0] == QStringLiteral("bank") &&
+      parts[1] == QStringLiteral("page")) {
+    if (parts[2] == QStringLiteral("close")) {
+      closeBankGrid();
+    } else {
+      chooseBankPage(parts[2].toInt());
+    }
+    return;
+  }
 
   if (timelineVm_ != nullptr && timelineVm_->editOpen() && parts.size() >= 2 &&
       parts[0] == QStringLiteral("edit")) {
@@ -2296,11 +2336,13 @@ void AppController::activateFocus() {
     return;
   }
   if (focusId == QStringLiteral("mixer.mode.0")) {
-    mixerVm_->setSelectedMode(false);
+    // G1: the header pair switches the MIXER/TRACK view. It is not the selected
+    // track's mode: pressing it must show the other face, not rewrite the mode.
+    mixerVm_->setTrackMode(false);
     return;
   }
   if (focusId == QStringLiteral("mixer.mode.1")) {
-    mixerVm_->setSelectedMode(true);
+    mixerVm_->setTrackMode(true);
     return;
   }
 
@@ -2539,8 +2581,18 @@ void AppController::activateFocus() {
     } else if (what == QStringLiteral("arm")) {
       mixerVm_->setTrackArm(!mixerVm_->trackArm());
     } else if (what == QStringLiteral("mode")) {
-      mixerVm_->setSelectedMode(nextTrackMode(mixerVm_->selectedMode()));
+      // The popout's four-way selector: the ring stop names the mode it shows,
+      // so PRESS picks that mode (a ring of four that only cycled would leave
+      // three of its own stops pointing at the same verb).
+      if (parts.size() >= 3) {
+        const int requested = parts[2].toInt();
+        mixerVm_->setSelectedMode(std::clamp(requested, 0, kTrackModeCount - 1));
+      } else {
+        mixerVm_->setSelectedMode(nextTrackMode(mixerVm_->selectedMode()));
+      }
       showTextPopup(QStringLiteral("TRACK MODE"), mixerVm_->selectedModeWord());
+    } else if (what == QStringLiteral("recsource")) {
+      openTrackMode(mixerVm_->trackIndex());
     } else if (what == QStringLiteral("gain") || what == QStringLiteral("trim") ||
                what == QStringLiteral("pan") || what == QStringLiteral("fx1") ||
                what == QStringLiteral("fx2") || what == QStringLiteral("cue") ||
@@ -3705,7 +3757,10 @@ void AppController::rebuildFocusIds() {
     ids.push_back(QStringLiteral("channel.mute"));
     ids.push_back(QStringLiteral("channel.solo"));
     ids.push_back(QStringLiteral("channel.arm"));
-    ids.push_back(QStringLiteral("channel.monitor"));
+    for (int mode = 0; mode < kTrackModeCount; ++mode) {
+      ids.push_back(QStringLiteral("channel.mode.%1").arg(mode));
+    }
+    ids.push_back(QStringLiteral("channel.recsource"));
     ids.push_back(QStringLiteral("channel.input"));
     ids.push_back(QStringLiteral("channel.output"));
     ids.push_back(QStringLiteral("channel.fx"));
@@ -3713,7 +3768,9 @@ void AppController::rebuildFocusIds() {
   } else if (shiftFace_) {
     switch (tab_) {
       case 0:
-        if (mixerVm_->selectedMode()) {
+        // G1: the face follows the MIXER/TRACK view, never the selected
+        // track's ARM/PLAY/OVERDUB value.
+        if (mixerVm_->trackMode()) {
           ids.push_back(QStringLiteral("shift.track.input"));
           ids.push_back(QStringLiteral("shift.track.input.pair"));
           ids.push_back(QStringLiteral("shift.track.output"));
@@ -3904,9 +3961,9 @@ void AppController::rebuildFocusIds() {
       case 0: {
         ids.push_back(QStringLiteral("mixer.mode.0"));
         ids.push_back(QStringLiteral("mixer.mode.1"));
-        if (mixerVm_->selectedMode()) {
-          // Only the current page of four is on screen; the header page buttons
-          // walk the same list the MIXER face banks.
+        if (mixerVm_->trackMode()) {
+          // Only the current page of three is on screen; the header page
+          // buttons walk the same list the MIXER face banks.
           const int first = mixerVm_->bank() * kStripsPerBank;
           for (int position = first;
                position < first + kStripsPerBank && position < mixerVm_->stripCount();
@@ -3915,6 +3972,7 @@ void AppController::rebuildFocusIds() {
                                                 MixerViewModel::SlotRole);
             ids.push_back(QStringLiteral("track.select.%1").arg(slot.toInt()));
           }
+          ids.push_back(QStringLiteral("track.expand"));
           ids.push_back(QStringLiteral("track.gain"));
           ids.push_back(QStringLiteral("track.pan"));
           // G8: "track.mode" had no widget; the MODE control lives on the
@@ -3931,11 +3989,8 @@ void AppController::rebuildFocusIds() {
                                                 MixerViewModel::SlotRole);
             const int strip = slot.toInt();
             ids.push_back(QStringLiteral("mixer.expand.%1").arg(strip));
-            ids.push_back(QStringLiteral("mixer.trackmode.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.select.%1").arg(strip));
-            ids.push_back(QStringLiteral("mixer.in.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.gain.%1").arg(strip));
-            ids.push_back(QStringLiteral("mixer.pan.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.mute.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.solo.%1").arg(strip));
             ids.push_back(QStringLiteral("mixer.arm.%1").arg(strip));

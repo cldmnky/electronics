@@ -73,7 +73,7 @@ int MixerViewModel::pageCount() const {
 }
 
 QVariantList MixerViewModel::bankPages() const {
-  // A fixed 4x4 grid over the capacity: a page past the track list stays
+  // A fixed grid over the capacity: a page past the track list stays
   // visible but dimmed, so "there is no track 17 yet" is legible instead of the
   // grid silently shrinking.
   constexpr int kPages =

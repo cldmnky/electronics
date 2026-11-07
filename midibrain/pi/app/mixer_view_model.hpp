@@ -1,6 +1,6 @@
 #pragma once
 // QML model for the dynamic banked mixer and the single-track TRACK mode.
-// The mixer shows the session's ordered track list, four strips per page; the
+// The mixer shows the session's ordered track list, three strips per page; the
 // per-slot configuration store is fixed (MixerModel) so a removed track keeps
 // its settings and takes and a re-add restores them. Values live in
 // MixerModel's atomics; this model only formats them for QML and forwards
@@ -26,10 +26,11 @@ namespace mnky::app {
 
 class FxManager;
 
-// Four strips per page: the owner's "8-9 crammed, sliders too small" ask. The
+// Three strips per page: the owner's "8-9 crammed, sliders too small" ask,
+// then the stage-2 performance-surface ask (taller faders, real meters). The
 // page count comes from the track list (ceil(tracks / kStripsPerBank)), never
 // from a capacity constant.
-inline constexpr int kStripsPerBank = 4;
+inline constexpr int kStripsPerBank = 3;
 
 class MixerViewModel final : public QAbstractListModel {
   Q_OBJECT
@@ -39,7 +40,7 @@ class MixerViewModel final : public QAbstractListModel {
   Q_PROPERTY(int pageCount READ pageCount NOTIFY tracksChanged)
   Q_PROPERTY(bool empty READ empty NOTIFY tracksChanged)
   Q_PROPERTY(QString bankText READ bankText NOTIFY tracksChanged)
-  // A11: one row per four-track page, for the pager grid ({index, label,
+  // A11: one row per three-track page, for the pager grid ({index, label,
   // empty, current}). A page is empty when its first slot is past the list.
   Q_PROPERTY(QVariantList bankPages READ bankPages NOTIFY tracksChanged)
   Q_PROPERTY(bool trackMode READ trackMode WRITE setTrackMode NOTIFY trackModeChanged)

@@ -550,7 +550,7 @@ void capacityTests() {
   check(model.removeTrackAt(0), "the last slot can be removed");
   check(!model.trackActive(lastSlot), "the removed last slot is silent");
 
-  // A full 64-track list: the page count follows the list, four per page.
+  // A full 64-track list: the page count follows the list, three per page.
   MixerModel full;
   for (int slot = 0; slot < audio::kMaxTracks; ++slot) {
     check(full.addTrack(slot, ""), "every capacity slot can be added");
@@ -560,7 +560,7 @@ void capacityTests() {
   MixerViewModel view(full, settings, eq);
   check(view.stripCount() == audio::kMaxTracks, "the mixer shows every track");
   check(view.pageCount() == (audio::kMaxTracks + kStripsPerBank - 1) / kStripsPerBank,
-        "the page count is ceil(tracks / 4), never a constant");
+        "the page count is ceil(tracks / 3), never a constant");
   view.setBank(view.pageCount() - 1);
   check(view.bank() == view.pageCount() - 1, "the last page is reachable");
   view.setBank(view.pageCount());
@@ -568,7 +568,7 @@ void capacityTests() {
 }
 
 // The QML model over the dynamic list: rows carry slots (not positions), the
-// bank pages four strips at a time, the selectors are absolute list writes and
+// bank pages three strips at a time, the selectors are absolute list writes and
 // the channel popout reads the same slot the strip was opened on.
 void dynamicMixerViewModelTests() {
   SessionSettings settings;
@@ -596,26 +596,28 @@ void dynamicMixerViewModelTests() {
   check(view.data(view.index(2, 0), MixerViewModel::OutputTextRole).toString() ==
             "NONE",
         "the output destination reads back in the row");
+  check(view.stripsPerBank() == 3, "the stage-2 bank shows three strips");
   check(view.bankText() == "TRACKS 1-3 / 3", "the page readout counts the tracks");
 
   check(view.addTrack(3, "gtr", 3, false, 0), "the view adds slot 3");
   check(view.addTrack(4, "vox", 4, false, 0), "the view adds slot 4");
-  check(view.pageCount() == 2 && view.bankText() == "TRACKS 1-4 / 5",
-        "four strips fit one page and the fifth opens a second page");
+  check(view.pageCount() == 2 && view.bankText() == "TRACKS 1-3 / 5",
+        "three strips fit one page and the fourth opens a second page");
   view.stepBank(1);
-  check(view.bank() == 1 && view.bankText() == "TRACKS 5-5 / 5",
+  check(view.bank() == 1 && view.bankText() == "TRACKS 4-5 / 5",
         "stepping the bank reaches the second page");
   view.stepBank(1);
   check(view.bank() == 1, "the bank cannot step past the last page");
-  // A11: the pager grid is a fixed 4x4 over the capacity; pages past the track
-  // list stay visible but empty, and the current page is marked.
+  // A11: the pager grid is a fixed grid over the capacity; pages past the
+  // track list stay visible but empty, and the current page is marked.
   const auto pages = view.bankPages();
-  check(pages.size() == 16, "the pager grid covers the 64-track capacity");
-  check(pages.value(0).toMap().value(QStringLiteral("label")).toString() == "1-4",
-        "the first page reads 1-4");
+  check(pages.size() == (audio::kMaxTracks + kStripsPerBank - 1) / kStripsPerBank,
+        "the pager grid covers the 64-track capacity");
+  check(pages.value(0).toMap().value(QStringLiteral("label")).toString() == "1-3",
+        "the first page reads 1-3");
   check(!pages.value(1).toMap().value(QStringLiteral("empty")).toBool(),
         "a page with tracks is selectable");
-  check(pages.value(3).toMap().value(QStringLiteral("empty")).toBool(),
+  check(pages.value(2).toMap().value(QStringLiteral("empty")).toBool(),
         "a page past the track list is empty");
   check(pages.value(1).toMap().value(QStringLiteral("current")).toBool(),
         "the grid marks the current page");

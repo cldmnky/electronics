@@ -4,11 +4,12 @@ import "../components"
 
 // Mixer screen with two views of the same strips: MIXER (one setting across
 // many tracks) and TRACK (one track with many settings). The mixer is the
-// session's dynamic track list, four strips per page: ADD TRACK appends a strip,
-// the expand chevron on a strip opens the full channel popout (where REMOVE
-// TRACK lives, confirmed), and every selector opens its option list. SHIFT
-// switches to the configure face: per-strip Gain/FX/CUE/OUT34/monitor for
-// MIXER, and the TRACK I/O, sends and monitor summaries for TRACK.
+// session's dynamic track list, three strips per page: ADD TRACK appends a
+// strip, each strip's CH control opens the full channel popout (where pan,
+// input, sends, the mode selector and REMOVE TRACK live, confirmed), and every
+// selector opens its option list. SHIFT switches to the configure face:
+// per-strip Gain/FX/CUE/OUT34/mode for MIXER, and the TRACK I/O, sends and
+// monitor summaries for TRACK.
 Item {
     id: screen
 
@@ -21,34 +22,34 @@ Item {
 
         Row {
             width: parent.width
-            height: Style.touch
+            height: Style.touchSecondary
             spacing: Style.gap
 
             TouchButton {
-                width: 84
+                width: 96
                 height: parent.height
                 text: "MIXER"
-                textSize: Style.fontSmall
+                textSize: Style.fontSecondary
                 checked: !mixer.trackMode
                 focusId: "mixer.mode.0"
                 onClicked: mixer.trackMode = false
             }
             TouchButton {
-                width: 84
+                width: 96
                 height: parent.height
                 text: "TRACK"
-                textSize: Style.fontSmall
+                textSize: Style.fontSecondary
                 checked: mixer.trackMode
                 focusId: "mixer.mode.1"
                 onClicked: mixer.trackMode = true
             }
             Row {
-                width: 232
+                width: 264
                 height: parent.height
                 spacing: Style.gapTight
 
                 TouchButton {
-                    width: Style.touch
+                    width: Style.touchSecondary
                     height: parent.height
                     text: "<"
                     textSize: 18
@@ -58,17 +59,17 @@ Item {
                 // A11: the label is the pager. It opens the page grid so page
                 // 16 is one tap away; the arrows keep stepping one page.
                 TouchButton {
-                    width: parent.width - Style.touch * 2 - Style.gapTight * 2
+                    width: parent.width - Style.touchSecondary * 2 - Style.gapTight * 2
                     height: parent.height
                     text: mixer.bankText
-                    textSize: Style.fontSmall
+                    textSize: Style.fontSecondary
                     variant: "ghost"
                     chevron: "down"
                     focusId: "mixer.bank.pages"
                     onClicked: app.openBankGrid()
                 }
                 TouchButton {
-                    width: Style.touch
+                    width: Style.touchSecondary
                     height: parent.height
                     text: ">"
                     textSize: 18
@@ -77,23 +78,23 @@ Item {
                 }
             }
             TouchButton {
-                width: 110
+                width: 120
                 height: parent.height
                 text: "ADD TRACK"
-                textSize: Style.fontSmall
+                textSize: Style.fontSecondary
                 variant: "primary"
                 focusId: "mixer.add"
                 onClicked: app.requestAddTrack()
             }
             Text {
-                width: parent.width - 84 - 84 - 232 - 110 - Style.gap * 4
+                width: parent.width - 96 - 96 - 264 - 120 - Style.gap * 4
                 height: parent.height
                 text: screen.shiftFace ? "SHIFT  configure"
-                      : (mixer.trackMode ? mixer.trackName + "  -  ^ = full channel"
+                      : (mixer.trackMode ? mixer.trackName + " - ^ = channel"
                                          : (mixer.empty ? "no tracks yet"
-                                                        : "tap ^ in a strip header for the full channel"))
+                                                        : "tap name = select"))
                 color: screen.shiftFace ? Style.accent : Style.textDim
-                font.pixelSize: Style.fontSmall
+                font.pixelSize: Style.fontSecondary
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
@@ -103,7 +104,7 @@ Item {
         Item {
             visible: !mixer.trackMode && !screen.shiftFace
             width: parent.width
-            height: parent.height - Style.touch - Style.gap
+            height: parent.height - Style.touchSecondary - Style.gap
 
             Row {
                 anchors.fill: parent
@@ -129,16 +130,17 @@ Item {
                     Repeater {
                         model: mixer
                         delegate: MixerStrip {
+                            readonly property real cellWidth: (stripsArea.width -
+                                Style.gap * (mixer.stripsPerBank - 1)) / mixer.stripsPerBank
                             visible: index >= mixer.bank * mixer.stripsPerBank &&
                                      index < (mixer.bank + 1) * mixer.stripsPerBank
-                            width: visible ? stripsArea.width / mixer.stripsPerBank : 0
+                            width: visible ? cellWidth : 0
                             height: stripsArea.height
-                            x: visible ? (index % mixer.stripsPerBank) * width : 0
+                            x: visible ? (index % mixer.stripsPerBank) *
+                                         (cellWidth + Style.gap) : 0
                             stripIndex: model.slot
                             stripName: model.name
                             gainDb: model.gainDb
-                            pan: model.pan
-                            inputText: model.inputText
                             level: model.level
                             clip: model.clip
                             mode: model.mode
@@ -166,18 +168,43 @@ Item {
 
                         Text {
                             width: parent.width
-                            height: 18
+                            height: 20
                             text: "MASTER"
                             color: Style.text
-                            font.pixelSize: Style.fontTitle
+                            font.pixelSize: Style.fontLabel
                             font.weight: Font.DemiBold
                             horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        Row {
+                            width: implicitWidth
+                            height: 30
+                            x: (parent.width - width) / 2
+                            spacing: 3
+
+                            Text {
+                                height: parent.height
+                                text: Number(mixer.masterDb).toFixed(1)
+                                color: Style.text
+                                font.pixelSize: Style.fontValue
+                                font.weight: Font.DemiBold
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            Text {
+                                height: parent.height
+                                text: "dB"
+                                color: Style.textDim
+                                font.pixelSize: Style.fontSecondary
+                                verticalAlignment: Text.AlignVCenter
+                            }
                         }
 
                         TouchSlider {
                             id: masterGain
-                            width: parent.width
-                            height: Math.max(96, parent.height - 18 - 88 - Style.gapTight * 2)
+                            width: Style.touchPrimary
+                            height: parent.height - 20 - 30 - 72 - Style.gapTight * 3
+                            x: (parent.width - width) / 2
                             vertical: true
                             minimumValue: -60
                             maximumValue: 12
@@ -191,7 +218,7 @@ Item {
 
                         Row {
                             width: parent.width
-                            height: 84
+                            height: 72
                             spacing: 5
 
                             Repeater {
@@ -214,7 +241,7 @@ Item {
         Item {
             visible: !mixer.trackMode && screen.shiftFace
             width: parent.width
-            height: parent.height - Style.touch - Style.gap
+            height: parent.height - Style.touchSecondary - Style.gap
 
             Item {
                 id: shiftStripsArea
@@ -224,17 +251,22 @@ Item {
                 Repeater {
                     model: mixer
                     delegate: MixerShiftStrip {
+                        readonly property real cellWidth: (shiftStripsArea.width -
+                            Style.gap * (mixer.stripsPerBank - 1)) / mixer.stripsPerBank
                         visible: index >= mixer.bank * mixer.stripsPerBank &&
                                  index < (mixer.bank + 1) * mixer.stripsPerBank
-                        width: visible ? shiftStripsArea.width / mixer.stripsPerBank : 0
-                        height: shiftStripsArea.height - 34
-                        x: visible ? (index % mixer.stripsPerBank) * width : 0
+                        width: visible ? cellWidth : 0
+                        height: shiftStripsArea.height - 30
+                        x: visible ? (index % mixer.stripsPerBank) *
+                                     (cellWidth + Style.gap) : 0
                         stripIndex: model.slot
                         stripName: model.name
                         fx1Wet: model.fx1Wet
                         fx2Wet: model.fx2Wet
                         fx1Name: model.fx1Name
                         fx2Name: model.fx2Name
+                        mode: model.mode
+                        modeWord: model.modeWord
                     }
                 }
 
@@ -259,7 +291,7 @@ Item {
         Item {
             visible: mixer.trackMode && !screen.shiftFace
             width: parent.width
-            height: parent.height - Style.touch - Style.gap
+            height: parent.height - Style.touchSecondary - Style.gap
 
             Column {
                 width: parent.width
@@ -270,7 +302,7 @@ Item {
                     width: parent.width
                     height: Style.touch
 
-                    // The selector is the current page of four: the header's
+                    // The selector is the current page of three: the header's
                     // page buttons walk the same list the MIXER face banks.
                     readonly property int selectWidth: mixer.empty ? width
                                                                     : width - Style.touch -
@@ -284,7 +316,7 @@ Item {
                             height: Style.touch
                             x: visible ? (index % mixer.stripsPerBank) * width : 0
                             text: model.name
-                            textSize: Style.fontSmall
+                            textSize: Style.fontSecondary
                             checked: model.slot === mixer.trackIndex
                             focusId: "track.select." + model.slot
                             onClicked: mixer.setTrackIndex(model.slot)
@@ -387,7 +419,7 @@ Item {
         Item {
             visible: mixer.trackMode && screen.shiftFace
             width: parent.width
-            height: parent.height - Style.touch - Style.gap
+            height: parent.height - Style.touchSecondary - Style.gap
 
             Column {
                 width: parent.width
@@ -594,9 +626,16 @@ Item {
             onClicked: {}
         }
 
+        readonly property int pageColumns: 4
+        readonly property int pageRows: Math.ceil(mixer.bankPages.length / pageColumns)
+
         Rectangle {
             width: 236
-            height: 44 + Style.gap + 4 * Style.touch + 3 * Style.gapTight + 12
+            // The title row, the page rows and the Column's 10 px top/bottom
+            // margins: a 64-track capacity is 22 pages, six rows, 356 px.
+            height: Math.min(parent.height - 4,
+                             44 + Style.gap + bankGrid.pageRows * Style.touch +
+                             (bankGrid.pageRows - 1) * Style.gapTight + 20)
             anchors.centerIn: parent
             color: Style.raised
             radius: Style.cornerPanel
@@ -610,7 +649,7 @@ Item {
 
                 Row {
                     width: parent.width
-                    height: 34
+                    height: Style.touch
 
                     Text {
                         width: parent.width - 92
@@ -623,7 +662,7 @@ Item {
                     }
                     TouchButton {
                         width: 92
-                        height: 34
+                        height: parent.height
                         text: "CLOSE"
                         textSize: Style.fontSmall
                         variant: "ghost"
@@ -634,14 +673,15 @@ Item {
 
                 Grid {
                     width: parent.width
-                    columns: 4
+                    columns: bankGrid.pageColumns
                     spacing: Style.gapTight
 
                     Repeater {
                         model: mixer.bankPages
                         delegate: Rectangle {
                             readonly property bool current: modelData.current
-                            width: (parent.width - Style.gapTight * 3) / 4
+                            width: (parent.width - Style.gapTight *
+                                    (bankGrid.pageColumns - 1)) / bankGrid.pageColumns
                             height: Style.touch
                             radius: Style.corner
                             color: current ? Style.accent
