@@ -19,18 +19,19 @@ in the present tense.
 ## Table of contents
 
 1. Setup - mount, power, audio, MIDI, first boot
+1A. The POWER button and safe shutdown
 2. Meters, inputs, names, gain
 3. Controls overview - joystick, buttons, encoder, touch, LEDs
 4. Modes at a glance
 5. Transport strip
-6. MIXER - four strips a page
-7. TRACK - one track, everything
+6. MIXER - three strips a page + Master
+7. CHANNEL - the track's detail view
 8. EQ - four bands per track and the main
 9. FX RACK - two effect slots per track, X/Y grid
 10. EDIT - timeline, regions, trim and chop
 10A. ARRANGE - sections, clips, song mode, render
 11. PROJ - projects and templates
-12. SYSTEM SHIFT - output, metronome, MIDI learn, TOOLS
+12. SYSTEM SHIFT - summaries, diagnostics, MIDI learn
 13. Recording and playing takes
 14. USB audio streaming
 15. File management and backup
@@ -64,6 +65,32 @@ once you have one.
 **MIDI.** TRS Type-A IN/OUT plus a powered USB hub on the data feedthrough
 for controllers and interfaces. The Pico generates the clock on both ports;
 the Pi mirrors it to USB (section 16).
+
+## 1A. The POWER button and safe shutdown
+
+The panel POWER button (bottom right of the front panel) drives the Pi's
+power input. It has no hard off switch - the module draws standby power
+while plugged in.
+
+**Press** while off: the Pi boots. **Press** while running: a graceful
+shutdown request. The app saves the open project and every dirty state,
+then fills the screen with `SAFE TO POWER OFF`. When that screen is up the
+system has halted cleanly and you may cut power (or leave it - standby draw
+is accepted by design). The screen clears itself after a few seconds or at
+a touch.
+
+If a save ever fails the screen says `SAVE FAILED - DO NOT POWER OFF`
+instead - fix the storage problem before pulling power, the work is still
+in memory.
+
+**Press twice** (or hold): the PMIC force-off - the last resort when the
+system is wedged. Nothing is saved; use it only when the graceful path is
+not responding.
+
+Closing the app window on a desktop session saves through the same path,
+quietly - no shutdown screen.
+
+---
 
 ## 2. Meters, inputs, names, gain
 
@@ -101,10 +128,12 @@ meter without lighting the crown.
   ring, activates, edits values. Hold a direction and it repeats (400 ms
   first, 80 ms after) for scrolling lists and slewing values. There is no
   spatial jump: up and left both step back, down and right both step
-  forward. The ring starts at one `TAB` stop - press it and the tabs open
-  as a grid; pick one and the grid closes with the ring on that screen.
+  forward. The ring walks the
+  persistent destinations (Mixer, Recorder, Arrange, More) - PRESS on
+  More opens the page grid (Routing, Projects, MIDI, EQ, XY, System),
+  pick one and the grid closes with the ring on that screen.
 - **SHIFT/EXIT**: short press = back / dismiss / leave EDIT; hold ~0.5 s
-  = the tab's SHIFT face (section 4). On touch the `SHIFT >` chip in the
+  = the tab's SHIFT face (section 4). On touch the `CONFIGURE` toggle in the
   transport strip does the same job. Inside a SHIFT face, LEFT/RIGHT change
   tab; outside it, LEFT/RIGHT move the ring.
 - **Value knob (TEMPO)**: smooth and endless - no detents, no end stops. It
@@ -164,136 +193,103 @@ OK/Cancel/EXIT, and trap the panel the same way (section 3).
 
 ## 5. Transport strip (every screen)
 
-Left to right: the state word, position, tempo, the no-Pico badge, the touch
-transport, the notice slot, the SHIFT chip, CLICK and the unsaved dot.
+Left to right: the state word, the position (two lines), tempo, the SONG
+tag, the RECMODE badge, the big transport glyphs, the feedback well, the
+Configure toggle and the unsaved dot.
 
-`STOP | 001:3:15 / 00:01 | 120.00 BPM | [NO PICO] | play stop rec | notice | SHIFT > | CLICK | dot`
+**State and position.** The state word is `STOP`, `ROLL` or `REC`. The
+position reads `012:3:02` in large type with the elapsed time under it.
 
-**State and position.** The state word is `STOP`, `ROLL` or `REC`; the
-position reads bars:beats:ticks plus the elapsed time computed from that
-position.
+**Tempo.** The BPM value with a chevron opens the TEMPO popup (40-240
+slider, -1/+1, TAP three times for tap tempo). The panel knob sets the
+same value.
 
-**Tempo.** The BPM readout is a button with a chevron (it reads `120.00
-BPM`). It opens the TEMPO popup: a 40-240 BPM slider, -1 and +1, TAP, DONE,
-with the hint `drag or +-1 - TAP three times for tap tempo`. TAP three times
-and the tempo comes from the interval between the taps. The knob sets the
-same value from the panel.
+**SONG tag.** `SONG ON` means playback follows the arrangement (section
+10A); `SONG OFF` means the classic free take path. Tap it to switch; the
+choice is stored in the project.
 
-**No-Pico badge.** `NO PICO` appears in red only when the run has no Pico
-linked. The SYSTEM screen names exactly what that costs: TRS MIDI and TRS
-clock, panel controls (touch only), LEDs and clock-source follow are absent;
-audio, USB MIDI, the recorder, takes, the mixer, the FX racks, EQ, X/Y,
-projects and the Pi clock to USB OUT stay live.
+**RECMODE badge.** Shows `NOW`, `COUNT-IN` or `PUNCH` whenever it changes
+what pressing REC will do. It is always visible; the full choice lives in
+the options sheet.
 
-**Touch transport.** PLAY, STOP and REC are always there, 44 px, after the
-no-Pico badge. Play is accent while rolling, stop is outlined while stopped,
-rec is record red and pulses while the recorder is actually writing. With a
-Pico linked they sit outside the panel ring - the panel's own buttons own
-transport - but they never disappear, so a bench or demo session can run
-takes with no panel harness.
+**Touch transport.** PLAY, STOP and REC are large (64 px) and always
+present - the panel's own buttons own transport when a Pico is linked, but
+a bench session runs from the screen too. **STOP while stopped returns to
+bar 1** (notice `BACK TO START`) - the classic hardware move. SONG mode
+keeps that zero across START; free mode always begins at bar 1.
 
-**SHIFT chip.** `SHIFT >` switches the current tab to its second face and
-reads `< PRIMARY` while that face is up. It is the touch twin of holding
-SHIFT.
+**Feedback well.** The dark slot right of centre is the one place values
+and notices appear: a parameter you just changed, a notice like `TAKE
+SAVED`, or `SAVE FAILED`. Values and notices replace each other here - no
+more hunting for tiny transient text.
 
-**Notice slot.** Transient messages live here: playback warnings, import
-refusals, `PANIC sent (CC123, all 16 channels)`, `playback: 2 armed track(s)
-monitor input, not their takes`. Info clears after 6 s, a warning after 10 s,
-an error stays until the same kind of action succeeds.
+**Configure toggle.** `CONFIGURE` switches the current screen to its
+second face; it reads `PRIMARY` to come back. The physical SHIFT button
+does exactly the same, and the return label never truncates.
 
-**CLICK.** Short tap toggles the metronome; hold it for 0.6 s to open the
-metronome popup. The label tells the mode when it is not on-play: `CLICK
-REC` or `CLICK OFF`. Toggling never changes the mode - a rec-only click
-stays rec-only. The popup holds mode (off, record only, on play), output
-(`MAIN` / `PHONES` / `OUT3&4`), level and count-in bars (section 12).
+**Options sheet.** The transport's less frequent choices live here:
+RECMODE (NOW / COUNT-IN / PUNCH), CLICK mode (off / record only / on
+play), CLICK output (MAIN / PHONES / OUT3&4) and the metronome setup.
+Closing the sheet keeps every change - nothing to confirm.
 
-**The dot.** The far-right dot marks unsaved work; the same dot sits on the
-PROJ tab and on its SAVE button (section 11).
+**The dot.** The far-right dot marks unsaved work.
 
-## 6. MIXER - four strips a page
+## 6. MIXER - three strips a page + Master
 
-**You see** your session as a dynamic list of tracks, four strips to a page.
-ADD TRACK appends a track and opens the keypad for its name; the pager reads
-`TRACKS 1-4 / 8` and steps with `<` and `>`. The list grows to 64 tracks and
-only real tracks appear. MASTER rides the right edge with its own fader and
-a stereo meter pair.
+**You see** your session as three fat strips per bank plus a compact
+MASTER column on the right. `ADD TRACK` appends a track and opens the
+keypad for its name; the pager reads `TRACKS 1-3 / 8` and steps with `<`
+and `>` - tap the pager to open the bank grid and jump straight to any
+bank. The list grows to 64 tracks and only real tracks appear.
 
-Each strip carries the track name, its pan readout and a `^` expand button
-in the header; a tall gain fader with the post-gain meter and clip crown;
-the PAN knob chip; the INPUT SOURCE selector; and M / S / ARM along the
-base. Tapping a strip body selects it (cyan border). The letter under the
-meter is the monitor mode (P, A, B, M - section 13).
+Each strip is a performance surface: the track name (tap to select, hold
+to rename), a `CH` button that opens the channel view (section 7), the
+gain value in large type, a tall fader beside a real level meter (taper,
+peak hold and a clip crown), and large M / S / ARM switches along the
+base. When the track's mode is not plain PLAY, a readable pill says so -
+`OVERDUB`, `LIVE` - instead of a tiny selector.
 
-**Touch workflow.** Drag any strip's fader; drags stay live past the strip
-frame, and two fingers adjust two strips at once - ride a vocal against a
-bassline with both hands. Tapping M, S or ARM flips that strip's state with
-the colour contract: solo green, mute gray, arm red, focus cyan. A clip
-crown clears itself after a couple of seconds, so a glance after a loud
-passage tells you exactly which channel needs trimming. Tap `^` for the
-full channel (section 7); tap the name to select it, hold it to rename it.
+**Touch workflow.** Riding a fader never opens the channel view: the name,
+the CH button and the fader are three separate touch surfaces. Two
+fingers adjust two strips at once - ride a vocal against a bassline with
+both hands. Mute gray, solo green, arm red, selection cyan. A clip crown
+clears itself after a couple of seconds, so a glance after a loud passage
+tells you which channel needs trimming.
 
-**SHIFT face** turns the same four strips into configure strips: GAIN, FX1,
-FX2, CUE and OUT34 knob chips plus the monitor button (`M PLAY`, `M AUTO`,
-`M BOTH`, `M MON`). Every value applies while you drag. FX1 and FX2 are the
-wet levels of that track's two rack slots - whatever each slot holds (section
-9); CUE feeds the cue bus; OUT34 feeds outputs 3 and 4. PRE or POST for CUE,
-OUT34 and REC is one setting for the whole mixer (SYSTEM SHIFT, section 12)
-and the legend at the foot of the face spells the whole state language out:
-`solo green - mute gray - arm red - MON input - AUTO smart - BOTH layer -
-PLAY take`.
+**What left the strip.** Pan, input assignment, track mode and sends live
+in the channel view (section 7) - the strip keeps only what you touch
+while playing. The SHIFT face (CONFIGURE) carries the wet sends for the
+focused strip: FX1, FX2, CUE and OUT34.
 
-**Panel workflow.** The ring starts at the TAB stop and then walks the
-screen. PRESS on a toggle flips it; PRESS on a value enters EDIT and the
-directions or the knob slew it with a popup readout; PRESS confirms, EXIT
-walks away and the value stays as set. Use the `<` and `>` buttons to change
-page - the ring has no spatial jump across banks.
+**Panel workflow.** The ring walks the strips in view order (the mixer
+face's ring is the mixer's own - not the track list's). PRESS on a toggle
+flips it; PRESS on a value enters EDIT and the directions or the knob
+slew it with a popup readout. The bank grid takes PRESS to pick a page
+and EXIT to close.
 
-**Session.** Soundcheck: ADD TRACK per source, name them, pick inputs, set
-GAIN on the SHIFT face so loud passages tickle the top of the meter without
-lighting the crown, then mix on the strip faders. Nothing here is a mode you
-have to leave: the meters keep running while you work.
+**Session.** Soundcheck: ADD TRACK per source, name them, open CH to pick
+the input and set gain so loud passages tickle the top of the meter, then
+mix on the strip faders. The meters keep running while you work.
 
-## 7. TRACK - one track, everything
+## 7. CHANNEL - the track's detail view
 
-**Two views of one tab.** MIXER and TRACK buttons at the top switch between
-the many-tracks face and the one-track face. Everything below is the same
-engine state seen from the other side.
+The `CH` button on a strip (or PRESS on the strip's expand stop from the
+panel) opens the channel view for that track: everything that does not
+belong on the performance strip.
 
-**TRACK primary.** A selector with the four tracks of the current page, then
-VOL and PAN knob chips and the REC / MUTE / SOLO buttons. The selector
-follows the same pages as the mixer bank, so page 2 of the mixer is the same
-four tracks here.
+**Pan** (knob chip with a value card), **input assignment** (the pair/
+source selectors), **output destination**, **track mode** (PLAY / ARM /
+OVERDUB / LIVE - the same words the strip pill shows), **rec source**
+(PRE / POST / POST FX), the **FX slots** entry (section 9) and, at the
+bottom, separated from the everyday controls, **REMOVE TRACK**.
 
-**TRACK SHIFT.** The assignment and configure face: INPUT (source plus
-MONO/PAIR), OUTPUT destination, GAIN, FX1, FX2, CUE and OUT34 knob chips,
-then the SENDS popup (PRE/POST for CUE, OUT34 and REC) and the MONITOR popup
-(the same four modes as the strip). FX1 and FX2 are the wet levels of this
-track's two rack slots; the slots themselves are configured in the channel
-popout's TRACK FX popup (section 9).
+Sends (FX1, FX2, CUE, OUT34) adjust on the strip's SHIFT face while the
+channel view stays a tap away. Every value applies as you change it -
+there is no Apply button anywhere in this app.
 
-**The channel popout is the whole channel.** Tap `^` in a strip header and
-the full channel opens as one surface: name, RENAME and CLOSE; the gain
-fader with its meter and monitor letter; PAN; MUTE, SOLO and ARM; TRIM;
-INPUT SOURCE and MONO/PAIR; OUTPUT; FX1 and FX2 (the rack slot wets), CUE
-and OUT34; the four-way INPUT MONITOR; TRACK FX, which opens the two slot
-cards (section 9); the EQ band summary; and REMOVE TRACK at the bottom,
-which asks first and leaves the slot's settings and takes in place. This is
-the screen to open when a channel misbehaves - every control that can
-silence it is on it.
-
-**Touch workflow.** Everything drags in place and applies immediately. The
-pan readout is a pill (`C`, `L 30`, `R 45`) so centeredness is a fact, not a
-guess. Hold the name (or tap RENAME) to rename without losing the slot,
-routing or takes.
-
-**Panel workflow.** Up/down walks the face's controls; PRESS edits; the knob
-slews; EXIT backs out. The channel popout traps the ring the same way, so
-REMOVE TRACK is reachable from the panel too.
-
-**Session.** A channel giving trouble: open the channel popout, check INPUT
-MONITOR (doubling? -> AUTO), check OUTPUT (silence? -> not Main), ride TRIM
-against the clip crown. Rename it while you are there - the name is what you
-will look for in the file list.
+The view keeps its own panel ring (so every control is reachable by
+joystick and encoder), and closing it restores the panel focus to
+whatever opened it.
 
 ## 8. EQ - four bands per track and the main
 
@@ -351,6 +347,13 @@ holds four: Core, Room, Hall and Plate.
 
 **A plugin slot** hosts a CLAP plugin: LOAD, SAVE, EJECT, BYPASS and the
 plugin's own parameter list, which gets the full height of the slot card.
+The plugin list is discovered at startup from `CLAP_PATH` and the standard
+locations (`~/.clap`, `/usr/lib/clap`, `/usr/local/lib/clap`, and the
+macOS Audio Plug-Ins CLAP folders). If the machine has no CLAP plugins
+the list says so honestly instead of offering dead entries - DELAY and
+REVERB are built in and always work. A plugin that fails to load is
+reported as `NOT LOADED` in the slot rather than failing silently, and
+switching an effect on a slot replaces it cleanly at any time.
 
 **Touch workflow.** Knobs drag, values apply while you drag, BYPASS and BEAT
 and PING toggle, and the MODEL chip opens the model list with the change
@@ -375,45 +378,37 @@ track are a different pair - the rack is per track.
 
 ## 10. EDIT - timeline, regions, trim and chop
 
-**You see** six tracks per page, time left to right, waveform thumbnails
-drawn from the peak sidecars, the playhead, and the loop brace and punch
-markers (display only; they are edited on RECORDER SHIFT). A lane label
-reads `02 bass`. The toolbar is P< / P> (track page), V< / V> (scroll), Z- /
-Z+ (zoom), IN, OUT, OPS and UNDO.
+**You see** the take at full width: a large waveform (about 254 px tall),
+the playhead, the selection with its IN and OUT grab tabs, and beneath it
+a single row of controls: the operation selector, the parameters of the
+selected operation, and the verb row.
 
-**Pick the take first.** Tap a lane label to open `TAKE FOR TRACK 02`: the
-ACTIVE take, the track's other takes, imported pointers and `LIVE INPUT`.
-Picking one makes it ACTIVE and repaints the lanes; the bottom hint says
-`TAP A LANE LABEL TO PICK ITS TAKE`. A track with no take says `NO ACTIVE
-TAKE` in its lane.
+**Operations.** One selector lists them all - TRIM, SPLIT, GAIN, FADES,
+NORMALIZE, DELETE, CLEAR and friends. Only the selected operation's
+parameters show (a knob chip or the IN/OUT readout), so the screen stays
+quiet. `APPLY <OP>` names the exact verb it will run - it is the one big
+button, and it does the thing. `UNDO` sits right beside it and steps back
+through the edit history. `RENDER REGION` renders the selection to a new
+take. Everything is reachable in fullscreen too - the verb row travels
+with the waveform.
 
-**Regions.** Drag on a waveform to select, or set the edges exactly: IN puts
-the in-point at the cursor, OUT the out-point, and the header shows the
-selection in bars:beats. OPS opens REGION OPS for that selection: TRIM,
-SPLIT, GAIN, FADES, NORMALIZE, DELETE and CLEAR. The popup previews on the
-waveform when the take has a peak sidecar; when it does not, the preview
-block offers RENDER PEAKS instead. RENDER is not available in this build.
-UNDO steps back one edit.
+**Precision without fat fingers.** IN is a grab tab on the waveform's top
+edge, OUT on the bottom edge - they can sit microns apart and never cover
+one another, and dragging one never moves the other. For exact work use
+the numeric/encoder path: PRESS on IN or OUT and nudge bars:beats with
+the knob. Two fingers pinch to zoom the waveform (nothing else moves -
+the popup stays put).
 
 **Nothing is destructive until you say so.** Edits are a region list
-rendered at playback - the take file is never rewritten - so UNDO, picking a
-different take and walking away are always safe.
+rendered at playback - the take file is never rewritten - so UNDO,
+picking a different take and walking away are always safe.
 
-**Touch workflow.** Drag a region, zoom with Z- and Z+, page through the
-tracks with P< and P>, split at the cursor repeatedly to chop a break, then
-alternate mutes for the arrangement.
+**Panel workflow.** NAV moves the cursor (SHIFT for coarse bars). PRESS
+sets IN, then OUT; PRESS on IN or OUT enters EDIT for a bars:beats nudge.
+The operation list is a trapped ring; PRESS applies, EXIT walks away.
 
-**Panel workflow.** NAV moves the cursor (hold SHIFT for coarse bars), and
-the lane and cursor column draw their own ring, so no stop is invisible.
-PRESS on the cursor sets IN, then OUT; PRESS on IN or OUT sets that edge at
-the cursor and enters EDIT for a bars:beats nudge. OPS opens the trapped op
-list (up/down, PRESS, adjust the value, PRESS to apply, EXIT to walk away).
-Nothing commits on focus change alone.
-
-**Session.** The MPC habit, end to end: record a pass, pick the take, trim
-the heads, normalize, chop the break, keep two takes for two arrangements.
-Files are never rewritten by edits - only a render would write new audio,
-and it is not in this build.
+**Session.** The MPC habit, end to end: record a pass, trim the heads,
+normalize, chop the break, keep two takes for two arrangements.
 
 ## 10A. ARRANGE - sections, clips, song mode, render
 
@@ -428,17 +423,15 @@ loop window.
 **SONG mode.** The `SONG` chip in the transport strip governs playback.
 `SONG ON` means the transport reads the song timeline and the clip lanes
 play; `SONG` (off) means the classic free Active-take and take-loop path,
-exactly as before. The choice is stored per project (the app-side
-`arrange.mnkybox` sidecar until the session song object carries it). The
+exactly as before. The choice is stored with the project's session data. The
 transport's bar:beat readout is the song position in both cases; with SONG
 on it is the position the arrangement is playing.
 
 **Sections.** `ADD SECTION` appends a four-bar section. `DUP SECTION` is
 the core arranger verb: it copies the selected section (marker, bars and
 every clip that starts inside it) immediately after itself and shifts every
-later section and clip right by the section length. `LOOP SECTION` sets
-the loop window to the selected section. `RENAME` opens the shared keypad
-for the section name. Tapping a section selects it; when a section loop is
+later section and clip right by the section length. The SECTIONS sheet holds them all - `ADD`, `DUP`, `LOOP`, `LEN` and
+`RENAME` - as one row of large buttons. Tapping a section selects it; when a section loop is
 already armed, tapping another section moves the loop with the selection.
 
 **Length and loop.** `LEN 20:0` is the song length in bars:beats. Tap it to
@@ -446,8 +439,9 @@ open the LEN stepper: `BARS -/+` are coarse (four beats), `BEATS -/+` are
 fine and grid-snapped, `DONE` closes. The length is independent of the
 sections; `LOOP` toggles the loop window on/off. With the loop window at
 its default (whole song, end 0) the playhead wraps at `LEN`; a section loop
-wraps at that section's edges. The loop band flashes when the playhead
-wraps. The playhead itself is a transport seek: tap an empty lane or a bar
+wraps at that section's edges. On every wrap the loop band and the
+transport position pulse together, so the cycle restart is visible from
+across the room. The playhead itself is a transport seek: tap an empty lane or a bar
 position and playback (or the next PLAY from stopped) starts from the
 touched point; the Pico keeps its own clock, the app carries the song
 position as a signed tick offset.
@@ -460,8 +454,7 @@ places a copy in the next free grid position; `GAIN/FADE` opens three
 KnobChip cards (gain, fade in, fade out); `MUTE` keeps the block and
 silences it; `DELETE` asks first and removes only the placement - the take
 file stays on disk. Drag the body to move (grid-snapped) and the left/right
-16 px edges to trim. A long press duplicates. `BAR`, `1/2`, `1/4`, `1/16`
-set the snap grid; `Z-`/`Z+` and a two-finger pinch zoom. Clips on one
+16 px edges to trim. A long press duplicates. The `GRID` selector cycles the snap grid (BAR, 1/2, 1/4, 1/16); `Z-`/`Z+` and a two-finger pinch zoom. Clips on one
 track never overlap: an edit that would overlap is refused with a notice.
 
 **Panel.** NAV walks clips spatially: LEFT/RIGHT move along a track by grid
@@ -480,7 +473,7 @@ track. The notice names it: `TAKE SAVED -> clip at bar 9`. Punch engages
 once per REC press; it does not re-arm on a loop wrap. With SONG off the
 session punch fields keep their original absolute-measure meaning.
 
-**RENDER SONG.** `RENDER SONG` writes `song-<date>.wav` (stereo, 48 kHz,
+**RENDER SONG.** The SONG sheet holds `RENDER SONG`, `LEN` and `LOOP`; `RENDER SONG` writes `song-<date>.wav` (stereo, 48 kHz,
 the song length) into the take folder and lists it in the Recorder as a
 `MASTER` take (selecting it makes it that track's ACTIVE take; it never
 changes automatically). The notice says `SONG RENDERED song-<date>.wav -
@@ -529,11 +522,15 @@ back and keeps the current take registry unless the template carries one.
 template, select it, RENAME it, record. The dirty dot means save before you
 switch or sleep.
 
-## 12. SYSTEM SHIFT - output, metronome, MIDI learn, TOOLS
+## 12. SYSTEM SHIFT - summaries, diagnostics, MIDI learn
 
-SYSTEM's primary face is status: the Pico link, clock and transport, the
-audio backend and device list, the log tail. Its SHIFT face is the configure
-surface, split into three pages plus PANIC.
+SYSTEM's primary face is a readable summary of the machine: audio device
+and sample rate, clock source and state, Pico connection, and storage
+(free space and where takes go). Everything is legible across the room.
+The raw protocol counters, device lists and the log tail live behind the
+`DIAGNOSTICS` button - the troubleshooting data is all still there, just
+not default. Its SHIFT face is the configure surface, split into three
+pages plus PANIC.
 
 **Page 1 - metronome, send sources, monitor, comp.** One summary button per
 group; each opens a popup whose changes apply immediately and whose CANCEL
@@ -579,12 +576,17 @@ intent, not a routing.
 
 ## 13. Recording and playing takes
 
-**Arm and roll.** Arm tracks (ARM on a strip, or the ARM button on the
-recorder screen), then REC+PLAY on the panel, REC in the transport strip, or
-START TAKE on the recorder. STOP cuts the take. The recorder shows the take
-list for the selected track, that track's ACTIVE take and the disk free
-space; its header reads `TRACK 02 - bass` and the selector buttons carry the
-same name under their number.
+**Arm and roll.** Arm tracks (ARM on a strip or the big ARM button on the
+recorder), then REC+PLAY on the panel, REC in the transport strip, or
+START TAKE on the recorder. STOP cuts the take. The recorder leads with
+what matters: the recording state and elapsed time in large type, the
+selected track as one big button (`02 - bass`; tap it for the track
+picker, or step with prev/next), the big ARM and START/STOP TAKE actions,
+a readable recording-source summary, and the take list below. Take rows
+are tall and carry identity, duration, the ACTIVE state and EDIT; the
+full filename, timestamp, storage path and file size live in the row's
+details disclosure. `ARMED` and `RECORDING` are told apart by words and
+an icon as well as colour.
 
 **After a take.** The take is written to the project folder, named from the
 track (`02-bass-003.wav`, or `02-ch02-003.wav` for an unnamed slot) and
