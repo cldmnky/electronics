@@ -9,6 +9,10 @@ Item {
     id: screen
 
     readonly property bool shiftFace: app.panelMode === "shift"
+    // The live audio line is "LIVE  <name>   <rate> Hz / <frames> frames", so
+    // the rate/buffer are field 1 and the raw REQUEST/EFFECTIVE note stays on
+    // DIAGNOSTICS.
+    readonly property var liveFields: system.liveText.replace("LIVE  ", "").split("   ")
 
     Column {
         visible: !screen.shiftFace
@@ -25,27 +29,24 @@ Item {
                 height: parent.height
             }
             Text {
-                width: parent.width - 126 - 250 - Style.gap
+                width: parent.width - 126 - 132 - Style.gap * 2
                 height: parent.height
-                text: "SYSTEM  -  link, clock, audio devices"
+                text: "SYSTEM  -  audio, clock, link"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
-            // B10: the primary face names what its SHIFT face holds, so the
-            // metronome, MIDI learn and TOOLS are not a hidden second screen.
-            Text {
-                width: 250
+            // Discoverability: the raw troubleshooting surface is one tap from
+            // the primary page, not hidden behind the SHIFT face's last tab.
+            TouchButton {
+                width: 132
                 height: parent.height
-                text: "SHIFT > metronome - MIDI learn - TOOLS"
-                color: Style.accent
-                font.pixelSize: Style.fontSmall
-                font.weight: Font.DemiBold
-                horizontalAlignment: Text.AlignRight
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
+                text: "DIAGNOSTICS"
+                textSize: Style.fontSmall
+                focusId: "system.diagnostics"
+                onClicked: app.openDiagnostics()
             }
         }
 
@@ -110,14 +111,6 @@ Item {
                     font.weight: Font.DemiBold
                 }
 
-                Text {
-                    width: parent.width
-                    height: 12
-                    text: "OUTPUT DEVICE - name / backend / channels"
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                }
-
                 DeviceComboBox {
                     id: backendBox
                     objectName: "systemOutputList"
@@ -157,8 +150,7 @@ Item {
                     Text {
                         width: parent.width - 96
                         height: parent.height
-                        text: system.applyNote !== "" ? system.applyNote
-                                                      : "live: a picker change reopens audio"
+                        text: system.applyNote
                         color: system.applyNote !== "" ? Style.record : Style.textDim
                         font.pixelSize: Style.fontSmall
                         wrapMode: Text.Wrap
@@ -304,97 +296,134 @@ Item {
                     }
                 }
 
-                Text {
-                    width: parent.width
-                    height: 16
-                    text: "session deviceOut - tap SAVED ONLY for what the backend does"
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    elide: Text.ElideRight
-                }
-
-                Text {
-                    width: parent.width
-                    height: 16
-                    text: system.liveText
-                    color: Style.text
-                    font.pixelSize: Style.fontSmall
-                    elide: Text.ElideRight
-                }
-                Text {
-                    width: parent.width
-                    height: 34
-                    text: system.noteText
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    wrapMode: Text.Wrap
-                    maximumLineCount: 2
-                    elide: Text.ElideRight
-                }
-
-                Text {
-                    width: parent.width
-                    text: system.backendHint
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    wrapMode: Text.Wrap
-                }
             }
         }
 
         Column {
             width: parent.width - (parent.width - Style.gap) * 0.48 - Style.gap
             height: parent.height
-            spacing: 3
+            spacing: Style.gapTight
 
-            Text {
+            // Stage 5: readable summaries, not the raw protocol dump. The
+            // counters and the log tail live on DIAGNOSTICS (SHIFT > DIAG).
+            Column {
                 width: parent.width
-                height: 16
-                text: "LINK / CLOCK / TRANSPORT"
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
-                font.weight: Font.DemiBold
-            }
-            TextArea {
-                width: parent.width
-                height: parent.height * 0.55
-                readOnly: true
-                text: system.statsText
-                color: Style.text
-                font.family: "monospace"
-                font.pixelSize: Style.fontSmall
-                wrapMode: TextEdit.NoWrap
-                clip: true
-                background: Rectangle {
-                    color: Style.panelDark
-                    radius: Style.corner
-                    border.width: Style.outlineWidth
-                    border.color: Style.outline
+                spacing: 1
+                Text {
+                    width: parent.width
+                    text: "AUDIO DEVICE"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    width: parent.width
+                    height: Style.fontValue + 4
+                    text: screen.liveFields[0]
+                    color: Style.text
+                    font.pixelSize: Style.fontLabel
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    // Rate / buffer, not the raw REQUEST -> EFFECTIVE note: it
+                    // was the line that elided mid-sentence on the panel.
+                    text: screen.liveFields.length > 1 ? screen.liveFields[1] : ""
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    maximumLineCount: 1
+                    elide: Text.ElideRight
                 }
             }
-            Text {
+
+            Column {
                 width: parent.width
-                height: 16
-                text: "LOG (last 120 lines)"
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
-                font.weight: Font.DemiBold
+                spacing: 1
+                Text {
+                    width: parent.width
+                    text: "CLOCK"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    width: parent.width
+                    height: Style.fontValue + 4
+                    text: session.clockSourceText
+                    color: Style.text
+                    font.pixelSize: Style.fontLabel
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    text: app.transportState + "  " + app.tempoText
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    elide: Text.ElideRight
+                }
             }
-            TextArea {
+
+            Column {
                 width: parent.width
-                height: Math.max(40, parent.height - parent.height * 0.55 - 38)
-                readOnly: true
-                text: system.logText
-                color: Style.textDim
-                font.family: "monospace"
-                font.pixelSize: Style.fontSmall
-                wrapMode: TextEdit.NoWrap
-                clip: true
-                background: Rectangle {
-                    color: Style.panelDark
-                    radius: Style.corner
-                    border.width: Style.outlineWidth
-                    border.color: Style.outline
+                spacing: 1
+                Text {
+                    width: parent.width
+                    text: "PICO"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    width: parent.width
+                    height: Style.fontValue + 4
+                    text: app.linkSummary
+                    color: Style.text
+                    font.pixelSize: Style.fontLabel
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    text: system.noPicoMode ? "USB MIDI only - no TRS, panel or LEDs"
+                                            : "Panel, LEDs and TRS are wired"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    elide: Text.ElideRight
+                }
+            }
+
+            Column {
+                width: parent.width
+                spacing: 1
+                Text {
+                    width: parent.width
+                    text: "STORAGE"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    width: parent.width
+                    height: Style.fontValue + 4
+                    text: tools.diskFreeText
+                    color: tools.lowSpace ? Style.record : Style.text
+                    font.pixelSize: Style.fontLabel
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    text: tools.lowSpace ? "LOW SPACE - free the take volume"
+                                         : "take volume"
+                    color: tools.lowSpace ? Style.record : Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    elide: Text.ElideRight
                 }
             }
         }

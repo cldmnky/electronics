@@ -329,11 +329,17 @@ void AppController::setToolsPage(int page) {
 }
 
 void AppController::setSystemShiftPage(int page) {
-  const int clamped = std::clamp(page, 0, 2);
+  const int clamped = std::clamp(page, 0, 3);
   if (clamped == systemShiftPage_) return;
   systemShiftPage_ = clamped;
   emit systemShiftPageChanged();
   rebuildFocusIds();
+}
+
+void AppController::openDiagnostics() {
+  if (!tabHasShiftFace(tab_)) setTab(3);
+  setSystemShiftPage(3);
+  showShiftFace(true);
 }
 
 void AppController::play() {
@@ -2163,6 +2169,11 @@ void AppController::activateFocus() {
       if (parts[2] == QStringLiteral("op")) {
         configVm_->setTimelineOp(parts[3].toInt());
       }
+    } else if (parts[1] == QStringLiteral("renderregion")) {
+      // Same two steps as the touch button: apply/cancel the popup, then bake
+      // IN..OUT onto a new track.
+      configCancel();
+      renderRegionToTrack();
     } else if (parts[1] == QStringLiteral("eqtype") && parts.size() >= 3) {
       configVm_->setEqType(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("delay") && parts.size() >= 3) {
@@ -2485,11 +2496,6 @@ void AppController::activateFocus() {
     return;
   }
 
-  if (parts.size() >= 2 && parts[0] == QStringLiteral("tools") &&
-      parts[1] == QStringLiteral("page") && parts.size() >= 3) {
-    setToolsPage(parts[2].toInt());
-    return;
-  }
   if (focusId == QStringLiteral("tools.brightness")) {
     setPanelMode(QStringLiteral("edit"));
     return;
@@ -2568,6 +2574,10 @@ void AppController::activateFocus() {
     const int index = parts.size() >= 3 ? parts[2].toInt() : 0;
     if (parts[1] == QStringLiteral("summary") && parts.size() >= 3) {
       openConfig(parts[2]);
+    } else if (parts[1] == QStringLiteral("clocksource") && parts.size() >= 3) {
+      // G12: the three persisted clock-source choices are direct picks, not a
+      // cycling stop, so the ring stop names the value it selects.
+      sessionVm_->setClockSourceChoice(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("sends")) {
       openConfig(QStringLiteral("sends"));
     } else if (parts[1] == QStringLiteral("clickmode")) {
@@ -2841,6 +2851,14 @@ void AppController::activateFocus() {
       systemVm_->apply();
     } else if (parts[1] == QStringLiteral("refresh")) {
       systemVm_->refreshDevices();
+    } else if (parts[1] == QStringLiteral("diagnostics")) {
+      openDiagnostics();
+    } else if (parts[1] == QStringLiteral("devout") && parts.size() >= 3 &&
+               parts[2] == QStringLiteral("saved")) {
+      showTextPopup(QStringLiteral("DEVICE OUT CHANNELS"),
+                    QStringLiteral("Saved with the project (session deviceOut) and "
+                                   "reloaded unchanged. The audio backend does not map "
+                                   "these pairs onto the interface channels yet."));
     } else if (parts[1] == QStringLiteral("backend") ||
                parts[1] == QStringLiteral("input") ||
                parts[1] == QStringLiteral("buffer")) {
@@ -2939,11 +2957,19 @@ void AppController::activateFocus() {
   if (parts.size() >= 2 && parts[0] == QStringLiteral("xy")) {
     if (parts[1] == QStringLiteral("freeze")) {
       xyVm_->toggleFreeze();
+    } else if (parts[1] == QStringLiteral("bank") && parts.size() >= 3) {
+      mixerVm_->stepBank(parts[2].toInt() == 0 ? -1 : 1);
+    } else if (parts[1] == QStringLiteral("track") && parts.size() >= 3) {
+      selectStrip(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("delay") ||
                parts[1] == QStringLiteral("reverb")) {
       // Grid ids keep their historical names; the grid is the rack slot.
       const int slot = parts[1] == QStringLiteral("reverb") ? 1 : 0;
-      if (parts.size() >= 3 && parts[2] == QStringLiteral("params")) {
+      if (parts.size() >= 3 && parts[2] == QStringLiteral("pick")) {
+        // G12: an unbound grid's PICK EFFECT button is a ring stop while it is
+        // visible, so PRESS opens the same rack picker as touch.
+        openFxSlot(slot);
+      } else if (parts.size() >= 3 && parts[2] == QStringLiteral("params")) {
         if (slot == 1 && xyVm_->frozen()) {
           showTextPopup(QStringLiteral("FX2"),
                         QStringLiteral("FREEZE locks the reverb params"));
@@ -3830,8 +3856,6 @@ void AppController::rebuildFocusIds() {
     } else if (kind == QStringLiteral("trackfromtake")) {
       ids.push_back(QStringLiteral("config.trackfromtake.0"));
       ids.push_back(QStringLiteral("config.trackfromtake.1"));
-    } else if (kind == QStringLiteral("takeedit")) {
-      ids.push_back(QStringLiteral("config.ok"));
     } else if (kind == QStringLiteral("monitor")) {
       ids.push_back(QStringLiteral("config.phones.0"));
       ids.push_back(QStringLiteral("config.phones.1"));
@@ -3865,6 +3889,8 @@ void AppController::rebuildFocusIds() {
       ids.push_back(QStringLiteral("config.timeline.gain"));
       ids.push_back(QStringLiteral("config.timeline.fadein"));
       ids.push_back(QStringLiteral("config.timeline.fadeout"));
+      // G12: the region render verb is part of the timeline-ops surface.
+      ids.push_back(QStringLiteral("config.renderregion"));
     } else if (kind == QStringLiteral("inputsource")) {
       const int channels = MixerViewModel::inputChannelCount();
       for (int state = 0; state < 1 + channels + channels / 2; ++state) {
@@ -4101,7 +4127,12 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("shift.system.page.0"));
         ids.push_back(QStringLiteral("shift.system.page.1"));
         ids.push_back(QStringLiteral("shift.system.page.2"));
+        ids.push_back(QStringLiteral("shift.system.page.3"));
         if (systemShiftPage_ == 0) {
+          // G12: the three clock-source choices are real persisted controls.
+          for (int source = 0; source < 3; ++source) {
+            ids.push_back(QStringLiteral("shift.monitor.clocksource.%1").arg(source));
+          }
           ids.push_back(QStringLiteral("shift.monitor.summary.metronome"));
           ids.push_back(QStringLiteral("shift.monitor.summary.sends"));
           ids.push_back(QStringLiteral("shift.monitor.summary.monitor"));
@@ -4113,9 +4144,11 @@ void AppController::rebuildFocusIds() {
           for (int row = 0; row < learnVm_->bindings().size(); ++row) {
             ids.push_back(QStringLiteral("shift.learn.binding.%1").arg(row));
           }
-        } else {
+        } else if (systemShiftPage_ == 2) {
           ids.push_back(QStringLiteral("shift.tools.brightness"));
         }
+        // Page 3 (DIAGNOSTICS) is read-only; the four page tabs remain the
+        // ring stops, so the raw counters are panel-reachable without dead ids.
         break;
       case kArrangeTabIndex:
         ids.push_back(QStringLiteral("shift.arrange.addsection"));
@@ -4142,7 +4175,7 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("shift.eq.band.type"));
         break;
       }
-      case 5:
+      case kProjectsTabIndex:
         ids.push_back(QStringLiteral("shift.projects.new"));
         ids.push_back(QStringLiteral("shift.projects.rename"));
         ids.push_back(QStringLiteral("shift.projects.delete"));
@@ -4254,10 +4287,12 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("system.backend"));
         ids.push_back(QStringLiteral("system.input"));
         ids.push_back(QStringLiteral("system.buffer"));
+        ids.push_back(QStringLiteral("system.devout.saved"));
         ids.push_back(QStringLiteral("system.devout.main"));
         ids.push_back(QStringLiteral("system.devout.out34"));
         ids.push_back(QStringLiteral("system.devout.phones"));
         ids.push_back(QStringLiteral("system.refresh"));
+        ids.push_back(QStringLiteral("system.diagnostics"));
         break;
       }
       case kProjectsTabIndex: {
@@ -4294,13 +4329,30 @@ void AppController::rebuildFocusIds() {
         break;
       }
       case kXyTabIndex: {
-        // X/Y performance: the two grids, the freeze toggle and the two
-        // secondary-parameter popups.
+        // X/Y performance: bank arrows and the visible strip row (G12), the two
+        // grids, freeze, the two secondary-parameter popups and the picker for
+        // an unbound slot (the button exists only in that state).
+        ids.push_back(QStringLiteral("xy.bank.0"));
+        ids.push_back(QStringLiteral("xy.bank.1"));
+        const int first = mixerVm_->bank() * kStripsPerBank;
+        for (int position = first;
+             position < first + kStripsPerBank && position < mixerVm_->stripCount();
+             ++position) {
+          const QVariant slot =
+              mixerVm_->data(mixerVm_->index(position, 0), MixerViewModel::SlotRole);
+          ids.push_back(QStringLiteral("xy.track.%1").arg(slot.toInt()));
+        }
         ids.push_back(QStringLiteral("xy.delay"));
         ids.push_back(QStringLiteral("xy.reverb"));
         ids.push_back(QStringLiteral("xy.freeze"));
         ids.push_back(QStringLiteral("xy.delay.params"));
         ids.push_back(QStringLiteral("xy.reverb.params"));
+        if (xyVm_ != nullptr && !xyVm_->boundAt(0)) {
+          ids.push_back(QStringLiteral("xy.delay.pick"));
+        }
+        if (xyVm_ != nullptr && !xyVm_->boundAt(1)) {
+          ids.push_back(QStringLiteral("xy.reverb.pick"));
+        }
         break;
       }
       case kArrangeTabIndex: {
@@ -4907,6 +4959,24 @@ void AppController::updateTransport() {
   }
   if (tempo != tempoText_) {
     tempoText_ = tempo;
+    changed = true;
+  }
+  // G12/Stage 5: the System primary page shows one readable Pico summary; the
+  // counters that back it remain on the DIAGNOSTICS page.
+  QString linkSummary;
+  if (status.noPico) {
+    linkSummary = QStringLiteral("NO PICO - PI CLOCK MASTER");
+  } else {
+    linkSummary = status.emulated ? QStringLiteral("EMULATOR")
+                                  : QStringLiteral("PICO LINK");
+    linkSummary += status.linkUp ? QStringLiteral(" UP") : QStringLiteral(" DOWN");
+    if (status.linkUp && status.readyValid) {
+      linkSummary += status.ready ? QStringLiteral(" - READY HIGH")
+                                  : QStringLiteral(" - READY LOW");
+    }
+  }
+  if (linkSummary != linkSummary_) {
+    linkSummary_ = linkSummary;
     changed = true;
   }
   if (changed) emit transportChanged();

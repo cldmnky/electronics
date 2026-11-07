@@ -30,10 +30,9 @@ Item {
             Text {
                 width: parent.width - 376
                 height: parent.height
-                // B12: the mode is named in words. This build always exposes
-                // both grids (FX1 and FX2 of the selected track) and tracks one
-                // finger per grid, so there is no single-grid mode to select.
-                text: "X/Y - " + xy.trackName + " - MODE: BOTH GRIDS - one finger per grid"
+                // Stage 5: the permanent instruction is gone; the two visible
+                // grids are the mode.
+                text: "X/Y  -  " + xy.trackName + "  -  BOTH GRIDS"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold
@@ -97,7 +96,7 @@ Item {
                     // so four strips never push it off the screen.
                     width: visible ? (screen.width - Style.margin * 2 - Style.touch * 2 -
                                       Style.gapTight * 6 -
-                                      (mixer.pageCount > 1 ? 64 : 0)) /
+                                      (mixer.pageCount > 1 ? 112 : 0)) /
                                      mixer.stripsPerBank : 0
                     height: Style.touch
                     visible: index >= mixer.bank * mixer.stripsPerBank &&
@@ -111,7 +110,7 @@ Item {
                 }
             }
             Text {
-                width: mixer.pageCount > 1 ? 64 : 0
+                width: mixer.pageCount > 1 ? 112 : 0
                 height: parent.height
                 visible: mixer.pageCount > 1
                 text: mixer.bankText
@@ -214,8 +213,8 @@ Item {
             anchors.fill: parent
             color: Style.panel
             radius: Style.cornerPanel
-            border.width: app.focusId === gridItem.focusId ? 2 : Style.outlineWidth
-            border.color: app.focusId === gridItem.focusId ? Style.accent : Style.outline
+            border.width: app.focusId === gridItem.focusId ? 2 : 0
+            border.color: Style.text
         }
 
         Canvas {

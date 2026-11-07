@@ -47,6 +47,15 @@ Item {
                 onClicked: app.setSystemShiftPage(2)
             }
             TouchButton {
+                width: 132
+                height: parent.height
+                text: "DIAGNOSTICS"
+                textSize: Style.fontSmall
+                checked: app.systemShiftPage === 3
+                focusId: "shift.system.page.3"
+                onClicked: app.setSystemShiftPage(3)
+            }
+            TouchButton {
                 width: 92
                 height: parent.height
                 text: "PANIC"
@@ -54,16 +63,6 @@ Item {
                     variant: "danger"
                 focusId: "shift.system.panic"
                 onClicked: app.shiftAction(1)
-            }
-            Text {
-                width: parent.width - 520
-                height: parent.height
-                text: "SHIFT > MIDI learn - metronome - tools"
-                color: Style.accent
-                font.pixelSize: Style.fontSmall
-                font.weight: Font.DemiBold
-                horizontalAlignment: Text.AlignRight
-                verticalAlignment: Text.AlignVCenter
             }
         }
 
@@ -75,6 +74,7 @@ Item {
                 case 0: return "MonitorScreen.qml"
                 case 1: return "../components/LearnPanel.qml"
                 case 2: return "ToolsStatusScreen.qml"
+                case 3: return "ToolsScreen.qml"
                 default: return ""
                 }
             }

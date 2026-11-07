@@ -72,11 +72,10 @@ Item {
                     delegate: Rectangle {
                         width: ListView.view.width
                         height: Style.touch
-                        color: index === midimon.selectedPort ? Style.outline : Style.panelDark
-                        border.width: app.focusId === ("midimon.port." + index) ? 2
-                                                                               : Style.outlineWidth
-                        border.color: app.focusId === ("midimon.port." + index) ? Style.accent
-                                                                                : Style.outline
+                        property string focusId: "midimon.port." + index
+                        color: index === midimon.selectedPort ? Style.raised : Style.panelDark
+                        border.width: app.focusId === focusId ? 2 : 0
+                        border.color: Style.text
 
                         Text {
                             x: 8

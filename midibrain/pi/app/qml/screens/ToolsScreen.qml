@@ -1,73 +1,93 @@
 import QtQuick
+import QtQuick.Controls
 import Mnkybox 1.0
-import "../components"
 
-// Tools: PUNCH markers, MONITOR / metronome / bus-comp configuration and the
-// TOOLS status page. One tab, three pages, all settings written to the session
-// v2 app-owned sections.
+// DIAGNOSTICS: the troubleshooting surface behind System > DIAGNOSTICS. It is
+// deliberately the raw audio request/effective note, the raw protocol counter
+// block and the app log tail; the System primary page carries only the readable
+// summaries. Read-only, so the panel reaches it through the SHIFT page tabs and
+// does not need a ring of its own.
 Item {
-    id: screen
+    id: page
 
     Column {
-        anchors.fill: parent
-        anchors.margins: Style.margin
-        spacing: Style.gap
+        id: body
+        width: parent.width
+        height: parent.height
+        spacing: Style.gapTight
 
-        Row {
+        // The two dumps split whatever the three 18 px labels leave, so the page
+        // never grows past the face it is loaded into.
+        readonly property real dumpHeight: height - audioHeading.height -
+                                           audioNote.height - statsHeading.height -
+                                           logHeading.height - Style.gapTight * 4
+
+        Text {
+            id: audioHeading
             width: parent.width
-            height: Style.touch
-            spacing: Style.gap
-
-            TouchButton {
-                width: 150
-                height: parent.height
-                text: "PUNCH"
-                textSize: Style.fontSmall
-                checked: app.toolsPage === 0
-                focusId: "tools.page.0"
-                onClicked: app.setToolsPage(0)
-            }
-            TouchButton {
-                width: 150
-                height: parent.height
-                text: "MONITOR"
-                textSize: Style.fontSmall
-                checked: app.toolsPage === 1
-                focusId: "tools.page.1"
-                onClicked: app.setToolsPage(1)
-            }
-            TouchButton {
-                width: 150
-                height: parent.height
-                text: "TOOLS STATUS"
-                textSize: Style.fontSmall
-                checked: app.toolsPage === 2
-                focusId: "tools.page.2"
-                onClicked: app.setToolsPage(2)
-            }
-            Text {
-                width: parent.width - 478
-                height: parent.height
-                text: app.toolsPage === 0 ? "transport markers"
-                       : (app.toolsPage === 1 ? "session v2 monitor config" : "disk / screen / versions")
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: Text.AlignRight
-                elide: Text.ElideRight
+            height: 18
+            text: "AUDIO - REQUEST / EFFECTIVE"
+            color: Style.textDim
+            font.pixelSize: Style.fontSecondary
+            font.weight: Font.DemiBold
+        }
+        Text {
+            id: audioNote
+            width: parent.width
+            height: 18
+            // Long by nature: the counter block below carries the same facts, so
+            // this line may elide.
+            text: system.noteText
+            color: Style.text
+            font.pixelSize: Style.fontSecondary
+            elide: Text.ElideRight
+        }
+        Text {
+            id: statsHeading
+            width: parent.width
+            height: 18
+            text: "LINK / CLOCK / TRANSPORT COUNTERS"
+            color: Style.textDim
+            font.pixelSize: Style.fontSecondary
+            font.weight: Font.DemiBold
+        }
+        TextArea {
+            width: parent.width
+            height: body.dumpHeight * 0.62
+            readOnly: true
+            text: system.statsText
+            color: Style.text
+            font.family: "monospace"
+            font.pixelSize: Style.fontSmall
+            wrapMode: TextEdit.NoWrap
+            clip: true
+            background: Rectangle {
+                color: Style.panelDark
+                radius: Style.corner
             }
         }
-
-        Loader {
+        Text {
+            id: logHeading
             width: parent.width
-            height: parent.height - Style.touch - Style.gap
-            source: {
-                switch (app.toolsPage) {
-                case 0: return "PunchScreen.qml"
-                case 1: return "MonitorScreen.qml"
-                case 2: return "ToolsStatusScreen.qml"
-                default: return ""
-                }
+            height: 18
+            text: "APP LOG - last 120 lines"
+            color: Style.textDim
+            font.pixelSize: Style.fontSecondary
+            font.weight: Font.DemiBold
+        }
+        TextArea {
+            width: parent.width
+            height: body.dumpHeight * 0.38
+            readOnly: true
+            text: system.logText
+            color: Style.textDim
+            font.family: "monospace"
+            font.pixelSize: Style.fontSmall
+            wrapMode: TextEdit.NoWrap
+            clip: true
+            background: Rectangle {
+                color: Style.panelDark
+                radius: Style.corner
             }
         }
     }

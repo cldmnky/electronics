@@ -65,6 +65,9 @@ class AppController final : public QObject {
   Q_PROPERTY(QString transportState READ transportState NOTIFY transportChanged)
   Q_PROPERTY(QString positionText READ positionText NOTIFY transportChanged)
   Q_PROPERTY(QString tempoText READ tempoText NOTIFY transportChanged)
+  // System summary: one readable line about the Pico link (UP/DOWN, READY,
+  // emulator or NO PICO). The raw counters stay on the DIAGNOSTICS page.
+  Q_PROPERTY(QString linkSummary READ linkSummary NOTIFY transportChanged)
   // Numeric tempo for the touch TEMPO popup slider (40..240 BPM).
   Q_PROPERTY(double tempoBpm READ tempoBpm NOTIFY transportChanged)
   Q_PROPERTY(QString noticeText READ noticeText NOTIFY noticeChanged)
@@ -157,9 +160,13 @@ class AppController final : public QObject {
   Q_INVOKABLE void setToolsPage(int page);
   int systemShiftPage() const { return systemShiftPage_; }
   Q_INVOKABLE void setSystemShiftPage(int page);
+  // System > DIAGNOSTICS: the raw link counters and log tail live on the
+  // SHIFT face's fourth page, so the primary surface stays readable.
+  Q_INVOKABLE void openDiagnostics();
   QString transportState() const { return transportState_; }
   QString positionText() const { return positionText_; }
   QString tempoText() const { return tempoText_; }
+  QString linkSummary() const { return linkSummary_; }
   double tempoBpm() const { return state_.tempoX100.load() / 100.0; }
   QString noticeText() const { return noticeText_; }
   QString noticeKind() const { return noticeKind_; }
@@ -507,6 +514,7 @@ class AppController final : public QObject {
   bool fullscreen_ = false;
   int toolsPage_ = 0;
   int systemShiftPage_ = 0;
+  QString linkSummary_;
   int refreshTicks_ = 0;
   int focusByScreen_[kScreenCount] = {};
   std::vector<QString> focusIds_;

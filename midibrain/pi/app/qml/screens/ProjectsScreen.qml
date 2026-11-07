@@ -37,7 +37,7 @@ Item {
             Text {
                 width: parent.width - 100 - 118 - 100 - Style.gap * 3
                 height: parent.height
-                text: "tap loads - ... selects  -  SHIFT > manage + templates"
+                text: "tap loads  -  ... selects  -  SHIFT > manage"
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
                 verticalAlignment: Text.AlignVCenter
@@ -130,7 +130,17 @@ Item {
                 color: index === projects.selectedRow ? Style.raised
                        : (index % 2 === 0 ? Style.panel : Style.panelDark)
                 border.width: app.focusId === focusId ? 2 : 0
-                border.color: Style.accent
+                border.color: Style.text
+
+                // Selection (the SHIFT verb subject) is a left bar; panel focus
+                // is the border. They were both the accent border before.
+                Rectangle {
+                    visible: index === projects.selectedRow
+                    width: 4
+                    height: parent.height
+                    radius: 2
+                    color: Style.accent
+                }
 
                 Text {
                     anchors.left: parent.left
@@ -169,8 +179,8 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Style.corner
                     color: index === projects.selectedRow ? Style.raised : Style.panelDark
-                    border.width: 2
-                    border.color: index === projects.selectedRow ? Style.accent : Style.outline
+                    border.width: index === projects.selectedRow ? 2 : 0
+                    border.color: Style.accent
 
                     Text {
                         anchors.centerIn: parent
@@ -211,7 +221,7 @@ Item {
             Text {
                 width: parent.width - 118 - Style.gap
                 height: parent.height
-                text: "SHIFT  PROJECT MANAGEMENT / TEMPLATES  -  templates are settings-only session files"
+                text: "PROJECTS  -  manage + templates"
                 color: Style.accent
                 font.pixelSize: Style.fontSmall
                 font.weight: Font.DemiBold

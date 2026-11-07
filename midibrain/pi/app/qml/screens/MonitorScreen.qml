@@ -17,7 +17,7 @@ Item {
         Text {
             width: parent.width
             height: 16
-            text: "OUTPUT CONFIG  -  tap a summary to open it; changes apply at once, CANCEL restores"
+            text: "OUTPUT CONFIG"
             color: Style.textDim
             font.pixelSize: Style.fontSmall
             font.weight: Font.DemiBold

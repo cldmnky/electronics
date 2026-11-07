@@ -10,6 +10,23 @@ Item {
 
     readonly property bool shiftFace: app.panelMode === "shift"
     readonly property bool pipesPage: screen.shiftFace && routing.shiftPage === 1
+    // Stage 5: the route the last wire tap selected. Kept separately from
+    // selectedInput so both endpoints can light together while the route is
+    // being inspected (the tap also toggles the wire).
+    property int selectedDestination: -1
+
+    // QML tap slop: hitWireTest is exact, so probe a narrow vertical band
+    // around the finger. Wires are near-horizontal; this widens the target
+    // without moving the drawing or claiming a route the user cannot see.
+    function routeAt(px, py) {
+        const offsets = [0, -10, 10, -18, 18]
+        for (let i = 0; i < offsets.length; ++i) {
+            const code = routing.hitWireTest(px, py + offsets[i],
+                                             patchbay.width, patchbay.height)
+            if (code >= 0) return code
+        }
+        return -1
+    }
     readonly property var inputNames: ["TRS IN 1", "TRS IN 2", "USB IN"]
     readonly property var outputNames: ["TRS OUT 1", "TRS OUT 2", "USB OUT"]
     readonly property int patchRows: Math.max(1, Math.max(routing.inputCount,
@@ -93,7 +110,7 @@ Item {
                 text: (screen.pipesPage ? routing.pipeStatusText
                        : (screen.shiftFace
                           ? "SHIFT  FILTER / TRANSPOSE / CLOCK OUT"
-                          : "ROUTING - tap a wire, or an input then an output"
+                          : "ROUTING - tap a wire"
                             + (routing.noPicoMode ? "  -  NO PICO: TRS UNAVAILABLE" : "")))
                 color: Style.textDim
                 font.pixelSize: Style.fontSmall
@@ -229,6 +246,8 @@ Item {
                             for (let d = 0; d < routing.outputCount; ++d) {
                                 const enabled = routing.routes[s * routing.outputCount + d] === true
                                 const selected = routing.selectedInput === s
+                                const selectedRoute = selected &&
+                                                      screen.selectedDestination === d
                                 // Draw every route that is on, plus the possible
                                 // targets of the selected input. A long per-device
                                 // list would otherwise paint hundreds of idle grey
@@ -255,6 +274,17 @@ Item {
                                 ctx.lineWidth = thickness
                                 ctx.lineCap = "round"
                                 ctx.stroke()
+                                if (selectedRoute) {
+                                    // The selected route reads as one path, not
+                                    // as a source highlight plus a list of all
+                                    // possible targets.
+                                    ctx.beginPath()
+                                    ctx.moveTo(x0, y0)
+                                    ctx.bezierCurveTo(x0 + handle, y0, x1 - handle, y1, x1, y1)
+                                    ctx.strokeStyle = Style.text.toString()
+                                    ctx.lineWidth = thickness + 2
+                                    ctx.stroke()
+                                }
                                 if (enabled) {
                                     ctx.fillStyle = color.toString()
                                     ctx.beginPath()
@@ -283,9 +313,8 @@ Item {
                         readonly property bool focused: app.focusId === focusId
                         color: !available ? Style.panelDark
                                           : (routing.selectedInput === nodeIndex ? Style.accent : Style.panel)
-                        border.width: (routing.selectedInput === nodeIndex || focused) ? 2 : Style.outlineWidth
-                        border.color: (routing.selectedInput === nodeIndex || focused)
-                                      ? Style.accent : Style.outline
+                        border.width: focused ? 2 : 0
+                        border.color: Style.text
 
                         Column {
                             anchors.centerIn: parent
@@ -331,7 +360,10 @@ Item {
                         }
 
                         TapHandler {
-                            onTapped: routing.selectInput(nodeIndex)
+                            onTapped: {
+                                screen.selectedDestination = -1
+                                routing.selectInput(nodeIndex)
+                            }
                         }
                     }
                 }
@@ -343,6 +375,8 @@ Item {
                         readonly property bool available: routing.outputAvailable(nodeIndex)
                         readonly property bool wired: routing.selectedInput >= 0 &&
                                                       routing.routes[routing.selectedInput * routing.outputCount + nodeIndex] === true
+                        readonly property bool endpoint: routing.selectedInput >= 0 &&
+                                                        screen.selectedDestination === nodeIndex
                         x: patchbay.width - width
                         y: patchbay.height * (nodeIndex + 0.5) / screen.patchRows - height / 2
                         width: patchbay.width * routing.nodeWidthFraction
@@ -350,9 +384,10 @@ Item {
                         radius: Style.corner
                         property string focusId: "routing.node.out." + modelData.port
                         readonly property bool focused: app.focusId === focusId
-                        color: available ? Style.panel : Style.panelDark
-                        border.width: (wired || focused) ? 2 : Style.outlineWidth
-                        border.color: (wired || focused) ? Style.accent : Style.outline
+                        color: endpoint ? Style.accent
+                                        : (available ? Style.panel : Style.panelDark)
+                        border.width: focused ? 2 : (endpoint || wired ? 2 : 0)
+                        border.color: focused ? Style.text : Style.accent
 
                         Column {
                             anchors.centerIn: parent
@@ -360,7 +395,8 @@ Item {
                             Text {
                                 width: parent.parent.width - 8
                                 text: modelData.name
-                                color: available ? Style.text : Style.textDim
+                                color: endpoint ? Style.panelDark
+                                                : (available ? Style.text : Style.textDim)
                                 font.pixelSize: Style.fontSmall
                                 font.weight: Font.DemiBold
                                 horizontalAlignment: Text.AlignHCenter
@@ -376,7 +412,7 @@ Item {
                             Text {
                                 visible: available && !modelData.dynamic && modelData.port === 5
                                 text: routing.usbOutputs + (routing.usbOutputs === 1 ? " PORT" : " PORTS")
-                                color: Style.textDim
+                                color: endpoint ? Style.panelDark : Style.textDim
                                 font.pixelSize: Style.fontSmall
                                 anchors.horizontalCenter: parent.horizontalCenter
                             }
@@ -397,7 +433,10 @@ Item {
                         }
 
                         TapHandler {
-                            onTapped: routing.selectOutput(nodeIndex)
+                            onTapped: {
+                                screen.selectedDestination = nodeIndex
+                                routing.selectOutput(nodeIndex)
+                            }
                         }
                     }
                 }
@@ -405,11 +444,12 @@ Item {
                 TapHandler {
                     onTapped: (eventPoint) => {
                         const p = eventPoint.position
-                        const code = routing.hitWireTest(p.x, p.y, patchbay.width, patchbay.height)
+                        const code = screen.routeAt(p.x, p.y)
                         if (code >= 0) {
                             const destination = code % routing.outputCount
                             const source = Math.floor(code / routing.outputCount)
                             routing.selectedInput = source
+                            screen.selectedDestination = destination
                             routing.toggleRoute(source, destination)
                         }
                     }

@@ -325,28 +325,6 @@ Rectangle {
                 }
             }
 
-            // ---- EDIT a take: the W5 popup lands next wave -------------------
-            Column {
-                visible: config.kind === "takeedit"
-                width: parent.width
-                spacing: Style.gapTight
-
-                Text {
-                    width: parent.width
-                    text: "edit popup lands in the next wave"
-                    color: Style.text
-                    font.pixelSize: Style.fontBody
-                    wrapMode: Text.Wrap
-                }
-                Text {
-                    width: parent.width
-                    text: "The take is unchanged. TRIM/SPLIT/GAIN/FADE/NORMALIZE with the big waveform arrive with the EDIT popup (plan W5)."
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    wrapMode: Text.Wrap
-                }
-            }
-
             // ---- NEW TRACK FROM TAKE (W3): MOVE / KEEP ON SOURCE --------------
             Column {
                 visible: config.kind === "trackfromtake"

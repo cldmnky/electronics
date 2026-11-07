@@ -9,7 +9,7 @@ The touch path is green (`--ui-taps`: **864 taps, 0 QML warnings, 0 failures**).
 | # | Severity | Defect | Evidence |
 |---|---|---|---|
 | G1 | **Blocker** | Mixer ring face is chosen by the *selected track's mode* (`selectedMode()`), not the MIXER/TRACK view; with the default ARM mode the MIXER surface's ring is the 16-stop TRACK ring, so the strips/faders cannot be focused. The ring is also never rebuilt on view/track changes. | `app_controller.cpp:3639`, `:3824`; probe8/probe10 |
-| G2 | **Blocker** | PROJECTS SHIFT face is entered but its ring is **empty** (`case 5:` used for a tab that is 4; tab 5 is MIDI and has no face). NEW/RENAME/DELETE/template verbs are unreachable. | `app_controller.cpp:3795`; probe4 `tab 4 … faceRing=0` |
+| G2 | **FIXED stage 5** (was Blocker) | PROJECTS SHIFT face was entered with an **empty** ring (`case 5:` used for a tab that is 4; tab 5 is MIDI and has no face). Stage 5 maps the case to `kProjectsTabIndex`; NEW/RENAME/DELETE/template verbs are now ring stops and `--panel-taps` treats an empty face ring as a hard failure. | `app_controller.cpp` shift switch `case kProjectsTabIndex`; stage-5 `--panel-taps` exit 0 |
 | G3 | **Blocker** | Bank-page grid is a **hard lockout**: `bank.page.N` / `bank.page.close` have no PRESS handler and EXIT does not close it. Panel is trapped until touch. | `app_controller.cpp:3406-3413`; probe3/probe9 |
 | G4 | **Blocker** | TRACK FX popup CLOSE (ring stop 0) **segfaults** on PRESS: `parts[2]` read with `parts.size()==2`. EXIT also does not close the popup → hard lockout. | `app_controller.cpp:1911`; probe3 repro (2×) |
 | G5 | High | EXIT does not close the **channel popout**, **TRACK FX popup** or **bank grid**. | `updateShiftState` `:1698-1721`; probe3 matrix |
@@ -19,12 +19,33 @@ The touch path is green (`--ui-taps`: **864 taps, 0 QML warnings, 0 failures**).
 | G9 | High | Focus is **not restored** after any popup: config/tempo/tab grid/take sheet/bank grid/length popup all return to index 0 (or 1). Only tab switches restore. | probe4 |
 | G10 | High | ARRANGE clip block is a **nav trap**: from a clip all four directions are spatial (`neighborClip`), so `arrange.clipmenu` and `arrange.render` can never be reached by walking. | `:1515-1543` |
 | G11 | Medium | Choice cards classified as "editable" do not pick on PRESS (`config.mode.N`, `out.N`, `phones.N`, `cuestyle.N`, `out34.N`, `pipeparam.N`) — PRESS enters EDIT and only the encoder cycles. | `isEditableFocus` `:1726-1748`; probe6 |
-| G12 | Medium | Panel SHIFT/`transport.tempo`/`transport.shift` focus ids never join the ring; `shift.monitor.clocksource.N` (a real 3-way persisted control) is unreachable; `shift.recorder.mode`, `recorder.takesheet`, `take.sheet.edit.N`, `xy.bank/track/pick`, `channel.mode.N`, `channel.recsource`, `system.devout.saved`, `config.renderregion` unreachable. | probe1 vs QML grep |
+| G12 | **FIXED stage 5** (was Medium) | Stage 5 wires the remaining in-lane stops: `shift.monitor.clocksource.0..2`, `xy.bank.0/1`, the visible `xy.track.N` row, conditional `xy.*.pick`, `system.devout.saved`, `system.diagnostics`, and `config.renderregion`. Earlier stages had already added `transport.tempo`, `shift.recorder.mode`, `recorder.takesheet`, `take.sheet.edit.N`, `channel.mode.N` and `channel.recsource`. | `rebuildFocusIds` cases 3/kXyTabIndex/projects; full `--panel-taps` walk |
 | G13 | Medium | Encoder-press (`EncoderSw`) means **toggle ARM** on primary screens but "activate" on faces/popups — not "confirm". | `performPanelFocus` default branch `:1608-1612` |
 | G14 | Medium | Focus can move **off-viewport** in the recorder take list and projects list; neither list scrolls to the focused row. | `RecorderScreen.qml:194`, `ProjectsScreen.qml:99` |
-| G15 | Low | Dead code that lies about parity: `ConfigPopup` `takeedit` kind/ring branch (kind not openable), `config.renderregion` focus id not in any ring, `ToolsScreen.qml` not referenced anywhere (`tools.page.N`), `Main.qml` `tab.N`, `transport.nopico`. | grep/CMake |
+| G15 | **FIXED stage 5** (was Low) | The `ConfigPopup` `takeedit` kind and its QML block are deleted (the take EDIT path is the timeline editor, not this popup); `config.renderregion` is now in the `timelineops` ring; `ToolsScreen.qml` is repurposed as the DIAGNOSTICS page and its `tools.page.N` ids are gone. `Main.qml` `tab.N` and `transport.nopico` remain documented shell-owned ids outside the stage-5 lane. | `app_controller.cpp` config ring; `ToolsScreen.qml`; `SystemShiftFace.qml` page 3 |
 
 Everything below is the detail behind this list.
+
+### Stage 5 disposition (2026-02-12)
+
+* **G2:** fixed. The Projects SHIFT switch uses `kProjectsTabIndex`; the
+  `--panel-taps` G2 allowlist (empty face ring, `shift.4`) is gone and an empty
+  face ring now fails the gate. Historical text above is kept unchanged in the
+  original defect rows.
+* **G12 (in-lane):** fixed for the stage-5 screens: clock-source choices,
+  X/Y bank + visible track row + unbound-slot picker, device-output SAVED ONLY,
+  the DIAGNOSTICS shortcut and RENDER REGION. Off-lane items (mixer/arrange/EQ/
+  recorder) were already closed by stages 2-4 or remain under their owners.
+* **G15 (in-lane):** `takeedit` removed from the ConfigPopup ring and QML;
+  `tools.page.N` removed with the ToolsScreen repurpose; `config.renderregion`
+  reachable. Shell-owned `tab.N` / `transport.nopico` are unchanged.
+* **Remaining documented panel-tap allowlist:** only `midimon.port.N`, because
+  the MIDI MONITOR ListView virtualizes off-viewport delegates; the ring still
+  walks and selects them. Everything else in the allowlist belongs to the
+  stage 2-4 owners.
+* **System surface:** raw link counters and the log tail moved to
+  System > DIAGNOSTICS (SHIFT page 3); the primary System page shows audio,
+  clock, Pico and storage summaries.
 
 ---
 
@@ -204,7 +225,7 @@ PRESS on a config card: **picks** for `send.*`, `trackmode.N`, `recsource.N`, `r
 
 ## 4. Gap list (grouped by kind)
 
-**A. Missing focus ids (QML control never enters the ring)** — `recorder.takesheet`, `recorder.take.wave.N`, `recorder.take.edit.N`, `take.sheet.edit.N`, `shift.recorder.mode`, `shift.monitor.clocksource.0..2`, `shift.routing.filter.prev/next` (when >1 page), `channel.mode.0..3`, `channel.recsource`, `xy.bank.0/1`, `xy.track.N`, `xy.delay.pick`, `xy.reverb.pick`, `track.expand`, `system.devout.saved`, `config.renderregion`, `mixer.add/bank/master` only when the ring face is right, `punch.*.measure.dec/inc`, `loop.*.dec/inc`, `tools.page.N` (dead screen), `keypad.*` (by design, but see G7).
+**A. Missing focus ids (QML control never enters the ring)** — `recorder.takesheet`, `recorder.take.wave.N`, `recorder.take.edit.N`, `take.sheet.edit.N`, `shift.recorder.mode`, `shift.monitor.clocksource.0..2`, `shift.routing.filter.prev/next` (when >1 page), `channel.mode.0..3`, `channel.recsource`, `xy.bank.0/1`, `xy.track.N`, `xy.delay.pick`, `xy.reverb.pick`, `track.expand`, `system.devout.saved`, `config.renderregion`, `mixer.add/bank/master` only when the ring face is right, `punch.*.measure.dec/inc`, `loop.*.dec/inc`, `tools.page.N` (removed in stage 5 with the DIAGNOSTICS repurpose), `keypad.*` (by design, but see G7).
 
 **B. Ring id with no widget (dead stop)** — `track.mode`, `mixer.select.N`, `channel.monitor`, `edit.value`, `shift.eq.band.gain/q/freq` (shadow property only), `midimon.port.N` (inline comparison only). Plus `config.pipeparam.N` when opened without a pipe (ring not built at all then — but that context can’t be reached from a card either).
 

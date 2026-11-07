@@ -18,7 +18,7 @@ Item {
         Text {
             width: parent.width
             height: 18
-            text: "PUNCH MARKERS  -  measures are 1-based, persisted in session v2 punch"
+            text: "PUNCH MARKERS  -  1-based session measures"
             color: Style.textDim
             font.pixelSize: Style.fontSmall
             font.weight: Font.DemiBold
@@ -51,19 +51,6 @@ Item {
             focusPrefix: page.focusPrefix + ".out"
             onToggled: session.punchOutEnabled = !session.punchOutEnabled
             onMeasureMoved: (value) => session.punchOutMeasure = value
-        }
-
-        Text {
-            width: parent.width
-            height: page.compact ? 0 : 40
-            text: page.compact ? "" :
-                  "PLAY FROM starts playback at the marker; PUNCH IN arms recording and " +
-                  "PUNCH OUT disarms it. The session keeps the points; the engine exposes " +
-                  "the transport position. RECMODE PUNCH (long-press REC) writes between PUNCH IN and PUNCH OUT."
-            visible: !page.compact
-            color: Style.textDim
-            font.pixelSize: Style.fontSmall
-            wrapMode: Text.Wrap
         }
     }
 

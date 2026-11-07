@@ -1626,6 +1626,9 @@ void UiTapRunner::runPanelGate() {
   // locks in stage-1 parity without pretending to fix stage 2/5 work.
   const QStringList knownGapPrefixes = {
       QStringLiteral("edit.value"), QStringLiteral("shift.eq.band."),
+      // MIDI MONITOR rows: the ListView virtualizes off-viewport delegates, so
+      // the ring can name a row that has no live widget until it is scrolled
+      // into view. The tap path still walks the ring and scrolls on focus.
       QStringLiteral("midimon.port."),
       // Stage 3/4/5 screens own these; the audit already lists them (EQ node
       // visibility, ARRANGE toolbar, recorder punch rows, SYSTEM summaries).
@@ -1781,10 +1784,10 @@ void UiTapRunner::runPanelGate() {
     const std::vector<QString> ids = controller_->focusIds_;
     const QString& name = context.name;
     if (ids.empty()) {
-      // G2 (stage 5): the Projects SHIFT face builds an empty ring. Known gap,
-      // not a stage-1 failure; the fix stage must make this a hard failure.
-      std::printf("panel-taps: known-gap %s: empty face ring (G2, stage 5)\n",
-                  qPrintable(name));
+      // Stage 5: every face ring must be non-empty. This used to allowlist
+      // G2 (Projects) as a known gap; the mapping is fixed, so an empty face
+      // ring is a hard failure now.
+      fail(name, QStringLiteral("empty face ring"));
       continue;
     }
     QSet<QString> unique;
@@ -1904,9 +1907,8 @@ void UiTapRunner::runPanelGate() {
       fail(QStringLiteral("shift.%1").arg(tab),
            QStringLiteral("face %1, expected %2").arg(entered ? 1 : 0).arg(expected ? 1 : 0));
     }
-    if (entered && controller_->focusIds_.empty() && tab != 4) {
-      // tab 4 is the documented G2 gap (stage 5); every other face must have
-      // a non-empty ring.
+    if (entered && controller_->focusIds_.empty()) {
+      // Stage 5: Projects (tab 4) is fixed too; every entered face needs a ring.
       fail(QStringLiteral("shift.%1").arg(tab), QStringLiteral("empty face ring"));
     }
     LinkStatus released;
