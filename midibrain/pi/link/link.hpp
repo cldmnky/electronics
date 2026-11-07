@@ -255,6 +255,14 @@ class PicoLink {
     std::uint64_t bad{};
     std::uint64_t dup{};
     std::uint64_t overruns{};
+    // App-level reliability accounting (control frames only): retries sent
+    // after a missing ack, per-frame acks consumed, Note Offs that had to be
+    // refused because the queue held only Note Offs, and safe frames evicted
+    // to make room for a Note Off.
+    std::uint64_t retries{};
+    std::uint64_t acks{};
+    std::uint64_t noteOffDrops{};
+    std::uint64_t evicted{};
   };
 
   explicit PicoLink(ISpiTransport& transport);
@@ -327,6 +335,8 @@ class PicoLink {
   void handle(const mb::Frame& f, std::uint64_t now_us);
   void handleControl(const mb::Frame& f, std::uint64_t now_us);
   bool queueFrame(mb::Frame f);
+  // Retires the inflight slot whose Pi sequence the Pico acked.
+  void noteAck(std::uint16_t sequence);
   bool enqueueHello();
   void resendClockRoutes();
   void resendClockSource();
@@ -340,8 +350,22 @@ class PicoLink {
   bool have_remote_seq_ = false;
   std::uint16_t remote_seq_ = 0;
   bool link_up_ = false;
+  // Set by handle() when a Pico session change cleared the outbound queue; the
+  // poll that observed it must not overwrite the fresh HELLO idle filler.
+  bool resynced_ = false;
   std::uint64_t last_xfer_us_ = 0;
   std::deque<mb::Bytes> txq_;
+  // Unacked control frames: a lost ack replays the SAME (session, sequence),
+  // which the Pico dedups and acks again, so the message is applied exactly
+  // once. Note Offs are never evicted from txq_ to make room.
+  struct Inflight {
+    mb::Bytes wire{};
+    std::uint16_t sequence = 0;
+    std::uint64_t sent_us = 0;
+    std::uint8_t attempts = 0;
+    bool acked = false;
+  };
+  std::deque<Inflight> inflight_;
   mb::Bytes repeat_{};
   std::deque<Event> events_;
   mb::LinkStatus status_{};

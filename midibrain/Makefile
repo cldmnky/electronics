@@ -93,7 +93,11 @@ host: midifx
 	@set -eu; exe=$$(mktemp "$${TMPDIR:-/tmp}/midibrain-test.XXXXXX"); trap 'rm -f "$$exe"' EXIT; \
 	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic firmware/pico/protocol_test.cpp -o "$$exe"; "$$exe"; \
 	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic \
-	    pi/emulator/clock_sim.cpp pi/emulator/clock_sim_test.cpp -o "$$exe"; "$$exe"
+	    pi/emulator/clock_sim.cpp pi/emulator/clock_sim_test.cpp -o "$$exe"; "$$exe"; \
+	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic -I. \
+	    firmware/pico/spi_slave_test.cpp pi/emulator/clock_sim.cpp -o "$$exe"; "$$exe"; \
+	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic -I. \
+	    pi/link/link.cpp pi/link/link_reliability_test.cpp -o "$$exe"; "$$exe"
 
 # Shared MIDI FX core + schema suite (midibrain/midifx): the firmware compiles
 # this header today and the Pi adopts the same one, so the behavior expectations

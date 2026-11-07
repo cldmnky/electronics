@@ -31,8 +31,10 @@ bad CRC, invalid length and zero session.
   on hardware before raising).
 - One transaction = one CSn assertion carrying **exactly 32 clocks/bytes**;
   the master waits **>= 10 us after asserting CSn** (slave arms on the edge),
-  then deasserts. An aborted transfer hangs the slave until its 8 s watchdog
-  reboots it — the master must guarantee full transfers.
+  then deasserts. A master abort (CSn deasserted mid-frame, or 100 us without a
+  clock) is detected by the slave's IRQ-driven receiver and the partial frame
+  is discarded; the next full transaction resynchronises without a watchdog
+  restart (firmware/pico/spi_slave.hpp).
 - Full duplex: every transaction exchanges one frame each way. Idle fillers
   are **repeats of the last frame**; both sides dedup by (session, sequence)
   and never re-apply duplicates. Sequence increments on new frames only.
@@ -52,10 +54,14 @@ bad CRC, invalid length and zero session.
   state/tempo without rebooting; tempo, transport state and tick count
   survive. The Pi treats the new session exactly like a Pico reboot:
   `LinkLost`, outbound flush, re-handshake, `Linked`.
-- Link-up in this revision = Pi HELLO seen. No retry/credit/flow protocol yet;
-  queue overflows are counted (`txov`, `rxov`), printed on the Pico USB
-  console and reported to the Pi in the `0x21` status response; they are not
-  recovered.
+- Link-up in this revision = Pi HELLO seen. ACK type 2 with length 0 is the
+  handshake ACK. A length-2 ACK carries the Pi sequence it acknowledges
+  (payload[0..1] LE) for every accepted CONTROL_EVENT; duplicates are acked
+  again but never re-applied. The Pi keeps a control frame at the head of its
+  queue until that ACK arrives and replays the same (session, sequence) — the
+  receiver's dedup makes delivery exactly-once. Generic queue overflow is
+  still counted (`txov`, `rxov`), printed on the Pico USB console and reported
+  in the `0x21` status response.
 
 ## CONTROL_EVENT registry (payload[0] = kind)
 
@@ -262,7 +268,7 @@ arm toggle, so the Pi mirror converges without polling.
 ## Prototype limitations (not yet implemented)
 
 SysEx forwarding (content skipped; running-status/system-common/realtime/undefined-byte handling is byte-exact per the midi.hpp comments, with EOX preserving running status), scheduled-output musical timeline (MIDI_SEND is
-immediate), ACK/retry/credit reliability, queue recovery, CS-abort recovery
-beyond the watchdog, SPI rates above 1 MHz, clock jitter measurement, and
-thermal/EMC behaviour. The framed loopback, debounce, parser and event tests
-are host simulations, not hardware validation.
+immediate), credit-based flow control (the app path is stop-and-wait per
+control frame), SPI rates above 1 MHz, clock jitter measurement, and
+thermal/EMC behaviour. The framed loopback, debounce, parser, SPI-abort and
+reliability tests are host simulations, not hardware validation.

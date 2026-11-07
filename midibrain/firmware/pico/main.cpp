@@ -20,6 +20,7 @@
 
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
+#include "hardware/regs/spi.h"
 #include "hardware/spi.h"
 #include "hardware/structs/rosc.h"
 #include "hardware/sync.h"
@@ -39,6 +40,7 @@
 #include "pipe_event.hpp"
 #include "pins.h"
 #include "route_chain.hpp"
+#include "spi_slave.hpp"
 
 namespace {
 // The shared MIDI FX core (midibrain/midifx/core) is the only pipe
@@ -136,8 +138,13 @@ RxRing rxring[2];
 // Per-output non-blocking MIDI TX queues. The clock alarm and transport path
 // only enqueue; the UART TX IRQ drains them, realtime bytes first.
 mb::MidiTxScheduler midi_tx[2];
-volatile bool spi_rx_ready = false;
-mb::Bytes spi_tx{}, spi_rx{};
+// SPI link: the RX/CSn interrupts feed this engine, the main loop only polls
+// the gap timeout and drains complete frames. No path blocks on the master.
+mb::SpiSlaveLink spi_link;
+volatile bool spi_frame_pending = false;
+mb::Bytes spi_tx{}, spi_in{};
+uint32_t spi_tx_pos = 0;
+uint64_t spi_acks = 0, spi_rx_overruns = 0;
 // True while spi_tx holds a queued (unpopped) frame.
 bool tx_holds_queued = false;
 
@@ -256,6 +263,27 @@ bool queue_tempo() {
   mb::Frame f{};
   if (!mb::pack_tempo(f, alloc_seq(), pico_session, static_cast<uint16_t>(bpm_x100))) return false;
   return queue_frame(f);
+}
+
+// Per-frame ack for app (control_event) frames: payload[0..1] echoes the Pi's
+// sequence so the Pi can retire its retry slot. Length 0 stays the handshake
+// ack, so an older Pi ignores the payload and this Pi still answers a length-0
+// ACK from older firmware as link liveness only.
+bool frame_needs_ack(const mb::Frame& f) {
+  return f.type == mb::Type::control_event && f.length >= 1 &&
+         (f.payload[0] == mb::EV_MIDI_SEND ||
+          f.payload[0] == mb::EV_MIDI_ROUTE_SEND);
+}
+
+void queue_ack(uint16_t acked_seq) {
+  mb::Frame ack{};
+  ack.type = mb::Type::ack;
+  ack.sequence = alloc_seq();
+  ack.session = pico_session;
+  ack.length = 2;
+  ack.payload[0] = static_cast<uint8_t>(acked_seq);
+  ack.payload[1] = static_cast<uint8_t>(acked_seq >> 8);
+  if (queue_frame(ack)) ++spi_acks;
 }
 
 void apply_leds() {
@@ -850,18 +878,51 @@ void drain_midi() {
   }
 }
 
-// One 32-byte exchange per CSn assertion. Polled (sub-microsecond latency,
-// no IRQ race with the master's first clocks). The master must hold CS low
-// across all 32 clocks; an aborted transaction hangs here until the watchdog
-// reboots us, so the master side must guarantee full transfers.
-void spi_service(bool csn_level) {
-  static bool was_high = true;
-  if (was_high && !csn_level) {
-    was_high = false;
-    spi_write_read_blocking(spi0, spi_tx.data(), spi_rx.data(), spi_tx.size());
-    spi_rx_ready = true;
-  } else if (!was_high && csn_level) {
-    was_high = true;
+// SPI slave: the CSn edge interrupt starts/ends the logical transaction, the
+// SPI RX interrupt feeds each clocked MOSI byte and refills the TX FIFO from
+// the preloaded response. Neither handler waits for the master; an aborted
+// transfer is just a short transaction and a byte-gap timeout.
+void spi_tx_prime() {
+  auto* hw = spi_get_hw(spi0);
+  while (spi_tx_pos < mb::frame_size && (hw->sr & SPI_SSPSR_TNF_BITS))
+    hw->dr = spi_link.responseByte(spi_tx_pos++);
+}
+
+void spi_drain_rx() {
+  auto* hw = spi_get_hw(spi0);
+  while (hw->sr & SPI_SSPSR_RNE_BITS) {
+    spi_link.feed(static_cast<uint8_t>(hw->dr), time_us_32());
+    spi_tx_prime();
+    if (spi_link.frameReady()) {
+      mb::Bytes dropped{};
+      if (spi_frame_pending) {
+        ++spi_rx_overruns;  // main loop has not drained the previous frame
+        spi_link.takeFrame(dropped);
+      } else {
+        spi_link.takeFrame(spi_in);
+        spi_frame_pending = true;
+      }
+    }
+  }
+}
+
+void on_spi0_irq() { spi_drain_rx(); }
+
+void on_spi_csn_irq(uint gpio, uint32_t events) {
+  if (gpio != MB_PIN_SPI0_CSN) return;
+  if (events & GPIO_IRQ_EDGE_FALL) {
+    // Flush both FIFOs of the previous transaction (including a partial one)
+    // before arming: an aborted frame must not shift stale MISO bytes.
+    auto* hw = spi_get_hw(spi0);
+    hw->cr1 &= ~SPI_SSPCR1_SSE_BITS;
+    hw->cr1 |= SPI_SSPCR1_SSE_BITS;
+    spi_tx_pos = 0;  // prime before the master's first clock (>=10 us setup)
+    spi_link.begin(time_us_32());
+    spi_tx_prime();
+  }
+  if (events & GPIO_IRQ_EDGE_RISE) {
+    spi_drain_rx();  // take the last bytes before the logical end
+    spi_link.end(time_us_32());
   }
 }
 }  // namespace
@@ -928,6 +989,14 @@ int main() {
   gpio_pull_up(MB_PIN_SPI0_CSN);
   gpio_init(MB_PIN_READY_IRQ);
   gpio_set_dir(MB_PIN_READY_IRQ, GPIO_OUT);
+  // Interrupt-driven slave: RXIM feeds bytes, the CSn edge starts/ends a
+  // transaction. A partial frame costs one byte-gap timeout, never a stall.
+  irq_set_exclusive_handler(SPI0_IRQ, on_spi0_irq);
+  irq_set_enabled(SPI0_IRQ, true);
+  spi_get_hw(spi0)->imsc = SPI_SSPIMSC_RXIM_BITS;
+  gpio_set_irq_enabled_with_callback(MB_PIN_SPI0_CSN,
+                                     GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE,
+                                     true, &on_spi_csn_irq);
 
   // First HELLO goes out in the very first exchange; repeats (same sequence)
   // are the idle filler until the Pi answers.
@@ -939,6 +1008,7 @@ int main() {
     hello.length = 0;
     mb::encode(hello, spi_tx);
   }
+  spi_link.loadResponse(spi_tx);
   next_seq = 1;
   ready_update();  // alive + HELLO pending
   announce_state();  // boot state: stopped, tick 0 (ticks already flowing)
@@ -951,23 +1021,40 @@ int main() {
 
   while (true) {
     watchdog_update();
-    spi_service(gpio_get(MB_PIN_SPI0_CSN));
-    if (spi_rx_ready) {
-      spi_rx_ready = false;
+    // Poll the byte-gap timeout and drain a complete frame with IRQs masked so
+    // the CSn/RX handlers cannot change the one-slot mailbox mid-check.
+    bool have_frame = false;
+    {
+      const uint32_t saved = save_and_disable_interrupts();
+      spi_link.poll(time_us_32());
+      if (spi_frame_pending) {
+        spi_frame_pending = false;
+        have_frame = true;
+      }
+      restore_interrupts(saved);
+    }
+    if (have_frame) {
       if (tx_holds_queued) {
         txq.pop();
         tx_holds_queued = false;
       }
       mb::Frame f{};
-      if (!mb::decode(spi_rx, f)) {
+      if (!mb::decode(spi_in, f)) {
         ++bad_frames;
       } else if (last_rx_valid && f.session == last_rx_session && f.sequence == last_rx_seq) {
         ++dup_frames;  // idle-fill repeat or retried transfer: no re-apply
+        // A retry means the Pi missed our ack: answer it again (the frame was
+        // applied exactly once above).
+        if (frame_needs_ack(f)) queue_ack(f.sequence);
       } else {
         last_rx_valid = true;
         last_rx_session = f.session;
         last_rx_seq = f.sequence;
         handle_frame(f);
+        // App-level delivery accounting: ack every accepted control frame,
+        // including one the handler rejected on content, so the Pi retires
+        // its retry slot instead of replaying it forever.
+        if (frame_needs_ack(f)) queue_ack(f.sequence);
       }
       // Preload the next exchange: queued frame, else repeat (Pi dedups).
       if (txq.count > 0) {
@@ -975,6 +1062,11 @@ int main() {
         tx_holds_queued = true;
       } else {
         tx_holds_queued = false;  // spi_tx keeps the last frame: idle repeat
+      }
+      {
+        const uint32_t saved = save_and_disable_interrupts();
+        spi_link.loadResponse(spi_tx);
+        restore_interrupts(saved);
       }
       ready_update();
     }
@@ -993,6 +1085,7 @@ int main() {
       uint32_t mtx[4];
       uint64_t mtx_drop, mtx_reject, mtx_rt_drop;
       uint32_t skipped;
+      uint64_t spi_abort, spi_bad, spi_garbage, spi_ok, spi_ack, spi_ov;
       {
         const uint32_t saved = save_and_disable_interrupts();
         mtx[0] = midi_tx[0].normalDepth();
@@ -1003,9 +1096,15 @@ int main() {
         mtx_reject = midi_tx[0].rejectedNormal() + midi_tx[1].rejectedNormal();
         mtx_rt_drop = midi_tx[0].droppedRealtime() + midi_tx[1].droppedRealtime();
         skipped = clock_skipped;
+        spi_abort = spi_link.abortedFrames();
+        spi_bad = spi_link.badFrames();
+        spi_garbage = spi_link.ignoredBytes();
+        spi_ok = spi_link.completedFrames();
+        spi_ack = spi_acks;
+        spi_ov = spi_rx_overruns;
         restore_interrupts(saved);
       }
-      printf("[stat] link=%d bpm=%ld.%02ld run=%d ticks=%lu txq=%lu rxpend=%d/%d bad=%llu dup=%llu txov=%lu rxov=%lu/%lu mtx=%lu+%lu/%lu+%lu mtxdrop=%llu mtxrej=%llu mtxrt=%llu miss=%lu\n",
+      printf("[stat] link=%d bpm=%ld.%02ld run=%d ticks=%lu txq=%lu rxpend=%d/%d bad=%llu dup=%llu txov=%lu rxov=%lu/%lu mtx=%lu+%lu/%lu+%lu mtxdrop=%llu mtxrej=%llu mtxrt=%llu miss=%lu spiabort=%llu spibad=%llu spigarb=%llu spiok=%llu spiak=%llu spiov=%llu\n",
              hello_seen ? 1 : 0, static_cast<long>(bpm_x100 / 100), static_cast<long>(bpm_x100 % 100),
              transport_running ? 1 : 0, static_cast<unsigned long>(clock_ticks),
              static_cast<unsigned long>(txq.count), rxring[0].pending() ? 1 : 0,
@@ -1017,7 +1116,13 @@ int main() {
              static_cast<unsigned long long>(mtx_drop),
              static_cast<unsigned long long>(mtx_reject),
              static_cast<unsigned long long>(mtx_rt_drop),
-             static_cast<unsigned long>(skipped));
+             static_cast<unsigned long>(skipped),
+             static_cast<unsigned long long>(spi_abort),
+             static_cast<unsigned long long>(spi_bad),
+             static_cast<unsigned long long>(spi_garbage),
+             static_cast<unsigned long long>(spi_ok),
+             static_cast<unsigned long long>(spi_ack),
+             static_cast<unsigned long long>(spi_ov));
     }
   }
 }

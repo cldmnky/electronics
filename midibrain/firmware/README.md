@@ -50,8 +50,10 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
   SET_TEMPO, plus timestamped tick frames per tick and transport-state
   announcements so the Pi can mirror phase and rolling state to USB.
   Panel PLAY/PLAY_START/STOP drive transport locally (no Pi round-trip).
-- SPI0 slave @1 MHz to the Pi: CSn-polled 32-byte exchanges, HELLO/ACK
-  handshake with ROSC-derived session, sequence dedup, READY pin, 8 s watchdog.
+- SPI0 slave @1 MHz to the Pi: IRQ-driven 32-byte exchanges (CSn edge + SPI
+  RX interrupt, preloaded MISO response), HELLO/ACK handshake with
+  ROSC-derived session, per-frame app ACKs, sequence dedup, READY pin, 8 s
+  watchdog. The main loop never blocks on the master.
 
 ## Clock design (deadline grid)
 
@@ -107,6 +109,37 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
   (new messages refused because only Note Offs were queued), `mtxrt` (realtime
   bytes dropped) and `miss` (clock grid ticks skipped).
 
+## SPI link design (non-blocking)
+
+- The old slave called `spi_write_read_blocking()` from the main loop. A Linux
+  transfer killed mid-frame left it waiting for clocks that never came, so
+  MIDI routing, panel scans and route engines froze until the 8 s watchdog
+  rebooted the Pico (the clock alarm and UART ISRs kept running, but nothing
+  else did).
+- `spi_slave.hpp` is the host-tested transaction engine. The CSn falling edge
+  starts a frame, the SPI RX interrupt feeds each MOSI byte and refills the TX
+  FIFO from the preloaded response, the rising edge ends it. The main loop
+  only polls a 100 us byte-gap timeout and drains the completed-frame mailbox;
+  no path waits on the master.
+- Resynchronisation: a short transaction (CSn deasserted before 32 bytes, or
+  no clock for 100 us) discards the partial frame and counts `spiabort`. Bytes
+  that do not start an `MB`/version-1 header are ignored (`spigarb`) until a
+  valid header; a complete frame that fails CRC/format is dropped
+  (`spibad`). The next transaction is a fresh frame boundary — no reboot.
+- App reliability: every accepted (or deduped) CONTROL_EVENT is acked with
+  type ACK, length 2, payload = the Pi sequence. The Pi (pi/link/link.cpp)
+  holds a control frame at its queue head until that ack returns, replaying
+  the same (session, sequence); the receiver's dedup applies it exactly once.
+  A lost ack/aborted transfer therefore costs one retry, not a lost Note Off.
+  A full 16-slot queue evicts the oldest whole non-Note-Off frame to admit a
+  Note Off (never the reverse); only a queue made entirely of Note Offs can
+  refuse another one (`noteOffDrops`).
+- Diagnostics: `[stat]` adds `spiabort` (short/gap-aborted transactions),
+  `spibad` (CRC/format drops), `spigarb` (ignored out-of-frame bytes), `spiok`
+  (completed frames), `spiak` (app acks queued) and `spiov` (frames the main
+  loop had not drained). Pi-side `PicoLink::Stats` adds `retries`, `acks`,
+  `noteOffDrops` and `evicted`.
+
 ## Clock bench acceptance (PROPOSED TARGETS, UNMEASURED)
 
 The review's targets, recorded as a checklist for real hardware. None of these
@@ -122,6 +155,9 @@ full system (Pico + Pi + DAW + NVMe + SPI traffic).
 | 5 | TX priority | F8 overtakes 10 queued note bytes; realtime interleaves mid-message | Host test covers the policy; confirm on the wire with an analyzer during a burst | unmeasured (host-verified) |
 | 6 | Overflow safety | Never a partial message or hung note | Host test covers whole-message drops and Note Off protection; stress with an analyzer | unmeasured (host-verified) |
 | 7 | Transport placement | FA/FB/FC once, in order, not delayed by clock backlog | Analyzer on both outs while clock and note traffic are saturated | unmeasured |
+| 8 | SPI aborts recovered | 0 watchdog restarts; every abort resyncs on the next frame | Inject 1-in-8 short transfers for 2 h; compare `[stat] spiabort`/`spiok` and confirm clock keeps running | unmeasured (host-verified: abort/garbage/CRC stages in `spi_slave_test`) |
+| 9 | Clock path under SPI faults | 0 dropped F8 during aborts, CRC failures and garbage | 2 h capture both outs while the SPI stream is deliberately broken | unmeasured (host-verified: 300 F8 emitted, 0 drops across 100 incidents) |
+| 10 | App-message loss recovery | 0 lost Note Offs; retries bounded; exactly-once delivery | Delay/kill the Linux drain, then audit hanging notes and `retries`/`acks`/`spiov` counters | unmeasured (host-verified: lost frame, lost ACK, 16-slot overflow) |
 
 Run the host side with `make host` (or `make test`) from `midibrain/`. The
 host test simulates 500,000 clock ticks at 120 bpm against the exact rational

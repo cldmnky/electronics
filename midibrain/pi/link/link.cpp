@@ -27,6 +27,27 @@ namespace {
 constexpr std::size_t kMaxTxQueue = 16;
 // Draining capacity between app polls; overflow is counted in Stats::overruns.
 constexpr std::size_t kMaxEvents = 64;
+// A control frame is replayed until its per-frame ACK returns; after this many
+// attempts the app-level send is counted as lost and the queue moves on.
+constexpr std::uint8_t kMaxRetries = 3;
+
+bool frameIsNoteOff(const mb::Frame& f) {
+  if (f.type != mb::Type::control_event || f.length < 4) return false;
+  std::uint8_t status = 0;
+  std::uint8_t velocity = 0;
+  if ((f.payload[0] == mb::EV_MIDI_MSG || f.payload[0] == mb::EV_MIDI_SEND) &&
+      f.length >= 6) {
+    status = f.payload[3];
+    velocity = f.payload[5];
+  } else if (f.payload[0] == mb::EV_MIDI_ROUTE_SEND && f.length >= 6) {
+    status = f.payload[4];
+    velocity = f.payload[6];
+  } else {
+    return false;
+  }
+  if ((status & 0xF0) == 0x80) return true;
+  return (status & 0xF0) == 0x90 && velocity == 0;
+}
 // Emulator session base ("PICO"); reboot() increments it so each power cycle
 // looks like a new Pico to the host, as on hardware.
 constexpr std::uint32_t kEmulatorSessionBase = 0x5049434fu;
@@ -107,15 +128,30 @@ bool EmulatorTransport::transfer(const std::uint8_t out[32], std::uint8_t in[32]
   std::array<std::uint8_t, kFrameBytes> wire{};
   std::copy(out, out + kFrameBytes, wire.begin());
   mb::Frame f{};
-  if (!mb::decode(wire, f)) {
-    // Bad frame: the Pi miscounted its 32 bytes. Nothing to apply.
-  } else if (have_last_rx_ && f.session == last_rx_session_ && f.sequence == last_rx_seq_) {
-    // Idle-fill repeat or retried transfer: deduped, never re-applied.
-  } else {
-    have_last_rx_ = true;
-    last_rx_session_ = f.session;
-    last_rx_seq_ = f.sequence;
-    handle(f);
+  if (mb::decode(wire, f)) {
+    if (!(have_last_rx_ && f.session == last_rx_session_ &&
+          f.sequence == last_rx_seq_)) {
+      have_last_rx_ = true;
+      last_rx_session_ = f.session;
+      last_rx_seq_ = f.sequence;
+      handle(f);
+    }
+    // Mirror the firmware: every accepted (or deduped) app MIDI frame is
+    // acked by sequence, so the Pi can retire its retry slot and a replay is
+    // acked again without being applied twice. Config frames are not on the
+    // app reliability path (they are idempotent and resent after HELLO).
+    if (f.type == mb::Type::control_event && f.length >= 1 &&
+        (f.payload[0] == mb::EV_MIDI_SEND ||
+         f.payload[0] == mb::EV_MIDI_ROUTE_SEND)) {
+      mb::Frame ack{};
+      ack.type = mb::Type::ack;
+      ack.sequence = allocSeq();
+      ack.session = pico_session_;
+      ack.length = 2;
+      ack.payload[0] = static_cast<std::uint8_t>(f.sequence);
+      ack.payload[1] = static_cast<std::uint8_t>(f.sequence >> 8);
+      queue(ack);
+    }
   }
   advance(kTransactionUs);
   if (!txq_.empty()) {
@@ -530,8 +566,35 @@ bool PicoLink::queueFrame(mb::Frame f) {
   mb::Bytes wire{};
   if (!mb::encode(f, wire)) return false;
   if (txq_.size() >= kMaxTxQueue) {
-    ++stats_.overruns;
-    return false;
+    // Delivery priority: a Note Off is never the overflow victim. Evict the
+    // oldest whole non-Note-Off frame instead (whole message, framing intact);
+    // a non-Note-Off overflow keeps the bounded drop-newest policy.
+    if (!frameIsNoteOff(f)) {
+      ++stats_.overruns;
+      return false;
+    }
+    auto in_flight = [this](const mb::Bytes& wire) {
+      mb::Frame queued{};
+      if (!mb::decode(wire, queued)) return false;
+      for (const auto& slot : inflight_)
+        if (slot.sequence == queued.sequence) return true;
+      return false;
+    };
+    auto victim = txq_.end();
+    for (auto it = txq_.begin(); it != txq_.end(); ++it) {
+      mb::Frame queued{};
+      if (mb::decode(*it, queued) && !frameIsNoteOff(queued) &&
+          !in_flight(*it)) {
+        victim = it;
+        break;
+      }
+    }
+    if (victim == txq_.end()) {
+      ++stats_.noteOffDrops;  // every slot is a Note Off: refuse the new one
+      return false;
+    }
+    txq_.erase(victim);
+    ++stats_.evicted;
   }
   txq_.push_back(wire);
   return true;
@@ -550,23 +613,82 @@ void PicoLink::poll() {
   if (last_xfer_us_ != 0 && now - last_xfer_us_ < kMinTransactionUs) return;
   last_xfer_us_ = now;
   const mb::Bytes& out = txq_.empty() ? repeat_ : txq_.front();
+  mb::Frame sent{};
+  // Only app MIDI messages are stop-and-wait. Config frames (tempo, routes,
+  // clock gates) are idempotent, resent after HELLO and must not halve the
+  // config-batch throughput.
+  const bool sent_control =
+      mb::decode(out, sent) && sent.type == mb::Type::control_event &&
+      (sent.payload[0] == mb::EV_MIDI_SEND ||
+       sent.payload[0] == mb::EV_MIDI_ROUTE_SEND);
+  if (sent_control) {
+    bool tracked = false;
+    for (const auto& slot : inflight_)
+      if (slot.sequence == sent.sequence) tracked = true;
+    if (!tracked) {
+      if (inflight_.size() >= kMaxTxQueue) inflight_.pop_front();
+      Inflight slot{};
+      slot.wire = out;
+      slot.sequence = sent.sequence;
+      slot.sent_us = now;
+      slot.attempts = 1;
+      inflight_.push_back(slot);
+    }
+  }
   std::array<std::uint8_t, kFrameBytes> in{};
   if (!transport_.transfer(out.data(), in.data())) {
     ++stats_.bad;  // aborted exchange: the queue head stays for the retry
     return;
   }
-  if (!txq_.empty()) {
-    repeat_ = txq_.front();
-    txq_.pop_front();
-  }
   ++stats_.tx;
+  // A control frame stays at the head until its per-frame ACK returns. The
+  // next transaction repeats the SAME (session, sequence), which the Pico
+  // dedups and acks again: stop-and-wait delivery, applied exactly once. This
+  // also keeps the receiver's one-frame dedup window sufficient (no older
+  // retry can arrive after a newer frame). The ack for exchange N is in the
+  // slave's preloaded response, i.e. it arrives on exchange N+1.
   mb::Frame f{};
-  if (!mb::decode(in, f)) {
+  const bool decoded = mb::decode(in, f);
+  if (decoded) {
+    ++stats_.rx;
+    handle(f, now);
+  } else {
     ++stats_.bad;
+  }
+  bool acked = !sent_control;
+  if (sent_control) {
+    acked = true;
+    for (auto it = inflight_.begin(); it != inflight_.end(); ++it) {
+      if (it->sequence != sent.sequence) continue;
+      acked = false;
+      if (it->attempts >= kMaxRetries) {
+        ++stats_.overruns;  // app-level give-up after repeated lost acks
+        inflight_.erase(it);
+        acked = true;  // stop holding the head; the frame is counted as lost
+      } else {
+        ++it->attempts;
+        ++stats_.retries;
+      }
+      break;
+    }
+  }
+  if (resynced_) {
+    // handle() already installed the new HELLO as the idle filler; the
+    // exchange that carried the session-changing frame must not overwrite it.
+    resynced_ = false;
+  } else if (acked) {
+    if (!txq_.empty()) txq_.pop_front();
+    repeat_ = out;
+  }
+}
+
+void PicoLink::noteAck(std::uint16_t sequence) {
+  ++stats_.acks;
+  for (auto it = inflight_.begin(); it != inflight_.end(); ++it) {
+    if (it->sequence != sequence) continue;
+    inflight_.erase(it);
     return;
   }
-  ++stats_.rx;
-  handle(f, now);
 }
 
 void PicoLink::handle(const mb::Frame& f, std::uint64_t now_us) {
@@ -585,6 +707,8 @@ void PicoLink::handle(const mb::Frame& f, std::uint64_t now_us) {
     link_up_ = false;
     have_status_ = false;  // cached snapshot belonged to the old session
     txq_.clear();
+    inflight_.clear();
+    resynced_ = true;
     enqueueHello();
   }
   if (have_remote_seq_ && f.sequence == remote_seq_) {
@@ -597,6 +721,10 @@ void PicoLink::handle(const mb::Frame& f, std::uint64_t now_us) {
     case mb::Type::hello:
       break;  // our repeated HELLO answers it; the ACK confirms link-up
     case mb::Type::ack:
+      if (f.length >= 2) {
+        noteAck(static_cast<std::uint16_t>(f.payload[0] |
+                                           (f.payload[1] << 8)));
+      }
       if (!link_up_) {
         link_up_ = true;
         Event up{};
