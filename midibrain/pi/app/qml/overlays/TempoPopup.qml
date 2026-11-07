@@ -23,7 +23,7 @@ Rectangle {
     Rectangle {
         id: panel
         width: Math.min(560, root.width - 40)
-        height: 236
+        height: 256
         anchors.centerIn: parent
         color: Style.raised
         radius: Style.cornerPanel
@@ -84,7 +84,7 @@ Rectangle {
 
             Row {
                 width: parent.width
-                height: Style.touch
+                height: Style.touchPrimary
                 spacing: Style.gap
 
                 TouchButton {

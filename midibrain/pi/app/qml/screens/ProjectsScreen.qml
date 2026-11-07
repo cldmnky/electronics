@@ -108,13 +108,28 @@ Item {
             model: projects.model
             boundsBehavior: Flickable.StopAtBounds
 
+            // G14: the panel ring can move past the visible rows; keep the
+            // focused project row in view instead of leaving focus off-screen.
+            function syncFocus() {
+                const id = app.focusId
+                if (!id.startsWith("projects.row.")) return
+                const row = parseInt(id.substring("projects.row.".length))
+                if (!isNaN(row)) positionViewAtIndex(row, ListView.Contain)
+            }
+            Connections {
+                target: app
+                function onFocusChanged() { projectList.syncFocus() }
+            }
+            Component.onCompleted: syncFocus()
+
             delegate: Rectangle {
                 width: ListView.view.width
                 height: Style.touch
+                property string focusId: "projects.row." + index
                 radius: Style.corner
                 color: index === projects.selectedRow ? Style.raised
                        : (index % 2 === 0 ? Style.panel : Style.panelDark)
-                border.width: app.focusId === ("projects.row." + index) ? 2 : 0
+                border.width: app.focusId === focusId ? 2 : 0
                 border.color: Style.accent
 
                 Text {

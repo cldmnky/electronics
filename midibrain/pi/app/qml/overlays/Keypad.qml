@@ -52,6 +52,26 @@ Rectangle {
         function onKeypadAcceptRequested() {
             if (app.keypadOpen) app.keypadAccept(root.buffer)
         }
+        // G7: the panel's key ring presses. The buffer stays here; the
+        // controller only names the character or verb the panel selected.
+        function onKeypadTextRequested(text) {
+            if (app.keypadOpen) root.insert(text)
+        }
+        function onKeypadEditRequested(action) {
+            if (!app.keypadOpen) return
+            if (action === "clear") {
+                root.buffer = ""
+                root.cursor = 0
+            } else if (action === "back") {
+                root.backspace()
+            } else if (action === "space") {
+                root.insert(" ")
+            } else if (action === "left") {
+                root.cursor = Math.max(0, root.cursor - 1)
+            } else if (action === "right") {
+                root.cursor = Math.min(root.buffer.length, root.cursor + 1)
+            }
+        }
     }
 
     // Outside a popup is never a dismiss: the ConfigPopup contract applies to
@@ -190,7 +210,9 @@ Rectangle {
             Row {
                 id: actionRow
                 width: parent.width
-                height: Style.touch
+                // Stage 4 sheet vocabulary: the action footer is a touchPrimary
+                // row so CANCEL/DONE read as the modal's predictable exits.
+                height: Style.touchPrimary
                 spacing: 3
 
                 readonly property real unit: (width - spacing * 7) / 8

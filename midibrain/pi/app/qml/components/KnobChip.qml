@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Mnkybox 1.0
 
 // A value in a tight cell: a framed arc dial with its label and value. This is
@@ -94,8 +95,14 @@ Rectangle {
         preventStealing: true
 
         property real pressY: 0
+        property real pressX: 0
         property real pressValue: 0
         property bool pickOnly: false
+        // Tap-vs-drag threshold: a finger that moves less than this many pixels
+        // is a tap (open the precision sheet); anything more is a drag and
+        // never opens it. The two gestures can never fight.
+        property bool dragActive: false
+        readonly property real tapThreshold: 10
 
         onPressed: (mouse) => {
             if (root.learnOutline) {
@@ -103,13 +110,20 @@ Rectangle {
                 app.learnTargetTouched(root.focusId)
                 return
             }
+            pressX = mouse.x
             pressY = mouse.y
             pressValue = root.value
+            dragActive = false
             app.touchAnchorY = mapToItem(null, mouse.x, mouse.y).y
         }
         onPositionChanged: (mouse) => {
             if (pickOnly) return
             if (!pressed) return
+            if (!dragActive &&
+                Math.abs(mouse.x - pressX) + Math.abs(mouse.y - pressY) >
+                tapThreshold) {
+                dragActive = true
+            }
             let next
             if (root.stepSize > 0) {
                 next = pressValue + Math.round((pressY - mouse.y) / 24) * root.stepSize
@@ -128,12 +142,117 @@ Rectangle {
             root.moved(next)
         }
         onReleased: {
+            if (!pickOnly && !dragActive && root.active) precision.open()
             pickOnly = false
             app.touchAnchorY = -1
         }
         onCanceled: {
             pickOnly = false
             app.touchAnchorY = -1
+        }
+    }
+
+    // Tap-to-edit precision sheet. The chip advertises "tap = edit precisely":
+    // one tap opens it, drag still nudges the value in place, and the panel
+    // encoder keeps driving the same value behind it. Outside a tap dismisses
+    // it: nothing is committed here (the value is already live), so the cheap
+    // escape is the right one. CLOSE is the explicit, large exit.
+    Popup {
+        id: precision
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        width: 340
+        height: 246
+        modal: true
+        dim: true
+        closePolicy: Popup.CloseOnPressOutside
+
+        onOpened: app.setKnobSheetOpen(true)
+        onClosed: app.setKnobSheetOpen(false)
+
+        // The controller takes the sheet down with the overlay it was opened
+        // from (channel popout closed, tab jump, panel EXIT).
+        Connections {
+            target: app
+            function onKnobSheetCloseRequested() {
+                if (precision.opened) precision.close()
+            }
+        }
+
+        background: Rectangle {
+            color: Style.raised
+            radius: Style.cornerPanel
+            border.width: 2
+            border.color: Style.accent
+        }
+
+        contentItem: Column {
+            spacing: Style.gap
+            padding: 12
+
+            Text {
+                width: parent.width - 24
+                height: 24
+                text: root.popupLabel !== "" ? root.popupLabel : root.label
+                color: Style.text
+                font.pixelSize: Style.fontTitle
+                font.weight: Font.DemiBold
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+            Text {
+                width: parent.width - 24
+                height: 40
+                text: (root.valueText !== "" ? root.valueText
+                                             : Number(root.value).toFixed(root.decimals))
+                      + root.suffix
+                color: Style.accent
+                font.pixelSize: Style.fontValue
+                font.weight: Font.DemiBold
+                verticalAlignment: Text.AlignVCenter
+            }
+            Row {
+                width: parent.width - 24
+                height: Style.touchPrimary
+                spacing: Style.gap
+
+                TouchButton {
+                    width: 96
+                    height: parent.height
+                    text: "-"
+                    textSize: Style.fontLabel
+                    onClicked: precision.step(-1)
+                }
+                TouchButton {
+                    width: 96
+                    height: parent.height
+                    text: "+"
+                    textSize: Style.fontLabel
+                    onClicked: precision.step(1)
+                }
+                TouchButton {
+                    width: parent.width - 96 - 96 - Style.gap * 2
+                    height: parent.height
+                    text: "CLOSE"
+                    textSize: Style.fontLabel
+                    variant: "primary"
+                    onClicked: precision.close()
+                }
+            }
+        }
+
+        function step(direction) {
+            let delta = root.stepSize > 0 ? root.stepSize
+                                          : (root.maximumValue - root.minimumValue) / 100
+            if (delta <= 0) delta = 1
+            let next = root.value + direction * delta
+            next = Math.max(root.minimumValue, next)
+            if (root.maximumValue > root.minimumValue) {
+                next = Math.min(root.maximumValue, next)
+            }
+            app.showValuePopup(root.popupLabel !== "" ? root.popupLabel : root.focusId,
+                               root.popupKind, next)
+            root.moved(next)
         }
     }
 }

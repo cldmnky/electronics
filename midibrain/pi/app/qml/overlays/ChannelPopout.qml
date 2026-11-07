@@ -41,11 +41,13 @@ Rectangle {
 
             Row {
                 width: parent.width
-                height: Style.touch
+                // Stage 4 sheet header: the CLOSE control is 64 px and the
+                // title sits at the same 12 px padding as every other sheet.
+                height: Style.touchPrimary
                 spacing: Style.gapTight
 
                 Text {
-                    width: parent.width - 120 - 92 - Style.gapTight * 2
+                    width: parent.width - 160 - 92 - Style.gapTight * 2
                     height: parent.height
                     text: "CHANNEL  " + mixer.trackName
                     color: Style.text
@@ -66,9 +68,10 @@ Rectangle {
                     onClicked: app.requestRenameTrack(mixer.channelSlot)
                 }
                 TouchButton {
-                    width: 120
+                    width: 160
                     height: parent.height
                     text: "CLOSE"
+                    textSize: Style.fontLabel
                     variant: "primary"
                     focusId: "channel.close"
                     onClicked: app.closeChannel()
@@ -77,7 +80,7 @@ Rectangle {
 
             Row {
                 width: parent.width
-                height: parent.height - Style.touch - Style.gapTight
+                height: parent.height - Style.touchPrimary - Style.gapTight
                 spacing: Style.gap
 
                 // ---- left column: the strip --------------------------------

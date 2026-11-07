@@ -266,6 +266,17 @@ void UiTapRunner::buildScenarios() {
       // walking the strips instead of opening an overlay over them.
       excluded << QStringLiteral("mixer.bank.pages");
     }
+    if (tab == 2) {
+      // Stage 4 recorder hierarchy: the track picker, the take sheet, the
+      // recording-source popup and the row EDIT/WAVE/menu surfaces own their
+      // own passes; opening them mid-walk would hide the controls behind them.
+      excluded << QStringLiteral("recorder.takesheet")
+               << QStringLiteral("recorder.track.pick")
+               << QStringLiteral("recorder.recsource")
+               << QStringLiteral("recorder.take.edit.")
+               << QStringLiteral("recorder.take.wave.")
+               << QStringLiteral("recorder.take.menu.");
+    }
     if (tab == 8) {
       // The clip sheet, the LEN stepper, the section rename keypad and the
       // render verb own their scenarios; the screen pass covers the toolbar,
@@ -823,6 +834,25 @@ void UiTapRunner::buildScenarios() {
         [this] { return !scenarioSawTarget_ || controller_->timeline()->editOpen(); },
         QStringLiteral("take-sheet EDIT did not open the take edit popup")});
   }
+
+  // Stage 4 track picker: the one selected-track button opens an 18-track
+  // sheet; picking a track closes it and selects that track.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("clips.recorder.trackpicker"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(2);
+        controller_->recorder()->setSelectedTrack(0);
+        controller_->openTrackPicker();
+      },
+      QStringLiteral("recorder.track.pick.7"), {},
+      {QStringLiteral("recorder.track.pick.7")}, true, true, false, {}, {},
+      [this] {
+        return !controller_->trackPickerOpen() &&
+               controller_->recorder()->selectedTrack() == 7;
+      },
+      QStringLiteral("the track picker did not select track 7 and close")});
 
   // 3g. The take edit popup (plan W5): open it from the recorder's EDIT
   // affordance, then walk every control. The handle pass drags the two edge
@@ -1726,6 +1756,23 @@ void UiTapRunner::runPanelGate() {
     };
     contexts.push_back(context);
   }
+  // G7: the keypad is no longer a dead modal. Its keys, cursor, edit verbs and
+  // the two exits are ring stops, so the whole NAME/RENAME/IMPORT path can be
+  // typed from the panel; the encoder still walks the same ring.
+  {
+    Context context;
+    context.name = QStringLiteral("keypad");
+    // The keypad ring is a linear list over its keys; its NAV is 2D (NavDown
+    // jumps a keyboard row = +10). The generic ring-truth loop walks the list,
+    // so it must use the linear keys (NavRight = +1) like every other context.
+    context.walkKind = Intent::Kind::NavRight;
+    context.setup = [this, reset] {
+      reset();
+      controller_->setTab(0);
+      controller_->requestRenameTrack(0);
+    };
+    contexts.push_back(context);
+  }
 
   // 1-2. Ring truth: non-empty, no duplicates, every stop has a visible widget.
   // 3. Ring walk: NavDown n+1 times visits every stop once and wraps.
@@ -1892,6 +1939,58 @@ void UiTapRunner::runPanelGate() {
   exitCloses(QStringLiteral("confirm"),
              [this] { controller_->requestConfirm(QStringLiteral("T"), QStringLiteral("M"), QStringLiteral("OK"), QStringLiteral("test"), 0); },
              [this] { return !controller_->confirmOpen(); });
+  // The KnobChip precision sheet is the topmost layer while it is up, so EXIT
+  // must spend its press on it (G9 for the touch-only sheet).
+  exitCloses(QStringLiteral("knobsheet"),
+             [this] { controller_->setKnobSheetOpen(true); },
+             [this] { return !controller_->knobSheetOpen(); });
+
+  // 7b. G9: opening an overlay saves the invoking stop and closing it restores
+  // that stop, not index 0. Each branch opens from a real ring stop.
+  const auto focusReturns = [this, &fail](const QString& name, int tab,
+                                          const QString& invoking,
+                                          const std::function<void()>& open,
+                                          const std::function<void()>& close) {
+    closeOverlays();
+    controller_->setTab(tab);
+    const auto& ids = controller_->focusIds_;
+    const auto found = std::find(ids.begin(), ids.end(), invoking);
+    if (found == ids.end()) {
+      fail(QStringLiteral("focus.%1").arg(name),
+           QStringLiteral("%1 not in the ring").arg(invoking));
+      return;
+    }
+    controller_->focusIndex_ = static_cast<int>(std::distance(ids.begin(), found));
+    controller_->focusId_ = invoking;
+    open();
+    close();
+    if (controller_->focusId() != invoking) {
+      fail(QStringLiteral("focus.%1").arg(name),
+           QStringLiteral("close left %1, expected %2")
+               .arg(controller_->focusId(), invoking));
+    }
+  };
+  focusReturns(QStringLiteral("tempo"), 0, QStringLiteral("transport.tempo"),
+               [this] { controller_->openTempoPopup(); },
+               [this] { controller_->closeTempoPopup(); });
+  focusReturns(QStringLiteral("tabgrid"), 0, QStringLiteral("nav.more"),
+               [this] { controller_->openTabGrid(); },
+               [this] { controller_->closeTabGrid(); });
+  focusReturns(QStringLiteral("config"), 0, QStringLiteral("transport.recmode"),
+               [this] { controller_->openConfig(QStringLiteral("metronome")); },
+               [this] { controller_->configCancel(); });
+  focusReturns(QStringLiteral("keypad"), 0, QStringLiteral("transport.recmode"),
+               [this] { controller_->requestRenameTrack(0); },
+               [this] { controller_->keypadCancel(); });
+  focusReturns(QStringLiteral("channel"), 0, QStringLiteral("mixer.expand.0"),
+               [this] { controller_->openChannel(0); },
+               [this] { controller_->closeChannel(); });
+  focusReturns(QStringLiteral("trackpicker"), 2, QStringLiteral("recorder.track.pick"),
+               [this] { controller_->openTrackPicker(); },
+               [this] { controller_->closeTrackPicker(); });
+  focusReturns(QStringLiteral("takesheet"), 2, QStringLiteral("recorder.takesheet"),
+               [this] { controller_->openTakeSheet(0); },
+               [this] { controller_->closeTakeSheet(); });
 
   // 8. Three-band shell reconciliation: every visible control in the nav and
   // transport bands is a ring stop (or an explicit touch duplicate).

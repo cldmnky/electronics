@@ -19,7 +19,7 @@ Rectangle {
 
     Rectangle {
         width: Math.min(560, root.width - 60)
-        height: Math.min(200, root.height - 80)
+        height: Math.min(220, root.height - 80)
         anchors.centerIn: parent
         color: Style.raised
         radius: Style.cornerPanel
@@ -43,7 +43,7 @@ Rectangle {
             }
             Text {
                 width: parent.width
-                height: parent.height - 26 - Style.touch - 16
+                height: parent.height - 26 - Style.touchPrimary - 16
                 text: app.confirmMessage
                 color: Style.textDim
                 font.pixelSize: Style.fontBody
@@ -53,7 +53,7 @@ Rectangle {
             }
             Row {
                 width: parent.width
-                height: Style.touch
+                height: Style.touchPrimary
                 spacing: 8
                 layoutDirection: Qt.RightToLeft
 
@@ -68,6 +68,7 @@ Rectangle {
                     width: 130
                     height: parent.height
                     text: "CANCEL"
+                    variant: "ghost"
                     onClicked: app.confirmCancel()
                 }
             }

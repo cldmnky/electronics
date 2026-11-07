@@ -250,11 +250,16 @@ void AppController::shutdown() {
 
 void AppController::setTab(int tab) {
   const int clamped = std::clamp(tab, 0, kScreenCount - 1);
+  // A tab jump closes overlays; it must not restore a stop on the old tab.
+  suppressFocusReturn_ = true;
+  dismissKnobSheet();
   closeTabGrid();
   closeBankGrid();
   closeTempoPopup();
   closeTakeSheet();
+  closeTrackPicker();
   closeTakeEdit();
+  suppressFocusReturn_ = false;
   if (arrangeVm_ != nullptr) {
     arrangeVm_->closeClipMenu();
     arrangeVm_->closeLengthPopup();
@@ -462,6 +467,7 @@ void AppController::tapTempo() {
 
 void AppController::openTempoPopup() {
   if (tempoPopupOpen_) return;
+  noteFocusReturn();
   tempoPopupOpen_ = true;
   emit tempoPopupChanged();
   rebuildFocusIds();
@@ -471,7 +477,7 @@ void AppController::closeTempoPopup() {
   if (!tempoPopupOpen_) return;
   tempoPopupOpen_ = false;
   emit tempoPopupChanged();
-  rebuildFocusIds();
+  restoreFocusReturn();
 }
 
 void AppController::setTempoBpm(int bpm) {
@@ -488,6 +494,7 @@ void AppController::setTempoBpm(int bpm) {
 
 void AppController::openTabGrid() {
   if (tabGridOpen_) return;
+  noteFocusReturn();
   tabGridOpen_ = true;
   const QVariantList pages = morePageTabs();
   const int position = pages.indexOf(tab_);
@@ -500,11 +507,12 @@ void AppController::closeTabGrid() {
   if (!tabGridOpen_) return;
   tabGridOpen_ = false;
   emit tabGridChanged();
-  rebuildFocusIds();
+  restoreFocusReturn();
 }
 
 void AppController::openBankGrid() {
   if (bankGridOpen_) return;
+  noteFocusReturn();
   bankGridOpen_ = true;
   emit bankGridChanged();
   rebuildFocusIds();
@@ -514,7 +522,7 @@ void AppController::closeBankGrid() {
   if (!bankGridOpen_) return;
   bankGridOpen_ = false;
   emit bankGridChanged();
-  rebuildFocusIds();
+  restoreFocusReturn();
 }
 
 void AppController::chooseBankPage(int page) {
@@ -531,6 +539,7 @@ bool AppController::tabHasShiftFace(int tab) const {
 
 void AppController::requestKeypad(const QString& title, const QString& initial,
                                   const QString& action, int index) {
+  noteFocusReturn();
   keypadTitle_ = title;
   keypadInitial_ = initial;
   keypadAction_ = action;
@@ -538,9 +547,16 @@ void AppController::requestKeypad(const QString& title, const QString& initial,
   keypadError_.clear();
   keypadOpen_ = true;
   emit keypadChanged();
+  // G7: the keypad owns its own ring (keys are stops) - rebuild immediately so
+  // the ring snapshot agrees with the NAV walk while the modal is open. Every
+  // other modal open path rebuilds here; without this the panel walked the
+  // keypad keys while focusIds_ still held the shell ring (panel-taps failures
+  // 'keypad: step 1 gave keypad.key.4' and the wrap check).
+  rebuildFocusIds();
 }
 
 void AppController::keypadAccept(const QString& text) {
+  const bool wasOpen = keypadOpen_;
   QString error;
   if (keypadAction_ == QStringLiteral("project-rename")) {
     error = projectsVm_->renameSelected(text);
@@ -592,6 +608,7 @@ void AppController::keypadAccept(const QString& text) {
         keypadOpen_ = false;
         keypadError_.clear();
         emit keypadChanged();
+        if (wasOpen) restoreFocusReturn();
         openConfigInternal(QStringLiteral("trackfromtake"));
         return;
       }
@@ -611,6 +628,7 @@ void AppController::keypadAccept(const QString& text) {
       keypadOpen_ = false;
       keypadError_.clear();
       emit keypadChanged();
+      if (wasOpen) restoreFocusReturn();
       requestConfirm(QStringLiteral("IMPORT TAKE"), preview,
                      QStringLiteral("IMPORT"), QStringLiteral("take-import"), -1);
       return;
@@ -653,12 +671,15 @@ void AppController::keypadAccept(const QString& text) {
   keypadOpen_ = false;
   keypadError_.clear();
   emit keypadChanged();
+  if (wasOpen) restoreFocusReturn();
 }
 
 void AppController::keypadCancel() {
+  const bool wasOpen = keypadOpen_;
   keypadOpen_ = false;
   keypadError_.clear();
   emit keypadChanged();
+  if (wasOpen) restoreFocusReturn();
 }
 
 void AppController::requestConfirm(const QString& title, const QString& message,
@@ -669,6 +690,7 @@ void AppController::requestConfirm(const QString& title, const QString& message,
   confirmLabel_ = confirmLabel;
   confirmAction_ = action;
   confirmIndex_ = index;
+  noteFocusReturn();
   confirmOpen_ = true;
   emit confirmChanged();
 }
@@ -678,6 +700,7 @@ void AppController::confirmAccept() {
   const int index = confirmIndex_;
   confirmOpen_ = false;
   emit confirmChanged();
+  restoreFocusReturn();
   if (action == QStringLiteral("project-load")) {
     projectsVm_->loadRow(index);
   } else if (action == QStringLiteral("project-delete")) {
@@ -717,8 +740,10 @@ void AppController::confirmAccept() {
 }
 
 void AppController::confirmCancel() {
+  if (!confirmOpen_) return;
   confirmOpen_ = false;
   emit confirmChanged();
+  restoreFocusReturn();
 }
 
 void AppController::requestLoadProject(int row) {
@@ -869,10 +894,11 @@ void AppController::closeTakeSheet() {
   if (!takeSheetOpen_) return;
   takeSheetOpen_ = false;
   emit takeSheetChanged();
-  rebuildFocusIds();
+  restoreFocusReturn();
 }
 
 void AppController::setTakeSheetTrack(int track) {
+  if (!takeSheetOpen_) noteFocusReturn();
   const int clamped = std::clamp(track, 0, kNumStrips - 1);
   // The sheet lists the recorder's per-track take list, so the recorder's
   // selected track follows the lane the sheet was opened from.
@@ -916,6 +942,7 @@ void AppController::openTakeEdit(int row) {
     recorderVm_->activateSelected();
   }
   closeTakeSheet();
+  noteFocusReturn();
   timelineVm_->openEdit(track);
   showNotice(NoticeInfo,
              QStringLiteral("EDIT %1 - non-destructive (RENDER writes a new take)")
@@ -925,7 +952,7 @@ void AppController::openTakeEdit(int row) {
 void AppController::closeTakeEdit() {
   if (timelineVm_ == nullptr || !timelineVm_->editOpen()) return;
   timelineVm_->closeEdit();
-  rebuildFocusIds();
+  restoreFocusReturn();
 }
 
 void AppController::chooseLiveInput() {
@@ -1008,7 +1035,9 @@ void AppController::openOutputDest(int slot) {
 }
 
 void AppController::openTrackFx(int slot) {
+  const bool wasOpen = fxVm_->open();
   fxVm_->openFor(mixerVm_->selectedStrip(), slot);
+  if (!wasOpen) noteFocusReturn();
   // The popup owns the ring while it is open; start it on CLOSE, exactly the
   // stop the owner presses to dismiss the rack.
   focusIndex_ = 0;
@@ -1016,8 +1045,10 @@ void AppController::openTrackFx(int slot) {
 }
 
 void AppController::closeTrackFx() {
+  const bool wasOpen = fxVm_->open();
   fxVm_->close();
-  rebuildFocusIds();
+  if (wasOpen && !fxVm_->open()) restoreFocusReturn();
+  else rebuildFocusIds();
 }
 
 void AppController::openFxSlot(int slot) {
@@ -1046,6 +1077,12 @@ void AppController::openFxSlotParams(int slot) {
 }
 
 void AppController::openChannel(int slot) {
+  const bool wasOpen = mixerVm_->channelOpen();
+  // Save the invoking stop BEFORE opening: openChannel's change signal
+  // triggers rebuildFocusIds(), which rewrites focusId_ to the new ring's
+  // stop - noting afterwards would save the wrong id and the G9 restore
+  // would land on index 0 (panel-taps: 'focus.channel: close left nav.mixer').
+  if (!wasOpen) noteFocusReturn();
   mixerVm_->openChannel(slot);
   // A newly opened overlay starts its ring at its own first stop (CLOSE), not
   // at whatever index the strip screen happened to hold.
@@ -1054,8 +1091,10 @@ void AppController::openChannel(int slot) {
 }
 
 void AppController::closeChannel() {
+  const bool wasOpen = mixerVm_->channelOpen();
   mixerVm_->closeChannel();
-  rebuildFocusIds();
+  if (wasOpen && !mixerVm_->channelOpen()) restoreFocusReturn();
+  else rebuildFocusIds();
 }
 
 void AppController::demoSeedArrange() {
@@ -1220,7 +1259,9 @@ void AppController::openConfigInternal(const QString& kind) {
   } else if (kind == QStringLiteral("addtrack")) {
     configVm_->setAddTrackSlot(mixerVm_->nextFreeSlot());
   }
+  const bool wasOpen = configVm_->open();
   if (!configVm_->openKind(kind)) return;
+  if (!wasOpen) noteFocusReturn();
   // A popup opened from the SHIFT face keeps that face underneath it; the
   // popup's own focus trap replaces the ring while it is open, and CANCEL puts
   // the shift stops back instead of dropping to the primary face.
@@ -1231,15 +1272,19 @@ void AppController::openConfigInternal(const QString& kind) {
 }
 
 void AppController::configAccept() {
+  const bool wasOpen = configVm_->open();
   configVm_->accept();
   emit clickChanged();
   emit dirtyChanged();
-  rebuildFocusIds();
+  if (wasOpen && !configVm_->open()) restoreFocusReturn();
+  else rebuildFocusIds();
 }
 
 void AppController::configCancel() {
+  const bool wasOpen = configVm_->open();
   configVm_->cancel();
-  rebuildFocusIds();
+  if (wasOpen && !configVm_->open()) restoreFocusReturn();
+  else rebuildFocusIds();
 }
 
 void AppController::timerTick() {
@@ -1415,23 +1460,43 @@ void AppController::perform(const Intent& intent) {
 }
 
 void AppController::performPanelFocus(const Intent& intent) {
-  // A2: the keypad and the confirmation trap the panel. NAV is inert, PRESS
-  // accepts, the encoder moves the keypad cursor (perform()), and the short
-  // EXIT press cancels (updateShiftState). Nothing behind the modal can be
-  // activated: rebuildFocusIds() returns an empty ring while one is open.
+  // A2/G7: the confirmation traps the panel (two answers); the keypad is a
+  // real ring over its keys, PRESS inserts the focused character or runs the
+  // focused action, and EXIT still cancels. The encoder keeps moving the
+  // cursor (perform()).
   if (keypadOpen_ || confirmOpen_) {
+    if (confirmOpen_) {
+      switch (intent.kind) {
+        case Intent::Kind::NavPress:
+        case Intent::Kind::EncoderSw:
+          confirmAccept();
+          break;
+        default:
+          break;
+      }
+      return;
+    }
     switch (intent.kind) {
+      case Intent::Kind::NavUp:
+        moveFocus(-10);
+        break;
+      case Intent::Kind::NavDown:
+        moveFocus(10);
+        break;
+      case Intent::Kind::NavLeft:
+        moveFocus(-1);
+        break;
+      case Intent::Kind::NavRight:
+        moveFocus(1);
+        break;
       case Intent::Kind::NavPress:
       case Intent::Kind::EncoderSw:
-        if (keypadOpen_) {
-          emit keypadAcceptRequested();
-        } else {
-          confirmAccept();
-        }
+        activateFocus();
         break;
       default:
         break;
     }
+    rebuildFocusIds();
     return;
   }
   if (tempoPopupOpen_ || tabGridOpen_ || takeSheetOpen_) {
@@ -1763,7 +1828,10 @@ void AppController::updateShiftState(const LinkStatus& status) {
       rebuildFocusIds();
     } else if (!longHold) {
       // EXIT short press: dismiss an open overlay, otherwise leave EDIT.
-      if (configVm_->open()) {
+      // The KnobChip precision sheet is the topmost layer while it is up.
+      if (knobSheetOpen_) {
+        dismissKnobSheet();
+      } else if (configVm_->open()) {
         configCancel();
       } else if (confirmOpen_) {
         confirmCancel();
@@ -1928,6 +1996,34 @@ void AppController::activateFocus() {
   if (focusId.startsWith(QStringLiteral("shift."))) focusId = focusId.mid(6);
   if (focusId.isEmpty()) return;
   const auto parts = focusId.split(QLatin1Char('.'));
+
+  // G7: the keypad's ring presses. The buffer stays in QML; the controller
+  // forwards the intent, so panel and touch share one editing path.
+  if (parts[0] == QStringLiteral("keypad")) {
+    if (focusId == QStringLiteral("keypad.done")) {
+      emit keypadAcceptRequested();
+    } else if (focusId == QStringLiteral("keypad.cancel")) {
+      keypadCancel();
+    } else if (parts.size() >= 2 && parts[1] == QStringLiteral("key")) {
+      emit keypadTextRequested(focusId.mid(QStringLiteral("keypad.key.").size()));
+    } else if (parts.size() >= 2 && parts[1] == QStringLiteral("cursor")) {
+      emit keypadEditRequested(parts[2]);
+    } else if (parts.size() >= 2) {
+      emit keypadEditRequested(parts[1]);
+    }
+    return;
+  }
+
+  // Stage 4 recorder picker: choose a track or close the sheet.
+  if (focusId == QStringLiteral("recorder.track.picker.close")) {
+    closeTrackPicker();
+    return;
+  }
+  if (parts.size() >= 4 && parts[0] == QStringLiteral("recorder") &&
+      parts[1] == QStringLiteral("track") && parts[2] == QStringLiteral("pick")) {
+    chooseTrack(parts[3].toInt());
+    return;
+  }
 
   // G3: the page grid is a modal with a ring, so PRESS must choose a page and
   // CLOSE must close it; otherwise the panel is locked out.
@@ -2176,6 +2272,8 @@ void AppController::activateFocus() {
       closeTakeSheet();
     } else if (parts[2] == QStringLiteral("row") && parts.size() >= 4) {
       chooseTakeRow(parts[3].toInt());
+    } else if (parts[2] == QStringLiteral("edit") && parts.size() >= 4) {
+      requestEditTake(parts[3].toInt());
     }
     return;
   }
@@ -2185,6 +2283,8 @@ void AppController::activateFocus() {
       closeTakeSheet();
     } else if (focusId == QStringLiteral("take.sheet.live")) {
       chooseLiveInput();
+    } else if (focusId.startsWith(QStringLiteral("take.sheet.edit."))) {
+      requestEditTake(focusId.mid(QStringLiteral("take.sheet.edit.").size()).toInt());
     } else {
       chooseTakeRow(focusId.mid(16).toInt());
     }
@@ -2689,7 +2789,21 @@ void AppController::activateFocus() {
 
   if (parts.size() >= 2 && parts[0] == QStringLiteral("recorder")) {
     if (parts[1] == QStringLiteral("track") && parts.size() >= 3) {
-      recorderVm_->setSelectedTrack(parts[2].toInt());
+      if (parts[2] == QStringLiteral("pick")) {
+        openTrackPicker();
+      } else if (parts[2] == QStringLiteral("prev")) {
+        recorderVm_->setSelectedTrack(moveIndex(recorderVm_->selectedTrack(), -1, kNumStrips));
+      } else if (parts[2] == QStringLiteral("next")) {
+        recorderVm_->setSelectedTrack(moveIndex(recorderVm_->selectedTrack(), 1, kNumStrips));
+      } else {
+        recorderVm_->setSelectedTrack(parts[2].toInt());
+      }
+    } else if (parts[1] == QStringLiteral("takesheet")) {
+      openTakeSheet(recorderVm_->selectedTrack());
+    } else if (parts[1] == QStringLiteral("recsource")) {
+      openTrackMode(recorderVm_->selectedTrack());
+    } else if (parts[1] == QStringLiteral("mode")) {
+      cycleTrackMode(recorderVm_->selectedTrack());
     } else if (parts[1] == QStringLiteral("arm")) {
       mixerVm_->toggleArm(recorderVm_->selectedTrack());
     } else if (parts[1] == QStringLiteral("start")) {
@@ -2705,7 +2819,15 @@ void AppController::activateFocus() {
     } else if (parts[1] == QStringLiteral("delete")) {
       requestDeleteTake();
     } else if (parts[1] == QStringLiteral("take") && parts.size() >= 3) {
-      recorderVm_->selectRow(parts[2].toInt());
+      if (parts[2] == QStringLiteral("edit") && parts.size() >= 4) {
+        requestEditTake(parts[3].toInt());
+      } else if (parts[2] == QStringLiteral("wave") && parts.size() >= 4) {
+        openTakeEdit(parts[3].toInt());
+      } else if (parts[2] == QStringLiteral("menu") && parts.size() >= 4) {
+        openTakeActions(parts[3].toInt());
+      } else {
+        recorderVm_->selectRow(parts[2].toInt());
+      }
     }
     return;
   }
@@ -3521,11 +3643,104 @@ void AppController::adjustFocused(int detents, bool fine) {
   }
 }
 
+void AppController::noteFocusReturn() {
+  if (suppressFocusReturn_ || focusId_.isEmpty()) return;
+  focusReturnStack_.push_back(focusId_);
+  // Nested overlays are shallow; cap the stack so a modal opened in a loop
+  // cannot grow it without bound.
+  if (focusReturnStack_.size() > 8) focusReturnStack_.erase(focusReturnStack_.begin());
+}
+
+void AppController::restoreFocusReturn() {
+  // An overlay just closed under the sheet the panel was editing: the sheet is
+  // part of that overlay and goes with it.
+  dismissKnobSheet();
+  QString saved;
+  if (!suppressFocusReturn_ && !focusReturnStack_.empty()) {
+    saved = focusReturnStack_.back();
+    focusReturnStack_.pop_back();
+  }
+  rebuildFocusIds();
+  if (suppressFocusReturn_ || saved.isEmpty()) return;
+  const auto found = std::find(focusIds_.begin(), focusIds_.end(), saved);
+  if (found == focusIds_.end()) return;
+  focusIndex_ = static_cast<int>(std::distance(focusIds_.begin(), found));
+  focusByScreen_[tab_] = focusIndex_;
+  if (focusId_ != saved) {
+    focusId_ = saved;
+    emit focusChanged();
+  }
+}
+
+void AppController::setKnobSheetOpen(bool open) {
+  if (open == knobSheetOpen_) return;
+  knobSheetOpen_ = open;
+  emit knobSheetChanged();
+}
+
+void AppController::dismissKnobSheet() {
+  if (!knobSheetOpen_) return;
+  knobSheetOpen_ = false;
+  emit knobSheetChanged();
+  emit knobSheetCloseRequested();
+}
+
+void AppController::openTrackPicker() {
+  if (trackPickerOpen_) return;
+  noteFocusReturn();
+  trackPickerOpen_ = true;
+  emit trackPickerChanged();
+  focusIndex_ = 0;
+  rebuildFocusIds();
+}
+
+void AppController::closeTrackPicker() {
+  if (!trackPickerOpen_) return;
+  trackPickerOpen_ = false;
+  emit trackPickerChanged();
+  restoreFocusReturn();
+}
+
+void AppController::chooseTrack(int track) {
+  if (track < 0 || track >= kNumStrips) return;
+  recorderVm_->setSelectedTrack(track);
+  closeTrackPicker();
+  showTextPopup(QStringLiteral("TRACK %1").arg(track + 1, 2, 10, QLatin1Char('0')),
+                recorderVm_->trackName());
+}
+
 void AppController::rebuildFocusIds() {
   std::vector<QString> ids;
-  if (keypadOpen_ || confirmOpen_) {
-    // A2 modal trap: an open keypad or confirmation has no panel focus ring,
-    // so NAV/PRESS/encoder can never reach a control behind it.
+  if (keypadOpen_) {
+    // G7: the keypad is a real modal surface now. Its keys are ring stops, so
+    // the panel can select and insert characters; the action verbs come first
+    // (PRESS on stop 0 keeps the old DONE semantics), then every key in
+    // keyboard order. A confirmation keeps the modal trap (two answers only).
+    ids.push_back(QStringLiteral("keypad.done"));
+    ids.push_back(QStringLiteral("keypad.cancel"));
+    ids.push_back(QStringLiteral("keypad.clear"));
+    ids.push_back(QStringLiteral("keypad.back"));
+    ids.push_back(QStringLiteral("keypad.space"));
+    ids.push_back(QStringLiteral("keypad.left"));
+    ids.push_back(QStringLiteral("keypad.right"));
+    for (const char* row : {"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm-_<>/."}) {
+      for (const char* character = row; *character != '\0'; ++character) {
+        if (*character == '<') {
+          ids.push_back(QStringLiteral("keypad.cursor.left"));
+        } else if (*character == '>') {
+          ids.push_back(QStringLiteral("keypad.cursor.right"));
+        } else {
+          ids.push_back(QStringLiteral("keypad.key.%1").arg(QChar(*character)));
+        }
+      }
+    }
+  } else if (confirmOpen_) {
+    // A confirmation has exactly two answers; the panel trap stays here.
+  } else if (trackPickerOpen_) {
+    for (int track = 0; track < kNumStrips; ++track) {
+      ids.push_back(QStringLiteral("recorder.track.pick.%1").arg(track));
+    }
+    ids.push_back(QStringLiteral("recorder.track.picker.close"));
   } else if (tabGridOpen_) {
     // More holds six pages in a 3x2 sheet; the id is the unchanged tab index,
     // so a press still lands on the same screen mapping.
@@ -3577,6 +3792,7 @@ void AppController::rebuildFocusIds() {
     ids.push_back(QStringLiteral("take.sheet.live"));
     for (int row = 0; row < recorderVm_->takes()->rowCount(); ++row) {
       ids.push_back(QStringLiteral("take.sheet.row.%1").arg(row));
+      ids.push_back(QStringLiteral("take.sheet.edit.%1").arg(row));
     }
     ids.push_back(QStringLiteral("take.sheet.close"));
   } else if (tempoPopupOpen_) {
@@ -4017,13 +4233,19 @@ void AppController::rebuildFocusIds() {
         break;
       }
       case 2: {
-        for (int track = 0; track < kNumStrips; ++track) {
-          ids.push_back(QStringLiteral("recorder.track.%1").arg(track));
-        }
+        // Stage 4: one selected-track button plus prev/next, not 18 permanent
+        // selectors. The picker owns the ring while it is open.
+        ids.push_back(QStringLiteral("recorder.takesheet"));
+        ids.push_back(QStringLiteral("recorder.track.prev"));
+        ids.push_back(QStringLiteral("recorder.track.pick"));
+        ids.push_back(QStringLiteral("recorder.track.next"));
+        ids.push_back(QStringLiteral("recorder.recsource"));
         ids.push_back(QStringLiteral("recorder.mode"));
         ids.push_back(QStringLiteral("recorder.start"));
         for (int row = 0; row < recorderVm_->takes()->rowCount(); ++row) {
           ids.push_back(QStringLiteral("recorder.take.%1").arg(row));
+          ids.push_back(QStringLiteral("recorder.take.wave.%1").arg(row));
+          ids.push_back(QStringLiteral("recorder.take.edit.%1").arg(row));
           ids.push_back(QStringLiteral("recorder.take.menu.%1").arg(row));
         }
         break;

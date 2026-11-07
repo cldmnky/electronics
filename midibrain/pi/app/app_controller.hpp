@@ -85,6 +85,9 @@ class AppController final : public QObject {
   Q_PROPERTY(bool bankGridOpen READ bankGridOpen NOTIFY bankGridChanged)
   Q_PROPERTY(bool takeSheetOpen READ takeSheetOpen NOTIFY takeSheetChanged)
   Q_PROPERTY(int takeSheetTrack READ takeSheetTrack NOTIFY takeSheetChanged)
+  // Stage 4: the recorder shows ONE selected-track button; tapping it opens a
+  // picker sheet instead of parking 18 permanent selectors above the takes.
+  Q_PROPERTY(bool trackPickerOpen READ trackPickerOpen NOTIFY trackPickerChanged)
   // MIDI-learn target capture: while true every learnable control is outlined
   // and the next touched one becomes the capture target (A9 arm-then-touch).
   Q_PROPERTY(bool learnArmed READ learnArmed NOTIFY learnChanged)
@@ -97,6 +100,10 @@ class AppController final : public QObject {
   Q_PROPERTY(double masterPeakLeft READ masterPeakLeft NOTIFY metersChanged)
   Q_PROPERTY(double masterPeakRight READ masterPeakRight NOTIFY metersChanged)
   Q_PROPERTY(bool keypadOpen READ keypadOpen NOTIFY keypadChanged)
+  // The KnobChip precision sheet is QML-local (it steps the chip's own value),
+  // but the controller must know it is up: EXIT has to dismiss the topmost
+  // sheet, and a tab jump or an overlay close has to take it down with its owner.
+  Q_PROPERTY(bool knobSheetOpen READ knobSheetOpen NOTIFY knobSheetChanged)
   Q_PROPERTY(QString keypadTitle READ keypadTitle NOTIFY keypadChanged)
   Q_PROPERTY(QString keypadInitial READ keypadInitial NOTIFY keypadChanged)
   Q_PROPERTY(QString keypadError READ keypadError NOTIFY keypadChanged)
@@ -163,6 +170,8 @@ class AppController final : public QObject {
   bool bankGridOpen() const { return bankGridOpen_; }
   bool takeSheetOpen() const { return takeSheetOpen_; }
   int takeSheetTrack() const { return takeSheetTrack_; }
+  bool trackPickerOpen() const { return trackPickerOpen_; }
+  bool knobSheetOpen() const { return knobSheetOpen_; }
   bool learnArmed() const;
   QString panelMode() const { return panelMode_; }
   QString focusId() const { return focusId_; }
@@ -236,6 +245,13 @@ class AppController final : public QObject {
   Q_INVOKABLE int trackRecSource(int slot) const;
   // TAKE row actions (W4) and NEW TRACK FROM THIS TAKE (W3).
   Q_INVOKABLE void openTakeActions(int row);
+  // Stage 4 recorder hierarchy: the selected-track picker sheet.
+  Q_INVOKABLE void openTrackPicker();
+  Q_INVOKABLE void closeTrackPicker();
+  Q_INVOKABLE void chooseTrack(int track);
+  // the KnobChip precision sheet reports its open state so the panel can close
+  // it; the value itself stays in QML next to the chip it edits.
+  Q_INVOKABLE void setKnobSheetOpen(bool open);
   Q_INVOKABLE void requestRemoveTake();
   Q_INVOKABLE void requestNewTrackFromTake(int row);
   Q_INVOKABLE void requestEditTake(int row);
@@ -378,6 +394,16 @@ class AppController final : public QObject {
   // the cursor or accept through these two signals (A2 modal trap).
   void keypadCursorMoveRequested(int delta);
   void keypadAcceptRequested();
+  // G7: the panel reaches the keypad's keys as ring stops; a PRESS asks the
+  // QML buffer to insert a character or run an edit verb (buffer stays in QML).
+  void keypadTextRequested(const QString& text);
+  void keypadEditRequested(const QString& action);
+  void knobSheetChanged();
+  // The owning overlay closed (or the user pressed EXIT): the chip hides its
+  // precision sheet. Without this a modal sheet outlived the popout it was
+  // opened from and swallowed every later touch.
+  void knobSheetCloseRequested();
+  void trackPickerChanged();
   void panelModeChanged();
   void focusChanged();
   void recModeChanged();
@@ -394,6 +420,11 @@ class AppController final : public QObject {
   // exposing a test-only API to QML.
   friend class UiTapRunner;
   void timerTick();
+  // G9: every overlay saves the invoking focus id on open and restores it on
+  // close (by id when it still exists, else by the saved index).
+  void noteFocusReturn();
+  void restoreFocusReturn();
+  void dismissKnobSheet();
   void perform(const Intent& intent);
   void performPanelFocus(const Intent& intent);
   // EDIT-mode directions on the EQ node / X/Y grid. Returns true when handled.
@@ -536,6 +567,12 @@ class AppController final : public QObject {
   QString pendingImportPath_;
   bool takeSheetOpen_ = false;
   int takeSheetTrack_ = -1;
+  bool trackPickerOpen_ = false;
+  bool knobSheetOpen_ = false;
+  // G9 focus-return stack: nested overlays (channel -> TRACK FX -> config /
+  // keypad) each restore the stop they were opened from.
+  std::vector<QString> focusReturnStack_;
+  bool suppressFocusReturn_ = false;
   // Last non-Off metronome mode: enabling CLICK from Off restores it instead
   // of silently rewriting the configured mode (A8).
   int lastNonZeroClickMode_ = 0;

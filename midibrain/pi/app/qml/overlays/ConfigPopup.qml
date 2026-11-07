@@ -1412,13 +1412,15 @@ Rectangle {
 
             Row {
                 width: parent.width
-                height: Style.touch
+                // Stage 4 footer: the two exits are a full 64 px row; CANCEL
+                // is a common action (ghost), not a destructive red verb.
+                height: Style.touchPrimary
                 spacing: 4
                 TouchButton {
                     width: (parent.width - Style.gapTight) / 2
                     height: parent.height
                     text: "CANCEL"
-                    variant: "danger"
+                    variant: "ghost"
                     focusId: "config.cancel"
                     onClicked: app.configCancel()
                 }

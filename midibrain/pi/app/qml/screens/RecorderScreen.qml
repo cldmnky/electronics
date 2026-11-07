@@ -16,116 +16,137 @@ Item {
         visible: !screen.shiftFace
         anchors.fill: parent
         anchors.margins: Style.margin
-        spacing: Style.gap
+        spacing: Style.gapTight
 
+        // (a) The recording state and the running take clock are the first
+        // thing read, at value size. The ACTIVE take is the one large card that
+        // opens the take sheet.
         Row {
             width: parent.width
-            height: Style.touch
+            height: Style.touchSecondary
             spacing: Style.gap
 
-            // A6: REC / PLAY / STOP only, in the state's colour. The dim line
-            // below says what the state does not (playing a take / inputs live).
-            Text {
-                width: parent.width * 0.55
+            Column {
+                width: parent.width * 0.62 - Style.gap
                 height: parent.height
-                text: recorder.transportText
-                color: recorder.recording ? Style.record
-                       : (app.rolling ? Style.accent : Style.textDim)
-                font.pixelSize: Style.fontDisplay
-                font.weight: Font.DemiBold
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
+                spacing: 0
+
+                Text {
+                    width: parent.width
+                    height: Style.fontValue + 8
+                    text: recorder.transportText
+                    color: recorder.recording ? Style.record
+                           : (app.rolling ? Style.accent : Style.textDim)
+                    font.pixelSize: Style.fontValue
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    height: parent.height - Style.fontValue - 8
+                    text: recorder.recording ? recorder.statusText : recorder.transportHint
+                    color: recorder.recording ? Style.record : Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
             }
-            Text {
-                id: activeReadout
-                width: parent.width - parent.width * 0.55 - Style.gap
+            Rectangle {
+                width: parent.width - parent.width * 0.62 - Style.gap
                 height: parent.height
-                text: "ACTIVE  " + recorder.activeTake
-                color: recorder.activeTake === "LIVE INPUT" ? Style.textDim : Style.accent
-                font.pixelSize: Style.fontSmall
-                font.weight: Font.DemiBold
-                horizontalAlignment: Text.AlignRight
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideMiddle
-                // The take-sheet opener: the sheet left the retired EDIT tab and
-                // now lives here, on the surface that owns the takes.
+                radius: Style.corner
+                color: Style.panel
+                border.width: app.focusId === "recorder.takesheet" ? 2 : Style.outlineWidth
+                border.color: app.focusId === "recorder.takesheet" ? Style.accent : Style.outline
                 property string focusId: "recorder.takesheet"
+
+                Text {
+                    x: 10
+                    width: parent.width - 20
+                    height: 16
+                    text: "ACTIVE TAKE  -  TAP FOR TAKES"
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSmall
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                Text {
+                    x: 10
+                    y: 16
+                    width: parent.width - 20
+                    height: parent.height - 16
+                    text: recorder.activeTake
+                    color: recorder.activeTake === "LIVE INPUT" ? Style.textDim : Style.accent
+                    font.pixelSize: Style.fontLabel
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideMiddle
+                }
                 TapHandler {
                     onTapped: app.openTakeSheet(recorder.selectedTrack)
                 }
             }
         }
 
-        Text {
-            width: parent.width
-            height: recorder.transportHint !== "" ? 14 : 0
-            visible: recorder.transportHint !== ""
-            text: recorder.transportHint
-            color: Style.textDim
-            font.pixelSize: Style.fontSmall
-            elide: Text.ElideRight
-        }
-
-        Item {
-            width: parent.width
-            // One row of nine per line; the row count and the arm state come
-            // from the recorder's own arm model, not a literal.
-            height: Math.ceil(recorder.arms.count / 9) * Style.touch
-
-            Repeater {
-                model: recorder.arms
-                delegate: TouchButton {
-                    width: parent.width / 9
-                    height: Style.touch
-                    x: (index % 9) * width
-                    y: Math.floor(index / 9) * Style.touch
-                    text: String(index + 1).padStart(2, "0")
-                    textSize: Style.fontSmall
-                    checked: index === recorder.selectedTrack
-                    focusId: "recorder.track." + index
-                    onClicked: recorder.setSelectedTrack(index)
-
-                    // C2: one track identity - the mixer's name on a second
-                    // 9 px line, so the selector and the strip agree.
-                    Text {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        height: 12
-                        text: model.name
-                        color: index === recorder.selectedTrack ? Style.panelDark
-                                                                : Style.textDim
-                        font.pixelSize: 9
-                        horizontalAlignment: Text.AlignHCenter
-                        elide: Text.ElideRight
-                    }
-                }
-            }
-        }
-
+        // (b) ONE selected-track button (opens the picker) plus prev/next,
+        // instead of the permanent 18-selector grid. (d) The recording source
+        // is its own readable summary card.
         Row {
             width: parent.width
-            height: Style.touch
+            height: Style.touchPrimary
             spacing: Style.gap
 
-            Text {
-                width: 120
-                height: parent.height
-                text: recorder.trackName
-                color: Style.text
-                font.pixelSize: Style.fontBody
-                font.weight: Font.DemiBold
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
-            }
-            // W1: the mode word replaces the ARM toggle (ARM is a mode, not a
-            // hidden switch). Tap cycles PLAY -> ARM -> OVERDUB -> LIVE; a long
-            // press picks from the list.
             TouchButton {
-                width: 78
+                width: parent.width - 64 * 2 - 168 - Style.gap * 3
                 height: parent.height
-                text: recorder.trackModeWord
-                textSize: Style.fontSmall
+                text: "TRACK " + String(recorder.selectedTrack + 1).padStart(2, "0") +
+                      "   " + recorder.trackName
+                textSize: Style.fontLabel
+                chevron: "down"
+                focusId: "recorder.track.pick"
+                onClicked: app.openTrackPicker()
+            }
+            TouchButton {
+                width: 64
+                height: parent.height
+                text: "<"
+                textSize: Style.fontLabel
+                focusId: "recorder.track.prev"
+                onClicked: recorder.setSelectedTrack((recorder.selectedTrack + 17) % 18)
+            }
+            TouchButton {
+                width: 64
+                height: parent.height
+                text: ">"
+                textSize: Style.fontLabel
+                focusId: "recorder.track.next"
+                onClicked: recorder.setSelectedTrack((recorder.selectedTrack + 1) % 18)
+            }
+            TouchButton {
+                width: 168
+                height: parent.height
+                text: "SRC  " + recorder.trackRecSourceText
+                textSize: Style.fontLabel
+                chevron: "down"
+                focusId: "recorder.recsource"
+                onClicked: app.openTrackMode(recorder.selectedTrack)
+            }
+        }
+
+        // (c) Large ARM and START/STOP TAKE actions, with the armed/recording
+        // state spelled out in words and an icon as well as colour (g).
+        Row {
+            width: parent.width
+            height: Style.touchPrimary
+            spacing: Style.gap
+
+            TouchButton {
+                width: 200
+                height: parent.height
+                text: recorder.trackArm ? "ARM  ON" : "ARM  OFF"
+                textSize: Style.fontLabel
                 checked: recorder.trackArm
                 checkedColor: Style.record
                 focusId: "recorder.mode"
@@ -133,94 +154,98 @@ Item {
                 onLongClicked: app.openTrackMode(recorder.selectedTrack)
             }
             TouchButton {
-                width: 140
+                width: 300
                 height: parent.height
                 text: recorder.buttonText
-                textSize: Style.fontSmall
-                variant: "danger"
+                textSize: Style.fontLabel
+                variant: recorder.recording ? "danger" : "primary"
                 focusId: "recorder.start"
                 onClicked: recorder.startStop()
             }
-            // W2b: the tap point the take captures, beside the mode word.
-            Text {
-                width: 76
+            Row {
+                width: parent.width - 200 - 300 - Style.gap * 2
                 height: parent.height
-                text: "SRC " + recorder.trackRecSourceText
-                color: recorder.trackRecSourceText === "PRE" ? Style.textDim
-                                                             : Style.accent
-                font.pixelSize: Style.fontSmall
-                horizontalAlignment: Text.AlignRight
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
-                TapHandler {
-                    onTapped: app.openTrackMode(recorder.selectedTrack)
+                spacing: Style.gap
+
+                Rectangle {
+                    width: 14
+                    height: 14
+                    radius: 7
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: recorder.recording ? Style.record : "transparent"
+                    border.width: 2
+                    border.color: recorder.recording || recorder.trackArm
+                                  ? Style.record : Style.textDim
                 }
-            }
-            Text {
-                width: parent.width - 120 - 78 - 76 - 140 - Style.gap * 4
-                height: parent.height
-                text: "SHIFT > takes + punch"
-                color: Style.textDim
-                font.pixelSize: Style.fontSmall
-                horizontalAlignment: Text.AlignRight
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
+                Text {
+                    width: parent.width - 14 - Style.gap
+                    height: parent.height
+                    text: recorder.recording ? "RECORDING"
+                          : (recorder.trackArm ? "ARMED - START TAKE READY" : "NOT ARMED")
+                    color: recorder.recording || recorder.trackArm ? Style.record : Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    font.weight: Font.DemiBold
+                    wrapMode: Text.WordWrap
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
         }
 
+        // Disk/take-count line, or the state warning when one is active. The
+        // take list below owns the rest of the page and scrolls the focused
+        // row into view (audit G14).
         Text {
             width: parent.width
-            height: recorder.statusWarning ? 34 : 16
-            text: recorder.statusText
+            height: 18
+            text: recorder.statusWarning ? recorder.statusText : recorder.diskText
             color: recorder.statusWarning ? Style.record : Style.textDim
-            font.pixelSize: recorder.statusWarning ? 16 : Style.fontSmall
+            font.pixelSize: recorder.statusWarning ? Style.fontSecondary : Style.fontSmall
             font.weight: recorder.statusWarning ? Font.DemiBold : Font.Normal
-            wrapMode: Text.WordWrap
             elide: Text.ElideRight
-        }
-        Text {
-            width: parent.width
-            height: 14
-            text: recorder.diskText + "  -  " + recorder.takeDirectory
-            color: Style.textDim
-            font.pixelSize: Style.fontSmall
-            elide: Text.ElideMiddle
         }
 
         ListView {
             id: takeList
             width: parent.width
-            height: Math.max(0, screen.height - Style.margin * 2 - Style.touch * 4 -
-                                16 - 14 - 18 - Style.gap * 6)
+            height: Math.max(0, screen.height - Style.margin * 2 -
+                                Style.touchSecondary - Style.touchPrimary * 2 - 18 -
+                                Style.gapTight * 4)
             clip: true
             model: recorder.takes
             boundsBehavior: Flickable.StopAtBounds
 
+            function syncFocus() {
+                const id = app.focusId
+                if (!id.startsWith("recorder.take.")) return
+                const parts = id.split(".")
+                if (parts.length < 3) return
+                const row = parseInt(parts[2])
+                if (!isNaN(row)) positionViewAtIndex(row, ListView.Contain)
+            }
+            Connections {
+                target: app
+                function onFocusChanged() { takeList.syncFocus() }
+            }
+            Component.onCompleted: syncFocus()
+
             delegate: Rectangle {
                 id: takeRow
                 width: ListView.view.width
-                height: Style.touch
+                height: 64 + (takeRow.detailsOpen ? 40 : 0)
                 radius: Style.corner
-                // The row body is the ACTIVE tap target and the panel ring stop;
-                // bodyLeft carries the id so the headless tap gate clicks the
-                // body surface, never a child button.
                 color: index === recorder.selectedRow ? Style.raised
                        : (index % 2 === 0 ? Style.panel : Style.panelDark)
                 border.width: app.focusId === ("recorder.take." + index) ? 2 : 0
                 border.color: Style.accent
+                property bool detailsOpen: false
 
-                // The row is split into non-overlapping 44 px tap surfaces:
-                // body (activate), mini-waveform (EDIT), EDIT button and "..."
-                // menu. A row-wide TapHandler used to sit under the child
-                // buttons and compete for the touch point; on the Pi's
-                // touchscreen that made EDIT/"..." look dead. Disjoint
-                // handlers mean a tap can only mean one thing.
+                // The row body is the ACTIVE tap target and the panel ring stop.
                 Item {
                     id: bodyLeft
                     x: 0
                     y: 0
-                    width: miniWave.x
-                    height: parent.height
+                    width: takeRow.width - 70 - 64 - 64 - 64
+                    height: 64
                     property string focusId: "recorder.take." + index
 
                     Rectangle {
@@ -233,21 +258,22 @@ Item {
                     }
                     Text {
                         x: 10
-                        width: 56
-                        height: parent.height
-                        text: model.active ? "ACTIVE" : ""
+                        width: 60
+                        height: 16
+                        text: model.active ? "✓ ACTIVE" : ""
                         color: Style.accent
                         font.pixelSize: Style.fontSmall
                         font.weight: Font.DemiBold
                         verticalAlignment: Text.AlignVCenter
                     }
                     Text {
-                        x: 72
-                        width: takeRow.width * 0.30
-                        height: parent.height
+                        x: 10
+                        y: 16
+                        width: parent.width - 14
+                        height: 40
                         text: (model.imported ? "PTR  " : (model.master ? "MASTER  " : "")) + model.name
                         color: Style.text
-                        font.pixelSize: Style.fontBody
+                        font.pixelSize: Style.fontLabel
                         font.weight: Font.DemiBold
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideMiddle
@@ -256,16 +282,105 @@ Item {
                         onTapped: app.activateTakeRow(index)
                     }
                 }
-                // W5: the row's mini-waveform (44 px strip). Tapping it opens
-                // the take edit popup; the model carries the .peaks reduction,
-                // so the row paints without touching the disk. It owns the
-                // only tap between bodyLeft and bodyRight.
+                // EDIT is the first action of the row (f).
+                Rectangle {
+                    id: editButton
+                    x: bodyLeft.x + bodyLeft.width + 4
+                    anchors.verticalCenter: parent.top
+                    anchors.verticalCenterOffset: 32
+                    width: 64
+                    height: 64
+                    radius: Style.corner
+                    color: Style.panelDark
+                    border.width: app.focusId === ("recorder.take.edit." + index) ? 2 : 1
+                    border.color: app.focusId === ("recorder.take.edit." + index)
+                                  ? Style.accent : Style.outline
+                    property string focusId: "recorder.take.edit." + index
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "EDIT"
+                        color: Style.accent
+                        font.pixelSize: Style.fontSecondary
+                        font.weight: Font.DemiBold
+                    }
+                    TapHandler {
+                        onTapped: app.requestEditTake(index)
+                    }
+                }
+                Text {
+                    x: editButton.x + editButton.width + 8
+                    width: 48
+                    height: 64
+                    text: model.duration
+                    color: Style.textDim
+                    font.pixelSize: Style.fontSecondary
+                    horizontalAlignment: Text.AlignRight
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                // Details disclosure: full path, file size and file count only
+                // on request; the row itself stays an identity/duration/EDIT row.
+                Rectangle {
+                    id: detailsButton
+                    x: takeRow.width - 64 - 64 - 8
+                    y: 0
+                    width: 64
+                    height: 64
+                    radius: Style.corner
+                    color: takeRow.detailsOpen ? Style.raised : Style.panelDark
+                    border.width: 1
+                    border.color: Style.outline
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: takeRow.detailsOpen ? "LESS" : "INFO"
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSmall
+                        font.weight: Font.DemiBold
+                    }
+                    TapHandler {
+                        onTapped: takeRow.detailsOpen = !takeRow.detailsOpen
+                    }
+                }
+                Rectangle {
+                    id: selectTarget
+                    x: takeRow.width - 64 - 2
+                    y: 0
+                    width: 64
+                    height: 64
+                    radius: Style.corner
+                    color: index === recorder.selectedRow ? Style.raised : Style.panelDark
+                    border.width: app.focusId === ("recorder.take.menu." + index) ? 2 : 1
+                    border.color: app.focusId === ("recorder.take.menu." + index)
+                                  ? Style.accent : Style.outline
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "..."
+                        color: Style.textDim
+                        font.pixelSize: Style.fontBody
+                        font.weight: Font.DemiBold
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: "transparent"
+                        property string focusId: "recorder.take.menu." + index
+                    }
+                    TapHandler {
+                        onTapped: app.openTakeActions(index)
+                    }
+                }
+                // Mini-waveform inset at the bottom of the identity block:
+                // tapping it opens the take edit popup (kept for parity with
+                // the stage-2 row and the ui-tap gate).
                 Item {
                     id: miniWave
-                    x: 72 + takeRow.width * 0.30 + 6
-                    width: 132
-                    height: Style.touch
-                    anchors.verticalCenter: parent.verticalCenter
+                    x: bodyLeft.x + 10
+                    y: 40
+                    width: Math.max(0, bodyLeft.width - 20)
+                    height: 20
                     property string focusId: "recorder.take.wave." + index
 
                     TimelineWave {
@@ -278,82 +393,36 @@ Item {
                         onTapped: app.openTakeEdit(index)
                     }
                 }
-                Item {
-                    id: bodyRight
-                    x: miniWave.x + miniWave.width
-                    y: 0
-                    width: Math.max(0, editButton.x - x)
-                    height: parent.height
+                // Disclosed metadata: full storage path, size and file count.
+                Rectangle {
+                    visible: takeRow.detailsOpen
+                    x: 8
+                    y: 64
+                    width: takeRow.width - 16
+                    height: 36
+                    color: Style.panelDark
+                    radius: Style.corner
 
                     Text {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 6
-                        width: Math.max(90, takeRow.width * 0.24)
-                        height: parent.height
-                        text: model.duration + "  -  " + model.bytes
+                        x: 8
+                        width: parent.width - 16
+                        height: 18
+                        text: "FILE  " + model.path
                         color: Style.textDim
                         font.pixelSize: Style.fontSmall
-                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideMiddle
+                    }
+                    Text {
+                        x: 8
+                        y: 18
+                        width: parent.width - 16
+                        height: 16
+                        text: model.bytes + "  -  " + model.files + " file(s)"
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSmall
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
-                    }
-                    TapHandler {
-                        onTapped: app.activateTakeRow(index)
-                    }
-                }
-                // W5: EDIT opens the take edit popup for this row.
-                Rectangle {
-                    id: editButton
-                    anchors.right: selectTarget.left
-                    anchors.rightMargin: 4
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 64
-                    height: Style.touch
-                    radius: Style.corner
-                    color: Style.panelDark
-                    border.width: 1
-                    border.color: Style.outline
-                    property string focusId: "recorder.take.edit." + index
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "EDIT"
-                        color: Style.accent
-                        font.pixelSize: Style.fontSmall
-                        font.weight: Font.DemiBold
-                    }
-                    TapHandler {
-                        onTapped: app.requestEditTake(index)
-                    }
-                }
-                // A3: "..." opens the row actions (docs/daw-plan.md W4).
-                Rectangle {
-                    id: selectTarget
-                    width: Style.touch
-                    height: Style.touch
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    radius: Style.corner
-                    color: index === recorder.selectedRow ? Style.raised : Style.panelDark
-                    border.width: 2
-                    border.color: index === recorder.selectedRow ? Style.accent : Style.outline
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "..."
-                        color: Style.textDim
-                        font.pixelSize: Style.fontBody
-                        font.weight: Font.DemiBold
-                    }
-                    Rectangle {
-                        // W4: the row's action menu target ("..." = 44 px).
-                        anchors.fill: parent
-                        radius: parent.radius
-                        color: "transparent"
-                        property string focusId: "recorder.take.menu." + index
-                    }
-                    TapHandler {
-                        onTapped: app.openTakeActions(index)
                     }
                 }
             }
@@ -362,9 +431,9 @@ Item {
                 visible: takeList.count === 0
                 anchors.centerIn: parent
                 width: parent.width - 20
-                text: "no takes yet - tap START TAKE"
+                text: "no takes yet - ARM a track and tap START TAKE"
                 color: Style.textDim
-                font.pixelSize: Style.fontBody
+                font.pixelSize: Style.fontLabel
                 horizontalAlignment: Text.AlignHCenter
             }
         }
@@ -611,10 +680,10 @@ Item {
     }
 
 
-    // TAKE FOR TRACK nn (A10): the sheet that used to live on the EDIT tab. The
-    // ACTIVE readout opens it; a row makes that take ACTIVE, EDIT opens the take
-    // edit popup for it, and LIVE INPUT clears the pointer. Every row carries its
-    // own 44 px mini-waveform.
+    // TAKE FOR TRACK nn (A10): the stage-4 sheet. Title and padding match the
+    // shared overlay header, rows are 64 px with identity/duration/EDIT first,
+    // the details disclosure holds the full path/size, and CLOSE is a fixed
+    // 64 px footer while the list scrolls (item #8 vocabulary).
     Rectangle {
         id: takeSheet
 
@@ -629,10 +698,8 @@ Item {
         }
 
         Rectangle {
-            width: Math.min(620, parent.width - 24)
-            height: Math.min(parent.height - 8, 24 + 16 + Style.touch + 8 +
-                            Math.min(5, recorder.takes.count) * Style.touch +
-                            Style.gap * 4)
+            width: Math.min(680, parent.width - 24)
+            height: Math.min(parent.height - 8, 352)
             anchors.centerIn: parent
             color: Style.raised
             radius: Style.cornerPanel
@@ -649,7 +716,7 @@ Item {
                     height: 24
 
                     Text {
-                        width: parent.width - 92
+                        width: parent.width
                         height: parent.height
                         text: "TAKE FOR TRACK " +
                               String(app.takeSheetTrack + 1).padStart(2, "0")
@@ -658,29 +725,11 @@ Item {
                         font.weight: Font.DemiBold
                         verticalAlignment: Text.AlignVCenter
                     }
-                    TouchButton {
-                        width: 92
-                        height: parent.height
-                        text: "CLOSE"
-                        textSize: Style.fontSmall
-                        variant: "ghost"
-                        focusId: "take.sheet.close"
-                        onClicked: app.closeTakeSheet()
-                    }
-                }
-
-                Text {
-                    width: parent.width
-                    height: 16
-                    text: "tap a take to make it ACTIVE - EDIT opens the waveform"
-                    color: Style.textDim
-                    font.pixelSize: Style.fontSmall
-                    elide: Text.ElideRight
                 }
 
                 Rectangle {
                     width: parent.width
-                    height: Style.touch
+                    height: Style.touchSecondary
                     radius: Style.corner
                     property string focusId: "take.sheet.live"
                     color: Style.panelDark
@@ -688,13 +737,12 @@ Item {
                     border.color: app.focusId === focusId ? Style.accent : Style.outline
 
                     Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 8
-                        width: parent.width - 16
+                        x: 10
+                        width: parent.width - 20
                         height: parent.height
                         text: "LIVE INPUT"
                         color: Style.textDim
-                        font.pixelSize: Style.fontBody
+                        font.pixelSize: Style.fontLabel
                         font.weight: Font.DemiBold
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -705,69 +753,58 @@ Item {
 
                 ListView {
                     width: parent.width
-                    height: Math.min(5, recorder.takes.count) * Style.touch
+                    height: parent.height - 24 - Style.touchSecondary - 64 - Style.gap * 3
                     clip: true
                     model: recorder.takes
                     boundsBehavior: Flickable.StopAtBounds
 
                     delegate: Rectangle {
+                        id: takeSheetRow
                         width: ListView.view.width
-                        height: Style.touch
+                        height: 64 + (takeSheetRow.detailsOpen ? 26 : 0)
                         radius: Style.corner
                         color: model.active ? Style.raised : Style.panelDark
                         border.width: model.active ? 2 : Style.outlineWidth
                         border.color: model.active ? Style.accent : Style.outline
+                        property bool detailsOpen: false
 
-                        // The pick target stops before EDIT, so a tap is never
-                        // both a pick and an edit.
+                        // Identity + active marker + duration; the pick target
+                        // stops before EDIT so a tap is never both.
                         Item {
                             x: 0
                             y: 0
-                            width: parent.width - 68
+                            width: parent.width - 64 - 64
                             height: parent.height
                             property string focusId: "take.sheet.row." + index
 
                             Text {
-                                x: 10
+                                x: 8
                                 width: 64
                                 height: parent.height
-                                text: model.active ? "ACTIVE" : ""
+                                text: model.active ? "\u2713 ACTIVE" : ""
                                 color: Style.accent
                                 font.pixelSize: Style.fontSmall
                                 font.weight: Font.DemiBold
                                 verticalAlignment: Text.AlignVCenter
                             }
                             Text {
-                                x: 78
-                                width: parent.width - 78 - 104
+                                x: 76
+                                width: parent.width - 76 - 74
                                 height: parent.height
                                 text: model.name
                                 color: Style.text
-                                font.pixelSize: Style.fontBody
+                                font.pixelSize: Style.fontLabel
                                 verticalAlignment: Text.AlignVCenter
                                 elide: Text.ElideMiddle
                             }
-                            Item {
-                                x: parent.width - 156
-                                width: 100
-                                height: Style.touch - 8
-                                anchors.verticalCenter: parent.verticalCenter
-
-                                TimelineWave {
-                                    anchors.fill: parent
-                                    values: recorder.takeWave(index)
-                                    placeholderText: ""
-                                    waveColor: model.active ? Style.accent : Style.textDim
-                                }
-                            }
                             Text {
                                 anchors.right: parent.right
-                                anchors.rightMargin: 4
-                                width: 48
+                                anchors.rightMargin: 6
+                                width: 70
                                 height: parent.height
                                 text: model.duration
                                 color: Style.textDim
-                                font.pixelSize: Style.fontSmall
+                                font.pixelSize: Style.fontSecondary
                                 horizontalAlignment: Text.AlignRight
                                 verticalAlignment: Text.AlignVCenter
                             }
@@ -776,29 +813,181 @@ Item {
                             }
                         }
                         Rectangle {
-                            anchors.right: parent.right
-                            anchors.rightMargin: 4
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 60
-                            height: Style.touch
+                            x: parent.width - 128
+                            y: 2
+                            width: 64
+                            height: 60
                             radius: Style.corner
                             color: Style.panelDark
-                            border.width: 1
-                            border.color: Style.outline
+                            border.width: app.focusId === ("take.sheet.edit." + index) ? 2 : 1
+                            border.color: app.focusId === ("take.sheet.edit." + index)
+                                          ? Style.accent : Style.outline
                             property string focusId: "take.sheet.edit." + index
 
                             Text {
                                 anchors.centerIn: parent
                                 text: "EDIT"
                                 color: Style.accent
-                                font.pixelSize: Style.fontSmall
+                                font.pixelSize: Style.fontSecondary
                                 font.weight: Font.DemiBold
                             }
                             TapHandler {
                                 onTapped: app.requestEditTake(index)
                             }
                         }
+                        // Details disclosure: full file path and size, not on
+                        // the row itself.
+                        Rectangle {
+                            x: parent.width - 64
+                            y: 2
+                            width: 60
+                            height: 60
+                            radius: Style.corner
+                            color: takeSheetRow.detailsOpen ? Style.raised : Style.panelDark
+                            border.width: 1
+                            border.color: Style.outline
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: takeSheetRow.detailsOpen ? "LESS" : "INFO"
+                                color: Style.textDim
+                                font.pixelSize: Style.fontSmall
+                                font.weight: Font.DemiBold
+                            }
+                            TapHandler {
+                                onTapped: takeSheetRow.detailsOpen = !takeSheetRow.detailsOpen
+                            }
+                        }
+                        Text {
+                            visible: takeSheetRow.detailsOpen
+                            x: 8
+                            y: 64
+                            width: takeSheetRow.width - 16
+                            height: 24
+                            text: model.path + "  -  " + model.bytes
+                            color: Style.textDim
+                            font.pixelSize: Style.fontSmall
+                            elide: Text.ElideMiddle
+                            verticalAlignment: Text.AlignVCenter
+                        }
                     }
+                }
+
+                // Fixed footer: the one large predictable close control.
+                Row {
+                    width: parent.width
+                    height: 64
+                    spacing: Style.gap
+
+                    Text {
+                        width: parent.width - 160 - Style.gap
+                        height: parent.height
+                        text: recorder.activeTake === "LIVE INPUT"
+                              ? "no take is ACTIVE - this track plays the live input"
+                              : "ACTIVE  " + recorder.activeTake
+                        color: Style.textDim
+                        font.pixelSize: Style.fontSecondary
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideMiddle
+                    }
+                    TouchButton {
+                        width: 160
+                        height: parent.height
+                        text: "CLOSE"
+                        textSize: Style.fontLabel
+                        variant: "primary"
+                        focusId: "take.sheet.close"
+                        onClicked: app.closeTakeSheet()
+                    }
+                }
+            }
+        }
+    }
+
+    // TRACK PICKER (stage 4): the selected-track button's sheet. 18 tracks in
+    // a 6x3 grid of 64 px rows, the selected one checked; CLOSE is a 64 px
+    // footer and outside touches never dismiss (the shared overlay contract).
+    Rectangle {
+        id: trackPicker
+
+        visible: app.trackPickerOpen
+        anchors.fill: parent
+        color: "#cc000000"
+        z: 55
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {}
+        }
+
+        Rectangle {
+            width: Math.min(680, parent.width - 24)
+            height: Math.min(parent.height - 8, 352)
+            anchors.centerIn: parent
+            color: Style.raised
+            radius: Style.cornerPanel
+            border.width: 2
+            border.color: Style.accent
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: Style.gap
+
+                Text {
+                    width: parent.width
+                    height: 24
+                    text: "SELECT TRACK"
+                    color: Style.text
+                    font.pixelSize: Style.fontTitle
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                Grid {
+                    width: parent.width
+                    height: parent.height - 24 - 64 - Style.gap * 2
+                    columns: 6
+                    rowSpacing: Style.gapTight
+                    columnSpacing: Style.gapTight
+
+                    Repeater {
+                        model: recorder.arms
+                        delegate: TouchButton {
+                            width: (trackPicker.width - 24 - 5 * Style.gapTight) / 6
+                            height: 64
+                            text: (index === recorder.selectedTrack ? "\u2713 " : "") +
+                                  String(index + 1).padStart(2, "0")
+                            textSize: Style.fontLabel
+                            checked: index === recorder.selectedTrack
+                            focusId: "recorder.track.pick." + index
+                            onClicked: app.chooseTrack(index)
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.bottomMargin: 4
+                                height: 12
+                                text: model.name
+                                color: index === recorder.selectedTrack ? Style.panelDark
+                                                                        : Style.textDim
+                                font.pixelSize: Style.fontSmall
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+                }
+
+                TouchButton {
+                    width: parent.width
+                    height: 64
+                    text: "CLOSE"
+                    textSize: Style.fontLabel
+                    variant: "primary"
+                    focusId: "recorder.track.picker.close"
+                    onClicked: app.closeTrackPicker()
                 }
             }
         }
