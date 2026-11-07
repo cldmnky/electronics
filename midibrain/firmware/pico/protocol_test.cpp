@@ -1,5 +1,7 @@
 #include "protocol.hpp"
 #include "clock_follow.hpp"
+#include "clock_scheduler.hpp"
+#include "midi_tx_scheduler.hpp"
 #include "route_chain.hpp"
 #include "clock_output.hpp"
 #include "midi.hpp"
@@ -915,6 +917,196 @@ void run_clock_follow_tests() {
   std::printf("PASS: external clock follow (jittered convergence, outlier, coast/resume, mask, EV)\n");
 }
 
+void run_clock_scheduler_tests() {
+  using namespace mb;
+  // Deadline grid: at 120.00 bpm the exact period is 20833.333... us. Every
+  // tick k must land on epoch + floor(k * 250'000'000'000 / 12000) ns. A naive
+  // uint32-microsecond period (20833 us, then re-arming from the callback)
+  // falls behind by 0.333 us per tick; this asserts the exact rational grid
+  // over a simulated 2.9-hour run (500,000 ticks).
+  constexpr std::uint64_t kDen = 12000;
+  constexpr std::uint64_t kTicks = 500'000;
+  const std::uint64_t epoch_us = 1000;
+  auto exact_ns = [](std::uint64_t k) {
+    return (k / kDen) * kClockTickNumeratorNs +
+           ((k % kDen) * kClockTickNumeratorNs) / kDen;
+  };
+  ClockScheduler s;
+  s.reset(12000, epoch_us);
+  assert(s.nextDeadlineNs() == epoch_us * 1000ull + exact_ns(1));
+  for (std::uint64_t k = 1; k <= kTicks; ++k) {
+    const std::uint64_t expected_ns = epoch_us * 1000ull + exact_ns(k);
+    assert(s.nextDeadlineNs() == expected_ns);
+    const std::uint64_t deadline_us = s.nextDeadlineUs();
+    const std::uint64_t deadline_as_ns = deadline_us * 1000ull;
+    assert(deadline_as_ns >= expected_ns);
+    assert(deadline_as_ns - expected_ns < 1000ull);  // sub-microsecond
+    if (k == 4) {
+      // 4 * 20833.333... us = 83333.333... us: the grid is at 83334 us, not
+      // the 83332 us a fixed 20833 us period would give.
+      assert(deadline_us - epoch_us == 83'334ull);
+    }
+    s.advance();
+  }
+  assert(s.intervalUsRounded() == 20833);
+
+  // A tempo change rebases the period at the pending deadline without moving
+  // it: no re-phase, no dropped tick, and the new rational grid is exact.
+  ClockScheduler c;
+  c.reset(12000, 0);
+  for (int i = 0; i < 10; ++i) c.advance();
+  const std::uint64_t pending = c.nextDeadlineNs();
+  c.setTempoX100(9000);
+  assert(c.nextDeadlineNs() == pending);
+  const std::uint64_t q = kClockTickNumeratorNs / 9000ull;
+  const std::uint64_t r = kClockTickNumeratorNs % 9000ull;
+  for (std::uint64_t k = 1; k <= 1000; ++k) {
+    assert(c.advance() == pending + k * q + (k * r) / 9000ull);
+  }
+
+  // Follow-style integer period override stays on the absolute grid.
+  ClockScheduler f;
+  f.reset(12000, 0);
+  f.advance();
+  const std::uint64_t base = f.nextDeadlineNs();
+  f.setPeriodNs(50'000'000);  // 50 ms period override (follow path)
+  for (std::uint64_t k = 1; k <= 10; ++k) {
+    assert(f.advance() == base + k * 50'000'000ull);
+  }
+
+  // A stalled alarm skips whole missed ticks instead of bursting them; the
+  // surviving deadline is still the same absolute grid point.
+  ClockScheduler m;
+  m.reset(12000, 0);
+  const std::uint64_t first_us = m.nextDeadlineUs();
+  assert(m.skipToAfter(first_us + 2 * first_us + 1) == 3);
+  assert(m.nextDeadlineNs() == exact_ns(4));
+  assert(m.skipToAfter(first_us) == 0);
+
+  std::printf("PASS: deadline clock scheduler (500k ticks, exact rational grid, tempo rebase, skip)\n");
+}
+
+void run_midi_tx_scheduler_tests() {
+  using namespace mb;
+
+  // Priority: a clock byte enqueued behind ten complete note messages is the
+  // next byte on the wire; the note messages follow in their original order.
+  MidiTxScheduler tx;
+  std::uint8_t notes[10][3]{};
+  for (std::uint8_t i = 0; i < 10; ++i) {
+    notes[i][0] = 0x90;
+    notes[i][1] = static_cast<std::uint8_t>(0x30 + i);
+    notes[i][2] = 0x64;
+    assert(tx.enqueue(notes[i], 3));
+  }
+  assert(tx.enqueueRealtime(0xF8));
+  assert(tx.nextByte() == 0xF8);
+  std::vector<std::uint8_t> out;
+  for (int b = tx.nextByte(); b >= 0; b = tx.nextByte())
+    out.push_back(static_cast<std::uint8_t>(b));
+  assert(out.size() == 30);
+  for (std::size_t i = 0; i < 10; ++i) {
+    for (std::size_t j = 0; j < 3; ++j) assert(out[i * 3 + j] == notes[i][j]);
+  }
+  assert(!tx.pending());
+
+  // Realtime interleaves between the bytes of a longer message (legal MIDI),
+  // including a transport byte; framing of the interrupted message survives.
+  MidiTxScheduler mid;
+  const std::uint8_t cc[3] = {0xB0, 7, 100};
+  assert(mid.enqueue(cc, 3));
+  assert(mid.nextByte() == 0xB0);
+  assert(mid.enqueueRealtime(0xF8));
+  assert(mid.nextByte() == 0xF8);
+  assert(mid.nextByte() == 7);
+  assert(mid.enqueueRealtime(0xFA));
+  assert(mid.nextByte() == 0xFA);
+  assert(mid.nextByte() == 100);
+  assert(mid.nextByte() == -1);
+
+  // Overflow: a full queue drops the OLDEST non-Note-Off message as a whole.
+  // A queued Note Off (including note-on velocity 0) is never the victim and
+  // no message is ever cut in half.
+  MidiTxScheduler ov;
+  for (std::uint32_t i = 0; i < MidiTxScheduler::kNormalDepth; ++i) {
+    std::uint8_t msg[3] = {0x90, static_cast<std::uint8_t>(i), 0x64};
+    if (i == 3) {  // velocity-0 note-on: protected like a Note Off
+      msg[0] = 0x90;
+      msg[2] = 0x00;
+    } else if (i == 5) {  // explicit Note Off: protected too
+      msg[0] = 0x80;
+      msg[2] = 0x40;
+    }
+    assert(ov.enqueue(msg, 3));
+  }
+  assert(ov.maxNormalDepth() == MidiTxScheduler::kNormalDepth);
+  std::uint8_t newcomer[3] = {0x90, 0x70, 0x7F};
+  assert(ov.enqueue(newcomer, 3));  // drops message 0 (oldest safe)
+  assert(ov.droppedNormal() == 1 && ov.rejectedNormal() == 0);
+  assert(ov.normalDepth() == MidiTxScheduler::kNormalDepth);
+  out.clear();
+  for (int b = ov.nextByte(); b >= 0; b = ov.nextByte())
+    out.push_back(static_cast<std::uint8_t>(b));
+  assert(out.size() == 3 * MidiTxScheduler::kNormalDepth);  // whole frames only
+  bool saw_note_off = false, saw_velocity_zero_off = false;
+  std::vector<std::uint8_t> first_notes;
+  for (std::size_t i = 0; i < out.size(); i += 3) {
+    assert(out[i] == 0x80 || out[i] == 0x90);  // no orphaned data bytes
+    if (out[i] == 0x80) saw_note_off = true;
+    if (out[i] == 0x90 && out[i + 2] == 0x00) saw_velocity_zero_off = true;
+    first_notes.push_back(out[i + 1]);
+  }
+  assert(saw_note_off && saw_velocity_zero_off);
+  assert(first_notes.front() == 1);  // message 0 was dropped, 1 shifted up
+  assert(out[2 * 3] == 0x90 && out[2 * 3 + 2] == 0x00);  // velocity-0 Note Off kept
+  assert(out[4 * 3] == 0x80);  // explicit Note Off kept
+
+  // An in-flight message is never dropped (its first byte is already on the
+  // wire); overflow drops a not-yet-started message instead.
+  MidiTxScheduler ip;
+  std::uint8_t inflight[3] = {0x90, 0x11, 0x22};
+  assert(ip.enqueue(inflight, 3));
+  assert(ip.nextByte() == 0x90);
+  for (std::uint32_t i = 1; i < MidiTxScheduler::kNormalDepth; ++i) {
+    std::uint8_t msg[3] = {0x90, static_cast<std::uint8_t>(i), 0x33};
+    assert(ip.enqueue(msg, 3));
+  }
+  assert(ip.enqueue(newcomer, 3));
+  out.clear();
+  for (int b = ip.nextByte(); b >= 0; b = ip.nextByte())
+    out.push_back(static_cast<std::uint8_t>(b));
+  assert(out.size() == 2 + 3 * (MidiTxScheduler::kNormalDepth - 1));
+  assert(out[0] == 0x11 && out[1] == 0x22);  // in-flight message completed
+
+  // If the queue holds only Note Offs, the NEW message is refused: a queued
+  // Note Off is never sacrificed, so nothing can hang a note.
+  MidiTxScheduler offs;
+  for (std::uint32_t i = 0; i < MidiTxScheduler::kNormalDepth; ++i) {
+    std::uint8_t msg[3] = {0x80, static_cast<std::uint8_t>(i), 0x00};
+    assert(offs.enqueue(msg, 3));
+  }
+  assert(!offs.enqueue(newcomer, 3));
+  assert(offs.rejectedNormal() == 1 && offs.droppedNormal() == 0);
+  std::uint32_t off_count = 0;
+  for (int b = offs.nextByte(); b >= 0; b = offs.nextByte()) {
+    assert((b & 0xF0) == 0x80 || b < 0x80);
+    if ((b & 0xF0) == 0x80) ++off_count;
+  }
+  assert(off_count == MidiTxScheduler::kNormalDepth);
+
+  // Realtime overflow drops the new byte, never a queued clock byte.
+  MidiTxScheduler rt;
+  for (std::uint32_t i = 0; i < MidiTxScheduler::kRealtimeDepth; ++i)
+    assert(rt.enqueueRealtime(0xF8));
+  assert(!rt.enqueueRealtime(0xFC));
+  assert(rt.droppedRealtime() == 1);
+  assert(rt.realtimeDepth() == MidiTxScheduler::kRealtimeDepth);
+  for (std::uint32_t i = 0; i < MidiTxScheduler::kRealtimeDepth; ++i)
+    assert(rt.nextByte() == 0xF8);
+
+  std::printf("PASS: MIDI TX scheduler (clock priority, realtime interleave, whole-message overflow, Note Off kept)\n");
+}
+
 void run_evidence() {
   std::printf("EV_CONTROL evidence from PanelControl + pack_control + encode\n");
   std::printf("scan 1 kHz, debounce 10 ms, NAV repeat 400 ms then 80 ms, SHIFT long 500 ms\n");
@@ -975,6 +1167,8 @@ int main(int argc, char** argv) {
   run_route_chain_tests();
   run_clock_extras_tests();
   run_clock_follow_tests();
+  run_clock_scheduler_tests();
+  run_midi_tx_scheduler_tests();
   Debouncer wrap(10); assert(!wrap.update(true, 0xfffffffau)); assert(wrap.update(true, 4));
   Frame event{Type::control_event, 124, hello.session, 2, {}};
   event.payload[0] = 1; event.payload[1] = 1; // NAV_UP pressed, simulated

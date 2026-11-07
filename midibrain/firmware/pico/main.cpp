@@ -31,8 +31,10 @@
 
 #include "clock_follow.hpp"
 #include "clock_output.hpp"
+#include "clock_scheduler.hpp"
 #include "encoder_input.hpp"
 #include "midi.hpp"
+#include "midi_tx_scheduler.hpp"
 #include "panel_input.hpp"
 #include "pipe_event.hpp"
 #include "pins.h"
@@ -65,11 +67,6 @@ constexpr int32_t kTempoMin = 2000, kTempoMax = 30000;
 // jitter on the interval estimate does not flood the link; the generator
 // itself always runs at the unquantized estimate.
 constexpr int32_t kFollowTempoAnnounceX100 = 10;
-
-constexpr uint32_t tempo_interval_us(int32_t bpm_x100) {
-  return static_cast<uint32_t>((60'000'000LL * 100) /
-                               (static_cast<int64_t>(bpm_x100) * 24));
-}
 
 // ---------------------------------------------------------------------------
 // Outbound SPI frame queue (main loop only; CSn path only peeks)
@@ -136,6 +133,9 @@ struct RxRing {
 
 TxQueue txq;
 RxRing rxring[2];
+// Per-output non-blocking MIDI TX queues. The clock alarm and transport path
+// only enqueue; the UART TX IRQ drains them, realtime bytes first.
+mb::MidiTxScheduler midi_tx[2];
 volatile bool spi_rx_ready = false;
 mb::Bytes spi_tx{}, spi_rx{};
 // True while spi_tx holds a queued (unpopped) frame.
@@ -177,12 +177,14 @@ volatile uint32_t clock_delay_drops = 0;
 // tick alarm is their only clock.
 mb::RouteChains route_chains;
 // External clock follow (RAM only). Default: internal generator, no transport
-// follow; the Pi re-sends its last-known config after HELLO. The generator
-// always runs from clock_interval_us; follow only retunes that period.
+// follow; the Pi re-sends its last-known config after HELLO. Follow only
+// retunes the absolute grid period; it never gates or re-phases the generator.
 mb::ClockFollow clock_follow;
-volatile uint32_t clock_interval_us = tempo_interval_us(kTempoDefault);
+// Absolute 24-PPQN grid. The alarm always re-arms at nextDeadlineUs(), never
+// "now + interval"; a missed deadline skips whole ticks instead of bursting.
+mb::ClockScheduler clock_scheduler;
+volatile uint32_t clock_skipped = 0;
 uint32_t clock_ticks = 0;
-int clock_alarm = -1;
 uint8_t led_mask = 0;
 // Record-arm state, toggled by REC/OVERDUB press edges (a rule the Pi shares:
 // both sides toggle on the same deduped press edge).
@@ -277,17 +279,35 @@ void refresh_indicators() {
   }
 }
 
-// UART TX from the main loop runs opposite the clock alarm: guard multi-byte
-// writes so clock bytes cannot interleave a MIDI_SEND.
-void uart_write_guarded(uart_inst_t* uart, const uint8_t* data, uint32_t n) {
-  const uint32_t saved = save_and_disable_interrupts();
-  for (uint32_t i = 0; i < n; ++i) uart_putc(uart, data[i]);
-  restore_interrupts(saved);
+// UART TX interrupt half: drain the per-output scheduler while the hardware
+// has FIFO space, then disable the TX interrupt so an idle UART cannot storm.
+// Only this function writes MIDI bytes to a UART.
+void midi_tx_drain(uint8_t port) {
+  uart_inst_t* uart = (port == 0) ? uart0 : uart1;
+  mb::MidiTxScheduler& queue = midi_tx[port];
+  while (uart_is_writable(uart)) {
+    const int byte = queue.nextByte();
+    if (byte < 0) break;
+    // Direct data-register write after the writable check: the ISR must never
+    // call a UART helper that can wait for FIFO space.
+    uart_get_hw(uart)->dr = static_cast<std::uint8_t>(byte);
+  }
+  if (!queue.pending()) uart_set_irq_enables(uart, true, false);
 }
 
+// Enqueue-only MIDI TX. Safe from the clock alarm: it never waits for UART
+// FIFO space and realtime bytes jump ahead of normal traffic. The mask keeps
+// the queue mutation + TX-interrupt enable atomic against the UART handler:
+// otherwise the handler could drain between them and leave the TX interrupt
+// enabled on an empty FIFO (a spurious interrupt storm).
 void midi_emit(uint8_t port, const uint8_t* data, uint32_t n) {
-  uart_inst_t* uart = (port == 0) ? uart0 : uart1;
-  uart_write_guarded(uart, data, n);
+  if (port > 1) return;
+  const uint32_t saved = save_and_disable_interrupts();
+  midi_tx[port].enqueue(data, n);
+  if (midi_tx[port].pending()) {
+    uart_set_irq_enables((port == 0) ? uart0 : uart1, true, true);
+  }
+  restore_interrupts(saved);
 }
 
 // Emits the ordered result of one route evaluation to the physical output.
@@ -300,8 +320,8 @@ void emit_pipe_output(uint8_t dst, const PipeOutput& out) {
 
 // Fixed-length note-offs, delay echoes and the clocked Wave-2 pipes are
 // serviced in the main loop, never in the clock IRQ: the route engines are not
-// IRQ-safe and emit to a UART through the same guarded path as any other routed
-// message. clock_ticks is read once per pass; a missed tick is caught up by the
+// IRQ-safe, so their output goes through the same non-blocking TX scheduler as
+// any other routed message. clock_ticks is read once per pass; a missed tick is caught up by the
 // engine (bounded to kMaxStepsPerCall steps, then it resyncs to the grid).
 void drain_route_engines() {
   const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
@@ -333,32 +353,56 @@ int64_t clock_tick(alarm_id_t, void*) {
   // frame stay unconditional because they also drive the Pi timeline and USB
   // mirror. Only the clock byte enters the delay line; transport bytes are
   // emitted directly by transport_cmd.
-  const uint32_t stamp_us = time_us_32();
+  const uint32_t stamp_us = static_cast<uint32_t>(clock_scheduler.nextDeadlineUs());
   const uint8_t tick = 0xF8;
   for (uint8_t port = 0; port < 2; ++port) {
     if (!clock_gates.clockOn(port)) continue;
     if (!mb::clock_div_due(clock_ticks, clock_gates.tempoDiv(port))) continue;
     if (clock_gates.syncDelayMs(port) == 0) {
-      uart_putc(port == 0 ? uart0 : uart1, tick);
+      midi_emit(port, &tick, 1);  // enqueue realtime; no blocking UART call
     } else if (!clock_delay[port].push(stamp_us)) {
       clock_delay_drops = clock_delay_drops + 1u;
     }
   }
   ++clock_ticks;
   queue_tick(clock_ticks, stamp_us);  // Pi USB-mirror + timeline mapping
-  return static_cast<int64_t>(clock_interval_us);
+  // The next pulse is the previous scheduled deadline + one exact period.
+  // If the callback ran past that point, skip whole missed ticks (never a
+  // burst) and re-arm at the next absolute grid point. Sample `now` after the
+  // callback's enqueue work so a slow callback is measured as slow.
+  clock_scheduler.advance();
+  clock_skipped = clock_skipped + clock_scheduler.skipToAfter(time_us_64());
+  add_alarm_at(from_us_since_boot(clock_scheduler.nextDeadlineUs()), clock_tick, nullptr,
+               true);
+  return 0;
 }
 
-// Recompute the generator period: the smoothed follow estimate when one exists
-// (including while coasting), otherwise the internal tempo. `announce` queues
-// EV_TEMPO when the followed tempo moves past the deadband; the main loop owns
-// all of this state, and clock_tick only reads the single volatile word.
+// Retune the absolute grid. The setters mask interrupts because the clock
+// alarm advances the same scheduler from IRQ context. Recompute the period
+// from the smoothed follow estimate when one exists (including while
+// coasting), otherwise from the internal tempo. `announce` queues EV_TEMPO
+// when the followed tempo moves past the deadband; the main loop owns this
+// state, and clock_tick only advances the grid.
+void clock_period_set_ns(uint64_t period_ns) {
+  const uint32_t saved = save_and_disable_interrupts();
+  clock_scheduler.setPeriodNs(period_ns);
+  restore_interrupts(saved);
+}
+
+void clock_period_set_tempo(int32_t bpm) {
+  const uint32_t saved = save_and_disable_interrupts();
+  clock_scheduler.setTempoX100(bpm);
+  restore_interrupts(saved);
+}
+
 void clock_interval_refresh(bool announce) {
   if (!clock_follow.hasEstimate()) {
-    clock_interval_us = tempo_interval_us(bpm_x100);
+    clock_period_set_tempo(bpm_x100);
     return;
   }
-  clock_interval_us = clock_follow.intervalUsRounded();
+  // Follow supplies a measured integer-microsecond estimate; it enters the
+  // same absolute grid, so the generator period never accumulates its rounding.
+  clock_period_set_ns(static_cast<uint64_t>(clock_follow.intervalUsRounded()) * 1000ull);
   const int32_t followed = clock_follow.bpmX100();
   if (followed >= bpm_x100 + kFollowTempoAnnounceX100 ||
       followed <= bpm_x100 - kFollowTempoAnnounceX100) {
@@ -368,10 +412,8 @@ void clock_interval_refresh(bool announce) {
 }
 
 void clock_arm() {
-  if (clock_alarm < 0) {
-    clock_alarm = add_alarm_in_us(static_cast<uint64_t>(clock_interval_us), clock_tick, nullptr,
-                                  true);
-  }
+  clock_scheduler.reset(bpm_x100, time_us_64());
+  add_alarm_at(from_us_since_boot(clock_scheduler.nextDeadlineUs()), clock_tick, nullptr, true);
 }
 
 // Transport state for the Pi USB mirror (ticks flow regardless).
@@ -436,6 +478,10 @@ void reset_link_session() {
 
 void transport_cmd(uint8_t cmd) {
   // Transport state is global; only the emitted bytes are per-output gated.
+  // A transport command is an event, not a clock tick: its bytes go out at the
+  // event instant on the realtime TX class (never through the clock divider or
+  // sync-delay line), and START resets the tick index. This preserves the
+  // pre-scheduler semantics.
   uint8_t b = 0xFC;
   if (cmd == 1) {
     b = 0xFA;
@@ -460,10 +506,14 @@ void set_tempo(int32_t v, bool echo) {
   if (echo) queue_tempo();
 }
 
-void on_uart0_rx() {
+// One handler per UART covers both directions. Drain TX first so a busy RX
+// stream cannot delay a queued clock byte.
+void on_uart0_irq() {
+  midi_tx_drain(0);
   while (uart_is_readable(uart0)) rxring[0].push(uart_getc(uart0), time_us_32());
 }
-void on_uart1_rx() {
+void on_uart1_irq() {
+  midi_tx_drain(1);
   while (uart_is_readable(uart1)) rxring[1].push(uart_getc(uart1), time_us_32());
 }
 
@@ -860,8 +910,8 @@ int main() {
   gpio_set_function(MB_PIN_MIDI_IN_2_UART1_RX, GPIO_FUNC_UART);
   uart_set_irq_enables(uart0, true, false);
   uart_set_irq_enables(uart1, true, false);
-  irq_set_exclusive_handler(UART0_IRQ, on_uart0_rx);
-  irq_set_exclusive_handler(UART1_IRQ, on_uart1_rx);
+  irq_set_exclusive_handler(UART0_IRQ, on_uart0_irq);
+  irq_set_exclusive_handler(UART1_IRQ, on_uart1_irq);
   irq_set_enabled(UART0_IRQ, true);
   irq_set_enabled(UART1_IRQ, true);
 
@@ -940,13 +990,34 @@ int main() {
     }
     if (now_ms - last_stats >= 1000) {
       last_stats = now_ms;
-      printf("[stat] link=%d bpm=%ld.%02ld run=%d ticks=%lu txq=%lu rxpend=%d/%d bad=%llu dup=%llu txov=%lu rxov=%lu/%lu\n",
+      uint32_t mtx[4];
+      uint64_t mtx_drop, mtx_reject, mtx_rt_drop;
+      uint32_t skipped;
+      {
+        const uint32_t saved = save_and_disable_interrupts();
+        mtx[0] = midi_tx[0].normalDepth();
+        mtx[1] = midi_tx[0].realtimeDepth();
+        mtx[2] = midi_tx[1].normalDepth();
+        mtx[3] = midi_tx[1].realtimeDepth();
+        mtx_drop = midi_tx[0].droppedNormal() + midi_tx[1].droppedNormal();
+        mtx_reject = midi_tx[0].rejectedNormal() + midi_tx[1].rejectedNormal();
+        mtx_rt_drop = midi_tx[0].droppedRealtime() + midi_tx[1].droppedRealtime();
+        skipped = clock_skipped;
+        restore_interrupts(saved);
+      }
+      printf("[stat] link=%d bpm=%ld.%02ld run=%d ticks=%lu txq=%lu rxpend=%d/%d bad=%llu dup=%llu txov=%lu rxov=%lu/%lu mtx=%lu+%lu/%lu+%lu mtxdrop=%llu mtxrej=%llu mtxrt=%llu miss=%lu\n",
              hello_seen ? 1 : 0, static_cast<long>(bpm_x100 / 100), static_cast<long>(bpm_x100 % 100),
              transport_running ? 1 : 0, static_cast<unsigned long>(clock_ticks),
              static_cast<unsigned long>(txq.count), rxring[0].pending() ? 1 : 0,
              rxring[1].pending() ? 1 : 0, static_cast<unsigned long long>(bad_frames),
              static_cast<unsigned long long>(dup_frames), static_cast<unsigned long>(txq.overflows),
-             static_cast<unsigned long>(rxring[0].overruns), static_cast<unsigned long>(rxring[1].overruns));
+             static_cast<unsigned long>(rxring[0].overruns), static_cast<unsigned long>(rxring[1].overruns),
+             static_cast<unsigned long>(mtx[0]), static_cast<unsigned long>(mtx[1]),
+             static_cast<unsigned long>(mtx[2]), static_cast<unsigned long>(mtx[3]),
+             static_cast<unsigned long long>(mtx_drop),
+             static_cast<unsigned long long>(mtx_reject),
+             static_cast<unsigned long long>(mtx_rt_drop),
+             static_cast<unsigned long>(skipped));
     }
   }
 }
