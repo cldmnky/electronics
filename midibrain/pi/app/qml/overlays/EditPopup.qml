@@ -80,9 +80,10 @@ Rectangle {
             }
             Text {
                 id: metaText
+                objectName: "edit.meta"
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: 210
+                width: 310
                 height: parent.height
                 text: timeline.editMetaText
                 color: Style.textDim
@@ -99,9 +100,12 @@ Rectangle {
             x: 0
             y: header.height + root.rowGap
             width: root.width
-            height: Math.max(200, root.height - header.height - root.rowGap -
-                             root.paramHeight - root.rowGap - root.selectorHeight -
-                             root.rowGap - root.actionHeight - root.rowGap * 2)
+            // The rows below are placed from the popup's bottom edge, so the
+            // verb row (APPLY/UNDO/CLOSE) is on screen at every window height.
+            // The old fixed 200 px floor could push it past the bottom on a
+            // scaled/fullscreen window, leaving the op selector visible with
+            // no apply path and no exit.
+            height: Math.max(120, parameterRow.y - root.rowGap - y)
             clip: true
 
             Rectangle {
@@ -433,15 +437,31 @@ Rectangle {
                 }
             }
 
+            // Two-finger zoom of the WAVEFORM only. Qt's default pinch target
+            // is the handler's parent, so without `target: null` the whole
+            // popup was scaled and rotated by the gesture on top of the manual
+            // zoom below (owner report: "the whole waveform widget window is
+            // zoomed in and out. It also rotates."). target: null makes the
+            // handler a gesture source only - the ArrangeScreen pattern - and
+            // the rotation axis is pinned so no code path can rotate the
+            // popup. Single-finger IN/OUT handle drags are untouched: a pinch
+            // only activates with two points.
             PinchHandler {
                 id: pinch
+                target: null
+                minimumRotation: 0
+                maximumRotation: 0
                 property real lastScale: 1
                 onActiveChanged: if (active) lastScale = 1
                 onScaleChanged: {
                     if (!active || scale <= 0) return
-                    const delta = lastScale / scale
-                    lastScale = scale
-                    timeline.zoomBy(delta)
+                    const factor = pinch.scale / pinch.lastScale
+                    if (factor > 1.02 || factor < 0.98) {
+                        // timeline.zoomBy multiplies the visible window, so the
+                        // inverse gesture factor makes fingers-apart zoom in.
+                        timeline.zoomBy(1.0 / factor)
+                        pinch.lastScale = pinch.scale
+                    }
                 }
             }
 
@@ -471,7 +491,7 @@ Rectangle {
         Rectangle {
             id: parameterRow
             x: 12
-            y: waveHost.y + waveHost.height + root.rowGap
+            y: selectorRow.y - root.paramHeight - root.rowGap
             width: root.width - 24
             height: root.paramHeight
             radius: Style.corner
@@ -544,7 +564,7 @@ Rectangle {
         Row {
             id: selectorRow
             x: 12
-            y: parameterRow.y + parameterRow.height + root.rowGap
+            y: actionRow.y - root.selectorHeight - root.rowGap
             width: root.width - 24
             height: root.selectorHeight
             spacing: 4
@@ -570,7 +590,9 @@ Rectangle {
         Row {
             id: actionRow
             x: 12
-            y: selectorRow.y + selectorRow.height + root.rowGap
+            // Anchored to the bottom: the verbs are the exit and the apply path,
+            // so no waveform/geometry change can scroll them off the screen.
+            y: root.height - root.actionHeight - root.rowGap
             width: root.width - 24
             height: root.actionHeight
             spacing: 8
@@ -588,10 +610,14 @@ Rectangle {
             }
             TouchButton {
                 id: undoButton
-                width: 96
+                // The label carries the stack depth (view model undoText) and
+                // `active` dims + disables the button at the bottom of the
+                // stack, so the shot shows whether UNDO is live instead of a
+                // control that silently does nothing.
+                width: 132
                 height: parent.height
-                text: "UNDO"
-                textSize: 16
+                text: timeline.undoText
+                textSize: 14
                 variant: "ghost"
                 active: timeline.canUndo
                 focusId: "edit.undo"

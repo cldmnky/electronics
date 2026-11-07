@@ -25,6 +25,7 @@
 
 #include "../../session/session.hpp"
 #include "app_context.hpp"
+#include "app_controller.hpp"
 #include "app_state.hpp"
 #include "arrange_logic.hpp"
 #include "audio/engine.hpp"
@@ -57,6 +58,7 @@
 #include "system_view_model.hpp"
 #include "text_buffer.hpp"
 #include "timeline_model.hpp"
+#include "timeline_view_model.hpp"
 #include "wav_info.hpp"
 #include "xy_view_model.hpp"
 
@@ -76,6 +78,9 @@ void check(bool condition, const std::string& name) {
 void checkNear(double actual, double expected, double tolerance, const std::string& name) {
   check(std::abs(actual - expected) <= tolerance, name);
 }
+
+void appClapActivationAudioTests();
+void newTrackFromTakeTests();
 
 void checkEqual(const std::string& actual, const std::string& expected,
                 const std::string& name) {
@@ -954,6 +959,49 @@ void writeMinimalWav(const std::filesystem::path& path) {
              static_cast<std::streamsize>(bytes.size()));
 }
 
+// A deterministic tone so the EDIT popup's waveform assertions have a real
+// peak to compare across an APPLY (writeMinimalWav is silent by design).
+void writeToneWav(const std::filesystem::path& path, std::uint32_t frames,
+                  std::uint16_t channels, double amplitude) {
+  std::vector<unsigned char> bytes;
+  appendTag(bytes, "RIFF");
+  appendLe32(bytes, 36 + frames * channels * 4);
+  appendTag(bytes, "WAVE");
+  appendTag(bytes, "fmt ");
+  appendLe32(bytes, 16);
+  appendLe16(bytes, 3);  // IEEE float
+  appendLe16(bytes, channels);
+  appendLe32(bytes, 48000);
+  appendLe32(bytes, 48000 * channels * 4);
+  appendLe16(bytes, static_cast<std::uint16_t>(channels * 4));
+  appendLe16(bytes, 32);
+  appendTag(bytes, "data");
+  appendLe32(bytes, frames * channels * 4);
+  const std::size_t start = bytes.size();
+  bytes.resize(start + static_cast<std::size_t>(frames) * channels * 4, 0);
+  for (std::uint32_t frame = 0; frame < frames; ++frame) {
+    const double t = static_cast<double>(frame) / 48000.0;
+    const float value = static_cast<float>(
+        amplitude * std::sin(2.0 * 3.14159265358979323846 * 220.0 * t));
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof bits);
+    for (std::uint16_t channel = 0; channel < channels; ++channel) {
+      const std::size_t offset = start +
+                                 static_cast<std::size_t>(frame) * channels * 4 +
+                                 static_cast<std::size_t>(channel) * 4;
+      for (int shift = 0; shift < 32; shift += 8) {
+        bytes[offset + static_cast<std::size_t>(shift / 8)] =
+            static_cast<unsigned char>((bits >> shift) & 0xFFu);
+      }
+    }
+  }
+  std::error_code error;
+  std::filesystem::create_directories(path.parent_path(), error);
+  std::ofstream file(path, std::ios::binary);
+  file.write(reinterpret_cast<const char*>(bytes.data()),
+             static_cast<std::streamsize>(bytes.size()));
+}
+
 void takeAdoptionTests() {
   AppState state;
   SessionSettings settings;
@@ -990,6 +1038,314 @@ void takeAdoptionTests() {
         "second recorded take is adopted");
   check(std::filesystem::exists(second / "02-ch02-002.wav"),
         "take counter continues per track");
+  std::filesystem::remove_all(base, error);
+}
+
+// W5 chain proof: the popup's APPLY has to reach TimelineViewModel's region
+// engine, change the region list and change what the header/waveform report.
+// These are the state assertions the owner's "when I apply nothing happens"
+// report needs: GAIN changes the selected peak, TRIM and DELETE change the
+// edited duration/region count.
+void takeEditViewModelTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  FxManager fx;
+  PerformanceModel performance;
+  MidiGlue midi(false);
+  AudioGlue audio(mixer, fx, performance, state, true);
+  LinkClient link(midi, state, true);
+  const auto base = std::filesystem::temp_directory_path() /
+                    ("mnkybox-take-edit-" +
+                     std::to_string(std::chrono::steady_clock::now()
+                                        .time_since_epoch()
+                                        .count()));
+  std::error_code error;
+  std::filesystem::create_directories(base, error);
+  state.setTakeDirectory(base);
+  writeToneWav(base / "01-tone-001.wav", 4u * 48000u, 1, 0.8);
+  for (int track = 0; track < 3; ++track) {
+    settings.setActiveTake(track, "01-tone-001.wav");
+  }
+  RecorderViewModel recorder(state, audio, mixer, link, settings);
+  TimelineViewModel timeline(state, audio, recorder, link, settings);
+  timeline.preparePeaksForDemo();
+
+  const auto columnPeak = [](const QVariantList& wave, int column) {
+    const int index = column * 2;
+    if (index + 1 >= wave.size()) return 0.0;
+    return std::max(std::abs(wave[index].toDouble()),
+                    std::abs(wave[index + 1].toDouble()));
+  };
+
+  // GAIN on IN..OUT only: the region list is cut at both edges first, the
+  // middle region carries -6 dB, and the waveform peak at that span halves.
+  timeline.openEdit(0);
+  checkNear(timeline.takeBeats(), 8.0, 0.01,
+            "the 4 s EDIT fixture is 8 beats at 120 BPM");
+  const QVariantList gainBefore = timeline.editWave();
+  check(gainBefore.size() > 0, "the EDIT popup has a waveform to apply to");
+  timeline.beginSelection(0, 2.0);
+  timeline.updateSelection(6.0);
+  timeline.endSelection();
+  timeline.selectEditOp(2);  // GAIN
+  timeline.setEditGainDb(-6.0);
+  check(timeline.applyEditOp().isEmpty(), "APPLY GAIN reports success");
+  const auto& gained = settings.takeEdit[0];
+  check(gained.size() == 3,
+        "GAIN cuts the take at IN and OUT, so only the selection changes");
+  if (gained.size() == 3) {
+    check(std::abs(gained[0].offsetBeats - 0.0) < 1e-9 &&
+              std::abs(gained[0].lengthBeats - 2.0) < 1e-9 &&
+              std::abs(gained[0].gainDb) < 1e-6,
+          "GAIN leaves the head of the take untouched");
+    check(std::abs(gained[1].offsetBeats - 2.0) < 1e-9 &&
+              std::abs(gained[1].lengthBeats - 4.0) < 1e-9 &&
+              std::abs(gained[1].gainDb + 6.0) < 1e-6,
+          "GAIN applies -6 dB to the selected span only");
+    // The tail keeps the "to the end of the take" marker (lengthBeats 0).
+    check(std::abs(gained[2].offsetBeats - 6.0) < 1e-9 &&
+              std::abs(gained[2].lengthBeats) < 1e-9 &&
+              std::abs(gained[2].gainDb) < 1e-6,
+          "GAIN leaves the tail of the take untouched");
+  }
+  const QVariantList gainAfter = timeline.editWave();
+  check(gainAfter.size() == gainBefore.size(),
+        "the applied waveform keeps the popup's column count");
+  // Column 400 is beat 4, inside the selection; column 100 is beat 1, outside.
+  const double selectedBefore = columnPeak(gainBefore, 400);
+  const double selectedAfter = columnPeak(gainAfter, 400);
+  const double untouchedBefore = columnPeak(gainBefore, 100);
+  const double untouchedAfter = columnPeak(gainAfter, 100);
+  check(selectedBefore > 0.05 &&
+            std::abs(selectedAfter / selectedBefore - 0.5012) < 0.02,
+        "GAIN's waveform peak is 6 dB lower inside the selection");
+  check(std::abs(untouchedAfter - untouchedBefore) < 1e-6,
+        "GAIN's waveform outside the selection is unchanged");
+  check(timeline.canUndo() && timeline.undo(),
+        "the applied GAIN is on the undo stack");
+  check(settings.takeEdit[0].empty(),
+        "UNDO returns the take to no committed regions");
+
+  // TRIM on IN..OUT: one region remains, the edited duration is the selection
+  // and the header says so (the meta property now emits editChanged).
+  timeline.openEdit(1);
+  timeline.beginSelection(1, 2.0);
+  timeline.updateSelection(6.0);
+  timeline.endSelection();
+  timeline.selectEditOp(0);  // TRIM
+  check(timeline.applyEditOp().isEmpty(), "APPLY TRIM reports success");
+  check(settings.takeEdit[1].size() == 1,
+        "TRIM keeps one region for a single-region take");
+  if (settings.takeEdit[1].size() == 1) {
+    check(std::abs(settings.takeEdit[1][0].offsetBeats - 2.0) < 1e-9 &&
+              std::abs(settings.takeEdit[1][0].lengthBeats - 4.0) < 1e-9,
+          "TRIM keeps exactly IN..OUT");
+  }
+  checkNear(timeline.editedBeats(), 4.0, 1e-9,
+            "TRIM's edited duration is the 4-beat selection");
+  check(timeline.editMetaText().contains(QStringLiteral("4.0 edited")),
+        "the EDIT header states the trimmed duration");
+  const QVariantList trimWave = timeline.editWave();
+  check(columnPeak(trimWave, 100) == 0.0,
+        "TRIM silences the waveform before IN");
+  check(columnPeak(trimWave, 400) > 0.05,
+        "TRIM keeps the waveform inside IN..OUT");
+  check(columnPeak(trimWave, 700) == 0.0,
+        "TRIM silences the waveform after OUT");
+
+  // DELETE on IN..OUT: the selected span is cut out, the two remaining parts
+  // stay as regions, and both the region count and the edited duration change.
+  timeline.openEdit(2);
+  timeline.beginSelection(2, 2.0);
+  timeline.updateSelection(6.0);
+  timeline.endSelection();
+  timeline.selectEditOp(6);  // DELETE REGION
+  check(timeline.applyEditOp().isEmpty(), "APPLY DELETE reports success");
+  const auto& deleted = settings.takeEdit[2];
+  check(deleted.size() == 2,
+        "DELETE removes the selected span and keeps the two sides");
+  if (deleted.size() == 2) {
+    // The tail keeps the "to the end of the take" marker (lengthBeats 0).
+    check(std::abs(deleted[0].offsetBeats - 0.0) < 1e-9 &&
+              std::abs(deleted[0].lengthBeats - 2.0) < 1e-9 &&
+              std::abs(deleted[1].offsetBeats - 6.0) < 1e-9 &&
+              std::abs(deleted[1].lengthBeats) < 1e-9,
+          "DELETE's regions are the head and the tail of the take");
+  }
+  checkNear(timeline.editedBeats(), 4.0, 1e-9,
+            "DELETE shortens the edited duration by the selection");
+  checkNear(timeline.takeBeats(), 8.0, 1e-9,
+            "DELETE leaves the source take length alone");
+  check(timeline.editMetaText().contains(QStringLiteral("4.0 edited")),
+        "the EDIT header states the post-delete duration");
+  check(timeline.lastOpText().startsWith(QStringLiteral("DELETE")) &&
+            timeline.regionCount() == 2,
+        "DELETE names itself and the new region count");
+  const QVariantList deleteWave = timeline.editWave();
+  check(columnPeak(deleteWave, 400) == 0.0,
+        "DELETE clears the waveform across the removed span");
+  check(columnPeak(deleteWave, 100) > 0.05 && columnPeak(deleteWave, 700) > 0.05,
+        "DELETE keeps the waveform on both sides");
+  // A delete that would empty the list is refused: an empty region list means
+  // CLEAR (unedited take) to the engine, which would silently undo the edit.
+  timeline.beginSelection(2, 0.0);
+  timeline.updateSelection(8.0);
+  timeline.endSelection();
+  const int beforeRefusal = timeline.regionCount();
+  check(!timeline.applyEditOp().isEmpty(),
+        "DELETE that would empty the region list is refused");
+  check(timeline.regionCount() == beforeRefusal,
+        "a refused DELETE leaves the region list untouched");
+
+  // ---- UNDO model -----------------------------------------------------
+  // The stack stores the region list as it was BEFORE each APPLY, so UNDO is an
+  // exact restore of the previous take state and not a reverse arithmetic. The
+  // checks below walk the whole op selector, the LIFO order, the bottom of the
+  // stack, the >=16 level depth and the popup/track lifetime.
+  using Regions = std::vector<session::TakeRegion>;
+  const auto sameRegions = [](const Regions& a, const Regions& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+      const auto& x = a[i];
+      const auto& y = b[i];
+      if (x.take != y.take || std::abs(x.offsetBeats - y.offsetBeats) > 1e-9 ||
+          std::abs(x.lengthBeats - y.lengthBeats) > 1e-9 ||
+          std::abs(x.gainDb - y.gainDb) > 1e-6 ||
+          std::abs(x.fadeInBeats - y.fadeInBeats) > 1e-9 ||
+          std::abs(x.fadeOutBeats - y.fadeOutBeats) > 1e-9 ||
+          x.normalize != y.normalize) {
+        return false;
+      }
+    }
+    return true;
+  };
+  const auto undoAll = [&timeline](int track) {
+    timeline.openEdit(track);
+    for (int guard = 0; guard < 64 && timeline.undo(); ++guard) {
+    }
+  };
+  check(TimelineViewModel::kUndoDepth >= 16,
+        "the per-take undo stack holds at least the 16 levels the owner asked for");
+
+  // Every op card is reversible: apply it, then UNDO restores the previous
+  // region list exactly. GAIN and the two fades need their drafted value; SPLIT
+  // cuts at the cursor and ignores the selection.
+  struct OpCase {
+    int op;
+    const char* name;
+  };
+  const OpCase opCases[] = {{0, "TRIM"},      {1, "SPLIT"},   {2, "GAIN"},
+                            {3, "FADE IN"},   {4, "FADE OUT"}, {5, "NORMALIZE"},
+                            {6, "DELETE"}};
+  for (const auto& opCase : opCases) {
+    undoAll(0);
+    if (opCase.op == 1) {
+      timeline.clearSelection();
+      timeline.setCursorBeats(4.0);
+    } else {
+      timeline.beginSelection(0, 2.0);
+      timeline.updateSelection(6.0);
+      timeline.endSelection();
+    }
+    timeline.selectEditOp(opCase.op);
+    if (opCase.op == 2) timeline.setEditGainDb(-6.0);
+    if (opCase.op == 3) timeline.setEditFadeIn(1.0);
+    if (opCase.op == 4) timeline.setEditFadeOut(1.0);
+    const Regions before = settings.takeEdit[0];
+    const QVariantList waveBefore = timeline.editWave();
+    check(timeline.applyEditOp().isEmpty(),
+          std::string("APPLY ") + opCase.name + " reports success");
+    check(!sameRegions(settings.takeEdit[0], before),
+          std::string("APPLY ") + opCase.name + " changes the take state");
+    const Regions applied = settings.takeEdit[0];
+    check(!applied.empty(),
+          std::string("APPLY ") + opCase.name + " leaves committed regions");
+    check(timeline.canUndo(),
+          std::string("APPLY ") + opCase.name + " pushes one undo level");
+    check(timeline.undo(),
+          std::string("UNDO after ") + opCase.name + " succeeds");
+    check(sameRegions(settings.takeEdit[0], before),
+          std::string("UNDO restores the exact state before ") + opCase.name);
+    check(!timeline.canUndo(),
+          std::string("UNDO after ") + opCase.name + " pops the only level");
+    if (opCase.op == 2) {
+      check(timeline.editWave() == waveBefore,
+            "UNDO repaints the waveform back to the pre-GAIN peaks");
+    }
+  }
+
+  // LIFO order: three stacked edits unwind newest first, and each level returns
+  // exactly the state the previous level pushed.
+  undoAll(0);
+  timeline.beginSelection(0, 2.0);
+  timeline.updateSelection(6.0);
+  timeline.endSelection();
+  timeline.selectEditOp(2);
+  timeline.setEditGainDb(-6.0);
+  check(timeline.applyEditOp().isEmpty(), "stacked op 1 (GAIN) applies");
+  const Regions afterGain = settings.takeEdit[0];
+  timeline.beginSelection(0, 3.0);
+  timeline.updateSelection(5.0);
+  timeline.endSelection();
+  timeline.selectEditOp(3);
+  timeline.setEditFadeIn(1.0);
+  check(timeline.applyEditOp().isEmpty(), "stacked op 2 (FADE IN) applies");
+  const Regions afterFade = settings.takeEdit[0];
+  timeline.beginSelection(0, 7.0);
+  timeline.updateSelection(8.0);
+  timeline.endSelection();
+  timeline.selectEditOp(6);  // DELETE REGION
+  check(timeline.applyEditOp().isEmpty(), "stacked op 3 (DELETE) applies");
+  check(timeline.undo() && sameRegions(settings.takeEdit[0], afterFade),
+        "the first UNDO pops the newest APPLY (DELETE restores FADE's state)");
+  check(timeline.undo() && sameRegions(settings.takeEdit[0], afterGain),
+        "the second UNDO restores the state after the first op");
+  check(timeline.undo() && settings.takeEdit[0].empty(),
+        "the third UNDO restores the unedited take");
+  check(!timeline.canUndo(), "the stack reports empty at the bottom");
+  check(!timeline.undo(), "UNDO at the bottom of the stack is a no-op");
+  check(settings.takeEdit[0].empty(),
+        "the bottom-of-stack no-op leaves the take untouched");
+
+  // Depth: 17 stacked GAIN applies (over the 16-level floor) all unwind.
+  undoAll(0);
+  timeline.beginSelection(0, 2.0);
+  timeline.updateSelection(6.0);
+  timeline.endSelection();
+  timeline.selectEditOp(2);
+  bool allApplied = true;
+  for (int step = 0; step < 17; ++step) {
+    timeline.setEditGainDb(-1.0 - static_cast<double>(step));
+    allApplied = allApplied && timeline.applyEditOp().isEmpty();
+  }
+  check(allApplied, "17 stacked GAIN applies all report success");
+  int undoneLevels = 0;
+  while (undoneLevels < 64 && timeline.undo()) ++undoneLevels;
+  check(undoneLevels == 17,
+        "17 UNDO presses walk the whole stack back (>= 16 levels kept)");
+  check(settings.takeEdit[0].empty() && !timeline.canUndo(),
+        "the 17-level walk ends on the unedited take with an empty stack");
+
+  // Lifetime: the stack belongs to the session take, so closing and reopening
+  // the popup keeps it; a different track has its own stack.
+  timeline.selectEditOp(2);
+  timeline.setEditGainDb(-3.0);
+  check(timeline.applyEditOp().isEmpty(), "lifetime GAIN applies");
+  timeline.closeEdit();
+  check(timeline.canUndo(), "the undo stack survives closing the EDIT popup");
+  timeline.openEdit(0);
+  check(timeline.canUndo(), "the undo stack survives reopening the EDIT popup");
+  check(timeline.undo() && settings.takeEdit[0].empty(),
+        "UNDO after reopening restores the pre-edit take");
+  // Track 1 still carries the TRIM from above: its stack is independent of the
+  // now-empty track 0 stack, and undoing it restores that track only.
+  timeline.openEdit(1);
+  check(timeline.canUndo(), "a different track keeps its own undo level");
+  check(timeline.undo(), "track 1's own level pops on its own stack");
+  check(settings.takeEdit[1].empty() && settings.takeEdit[0].empty(),
+        "track 1's UNDO restores only track 1 (track 0 stays popped)");
+
   std::filesystem::remove_all(base, error);
 }
 
@@ -3588,6 +3944,163 @@ void trackModeTests() {
         "the measure boundary maps ticks to 1-based bars");
 }
 
+// Owner bug A, physical path: selecting a discovered plugin in the FX popup
+// must instantiate it through the app's own rack sink and change the sound. The
+// probe renders through AudioGlue's emulator driver (the same Engine the device
+// runs) instead of attaching an effect to a bare Engine, which is why the old
+// tests could stay green while the app slot was silent.
+void appClapActivationAudioTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  FxManager fx;
+  PerformanceModel performance;
+  EqModel eq;
+  AudioGlue audio(mixer, fx, performance, state, true);
+  MixerViewModel view(mixer, settings, eq);
+  view.setClapHost(&fx);
+
+  const auto plugins = fx.plugins();
+  if (plugins.empty()) {
+    check(view.fxSlotNote(0, 0).isEmpty() ||
+              !view.fxSlotNote(0, 0).contains(QStringLiteral("NOT LOADED")),
+          "a zero-CLAP device offers no dead plugin row");
+    return;
+  }
+  const auto plugin = plugins.front();
+  if (plugin.id != "com.cldmnky.mnkygain") return;  // needs the reference gain DSP
+
+  check(view.addTrack(0, "drums", 0, false, 0), "the probe track exists");
+  mixer.setMode(0, kTrackModeLive);
+  mixer.setGainDb(0, 0.0f);
+  check(audio.start(), "the emulator backend starts");
+
+  // The peak meter is a read-and-decay hold. Drain the previous phase's hold
+  // until it falls under the current block level before measuring, or the dry
+  // peak would be read back as the wet one.
+  const auto settlePeak = [&audio] {
+    for (int i = 0; i < 24; ++i) {
+      (void)audio.peak(0);
+      std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    }
+  };
+  const auto samplePeak = [&audio] {
+    float peak = 0.0f;
+    for (int i = 0; i < 40; ++i) {
+      peak = std::max(peak, audio.peak(0));
+      std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    }
+    return peak;
+  };
+  const float dry = samplePeak();
+  check(dry > 0.01f, "the emulator input reaches the main bus before the FX");
+
+  ConfigPopupModel popup(state, mixer, settings, eq);
+  popup.setMixer(&view);
+  popup.setFxTarget(0, 0);
+  check(popup.openKind(QStringLiteral("fxslot")), "the FX slot list opens");
+  popup.setFxSlotChoice(MixerViewModel::kFxChoicePlugin);
+  check(view.fxSlotNote(0, 0).contains(QStringLiteral("active")),
+        "the plugin is instantiated when it is selected (not only at load)");
+  view.setFxParamAt(0, 0, 0, -24.0);
+  check(!view.fxParams(0, 0).isEmpty(),
+        "the reference plugin's own parameter cards are present");
+
+  settlePeak();
+  const float wet = samplePeak();
+  check(wet < dry * 0.25f,
+        "a selected plugin audibly processes the strip (gain -24 dB)");
+
+  view.setFxBypassAt(0, 0, true);
+  settlePeak();
+  const float bypassed = samplePeak();
+  check(bypassed > dry * 0.5f,
+        "BYPASS restores the dry strip while the instance stays loaded");
+  view.setFxBypassAt(0, 0, false);
+  settlePeak();
+  const float enabled = samplePeak();
+  check(enabled < dry * 0.25f,
+        "un-bypassing the slot re-engages the same plugin instance");
+  // A slot that names a plugin but holds no live instance (a failed earlier
+  // load, a host teardown) must retry when the owner selects the same entry
+  // again; the pre-fix no-op left the entry reading as selected but dead.
+  fx.unloadTrackEffect(0, 0);
+  check(!fx.trackEffectLoaded(0, 0), "the probe slot lost its instance");
+  const int choice = view.fxChoiceAt(0, 0);
+  check(choice >= MixerViewModel::kFxChoicePlugin,
+        "the slot still names the discovered plugin");
+  check(view.setFxChoiceAt(0, 0, choice),
+        "re-selecting the same plugin succeeds (it is not a silent no-op)");
+  check(fx.trackEffectLoaded(0, 0),
+        "re-selecting a dead plugin entry retries the host instance");
+  popup.cancel();
+  audio.stop();
+}
+
+// Owner bug B: NEW TRACK FROM TAKE must grow the mixer's track list, land the
+// bank on the new strip and keep the take ACTIVE on it. Drives the same public
+// controller/model calls the recorder's "..." menu and MOVE button use.
+void newTrackFromTakeTests() {
+  AppController controller(true, true);
+  MixerViewModel* mixer = controller.mixer();
+  const char* names[] = {"drums", "bass", "keys", "gtr", "vox", "perc"};
+  for (int slot = 0; slot < 6; ++slot) {
+    mixer->addTrack(slot, QString::fromLatin1(names[slot]), slot, false, 0);
+  }
+  mixer->setBank(0);
+  const int before = mixer->stripCount();
+  check(before == 6, "the fixture mixer has six tracks");
+
+  const auto base = std::filesystem::temp_directory_path() /
+                    ("mnkybox-new-track-take-" +
+                     std::to_string(std::chrono::steady_clock::now()
+                                        .time_since_epoch()
+                                        .count()));
+  std::error_code error;
+  std::filesystem::create_directories(base, error);
+  const auto wav = base / "beat.wav";
+  writeMinimalWav(wav);
+  check(controller.recorder()->importTake(QString::fromStdString(wav.string())).isEmpty(),
+        "the take fixture imports");
+  int row = -1;
+  for (int candidate = 0; candidate < controller.recorder()->takes()->count();
+       ++candidate) {
+    if (controller.recorder()->takeNameAt(candidate) == QStringLiteral("beat.wav")) {
+      row = candidate;
+      break;
+    }
+  }
+  check(row >= 0, "the imported take is listed");
+  if (row < 0) {
+    std::filesystem::remove_all(base, error);
+    return;
+  }
+
+  controller.openTakeActions(row);
+  controller.config()->chooseTakeAction(6);
+  check(controller.keypadOpen(), "NEW TRACK FROM THIS TAKE asks for a name");
+  controller.keypadAccept(QStringLiteral("beat"));
+  check(controller.config()->kind() == QStringLiteral("trackfromtake"),
+        "the MOVE / KEEP ON SOURCE step opens");
+  controller.config()->chooseTrackFromTake(0);
+
+  check(mixer->stripCount() == before + 1,
+        "NEW TRACK FROM TAKE creates a real track");
+  check(mixer->trackIndex() == 6, "the mixer selects the new track's slot");
+  check(mixer->bank() == 2,
+        "the mixer bank lands on the page that shows the new track");
+  check(mixer->index(0, 0).isValid() &&
+            mixer->data(mixer->index(6, 0), MixerViewModel::NameRole).toString() ==
+                QStringLiteral("beat"),
+        "the new track carries the keypad name");
+  const QString active = controller.recorder()->activeTakePath(6);
+  check(active.endsWith(QStringLiteral("beat.wav")),
+        "the new track plays the take (ACTIVE)");
+  check(controller.recorder()->activeTakePath(0).isEmpty(),
+        "MOVE leaves the source track without that take");
+  std::filesystem::remove_all(base, error);
+}
+
 void styleTests() {
   QFile file(QStringLiteral(":/qml/Style.qml"));
   check(file.open(QIODevice::ReadOnly | QIODevice::Text), "QML Style resource opens");
@@ -3752,6 +4265,8 @@ void arrangeTests() {
 }
 
 int runAll() {
+  appClapActivationAudioTests();
+  newTrackFromTakeTests();
   logicTests();
   textBufferTests();
   projectTests();
@@ -3762,6 +4277,7 @@ int runAll() {
   learnTests();
   wavTests();
   takeAdoptionTests();
+  takeEditViewModelTests();
   sessionClickTests();
   takeNameTests();
   meterAndSpaceTests();

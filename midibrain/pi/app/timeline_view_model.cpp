@@ -269,8 +269,7 @@ void TimelineViewModel::pushUndo(int track) {
   if (track < 0 || track >= audio::kMaxInputs) return;
   auto& stack = undo_[static_cast<std::size_t>(track)];
   stack.push_back(UndoEntry{editList(track)});
-  constexpr std::size_t kMaxUndo = 16;
-  if (stack.size() > kMaxUndo) stack.erase(stack.begin());
+  if (stack.size() > kUndoDepth) stack.erase(stack.begin());
   emitUndo();
 }
 
@@ -305,6 +304,10 @@ void TimelineViewModel::openEdit(int track) {
     editOpen_ = true;
     emit editOpenChanged();
   }
+  // The undo stack is per take, so reopening the popup (on this track or
+  // another one) has to republish canUndo/undoText: the QML UNDO button binds
+  // `active` to them and would otherwise keep the previous take's state.
+  emitUndo();
   rebuildEditWave();
   rebuildPreview();
   updateScanBadge();
@@ -326,6 +329,9 @@ void TimelineViewModel::setSelectedTrack(int track) {
   if (clamped == selectedTrack_) return;
   selectedTrack_ = clamped;
   emit selectedTrackChanged();
+  // Undo is per take: switching tracks changes canUndo/undoText and the UNDO
+  // button's enabled state with it.
+  emitUndo();
   emit loopChanged();
   rebuildPreview();
   rebuildPunch();
@@ -358,10 +364,30 @@ QString TimelineViewModel::editTitle() const {
 QString TimelineViewModel::editMetaText() const {
   const auto& source = sources_[static_cast<std::size_t>(selectedTrack_)];
   if (source.path.empty()) return QStringLiteral("NO ACTIVE TAKE");
-  return QStringLiteral("%1 kHz - %2 ch - %3 beats")
-      .arg(source.sampleRate / 1000)
-      .arg(source.channels)
-      .arg(trackBeats_[static_cast<std::size_t>(selectedTrack_)], 0, 'f', 1);
+  const QString takeText = QStringLiteral("%1 kHz - %2 ch - %3 beats")
+                               .arg(source.sampleRate / 1000)
+                               .arg(source.channels)
+                               .arg(trackBeats_[static_cast<std::size_t>(selectedTrack_)], 0,
+                                    'f', 1);
+  // Once a region op changes the edited length the header states it too, so
+  // TRIM/DELETE are visible as a duration change and not only in the waveform.
+  const double edited = editedBeats();
+  if (edited <= 0.0 || std::abs(edited - takeBeats()) < 0.05) return takeText;
+  return takeText + QStringLiteral(" -> %1 edited").arg(edited, 0, 'f', 1);
+}
+
+double TimelineViewModel::editedBeats() const {
+  const auto& edits = editList(selectedTrack_);
+  if (edits.empty()) return 0.0;
+  const timeline::TakeLengthFn lengthFn = lengthFnFor(selectedTrack_);
+  // The sounding length of the committed edit, not its outer span: DELETE
+  // removes a middle slice, so the sum of the region lengths is what remains.
+  double total = 0.0;
+  for (const auto& region : edits) {
+    total += std::max(0.0, timeline::regionEndBeats(region, lengthFn) -
+                               region.offsetBeats);
+  }
+  return total;
 }
 
 void TimelineViewModel::selectEditOp(int op) {
@@ -632,11 +658,11 @@ QString TimelineViewModel::applyOp(int op, double gainDb, double fadeIn,
   }
   std::vector<session::TakeRegion> current = editList(selectedTrack_);
   if (current.empty()) {
-    // The first region-creating op starts from the active take as one implicit
-    // "whole take" region; no take file is touched. CLEAR/DELETE of an empty
-    // list would just be a no-op, so they stay "nothing here" instead.
-    if (operation == timeline::TimelineOp::Clear ||
-        operation == timeline::TimelineOp::Delete) {
+    // The first region op starts from the active take as one implicit "whole
+    // take" region; no take file is touched. DELETE is a region op too - the
+    // user can cut a piece out of a fresh take without first applying TRIM.
+    // CLEAR of an empty list is the only true no-op.
+    if (operation == timeline::TimelineOp::Clear) {
       return QStringLiteral("no region edit on track %1").arg(selectedTrack_ + 1);
     }
     const auto& source = sources_[static_cast<std::size_t>(selectedTrack_)];
@@ -657,6 +683,21 @@ QString TimelineViewModel::applyOp(int op, double gainDb, double fadeIn,
   const timeline::BeatRange range = selection_.active
                                         ? selection_
                                         : timeline::BeatRange{};
+  // The popup's ops act on IN..OUT, not on every whole region the range
+  // happens to touch. Cut the region list at both range edges first, so GAIN /
+  // FADES / NORMALIZE change only the selected span and DELETE removes only
+  // that span. Without this a GAIN on a 4-beat selection rewrote the whole
+  // take (and DELETE dropped the whole take, which an empty list then played
+  // back unedited - the owner's "when I apply nothing happens"). TRIM already
+  // clips to the range and SPLIT cuts at the cursor, so both skip the cut.
+  const bool rangeOp = operation == timeline::TimelineOp::Gain ||
+                       operation == timeline::TimelineOp::Fades ||
+                       operation == timeline::TimelineOp::Normalize ||
+                       operation == timeline::TimelineOp::Delete;
+  if (rangeOp && range.active && range.span() > 0.0) {
+    current = timeline::splitRegionsAt(current, range.start(), length);
+    current = timeline::splitRegionsAt(current, range.end(), length);
+  }
   std::vector<session::TakeRegion> next = current;
   switch (operation) {
     case timeline::TimelineOp::Trim:
@@ -685,6 +726,13 @@ QString TimelineViewModel::applyOp(int op, double gainDb, double fadeIn,
     case timeline::TimelineOp::Render:
       break;
   }
+  if (next.empty() && !current.empty() &&
+      operation == timeline::TimelineOp::Delete) {
+    // A region list has no way to say "play nothing": applyTrackEdit sends an
+    // empty list as CLEAR, which would restore the unedited take. Refuse the
+    // full-take delete instead of silently undoing the edit.
+    return QStringLiteral("DELETE would remove the whole take - select a part of it");
+  }
   if (next == current) {
     lastOpText_ = textOf(timeline::timelineOpName(operation)) +
                   QStringLiteral(" - no change");
@@ -698,6 +746,14 @@ QString TimelineViewModel::applyOp(int op, double gainDb, double fadeIn,
   previewDraftActive_ = false;
   lastOpText_ = textOf(timeline::timelineOpName(operation)) + QStringLiteral(" -> ") +
                 QString::number(regionCount()) + QStringLiteral(" REGION(S)");
+  // `lastOpText` is a NOTIFY statusChanged property and refresh() only emits
+  // when the region count/status text changes; an op that keeps the count has
+  // to refresh it here.
+  emit statusChanged();
+  // The header meta (edited length) is a NOTIFY editChanged property; without
+  // this emit the popup keeps the pre-apply text even though the region list
+  // and the waveform already changed.
+  emit editChanged();
   refresh();
   return {};
 }
@@ -753,6 +809,10 @@ bool TimelineViewModel::undo() {
   lastOpText_ = QStringLiteral("UNDO -> ") + QString::number(regionCount()) +
                 QStringLiteral(" REGION(S)");
   emitUndo();
+  // Same reasons as applyOp: the last-op line has its own NOTIFY, and the
+  // header states the edited length.
+  emit statusChanged();
+  emit editChanged();
   refresh();
   return true;
 }
@@ -820,6 +880,63 @@ void TimelineViewModel::rebuildPunch() {
   emit punchChanged();
 }
 
+// The committed region list as drawable spans. A region's length 0 means "to
+// the end of the take" (session contract), and normalize scales the region so
+// its peak lands at the normalize target instead of at the take's own peak.
+auto TimelineViewModel::appliedShapes(int track) const -> std::vector<RegionShape> {
+  std::vector<RegionShape> shapes;
+  const auto& edits = editList(track);
+  if (edits.empty()) return shapes;
+  const timeline::TakeLengthFn lengthFn = lengthFnFor(track);
+  const auto& peak = peaks_[static_cast<std::size_t>(track)];
+  for (const auto& region : edits) {
+    RegionShape shape;
+    shape.start = region.offsetBeats;
+    shape.end = timeline::regionEndBeats(region, lengthFn);
+    if (shape.end <= shape.start) continue;
+    double scale = std::pow(10.0, static_cast<double>(region.gainDb) / 20.0);
+    if (region.normalize) {
+      double regionPeak = 0.0;
+      if (peak.valid && !peak.summary.empty()) {
+        const auto reduced = timeline::reducePeakPairs(peak.summary, shape.start,
+                                                       shape.end, takeBeats(), 64);
+        for (const float value : reduced) regionPeak = std::max(regionPeak,
+                                                                static_cast<double>(value));
+      }
+      if (regionPeak > 1e-6) {
+        scale *= std::min(4.0, static_cast<double>(
+                                   std::pow(10.0, audio::kNormalizePeakDbfs / 20.0f)) /
+                                   regionPeak);
+      }
+    }
+    shape.gain = std::min(4.0, scale);
+    shape.fadeIn = std::max(0.0, region.fadeInBeats);
+    shape.fadeOut = std::max(0.0, region.fadeOutBeats);
+    shapes.push_back(shape);
+  }
+  return shapes;
+}
+
+// Committed amplitude multiplier at one beat: 0 outside every region (TRIM /
+// DELETE take that part of the take out of the picture), the region's gain and
+// its linear fade ramps inside one.
+double TimelineViewModel::shapeGainAt(const std::vector<RegionShape>& shapes,
+                                      double beat) {
+  if (shapes.empty()) return 1.0;
+  for (const auto& shape : shapes) {
+    if (beat < shape.start || beat >= shape.end) continue;
+    double gain = shape.gain;
+    if (shape.fadeIn > 0.0 && beat < shape.start + shape.fadeIn) {
+      gain *= (beat - shape.start) / shape.fadeIn;
+    }
+    if (shape.fadeOut > 0.0 && beat > shape.end - shape.fadeOut) {
+      gain *= (shape.end - beat) / shape.fadeOut;
+    }
+    return std::clamp(gain, 0.0, 4.0);
+  }
+  return 0.0;
+}
+
 void TimelineViewModel::rebuildEditWave() {
   if (!editOpen_) return;
   const auto& source = sources_[static_cast<std::size_t>(selectedTrack_)];
@@ -828,22 +945,38 @@ void TimelineViewModel::rebuildEditWave() {
   // pass a pure polyline (no reduction there).
   constexpr int kColumns = 800;
   const double viewEnd = viewStartBeats_ + viewBeats_;
+  // The wave draws the take AFTER the committed ops, so the region list is part
+  // of the cache key: an APPLY (or an UNDO) redraws the waveform.
   const QString signature =
-      QStringLiteral("%1|%2|%3|%4|%5|%6")
+      QStringLiteral("%1|%2|%3|%4|%5|%6|%7")
           .arg(QString::fromStdString(source.path.string()))
           .arg(viewStartBeats_, 0, 'f', 6)
           .arg(viewBeats_, 0, 'f', 6)
           .arg(takeBeats(), 0, 'f', 6)
           .arg(peakGeneration_)
-          .arg(peak.valid ? 1 : 0);
+          .arg(peak.valid ? 1 : 0)
+          .arg(QString::fromStdString(editSignature(settings_.takeEdit)));
   if (signature == editWaveSignature_) return;
   editWaveSignature_ = signature;
   QVariantList wave;
   if (peak.valid && !peak.summary.empty()) {
     const auto reduced = timeline::reducePeakPairs(
         peak.summary, viewStartBeats_, viewEnd, takeBeats(), kColumns);
+    const std::vector<RegionShape> shapes = appliedShapes(selectedTrack_);
     wave.reserve(static_cast<int>(reduced.size()));
-    for (const float value : reduced) wave.push_back(value);
+    const int pairs = static_cast<int>(reduced.size()) / 2;
+    for (int column = 0; column < pairs; ++column) {
+      const double beat = viewStartBeats_ +
+                          (static_cast<double>(column) + 0.5) * viewBeats_ /
+                              std::max(1, kColumns);
+      const double gain = shapeGainAt(shapes, beat);
+      wave.push_back(static_cast<float>(
+          std::min(1.0, static_cast<double>(reduced[static_cast<std::size_t>(column) * 2]) *
+                            gain)));
+      wave.push_back(static_cast<float>(
+          std::min(1.0, static_cast<double>(reduced[static_cast<std::size_t>(column) * 2 + 1]) *
+                            gain)));
+    }
   }
   const bool columnsChanged = kColumns != editWaveColumns_;
   editWaveColumns_ = kColumns;

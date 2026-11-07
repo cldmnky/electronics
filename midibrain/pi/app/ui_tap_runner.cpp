@@ -782,6 +782,50 @@ void UiTapRunner::buildScenarios() {
                controller_->config()->takeTargetRow() == 0;
       },
       QStringLiteral("... did not open the take actions config")});
+  // Owner bug B (physical path): the row "..." menu -> NEW TRACK FROM THIS
+  // TAKE -> keypad DONE -> MOVE must add a track, land the bank on the page
+  // that shows it and leave the take ACTIVE on the new strip.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("clips.recorder.newtrack"), openRecorderRows,
+      QStringLiteral("recorder.take.menu"), {}, {}, false, false, false, {},
+      {QStringLiteral("recorder.take.menu.0"),
+       QStringLiteral("config.takeaction.6"), QStringLiteral("keypad.done"),
+       QStringLiteral("config.trackfromtake.0")},
+      [this] {
+        return controller_->mixer()->stripCount() == 7 &&
+               controller_->mixer()->trackIndex() == 6 &&
+               controller_->mixer()->bank() == 2 &&
+               !controller_->recorder()->activeTakePath(6).isEmpty();
+      },
+      QStringLiteral("NEW TRACK FROM TAKE created no track, stayed on page 1 "
+                     "or lost the take")});
+  // Owner bug A (physical path): a discovered plugin row selected in the FX
+  // slot list must leave the slot with a live instance ("active" note), not a
+  // selected-but-dead entry. Only added when the build really has a plugin;
+  // a zero-CLAP device keeps the honest DELAY/REVERB-only list.
+  if (controller_->mixer()->fxChoiceLabels().size() >
+      MixerViewModel::kFxChoiceBuiltinCount) {
+    const auto openTrackFx = [this] {
+      closeOverlays();
+      controller_->showShiftFace(false);
+      controller_->setTab(0);
+      primeMixerTracks();
+      controller_->mixer()->setTrackIndex(0);
+      controller_->openChannel(0);
+      controller_->openTrackFx(0);
+    };
+    scenarios_.push_back(Scenario{
+        QStringLiteral("mixer.trackfx.plugin"), openTrackFx,
+        QStringLiteral("trackfx."), {}, {}, false, false, false, {},
+        {QStringLiteral("trackfx.fx1.select"),
+         QStringLiteral("config.fxslot.3"), QStringLiteral("config.ok")},
+        [this] {
+          return controller_->mixer()->fxNameAt(0, 0) != QStringLiteral("NONE") &&
+                 controller_->mixer()->fxSlotNote(0, 0).contains(
+                     QStringLiteral("active"));
+        },
+        QStringLiteral("selecting a discovered plugin left a dead FX slot")});
+  }
   scenarios_.push_back(Scenario{
       QStringLiteral("clips.recorder.wave"), openRecorderRows,
       QStringLiteral("recorder.take.wave.0"), {},
@@ -919,6 +963,146 @@ void UiTapRunner::buildScenarios() {
         controller_->timeline()->applyEditOp();
       },
       QStringLiteral("edit.apply"), {}, {QStringLiteral("edit.apply")}, false, true});
+  // The APPLY chain, end to end through the QML button: a fresh take has no
+  // committed regions, so the tap has to create them, put GAIN on the undo
+  // stack and name the result. This is the owner's "when I apply nothing
+  // happens" path, not a direct view-model call.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.apply.state"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        // The tap fixture is a short take; select the middle 50% of it so the
+        // selection is inside the take, exactly as a finger drag would be.
+        const double length = controller_->timeline()->takeBeats();
+        controller_->timeline()->beginSelection(
+            controller_->timeline()->selectedTrack(), length * 0.25);
+        controller_->timeline()->updateSelection(length * 0.75);
+        controller_->timeline()->endSelection();
+        controller_->timeline()->selectEditOp(2);  // GAIN
+        controller_->timeline()->setEditGainDb(-6.0);
+      },
+      QStringLiteral("edit.apply"), {}, {QStringLiteral("edit.apply")}, true, true,
+      false, {}, {},
+      [this] {
+        auto* timeline = controller_->timeline();
+        QQuickItem* apply = findFocusTarget(QStringLiteral("edit.apply"));
+        QQuickItem* undo = findFocusTarget(QStringLiteral("edit.undo"));
+        return timeline->regionCount() == 3 && timeline->canUndo() &&
+               timeline->lastOpText().startsWith(QStringLiteral("GAIN")) &&
+               apply != nullptr &&
+               apply->property("text").toString() == QStringLiteral("APPLY GAIN") &&
+               // The UNDO button is live after an APPLY: enabled (`active`) and
+               // labelled with the real stack depth, not dimmed.
+               undo != nullptr && undo->property("active").toBool() &&
+               undo->property("text").toString() == timeline->undoText();
+      },
+      QStringLiteral("APPLY GAIN did not change the region list/undo state")});
+  // The fullscreen surface must keep the same verbs on screen: the layout is
+  // bottom-anchored so APPLY/UNDO/CLOSE can never fall below the window while
+  // the op selector stays visible.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.fullscreen.apply"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        controller_->setFullscreen(true);
+        const double length = controller_->timeline()->takeBeats();
+        controller_->timeline()->beginSelection(
+            controller_->timeline()->selectedTrack(), length * 0.25);
+        controller_->timeline()->updateSelection(length * 0.75);
+        controller_->timeline()->endSelection();
+        controller_->timeline()->selectEditOp(2);  // GAIN
+        controller_->timeline()->setEditGainDb(-6.0);
+      },
+      QStringLiteral("edit.apply"), {}, {QStringLiteral("edit.apply")}, true, true,
+      false, {}, {},
+      [this] {
+        auto* timeline = controller_->timeline();
+        QQuickItem* apply = findFocusTarget(QStringLiteral("edit.apply"));
+        QQuickItem* undo = findFocusTarget(QStringLiteral("edit.undo"));
+        QQuickItem* close = findFocusTarget(QStringLiteral("edit.close"));
+        const auto bottomOnScreen = [this](QQuickItem* item) {
+          if (item == nullptr) return false;
+          const QPointF bottom = item->mapToScene(
+              QPointF(item->width() / 2.0, item->height()));
+          return item->height() >= 64.0 && bottom.y() <= window_->height();
+        };
+        return timeline->regionCount() == 3 && timeline->canUndo() &&
+               timeline->lastOpText().startsWith(QStringLiteral("GAIN")) &&
+               bottomOnScreen(apply) && bottomOnScreen(undo) && bottomOnScreen(close);
+      },
+      QStringLiteral("the fullscreen verb row is missing, too short or off screen")});
+  // And the fullscreen surface has an exit: CLOSE must reach closeTakeEdit().
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.fullscreen.close"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        controller_->setFullscreen(true);
+      },
+      QStringLiteral("edit.close"), {}, {QStringLiteral("edit.close")}, true, true,
+      false, {}, {},
+      [this] { return !controller_->timeline()->editOpen(); },
+      QStringLiteral("fullscreen CLOSE did not close the editor")});
+  // TRIM through the QML button: the header meta Text has to receive the
+  // edited duration (the editChanged emit), not only the model's own getter.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.apply.trim"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        const double length = controller_->timeline()->takeBeats();
+        controller_->timeline()->beginSelection(
+            controller_->timeline()->selectedTrack(), length * 0.25);
+        controller_->timeline()->updateSelection(length * 0.75);
+        controller_->timeline()->endSelection();
+        controller_->timeline()->selectEditOp(0);  // TRIM
+      },
+      QStringLiteral("edit.apply"), {}, {QStringLiteral("edit.apply")}, true, true,
+      false, {}, {},
+      [this] {
+        auto* timeline = controller_->timeline();
+        QQuickItem* meta = findObjectByName(window_->contentItem(),
+                                            QStringLiteral("edit.meta"));
+        QQuickItem* apply = findFocusTarget(QStringLiteral("edit.apply"));
+        return timeline->regionCount() == 1 &&
+               timeline->editedBeats() < timeline->takeBeats() &&
+               timeline->editMetaText().contains(QStringLiteral("edited")) &&
+               meta != nullptr &&
+               meta->property("text").toString().contains(QStringLiteral("edited")) &&
+               apply != nullptr &&
+               apply->property("text").toString() == QStringLiteral("APPLY TRIM");
+      },
+      QStringLiteral("APPLY TRIM did not update the header's edited duration")});
+  // UNDO through the QML button: APPLY GAIN then tap UNDO, and the popup has to
+  // be back on the exact pre-apply take state (no regions, empty stack, header
+  // meta without an edited duration) with the UNDO button dimmed again. This is
+  // the owner's "undo for waveform editing" path, driven by real taps.
   scenarios_.push_back(Scenario{
       QStringLiteral("edit.undo"),
       [this] {
@@ -930,14 +1114,57 @@ void UiTapRunner::buildScenarios() {
         controller_->setTab(2);
         controller_->recorder()->selectRow(0);
         controller_->requestEditTake(0);
+        // Drain any stack an earlier pass left behind, so "apply then undo"
+        // starts and ends on the unedited take (deterministic assertion).
+        for (int guard = 0; guard < 64 && controller_->timeline()->undo(); ++guard) {
+        }
+        const double length = controller_->timeline()->takeBeats();
         controller_->timeline()->beginSelection(
-            controller_->timeline()->selectedTrack(), 1.0);
-        controller_->timeline()->updateSelection(5.0);
+            controller_->timeline()->selectedTrack(), length * 0.25);
+        controller_->timeline()->updateSelection(length * 0.75);
         controller_->timeline()->endSelection();
-        controller_->timeline()->selectEditOp(5);
-        controller_->timeline()->applyEditOp();
+        controller_->timeline()->selectEditOp(2);  // GAIN
+        controller_->timeline()->setEditGainDb(-6.0);
       },
-      QStringLiteral("edit.undo"), {}, {QStringLiteral("edit.undo")}, false, true});
+      QStringLiteral("edit."), {}, {}, false, true, false, {}, 
+      {QStringLiteral("edit.apply"), QStringLiteral("edit.undo")},
+      [this] {
+        auto* timeline = controller_->timeline();
+        QQuickItem* undo = findFocusTarget(QStringLiteral("edit.undo"));
+        return timeline->regionCount() == 0 && !timeline->canUndo() &&
+               timeline->lastOpText().startsWith(QStringLiteral("UNDO")) &&
+               !timeline->editMetaText().contains(QStringLiteral("edited")) &&
+               undo != nullptr && !undo->property("active").toBool() &&
+               undo->property("text").toString() == timeline->undoText();
+      },
+      QStringLiteral("APPLY then UNDO did not restore the pre-edit take state")});
+  // Bottom of the stack through the same button: no state change, no QML
+  // warning, and the empty-stack label stays on screen.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.undo.empty"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        for (int guard = 0; guard < 64 && controller_->timeline()->undo(); ++guard) {
+        }
+      },
+      QStringLiteral("edit.undo"), {}, {QStringLiteral("edit.undo")}, false, true,
+      false, {}, {},
+      [this] {
+        auto* timeline = controller_->timeline();
+        QQuickItem* undo = findFocusTarget(QStringLiteral("edit.undo"));
+        return timeline->regionCount() == 0 && !timeline->canUndo() &&
+               undo != nullptr && !undo->property("active").toBool() &&
+               undo->property("text").toString() ==
+                   QStringLiteral("UNDO - empty");
+      },
+      QStringLiteral("UNDO at the bottom of the stack changed the take")});
   scenarios_.push_back(Scenario{
       QStringLiteral("edit.render"),
       [this] {
