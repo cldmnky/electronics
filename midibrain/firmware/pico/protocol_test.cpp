@@ -887,6 +887,38 @@ void run_clock_follow_tests() {
   assert(wrap.onTick(0xFFFFF000u + 20'833u));
   assert(std::fabs(wrap.intervalUs() - 20'833.0) < 0.001);
 
+  // PLL: the two-argument tick measures phase against the pending local
+  // deadline and pulls an 8 ms offset out through bounded 200 us nudges (the
+  // review's free-running-EMA failure mode). The nudge is consumed once per
+  // tick and never exceeds the slew limit; a zero error stops nudging.
+  ClockFollow pll;
+  assert(pll.apply(CLOCK_SOURCE_TRS1, 0));
+  std::uint32_t pll_stamp = 1'000'000;
+  std::uint32_t pll_pending = pll_stamp + 20'833 + 8'000;  // 8 ms behind
+  std::uint32_t pll_period = 20'833;
+  assert(!pll.onTick(pll_stamp, pll_pending));  // arm
+  assert(pll.takePhaseNudgeUs() == 0);
+  bool saw_max_slew = false;
+  for (int i = 0; i < 120; ++i) {
+    pll_stamp += 20'833;
+    pll_pending += pll_period;
+    pll.onTick(pll_stamp, pll_pending);
+    const std::int32_t nudge = pll.takePhaseNudgeUs();
+    assert(nudge >= -kClockFollowMaxSlewUs && nudge <= kClockFollowMaxSlewUs);
+    if (nudge == -kClockFollowMaxSlewUs) saw_max_slew = true;
+    assert(pll.takePhaseNudgeUs() == 0);  // consumed exactly once
+    pll_pending += nudge;
+    pll_period = pll.intervalUsRounded();
+  }
+  assert(saw_max_slew);
+  const std::int32_t residual =
+      static_cast<std::int32_t>(pll_stamp + pll_period - pll_pending);
+  assert(std::fabs(static_cast<double>(residual)) < 500.0);
+
+  // The integral trim is bounded to 0.1 % of the period, so the PLL can never
+  // itself move tempo beyond the announced accuracy target.
+  assert(pll.intervalUsRounded() >= 20'810 && pll.intervalUsRounded() <= 20'856);
+
   // A source change restarts acquisition (stamps from different inputs are
   // never mixed); changing only the mask keeps the estimate.
   assert(f.apply(CLOCK_SOURCE_TRS2, CLOCK_FOLLOW_TRS1));
@@ -972,6 +1004,19 @@ void run_clock_scheduler_tests() {
   f.setPeriodNs(50'000'000);  // 50 ms period override (follow path)
   for (std::uint64_t k = 1; k <= 10; ++k) {
     assert(f.advance() == base + k * 50'000'000ull);
+  }
+
+  // External follow rebases the pending deadline (phase), not the grid anchor:
+  // the nudge moves that one grid point and the exact rational period carries
+  // on from the moved point with no dropped tick.
+  ClockScheduler rebase_scheduler;
+  rebase_scheduler.reset(12000, 0);
+  rebase_scheduler.advance();
+  const std::uint64_t rebase_pending = rebase_scheduler.nextDeadlineNs();
+  assert(rebase_scheduler.rebasePendingNs(-400'000) == rebase_pending - 400'000ull);
+  assert(rebase_scheduler.rebasePendingNs(1'000'000) == rebase_pending + 600'000ull);
+  for (std::uint64_t k = 1; k <= 100; ++k) {
+    assert(rebase_scheduler.advance() == exact_ns(2 + k) + 600'000ull);
   }
 
   // A stalled alarm skips whole missed ticks instead of bursting them; the

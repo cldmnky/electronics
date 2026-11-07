@@ -63,6 +63,24 @@ class ClockScheduler {
     period_den_ = 1;
   }
 
+  // Phase rebase for external clock follow: moves the pending deadline (and
+  // therefore the absolute grid anchor) by a bounded delta without changing
+  // the period or its rational fractional carry. main.cpp applies the PLL's
+  // per-tick nudge here, so follow corrects phase on the existing deadline
+  // path instead of re-anchoring the grid to an input edge. The caller bounds
+  // |delta| well below one period; an already-armed alarm is not moved (the
+  // correction shows up on the following tick), which keeps the output slew
+  // continuous. Returns the moved deadline.
+  std::uint64_t rebasePendingNs(std::int64_t delta_ns) {
+    if (delta_ns < 0 && static_cast<std::uint64_t>(-delta_ns) > deadline_ns_) {
+      deadline_ns_ = 0;
+      return deadline_ns_;
+    }
+    deadline_ns_ = static_cast<std::uint64_t>(static_cast<std::int64_t>(deadline_ns_) +
+                                              delta_ns);
+    return deadline_ns_;
+  }
+
   // Absolute deadline of the next tick in nanoseconds.
   std::uint64_t nextDeadlineNs() const { return deadline_ns_; }
 

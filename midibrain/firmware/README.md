@@ -71,7 +71,18 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
 - A tempo change rebases the period at the pending deadline: the already
   scheduled tick is not moved or dropped, and later ticks use the new exact
   rational period from that point. External-clock follow supplies its smoothed
-  period through the same absolute grid.
+  period and phase through the same absolute grid.
+- External follow is a phase-locked loop over that grid. The interval EMA
+  (1/8) stays the frequency estimator; each accepted F8 also measures phase
+  against the pending deadline. The proportional term rebases the pending
+  deadline by 0.25 of the phase error per tick, clamped to 200 us and to one
+  slew step per generated tick (two input edges may fall between output ticks
+  under jitter). The integral term trims the period by 1/128 of the low-passed
+  phase error per tick, clamped to 0.1 %, so it can never be audible. A lost
+  source coasts at the last locked period; on return the phase error is slewed
+  out across ticks, never re-anchored to an input edge (no time-skip). Follow
+  never gates or stops the clock; `tempoDiv`, `syncDelayMs` and the
+  EV_CLOCK_ROUTE policy are unchanged.
 - If the callback runs past the next grid point, `skipToAfter()` steps over
   whole missed ticks (bounded to 4096) instead of emitting a catch-up burst.
   The grid phase is unchanged; skipped ticks are counted in `[stat] miss=`.
@@ -158,6 +169,12 @@ full system (Pico + Pi + DAW + NVMe + SPI traffic).
 | 8 | SPI aborts recovered | 0 watchdog restarts; every abort resyncs on the next frame | Inject 1-in-8 short transfers for 2 h; compare `[stat] spiabort`/`spiok` and confirm clock keeps running | unmeasured (host-verified: abort/garbage/CRC stages in `spi_slave_test`) |
 | 9 | Clock path under SPI faults | 0 dropped F8 during aborts, CRC failures and garbage | 2 h capture both outs while the SPI stream is deliberately broken | unmeasured (host-verified: 300 F8 emitted, 0 drops across 100 incidents) |
 | 10 | App-message loss recovery | 0 lost Note Offs; retries bounded; exactly-once delivery | Delay/kill the Linux drain, then audit hanging notes and `retries`/`acks`/`spiov` counters | unmeasured (host-verified: lost frame, lost ACK, 16-slot overflow) |
+| 11 | External follow lock | Lock within 3 beats from free-run | Emulated source at 120 bpm with an 8 ms initial phase offset; count beats until 24 consecutive ticks are within 1 ms | simulated: 1.34 beats |
+| 12 | Follow steady-state phase | Residual converges to ~0 under clean input | Same run after settling; max \|generated - ideal\| | simulated: 0.002 ms residual |
+| 13 | Follow under input jitter | Tempo <= 0.1 %, phase bounded, per-edge slew <= 200 us | Emulated +/-1 and +/-2 ms uniform arrival jitter, 12 s | simulated: tempo 0.004 %, phase 0.84/1.53 ms, interval step 0.36/0.51 ms (1-3 edges clustered per output tick) |
+| 14 | Follow under wander | Tracks slow drift, phase bounded | Emulated +/-1.5 bpm sinusoid over 8 s | simulated: 0.455 ms max phase after 2 s |
+| 15 | Follow holdover | Frequency stable through a dropout, clock never stops | 550 ms hard dropout; count holdover pulses and interval error | simulated: 26 pulses, 0.0016 % error, no gap |
+| 16 | Follow smooth resync | Resync within a few beats, no time-skip on TRS | 121 bpm source returns after the dropout; time to 2 ms and max interval step | simulated: 0.02 beats, 0.196 ms max step, no gap |
 
 Run the host side with `make host` (or `make test`) from `midibrain/`. The
 host test simulates 500,000 clock ticks at 120 bpm against the exact rational

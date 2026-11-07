@@ -94,6 +94,8 @@ host: midifx
 	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic firmware/pico/protocol_test.cpp -o "$$exe"; "$$exe"; \
 	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic \
 	    pi/emulator/clock_sim.cpp pi/emulator/clock_sim_test.cpp -o "$$exe"; "$$exe"; \
+	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic \
+	    firmware/pico/clock_follow_test.cpp pi/emulator/clock_sim.cpp -o "$$exe"; "$$exe"; \
 	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic -I. \
 	    firmware/pico/spi_slave_test.cpp pi/emulator/clock_sim.cpp -o "$$exe"; "$$exe"; \
 	  $${CXX:-c++} -std=c++20 -Wall -Wextra -Werror -pedantic -I. \

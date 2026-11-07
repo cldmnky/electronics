@@ -411,8 +411,13 @@ int64_t clock_tick(alarm_id_t, void*) {
 // coasting), otherwise from the internal tempo. `announce` queues EV_TEMPO
 // when the followed tempo moves past the deadband; the main loop owns this
 // state, and clock_tick only advances the grid.
-void clock_period_set_ns(uint64_t period_ns) {
+// Follow retune: the PLL supplies both the period and a bounded phase nudge
+// for the pending deadline. Both must land atomically, because the clock alarm
+// advances the same scheduler from IRQ context. The nudge is a rebase of the
+// pending grid point (P0's rebase path), never a reset to the input edge.
+void clock_period_set_follow(uint64_t period_ns, int32_t nudge_us) {
   const uint32_t saved = save_and_disable_interrupts();
+  if (nudge_us != 0) clock_scheduler.rebasePendingNs(static_cast<int64_t>(nudge_us) * 1000);
   clock_scheduler.setPeriodNs(period_ns);
   restore_interrupts(saved);
 }
@@ -424,13 +429,17 @@ void clock_period_set_tempo(int32_t bpm) {
 }
 
 void clock_interval_refresh(bool announce) {
+  const int32_t nudge_us = clock_follow.takePhaseNudgeUs();
   if (!clock_follow.hasEstimate()) {
     clock_period_set_tempo(bpm_x100);
     return;
   }
-  // Follow supplies a measured integer-microsecond estimate; it enters the
-  // same absolute grid, so the generator period never accumulates its rounding.
-  clock_period_set_ns(static_cast<uint64_t>(clock_follow.intervalUsRounded()) * 1000ull);
+  // Follow supplies a measured integer-microsecond estimate plus the slow
+  // integral trim; it enters the same absolute grid, so the generator period
+  // never accumulates its rounding. The bounded nudge slews the pending grid
+  // point toward the external phase without a discontinuity.
+  clock_period_set_follow(static_cast<uint64_t>(clock_follow.intervalUsRounded()) * 1000ull,
+                          nudge_us);
   const int32_t followed = clock_follow.bpmX100();
   if (followed >= bpm_x100 + kFollowTempoAnnounceX100 ||
       followed <= bpm_x100 - kFollowTempoAnnounceX100) {
@@ -856,7 +865,11 @@ void drain_midi() {
         // consumed instead of routed so the Pico regenerates rather than
         // mirrors them. Other ports' clock stays ordinary MIDI input.
         if (clock_follow.following() && clock_follow.source() == port + 1) {
-          clock_follow.onTick(m.stamp_us);
+          // Hand the PLL both the input capture stamp and the pending local
+          // deadline; it measures interval and phase against the same grid the
+          // alarm will emit. The 32-bit cast matches the UART stamp domain.
+          clock_follow.onTick(m.stamp_us,
+                              static_cast<uint32_t>(clock_scheduler.nextDeadlineUs()));
           clock_interval_refresh(true);
         } else {
           queue_midi(m);
