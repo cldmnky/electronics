@@ -108,6 +108,19 @@
       "cornerRadius": 1
     }
   },
+  "fpcConnector": {
+    "pins": 15,
+    "face": "rear",
+    "bodyLength": 21.412,
+    "bodyWidth": 4.826,
+    "edgeInset": 2.25,
+    "centerX": 48.337,
+    "centerY": 0.7,
+    "at": {
+      "x": 38.837,
+      "y": 11.7
+    }
+  },
   "lcdCutoutOutline": [
     {
       "x": 44.11,

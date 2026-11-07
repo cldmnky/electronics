@@ -27,21 +27,22 @@ The chain rests on two **explicit assumptions** and the vendor depth figures. It
 
 - Assumption A: the display glass front sits flush with the panel front face (Z = 0). Nothing has measured this.
 - Assumption B: the display standoff is **9.0 mm** (front-board top face to the display PCB **rear** face).
-- Vendor figures, from the 2D drawing **and** the 3D model (both primary): 6.7 mm from the **lens front face to the
-  display PCB rear face**, then 4.0 mm from that PCB rear face to the **mounting-boss ends**, which are the rear-most
-  feature; overall 10.7 mm = 6.7 + 4.0. The earlier note called 6.7 the "rear envelope" and 4.0 the "forward envelope";
-  that assignment was reversed and is withdrawn, and the 4.0 mm is not a connector-only figure.
+- Vendor figures for the 4.3-inch module: **14.05 mm overall** (wiki FAQ, the vendor's stated maximum), split
+  provisionally as 10.05 mm from the **glass front face to the display PCB rear face** plus the **4.0 mm** boss
+  projection behind it. Only the 4.0 mm is a vendor-modelled number; the 10.05 mm is derived (14.05 − 4.0), not
+  measured, and the split is the thing the first article replaces with two direct measurements. The reference STEP's
+  union bbox is 13.82 mm; see the thickness resolution in the display table below.
 
 | Feature | Z (mm) | Basis |
 |---|---:|---|
 | Panel front / rear faces | 0 / 1.60 | 1.6 mm FR-4. |
 | Display glass front | 0.00 | Assumption A, not measured. |
-| Display mounting PCB | 4.00 | Forward envelope 4.0 below assumption A. |
-| Display PCB rear face | 6.70 | Vendor: lens front face to PCB rear. |
-| Display rear-most point (connector) | 10.70 | Vendor overall depth 10.7. |
-| Front-board top face | 15.70 | Display PCB rear face + 9.0 mm standoff (assumption B). |
-| Front-board rear face | 17.30 | 1.6 mm board. |
-| Panel rear → front-board top | 14.10 | Falls out of A and B; a consequence, not evidence. |
+| Display mounting PCB | 8.45 | Glass front + 10.05 − 1.6 mm PCB (provisional split). |
+| Display PCB rear face | 10.05 | Glass front + 10.05 mm (provisional split, not measured). |
+| Display rear-most point (boss ends) | 14.05 | 10.05 + 4.0 mm boss projection; equals the wiki overall depth. |
+| Front-board top face | 19.05 | Display PCB rear face + 9.0 mm standoff (assumption B). |
+| Front-board rear face | 20.65 | 1.6 mm board. |
+| Panel rear → front-board top | 17.45 | Falls out of A and B; a consequence, not evidence. |
 
 **Spacer length is not the plane separation.** The spacer screws onto the boss ends, which already reach 4.0 mm below the
 display PCB rear face, so:
@@ -59,16 +60,17 @@ favour of the two explicit numbers. Both remain provisional.
 **One standoff definition only.** The earlier `3.5 mm` value in `layout.ts` and the `8–10 mm` figure in the older
 text described different quantities at the same time; `3.5 mm` is withdrawn and the separate 3 mm "additional
 clearance spacer" is gone because it double-counted the same gap. 9.0 mm is provisional: it is the middle of the old
-8–10 mm candidate range, and the 6.7 mm from lens front to PCB rear plus the 4.0 mm connector depth fit inside it.
+8–10 mm candidate range, and the 10.05 mm from glass front to PCB rear plus the 4.0 mm boss projection fit inside it.
 
-**Display underside — pending, no clearance claimed.** The display rear-most point (10.70) is 5.00 mm from the
+**Display underside — pending, no clearance claimed.** The display rear-most point (14.05, the boss ends) is 5.00 mm
+from the
 front-board top face. The tallest front-side part with a manufacturer-stated height is the MIDI receiver in the
 Toshiba 11-4L1S body, **maximum installed height 2.1 ± 0.1 mm (drawing p. 15)**, i.e. 2.2 mm, which leaves 2.80 mm over
 that part. That figure does **not** prove the display underside: the display's own underside component map, its 15-pin
 FPC latch and the module tolerance are unmapped. Keep this as a gate.
 
 **Light pipe — reach pending, and now clearly short.** The Bivar PLP2-400-C is 10.16 mm long and the provisional
-panel-to-board gap is 14.10 mm, so 3.94 mm is unaccounted. No LED height or seat allowance is recorded, because neither
+panel-to-board gap is 17.45 mm, so 7.29 mm is unaccounted. No LED height or seat allowance is recorded, because neither
 is measured. Check the Bivar drawing and the actual LED, and expect a different (longer) light pipe to be needed.
 
 ## LCD aperture (panel cutout)
@@ -91,7 +93,8 @@ is measured. Check the Bivar drawing and the actual LED, and expect a different 
 | Printed bezel opening | 95.54 × 54.36 mm | STEP plane = VA + 0.25 mm per side |
 | Mounting pattern (used) | 58.00 × 49.04 mm, insets 25.62 / 22.38 / 9.50 / 9.46, 4× Ø4.30 | vendor drawing; STEP circles r2.15 |
 | Outer hole pattern (alternative) | 99.30 × 61.80 mm, insets 3.35 / 3.10, 4× Ø4.30 | vendor drawing; STEP `SMTSO-M2_5-4ET` SMT bosses sit here |
-| Overall thickness | **14.05 mm (wiki FAQ)** vs **13.82 mm (STEP bbox)** | Both recorded: the wiki number is the vendor's stated maximum, the STEP bbox is the modelled geometry (106.10 × 68.36 × 13.82). The 0.23 mm difference is unallocated; the stack uses the LARGER (14.05) so the panel gap cannot be optimistic. |
+| Overall thickness | **14.05 mm (wiki FAQ)** vs **13.82 mm (STEP bbox)** | RESOLVED as far as the sources allow: the wiki FAQ states the vendor's overall thickness 14.05; the reference STEP's union bbox (CadQuery import, 106.10 × 68.36 × 13.82) is 0.23 mm thinner, and **no modelled solid reaches the 14.05 plane**. The model's only overhangs past the 106 × 68 PCB envelope are in X/Y (front frame 106.10 × 67.80, union y 68.362, i.e. ≤ 0.18 mm past the PCB edge) — nothing in Z explains the difference, so it is the vendor's stated maximum vs. modelled nominal, not glass overhang or feet. The stack uses the LARGER (14.05) so the panel gap cannot be optimistic. |
+| 15-pin DSI FPC connector | body **21.412 × 4.826 mm**, 15-pin, rear face, right-hand long edge (rear view); module-local centre (+48.34, +0.7) → absolute (**38.84, 11.7**) | Body from the STEP (two extruded solids 106739 / 107488); position from the drawing at 7.11 px/mm because the STEP does not resolve that body's assembly placement (bar 21.8 mm long, centre 33.3 mm from the top edge, outer face 2.25 mm inboard of the edge; ±0.4 mm). Recorded as `DISPLAY_FPC_CONNECTOR` / `DISPLAY_FPC_CONNECTOR_AT` in `tscircuit/lib/layout.ts`. It does not move the PCB — the cable leaves at the module edge, 1.5 mm inside the 128 mm board — but the plug and the first bend sit over the J5 IDC corridor (X ≈ 29–39, Y −10…+30), so that is a first-article cable-bend check. |
 | Panel-to-front-board gap | **17.45 mm provisional** | Assumption A (glass front flush with the panel front face, z = 0) + Assumption B (9.0 mm plane separation to the PCB rear) + 10.05 mm glass-front-to-PCB rear + 1.60 mm panel − 1.60 mm panel … see `PROVISIONAL_Z` in `tscircuit/lib/layout.ts`. Was 14.10 mm for the withdrawn 3.5-inch module. |
 | Light-pipe reach | 10.16 mm pipe vs 17.45 mm gap | **7.29 mm unaccounted, PENDING**: a longer pipe (or a different optical path) is required; no LED height or seating allowance is claimed. |
 

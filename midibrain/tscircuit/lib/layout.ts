@@ -295,6 +295,50 @@ export const PANEL_LCD_CUTOUT = {
   cornerRadius: LCD_CUTOUT_ALLOWANCE.cornerRadius,
 } as const
 
+// 15-pin DSI FPC connector keep-out, on the module's REAR face (opposite the
+// glass), at the rear-view drawing's right-hand long edge. This is the plug the
+// DSI cable leaves from, so it is the one part of the module that is not simply
+// a flat envelope the panel has to clear.
+//
+// Body: 21.412 x 4.826 mm. The STEP carries it as two extruded bodies (solids
+// 106739 / 107488, 1.0 and 0.8 mm tall) and, unlike the PCB and glass, does not
+// resolve their assembly placement for the text-only reader in
+// mechanical/tools/measure_display_step.py - it reports every solid in its own
+// frame, so the POSITION comes from the drawing at its 7.11 px/mm scale:
+//   bar 244..398 px along the edge = 21.8 mm (STEP 21.412, agrees to 0.4 mm)
+//   long-axis centre 33.3 mm from the top edge -> +0.7 mm from module centre
+//   body 808..840 px = 4.5 mm deep (STEP 4.826), outer face 2.25 mm inboard
+// Reading error on those three is about +-0.4 mm.
+//
+// Insets use the same no-mirror convention as DISPLAY_STANDOFFS (drawing
+// insets are applied to the layout frame as drawn), so "right-hand edge" here
+// is the drawing's, not the front view's left. The module edge is +53.0.
+//
+// It does not move the PCB this rev: the connector faces the front board's rear
+// side and sits 20.5 mm inside the 128 mm board edge (module right edge +43.5
+// against board edge +64.0), so the cable leaves over the front board rather
+// than beside it. At absolute (38.84, 11.7) it sits over the J5 IDC corridor,
+// so the DSI plug, its latch and the first bend are a first-article check
+// against the J5 header height (docs/mechanical-stack.md). No board change is
+// made on that basis now.
+export const DISPLAY_FPC_CONNECTOR = {
+  pins: 15,
+  face: "rear" as const,
+  bodyLength: 21.412, // STEP extruded bodies; drawing bar 21.8
+  bodyWidth: 4.826,   // STEP; drawing 4.5
+  edgeInset: 2.25,    // outer body face, inboard of the module's right edge
+  // module-local centre; +x is the drawing's right-hand edge side
+  centerX: mm3(DISPLAY_VENDOR.outline.width - 2.25 - 4.826 / 2 - DISPLAY_VENDOR.outline.width / 2), // +48.337
+  centerY: 0.7,       // 33.3 mm from the top edge (drawing)
+} as const
+
+// The same point in absolute panel/front-board coordinates: the module centre is
+// at DISPLAY_CONCEPT, so this is where the DSI cable leaves the module.
+export const DISPLAY_FPC_CONNECTOR_AT = {
+  x: mm3(DISPLAY_CONCEPT.x + DISPLAY_FPC_CONNECTOR.centerX), // 38.837
+  y: mm3(DISPLAY_CONCEPT.y + DISPLAY_FPC_CONNECTOR.centerY), // 11.7
+} as const
+
 // Rounded-rectangle outline in absolute panel coordinates, counter-clockwise.
 // tscircuit has no rounded-rect cutout, so the panel emits this polygon. The
 // straight chords lie INSIDE the true corner arc, i.e. toward the module, so
@@ -564,6 +608,7 @@ export const mechanicalExport = () => ({
   depthTarget: DEPTH_TARGET,
   provisionalDepth: PROVISIONAL_DEPTH,
   lcdCutout: { ...PANEL_LCD_CUTOUT, allowances: LCD_CUTOUT_ALLOWANCE },
+  fpcConnector: { ...DISPLAY_FPC_CONNECTOR, at: DISPLAY_FPC_CONNECTOR_AT },
   // The actual aperture polygon, so Python can re-measure the corner clearance
   // from the same geometry the panel emits.
   lcdCutoutOutline: roundedRectOutline(PANEL_LCD_CUTOUT),
