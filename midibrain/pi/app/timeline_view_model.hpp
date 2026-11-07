@@ -103,6 +103,11 @@ class TimelineViewModel final : public QObject {
   Q_PROPERTY(double previewRegionFadeOutBeats READ previewRegionFadeOutBeats NOTIFY previewChanged)
 
  public:
+  // Bounded per-track undo depth. Every op that changes the region list pushes
+  // the previous list, so the last kUndoDepth edits of a take stay reversible
+  // for the whole session (closing/reopening the popup or switching tracks does
+  // not drop the stack; a project load does, by design).
+  static constexpr std::size_t kUndoDepth = 32;
   TimelineViewModel(AppState& state, AudioGlue& audio, RecorderViewModel& recorder,
                     LinkClient& link, SessionSettings& settings,
                     QObject* parent = nullptr);
@@ -110,6 +115,10 @@ class TimelineViewModel final : public QObject {
   bool editOpen() const { return editOpen_; }
   QString editTitle() const;
   QString editMetaText() const;
+  // Sounding length of the committed region list in beats (the sum of the
+  // regions, so a DELETE in the middle removes its span; 0 with no edit).
+  // TRIM/DELETE move it, so the popup states the duration change.
+  double editedBeats() const;
   QString editTrackText() const;
   QVariantList editWave() const { return editWave_; }
   int editWaveColumns() const { return editWaveColumns_; }
@@ -250,6 +259,17 @@ class TimelineViewModel final : public QObject {
   struct UndoEntry {
     std::vector<session::TakeRegion> regions;
   };
+  // The applied region list resolved into what the popup waveform draws: the
+  // committed gain, fades and normalize scale per region span. EDIT shows the
+  // take AFTER the ops that are committed, so APPLY changes the picture instead
+  // of only the engine's copy of the region list.
+  struct RegionShape {
+    double start = 0.0;
+    double end = 0.0;
+    double gain = 1.0;
+    double fadeIn = 0.0;
+    double fadeOut = 0.0;
+  };
 
   std::vector<session::TakeRegion>& editList(int track);
   const std::vector<session::TakeRegion>& editList(int track) const;
@@ -269,6 +289,8 @@ class TimelineViewModel final : public QObject {
   void setStatus(const QString& text);
   void pushUndo(int track);
   void emitUndo();
+  std::vector<RegionShape> appliedShapes(int track) const;
+  static double shapeGainAt(const std::vector<RegionShape>& shapes, double beat);
 
   AppState& state_;
   AudioGlue& audio_;

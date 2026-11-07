@@ -919,6 +919,137 @@ void UiTapRunner::buildScenarios() {
         controller_->timeline()->applyEditOp();
       },
       QStringLiteral("edit.apply"), {}, {QStringLiteral("edit.apply")}, false, true});
+  // The APPLY chain, end to end through the QML button: a fresh take has no
+  // committed regions, so the tap has to create them, put GAIN on the undo
+  // stack and name the result. This is the owner's "when I apply nothing
+  // happens" path, not a direct view-model call.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.apply.state"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        // The tap fixture is a short take; select the middle 50% of it so the
+        // selection is inside the take, exactly as a finger drag would be.
+        const double length = controller_->timeline()->takeBeats();
+        controller_->timeline()->beginSelection(
+            controller_->timeline()->selectedTrack(), length * 0.25);
+        controller_->timeline()->updateSelection(length * 0.75);
+        controller_->timeline()->endSelection();
+        controller_->timeline()->selectEditOp(2);  // GAIN
+        controller_->timeline()->setEditGainDb(-6.0);
+      },
+      QStringLiteral("edit.apply"), {}, {QStringLiteral("edit.apply")}, true, true,
+      false, {}, {},
+      [this] {
+        auto* timeline = controller_->timeline();
+        QQuickItem* apply = findFocusTarget(QStringLiteral("edit.apply"));
+        return timeline->regionCount() == 3 && timeline->canUndo() &&
+               timeline->lastOpText().startsWith(QStringLiteral("GAIN")) &&
+               apply != nullptr &&
+               apply->property("text").toString() == QStringLiteral("APPLY GAIN");
+      },
+      QStringLiteral("APPLY GAIN did not change the region list/undo state")});
+  // The fullscreen surface must keep the same verbs on screen: the layout is
+  // bottom-anchored so APPLY/UNDO/CLOSE can never fall below the window while
+  // the op selector stays visible.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.fullscreen.apply"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        controller_->setFullscreen(true);
+        const double length = controller_->timeline()->takeBeats();
+        controller_->timeline()->beginSelection(
+            controller_->timeline()->selectedTrack(), length * 0.25);
+        controller_->timeline()->updateSelection(length * 0.75);
+        controller_->timeline()->endSelection();
+        controller_->timeline()->selectEditOp(2);  // GAIN
+        controller_->timeline()->setEditGainDb(-6.0);
+      },
+      QStringLiteral("edit.apply"), {}, {QStringLiteral("edit.apply")}, true, true,
+      false, {}, {},
+      [this] {
+        auto* timeline = controller_->timeline();
+        QQuickItem* apply = findFocusTarget(QStringLiteral("edit.apply"));
+        QQuickItem* undo = findFocusTarget(QStringLiteral("edit.undo"));
+        QQuickItem* close = findFocusTarget(QStringLiteral("edit.close"));
+        const auto bottomOnScreen = [this](QQuickItem* item) {
+          if (item == nullptr) return false;
+          const QPointF bottom = item->mapToScene(
+              QPointF(item->width() / 2.0, item->height()));
+          return item->height() >= 64.0 && bottom.y() <= window_->height();
+        };
+        return timeline->regionCount() == 3 && timeline->canUndo() &&
+               timeline->lastOpText().startsWith(QStringLiteral("GAIN")) &&
+               bottomOnScreen(apply) && bottomOnScreen(undo) && bottomOnScreen(close);
+      },
+      QStringLiteral("the fullscreen verb row is missing, too short or off screen")});
+  // And the fullscreen surface has an exit: CLOSE must reach closeTakeEdit().
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.fullscreen.close"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        controller_->setFullscreen(true);
+      },
+      QStringLiteral("edit.close"), {}, {QStringLiteral("edit.close")}, true, true,
+      false, {}, {},
+      [this] { return !controller_->timeline()->editOpen(); },
+      QStringLiteral("fullscreen CLOSE did not close the editor")});
+  // TRIM through the QML button: the header meta Text has to receive the
+  // edited duration (the editChanged emit), not only the model's own getter.
+  scenarios_.push_back(Scenario{
+      QStringLiteral("edit.apply.trim"),
+      [this] {
+        closeOverlays();
+        controller_->showShiftFace(false);
+        controller_->setTab(0);
+        primeMixerTracks();
+        activateRealTakes();
+        controller_->setTab(2);
+        controller_->recorder()->selectRow(0);
+        controller_->requestEditTake(0);
+        const double length = controller_->timeline()->takeBeats();
+        controller_->timeline()->beginSelection(
+            controller_->timeline()->selectedTrack(), length * 0.25);
+        controller_->timeline()->updateSelection(length * 0.75);
+        controller_->timeline()->endSelection();
+        controller_->timeline()->selectEditOp(0);  // TRIM
+      },
+      QStringLiteral("edit.apply"), {}, {QStringLiteral("edit.apply")}, true, true,
+      false, {}, {},
+      [this] {
+        auto* timeline = controller_->timeline();
+        QQuickItem* meta = findObjectByName(window_->contentItem(),
+                                            QStringLiteral("edit.meta"));
+        QQuickItem* apply = findFocusTarget(QStringLiteral("edit.apply"));
+        return timeline->regionCount() == 1 &&
+               timeline->editedBeats() < timeline->takeBeats() &&
+               timeline->editMetaText().contains(QStringLiteral("edited")) &&
+               meta != nullptr &&
+               meta->property("text").toString().contains(QStringLiteral("edited")) &&
+               apply != nullptr &&
+               apply->property("text").toString() == QStringLiteral("APPLY TRIM");
+      },
+      QStringLiteral("APPLY TRIM did not update the header's edited duration")});
   scenarios_.push_back(Scenario{
       QStringLiteral("edit.undo"),
       [this] {

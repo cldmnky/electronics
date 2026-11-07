@@ -1200,3 +1200,33 @@ per pixel. Focus ids cover sections, toolbar verbs, clips, clip actions and the
 LEN stepper; NAV moves clips spatially and EDIT turns the knob into POS/LEN.
 The transport strip gains a persisted `SONG` chip; the tab row is now nine tabs
 (Mixer..ARRANGE).
+
+## EDIT popup: apply chain, fullscreen verbs, pinch (fix/editor-pinch-apply-undo)
+
+**APPLY now reaches and changes the take state.** `TimelineViewModel::applyOp`
+cuts the region list at both IN/OUT edges before GAIN/FADES/NORMALIZE/DELETE, so
+those ops change only the selected span instead of every whole region the range
+touched (a GAIN on four beats used to rewrite the whole take, and DELETE on a
+fresh take was refused or emptied the list, which the engine reads as CLEAR and
+plays back unedited). DELETE on an unedited take starts from the implicit
+whole-take region; a delete that would empty the list is refused with the reason
+instead of silently restoring the unedited take. `applyOp`/`undo()` emit
+`editChanged`, so the header's edited length (`editedBeats`, now the sum of the
+remaining regions) updates with the waveform. `logic_tests.cpp` asserts the
+GAIN peak change, the TRIM duration/waveform and the DELETE region/duration
+change against a real tone take; `--ui-taps` presses APPLY through QML and
+asserts the region list and undo stack changed.
+
+**Fullscreen verb row.** The EditPopup is the fullscreen editor surface; its
+rows are placed from the bottom edge now (action row, selector, parameter row,
+then the waveform fills the rest). The old 200 px waveform floor could push
+APPLY/UNDO/CLOSE below a scaled/fullscreen window while the op selector stayed
+visible. The verbs stay 64 px and on screen at every window height; the tap gate
+has a fullscreen APPLY pass (verb row >= 64 px and bottom on screen) and a
+fullscreen CLOSE pass (the popup closes).
+
+**Pinch is a gesture source only.** EditPopup's PinchHandler keeps `target:
+null` (the ArrangeScreen pattern, so Qt never scales/rotates the popup) and
+pins the rotation axis at zero. Only `onScaleChanged` calls `zoomBy`; a 2%
+threshold keeps finger jitter still and the inverse factor makes fingers-apart
+zoom in. Single-finger IN/OUT drags are untouched (a pinch needs two points).
