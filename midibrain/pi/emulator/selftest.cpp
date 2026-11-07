@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "clock_sim.hpp"
 #include "scenario.hpp"
 
 namespace {
@@ -73,7 +74,15 @@ int main(int argc, char** argv) {
   mnky::emulator::ScenarioOptions options;
   options.workDir = workDir;
   options.pluginPath = pluginPath;
-  const mnky::emulator::ScenarioReport report = mnky::emulator::runScenario(options);
+  mnky::emulator::ScenarioReport report = mnky::emulator::runScenario(options);
+  const mnky::emulator::clocksim::ClockSimResult clock =
+      mnky::emulator::clocksim::runClockSimulation();
+  for (const auto& stage : clock.stages) {
+    report.stages.push_back(mnky::emulator::StageResult{
+        stage.name, stage.pass ? mnky::emulator::StageStatus::Pass
+                               : mnky::emulator::StageStatus::Fail,
+        stage.detail});
+  }
 
   int passed = 0;
   int failed = 0;
@@ -97,6 +106,7 @@ int main(int argc, char** argv) {
     }
   }
 
+  std::printf("\n%s", clock.acceptanceTable.c_str());
   std::printf("%zu stages: %d passed, %d failed, %d skipped\n", report.stages.size(), passed,
               failed, skipped);
   std::printf("RESULT: %s\n", report.passed() ? "PASS" : "FAIL");

@@ -23,7 +23,7 @@ endif()
 
 find_package(Threads REQUIRED)
 
-add_executable(mnky_selftest selftest.cpp scenario.cpp synth.cpp)
+add_executable(mnky_selftest selftest.cpp scenario.cpp synth.cpp clock_sim.cpp)
 target_include_directories(mnky_selftest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(mnky_selftest PRIVATE cxx_std_20)
 target_compile_options(mnky_selftest PRIVATE ${MNKY_WARNINGS})
@@ -77,3 +77,12 @@ if(MNKY_SELFTEST_CLAP_PLUGIN)
 else()
   add_test(NAME emulator_selftest COMMAND mnky_selftest)
 endif()
+
+# MIDI-clock emulation harness: pure host code, no display/JUCE/CLAP, virtual
+# time. Prints the review's acceptance matrix; phase 2 swaps the firmware
+# adapters in behind the seam in clock_sim.hpp.
+add_executable(mnky_clock_sim_test clock_sim_test.cpp clock_sim.cpp)
+target_include_directories(mnky_clock_sim_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(mnky_clock_sim_test PRIVATE cxx_std_20)
+target_compile_options(mnky_clock_sim_test PRIVATE ${MNKY_WARNINGS})
+add_test(NAME mnky_clock_sim_test COMMAND mnky_clock_sim_test)
