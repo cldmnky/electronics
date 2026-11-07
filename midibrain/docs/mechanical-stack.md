@@ -12,8 +12,8 @@ X direction.
 
 | Item | Value | Note |
 |---|---|---|
-| Front panel | 26HP × 3U, 132.08 × 128.5 × 1.6 | Rail holes X ±58.54, Y ±61.25 (3.0 mm edge inset, Doepfer 3U rule). |
-| Front/UI PCB | 128 × 112 × 1.6 | Four display standoff holes on the boss pattern from the 3D model: x −18.12/+39.88, y ±24.50 (58 × 49 mm). |
+| Front panel | **32HP × 3U, 162.56 × 128.5 × 1.6** (owner decision 2026-11-07) | Rail holes X ±73.78, Y ±61.25 (7.5 / 3.0 mm edge insets, Doepfer 3U rule). Display window 107.22 × 68.87 mm centred on the module. |
+| Front/UI PCB | **128 × 112 × 1.6 (unchanged)** | Four display standoff holes on the drawing's mounting pattern: 25.62 / 22.38 and 9.50 / 9.46 edge insets → 58.00 × 49.04 mm, i.e. layout x −27.38 / +30.62, y +24.50 / −24.54 from the module centre (−9.5, 11). |
 | Rear/base PCB | 101.6 × 112 × 1.6 (20HP) | Pi hole grid 58 × 49 mm (portrait), Pico on the left. |
 | Installed depth target | ≤110 mm | Target retained. Not verified; see the depth section. |
 
@@ -77,8 +77,47 @@ is measured. Check the Bivar drawing and the actual LED, and expect a different 
 |---|---:|---|
 | Size | 90.67 × 54.36 | **LENS OD** 88.87 × 52.56 plus 0.9 mm per side. The 86.5 × 56.0 PCB never passes the panel, so the PCB height must not size the aperture. |
 | Corner relief | 1.0 mm radius | A routed inside corner cannot be sharp; emitted as an explicit rounded polygon. |
-| Clearance per side | 0.90 | 0.2 mm JLCPCB profile tolerance + 0.2 mm vendor LENS OD tolerance (all charged to one side) + 0.5 mm unverified registration/assembly allowance. |
-| Corner clearance | 0.851 measured | Polygon chords lie inside the true arc, so the aperture is slightly smaller than the exact rounded rectangle; measured on the built panel by `scripts/check_placement.ts`, above the 0.5 mm target. |
+| Clearance per side | 0.90 | 0.2 mm JLCPCB profile tolerance + 0.2 mm vendor GLASS tolerance (all charged to one side) + 0.5 mm unverified registration/assembly allowance. |
+| Corner clearance | 0.906 measured | Polygon chords lie inside the true arc, so the aperture is slightly smaller than the exact rounded rectangle; measured on the built panel by `scripts/check_placement.ts` at the four GLASS corners, above the 0.5 mm target. |
+
+### 4.3-inch DSI LCD: measured numbers, both sources
+
+| Feature | Value | Source |
+| --- | --- | --- |
+| Module PCB outline | 106.00 × 68.00 × 1.6 mm | vendor drawing (drawn) / STEP plane pair z 0 → 1.6 |
+| Glass front-face outline | **105.42 × 67.07 mm** | reference STEP, cover-glass front face (16-point loop at z 2.900 / 0.000) |
+| Front frame around the glass | 106.10 × 67.80 mm | reference STEP (faces at z 3.80 / 4.80) |
+| Active area (VA) | **95.04 × 53.856 mm** | 800 × 0.1188 / 480 × 0.1122 mm pixels; STEP VA face 95.04 × 53.86 at z 2.900 |
+| Printed bezel opening | 95.54 × 54.36 mm | STEP plane = VA + 0.25 mm per side |
+| Mounting pattern (used) | 58.00 × 49.04 mm, insets 25.62 / 22.38 / 9.50 / 9.46, 4× Ø4.30 | vendor drawing; STEP circles r2.15 |
+| Outer hole pattern (alternative) | 99.30 × 61.80 mm, insets 3.35 / 3.10, 4× Ø4.30 | vendor drawing; STEP `SMTSO-M2_5-4ET` SMT bosses sit here |
+| Overall thickness | **14.05 mm (wiki FAQ)** vs **13.82 mm (STEP bbox)** | Both recorded: the wiki number is the vendor's stated maximum, the STEP bbox is the modelled geometry (106.10 × 68.36 × 13.82). The 0.23 mm difference is unallocated; the stack uses the LARGER (14.05) so the panel gap cannot be optimistic. |
+| Panel-to-front-board gap | **17.45 mm provisional** | Assumption A (glass front flush with the panel front face, z = 0) + Assumption B (9.0 mm plane separation to the PCB rear) + 10.05 mm glass-front-to-PCB rear + 1.60 mm panel − 1.60 mm panel … see `PROVISIONAL_Z` in `tscircuit/lib/layout.ts`. Was 14.10 mm for the withdrawn 3.5-inch module. |
+| Light-pipe reach | 10.16 mm pipe vs 17.45 mm gap | **7.29 mm unaccounted, PENDING**: a longer pipe (or a different optical path) is required; no LED height or seating allowance is claimed. |
+
+Display window (owner decision D1): the aperture follows the GLASS, not the 106 × 68 PCB envelope, and not the
+95.54 × 54.36 printed border. Window = glass + 0.9 mm per side = 107.22 × 68.87 mm, centred on the module at
+(−9.5, 11). Vertical fit: the glass-derived window is 68.87 mm against a 65.10 mm free band when the LED light pipes
+sit above the buttons, so the authorised fallback (3) was applied — the REC / OVER DUB / PLAY light pipes moved 12 mm
+beside their buttons. The band is then +49.70 (feedthrough cutout floor) to −27.80 (transport-button opening top) =
+77.50 mm, and the window keeps 4.365 mm to the button openings, 1.165 mm to the feedthrough labels (moved from y 44.0
+to 47.5) and 2.865 mm … 7.935 mm of panel web around it. Horizontal: the window left edge −63.11 keeps 9.07 mm to
+the M3 rail-hole edge (72.18) and 18.17 mm to the panel edge (−81.28); the module left edge −62.5 keeps 1.5 mm to
+the 128 mm board edge and the module right edge +43.5 keeps 2.25 mm to the value-knob body (Ø12.5 at x = 52).
+
+Reference CAD path: `mechanical/reference/waveshare-4.3inch-dsi-lcd.step` (STEP SHA-256
+`01eef9172ff4364691f4de37ff98f95437e96caa647b94b4bd4a1c54ac4519ed`, downloaded from the wiki's
+`4.3inch_DSI_LCD_Drawing.zip`, archive SHA-256 `f75cb7ad…`, provenance in
+`mechanical/reference/waveshare-4.3inch-dsi-lcd.source.json`). CadQuery is not installed in the build image, so
+`mechanical/tools/measure_display_step.py` reads the ISO-10303-21 text directly and prints every solid's bounding box
+plus the front-facing planar faces; the glass and bezel numbers above come from that script.
+
+Kit contents and the standoff row: the box carries three DSI cables — **50 mm** and **120 mm** 15-pin→22-pin (the Pi 5
+DSI1 interface) and a 160 mm 15-pin→15-pin cable that does NOT fit DSI1 — plus screws and copper pillars. The module
+itself carries M2.5 SMT standoffs (`SMTSO-M2_5-4ET`, 4 mm class) on the outer 99.30 × 61.80 pattern; whether OUR
+spacers land on the module's threaded bosses or on the inner through-hole pattern is a first-article question, and the
+`DISPLAY_STANDOFFS` / `DISPLAY_BOSS_PATTERN` data pair lets the answer be switched without re-deriving coordinates.
+The 9.0 mm plane separation + 5.0 mm spacer remains provisional against the kit pillars.
 
 Primary sources for the display: the 2D drawing `3.5_inch_DSI_LCD_H-2D-PDF.pdf` and the 3D model
 `3.5_inch_DSI_LCD_H_3D-STP.zip` → `3.5 inch DSI LCD (H)_3d-20251129.stp`. The model was read with CadQuery 2.8.0: lens
@@ -141,7 +180,7 @@ Case data from the Thomann product page: 2 × 140 HP, 6U, M3 slide nuts, +12 V/3
 112 × 723 × 311 mm, **maximum module depth 40 mm (lower row) and 62 mm (upper row)**. The module draws nothing from
 the Eurorack bus.
 
-- Width/height: 26HP (132.08 mm) fits a 140 HP row; 128.5 mm fits 3U; rail holes are at the Doepfer 3U positions
+- Width/height: 32HP (162.56 mm) fits a 140 HP row with 2 × (140 − 32) HP of space left; 128.5 mm fits 3U; rail holes are at the Doepfer 3U positions
   Y ±61.25 after the 2026-11 fix. Round Ø3.2 holes suit the Go's sliding M3 nuts; slotted holes are still recommended.
 - Depth: the provisional stack is **≈59–71 mm behind the panel back** (72.9 − 1.6 = 71.3 mm at the high end, and
   ≈59.3 mm at the low end). That exceeds the 40 mm lower row by 19–31 mm and is at or over the 62 mm upper row

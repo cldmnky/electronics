@@ -2,7 +2,7 @@
   "units": "mm",
   "note": "Generated from tscircuit/lib/layout.ts. Provisional planning data; not a verified clearance.",
   "panel": {
-    "width": 132.08,
+    "width": 162.56,
     "height": 128.5,
     "thickness": 1.6
   },
@@ -17,27 +17,37 @@
     "thickness": 1.6
   },
   "display": {
-    "x": -17,
+    "x": -9.5,
     "y": 11,
-    "width": 88.87,
-    "height": 52.56,
-    "innerWidth": 75.8,
-    "innerHeight": 45.36,
+    "width": 106,
+    "height": 68,
+    "innerWidth": 95.04,
+    "innerHeight": 53.856,
+    "bezelWidth": 95.54,
+    "bezelHeight": 54.36,
+    "glassWidth": 105.42,
+    "glassHeight": 67.07,
     "pcb": {
-      "width": 86.5,
-      "height": 56
+      "width": 106,
+      "height": 68
     },
     "stack": {
-      "lensWidth": 88.87,
-      "lensHeight": 52.56,
-      "pcbWidth": 86.5,
-      "pcbHeight": 56,
-      "overallDepth": 10.7,
-      "lensFrontToPcbRear": 6.7,
+      "outlineWidth": 106,
+      "outlineHeight": 68,
+      "activeWidth": 95.04,
+      "activeHeight": 53.856,
+      "bezelWidth": 95.54,
+      "bezelHeight": 54.36,
+      "pcbWidth": 106,
+      "pcbHeight": 68,
+      "glassWidth": 105.42,
+      "glassHeight": 67.07,
+      "overallDepth": 14.05,
+      "glassFrontToPcbRear": 10.05,
       "bossProjection": 4,
       "planeSeparation": 9,
       "spacerLength": 5,
-      "standoffDiameter": 3,
+      "holeDiameter": 4.3,
       "piWidth": 85,
       "piHeight": 56,
       "piMountPitchLong": 58,
@@ -45,12 +55,11 @@
     }
   },
   "displayDatum": {
-    "source2d": "3.5_inch_DSI_LCD_H-2D-PDF.pdf",
-    "source3d": "3.5_inch_DSI_LCD_H_3D-STP.zip -> 3.5 inch DSI LCD (H)_3d-20251129.stp",
-    "rotationDeg": 180,
-    "rawPcbCentreOffsetX": -0.13,
-    "pcbCentreOffsetX": 0.13,
-    "rawModelMaxX": 44.635,
+    "sourceDrawing": "assets/display-4.3-drawing.png (Waveshare Exterior-Size, Rev2.2)",
+    "sourceDrawingUrl": "https://www.waveshare.com/img/devkit/LCD/4.3DP/Exterior-Size.jpg",
+    "sourceWiki": "https://www.waveshare.com/wiki/4.3inch_DSI_LCD",
+    "source3d": "4.3inch_DSI_LCD_Drawing.zip -> 4_3inch-dsi-lcd-V1.stp",
+    "drawingRev": "Rev2.2",
     "firstArticlePending": true
   },
   "displayStandoff": {
@@ -61,10 +70,10 @@
     "panelFront": 0,
     "panelRear": 1.6,
     "displayGlassFront": 0,
-    "displayPcbRear": 6.7,
-    "displayRearMost": 10.7,
-    "frontBoardTop": 15.7,
-    "frontBoardRear": 17.3
+    "displayPcbRear": 10.05,
+    "displayRearMost": 14.05,
+    "frontBoardTop": 19.05,
+    "frontBoardRear": 20.65
   },
   "displayUndersideGap": 5,
   "frontTopSmdMaxHeight": {
@@ -77,11 +86,11 @@
     "length": 10.16
   },
   "lightPipeReach": {
-    "gap": 14.1,
+    "gap": 17.45,
     "pipeLength": 10.16,
-    "unaccounted": 3.94
+    "unaccounted": 7.29
   },
-  "panelToFrontBoardGap": 14.1,
+  "panelToFrontBoardGap": 17.45,
   "depthTarget": 110,
   "provisionalDepth": {
     "frontToRearGap": 20,
@@ -89,10 +98,10 @@
     "piStackRearward": 30
   },
   "lcdCutout": {
-    "x": -17,
+    "x": -9.5,
     "y": 11,
-    "width": 90.67,
-    "height": 54.36,
+    "width": 107.22,
+    "height": 68.87,
     "cornerRadius": 1,
     "allowances": {
       "perSide": 0.9,
@@ -101,116 +110,116 @@
   },
   "lcdCutoutOutline": [
     {
-      "x": 28.335,
-      "y": 37.18
+      "x": 44.11,
+      "y": 44.435
     },
     {
-      "x": 28.30092582628907,
-      "y": 37.43881904510252
+      "x": 44.075925826289065,
+      "y": 44.69381904510252
     },
     {
-      "x": 28.20102540378444,
-      "y": 37.68
+      "x": 43.97602540378444,
+      "y": 44.935
     },
     {
-      "x": 28.042106781186547,
-      "y": 37.887106781186546
+      "x": 43.817106781186546,
+      "y": 45.14210678118655
     },
     {
-      "x": 27.835,
-      "y": 38.04602540378444
+      "x": 43.61,
+      "y": 45.30102540378444
     },
     {
-      "x": 27.59381904510252,
-      "y": 38.145925826289066
+      "x": 43.36881904510252,
+      "y": 45.40092582628907
     },
     {
-      "x": 27.335,
-      "y": 38.18
+      "x": 43.11,
+      "y": 45.435
     },
     {
-      "x": -61.335,
-      "y": 38.18
+      "x": -62.11,
+      "y": 45.435
     },
     {
-      "x": -61.59381904510252,
-      "y": 38.145925826289066
+      "x": -62.36881904510252,
+      "y": 45.40092582628907
     },
     {
-      "x": -61.835,
-      "y": 38.04602540378444
+      "x": -62.61,
+      "y": 45.30102540378444
     },
     {
-      "x": -62.04210678118655,
-      "y": 37.887106781186546
+      "x": -62.817106781186546,
+      "y": 45.14210678118655
     },
     {
-      "x": -62.20102540378444,
-      "y": 37.68
+      "x": -62.97602540378444,
+      "y": 44.935
     },
     {
-      "x": -62.30092582628907,
-      "y": 37.43881904510252
+      "x": -63.075925826289065,
+      "y": 44.69381904510252
     },
     {
-      "x": -62.335,
-      "y": 37.18
+      "x": -63.11,
+      "y": 44.435
     },
     {
-      "x": -62.335,
-      "y": -15.18
+      "x": -63.11,
+      "y": -22.435000000000002
     },
     {
-      "x": -62.30092582628907,
-      "y": -15.438819045102521
+      "x": -63.075925826289065,
+      "y": -22.693819045102522
     },
     {
-      "x": -62.20102540378444,
-      "y": -15.68
+      "x": -62.97602540378444,
+      "y": -22.935000000000002
     },
     {
-      "x": -62.04210678118655,
-      "y": -15.887106781186548
+      "x": -62.817106781186546,
+      "y": -23.14210678118655
     },
     {
-      "x": -61.835,
-      "y": -16.046025403784437
+      "x": -62.61,
+      "y": -23.30102540378444
     },
     {
-      "x": -61.59381904510252,
-      "y": -16.14592582628907
+      "x": -62.36881904510252,
+      "y": -23.400925826289072
     },
     {
-      "x": -61.335,
-      "y": -16.18
+      "x": -62.11,
+      "y": -23.435000000000002
     },
     {
-      "x": 27.335,
-      "y": -16.18
+      "x": 43.11,
+      "y": -23.435000000000002
     },
     {
-      "x": 27.59381904510252,
-      "y": -16.14592582628907
+      "x": 43.36881904510252,
+      "y": -23.400925826289072
     },
     {
-      "x": 27.835,
-      "y": -16.046025403784437
+      "x": 43.61,
+      "y": -23.30102540378444
     },
     {
-      "x": 28.042106781186547,
-      "y": -15.887106781186548
+      "x": 43.817106781186546,
+      "y": -23.14210678118655
     },
     {
-      "x": 28.20102540378444,
-      "y": -15.68
+      "x": 43.97602540378444,
+      "y": -22.935000000000002
     },
     {
-      "x": 28.30092582628907,
-      "y": -15.43881904510252
+      "x": 44.075925826289065,
+      "y": -22.693819045102522
     },
     {
-      "x": 28.335,
-      "y": -15.18
+      "x": 44.11,
+      "y": -22.435000000000002
     }
   ],
   "frontTopNotch": {
@@ -230,7 +239,7 @@
     "mountEdgeWall": 3,
     "mountHeadClearance": 6.5,
     "slotClearancePerSide": 1.5,
-    "displayClearance": 2.5,
+    "spacerHeadWall": 1,
     "tieHoleDiameter": 3.2,
     "materialToCuts": 1
   },
@@ -245,10 +254,10 @@
     "outline": {
       "x1": -63,
       "x2": 58,
-      "y1": 41.5,
+      "y1": 42,
       "y2": 56,
       "width": 121,
-      "height": 14.5
+      "height": 14
     },
     "slots": [
       {

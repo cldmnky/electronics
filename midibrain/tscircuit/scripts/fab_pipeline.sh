@@ -95,12 +95,23 @@ printf '\n########## silkscreen bounds gate ##########\n'
 # Gerber file is authoritative.
 python3 - "$FAB_DIR" <<'PY'
 import re
+import json
 import sys
 import zipfile
 from pathlib import Path
 
 fab = Path(sys.argv[1])
-BOUNDS = {"front": (128, 112), "rear": (101.6, 112), "panel": (132.08, 128.5)}
+# Board outlines for the silk bounds guard, READ from the canonical layout
+# export (mechanical/layout.json, generated from lib/layout.ts and freshness-
+# checked by `make mechanical` earlier in this pipeline) instead of restated
+# here. A re-stated copy is what let this gate keep a withdrawn 136 x 112 / 30HP
+# draft while owner decision D2 shipped 128 x 112 and 32HP.
+_layout = json.loads((fab.parent / "mechanical" / "layout.json").read_text())
+BOUNDS = {
+    "front": (_layout["frontPcb"]["width"], _layout["frontPcb"]["height"]),
+    "rear": (_layout["rearPcb"]["width"], _layout["rearPcb"]["height"]),
+    "panel": (_layout["panel"]["width"], _layout["panel"]["height"]),
+}
 GUARD = 0.5
 
 

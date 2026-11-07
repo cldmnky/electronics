@@ -1,11 +1,11 @@
 Board,Designators,Quantity,MPN,LCSC,Package,Side,Method,Source,Notes
 module,RPi5,1,Raspberry Pi 5 (RAM size TBD),,,rear,hand,Pi reseller,HAT/cooler combo candidate and unproven; see docs/mechanical-stack.md
 module,Pico1,1,Raspberry Pi Pico 2 (fit 2x20 male headers; or Pico 2 H),,,rear,hand,Pi reseller,Sockets J_PICO_L/R are on the rear board; plain Pico 2 needs headers soldered first
-module,DISP1,1,Waveshare 3.5inch DSI LCD (H) SKU 33087,,module,front,hand,Waveshare,Includes the 12 cm DSI cable (CAB_DSI); 58x49 mm mounting holes
+module,DISP1,1,Waveshare 4.3inch DSI LCD,,module,front,hand,ElectroKit art 4103 5687 (Waveshare 4.3inch DSI LCD),800x480 IPS DSI; 106.00 x 68.00 mm PCB; ships 50/120/160 mm DSI cables + screws/standoffs
 module,HAT1,1,Raspberry Pi M.2 HAT+ (candidate),,,rear,hand,Pi reseller,Candidate only; stacking height unproven in the enclosure
 module,COOL1,1,Raspberry Pi Active Cooler (candidate),,,rear,hand,Pi reseller,Candidate only; unproven with HAT in the enclosure
 module,SSD1,1,M.2 NVMe SSD (capacity TBD; candidate),,,rear,hand,,Model TBD; target is 18ch 48 kHz/24-bit capture
-cable,CAB_DSI,1,15-pin FPC display to 22-pin Pi 5 DSI1 12 cm,,FPC,front-rear,hand,Waveshare (included with DISP1),Verify bend radius latch and clearance at assembly
+cable,CAB_DSI,1,DSI cable 15-pin display to 22-pin Pi 5 (included with DISP1),,FPC,front-rear,hand,Included with DISP1 (50/120/160 mm),Use the longest that fits the bend; verify bend radius and latch clearance at assembly
 cable,CAB_GPIO,1,40-pin 2x20 GPIO ribbon F-F ~150 mm (Adafruit 1988 or equivalent),,ribbon,rear,hand,Adafruit or equivalent,Pi 40-pin header to rear J_PI
 cable,CAB_FRONT,1,26-way 2x13 IDC ribbon F-F 100-150 mm,,ribbon,front-rear,hand,,Front J5 to rear J_FRONT; exact MPN TBD
 cable,CAB_PICO_USB,1,Micro-USB to USB-A programming cable ~0.3 m,,cable,rear,hand,,Isolate Pi/control power during Pico programming
@@ -22,7 +22,7 @@ cable,CAB_HUB_PSU,1,Powered hub supply (manufacturer-specific),,PSU,external,han
 hardware,STANDOFF_PANEL,4,M2.5 standoff length TBD (14.1 mm provisional panel gap) + 8x screw/nut,,,panel-front,hand,,Positions (+-61 +-53); exact part and fitted length pending zstack; plane gap is not a purchased-part approval
 hardware,SPACER_BOARDS,4,M2.5 spacer length TBD (~18-20 mm) + 8x screw/nut top-left low-profile head,,,front-rear,hand,,Positions (+-44 +43/-52); length set at J5 bend mockup
 hardware,SPACER_PI,4,M2.5 spacer 2.5 mm (or 5 mm if SD-vs-R-zone clash) + screws,,,rear,hand,,Positions per PI_HOLES; see docs/mechanical-stack.md
-hardware,STANDOFF_LCD,4,M2.5 spacer candidate 5 mm beyond boss ends + screws (PROVISIONAL),,,front,hand,,Display to front board at LCD_MOUNT_HOLES; 9 mm PCB-plane separation includes 4 mm bosses; exact part and fitted length pending zstack
+hardware,STANDOFF_LCD,4,M2.5 spacer beyond the 4 mm SMTSO bosses + kit pillars/screws (PROVISIONAL),,,front,hand,Included with DISP1,Display to front board at LCD_MOUNT_HOLES; new stack numbers pending in docs/mechanical-stack.md
 hardware,LP1-3,3,Bivar PLP2-400-C clear light pipe,,,panel,hand,DigiKey or Mouser,4.0 mm panel holes; length vs panel gap at mockup; light-pipe length is pending acceptance item light_pipes; 10.16 mm reference is NOT approved for the 14.1 mm provisional gap; replacement length and seating must be selected before purchase
 hardware,BR1,1,USB feedthrough bracket PETG (mechanical/feedthrough-bracket.stl),,,front,print,self,Generated from canonical mechanical/layout.json; CAD self-check verified; actual printed fit and cable retention remain pending
 hardware,KNOB1,1,Knob for 6 mm flatted 15 mm PEC11R shaft,,,panel-front,hand,,"Not specified yet: no knob part number; the 6.0 mm flatted / 15.0 mm PEC11R-4015F-S0024 shaft is defined by the datasheet, but knob OD, height and panel clearance stay pending acceptance item control_actuator - not an approved part"

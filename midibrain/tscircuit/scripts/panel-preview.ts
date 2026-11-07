@@ -21,15 +21,15 @@ const marks = FRONT_CONCEPT.map(p => {
   return `<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3">${shape}</g><text x="${x}" y="${labelY}" text-anchor="middle" font-size="1.55" fill="#d5e4da">${esc(p.id)}</text>`
 }).join("\n")
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PANEL.width + 16} ${PANEL.height + 20}">
-<title>mnkybox 26HP 3.5-inch DSI concept — not a cutting template</title>
+<title>mnkybox 32HP 4.3-inch DSI concept — not a cutting template</title>
 <rect width="100%" height="100%" fill="#e8e8e4"/>
 <text x="8" y="5" font-family="sans-serif" font-size="2.4" font-weight="bold" fill="#49544e">mnkybox — 26HP FRONT CONCEPT</text>
 <g transform="translate(8 8)" font-family="sans-serif">
 <rect width="${PANEL.width}" height="${PANEL.height}" rx="0.7" fill="#19211e"/>
 <rect x="${cx-c.width/2}" y="${cy-c.height/2}" width="${c.width}" height="${c.height}" fill="#080f0c" stroke="#829a8b" stroke-width="0.35"/>
 <rect x="${wx-w.width/2}" y="${wy-w.height/2}" width="${w.width}" height="${w.height}" fill="#112820"/>
-<text x="${dx}" y="${dy-2}" text-anchor="middle" fill="#b8e5cf" font-size="2.4">3.5-inch 800 × 480 DSI / I²C TOUCH</text>
-<text x="${dx}" y="${dy+2}" text-anchor="middle" fill="#86bba1" font-size="1.8">PANEL CUTOUT 89.2 × 56.3 — ILLUSTRATIVE</text>
+<text x="${dx}" y="${dy-2}" text-anchor="middle" fill="#b8e5cf" font-size="2.4">4.3-inch 800 × 480 DSI / CAPACITIVE TOUCH</text>
+<text x="${dx}" y="${dy+2}" text-anchor="middle" fill="#86bba1" font-size="1.8">PANEL CUTOUT 107.22 × 68.87 — ILLUSTRATIVE</text>
 ${marks}
 </g>
 <text x="8" y="${PANEL.height+14}" font-family="sans-serif" font-size="2.1" fill="#9b4234">ILLUSTRATIVE ONLY — NOT A CUTTING TEMPLATE OR FIT APPROVAL</text>

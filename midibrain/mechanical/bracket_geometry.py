@@ -124,7 +124,7 @@ class BracketGeometry:
     tie_holes: list[Circle]
     notch: Rect
     board: Rect
-    display_top: float
+    spacer_top: float
     material_to_cuts: float
 
     # -- derived checks -----------------------------------------------------
@@ -198,12 +198,10 @@ def bracket_geometry(layout: dict | None = None) -> BracketGeometry:
         tie_holes=[Circle(c["x"], c["y"], c["diameter"]) for c in b["tieHoles"]],
         notch=Rect(notch["left"], notch["bottom"], notch["right"], notch["top"]),
         board=Rect(-front["width"] / 2, -front["height"] / 2, front["width"] / 2, front["height"] / 2),
-        # The display PCB (86.5 x 56.0) is taller than the lens outline
-        # (88.87 x 52.56), so the bracket clears whichever reaches higher.
-        display_top=max(
-            data["display"]["y"] + data["display"]["height"] / 2,
-            data["display"]["y"] + data["display"].get("pcb", {}).get("height", 0) / 2,
-        ),
+        # The bar is on the REAR side of the front board, so the front-side
+        # display envelope does not constrain it; the constraint is the top
+        # front/rear spacer row whose heads the bar must clear.
+        spacer_top=max(h["y"] for h in data["frontRearMount"] if h["y"] > 0),
         material_to_cuts=data["bracketAllowance"]["materialToCuts"],
     )
 
@@ -318,9 +316,10 @@ def validate(g: BracketGeometry, layout: dict | None = None) -> list[str]:
             need(tie.clearance_to(m) > 0.0,
                  f"tie hole ({tie.x:.2f}, {tie.y:.2f}) touches a mount ligament")
 
-    # 6. Bracket bottom clears the display, and the part stays inside the panel.
-    need(g.outline.y1 >= g.display_top + allowance["displayClearance"] - EPS,
-         f"bracket bottom {g.outline.y1:.2f} is under the display clearance")
+    # 6. Bracket bottom sits below the top spacer row (so the bar carries the
+    #    head-clearance slots) and the part stays inside the panel.
+    need(g.outline.y1 <= g.spacer_top - allowance["spacerHeadWall"] + EPS,
+         f"bracket bottom {g.outline.y1:.2f} does not reach the top spacer row")
     panel = data["panel"]
     need(abs(g.outline.x1) < panel["width"] / 2 and abs(g.outline.x2) < panel["width"] / 2,
          "bracket is wider than the panel")

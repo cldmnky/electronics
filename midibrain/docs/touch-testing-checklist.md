@@ -4,7 +4,11 @@ The tap gate exercises control **centres** only. Passing every gate does not
 establish that adjacent controls are comfortable, that a finger does not
 occlude what it drags, or that drags land precisely. This checklist closes
 the redesign (items #1–#9 of the UI handoff) on the real 800×480 panel
-(~75.8 × 45.36 mm active area). Nothing is "finished" until this pass is done.
+(**95.04 × 53.856 mm active area**, Waveshare 4.3inch DSI LCD at 8.42 px/mm: a
+64 px target is ~7.6 mm, 56 px ~6.7 mm, 44 px ~5.2 mm). Nothing is "finished"
+until this pass is done. Also check the panel window against the glass: the
+107.22 × 68.87 mm window leaves a 0.9 mm reveal per side, so no active-area
+corner may be occluded.
 
 ## Global (every screen)
 

@@ -12,6 +12,7 @@ import {
   LCD_MOUNT_HOLES,
   LED_ID,
   LED_Y,
+  ledPosition,
   midiJackX,
   PANEL_LCD_CUTOUT,
   PANEL_CUTOUTS,
@@ -90,10 +91,17 @@ ok(`panel: LCD aperture centred on the display (${PANEL_LCD_CUTOUT.x}, ${PANEL_L
   lcdPoints.length > 0 && close((lcdBox.x1 + lcdBox.x2) / 2, PANEL_LCD_CUTOUT.x, 1e-6) && close((lcdBox.y1 + lcdBox.y2) / 2, PANEL_LCD_CUTOUT.y, 1e-6))
 ok("panel: LCD aperture inside the panel outline",
   lcdPoints.length > 0 && lcdBox.x1 > -PANEL.width / 2 && lcdBox.x2 < PANEL.width / 2 && lcdBox.y1 > -PANEL.height / 2 && lcdBox.y2 < PANEL.height / 2)
+// The aperture is sized from the GLASS outline (owner decision D1), so the
+// corner clearance is measured at the glass corners: those are the features
+// that pass through the panel. The 106 x 68 PCB corners are behind the panel
+// and clear the polygon by more, so they need no separate check.
 for (const [sx, sy] of [[-1, -1], [-1, 1], [1, -1], [1, 1]] as const) {
-  const corner = { x: DISPLAY_CONCEPT.x + sx * DISPLAY_CONCEPT.width / 2, y: DISPLAY_CONCEPT.y + sy * DISPLAY_CONCEPT.height / 2 }
+  const corner = {
+    x: DISPLAY_CONCEPT.x + DISPLAY_CONCEPT.glassWidth / 2 * sx,
+    y: DISPLAY_CONCEPT.y + DISPLAY_CONCEPT.glassHeight / 2 * sy,
+  }
   const d = lcdPoints.length > 0 ? polyDist(corner, lcdPoints) : 0
-  ok(`panel: LCD corner clearance ${d.toFixed(3)} mm >= ${MIN_LCD_CLEARANCE} at module corner (${corner.x}, ${corner.y})`, d >= MIN_LCD_CLEARANCE)
+  ok(`panel: LCD corner clearance ${d.toFixed(3)} mm >= ${MIN_LCD_CLEARANCE} at glass corner (${corner.x}, ${corner.y})`, d >= MIN_LCD_CLEARANCE)
 }
 
 // USB feedthrough cutouts and mounting holes.
@@ -121,11 +129,13 @@ for (const p of buttonOpenings) {
 }
 ok(`panel: ${buttonOpenings.length} button openings, no extras`, circles(PANEL_CUTOUTS.button / 2).length === buttonOpenings.length)
 
-// LED light-pipe openings above REC / OVER DUB / PLAY.
+// LED light-pipe openings BESIDE REC / OVER DUB / PLAY (fallback 3): the
+// glass-derived window owns the row above the transport buttons.
 const ledColumns = FRONT_COLUMNS.filter(c => c.button in LED_ID)
 for (const c of ledColumns) {
-  at(`panel: light pipe over ${c.button} (LED_ID ${LED_ID[c.button as keyof typeof LED_ID]})`,
-    centre(circles(PANEL_CUTOUTS.led / 2).find(o => close(o.center.x, c.x) && close(o.center.y, LED_Y))), { x: c.x, y: LED_Y })
+  const p = ledPosition(c.x)
+  at(`panel: light pipe beside ${c.button} (LED_ID ${LED_ID[c.button as keyof typeof LED_ID]})`,
+    centre(circles(PANEL_CUTOUTS.led / 2).find(o => close(o.center.x, p.x) && close(o.center.y, p.y))), p)
 }
 ok("panel: 3 light-pipe openings, no extras", circles(PANEL_CUTOUTS.led / 2).length === ledColumns.length)
 
@@ -218,15 +228,16 @@ for (const [i, jack] of ["MIDI IN 1", "MIDI IN 2"].entries()) {
   at(`front: ${jack} sleeve decoupling cap`, comp(`C${i + 1}`), { x: midiJackX(jack) - 7, y: JACK_Y + 5.5 })
 }
 
-// LEDs above REC / OVER DUB / PLAY with their 330R series resistors 4 mm left.
+// LEDs beside REC / OVER DUB / PLAY with their 330R series resistors 4.5 mm
+// above (a side-by-side resistor reaches into the neighbouring button).
 const LED_PARTS = [
   { led: "D3", button: "REC", res: "R13" },
   { led: "D4", button: "OVER DUB", res: "R14" },
   { led: "D5", button: "PLAY", res: "R15" },
 ] as const
 for (const p of LED_PARTS) {
-  at(`front: ${p.led} above ${p.button}`, comp(p.led), { x: transportButtonX(p.button), y: LED_Y })
-  at(`front: ${p.res} series resistor`, comp(p.res), { x: transportButtonX(p.button) - 4, y: LED_Y })
+  at(`front: ${p.led} beside ${p.button}`, comp(p.led), ledPosition(transportButtonX(p.button)))
+  at(`front: ${p.res} series resistor`, comp(p.res), { x: ledPosition(transportButtonX(p.button)).x, y: LED_Y + 4.5 })
 }
 
 // Interconnect header in the corridor between display and control column.

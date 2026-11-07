@@ -1,7 +1,7 @@
 # MIDI Brain - User Manual
 
 The complete instrument: an 18-track Eurorack recorder, mixer and MIDI hub
-in 26HP. Touchscreen when you want it, panel controls when you don't.
+in 32HP. Touchscreen when you want it, panel controls when you don't.
 
 Two computers share the work behind the panel. The Raspberry Pi 5 runs the
 app - mixing, recording, effects, projects. The socketed Pico 2 owns
@@ -45,7 +45,7 @@ Appendix A - specifications
 
 ## 1. Setup
 
-**Mount.** 26HP, 3U, <=110 mm deep - check case depth before the rails.
+**Mount.** 32HP, 3U, <=110 mm deep - check case depth before the rails.
 Four screws, standard pattern.
 
 **Power.** The module draws no rail power. Feed the front USB-C inlet from
@@ -758,7 +758,7 @@ takes and projects keep running meanwhile, while the panel and TRS are away.
 
 ## Appendix A - specifications
 
-26HP/3U, <=110 mm installed, zero rail power (external 5 V USB-C).
+32HP/3U, <=110 mm installed, zero rail power (external 5 V USB-C).
 800x480 touch DSI. 18 inputs / 20 outputs through the UMC1820 (+ ADA8200
 over S/PDIF), 48 kHz/24-bit, NVMe capture of every armed track. 2x TRS MIDI
 in/out (Type A) + USB MIDI hub. Pico 2 panel/clock controller + Pi 5 app

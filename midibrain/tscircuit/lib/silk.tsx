@@ -39,6 +39,7 @@ import {
   FRONT_PCB,
   JACK_Y,
   LED_Y,
+  ledPosition,
   REAR_PCB,
   POWER_BUTTON,
   POWER_HEADER,
@@ -107,9 +108,13 @@ export type BoardSilkSpec = {
 
 // ---- Front/UI board ----
 // Free zones were mapped from the routed board before placing anything:
-//  * the strip between the display outline top (37.3) and the top relief notch
-//    (48.0) is empty except the two front-to-rear spacer holes at (+-44, 43) -
-//    that strip carries the brand lockup;
+//  * the strip between the display module's outline top (45.0: the 4.3-inch
+//    module is 68 mm tall on y = 11) and the top relief notch bottom (48.0) is
+//    only 3 mm, shorter than the 3.5 mm the 2.8 mm-cap wordmark inks, so the
+//    brand lockup stays on the strip below it at y 43.5 and clears the two
+//    front-to-rear spacer holes at (+-44, 43) instead. It is board identity on
+//    a face that is covered by the module (the operator-facing wordmark is the
+//    panel art); it is not an operator label and nothing else fits there;
 //  * the block below the jack field (y < -42, x > 25) is empty - board
 //    identity and the hand-solder legend live there.
 const FRONT_JACK_PIN1_DY = 4.92 // lib/jack.tsx: pin 1 (tip) above the barrel centre
@@ -125,12 +130,25 @@ const frontSwitches = [
   { ref: "SW5", x: transportButtonX("PLAY START") },
   { ref: "SW6", x: RIGHT_CONTROLS.SHIFT_EXIT.x },
 ]
-// REC / OVER DUB / PLAY indicators, same columns as the panel light pipes.
+// REC / OVER DUB / PLAY indicators: same positions as the panel light pipes,
+// i.e. 12 mm BESIDE the transport button, so the polarity letters follow
+// ledPosition, never the button column.
 const frontLeds = [
-  { ref: "D3", x: transportButtonX("REC") },
-  { ref: "D4", x: transportButtonX("OVER DUB") },
-  { ref: "D5", x: transportButtonX("PLAY") },
+  { ref: "D3", x: ledPosition(transportButtonX("REC")).x },
+  { ref: "D4", x: ledPosition(transportButtonX("OVER DUB")).x },
+  { ref: "D5", x: ledPosition(transportButtonX("PLAY")).x },
 ]
+// MIDI OUT gate transistors (AO3401A SOT-23, front.circuit.tsx <MidiOut>): the
+// pin-1 pad side and, 2.1 mm right / 1.6 mm up from it, the ref designator. Q1's
+// cluster moved 45 -> 49 mm left when the 4.3-inch module's bottom-left LCD
+// hole landed inside the old courtyard at (-41.88, -13.54), so both marks are
+// derived from this one pair: the designator cannot strand itself on the old
+// spot (it did, at x -45.2, until this table was reconciled to the layout).
+const frontGates = [
+  { ref: "Q1", x: -51.3, y: -11.3 },
+  { ref: "Q2", x: -17.3, y: -11.3 },
+]
+const FRONT_GATE_REF_OFFSET = { dx: 2.1, dy: 1.6 }
 
 export const FRONT_SILK: BoardSilkSpec = {
   board: "front",
@@ -143,11 +161,12 @@ export const FRONT_SILK: BoardSilkSpec = {
     // SO6 chamfer marks drawn by the TLP2361 footprint itself.
     { ref: "U1", x: -41.95, y: 7.71, source: "footprint" },
     { ref: "U2", x: -11.95, y: 7.71, source: "footprint" },
-    // SOT-23 gates and the two multi-pin modules.
-    { ref: "Q1", x: -47.3, y: -11.3, source: "silk" },
-    { ref: "Q2", x: -17.3, y: -11.3, source: "silk" },
-    { ref: "U5", x: 42.1, y: RIGHT_CONTROLS.NAV.y + 1.43, source: "silk" },
-    { ref: "U6", x: 43.0, y: RIGHT_CONTROLS.TEMPO.y + 7.9, source: "silk" },
+    // SOT-23 gates (derived from the cluster, see frontGates) and the two
+    // multi-pin modules.
+    ...frontGates.map((gate) => ({ ref: gate.ref, x: gate.x, y: gate.y, source: "silk" as const })),
+    // Derived from the control column, which owner decision D2 moved 47 -> 52.
+    { ref: "U5", x: RIGHT_CONTROLS.NAV.x - 4.9, y: RIGHT_CONTROLS.NAV.y + 1.43, source: "silk" },
+    { ref: "U6", x: RIGHT_CONTROLS.TEMPO.x - 4.0, y: RIGHT_CONTROLS.TEMPO.y + 7.9, source: "silk" },
     // TRS jacks: pin 1 is the tip contact at the panel end of the footprint.
     ...frontJacks.map(({ ref, x }) => ({ ref, x: x - 1.9, y: JACK_Y + FRONT_JACK_PIN1_DY, source: "silk" as const })),
     // 2x13 front/rear interconnect (bottom side).
@@ -185,9 +204,16 @@ export const FRONT_SILK: BoardSilkSpec = {
       part: ref,
     })),
     // Reference designators the builder otherwise cannot see: tscircuit prints
-    // none for transistors or for the jack footprint.
-    { text: "Q1", x: -45.2, y: -9.7, fontSize: 0.8, role: "ref", part: "Q1" },
-    { text: "Q2", x: -15.2, y: -9.7, fontSize: 0.8, role: "ref", part: "Q2" },
+    // none for transistors or for the jack footprint. Derived from the gate
+    // marks so the designator follows its part.
+    ...frontGates.map((gate) => ({
+      text: gate.ref,
+      x: gate.x + FRONT_GATE_REF_OFFSET.dx,
+      y: gate.y + FRONT_GATE_REF_OFFSET.dy,
+      fontSize: 0.8,
+      role: "ref" as const,
+      part: gate.ref,
+    })),
     // LED polarity: anode/cathode beside their pads; the footprint also draws
     // the cathode bar on the cathode side.
     ...frontLeds.flatMap(({ ref, x }) => [

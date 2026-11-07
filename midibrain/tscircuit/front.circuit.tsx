@@ -22,6 +22,7 @@ import {
   LCD_MOUNT_HOLES,
   LCD_WINDOW,
   LED_Y,
+  ledPosition,
   MOUNT_HOLE_DIAMETER,
   POWER_BUTTON,
   POWER_HEADER,
@@ -197,7 +198,11 @@ const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: 
           and 270 puts pad 1 on the routed side. Value, net and footprint are
           unchanged. */}
       <R name={`R${ch + 8}`} value={`${MIDI_OUT_SERIES_OHM.ring}`} sec="midi_out" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C53728" mpn="25121WF330JT4E" footprint="2512" rot="270deg" p1={drain} p2={ring} />
-      <R name={`R${ch + 10}`} value={`${MIDI_OUT_SERIES_OHM.tip}`} sec="midi_out" x={`${x + 4.5}mm`} y={`${y - 6}mm`} lcsc="C118189" mpn="25121WF220JT4E" footprint="2512" p1={tip} p2="net.GND" />
+      {/* R11/R12 rotate 180 deg after the cluster moved to x = -49 for the
+          4.3-inch module's LCD hole: `tsci check placement` flags their pads as
+          "connections cross the routing path between its pads". Value, net and
+          footprint are unchanged. */}
+      <R name={`R${ch + 10}`} value={`${MIDI_OUT_SERIES_OHM.tip}`} sec="midi_out" x={`${x + 4.5}mm`} y={`${y - 6}mm`} rot="180deg" lcsc="C118189" mpn="25121WF220JT4E" footprint="2512" p1={tip} p2="net.GND" />
     </>
   )
 }
@@ -212,7 +217,12 @@ const TRANSPORT_SWITCHES = [
   { name: "SW5", button: "PLAY START", net: "net.PLAY_START" },
 ] as const
 
-// LEDs above REC / OVER DUB / PLAY, with their 330R series resistors 4 mm left.
+// LEDs BESIDE REC / OVER DUB / PLAY (owner-authorised fallback 3, 2026-11-07:
+// the glass-derived panel window owns the row above the transport buttons), 12
+// mm to the right of their button so the panel openings keep a 3.8 mm FR-4 web.
+// The 330R series resistor sits 4.5 mm above its LED: side by side it would
+// reach into the neighbouring button courtyard (24 mm pitch against a 15 mm
+// B3F-4055 courtyard leaves 9 mm of free board between two buttons).
 // Anode nets and LCSC parts unchanged from the routed prototype.
 const FRONT_LED_PARTS = [
   { name: "D3", button: "REC", lcsc: "C2295", mpn: "KT-0805R", drive: "net.REC_LED", anode: "net.REC_LED_A" },
@@ -272,7 +282,10 @@ export default () => (
         its THT body must mate rearward into the front-rear ribbon. */}
     <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={-45} y={10} />
     <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={-15} y={10} />
-    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={-45} y={-13} />
+    {/* ch1 cluster shifted 4 mm left (x -45 -> -49) to clear the 4.3-inch
+        module's bottom-left LCD_4 hole at (-41.88, -13.54), which the new
+        58.00 x 49.04 mounting pattern puts inside the old Q1 courtyard. */}
+    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={-49} y={-13} />
     <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} x={-15} y={-13} />
 
     <SKRHABE010
@@ -320,10 +333,10 @@ export default () => (
 
     {FRONT_LED_PARTS.map((led, i) => (
       <Fragment key={led.name}>
-        <R name={`R${13 + i}`} value="330" sec="controls" x={`${transportButtonX(led.button) - 4}mm`} y={`${LED_Y}mm`} lcsc="C23138" mpn="0603WAF3300T5E" p1={led.drive} p2={led.anode} />
+        <R name={`R${13 + i}`} value="330" sec="controls" rot="180deg" x={`${ledPosition(transportButtonX(led.button)).x}mm`} y={`${LED_Y + 4.5}mm`} lcsc="C23138" mpn="0603WAF3300T5E" p1={led.drive} p2={led.anode} />
         <led
           name={led.name}
-          pcbX={`${transportButtonX(led.button)}mm`}
+          pcbX={`${ledPosition(transportButtonX(led.button)).x}mm`}
           pcbY={`${LED_Y}mm`}
           layer="top"
           footprint="0805"
@@ -336,7 +349,7 @@ export default () => (
       </Fragment>
     ))}
     <C name="C5" value="10uF" sec="power" x="50mm" y="46mm" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
-    <C name="C6" value="100nF" sec="power" x="60mm" y="-12mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+    <C name="C6" value="100nF" sec="power" x="60mm" y="-20mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
 
     <BH254V_26P
       name="J5"

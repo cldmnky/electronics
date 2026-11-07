@@ -82,16 +82,19 @@ popup selectors. `ConfigSlider` is deleted and must not return.
 
 ## 7. Sizing policy (stage 1)
 
-The active area is ~75.8 x 45.36 mm at 800 x 480, so one logical pixel is
-~0.095 mm. A 44 px control is only ~4.2 mm - below a comfortable fingertip.
-The policy is measured in millimetres, not in "it fits":
+The active area is **95.04 x 53.856 mm** at 800 x 480 (Waveshare 4.3inch DSI
+LCD: 0.1188 x 0.1122 mm per pixel), so **800 px / 95.04 mm = 8.42 px/mm** and one
+logical pixel is ~0.119 mm. The px targets are unchanged - it is the same 800 x
+480 raster - but every millimetre figure is now larger, because the 4.3-inch
+panel replaces the 3.5-inch one (75.8 x 45.36 mm at 0.095 mm/px). The policy is
+measured in millimetres, not in "it fits":
 
 | Token | px | Physical | Role |
 |---|---|---|---|
-| `touchPrimary` | 64 | ~6.1 mm | frequent controls (transport, destination tiles, primary verbs) |
-| `touchSecondary` | 56 | ~5.3 mm | secondary controls and list/choice tiles where practical |
-| `touch` | 44 | ~4.2 mm | legacy floor only; screens must migrate, not stay here |
-| `gap` | 8 | ~0.76 mm | base grid between controls |
+| `touchPrimary` | 64 | ~7.6 mm | frequent controls (transport, destination tiles, primary verbs) |
+| `touchSecondary` | 56 | ~6.7 mm | secondary controls and list/choice tiles where practical |
+| `touch` | 44 | ~5.2 mm | legacy floor only; screens must migrate, not stay here |
+| `gap` | 8 | ~0.95 mm | base grid between controls |
 | `fontLabel` | 17 | | primary labels, nav destinations |
 | `fontSecondary` | 14 | | secondary information, chips, feedback |
 | `fontValue` | 24 | | important transport/recording values (22-28 band) |

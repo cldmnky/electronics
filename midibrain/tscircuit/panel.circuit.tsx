@@ -5,7 +5,7 @@ import {
   FRONT_COLUMNS,
   JACK_Y,
   LED_ID,
-  LED_Y,
+  ledPosition,
   MOUNT_HOLE_DIAMETER,
   OUT_RING,
   PANEL,
@@ -43,8 +43,9 @@ const buttonCutouts = [
   { x: PLAY_START.x, y: TRANSPORT_Y },
   { x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y },
 ]
-// LED light-pipe openings sit 9 mm above their transport buttons.
-const ledCutouts = FRONT_COLUMNS.filter(c => c.button in LED_ID).map(c => ({ x: c.x, y: LED_Y }))
+// LED light-pipe openings sit 12 mm beside their transport buttons (LED_Y is
+// the transport row): the glass-derived window owns the row above.
+const ledCutouts = FRONT_COLUMNS.filter(c => c.button in LED_ID).map(c => ledPosition(c.x))
 // MIDI jack barrels in the four transport columns.
 const jackCutouts = FRONT_COLUMNS.map(c => ({ x: c.x, y: JACK_Y }))
 
