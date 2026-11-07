@@ -720,6 +720,29 @@ Item {
                         target: arrange
                         function onLoopChanged() { loopFlash.restart() }
                     }
+                    // Wrap pulse: a wrap is a seek to the loop start and must
+                    // be visible, not only audible. app.loopWrapFlash is the
+                    // controller's ~280 ms cue, shared with the transport strip.
+                    Rectangle {
+                        id: loopWrapPulse
+                        anchors.fill: parent
+                        color: Style.accent
+                        opacity: 0.0
+                        SequentialAnimation {
+                            id: loopWrapAnimation
+                            PropertyAnimation { target: loopWrapPulse; property: "opacity";
+                                                to: 0.45; duration: 40 }
+                            PauseAnimation { duration: 120 }
+                            PropertyAnimation { target: loopWrapPulse; property: "opacity";
+                                                to: 0.0; duration: 120 }
+                        }
+                        Connections {
+                            target: app
+                            function onLoopWrapChanged() {
+                                if (app.loopWrapFlash) loopWrapAnimation.restart()
+                            }
+                        }
+                    }
                 }
             }
 

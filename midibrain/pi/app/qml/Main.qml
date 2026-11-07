@@ -41,7 +41,9 @@ Window {
                                       timeline.editOpen || arrange.clipMenuOpen ||
                                       arrange.lengthPopupOpen || app.keypadOpen ||
                                       app.confirmOpen || app.takeSheetOpen ||
-                                      app.tempoPopupOpen || app.bankGridOpen || transport.optionsOpen
+                                      app.tempoPopupOpen || app.bankGridOpen ||
+                                      transport.optionsOpen ||
+                                      app.safeToPowerOffVisible
 
     function moreLabel(tab) {
         switch (tab) {
@@ -442,5 +444,56 @@ Window {
 
     ConfirmDialog {
         anchors.fill: parent
+    }
+
+    // Panel POWER button end state (docs/decisions.md): the Pi 5 remote button
+    // asks systemd for a graceful stop; main.cpp flushes the project, shows this
+    // full-screen surface, and exits 4 s later (or on touch). There is no master
+    // switch, so this is the only cue that the supply can be cut.
+    Rectangle {
+        id: safeToPowerOff
+        anchors.fill: parent
+        z: 100
+        visible: app.safeToPowerOffVisible
+        color: Style.panelDark
+
+        Column {
+            anchors.centerIn: parent
+            spacing: Style.gap
+            width: parent.width - 2 * Style.margin
+
+            Text {
+                width: parent.width
+                text: app.safeToPowerOffText
+                color: app.safeToPowerOffText === "SAFE TO POWER OFF"
+                       ? Style.ok : Style.record
+                font.pixelSize: Style.fontValue
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                width: parent.width
+                text: app.safeToPowerOffText === "SAFE TO POWER OFF"
+                      ? "PROJECT FLUSHED - SHUTTING DOWN"
+                      : "PROJECT FLUSH FAILED - CHECK THE LOG"
+                color: Style.text
+                font.pixelSize: Style.fontLabel
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                width: parent.width
+                text: "TOUCH TO CONTINUE"
+                color: Style.textDim
+                font.pixelSize: Style.fontSecondary
+                horizontalAlignment: Text.AlignHCenter
+            }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: app.dismissSafeToPowerOff()
+        }
     }
 }

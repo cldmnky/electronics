@@ -65,6 +65,17 @@ class AppController final : public QObject {
   Q_PROPERTY(QString transportState READ transportState NOTIFY transportChanged)
   Q_PROPERTY(QString positionText READ positionText NOTIFY transportChanged)
   Q_PROPERTY(QString tempoText READ tempoText NOTIFY transportChanged)
+  // Loop-wrap cue: count increments on every SONG loop wrap; flash is true for
+  // the ~280 ms accent pulse the transport readout and ARRANGE band render.
+  Q_PROPERTY(int loopWrapCount READ loopWrapCount NOTIFY loopWrapChanged)
+  Q_PROPERTY(qint64 loopWrapLastMs READ loopWrapLastMs NOTIFY loopWrapChanged)
+  Q_PROPERTY(bool loopWrapFlash READ loopWrapFlash NOTIFY loopWrapChanged)
+  // SAFE TO POWER OFF end state: shown after a SIGTERM/SIGINT flush. The text
+  // names a flush failure instead of claiming it is safe to cut power.
+  Q_PROPERTY(bool safeToPowerOffVisible READ safeToPowerOffVisible
+                 NOTIFY safeToPowerOffChanged)
+  Q_PROPERTY(QString safeToPowerOffText READ safeToPowerOffText
+                 NOTIFY safeToPowerOffChanged)
   // System summary: one readable line about the Pico link (UP/DOWN, READY,
   // emulator or NO PICO). The raw counters stay on the DIAGNOSTICS page.
   Q_PROPERTY(QString linkSummary READ linkSummary NOTIFY transportChanged)
@@ -135,6 +146,24 @@ class AppController final : public QObject {
 
   void start();
   void shutdown();
+
+  int loopWrapCount() const { return loopWrap_.count(); }
+  qint64 loopWrapLastMs() const { return loopWrap_.lastMs(); }
+  bool loopWrapFlash() const { return loopWrapFlash_; }
+  bool safeToPowerOffVisible() const { return safeToPowerOffVisible_; }
+  QString safeToPowerOffText() const { return safeToPowerOffText_; }
+
+  // Graceful-poweroff hook (main.cpp's SIGTERM/SIGINT path and the normal
+  // window close): save the open project through the session path, stop the
+  // transport, then show the end-state screen. A flush failure is reported in
+  // the screen text and the log, never swallowed. Repeated calls are safe.
+  Q_INVOKABLE bool flushForShutdown();
+  Q_INVOKABLE void showSafeToPowerOffScreen();
+  // QML touch on the end-state screen: let main exit the event loop.
+  Q_INVOKABLE void dismissSafeToPowerOff();
+  // Replay the loop-wrap visual cue. The transport wrap calls the same path;
+  // --screenshots uses this to prove the rendering without waiting for a wrap.
+  Q_INVOKABLE void flashLoopWrapCue();
 
   int tab() const { return tab_; }
   Q_INVOKABLE void setTab(int tab);
@@ -387,6 +416,10 @@ class AppController final : public QObject {
   void fullscreenChanged();
   void dirtyChanged();
   void transportChanged();
+  void loopWrapChanged();
+  void safeToPowerOffChanged();
+  // The user touched the SAFE TO POWER OFF screen; main exits the event loop.
+  void safeToPowerOffDismissed();
   void songModeChanged();
   void clickChanged();
   void toolsPageChanged();
@@ -524,8 +557,15 @@ class AppController final : public QObject {
   bool shiftFace_ = false;
   QStringList shiftActions_;
 
+  void startLoopWrapCue();
+
   DirtyTracker dirtyTracker_;
   ChordDetector chord_;
+  LoopWrapPulse loopWrap_;
+  bool loopWrapFlash_ = false;
+  QTimer loopWrapTimer_;
+  bool safeToPowerOffVisible_ = false;
+  QString safeToPowerOffText_;
   // COUNT-IN / PUNCH: what the schedule waits for. None = nothing pending.
   enum class RecSchedule { None, CountIn, PunchIn };
   RecSchedule recSchedule_ = RecSchedule::None;

@@ -4,6 +4,8 @@
 // floors stay a measured property of the shipped theme.
 #include <QColor>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QRegularExpression>
 #include <QVariantMap>
 
@@ -171,6 +173,17 @@ void textBufferTests() {
 }
 
 void projectTests() {
+  LoopWrapPulse wrapPulse;
+  wrapPulse.note(1000);
+  check(wrapPulse.count() == 1 && wrapPulse.lastMs() == 1000,
+        "loop wrap pulse records the counter and timestamp");
+  check(wrapPulse.active(1000) && wrapPulse.active(1279),
+        "loop wrap pulse stays active for its ~280 ms window");
+  check(!wrapPulse.active(1280) && !wrapPulse.active(999),
+        "loop wrap pulse expires after 280 ms and ignores clock skew");
+  wrapPulse.note(2000);
+  check(wrapPulse.count() == 2 && wrapPulse.lastMs() == 2000,
+        "a second loop wrap advances the pulse");
   check(validateProjectName("Project-20260101-120000").empty(), "valid project name");
   check(!validateProjectName("").empty(), "empty project name rejected");
   check(!validateProjectName("bad/name").empty(), "path separator rejected");
@@ -1083,6 +1096,159 @@ void learnTargetCaptureTests() {
   check(learn.bindings().value(0).contains(QStringLiteral("CC 21 ch1 -> Mixer 02 GAIN")),
         "the binding row names the CC and the human target");
   learn.removeBinding(0);
+}
+
+void songPersistenceTests() {
+  AppState state;
+  SessionSettings settings;
+  MixerModel mixer;
+  FxManager fx;
+  PerformanceModel performance;
+  EqModel eq;
+  MidiGlue midi(false);
+  AudioGlue audio(mixer, fx, performance, state, true);
+  LinkClient link(midi, state, true);
+  AppContext context{state, mixer, fx, midi, audio, link, settings, eq, performance};
+
+  const auto directory = std::filesystem::temp_directory_path() /
+                         ("mnkybox-song-test-" +
+                          std::to_string(std::chrono::steady_clock::now()
+                                             .time_since_epoch()
+                                             .count()));
+  std::string error;
+  settings.songMode = false;
+  settings.songLengthBeats = 48.0;
+  settings.loopOn = false;
+  settings.loopStartBeats = 8.0;
+  settings.loopEndBeats = 24.0;
+  settings.song.sections.push_back(session::SongSection{"INTRO", 4});
+  settings.song.sections.push_back(session::SongSection{"VERSE", 8});
+  session::SongClip clip;
+  clip.track = 1;
+  clip.startBeats = 16.0;
+  clip.take = "02-drums-003.wav";
+  clip.offsetBeats = 1.0;
+  clip.lengthBeats = 8.0;
+  clip.gainDb = -2.5f;
+  clip.fadeInBeats = 0.25;
+  clip.fadeOutBeats = 0.5;
+  clip.normalize = true;
+  clip.loop = true;
+  clip.muted = false;
+  settings.song.clips.push_back(clip);
+  settings.song.grid = 2;
+
+  check(project::save(context, directory, error),
+        "song state: project save writes the session file");
+  check(!std::filesystem::exists(directory / project::kLegacyArrangeFileName),
+        "song state: save no longer writes the legacy arrange sidecar");
+  settings.reset();
+  check(project::load(context, directory, error),
+        "song state: project load reads the session file");
+  check(!settings.songMode && std::abs(settings.songLengthBeats - 48.0) < 1e-9 &&
+            !settings.loopOn && std::abs(settings.loopStartBeats - 8.0) < 1e-9 &&
+            std::abs(settings.loopEndBeats - 24.0) < 1e-9,
+        "song state: mode/length/loop round-trip through the session song");
+  check(settings.song.sections.size() == 2 &&
+            settings.song.sections[0].name == "INTRO" &&
+            settings.song.sections[1].bars == 8,
+        "song state: sections round-trip through the session song");
+  check(settings.song.clips.size() == 1 &&
+            settings.song.clips[0].track == 1 &&
+            settings.song.clips[0].take == "02-drums-003.wav" &&
+            std::abs(settings.song.clips[0].lengthBeats - 8.0) < 1e-9 &&
+            settings.song.clips[0].loop && settings.song.clips[0].normalize,
+        "song state: clips round-trip through the session song");
+  check(!settings.song.mode && std::abs(settings.song.lengthBeats - 48.0) < 1e-9 &&
+            !settings.song.loop.on &&
+            std::abs(settings.song.loop.startBeats - 8.0) < 1e-9 &&
+            std::abs(settings.song.loop.endBeats - 24.0) < 1e-9,
+        "song state: load mirrors the timing fields into the session object");
+
+  // Rewrite project.mnkybox as the old writer left it: song sections/clips and
+  // the deprecated lengthBars, but none of the timing keys. The legacy sidecar
+  // must fold its mode/length/loop into that project and then vanish.
+  const auto projectFile = directory / project::kProjectFileName;
+  {
+    QFile file(QString::fromStdString(projectFile.string()));
+    check(file.open(QIODevice::ReadOnly), "song migration: project file readable");
+    auto document = QJsonDocument::fromJson(file.readAll());
+    file.close();
+    auto root = document.object();
+    auto song = root.value(QStringLiteral("song")).toObject();
+    song.remove(QStringLiteral("mode"));
+    song.remove(QStringLiteral("lengthBeats"));
+    song.remove(QStringLiteral("loop"));
+    song.insert(QStringLiteral("lengthBars"), 12);
+    root.insert(QStringLiteral("song"), song);
+    check(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
+          "song migration: legacy project file writable");
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    file.close();
+  }
+  {
+    const auto sidecar = directory / project::kLegacyArrangeFileName;
+    QFile file(QString::fromStdString(sidecar.string()));
+    check(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
+          "song migration: legacy sidecar writable");
+    file.write(R"({"song":{"mode":false,"lengthBeats":40,"loop":{"on":false,"startBeats":4,"endBeats":20}}})");
+    file.close();
+    check(std::filesystem::exists(sidecar), "song migration: sidecar fixture exists");
+  }
+  settings.reset();
+  check(project::load(context, directory, error),
+        "song migration: legacy project still loads");
+  check(!settings.songMode && std::abs(settings.songLengthBeats - 40.0) < 1e-9 &&
+            !settings.loopOn && std::abs(settings.loopStartBeats - 4.0) < 1e-9 &&
+            std::abs(settings.loopEndBeats - 20.0) < 1e-9,
+        "song migration: sidecar wins for the timing fields it carries");
+  check(settings.song.sections.size() == 2 && settings.song.clips.size() == 1,
+        "song migration: project.mnkybox stays authoritative for sections/clips");
+  check(!std::filesystem::exists(directory / project::kLegacyArrangeFileName),
+        "song migration: the folded sidecar is removed");
+
+  // The folded state is now in project.mnkybox. A stale sidecar from an
+  // interrupted migration must not overwrite it.
+  check(project::save(context, directory, error),
+        "song migration: migrated project saves the session song");
+  {
+    const auto sidecar = directory / project::kLegacyArrangeFileName;
+    QFile file(QString::fromStdString(sidecar.string()));
+    check(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
+          "song migration: stale sidecar writable");
+    file.write(R"({"song":{"mode":true,"lengthBeats":64,"loop":{"on":true,"startBeats":0,"endBeats":64}}})");
+    file.close();
+  }
+  settings.reset();
+  check(project::load(context, directory, error),
+        "song migration: the project with session song data loads");
+  check(!settings.songMode && std::abs(settings.songLengthBeats - 40.0) < 1e-9 &&
+            !settings.loopOn && std::abs(settings.loopStartBeats - 4.0) < 1e-9 &&
+            std::abs(settings.loopEndBeats - 20.0) < 1e-9,
+        "song migration: a stale sidecar never overrides the session song");
+  check(!std::filesystem::exists(directory / project::kLegacyArrangeFileName),
+        "song migration: the stale sidecar is removed after it is ignored");
+
+  // Shutdown flush: nothing to do when no project is open and nothing is
+  // dirty; dirty state without a folder fails loudly; an open project saves
+  // through the same session snapshot path.
+  state.clearDirty();
+  state.setCurrentProject({});
+  check(project::flushCurrentProject(context, error),
+        "shutdown flush: a clean session with no project needs no write");
+  state.markDirty();
+  check(!project::flushCurrentProject(context, error) &&
+            error.find("no project folder") != std::string::npos,
+        "shutdown flush: dirty state without a project fails loudly");
+  state.setCurrentProject(directory);
+  check(project::flushCurrentProject(context, error),
+        "shutdown flush: the open project saves through the session path");
+  check(std::filesystem::exists(directory / project::kProjectFileName),
+        "shutdown flush: the session file is on disk after the flush");
+  state.clearDirty();
+
+  std::error_code removeError;
+  std::filesystem::remove_all(directory, removeError);
 }
 
 void projectRoundTripTests() {
@@ -3602,6 +3768,7 @@ int runAll() {
   learnCaptureTests();
   learnTargetCaptureTests();
   projectRoundTripTests();
+  songPersistenceTests();
   loopAndIoTests();
   eqAndXyTests();
   trackFxRackTests();

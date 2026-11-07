@@ -40,6 +40,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QSocketNotifier>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QUrl>
@@ -47,6 +48,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -55,6 +57,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <unistd.h>
 
 #include "app_controller.hpp"
 #include "logging.hpp"
@@ -71,6 +75,20 @@ int runLogicUnitTests();
 namespace {
 
 constexpr const char* kInstanceLockName = "mnkybox-ui.lock";
+
+// SIGTERM/SIGINT (Pi 5 remote POWER button -> systemd stop, or Ctrl+C) must
+// reach the Qt loop without touching Qt from the handler. The handler only
+// writes one byte into a self-pipe; QSocketNotifier drains it on the GUI thread.
+int gSignalPipeWrite = -1;
+volatile sig_atomic_t gTerminationRequested = 0;
+
+void onTerminationSignal(int) {
+  if (gTerminationRequested) _exit(0);  // second signal: force path
+  gTerminationRequested = 1;
+  const char byte = 1;
+  const ssize_t written = ::write(gSignalPipeWrite, &byte, 1);
+  (void)written;
+}
 
 QString argumentValue(const QStringList& arguments, const QString& name) {
   const int index = arguments.indexOf(name);
@@ -1637,6 +1655,25 @@ class ScreenshotRunner final : public QObject {
                         controller_->setTab(8);
                         controller_->setSongMode(true);
                       }});
+    // Loop-wrap cue: a first-section loop (16 beats) with the playhead seeked
+    // just before its end. The grab lands inside the 280 ms accent pulse, so the
+    // transport readout and ARRANGE loop band show the same visual.
+    steps_.push_back({"49-loop-wrap", [this] {
+                        resetShot();
+                        primeEditFixture();
+                        controller_->demoSeedArrange();
+                        controller_->arrange()->selectSection(0);
+                        controller_->arrange()->loopSection();
+                        controller_->arrange()->setGrid(3);
+                        controller_->arrange()->seekToBeat(15.75);
+                        controller_->setTab(8);
+                        controller_->flashLoopWrapCue();
+                      }});
+    // End state after a graceful POWER-button shutdown. Test-only trigger: the
+    // screen is normally shown by main.cpp only after a real SIGTERM flush.
+    steps_.push_back({"49-power-off", [this] {
+                        controller_->showSafeToPowerOffScreen();
+                      }});
     // The mixer screens above show strips; the app's own default stays empty.
     primeMixerDemo();
   }
@@ -2272,6 +2309,58 @@ int main(int argc, char* argv[]) {
     }
     screenshots = std::make_unique<ScreenshotRunner>(&controller, window, directory);
     screenshots->start();
+  }
+
+  // A window close is a normal quit: flush the open project through the same
+  // session save path, then let aboutToQuit stop the services. It stays silent
+  // (no end-state screen); a flush error is logged loudly.
+  QObject::connect(window, &QQuickWindow::closing, &controller,
+                   [&controller](QQuickCloseEvent*) {
+                     controller.flushForShutdown();
+                   });
+
+  // The Pi 5 remote POWER button asks systemd for a graceful stop, which sends
+  // SIGTERM. First signal: flush, show SAFE TO POWER OFF for 4 s (or until
+  // touched), then exit(0). Second signal: immediate force exit in the handler.
+  int signalPipe[2] = {-1, -1};
+  std::unique_ptr<QSocketNotifier> terminationNotifier;
+  if (::pipe(signalPipe) == 0) {
+    gSignalPipeWrite = signalPipe[1];
+    struct sigaction action {};
+    action.sa_handler = &onTerminationSignal;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = SA_RESTART;
+    sigaction(SIGTERM, &action, nullptr);
+    sigaction(SIGINT, &action, nullptr);
+    terminationNotifier = std::make_unique<QSocketNotifier>(signalPipe[0],
+                                                            QSocketNotifier::Read);
+    QObject::connect(terminationNotifier.get(), &QSocketNotifier::activated, &app,
+                     [&app, &controller, signalPipe] {
+                       char bytes[16] = {};
+                       const ssize_t got = ::read(signalPipe[0], bytes, sizeof bytes);
+                       (void)got;
+                       if (controller.safeToPowerOffVisible()) return;
+                       controller.flushForShutdown();
+                       controller.showSafeToPowerOffScreen();
+                       mnky::app::log(
+                           "shutdown: termination requested; flushing and showing "
+                           "SAFE TO POWER OFF");
+                       QTimer::singleShot(4000, &app, [] {
+                         QCoreApplication::exit(0);
+                       });
+                     });
+  } else {
+    mnky::app::log("shutdown: cannot create the signal self-pipe; "
+                   "SIGTERM shutdown screen unavailable");
+  }
+
+  QObject::connect(&controller, &mnky::app::AppController::safeToPowerOffDismissed,
+                   &app, [] { QCoreApplication::exit(0); });
+
+  // Test-only end-state trigger; never set in a normal run.
+  if (qEnvironmentVariableIsSet("MNKY_SHUTDOWN_DEMO")) {
+    QTimer::singleShot(300, &controller,
+                       [&controller] { controller.showSafeToPowerOffScreen(); });
   }
 
   QObject::connect(&app, &QCoreApplication::aboutToQuit, &controller,

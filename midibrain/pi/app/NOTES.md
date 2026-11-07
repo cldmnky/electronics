@@ -1146,19 +1146,20 @@ claim.
 ## DAW W4/W5 — ARRANGE tab, SONG mode, punch-into-song, RENDER SONG
 
 **Song model and persistence.** The ARRANGE tab is `ArrangeViewModel` plus
-`arrange_logic.*` (Qt-free section/clip math covered by `--unittests`). The
-session `song` object still carries sections, clips, grid and the deprecated
-`lengthBars`; `project_io.cpp` copies the app's `SessionSettings::song` into it
-and fills `lengthBars = round(lengthBeats/4)`. The W4/W5 settled fields the
-frozen session object does not carry yet (`mode`, `lengthBeats`, loop
-`{on,startBeats,endBeats}`) ride in the app-owned `arrange.mnkybox` sidecar,
-written with those exact names. `TODO(fold-into-session)`: when
-`session::SongState` gains the fields, delete the sidecar and move read/write
-into `project.mnkybox`. `songMode` defaults on; an empty/new arrangement keeps
-the engine in free-take mode (`applySongToEngine` only enables the clip
-scheduler when at least one lane resolves), so the W1 take path is never
-silently muted by an empty SONG project. The whole-song loop is on by default,
-end 0 = song length.
+`arrange_logic.*` (Qt-free section/clip math covered by `--unittests`). Song
+state lives in the session `song` object: `mode`, `lengthBeats`, the loop window
+`{on,startBeats,endBeats}`, sections, clips, grid and the deprecated
+`lengthBars`. `project_io.cpp` mirrors the live `SessionSettings` editor fields
+into that object on save and back out on load, all in `project.mnkybox`;
+`lengthBars` is written as `round(lengthBeats/4)` for old readers. The legacy
+app-owned `arrange.mnkybox` sidecar is never written. A project load folds it
+once and removes it: the sidecar wins only when `project.mnkybox` predates the
+song timing keys (loaded `lengthBeats == 0`), and a stale sidecar is ignored and
+removed when the session already carries them. `songMode` defaults on; an
+empty/new arrangement keeps the engine in free-take mode
+(`applySongToEngine` only enables the clip scheduler when at least one lane
+resolves), so the W1 take path is never silently muted by an empty SONG project.
+The whole-song loop is on by default, end 0 = song length.
 
 **Transport seek.** The Pico owns the raw tick and `link_client.*` is
 untouched. A tap on the ARRANGE playhead writes a signed

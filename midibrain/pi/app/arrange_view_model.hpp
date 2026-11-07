@@ -3,11 +3,9 @@
 // band, the clip lanes, the SONG-mode transport position, the loop window and
 // the clip edit actions.
 //
-// The arrangement is the session `song` object plus the W4/W5 settled fields
-// that the frozen session object does not carry yet (mode, lengthBeats and the
-// loop window). Those ride in the app-owned `arrange.mnkybox` project sidecar
-// until the session seam folds them in; see project_io.cpp
-// TODO(fold-into-session). Sections and clips are saved in project.mnkybox.
+// The arrangement is the session `song` object (mode, lengthBeats, loop window,
+// sections and clips). The live editor values are mirrored by SessionSettings
+// and saved by project_io into project.mnkybox.
 //
 // Clips point at take keys, never at audio copies. Applying a lane resolves the
 // key through RecorderViewModel and hands absolute paths to the engine, so a

@@ -17,6 +17,10 @@
 
 namespace mnky::app {
 
+// New-song default: 8 bars at 4/4. Shared by reset() and project_io's legacy
+// load fallback so an absent length has one meaning.
+inline constexpr double kDefaultSongLengthBeats = 32.0;
+
 class SessionSettings {
  public:
   // Active take pointer per track: empty means the live input. Non-empty is
@@ -42,13 +46,13 @@ class SessionSettings {
   // 43130e8). The TimelineViewModel owns the edits and applies them through
   // AudioGlue; this array is what project_io saves and loads.
   std::array<std::vector<session::TakeRegion>, audio::kMaxTracks> takeEdit{};
-  // Song arrangement (the session "song" object: sections, clips, grid and the
-  // deprecated lengthBars). The W4/W5 addendum's settled length/loop/mode
-  // fields ride in the app-owned project sidecar until the session seam gains
-  // them; see project_io.cpp TODO(fold-into-session).
+  // Song arrangement (the session "song" object: mode, lengthBeats, loop,
+  // sections, clips and the deprecated lengthBars). The live editor fields
+  // below are the app-side authority while a project is open; project_io copies
+  // them into snapshot.song on save and back out on load.
   session::SongState song;
   bool songMode = true;
-  double songLengthBeats = 32.0;
+  double songLengthBeats = kDefaultSongLengthBeats;
   bool loopOn = true;
   double loopStartBeats = 0.0;
   double loopEndBeats = 0.0;  // <= start means "to the song length"

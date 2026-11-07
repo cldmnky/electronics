@@ -53,6 +53,31 @@ Rectangle {
             height: parent.height
             readonly property var parts: app.positionText.split(" / ")
 
+            // Loop-wrap pulse: the same accent cue as the ARRANGE loop band, so
+            // a wrap is visible in the always-present transport strip too.
+            Rectangle {
+                id: wrapFlash
+                anchors.fill: parent
+                anchors.margins: -4
+                radius: Style.corner
+                color: Style.accent
+                opacity: 0.0
+                SequentialAnimation {
+                    id: wrapPulse
+                    PropertyAnimation { target: wrapFlash; property: "opacity";
+                                        to: 0.35; duration: 40 }
+                    PauseAnimation { duration: 120 }
+                    PropertyAnimation { target: wrapFlash; property: "opacity";
+                                        to: 0.0; duration: 120 }
+                }
+                Connections {
+                    target: app
+                    function onLoopWrapChanged() {
+                        if (app.loopWrapFlash) wrapPulse.restart()
+                    }
+                }
+            }
+
             Column {
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width

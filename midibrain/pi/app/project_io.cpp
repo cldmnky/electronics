@@ -15,7 +15,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
-#include <QSaveFile>
 
 #include "../../session/session.hpp"
 #include "app_state.hpp"
@@ -131,58 +130,52 @@ struct SlotTargets {
   std::array<session::FxSlotTarget*, session::kFxBuses> pointers;
 };
 
-// W4/W5 settled song fields that session::SongState does not carry yet. The
-// sidecar is app-owned and deliberately temporary:
-// TODO(fold-into-session): SongState gains mode/lengthBeats/loop; then this
-// writer/reader and arrange.mnkybox are deleted and the fields ride in
-// project.mnkybox.
-bool saveArrangeSidecar(const std::filesystem::path& directory,
-                        const SessionSettings& settings, std::string& error) {
-  QJsonObject loop;
-  loop.insert(QStringLiteral("on"), settings.loopOn);
-  loop.insert(QStringLiteral("startBeats"), settings.loopStartBeats);
-  loop.insert(QStringLiteral("endBeats"), settings.loopEndBeats);
-  QJsonObject song;
-  song.insert(QStringLiteral("mode"), settings.songMode);
-  song.insert(QStringLiteral("lengthBeats"), settings.songLengthBeats);
-  song.insert(QStringLiteral("loop"), loop);
-  QJsonObject root;
-  root.insert(QStringLiteral("song"), song);
-  QSaveFile file(QString::fromStdString(
-      (directory / kArrangeFileName).string()));
-  if (!file.open(QIODevice::WriteOnly)) {
-    error = "cannot write " +
-            (directory / kArrangeFileName).string();
-    return false;
+// The live editor fields and the session song object are two views of one
+// state while a project is open. Load syncs both so a later save writes exactly
+// what the UI shows; `lengthBeats` 0 means the key is absent (legacy file) and
+// the deprecated lengthBars or the new-song default supplies the length.
+void applySongState(SessionSettings& settings, const session::SongState& song,
+                    double defaultLengthBeats) {
+  settings.song = song;
+  settings.songMode = song.mode;
+  settings.loopOn = song.loop.on;
+  settings.loopStartBeats = song.loop.startBeats;
+  settings.loopEndBeats = song.loop.endBeats;
+  if (song.lengthBeats > 0.0) {
+    settings.songLengthBeats = song.lengthBeats;
+  } else if (song.lengthBars > 0) {
+    settings.songLengthBeats = static_cast<double>(song.lengthBars) * 4.0;
+  } else {
+    settings.songLengthBeats = defaultLengthBeats;
   }
-  file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
-  if (!file.commit()) {
-    error = "cannot write " +
-            (directory / kArrangeFileName).string();
-    return false;
-  }
-  return true;
 }
 
-// Missing sidecar = an older project: keep the settled defaults (mode on, the
-// app's default length, whole-song loop). A malformed sidecar is ignored with a
-// log line rather than blocking the session load; the session song object still
-// carries the section/clip data.
-void loadArrangeSidecar(const std::filesystem::path& directory,
-                        SessionSettings& settings) {
-  QFile file(QString::fromStdString(
-      (directory / kArrangeFileName).string()));
+// One-time fold of the pre-session legacy `arrange.mnkybox` sidecar. A project
+// whose project.mnkybox already carries the song timing fields (lengthBeats > 0)
+// keeps them and treats the sidecar as stale; only a file without them (the old
+// writer) lets the sidecar win. The sidecar is removed after a successful read,
+// so it can never overwrite a later load.
+void foldLegacyArrangeSidecar(const std::filesystem::path& directory,
+                              SessionSettings& settings,
+                              bool sessionCarriesSongTiming) {
+  const auto path = directory / kLegacyArrangeFileName;
+  QFile file(QString::fromStdString(path.string()));
   if (!file.exists()) return;
+  if (sessionCarriesSongTiming) {
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+    log("arrange: ignoring stale " + path.string() +
+        " (project.mnkybox already carries the song timing fields); removed");
+    return;
+  }
   if (!file.open(QIODevice::ReadOnly)) {
-    log("arrange: cannot read " + (directory / kArrangeFileName).string() +
-        "; using the song defaults");
+    log("arrange: cannot read " + path.string() + "; keeping the song defaults");
     return;
   }
   QJsonParseError parseError{};
   const auto document = QJsonDocument::fromJson(file.readAll(), &parseError);
   if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-    log("arrange: invalid " + (directory / kArrangeFileName).string() +
-        "; using the song defaults");
+    log("arrange: invalid " + path.string() + "; keeping the song defaults");
     return;
   }
   const auto song = document.object().value(QStringLiteral("song")).toObject();
@@ -200,6 +193,19 @@ void loadArrangeSidecar(const std::filesystem::path& directory,
       loop.value(QStringLiteral("startBeats")).toDouble(settings.loopStartBeats);
   settings.loopEndBeats =
       loop.value(QStringLiteral("endBeats")).toDouble(settings.loopEndBeats);
+  settings.song.mode = settings.songMode;
+  settings.song.lengthBeats = settings.songLengthBeats;
+  settings.song.loop.on = settings.loopOn;
+  settings.song.loop.startBeats = settings.loopStartBeats;
+  settings.song.loop.endBeats = settings.loopEndBeats;
+  std::error_code removeError;
+  std::filesystem::remove(path, removeError);
+  if (removeError) {
+    log("arrange: folded " + path.string() + " but could not remove it: " +
+        removeError.message());
+  } else {
+    log("arrange: folded legacy " + path.string() + " into project.mnkybox");
+  }
 }
 
 session::Snapshot captureSnapshot(const AppContext& context) {
@@ -242,10 +248,17 @@ session::Snapshot captureSnapshot(const AppContext& context) {
   snapshot.sends = context.settings.sends;
   snapshot.mainComp = context.settings.mainComp;
   snapshot.isTemplate = context.settings.isTemplate;
-  // Song sections/clips/grid are app-owned (session::capture only reads the
-  // live engine lanes). Copy by value so session save writes the arrangement;
-  // lengthBars is the deprecated view of the settled lengthBeats (4/4).
+  // Song state is the session `song` object (session::capture only reads the
+  // live engine lanes, so sections/clips/grid are app-owned and copied by
+  // value). The live editor fields are the app-side authority, so they are
+  // mirrored in before saving; lengthBars is the deprecated view of
+  // lengthBeats (4/4).
   snapshot.song = context.settings.song;
+  snapshot.song.mode = context.settings.songMode;
+  snapshot.song.lengthBeats = context.settings.songLengthBeats;
+  snapshot.song.loop = session::SongState::LoopRegion{
+      context.settings.loopOn, context.settings.loopStartBeats,
+      context.settings.loopEndBeats};
   snapshot.song.lengthBars = static_cast<int>(
       std::lround(context.settings.songLengthBeats / 4.0));
   snapshot.mixer.out34Mode = context.mixer.out34Mode();
@@ -471,7 +484,7 @@ bool save(const AppContext& context, const std::filesystem::path& directory,
     error = "cannot write " + file.string();
     return false;
   }
-  return saveArrangeSidecar(directory, context.settings, error);
+  return true;
 }
 
 bool load(const AppContext& context, const std::filesystem::path& directory,
@@ -531,15 +544,14 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
   context.settings.sends = result.snapshot.sends;
   context.settings.mainComp = result.snapshot.mainComp;
   context.settings.isTemplate = result.snapshot.isTemplate;
-  context.settings.song = result.snapshot.song;
-  // The settled song length/loop/mode fields ride in arrange.mnkybox until the
-  // session seam gains them. Older projects without it keep the defaults, and
-  // a non-zero legacy lengthBars becomes the length (x4 at 4/4).
-  if (result.snapshot.song.lengthBars > 0) {
-    context.settings.songLengthBeats =
-        static_cast<double>(result.snapshot.song.lengthBars) * 4.0;
-  }
-  loadArrangeSidecar(directory, context.settings);
+  // Song state comes straight from project.mnkybox. A file that predates the
+  // song timing keys has lengthBeats 0; its deprecated lengthBars or the
+  // new-song default supplies the length. The pre-session sidecar is folded
+  // only in that legacy case and removed after a successful read.
+  const bool sessionCarriesSongTiming = result.snapshot.song.lengthBeats > 0.0;
+  applySongState(context.settings, result.snapshot.song,
+                 kDefaultSongLengthBeats);
+  foldLegacyArrangeSidecar(directory, context.settings, sessionCarriesSongTiming);
   // The session store width is the snapshot's own; a narrower store leaves the
   // app-side slots above it at their defaults (they are not persisted yet).
   for (std::size_t channel = 0; channel < result.snapshot.takes.active.size(); ++channel) {
@@ -556,6 +568,17 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
   context.settings.deviceOut = result.snapshot.deviceOut;
   context.audio.applyTakeLoops(context.settings);
   return true;
+}
+
+bool flushCurrentProject(const AppContext& context, std::string& error) {
+  error.clear();
+  const auto directory = context.state.currentProject();
+  if (directory.empty()) {
+    if (!context.state.dirty.load()) return true;
+    error = "no project folder for the unsaved session";
+    return false;
+  }
+  return save(context, directory, error);
 }
 
 std::string fingerprint(const AppContext& context) {

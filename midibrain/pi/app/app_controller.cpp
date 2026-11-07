@@ -186,6 +186,13 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
   valuePopupTimer_.setInterval(1500);
   connect(&valuePopupTimer_, &QTimer::timeout, this,
           [this] { hideValuePopup(); });
+  loopWrapTimer_.setSingleShot(true);
+  loopWrapTimer_.setInterval(static_cast<int>(LoopWrapPulse::kFlashMs));
+  connect(&loopWrapTimer_, &QTimer::timeout, this, [this] {
+    loopWrapFlash_ = false;
+    emit loopWrapChanged();
+  });
+  safeToPowerOffText_ = QStringLiteral("SAFE TO POWER OFF");
   noticeTimer_.setSingleShot(true);
   connect(&noticeTimer_, &QTimer::timeout, this, [this] { clearNotice(); });
   // MIDI-learn arm-then-touch: the target outline lives on the controls, so a
@@ -246,6 +253,58 @@ void AppController::shutdown() {
   audio_.stop();
   midi_.close();
   started_ = false;
+}
+
+bool AppController::flushForShutdown() {
+  // Every persisted app value (including the session song state) is captured
+  // by project::save through the session snapshot. The app has one open project
+  // at a time, so "flush all dirty projects" is the current project plus the
+  // session state it carries.
+  const auto directory = state_.currentProject();
+  std::string error;
+  if (!project::flushCurrentProject(*context_, error)) {
+    safeToPowerOffText_ = directory.empty()
+                              ? QStringLiteral("UNSAVED CHANGES - DO NOT POWER OFF")
+                              : QStringLiteral("SAVE FAILED - DO NOT POWER OFF");
+    log("shutdown: FLUSH FAILED for " +
+        (directory.empty() ? std::string("the unsaved session") : directory.string()) +
+        ": " + error);
+    emit safeToPowerOffChanged();
+    return false;
+  }
+  dirtyTracker_.clear(project::fingerprint(*context_));
+  state_.clearDirty();
+  safeToPowerOffText_ = QStringLiteral("SAFE TO POWER OFF");
+  emit dirtyChanged();
+  emit safeToPowerOffChanged();
+  if (directory.empty()) {
+    log("shutdown: nothing to flush (no open project)");
+  } else {
+    log("shutdown: flushed " + directory.string());
+  }
+  return true;
+}
+
+void AppController::showSafeToPowerOffScreen() {
+  if (safeToPowerOffVisible_) return;
+  safeToPowerOffVisible_ = true;
+  emit safeToPowerOffChanged();
+}
+
+void AppController::dismissSafeToPowerOff() {
+  if (!safeToPowerOffVisible_) return;
+  emit safeToPowerOffDismissed();
+}
+
+void AppController::startLoopWrapCue() {
+  loopWrap_.note(static_cast<std::int64_t>(nowMs()));
+  loopWrapFlash_ = true;
+  emit loopWrapChanged();
+  loopWrapTimer_.start();
+}
+
+void AppController::flashLoopWrapCue() {
+  startLoopWrapCue();
 }
 
 void AppController::setTab(int tab) {
@@ -1349,6 +1408,9 @@ void AppController::timerTick() {
           std::llround(start / 4.0 * static_cast<double>(kTicksPerBeat)));
       state_.transportOffsetTicks.store(target - static_cast<std::int64_t>(status.tick));
       arrangeVm_->noteLoopWrap();
+      // Visual cue: a wrap is a seek, and the musician must see the cycle
+      // restart rather than only hearing it.
+      startLoopWrapCue();
     }
   }
   pollRecSchedule(status);

@@ -14,11 +14,10 @@
 namespace mnky::app::project {
 
 inline constexpr const char* kProjectFileName = "project.mnkybox";
-// Temporary carrier for the W4/W5 settled song fields that the frozen session
-// object does not carry yet. TODO(fold-into-session): when SongState gains
-// mode/lengthBeats/loop, delete this sidecar and read/write those fields from
-// project.mnkybox instead. The sidecar keeps exactly the settled names/shapes.
-inline constexpr const char* kArrangeFileName = "arrange.mnkybox";
+// Legacy sidecar from before the song timing fields moved into the session
+// `song` object. Never written; load() folds it into the song state once and
+// removes it, then project.mnkybox is the only project file.
+inline constexpr const char* kLegacyArrangeFileName = "arrange.mnkybox";
 
 struct Entry {
   std::string name;
@@ -48,5 +47,11 @@ bool load(const AppContext& context, const std::filesystem::path& directory,
 // click, MIDI map). The controller compares it to detect a change for the dirty
 // flag.
 std::string fingerprint(const AppContext& context);
+
+// Graceful-shutdown flush: saves the open project through save(), covering the
+// whole session snapshot. True when there is nothing to flush (no project and
+// not dirty) or the save succeeded; false with `error` when dirty state has no
+// project folder or the save fails.
+bool flushCurrentProject(const AppContext& context, std::string& error);
 
 }  // namespace mnky::app::project

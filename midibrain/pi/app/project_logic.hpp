@@ -44,6 +44,28 @@ std::string defaultProjectName(std::int64_t unixSeconds);
 // marks the state dirty when the fingerprint changed, and only clear() drops
 // it. A manual undo back to the saved values therefore stays dirty until the
 // next save/load/new, which is what the project UI promises.
+// Loop-wrap visual pulse: the transport wraps at the loop end, and the
+// position readout plus the ARRANGE loop band flash for a short window so the
+// musician sees the cycle restart. Pure timing so `--unittests` covers it.
+class LoopWrapPulse {
+ public:
+  static constexpr std::int64_t kFlashMs = 280;
+
+  void note(std::int64_t nowMs) {
+    ++count_;
+    lastMs_ = nowMs;
+  }
+  int count() const { return count_; }
+  std::int64_t lastMs() const { return lastMs_; }
+  bool active(std::int64_t nowMs) const {
+    return lastMs_ >= 0 && nowMs >= lastMs_ && nowMs - lastMs_ < kFlashMs;
+  }
+
+ private:
+  int count_ = 0;
+  std::int64_t lastMs_ = -1;
+};
+
 class DirtyTracker {
  public:
   bool dirty() const { return dirty_; }
