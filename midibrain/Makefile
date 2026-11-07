@@ -45,9 +45,12 @@ reports:
 test:
 	@echo "== prototype verification only: see docs/acceptance.md =="
 	cd tscircuit && $(BUN) run typecheck
+	# Build FIRST: the silk/mechanical tests and the placement checker measure
+	# the BUILT circuit JSON under tscircuit/dist/, which is gitignored, so a
+	# fresh checkout must build before it tests.
+	cd tscircuit && $(BUN) run build
 	cd tscircuit && $(BUN) run test
 	cd tscircuit && $(BUN) run scripts/gen-pins.ts --check
-	cd tscircuit && $(BUN) run build
 	cd tscircuit && $(BUN) run placement
 	$(MAKE) reports
 	$(PYTHON) tscircuit/scripts/fab_check.py

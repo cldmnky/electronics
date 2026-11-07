@@ -1,7 +1,7 @@
 {
   "schema": "midibrain-hardware-acceptance/1",
   "note": "Physical acceptance state for the MIDI Brain hardware. An item moves to \"accepted\" only with measured evidence in docs/evidence/ that names a reviewer, a date and the current hardware fingerprint. The fingerprint covers the canonical PCB/panel sources, the mechanical TS-to-CAD bridge and its exported layout, the CAD algorithm, the JLCPCB order settings and the curated cable/hardware selection, so any hardware, algorithm, order-setting or part-selection change makes old evidence stale. Refresh hardware_fingerprint with `bun run scripts/release_gate.ts --fingerprint` after such a change; a documentation-only commit does not change it. There is no override key: unknown keys are errors. See docs/acceptance.md.",
-  "hardware_fingerprint": "937941eb996edc6c03e0e88a0a7d221d909839b3ef2ea84b0bbf27a9400f0f08",
+  "hardware_fingerprint": "7de347cf04d904e68c73616ae60d0e2d625713712662ac147b27f5bb1d7b8c71",
   "items": [
     {
       "id": "zstack",
@@ -26,7 +26,27 @@
     {
       "id": "display_dsi",
       "state": "pending",
-      "note": "Waveshare 3.5 inch DSI panel mounted on the front board with the 12 cm DSI cable routed, bend radius and latch verified."
+      "note": "Waveshare 4.3 inch DSI panel mounted on the front board at the fitted SMTSO boss pattern with one of the kit DSI cables (50 mm or 120 mm, 15-pin to 22-pin) routed, bend radius and latch verified, and the display underside clearance recorded."
+    },
+    {
+      "id": "display_boss_pattern",
+      "state": "pending",
+      "note": "The fitted display mounting confirmed on the physical module: the SMTSO-M2.5 bosses (99.30 x 61.80 pattern) take the spacer screws and the 58.00 x 49.04 plain holes do not, with the plane separation 9.0 mm = 4.0 mm boss projection + 5.0 mm spacer measured on the built stack."
+    },
+    {
+      "id": "display_fpc_idc",
+      "state": "pending",
+      "note": "The display FPC plug and the J5 IDC plug/ribbon coexist in the assembled stack: the provisional Z clearances (FPC stack top <= ~12.9 mm vs the front-board top face 19.05 mm and the IDC plug >= 19.05 mm) plus the routed bend at the display's right edge recorded per the route contract in docs/mechanical-stack.md."
+    },
+    {
+      "id": "module_label_sku_read",
+      "state": "pending",
+      "note": "The delivered display module label/SKU read and matched the selected part (Waveshare 4.3inch DSI LCD, ElectroKit 4103 5687) that the drawing and STEP model were sourced from."
+    },
+    {
+      "id": "touch_window_alignment",
+      "state": "pending",
+      "note": "With the display seated in the 107.22 x 68.87 panel window, touch input stays aligned with the visible UI: glass centred in the cutout and touch coordinates agree with the active-area silkscreen window."
     },
     {
       "id": "pi_microsd",
@@ -41,7 +61,7 @@
     {
       "id": "case_fit",
       "state": "pending",
-      "note": "26HP/3U panel, 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth."
+      "note": "32HP/3U panel, 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth."
     },
     {
       "id": "usb_c_5a_path",

@@ -62,7 +62,27 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "display_dsi",
     title: "Display and DSI cable",
-    requirement: "Waveshare 3.5 inch DSI panel mounted on the front board with the 12 cm DSI cable routed, bend radius and latch verified.",
+    requirement: "Waveshare 4.3 inch DSI panel mounted on the front board at the fitted SMTSO boss pattern with one of the kit DSI cables (50 mm or 120 mm, 15-pin to 22-pin) routed, bend radius and latch verified, and the display underside clearance recorded.",
+  },
+  {
+    id: "display_boss_pattern",
+    title: "Display mount threads",
+    requirement: "The fitted display mounting confirmed on the physical module: the SMTSO-M2.5 bosses (99.30 x 61.80 pattern) take the spacer screws and the 58.00 x 49.04 plain holes do not, with the plane separation 9.0 mm = 4.0 mm boss projection + 5.0 mm spacer measured on the built stack.",
+  },
+  {
+    id: "display_fpc_idc",
+    title: "Display FPC / IDC coexistence",
+    requirement: "The display FPC plug and the J5 IDC plug/ribbon coexist in the assembled stack: the provisional Z clearances (FPC stack top <= ~12.9 mm vs the front-board top face 19.05 mm and the IDC plug >= 19.05 mm) plus the routed bend at the display's right edge recorded per the route contract in docs/mechanical-stack.md.",
+  },
+  {
+    id: "module_label_sku_read",
+    title: "Module label SKU read",
+    requirement: "The delivered display module label/SKU read and matched the selected part (Waveshare 4.3inch DSI LCD, ElectroKit 4103 5687) that the drawing and STEP model were sourced from.",
+  },
+  {
+    id: "touch_window_alignment",
+    title: "Touch/panel window alignment",
+    requirement: "With the display seated in the 107.22 x 68.87 panel window, touch input stays aligned with the visible UI: glass centred in the cutout and touch coordinates agree with the active-area silkscreen window.",
   },
   {
     id: "pi_microsd",
@@ -77,7 +97,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "case_fit",
     title: "Case fit",
-    requirement: "26HP/3U panel, 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth.",
+    requirement: "32HP/3U panel, 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth.",
   },
   {
     id: "usb_c_5a_path",

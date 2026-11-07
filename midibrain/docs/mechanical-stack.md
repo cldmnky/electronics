@@ -105,7 +105,8 @@ sit above the buttons, so the authorised fallback (3) was applied — the REC / 
 beside their buttons. The band is then +49.70 (feedthrough cutout floor) to −27.80 (transport-button opening top) =
 77.50 mm, and the window keeps 4.365 mm to the button openings, 1.165 mm to the feedthrough labels (moved from y 44.0
 to 47.5) and 2.865 mm … 7.935 mm of panel web around it. Horizontal: the window left edge −63.11 keeps 9.07 mm to
-the M3 rail-hole edge (72.18) and 18.17 mm to the panel edge (−81.28); the module left edge −62.5 keeps 1.5 mm to
+the M3 rail-hole edge (72.18) and 18.17 mm to the panel edge (−81.28); the knob at x = 52 (body right edge 58.25)
+keeps 13.93 mm to the rail-hole edge and 23.03 mm to the panel edge, so the +5 mm column move stays off the rails; the module left edge −62.5 keeps 1.5 mm to
 the 128 mm board edge and the module right edge +43.5 keeps 2.25 mm to the value-knob body (Ø12.5 at x = 52).
 
 Reference CAD path: `mechanical/reference/waveshare-4.3inch-dsi-lcd.step` (STEP SHA-256
@@ -117,10 +118,42 @@ plus the front-facing planar faces; the glass and bezel numbers above come from 
 
 Kit contents and the standoff row: the box carries three DSI cables — **50 mm** and **120 mm** 15-pin→22-pin (the Pi 5
 DSI1 interface) and a 160 mm 15-pin→15-pin cable that does NOT fit DSI1 — plus screws and copper pillars. The module
-itself carries M2.5 SMT standoffs (`SMTSO-M2_5-4ET`, 4 mm class) on the outer 99.30 × 61.80 pattern; whether OUR
-spacers land on the module's threaded bosses or on the inner through-hole pattern is a first-article question, and the
-`DISPLAY_STANDOFFS` / `DISPLAY_BOSS_PATTERN` data pair lets the answer be switched without re-deriving coordinates.
-The 9.0 mm plane separation + 5.0 mm spacer remains provisional against the kit pillars.
+itself carries M2.5 SMT threaded standoffs (`SMTSO-M2_5-4ET`, 4 mm class) on the outer 99.30 × 61.80 pattern, which is
+that pattern that is FITTED (see the reconciliation row above); the inner 58.00 × 49.04 plain holes stay recorded as
+alternative data (DISPLAY_STANDOFFS) and the kit's copper pillars can span them electrically. Design DSI cable pick:
+the **120 mm** 15→22 cable — the coexistence/route contract below needs slack for two 90° folds of the flex inside the
+display stack slot and the drop to the Pi (the provisional path is ~60 mm; 50 mm leaves none). The 9.0 mm plane
+separation = 4.0 mm boss projection + 5.0 mm spacer remains provisional against the kit pillars and is verified by
+acceptance item `display_boss_pattern`.
+
+### Display FPC ↔ J5 IDC coexistence (resolved on paper, gated as `display_fpc_idc`)
+
+The 15-pin FPC connector sits on the module rear face at absolute (38.84, 11.7) — inside the J5 IDC corridor plan area
+(X ≈ 29–39, Y −3.5…+23.5). **In Z the two never share a plane:**
+
+| Feature | Provisional Z | Basis |
+|---|---:|---|
+| Display PCB rear face | 10.05 | PROVISIONAL_Z chain (glass front flush, 10.05 mm glass-front → PCB-rear) |
+| FPC connector stack top | ≤ 12.9 | STEP bodies 1.0 + 0.8 mm over the PCB rear + ~1 mm folded flex; not measured |
+| Front-board top face | 19.05 | PROVISIONAL_Z (assumption B) |
+| J5 IDC plug bottom | ≥ 19.05 | the plug stands on the front board's top face |
+
+So the FPC body/bend zone clears the front-board plane by ≥ 6.1 mm, and the IDC plug exists only above 19.05, where
+the display stack has already ended (≤ 14.05). The ribbon and the flex coexist **provided the flex never lies on the
+front-board top face while crossing the corridor; that is the route contract:**
+
+1. From the ZIF mouth the flex folds rearward inside the display-stack slot (display rear-most 14.05 → board top
+   19.05, a 5.0 mm slot) and runs in the panel-to-board gap (z < 19.05).
+2. In that gap it travels right along the module's right edge (+43.5) into the free corridor x 43.5…64 — clear below
+   z 19.05 except the light pipes at x −41…+7, which are not in that x range.
+3. It crosses the board plane beyond the board edge (x ≥ +64) — NOT through the relief notch, which the feedthrough
+   bracket and the IDC hardware own — then runs rackward at x ≥ +64 where no board exists (rear board ±50.8).
+4. Rackward it only descends toward the Pi DSI1 (x ≈ 33) at z ≥ 42, above the IDC stack's z band (20.65…40.65).
+
+A 50 mm kit cable covers ~55 mm of that path with no slack: it fails the route contract. The 120 mm 15→22 cable is
+the design pick and the route above is the mechanical yardstick (item `display_fpc_idc`). Two 90° folds of a 15-pin
+0.5 mm-pitch flex need ~2 mm radius each; the 5.0 mm slot and the open rack cavity provide that. First article still
+measures the real bend — the table above is derived from vendor numbers, not a measurement.
 
 Primary sources for the display: the 2D drawing `3.5_inch_DSI_LCD_H-2D-PDF.pdf` and the 3D model
 `3.5_inch_DSI_LCD_H_3D-STP.zip` → `3.5 inch DSI LCD (H)_3d-20251129.stp`. The model was read with CadQuery 2.8.0: lens
@@ -153,14 +186,20 @@ board (edge ligament 5.45 mm). The right-hand control column at x = 47 is on the
 overhangs; a left-flush rear board (26.4 mm one side) is a different, unchosen arrangement and would be an owner
 decision.
 
-- Front↔rear spacers: length TBD (~18–20 mm pending the J5 IDC bend mockup). The top pair at (±44, 43) sits inside
+- Front↔rear spacers: length TBD (~18–20 mm pending the J5 IDC bend mockup). The top pair at (±45, 43) sits inside
   the feedthrough bracket envelope, so the printed bracket carries head-clearance slots there; the M2.5 head/washer
-  envelope is unmeasured.
+  envelope is unmeasured. (±44 → ±45 was forced by the new display boss hole at (+40.15, +41.90): the web goes
+  0.50 → 1.47 mm; ±46 was tried and rejected — the rear autorouter then placed a via at (50.46, 6.56) with 0.118 mm
+  of copper to the board edge, under the published 0.20 mm rule.)
 - Panel↔front standoffs: 4 × M2.5 at (±61, ±53), 1.65 mm edge ligament; length TBD.
-- J5 corridor (X ≈29–39, Y −10…+30) clears the display PCB edge (~26.3) by ~3 mm and the control column (~39.5) by
-  ~1 mm. IDC plug overhang and solder-tail protrusion still need a physical sample.
-- LCD top (39.0) to bracket bottom (41.5): 2.5 mm. Display left (−61.44) to front-PCB edge (−64): 2.56 mm.
-- C5 (50, 46) against the right bracket mount (55, 46.5): about 1 mm of screw-head clearance; sample check.
+- J5 corridor (X ≈29–39, Y −3.5…+23.5): the 106 mm module now extends past it (right edge +43.5), so the corridor
+  region overlaps the display's plan area; the FPC/IDC Z-clearance argument above covers it, and the IDC plug bottom
+  (≥ 19.05) vs the display stack top (≤ 14.05) keeps ≥ 5.0 mm in Z even where their plans overlap.
+- Display top edge (+45.0) vs the bracket bar (bottom 42.0): they overlap in PLAN but not in Z (display stack ends at
+  14.05, the bar sits behind the board from 20.65). Display left (−62.5) to front-PCB edge (−64): 1.5 mm ligament
+  (owner decision D2).
+- C5 (50, 46) against the right bracket mount (55, 46.5) and the top spacer pair (±45, 43): centre distances 9.66 /
+  5.83 mm, screw-head class; sample check.
 
 ## Provisional installed-depth chain
 

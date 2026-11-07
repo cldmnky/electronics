@@ -23,7 +23,7 @@ const marks = FRONT_CONCEPT.map(p => {
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PANEL.width + 16} ${PANEL.height + 20}">
 <title>mnkybox 32HP 4.3-inch DSI concept — not a cutting template</title>
 <rect width="100%" height="100%" fill="#e8e8e4"/>
-<text x="8" y="5" font-family="sans-serif" font-size="2.4" font-weight="bold" fill="#49544e">mnkybox — 26HP FRONT CONCEPT</text>
+<text x="8" y="5" font-family="sans-serif" font-size="2.4" font-weight="bold" fill="#49544e">mnkybox — 32HP FRONT CONCEPT</text>
 <g transform="translate(8 8)" font-family="sans-serif">
 <rect width="${PANEL.width}" height="${PANEL.height}" rx="0.7" fill="#19211e"/>
 <rect x="${cx-c.width/2}" y="${cy-c.height/2}" width="${c.width}" height="${c.height}" fill="#080f0c" stroke="#829a8b" stroke-width="0.35"/>

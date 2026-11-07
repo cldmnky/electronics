@@ -38,20 +38,22 @@ claim and it is not HDI.
 
 ## Geometry results
 
-`python3 tscircuit/scripts/fab_check.py`:
+`python3 tscircuit/scripts/fab_check.py` (measured on the 2026-11-08 build; the
+autorouter is deliberately re-run per build, so trace/via counts move between
+builds while the SMT pads, PTH and NPTH hole sets do not):
 
 | Item | Front/UI | Rear/base | Limit |
 |---|---|---|---|
 | Size | 128 × 112 mm | 101.6 × 112 mm | ≥ 3 × 3 mm |
 | Layers / thickness | 2 / 1.6 mm | 2 / 1.6 mm | 2 / 1.6 mm |
-| Routed elements | 91 traces, 88 vias, 76 SMT pads, 69 plated holes, 28 NPTH | 83 traces, 207 vias, 43 SMT pads, 106 plated holes, 8 NPTH | required data |
-| Min trace | 0.150 mm | 0.150 mm | ≥ 0.10 mm |
+| Routed elements | 93 traces, 68–69 vias, 76 SMT pads, 61 plated holes, 30 NPTH | 87 traces, 163–215 vias, 47 SMT pads, 106 plated holes, 8 NPTH | required data |
+| Min trace | 0.200 mm (built route widths) | 0.200 mm | ≥ 0.10 mm |
 | Via drill / pad / ring | 0.200 / 0.300 / 0.050 mm | 0.200 / 0.300 / 0.050 mm | ≥ 0.15 / 0.25 / 0.05 mm |
 | Via target | 0.200 / 0.300 mm is **below** 0.20 / 0.45 mm target | same | TARGET |
-| PTH drill | 1.020–1.300 mm (55 round) + 14 oblong slots | 1.000 mm (106) | 0.15–6.3 mm |
-| PTH annular ring | 0.290 mm | 0.250 mm | ≥ 0.18 mm (recommend 0.25) |
-| Plated slot width | 1.20 mm | — | ≥ 0.50 mm |
-| NPTH | 0.900–2.700 mm | 2.700 mm | ≥ 0.50 mm |
+| PTH drill | 1.000–1.300 mm (61 round, no oblong slots) | 1.000–1.100 mm (106 round) | 0.15–6.3 mm |
+| PTH annular ring | 0.250 mm min | 0.250 mm | ≥ 0.18 mm (recommend 0.25) |
+| Plated slot width | none | — | ≥ 0.50 mm |
+| NPTH | 0.900–2.700 mm (30 holes) | 2.700 mm (8 holes) | ≥ 0.50 mm |
 | Min SMT pad | 0.600 mm | 0.600 mm | ≥ 0.25 mm (project floor) |
 | Board-edge rule | 0.20 mm | 0.20 mm | ≥ 0.20 mm |
 
@@ -109,7 +111,7 @@ guard).
 
 ## Front panel
 
-`panel.circuit.tsx` builds a bare 26HP × 3U FR-4 panel: no copper, no components,
+`panel.circuit.tsx` builds a bare 32HP × 3U FR-4 panel: no copper, no components,
 no solder mask, white silkscreen, ENIG. It has the LCD/control/USB/TRS cutouts and
 three 4 mm LED light-pipe holes. This is a **panel PCB**, not part of the
 electrical netlist. Verify the "no solder mask both sides" option with JLCPCB

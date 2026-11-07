@@ -89,19 +89,32 @@ test("display, window, cutout and mounting holes share one coordinate source", (
   // of the module's right edge 43.5. See docs/decisions.md (D2).
   expect(d.x).toBe(-9.5)
   expect(d.y).toBe(11)
-  // Holes derive from the display centre plus the vendor-local offsets.
-  expect(LCD_MOUNT_HOLES).toHaveLength(DISPLAY_STANDOFFS.length)
+  // Holes derive from the display centre plus the vendor-local offsets - the
+  // SMTSO boss pattern, the only M2.5 threads the module offers.
+  expect(LCD_MOUNT_HOLES).toHaveLength(DISPLAY_BOSS_PATTERN.length)
   LCD_MOUNT_HOLES.forEach((h, i) => {
-    expect(h.x).toBeCloseTo(d.x + DISPLAY_STANDOFFS[i].x, 9)
-    expect(h.y).toBeCloseTo(d.y + DISPLAY_STANDOFFS[i].y, 9)
+    expect(h.x).toBeCloseTo(d.x + DISPLAY_BOSS_PATTERN[i].x, 9)
+    expect(h.y).toBeCloseTo(d.y + DISPLAY_BOSS_PATTERN[i].y, 9)
   })
-  // Asymmetric 58 x 49 mm pattern preserved.
+  // Asymmetric 99.30 x 61.80 mm pattern (3.35 / 3.10 edge insets).
   const xs = [...new Set(LCD_MOUNT_HOLES.map(h => h.x))].sort((a, b) => a - b)
   const ys = [...new Set(LCD_MOUNT_HOLES.map(h => h.y))].sort((a, b) => a - b)
-  // Owner-directed pattern: 25.62 / 22.38 edge insets give 58.00 mm, 9.50 / 9.46
-  // give 49.04 mm. The pattern is asymmetric, so the pitch is NOT 58 x 49.00.
-  expect(xs[1] - xs[0]).toBeCloseTo(58.0, 6)
-  expect(ys[1] - ys[0]).toBeCloseTo(49.04, 6)
+  expect(xs[1] - xs[0]).toBeCloseTo(99.3, 6)
+  expect(ys[1] - ys[0]).toBeCloseTo(61.8, 6)
+  // The spacer arithmetic only closes on this pattern: planeSeparation 9.0 =
+  // the 4.0 mm SMT boss projection + the 5.0 mm spacer. The inner plain holes
+  // provide no thread, so the fitted pattern and the Z stack must agree.
+  expect(DISPLAY_STANDOFF.spacerLength + DISPLAY_VENDOR.pcbRearToBossEnd)
+    .toBeCloseTo(DISPLAY_STANDOFF.planeSeparation, 9)
+  // Front-board hole webs: the LCD holes and the spacer/board holes are drill
+  // features in the same plane; keep at least 1.0 mm of FR-4 between them (the
+  // 0.50 mm web a (44, 43) spacer imposed is why that pair moved to ±46).
+  for (const l of LCD_MOUNT_HOLES) {
+    for (const m of [...FRONT_REAR_MOUNT, ...FRONT_BOARD_HOLES]) {
+      const web = Math.hypot(l.x - m.x, l.y - m.y) - 2.15 - MOUNT_HOLE_DIAMETER / 2
+      expect(web).toBeGreaterThan(1.0)
+    }
+  }
   // Panel cutout centred on the module and sized from the GLASS OUTLINE (D1):
   // the glass passes through the panel, so the window is LARGER than the
   // 106 x 68 module outline: 105.42 x 67.07 glass + 0.9 mm per side.
@@ -249,9 +262,11 @@ test("panel standoffs and the shared front-rear grid clear parts and edges", () 
   expect(-58 - (-61 + 2.5)).toBeCloseTo(0.5, 6)
   expect(j1.x).toBe(-53)
   // Shared front-rear spacer grid: inside both boards, top pair below the
-  // relief notch (bottom 48.0), bottom pair below the jack courtyards.
+  // relief notch (bottom 48.0), bottom pair below the jack courtyards. The
+  // top pair moved ±44 → ±45 to keep FR-4 web against the new SMTSO-pattern
+  // display hole at (+40.15, +41.90); ±46 was tried and rejected (see layout.ts).
   expect(FRONT_REAR_MOUNT).toEqual([
-    { x: -44, y: -52 }, { x: 44, y: -52 }, { x: -44, y: 43 }, { x: 44, y: 43 },
+    { x: -44, y: -52 }, { x: 44, y: -52 }, { x: -45, y: 43 }, { x: 45, y: 43 },
   ])
   for (const h of FRONT_REAR_MOUNT) {
     expect(Math.abs(h.x)).toBeLessThan(101.6 / 2 - 3)
@@ -640,12 +655,12 @@ test("export with no argument writes the canonical JSON", () => {
   }
 })
 
-test("mounting holes follow the drawing's asymmetric insets, never a mirrored pitch", () => {
-  // Drawing Rev2.2: 25.62 mm from the LEFT edge and 22.38 mm from the RIGHT
-  // (58.00 mm apart), 9.50 mm from the TOP and 9.46 mm from the BOTTOM
-  // (49.04 mm apart). Both pairs are derived from the edge insets, so the
-  // top/bottom asymmetry survives: y is +24.50 at the top and -24.54 at the
-  // bottom, NOT +-24.50.
+test("display patterns follow the drawing's asymmetric insets, never a mirrored pitch", () => {
+  // Drawing Rev2.2 inner pattern: 25.62 mm from the LEFT edge and 22.38 mm
+  // from the RIGHT (58.00 mm apart), 9.50 mm from the TOP and 9.46 mm from
+  // the BOTTOM (49.04 mm apart). Both pairs are derived from the edge insets,
+  // so the top/bottom asymmetry survives: y is +24.50 at the top and -24.54
+  // at the bottom, NOT +-24.50.
   expect(DISPLAY_STANDOFFS.map(h => h.x)).toEqual([-27.38, 30.62, -27.38, 30.62])
   expect(DISPLAY_STANDOFFS.map(h => h.y)).toEqual([24.5, 24.5, -24.54, -24.54])
   const d = DISPLAY_CONCEPT
@@ -653,9 +668,9 @@ test("mounting holes follow the drawing's asymmetric insets, never a mirrored pi
   expect(d.x + d.width / 2 - 22.38).toBeCloseTo(d.x + 30.62, 6)
   expect(d.y + d.height / 2 - 9.5).toBeCloseTo(d.y + 24.5, 6)
   expect(d.y + d.height / 2 - 58.54).toBeCloseTo(d.y - 24.54, 6)
-  // The alternative outer pattern (99.30 x 61.80, 3.35 / 3.10 insets) is kept
-  // as data: the drawing's corner features look like the module's own SMT
-  // standoffs, so the first article must confirm which pattern is threaded.
+  // The fitted outer pattern (99.30 x 61.80, 3.35 / 3.10 insets): the
+  // reference STEP names its corner features `SMTSO-M2_5-4ET`, M2.5 female
+  // threads, so these are the mounting centres the front board carries.
   expect(DISPLAY_BOSS_PATTERN.map(h => h.x)).toEqual([-49.65, 49.65, -49.65, 49.65])
   expect(DISPLAY_BOSS_PATTERN.map(h => h.y)).toEqual([30.9, 30.9, -30.9, -30.9])
   expect(DISPLAY_BOSS_PATTERN[1]!.x - DISPLAY_BOSS_PATTERN[0]!.x).toBeCloseTo(99.3, 6)

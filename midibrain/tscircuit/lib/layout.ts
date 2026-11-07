@@ -49,13 +49,22 @@ export const FRONT_BOARD_HOLES = [
 // Front-to-rear-board spacer grid (M2.5, spacer length TBD ~18–20 mm pending
 // the J5 IDC cable-bend mockup). Shared by both boards; the panel does NOT
 // carry these (internal stack only). Top pair sits between the display top
-// (39.0) and the relief-notch bottom (48.0) while clearing the U6 courtyard
+// (45.0) and the relief-notch bottom (48.0) while clearing the U6 courtyard
 // (top 38.4) and C5; bottom pair sits below the jack courtyards (bottom
-// −54.9) with 2.65 mm edge ligament. See docs/mechanical-stack.md for the
-// two residuals: top positions need bracket clearance holes at regen time,
-// and (-44, 43) needs low-profile top hardware for the 3.5 mm display gap.
+// −54.9) with 2.65 mm edge ligament. The top pair was moved ±44 → ±45 when the
+// display mounting switched to the SMTSO boss pattern: the new display hole
+// at (+40.15, +41.90) kept only 0.50 mm of FR-4 web to a (44, 43) spacer hole
+// (centre distance 4.00 − half-diameters 3.50); at (±45, 43) the web is 1.47
+// mm. ±46 was tried first and REJECTED: it shifted the rear-board autorouter
+// to a via at (50.46, 6.56) violating the 0.20 mm copper-to-edge rule
+// (0.118 mm), a build failure; ±45 clears the router and keeps every web
+// (rear ligament 4.45 mm, C5 centre distance 5.83 mm, J_PWR pads 4.3 mm, the
+// same class as at ±44). The bottom pair stays at ±44: the bottom display
+// hole (+40.15, −19.90) is 32 mm above it and nothing else asked for the
+// move. See docs/mechanical-stack.md for the residual: top positions need
+// bracket clearance holes at regen time.
 export const FRONT_REAR_MOUNT = [
-  { x: -44, y: -52 }, { x: 44, y: -52 }, { x: -44, y: 43 }, { x: 44, y: 43 },
+  { x: -44, y: -52 }, { x: 44, y: -52 }, { x: -45, y: 43 }, { x: 45, y: 43 },
 ] as const
 
 // Eurorack rail holes in the panel (M3 rack screws). Doepfer 3U, same rule as
@@ -120,15 +129,21 @@ export const PI_HOLES = [-1, 1].flatMap(sx => [-1, 1].map(sy => ({
 //                          The PANEL WINDOW is sized from the GLASS (owner
 //                          decision D1), not from the PCB envelope.
 //
-// WHICH HOLES ARE THREADED. The drawing shows two 4-hole patterns. Zooming the
-// corner at 4x shows a silver SMT standoff body (the STEP file carries
-// `SMTSO-M2_5-4ET`, an M2.5 threaded SMT spacer) at the 3.35 / 3.10 corner
-// pattern, while the 25.62 / 22.38 / 9.50 / 9.46 pattern shows a plain plated
-// through hole. The owner-directed mounting pattern is the 25.62 / 22.38 set, so
-// that is what DISPLAY_STANDOFFS carries; the outer pattern is kept in
-// DISPLAY_BOSS_PATTERN as the alternative and the first article must confirm
-// which pattern is threaded (if the SMT standoffs are the bosses, the spacers
-// move to DISPLAY_BOSS_PATTERN and nothing else changes).
+// WHICH PATTERN IS THREADED (reconciled against the reference STEP, 2026-11-08).
+// The drawing shows two 4-hole patterns. The STEP file carries
+// `SMTSO-M2_5-4ET` - an M2.5 FEMALE-THREADED SMT standoff - at the 3.35 / 3.10
+// corner pattern, while the 25.62 / 22.38 / 9.50 / 9.46 inner pattern is a
+// plain plated through hole with nothing to thread into; and the module kit's
+// screws/pillars are MatroM2.5 pieces. The FITTED pattern is therefore the
+// OUTER boss pattern: DISPLAY_BOSS_PATTERN. This is the only choice whose
+// spacer arithmetic holds: planeSeparation 9.0 = the 4.0 mm boss projection
+// (DISPLAY_VENDOR.pcbRearToBossEnd, measured off those same SMT standoffs)
+// + the 5.0 mm spacer. Mounting through the inner plain Ø4.3 holes would need
+// hardware the module does not provide and would change the spacer to the full
+// 9.0 mm. DISPLAY_STANDOFFS keeps the inner pattern as recorded alternative
+// data (and the drawing's own inset figure) with the first article still
+// physically confirming the threads; flipping back is a one-line swap in
+// LCD_MOUNT_HOLES.
 export const DISPLAY_DATUM = {
   sourceDrawing: "assets/display-4.3-drawing.png (Waveshare Exterior-Size, Rev2.2)",
   sourceDrawingUrl: "https://www.waveshare.com/img/devkit/LCD/4.3DP/Exterior-Size.jpg",
@@ -163,11 +178,14 @@ export const DISPLAY_VENDOR = {
   bossDiameter: 6.2, // SMT standoff body read off the drawing corner (~6.2 mm)
 } as const
 
-// Owner-directed pattern: hole centres 25.62 mm from the LEFT edge, 22.38 mm from
-// the RIGHT edge, 9.50 mm from the TOP and 9.46 mm from the BOTTOM. The pattern
-// is asymmetric left-right and top-bottom, so it is NOT mirrored: in the layout
-// frame (module centred on the origin) the offsets are derived from the edge
-// insets, never by negating a pitch.
+// ALTERNATIVE inner pattern (plain plated holes, no thread): hole centres
+// 25.62 mm from the LEFT edge, 22.38 mm from the RIGHT edge, 9.50 mm from the
+// TOP and 9.46 mm from the BOTTOM. The pattern is asymmetric left-right and
+// top-bottom, so it is NOT mirrored: in the layout frame (module centred on
+// the origin) the offsets are derived from the edge insets, never by negating
+// a pitch. Kept 1) as the mounting-pattern fallback if the first article
+// shows the SMT bosses are not threaded and 2) because these centres match
+// exactly what the drawing dimensions.
 export const DISPLAY_STANDOFFS = [
   { x: mm3(25.62 - DISPLAY_VENDOR.outline.width / 2), y: mm3(DISPLAY_VENDOR.outline.height / 2 - 9.5) },
   { x: mm3(DISPLAY_VENDOR.outline.width - 22.38 - DISPLAY_VENDOR.outline.width / 2), y: mm3(DISPLAY_VENDOR.outline.height / 2 - 9.5) },
@@ -175,9 +193,11 @@ export const DISPLAY_STANDOFFS = [
   { x: mm3(DISPLAY_VENDOR.outline.width - 22.38 - DISPLAY_VENDOR.outline.width / 2), y: mm3(DISPLAY_VENDOR.outline.height / 2 - 58.54) },
 ] as const // x -27.38 / +30.62, y +24.50 / -24.54
 
-// Outer 4-hole pattern (99.30 x 61.80 centres, 3.35 / 3.10 edge insets). The
-// corner features that look like the module's own SMT standoffs sit here; kept
-// as data so the first article can switch the spacers without re-deriving them.
+// FITTED outer 4-hole pattern (99.30 x 61.80 centres, 3.35 / 3.10 edge
+// insets). The corner features that carry the module's own SMT standoffs sit
+// here; the reference STEP names them `SMTSO-M2_5-4ET`, i.e. these are the
+// ONLY M2.5 threads the module offers, so our spacers screw into them and the
+// front board carries its holes at these centres (LCD_MOUNT_HOLES).
 export const DISPLAY_BOSS_PATTERN = [
   { x: mm3(3.35 - DISPLAY_VENDOR.outline.width / 2), y: mm3(DISPLAY_VENDOR.outline.height / 2 - 3.1) },
   { x: mm3(DISPLAY_VENDOR.outline.width - 3.35 - DISPLAY_VENDOR.outline.width / 2), y: mm3(DISPLAY_VENDOR.outline.height / 2 - 3.1) },
@@ -243,8 +263,9 @@ export const DISPLAY_STACK = {
 export const DISPLAY_BEHIND_PCB = DISPLAY_VENDOR.pcbRearToBossEnd // 4.0
 
 // Front-board LCD standoff holes derive from the display centre plus the
-// fixed display-local offsets above. Do not re-state their positions.
-export const LCD_MOUNT_HOLES = DISPLAY_STANDOFFS.map(o => ({
+// mounted display-local offsets above (the SMTSO boss pattern, see
+// DISPLAY_BOSS_PATTERN). Do not re-state their positions.
+export const LCD_MOUNT_HOLES = DISPLAY_BOSS_PATTERN.map(o => ({
   x: DISPLAY_CONCEPT.x + o.x,
   y: DISPLAY_CONCEPT.y + o.y,
 }))
@@ -376,7 +397,7 @@ export const DISPLAY_ANNOTATIONS = [
   { text: "LCD 4.3in 106.00 x 68.00", dx: 0, dy: 26, fontSize: 1.2 },
   { text: "ACTIVE 95.04 x 53.86", dx: 0, dy: -30, fontSize: 0.9 },
   { text: "BEZEL 95.54 x 54.36", dx: 0, dy: -34, fontSize: 0.9 },
-  { text: "MOUNT 58.00 x 49.04", dx: 0, dy: 21, fontSize: 0.9 },
+  { text: "MOUNT 99.30 x 61.80", dx: 0, dy: 21, fontSize: 0.9 },
   { text: "DSI 15P", dx: 20, dy: 13, fontSize: 1.0 },
 ] as const
 export const displayAnnotationXY = (a: { dx: number; dy: number }) => ({
