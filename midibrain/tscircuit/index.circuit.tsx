@@ -6,6 +6,7 @@ import { C8545_2N7002 } from "./imports/C8545_2N7002"
 import { SN74LVC1G126DBVR } from "./imports/SN74LVC1G126DBVR"
 import { BOARD_POLICY } from "./lib/electrical"
 import { FRONT_REAR_MOUNT, PI_HOLES, REAR_PCB } from "./lib/layout"
+import { PROBE_FOOTPRINT, PROBE_HOLE_DIAMETER_MM, PROBE_PAD_DIAMETER_MM, PROBE_POINTS } from "./lib/probe-points"
 import { RearSilk } from "./lib/silk"
 
 // REAR/BASE BOARD, 20HP x 112 mm. Prototype schematic/placement; not a
@@ -111,6 +112,7 @@ export default () => (
       <schematicsection name="headers" displayName="Connectors" />
       <schematicsection name="power" displayName="Power, decoupling and MIDI rail" />
       <schematicsection name="isolation" displayName="Pi/Pico isolation, reset" />
+      <schematicsection name="probe" displayName="Probe points (bare copper, no parts)" />
     </schematicsheet>
 
     {/* Pi 5 mounting holes: 58 x 49 grid, portrait orientation. */}
@@ -249,6 +251,29 @@ export default () => (
         scripts/check_electrical.py (limit 3 mm). */}
     <C name="C13" value="100nF" x="37.55mm" y="-10.45mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
     <C name="C14" value="100nF" x="37.55mm" y="-5.45mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+
+    {/* Probe points: bare plated through-holes on nets that already exist, one
+        source in lib/probe-points.ts. They add no part and bridge no rail; the
+        explicit footprint carries the drill AND the pad (0.80 / 1.60 mm,
+        0.40 mm ring) because the through-hole testpoint variant ignores
+        padDiameter. Physical probe access is unverified: acceptance item
+        probe_point_access. */}
+    {PROBE_POINTS.map(p => (
+      <testpoint
+        key={p.ref}
+        name={p.ref}
+        footprint={PROBE_FOOTPRINT}
+        holeDiameter={`${PROBE_HOLE_DIAMETER_MM}mm`}
+        padDiameter={`${PROBE_PAD_DIAMETER_MM}mm`}
+        doNotPlace
+        layer="bottom"
+        pcbX={`${p.x}mm`}
+        pcbY={`${p.y}mm`}
+        schSheetName="rear"
+        schSectionName="probe"
+        connections={{ pin1: `net.${p.net}` }}
+      />
+    ))}
 
     {/* Silkscreen wave: brand lockup, hand-solder hints, pin-1 and polarity
         marks. Every position and its clearance proof live in lib/silk.tsx. */}

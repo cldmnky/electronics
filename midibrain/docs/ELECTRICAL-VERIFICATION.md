@@ -14,8 +14,8 @@ top).
 cd midibrain/tscircuit
 bun install --frozen-lockfile
 bun run build                      # writes dist/index, dist/front, dist/panel
-python3 scripts/check_electrical.py # independent electrical checks (110)
-python3 scripts/test_electrical.py  # negative mutations and model cases (22)
+python3 scripts/check_electrical.py # independent electrical checks (238)
+python3 scripts/test_electrical.py  # negative mutations and model cases (35)
 bun run typecheck && bun test lib/*.test.ts && bun run placement
 cd ../spice && python3 run_tests.py
 ```
@@ -98,6 +98,7 @@ TLP2362 guarantees a threshold input current of 5.0 mA maximum and recommends
 | Output | open collector | inverting **totem pole** |
 | Threshold IFHL max | 5.0 mA | **1.3 mA at Ta ≤ 105 °C, 1.6 mA at 125 °C** |
 | Recommended IF(ON) | 7.5–14 mA | **2–6 mA** |
+| Absolute maximum IF | 25 mA | **10 mA at Ta = 25 °C**, derating −0.13 mA/°C for Ta ≥ 110 °C → **8.05 mA at 125 °C** |
 | Height | 2.2 mm (same package) | **2.2 mm max** (2.1 ± 0.1, package drawing) |
 
 `imports/TLP2361_TPL_E.tsx` reuses the verified 11-4L1S pad geometry, carries
@@ -121,9 +122,24 @@ about the external device; the model includes both.
 | Corner | Loop current | Against the 125 °C TLP2361 threshold (1.6 mA) | Against TLP2362 |
 |---|---|---|---|
 | 5 V sender, minimum | **3.435 mA** | 2.15× | **0.69× — not guaranteed** |
-| 5 V sender, maximum | **6.527 mA** | above the 6 mA recommended maximum, 65 % of the 10 mA absolute max | — |
+| 5 V sender, maximum | **6.527 mA** | above the 6 mA recommended maximum; 65 % of the 25 °C absolute max (10 mA) and 81 % of the 125 °C derated limit (8.05 mA) | — |
 | 3.3 V sender, minimum | **3.684 mA** | 2.30× | 0.74× |
-| 3.3 V sender, maximum | **8.177 mA** | above the 6 mA recommended maximum, 82 % of the 10 mA absolute max | — |
+| 3.3 V sender, maximum | **8.177 mA** | above the 6 mA recommended maximum; 82 % of the 25 °C absolute max (10 mA) and 1.6 % above the 8.05 mA 125 °C derated limit **in this model** (illustrative only, see below) | — |
+
+The datasheet's absolute maximum is a **25 °C** rating (10 mA) with a stated
+derating of −0.13 mA/°C above 110 °C; it is not a full-temperature limit. The
+checker carries the derating constant and fails if the 125 °C value it computes
+is not 8.05 mA.
+
+**The 8.177 mA comparison is illustrative, not a measurement or a rating.** That
+bound comes from the model: CA-033 sender corners, the datasheet VF minimum at
+2 mA, and an assumed 0 V sender driver drop. It is therefore **not** a measured
+input current, and **no safe maximum ambient temperature is derived from it**.
+Physical current and temperature at the high-rail/low-VF corners stay acceptance
+item
+`midi_receiver_high_current_thermal`, which must record the actual current and
+ambient; the 6 mA recommended on-state current is exceeded by both model
+corners and remains a recorded deviation.
 
 The minimum corner uses VF = 1.85 V because the datasheet 1.65 V maximum is
 specified at 2 mA only and the loop runs near 3.7 mA; the maximum corner uses
@@ -199,7 +215,7 @@ At the strongest rail (3.465 V) and with the 1 % resistors at −1 %:
 | Fault | Dissipation |
 |---|---|
 | Ring to ground, RA only (32.67 Ω) | **0.366 W** |
-| Tip to ground, RC only (21.78 Ω) | **0.547 W** |
+| Tip connected to the positive rail, RC only (21.78 Ω) | **0.547 W** |
 | Ring-to-tip short, both in series at low resistance (54.45 Ω) | 0.132 W (RA) + 0.088 W (RC) |
 
 Both parts are 2512 1 W resistors, so the worst single-part fault uses 55 % of
@@ -209,11 +225,15 @@ it, so **sustained-fault behaviour above 70 °C stays pending bench work** and
 the numbers stay provisional until then.
 
 CA-033 asks for RA 33 Ω and **RC 10 Ω** at 3.3 V. This design uses 33 Ω and
-**22 Ω**. That is a deliberate deviation: RC is permanently grounded, so a
-10 Ω part would carry 3.465² / 9.5 = **1.264 W** in a tip-to-ground fault,
-far above the 0.25 W that CA-033 assumes for RC. The 22 Ω 1 W part is the
-smallest standard value that keeps that fault inside one 1 W 2512 part. The
-checker asserts both halves of this argument.
+**22 Ω**. That is a deliberate deviation: RC is the tip's return to ground, so
+the fault that heats it is the **tip connected to the positive rail** (a
+wrong-wired plug or a short to a rail), not the tip connected to ground (which
+carries no current here). A 10 Ω part would carry 3.465² / 9.5 = **1.264 W**
+in that fault, far above the 0.25 W that CA-033 assumes for RC. The 22 Ω 1 W
+part is the smallest standard value that keeps the fault inside one 1 W 2512
+part. The checker asserts both halves of this argument and names the faults by
+the electrical connection: `ring to ground`, `tip to positive rail`,
+`ring tip ring`, `ring tip tip`.
 
 ### Receiver output against the RP2350 input
 
@@ -273,31 +293,130 @@ boards and visible in the emitted `pcb_board` element:
 Ground pours: rear board on the **top** layer (parts are on the bottom), front
 board on the **bottom** layer (parts are on the top). No blind or buried vias.
 
-### Recount, before → after this change
+### Recount: before the electrical work → current build
+
+The right-hand column is measured on the current build. The autorouter re-runs
+on every build, so via and trace counts are **build-dependent**; the hole and
+pad sets are not.
 
 | Metric | Rear board | Front board |
 |---|---|---|
 | Trace width | 0.15 mm everywhere → 0.20/0.225/0.25 mm | 0.15 mm → 0.20/0.225/0.25 mm |
 | Via drill / pad | 0.20 / 0.30 mm → **0.20 / 0.45 mm** | 0.20 / 0.30 mm → **0.20 / 0.45 mm** |
-| Vias | 207 → **163** | 88 → **81** |
-| Routed traces | 83 → 87 | 91 → 91 |
-| Routed length | not measured before → **4058 mm** | not measured before → **2307 mm** |
-| Unconnected pads (emitted warnings) | 26 → 26, all deliberate unused pins | 12 → 12, unused switch contacts |
+| Vias (build-dependent) | 207 → **316** | 88 → **68** |
+| Routed traces (build-dependent) | 83 → **102** | 91 → **93** |
+| Unconnected pads (declared do-not-connect) | 26, all deliberate unused header pins | 14, unused switch contacts |
 | Routing / DRC errors | 0 → **0** | 0 → **0** |
 | Ground pours | none → **1 (top, GND)** | none → **1 (bottom, GND)** |
 
 The 26 rear pads are the 23 Pi-header pins this design does not use plus
-`J_PICO_R` pins 15, 17 and 20 (unused Pico GPIO). The twelve front pads are the
-second contact pair of each B3F-4055 tact switch. The checker no longer keeps a
-flat allowlist: it derives the open set from the connectivity tables, so a pin
-that *should* be connected and is not fails the check. The earlier "26 → 3"
-figure came from the `<chip>` element suppressing the warnings and was not a
-connectivity improvement.
+`J_PICO_R` pins 15, 17 and 20 (unused Pico GPIO). The 14 front pads are the
+second contact pair of the seven B3F-4055 tact switches (six transport buttons
+plus the panel POWER momentary). The checker no longer keeps a flat allowlist:
+it derives the open set from the connectivity tables, so a pin that *should* be
+connected and is not fails the check. The earlier "26 → 3" figure came from the
+`<chip>` element suppressing the warnings and was not a connectivity
+improvement.
 
-The rear board still needs 163 vias: about 49 SMT pads on a board whose other
-layer is the ground plane need one layer change each, and the rest are signal
-layer changes. No router preset was changed, so **no claim is made that this is
-an optimum**; the count is reported so a later change can be compared.
+The rear board still needs 316 vias on this build: about 47 SMT pads on a board
+whose other layer is the ground plane need one layer change each, the rest are
+signal layer changes, and the 15 probe points add a fan-out each. The
+autorouter is re-run per build, so the count is **build-dependent**. No router
+preset was changed, so **no claim is made that this is an optimum**; the count
+is reported so a later change can be compared.
+
+### Probe points (testability)
+
+Fifteen bare plated through-holes on the rear/base board, one source
+`tscircuit/lib/probe-points.ts`. They add **no part**: each pad connects to a net
+that already exists, the source declares `doNotPlace`, no supplier or
+manufacturer part number is invented, and the pads therefore have no BOM line
+and no CPL line. They bridge no rail.
+
+Geometry, measured on the built JSON: **0.80 mm drill, 1.60 mm pad, 0.40 mm
+annular ring** on both copper layers, so a probe reaches the same net from
+either face. The ring target is 0.25 mm, not the published 0.18 mm floor. The
+installed `<testpoint footprintVariant="through_hole">` was **not** used: it
+derives the pad from the drill alone (`platedhole_d<hole>`, pad = 1.5 × drill),
+ignores `padDiameter`, and produced a 0.20 mm ring on the first attempt. The
+pad is authored with the footprinter string `platedhole_d0.8mm_pd1.6mm`, and
+`check_electrical.py` fails if either number or the ring moves.
+
+| Ref | Net | Position (mm) | Label | What the pad is on |
+|---|---|---|---|---|
+| TP1 | `P5V` | (−40, 52.5) | `5V` | Pi header pins 2/4 and D3 anode: the Pi 5 V rail **before** D3, not Pico `VSYS` |
+| TP2 | `P3V3` | (−35, 52.5) | `3V3` | Pico module pin 36 (3V3 OUT) and the board 3.3 V rail: the Pico's SMPS output |
+| TP3 | `PI_3V3` | (−40, 49.5) | `PI3V3` | Pi header pin 1 only, then R19 (100 Ω) to net `OE`; **not** the Pico 3V3 rail |
+| TP4 | `RUN` | (−35, 49.5) | `RUN` | Pico module pin 30, Q3 drain and R18 (10 k to `P3V3`) |
+| TP5 | `SPI_SCLK_PICO` | (−40, 46.5) | `SCLK` | Pico pin 24 (GPIO18), Pico side of R14 (100 Ω) |
+| TP6 | `SPI_CS_PICO` | (−35, 46.5) | `CS` | Pico pin 22 (GPIO17), Pico side of R15 (100 Ω) |
+| TP7 | `SPI_MOSI_PICO` | (−40, 43.5) | `MOSI` | Pico pin 21 (GPIO16), Pico side of R13 (100 Ω) |
+| TP8 | `SPI_MISO_PICO` | (−35, 43.5) | `MISO` | Pico pin 25 (GPIO19) and U3 input A (buffer input, Pico side) |
+| TP9 | `READY_PICO` | (−40, 40.5) | `READY` | Pico pin 26 (GPIO20) and U4 input A (buffer input, Pico side) |
+| TP10 | `GND` | (−35, 40.5) | `GND` | local return beside the logic field |
+| TP11 | `MIDI_OUT_1_TX` | (−33, −30) | `TX1` | Pico pin 1 (UART0 TX); on the front board it reaches R5 (100 Ω) pin 1, Q1 gate is R5 pin 2 |
+| TP12 | `MIDI_IN_1_RX` | (−30, −30) | `RX1` | Pico pin 2 (UART0 RX); on the front board U1 pin 5 (TLP2361 VO) drives it, R3 (2.2 k) pull-up |
+| TP13 | `MIDI_OUT_2_TX` | (−27, −30) | `TX2` | Pico pin 6 (UART1 TX); on the front board it reaches R6 (100 Ω) pin 1, Q2 gate is R6 pin 2 |
+| TP14 | `MIDI_IN_2_RX` | (−33, −33) | `RX2` | Pico pin 7 (UART1 RX); on the front board U2 pin 5 (TLP2361 VO) drives it, R4 (2.2 k) pull-up |
+| TP15 | `GND` | (−30, −33) | `GND` | local return beside the MIDI points (TP11–TP14) |
+
+MIDI channel 1 and channel 2 are separate nets on separate pads with separate
+front-board parts: TX1 reaches R5 (Q1 gate is R5 pin 2), TX2 reaches R6 (Q2 gate
+is R6 pin 2); RX1 comes from U1 pin 5 with the R3 pull-up, RX2 from U2 pin 5 with
+the R4 pull-up. The two local grounds (TP10 in the logic field, TP15 in the MIDI
+group) are the same `GND` net.
+
+`PI_3V3` and `P3V3` are separate nets on separate pads. The only parts between
+them are R19 (Pi 3V3 → 100 Ω → `OE`) and R20 (100 kΩ, `OE` → GND); U3 and U4 are
+powered from `P3V3` and their `OE` pins are driven from that divider. No
+component has ports on both nets, and the checker fails if one appears. **The
+Pi and Pico regulators are never coupled**; the boards already relied on that
+before the probe points existed.
+
+Placement: the logic field fills the empty top-left block (two columns 5 mm
+apart, 5 rows 3 mm apart) and the MIDI points sit in the open pocket right of the
+Pico's micro-USB plug in two rows (three points at 3 mm pitch, two below). No
+two probe pads are closer than **3.0 mm**, every pad keeps **2.0 mm** to the
+board edge, the pads are outside the Pico module (51 × 21 mm, Pico 2 datasheet),
+the Pi PCB (85 × 56 mm on the 58 × 49 mm hole grid), the J_PI and J_FRONT bodies
+with their ribbons and the spacer holes, and the nearest other component pad or
+hole is 2.85 mm away. The 2.0 mm edge target is one source constant,
+`PROBE_EDGE_MM` in `lib/probe-points.ts`; `lib/probe-points.test.ts` checks the
+envelopes, the edge target and the labels, and `check_electrical.py` re-checks
+the same geometry independently on the built coordinates.
+
+**Physical access is not verified.** The envelopes above are planning boxes, not
+measured cable or part clearances. Nothing here claims that a probe tip, a clip
+or a finger can reach a pad inside the assembled stack, and **in-rack access is
+not claimed at all**: that is acceptance item `probe_point_access`, which must
+record the actual assembly state used (front board off, Pi removed, Pico
+socketed, USB cable fitted) for each pad.
+
+### Pico 2 SWD: documented, not implemented
+
+The Pico 2 brings SWD to **three pads on the module's lower edge**, which are
+separate from the 40-pin socket pins. Primary source: *Raspberry Pi Pico 2
+Datasheet* (document revision 2026-07-03), Figure 2 (pinout, page 5),
+retrieved 2026-11-08 from
+<https://datasheets.raspberrypi.com/pico/pico-2-datasheet.pdf>, SHA-256
+`cbcfaf881018c686495a2e53c7bd281e7e0a8217d79447d73eda7c8f74b7f675`:
+the pads read
+**SWCLK, GND, SWDIO** in that order when viewed from the module's component
+side with the micro-USB at the top. The drawn pad spacing matches the 2.54 mm
+pin pitch of Figure 2 (scaled from the drawing; the text does not state it).
+Figure 4
+(physical pin numbering, page 9) shows the three pads between the two socket
+rows at the board end opposite the USB but does **not** name the signals and
+does not dimension the pad centres. The module is socketed with its USB end at
+−Y on this board (module pin 1, `J_PICO_L` pad 1, is at y = −24.13), so those
+pads face the +Y end. The exact pad centres were not measured.
+
+**No SWD anchor pads were added.** A safe, mechanically viable hand-wired link
+to those pads is unproven: no wire gauge, insulation, strain relief, connector,
+probe ground reference or procedure has been selected, and the debug pads carry
+no connection to the 40-pin sockets. Adding isolated copper would not create
+access and would invite a claim the design cannot support. Access stays a
+documented gap (`docs/TODO.md`), not a feature.
 
 ### Routing-path cache warning (unresolved, upstream)
 
@@ -338,10 +457,18 @@ built output. It derives each pad's physical pin number and net from
 - bypass presence, part number, and pad distances;
 - ground pour layer and net, SMT side, 2 layers, board rules, trace widths, via
   drill and pad, minimum pad gap, and zero emitted errors;
+- the 15 probe points on the rear board: exact ref set, one circular plated
+  through-hole each on both layers, authored 0.80 mm drill / 1.60 mm pad,
+  ring ≥ 0.25 mm, exact net, exact position, `doNotPlace` only, no supplier or
+  manufacturer part number, a routed trace at the pad with other pads on the
+  same net, pitch ≥ 3.0 mm, 2.0 mm to the board edge, 2 mm to the nearest other
+  pad or hole, the Pico/Pi/ribbon envelopes, and that no component sits on both
+  `PI_3V3` and `P3V3`;
 - the analytical loop current of section 4 against hand-calculated reference
-  values (3.435/6.527 mA and 3.684/8.177 mA), the 125 °C threshold, the
-  the output stage (gate drive, off state, legacy current, both fault cases and
-  the CA-033 deviation) and the RP2350 input margins.
+  values (3.435/6.527 mA and 3.684/8.177 mA), the 125 °C threshold and the
+  datasheet's absolute-maximum derating (8.05 mA at 125 °C), the output stage
+  (gate drive, off state, legacy current, the ring-to-ground / tip-to-positive-
+  rail / ring-tip faults and the CA-033 deviation) and the RP2350 input margins.
 
 `scripts/test_electrical.py` proves the checker can fail. Each case copies
 `dist/`, breaks one thing, and requires a rejection:
@@ -361,6 +488,19 @@ built output. It derives each pad's physical pin number and net from
 | receiver resistor tolerance removed | the reference-case comparison |
 | the 105 °C threshold used instead of 125 °C | the threshold check |
 | the sender driver-drop bound dropped | the reference-case comparison |
+| a probe pad moved onto the other 3.3 V rail | the exact-net check and the rail-separation check |
+| a probe pad ring reduced to 0.24 mm | the annular-ring check |
+| a probe drill changed to 0.50 mm | the authored drill/pad check |
+| a probe pad moved inside the Pico envelope | the envelope check |
+| a probe point renamed away | the exact-set check |
+| two probe pads on one spot | the pad-pitch check |
+| a placeholder probe part number added | the bare-copper check |
+| a probe pad set to one layer | the plated-through-hole check |
+| `doNotPlace` removed from a probe pad | the do-not-place set check |
+| the trace at a MIDI RX2 pad deleted | the routed, already-existing-net check |
+| a MIDI TX2 pad moved onto the channel-1 TX net | the exact-net check |
+| a MIDI RX2 pad moved inside the Pi envelope | the envelope check |
+| R19 moved so a part sits on both 3.3 V rails | the rail-coupling check |
 
 ## 8. SPICE: what it now does and does not show
 
@@ -446,17 +586,23 @@ fixed:
 | AOS AO3401A | `/tmp/midibrain-AO3401A.pdf` (Rev 3.1, December 2023) | — |
 | Toshiba TLP2362 (replaced) | `/tmp/review-c37658.pdf` (Rev.6.0, 2016-01-19) | `0686005de511e3987d3eac309f840a44d3475358eaf5567d66a646ef63d2c6e6` |
 | TI SN74LVC1G126 (unchanged part) | `/tmp/review-sn74lvc1g126.pdf` | `c73611ec7322b956154ca042b1b96c362d2c3a9e79aeae1e545467071289cadf` |
+| Raspberry Pi Pico 2 datasheet (SWD debug pads, Figure 2) | https://datasheets.raspberrypi.com/pico/pico-2-datasheet.pdf (revision 2026-07-03, retrieved 2026-11-08) | `cbcfaf881018c686495a2e53c7bd281e7e0a8217d79447d73eda7c8f74b7f675` |
 | MIDI CA-033 electrical update | `/tmp/CA-033-MIDI-1-0-Electrical-Specification-Update-2014-English.pdf` | — |
 | MIDI TRS adapters (Type A) | `/tmp/US-MIDI-2-0-Adapters-the-Responsibility-of-February-2024.pdf` | — |
 
 ## 11. Unresolved items — do not treat this board as release-ready
 
 1. **TLP2361 high-current corner.** Both sender corners exceed the 6 mA
-   recommended on-state current at their maximum (6.53 mA and 8.18 mA, both
-   below the 10 mA absolute maximum). High-current and high-temperature
-   behaviour is not qualified; measure on first article.
+   recommended on-state current at their maximum (6.53 mA and 8.18 mA). Both are
+   below the absolute maximum **at 25 °C (10 mA)**; the absolute maximum is
+   derated −0.13 mA/°C above 110 °C, so the 3.3 V model corner (8.18 mA) is
+   above the 8.05 mA limit at 125 °C. **The comparison is illustrative only**
+   (model currents from CA-033 corners, the 2 mA VF minimum and an assumed 0 V
+   sender drop) and **no safe ambient is derived**. Physical input current and
+   temperature are not qualified; measure both, with the ambient, on first
+   article.
 1a. **Output stage pending items.** The AO3401A stage meets the 4 mA legacy
-   worst case on paper (4.276 mA at 25 °C). The full-temperature off state, the
+   worst case on paper (4.309 mA at 25 °C). The full-temperature off state, the
    switching edges and the 1 W 2512 derating above 70 °C are **not** qualified,
    and the parent adds a pending acceptance item `midi_out_legacy`.
 2. **VF assumption.** The 1.85 V bound used for the minimum-current corner is an

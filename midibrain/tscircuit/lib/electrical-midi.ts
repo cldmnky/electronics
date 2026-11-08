@@ -34,8 +34,14 @@ export type OptoSpec = {
   /** Recommended on-state input current range, in A. */
   readonly ifOnMinA: number
   readonly ifOnMaxA: number
-  /** Absolute maximum continuous input current, in A. */
+  /** Absolute maximum continuous input current at Ta = 25 C, in A. */
   readonly ifAbsMaxA: number
+  /**
+   * Datasheet derating of the absolute-maximum input current, in A per C
+   * above aboveC; null when that part's absolute-maximum table was not read
+   * (the derated limit is then unknown, not zero).
+   */
+  readonly ifAbsDerating: { readonly aboveC: number; readonly perC: number } | null
   /** Input forward current at which the VF limits below are specified, in A. */
   readonly vfRatedCurrentA: number
   /** Input forward voltage limits at vfRatedCurrentA, in V. */
@@ -65,7 +71,11 @@ export const TLP2361: OptoSpec = {
   ifhlGuaranteedA: 1.6e-3,
   ifOnMinA: 2e-3,
   ifOnMaxA: 6e-3,
+  // Page 3: input forward current 10 mA at Ta = 25 C, derating -0.13 mA/C for
+  // Ta >= 110 C, i.e. 8.05 mA at 125 C. The 10 mA figure is a 25 C value and is
+  // never used as a full-temperature limit.
   ifAbsMaxA: 10e-3,
+  ifAbsDerating: { aboveC: 110, perC: 0.13e-3 },
   vfRatedCurrentA: 2e-3,
   vfMin: 1.35,
   vfTyp: 1.5,
@@ -94,6 +104,9 @@ export const TLP2362: OptoSpec = {
   ifOnMinA: 7.5e-3,
   ifOnMaxA: 14e-3,
   ifAbsMaxA: 25e-3,
+  // The TLP2362 absolute-maximum table was not read in this pass; no derating
+  // is claimed for it.
+  ifAbsDerating: null,
   vfRatedCurrentA: 10e-3,
   vfMin: 1.45,
   vfTyp: 1.55,
@@ -205,10 +218,12 @@ export const gateOffVgs = (): number => {
   return rail - gateV
 }
 
-// CA-033 asks for RA 33 ohm and RC 10 ohm at 3.3 V. The tip resistor is
-// permanently grounded, so a 10 ohm part would carry 3.465^2 / 9.5 = 1.24 W in
-// a tip-to-ground fault, far above the 0.25 W CA-033 assumes for RC. This
-// design deliberately uses 22 ohm there with a 1 W 2512 part.
+// CA-033 asks for RA 33 ohm and RC 10 ohm at 3.3 V. RC connects the tip to
+// ground, so the fault that heats it is the tip connected to the POSITIVE rail
+// (a wrong-wired plug or a short to a rail): a 10 ohm part would then carry
+// 3.465^2 / 9.5 = 1.24 W, far above the 0.25 W CA-033 assumes for RC. A
+// tip-to-ground short carries no current at all. This design deliberately uses
+// 22 ohm there with a 1 W 2512 part.
 export const OUTPUT_STAGE_DEVIATION = {
   ca033RingOhm: 33,
   ca033TipOhm: 10,
@@ -216,21 +231,24 @@ export const OUTPUT_STAGE_DEVIATION = {
   implementedTipOhm: MIDI_OUT_SERIES_OHM.tip,
   resistorRatedW: 1.0,
   ca033ResistorRatedW: 0.25,
-  reason: "RC is permanently grounded: 10 ohm would dissipate about 1.26 W in a tip fault",
+  reason: "RC returns the tip to ground: 10 ohm would dissipate about 1.26 W in a tip-to-positive-rail fault",
 } as const
 
 /** Worst-case dissipation in one output resistor, in W. */
 export type FaultPower = {
   readonly ringToGroundW: number
-  readonly tipToGroundW: number
+  /** Tip connected to the positive rail: RC carries the full rail current. */
+  readonly tipToRailW: number
   readonly ringTipShortRingW: number
   readonly ringTipShortTipW: number
 }
 
 /**
  * Fault dissipation at the strongest rail. A ring-to-ground fault sees only the
- * ring resistor, a tip-to-ground fault only the tip resistor, and a ring-tip
- * short sees both in series at -tolerance, which is the largest current.
+ * ring resistor, a tip-to-positive-rail fault only the tip resistor, and a
+ * ring-tip short sees both in series at -tolerance, which is the largest
+ * current. A tip-to-ground fault carries no current here because RC is the
+ * tip's return to ground.
  */
 export const outputFaultPower = (
   railV: number = 3.465,
@@ -243,7 +261,7 @@ export const outputFaultPower = (
   const loopCurrent = railV / (ring + tip + rdsOnOhm)
   return {
     ringToGroundW: ringCurrent * ringCurrent * ring,
-    tipToGroundW: tipCurrent * tipCurrent * tip,
+    tipToRailW: tipCurrent * tipCurrent * tip,
     ringTipShortRingW: loopCurrent * loopCurrent * ring,
     ringTipShortTipW: loopCurrent * loopCurrent * tip,
   }
@@ -430,6 +448,27 @@ export const loopCurrent = (
 export const thresholdMargin = (minLoopA: number, ifhlMaxA: number): number =>
   minLoopA / ifhlMaxA
 
-/** Worst-case input current as a fraction of the absolute maximum rating. */
+/**
+ * Absolute-maximum input current at tempC, in A: the 25 C rating below the
+ * datasheet's derating point, then the linear derating. Null when the part's
+ * derating was not read, so a caller cannot mistake "unknown" for "unlimited".
+ */
+export const ifAbsMaxAtC = (opto: OptoSpec, tempC: number): number | null => {
+  const derating = opto.ifAbsDerating
+  if (derating === null) return null
+  if (tempC <= derating.aboveC) return opto.ifAbsMaxA
+  return opto.ifAbsMaxA - derating.perC * (tempC - derating.aboveC)
+}
+
+/** Worst-case input current as a fraction of the 25 C absolute maximum. */
 export const absoluteCurrentUse = (maxLoopA: number, opto: OptoSpec): number =>
   maxLoopA / opto.ifAbsMaxA
+
+/**
+ * Worst-case input current as a fraction of the DERATED absolute maximum at
+ * tempC. Null when the part's derating is not recorded.
+ */
+export const absoluteCurrentUseAt = (maxLoopA: number, opto: OptoSpec, tempC: number): number | null => {
+  const limit = ifAbsMaxAtC(opto, tempC)
+  return limit === null ? null : maxLoopA / limit
+}

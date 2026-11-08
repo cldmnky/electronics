@@ -109,7 +109,9 @@ OPEN_BY_DESIGN: dict[str, dict[str, set[int]]] = {
     },
     "front": {
         "J5": set(range(1, 27)) - set(INTERCONNECT),
-        **{sw: {2, 4} for sw in ("SW1", "SW2", "SW3", "SW4", "SW5", "SW6")},
+        # Both contact pairs 2 and 4 of every B3F-4055 are the duplicated
+        # internal contacts; SW7 is the panel POWER momentary.
+        **{sw: {2, 4} for sw in ("SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "SW7")},
     },
 }
 
@@ -124,7 +126,13 @@ TLP2361 = {
     "ifhl_guaranteed_a": 1.6e-3,  # guaranteed maximum over -40..125 C (used here)
     "if_on_min_a": 2e-3,         # recommended on-state current
     "if_on_max_a": 6e-3,
+    # Absolute maximum ratings (page 3): IF 10 mA at Ta = 25 C, derating
+    # -0.13 mA/C for Ta >= 110 C, so the permitted continuous current at
+    # 125 C is 10 - 0.13 x (125 - 110) = 8.05 mA. 10 mA is NOT a
+    # full-temperature limit and is never used as one here.
     "if_abs_max_a": 10e-3,
+    "if_abs_derating_above_c": 110.0,
+    "if_abs_derating_per_c": 0.13e-3,
     "vf_min_at_2ma": 1.35,
     "vf_max_at_2ma": 1.65,
     "height_max_mm": 2.2,        # package drawing: 2.1 +-0.1 mm
@@ -215,9 +223,14 @@ REFERENCE_GATE_ON_V = 2.5182
 REFERENCE_GATE_OFF_V = 0.2100
 REFERENCE_LEGACY_NEW_A = 4.3086e-3
 REFERENCE_LEGACY_OLD_A = 3.4374e-3
+# Fault names are the electrical fault, not a topology guess: the ring is the
+# current-source side, so a ring-to-ground fault pulls current through RA; the
+# tip is the sink side with RC to ground, so the fault that heats RC is the tip
+# connected to the POSITIVE rail (wrong-wired plug or a short to a rail), not
+# the tip connected to ground.
 REFERENCE_FAULT_W = {
     "ring_to_ground": 0.3656,
-    "tip_to_ground": 0.5470,
+    "tip_to_positive_rail": 0.5470,
     "ring_tip_ring": 0.1319,
     "ring_tip_tip": 0.0879,
 }
@@ -245,6 +258,51 @@ EXPECTED_SMT_SIDE = {"index": "bottom", "front": "top"}
 # tactile switches and the encoder. U5 (SKRHABE010) is an SMD part.
 THT_PARTS = {"J5", "J_PI", "J_FRONT", "J_PICO_L", "J_PICO_R", "J1", "J2", "J3", "J4",
              "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "U6"}
+
+# ---------------------------------------------------------------------------
+# Probe points (rear board only): bare plated through-holes with no part.
+# ---------------------------------------------------------------------------
+# Restated from the owner list and tscircuit/lib/probe-points.ts - this checker
+# never imports the design source, so a changed pad has to appear in the built
+# JSON to pass. Every entry is the exact net the pad must carry and the exact
+# position; the net names are the source_net names the builder emits.
+PROBE_POINTS = {
+    # ref:  (net, x, y)
+    "TP1": ("P5V", -40.0, 52.5),
+    "TP2": ("P3V3", -35.0, 52.5),
+    "TP3": ("PI_3V3", -40.0, 49.5),
+    "TP4": ("RUN", -35.0, 49.5),
+    "TP5": ("SPI_SCLK_PICO", -40.0, 46.5),
+    "TP6": ("SPI_CS_PICO", -35.0, 46.5),
+    "TP7": ("SPI_MOSI_PICO", -40.0, 43.5),
+    "TP8": ("SPI_MISO_PICO", -35.0, 43.5),
+    "TP9": ("READY_PICO", -40.0, 40.5),
+    "TP10": ("GND", -35.0, 40.5),
+    "TP11": ("MIDI_OUT_1_TX", -33.0, -30.0),
+    "TP12": ("MIDI_IN_1_RX", -30.0, -30.0),
+    "TP13": ("MIDI_OUT_2_TX", -27.0, -30.0),
+    "TP14": ("MIDI_IN_2_RX", -33.0, -33.0),
+    "TP15": ("GND", -30.0, -33.0),
+}
+PROBE_HOLE_MM = 0.8
+PROBE_PAD_MM = 1.6
+PROBE_MIN_RING_MM = 0.25
+PROBE_PAD_RADIUS_MM = PROBE_PAD_MM / 2
+PROBE_MIN_PITCH_MM = 3.0          # the source places every pair at 3.0 mm or more
+PROBE_EDGE_MM = 2.0
+PROBE_PART_GAP_MM = 2.0           # pad edge to another component's pad/hole
+PROBE_POSITION_TOL_MM = 0.01
+# Planning envelopes a probe PAD must stay out of; same boxes as
+# lib/probe-points.ts, restated here on purpose. Sources: Pico 2 datasheet
+# (51 x 21 mm module, micro-USB at the pin-1 end), Pi 5 85 x 56 mm board on the
+# 58 x 49 mm hole grid, J_PI / J_FRONT body plus ribbon space.
+PROBE_KEEPOUTS = {
+    "pico_module": (-50.2, -25.5, -28.8, 25.5),
+    "pico_usb_plug": (-43.5, -45.0, -35.5, -25.5),
+    "pi_pcb": (-22.0, -42.5, 34.0, 42.5),
+    "j_pi_body": (-26.0, 45.0, 26.0, 53.0),
+    "j_front_body": (41.0, -19.0, 50.0, 19.0),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -533,6 +591,19 @@ def check_midi_current(checker: Checker) -> None:
         f"{TLP2361['ifhl_guaranteed_a'] * 1e3:.1f} mA over -40..125 C; "
         f"the 105 C figure is {TLP2361['ifhl_max_a'] * 1e3:.1f} mA",
     )
+    # Absolute maximum, page 3: 10 mA at Ta = 25 C, derating -0.13 mA/C for
+    # Ta >= 110 C. 10 mA is NOT a full-temperature limit; the 125 C figure is
+    # 10 - 0.13 x (125 - 110) = 8.05 mA. Checked as data so the model cannot
+    # silently quote the 25 C number as the hot one.
+    tlp_abs_125_a = (TLP2361["if_abs_max_a"]
+                     - TLP2361["if_abs_derating_per_c"]
+                     * (125 - TLP2361["if_abs_derating_above_c"]))
+    checker.check(
+        "MIDI loop: the TLP2361 absolute maximum is derated for 125 C",
+        abs(tlp_abs_125_a - 8.05e-3) < 1e-9,
+        f"{tlp_abs_125_a * 1e3:.2f} mA at 125 C (abs max 10 mA is a 25 C value; "
+        "-0.13 mA/C above 110 C)",
+    )
     lows = {}
     for name, sender in SENDERS.items():
         low, high = loop_bounds(sender)
@@ -563,15 +634,24 @@ def check_midi_current(checker: Checker) -> None:
             f"model {margin:.4f}x, reference {reference_margin:.4f}x",
         )
         checker.check(
-            f"MIDI loop, {name}: worst-case high current stays below the TLP2361 absolute maximum",
+            f"MIDI loop, {name}: worst-case high current stays below the 25 C TLP2361 absolute maximum",
             high < TLP2361["if_abs_max_a"],
-            f"{high * 1e3:.2f} mA vs {TLP2361['if_abs_max_a'] * 1e3:.0f} mA",
+            f"{high * 1e3:.2f} mA vs {TLP2361['if_abs_max_a'] * 1e3:.0f} mA at 25 C, "
+            f"{high / tlp_abs_125_a * 100:.0f} % of the {tlp_abs_125_a * 1e3:.2f} mA 125 C derated limit",
         )
         if high > TLP2361["if_on_max_a"]:
             checker.note(
                 f"MIDI loop, {name}: {high * 1e3:.2f} mA is above the recommended "
                 f"{TLP2361['if_on_max_a'] * 1e3:.0f} mA on-state current; recorded as a deviation, "
                 "high-current and temperature qualification pending")
+        if high > tlp_abs_125_a:
+            checker.note(
+                f"MIDI loop, {name}: the model bound {high * 1e3:.2f} mA is above the "
+                f"{tlp_abs_125_a * 1e3:.2f} mA absolute maximum at 125 C. The comparison is "
+                "illustrative only: the model uses the 2 mA VF minimum, the CA-033 sender corners "
+                "and an assumed 0 V sender drop, so it is not a measurement and no safe ambient is "
+                "derived. Physical current and temperature qualification pending (acceptance item "
+                "midi_receiver_high_current_thermal)")
     worst = min(lows.values())
     checker.check(
         "MIDI loop: the replaced TLP2362 would not be guaranteed to switch at this current",
@@ -681,6 +761,188 @@ def check_rear(checker: Checker, rear: BoardModel) -> None:
     checker.check("rear: Pi 3.3 V reference and Pico 3V3 output stay separate nets", separate,
                   f"Pi pin 1 {(rear.pad('J_PI', 1) or {}).get('net')!r}, "
                   f"Pico pin 36 {(rear.pad('J_PICO_R', 16) or {}).get('net')!r}")
+
+
+def board_box(model: BoardModel) -> tuple[float, float]:
+    board = (model.elements.get("pcb_board") or [{}])[0]
+    return board.get("width", 0.0), board.get("height", 0.0)
+
+
+def box_distance(x: float, y: float, box: tuple[float, float, float, float]) -> float:
+    """Distance from a point to an axis-aligned box; 0 inside the box."""
+    x1, y1, x2, y2 = box
+    return math.hypot(max(x1 - x, 0.0, x - x2), max(y1 - y, 0.0, y - y2))
+
+
+def probe_pads(model: BoardModel) -> dict[str, list[dict]]:
+    """ref -> the built pads of each simple_test_point component."""
+    out: dict[str, list[dict]] = {}
+    for name, comp in model.components_by_name.items():
+        if comp.get("ftype") != "simple_test_point":
+            continue
+        out[name] = [entry["raw"] for entry in model.component_pins(name).values()]
+    return out
+
+
+def check_probe_points(checker: Checker, rear: BoardModel) -> None:
+    """The rear board's probe points, measured on the built pads.
+
+    Fail-closed: the set must be exactly the approved pads, each one a plated
+    through-hole on both copper layers with the authored 0.80 mm drill and
+    1.60 mm pad (0.40 mm ring, above the 0.25 mm target), on the exact net and
+    at the exact position. Nothing here proves that a probe tip can reach the
+    pad inside the assembled stack: that is acceptance item
+    `probe_point_access` and stays pending.
+    """
+    found = probe_pads(rear)
+    checker.check(
+        "rear: the probe-point set is exactly the approved pads",
+        sorted(found) == sorted(PROBE_POINTS),
+        f"built {sorted(found)}, expected {sorted(PROBE_POINTS)}",
+    )
+
+    # doNotPlace is the only treatment that keeps bare copper out of the BOM and
+    # the CPL without inventing a manufacturer part number. It must cover the
+    # probe points and nothing else.
+    dnp = {name for name, comp in rear.components_by_name.items()
+           if rear.pcb_of.get(comp["source_component_id"], {}).get("do_not_place")}
+    checker.check("rear: exactly the probe points are doNotPlace (no BOM line, no part number)",
+                  dnp == set(PROBE_POINTS), f"doNotPlace {sorted(dnp)}")
+
+    built: dict[str, dict] = {}
+    for ref, (net, x, y) in PROBE_POINTS.items():
+        pads = found.get(ref, [])
+        if len(pads) != 1:
+            checker.check(f"rear: {ref} has exactly one pad", False, f"{len(pads)} pads")
+            continue
+        pad = pads[0]
+        built[ref] = pad
+        hole = pad.get("hole_diameter")
+        outer = pad.get("outer_diameter")
+        ring = (outer - hole) / 2 if isinstance(outer, (int, float)) and isinstance(hole, (int, float)) else None
+        checker.check(f"rear: {ref} is a circular plated through-hole on both copper layers",
+                      pad.get("shape") == "circle"
+                      and set(pad.get("layers") or []) == {"top", "bottom"},
+                      f"shape {pad.get('shape')}, layers {pad.get('layers')}")
+        checker.check(f"rear: {ref} uses the authored {PROBE_HOLE_MM} mm drill and {PROBE_PAD_MM} mm pad",
+                      hole is not None and outer is not None
+                      and abs(hole - PROBE_HOLE_MM) < 1e-9 and abs(outer - PROBE_PAD_MM) < 1e-9,
+                      f"drill {hole}, pad {outer}")
+        checker.check(f"rear: {ref} annular ring is at least {PROBE_MIN_RING_MM} mm",
+                      ring is not None and ring >= PROBE_MIN_RING_MM - 1e-9,
+                      f"{ring if ring is None else round(ring, 3)} mm")
+        entry = rear.pads.get(ref, {}).get(_probe_pin(rear, ref), {})
+        checker.check(f"rear: {ref} is on net {net}", entry.get("net") == net, f"net {entry.get('net')!r}")
+        checker.check(f"rear: {ref} sits at ({x}, {y}) mm",
+                      abs(pad["x"] - x) <= PROBE_POSITION_TOL_MM and abs(pad["y"] - y) <= PROBE_POSITION_TOL_MM,
+                      f"({pad['x']:.3f}, {pad['y']:.3f})")
+        comp = rear.components_by_name.get(ref, {})
+        suppliers = comp.get("supplier_part_numbers") or {}
+        checker.check(f"rear: {ref} carries no supplier or manufacturer part number (bare copper)",
+                      not suppliers.get("jlcpcb") and not comp.get("manufacturer_part_number"),
+                      f"{suppliers} {comp.get('manufacturer_part_number')}")
+
+    # Connectivity, not only a net label: a routed trace must start at each pad
+    # centre, and the net must already carry other pads. A single-pad net would
+    # be an isolated anchor, and this design does not add one.
+    trace_points: list[tuple[float, float]] = []
+    for trace in rear.elements.get("pcb_trace", []):
+        for point in trace.get("route", []):
+            if "x" in point:
+                trace_points.append((point["x"], point["y"]))
+            else:
+                trace_points.append((point["start"]["x"], point["start"]["y"]))
+                trace_points.append((point["end"]["x"], point["end"]["y"]))
+    for ref, pad in built.items():
+        near = (min(math.hypot(pad["x"] - x, pad["y"] - y) for x, y in trace_points)
+                if trace_points else float("inf"))
+        pin = _probe_pin(rear, ref)
+        net = rear.pads.get(ref, {}).get(pin, {}).get("net")
+        others = [entry for entry in rear.pads_by_net.get(net or "", [])
+                  if entry["component"] != ref]
+        checker.check(f"rear: {ref} is on a routed, already-existing net",
+                      near <= 0.01 and len(others) >= 1,
+                      f"nearest trace {near:.3f} mm, {len(others)} other pad(s) on {net!r}")
+
+    # Pitches, edges and the envelope keepouts, from the built coordinates.
+    refs = sorted(built)
+    worst_pitch = None
+    for i, a in enumerate(refs):
+        for b in refs[i + 1:]:
+            pitch = math.hypot(built[a]["x"] - built[b]["x"], built[a]["y"] - built[b]["y"])
+            if worst_pitch is None or pitch < worst_pitch[0]:
+                worst_pitch = (pitch, a, b)
+    checker.check(f"rear: no two probe pads are closer than {PROBE_MIN_PITCH_MM} mm",
+                  worst_pitch is None or worst_pitch[0] >= PROBE_MIN_PITCH_MM - 1e-9,
+                  "none paired" if worst_pitch is None
+                  else f"closest {worst_pitch[0]:.2f} mm between {worst_pitch[1]} and {worst_pitch[2]}")
+
+    width, height = board_box(rear)
+    edge_problems = []
+    for ref, pad in built.items():
+        for edge in (pad["x"] - PROBE_PAD_RADIUS_MM + width / 2,
+                     width / 2 - pad["x"] - PROBE_PAD_RADIUS_MM,
+                     pad["y"] - PROBE_PAD_RADIUS_MM + height / 2,
+                     height / 2 - pad["y"] - PROBE_PAD_RADIUS_MM):
+            if edge < PROBE_EDGE_MM:
+                edge_problems.append(f"{ref} {edge:.2f} mm")
+    checker.check(f"rear: every probe pad keeps {PROBE_EDGE_MM} mm to the board edge",
+                  not edge_problems, ", ".join(edge_problems[:4]))
+
+    keepout_problems = []
+    for ref, pad in built.items():
+        for name, box in PROBE_KEEPOUTS.items():
+            gap = box_distance(pad["x"], pad["y"], box)
+            if gap <= PROBE_PAD_RADIUS_MM:
+                keepout_problems.append(f"{ref} inside {name}")
+    checker.check("rear: no probe pad sits in a Pico/Pi/connector/ribbon envelope",
+                  not keepout_problems, ", ".join(keepout_problems[:4]))
+
+    # Physical probing: a pad edge must clear another component's pad or a bare
+    # hole by PROBE_PART_GAP_MM, so a probe body does not land on a part.
+    others = []
+    for pad in rear.all_pads():
+        if str(pad["component"]).startswith("TP"):
+            continue
+        others.append((f"{pad['component']}.{pad['pin']}", pad_polygon(pad["raw"])))
+    for hole in rear.elements.get("pcb_hole", []):
+        others.append((f"hole({hole['x']:.1f},{hole['y']:.1f})",
+                       _rotated_rect(hole["x"], hole["y"], hole["hole_diameter"], hole["hole_diameter"], 0.0)))
+    clearance = []
+    for ref, pad in built.items():
+        poly = pad_polygon(pad)
+        best = None
+        for label, other in others:
+            gap = polygon_gap(poly, other)
+            if best is None or gap < best[0]:
+                best = (gap, label)
+        clearance.append((ref, best))
+    for ref, best in clearance:
+        checker.check(f"rear: {ref} keeps {PROBE_PART_GAP_MM} mm from the nearest other pad or hole",
+                      best is not None and best[0] >= PROBE_PART_GAP_MM - 1e-9,
+                      "no other pad" if best is None else f"{best[0]:.2f} mm to {best[1]}")
+
+    # The two 3.3 V rails stay separate: different nets on the probe pads, and
+    # no component anywhere on the board bridges PI_3V3 to P3V3.
+    pi = built.get("TP3")
+    pico = built.get("TP2")
+    pi_net = rear.pads.get("TP3", {}).get(_probe_pin(rear, "TP3"), {}).get("net")
+    pico_net = rear.pads.get("TP2", {}).get(_probe_pin(rear, "TP2"), {}).get("net")
+    checker.check("rear: the PI_3V3 and P3V3 probe pads are on different nets",
+                  pi is not None and pico is not None and pi_net == "PI_3V3" and pico_net == "P3V3",
+                  f"{pi_net!r} vs {pico_net!r}")
+    bridging = [name for name, pins in rear.pads.items()
+                if {"PI_3V3", "P3V3"} <= {p["net"] for p in pins.values() if p["net"]}]
+    checker.check("rear: no component has ports on both PI_3V3 and P3V3 (rails not coupled)",
+                  not bridging, f"bridging components {bridging}")
+    checker.note("rear: probe pads are bare copper on nets that already exist; physical probe "
+                 "access inside the assembled stack is unverified (acceptance item probe_point_access)")
+
+
+def _probe_pin(model: BoardModel, ref: str) -> int | None:
+    """The single physical pin number of a probe point, or None when absent."""
+    pins = model.component_pins(ref)
+    return next(iter(pins)) if len(pins) == 1 else None
 
 
 def check_front(checker: Checker, front: BoardModel) -> None:
@@ -899,7 +1161,7 @@ def check_output_stage(checker: Checker) -> None:
     i_loop = rail_max / (ring_min + tip_min + rds)
     fault = {
         "ring_to_ground": i_ring * i_ring * ring_min,
-        "tip_to_ground": i_tip * i_tip * tip_min,
+        "tip_to_positive_rail": i_tip * i_tip * tip_min,
         "ring_tip_ring": i_loop * i_loop * ring_min,
         "ring_tip_tip": i_loop * i_loop * tip_min,
     }
@@ -917,7 +1179,7 @@ def check_output_stage(checker: Checker) -> None:
     checker.check("MIDI OUT: a CA-033 10 ohm tip resistor would be unsafe (deviation justified)",
                   abs(ca033_tip_fault - REFERENCE_CA033_TIP_FAULT_W) <= 0.01 * REFERENCE_CA033_TIP_FAULT_W
                   and ca033_tip_fault > OUT_SERIES["rated_w"],
-                  f"{ca033_tip_fault:.4f} W in a tip fault against a "
+                  f"{ca033_tip_fault:.4f} W in a tip-to-positive-rail fault against a "
                   f"{CA033['ca033_resistor_w']:.2f} W CA-033 part; this design uses "
                   f"{OUT_SERIES['tip']} ohm 1 W instead of {CA033['ca033_tip_ohm']} ohm")
 
@@ -1026,6 +1288,7 @@ def main() -> int:
     front = checker.load("front")
 
     check_rear(checker, rear)
+    check_probe_points(checker, rear)
     check_front(checker, front)
     for model in (rear, front):
         check_copper(checker, model)

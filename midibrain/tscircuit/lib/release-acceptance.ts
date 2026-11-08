@@ -122,7 +122,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "midi_receiver_high_current_thermal",
     title: "Receiver high-current and temperature corners",
-    requirement: "TLP2361 input current and junction temperature measured at worst-case high-rail/low-VF source corners (recommended 2-6 mA, absolute continuous 10 mA, derating above 110 C), with the 220 ohm choice justified by measurement.",
+    requirement: "TLP2361 input current and junction temperature measured at worst-case high-rail/low-VF source corners, with the recorded ambient: recommended 2-6 mA, absolute continuous 10 mA at 25 C derated -0.13 mA/C above 110 C (8.05 mA at 125 C), and the 220 ohm choice justified by measurement.",
   },
   {
     id: "midi_out_legacy",
@@ -153,6 +153,16 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
     id: "scope_thermal",
     title: "Thermal soak",
     requirement: "Closed-rack thermal soak at the recorded ambient and load, with cooler noise and NVMe temperature recorded.",
+  },
+  {
+    id: "probe_point_access",
+    title: "Probe point access",
+    requirement: "With the assembly state recorded for each measurement (front board fitted or off, Pi fitted or removed, Pico socketed, Pico USB cable fitted or not), every rear-board probe point TP1-TP15 reached with the intended probe and read on the net the board declares; the pad, the side used, the assembly state and any obstruction recorded. In-rack access is not assumed.",
+  },
+  {
+    id: "abrupt_power_loss",
+    title: "Abrupt power loss",
+    requirement: "Abrupt removal and re-application of power recorded on the full stack: rail decay order and time captured, Pico/Pi/display state, write integrity of the microSD card or NVMe SSD after a loss during a recording, and any backfeed or latch-up seen. No graceful-shutdown behaviour is assumed.",
   },
   {
     id: "scope_dfm_cpl",
@@ -198,6 +208,12 @@ export const FINGERPRINT_FILES = [
   // for the same reason the panel artwork is: brand marks, hand-solder hints,
   // pin-1 and polarity marks all reach the fabrication output.
   "tscircuit/lib/silk.tsx",
+  // Probe-point pads, positions and their labels are board geometry too.
+  "tscircuit/lib/probe-points.ts",
+  // The board design rules and the MIDI electrical model feed the netlist,
+  // the BOM values and the fabrication rules, so a change is a hardware change.
+  "tscircuit/lib/electrical.ts",
+  "tscircuit/lib/electrical-midi.ts",
   "tscircuit/lib/oshw.ts",
   "tscircuit/lib/oshw-outline.ts",
   "tscircuit/package.json",

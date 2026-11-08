@@ -294,7 +294,13 @@ test("every hand-soldered through-hole part has a ref and a hint at its own posi
     expect(tht).toEqual(
       spec.board === "front"
         ? ["J1", "J2", "J3", "J4", "J5", "J_PWR", "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "SW7", "U6"]
-        : ["J_FRONT", "J_PI", "J_PICO_L", "J_PICO_R"],
+        : [
+          // Bare plated probe points are through-hole "parts" with no SMT pad
+          // and no BOM line (doNotPlace); each still prints its own net label.
+          "J_FRONT", "J_PI", "J_PICO_L", "J_PICO_R",
+          "TP1", "TP10", "TP11", "TP12", "TP13", "TP14", "TP15", "TP2",
+          "TP3", "TP4", "TP5", "TP6", "TP7", "TP8", "TP9",
+        ],
     )
     const texts = built.filter((e) => e.type === "pcb_silkscreen_text")
     for (const ref of tht) {
