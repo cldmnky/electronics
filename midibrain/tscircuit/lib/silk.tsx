@@ -51,6 +51,7 @@ import {
 } from "./layout"
 import { WORDMARK_TEXT, textPaths, unionBounds, type Bounds, type Pt } from "./panel-art"
 import { oshwPaths } from "./oshw"
+import { PROBE_LABEL_FONT_MM, PROBE_POINTS, probeLabelPosition } from "./probe-points"
 
 /** Drawn ink clearance kept between silkscreen and any pad, hole or other ink. */
 export const SILK_CLEARANCE = 0.2
@@ -264,6 +265,14 @@ export const REAR_SILK: BoardSilkSpec = {
     { text: "J_FRONT THT", x: 44.9, y: 21.6, fontSize: 0.7, role: "hint", part: "J_FRONT" },
     { text: "1", x: 27.2, y: 47.9, fontSize: 0.7, role: "pin1", part: "J_PI" },
     { text: "1", x: 48.4, y: 17.6, fontSize: 0.7, role: "pin1", part: "J_FRONT" },
+    // Probe points: one net label per pad, derived from lib/probe-points.ts so
+    // a pad can never carry a label that belongs to another net. The automatic
+    // reference designator (TP1..TP15, 0.4 mm) prints beside each pad from its
+    // own footprint, so the pair reads e.g. "TP5" + "SCLK".
+    ...PROBE_POINTS.map(p => {
+      const at = probeLabelPosition(p)
+      return { text: p.label, x: at.x, y: at.y, fontSize: PROBE_LABEL_FONT_MM, role: "hint" as const, part: p.ref }
+    }),
   ],
 }
 

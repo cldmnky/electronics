@@ -9,7 +9,7 @@ Physical acceptance is machine-readable in `hardware-acceptance.json` and is
 enforced by `make release`; the rows below restate those items so the whole
 gap list is in one place. Evidence format: `docs/evidence/README.md`.
 
-## Hardware — physical acceptance (all 26 items pending)
+## Hardware — physical acceptance (all 28 items pending)
 
 `make gate` prints the current state; every item is `pending` until measured
 evidence exists against the current hardware fingerprint.
@@ -32,16 +32,25 @@ evidence exists against the current hardware fingerprint.
 | `usb_pd_droop_thermal` | 27 W Pi PSU is a candidate only | Full-load PD negotiation, droop and temperature in both orientations | Measurements in both orientations |
 | `encoder_solder_process` | PEC11R-4015F-S0024 (C143789), THT; bench technique in `assembly.md`; Bourns does not recommend hand soldering | Selective/wave or validated manual process with profile and inspection | Process record per `encoder_solder_process` |
 | `midi_threshold` | TLP2361 receiver, 220 Ω input; SPICE only | Measured threshold against the CA-033 < 5 mA requirement | Measurement at recorded supply/temperature |
-| `midi_receiver_high_current_thermal` | 2–6 mA recommended, 10 mA absolute, derating above 110 °C | Input current and junction temperature at worst-case high-rail/low-VF corners | Measurements and 220 Ω justification |
+| `midi_receiver_high_current_thermal` | 2–6 mA recommended, 10 mA absolute at 25 °C derated −0.13 mA/°C above 110 °C (8.05 mA at 125 °C). The 3.3 V model corner (8.18 mA) is above that 125 °C limit, but the comparison is illustrative (model current from a 2 mA VF minimum and an assumed sender drop): no safe ambient is derived | Actual input current and junction temperature at worst-case high-rail/low-VF corners, with the recorded ambient | Measurements and 220 Ω justification |
 | `midi_out_legacy` | AO3401A high-side output stage; SPICE current checks | Legacy receiver loads measured: low-rail current, rise/fall < 2 µs, fault temperatures; independent topology review | Measurements plus review record |
 | `midi_interop` | Host parser/route tests only | Two real MIDI devices exchanging note, clock and sysex both directions | Equipment list and traffic log |
 | `midi_current_faults` | Protection parts in the netlist | Short, open, reverse and over-current cases on both inputs and outputs | Fault matrix results |
 | `scope_spi` | SPI0 mode 0, 1 MHz, IRQ-driven 32-byte frames; host reliability tests | Scope/logic-analyser capture incl. Pico-USB and Pi-off cases | Capture at the target rate |
 | `scope_power_sequences` | Power branch designed; SPICE backfeed checks | Power-up/down order for Pi, Pico, display and 3.3 V rails | Capture with no backfeed or latch-up |
 | `scope_thermal` | None | Closed-rack soak at recorded ambient/load; cooler noise; NVMe temperature | Soak record |
+| `probe_point_access` | 15 bare plated through-holes TP1–TP15 on the rear board (`lib/probe-points.ts`), geometry and nets checked by `check_electrical.py`; no probe access measured | Access with the stack assembled, per pad and per assembly state; in-rack access is not assumed | Recorded assembly state, pad, side and obstruction for each point |
+| `abrupt_power_loss` | Nothing measured; firmware has no power-fail write guard (nothing claimed) | Abrupt power removal/re-application on the full stack, with rail decay and storage write integrity recorded | Scope capture of the rails plus post-loss write-integrity result |
 | `scope_dfm_cpl` | `fab_check.py` compares geometry with published limits; six `tsci check` reports pinned | JLCPCB DFM/order-preview review of copper, mask, silk, drill and CPL rotation on prototype material | Review findings recorded |
 | `autoroute_upstream_warning` | Known tscircuit line "Could not save autorouting paths ... unique PCB port" appears on both boards; printed as a note by `check_reports.ts` | Resolve upstream or review its effect on the routed copper | Resolution or recorded copper review |
 | `first_article` | None | First-article boards built, inspected and tested against the full list | First-article report |
+
+## Hardware — design gaps (not acceptance items)
+
+| Item | Exists today | Missing | Definition of done |
+|---|---|---|---|
+| Pico 2 SWD access | Pad order documented from the Pico 2 datasheet (SWCLK, GND, SWDIO on the module's lower edge, Figure 2, page 5); the debug pads are separate from the 40-pin sockets | No access implemented and none claimed: no wire gauge, insulation, strain relief, connector, probe ground reference or procedure has been selected, so a safe hand-wired link to the module's debug pads is unproven. No anchor pads were added, because isolated copper is not access | A qualified procedure (materials, strain relief, ground reference, polarity checks) with a measured first connection, or an explicit decision not to provide SWD |
+| Probe-point side access | 15 plated through-holes on both copper layers, outside the documented Pico/Pi/ribbon envelopes | The pad is reachable from both faces in principle; no probe has been tried on a built board. The rear face carries the parts, the front face faces the front board | Covered by acceptance item `probe_point_access`; delete this row when that evidence exists |
 
 ## Pi app (`pi/app`, `pi/audio`, `pi/session`, `pi/update`)
 
@@ -71,7 +80,7 @@ evidence exists against the current hardware fingerprint.
 | Item | Exists today | Missing | Definition of done |
 |---|---|---|---|
 | `pi/README.md` status | Status section says "W3 in flight, W4/W5 next" and "nothing here has been run on Pi hardware yet" | It contradicts the shipped song/arrange work and the studio-Pi run in `pi/app/NOTES.md`; the file is owned by the pi lane | Status rewritten from `pi/app/NOTES.md` |
-| Acceptance evidence | `hardware-acceptance.json`, `docs/evidence/README.md`, `make gate` | All 26 items pending | Same as the hardware table above |
+| Acceptance evidence | `hardware-acceptance.json`, `docs/evidence/README.md`, `make gate` | All 28 items pending | Same as the hardware table above |
 
 ## Pi app — open items (from the inline-docs sweep)
 

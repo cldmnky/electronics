@@ -9,6 +9,8 @@ import {
 } from "./electrical"
 import {
   absoluteCurrentUse,
+  absoluteCurrentUseAt,
+  ifAbsMaxAtC,
   AO3401A,
   CA033,
   gateOffVgs,
@@ -88,7 +90,8 @@ describe("MIDI input current loop, worst case", () => {
   })
 
   test("maximum current against the absolute rating, and the known deviations", () => {
-    // 6.5272 / 10 = 0.653 and 8.1771 / 10 = 0.818: inside the absolute maximum.
+    // 6.5272 / 10 = 0.653 and 8.1771 / 10 = 0.818: inside the 25 C absolute
+    // maximum. The derated 125 C limit is a separate test below.
     expect(absoluteCurrentUse(five.maxA, TLP2361)).toBeCloseTo(0.653, 3)
     expect(absoluteCurrentUse(three.maxA, TLP2361)).toBeCloseTo(0.818, 3)
     expect(five.maxA).toBeLessThan(TLP2361.ifAbsMaxA)
@@ -97,6 +100,26 @@ describe("MIDI input current loop, worst case", () => {
     // as deviations; high-current and temperature qualification is pending.
     expect(five.maxA).toBeGreaterThan(TLP2361.ifOnMaxA)
     expect(three.maxA).toBeGreaterThan(TLP2361.ifOnMaxA)
+  })
+
+  test("the absolute maximum is a 25 C value and is derated for 125 C", () => {
+    // Datasheet page 3: IF 10 mA at Ta = 25 C, -0.13 mA/C for Ta >= 110 C.
+    expect(TLP2361.ifAbsMaxA).toBe(10e-3)
+    expect(ifAbsMaxAtC(TLP2361, 25)).toBeCloseTo(10e-3, 12)
+    expect(ifAbsMaxAtC(TLP2361, 110)).toBeCloseTo(10e-3, 12)
+    expect(ifAbsMaxAtC(TLP2361, 125)).toBeCloseTo(8.05e-3, 12)
+    expect(absoluteCurrentUseAt(three.maxA, TLP2361, 125)).toBeCloseTo(three.maxA / 8.05e-3, 12)
+    // The 3.3 V high-current model corner is inside the 25 C absolute maximum
+    // but above the derated 125 C limit. The comparison is illustrative: the
+    // model uses the 2 mA VF minimum and an assumed sender drop, so no safe
+    // ambient is derived and physical current/temperature qualification stays
+    // with acceptance item midi_receiver_high_current_thermal.
+    expect(three.maxA).toBeLessThan(ifAbsMaxAtC(TLP2361, 25)!)
+    expect(three.maxA).toBeGreaterThan(ifAbsMaxAtC(TLP2361, 125)!)
+    expect(five.maxA).toBeLessThan(ifAbsMaxAtC(TLP2361, 125)!)
+    // No derating is claimed for the replaced part: unknown, not unlimited.
+    expect(ifAbsMaxAtC(TLP2362, 125)).toBeNull()
+    expect(absoluteCurrentUseAt(three.maxA, TLP2362, 125)).toBeNull()
   })
 
   test("the two VF numbers stay apart: 1.65 V is only the 2 mA maximum", () => {
@@ -211,7 +234,7 @@ describe("MIDI output: AO3401A high-side stage", () => {
     expect(fault.ringToGroundW).toBeCloseTo(0.3656, 3)
     // tip 22 ohm 1 % -> 21.78: 3.465 / (21.78 + 0.085) = 158.47 mA,
     // P = 0.5470 W
-    expect(fault.tipToGroundW).toBeCloseTo(0.5470, 3)
+    expect(fault.tipToRailW).toBeCloseTo(0.5470, 3)
     // ring-tip short uses the LOW total resistance 54.45: 63.54 mA through the
     // pair, so the per-part dissipation falls to 0.1319 W and 0.0879 W
     expect(fault.ringTipShortRingW).toBeCloseTo(0.1319, 3)

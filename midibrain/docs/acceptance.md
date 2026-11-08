@@ -101,13 +101,15 @@ instead of being skipped. Print it with
 | `usb_pd_droop_thermal` | Full-load PD negotiation, voltage droop, connector/feedthrough temperature, both orientations |
 | `encoder_solder_process` | Bourns PEC11R process qualified (selective/wave or validated manual) with profile and inspection |
 | `midi_threshold` | Receiver threshold measured against the MIDI CA-033 receiver requirement (<5 mA at 5 V) at the recorded temperature |
-| `midi_receiver_high_current_thermal` | TLP2361 input current and temperature at worst-case high-rail/low-VF corners (recommended 2–6 mA, absolute continuous 10 mA, derating above 110 °C) |
+| `midi_receiver_high_current_thermal` | TLP2361 input current and temperature at worst-case high-rail/low-VF corners with the recorded ambient: recommended 2–6 mA, absolute continuous 10 mA **at 25 °C**, derated −0.13 mA/°C above 110 °C (8.05 mA at 125 °C); the 220 Ω choice justified by measurement |
 | `midi_out_legacy` | Legacy receiver loads: low-rail current, rise/fall < 2 µs, sustained ring/tip fault temperatures; independent output-topology review |
 | `midi_interop` | Two real MIDI devices exchange note, clock and sysex in both directions |
 | `midi_current_faults` | Short, open, reverse and over-current cases on both inputs and outputs |
 | `scope_spi` | SPI0 clock/data and READY capture at the target rate, including Pico-USB and Pi-off cases |
 | `scope_power_sequences` | Power-up/down order of Pi, Pico, display and 3.3 V rails; no backfeed or latch-up |
 | `scope_thermal` | Closed-rack soak at recorded ambient and load; cooler noise and NVMe temperature |
+| `probe_point_access` | Each rear-board probe point TP1–TP15 reached with the intended probe and read on its declared net, with the assembly state recorded per pad (front board fitted/off, Pi fitted/removed, Pico socketed, Pico USB cable fitted/not) and every obstruction noted. In-rack access is not assumed |
+| `abrupt_power_loss` | Abrupt power removal and re-application on the full stack: rail decay order and time, Pico/Pi/display state, SD-card or NVMe write integrity after a loss during a recording, and any backfeed or latch-up seen |
 | `scope_dfm_cpl` | JLCPCB DFM/order-preview review of copper, mask, silk, drill and CPL rotation on prototype material |
 | `autoroute_upstream_warning` | The tscircuit "Could not save autorouting paths" warning resolved or its effect on the copper reviewed |
 | `first_article` | First-article boards built, inspected and tested against this list |

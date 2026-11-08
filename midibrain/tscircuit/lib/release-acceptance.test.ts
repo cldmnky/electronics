@@ -265,6 +265,24 @@ describe("hardware fingerprint", () => {
     expect(computeHardwareFingerprint(root)).not.toBe(fingerprint)
   })
 
+  test("changes when a probe-point pad or position changes", () => {
+    expect(FINGERPRINT_FILES).toContain("tscircuit/lib/probe-points.ts")
+    appendFileSync(join(root, "tscircuit/lib/probe-points.ts"), "// moved TP7\n")
+    expect(computeHardwareFingerprint(root)).not.toBe(fingerprint)
+  })
+
+  test("changes when the board electrical policy changes", () => {
+    expect(FINGERPRINT_FILES).toContain("tscircuit/lib/electrical.ts")
+    appendFileSync(join(root, "tscircuit/lib/electrical.ts"), "// tighter rule\n")
+    expect(computeHardwareFingerprint(root)).not.toBe(fingerprint)
+  })
+
+  test("changes when the MIDI electrical model changes", () => {
+    expect(FINGERPRINT_FILES).toContain("tscircuit/lib/electrical-midi.ts")
+    appendFileSync(join(root, "tscircuit/lib/electrical-midi.ts"), "// lower IF\n")
+    expect(computeHardwareFingerprint(root)).not.toBe(fingerprint)
+  })
+
   test("changes when a footprint import changes", () => {
     appendFileSync(join(root, "tscircuit/imports/PJ_313D.tsx"), "// pad change\n")
     expect(computeHardwareFingerprint(root)).not.toBe(fingerprint)

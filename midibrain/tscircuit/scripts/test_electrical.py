@@ -94,6 +94,33 @@ def swap_connectivity(circuit: list[dict], component: str, pin_a: int, pin_b: in
     by_id[b]["subcircuit_connectivity_map_key"] = key_a
 
 
+def set_pin_net(circuit: list[dict], component: str, pin: int,
+                net_component: str, net_pin: int) -> None:
+    """Move one pad onto the net of another component's pin (keeps positions)."""
+    ports = port_pin_map(circuit)
+    by_id = {p["source_port_id"]: p for p in circuit if p["type"] == "source_port"}
+    by_id[ports[component][pin]]["subcircuit_connectivity_map_key"] = (
+        by_id[ports[net_component][net_pin]].get("subcircuit_connectivity_map_key"))
+
+
+def pad_of(circuit: list[dict], component: str) -> dict:
+    """The single plated-hole pad of a one-pad component."""
+    components = {c["source_component_id"]: c for c in circuit if c["type"] == "source_component"}
+    pcb = {c["pcb_component_id"]: c for c in circuit if c["type"] == "pcb_component"}
+    ports = port_pin_map(circuit)
+    pcb_ports = {p["pcb_port_id"]: p for p in circuit if p["type"] == "pcb_port"}
+    wanted = {ports[component][1]}
+    pads = [
+        pad for pad in circuit
+        if pad["type"] == "pcb_plated_hole"
+        and components.get(pcb.get(pad.get("pcb_component_id"), {}).get("source_component_id"), {}).get("name") == component
+        and pcb_ports.get(pad.get("pcb_port_id"), {}).get("source_port_id") in wanted
+    ]
+    if len(pads) != 1:
+        raise AssertionError(f"expected 1 pad for {component} pin 1, found {len(pads)}")
+    return pads[0]
+
+
 def swap_pad_positions(circuit: list[dict], component: str, pin_a: int, pin_b: int) -> None:
     """Move two pads to each other's coordinates, leaving nets on their pins."""
     components = {c["source_component_id"]: c for c in circuit if c["type"] == "source_component"}
@@ -237,6 +264,117 @@ def cases() -> list[tuple[str, str, callable]]:
                 element["resistance"] = 10
         save(dist, "front", circuit)
 
+    # ---- probe points: every physical and electrical fact must be checked ----
+
+    def probe_net_changed(dist: Path) -> None:
+        # PI_3V3 probe moved onto the Pico 3V3 net: the exact-net check and the
+        # rail-separation check must both see it.
+        circuit = load(dist, "index")
+        set_pin_net(circuit, "TP3", 1, "TP2", 1)
+        save(dist, "index", circuit)
+
+    def probe_ring_too_small(dist: Path) -> None:
+        # 1.28 mm pad on a 0.80 mm drill = 0.24 mm ring, below the 0.25 mm
+        # target. This is the ring the through-hole testpoint variant produced.
+        circuit = load(dist, "index")
+        pad_of(circuit, "TP1")["outer_diameter"] = 1.28
+        save(dist, "index", circuit)
+
+    def probe_drill_changed(dist: Path) -> None:
+        # A smaller drill must not be accepted as a way to "fix" the ring.
+        circuit = load(dist, "index")
+        pad_of(circuit, "TP5")["hole_diameter"] = 0.5
+        save(dist, "index", circuit)
+
+    def probe_tx2_wrong_net(dist: Path) -> None:
+        # Channel 2's TX point moved onto channel 1's net: the exact-net check
+        # must catch it even though both are MIDI TX nets.
+        circuit = load(dist, "index")
+        set_pin_net(circuit, "TP13", 1, "TP11", 1)
+        save(dist, "index", circuit)
+
+    def probe_rx2_inside_pi(dist: Path) -> None:
+        circuit = load(dist, "index")
+        pad = pad_of(circuit, "TP14")
+        pad["x"], pad["y"] = -20.0, -33.0
+        save(dist, "index", circuit)
+
+    def probe_floating(dist: Path) -> None:
+        # Delete the trace that lands on TP14 (MIDI channel 2 RX): the pad keeps
+        # its net name but no copper reaches it, which is exactly a floating anchor.
+        circuit = load(dist, "index")
+        pad = pad_of(circuit, "TP14")
+        kept = []
+        removed = 0
+        for element in circuit:
+            if element["type"] == "pcb_trace":
+                points = []
+                for point in element.get("route", []):
+                    if "x" in point:
+                        points.append((point["x"], point["y"]))
+                    else:
+                        points.append((point["start"]["x"], point["start"]["y"]))
+                        points.append((point["end"]["x"], point["end"]["y"]))
+                # The router may leave more than one trace touching a pad; a
+                # single removal would not make the pad float.
+                if any(abs(x - pad["x"]) < 1e-6 and abs(y - pad["y"]) < 1e-6 for x, y in points):
+                    removed += 1
+                    continue
+            kept.append(element)
+        if removed < 1:
+            raise AssertionError("expected at least one trace at the TP14 pad")
+        save(dist, "index", kept)
+
+    def probe_inside_pico(dist: Path) -> None:
+        circuit = load(dist, "index")
+        pad = pad_of(circuit, "TP8")
+        pad["x"], pad["y"] = -40.0, 25.0
+        save(dist, "index", circuit)
+
+    def probe_renamed(dist: Path) -> None:
+        circuit = load(dist, "index")
+        for element in circuit:
+            if element["type"] == "source_component" and element.get("name") == "TP10":
+                element["name"] = "TP14"
+        save(dist, "index", circuit)
+
+    def probe_overlap(dist: Path) -> None:
+        circuit = load(dist, "index")
+        pad = pad_of(circuit, "TP12")
+        pad["x"] = -33.0
+        save(dist, "index", circuit)
+
+    def probe_invented_mpn(dist: Path) -> None:
+        # A placeholder manufacturer part number would claim a real part.
+        circuit = load(dist, "index")
+        for element in circuit:
+            if element["type"] == "source_component" and element.get("name") == "TP2":
+                element["manufacturer_part_number"] = "TESTPOINT-1"
+                element["supplier_part_numbers"] = {"jlcpcb": ["C123456"]}
+        save(dist, "index", circuit)
+
+    def probe_one_layer(dist: Path) -> None:
+        circuit = load(dist, "index")
+        pad_of(circuit, "TP6")["layers"] = ["top"]
+        save(dist, "index", circuit)
+
+    def probe_placed(dist: Path) -> None:
+        # doNotPlace removed: the pad would enter the BOM/CPL as a part.
+        circuit = load(dist, "index")
+        components = {c["source_component_id"]: c for c in circuit if c["type"] == "source_component"}
+        for element in circuit:
+            if element["type"] == "pcb_component" and element.get("do_not_place"):
+                if components.get(element.get("source_component_id"), {}).get("name") == "TP1":
+                    element["do_not_place"] = False
+        save(dist, "index", circuit)
+
+    def probe_rails_coupled(dist: Path) -> None:
+        # R19 pin 2 (OE) moved onto P3V3: a component would then sit on both
+        # PI_3V3 and P3V3, which is the rail coupling the design forbids.
+        circuit = load(dist, "index")
+        set_pin_net(circuit, "R19", 2, "TP2", 1)
+        save(dist, "index", circuit)
+
     def old_opto(dist: Path) -> None:
         circuit = load(dist, "front")
         for element in circuit:
@@ -258,6 +396,19 @@ def cases() -> list[tuple[str, str, callable]]:
         ("gate pull-up missing", "gate network", gate_pullup_missing),
         ("gate series resistor too large", "gate drive reaches the RDS(ON) test point", gate_series_too_big),
         ("CA-033 10 ohm tip resistor", "10 ohm tip resistor would be unsafe", ca033_tip_resistor),
+        ("probe point on the wrong rail", "TP3 is on net PI_3V3", probe_net_changed),
+        ("probe pad ring below 0.25 mm", "TP1 annular ring is at least 0.25 mm", probe_ring_too_small),
+        ("probe drill changed to fake a ring", "TP5 uses the authored 0.8 mm drill", probe_drill_changed),
+        ("probe pad inside the Pico envelope", "no probe pad sits in a Pico/Pi/connector/ribbon envelope", probe_inside_pico),
+        ("probe pad left floating", "TP14 is on a routed, already-existing net", probe_floating),
+        ("MIDI TX2 point on the channel-1 net", "TP13 is on net MIDI_OUT_2_TX", probe_tx2_wrong_net),
+        ("MIDI RX2 point inside the Pi envelope", "no probe pad sits in a Pico/Pi/connector/ribbon envelope", probe_rx2_inside_pi),
+        ("probe point removed", "the probe-point set is exactly the approved pads", probe_renamed),
+        ("two probe pads on one spot", "no two probe pads are closer than 3.0 mm", probe_overlap),
+        ("invented probe part number", "TP2 carries no supplier or manufacturer part number", probe_invented_mpn),
+        ("probe pad on one layer only", "TP6 is a circular plated through-hole on both copper layers", probe_one_layer),
+        ("probe pad marked as placed", "exactly the probe points are doNotPlace", probe_placed),
+        ("Pi and Pico rails coupled through a component", "rails not coupled", probe_rails_coupled),
     ]
 
 

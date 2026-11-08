@@ -39,29 +39,32 @@ claim and it is not HDI.
 ## Geometry results
 
 `python3 tscircuit/scripts/fab_check.py` (measured on the 2026-11-08 build; the
-autorouter is deliberately re-run per build, so trace/via counts move between
-builds while the SMT pads, PTH and NPTH hole sets do not):
+autorouter is deliberately re-run per build, so trace/via counts and the exact
+via/route geometry are build-dependent and move between builds, while the SMT
+pad, PTH and NPTH hole sets do not):
 
 | Item | Front/UI | Rear/base | Limit |
 |---|---|---|---|
 | Size | 128 × 112 mm | 101.6 × 112 mm | ≥ 3 × 3 mm |
 | Layers / thickness | 2 / 1.6 mm | 2 / 1.6 mm | 2 / 1.6 mm |
-| Routed elements | 93 traces, 68–69 vias, 76 SMT pads, 61 plated holes, 30 NPTH | 87 traces, 163–215 vias, 47 SMT pads, 106 plated holes, 8 NPTH | required data |
-| Min trace | 0.200 mm (built route widths) | 0.200 mm | ≥ 0.10 mm |
-| Via drill / pad / ring | 0.200 / 0.300 / 0.050 mm | 0.200 / 0.300 / 0.050 mm | ≥ 0.15 / 0.25 / 0.05 mm |
-| Via target | 0.200 / 0.300 mm is **below** 0.20 / 0.45 mm target | same | TARGET |
-| PTH drill | 1.000–1.300 mm (61 round, no oblong slots) | 1.000–1.100 mm (106 round) | 0.15–6.3 mm |
+| Routed elements (build-dependent) | 93 traces, 68 vias, 76 SMT pads, 61 round plated holes, 30 NPTH | 102 traces, 316 vias, 47 SMT pads, 121 round plated holes, 8 NPTH | required data |
+| Min trace | 0.200 mm (built widths 0.200/0.225/0.250 mm) | 0.200 mm (same widths) | ≥ 0.10 mm |
+| Via drill / pad / ring | 0.200 / 0.450 / 0.125 mm | 0.200 / 0.450 / 0.125 mm | ≥ 0.15 / 0.25 / 0.05 mm |
+| Via target | 0.200 / 0.450 mm, target met | same | 0.20 / 0.45 mm |
+| PTH drill | 1.000–1.300 mm round holes (61) plus 14 plated slots | 0.800–1.100 mm (119 round, no plated slots) | 0.15–6.3 mm |
 | PTH annular ring | 0.250 mm min | 0.250 mm | ≥ 0.18 mm (recommend 0.25) |
-| Plated slot width | none | — | ≥ 0.50 mm |
+| Plated slot width | 1.200 mm min (14 slots: 12 oval jack contacts, 2 pill encoder lugs) | none | ≥ 0.50 mm |
 | NPTH | 0.900–2.700 mm (30 holes) | 2.700 mm (8 holes) | ≥ 0.50 mm |
 | Min SMT pad | 0.600 mm | 0.600 mm | ≥ 0.25 mm (project floor) |
 | Board-edge rule | 0.20 mm | 0.20 mm | ≥ 0.20 mm |
 
-Open TARGET items (both boards): the via pad is 0.30 mm, below the 0.45 mm
-target, so the electrical work is expected to retarget 0.20 mm drill / 0.45 mm
-pad (ring 0.125 mm). The SMD pad-to-pad **rule** is 0.10 mm, below the published
-0.15 mm different-net value; a rule is not measured copper, so it must be
-confirmed in the JLCPCB DFM preview (acceptance item `scope_dfm_cpl`).
+No TARGET item is open: every via is 0.20 mm drill / 0.45 mm pad (0.125 mm
+ring), the electrical work's retarget, and both board rules that the script
+compares with a published clearance are at or above it. The rear board's
+0.800 mm PTH drills are the 15 probe points (`platedhole_d0.8mm_pd1.6mm`,
+0.40 mm ring, bare copper, `doNotPlace`). The SMD pad-to-pad and track-to-pad
+**rules** are settings, not measured copper, so the actual copper still has to
+be confirmed in the JLCPCB DFM preview (acceptance item `scope_dfm_cpl`).
 
 Missing data fails instead of passing quietly: no board element, no traces, no
 vias, no pads, no plated holes, a route segment or pad without a size, or an
@@ -76,21 +79,21 @@ the text — not the exit code:
 | Report | Front/UI | Rear/base |
 |---|---|---|
 | source | 0 errors, 0 warnings | 0 errors, 0 warnings |
-| pin_specification | 0 errors, 9 warnings (passive U5/U6/J5) | 0 errors, 0 warnings |
+| pin_specification | 0 errors, 0 warnings | 0 errors, 0 warnings |
 | netlist | 0 errors, 0 warnings | 0 errors, 0 warnings |
-| placement | 0 errors, 0 warnings; **exit code 1** from three informational "rotate 180 degrees" notes (C2, R9, R10) | 0 errors, 0 warnings, exit 0 |
+| placement | 0 errors, 0 warnings, exit 0 | 0 errors, 0 warnings, exit 0 |
 | shorts | "No shorts detected" | "No shorts detected" |
 | pcb-style | "No PCB style issues detected" | "No PCB style issues detected" |
 
-- The nine front `pin_specification` warnings are the known passive-control ones
-  (U5 nav switch, U6 encoder, J5 interconnect declare no power/ground role). A
-  **new** warning or any error fails; the set is pinned in
-  `tscircuit/lib/reports.ts`.
+- No `pin_specification` warning is allowed on either board today: the former
+  passive-control warnings are gone because U5/U6 are declared as switches with
+  per-pin attributes. A **new** warning or any error fails; the allowed set is
+  empty in `tscircuit/lib/reports.ts`.
 - The placement exit code is parsed, not trusted: only the pinned informational
-  rotations may exit 1, and only when the counters read 0/0. Zero output, a
-  crash line, a missing counter, a missing marker, an unexpected flagged
-  component, an unexpected issue text or a non-zero exit on any other report
-  fails.
+  rotations may exit 1, and only when the counters read 0/0. The pinned set is
+  empty today (C2, R9 and R10 were rotated in the source). Zero output, a crash
+  line, a missing counter, a missing marker, an unexpected flagged component,
+  an unexpected issue text or a non-zero exit on any other report fails.
 - The upstream autorouter line "Could not save autorouting paths ... unique PCB
   port" still appears on both boards. It is printed as a known note and remains
   a manufacturing acceptance item (`autoroute_upstream_warning`); it is not
@@ -98,7 +101,8 @@ the text — not the exit code:
 - The built `dist/` JSON is also checked for emitted error elements and for
   unconnected pins. The pins the design leaves open (tact switch pin 2/4 pairs,
   unused Pi/Pico header pins) are pinned by refdes and pin; a new unconnected
-  pin fails.
+  pin fails. The current build declares 26 open pins on the rear board and 14 on
+  the front board, all from those two sources.
 
 ## Silkscreen
 
@@ -123,4 +127,6 @@ No solder-mask aperture, plating thickness, drill-to-copper registration, panel
 rail tolerance, impedance, EMC, assembly clearance or first-article fit is
 checked here. The USB-C 5 A feedthrough, the display sample, the light-pipe
 length, the encoder solder process and every mechanical clearance remain
-physical tests.
+physical tests. The probe points are checked as copper only: that a probe tip
+can reach them inside the assembled stack is **not** verified (acceptance item
+`probe_point_access`).
