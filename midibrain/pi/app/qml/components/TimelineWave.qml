@@ -13,7 +13,7 @@ import Mnkybox 1.0
 // An empty feed draws the explicit placeholder block pattern, never a blocking
 // scan; the popup puts its SCANNING badge above this item.
 //
-// `before`/`after` envelopes are the plan W5 live preview: the stored region
+// `before`/`after` envelopes are the live preview: the stored region
 // shape (dim, dashed) and the drafted shape (accent, solid) over the region
 // span, so an op preview is a comparison.
 Item {

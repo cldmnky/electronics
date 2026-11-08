@@ -53,7 +53,7 @@ class AppController final : public QObject {
   Q_PROPERTY(bool noPicoMode READ noPicoMode CONSTANT)
   Q_PROPERTY(bool recording READ recording NOTIFY transportChanged)
   Q_PROPERTY(bool rolling READ rolling NOTIFY transportChanged)
-  // SONG mode governs playback (docs/daw-plan.md W6): on = the ARRANGE clip
+  // SONG mode governs playback: on = the ARRANGE clip
   // lanes, off = the free Active-take/loop path. Persisted per project.
   Q_PROPERTY(bool songMode READ songMode WRITE setSongMode NOTIFY songModeChanged)
   Q_PROPERTY(bool overdub READ overdub NOTIFY transportChanged)
@@ -94,12 +94,12 @@ class AppController final : public QObject {
   // Main.qml binds the sheet to the same list the ring is built from, so the
   // nav and the panel can never disagree.
   Q_PROPERTY(QVariantList morePageTabs READ morePageTabs CONSTANT)
-  // A11: the TRACKS n-m / N label opens a page grid; a page is a jump, the two
+  // the TRACKS n-m / N label opens a page grid; a page is a jump, the two
   // arrows keep stepping one page.
   Q_PROPERTY(bool bankGridOpen READ bankGridOpen NOTIFY bankGridChanged)
   Q_PROPERTY(bool takeSheetOpen READ takeSheetOpen NOTIFY takeSheetChanged)
   Q_PROPERTY(int takeSheetTrack READ takeSheetTrack NOTIFY takeSheetChanged)
-  // Stage 4: the recorder shows ONE selected-track button; tapping it opens a
+  // the recorder shows ONE selected-track button; tapping it opens a
   // picker sheet instead of parking 18 permanent selectors above the takes.
   Q_PROPERTY(bool trackPickerOpen READ trackPickerOpen NOTIFY trackPickerChanged)
   // MIDI-learn target capture: while true every learnable control is outlined
@@ -267,21 +267,21 @@ class AppController final : public QObject {
   Q_INVOKABLE void stop();
   Q_INVOKABLE void recToggle();
   Q_INVOKABLE void toggleOverdub();
-  // RECMODE (docs/daw-plan.md W2): the transport's long-press REC opens the
+  // RECMODE: the transport's long-press REC opens the
   // NOW / COUNT-IN n bars / PUNCH picker; `recModeText` is the transport strip's
   // one-line readout of the current choice.
   Q_INVOKABLE void openRecMode();
   QString recModeText() const;
-  // TRACK MODE (docs/daw-plan.md W1): tap a strip's (or the recorder's) mode
+  // TRACK MODE: tap a strip's (or the recorder's) mode
   // pill to cycle, long-press to pick. Both land on the selected track's mode.
   Q_INVOKABLE void cycleTrackMode(int slot);
   Q_INVOKABLE void openTrackMode(int slot);
-  // REC SOURCE (W2b): the chosen tap point of one track, for the status line
+  // REC SOURCE: the chosen tap point of one track, for the status line
   // and the popups.
   Q_INVOKABLE int trackRecSource(int slot) const;
-  // TAKE row actions (W4) and NEW TRACK FROM THIS TAKE (W3).
+  // TAKE row actions and NEW TRACK FROM THIS TAKE.
   Q_INVOKABLE void openTakeActions(int row);
-  // Stage 4 recorder hierarchy: the selected-track picker sheet.
+  // Recorder hierarchy: the selected-track picker sheet.
   Q_INVOKABLE void openTrackPicker();
   Q_INVOKABLE void closeTrackPicker();
   Q_INVOKABLE void chooseTrack(int track);
@@ -291,19 +291,19 @@ class AppController final : public QObject {
   Q_INVOKABLE void requestRemoveTake();
   Q_INVOKABLE void requestNewTrackFromTake(int row);
   Q_INVOKABLE void requestEditTake(int row);
-  // RENDER REGION TO TRACK from the region-ops popup (W3).
+  // RENDER REGION TO TRACK from the region-ops popup.
   Q_INVOKABLE void renderRegionToTrack();
-  // RENDER SONG (W7): master bounce into the take folder, listed as a MASTER
+  // RENDER SONG: master bounce into the take folder, listed as a MASTER
   // take; the notice names the file and says what the mix includes.
   Q_INVOKABLE void renderSong();
-  // ARRANGE section rename through the shared keypad (W6).
+  // ARRANGE section rename through the shared keypad.
   Q_INVOKABLE void requestArrangeSectionRename();
   Q_INVOKABLE void selectStrip(int index);
   Q_INVOKABLE void shiftAction(int index);
   Q_INVOKABLE void tapTempo();
-  // Touch tempo popup (A7): 40..240 BPM slider, +-1 buttons and TAP.
+  // Touch tempo popup: 40..240 BPM slider, +-1 buttons and TAP.
   Q_INVOKABLE void openTempoPopup();
-  // D2: an error notice stays until the next successful action of its domain
+  // an error notice stays until the next successful action of its domain
   // clears it; a screen/screenshot reset uses the same call.
   Q_INVOKABLE void clearNotice();
   Q_INVOKABLE void closeTempoPopup();
@@ -324,7 +324,7 @@ class AppController final : public QObject {
   Q_INVOKABLE void openBankGrid();
   Q_INVOKABLE void closeBankGrid();
   Q_INVOKABLE void chooseBankPage(int page);
-  // D3: only tabs 0,1,2,3,4,5,7 have a SHIFT face.
+  // only tabs 0,1,2,3,4,5,7 have a SHIFT face.
   Q_INVOKABLE bool tabHasShiftFace(int tab) const;
 
   // Keypad / confirmation overlays.
@@ -338,7 +338,7 @@ class AppController final : public QObject {
   Q_INVOKABLE void confirmAccept();
   Q_INVOKABLE void confirmCancel();
   Q_INVOKABLE void requestLoadProject(int row);
-  // A3: the 44x44 "..." target selects without loading; the row body loads.
+  // the 44x44 "..." target selects without loading; the row body loads.
   Q_INVOKABLE void selectProjectRow(int row);
   Q_INVOKABLE void selectTakeRow(int row);
   Q_INVOKABLE void activateTakeRow(int row);
@@ -360,21 +360,21 @@ class AppController final : public QObject {
   // configuration, name and takes in the project, so a re-add restores them.
   Q_INVOKABLE void requestAddTrack();
   Q_INVOKABLE void requestRemoveTrack(int slot);
-  // A4: rename a live track through the shared keypad. The strip name's 600 ms
+  // rename a live track through the shared keypad. The strip name's 600 ms
   // long-press and the channel popout's RENAME button both land here.
   Q_INVOKABLE void requestRenameTrack(int slot);
-  // A10: the recorder header -> "TAKE FOR TRACK nn" sheet; choosing a row makes
+  // the recorder header -> "TAKE FOR TRACK nn" sheet; choosing a row makes
   // it ACTIVE and repaints the strip/waveforms.
   Q_INVOKABLE void openTakeSheet(int track);
   Q_INVOKABLE void closeTakeSheet();
   Q_INVOKABLE void chooseTakeRow(int row);
   Q_INVOKABLE void chooseLiveInput();
-  // W5: the take edit popup. Every EDIT affordance (recorder take row, the
+  // the take edit popup. Every EDIT affordance (recorder take row, the
   // row's "..." menu, the take sheet) opens it for one take; opening makes that
   // take ACTIVE because region edits are applied to the track's active take.
   Q_INVOKABLE void openTakeEdit(int row);
   Q_INVOKABLE void closeTakeEdit();
-  // A9: arm a capture without a target, then pick the target by touching it.
+  // arm a capture without a target, then pick the target by touching it.
   Q_INVOKABLE void armLearnTargetCapture();
   Q_INVOKABLE void learnTargetTouched(const QString& focusId);
   Q_INVOKABLE bool isLearnableFocus(const QString& focusId) const;
@@ -395,7 +395,7 @@ class AppController final : public QObject {
   Q_INVOKABLE void openChannel(int slot);
   Q_INVOKABLE void closeChannel();
 
-  // B5: the NO PICO badge opens this explanation with an OPEN SYSTEM action.
+  // the NO PICO badge opens this explanation with an OPEN SYSTEM action.
   Q_INVOKABLE void showNoPicoInfo();
   // Screenshot/tap runner helpers: seed a deterministic arrangement and the
   // punch auto-place notice. Not called by the UI.
@@ -443,7 +443,7 @@ class AppController final : public QObject {
   // the cursor or accept through these two signals (A2 modal trap).
   void keypadCursorMoveRequested(int delta);
   void keypadAcceptRequested();
-  // G7: the panel reaches the keypad's keys as ring stops; a PRESS asks the
+  // the panel reaches the keypad's keys as ring stops; a PRESS asks the
   // QML buffer to insert a character or run an edit verb (buffer stays in QML).
   void keypadTextRequested(const QString& text);
   void keypadEditRequested(const QString& action);
@@ -465,11 +465,11 @@ class AppController final : public QObject {
 
  private:
   // The headless tap runner drives the same panel intents (focus PRESS, EXIT)
-  // the Pico sends, so these private handlers can be regression-gated without
+  // the Pico sends, so these private handlers can be gated without
   // exposing a test-only API to QML.
   friend class UiTapRunner;
   void timerTick();
-  // G9: every overlay saves the invoking focus id on open and restores it on
+  // every overlay saves the invoking focus id on open and restores it on
   // close (by id when it still exists, else by the saved index).
   void noteFocusReturn();
   void restoreFocusReturn();
@@ -619,19 +619,19 @@ class AppController final : public QObject {
   bool tempoPopupOpen_ = false;
   bool tabGridOpen_ = false;
   bool bankGridOpen_ = false;
-  // D7: the import preview asked for confirmation; this is the path it will add
-  // when the confirmation accepts.
+  // the import preview asks for confirmation; this path is copied here so the
+  // confirmation can import it.
   QString pendingImportPath_;
   bool takeSheetOpen_ = false;
   int takeSheetTrack_ = -1;
   bool trackPickerOpen_ = false;
   bool knobSheetOpen_ = false;
-  // G9 focus-return stack: nested overlays (channel -> TRACK FX -> config /
+  // The focus-return stack: nested overlays (channel -> TRACK FX -> config /
   // keypad) each restore the stop they were opened from.
   std::vector<QString> focusReturnStack_;
   bool suppressFocusReturn_ = false;
   // Last non-Off metronome mode: enabling CLICK from Off restores it instead
-  // of silently rewriting the configured mode (A8).
+  // of silently rewriting the configured mode.
   int lastNonZeroClickMode_ = 0;
   // Engine take loops are mapped with the transport tempo at apply time, so a
   // tempo change re-applies them (Engine::setTakeLoop contract).

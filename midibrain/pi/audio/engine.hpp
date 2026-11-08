@@ -33,7 +33,7 @@ inline constexpr int kBlockSize = 128;
 /// RecSource selection below is what a session/UI chooses.
 enum class TapPoint : uint8_t { PreGain, PostGain };
 
-/// REC SOURCE (W2b): where Engine::tap() captures the track's LIVE INPUT.
+/// REC SOURCE: where Engine::tap() captures the track's LIVE INPUT.
 /// `Pre` is the historical tap (post-gain, pre-EQ; Channel::tapPoint still
 /// picks PreGain/PostGain inside it) and the default, so a session that never
 /// chose a source is bit-identical to the old engine. `Post` is post-EQ plus
@@ -275,7 +275,7 @@ public:
     /// TapPoint::PreGain, `in * gain` for the default PostGain); POST is the
     /// live input through gain, the strip EQ and the fader (pre-FX-rack,
     /// pre-pan); POSTFX additionally runs the live input through this track's
-    /// FX1 -> FX2 rack (wet included) before the fader. The tap is always the
+    /// > FX2 rack (wet included) before the fader. The tap is always the
     /// track's *selected* live source and never take or clip playback; a
     /// stereo track is averaged to mono (`0.5 * (L + R)`), because the recorder
     /// writes one mono file per armed track. nullptr when `track` is outside
@@ -374,8 +374,8 @@ public:
     EqBand mainEqBand(int band) const;
 
     // --- per-track FX rack (two series slots) -----------------------------
-    /// One rack per track, placed post-EQ, pre-fader and pre-sends (the old
-    /// per-track insert home; see NOTES.md, "Engine wave 11"). The slots run
+    /// One rack per track, placed post-EQ, pre-fader and pre-sends (it is
+    /// also the per-track insert home). The slots run
     /// in series, slot 0 then slot 1, each with its own dry/wet crossfade. An
     /// empty id detaches a slot: no DSP runs, the block costs one atomic
     /// pointer load plus one kind load, and the wet value is kept (the UI mix

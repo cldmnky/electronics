@@ -45,7 +45,7 @@ class AppState {
   std::atomic<std::uint32_t> tick{0};
   // App-side song transport seek offset. The Pico owns the raw tick, so a
   // tap-to-seek shifts the engine and UI position by this signed delta instead
-  // of writing the Pico's counter. See docs/daw-plan.md W6 and NOTES.
+  // of writing the Pico's counter. See ARCHITECTURE.md.
   std::atomic<std::int64_t> transportOffsetTicks{0};
   std::atomic<bool> clickEnabled{false};
   std::atomic<float> clickLevel{0.5f};
@@ -53,7 +53,7 @@ class AppState {
   std::atomic<int> clickOutput{0};
   std::atomic<float> clickGainDb{-6.0f};
   std::atomic<int> clickBars{1};
-  // RECMODE (docs/daw-plan.md W2): 0 = NOW (record on the press), 1 = COUNT-IN
+  // RECMODE: 0 = NOW (record on the press), 1 = COUNT-IN
   // n bars (roll, engage at the downbeat), 2 = PUNCH (roll, engage between the
   // PUNCH IN/OUT measures). `recScheduled` is true from the REC press until the
   // boundary the schedule waits for arrives or the schedule is cancelled, so

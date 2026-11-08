@@ -2,118 +2,115 @@
 
 C++20 host software for the **mnkybox** recorder/MIDI hub: Raspberry Pi 5,
 800×480 touch UI, Pico 2 as SPI link + clock master. Everything in this
-directory also builds and runs **headless on the macOS dev machine**; nothing
-here has been run on Pi hardware yet.
+directory also builds and runs **headless on the macOS dev machine** through the
+emulator backends and the offscreen Qt platform.
 
-This is prototype software. A green build says nothing about audio latency,
-MIDI/SysEx behaviour on real interfaces, the SPI link, power or the mechanical
-stack. See [ARCHITECTURE.md](ARCHITECTURE.md) for the module contracts and
+A green build says nothing about audio latency, MIDI/SysEx behaviour on real
+interfaces, the SPI link, power or the mechanical stack. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the module contracts and
 [../docs/](../docs/) for the hardware-side status.
 
-## Layout and ownership
+## Layout
 
 ```
 pi/
-  CMakeLists.txt      root build (setup team): pins, RtMidi, core libs, CTest, JUCE smoke
-  ARCHITECTURE.md     module contracts (parent-owned)
-  third_party/        vendored RtMidi 6.1.0 + pinned-dependency table (parent-owned)
-  link/               Pico SPI link core      (JUCE-free)
-  midi/               router / USB MIDI / clock / buttons (JUCE-free, uses RtMidi)
-  audio/              engine + multitrack float32 recorder (JUCE-free)
-  clap/               CLAP host core + example mnkygain plugin (JUCE-free)
-  app/                wave 2: JUCE touchscreen application
-  emulator/           wave 2: emulator backends + headless selftest
+  CMakeLists.txt      root build: dependency pins, core libs, CTest, the Qt app
+  ARCHITECTURE.md     module contracts and standing rules
+  third_party/        vendored RtMidi 6.1.0 + the pinned-dependency table
+  link/               Pico SPI link core
+  midi/               router, USB MIDI, clock discipline, buttons
+  audio/              engine, per-track FX rack, recorder + WAV, device backends
+  clap/               CLAP host core + example mnkygain plugin
+  session/            versioned JSON project format
+  update/             Pico 2 UF2/BOOTSEL updater core
+  app/                Qt 6 QML touchscreen application (`mnkybox`)
+  emulator/           scripted backends + headless selftest
+  bench/              studio measurement harness + `--bench-clock` driver
 ```
 
-One writer per directory. The root build never edits module code; modules never
-edit the root build.
+The core modules are JUCE-free and Qt-free; Qt lives in `app/` only.
 
 ## Build and test (dev machine, macOS arm64)
 
-Requires CMake ≥ 3.24, a C++20 compiler, `git` and network access for the first
-configure (both dependencies are fetched shallow and pinned).
+Requires CMake ≥ 3.24, a C++20 compiler, Qt 6 (`brew install qt`), `git` and
+network access for the first configure (CLAP is fetched shallow and pinned).
 
 ```sh
-cmake -S midibrain/pi -B /tmp/pi-build
+cmake -S midibrain/pi -B /tmp/pi-build -DCMAKE_PREFIX_PATH=$(brew --prefix qt)
 cmake --build /tmp/pi-build -j
 ctest --test-dir /tmp/pi-build --output-on-failure
 ```
-
-The first configure shallow-clones JUCE 9.0.5 and CLAP 1.2.10 into
-`/tmp/pi-build/_deps` (~25–40 s) and builds JUCE's `juceaide` host tool.
-A full `-j` build then takes roughly a minute on an M-series laptop; later
-builds are incremental. No artifact from this directory is installed, packaged
-or flashed.
 
 Targets:
 
 | Target | Kind | Notes |
 |---|---|---|
 | `mnky_rtmidi` | static lib | RtMidi 6.1.0 compiled **once**; `__MACOSX_CORE__` (macOS) / `__LINUX_ALSA__` (Pi) is a `PUBLIC` define so every consumer sees the same `RtMidi` layout |
-| `mnky_link` `mnky_midi` `mnky_audio` `mnky_clap` | static libs | fixed names from ARCHITECTURE.md |
+| `mnky_link` `mnky_midi` `mnky_audio` `mnky_clap` `mnky_session` `mnky_update` | static libs | fixed names from ARCHITECTURE.md |
 | `mnky_clap_headers` | interface | CLAP 1.2.10 `include/` (headers only; the upstream CLAP CMake project is deliberately not added) |
-| `mnkygain` | loadable module | example CLAP gain plugin from `clap/effects/mnkygain/`, needs the real CLAP headers |
-| `mnky_juce_smoke` | static lib | compile smoke: `juce_gui_basics` + `juce_audio_devices`. Compiles and links into a static archive, never runs. The wave-2 `app/` team owns the real `juce_add_gui_app` target |
-| `test_link` `test_midi` `test_audio` (+ `clap_host_core`) | test binaries | registered with CTest |
+| `mnkygain` | loadable module | example CLAP gain plugin from `clap/effects/mnkygain/` |
+| `mnkybox` | executable | the Qt 6 QML app (`app/CMakeLists.txt`) |
+| `mnky_selftest` `mnky_clock_sim_test` | executables | headless emulator selftest and clock-simulation check |
+| `test_link` `test_midi` `test_audio` `test_clap` `test_session` `test_update` (+ module test binaries) | test binaries | registered with CTest |
 
-### Ownership-tolerant wiring
+### Optional modules
 
-Modules land in parallel, so configure never fails on a missing module:
+Every module subdirectory is optional: a missing directory skips its target
+instead of failing configure.
 
-* `mnky_core_module()` skips a module whose directory is absent, uses the
-  module's own `CMakeLists.txt` when it has one, and otherwise globs
-  `<dir>/*.cpp` (excluding `test_*.cpp`) into the fixed library name.
+* `mnky_core_module()` uses the module's own `CMakeLists.txt` when it has one,
+  and otherwise globs `<dir>/*.cpp` (excluding `test_*.cpp`) into the fixed
+  library name.
 * `mnky_module_tests()` registers `<dir>/test_*.cpp` with CTest, and skips a
-  test the module already defines itself (e.g. `test_clap`/`clap_host_core`).
-  A module without tests simply adds none.
-* `app/CMakeLists.txt` and `emulator/CMakeLists.txt` are added if present.
+  test the module already defines itself. A module without tests adds none.
 
 Test binaries are compiled with `-UNDEBUG` in every build type: module tests are
 assert-based, and a `Release`/`RelWithDebInfo` `-DNDEBUG` would silently disable
 every check.
 
-Each module can also be built standalone exactly as documented in
-ARCHITECTURE.md (`cmake -S midibrain/pi/<mod> -B …`, or the plain
-`c++ -std=c++20 …` lines). Those standalone builds are the reference for the
-module teams; the root build is what CI and the app link against.
+Each module also builds standalone as documented in ARCHITECTURE.md
+(`cmake -S midibrain/pi/<mod> -B …`, or the plain `c++ -std=c++20 …` line).
+
+## App command line
+
+| Flag | Purpose |
+|---|---|
+| `--emulator` | scripted Pico SPI transport, in-process synth instead of a device, virtual `mnkybox` USB MIDI ports |
+| `--no-pico` | no link: the Pi is clock master and the TRS rows read unavailable |
+| `--unittests` | headless logic tests (no window) |
+| `--ui-taps` | headless tap gate over every touch control; any QML warning fails |
+| `--panel-taps` | headless panel-intent gate (focus PRESS/EXIT parity) |
+| `--screenshots [dir]` | offscreen screenshot set; `--screenshots-live` drives the real device |
+| `--bench-clock` | automated MIDI-clock acceptance run against the real device, see `bench/README.md` |
+| `--clap-bench` | CLAP host timing measurement |
 
 ## Pinned dependencies
 
-Versions are single-sourced in `pi/CMakeLists.txt` (`MNKY_JUCE_VERSION`,
-`MNKY_CLAP_VERSION`) and must stay identical to
-[third_party/README.md](third_party/README.md). Never float on a branch.
+Versions are single-sourced in `pi/CMakeLists.txt` (`MNKY_CLAP_VERSION`) and must
+stay identical to [third_party/README.md](third_party/README.md). Never float on
+a branch. Qt 6 comes from the host toolchain (Homebrew on macOS, Debian packages
+on the Pi) and the QML stays inside the 6.4-compatible subset.
 
-Two macOS dev-machine facts are baked into the root build:
-
-* **Apple clang is selected on Darwin** when the caller has not chosen a
-  compiler (`CC`/`CXX` unset, no `-DCMAKE_CXX_COMPILER`). JUCE compiles against
-  the macOS SDK frameworks (ApplicationServices/HarfBuzz, CoreMIDI), which a
-  non-Apple `g++` on `PATH` does not have. Override with
-  `-DCMAKE_CXX_COMPILER=…` if you know your toolchain can build JUCE.
-  Standalone per-module tests still work with the plain `c++` on `PATH` — they
-  are JUCE-free, but they are then a different C++ runtime from the CMake-built
-  artifacts, so do not link objects from the two.
-* **`-include cstring` for C++/ObjC++ on Apple.** Upstream JUCE 9.0.5 includes
-  `<cstring>` in `juce_StandardHeader.h` only for Linux/BSD, Android and MSVC;
-  current libc++ no longer pulls it in transitively, so `juce_core`'s
-  `memset`/`memmove` fail to compile. The header is force-included instead of
-  patching the pinned tree, and the same flag is passed to JUCE's configure-time
-  `juceaide` bootstrap through `CXXFLAGS`. Both go away when a JUCE version that
-  fixes the include is pinned.
+One macOS dev-machine fact is baked into the root build: **Apple clang is
+selected on Darwin** when the caller has not chosen a compiler (`CC`/`CXX`
+unset, no `-DCMAKE_CXX_COMPILER`), because the app needs the macOS SDK
+frameworks that a non-Apple `g++` on `PATH` does not have. Standalone
+per-module tests still work with the plain `c++` on `PATH`; they are then a
+different C++ runtime from the CMake-built artifacts, so do not link objects
+from the two.
 
 ## Pi notes
 
 * The Pi 5 build is the same root build with `gcc`/`clang` and the system CMake;
-  RtMidi is compiled with `__LINUX_ALSA__` and links `asound`, and JUCE's
-  `audio_devices` uses ALSA. **This has not been built or run on a Pi yet** —
-  the ARM/ALSA path is unverified.
-* Display, touch (I2C), USB-C power, cooling and NVMe stack details are tracked
-  in `../docs/mechanical-stack.md` and `../docs/requirements.md`; none of them
-  are proven by this build.
-* JUCE licence (GPLv3 vs commercial) is undecided, so no binary built here may
-  be distributed yet.
+  RtMidi is compiled with `__LINUX_ALSA__` and links `asound`. Verification
+  target is the studio Pi 5 — see [STUDIO-PI.md](STUDIO-PI.md).
+* Display, touch, USB-C power, cooling and NVMe stack details are tracked in
+  `../docs/mechanical-stack.md` and `../docs/requirements.md`; none of them are
+  proven by this build.
+* Qt licence (LGPLv3 vs commercial) is undecided, so no binary built here may be
+  distributed yet.
 
-## Status (2026-11-06)
+## Status
 
 Built and running on macOS (dev) and the studio Pi 5 (product host, UMC1820):
 
@@ -121,18 +118,18 @@ Built and running on macOS (dev) and the studio Pi 5 (product host, UMC1820):
   (tracks are created, up to 64 with stereo pairs), track modes
   (PLAY/ARM/OVERDUB/LIVE), record start modes (NOW/COUNT-IN/PUNCH), record
   source (PRE/POST/POST+FX), take manager + take-to-track, edit popup with
-  full-width waveforms (W3), per-track FX rack (FX1/FX2 selectable:
-  built-in delay/reverb + CLAP plugins, lazy 16-instance hosting), EQ +
-  per-track X/Y, panel/touch parity (NAV/EDIT/SHIFT + value knob), value
-  popups, slider law, `--ui-taps` headless tap gate (every control).
-- **Cores**: link (SPI + no-pico Pi clock master), MIDI (router, per-device
-  USB ports, MIDI-learn), audio (64-track engine, per-track EQ inserts,
-  take playback + regions + loops, song clip scheduler, RENDER SONG),
+  full-width waveforms, per-track FX rack (FX1/FX2 selectable: built-in
+  delay/reverb + CLAP plugins, lazy 16-instance hosting), EQ + per-track X/Y,
+  panel/touch parity (NAV/EDIT/SHIFT + value knob), value popups, slider law,
+  `--ui-taps` and `--panel-taps` headless gates.
+- **Cores**: link (SPI + no-pico Pi clock master), MIDI (router, per-device USB
+  ports, MIDI-learn, MIDI FX pipes), audio (64-track engine, per-track EQ and
+  FX rack, take playback + regions + loops, song clip scheduler, RENDER SONG),
   CLAP host + example plugin, sessions v2 (song + takes + rack + router).
-- **Tooling**: `--ui-taps` regression gate, `--screenshots`, emulator +
-  headless selftest, studio bench harness (jitter/latency/gadget probes),
-  updater core (`pi/update`, UF2 + BOOTSEL).
+- **Tooling**: `--screenshots`, emulator + headless selftest, studio bench
+  harness (jitter/latency/gadget probes, `--bench-clock`), updater core
+  (`pi/update`, UF2 + BOOTSEL).
 
-Open: DAW W3 in flight (edit popup polish), W4/W5 (song UI + arranger)
-next; hardware acceptance items (see docs/acceptance.md); physical touch
-and timing measurement; brain-os image parked.
+Open: hardware acceptance items (see `docs/acceptance.md`); physical touch and
+timing measurement; the brain-os image workstream is parked
+([BUILDROOT-AUDIO.md](BUILDROOT-AUDIO.md)).

@@ -2,7 +2,7 @@ import QtQuick
 import Mnkybox 1.0
 import "../components"
 
-// ARRANGE clip "..." sheet (docs/daw-plan.md W6). One clip at a time: OPEN EDIT
+// ARRANGE clip "..." sheet. One clip at a time: OPEN EDIT
 // hands the take to the W3 edit popup, MOVE/TRIM arm the touch drag and the
 // panel value knob (pos/length stay editable through the sheet AND the
 // encoder, never drag-only), DUPLICATE/MUTE/DELETE are instant, and GAIN/FADE

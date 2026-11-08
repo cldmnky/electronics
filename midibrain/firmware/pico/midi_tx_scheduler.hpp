@@ -5,8 +5,8 @@
 //
 // Why: sending 0xF8 with a blocking uart_putc inside the clock alarm lets a
 // full TX FIFO (or a queue of ordinary MIDI bytes) delay the clock edge by
-// milliseconds. The alarm now only enqueues. The UART TX interrupt drains this
-// scheduler with a direct data-register write while the hardware reports
+// milliseconds. The alarm therefore only enqueues. The UART TX interrupt drains
+// this scheduler with a direct data-register write while the hardware reports
 // writable space; no blocking UART helper is ever called from an ISR.
 //
 // Priority classes:

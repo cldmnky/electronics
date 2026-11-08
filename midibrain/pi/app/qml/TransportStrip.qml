@@ -2,7 +2,7 @@ import QtQuick
 import Mnkybox 1.0
 import "components"
 
-// Persistent transport strip under the nav row. Stage 1 sizing policy: the
+// Persistent transport strip under the nav row. Sizing policy: the
 // three transport verbs are 64 px (Style.touchPrimary, ~6.1 mm), the musical
 // position and tempo are read at Style.fontValue (24 px), and the feedback
 // readout has a defined width instead of competing for the row's leftover.
@@ -245,7 +245,7 @@ Rectangle {
             chevron: root.optionsOpen ? "down" : "up"
             onClicked: root.optionsOpen = !root.optionsOpen
         }
-        // B5: the bare-Pi marker is a chip, not a badge. Touch-only; it is not
+        // the bare-Pi marker is a chip, not a badge. Touch-only; it is not
         // a panel stop (there is no panel in no-Pico mode), so it carries no
         // focusId and the tap gate reaches it through its own scenario below.
         Rectangle {

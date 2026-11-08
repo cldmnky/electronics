@@ -182,7 +182,7 @@ Rectangle {
             }
 
             // ---- INPUT MONITOR (TRACK SHIFT summary) ----------------------
-            // ---- TRACK MODE (W1) + REC SOURCE (W2b) ------------------------
+            // ---- TRACK MODE + REC SOURCE ------------------------------------
             // The mode words replace the old monitor letters: LIVE processes the
             // input, PLAY plays the take, ARM records and waits, OVERDUB layers
             // the live input over the take. REC SOURCE names where the take
@@ -235,7 +235,7 @@ Rectangle {
                     TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "POST"; textSize: Style.fontSmall; checked: config.trackRecSource === 1; focusId: "config.recsource.1"; onClicked: config.trackRecSource = 1 }
                     TouchButton { width: (parent.width - Style.gapTight * 2) / 3; height: parent.height; text: "POST+FX"; textSize: Style.fontSmall; checked: config.trackRecSource === 2; focusId: "config.recsource.2"; onClicked: config.trackRecSource = 2 }
                 }
-                // The one-line monitor legend (plan §5): the MPC source names
+                // The one-line monitor legend: the MPC source names
                 // stay documented even though the face now speaks mode words.
                 Text {
                     width: parent.width
@@ -246,7 +246,7 @@ Rectangle {
                 }
             }
 
-            // ---- REC MODE (W2) ---------------------------------------------
+            // ---- REC MODE --------------------------------------------------
             Column {
                 visible: config.kind === "recmode"
                 width: parent.width
@@ -292,7 +292,7 @@ Rectangle {
                 }
             }
 
-            // ---- TAKE row actions (W4) -------------------------------------
+            // ---- TAKE row actions ------------------------------------------
             Column {
                 visible: config.kind === "takeactions"
                 width: parent.width
@@ -325,7 +325,7 @@ Rectangle {
                 }
             }
 
-            // ---- NEW TRACK FROM TAKE (W3): MOVE / KEEP ON SOURCE --------------
+            // ---- NEW TRACK FROM TAKE: MOVE / KEEP ON SOURCE -----------------
             Column {
                 visible: config.kind === "trackfromtake"
                 width: parent.width
@@ -1224,7 +1224,7 @@ Rectangle {
                 width: parent.width
                 spacing: 2
 
-                // D5: the op's range and its validity are read before the run,
+                // the op's range and its validity are read before the run,
                 // not reported as a refusal after it.
                 Text {
                     width: parent.width
@@ -1334,7 +1334,7 @@ Rectangle {
                         fadeOutRatio: timeline.previewLengthBeats > 0
                                       ? config.timelineFadeOutBeats / timeline.previewLengthBeats : 0
                     }
-                    // A14: a missing peaks sidecar is an action, not a dead
+                    // a missing peaks sidecar is an action, not a dead
                     // preview block.
                     TouchButton {
                         visible: timeline.previewWave.length === 0
@@ -1371,7 +1371,7 @@ Rectangle {
                     wrapMode: Text.Wrap
                     elide: Text.ElideRight
                 }
-                // W3: bake IN..OUT into a new take and drop it on a new track.
+                // bake IN..OUT into a new take and drop it on a new track.
                 TouchButton {
                     width: parent.width
                     height: Style.touch
@@ -1390,7 +1390,7 @@ Rectangle {
 
             Row {
                 width: parent.width
-                // Stage 4 footer: the two exits are a full 64 px row; CANCEL
+                // Sheet footer: the two exits are a full 64 px row; CANCEL
                 // is a common action (ghost), not a destructive red verb.
                 height: Style.touchPrimary
                 spacing: 4
@@ -1402,7 +1402,7 @@ Rectangle {
                     focusId: "config.cancel"
                     onClicked: app.configCancel()
                 }
-                // C9: the button is its verb; the header repeats it. D5: a
+                // the button is its verb; the header repeats it. D5: a
                 // region op with an unusable range is dimmed and says why
                 // above instead of failing after the tap.
                 TouchButton {

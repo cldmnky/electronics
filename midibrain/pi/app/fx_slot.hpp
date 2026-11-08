@@ -79,9 +79,9 @@ class FxSlot {
 
 class FxManager {
  public:
-  // Owner decision for this wave: at most 16 simultaneous per-track CLAP
-  // instances. The Pi measurement in NOTES.md reports what the target holds;
-  // this ceiling is the UI's admission rule, not a measured CPU guarantee.
+  // At most 16 simultaneous per-track CLAP instances. This ceiling is the UI's
+  // admission rule, not a measured CPU guarantee: a loaded instance costs CPU
+  // on the target, so the number stays small enough to keep the graph live.
   static constexpr int kMaxTrackInstances = 16;
   static constexpr int kTrackSlots = audio::kTrackFxSlots;
 

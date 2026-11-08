@@ -1,4 +1,4 @@
-# UI refresh spec — declutter, modern, graphic (wave 2)
+# UI refresh spec — declutter, modern, graphic
 
 Owner direction (2026-11-06): "the UI is a bit cluttered and could be more
 modern. Use popups more where we do selections on a button, integrate nice
@@ -24,7 +24,7 @@ Candidates (audit list — collapse every one found):
 - EQ type corners (already popup — remove the SHIFT-face 6-button row)
 - Device-out pickers, meter density, backend/device lists (already lists —
   keep, but give the closed state a one-line summary)
-- Pipe chMask (wave-1 ships 16 toggles in a popup already — summary readout
+- Pipe chMask (16 toggles already live in a popup — summary readout
   `CH 1-4` on the pipe row is the pattern)
 
 Primary faces keep: meters, faders, transport, take list, wires, grids.
@@ -80,7 +80,7 @@ popout gain). Every other numeric value in a tight cell uses `KnobChip`
 (arc + label + value) or a popup-edited value chip; enum/bool values use
 popup selectors. `ConfigSlider` is deleted and must not return.
 
-## 7. Sizing policy (stage 1)
+## 7. Sizing policy
 
 The active area is **95.04 x 53.856 mm** at 800 x 480 (Waveshare 4.3inch DSI
 LCD: 0.1188 x 0.1122 mm per pixel), so **800 px / 95.04 mm = 8.42 px/mm** and one
@@ -101,10 +101,9 @@ measured in millimetres, not in "it fits":
 
 Rule: **never solve overflow by shrinking an essential font.** Remove,
 group, or relocate a control first (into a sheet, a summary button or the
-options sheet). The stage-1 migration covers the four-destination nav row and
-the transport strip; every other screen keeps its existing fixed arithmetic
-and is migrated by its own redesign stage, so `Style.touch` is deliberately
-not raised globally.
+options sheet). The four-destination nav row and the transport strip use these tokens
+today; every other screen keeps its existing fixed arithmetic, so
+`Style.touch` is deliberately not raised globally.
 
 Destinations keep the existing tab identifiers: Mixer 0, Routing 1,
 Recorder 2, System 3, Projects 4, MIDI 5, EQ 6, XY 7, Arrange 8. The nav shows

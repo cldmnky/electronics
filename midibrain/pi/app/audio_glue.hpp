@@ -100,13 +100,13 @@ class AudioGlue final : private audio::DeviceClient {
   // Control-thread monitor/compressor configuration. The audio callback copies
   // these atomics into the engine every block.
   void applyMonitorSettings(const SessionSettings& settings);
-  // Control-thread REC SOURCE (docs/daw-plan.md W2b): forwards one track's
+  // Control-thread REC SOURCE: forwards one track's
   // PRE / POST / POST+FX tap choice to Engine::setRecSource. Pushed with the
   // monitor settings once per tick, so a strip edit lands like every other
   // mixer value.
   void applyRecSource(int track, int source);
   int recSource(int track) const;  // what the engine holds for that track
-  // RENDER REGION TO TRACK (docs/daw-plan.md W3): bakes the active take's
+  // RENDER REGION TO TRACK: bakes the active take's
   // [inBeats, outBeats) into a new `<nn>-<name>-<NNN>.wav` in the take folder
   // through Engine::renderRegionToTake, then reports the path. Refusals come
   // back as a reason (no active take, tempo missing, unwritable file).
@@ -144,10 +144,10 @@ class AudioGlue final : private audio::DeviceClient {
   bool setActiveTake(int track, const std::filesystem::path& path,
                      std::string* error = nullptr);
   void clearActiveTake(int track);
-  // --- SONG mode / clip scheduler / RENDER SONG (W4/W5) ---------------------
+  // --- SONG mode / clip scheduler / RENDER SONG ----------------------------
   // SONG mode swaps the take voice to the per-track clip lanes; false restores
-  // the legacy Active-take/loops path exactly. The app only enables it when the
-  // arrangement has clips, so an empty song keeps the W1 take path audible.
+  // the Active-take/loops path exactly. The app only enables it when the
+  // arrangement has clips, so an empty song keeps the Active-take path audible.
   void setSongMode(bool on);
   bool songMode() const;
   // Applies one track's already-resolved song lane (absolute take paths). An

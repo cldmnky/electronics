@@ -1,6 +1,6 @@
 #pragma once
-// Draft state for the generic configuration modal. The owner's wave-end rule
-// is "no apply buttons": every setting is live, so each setter writes the open
+// Draft state for the generic configuration modal. There are no apply
+// buttons: every setting is live, so each setter writes the open
 // kind's values to the models immediately; OK/CLOSE keeps them and CANCEL
 // restores the values the popup opened with. The summary properties are
 // one-line live readouts for the buttons that open each popup; the list kinds
@@ -55,20 +55,20 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(double compReleaseMs READ compReleaseMs WRITE setCompReleaseMs NOTIFY changed)
   Q_PROPERTY(double compMakeupDb READ compMakeupDb WRITE setCompMakeupDb NOTIFY changed)
   Q_PROPERTY(int compMode READ compMode WRITE setCompMode NOTIFY changed)
-  // TRACK MODE (docs/daw-plan.md W1): the four mode words plus the track's REC
+  // TRACK MODE: the four mode words plus the track's REC
   // SOURCE. Both are live, like every other value in this popup.
   Q_PROPERTY(int trackMode READ trackMode WRITE setTrackMode NOTIFY changed)
   Q_PROPERTY(int trackRecSource READ trackRecSource WRITE setTrackRecSource NOTIFY changed)
   Q_PROPERTY(QString trackRecSourceText READ trackRecSourceText NOTIFY changed)
-  // RECMODE (docs/daw-plan.md W2): NOW / COUNT-IN n bars / PUNCH, written to
+  // RECMODE: NOW / COUNT-IN n bars / PUNCH, written to
   // AppState so the transport and the recorder status read one source.
   Q_PROPERTY(int recMode READ recMode WRITE setRecMode NOTIFY changed)
   Q_PROPERTY(int countInBars READ countInBars WRITE setCountInBars NOTIFY changed)
   Q_PROPERTY(QString recModeSummary READ recModeSummary NOTIFY changed)
-  // TAKE row actions (docs/daw-plan.md W4): the header names the row and every
+  // TAKE row actions: the header names the row and every
   // pick runs an AppController action through the sink below.
   Q_PROPERTY(QString takeTargetName READ takeTargetName NOTIFY changed)
-  // NEW TRACK FROM TAKE (docs/daw-plan.md W3): the two placement verbs.
+  // NEW TRACK FROM TAKE: the two placement verbs.
   Q_PROPERTY(QString trackFromTakeText READ trackFromTakeText NOTIFY changed)
   Q_PROPERTY(QStringList takeActions READ takeActions CONSTANT)
   Q_PROPERTY(QStringList trackFromTakeChoices READ trackFromTakeChoices CONSTANT)
@@ -96,7 +96,7 @@ class ConfigPopupModel final : public QObject {
   Q_PROPERTY(double timelineFadeInBeats READ timelineFadeInBeats WRITE setTimelineFadeInBeats NOTIFY changed)
   Q_PROPERTY(double timelineFadeOutBeats READ timelineFadeOutBeats WRITE setTimelineFadeOutBeats NOTIFY changed)
   Q_PROPERTY(QString timelineOpName READ timelineOpName NOTIFY changed)
-  // D5: the region the op will use and whether APPLY can run. The header line
+  // the region the op will use and whether APPLY can run. The header line
   // names IN/OUT; an invalid range disables the verb and states the reason
   // inline instead of leaving a live button that can only fail.
   Q_PROPERTY(QString regionLine READ regionLine NOTIFY changed)
@@ -117,7 +117,7 @@ class ConfigPopupModel final : public QObject {
   // Footer text: the popup states its own OK/CANCEL contract (live values vs
   // the add-track create and the region-op run).
   Q_PROPERTY(QString footerHint READ footerHint NOTIFY openChanged)
-  // C9: the primary button states its verb (ADD TRACK, APPLY TRIM, ...); the
+  // the primary button states its verb (ADD TRACK, APPLY TRIM, ...); the
   // header repeats it. Only a pure settings popup keeps OK.
   Q_PROPERTY(QString acceptLabel READ acceptLabel NOTIFY changed)
   // ---- selector popups (tap-to-open lists) -------------------------------
@@ -205,7 +205,7 @@ class ConfigPopupModel final : public QObject {
   int countInBars() const { return countInBars_; }
   QString recModeSummary() const;
   QString takeTargetName() const { return takeTargetName_; }
-  // The TAKE row menu, in plan order (docs/daw-plan.md W4 + W3). The index the
+  // The TAKE row menu, in display order. The index the
   // popup reports back is the position in this list.
   QStringList takeActions() const;
   // Labels of the two placement verbs of NEW TRACK FROM TAKE.

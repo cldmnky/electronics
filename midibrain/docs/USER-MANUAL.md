@@ -1,6 +1,6 @@
 # MIDI Brain - User Manual
 
-The complete instrument: an 18-track Eurorack recorder, mixer and MIDI hub
+The complete instrument: an 18-input, 64-track Eurorack recorder, mixer and MIDI hub
 in 32HP. Touchscreen when you want it, panel controls when you don't.
 
 Two computers share the work behind the panel. The Raspberry Pi 5 runs the
@@ -564,8 +564,9 @@ and move a knob on your controller.
 
 **Page 3 - TOOLS.** Take-volume free space with the low-space banner and the
 take directory, screen brightness 5-100 % (with the note when the display
-cannot be dimmed), and the APP and FIRMWARE versions. There are no update
-entries: firmware is flashed over USB (section 17).
+cannot be dimmed), and the APP version. The FIRMWARE row reads "not reported by the link status"
+until the protocol carries a version field. There are no update entries:
+firmware is flashed over USB (section 17).
 
 **PANIC** sends CC123 on all 16 channels and says so in the notice slot.
 
@@ -762,6 +763,6 @@ takes and projects keep running meanwhile, while the panel and TRS are away.
 800x480 touch DSI. 18 inputs / 20 outputs through the UMC1820 (+ ADA8200
 over S/PDIF), 48 kHz/24-bit, NVMe capture of every armed track. 2x TRS MIDI
 in/out (Type A) + USB MIDI hub. Pico 2 panel/clock controller + Pi 5 app
-host, internal SPI. REC / OVERDUB / STOP / PLAY / PLAY START + TEMPO / NAV /
+host, internal SPI. REC / OVERDUB / STOP / PLAY / PLAY START + VALUE / NAV /
 SHIFT / EXIT, 3 semantic LEDs on light pipes, MIDI clock master with follow.
 USB audio streaming is absent by hardware (section 14).

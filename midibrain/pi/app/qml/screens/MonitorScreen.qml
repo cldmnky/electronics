@@ -24,7 +24,7 @@ Item {
             elide: Text.ElideRight
         }
 
-        // D8: clock source. The three choices persist in the session
+        // clock source. The three choices persist in the session
         // (clock.source + transportFollow); the note states what this build
         // can send, so the row never claims a follow that is not wired.
         Row {

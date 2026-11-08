@@ -17,7 +17,7 @@ Item {
             height: Style.touch
             spacing: Style.gap
 
-            // B3: this page is output/phones/cue/comp - OUTPUT, not MONITOR.
+            // this page is output/phones/cue/comp - OUTPUT, not MONITOR.
             // MON stays the per-track input-monitor mark on the mixer.
             TouchButton {
                 width: 132

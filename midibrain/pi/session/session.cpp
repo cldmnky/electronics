@@ -2400,7 +2400,7 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
     // encoded view, so both are captured with the same value.
     channel.mode = static_cast<int>(live.monitor);
     channel.monitor = channel.mode;
-    // REC SOURCE (W2b): the engine holds the three-point tap selection, so a
+    // REC SOURCE: the engine holds the three-point tap selection, so a
     // session round-trip reads it back instead of re-applying a stale value.
     channel.recSource = static_cast<int>(engine.recSource(index));
     // Input source and output destination are routing state, not Channel
@@ -2410,7 +2410,7 @@ Snapshot capture(const midi::Router& router, const audio::Engine& engine,
     channel.inCh = engine.inputSource(index);
     channel.inPair = engine.inputPair(index);
     channel.outDst = static_cast<int>(engine.outputDestination(index));
-    // The per-track FX rack is engine state (audio wave 11): capture both
+    // The per-track FX rack is engine state: capture both
     // slots with the values the DSP actually holds (built-in ranges clamped,
     // stepped selectors rounded, wet clamped by the engine). The deprecated
     // `insert` is the legacy view of FX1 so old readers keep working.
@@ -2638,7 +2638,7 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
     // is its encoded view, not a second input). setChannel() maps anything
     // outside the documented 0..3 back to Auto.
     channel.monitor = static_cast<audio::MonitorMode>(state.mode);
-    // REC SOURCE (W2b): setChannel carries the per-track tap point; anything
+    // REC SOURCE: setChannel carries the per-track tap point; anything
     // outside 0..2 maps back to PRE in the engine.
     channel.recSource = static_cast<audio::RecSource>(state.recSource);
     engine.setChannel(index, channel);
@@ -2646,7 +2646,7 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
     engine.setInputPair(index, state.inPair);
     engine.setOutputDestination(
         index, static_cast<audio::OutputDestination>(state.outDst));
-    // Per-track FX rack (audio wave 11): two series slots, post-EQ and
+    // Per-track FX rack: two series slots, post-EQ and
     // pre-fader. An empty id detaches a slot; a changed id re-initializes only
     // that slot and a parameter-only change is applied hot.
     for (int slot = 0; slot < kTrackFxSlots; ++slot) {
@@ -2788,7 +2788,7 @@ void apply(const Snapshot& snapshot, midi::Router& router, audio::Engine& engine
     }
   }
 
-  // Song lanes are engine scheduler state (W4): re-apply every track from the
+  // Song lanes are engine scheduler state: re-apply every track from the
   // snapshot so a load is authoritative. The engine resolves the beat fields
   // with its current tempo, so the app applies the transport tempo before (or
   // re-applies) the song; lengthBars/sections/grid stay app-owned. A refused

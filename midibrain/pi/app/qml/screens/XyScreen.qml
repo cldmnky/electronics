@@ -30,7 +30,7 @@ Item {
             Text {
                 width: parent.width - 376
                 height: parent.height
-                // Stage 5: the permanent instruction is gone; the two visible
+                // the permanent instruction is gone; the two visible
                 // grids are the mode.
                 text: "X/Y  -  " + xy.trackName + "  -  BOTH GRIDS"
                 color: Style.textDim

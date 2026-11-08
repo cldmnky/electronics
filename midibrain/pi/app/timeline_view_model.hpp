@@ -1,5 +1,5 @@
 #pragma once
-// QML view model for the EDIT popup (docs/daw-plan.md W5): one take, one
+// QML view model for the EDIT popup: one take, one
 // waveform, one region selection. Time runs left to right in session beats;
 // the waveform comes from the take's `.peaks` sidecar (pi/audio/peaks.hpp) at
 // the sidecar's own resolution, and a missing/stale sidecar shows a SCANNING
@@ -9,9 +9,9 @@
 // AudioGlue, so the session file, the dirty fingerprint and the engine cannot
 // disagree.
 //
-// The popup is modal and single-take, so the multi-track lane/page model the
-// retired EDIT tab used is gone: `selectedTrack` is the track the popup edits,
-// and the view window is take-relative.
+// The popup is modal and single-take, so it has no multi-track lane/page
+// model: `selectedTrack` is the track the popup edits, and the view window is
+// take-relative.
 //
 // The destructive RENDER action is not a region op here: the popup's RENDER
 // REGION TO TRACK calls AppController::renderRegionToTrack(), which uses the
@@ -54,7 +54,7 @@ class TimelineViewModel final : public QObject {
   // sidecar; the popup shows `SCANNING nn%` instead of an empty block.
   Q_PROPERTY(bool editScanning READ editScanning NOTIFY scanChanged)
   Q_PROPERTY(QString editScanText READ editScanText NOTIFY scanChanged)
-  // Selected region op and its live drafts (plan W5 ops strip).
+  // Selected region op and its live drafts (the ops strip).
   Q_PROPERTY(int editOp READ editOp WRITE selectEditOp NOTIFY editOpChanged)
   Q_PROPERTY(QString editOpName READ editOpName NOTIFY editOpChanged)
   Q_PROPERTY(double editGainDb READ previewGainDb NOTIFY previewChanged)
@@ -94,7 +94,7 @@ class TimelineViewModel final : public QObject {
   Q_PROPERTY(double previewFadeOutBeats READ previewFadeOutBeats NOTIFY previewChanged)
   Q_PROPERTY(double previewLengthBeats READ previewLengthBeats NOTIFY previewChanged)
   // The region the draft applies to, and its stored values: the popup draws the
-  // stored shape as BEFORE and the draft as AFTER (plan W5 live preview).
+  // stored shape as BEFORE and the draft as AFTER (live preview).
   Q_PROPERTY(bool previewRegionFound READ previewRegionFound NOTIFY previewChanged)
   Q_PROPERTY(double previewRegionStartBeats READ previewRegionStartBeats NOTIFY previewChanged)
   Q_PROPERTY(double previewRegionLengthBeats READ previewRegionLengthBeats NOTIFY previewChanged)

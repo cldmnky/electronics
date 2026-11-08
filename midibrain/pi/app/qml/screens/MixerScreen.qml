@@ -56,7 +56,7 @@ Item {
                     focusId: "mixer.bank.0"
                     onClicked: mixer.stepBank(-1)
                 }
-                // A11: the label is the pager. It opens the page grid so page
+                // the label is the pager. It opens the page grid so page
                 // 16 is one tap away; the arrows keep stepping one page.
                 TouchButton {
                     width: parent.width - Style.touchSecondary * 2 - Style.gapTight * 2
@@ -270,7 +270,7 @@ Item {
                     }
                 }
 
-                // C1: one colour legend for the three strip switches.
+                // one colour legend for the three strip switches.
                 Text {
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -323,7 +323,7 @@ Item {
                         }
                     }
 
-                    // B2: the same channel entry point as a strip header, with
+                    // the same channel entry point as a strip header, with
                     // its payoff named by the header hint.
                     TouchButton {
                         visible: !mixer.empty
@@ -611,7 +611,7 @@ Item {
         }
     }
 
-    // A11: the page grid. One 44 px cell per page, current page outlined, a
+    // the page grid. One 44 px cell per page, current page outlined, a
     // page past the track list dimmed and unselectable. Arrows keep stepping.
     Rectangle {
         id: bankGrid

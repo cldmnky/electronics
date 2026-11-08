@@ -360,8 +360,8 @@ void run_wire_config_tests() {
     assert(!pack_midi_route_pipe(f, 33, 0x12345678, 0, 1, 0, 2, false, 5, six, 6));
     assert(!pack_midi_route_pipe(f, 33, 0x12345678, 0, 1, 0, 2, false, 0, params, 5));
 
-    // Backward tolerance: a pre-scope frame (length 8 + 2*count, five params,
-    // no mask) still decodes and means chMask = all channels.
+    // A mask-less frame (length 8 + 2*count, five params) still decodes and
+    // means chMask = all channels.
     Frame legacy{};
     legacy.type = Type::control_event;
     legacy.sequence = 40;
@@ -388,8 +388,8 @@ void run_wire_config_tests() {
                                   route_pipe_param_frame_max_legacy, count));
     assert(count == 5 && out_params[4] == -7);
     assert(ch_mask == route_pipe_channel_mask_default);
-    // A scope frame cannot smuggle the legacy fifth param past the 18-byte
-    // payload: a length-20 scope frame is rejected before its mask is read.
+    // A scope frame cannot carry a fifth param past the 18-byte payload: a
+    // length-20 scope frame is rejected before its mask is read.
     Frame oversize{};
     oversize.type = Type::control_event;
     oversize.length = 20;
@@ -472,8 +472,8 @@ void run_wire_config_tests() {
     } while (offset < param_count);
   };
 
-  // Every Wave-2 type fits the 0x19 transport with its real positional params
-  // (the five-param LFO/harmonizer need two chunks).
+  // Every clocked pipe type fits the 0x19 transport with its real positional
+  // params (the five-param LFO/harmonizer need two chunks).
   {
     mnky::midifx::PipeChain chain;
     chain.begin(true);
@@ -551,8 +551,8 @@ void run_route_chain_tests() {
   assert(!route_src_valid(2) && !route_src_valid(0xFA));
   assert(route_src_insert_slot(route_src_insert(2)) == 2);
 
-  // A 0x18 frame carries the generator and insert pseudo-sources; a legacy
-  // frame (src 0/1) still decodes, and an undefined src byte is refused.
+  // A 0x18 frame carries the generator and insert pseudo-sources; a frame with
+  // a physical TRS source still decodes, and an undefined src byte is refused.
   {
     Frame f{};
     Bytes wire{};
@@ -888,9 +888,9 @@ void run_clock_follow_tests() {
   assert(std::fabs(wrap.intervalUs() - 20'833.0) < 0.001);
 
   // PLL: the two-argument tick measures phase against the pending local
-  // deadline and pulls an 8 ms offset out through bounded 200 us nudges (the
-  // review's free-running-EMA failure mode). The nudge is consumed once per
-  // tick and never exceeds the slew limit; a zero error stops nudging.
+  // deadline and pulls an 8 ms offset out through bounded 200 us nudges, which
+  // an interval-only estimator cannot do. The nudge is consumed once per tick
+  // and never exceeds the slew limit; a zero error stops nudging.
   ClockFollow pll;
   assert(pll.apply(CLOCK_SOURCE_TRS1, 0));
   std::uint32_t pll_stamp = 1'000'000;
@@ -1393,7 +1393,7 @@ int main(int argc, char** argv) {
   assert(CLOCK_ROUTE_DEFAULT == (CLOCK_ROUTE_CLOCK | CLOCK_ROUTE_TRANSPORT));
   ClockGates gates;
   assert(gates.clockOn(0) && gates.transportOn(0));
-  assert(gates.clockOn(1) && gates.transportOn(1));  // legacy always-on default
+  assert(gates.clockOn(1) && gates.transportOn(1));  // both gates default on
   assert(gates.apply(0, CLOCK_ROUTE_TRANSPORT));
   assert(!gates.clockOn(0) && gates.transportOn(0));
   assert(gates.clockOn(1) && gates.transportOn(1));  // other output untouched

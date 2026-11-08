@@ -8,23 +8,23 @@ Source: [Pico 2 datasheet](https://datasheets.raspberrypi.com/pico/pico-2-datash
 | SPI0 MISO | 21 (GPIO9) | 25 (GP19 / SPI0 TX) | Pico → Pi |
 | SPI0 clock | 23 (GPIO11) | 24 (GP18 / SPI0 SCK) | Pi → Pico |
 | SPI0 CE0 | 24 (GPIO8) | 22 (GP17 / SPI0 CSn) | Pi → Pico |
-| READY / IRQ | 18 (GPIO24) | 26 (GP20) | Pico → Pi, polarity and bias pending |
-| Reset request | 22 (GPIO25) | 30 (RUN) | **Open-drain/reset circuit pending**; do not wire a push-pull GPIO directly without analysing power sequencing |
+| READY / IRQ | 18 (GPIO24) | 26 (GP20) | Pico → Pi through the SN74LVC1G126 buffer; on-target polarity/timing still a bench item |
+| Reset request | 22 (GPIO25) | 30 (RUN) | 2N7002 open-drain reset implemented; power-sequence behaviour still a bench item |
 | Common ground | 20 or 25 | any Pico GND pin | shared logic ground; electrical connector assignment pending |
 
-Pico UART0: GP0/pin 1 TX → MIDI OUT 1; GP1/pin 2 RX ← isolated MIDI IN 1. UART1: GP4/pin 6 TX → MIDI OUT 2; GP5/pin 7 RX ← isolated MIDI IN 2. MIDI jacks are not tied directly to UARTs; isolation and output drivers are unimplemented.
+Pico UART0: GP0/pin 1 TX → MIDI OUT 1; GP1/pin 2 RX ← isolated MIDI IN 1. UART1: GP4/pin 6 TX → MIDI OUT 2; GP5/pin 7 RX ← isolated MIDI IN 2. The jacks are not tied directly to the UARTs: the board carries a TLP2361 opto receiver on each input and an AO3401A high-side output stage. The circuits are designed and simulate; threshold, current and fault behaviour are unmeasured (`docs/TODO.md`).
 
 | Pico signal | Pico GPIO / physical pin |
 |---|---|
 | NAV up/down/left/right/press | GP6/9, GP7/10, GP8/11, GP9/12, GP10/14 |
-| Tempo encoder A/B | GP11/15, GP12/16 |
-| Tempo encoder push | GP2/4 |
+| Value encoder A/B | GP11/15, GP12/16 |
+| Value encoder push | GP2/4 |
 | REC / OVER DUB / STOP / PLAY / PLAY START | GP13/17, GP14/19, GP15/20, GP21/27, GP3/5 |
 | SHIFT / EXIT | GP28/34 |
 | REC / OVER DUB / PLAY LEDs | GP26/31, GP27/32, GP22/29; 330 Ω to 3.3 V |
 | Available for future expansion | **none on the Pico header**; use an I2C expander or matrix if more controls are added |
 
-Pico pins 39 (VSYS), 40 (VBUS), 36 (3V3 OUT), 37 (3V3_EN), 30 (RUN) are not generic IO. Pico is 3.3 V logic; do not apply 5 V to either board's GPIO or tie Pi 3.3 V to Pico 3.3 V OUT. USB programming vs Pi-powered branch requires isolated power-path design and an off-state GPIO injection audit. The Pico datasheet §4.5 describes diode/FET alternatives; none has been selected here.
+Pico pins 39 (VSYS), 40 (VBUS), 36 (3V3 OUT), 37 (3V3 EN), 30 (RUN) are not generic IO. Pico is 3.3 V logic; do not apply 5 V to either board's GPIO or tie Pi 3.3 V to Pico 3.3 V OUT. The power branch is designed: B5819W Pi 5 V → Pico VSYS, SN74LVC1G126 buffers for MISO/READY enabled only from Pi 3.3 V, and a 2N7002 reset. Off-state injection, sequencing and backfeed are simulated only; they remain physical acceptance items (`scope_power_sequences`, `scope_spi`).
 
 Connector part, mating-face pin order, wire length, shielding, decoupling and power branch protection remain open. Hardware pin mux and continuity must be tested with actual Pi OS/Pico SDK versions.
 

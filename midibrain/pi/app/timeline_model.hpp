@@ -52,7 +52,7 @@ inline constexpr int kTimelineOpCount = 8;
 // action (RENDER REGION TO TRACK), so the ring stops before it (A14).
 inline constexpr int kTimelineUiOpCount = 7;
 
-// The EDIT popup's ops strip (docs/daw-plan.md W5): TRIM, SPLIT, GAIN, FADE IN,
+// The EDIT popup's ops strip: TRIM, SPLIT, GAIN, FADE IN,
 // FADE OUT, NORMALIZE, DELETE REGION, UNDO - in that order. The two fade cards
 // both run TimelineOp::Fades, zeroing the other fade; UNDO is an action on the
 // undo stack, not a region op.
@@ -87,8 +87,8 @@ bool editOpRequest(EditOp op, float gainDb, double fadeInBeats,
                    double fadeOutBeats, EditOpRequest* out);
 
 const char* timelineOpName(TimelineOp op);
-// RENDER is refused until the core render call exists; the ops popup no longer
-// offers it, and this guard keeps a stale id from writing anything.
+// RENDER is refused until the core render call exists; the ops popup does not
+// offer it, and this guard keeps a stale id from writing anything.
 bool timelineOpAvailable(TimelineOp op);
 
 using TakeLengthFn = std::function<double(const std::string& take)>;
@@ -158,7 +158,7 @@ std::vector<float> reducePeakPairs(const audio::PeakSummary& summary,
                                    double takeBeats, int columns);
 
 // "bar:beat:tick" without the zero-padded bar, for the EDIT popup's footer
-// (plan W5: `IN 1:2:00 OUT 2:2:00`).
+// (`IN 1:2:00 OUT 2:2:00`).
 std::string beatTextCompact(double beats);
 
 }  // namespace mnky::app::timeline

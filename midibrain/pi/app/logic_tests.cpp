@@ -395,7 +395,7 @@ void mixerTests() {
   checkNear(engine.channel(3).gain, dbToGain(-6.0f), 1e-6, "mixer snapshot gain");
   checkNear(engine.channel(3).pan, 0.25, 1e-6, "mixer snapshot pan");
   checkNear(engine.channel(3).send[1], 0.5, 1e-6, "mixer snapshot send");
-  // Track modes (docs/daw-plan.md W1): 0 PLAY, 1 ARM, 2 OVERDUB, 3 LIVE. The
+  // Track modes: 0 PLAY, 1 ARM, 2 OVERDUB, 3 LIVE. The
   // number is the engine's MonitorMode value 1:1, so 3 binds to InputOnly.
   model.setMode(3, 3);
   check(model.mode(3) == 3, "LIVE mode is stored unclamped");
@@ -511,7 +511,7 @@ void dynamicMixerTests() {
         "an empty slot holds no effect");
 
   // Legacy sessions: a default session::MixerState carries all 18 slots in
-  // order, so the app shows the legacy 18-strip mixer for a file without a
+  // order, so the app shows the full-width 18-strip mixer for a file without a
   // "tracks" key (the session reader keeps that default).
   session::MixerState legacy;
   const int legacySlots = static_cast<int>(legacy.tracks.size());
@@ -626,7 +626,7 @@ void dynamicMixerViewModelTests() {
         "stepping the bank reaches the second page");
   view.stepBank(1);
   check(view.bank() == 1, "the bank cannot step past the last page");
-  // A11: the pager grid is a fixed grid over the capacity; pages past the
+  // the pager grid is a fixed grid over the capacity; pages past the
   // track list stay visible but empty, and the current page is marked.
   const auto pages = view.bankPages();
   check(pages.size() == (audio::kMaxTracks + kStripsPerBank - 1) / kStripsPerBank,
@@ -640,7 +640,7 @@ void dynamicMixerViewModelTests() {
   check(pages.value(1).toMap().value(QStringLiteral("current")).toBool(),
         "the grid marks the current page");
   view.stepBank(-1);
-  // B7: a tap clears one meter's latch without ending the demo fixture.
+  // a tap clears one meter's latch without ending the demo fixture.
   const auto clipAt = [&view](int row) {
     return view.data(view.index(row, 0), MixerViewModel::ClipRole).toBool();
   };
@@ -922,7 +922,7 @@ void wavTests() {
         "WAV format fields");
   check(info.frames == frames, "WAV frame count");
   checkNear(wavDurationSeconds(path), 0.01, 1e-9, "WAV duration");
-  // D7: the import rule is a header check, and its refusal names the rate.
+  // the import rule is a header check, and its refusal names the rate.
   check(importSampleRateError(48000).empty(),
         "48 kHz is the import rate");
   check(importSampleRateError(44100) ==
@@ -1041,11 +1041,10 @@ void takeAdoptionTests() {
   std::filesystem::remove_all(base, error);
 }
 
-// W5 chain proof: the popup's APPLY has to reach TimelineViewModel's region
+// Edit chain proof: the popup's APPLY has to reach TimelineViewModel's region
 // engine, change the region list and change what the header/waveform report.
-// These are the state assertions the owner's "when I apply nothing happens"
-// report needs: GAIN changes the selected peak, TRIM and DELETE change the
-// edited duration/region count.
+// GAIN changes the selected peak; TRIM and DELETE change the edited
+// duration/region count.
 void takeEditViewModelTests() {
   AppState state;
   SessionSettings settings;
@@ -1128,7 +1127,7 @@ void takeEditViewModelTests() {
         "UNDO returns the take to no committed regions");
 
   // TRIM on IN..OUT: one region remains, the edited duration is the selection
-  // and the header says so (the meta property now emits editChanged).
+  // and the header says so (the meta property emits editChanged).
   timeline.openEdit(1);
   timeline.beginSelection(1, 2.0);
   timeline.updateSelection(6.0);
@@ -1338,8 +1337,8 @@ void takeEditViewModelTests() {
   check(timeline.canUndo(), "the undo stack survives reopening the EDIT popup");
   check(timeline.undo() && settings.takeEdit[0].empty(),
         "UNDO after reopening restores the pre-edit take");
-  // Track 1 still carries the TRIM from above: its stack is independent of the
-  // now-empty track 0 stack, and undoing it restores that track only.
+  // Track 1 still carries the TRIM from above: its stack is independent of
+  // track 0's empty stack, and undoing it restores that track only.
   timeline.openEdit(1);
   check(timeline.canUndo(), "a different track keeps its own undo level");
   check(timeline.undo(), "track 1's own level pops on its own stack");
@@ -1431,7 +1430,7 @@ void learnCaptureTests() {
 void learnTargetCaptureTests() {
   MidiGlue midi(false);
   LearnViewModel learn(midi);
-  // A9 arm-then-touch: ARM CAPTURE with no target waits for a touch, and the
+  // Arm-then-touch: ARM CAPTURE with no target waits for a touch, and the
   // touched control becomes the capture target before any CC arrives.
   learn.armTargetCapture();
   check(learn.targetArmed(), "ARM CAPTURE without a target arms the touch pick");
@@ -1563,7 +1562,7 @@ void songPersistenceTests() {
   check(!std::filesystem::exists(directory / project::kLegacyArrangeFileName),
         "song migration: the folded sidecar is removed");
 
-  // The folded state is now in project.mnkybox. A stale sidecar from an
+  // The folded state lives in project.mnkybox. A stale sidecar left by an
   // interrupted migration must not overwrite it.
   check(project::save(context, directory, error),
         "song migration: migrated project saves the session song");
@@ -1926,7 +1925,7 @@ void eqAndXyTests() {
   check(eq.type(0) == 0, "EQ bands default to None");
   checkNear(eq.freqHz(0), 1000.0, 0.5, "EQ bands default to 1 kHz");
 
-  // B3: an untouched subject's four None bands share one frequency, which
+  // an untouched subject's four None bands share one frequency, which
   // stacked all four nodes on one spot. The screen's first load spreads them.
   EqModel spread;
   check(spread.ensureVisibleBandDefaults() == 1,
@@ -1962,7 +1961,7 @@ void eqAndXyTests() {
   checkNear(EqModel::yToGain(0.0), -24.0, 1e-9, "the grid bottom is -24 dB");
   checkNear(EqModel::yToGain(1.0), 24.0, 1e-9, "the grid top is +24 dB");
 
-  // B3: every band must produce a finite grid coordinate for every type and
+  // every band must produce a finite grid coordinate for every type and
   // for degenerate stored values (0 Hz, non-finite, far out of range).
   for (int type = 0; type < EqModel::kTypeCount; ++type) {
     EqModel band;
@@ -2451,10 +2450,9 @@ void clapTrackHostTests() {
 }
 
 // CLAP audio path: a selected plugin is not merely an instance count. The
-// engine's external branch must actually process the strip (the owner bug was
-// "every plugin except DELAY/REVERB is silent"), and the slot wet must still
-// crossfade around it. The build's reference plugin (mnkygain) is the probe:
-// gain -24 dB must attenuate a steady input; a dry slot must not.
+// engine's external branch must actually process the strip, and the slot wet
+// must still crossfade around it. The build's reference plugin (mnkygain) is
+// the probe: gain -24 dB must attenuate a steady input; a dry slot must not.
 void clapSlotAudioTests() {
   FxManager fx;
   const auto& plugins = fx.plugins();
@@ -2584,8 +2582,8 @@ void trackFxSeriesMathTests() {
   checkNear(render(), 0.6, 1e-5, "bypassing FX2 leaves FX1's wet output");
 }
 
-// The owner's Pi may discover zero CLAP modules (the honest "no CLAP plugins
-// found" state). The rack's builtin slots are engine-owned, so DELAY and REVERB
+// The Pi may discover zero CLAP modules (the honest "no CLAP plugins found"
+// state). The rack's builtin slots are engine-owned, so DELAY and REVERB
 // must stay fully functional there: a wet-1 slot changes the strip, wet 0 is
 // bit-transparent, and FX1 -> FX2 runs both slots in series.
 void builtinTrackFxRackAudioTests() {
@@ -2640,8 +2638,8 @@ void builtinTrackFxRackAudioTests() {
 
 // A device with no discoverable CLAP module is a state, not a broken popup: the
 // slot list must name it instead of showing an empty plugin section, and the
-// built-in choices must stay selectable. This is the owner's Pi if its plugin
-// search finds nothing.
+// built-in choices must stay selectable. This is the studio Pi's state when
+// its plugin search finds nothing.
 void fxSlotZeroClapStateTests() {
   AppState state;
   SessionSettings settings;
@@ -3059,7 +3057,7 @@ void clockGateTests() {
   check(session.trs1Clock() && session.trs1Transport(),
         "pushClockToLink re-reads the session gates");
 
-  // D8: the CLOCK SOURCE choice writes session clock.source + transportFollow.
+  // the CLOCK SOURCE choice writes session clock.source + transportFollow.
   check(session.clockSourceChoice() == 0 && session.clockSourceText() == "INTERNAL",
         "the clock source defaults to the internal generator");
   session.setClockSourceChoice(1);
@@ -3240,7 +3238,7 @@ void timelineAndPipeTests() {
             std::abs(wave[1] - 1.0f) < 1e-6,
         "peaks reduce to the requested waveform columns");
 
-  // EDIT popup (W5): the popup wave keeps polarity (lo, hi per column) and
+  // EDIT popup wave: it keeps polarity (lo, hi per column) and
   // switches to the folded coarse level once the fine buckets are denser than
   // the columns.
   const auto pairs = reducePeakPairs(summary, 0.0, 4.0, 4.0, 2);
@@ -3485,9 +3483,9 @@ void timelineAndPipeTests() {
         "pipe remove succeeds");
 
   // The engine-split readout states what the code does. The shared core
-  // implements all 16 types and no longer rejects the clocked ids; the missing
-  // piece Pi-side is the 24-PPQN grid pass (MidiGlue::pump calls Router::tick,
-  // not Router::clockTick), and the readout says exactly that.
+  // implements all 16 types, the 24-PPQN grid pass is missing Pi-side
+  // (MidiGlue::pump calls Router::tick, not Router::clockTick), and the readout
+  // says exactly that.
   {
     MidiGlue sweepMidi(false);
     RoutingViewModel sweep(sweepMidi, false);
@@ -3524,7 +3522,7 @@ void timelineAndPipeTests() {
 // The app half of the 0x1A split: only a TRS->TRS pair is mirrored to the Pico,
 // a Pi-owned pair never is, and Router::tick is pumped so NoteLength offs are
 // flushed without waiting for another input event.
-// A13 + the owner clarification: a generator route consumes no input. Its
+// A generator route consumes no input. Its
 // chain is stored per output, its head must carry the schema's generator role,
 // building the chain opens the route gate, and the session round-trip keeps it.
 void generatorRouteTests() {
@@ -3880,8 +3878,8 @@ void noPicoModeTests() {
         "hardware mode keeps the TRS monitor rows available");
 }
 
-// docs/daw-plan.md W1/W2/W2b: the mode words, the record-source names and the
-// scheduled-recording status strings are UI law, so they are asserted verbatim.
+// The mode words, the record-source names and the scheduled-recording status
+// strings are the UI contract, so they are asserted verbatim.
 void trackModeTests() {
   check(trackModeWord(0) == "PLAY" && trackModeWord(1) == "ARM" &&
             trackModeWord(2) == "OVERDUB" && trackModeWord(3) == "LIVE",
@@ -3924,7 +3922,7 @@ void trackModeTests() {
   modeModel.setArm(0, false);
   check(modeModel.mode(0) == kTrackModePlay, "disarming maps onto PLAY");
 
-  // W2 status strings: exactly what will happen and when.
+  // Schedule status strings: exactly what will happen and when.
   check(recScheduleStatus(kRecModeCountIn, 2, true, 1, 9, 13) ==
             "COUNT-IN 2 bars - recording at bar 1",
         "the count-in status names the bars and the engage bar");
@@ -3944,11 +3942,11 @@ void trackModeTests() {
         "the measure boundary maps ticks to 1-based bars");
 }
 
-// Owner bug A, physical path: selecting a discovered plugin in the FX popup
-// must instantiate it through the app's own rack sink and change the sound. The
-// probe renders through AudioGlue's emulator driver (the same Engine the device
-// runs) instead of attaching an effect to a bare Engine, which is why the old
-// tests could stay green while the app slot was silent.
+// Plugin activation, physical path: selecting a discovered plugin in the FX
+// popup must instantiate it through the app's own rack sink and change the
+// sound. The probe renders through AudioGlue's emulator driver (the same Engine
+// the device runs) rather than attaching an effect to a bare Engine, so a
+// silent app slot cannot pass.
 void appClapActivationAudioTests() {
   AppState state;
   SessionSettings settings;
@@ -4022,8 +4020,8 @@ void appClapActivationAudioTests() {
   check(enabled < dry * 0.25f,
         "un-bypassing the slot re-engages the same plugin instance");
   // A slot that names a plugin but holds no live instance (a failed earlier
-  // load, a host teardown) must retry when the owner selects the same entry
-  // again; the pre-fix no-op left the entry reading as selected but dead.
+  // load, a host teardown) must retry when the same entry is selected again;
+  // otherwise it reads as selected but stays dead.
   fx.unloadTrackEffect(0, 0);
   check(!fx.trackEffectLoaded(0, 0), "the probe slot lost its instance");
   const int choice = view.fxChoiceAt(0, 0);
@@ -4037,8 +4035,8 @@ void appClapActivationAudioTests() {
   audio.stop();
 }
 
-// Owner bug B: NEW TRACK FROM TAKE must grow the mixer's track list, land the
-// bank on the new strip and keep the take ACTIVE on it. Drives the same public
+// NEW TRACK FROM TAKE must grow the mixer's track list, land the bank on the
+// new strip and keep the take ACTIVE on it. Drives the same public
 // controller/model calls the recorder's "..." menu and MOVE button use.
 void newTrackFromTakeTests() {
   AppController controller(true, true);

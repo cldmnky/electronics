@@ -1,6 +1,6 @@
 #pragma once
 // Timing math, wave tables and the bounded note/queue state one clocked pipe
-// position needs. Shared by the Pico firmware and, later, the Pi (see
+// position needs. Shared by the Pico firmware and the Pi core (see
 // midifx/core/midifx.hpp for the engine and the clock contract).
 //
 // The engine owns no clock. A clocked pipe is driven by an absolute tick index

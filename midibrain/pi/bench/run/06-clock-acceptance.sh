@@ -3,7 +3,7 @@
 #
 # usage: sh run/06-clock-acceptance.sh [quick|full]
 #   quick 180 s per tempo  (20/60/120/180/300 bpm) -> ~15 min
-#   full   2 h per tempo                          -> ~10 h (owner's session)
+#   full   2 h per tempo                          -> ~10 h (full session)
 #
 # The app must be stopped: --bench-clock opens the real SPI link and the audio
 # device. The driver writes no project or take, prints timestamped

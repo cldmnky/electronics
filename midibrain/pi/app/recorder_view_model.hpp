@@ -96,7 +96,7 @@ class RecorderTakeModel final : public QAbstractListModel {
   void setEntries(std::vector<Entry> entries);
   // Valid only until the next setEntries()/rescan: the model owns its rows and
   // a take-folder rescan replaces (and frees) them. Copy what you need before
-  // any call that can rescan (docs/daw-plan.md W4 clip-click crash class).
+  // any call that can rescan (the clip-tap use-after-free class).
   const Entry* entry(int row) const;
 
  signals:
@@ -109,7 +109,7 @@ class RecorderTakeModel final : public QAbstractListModel {
 class RecorderViewModel final : public QObject {
   Q_OBJECT
   Q_PROPERTY(QString transportText READ transportText NOTIFY readoutsChanged)
-  // A6: the dim second line under the REC/PLAY/STOP header. Empty when the
+  // the dim second line under the REC/PLAY/STOP header. Empty when the
   // state needs no explanation (stopped, or recording a take).
   Q_PROPERTY(QString transportHint READ transportHint NOTIFY readoutsChanged)
   Q_PROPERTY(QString clockText READ clockText NOTIFY readoutsChanged)
@@ -120,11 +120,11 @@ class RecorderViewModel final : public QObject {
   // Arm state of the recorder's selected track: derived from its mode (ARM and
   // OVERDUB record), so the mode word and the picker can never disagree.
   Q_PROPERTY(bool trackArm READ trackArm NOTIFY readoutsChanged)
-  // Track mode of the selected track (docs/daw-plan.md W1): the word the
+  // Track mode of the selected track: the word the
   // recorder's mode button shows. `trackRecSourceText` is the tap point the
-  // header names beside it (W2b).
+  // header names beside it.
   Q_PROPERTY(QString trackModeWord READ trackModeWord NOTIFY readoutsChanged)
-  // REC SOURCE of the selected track (docs/daw-plan.md W2b).
+  // REC SOURCE of the selected track.
   Q_PROPERTY(QString trackRecSourceText READ trackRecSourceText NOTIFY readoutsChanged)
   Q_PROPERTY(QString diskText READ diskText NOTIFY readoutsChanged)
   Q_PROPERTY(QString buttonText READ buttonText NOTIFY readoutsChanged)
@@ -197,7 +197,7 @@ class RecorderViewModel final : public QObject {
   QString activateRow(int row);
   Q_INVOKABLE void clearActive();
   Q_INVOKABLE QString importTake(const QString& path);
-  // D7: the pre-accept preview/refusal of an import path. Returns
+  // the pre-accept preview/refusal of an import path. Returns
   // "name - 48 kHz - 2 ch - 0:12" when the file may be imported, else a first
   // line starting with "import refused:" (48 kHz rule) or a path error.
   Q_INVOKABLE QString takeImportPreview(const QString& path) const;
@@ -208,7 +208,7 @@ class RecorderViewModel final : public QObject {
   // for surfaces that read the list by row instead of by delegate role).
   Q_INVOKABLE QVariantList takeWave(int row) const;
   Q_INVOKABLE void deleteSelected();
-  // REMOVE (docs/daw-plan.md W4): project only - the take file stays on disk,
+  // REMOVE: project only - the take file stays on disk,
   // the track simply stops pointing at it.
   Q_INVOKABLE void removeSelected();
   Q_INVOKABLE void refresh();

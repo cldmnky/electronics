@@ -4,7 +4,7 @@ import "../components"
 
 // RECORDER primary: transport, track selection, arm/start and the take list
 // with a 44 px mini-waveform per row and an EDIT affordance that opens the take
-// edit popup (plan W5). The ACTIVE readout opens TAKE FOR TRACK nn - the sheet
+// edit popup. The ACTIVE readout opens TAKE FOR TRACK nn - the sheet
 // that used to live on the retired EDIT tab. SHIFT keeps take management
 // (import/live/active/rename/delete), the take loop and punch markers.
 Item {
@@ -577,7 +577,7 @@ Item {
                     app.requestDeleteTake()
                 }
             }
-            // A3: the destructive buttons act on this row; name it here.
+            // the destructive buttons act on this row; name it here.
             Text {
                 width: parent.width - 108 - 76 - 64 - 74 - 74 - 68 - Style.gap * 6
                 height: parent.height
@@ -680,7 +680,7 @@ Item {
     }
 
 
-    // TAKE FOR TRACK nn (A10): the stage-4 sheet. Title and padding match the
+    // TAKE FOR TRACK nn: the take sheet. Title and padding match the
     // shared overlay header, rows are 64 px with identity/duration/EDIT first,
     // the details disclosure holds the full path/size, and CLOSE is a fixed
     // 64 px footer while the list scrolls (item #8 vocabulary).
@@ -904,7 +904,7 @@ Item {
         }
     }
 
-    // TRACK PICKER (stage 4): the selected-track button's sheet. 18 tracks in
+    // TRACK PICKER: the selected-track button's sheet. 18 tracks in
     // a 6x3 grid of 64 px rows, the selected one checked; CLOSE is a 64 px
     // footer and outside touches never dismiss (the shared overlay contract).
     Rectangle {

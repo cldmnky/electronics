@@ -2,7 +2,7 @@ import QtQuick
 import Mnkybox 1.0
 import "../components"
 
-// ARRANGE (docs/daw-plan.md W6/W7): the section band, the clip lanes, the
+// ARRANGE: the section band, the clip lanes, the
 // playhead/loop band, SONG mode and the clip "..." sheet. The primary face is
 // the arrangement: one 56 px action row, then the section band, the ruler and
 // the lanes. The section verbs live in the SECTIONS sheet and RENDER SONG in
@@ -11,7 +11,7 @@ import "../components"
 //
 // All values live in ArrangeViewModel; this file draws and forwards touches so
 // the touch path and the panel ring drive the same state. Sizes are inline
-// (stage 1 tokenizes): 56 px frequent controls, 44 px minimum, 8 px spacing,
+// (the shared size tokens): 56 px frequent controls, 44 px minimum, 8 px
 // 16-18 px primary labels, 14 px secondary text. Lane height is min 64 px and
 // grows to 72 px; the chrome above it keeps its current height and the lane
 // area takes whatever vertical space is left, so a taller nav row later only

@@ -18,9 +18,9 @@
 
 namespace mnky::app {
 namespace {
-// Tab order after the FX tab retired into the per-track rack popup and EDIT
-// retired into the take edit popup: 0 Mixer, 1 Routing, 2 Recorder, 3 System,
-// 4 Projects, 5 Monitor, 6 EQ, 7 X/Y (logic.hpp kScreenCount matches).
+// Tab order: 0 Mixer, 1 Routing, 2 Recorder, 3 System, 4 Projects, 5 Monitor,
+// 6 EQ, 7 X/Y, 8 Arrange (logic.hpp kScreenCount matches). FX lives in the
+// per-track rack popup and take editing in the EDIT popup, so neither has a tab.
 constexpr int kProjectsTabIndex = 4;
 constexpr int kMonitorTabIndex = 5;
 constexpr int kEqTabIndex = 6;
@@ -109,7 +109,7 @@ AppController::AppController(bool emulator, bool noPico, QObject* parent)
           });
   connect(recorderVm_.get(), &RecorderViewModel::activeTakeChanged, mixerVm_.get(),
           &MixerViewModel::notifyActiveTakesChanged);
-  // G1: the mixer ring is keyed by the MIXER/TRACK view and the bank page, not
+  // the mixer ring is keyed by the MIXER/TRACK view and the bank page, not
   // by the selected track's mode, and every change that swaps the visible
   // strip set rebuilds it.
   connect(mixerVm_.get(), &MixerViewModel::trackModeChanged, this,
@@ -324,7 +324,7 @@ void AppController::setTab(int tab) {
     arrangeVm_->closeLengthPopup();
   }
   if (clamped == tab_) return;
-  // D3: a tab without a second face leaves the SHIFT face instead of landing
+  // a tab without a second face leaves the SHIFT face instead of landing
   // in a dead state with an empty ring.
   if (shiftFace_ && !tabHasShiftFace(clamped)) {
     shiftFace_ = false;
@@ -353,7 +353,7 @@ void AppController::setFullscreen(bool fullscreen) {
 void AppController::setClickEnabled(bool enabled) {
   if (enabled == state_.clickEnabled.load()) return;
   state_.clickEnabled.store(enabled);
-  // A8: the button flips only the enable flag. A configured REC ONLY click
+  // the button flips only the enable flag. A configured REC ONLY click
   // stays REC ONLY; only an Off mode falls back to the last configured mode
   // (On play when the session has never had one).
   if (enabled && state_.clickMode.load() == 0) {
@@ -402,7 +402,7 @@ void AppController::openDiagnostics() {
 }
 
 void AppController::play() {
-  // A1: an armed strip with an active take monitors its input, so PLAY would
+  // an armed strip with an active take monitors its input, so PLAY would
   // replay the room instead of the take. Say it in the notice slot.
   const int muted = mixerVm_->armedWithActiveTakeCount();
   if (muted > 0) {
@@ -611,7 +611,7 @@ void AppController::chooseBankPage(int page) {
 }
 
 bool AppController::tabHasShiftFace(int tab) const {
-  // D3: tabs 5 (MIDI) and 7 (XY) have no second face.
+  // tabs 5 (MIDI) and 7 (XY) have no second face.
   return tab <= 3 || tab == kProjectsTabIndex || tab == kEqTabIndex ||
          tab == kArrangeTabIndex;
 }
@@ -626,7 +626,7 @@ void AppController::requestKeypad(const QString& title, const QString& initial,
   keypadError_.clear();
   keypadOpen_ = true;
   emit keypadChanged();
-  // G7: the keypad owns its own ring (keys are stops) - rebuild immediately so
+  // the keypad owns its own ring (keys are stops) - rebuild immediately so
   // the ring snapshot agrees with the NAV walk while the modal is open. Every
   // other modal open path rebuilds here; without this the panel walked the
   // keypad keys while focusIds_ still held the shell ring (panel-taps failures
@@ -693,7 +693,7 @@ void AppController::keypadAccept(const QString& text) {
       }
     }
   } else if (keypadAction_ == QStringLiteral("take-import")) {
-    // D7: the header is read before anything is imported. A 48 kHz violation
+    // the header is read before anything is imported. A 48 kHz violation
     // keeps the keypad open with the refusal; a good file shows its duration
     // and channel count and asks once before it becomes ACTIVE.
     const QString preview = recorderVm_->takeImportPreview(text);
@@ -838,7 +838,7 @@ void AppController::requestLoadProject(int row) {
 }
 
 void AppController::selectProjectRow(int row) {
-  // A3: the row's "..." target selects without loading, so RENAME/DELETE on
+  // the row's "..." target selects without loading, so RENAME/DELETE on
   // the SHIFT face can act on a visible row without discarding the session.
   projectsVm_->selectRow(row);
   const QString name = projectsVm_->projectName(row);
@@ -857,10 +857,9 @@ void AppController::selectTakeRow(int row) {
 }
 
 void AppController::activateTakeRow(int row) {
-  // A3/A10: the row body loads the take (ACTIVE + waveform). The name comes
+  // the row body loads the take (ACTIVE + waveform). The name comes
   // back as a value, never as a pointer into the take list: activating rescans
-  // that list, and a pointer held across the rescan is a use-after-free (the
-  // SIGBUS a clip tap used to cause on the Pi).
+  // that list, so a pointer held across the rescan dangles.
   const QString name = recorderVm_->activateRow(row);
   if (!name.isEmpty()) {
     showTextPopup(QStringLiteral("TAKE ACTIVE"), name);
@@ -906,7 +905,7 @@ void AppController::requestDeleteTake() {
     showNotice(NoticeWarn, QStringLiteral("select a row first (...)"));
     return;
   }
-  // W4: the confirmation names the file it removes, verbatim per the plan.
+  // the confirmation names the file it removes, verbatim.
   const QString file = QString::fromStdString(entry->path.filename().string());
   requestConfirm(QStringLiteral("DELETE TAKE ") + entry->name,
                  QStringLiteral("DELETE ") + file +
@@ -1063,7 +1062,7 @@ bool AppController::isLearnableFocus(const QString& focusId) const {
       id.startsWith(QStringLiteral("mixer.fx2."))) {
     return true;
   }
-  // The channel popout carries the selected track's fader and pan now, so the
+  // The channel popout carries the selected track's fader and pan, so the
   // strip's learn targets must stay reachable through the popout's controls.
   return id == QStringLiteral("mixer.master") || id == QStringLiteral("channel.gain") ||
          id == QStringLiteral("channel.pan");
@@ -1118,7 +1117,7 @@ void AppController::openTrackFx(int slot) {
   fxVm_->openFor(mixerVm_->selectedStrip(), slot);
   if (!wasOpen) noteFocusReturn();
   // The popup owns the ring while it is open; start it on CLOSE, exactly the
-  // stop the owner presses to dismiss the rack.
+  // stop that dismisses the rack.
   focusIndex_ = 0;
   rebuildFocusIds();
 }
@@ -1258,7 +1257,7 @@ void AppController::openDemoKeypad() {
 }
 
 void AppController::showShiftFace(bool on) {
-  // D3: a tab without a second face never enters a dead SHIFT state.
+  // a tab without a second face never enters a dead SHIFT state.
   if (on && !tabHasShiftFace(tab_)) {
     showNotice(NoticeWarn, QStringLiteral("NO SHIFT FACE ON THIS TAB"));
     showTextPopup(QStringLiteral("SHIFT"),
@@ -1386,7 +1385,7 @@ void AppController::timerTick() {
       transportZeroAnchorTick_ = -1;
     }
   }
-  // SONG transport seek (W4/W5): the Pico tick resets on START, so preserve
+  // SONG transport seek: the Pico tick resets on START, so preserve
   // the displayed song position across the stopped -> rolling transition. Free
   // mode keeps its legacy "START begins at bar 1" behaviour.
   if (status.rolling && !lastRolling_) {
@@ -1485,7 +1484,7 @@ void AppController::perform(const Intent& intent) {
       break;
     case Intent::Kind::EncoderTurn:
       if (keypadOpen_) {
-        // A2: the encoder moves the keypad cursor, never a hidden control.
+        // the encoder moves the keypad cursor, never a hidden control.
         emit keypadCursorMoveRequested(intent.amount);
       } else if (confirmOpen_) {
         // The confirmation owns the panel; the encoder does nothing.
@@ -1542,7 +1541,7 @@ void AppController::perform(const Intent& intent) {
 }
 
 void AppController::performPanelFocus(const Intent& intent) {
-  // A2/G7: the confirmation traps the panel (two answers); the keypad is a
+  // the confirmation traps the panel (two answers); the keypad is a
   // real ring over its keys, PRESS inserts the focused character or runs the
   // focused action, and EXIT still cancels. The encoder keeps moving the
   // cursor (perform()).
@@ -1801,7 +1800,7 @@ void AppController::performPanelFocus(const Intent& intent) {
       } else if (panelMode_ == QStringLiteral("edit")) {
         setPanelMode(QStringLiteral("navigate"));
       } else if (focusId_.startsWith(QStringLiteral("arrange.clip."))) {
-        // W6: PRESS on a clip opens its "..." actions; MOVE/TRIM in that menu
+        // PRESS on a clip opens its "..." actions; MOVE/TRIM in that menu
         // put the ring into EDIT on the same clip for the value knob.
         activateFocus();
       } else if (isEditableFocus(focusId_)) {
@@ -1876,7 +1875,7 @@ void AppController::moveFocus(int delta) {
 
 void AppController::setPanelMode(const QString& mode) {
   if (mode == panelMode_) return;
-  // D3: refuse the SHIFT face on a tab that has none.
+  // refuse the SHIFT face on a tab that has none.
   if (mode == QStringLiteral("shift") && !tabHasShiftFace(tab_)) {
     showNotice(NoticeWarn, QStringLiteral("NO SHIFT FACE ON THIS TAB"));
     return;
@@ -2079,7 +2078,7 @@ void AppController::activateFocus() {
   if (focusId.isEmpty()) return;
   const auto parts = focusId.split(QLatin1Char('.'));
 
-  // G7: the keypad's ring presses. The buffer stays in QML; the controller
+  // the keypad's ring presses. The buffer stays in QML; the controller
   // forwards the intent, so panel and touch share one editing path.
   if (parts[0] == QStringLiteral("keypad")) {
     if (focusId == QStringLiteral("keypad.done")) {
@@ -2096,7 +2095,7 @@ void AppController::activateFocus() {
     return;
   }
 
-  // Stage 4 recorder picker: choose a track or close the sheet.
+  // Recorder track picker: choose a track or close the sheet.
   if (focusId == QStringLiteral("recorder.track.picker.close")) {
     closeTrackPicker();
     return;
@@ -2107,7 +2106,7 @@ void AppController::activateFocus() {
     return;
   }
 
-  // G3: the page grid is a modal with a ring, so PRESS must choose a page and
+  // the page grid is a modal with a ring, so PRESS must choose a page and
   // CLOSE must close it; otherwise the panel is locked out.
   if (parts.size() >= 3 && parts[0] == QStringLiteral("bank") &&
       parts[1] == QStringLiteral("page")) {
@@ -2315,8 +2314,8 @@ void AppController::activateFocus() {
     return;
   }
 
-  // Stage 1 nav: four persistent destinations. More opens the 3x2 page grid;
-  // every grid id is still the unchanged setTab index.
+  // Nav: four persistent destinations. More opens the 3x2 page grid;
+  // every grid id is a setTab index.
   if (focusId == QStringLiteral("nav.mixer")) {
     setTab(0);
     return;
@@ -2523,7 +2522,7 @@ void AppController::activateFocus() {
     return;
   }
   if (focusId == QStringLiteral("mixer.mode.0")) {
-    // G1: the header pair switches the MIXER/TRACK view. It is not the selected
+    // the header pair switches the MIXER/TRACK view. It is not the selected
     // track's mode: pressing it must show the other face, not rewrite the mode.
     mixerVm_->setTrackMode(false);
     return;
@@ -2651,7 +2650,7 @@ void AppController::activateFocus() {
     if (parts[1] == QStringLiteral("summary") && parts.size() >= 3) {
       openConfig(parts[2]);
     } else if (parts[1] == QStringLiteral("clocksource") && parts.size() >= 3) {
-      // G12: the three persisted clock-source choices are direct picks, not a
+      // the three persisted clock-source choices are direct picks, not a
       // cycling stop, so the ring stop names the value it selects.
       sessionVm_->setClockSourceChoice(parts[2].toInt());
     } else if (parts[1] == QStringLiteral("sends")) {
@@ -2735,7 +2734,7 @@ void AppController::activateFocus() {
     } else if (what == QStringLiteral("arm")) {
       mixerVm_->toggleArm(strip);
     } else if (what == QStringLiteral("trackmode")) {
-      // One tap cycles the mode (W1); the word says what the strip does now.
+      // One tap cycles the mode; the word says what the strip does.
       mixerVm_->setMode(strip, nextTrackMode(mixerVm_->modeAt(strip)));
       showTextPopup(QStringLiteral("TRACK MODE"), mixerVm_->modeWordAt(strip));
     } else if (what == QStringLiteral("in")) {
@@ -2845,7 +2844,7 @@ void AppController::activateFocus() {
       }
       rebuildFocusIds();
     } else if (parts[1] == QStringLiteral("reset")) {
-      // A12: a patchbay can be ten minutes of routing. The panel asks once;
+      // a patchbay can be ten minutes of routing. The panel asks once;
       // touch holds the button for 800 ms instead (RoutingScreen HoldButton).
       requestConfirm(
           QStringLiteral("RESET ROUTING?"),
@@ -3042,7 +3041,7 @@ void AppController::activateFocus() {
       // Grid ids keep their historical names; the grid is the rack slot.
       const int slot = parts[1] == QStringLiteral("reverb") ? 1 : 0;
       if (parts.size() >= 3 && parts[2] == QStringLiteral("pick")) {
-        // G12: an unbound grid's PICK EFFECT button is a ring stop while it is
+        // an unbound grid's PICK EFFECT button is a ring stop while it is
         // visible, so PRESS opens the same rack picker as touch.
         openFxSlot(slot);
       } else if (parts.size() >= 3 && parts[2] == QStringLiteral("params")) {
@@ -3086,7 +3085,7 @@ void AppController::activateFocus() {
     if (parts[1] == QStringLiteral("target")) {
       setPanelMode(QStringLiteral("edit"));
     } else if (parts[1] == QStringLiteral("arm")) {
-      // A9: PRESS on ARM CAPTURE arms the target capture (no pre-picked id).
+      // PRESS on ARM CAPTURE arms the target capture (no pre-picked id).
       armLearnTargetCapture();
     } else if (parts[1] == QStringLiteral("clear")) {
       learnVm_->clearAll();
@@ -3210,7 +3209,7 @@ void AppController::adjustFocused(int detents, bool fine) {
 
   if (parts.size() >= 3 && parts[0] == QStringLiteral("mixer") &&
       parts[1] == QStringLiteral("bank") && parts[2] == QStringLiteral("pages")) {
-    // A11: the panel focuses the label and the encoder still walks pages, so
+    // the panel focuses the label and the encoder still walks pages, so
     // a long turn stays a valid way to reach page 16 without the grid.
     mixerVm_->stepBank(detents > 0 ? 1 : -1);
     showTextPopup(QStringLiteral("MIXER PAGE"), mixerVm_->bankText());
@@ -3814,7 +3813,7 @@ void AppController::chooseTrack(int track) {
 void AppController::rebuildFocusIds() {
   std::vector<QString> ids;
   if (keypadOpen_) {
-    // G7: the keypad is a real modal surface now. Its keys are ring stops, so
+    // the keypad is a modal surface. Its keys are ring stops, so
     // the panel can select and insert characters; the action verbs come first
     // (PRESS on stop 0 keeps the old DONE semantics), then every key in
     // keyboard order. A confirmation keeps the modal trap (two answers only).
@@ -3965,7 +3964,7 @@ void AppController::rebuildFocusIds() {
       ids.push_back(QStringLiteral("config.timeline.gain"));
       ids.push_back(QStringLiteral("config.timeline.fadein"));
       ids.push_back(QStringLiteral("config.timeline.fadeout"));
-      // G12: the region render verb is part of the timeline-ops surface.
+      // the region render verb is part of the timeline-ops surface.
       ids.push_back(QStringLiteral("config.renderregion"));
     } else if (kind == QStringLiteral("inputsource")) {
       const int channels = MixerViewModel::inputChannelCount();
@@ -3978,7 +3977,7 @@ void AppController::rebuildFocusIds() {
       }
     } else if (kind == QStringLiteral("fxslot")) {
       // NONE / DELAY / REVERB plus every discovered CLAP plugin; a plugin
-      // selection is a real ring stop now.
+      // selection is a ring stop too.
       for (int choice = 0; choice < configVm_->fxSlotLabels().size(); ++choice) {
         ids.push_back(QStringLiteral("config.fxslot.%1").arg(choice));
       }
@@ -4058,7 +4057,7 @@ void AppController::rebuildFocusIds() {
                           .arg(entry.toMap().value(QStringLiteral("index")).toInt()));
       }
     }
-    // The rack's REC SOURCE neighbour (W2b).
+    // The rack's REC SOURCE neighbour.
     ids.push_back(QStringLiteral("trackfx.recsource"));
   } else if (mixerVm_->channelOpen()) {
     // Full channel popout: it traps the ring like the config popup, so the
@@ -4086,7 +4085,7 @@ void AppController::rebuildFocusIds() {
   } else if (shiftFace_) {
     switch (tab_) {
       case 0:
-        // G1: the face follows the MIXER/TRACK view, never the selected
+        // the face follows the MIXER/TRACK view, never the selected
         // track's ARM/PLAY/OVERDUB value.
         if (mixerVm_->trackMode()) {
           ids.push_back(QStringLiteral("shift.track.input"));
@@ -4205,7 +4204,7 @@ void AppController::rebuildFocusIds() {
         ids.push_back(QStringLiteral("shift.system.page.2"));
         ids.push_back(QStringLiteral("shift.system.page.3"));
         if (systemShiftPage_ == 0) {
-          // G12: the three clock-source choices are real persisted controls.
+          // the three clock-source choices are real persisted controls.
           for (int source = 0; source < 3; ++source) {
             ids.push_back(QStringLiteral("shift.monitor.clocksource.%1").arg(source));
           }
@@ -4263,20 +4262,20 @@ void AppController::rebuildFocusIds() {
         break;
     }
   } else {
-    // Stage 1 nav: the four destinations are ring stops, so the panel can walk
-    // the row it sees instead of the retired nine-way tab row. More opens the
+    // Nav: the four destinations are ring stops, so the panel can walk the
+    // row it sees rather than a nine-way tab row. More opens the
     // same 3x2 page grid the touch sheet shows.
     ids.push_back(QStringLiteral("nav.mixer"));
     ids.push_back(QStringLiteral("nav.recorder"));
     ids.push_back(QStringLiteral("nav.arrange"));
     ids.push_back(QStringLiteral("nav.more"));
     if (noPico_) {
-      // A5: the touch transport is a panel stop only where there is no panel.
+      // the touch transport is a panel stop only where there is no panel.
       ids.push_back(QStringLiteral("transport.play"));
       ids.push_back(QStringLiteral("transport.stop"));
       ids.push_back(QStringLiteral("transport.rec"));
     }
-    // G12: tempo and the second-face toggle are visible controls; they join
+    // tempo and the second-face toggle are visible controls; they join
     // the shell ring so the panel can reach them.
     ids.push_back(QStringLiteral("transport.tempo"));
     ids.push_back(QStringLiteral("transport.recmode"));
@@ -4300,8 +4299,8 @@ void AppController::rebuildFocusIds() {
           ids.push_back(QStringLiteral("track.expand"));
           ids.push_back(QStringLiteral("track.gain"));
           ids.push_back(QStringLiteral("track.pan"));
-          // G8: "track.mode" had no widget; the MODE control lives on the
-          // Recorder screen and in the mixer strip, so the dead stop is gone.
+          // The MODE control lives on the Recorder screen and in the mixer
+          // strip, so there is no "track.mode" ring stop.
           ids.push_back(QStringLiteral("track.arm"));
           ids.push_back(QStringLiteral("track.mute"));
           ids.push_back(QStringLiteral("track.solo"));
@@ -4342,7 +4341,7 @@ void AppController::rebuildFocusIds() {
         break;
       }
       case 2: {
-        // Stage 4: one selected-track button plus prev/next, not 18 permanent
+        // one selected-track button plus prev/next, not 18 permanent
         // selectors. The picker owns the ring while it is open.
         ids.push_back(QStringLiteral("recorder.takesheet"));
         ids.push_back(QStringLiteral("recorder.track.prev"));
@@ -4585,7 +4584,7 @@ void AppController::openTakeActions(int row) {
 
 void AppController::requestEditTake(int row) {
   // Every EDIT affordance (take row button, "..." menu, take sheet) lands in
-  // the same popup; the placeholder config kind is gone with the EDIT tab.
+  // the same popup; there is no separate config popup kind.
   openTakeEdit(row);
 }
 
@@ -4629,7 +4628,7 @@ void AppController::createTrackFromTake(int row, const QString& name, bool move)
     showNotice(NoticeError, QStringLiteral("no free track slot"));
     return;
   }
-  // W3: input NONE, output MAIN, mode PLAY, ACTIVE = the take. The take file
+  // input NONE, output MAIN, mode PLAY, ACTIVE = the take. The take file
   // keeps its name: the `NN-` prefix is convention, not binding.
   if (!mixerVm_->addTrack(slot, name, -1, false, 0)) {
     showNotice(NoticeError, QStringLiteral("could not add the track"));
@@ -4642,7 +4641,7 @@ void AppController::createTrackFromTake(int row, const QString& name, bool move)
   mixerVm_->refresh();
   // Select the new strip: setSelectedStrip also lands the bank on the page
   // that shows it. Without this the track exists but page 1 stays visible
-  // (kStripsPerBank = 3), so the owner's tap reads as "no track was created".
+  // (kStripsPerBank = 3), so a tap would read as "no track was created".
   mixerVm_->setTrackIndex(slot);
   recorderVm_->tracksChanged();
   timelineVm_->refresh();
@@ -4853,7 +4852,7 @@ void AppController::toggleTake() {
     stopTake();
     return;
   }
-  // W2: a COUNT-IN or PUNCH press does not write yet - the schedule starts the
+  // a COUNT-IN or PUNCH press does not write yet - the schedule starts the
   // transport (which zeroes the tick, so the count-in engages at bar 1) and
   // pollRecSchedule() opens the take on the measure boundary it names.
   const int recMode = clampRecMode(state_.recMode.load());
@@ -4939,7 +4938,7 @@ void AppController::pollRecSchedule(const LinkStatus& status) {
   const int punchInMeasure =
       settings_.punch.in.enabled ? settings_.punch.in.measure : 1;
   const int punchOutMeasure = recPunchOutBar_;
-  // SONG mode punch points are loop-relative (W4/W5 addendum): a marker bar
+  // SONG mode punch points are loop-relative: a marker bar
   // counts from the active loop start. Free mode keeps the legacy absolute
   // measure interpretation.
   const int punchIn = settings_.songMode ? songPunchBar(punchInMeasure)
@@ -4981,9 +4980,9 @@ void AppController::stopTake(bool keepRolling) {
   if (take.files > 0 && !take.path.empty()) {
     std::string lastKey;
     recorderVm_->adoptRecordedTake(take.path, takeArmMask_, &lastKey);
-    // W1 step 4: the recorded tracks switch to PLAY and the notice names the
-    // take and the way to hear it. OVERDUB stays in OVERDUB (§9 decision): it
-    // is a layering mode the user asked for, not a one-shot arm.
+    // The recorded tracks switch to PLAY and the notice names the take and
+    // the way to hear it. OVERDUB stays in OVERDUB: it is a layering mode the
+    // user asked for, not a one-shot arm.
     applyTakeModeAfterStop(takeArmMask_);
     if (punchPlaceArmed_ && settings_.songMode) {
       // PUNCH INTO SONG: the written take becomes a clip at the punch in point.
@@ -4991,8 +4990,8 @@ void AppController::stopTake(bool keepRolling) {
       punchPlaceArmed_ = false;
       placePunchTakeClips(takeArmMask_);
     } else if (!lastKey.empty()) {
-      // The notice names the take without its extension, exactly as the plan
-      // writes it: `TAKE SAVED 02-bass-001 - mode PLAY to hear it`.
+      // The notice names the take without its extension:
+      // `TAKE SAVED 02-bass-001 - mode PLAY to hear it`.
       std::string stem = std::filesystem::path(lastKey).filename().string();
       if (stem.size() > 4 && stem.compare(stem.size() - 4, 4, ".wav") == 0) {
         stem.resize(stem.size() - 4);
@@ -5014,8 +5013,8 @@ void AppController::stopTake(bool keepRolling) {
 
 void AppController::updateTransport() {
   const auto status = link_.status();
-  // A6/D1: one transport vocabulary - REC / PLAY / STOP. The strip used to say
-  // ROLL while the recorder said ROLLING; both now name the musical state.
+  // One transport vocabulary - REC / PLAY / STOP - so the strip and the
+  // recorder name the same musical state.
   const QString state = recording() ? QStringLiteral("REC")
                         : (status.rolling ? QStringLiteral("PLAY")
                                           : QStringLiteral("STOP"));
@@ -5041,7 +5040,7 @@ void AppController::updateTransport() {
     tempoText_ = tempo;
     changed = true;
   }
-  // G12/Stage 5: the System primary page shows one readable Pico summary; the
+  // the System primary page shows one readable Pico summary; the
   // counters that back it remain on the DIAGNOSTICS page.
   QString linkSummary;
   if (status.noPico) {
@@ -5167,8 +5166,8 @@ void AppController::registerLearnTargets() {
                               [this, strip](double value) {
                                 mixer_.setPan(strip, static_cast<float>(value));
                               });
-    // FX1/FX2 are the rack slots' wet now: the target names say so, so an old
-    // "sendA"/"sendB" binding to a retired bus does not silently keep writing.
+    // FX1/FX2 are the rack slots' wet: the target names say so, so a stale
+    // "sendA"/"sendB" binding cannot silently keep writing.
     midi_.registerLearnTarget(learnTarget(strip, "fx1wet"),
                               [this, strip](double value) {
                                 mixer_.setFxWet(strip, 0, static_cast<float>(value));
@@ -5223,7 +5222,7 @@ void AppController::showNotice(NoticeKind kind, const QString& notice) {
   noticeKind_ = kind == NoticeInfo ? QStringLiteral("info")
                 : (kind == NoticeWarn ? QStringLiteral("warn") : QStringLiteral("error"));
   noticeTimer_.stop();
-  // D2: info 6 s, warn 10 s, error until the next successful action of its
+  // info 6 s, warn 10 s, error until the next successful action of its
   // domain calls clearNotice().
   if (kind == NoticeInfo) noticeTimer_.start(6000);
   else if (kind == NoticeWarn) noticeTimer_.start(10000);

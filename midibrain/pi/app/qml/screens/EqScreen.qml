@@ -57,7 +57,7 @@ Item {
                 focusId: "eq.subject.main"
                 onClicked: eq.selectMain()
             }
-            // B14: the steppers belong to TRACK, so they say so; the readout
+            // the steppers belong to TRACK, so they say so; the readout
             // names the subject ("Main" or "02 bass"), not a second MAIN.
             Text {
                 width: 44
@@ -225,7 +225,7 @@ Item {
                     id: node
                     readonly property int bandIndex: index
                     readonly property bool selected: modelData.selected
-                    // B3: the model maps every band to a finite grid position;
+                    // the model maps every band to a finite grid position;
                     // this clamp is the delegate's own guard (a NaN coordinate
                     // would otherwise place the node outside the scene) and it
                     // keeps the whole circle on the grid at the edges.
@@ -491,7 +491,7 @@ Item {
             font.pixelSize: Style.fontSmall
             visible: chip.focusId === "eq.band.type"
         }
-        // C7: 48 px per stepper, so the EQ corners meet the same target rule
+        // 48 px per stepper, so the EQ corners meet the same target rule
         // as every other control (the value field gives up the width).
         TouchButton {
             width: 48

@@ -42,9 +42,9 @@ inline int midi_expected(std::uint8_t status) {
 // are unrecoverable); undefined 0xF4/0xF5/0xF9/0xFD ignored without touching
 // any state; EOX ends the SysEx skip and preserves running status so the
 // stream resumes cleanly; velocity-0 note-on passes through opaquely
-// (note-off semantics belong upstream); SysEx content skipped (v1 limitation:
-// long SysEx is dropped, documented); MIDI 2.0/UMP out of scope (the
-// 31250-baud UARTs are MIDI 1.0).
+// (note-off semantics belong upstream); SysEx content is skipped, not forwarded
+// (long SysEx is dropped); MIDI 2.0/UMP is out of scope (the 31250-baud UARTs
+// are MIDI 1.0).
 class MidiParser {
  public:
   explicit MidiParser(std::uint8_t port = 0) : port_(port) {}
@@ -135,12 +135,13 @@ constexpr std::uint8_t EV_CLOCK_ENABLE = 0x12;// Pi->Pico, accepted but ignored:
 constexpr std::uint8_t EV_TRANSPORT_STATE = 0x06;  // Pico->Pi rolling flag + tick (USB mirror)
 constexpr std::uint8_t EV_LED_SET = 0x13;      // Pi->Pico mask, states
 constexpr std::uint8_t EV_CLOCK_ROUTE = 0x14;   // Pi->Pico port, flags: per-output
-// clock/transport enable. payload[1] = port (0 = TRS OUT1/uart0,
-// 1 = TRS OUT2/uart1); payload[2] bit0 = clock on/off, bit1 = transport
-// start/stop/continue on/off. Both default on (legacy always-on behavior);
-// RAM state, reset at boot, Pi re-sends after HELLO. USB outputs are gated
-// Pi-side in the UsbClock mirror with the same semantics. tempoDiv and
-// syncDelayMs use the separate EV_CLOCK_ROUTE_EXT (0x1B, protocol.hpp).
+// EV_CLOCK_ROUTE payload[2] flag bits. Reserved bits must be zero; a frame
+// with any other bit set is rejected as a bad frame, not applied partially.
+// Both gates default on: the clock runs from boot and a transport command is
+// the only thing that moves transport state (RAM state, reset at boot, Pi
+// re-sends after HELLO). USB outputs are gated Pi-side in the UsbClock mirror
+// with the same semantics. tempoDiv and syncDelayMs use the separate
+// EV_CLOCK_ROUTE_EXT (0x1B, protocol.hpp).
 constexpr std::uint8_t EV_CLOCK_SOURCE = 0x17;  // Pi->Pico external clock
 // follow. payload[1] = source (0 = internal, 1 = TRS IN1, 2 = TRS IN2;
 // 3+ rejected); payload[2] = transport-follow mask bit0 = TRS IN1,
@@ -162,9 +163,9 @@ constexpr std::uint8_t EV_RESET_LINK = 0x23;   // Pi->Pico fresh session, no reb
 
 // Per-output TRS clock/transport gates and clock extras applied from
 // EV_CLOCK_ROUTE / EV_CLOCK_ROUTE_EXT. Index 0 = OUT1 (uart0), 1 = OUT2
-// (uart1); both default on so a Pico that has not seen the Pi behaves exactly
-// like the legacy always-on firmware. Pure RAM state: main.cpp owns the UART
-// writes and the delay line, this type owns validation and the decisions.
+// (uart1); both default on, so a Pico that has not seen the Pi still emits
+// clock on every output. Pure RAM state: main.cpp owns the UART writes and the
+// delay line, this type owns validation and the decisions.
 struct ClockGate {
   bool clock = true;
   bool transport = true;
@@ -247,8 +248,8 @@ inline bool is_nav_direction(std::uint8_t id) {
 // LED mask bits for EV_LED_SET (payload[1] mask, payload[2] states).
 constexpr std::uint8_t LED_REC = 0x01, LED_OVERDUB = 0x02, LED_PLAY = 0x04;
 // EV_LED_SET with this bit in the mask syncs arm state instead of driving
-// LEDs: payload[2] bits 0/1 become rec/overdub armed (backward compatible —
-// previous senders never set bit 7).
+// LEDs: payload[2] bits 0/1 become rec/overdub armed. The bit sits above the
+// three LED mask bits, so a plain display write can never trigger an arm sync.
 constexpr std::uint8_t LED_ARM_SYNC = 0x80;
 
 // Indicator semantics (classic transport/record lights, unit-tested here,
@@ -439,9 +440,10 @@ inline bool pack_tick(Frame& f, std::uint16_t seq, std::uint32_t session,
   return true;
 }
 // EV_TRANSPORT_STATE layout: [1]=rolling (0 stopped, 1 rolling),
-// [2..5]=tick count LE32 at the transition. Length 6. Sent on every
-// transport transition, at boot, and when the Pi (re)connects, so the USB
-// mirror always knows whether ticks mean "roll" or "idle".
+// [2..5]=tick count LE32 at the transition, [6]=record-arm mask, [7]=reserved.
+// Length 8. Sent on every transport transition, at boot, and when the Pi
+// (re)connects, so the USB mirror always knows whether ticks mean "roll" or
+// "idle" and which record arms are set.
 inline bool pack_transport_state(Frame& f, std::uint16_t seq, std::uint32_t session,
                                  bool rolling, std::uint32_t tick,
                                  bool rec_armed = false, bool overdub_armed = false) {

@@ -1,5 +1,5 @@
 #pragma once
-// Engine capacity taxonomy (audio wave 10). Single-sourced here because
+// Engine capacity taxonomy. Single-sourced here because
 // take_player.hpp cannot include engine.hpp (engine.hpp includes it).
 //
 //   kMaxDeviceInputs (18)  device capture width: UMC1820 16 analog inputs plus

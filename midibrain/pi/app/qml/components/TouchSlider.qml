@@ -23,7 +23,7 @@ Item {
     implicitHeight: vertical ? 100 : Style.touch
     opacity: active ? 1.0 : 0.45
 
-    // A9: while a MIDI-learn target capture is armed, a learnable control is
+    // while a MIDI-learn target capture is armed, a learnable control is
     // outlined and the next touch on it picks it as the capture target.
     readonly property bool learnOutline: app.learnArmed && app.isLearnableFocus(focusId)
 

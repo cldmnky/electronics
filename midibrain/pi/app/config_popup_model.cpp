@@ -889,7 +889,7 @@ void ConfigPopupModel::setCompMode(int value) {
 #undef CONFIG_SETTER
 
 QString ConfigPopupModel::footerHint() const {
-  // C9: the header repeats the button's verb, so the two can never disagree.
+  // the header repeats the button's verb, so the two can never disagree.
   if (kind_ == QStringLiteral("addtrack")) {
     return QStringLiteral("ADD TRACK - CANCEL ADDS NOTHING");
   }
@@ -1000,9 +1000,8 @@ void ConfigPopupModel::setFxSlotChoice(int value) {
   const int maximum = std::max(0, static_cast<int>(fxSlotLabels().size()) - 1);
   value = std::clamp(value, 0, maximum);
   // A slot that was NONE has no effect to remember a mix for. A project
-  // migrated from the retired send buses carries wet 0 (the legacy send
-  // default), so a freshly picked effect would run fully dry and read as a
-  // dead plugin. Selecting into an empty slot starts at full wet; switching
+  // migrated from the old send buses carries wet 0 (the legacy send default),
+  // so a freshly picked effect would run fully dry and read as a dead plugin. Selecting into an empty slot starts at full wet; switching
   // between two effects keeps the user's wet knob.
   const bool wasEmpty = mixerVm_->fxChoiceAt(fxTrackSlot_, fxSlotIndex_) == 0;
   if (!mixerVm_->setFxChoiceAt(fxTrackSlot_, fxSlotIndex_, value)) {

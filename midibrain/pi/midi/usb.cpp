@@ -1,8 +1,8 @@
 #include "usb.hpp"
 
 // The backend macro must be set before RtMidi.h is parsed. It is also passed on
-// the command line (see CMakeLists.txt / NOTES.md); the guard keeps a second
-// definition harmless.
+// the command line (see CMakeLists.txt); the guard keeps a second definition
+// harmless.
 #if defined(__APPLE__) && !defined(__MACOSX_CORE__)
 #define __MACOSX_CORE__ 1
 #endif

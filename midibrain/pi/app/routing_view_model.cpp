@@ -49,7 +49,7 @@ std::vector<RoutingNode> routingInputNodes(
                             true));
   nodes.push_back(fixedNode(midi::portId(midi::Port::UsbIn), "USB IN", "USB",
                             true));
-  // A13: the generator is a source-less route kind, listed beside the TRS/USB
+  // the generator is a source-less route kind, listed beside the TRS/USB
   // sources. Its chain head emits on the clock grid; nothing downstream may ask
   // it for an input channel.
   nodes.push_back(fixedNode(midi::kSrcGenerator, "GENERATOR", "GEN", true));

@@ -182,8 +182,8 @@ void UiTapRunner::buildScenarios() {
       QStringLiteral("nav."), {}, {}, false, true});
 
   // 2. Shared transport strip.
-  // Stage-1 regression for the top-band leak: the channel popout's header
-  // controls sit at y ~40, inside the top 52 px band that used to deliver the
+  // Top-band gate: the channel popout's header
+  // controls sit at y ~40, inside the top 52 px band that delivers the
   // same tap to the tab row underneath. RENAME must reach its handler and the
   // popup must survive; a leaked tab tap would navigate and tear it down.
   scenarios_.push_back(Scenario{
@@ -212,7 +212,7 @@ void UiTapRunner::buildScenarios() {
         controller_->setTab(0);
       },
       QStringLiteral("transport."), {}, {}, false, true});
-  // A2: STOP while already stopped returns the playhead to the start (the
+  // STOP while already stopped returns the playhead to the start (the
   // classic hardware STOP-STOP). SONG mode is the hard case: PLAY normally
   // preserves the stopped position, so only the return-to-zero anchor makes
   // the next start read bar 1.
@@ -262,12 +262,12 @@ void UiTapRunner::buildScenarios() {
       excluded << QStringLiteral("routing.shiftpipes");
     }
     if (tab == 0) {
-      // A11: the pager grid owns its own scenario, so the screen pass keeps
+      // the pager grid owns its own scenario, so the screen pass keeps
       // walking the strips instead of opening an overlay over them.
       excluded << QStringLiteral("mixer.bank.pages");
     }
     if (tab == 2) {
-      // Stage 4 recorder hierarchy: the track picker, the take sheet, the
+      // Recorder hierarchy: the track picker, the take sheet, the
       // recording-source popup and the row EDIT/WAVE/menu surfaces own their
       // own passes; opening them mid-walk would hide the controls behind them.
       excluded << QStringLiteral("recorder.takesheet")
@@ -347,7 +347,7 @@ void UiTapRunner::buildScenarios() {
         },
         QStringLiteral("shift."), shiftExcluded, {}, false, false});
   }
-  // D8: the OUTPUT page's clock-source choices. The page-switch pass changes
+  // the OUTPUT page's clock-source choices. The page-switch pass changes
   // pages before its content, so the row gets its own scenario.
   scenarios_.push_back(Scenario{
       QStringLiteral("shift.3.output"),
@@ -422,7 +422,7 @@ void UiTapRunner::buildScenarios() {
         prefix, shiftExcluded, {prefix}, true, true});
   }
 
-  // A13: the source-less generator route on the pipe page: FROM = GENERATOR,
+  // the source-less generator route on the pipe page: FROM = GENERATOR,
   // TO = USB OUT, head = CC LFO, no input selected anywhere.
   scenarios_.push_back(Scenario{
       QStringLiteral("shift.1.pipes.generator"),
@@ -479,7 +479,7 @@ void UiTapRunner::buildScenarios() {
       },
       QStringLiteral("mixer."), {QStringLiteral("mixer.bank.pages")}, {}, false,
       true});
-  // A11: the page grid itself: every non-empty page cell plus CLOSE.
+  // the page grid itself: every non-empty page cell plus CLOSE.
   scenarios_.push_back(Scenario{
       QStringLiteral("mixer.bankgrid"),
       [this] {
@@ -503,7 +503,7 @@ void UiTapRunner::buildScenarios() {
         controller_->openChannel(1);
       },
       QStringLiteral("channel."), {}, {QStringLiteral("channel.close")}, false, true});
-  // Stage 2 item 4h: riding a strip fader moves the value and never opens the
+  // Riding a strip fader moves the value and never opens the
   // channel sheet. The strip has three touch targets (name = select, CH =
   // expand, fader = level); this pass drags the fader and asserts that the
   // popout stayed closed while the gain actually moved.
@@ -546,7 +546,7 @@ void UiTapRunner::buildScenarios() {
   // built-in effects, so every selector, the wet chips, the bypass chips and
   // the delay/reverb parameter cards are tapped. A second pass covers a slot
   // that is still NONE (the selector is the only control on that card).
-  // A3: selecting an effect into an empty slot must be audible at once, even
+  // selecting an effect into an empty slot must be audible at once, even
   // when the slot carried the legacy send wet 0; each pick gets its own pass
   // and asserts the model's wet plus (for a CLAP pick) that the instance is
   // loaded rather than silently dry.
@@ -636,9 +636,9 @@ void UiTapRunner::buildScenarios() {
       },
       QStringLiteral("trackfx."), {}, {QStringLiteral("trackfx.close")}, false,
       true});
-  // Panel parity for the owner crash: the first ring stop of TRACK FX is
-  // CLOSE, and a PRESS on it must close the popup (the old dispatch read
-  // parts[2] of "trackfx.close" and segfaulted).
+  // Panel parity for TRACK FX: the first ring stop is CLOSE, and a PRESS on it
+  // must close the popup. The id carries two dots, so the dispatch must split
+  // it on the last one rather than index parts[2].
   scenarios_.push_back(Scenario{
       QStringLiteral("mixer.trackfx.panelclose"),
       [this] {
@@ -755,8 +755,8 @@ void UiTapRunner::buildScenarios() {
       {}, false, true});
   // The take-row buttons are separate 44 px surfaces on the same delegate. Each
   // gets a one-tap pass that asserts the popup it names is actually open when
-  // the tap finishes: a dead EDIT/menu (the owner's Pi report) is a failure
-  // here, not just a quiet tap.
+  // the tap finishes: a dead EDIT/menu is a failure here, not just a quiet
+  // tap.
   const auto openRecorderRows = [this] {
     closeOverlays();
     controller_->showShiftFace(false);
@@ -782,9 +782,9 @@ void UiTapRunner::buildScenarios() {
                controller_->config()->takeTargetRow() == 0;
       },
       QStringLiteral("... did not open the take actions config")});
-  // Owner bug B (physical path): the row "..." menu -> NEW TRACK FROM THIS
-  // TAKE -> keypad DONE -> MOVE must add a track, land the bank on the page
-  // that shows it and leave the take ACTIVE on the new strip.
+  // NEW TRACK FROM TAKE (physical path): the row "..." menu -> NEW TRACK FROM
+  // THIS TAKE -> keypad DONE -> MOVE must add a track, land the bank on the
+  // page that shows it and leave the take ACTIVE on the new strip.
   scenarios_.push_back(Scenario{
       QStringLiteral("clips.recorder.newtrack"), openRecorderRows,
       QStringLiteral("recorder.take.menu"), {}, {}, false, false, false, {},
@@ -799,9 +799,9 @@ void UiTapRunner::buildScenarios() {
       },
       QStringLiteral("NEW TRACK FROM TAKE created no track, stayed on page 1 "
                      "or lost the take")});
-  // Owner bug A (physical path): a discovered plugin row selected in the FX
-  // slot list must leave the slot with a live instance ("active" note), not a
-  // selected-but-dead entry. Only added when the build really has a plugin;
+  // Plugin activation (physical path): a discovered plugin row selected in the
+  // FX slot list must leave the slot with a live instance ("active" note), not
+  // a selected-but-dead entry. Only added when the build really has a plugin;
   // a zero-CLAP device keeps the honest DELAY/REVERB-only list.
   if (controller_->mixer()->fxChoiceLabels().size() >
       MixerViewModel::kFxChoiceBuiltinCount) {
@@ -879,7 +879,7 @@ void UiTapRunner::buildScenarios() {
         QStringLiteral("take-sheet EDIT did not open the take edit popup")});
   }
 
-  // Stage 4 track picker: the one selected-track button opens an 18-track
+  // Track picker: the one selected-track button opens an 18-track
   // sheet; picking a track closes it and selects that track.
   scenarios_.push_back(Scenario{
       QStringLiteral("clips.recorder.trackpicker"),
@@ -898,7 +898,7 @@ void UiTapRunner::buildScenarios() {
       },
       QStringLiteral("the track picker did not select track 7 and close")});
 
-  // 3g. The take edit popup (plan W5): open it from the recorder's EDIT
+  // 3g. The take edit popup: open it from the recorder's EDIT
   // affordance, then walk every control. The handle pass drags the two edge
   // targets by 24 px, so the drag path (not only the press) is exercised.
   const auto openEditPopup = [this] {
@@ -965,8 +965,8 @@ void UiTapRunner::buildScenarios() {
       QStringLiteral("edit.apply"), {}, {QStringLiteral("edit.apply")}, false, true});
   // The APPLY chain, end to end through the QML button: a fresh take has no
   // committed regions, so the tap has to create them, put GAIN on the undo
-  // stack and name the result. This is the owner's "when I apply nothing
-  // happens" path, not a direct view-model call.
+  // stack and name the result. This drives the QML button, not a direct
+  // view-model call.
   scenarios_.push_back(Scenario{
       QStringLiteral("edit.apply.state"),
       [this] {
@@ -1101,8 +1101,8 @@ void UiTapRunner::buildScenarios() {
       QStringLiteral("APPLY TRIM did not update the header's edited duration")});
   // UNDO through the QML button: APPLY GAIN then tap UNDO, and the popup has to
   // be back on the exact pre-apply take state (no regions, empty stack, header
-  // meta without an edited duration) with the UNDO button dimmed again. This is
-  // the owner's "undo for waveform editing" path, driven by real taps.
+  // meta without an edited duration) with the UNDO button dimmed again. Driven
+  // by real taps on the popup.
   scenarios_.push_back(Scenario{
       QStringLiteral("edit.undo"),
       [this] {
@@ -1183,8 +1183,8 @@ void UiTapRunner::buildScenarios() {
       },
       QStringLiteral("edit.render"), {}, {QStringLiteral("edit.render")}, false, true});
 
-  // 3i. KEYPAD TYPING (owner bug: keys dismissed the keypad and BACK looked
-  // dead). This pass opens a track-name keypad, types a real sequence, checks
+  // 3i. KEYPAD TYPING: keys must not dismiss the keypad and BACK must respond.
+  // This pass opens a track-name keypad, types a real sequence, checks
   // the QML buffer after every key, single-taps DEL (one character), long-holds
   // DEL (clears), types a new name and commits with DONE. The buffer is read
   // from the Keypad objectName probe; no model pointer is held across a rescan.
@@ -1226,7 +1226,7 @@ void UiTapRunner::buildScenarios() {
         QStringLiteral("DONE did not commit the typed name (expected beat)");
   }
 
-  // 3h. ARRANGE (W4/W5): the section band/clip blocks, the clip "..." sheet,
+  // 3h. ARRANGE: the section band/clip blocks, the clip "..." sheet,
   // the LEN stepper, section rename, punch-into-song auto-place and RENDER SONG.
   // Each destructive/overlay-opening verb gets its own pass so the modal it
   // opens cannot hide the rest of the screen.
@@ -1821,7 +1821,7 @@ void UiTapRunner::startPanelGate() {
 // --panel-taps: the mechanical panel-intent gate (docs/panel-parity-audit.md
 // section 5). It injects the same Intents the Pico sends, so a stop that no
 // widget implements, a ring that skips a visible control or an EXIT that does
-// not unwind fails here instead of on the owner's bench.
+// not unwind fails here instead of on the studio Pi.
 void UiTapRunner::runPanelGate() {
   int failures = 0;
   int stops = 0;
@@ -1847,18 +1847,17 @@ void UiTapRunner::runPanelGate() {
     for (const auto& target : visibleTargets()) ids.insert(target.focusId);
     return ids;
   };
-  // Later redesign stages own these: mixer strip selectors, the channel
-  // monitor row, the EDIT value chip, the EQ SHIFT shadow ids and the MIDI
-  // port rows. They are reported as known gaps, not failures, so this gate
-  // locks in stage-1 parity without pretending to fix stage 2/5 work.
+  // Known gaps: mixer strip selectors, the channel monitor row, the EDIT value
+  // chip, the EQ SHIFT shadow ids and the MIDI port rows. They are reported as
+  // gaps, not failures, so the gate states the real parity level.
   const QStringList knownGapPrefixes = {
       QStringLiteral("edit.value"), QStringLiteral("shift.eq.band."),
       // MIDI MONITOR rows: the ListView virtualizes off-viewport delegates, so
       // the ring can name a row that has no live widget until it is scrolled
       // into view. The tap path still walks the ring and scrolls on focus.
       QStringLiteral("midimon.port."),
-      // Stage 3/4/5 screens own these; the audit already lists them (EQ node
-      // visibility, ARRANGE toolbar, recorder punch rows, SYSTEM summaries).
+      // Gaps listed in docs/panel-parity-audit.md: EQ node visibility, ARRANGE
+      // toolbar, recorder punch rows, SYSTEM summaries.
       QStringLiteral("eq.node."), QStringLiteral("eq.subject.track"),
       QStringLiteral("arrange.addsection"), QStringLiteral("arrange.dupsection"),
       QStringLiteral("arrange.loopsection"), QStringLiteral("arrange.length"),
@@ -1986,7 +1985,7 @@ void UiTapRunner::runPanelGate() {
     };
     contexts.push_back(context);
   }
-  // G7: the keypad is no longer a dead modal. Its keys, cursor, edit verbs and
+  // the keypad is no longer a dead modal. Its keys, cursor, edit verbs and
   // the two exits are ring stops, so the whole NAME/RENAME/IMPORT path can be
   // typed from the panel; the encoder still walks the same ring.
   {
@@ -2011,7 +2010,7 @@ void UiTapRunner::runPanelGate() {
     const std::vector<QString> ids = controller_->focusIds_;
     const QString& name = context.name;
     if (ids.empty()) {
-      // Stage 5: every face ring must be non-empty. This used to allowlist
+      // every face ring must be non-empty. This used to allowlist
       // G2 (Projects) as a known gap; the mapping is fixed, so an empty face
       // ring is a hard failure now.
       fail(name, QStringLiteral("empty face ring"));
@@ -2135,7 +2134,7 @@ void UiTapRunner::runPanelGate() {
            QStringLiteral("face %1, expected %2").arg(entered ? 1 : 0).arg(expected ? 1 : 0));
     }
     if (entered && controller_->focusIds_.empty()) {
-      // Stage 5: Projects (tab 4) is fixed too; every entered face needs a ring.
+      // Projects (tab 4) is fixed too; every entered face needs a ring.
       fail(QStringLiteral("shift.%1").arg(tab), QStringLiteral("empty face ring"));
     }
     LinkStatus released;
@@ -2145,8 +2144,8 @@ void UiTapRunner::runPanelGate() {
     }
   }
 
-  // 7. EXIT unwinds the overlays stage 1 owns (stage 2 adds channel/TRACK FX/
-  // bank grid, where the audit already documents the gaps).
+  // 7. EXIT unwinds the overlays owned by the nav row (the channel/TRACK FX/
+  // bank grid layer is documented as a gap in docs/panel-parity-audit.md).
   const auto exitCloses = [this, &fail](const QString& name, const std::function<void()>& open,
                                         const std::function<bool()>& closed) {
     closeOverlays();
@@ -2169,12 +2168,12 @@ void UiTapRunner::runPanelGate() {
              [this] { controller_->requestConfirm(QStringLiteral("T"), QStringLiteral("M"), QStringLiteral("OK"), QStringLiteral("test"), 0); },
              [this] { return !controller_->confirmOpen(); });
   // The KnobChip precision sheet is the topmost layer while it is up, so EXIT
-  // must spend its press on it (G9 for the touch-only sheet).
+  // must spend its press on it (the touch-only sheet returns focus by id).
   exitCloses(QStringLiteral("knobsheet"),
              [this] { controller_->setKnobSheetOpen(true); },
              [this] { return !controller_->knobSheetOpen(); });
 
-  // 7b. G9: opening an overlay saves the invoking stop and closing it restores
+  // 7b. Focus return: opening an overlay saves the invoking stop and closing
   // that stop, not index 0. Each branch opens from a real ring stop.
   const auto focusReturns = [this, &fail](const QString& name, int tab,
                                           const QString& invoking,

@@ -41,7 +41,8 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
 ## What the firmware owns
 
 - Both MIDI UARTs at 31250 baud (IRQ rings with per-byte timestamps, parser
-  with running status + realtime interleave; SysEx skipped in v1).
+  with running status + realtime interleave; SysEx bodies are skipped, not
+  forwarded).
 - Debounced panel inputs (1 kHz scan), quadrature tempo encoder (SHIFT = fine),
   three semantic LEDs (armed-blink / recording-solid / play-on-roll, Pi-overridable
   via LED_SET with arm sync on mask bit 7).
@@ -82,15 +83,15 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
   source coasts at the last locked period; on return the phase error is slewed
   out across ticks, never re-anchored to an input edge (no time-skip). Follow
   never gates or stops the clock; `tempoDiv`, `syncDelayMs` and the
-  EV_CLOCK_ROUTE policy are unchanged.
+  EV_CLOCK_ROUTE gates stay per-output policy.
 - If the callback runs past the next grid point, `skipToAfter()` steps over
   whole missed ticks (bounded to 4096) instead of emitting a catch-up burst.
   The grid phase is unchanged; skipped ticks are counted in `[stat] miss=`.
-- Transport semantics are unchanged: the Pico always sends clock; START (FA)
-  resets the tick index, CONTINUE/STOP (FB/FC) and START are emitted at the
-  event instant on the realtime priority class, and the per-output clock gate,
-  `tempoDiv` and `syncDelayMs` policy is untouched. Transport bytes bypass the
-  clock delay line and divider, as before.
+- Transport semantics: the Pico always sends clock; START (FA) resets the tick
+  index, CONTINUE/STOP (FB/FC) and START are emitted at the event instant on
+  the realtime priority class. Transport bytes bypass the clock delay line and
+  the divider; the per-output clock gate, `tempoDiv` and `syncDelayMs` apply to
+  clock bytes only.
 
 ## MIDI TX design (non-blocking priority queue)
 
@@ -126,8 +127,8 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
   N can never run ahead of tick N's F8; the worst residual is the scheduler's
   byte-boundary budget (tick byte + the remaining bytes of the one message
   already on the wire, <= 3 byte times = 0.96 ms), not main-loop scheduling.
-  Realtime statuses are refused on the timed path. The shared `midifx` core is
-  untouched: only the emission timing changed.
+  Realtime statuses are refused on the timed path. The shared `midifx` core
+  owns what an event is; this scheduler owns only when its bytes leave.
 - Diagnostics: the 1 Hz `[stat]` line reports `mtx=n+r/n+r` (normal + realtime
   depth for OUT1/OUT2), `fxq=n+n` (pending timed FX messages per output),
   `fxdrop` (timed FX messages dropped/refused), `mtxdrop` (whole normal
@@ -137,11 +138,10 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
 
 ## SPI link design (non-blocking)
 
-- The old slave called `spi_write_read_blocking()` from the main loop. A Linux
-  transfer killed mid-frame left it waiting for clocks that never came, so
-  MIDI routing, panel scans and route engines froze until the 8 s watchdog
-  rebooted the Pico (the clock alarm and UART ISRs kept running, but nothing
-  else did).
+- No path in the link waits for the master. A blocking slave transfer would
+  wait for clocks that a killed Linux transfer never sends, freezing MIDI
+  routing, panel scans and the route engines until the 8 s watchdog reboots the
+  Pico (the clock alarm and UART ISRs keep running, nothing else does).
 - `spi_slave.hpp` is the host-tested transaction engine. The CSn falling edge
   starts a frame, the SPI RX interrupt feeds each MOSI byte and refills the TX
   FIFO from the preloaded response, the rising edge ends it. The main loop
@@ -152,11 +152,14 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
   that do not start an `MB`/version-1 header are ignored (`spigarb`) until a
   valid header; a complete frame that fails CRC/format is dropped
   (`spibad`). The next transaction is a fresh frame boundary — no reboot.
-- App reliability: every accepted (or deduped) CONTROL_EVENT is acked with
-  type ACK, length 2, payload = the Pi sequence. The Pi (pi/link/link.cpp)
-  holds a control frame at its queue head until that ack returns, replaying
-  the same (session, sequence); the receiver's dedup applies it exactly once.
-  A lost ack/aborted transfer therefore costs one retry, not a lost Note Off.
+- App reliability: every accepted (or deduped) routed-byte CONTROL_EVENT (0x15
+  EV_MIDI_SEND, 0x1A EV_MIDI_ROUTE_SEND) is acked with type ACK, length 2,
+  payload = the Pi sequence. Configuration frames stay off the retry path: they
+  are idempotent and re-sent after HELLO, so a lost one costs a resend, never a
+  hung note. The Pi (pi/link/link.cpp) holds an acked frame at its queue head
+  until that ack returns, replaying the same (session, sequence); the receiver's
+  dedup applies it exactly once. A lost ack/aborted transfer therefore costs one
+  retry, not a lost Note Off.
   A full 16-slot queue evicts the oldest whole non-Note-Off frame to admit a
   Note Off (never the reverse); only a queue made entirely of Note Offs can
   refuse another one (`noteOffDrops`).
@@ -166,13 +169,15 @@ codec/parser tests, the `pins.h` freshness check, the hardware gates and SPICE.
   loop had not drained). Pi-side `PicoLink::Stats` adds `retries`, `acks`,
   `noteOffDrops` and `evicted`.
 
-## Clock bench acceptance (PROPOSED TARGETS, UNMEASURED)
+## Clock bench acceptance criteria
 
-The review's targets, recorded as a checklist for real hardware. None of these
-has been measured; they require a logic analyzer on both TRS outputs and the
-full system (Pico + Pi + DAW + NVMe + SPI traffic).
+The clock path is accepted on real hardware by the checks below: a logic
+analyzer on both TRS outputs, with the full system running (Pico + Pi + DAW +
+NVMe + SPI traffic). `unmeasured` rows have no bench capture yet; rows marked
+`simulated` carry host evidence from the deterministic models and still need
+that capture.
 
-| # | Check | Proposed target | Method | Status |
+| # | Check | Target | Method | Status |
 |---|---|---|---|---|
 | 1 | Tempo accuracy | <= 0.1% error | 2 h capture on both TRS outs at 20/60/120/180/300 bpm; compare N-tick span to the exact grid | unmeasured |
 | 2 | Clock timing error | <= 1 ms max edge error | Per-edge timestamp histogram against the ideal 24-PPQN grid, both outputs | unmeasured |
@@ -193,14 +198,14 @@ full system (Pico + Pi + DAW + NVMe + SPI traffic).
 | 17 | Clocked FX timing parity | FX event released at its tick's grid deadline; F8 never displaced | Host harness: FX note stamped at tick N, F8 first; 2 h load matrix with FX traffic | simulated: note +0.320 ms (1 byte) typical, +1.320 ms structural worst (tick byte + 2 remaining bytes of an in-flight message), never early, F8 always first, 0 FX dropped |
 | 18 | Single-core full load | <= 1 ms clock error, 0 dropped F8, 0 lost FX | clock_sim one-core model, 2 h x 20/60/120/180/300 bpm x both outputs, note/CC + SPI churn (1 abort in 8) + clocked FX traffic | simulated: 0.360 ms max clock error, 0.0000 % tempo error, 0 dropped F8, 0 dropped FX |
 
-## DECISION: single core is sufficient, dual-core deferred (P2)
+## DECISION: one core carries the clock and the FX load
 
-The review's rule was "two cores only if load tests demand it". The full load
-matrix was run on ONE core's model (the same `clock_sim` alarm/UART/SPI models
-plus the firmware `MidiTxScheduler` timed-release path and clocked FX traffic):
-2 h per tempo, both TRS outputs, note/CC traffic every beat, a 32-byte SPI
-transaction every 50 ms with one aborted transfer in eight, and a clocked FX
-step (note-on + gate note-off, both timestamped) every eighth note. Virtual
+Rule: a second core is justified only when a load test demands it. The full
+load matrix runs on ONE core's model (the same `clock_sim` alarm/UART/SPI
+models plus the firmware `MidiTxScheduler` timed-release path and clocked FX
+traffic): 2 h per tempo, both TRS outputs, note/CC traffic every beat, a 32-byte
+SPI transaction every 50 ms with one aborted transfer in eight, and a clocked
+FX step (note-on + gate note-off, both timestamped) every eighth note. Virtual
 time, so every scenario is deterministic and exhaustive rather than sampled.
 
 ```
@@ -217,19 +222,20 @@ tempo  out  F8_pulses  tempo_err%  clock_max_ms  FX_msgs  fx_max_ms  fx_min_ms  
 300.0  2       864001     0.0000       0.3602   144000     1.3202     0.3202        0        0  PASS
 ```
 
-Verdict: **single core sufficient - dual-core deferred.** Worst-case clock
-error is 0.360 ms (budget 1 ms) and 0 F8 were dropped; tempo error is 0.0000 %
-over 2 h. The FX column is the deadline-to-first-byte error of a clock-derived
-message: 0.320 ms typical (one tick byte ahead of it) and 1.320 ms worst case,
-which is exactly the byte-boundary budget (alarm phase + tick byte + the two
-remaining bytes of a 3-byte message already on the wire). It is a MIDI framing
-bound, not a second timing regime: no FX event was early, none was dropped, and
-the F8 for every tick was always ahead of its clock-derived events. The
-measured worst case leaves > 0.6 ms of margin on the clock budget, so a second
-core would add a queue/lock boundary to the hot path without buying accuracy.
-The `RP2350`'s second core stays unused; revisit only if a bench run with the
-real Pi, NVMe and USB stack shows `[stat] miss=` (skipped grid ticks) or clock
-error > 1 ms with `fxq` at its 32-message ceiling.
+Verdict: **one core is sufficient; dual-core is not adopted.** Worst-case
+clock error is 0.360 ms (budget 1 ms) and 0 F8 are dropped; tempo error is
+0.0000 % over 2 h. The FX column is the deadline-to-first-byte error of a
+clock-derived message: 0.320 ms typical (one tick byte ahead of it) and
+1.320 ms worst case, which is exactly the byte-boundary budget (alarm phase +
+tick byte + the two remaining bytes of a 3-byte message already on the wire).
+It is a MIDI framing bound, not a second timing regime: no FX event is early,
+none is dropped, and the F8 for every tick is always ahead of its clock-derived
+events. The
+worst case leaves > 0.6 ms of margin on the clock budget, so a second core
+would add a queue/lock boundary to the hot path without buying accuracy. The
+`RP2350`'s second core stays unused; the decision is revisited only if a bench
+run with the real Pi, NVMe and USB stack shows `[stat] miss=` (skipped grid
+ticks) or clock error > 1 ms with `fxq` at its 32-message ceiling.
 
 Run the host side with `make host` (or `make test`) from `midibrain/`. The
 host test simulates 500,000 clock ticks at 120 bpm against the exact rational

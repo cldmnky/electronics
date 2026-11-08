@@ -1,7 +1,7 @@
-// P2 host evidence: timestamped clocked-FX emission and the dual-core load
+// Host evidence: timestamped clocked-FX emission and the one-core load
 // decision.
 //
-// Two questions, both measured on the clock_sim models (linked unchanged):
+// Two questions, both measured on the clock_sim models (linked as-is):
 //
 //  1. Does the TX scheduler's timed-release path put a clock-derived event on
 //     the wire at the grid point it was stamped with, without ever letting it

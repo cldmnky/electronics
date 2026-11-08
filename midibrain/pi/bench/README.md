@@ -11,7 +11,7 @@ the repository, the Pi's storage, its power, its cables or `/boot/firmware`.
 
 - The sequencer tap (`tap/midi_seqtap.c`) subscribes READ-only: it never writes a
   MIDI port, never opens a PCM or rawmidi device and leaves no client behind.
-- No script starts audio work while `fuser` reports an owner on `hw:1,0`
+- No script starts audio work while `fuser` reports a user of `hw:1,0`
   (`run/05-audio-latency.sh` refuses with exit 3).
 - `run/03-gadget-configfs-probe.sh` loads `libcomposite` and creates a configfs
   UAC2 gadget, then unloads `usb_f_uac2`, `u_audio`, `libcomposite` and removes
@@ -44,9 +44,10 @@ human-readable statistics and `*.json` the same numbers machine-readably.
 
 ## Automated clock acceptance (`--bench-clock`)
 
-`run/06-clock-acceptance.sh quick|full` drives the review's matrix against the
-real device from the app itself. `quick` spends 180 s per tempo (20/60/120/180/
-300 bpm, ~15 min total); `full` spends 2 h per tempo (~10 h, the owner's session).
+`run/06-clock-acceptance.sh quick|full` drives the clock acceptance matrix
+against the real device from the app itself. `quick` spends 180 s per tempo
+(20/60/120/180/300 bpm, ~15 min total); `full` spends 2 h per tempo (~10 h, a
+full session length).
 The app must be stopped first (SPI link and audio are exclusive) and the run
 writes no project or take: the driver refuses to start when a project has
 unsaved changes.

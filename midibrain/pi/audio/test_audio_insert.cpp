@@ -1,9 +1,8 @@
-// Assert-style acceptance tests for the per-track FX rack (engine wave 11):
-// two series slots (FX1 -> FX2) per track, each with its own built-in
-// delay/reverb instance, dry/wet mix and external (CLAP) seam. The legacy
-// single-insert API is tested as the wrapper for slot 0 (wave 9 behaviour is
-// bit-identical at wet = 1), and the retired global FX send buses are proven
-// inert.
+// Assert-style acceptance tests for the per-track FX rack: two series slots
+// (FX1 -> FX2) per track, each with its own built-in delay/reverb instance,
+// dry/wet mix and external (CLAP) seam. The legacy single-insert API is tested
+// as the wrapper for slot 0 (bit-identical at wet = 1), and the former global
+// FX send buses are proven inert.
 //
 // Build (from midibrain/pi/audio), one command:
 //   /usr/bin/c++ -std=c++20 -Wall -Wextra -Werror -I. test_audio_insert.cpp
@@ -1236,7 +1235,7 @@ void testCpuCost() {
     std::printf("INFO insert cpu: %d tracks, no insert: %8.2f us/block\n",
                 kMaxTracks, emptyUs);
 
-    // Wave 11 worst case: every track runs both slots, delay in FX1 and reverb
+    // Rack worst case: every track runs both slots, delay in FX1 and reverb
     // in FX2, at the two supported block sizes.
     const TrackFxSlot delay = delaySlot(250.0, 0.35, 0.3, 1.0f);
     const TrackFxSlot reverb = reverbSlot(0.7, 0.25, 1.0f);

@@ -38,7 +38,7 @@ Rectangle {
     readonly property real fraction: fullScale > 0
                                      ? Math.max(0, Math.min(1, value / fullScale)) : 0.0
     readonly property bool focused: app.focusId === focusId && focusId !== ""
-    // A9: outlined while a learn target capture waits for a touch.
+    // outlined while a learn target capture waits for a touch.
     readonly property bool learnOutline: app.learnArmed && app.isLearnableFocus(focusId)
 
     implicitHeight: Style.touch

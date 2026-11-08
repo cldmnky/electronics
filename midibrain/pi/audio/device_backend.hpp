@@ -61,7 +61,7 @@ inline int frameBytes(SampleFormat format, int channels) {
 }
 
 /// Decode one little-endian sample. Exact for every representable input:
-/// S32 -1.0 is exactly -1.0f, F32 is a bit copy, S24_3 sign-extends from bit 23.
+/// 1.0 is exactly -1.0f, F32 is a bit copy, S24_3 sign-extends from bit 23.
 float decodeSample(const unsigned char* source, SampleFormat format);
 /// Encode one sample. Clamped to [-1, 1] and rounded once with std::lround, so
 /// +1.0 maps to the positive full scale and -1.0 to the negative full scale;

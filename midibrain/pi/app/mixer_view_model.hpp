@@ -26,10 +26,10 @@ namespace mnky::app {
 
 class FxManager;
 
-// Three strips per page: the owner's "8-9 crammed, sliders too small" ask,
-// then the stage-2 performance-surface ask (taller faders, real meters). The
-// page count comes from the track list (ceil(tracks / kStripsPerBank)), never
-// from a capacity constant.
+// Three strips per page: eight or nine strips on one page cramp the faders,
+// and three leaves room for taller faders and real meters. The page count
+// comes from the track list (ceil(tracks / kStripsPerBank)), never from a
+// capacity constant.
 inline constexpr int kStripsPerBank = 3;
 
 class MixerViewModel final : public QAbstractListModel {
@@ -40,7 +40,7 @@ class MixerViewModel final : public QAbstractListModel {
   Q_PROPERTY(int pageCount READ pageCount NOTIFY tracksChanged)
   Q_PROPERTY(bool empty READ empty NOTIFY tracksChanged)
   Q_PROPERTY(QString bankText READ bankText NOTIFY tracksChanged)
-  // A11: one row per three-track page, for the pager grid ({index, label,
+  // one row per three-track page, for the pager grid ({index, label,
   // empty, current}). A page is empty when its first slot is past the list.
   Q_PROPERTY(QVariantList bankPages READ bankPages NOTIFY tracksChanged)
   Q_PROPERTY(bool trackMode READ trackMode WRITE setTrackMode NOTIFY trackModeChanged)
@@ -61,7 +61,7 @@ class MixerViewModel final : public QAbstractListModel {
   Q_PROPERTY(bool trackArm READ trackArm WRITE setTrackArm NOTIFY trackChanged)
   Q_PROPERTY(double trackLevel READ trackLevel NOTIFY metersChanged)
   Q_PROPERTY(bool trackClip READ trackClip NOTIFY metersChanged)
-  // The selected strip's mode (docs/daw-plan.md W1) and REC SOURCE (W2b): the
+  // The selected strip's mode and REC SOURCE: the
   // TRACK screen and the channel popout select LIVE/PLAY/ARM/OVERDUB and
   // PRE/POST/POST+FX through these. (`trackMode` above is the MIXER/TRACK screen
   // toggle, so the per-track value is named selected*.)
@@ -235,7 +235,7 @@ class MixerViewModel final : public QAbstractListModel {
   // Number of ARM-mode strips with an active take: the play() warning names
   // them, because ARM suppresses the take voice by contract.
   int armedWithActiveTakeCount() const;
-  // A track rename: every strip re-reads its name (A4/C2).
+  // A track rename: every strip re-reads its name.
   void notifyTrackNamesChanged();
   int selectedStrip() const { return selectedStrip_; }
   void setSelectedStrip(int slot);
@@ -308,7 +308,7 @@ class MixerViewModel final : public QAbstractListModel {
   // Deterministic clip/meter demo for the offscreen screenshot run.
   Q_INVOKABLE void showClipDemo();
   Q_INVOKABLE void clearClipDemo();
-  // B7: a tap on a meter drops its latch (and its demo crown).
+  // a tap on a meter drops its latch (and its demo crown).
   Q_INVOKABLE void clearClip(int slot);
   // Re-reads every value (project load, MIDI learn writes).
   void refresh();

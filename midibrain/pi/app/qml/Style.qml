@@ -46,7 +46,7 @@ QtObject {
     readonly property int touch: 44
     readonly property int touchPrimary: 64
     readonly property int touchSecondary: 56
-    // Navigation and transport migrated in stage 1; every other screen keeps
+    // Navigation and transport are migrated; every other screen keeps
     // its own fixed arithmetic until its stage moves it.
     readonly property int tabHeight: 56
     readonly property int transportHeight: 64

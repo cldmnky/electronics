@@ -38,7 +38,7 @@ Rectangle {
                 root.cursor = root.buffer.length
             }
         }
-        // A2: the keypad traps the panel. The encoder moves the cursor and a
+        // the keypad traps the panel. The encoder moves the cursor and a
         // panel PRESS accepts; the buffer stays here, in QML.
         function onKeypadCursorMoveRequested(delta) {
             if (!app.keypadOpen) return
@@ -52,7 +52,7 @@ Rectangle {
         function onKeypadAcceptRequested() {
             if (app.keypadOpen) app.keypadAccept(root.buffer)
         }
-        // G7: the panel's key ring presses. The buffer stays here; the
+        // the panel's key ring presses. The buffer stays here; the
         // controller only names the character or verb the panel selected.
         function onKeypadTextRequested(text) {
             if (app.keypadOpen) root.insert(text)
@@ -193,7 +193,7 @@ Rectangle {
                                     root.insert(character)
                                 }
                             }
-                            // A2: a held < or > steps twice per repeat.
+                            // a held < or > steps twice per repeat.
                             onLongClicked: {
                                 const character = keyRow.rowText.charAt(index)
                                 if (character === "<") {
@@ -210,7 +210,7 @@ Rectangle {
             Row {
                 id: actionRow
                 width: parent.width
-                // Stage 4 sheet vocabulary: the action footer is a touchPrimary
+                // Sheet vocabulary: the action footer is a touchPrimary
                 // row so CANCEL/DONE read as the modal's predictable exits.
                 height: Style.touchPrimary
                 spacing: 3
@@ -246,13 +246,13 @@ Rectangle {
                 TouchButton {
                     width: actionRow.unit
                     height: actionRow.height
-                    // DEL = one character; hold it to clear (A2). CLEAR is
+                    // DEL = one character; hold it to clear. CLEAR is
                     // the explicit whole-buffer key beside it.
                     text: "DEL"
                     textSize: Style.fontSmall
                     focusId: "keypad.back"
                     onClicked: root.backspace()
-                    // A2: 600 ms on BACK clears the whole buffer.
+                    // 600 ms on BACK clears the whole buffer.
                     onLongClicked: {
                         root.buffer = ""
                         root.cursor = 0
@@ -275,7 +275,7 @@ Rectangle {
                     focusId: "keypad.cancel"
                     onClicked: app.keypadCancel()
                 }
-                // C9: button = verb. The keypad's action is named by its title
+                // button = verb. The keypad's action is named by its title
                 // (RENAME TRACK 02, IMPORT TAKE); the accept button is DONE.
                 TouchButton {
                     width: actionRow.unit

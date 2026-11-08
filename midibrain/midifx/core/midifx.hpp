@@ -1,8 +1,8 @@
 #pragma once
 // Shared MIDI FX pipe engine: one ordered chain turns one routed MIDI message
 // into zero or more messages. This is the single behavior implementation for
-// all 16 pipe types (Wave 1 stateless 1..11, Wave 2 clocked 12..16); the Pico
-// firmware compiles it today and the Pi core adopts the same header.
+// all 16 pipe types (stateless 1..11, clocked 12..16), compiled unchanged by
+// both builds: the Pico firmware and the Pi core include this header.
 //
 // Ownership and clock contract
 // ----------------------------
@@ -24,8 +24,8 @@
 // release the notes they had turned on, so an edit can never leave a note
 // sounding forever.
 //
-// Fixture for both builds
-// -----------------------
+// Runtime state per chain position
+// -------------------------------
 // A chain keeps one runtime slot per pipe position: Dispatcher note->channel
 // assignments, the Sustain latch, NoteLength's pending note-offs, the
 // Chance/VelocityRandom xorshift32 stream, arp/repeater/LFO grids, harmonizer
@@ -187,12 +187,12 @@ class PipeChain {
     return true;
   }
 
-  // Replaces the whole chain in one call (Pi-side adoption path). Accepts ids
-  // 1..16, at most kMaxRoutePipes pipes and kMaxPipeParams params each. Invalid
-  // input leaves the current chain untouched and returns false. A successful
-  // configure enables the chain: the Pi chain owner has no separate pipe gate
-  // (its router decides whether a route runs), so configuring and evaluating
-  // is one step. Use begin(false) to mute.
+  // Replaces the whole chain in one call (the Pi's whole-chain configure path).
+  // Accepts ids 1..16, at most kMaxRoutePipes pipes and kMaxPipeParams params
+  // each. Invalid input leaves the current chain untouched and returns false. A
+  // successful configure enables the chain: the Pi chain owner has no separate
+  // pipe gate (its router decides whether a route runs), so configuring and
+  // evaluating is one step. Use begin(false) to mute.
   bool configure(const PipeConfig* pipes, std::size_t count) {
     if (count > kMaxRoutePipes) return false;
     if (pipes == nullptr && count != 0) return false;
@@ -1113,8 +1113,8 @@ class PipeChain {
   }
 
   // -------------------------------------------------------------------------
-  // Wave-2 clocked pipes. Generated events go through runGenerated(), which
-  // re-enters the chain after the producing pipe. That is only correct from
+  // Clocked pipes. Generated events go through runGenerated(), which re-enters
+  // the chain after the producing pipe. That is only correct from
   // tick()/clockTick(): inside runPipe() the enclosing pass already forwards a
   // pipe's output through the remaining stages, so the *_offs helpers below
   // append there instead of injecting.
@@ -1492,7 +1492,7 @@ class PipeChain {
 
   std::array<PendingOff, kMaxPendingNoteOffs> pending_{};
 
-  // One runtime slot per chain position for the Wave-2 pipes, plus their echo
+  // One runtime slot per chain position for the clocked pipes, plus their echo
   // queue. Bounded on purpose: kMaxHeldNotes/kMaxSoundingNotes per slot and
   // kMaxDelayEvents echoes per MidiDelay (see timing.hpp).
   std::array<ClockedPipeState, kMaxRoutePipes> clocked_{};

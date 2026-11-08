@@ -4,10 +4,9 @@
 //
 // The band values live in one audio::fx::Eq per subject (18 tracks + Main), so
 // the frequency/gain/Q ranges, the band type names and the response curve come
-// from the shipped effect instead of a second copy of the DSP constants. The
-// engine has no EQ insert yet (audio::Engine has two send buses only), so these
-// instances are edited and project-persisted but never processed in the audio
-// path; see NOTES.md, "EQ grid".
+// from the shipped effect instead of a second copy of the DSP constants.
+// AudioGlue forwards each band to Engine::setTrackEqBand, so these values are
+// the live per-track EQ and are processed in the audio path.
 #include <array>
 #include <string>
 #include <vector>

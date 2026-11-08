@@ -2,7 +2,7 @@
 
 Coordinates are mm with panel centre (0, 0), +X right and +Y up looking at the **front**. Every number here is a
 planning value from `tscircuit/lib/layout.ts`, which is the single source; nothing below is a measurement or a fit
-approval. Verification record and open gates: `docs/MECHANICAL-VERIFICATION.md`.
+approval. Open physical gates: [acceptance.md](acceptance.md) and [TODO.md](TODO.md).
 
 **Z datum: Z = 0 is the front (operator-side) face of the panel; +Z points rearward into the rack cavity.** PCB
 FRONT / CAD top faces the panel; REAR / CAD bottom faces the rack cavity. Looking from behind reverses the apparent
@@ -13,13 +13,13 @@ X direction.
 | Item | Value | Note |
 |---|---|---|
 | Front panel | **32HP × 3U, 162.56 × 128.5 × 1.6** (owner decision 2026-11-07) | Rail holes X ±73.78, Y ±61.25 (7.5 / 3.0 mm edge insets, Doepfer 3U rule). Display window 107.22 × 68.87 mm centred on the module. |
-| Front/UI PCB | **128 × 112 × 1.6 (unchanged)** | Four display standoff holes on the drawing's mounting pattern: 25.62 / 22.38 and 9.50 / 9.46 edge insets → 58.00 × 49.04 mm, i.e. layout x −27.38 / +30.62, y +24.50 / −24.54 from the module centre (−9.5, 11). |
+| Front/UI PCB | **128 × 112 × 1.6 (unchanged)** | Four display mounting holes on the module's threaded SMTSO boss pattern: 99.30 × 61.80 mm centres (3.35 / 3.10 insets), i.e. layout x −49.65 / +49.65, y +30.90 / −30.90 from the module centre (−9.5, 11). The drawn 58.00 × 49.04 plain-hole pattern stays as the recorded alternative (`DISPLAY_STANDOFFS`). |
 | Rear/base PCB | 101.6 × 112 × 1.6 (20HP) | Pi hole grid 58 × 49 mm (portrait), Pico on the left. |
 | Installed depth target | ≤110 mm | Target retained. Not verified; see the depth section. |
 
 Owner control centres are unchanged and must not be moved: transport buttons REC/OVER DUB/STOP/PLAY at
-x = −53/−29/−5/+19, y = −34; PLAY START at (47, −34); TEMPO (47, 30); NAV (47, 11); SHIFT/EXIT (47, −8); LEDs above
-REC/OVER DUB/PLAY at y = −24; MIDI jacks at y = −47.5 in the four transport columns; display centre (−17, 11).
+x = −53/−29/−5/+19, y = −34; PLAY START at (52, −34); VALUE (52, 30); NAV (52, 11); SHIFT/EXIT (52, −8); LEDs 12 mm
+beside REC/OVER DUB/PLAY at y = −34; MIDI jacks at y = −47.5 in the four transport columns; display centre (−9.5, 11).
 
 ## Provisional Z stack
 
@@ -77,10 +77,10 @@ is measured. Check the Bivar drawing and the actual LED, and expect a different 
 
 | Property | Value | Reason |
 |---|---:|---|
-| Size | 90.67 × 54.36 | **LENS OD** 88.87 × 52.56 plus 0.9 mm per side. The 86.5 × 56.0 PCB never passes the panel, so the PCB height must not size the aperture. |
+| Size | **107.22 × 68.87** | Module **glass front-face outline** 105.42 × 67.07 plus 0.9 mm per side. The 106 × 68 PCB and the 95.54 × 54.36 printed bezel are behind/inside this, so neither sizes the aperture. |
 | Corner relief | 1.0 mm radius | A routed inside corner cannot be sharp; emitted as an explicit rounded polygon. |
 | Clearance per side | 0.90 | 0.2 mm JLCPCB profile tolerance + 0.2 mm vendor GLASS tolerance (all charged to one side) + 0.5 mm unverified registration/assembly allowance. |
-| Corner clearance | 0.906 measured | Polygon chords lie inside the true arc, so the aperture is slightly smaller than the exact rounded rectangle; measured on the built panel by `scripts/check_placement.ts` at the four GLASS corners, above the 0.5 mm target. |
+| Corner clearance | 0.851 measured | Polygon chords lie inside the true arc, so the aperture is slightly smaller than the exact rounded rectangle; measured on the built panel by `scripts/check_placement.ts` at the four GLASS corners, above the 0.5 mm target. |
 
 ### 4.3-inch DSI LCD: measured numbers, both sources
 
@@ -91,8 +91,8 @@ is measured. Check the Bivar drawing and the actual LED, and expect a different 
 | Front frame around the glass | 106.10 × 67.80 mm | reference STEP (faces at z 3.80 / 4.80) |
 | Active area (VA) | **95.04 × 53.856 mm** | 800 × 0.1188 / 480 × 0.1122 mm pixels; STEP VA face 95.04 × 53.86 at z 2.900 |
 | Printed bezel opening | 95.54 × 54.36 mm | STEP plane = VA + 0.25 mm per side |
-| Mounting pattern (used) | 58.00 × 49.04 mm, insets 25.62 / 22.38 / 9.50 / 9.46, 4× Ø4.30 | vendor drawing; STEP circles r2.15 |
-| Outer hole pattern (alternative) | 99.30 × 61.80 mm, insets 3.35 / 3.10, 4× Ø4.30 | vendor drawing; STEP `SMTSO-M2_5-4ET` SMT bosses sit here |
+| Mounting pattern (used) | **99.30 × 61.80 mm**, insets 3.35 / 3.10, 4× Ø4.30 | vendor drawing; STEP `SMTSO-M2_5-4ET` threaded SMT bosses sit here |
+| Inner hole pattern (alternative) | 58.00 × 49.04 mm, insets 25.62 / 22.38 / 9.50 / 9.46, 4× Ø4.30 | vendor drawing; plain plated holes, no thread |
 | Overall thickness | **14.05 mm (wiki FAQ)** vs **13.82 mm (STEP bbox)** | RESOLVED as far as the sources allow: the wiki FAQ states the vendor's overall thickness 14.05; the reference STEP's union bbox (CadQuery import, 106.10 × 68.36 × 13.82) is 0.23 mm thinner, and **no modelled solid reaches the 14.05 plane**. The model's only overhangs past the 106 × 68 PCB envelope are in X/Y (front frame 106.10 × 67.80, union y 68.362, i.e. ≤ 0.18 mm past the PCB edge) — nothing in Z explains the difference, so it is the vendor's stated maximum vs. modelled nominal, not glass overhang or feet. The stack uses the LARGER (14.05) so the panel gap cannot be optimistic. |
 | 15-pin DSI FPC connector | body **21.412 × 4.826 mm**, 15-pin, rear face, right-hand long edge (rear view); module-local centre (+48.34, +0.7) → absolute (**38.84, 11.7**) | Body from the STEP (two extruded solids 106739 / 107488); position from the drawing at 7.11 px/mm because the STEP does not resolve that body's assembly placement (bar 21.8 mm long, centre 33.3 mm from the top edge, outer face 2.25 mm inboard of the edge; ±0.4 mm). Recorded as `DISPLAY_FPC_CONNECTOR` / `DISPLAY_FPC_CONNECTOR_AT` in `tscircuit/lib/layout.ts`. It does not move the PCB — the cable leaves at the module edge, 1.5 mm inside the 128 mm board — but the plug and the first bend sit over the J5 IDC corridor (X ≈ 29–39, Y −10…+30), so that is a first-article cable-bend check. |
 | Panel-to-front-board gap | **17.45 mm provisional** | Assumption A (glass front flush with the panel front face, z = 0) + Assumption B (9.0 mm plane separation to the PCB rear) + 10.05 mm glass-front-to-PCB rear + 1.60 mm panel − 1.60 mm panel … see `PROVISIONAL_Z` in `tscircuit/lib/layout.ts`. Was 14.10 mm for the withdrawn 3.5-inch module. |
@@ -155,35 +155,30 @@ the design pick and the route above is the mechanical yardstick (item `display_f
 0.5 mm-pitch flex need ~2 mm radius each; the 5.0 mm slot and the open rack cavity provide that. First article still
 measures the real bend — the table above is derived from vendor numbers, not a measurement.
 
-Primary sources for the display: the 2D drawing `3.5_inch_DSI_LCD_H-2D-PDF.pdf` and the 3D model
-`3.5_inch_DSI_LCD_H_3D-STP.zip` → `3.5 inch DSI LCD (H)_3d-20251129.stp`. The model was read with CadQuery 2.8.0: lens
-front plane z = 0 spans x ±44.435, y ±26.280; the PCB rear plane z = −6.7 spans x −43.38…43.12 (centre −0.13) and
-y ±28.0; four bosses (body r2.75, M2.5 thread r1.25) reach z −10.7 at x −39.88/+18.12, y ±24.5. The model also reaches
-x 44.635, i.e. 0.200 mm past the lens OD, inside the panel thickness zone; the 0.9 mm per-side allowance still leaves
-0.7 mm there.
+The display source is the 4.3-inch drawing and reference STEP recorded above; the withdrawn 3.5-inch 2D/3D files are no
+longer a source. The active area is centred on the module outline (`DISPLAY_ACTIVE_OFFSET_X = 0`); only the front-board
+silkscreen window uses it, and the panel aperture comes from the glass outline. `tscircuit` has no rounded-rectangle
+cutout, so `panel.circuit.tsx` emits `roundedRectOutline()` from `lib/layout.ts` as a polygon.
 
-The withdrawn 89.2 × 56.3 mm aperture left 0.165 mm horizontally and 0.15 mm vertically per side, inside the ±0.2 mm
-fabrication tolerance, and it sized the height from the PCB instead of the lens. It is not to be restored.
+**Panel openings (from `USB_FEEDTHROUGHS` / `PANEL_LCD_CUTOUT`).** Three feedthroughs at
+y = 53.5: USB-C power at x = −38 (12.6 × 7.6 mm slot, Ø3.2 holes on 18 mm centres),
+UMC audio USB-A at x = −5 and MIDI-hub USB-A at x = +35 (14.9 × 7.3 mm each, Ø3.5 holes
+on 30 mm centres). The LCD window is 107.22 × 68.87 mm at (−9.5, 11). Leave at least
+25–35 mm behind the panel for cable tails and bend radius; unverified. These are panel
+openings, not proof of the rear body, flange or cable-bundle envelopes.
 
-**Active area and silkscreen window.** The LENS VA is 75.8 × 45.36 mm with long-axis borders 3.63 mm and 9.44 mm, so the
-active centre sits (3.63 − 9.44)/2 = −2.905 mm from the lens centre in the **raw model frame**. The layout rotates that
-model 180° about Z (so the 25 mm PCB margin sits at front-view LEFT), which makes the layout offset **+2.905 mm, i.e. to
-the right**; the model agrees independently (raw active face x −40.805…+34.995). Only the front-board *silkscreen* window
-uses this value: the panel aperture comes from the symmetric lens outline, so no mechanical feature depends on it. Glass
-centre (−17, 11) and all control centres are unchanged.
-
-**Mounting holes.** The four display bosses, not the PCB corners, are the mounting pattern: after the 180° rotation they
-sit at x −18.12 and +39.88, y ±24.50 (58 × 49 mm pitch). The earlier −18.25 / +39.75 omitted the 0.13 mm PCB-to-lens
-offset, which places the PCB centre at +0.13. That puts the 25.00 mm margin on the LEFT and 3.50 mm on the right, as the
-chosen orientation intends. Physical first article still has to confirm the pattern. `tscircuit` has no rounded-rectangle cutout, so `panel.circuit.tsx`
-emits `roundedRectOutline()` from `lib/layout.ts` as a polygon.
+**Feedthrough fit — open finding.** The Adafruit 908 flange is 38.30 × 11.90 mm. At the canonical y = 53.5 centre it
+spans y 47.55…59.45, while the board notch spans y 48…56 and the board top edge is at y = 56. The flange therefore
+overlaps board material by **0.45 mm at its lower edge** and extends past the board's top edge. Options, none chosen:
+raise the feedthrough centres, trim the flange, or lower the notch (the notch cannot go below y = 47.85 without breaking
+into the bracket mount holes). This is a named physical gate — measure the purchased flange first.
 
 ## Board-to-board relationship
 
 Both boards are centred on their own origin, so the 128 mm front board overhangs the 101.6 mm rear board by
-**13.2 mm per side**, not 26.2 mm on one side. The four front↔rear M2.5 spacers at (±44, +43/−52) sit inside the rear
-board (edge ligament 5.45 mm). The right-hand control column at x = 47 is on the rear board outline but its hardware
-overhangs; a left-flush rear board (26.4 mm one side) is a different, unchosen arrangement and would be an owner
+**13.2 mm per side**, not 26.2 mm on one side. The four front↔rear M2.5 spacers at (±45, 43) and (±44, −52) sit inside the rear
+board (edge ligament 5.45 mm). The right-hand control column at x = 52 is outside the rear-board outline (±50.8) and
+its hardware overhangs; a left-flush rear board (26.4 mm one side) is a different, unchosen arrangement and would be an owner
 decision.
 
 - Front↔rear spacers: length TBD (~18–20 mm pending the J5 IDC bend mockup). The top pair at (±45, 43) sits inside
@@ -205,12 +200,12 @@ decision.
 
 | Segment | Provisional | Basis |
 |---|---:|---|
-| Front-board rear face | 17.3 | See the Z stack. |
+| Front-board rear face | 20.65 | See the Z stack. |
 | Front↔rear gap (J5 IDC plug + cable bend) | 20 | Candidate range 18–22. |
 | Rear/base PCB | 1.6 | 1.6 mm FR-4. |
 | Pi spacer + Pi PCB | 4 | Candidate. |
 | Pi cooler + M.2 HAT+ + SSD | 30 | Candidate range 20–30. |
-| **Total from the panel front face** | **72.9** | Sum of the above. |
+| **Total from the panel front face** | **76.25** | Sum of the above; `provisionalInstalledDepth()` in `layout.ts`. |
 
 The ≤110 mm target therefore holds on paper at the high end of every candidate, and `lib/layout.test.ts` keeps the
 chain inside it. That is arithmetic on unmeasured candidates, not a verified installed depth: no cooler/HAT/SSD,
@@ -224,9 +219,9 @@ the Eurorack bus.
 
 - Width/height: 32HP (162.56 mm) fits a 140 HP row with 2 × (140 − 32) HP of space left; 128.5 mm fits 3U; rail holes are at the Doepfer 3U positions
   Y ±61.25 after the 2026-11 fix. Round Ø3.2 holes suit the Go's sliding M3 nuts; slotted holes are still recommended.
-- Depth: the provisional stack is **≈59–71 mm behind the panel back** (72.9 − 1.6 = 71.3 mm at the high end, and
-  ≈59.3 mm at the low end). That exceeds the 40 mm lower row by 19–31 mm and is at or over the 62 mm upper row
-  before tolerances, ribbon folds, the Pico USB plug and airflow.
+- Depth: the provisional stack is **≈63–75 mm behind the panel back** (76.25 − 1.6 = 74.65 mm at the high end; the
+  low end of the candidate ranges is 62.65 mm). That exceeds the 40 mm lower row by 23–35 mm and is at or over the
+  62 mm upper row before tolerances, ribbon folds, the Pico USB plug and airflow.
 - **Verdict: not approved for the Eurorack Go. Do not plan this module for that case.** No fabrication release until
   the case is reselected or the Pi/cooler/NVMe stack leaves the rack. The ≤110 mm target was never compatible with a
   40 mm row.
@@ -240,17 +235,18 @@ head-clearance slots Ø6.5 at (±44, 43) for the top front↔rear spacer hardwar
 webs. Each slot floor is its own feedthrough's declared opening bottom less 1.5 mm, kept above the board notch bottom
 (48.0); the panel opening does not prove the unmeasured rear body, flange or cable bundle. All of it is derived from `lib/layout.ts` and
 generated into `mechanical/layout.json`; the first draft hardcoded slots at −48/−13/+22 and mounts at −61.5/40 with
-20/40/40 mm slots that touched each other. Details, reasons and the self-check: `docs/feedthroughs.md` and
-`docs/MECHANICAL-VERIFICATION.md`.
+20/40/40 mm slots that touched each other. The bracket is generated from `layout.ts`; the CAD self-check lives in
+`mechanical/feedthrough_bracket.py` + `mechanical/bracket_geometry.py` and is not run by `make test` (CadQuery is optional).
 
 ## Hardware process notes
 
-- **Encoder (Bourns PEC11R-4215F-S0024):** the manufacturer does not recommend hand soldering this part; it needs a
+- **Encoder (Bourns PEC11R-4015F-S0024, C143789):** the manufacturer does not recommend hand soldering this part; it needs a
   qualified soldering process (controlled iron temperature, preheat, limited dwell) or factory assembly. Treat "THT,
   hand-solder" as *not* automatically acceptable for it.
 - **USB-C panel feedthrough:** the current candidate (SparkFun CAB-15455) is rated **3 A**, not 5 A. Do not add a 5 A
   claim to it, and do not change the owner's power requirement on the strength of it. The replacement is a pending
-  part choice, gated on a current/PD test; see `docs/MECHANICAL-VERIFICATION.md` for the requested sourcing change.
+  part choice, gated on a current/PD test; see [assembly.md](assembly.md) and `usb_c_5a_path` in
+  [acceptance.md](acceptance.md).
 
 ## Before freezing the layout
 

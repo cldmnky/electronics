@@ -178,7 +178,7 @@ class EmulatorTransport : public ISpiTransport {
 #ifdef __linux__
 // /dev/spidev0.0 at 1 MHz, mode 0. Every call is one CSn assertion with
 // exactly 32 bytes or it reports failure (a short exchange hangs the Pico
-// until its watchdog). Unvalidated on hardware: see NOTES.md.
+// until its watchdog). Not yet validated on Pi hardware.
 class LinuxSpidevTransport : public ISpiTransport {
  public:
   explicit LinuxSpidevTransport(const char* device = "/dev/spidev0.0",

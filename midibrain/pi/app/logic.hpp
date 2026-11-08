@@ -18,9 +18,8 @@ namespace mnky::app {
 
 inline constexpr int kScreenCount = 9;  // Mixer, Routing, Recorder, System,
                                         // Projects, Monitor, EQ, X/Y, Arrange.
-                                        // The global FX tab retired into the
-                                        // per-track rack popup and EDIT into
-                                        // the take edit popup (plan W5).
+                                        // FX lives in the per-track rack popup
+                                        // and take editing in the EDIT popup.
 // Fixed-width surfaces that predate the dynamic mixer (the Recorder selector
 // and the Learn target list show this many rows). Mixer/track code never uses it:
 // track slots are audio::kMaxTracks and device capture channels are
@@ -279,7 +278,7 @@ inline std::string formatBytes(std::int64_t bytes) {
   return buffer;
 }
 
-// D7 import rule (USER-MANUAL section 16): 48 kHz only, refused with a reason
+// Import rule (USER-MANUAL section 16): 48 kHz only, refused with a reason
 // instead of silently converted. Empty means the header may be imported.
 inline std::string importSampleRateError(std::uint32_t sampleRate) {
   if (sampleRate == 0) return "import refused: no readable WAV header";
@@ -393,7 +392,7 @@ inline std::string formatChannelMask(std::uint16_t mask) {
   return out;
 }
 
-// --- track modes (docs/daw-plan.md W1) -------------------------------------
+// --- track modes -----------------------------------------------------------
 // One word per track state. The number is the frozen session-v2
 // `mixer.channels[].mode` value (`session::kTrackMode*`; project_io asserts the
 // two agree) and, by the same contract, the engine's `MonitorMode` number 1:1:
@@ -423,7 +422,7 @@ inline std::string trackModeWord(int mode) {
   }
 }
 
-// ARM and OVERDUB are the recording modes (W8: nothing armed, nothing
+// ARM and OVERDUB are the recording modes (nothing armed, nothing
 // recorded); PLAY and LIVE never record.
 inline bool trackModeRecords(int mode) {
   const int clamped = clampTrackMode(mode);
@@ -431,12 +430,12 @@ inline bool trackModeRecords(int mode) {
 }
 
 // One-tap cycle in the natural order: PLAY -> ARM -> OVERDUB -> LIVE -> PLAY,
-// so the first tap on a fresh track (PLAY after auto-PLAY) is ARM (W1 step 2).
+// so the first tap on a fresh track (PLAY after auto-PLAY) is ARM.
 inline int nextTrackMode(int mode) {
   return (clampTrackMode(mode) + 1) % kTrackModeCount;
 }
 
-// --- REC SOURCE (docs/daw-plan.md W2b) -------------------------------------
+// --- REC SOURCE ------------------------------------------------------------
 // Where in the strip chain the recorder taps: PRE (after gain, today's
 // default), POST (through EQ + fader, before the FX rack) or POST+FX (through
 // EQ, FX1/FX2 and the fader).
@@ -461,7 +460,7 @@ inline std::string recSourceText(int source) {
   }
 }
 
-// --- RECMODE (docs/daw-plan.md W2) -----------------------------------------
+// --- RECMODE ---------------------------------------------------------------
 // NOW records on the REC press; COUNT-IN rolls the click for n bars and
 // engages the recording at the downbeat; PUNCH rolls and records between the
 // PUNCH IN/OUT measures.
@@ -494,7 +493,7 @@ inline std::string recModeText(int mode, int countInBars) {
 }
 
 // The status line that states exactly what a scheduled recording will do and
-// when (plan §W2). Empty when no schedule is pending: NOW records on the
+// when. Empty when no schedule is pending: NOW records on the
 // press and needs no explanation, and a finished punch hands back to the
 // ordinary transport status.
 //

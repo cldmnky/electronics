@@ -1,13 +1,12 @@
 // Behavior suite for the shared MIDI FX pipe core (midifx/core/midifx.hpp).
 //
-// Moved here from firmware/pico/protocol_test.cpp when the firmware adopted
-// the core, so the firmware and (later) the Pi run ONE behavior suite. The
-// expectations are the firmware's - every Wave-1 pipe with boundary values,
-// bypass, chunked configuration and the Wave-2 synthetic tick grids - plus the
-// Pi engine's extra diagnostics (config validation, the dropped-event counter,
-// seed determinism) and the schema-default checks that bind pipes.json to
-// observed behavior. A failing check aborts through assert (the firmware suite
-// style) or prints FAIL for the diagnostics tests.
+// The single behavior suite for both builds: the Pico firmware and the Pi run
+// these same expectations. It covers the firmware's - every stateless pipe with
+// boundary values, bypass, chunked configuration and the clocked pipes'
+// synthetic tick grids - plus the engine diagnostics (config validation, the
+// dropped-event counter, seed determinism) and the schema-default checks that
+// bind pipes.json to observed behavior. A failing check aborts through assert
+// (the firmware suite style) or prints FAIL for the diagnostics tests.
 #include <array>
 #include <cassert>
 #include <cstddef>
@@ -81,7 +80,7 @@ bool output_has(const PipeOutput& out, std::uint8_t status, std::uint8_t data1,
   return false;
 }
 
-// --- Wave-2 clocked pipe helpers -------------------------------------------
+// --- Clocked pipe helpers --------------------------------------------------
 // One wire event with the tick (or millisecond) the chain emitted it on.
 struct StampedEvent {
   std::uint32_t at;
@@ -398,8 +397,8 @@ void run_pipe_tests() {
     assert(output_has(partial.process(test_event(0x90, 60, 100), 0), 0x90, 60, 100));
   }
 
-  // Bypass is honoured for every Wave-1 type: the configured transform never
-  // runs, and an empty chain/unknown Wave-2 id passes bytes untouched.
+  // Bypass is honoured for every stateless type: the configured transform never
+  // runs, and an empty chain/unknown clocked id passes bytes untouched.
   for (std::uint8_t type = 1; type <= 11; ++type) {
     PipeChain bypassed;
     bypassed.begin(true);
@@ -448,7 +447,7 @@ void run_pipe_tests() {
     assert(output_has(sparse.process(test_event(0xB0, 3, 1), 0), 0xB0, 0, 1));
   }
 
-  std::printf("PASS: Wave-1 MIDI pipes (filter/range/remap/scale/chance/velocity/"
+  std::printf("PASS: stateless MIDI pipes (filter/range/remap/scale/chance/velocity/"
               "dispatch/sustain/length/transform, bypass)\n");
 }
 
@@ -699,7 +698,7 @@ void run_wave2_pipe_tests() {
     assert(notes_of(kind_events(latched, 0x80)) == (std::vector<int>{60, 67}));
   }
 
-  // Bypass: every Wave-2 type passes the routed bytes untouched and emits
+  // Bypass: every clocked type passes the routed bytes untouched and emits
   // nothing on the clock grid.
   for (std::uint8_t type = 12; type <= 16; ++type) {
     PipeChain chain;
@@ -747,7 +746,7 @@ void run_wave2_pipe_tests() {
     assert(run_ms_train(off, 1, 500).empty());
   }
 
-  std::printf("PASS: Wave-2 clocked pipes (arp divisions/types/swing/accent/gate, "
+  std::printf("PASS: clocked pipes (arp divisions/types/swing/accent/gate, "
               "repeater falloff, LFO waves, harmonizer pairing + sustain, delay "
               "taps, bypass)\n");
 }

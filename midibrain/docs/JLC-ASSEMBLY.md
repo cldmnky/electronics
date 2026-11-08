@@ -30,8 +30,8 @@ hand-edit generated fabrication files to repair a source problem.
 
 ## Board options
 
-- Front 128 × 112 mm; rear 101.6 × 112 mm (20HP); panel 132.08 × 128.5 mm
-  (26HP/3U). Each board is 2-layer, 1.6 mm FR-4.
+- Front 128 × 112 mm; rear 101.6 × 112 mm (20HP); panel 162.56 × 128.5 mm
+  (32HP/3U). Each board is 2-layer, 1.6 mm FR-4.
 - Front and rear use 1 oz copper and candidate lead-free HASL. Apply the
   actual emitted source rules, reviewed Gerbers and
   [fab-check.md](fab-check.md), not obsolete defaults from an older export.
@@ -40,7 +40,7 @@ hand-edit generated fabrication files to repair a source problem.
 - Panel: **no copper, no placed components, no solder mask on either side**,
   white legends. No copper finish is required. Obtain fabricator confirmation
   of the no-mask/copperless order and review routed apertures and tolerances.
-- The LCD opening is a rounded-rectangle polygon, **90.67 × 54.36 mm** with
+- The LCD opening is a rounded-rectangle polygon, **107.22 × 68.87 mm** with
   1 mm corner relief, derived from lens dimensions rather than PCB height.
   Physical display and rail fit remain acceptance items.
 
@@ -96,7 +96,7 @@ never edit a CPL merely to force a match.
 - CAB-15455 is **3 A and rejected for the 5 A power path**. The exact suitable
   feedthrough/cable chain and PD/droop/temperature tests are still pending.
 - Bivar PLP2-400-C is a **10.16 mm reference, not an approved fit** to the
-  provisional 14.1 mm panel gap. Select the final part after reach/seating checks.
+  provisional 17.45 mm panel gap. Select the final part after reach/seating checks.
 - The display uses a **5 mm provisional spacer beyond 4 mm bosses**, producing
   9 mm PCB-plane separation. Plane separation is not the spacer purchase length.
 - Knob, NAV/button actuators, Pi spacers, ribbons and cooler/HAT/SSD remain
@@ -105,6 +105,6 @@ never edit a CPL merely to force a match.
   data. STL/STEP are reproducible, ignored outputs; actual printed fit and
   strain relief are still pending.
 
-See [assembly.md](assembly.md), [MECHANICAL-VERIFICATION.md](MECHANICAL-VERIFICATION.md)
+See [assembly.md](assembly.md), [mechanical-stack.md](mechanical-stack.md)
 and the physical acceptance record ([acceptance.md](acceptance.md)). No source document or generated
 packet is a substitute for the required reviewed evidence.

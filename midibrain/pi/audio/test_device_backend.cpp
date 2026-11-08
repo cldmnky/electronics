@@ -118,7 +118,7 @@ void testFormatExactness() {
     CHECK(sampleFormatFromBytes(3) == SampleFormat::S24_3);
     CHECK(sampleFormatFromBytes(1) == SampleFormat::Unknown);
 
-    // S32: the full negative rail is exactly -1.0, the positive rail is
+    // the full negative rail is exactly -1.0, the positive rail is
     // 1 - 2^-31; encode clamps at unity without wrap-around.
     unsigned char bytes[4] = {};
     writeLe32(bytes, 0x80000000u);
@@ -157,7 +157,7 @@ void testFormatExactness() {
     encodeSample(bytes, SampleFormat::S24_32, -0.5f);
     CHECK(std::abs(decodeSample(bytes, SampleFormat::S24_32) + 0.5f) < 1.0e-6f);
 
-    // S16: the classic 32768/32767 asymmetry.
+    // the classic 32768/32767 asymmetry.
     encodeSample(bytes, SampleFormat::S16, 1.0f);
     CHECK(bytes[0] == 0xFF && bytes[1] == 0x7F);
     encodeSample(bytes, SampleFormat::S16, -1.0f);
@@ -165,7 +165,7 @@ void testFormatExactness() {
     const unsigned char s16Min[2] = {0x00, 0x80};
     CHECK(decodeSample(s16Min, SampleFormat::S16) == -1.0f);
 
-    // F32: bit-exact pass-through, values above unity preserved, non-finite
+    // bit-exact pass-through, values above unity preserved, non-finite
     // samples silenced.
     encodeSample(bytes, SampleFormat::F32, 0.1f);
     CHECK(decodeSample(bytes, SampleFormat::F32) == 0.1f);

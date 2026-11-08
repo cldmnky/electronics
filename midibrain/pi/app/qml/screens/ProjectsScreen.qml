@@ -55,7 +55,7 @@ Item {
             }
         }
 
-        // C5: one dirty indicator, next to the thing it describes. The tab dot
+        // one dirty indicator, next to the thing it describes. The tab dot
         // and the transport dot are gone.
         Row {
             width: parent.width
@@ -108,7 +108,7 @@ Item {
             model: projects.model
             boundsBehavior: Flickable.StopAtBounds
 
-            // G14: the panel ring can move past the visible rows; keep the
+            // the panel ring can move past the visible rows; keep the
             // focused project row in view instead of leaving focus off-screen.
             function syncFocus() {
                 const id = app.focusId
@@ -166,7 +166,7 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
-                // A3: the row body loads; "..." only selects, so RENAME/DELETE
+                // the row body loads; "..." only selects, so RENAME/DELETE
                 // can name a visible row without loading it first.
                 TapHandler {
                     onTapped: app.requestLoadProject(index)
@@ -287,7 +287,7 @@ Item {
             }
         }
 
-        // A3: the mirrored list names every row the destructive buttons can
+        // the mirrored list names every row the destructive buttons can
         // act on (five rows, 44 px, dimmed 0.8, selected row in accent).
         ListView {
             id: shiftList

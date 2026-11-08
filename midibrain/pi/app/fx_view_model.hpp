@@ -6,8 +6,7 @@
 // AudioGlue's control-thread forwarder, so this class formats values and
 // forwards edits only. A CLAP slot's parameter cards and note come from
 // MixerViewModel (plugin discovery + FxManager), so this popup is the same
-// schema-driven card list for built-ins and plugins; the old global FX-tab CLAP
-// slot view models retired with the tab.
+// schema-driven card list for built-ins and plugins.
 #include <QObject>
 #include <QString>
 #include <QVariantList>

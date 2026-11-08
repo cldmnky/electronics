@@ -10,7 +10,7 @@ Item {
 
     readonly property bool shiftFace: app.panelMode === "shift"
     readonly property bool pipesPage: screen.shiftFace && routing.shiftPage === 1
-    // Stage 5: the route the last wire tap selected. Kept separately from
+    // the route the last wire tap selected. Kept separately from
     // selectedInput so both endpoints can light together while the route is
     // being inspected (the tap also toggles the wire).
     property int selectedDestination: -1
@@ -32,7 +32,7 @@ Item {
     readonly property int patchRows: Math.max(1, Math.max(routing.inputCount,
                                                            routing.outputCount))
 
-    // A12: press-and-hold RESET. The fill shows the remaining 800 ms; an early
+    // press-and-hold RESET. The fill shows the remaining 800 ms; an early
     // release says why nothing happened instead of wiping silently.
     component HoldResetButton: Rectangle {
         id: hold
@@ -188,7 +188,7 @@ Item {
                     app.showTextPopup("SHIFT PIPES", "MIDI FX chains")
                 }
             }
-            // A12: a patchbay is ten minutes of work, so touch resets only on
+            // a patchbay is ten minutes of work, so touch resets only on
             // an 800 ms hold with a fill; the panel asks for confirmation (the
             // focus press has no duration).
             HoldResetButton {
@@ -1054,7 +1054,7 @@ Item {
                     font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
                 }
-                // A13: naming truth. GENERATOR is a first-class, source-less
+                // naming truth. GENERATOR is a first-class, source-less
                 // FROM (head = CC LFO, the schema's generator role). Output
                 // inserts are selected on the INSERTS strip above; their chains
                 // accept every Wave-1/Wave-2 modifier (heads stay generator

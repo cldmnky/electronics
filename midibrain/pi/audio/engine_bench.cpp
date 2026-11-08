@@ -1,13 +1,12 @@
-// Engine capacity benchmark (audio wave 11): the real-time budget for 64
+// Engine capacity benchmark: the real-time budget for 64
 // mixer tracks at 48 kHz. Measurement tool, not a test: it prints a table and
 // exits 0. Run it on the target (studio Pi 5, Cortex-A76) before quoting any
 // number; the numbers on a dev machine are not the product budget.
 //
-// Scenarios cover the mixing path the owner asked about (gain + pan + 4-band
-// EQ + sends), the skip-inactive fast path, and the per-track FX rack worst
-// case (64 delay FX1 + 64 reverb FX2) in the 64-track context. Block sizes are
-// the engine's supported 64 and 128 frames; the owner's 64-frame question is
-// answered by the first column.
+// Scenarios cover the mixing path (gain + pan + 4-band EQ + sends), the
+// skip-inactive fast path, and the per-track FX rack worst case (64 delay FX1 +
+// 64 reverb FX2) in the 64-track context. Block sizes are the engine's
+// supported 64 and 128 frames; the 64-frame column is the smallest one.
 //
 // Build: part of the audio module (mnky_audio_bench). Usage:
 //   mnky_audio_bench [blocks-per-row] [warmup-blocks]
@@ -269,7 +268,7 @@ int main(int argc, char** argv) {
     delays64.fx1Delays = kMaxTracks;
     printRow(delays64, blocks, warmup);
 
-    // The wave-11 worst case: every track runs both rack slots at once.
+    // The worst case: every track runs both rack slots at once.
     Scenario rackWorst;
     rackWorst.name = "64 active + 64 delay FX1 + 64 reverb FX2";
     rackWorst.fx1Delays = kMaxTracks;

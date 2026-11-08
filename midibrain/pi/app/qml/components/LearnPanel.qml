@@ -2,7 +2,7 @@ import QtQuick
 import Mnkybox 1.0
 
 // MIDI-learn capture panel used by the SYSTEM SHIFT face.
-// A9: the primary flow is arm-then-touch. ARM CAPTURE arms the target capture
+// the primary flow is arm-then-touch. ARM CAPTURE arms the target capture
 // with no target; every learnable control outlines in the accent colour and
 // the next one touched becomes the target, then the next incoming CC completes
 // the binding. Picking an internal id by hand is the secondary path, labelled

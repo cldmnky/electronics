@@ -8,7 +8,7 @@ EqViewModel::EqViewModel(EqModel& model, MixerModel& mixer, QObject* parent)
     : QObject(parent), model_(model), mixer_(mixer) {}
 
 QVariantList EqViewModel::nodes() const {
-  // B3: the QML Repeater's data source returns four distinct positions even
+  // the QML Repeater's data source returns four distinct positions even
   // for the untouched default (see repairDefaultBands).
   repairDefaultBands();
   QVariantList list;
@@ -38,7 +38,7 @@ QVariantList EqViewModel::curve() const {
 QString EqViewModel::subjectText() const {
   const int subject = model_.subject();
   if (subject >= EqModel::kTrackCount) return QStringLiteral("Main");
-  // B14: the EQ subject is an input channel, so show the track that reads it
+  // the EQ subject is an input channel, so show the track that reads it
   // when one exists: "02 bass" instead of a bare "IN 02". No track keeps the
   // channel label, and MAIN stays Main.
   for (int track = 0; track < mixer_.trackCount(); ++track) {

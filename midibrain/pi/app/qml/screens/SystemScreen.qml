@@ -171,7 +171,7 @@ Item {
                 // channel pair carries Main 1&2, OUT3&4 and the phones bus.
                 // Defaults 1&2, 3&4, 5&6. The pairs are saved with the project;
                 // the audio backend does not map them onto the interface yet.
-                // D6: the three picks are stored, not applied. The badge says
+                // the three picks are stored, not applied. The badge says
                 // so once and explains it on tap instead of hiding the caveat
                 // in a 10 px note.
                 Row {
@@ -304,7 +304,7 @@ Item {
             height: parent.height
             spacing: Style.gapTight
 
-            // Stage 5: readable summaries, not the raw protocol dump. The
+            // readable summaries, not the raw protocol dump. The
             // counters and the log tail live on DIAGNOSTICS (SHIFT > DIAG).
             Column {
                 width: parent.width

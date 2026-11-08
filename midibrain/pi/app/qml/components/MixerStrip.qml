@@ -19,7 +19,7 @@ Rectangle {
     property real gainDb: 0.0
     property real level: 0.0
     property bool clip: false
-    // Track mode (docs/daw-plan.md W1): 0 PLAY, 1 ARM, 2 OVERDUB, 3 LIVE, and
+    // Track mode: 0 PLAY, 1 ARM, 2 OVERDUB, 3 LIVE, and
     // the word the pill shows. The full selector lives in the channel popout.
     property int mode: 1
     property string modeWord: "ARM"
@@ -78,7 +78,7 @@ Rectangle {
                 variant: "ghost"
                 focusId: "mixer.expand." + root.stripIndex
                 onClicked: app.openChannel(root.stripIndex)
-                // B2: the chevron states its payoff without stealing the tap.
+                // the chevron states its payoff without stealing the tap.
                 onLongClicked: app.showTextPopup(
                     "CHANNEL", "fader, pan, sends, monitor, I/O, insert, EQ")
             }
@@ -163,7 +163,7 @@ Rectangle {
                     clip: root.clip
                     vertical: true
                 }
-                // B7: the crown is a control. A tap drops the latch and says
+                // the crown is a control. A tap drops the latch and says
                 // so; without a latch the same tap explains the crown.
                 TapHandler {
                     onTapped: {

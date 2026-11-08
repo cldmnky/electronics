@@ -175,7 +175,7 @@ audio::Channel MixerModel::channel(int index) const {
   }
   out.cueSend = strip.cueSend.load(std::memory_order_relaxed);
   out.out34Send = strip.out34Send.load(std::memory_order_relaxed);
-  // REC SOURCE (W2b): the app stores 0/1/2 and audio::RecSource is the same
+  // REC SOURCE: the app stores 0/1/2 and audio::RecSource is the same
   // order (Pre/Post/PostFx), so the snapshot carries the tap point the strip
   // chose; tapPoint stays the PRE variant selector (raw vs post-gain).
   out.recSource =

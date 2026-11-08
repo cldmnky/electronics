@@ -4,7 +4,6 @@ Status: **prototype definition.** Nothing here is a fabrication release, a
 hardware measurement or a signal-integrity claim. Every number comes from a
 datasheet limit, a stated tolerance, or the built circuit JSON in `dist/`.
 
-Branch: `feat/midibrain-hardware-electrical`.
 Boards: rear/base `index.circuit.tsx` (101.6 × 112 mm, 2 layers, parts on the
 bottom) and front/UI `front.circuit.tsx` (128 × 112 mm, 2 layers, parts on the
 top).
@@ -15,8 +14,8 @@ top).
 cd midibrain/tscircuit
 bun install --frozen-lockfile
 bun run build                      # writes dist/index, dist/front, dist/panel
-python3 scripts/check_electrical.py # independent electrical checks (73)
-python3 scripts/test_electrical.py  # negative mutations (9 cases)
+python3 scripts/check_electrical.py # independent electrical checks (110)
+python3 scripts/test_electrical.py  # negative mutations and model cases (22)
 bun run typecheck && bun test lib/*.test.ts && bun run placement
 cd ../spice && python3 run_tests.py
 ```

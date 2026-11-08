@@ -137,8 +137,9 @@ double maxIntervalStepMs(const Run& run, std::size_t from = 1) {
 int main() {
   const Ps period = nominalPeriod();
 
-  // (a)+(b) Free-run starts 8 ms behind a clean 120 bpm source (the review's
-  // failure case). Report lock time in beats and the steady-state residual.
+  // (a)+(b) Free-run starts 8 ms behind a clean 120 bpm source: the case the
+  // phase term exists for. Report lock time in beats and the steady-state
+  // residual.
   {
     ExternalClockConfig clean;
     clean.duration = seconds(6);

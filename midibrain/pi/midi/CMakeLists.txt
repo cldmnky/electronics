@@ -41,7 +41,7 @@ if(NOT TARGET mnky_rtmidi)
       "-framework CoreServices"
     )
   elseif(UNIX)
-    # Pi 5 target (not exercised by the macOS acceptance run; see NOTES.md).
+    # Pi 5 target: ALSA backend (the macOS run covers the CoreMIDI backend).
     target_compile_definitions(mnky_rtmidi PUBLIC __LINUX_ALSA__)
     target_link_libraries(mnky_rtmidi PUBLIC asound)
   endif()

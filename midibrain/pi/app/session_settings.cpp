@@ -30,9 +30,9 @@ void SessionSettings::reset() {
   song = session::SongState{};
   song.sections.clear();
   song.clips.clear();
-  // W4/W5 settled defaults: mode on, eight bars of song, loop over the whole
-  // song. The engine only switches to the clip scheduler when clips exist, so
-  // an empty new project keeps the W1 take path audible.
+  // New-song defaults: mode on, eight bars of song, loop over the whole song.
+  // The engine only switches to the clip scheduler when clips exist, so an
+  // empty new project keeps the Active-take path audible.
   songMode = true;
   songLengthBeats = kDefaultSongLengthBeats;
   loopOn = true;

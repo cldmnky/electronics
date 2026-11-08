@@ -688,8 +688,8 @@ QString TimelineViewModel::applyOp(int op, double gainDb, double fadeIn,
   // FADES / NORMALIZE change only the selected span and DELETE removes only
   // that span. Without this a GAIN on a 4-beat selection rewrote the whole
   // take (and DELETE dropped the whole take, which an empty list then played
-  // back unedited - the owner's "when I apply nothing happens"). TRIM already
-  // clips to the range and SPLIT cuts at the cursor, so both skip the cut.
+  // back unedited). TRIM already clips to the range and SPLIT cuts at the
+  // cursor, so both skip the cut.
   const bool rangeOp = operation == timeline::TimelineOp::Gain ||
                        operation == timeline::TimelineOp::Fades ||
                        operation == timeline::TimelineOp::Normalize ||

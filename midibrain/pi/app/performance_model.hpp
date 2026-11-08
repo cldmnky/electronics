@@ -53,7 +53,7 @@ class PerformanceModel {
 
   // Reverb freeze macro. The shipped Reverb header has no freeze parameter, so
   // freeze applies the deepest/fully-wet/brightest/max-size state and restores
-  // every reverb parameter on release (NOTES.md, "X/Y performance").
+  // every reverb parameter on release.
   bool frozen() const { return frozen_; }
   void setFrozen(bool frozen);
   void toggleFrozen() { setFrozen(!frozen_); }

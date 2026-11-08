@@ -2,7 +2,7 @@ import QtQuick
 import Mnkybox 1.0
 import "../components"
 
-// Touch tempo popup (A7): a 44 px slider over 40..240 BPM, +-1 buttons and a
+// Touch tempo popup: a 44 px slider over 40..240 BPM, +-1 buttons and a
 // TAP button that averages three taps. The BPM button in the transport strip
 // opens it; DONE closes it and the panel's PRESS/encoder work the same popup.
 Rectangle {

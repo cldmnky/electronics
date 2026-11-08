@@ -10,17 +10,19 @@ verification; `make release` is the production path and it is gated.
 that `firmware/pico/pins.h` matches `lib/pin-map.ts`, builds and routes both
 boards, runs the placement consistency check, parses the six `tsci check`
 reports per board, checks geometry against the JLCPCB published limits, runs the
-Python unit tests for those checks, runs the host C++ framed-codec/debounce
-test, and runs the simplified ngspice checks. The electrical checker and its
-negative tests plus the mechanical steps are separate targets: they are owned by
-the electrical and mechanical work items. The mechanical target runs
-`bun run scripts/export-mechanical.ts --check` (non-writing; fails when
-`mechanical/layout.json` is stale against `lib/layout.ts`) and then the pure
-geometry tests in `mechanical/` (`python3 -m unittest discover -s mechanical -p
-"test_*.py"`). Regenerate the export deliberately with `make mechanical-export`
-after an intentional layout change. Full CAD stays optional and tool-dependent;
-the mechanical acceptance items remain pending. Details:
-`docs/MECHANICAL-VERIFICATION.md` §7 (mechanical work item).
+Python unit tests for those checks, runs the host C++ tests (framed codec,
+clock emulation, clock follow, SPI slave, FX timing, link reliability,
+midifx core/schema), runs the electrical checker and its negative tests, and
+runs the mechanical freshness + geometry checks and the simplified ngspice
+checks. The electrical and mechanical steps have their own targets
+(`make electrical`, `make mechanical`) but are part of `make test`.
+The mechanical target runs `bun run scripts/export-mechanical.ts --check`
+(non-writing; fails when `mechanical/layout.json` is stale against
+`lib/layout.ts`) and then the pure geometry tests in `mechanical/`. Regenerate
+the export deliberately with `make mechanical-export` after an intentional
+layout change. Full CAD stays optional and tool-dependent; the mechanical
+acceptance items remain pending. Geometry and open gates:
+[mechanical-stack.md](mechanical-stack.md).
 
 What that *does* prove: the sources, netlist, placement, geometry, host code and
 simplified SPICE models agree with each other, and the text of the tool reports
@@ -92,6 +94,7 @@ instead of being skipped. Print it with
 | `module_label_sku_read` | The delivered module label/SKU read and matches the selected Waveshare 4.3inch DSI LCD (ElectroKit 4103 5687) |
 | `touch_window_alignment` | With the display seated in the 107.22 × 68.87 window, touch input stays aligned with the UI across the active area |
 
+| `pi_microsd` | microSD insert/remove with the Pi in the stack and the case closed; clearance recorded |
 | `cooler_hat_ssd` | Active Cooler + M.2 HAT+ + SSD stacked; height, airflow, connector clearance |
 | `case_fit` | 32HP/3U panel, 20HP base board and all rail/standoff positions in the case |
 | `usb_c_5a_path` | An exact 5 A rated feedthrough from a primary source; CAB-15455 is 3 A and rejected for this path |
@@ -99,6 +102,7 @@ instead of being skipped. Print it with
 | `encoder_solder_process` | Bourns PEC11R process qualified (selective/wave or validated manual) with profile and inspection |
 | `midi_threshold` | Receiver threshold measured against the MIDI CA-033 receiver requirement (<5 mA at 5 V) at the recorded temperature |
 | `midi_receiver_high_current_thermal` | TLP2361 input current and temperature at worst-case high-rail/low-VF corners (recommended 2–6 mA, absolute continuous 10 mA, derating above 110 °C) |
+| `midi_out_legacy` | Legacy receiver loads: low-rail current, rise/fall < 2 µs, sustained ring/tip fault temperatures; independent output-topology review |
 | `midi_interop` | Two real MIDI devices exchange note, clock and sysex in both directions |
 | `midi_current_faults` | Short, open, reverse and over-current cases on both inputs and outputs |
 | `scope_spi` | SPI0 clock/data and READY capture at the target rate, including Pico-USB and Pi-off cases |

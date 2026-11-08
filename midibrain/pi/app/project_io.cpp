@@ -31,12 +31,12 @@
 
 // The app's names for the frozen session wire values must stay identical to the
 // session constants: the mixer model stores the session value and the UI only
-// adds the word (docs/daw-plan.md W1/W2b).
+// adds the word.
 namespace mnky::app::project {
 namespace {
 // The app's names for the frozen session wire values must stay identical to the
 // session constants: the mixer model stores the session value and the UI only
-// adds the word (docs/daw-plan.md W1/W2b).
+// adds the word.
 static_assert(kTrackModePlay == session::kTrackModePlay &&
                   kTrackModeArm == session::kTrackModeArm &&
                   kTrackModeOverdub == session::kTrackModeOverdub &&
@@ -224,9 +224,9 @@ session::Snapshot captureSnapshot(const AppContext& context) {
   // EQ bands and X/Y performance positions live in the session fx section
   // (v2: Snapshot::fx.eq / fx.xy); they are app-owned, so they are filled here
   // rather than by session::capture().
-  // REC SOURCE is app state (the engine tap point is the audio wave's), so the
-  // per-track choice is filled here: session::capture() has no engine field
-  // for it and would otherwise save the default PRE for every track.
+  // REC SOURCE is engine tap state, so the per-track choice is filled here:
+  // session::capture() has no engine field for it and would otherwise save the
+  // default PRE for every track.
   for (int track = 0;
        track < static_cast<int>(snapshot.mixer.channels.size()) &&
        track < audio::kMaxTracks;
@@ -374,7 +374,7 @@ void applyMixer(const AppContext& context, const session::MixerState& mixer) {
     context.mixer.setPan(index, channel.pan);
     context.mixer.setMute(index, channel.mute);
     context.mixer.setSolo(index, channel.solo);
-    // Track mode (frozen W1 wire contract): `mode` is canonical, `monitor` its
+    // Track mode (frozen wire contract): `mode` is canonical, `monitor` its
     // deprecated spelling (the reader keeps them equal). An armed legacy
     // channel that still reads PLAY becomes ARM, so a take-armed strip loads
     // armed as the mode word says.

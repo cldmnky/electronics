@@ -82,8 +82,8 @@ class RouteChains {
     }
   }
 
-  // Per-chain RNG seeds are a boot-session decision, exactly like the old
-  // route_pipes warm-up: identical session + time gives identical decisions.
+  // Per-chain RNG seeds are a boot-session decision: identical session + time
+  // gives identical Chance/VelocityRandom decisions, on both route kinds.
   void setSeeds(std::uint32_t session, std::uint32_t entropy) {
     std::uint32_t n = 0;
     for (auto& row : pipes_)

@@ -2,7 +2,7 @@ import QtQuick
 import Mnkybox 1.0
 import "../components"
 
-// EDIT popup (docs/daw-plan.md W5): one take, one waveform (fills the height
+// EDIT popup: one take, one waveform (fills the height
 // between the header and the controls, ~254 px at 800 x 480), an operation
 // selector that shows only the selected operation's parameter, and the three
 // verbs. It replaces the retired EDIT tab; every EDIT affordance opens it
@@ -15,7 +15,7 @@ import "../components"
 //
 // Layout is anchored, not hard-coded to today's chrome: header 44, waveform
 // flexible (min 200), parameter row 52, operation selector 56, verbs 64.
-// Stage 1 tokenizes these inline values.
+// These inline values use the shared size tokens.
 Rectangle {
     id: root
 
@@ -35,7 +35,7 @@ Rectangle {
                                     timeline.editOp === 4
     readonly property bool needsRange: timeline.editOp === 0 || timeline.editOp === 6
     readonly property bool previewShape: !root.needsRange && root.valueOp
-    // C9: the button states its verb and the header repeats it; UNDO is its own
+    // the button states its verb and the header repeats it; UNDO is its own
     // verb, so it never reads "APPLY UNDO".
     readonly property string applyVerb: timeline.editOpName === "UNDO"
                                         ? "UNDO"

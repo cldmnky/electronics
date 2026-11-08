@@ -1,5 +1,5 @@
 #pragma once
-// QML view model for the ARRANGE tab (docs/daw-plan.md W6/W7): the section
+// QML view model for the ARRANGE tab: the section
 // band, the clip lanes, the SONG-mode transport position, the loop window and
 // the clip edit actions.
 //
@@ -179,7 +179,7 @@ class ArrangeViewModel final : public QObject {
   // App/controller seams.
   // Resolves every clip and applies the per-track lanes to the engine. With no
   // clips the engine is left in free-take mode even while the UI says SONG ON,
-  // so an empty arrangement can never silence the W1 take path.
+  // so an empty arrangement can never silence the Active-take path.
   void applySongToEngine();
   void refresh();  // playhead + tempo reapply, called by AppController::timerTick
   void reloadFromSettings();

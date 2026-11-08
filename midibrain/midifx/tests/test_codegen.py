@@ -63,7 +63,7 @@ class CodegenTest(unittest.TestCase):
     def test_new_pipe_type_needs_no_ui_code(self) -> None:
         """A throwaway schema type must reach the generated editor metadata.
 
-        This is the phase-3 acceptance proof: the type exists only in the
+        This is the codegen acceptance proof: the type exists only in the
         fixture plus the schema/wire input the generator receives, and the
         generated tables describe its five editors (toggle, choice and three
         arc knobs with the % / st / note formats). Nothing in pi/app or the QML

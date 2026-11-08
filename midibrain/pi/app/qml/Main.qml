@@ -25,7 +25,7 @@ Window {
 
     // Tab identifiers are fixed (AppController::setTab indices): Mixer 0,
     // Routing 1, Recorder 2, System 3, Projects 4, MIDI 5, EQ 6, XY 7,
-    // Arrange 8. Stage 1 shows four persistent destinations; the six remaining
+    // Arrange 8. The nav row shows four persistent destinations; the remaining
     // pages live behind More in the existing tab-grid mechanism.
     readonly property var tabNames: ["Mixer", "Routing", "Recorder", "System",
                                      "Projects", "MIDI", "EQ", "XY", "Arrange"]
@@ -310,7 +310,7 @@ Window {
     }
 
 
-    // Transport options sheet (stage 1 item 3): recording mode, metronome and
+    // Transport options sheet: recording mode, metronome and
     // the rare choices moved off the strip but stay one tap away. Touch-only;
     // the panel reaches the same functions through its ring stops.
     Rectangle {
@@ -404,7 +404,7 @@ Window {
         // that band (fullscreen EQ grid), so the readout is never under the
         // touch point. The panel EDIT path has no anchor and keeps the band.
         anchorY: app.touchAnchorY
-        // B6: the transport strip owns ordinary value readouts; the floating
+        // the transport strip owns ordinary value readouts; the floating
         // band exists only on the fullscreen EQ face, which hides the strip.
         popupVisible: app.valuePopupVisible && app.fullscreen
         popupLabel: app.valuePopupLabel
@@ -423,13 +423,13 @@ Window {
         anchors.fill: parent
     }
 
-    // W5: the take edit popup (EDIT tab retired). It is above the screens and
+    // the take edit popup (EDIT tab retired). It is above the screens and
     // below the keypad/confirm modals.
     EditPopup {
         anchors.fill: parent
     }
 
-    // W6: the ARRANGE clip "..." sheet.
+    // the ARRANGE clip "..." sheet.
     ArrangeClipPopup {
         anchors.fill: parent
     }

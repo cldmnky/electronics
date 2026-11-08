@@ -350,8 +350,9 @@ class ScreenshotRunner final : public QObject {
                         }});
     }
 
-    // 36-*: touch-era UI fixes. The value readout sits in the top band (never
-    // under the finger), every mixer strip carries its own input source, the
+    // 36-*: touch-target surfaces. The value readout sits in the top band
+    // (never under the finger), every mixer strip carries its own input
+    // source, the
     // System screen selects the device output pairs and the device lists show
     // name + backend + channel count, and the Routing primary face names the
     // SHIFT PIPES face.
@@ -493,7 +494,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->openConfig(QStringLiteral("pipechannels"));
                       }});
 
-    // ---- 39-*: wave-2 refresh set, every screen and both faces -----------
+    // ---- 39-*: every screen and both faces -------------------------------
     steps_.push_back({"39-mixer", [this] {
                         resetShot();
                         controller_->mixer()->setTrackMode(false);
@@ -653,8 +654,9 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setTrackIndex(2);
                         controller_->setTab(0);
                         controller_->showShiftFace(true);
-                        // W1: the monitor popup is the TRACK MODE popup now (the
-                        // step keeps its name so the shot set stays stable).
+                        // The monitor popup is the TRACK MODE popup; the step
+                        // keeps its "trackmode" name because the shot id is
+                        // part of the screenshot set.
                         controller_->openConfig(QStringLiteral("trackmode"));
                       }});
     steps_.push_back({"39-popup-pipechmask", [this] {
@@ -875,8 +877,8 @@ class ScreenshotRunner final : public QObject {
                         resetShot();
                         primePipeChain(true);
                         controller_->routing()->selectPipe(0);
-                        // The sweep's numeric steppers are knob cards now: the
-                        // click BARS value is the metronome's.
+                        // The numeric steppers are knob cards: the click BARS
+                        // value is the metronome's.
                         controller_->setTab(3);
                         controller_->setSystemShiftPage(0);
                         controller_->showShiftFace(true);
@@ -940,26 +942,26 @@ class ScreenshotRunner final : public QObject {
                         controller_->openConfig(QStringLiteral("reverb"));
                       }});
 
-    // ---- 42-*: UI fix wave 1 (review A1/A3/A4/A5/A7/A8/A9/A10/A14/B1/C1/C4) --
+    // ---- 42-*: transport, recorder and FX surfaces -----------------------
     steps_.push_back({"42-transport-tempo", [this] {
                         resetShot();
                         primeMixerDemo();
                         controller_->setTab(0);
-                        // A7: the BPM button opens the touch tempo popup.
+                        // the BPM button opens the touch tempo popup.
                         controller_->openTempoPopup();
                       }});
     steps_.push_back({"42-transport-shift", [this] {
                         resetShot();
                         primeMixerDemo();
                         controller_->setTab(0);
-                        // B1: the chip reads < PRIMARY and is checked while the
+                        // the chip reads < PRIMARY and is checked while the
                         // current tab's second face is up.
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"42-transport-no-shift", [this] {
                         resetShot();
                         primeMixerDemo();
-                        // D3/B1: tab 6 (MIDI) has no second face; the chip is
+                        // tab 6 (MIDI) has no second face; the chip is
                         // dimmed and the tab long-press cannot enter it.
                         controller_->setTab(5);
                         controller_->showShiftFace(true);
@@ -971,8 +973,8 @@ class ScreenshotRunner final : public QObject {
                         controller_->recorder()->selectRow(0);
                         controller_->recorder()->activateSelected();
                         setStripArm(1, true);
-                        // W1: ARM is an explicit mode word now; the strip shows
-                        // ARM in the record colour instead of a hazard badge.
+                        // ARM is an explicit mode word; the strip shows ARM in
+                        // the record colour rather than a hazard badge.
                         controller_->mixer()->setTrackMode(false);
                         controller_->mixer()->setBank(0);
                         controller_->setTab(0);
@@ -983,7 +985,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setTrackMode(false);
                         controller_->mixer()->setBank(0);
                         controller_->setTab(0);
-                        // C1: solo green / mute gray / arm red plus the monitor
+                        // solo green / mute gray / arm red plus the monitor
                         // legend under the SHIFT strips.
                         controller_->showShiftFace(true);
                       }});
@@ -1001,7 +1003,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->recorder()->selectRow(0);
                         controller_->recorder()->activateSelected();
                         controller_->setTab(2);
-                        // A3: the SHIFT face names the take its buttons act on.
+                        // the SHIFT face names the take its buttons act on.
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"42-projects-select", [this] {
@@ -1014,7 +1016,7 @@ class ScreenshotRunner final : public QObject {
                         primeMixerDemo();
                         controller_->projects()->saveProject();
                         controller_->projects()->scanProjects();
-                        // A3: "..." selects without loading; the row body loads.
+                        // "..." selects without loading; the row body loads.
                         controller_->selectProjectRow(0);
                         controller_->hideValuePopup();
                       }});
@@ -1027,26 +1029,26 @@ class ScreenshotRunner final : public QObject {
                         controller_->projects()->scanProjects();
                         controller_->selectProjectRow(0);
                         controller_->hideValuePopup();
-                        // A3: the mirrored list on the destructive face.
+                        // the mirrored list on the destructive face.
                         controller_->showShiftFace(true);
                       }});
     steps_.push_back({"42-timeline-take-sheet", [this] {
                         resetShot();
                         controller_->setTab(8);
-                        // A10: the lane label opens TAKE FOR TRACK nn.
+                        // the lane label opens TAKE FOR TRACK nn.
                         controller_->openTakeSheet(1);
                       }});
     steps_.push_back({"42-popup-timelineops", [this] {
                         resetShot();
                         controller_->setTab(8);
-                        // A14: seven ops (no RENDER), footer names the peaks
+                        // seven ops (no RENDER), footer names the peaks
                         // sidecar, missing peaks is a RENDER PEAKS action.
                         controller_->openConfig(QStringLiteral("timelineops"));
                       }});
     steps_.push_back({"42-popup-metronome", [this] {
                         resetShot();
                         controller_->setTab(3);
-                        // A8: OFF / REC ONLY / ON PLAY, MAIN / PHONES / OUT3&4,
+                        // OFF / REC ONLY / ON PLAY, MAIN / PHONES / OUT3&4,
                         // LEVEL and COUNT-IN.
                         controller_->openConfig(QStringLiteral("metronome"));
                       }});
@@ -1056,7 +1058,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setTrackMode(false);
                         controller_->mixer()->setBank(0);
                         controller_->setTab(0);
-                        // A9: the learnable gain/pan/FX-wet controls outline in
+                        // the learnable gain/pan/FX-wet controls outline in
                         // the accent colour while the target capture waits.
                         controller_->armLearnTargetCapture();
                       }});
@@ -1065,7 +1067,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->setTab(3);
                         controller_->setSystemShiftPage(1);
                         controller_->showShiftFace(true);
-                        // A9: ARM CAPTURE with no target outlines every
+                        // ARM CAPTURE with no target outlines every
                         // learnable control and waits for a touch.
                         controller_->armLearnTargetCapture();
                       }});
@@ -1172,10 +1174,10 @@ class ScreenshotRunner final : public QObject {
                         controller_->setTab(7);
                       }});
 
-    // ---- 44-*: review wave 2 (remaining findings) -----------------------
-    // Each shot is the proof for one changed surface: renamed tabs, the
-    // pager grid, clip clear, PLAY wording, hold-to-reset, the pipe footer,
-    // one dirty indicator, the OUTPUT page + clock source, the EQ subject row,
+    // ---- 44-*: remaining surfaces ---------------------------------------
+    // Each shot covers one surface: renamed tabs, the pager grid, clip clear,
+    // PLAY wording, hold-to-reset, the pipe footer, one dirty indicator, the
+    // OUTPUT page + clock source, the EQ subject row,
     // the X/Y mode label, the EDIT lane hint, the import preview and the verbs.
     steps_.push_back({"44-tabs", [this] {
                         resetShot();
@@ -1240,7 +1242,7 @@ class ScreenshotRunner final : public QObject {
                         resetShot();
                         controller_->setTab(1);
                       }});
-    // A13: GENERATOR is a source-less FROM. The primary patchbay shows its wire
+    // GENERATOR is a source-less FROM. The primary patchbay shows its wire
     // without any input being selected.
     steps_.push_back({"44-routing-generator", [this] {
                         resetShot();
@@ -1257,7 +1259,7 @@ class ScreenshotRunner final : public QObject {
                         primePipeChain(true);
                         controller_->routing()->selectPipe(0);
                       }});
-    // A13: the pipe page with FROM = GENERATOR and no input source at all.
+    // the pipe page with FROM = GENERATOR and no input source at all.
     steps_.push_back({"44-pipes-generator", [this] {
                         resetShot();
                         primeGeneratorChain();
@@ -1319,7 +1321,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setBank(0);
                         controller_->setTab(0);
                       }});
-    // B6: an ordinary value readout lives in the transport notice slot.
+    // an ordinary value readout lives in the transport notice slot.
     steps_.push_back({"44-value-slot", [this] {
                         resetShot();
                         primeMixerDemo();
@@ -1329,7 +1331,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->showValuePopup(QStringLiteral("IN 02 GAIN"),
                                                     QStringLiteral("db"), -6.0);
                       }});
-    // B6: the fullscreen EQ face hides the strip, so there the readout floats.
+    // the fullscreen EQ face hides the strip, so there the readout floats.
     steps_.push_back({"44-eq-full-value", [this] {
                         resetShot();
                         primeMixerDemo();
@@ -1339,7 +1341,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->showValuePopup(QStringLiteral("BAND 3 GAIN"),
                                                     QStringLiteral("db"), -3.0);
                       }});
-    // B13: the pipe scope popup names MIDI channels and states the bypass rule.
+    // the pipe scope popup names MIDI channels and states the bypass rule.
     steps_.push_back({"44-popup-midi-filter", [this] {
                         resetShot();
                         primePipeChain(true);
@@ -1397,7 +1399,7 @@ class ScreenshotRunner final : public QObject {
                       }});
 
     // ---- 46-*: track modes, RECMODE, REC SOURCE, take manager, take->track --
-    // W1: the mode selector as a word + colour. TRACK 02 is ARM (record red),
+    // the mode selector as a word + colour. TRACK 02 is ARM (record red),
     // TRACK 03 is OVERDUB (accent), TRACK 04 is LIVE (accent), the rest PLAY
     // (dim) - never a bare letter.
     steps_.push_back({"46-track-modes", [this] {
@@ -1410,7 +1412,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->mixer()->setBank(0);
                         controller_->setTab(0);
                       }});
-    // W1/W2b: the ARM-area popup - mode words plus the REC SOURCE selector.
+    // the ARM-area popup - mode words plus the REC SOURCE selector.
     steps_.push_back({"46-popup-track-mode", [this] {
                         resetShot();
                         primeMixerDemo();
@@ -1419,7 +1421,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->openChannel(1);
                         controller_->openTrackMode(1);
                       }});
-    // W2b: REC SOURCE picked on the Recorder's own mode popup (POST+FX).
+    // REC SOURCE picked on the Recorder's own mode popup (POST+FX).
     steps_.push_back({"46-rec-source", [this] {
                         resetShot();
                         controller_->stop();
@@ -1430,7 +1432,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->setTab(2);
                         controller_->openTrackMode(1);
                       }});
-    // W2: COUNT-IN 2 bars armed and REC pressed - the roll runs, the recorder
+    // COUNT-IN 2 bars armed and REC pressed - the roll runs, the recorder
     // is silent, and the status line states exactly what will happen and when.
     steps_.push_back({"46-recmode-countin", [this] {
                         resetShot();
@@ -1448,7 +1450,7 @@ class ScreenshotRunner final : public QObject {
                       // The touch REC waits out the 300 ms chord window before
                       // the schedule starts, so the grab happens mid-count-in.
                       800});
-    // W2: the RECMODE picker itself, COUNT-IN selected with the bar stepper.
+    // the RECMODE picker itself, COUNT-IN selected with the bar stepper.
     steps_.push_back({"46-popup-recmode", [this] {
                         resetShot();
                         controller_->stop();
@@ -1458,7 +1460,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->config()->setRecMode(1);
                         controller_->config()->setCountInBars(2);
                       }});
-    // W2b: a running take names its REC SOURCE in the status line:
+    // a running take names its REC SOURCE in the status line:
     // `REC 00:00 - 02-bass-001 (POST+FX)`.
     steps_.push_back({"46-rec-status", [this] {
                         resetShot();
@@ -1480,7 +1482,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->recToggle();
                       },
                       700});
-    // W4/W3: the take row "..." menu with ACTIVE/EDIT/RENAME/DELETE/REMOVE/
+    // the take row "..." menu with ACTIVE/EDIT/RENAME/DELETE/REMOVE/
     // IMPORT/NEW TRACK FROM THIS TAKE, for a real row.
     steps_.push_back({"46-take-manager", [this] {
                         resetShot();
@@ -1490,7 +1492,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->setTab(2);
                         controller_->openTakeActions(0);
                       }});
-    // W4: the DELETE confirmation names the file it removes.
+    // the DELETE confirmation names the file it removes.
     steps_.push_back({"46-take-delete-confirm", [this] {
                         resetShot();
                         controller_->stop();
@@ -1499,7 +1501,7 @@ class ScreenshotRunner final : public QObject {
                         controller_->setTab(2);
                         controller_->requestDeleteTake();
                       }});
-    // W3: NEW TRACK FROM THIS TAKE - MOVE (default) or KEEP ON SOURCE after the
+    // NEW TRACK FROM THIS TAKE - MOVE (default) or KEEP ON SOURCE after the
     // name keypad.
     steps_.push_back({"46-take-new-track", [this] {
                         resetShot();
@@ -1510,16 +1512,16 @@ class ScreenshotRunner final : public QObject {
                         controller_->requestNewTrackFromTake(0);
                         controller_->keypadAccept(QStringLiteral("beat"));
                       }});
-    // W3 result: MOVE created TRACK 09 `beat` - input NONE, output MAIN, mode
+    // MOVE result: TRACK 09 `beat` exists - input NONE, output MAIN, mode
     // PLAY - and the take is ACTIVE on it while the source track let it go.
     steps_.push_back({"46-take-new-track-result", [this] {
                         controller_->config()->chooseTrackFromTake(0);
                         controller_->recorder()->setSelectedTrack(8);
                         controller_->setTab(2);
                       }});
-    // W5: EDIT tab retired - the take edit popup with the big waveform, its
-    // zoom levels, the ops strip and the live preview, plus the row/take-sheet
-    // mini-waveforms that open it.
+    // The take edit popup: the big waveform, its zoom levels, the ops strip
+    // and the live preview, plus the row/take-sheet mini-waveforms that open
+    // it (there is no EDIT tab).
     steps_.push_back({"47-take-mini-waves", [this] {
                         resetShot();
                         primeEditFixture();
@@ -1607,9 +1609,9 @@ class ScreenshotRunner final : public QObject {
                         controller_->timeline()->applyEditOp();
                         controller_->hideValuePopup();
                       }});
-    // W4/W5 ARRANGE shots: a real fixture take drives the clip waveforms, and
-    // the demo arrangement gives the section band, lanes, loop band and clip
-    // sheet deterministic content.
+    // ARRANGE shots: a real fixture take drives the clip waveforms, and the
+    // demo arrangement gives the section band, lanes, loop band and clip sheet
+    // deterministic content.
     steps_.push_back({"48-arrange", [this] {
                         resetShot();
                         primeEditFixture();
@@ -1679,9 +1681,9 @@ class ScreenshotRunner final : public QObject {
     primeMixerDemo();
   }
 
-  // W5 shots: one audible take with its .peaks sidecar written synchronously
-  // and the recorder rows refreshed from it, so both the popup waveform and the
-  // 44 px row strips show real peaks.
+  // Edit-popup shots: one audible take with its .peaks sidecar written
+  // synchronously and the recorder rows refreshed from it, so both the popup
+  // waveform and the 44 px row strips show real peaks.
   void primeEditFixture() {
     primeMixerDemo();
     controller_->stop();
@@ -2190,8 +2192,8 @@ int main(int argc, char* argv[]) {
   }
   if (wantsTaps || wantsPanelTaps) {
     // The tap driver is headless by contract: never attach to a real desktop
-    // (and never touch the owner's mouse) even if the caller exported a
-    // platform plugin for another tool.
+    // (and never touch the local mouse) even if the caller exported a platform
+    // plugin for another tool.
     qputenv("QT_QPA_PLATFORM", "offscreen");
   }
   // A tap run presses PROJECTS SAVE, recorder START and the import keypad. Point
@@ -2326,7 +2328,7 @@ int main(int argc, char* argv[]) {
   }
 
   // The bench driver starts after the UI is up and refuses to run with unsaved
-  // project state: this mode must never write the owner's projects or takes.
+  // project state: this mode must never write the real projects or takes.
   std::unique_ptr<mnky::bench::BenchClock> benchClockDriver;
   if (benchClock) {
     if (controller.dirty()) {

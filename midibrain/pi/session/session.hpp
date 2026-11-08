@@ -101,7 +101,7 @@ inline constexpr std::size_t kMaxSectionNameBytes = 16;
 // Two FX send buses, matching audio::kNumSends.
 inline constexpr int kFxBuses = audio::kNumSends;
 // Per-track FX rack size. Index 0 is FX1, index 1 is FX2; the engine runs
-// FX1 -> FX2 in series, post-EQ and pre-fader.
+// > FX2 in series, post-EQ and pre-fader.
 inline constexpr int kTrackFxSlots = 2;
 // REC SOURCE wire values (frozen W1/W2b contract, see
 // MixerChannelState::recSource): where the recorder taps the track's live
@@ -218,7 +218,7 @@ struct RouterState {
 // otherwise 1.0); a file with "fxSlots" wins and its explicit wet is kept.
 // "send" stays in the format and still round-trips, but it is deprecated: the
 // FX1/FX2 knobs now bind to fxSlots[i].wet. apply() forwards both slots to
-// Engine::setTrackFxSlot() and capture() reads them back (audio wave 11).
+// Engine::setTrackFxSlot() and capture() reads them back.
 struct FxInsertState {
   std::string id;  // empty = none; "builtin.delay" | "builtin.reverb" | CLAP id
   bool bypass = false;
@@ -266,14 +266,14 @@ struct MixerChannelState {
   // DEPRECATED legacy per-track FX insert (v2): the old single effect
   // instance. Its wire form "insert":{"id","bypass","params"} stays in the
   // format for old files and old readers; a file without "fxSlots" reads it
-  // as FX1, and the engine seam still applies/captures it as of audio wave 9.
+  // as FX1, and the engine seam still applies/captures it.
   // New code must use `fxSlots`.
   FxInsertState insert;
   // Per-track FX rack (v2): exactly kTrackFxSlots effects, FX1 then FX2, run
   // in series post-EQ pre-fader by the engine. See FxInsertState for the
   // frozen per-slot fields and the legacy migration rules. apply() forwards
   // both slots to Engine::setTrackFxSlot() and capture() reads them back
-  // (audio wave 11); the deprecated `insert` is the legacy FX1 view.
+  // and the deprecated `insert` is the legacy FX1 view.
   std::array<FxInsertState, kTrackFxSlots> fxSlots;
   friend bool operator==(const MixerChannelState&, const MixerChannelState&) = default;
 };
@@ -470,7 +470,7 @@ struct SongSection {
 // overlap on a track - the engine scheduler rejects an overlap, the session
 // reader only stores the placement.
 //
-// FROZEN WIRE CONTRACT for the app and engine workers (W1 session wave):
+// FROZEN WIRE CONTRACT for the app and engine:
 //   "clips":[{"track":<int>,"start":<beats>,"take":<string>,
 //              "offset":<beats>,"length":<beats>,"gainDb":<number>,
 //              "fadeIn":<beats>,"fadeOut":<beats>,"normalize":<bool>,
@@ -500,7 +500,7 @@ struct SongClip {
 
 // The song arrangement (the `song` section).
 //
-// FROZEN WIRE CONTRACT (W1 session wave; the app and engine workers bind to
+// FROZEN WIRE CONTRACT (the app and engine bind to
 // exactly this table):
 //   "song":{"sections":[{"name":<string>,"bars":<int>},...],
 //           "clips":[<SongClip>,...],"lengthBars":<int>,"grid":<int>}
@@ -654,8 +654,8 @@ class FxSlotTarget {
 // mixer.tracks is likewise app-owned while the engine has no dynamic track
 // list: capture() reports allSlots() (the legacy layout), and the app
 // overwrites it with its live list. The per-track FX rack is engine state
-// (audio wave 11): capture()
-// reads both slots back and apply() forwards them; a built-in id comes back
+// capture() reads both slots back and apply() forwards them; a built-in id
+// comes back
 // with the values the DSP holds, a CLAP id and its parameter vector verbatim
 // (the plugin owns its table). The deprecated `insert` is captured as the
 // legacy FX1 view and still applies to FX1 for an in-memory snapshot that

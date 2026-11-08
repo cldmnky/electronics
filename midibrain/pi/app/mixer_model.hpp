@@ -20,16 +20,16 @@ namespace mnky::app {
 
 class MixerModel {
  public:
-  // One bit per track slot. The audio::Recorder mask is uint64_t and the owner's
-  // track ceiling is audio::kMaxTracks (64), so this named type is the app's
+  // One bit per track slot. The audio::Recorder mask is uint64_t and the track
+  // ceiling is audio::kMaxTracks (64), so this named type is the app's
   // single mask width: every consumer names it instead of a literal, and a
   // capacity change is a change here plus the recorder's matching type.
   using TrackMask = std::uint64_t;
   static constexpr int kMaskBits = std::numeric_limits<TrackMask>::digits;
 
   // One active mixer track: the fixed per-slot configuration store plus the
-  // ordered list of slots the mixer shows. The owner's contract is that the
-  // mixer starts empty, ADD TRACK appends a slot and REMOVE TRACK deletes the
+  // ordered list of slots the mixer shows. The contract is that the mixer
+  // starts empty, ADD TRACK appends a slot and REMOVE TRACK deletes the
   // strip while the slot's configuration and takes stay in the project; order
   // is the list order, and a re-add of a removed slot restores its settings.
   struct Track {
@@ -37,7 +37,7 @@ class MixerModel {
     std::string name;
   };
   // Per-track FX rack entry (session v2 mixer.channels[].fxSlots[i]). The
-  // engine instance path is audio wave 11: FX slot 0 is FX1, 1 is FX2, they run
+  // engine instance path: FX slot 0 is FX1, 1 is FX2, they run
   // in series post-EQ pre-fader, and each slot's wet is its dry/wet crossfade.
   // `params` are positional doubles in the effect's stable order (fx_params.hpp
   // mirrors the tables); the engine clamps what it receives.
@@ -63,17 +63,17 @@ class MixerModel {
   bool mute(int index) const;
   void setSolo(int index, bool solo);
   bool solo(int index) const;
-  // Record arm, derived from the track mode: ARM and OVERDUB record (W8:
+  // Record arm, derived from the track mode: ARM and OVERDUB record (with
   // nothing armed, nothing recorded), PLAY and LIVE never do. Setting it maps
   // true onto ARM and false onto PLAY, so the strip's ARM button and the mode
   // selector can never disagree.
   void setArm(int index, bool arm);
   bool arm(int index) const;
-  // DEPRECATED per-track FX send (session v2 mixer.channels[].send[i]). Engine
-  // wave 11 retired the FX1/FX2 buses from the signal path, so nothing feeds
-  // them and no UI writes them any more: the session loader keeps the values
-  // round-tripping and migrates them into fxSlots[i].wet for a file without
-  // "fxSlots". New code uses the rack below.
+  // DEPRECATED per-track FX send (session v2 mixer.channels[].send[i]). No FX
+  // bus exists in the signal path, so nothing feeds these and no UI writes
+  // them: the session loader keeps the values round-tripping and migrates them
+  // into fxSlots[i].wet for a file without "fxSlots". New code uses the rack
+  // below.
   void setSend(int index, int send, float level);
   float send(int index, int send) const;
   // App-side input trim in dB. The engine exposes one per-channel gain, so the
@@ -88,19 +88,18 @@ class MixerModel {
   float cueSend(int index) const;
   void setOut34Send(int index, float level);
   float out34Send(int index) const;
-  // Per-track mode (session v2 mixer.channels[].mode, docs/daw-plan.md W1):
+  // Per-track mode (session v2 mixer.channels[].mode):
   // 0 PLAY, 1 ARM, 2 OVERDUB, 3 LIVE. The number is the engine's MonitorMode
   // value 1:1, so applyTo() forwards it as Channel::monitor: PLAY = take only,
   // ARM = live when armed or no take, OVERDUB = live layered over the take,
   // LIVE = live only. `arm` above is derived from it rather than stored, so
-  // there is one state per track. The app-side spelling is `mode`; the session
-  // wire field is `monitor` until the frozen `mode` field lands (project_io).
+  // there is one state per track. `mode` is the session wire field and
+  // `monitor` its deprecated synonym (project_io).
   void setMode(int index, int mode);
   int mode(int index) const;
-  // REC SOURCE (session v2 mixer.channels[].recSource, docs/daw-plan.md
-  // W2b): 0 PRE (after gain), 1 POST (EQ + fader, pre-FX) or 2 POST+FX (EQ +
-  // FX1/FX2 + fader). Default PRE. The engine tap does not read it yet (the
-  // audio wave owns Engine::setRecSource); AudioGlue keeps the named seam.
+  // REC SOURCE (session v2 mixer.channels[].recSource): 0 PRE (after gain),
+  // 1 POST (EQ + fader, pre-FX) or 2 POST+FX (EQ + FX1/FX2 + fader). Default
+  // PRE. AudioGlue forwards it to Engine::setRecSource, which owns the tap.
   void setRecSource(int index, int source);
   int recSource(int index) const;
   // Per-track I/O assignment (session v2 mixer.channels[].inCh/inPair/outDst):

@@ -2,7 +2,7 @@
 
 Status: **proposed targets, unmeasured.** This page is the bench session's
 checklist for the current Pico firmware (`firmware/README.md`, acceptance rows
-1-16) and the Pi-side USB reconstruction path. It does not record a measurement
+1-17) and the Pi-side USB reconstruction path. It does not record a measurement
 and it does not approve hardware. `make release` stays gated on
 `hardware-acceptance.json`.
 
@@ -17,13 +17,13 @@ result.
 | **TRS clock** | The Pico's own physical UART outputs (OUT1/OUT2, 24 PPQN, `0xF8`). The Pico's deadline grid and priority TX own this path; the Pi is not in the loop. | Logic analyser probes on both TRS output jacks, during a `--bench-clock` run. |
 | **USB clock** | The Pi-side reconstruction: Pico tick frames over SPI -> `UsbClock` discipline -> ALSA/USB MIDI OUT to the DAW. The Pi owns scheduling, so app/DAW/UI load and the 1 ms wake-up path matter here. | Read-only ALSA-sequencer tap (`pi/bench/tap/midi_seqtap.c`) on the `mnkybox` output ports, same run. |
 
-TRS rows use the firmware README's numbering (1-16). USB rows are a **separate
+TRS rows use the firmware README's numbering (1-17). USB rows are a **separate
 U-row set**; they are not TRS rows and must never be reported as passing a TRS
 target.
 
 ## TRS row set (Pico physical outputs) - targets from firmware/README.md
 
-These are the review's rows 1-16, restated here so the bench session and the
+These are the review's rows 1-17, restated here so the bench session and the
 logic analyser work from one page.
 
 | # | Check | Target |
@@ -39,6 +39,7 @@ logic analyser work from one page.
 | 9 | Clock under SPI faults | 0 dropped `F8` while the SPI stream is broken |
 | 10 | App-message loss recovery | 0 lost Note Offs; `retries` bounded; exactly-once delivery |
 | 11-16 | External follow | lock, steady state, jitter, wander, holdover, smooth resync (see firmware README for the simulated values) |
+| 17 | Clocked FX timing parity | FX event released at its tick grid deadline, never early; `F8` always first; no FX dropped |
 
 ## U-row set (Pi USB reconstruction) - PROPOSED, UNMEASURED
 

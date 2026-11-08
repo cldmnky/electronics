@@ -1,14 +1,14 @@
 #pragma once
-// Qt-free song-arrangement math for the ARRANGE tab (docs/daw-plan.md W6):
+// Qt-free song-arrangement math for the ARRANGE tab:
 // section spans, grid snapping, clip placement/trim/duplicate and the song
 // length/loop window. The view model owns the Qt-facing state; this file owns
 // the rules so `mnkybox --unittests` can exercise every edit without a window.
 //
-// The wire fields are the frozen session::SongClip entries. The W4/W5
-// addendum adds the settled length/loop semantics ahead of the session seam:
-// lengthBeats 0 derives from the last clip end, the loop is on by default and
-// an end at or below the start means "to the song length". The app carries the
-// not-yet-landed fields in an app-owned project sidecar (see project_io.cpp).
+// The wire fields are the frozen session::SongClip entries. The length/loop
+// semantics sit ahead of the session seam: lengthBeats 0 derives from the last
+// clip end, the loop is on by default and an end at or below the start means
+// "to the song length". The app persists these in the project file (see
+// project_io.cpp).
 #include <cstddef>
 #include <functional>
 #include <string>
@@ -122,7 +122,7 @@ std::vector<std::size_t> clipsInSection(const session::SongState& song, int inde
 
 // Punch-into-song placement: the written take becomes a clip at the punch in
 // point. `punchInMeasure` is 1-based and is interpreted relative to the loop
-// start (the W4/W5 addendum); the returned beat is an absolute song position.
+// start; the returned beat is an absolute song position.
 double punchStartBeats(int punchInMeasure, double loopStartBeats);
 // "clip at bar 9" for the auto-place notice (1-based absolute bar).
 int barOfBeat(double beats);

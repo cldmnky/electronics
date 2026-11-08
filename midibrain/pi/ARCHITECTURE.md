@@ -1,32 +1,37 @@
-# mnkybox Pi DAW — architecture for parallel teams
+# mnkybox Pi DAW — architecture
 
-Target: Raspberry Pi 5 (Linux/ALSA) with a 800×480 touch UI. Dev machine is
-macOS; **everything must also compile and run headless here** (emulator
-backends + selftest). C++20 throughout. No external test framework:
-assert-based `*_test.cpp` mains, built with plain `c++` (see per-module
-commands below). Children never commit; the parent commits per landed team.
+Target: Raspberry Pi 5 (Linux, PipeWire or ALSA) with an 800×480 touch UI. The
+dev machine is macOS and everything also builds and runs headless there
+(emulator backends, offscreen Qt). C++20 throughout. No external test
+framework: assert-based `*_test.cpp` mains, built with plain `c++` or registered
+with CTest.
 
-## Tree (one writer per directory — do not touch another team's dir)
+## Tree
 
 ```
 pi/
-  ARCHITECTURE.md      # this file (parent-owned)
-  CMakeLists.txt       # setup team (root build: core libs, CTest, JUCE app)
-  third_party/README.md
-  third_party/rtmidi/  # vendored RtMidi 6.1.0 (parent-owned, do not modify)
+  ARCHITECTURE.md      # this file: module contracts and standing rules
+  CMakeLists.txt       # root build: pins, core libs, CTest, the Qt app
+  third_party/         # vendored RtMidi 6.1.0 + the pinned-dependency table
   link/                # Pico SPI link core (JUCE-free)
   midi/                # router, USB MIDI, clock discipline, buttons (JUCE-free)
-  audio/               # engine, recorder+WAV, sends (JUCE-free)
+  audio/               # engine, per-track FX rack, recorder+WAV, device backends
   clap/                # CLAP host core + example gain plugin (JUCE-free)
-  app/                 # wave 2: JUCE touchscreen application (GUI team)
-  emulator/            # wave 2: emulator backends + headless selftest binary
+  session/             # versioned JSON project format (JUCE-free)
+  update/              # Pico 2 UF2/BOOTSEL updater core (JUCE-free)
+  app/                 # Qt 6 QML touchscreen application (mnkybox)
+  emulator/            # scripted backends + headless selftest
+  bench/               # studio measurement harness + --bench-clock driver
 ```
 
-## Non-negotiable rules
+## Standing rules
 
-- Core (`link midi audio clap`) is **JUCE-free, Linux-header-free, macOS-safe**:
-  no `<juce_*>`, no `<linux/...>`, no ALSA/gpio includes. Pi-only code goes
-  behind `#ifdef __linux__` with a portable fallback (throw or mock).
+- Core (`link midi audio clap session update`) is **JUCE-free,
+  Linux-header-free, macOS-safe**: no `<juce_*>`, no `<linux/...>`, no
+  ALSA/gpio includes outside `#ifdef __linux__` with a portable fallback
+  (throw or mock). Qt lives in `app/` only.
+- Core modules are held to zero warnings with `-Wall -Wextra -Werror`.
+  Third-party code (RtMidi, Qt, CLAP) is never compiled with those flags.
 - The 32-byte wire format is single-sourced: `#include "../../firmware/pico/protocol.hpp"`
   and `"../../firmware/pico/midi.hpp"` (relative to `pi/<mod>/`). Never
   redefine magic/version/CRC/registry values.
@@ -34,13 +39,19 @@ pi/
   Pi BCM numbers from `tscircuit/lib/pin-map.ts` (`READY_IRQ` = BCM 24).
   Protocol semantics: `docs/protocol.md` (SPI contract, READY, session/seq
   dedup, idle-fill repeats, registry, Pico-clock-master + USB mirror design).
-- Tests live next to code (`test_<mod>.cpp`), build with:
+- QML calls into a view model only through `Q_INVOKABLE` methods and
+  `Q_PROPERTY` read/write accessors; a method QML calls must be one of those
+  two, because the meta-object is the whole interface.
+- Tests live next to code (`test_<mod>.cpp`) and build with
   `clang++ -std=c++20 -Wall -Wextra -Werror -I. -I../third_party[/rtmidi] <test>.cpp <sources...> -o /tmp/t_<mod> && /tmp/t_<mod>`
-  must print PASS lines and exit 0. RtMidi compiles into the midi test/user
-  with `-D__MACOSX_CORE__` (mac) / `-D__LINUX_ALSA__` (Pi) + frameworks as needed.
-- Toolchain: on macOS ALWAYS Apple `clang++` (bare `c++` here is nix GCC,
-  which cannot see macOS frameworks — the midi build fails under it while
-  looking innocent). On Pi/Linux use system `c++`. Root CMake enforces this.
+  printing PASS lines and exiting 0. RtMidi compiles into the midi test/user
+  with `-D__MACOSX_CORE__` (macOS) / `-D__LINUX_ALSA__` (Pi) plus the
+  frameworks it needs.
+- Toolchain: on macOS use Apple `clang++` (a bare `c++` may be nix GCC, which
+  cannot see the macOS frameworks and fails the midi build while looking
+  innocent). On Pi/Linux use the system `c++`. The root CMake enforces this.
+- Never float a dependency on a branch: versions are pinned in
+  `pi/CMakeLists.txt` and match `third_party/README.md`.
 
 ## Module contracts (exact names — implementations must match)
 
@@ -77,52 +88,84 @@ pi/
   mistaking arrival for stamp.
 - `class UsbMidi` (RtMidi wrapper): `listInputs()/listOutputs()`,
   `openAll/outputAll` incl. virtual `"mnkybox"` ports for emulator mode,
-  input callback → `MidiEvent` with device index. Guard API defines per README.
+  input callback → `MidiEvent` with device index.
 - `enum class Action {None,Play,PlayStart,Stop,RecToggle,OverdubToggle,TempoCoarse,TempoFine,NavUp,NavDown,NavLeft,NavRight,NavPress,EncoderSw}`,
   `Action mapControl(uint8_t id,uint8_t value,bool shift)` — pure, tested
   (ids from `mb::CTL_*` in `firmware/pico/midi.hpp`).
-- MIDI byte constants: reuse `mb::` parsers where sensible; no second registry.
+- MIDI byte constants: reuse `mb::` parsers; there is no second registry.
 
 ### audio/ — namespace `mnky::audio`
-- `kMaxInputs=18, kNumSends=2, kBlockSize=128`. `struct Channel{float gain=1,pan=0.5; bool mute,solo,arm; float send[2]={0,0};}`.
-- `struct IEffect{virtual ~; virtual void process(float*const* ch,int nch,int n)=0; virtual const char* name() const=0;}` (stereo in practice; ch arrays sized by caller).
-- `class Engine`: `setChannel(int,Channel)`, `setMaster(float)`, `setFx(int,IEffect*)`,
-  `setFxReturn(int,float)`, `process(const float*const* in,int nch,int n,float* outL,float* outR)`,
-  `const float* tap(int ch)` (post-gain mono, block-valid). Solo logic: any-solo ⇒ only solos audible. Tested incl. pan law (constant-power), solo/mute matrix, sends.
-- `class Recorder`: `startTake(dir,armMask,sampleRate)`, `writeBlock(taps[18],masterL/R,n)` (non-blocking, drop counter),
-  `Take stopTake()` with `{path,files,frames,drops}`, `drops()`. Own minimal
-  float32 WAV writer (RIFF/WAVE/FMT/extensionless `take-<utc>/chNN.wav` +
-  `master.wav`). Background thread + mutex queue (prototype-grade; drops counted).
-- Requirement anchor: 18 ch, 48 kHz, 24-bit-class capture (float32 masters it).
+- Capacity is single-sourced in `capacity.hpp`: `kMaxDeviceInputs = 18`
+  (UMC1820 capture width), `kMaxTracks = 64` mixer tracks, `kMaxChannels = 128`
+  internal mix channels, `kBlockSize = 128`.
+- `struct Channel{float gain,pan; bool mute,solo,arm; float send[2];}` plus the
+  per-track input/output assignment, EQ bands and `tapPoint`.
+- `struct IEffect{virtual ~; virtual void process(float*const* ch,int nch,int n)=0; virtual const char* name() const=0;}`
+- `class Engine`: `setChannel(int,Channel)`, `setMaster(float)`,
+  `setTrackFxSlot()` / `setFx()` (external CLAP effect), `setRecSource()`,
+  `setTakeVoice()`/`setTakeLoop()`/`setSongLanes()` for playback,
+  `process(const float*const* in,int nch,int n,float* outL,float* outR)`,
+  `const float* tap(int ch)`. Solo logic: any-solo ⇒ only solos audible.
+  Constant-power pan. Both rack slots run per track, post-EQ/pre-fader, in
+  series. `process()` never allocates.
+- `class Recorder`: `startTake(dir,armMask,sampleRate,sampleRate,masterArm)`,
+  `writeBlock(taps,masterL/R,n)` (non-blocking, drop counter), `Take stopTake()`
+  with `{path,files,frames,drops}`. Own minimal float32 WAV writer
+  (`take-<utc>/chNN.wav` + `master.wav`). Background thread + mutex queue.
+- Device I/O is native: `device_backend.hpp` owns exactly one backend at a time
+  — libpipewire (product), ALSA `snd_pcm` (fallback), emulator (host tests).
+  Qt Multimedia is not part of audio I/O.
+- Requirement anchor: 18 ch capture, 48 kHz, float32 masters.
 
 ### clap/ — namespace `mnky::clap`
-- Headers: `-I../third_party/clap/include`, `#include <clap/clap.h>`.
+- Headers: `-I../third_party/clap/include` (or the FetchContent include dir),
+  `#include <clap/clap.h>`.
 - `class Host : public audio::IEffect`: `bool load(path)` (dlopen entry/init),
   `params()` → `vector<Param{id,name,min,max,value}>`, `setParam(id,v)`,
   `saveState/loadState(path)` (state ext), `process()` (audio-ports ext, stereo
   float32, static params latched per block), `unload()`. Minimal host callbacks
-  (thread-check/main-thread/timer/log). Graceful fail when exts missing.
+  (thread-check/main-thread/timer/log). Graceful fail when exts are missing.
 - Test seam: construct from factory function pointers so a `MockPlugin`
   (in-process fake clap_plugin) exercises load/init/activate/process/params/
-  state without any `.so`. `MockPlugin` lives in test code.
+  state without a `.so`. `MockPlugin` lives in test code.
 - `effects/mnkygain/`: example gain+softclip+lowpass bundle (gain/drive/tone/mix,
-  params+state exts). Builds as a loadable module here; bundle layout + Pi
-  notes in its README. It is the default FX for sends and the emulator.
+  params+state exts). Builds as a loadable module; bundle layout in its README.
+  It is the default FX for sends and the emulator.
 
-## Current state (2026-11-06)
+### session/ — namespace `mnky::session`
+- One versioned JSON object per project (`project.mnkybox`), hand-rolled writer
+  and parser, no JSON dependency. `load()` returns `LoadResult{ok,error,snapshot}`
+  and never throws; wrong version, malformed JSON, wrong-typed known fields and
+  files over 4 MiB are rejected with a reason. Unknown fields are ignored,
+  missing fields take documented defaults.
+- `capture()` reads Router + Engine into a canonical `Snapshot`; `apply()`
+  replaces router/mixer state wholesale and leaves an unavailable effect alone.
+- `mode` and `recSource` are canonical; `monitor` and `send[]` are deprecated
+  on-disk spellings that still round-trip. Absence of a section is exactly the
+  legacy state, so old files load unchanged.
 
-Everything above is built: `app/` is the Qt 6 QML touchscreen application
-(9 tabs, SHIFT faces, popups, dynamic mixer, per-track FX rack, EQ/X-Y,
-edit popup, panel/touch parity) and `emulator/` is the scripted backends +
-headless selftest. The tree also carries `update/` (Pico UF2/BOOTSEL
-updater core) and `bench/` (studio measurement harness). The one-writer
-rule and the module contracts above remain law for new work.
+### update/ — namespace `mnky::update`
+- Strict UF2 validation against the RP2350 bootrom contract, BOOTSEL drive
+  identification, copy-with-progress, disappearance and link-return
+  verification, plus the `pico-update` CLI.
+
+## Audio stack: the app and the system
+
+The product audio stack is **PipeWire**: `pipewire` + `wireplumber` (session
+manager) + ALSA `snd_pcm` compatibility. The app opens the device through
+`audio/device_backend.hpp` — libpipewire when a PipeWire sink exists, ALSA
+otherwise, emulator on the host — and enumerates devices at every start; it
+never assumes a node name. It honours the server quantum rather than demanding
+a period size, and has no dependency on `jackd` or any daemon binary name.
+Inter-app routing belongs to the PipeWire graph (`qpwgraph`, `pw-link`), not to
+the app UI.
 
 ## Acceptance
 
-`make test` = prototype verification (typecheck, build, placement,
-protocol, SPICE). The DAW program's gates: full CTest green on both hosts,
-`--ui-taps` clean (every control tapped headless; any QML warning = fail),
-offscreen screenshot sets per wave, and the studio Pi run for anything
-touching audio/MIDI timing (see pi/STUDIO-PI.md and pi/bench/). Physical
-hardware acceptance is docs/acceptance.md's domain.
+`make test` = prototype verification (typecheck, build, placement, protocol,
+SPICE). The DAW program's gates: full CTest green on the macOS host and the
+studio Pi, `--unittests` (headless logic), `--ui-taps` (every control tapped
+headless; any QML warning = fail), `--panel-taps` (panel intent parity),
+`--screenshots` sets, and a studio Pi run for anything touching audio/MIDI
+timing (see `pi/STUDIO-PI.md` and `pi/bench/`). Physical hardware acceptance is
+`docs/acceptance.md`'s domain.

@@ -36,7 +36,7 @@ struct InputEvents {
 };
 
 // Plugin -> host events are accepted and counted, then dropped: this host has no
-// automation recorder yet (see NOTES.md).
+// automation recorder.
 struct OutputSink {
    uint32_t dropped = 0;
 

@@ -701,8 +701,8 @@ bool MixerViewModel::setFxChoiceAt(int slot, int index, int choice) {
     }
     // The slot names this plugin but no instance is running (an earlier load
     // failed, the host was torn down, the module was replaced on disk). The
-    // selector is the owner's enable affordance, so re-selecting the same
-    // entry must retry the instance instead of silently doing nothing.
+    // selector is the enable affordance, so re-selecting the same entry must
+    // retry the instance instead of silently doing nothing.
     if (!clap_->loadTrackEffect(slot, index, plugin.id, kClapSampleRate,
                                 audio::kBlockSize)) {
       const std::string error = clap_->trackEffectError(slot, index);

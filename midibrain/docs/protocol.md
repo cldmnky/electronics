@@ -195,11 +195,15 @@ Pi-side link error or stale duplicate-tracking state. A Pico reboot or a
 `0x23` RESET_LINK always appears to the Pi as a session change (`LinkLost`
 then `Linked`), so the host can use the same reconnect path for all of them.
 
-## USB clock mirror (Pi side, pending implementation)
+## USB clock mirror (Pi side, implemented; hardware jitter unmeasured)
 
-The Pico is the single clock master for TRS and USB. The Pi must NOT mirror
+The Pico is the single clock master for TRS and USB. The Pi does NOT mirror
 ticks naively (SPI + Linux scheduling latency would put millisecond jitter on
-the USB wire). Instead it disciplines its own USB clock generator:
+the USB wire). `pi/link/link.cpp` handles `0x05` tick frames through the
+`tick_fn_` callback (the low-latency path, ahead of the app event queue); the
+`mnky::clock` generator disciplines its own USB clock from the stamp and the
+hook tests live in `pi/emulator/clock_sim_test.cpp`. The on-target numbers are
+still unmeasured: `clock-bench.md` defines the TRS and USB row sets.
 
 - **Offset mapping**: on each `0x05` tick, `offset = pi_now - stamp -
   latency_est` (EMA over recent ticks; tempo from `0x04`/tick intervals).
@@ -209,8 +213,8 @@ the USB wire). Instead it disciplines its own USB clock generator:
   out on the same schedule. Sustained rate tops out at 120 ticks/s (300 bpm),
   well inside the ≥1 ms master pacing budget.
 - **Recording alignment**: TRS stamps arrive in the Pico domain; add the
-  current offset to place them on the Pi timeline. This is the measured
-  mapping the link was designed around.
+  current offset to place them on the Pi timeline. This is the mapping the link
+  was designed around; it is not bench-measured yet.
 - **Transport inference**: the tick stream never stops, so transport comes
   from `0x06` state frames (rolling flag + count at the transition), not from
   stream silence. Tick count reset + rolling ⇒ START; rolling flag clear ⇒
@@ -255,20 +259,21 @@ arm toggle, so the Pi mirror converges without polling.
 
 ## Pico clock and controls
 
-- Clock: always on from boot at the current tempo (default 120.00). Dynamic
-  one-shot alarms at 60e6/(bpm·24) us, so tempo changes apply on the next
-  tick; 0xF8 flows on both UARTs regardless of transport state. Transport
-  commands still emit their bytes (START resets the tick count) and announce
-  state; STOP no longer halts ticks.
-- Encoder detent = 4 quadrature edges (±1.00 bpm, ±0.10 with SHIFT held).
+- Clock: always on from boot at the current tempo (default 120.00). The grid
+  is an exact rational period (`clock_scheduler.hpp` carries
+  `250'000'000'000 / bpm_x100` ns with a phase accumulator); each deadline is
+  rounded up to the 1 MHz alarm tick and computed from the previous scheduled
+  deadline. Tempo changes rebase at the pending deadline; 0xF8 flows on both
+  UARTs regardless of transport state. Tick frames carry the grid stamp.
+  Transport commands emit their bytes (START resets the tick count) and
+  announce state; STOP does not halt ticks.
+- Encoder: the Pico reports accelerated `CTL_ENCODER_TURN` int8 deltas only
+  (`encoder_input.hpp`); the Pi applies them to the focused value (tempo with
+  no focus, SHIFT = fine). The Pico no longer steps its own tempo.
 - Buttons/nav active-low, 10 ms debounce, 1 kHz scan; UART RX is IRQ-driven
   into 128-deep stamped rings per port.
 - LEDs default to mirroring REC/OVERDUB/PLAY presses; LED_SET overwrites.
 
 ## Prototype limitations (not yet implemented)
 
-SysEx forwarding (content skipped; running-status/system-common/realtime/undefined-byte handling is byte-exact per the midi.hpp comments, with EOX preserving running status), scheduled-output musical timeline (MIDI_SEND is
-immediate), credit-based flow control (the app path is stop-and-wait per
-control frame), SPI rates above 1 MHz, clock jitter measurement, and
-thermal/EMC behaviour. The framed loopback, debounce, parser, SPI-abort and
-reliability tests are host simulations, not hardware validation.
+SysEx forwarding (content skipped in v1; running-status/system-common/realtime/undefined-byte handling is byte-exact per the midi.hpp comments, with EOX preserving running status), app-scheduled `MIDI_SEND` (still immediate; clocked FX output is timestamped at the tick grid), credit-based flow control (the app path is stop-and-wait per control frame), SPI rates above 1 MHz, clock jitter measurement, and thermal/EMC behaviour. See [TODO.md](TODO.md). The framed loopback, debounce, parser, SPI-abort and reliability tests are host simulations, not hardware validation.

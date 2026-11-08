@@ -6,8 +6,8 @@
 // under `mnkybox --unittests` (logic_tests.cpp).
 //
 // The audio path itself is native: libpipewire (product) or ALSA snd_pcm
-// (fallback), see audio/device_backend.hpp. Qt Multimedia is no longer part of
-// audio I/O; it stays a UI dependency only. The persisted key therefore selects
+// (fallback), see audio/device_backend.hpp. Qt Multimedia is not part of audio
+// I/O; it stays a UI dependency only. The persisted key therefore selects
 // the audio API explicitly:
 //   "default"  -> PipeWire when a PipeWire sink exists, then ALSA, then emulator
 //   "pipewire" -> native PipeWire streams

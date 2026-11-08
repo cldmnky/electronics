@@ -1,6 +1,9 @@
 #pragma once
-// Host-testable demonstration codec. Not yet a Pico SPI driver or a complete
-// transport protocol; do not use it for scheduled MIDI or production hardware.
+// Host-testable wire codec for the Pi link: one 32-byte frame per CSn
+// assertion, CRC-16/CCITT-FALSE over the header and payload, session + sequence
+// for dedup. No Pico SDK dependency; protocol_test.cpp runs it on the host and
+// firmware/pico/main.cpp builds the same bytes on target. The Control-EVENT
+// registry and the Pi-side retry contract live in docs/protocol.md.
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -73,9 +76,8 @@ constexpr std::uint8_t ROUTE_FLAG_ON = 0x01;
 constexpr std::uint8_t ROUTE_FLAG_MASK = ROUTE_FLAG_ON;
 
 // Route source byte: 0/1 are the physical TRS inputs. Two pseudo-sources extend
-// the same frame (legacy-tolerant: an old frame could only carry 0/1 because
-// the encoder rejected anything else, and a decoder that predates these
-// constants still rejects them as bad frames rather than misreading them).
+// the same frame field, so a decoder without these constants rejects such a
+// frame as a bad frame instead of misreading the byte as a TRS port.
 //   route_src_generator: session kSrcGenerator (-1). The chain emits from its
 //     generator head and never consumes an input; dst is a real output.
 //   route_src_insert(slot): session kSrcOutputInsert (-2), slot is the insert's
@@ -106,11 +108,10 @@ constexpr bool route_src_valid(std::uint8_t src) {
 // (midibrain/midifx/core; firmware/pico/main.cpp static_asserts the match). A
 // param is a signed 16-bit positional integer; the largest pipe (Filter) has 8.
 //
-// A current 0x19 frame is 8 header bytes + int16 params + the 2-byte channel
-// scope, inside the 18-byte payload: at most route_pipe_param_frame_max (4)
-// params per frame, and offset selects the next chunk. Frames sent before the
-// scope field existed carried up to 5 params and no mask; the decoder still
-// accepts them and defaults chMask to all channels.
+// A 0x19 frame is 8 header bytes + int16 params + the 2-byte channel scope,
+// inside the 18-byte payload: at most route_pipe_param_frame_max (4) params per
+// frame, and offset selects the next chunk. The mask-less form (8 bytes + int16
+// params, up to 5 params) carries no scope and is decoded as all channels.
 constexpr std::size_t route_pipe_count_max = 8;
 constexpr std::size_t route_pipe_param_max = 10;
 constexpr std::size_t route_pipe_param_frame_max = 4;
@@ -120,8 +121,7 @@ constexpr std::uint16_t route_pipe_channel_mask_default = 0xFFFF;
 // EV_MIDI_ROUTE layout: [1]=src, [2]=dst, [3]=flags. Length 4. Starts a fresh
 // chain and clears its runtime state (dispatcher rotation, sustain latch and
 // pending note lengths); flags bit 0 enables the route. src is a route-source
-// byte (0/1, route_src_generator, route_src_insert(slot)); legacy frames with
-// 0/1 keep their meaning.
+// byte (0/1, route_src_generator, route_src_insert(slot)).
 inline bool pack_midi_route(Frame& f, std::uint16_t seq, std::uint32_t session,
                             std::uint8_t src, std::uint8_t dst, std::uint8_t flags) {
   if (!route_src_valid(src) || dst > 1 || (flags & ~ROUTE_FLAG_MASK) != 0) return false;
@@ -155,8 +155,8 @@ inline bool unpack_midi_route(const Frame& f, std::uint8_t& src, std::uint8_t& d
 // type 1..16 is accepted (all 16 evaluate in the shared core); param
 // offset+count <= 10 and count <= route_pipe_param_frame_max (4). The mask
 // takes effect on the offset-0 chunk; a continuation chunk keeps the scope the
-// pipe already has. A frame of length 8 + 2*count (no mask, up to the legacy 5
-// params) is still decoded and means chMask = all channels.
+// pipe already has. The mask-less form (length 8 + 2*count, up to 5 params) is
+// still decoded and means chMask = all channels.
 inline bool pack_midi_route_pipe(Frame& f, std::uint16_t seq, std::uint32_t session,
                                  std::uint8_t src, std::uint8_t dst,
                                  std::uint8_t index, std::uint8_t type, bool bypass,
@@ -206,8 +206,8 @@ inline bool unpack_midi_route_pipe(const Frame& f, std::uint8_t& src, std::uint8
   const std::size_t legacy_length = 8 + 2 * count;
   const std::size_t scope_length = 10 + 2 * count;
   if (f.length != legacy_length && f.length != scope_length) return false;
-  // An 18-byte payload holds the mask plus at most four params; the fifth
-  // param survives only in a legacy (mask-less) frame.
+  // An 18-byte payload holds the mask plus at most four params; a fifth param
+  // fits only in the mask-less form.
   if (f.length == scope_length && count > route_pipe_param_frame_max) return false;
   if (capacity < count || (count != 0 && params == nullptr)) return false;
   src = f.payload[1];

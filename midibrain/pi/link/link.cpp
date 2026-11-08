@@ -446,7 +446,7 @@ void EmulatorTransport::resetLinkSession() {
 }
 
 // ---------------------------------------------------------------------------
-// Linux transports (unvalidated on hardware; see NOTES.md)
+// Linux transports (not yet validated on Pi hardware)
 // ---------------------------------------------------------------------------
 #ifdef __linux__
 LinuxSpidevTransport::LinuxSpidevTransport(const char* device, std::uint32_t clock_hz)

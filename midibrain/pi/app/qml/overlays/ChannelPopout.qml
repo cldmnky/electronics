@@ -41,7 +41,7 @@ Rectangle {
 
             Row {
                 width: parent.width
-                // Stage 4 sheet header: the CLOSE control is 64 px and the
+                // Sheet header: the CLOSE control is 64 px and the
                 // title sits at the same 12 px padding as every other sheet.
                 height: Style.touchPrimary
                 spacing: Style.gapTight
@@ -122,7 +122,7 @@ Rectangle {
                             Text {
                                 width: parent.width
                                 height: 14
-                                // W1: the mode word, never a bare letter on the
+                                // the mode word, never a bare letter on the
                                 // channel itself (the strip column keeps the
                                 // three-letter form because it is 44 px).
                                 text: mixer.selectedModeWord.substring(0, 3)
@@ -314,7 +314,7 @@ Rectangle {
                             TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "OVERDUB"; textSize: 10; checked: mixer.selectedMode === 2; focusId: "channel.mode.2"; onClicked: mixer.setSelectedMode(2) }
                             TouchButton { width: (parent.width - 12) / 4; height: parent.height; text: "LIVE"; textSize: Style.fontSmall; checked: mixer.selectedMode === 3; focusId: "channel.mode.3"; onClicked: mixer.setSelectedMode(3) }
                         }
-                        // REC SOURCE (W2b): the ARM-area selector names where the
+                        // REC SOURCE: the ARM-area selector names where the
                         // take taps the channel; PRE is the dry capture.
                         Row {
                             width: parent.width

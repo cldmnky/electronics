@@ -48,10 +48,11 @@ Modals replace the list while open (see parity rule above).
 
 | Tab | SHIFT face |
 |---|---|
-| Mixer | gains, sends, monitor legend |
-| Track | input/output/monitor, pre/post |
+| Mixer | gains, sends, monitor legend (the TRACK view lives inside MIXER) |
 | Routing | filters, transpose, MIDI FX pipes (generator/insert chains) |
 | Recorder | takes + punch/loop |
 | System | OUTPUT, metronome, MIDI learn, TOOLS |
 | Projects | templates + keypad ops |
-| Monitor / EQ / XY | none (refused with a message) |
+| EQ | band types and the EQ grid |
+| Arrange | sections and clip verbs |
+| MIDI / XY | none (refused with a message; `tabHasShiftFace` in `app_controller.cpp`) |

@@ -169,8 +169,9 @@ bool transport_running = false;
 // HELLO when its policy needs manual.
 bool transport_local = true;
 // Per-output EV_CLOCK_ROUTE gates (RAM only): index 0 = OUT1/uart0, 1 =
-// OUT2/uart1. Defaults preserve the legacy always-on stream; the Pi re-sends
-// its last-known route after HELLO, so only boot state lives here.
+// OUT2/uart1. Both default on, so a Pico that has not seen the Pi still streams
+// clock and transport; the Pi re-sends its last-known route after HELLO, so
+// only boot state lives here.
 mb::ClockGates clock_gates;
 // Per-output clock delay line (EV_CLOCK_ROUTE_EXT): only 0xF8 bytes enter it,
 // transport bytes are emitted directly. The alarm pushes, the main loop pops.
@@ -270,10 +271,10 @@ bool queue_tempo() {
   return queue_frame(f);
 }
 
-// Per-frame ack for app (control_event) frames: payload[0..1] echoes the Pi's
-// sequence so the Pi can retire its retry slot. Length 0 stays the handshake
-// ack, so an older Pi ignores the payload and this Pi still answers a length-0
-// ACK from older firmware as link liveness only.
+// Per-frame ack for the routed-byte frames (EV_MIDI_SEND, EV_MIDI_ROUTE_SEND):
+// payload[0..1] echoes the Pi's sequence so the Pi can retire its retry slot.
+// Configuration frames are not acked; they are idempotent and re-sent after
+// HELLO. Length 0 stays the handshake ack.
 bool frame_needs_ack(const mb::Frame& f) {
   return f.type == mb::Type::control_event && f.length >= 1 &&
          (f.payload[0] == mb::EV_MIDI_SEND ||
@@ -388,11 +389,11 @@ void emit_clocked_output(uint8_t dst, const PipeOutput& out, uint64_t deadline_n
   }
 }
 
-// Fixed-length note-offs, delay echoes and the clocked Wave-2 pipes are
-// serviced in the main loop, never in the clock IRQ: the route engines are not
-// IRQ-safe, so their output goes through the same non-blocking TX scheduler as
-// any other routed message. clock_ticks is read once per pass; a missed tick is caught up by the
-// engine (bounded to kMaxStepsPerCall steps, then it resyncs to the grid).
+// Fixed-length note-offs, delay echoes and the clocked pipes are serviced in
+// the main loop, never in the clock IRQ: the route engines are not IRQ-safe, so
+// their output goes through the same non-blocking TX scheduler as any other
+// routed message. clock_ticks is read once per pass; a missed tick is caught up
+// by the engine (bounded to kMaxStepsPerCall steps, then it resyncs to the grid).
 void drain_route_engines() {
   const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
   uint32_t ticks;
@@ -463,16 +464,12 @@ int64_t clock_tick(alarm_id_t, void*) {
   return 0;
 }
 
-// Retune the absolute grid. The setters mask interrupts because the clock
-// alarm advances the same scheduler from IRQ context. Recompute the period
-// from the smoothed follow estimate when one exists (including while
-// coasting), otherwise from the internal tempo. `announce` queues EV_TEMPO
-// when the followed tempo moves past the deadband; the main loop owns this
-// state, and clock_tick only advances the grid.
-// Follow retune: the PLL supplies both the period and a bounded phase nudge
-// for the pending deadline. Both must land atomically, because the clock alarm
-// advances the same scheduler from IRQ context. The nudge is a rebase of the
-// pending grid point (P0's rebase path), never a reset to the input edge.
+// Retunes the absolute grid. The setters mask interrupts because the clock alarm
+// advances the same scheduler from IRQ context.
+//
+// Follow retune: the PLL supplies both the period and a bounded phase nudge for
+// the pending deadline, and both land inside one masked section. The nudge
+// rebases the pending grid point; it never resets the grid to the input edge.
 void clock_period_set_follow(uint64_t period_ns, int32_t nudge_us) {
   const uint32_t saved = save_and_disable_interrupts();
   if (nudge_us != 0) clock_scheduler.rebasePendingNs(static_cast<int64_t>(nudge_us) * 1000);
@@ -495,7 +492,9 @@ void clock_interval_refresh(bool announce) {
   // Follow supplies a measured integer-microsecond estimate plus the slow
   // integral trim; it enters the same absolute grid, so the generator period
   // never accumulates its rounding. The bounded nudge slews the pending grid
-  // point toward the external phase without a discontinuity.
+  // point toward the external phase without a discontinuity. `announce` queues
+  // EV_TEMPO when the followed tempo moves past the deadband; the main loop
+  // owns this state and clock_tick only advances the grid.
   clock_period_set_follow(static_cast<uint64_t>(clock_follow.intervalUsRounded()) * 1000ull,
                           nudge_us);
   const int32_t followed = clock_follow.bpmX100();
@@ -575,9 +574,9 @@ void reset_link_session() {
 void transport_cmd(uint8_t cmd) {
   // Transport state is global; only the emitted bytes are per-output gated.
   // A transport command is an event, not a clock tick: its bytes go out at the
-  // event instant on the realtime TX class (never through the clock divider or
-  // sync-delay line), and START resets the tick index. This preserves the
-  // pre-scheduler semantics.
+  // event instant on the realtime TX class, never through the clock divider or
+  // the sync-delay line, so transport timing never waits for a clock slot.
+  // START resets the tick index.
   uint8_t b = 0xFC;
   if (cmd == 1) {
     b = 0xFA;
@@ -632,7 +631,7 @@ void handle_frame(const mb::Frame& f) {
     queue_tempo();
     return;
   }
-  if (f.type == mb::Type::ack) return;  // link liveness only in this revision
+  if (f.type == mb::Type::ack) return;  // link liveness only
   if (f.type != mb::Type::control_event) {
     ++ignored_kinds;
     return;
@@ -718,8 +717,8 @@ void handle_frame(const mb::Frame& f) {
       std::uint8_t src = 0, dst = 0, index = 0, type = 0, offset = 0;
       bool bypass = false;
       std::uint16_t ch_mask = 0;
-      // Legacy frames (no scope) carry up to five params; the decoder keeps
-      // accepting them, so the array holds the legacy maximum.
+      // A frame without a channel-scope field carries up to five params; the
+      // decoder keeps accepting that form, so the array holds five.
       std::int16_t raw[mb::route_pipe_param_frame_max_legacy]{};
       std::size_t count = 0;
       if (!mb::unpack_midi_route_pipe(f, src, dst, index, type, bypass, offset, ch_mask,
@@ -833,7 +832,7 @@ void handle_frame(const mb::Frame& f) {
       reset_link_session();
       break;
     default:
-      ++ignored_kinds;  // Pico->Pi kinds echoed back, or future commands
+      ++ignored_kinds;  // Pico->Pi kinds echoed back, or kinds this Pico does not handle
       break;
   }
 }

@@ -12,7 +12,7 @@ acceptance items remain pending.
 | --- | --- | --- |
 | Front/UI, 128 × 112 mm | MIDI inputs/outputs, six transport/shift switches, three LEDs, NAV, encoder and J5 | SMT on top/panel side. J5 THT body faces rearward; other THT controls face the panel. |
 | Rear/base, 101.6 × 112 mm | Pico sockets, Pi/front ribbons, SPI buffers, reset and power branch | SMT on bottom/rear side; THT headers/sockets fitted separately. |
-| Panel, 26HP/3U | FR-4 1.6 mm, white legends, cutouts/light-pipe holes | No components or copper; no copper finish is required. Confirm no-solder-mask fabrication with JLCPCB. |
+| Panel, 32HP/3U | FR-4 1.6 mm, white legends, cutouts/light-pipe holes | No components or copper; no copper finish is required. Confirm no-solder-mask fabrication with JLCPCB. |
 
 The encoder is **not** an unconditional hand-solder line item: the selected
 THT part has no catalog SMD detentless 24 PPR equivalent, and Bourns does not
@@ -57,21 +57,18 @@ still need qualification; do not reduce the 220 Ω input resistor casually.
 | U6 / encoder | Bourns PEC11R-4015F-S0024, C143789. Detentless (0 detents), 24 pulses/rev, push switch, THT with two anchor lugs. **THT fallback:** the 2026-11-06 JLC/LCSC search found no SMD encoder with 0 detents, 24+ PPR and through-hole anchor lugs (the SMD PEC11S/PEC11J/EC11J families are 30 detents/15 pulses), and a lug-less SMD knob encoder is not accepted. Request JLCPCB THT/hand-solder assembly for U6 if offered; otherwise use the bench technique below. Bourns does not recommend hand soldering PEC11R, so the process is qualified rather than assumed. |
 | J_PI / J_FRONT / J5 | XFCN BH254V-40P / BH254V-26P. Use alternating IDC numbering and the exact body/keying represented by the selected imports; continuity-test the purchased ribbons. |
 | Pico sockets | Two removable 1×20, 2.54 mm sockets. Exact procurement and installed height must match the module and first article. |
-| Display | Waveshare 3.5inch DSI LCD (H), SKU 33087, with the included 12 cm 15-pin-to-Pi-5-22-pin DSI cable. |
+| Display | Waveshare 4.3inch DSI LCD, ElectroKit 4103 5687, with the kit's 120 mm 15-pin-to-Pi-5-22-pin DSI cable (50 mm is too short for the route contract; the 160 mm cable is 15-pin-to-15-pin and does not fit DSI1). |
 | Display spacers | Provisional **5 mm beyond the 4 mm boss ends**, giving 9 mm PCB-plane separation. Do not buy a 9 mm spacer from the plane-gap number. Exact parts and fit remain pending. |
-| Panel/front spacers | Length/MPN pending. The current flush-glass target gives a 14.1 mm panel-rear-to-front-PCB-top gap, not a measured assembly. |
+| Panel/front spacers | Length/MPN pending. The current flush-glass target gives a 17.45 mm panel-rear-to-front-PCB-top gap, not a measured assembly. |
 | Front/rear spacers | Length/MPN pending the keyed 2×13 plug and bend mock-up; provisional 18–22 mm range. |
 | Pi spacers | Candidate 2.5 or 5 mm; actual microSD/SMT clearance and service access determine the choice. |
-| Light pipes | **Part selection pending.** PLP2-400-C is a 10.16 mm reference, not approved for the provisional 14.1 mm gap; reach, seating and the LED envelope must be established before purchase. Three 4 mm panel holes remain. |
+| Light pipes | **Part selection pending.** PLP2-400-C is a 10.16 mm reference, not approved for the provisional 17.45 mm gap; reach, seating and the LED envelope must be established before purchase. Three 4 mm panel holes remain. |
 | Knob / button / NAV caps | Exact parts or printed actuators pending shaft, detent, travel and reach checks. |
 | Bracket | PETG model generated from `mechanical/layout.json`: 121 × 14.5 × 3 mm, with slots 15.6/17.9/17.9 mm. CAD checks pass; printed fit, fasteners and cable retention do not yet have physical acceptance. |
 | Bracket fasteners | Two M2.5 screw/nut sets and four cable ties; verify length, head/washer envelope and printed-hole fit. |
 | Rack screws | Four M3 screws for the selected case/rail profile. |
 
-See [MECHANICAL-VERIFICATION.md](MECHANICAL-VERIFICATION.md) for the primary
-lens/PCB/boss datums and [mechanical-stack.md](mechanical-stack.md) for the
-remaining physical checks. The panel aperture is 90.67 × 54.36 mm with explicit
-corner relief; it is still a provisional tolerance design.
+See [mechanical-stack.md](mechanical-stack.md) for the display datums, the Z chain and the remaining physical checks. The panel aperture is 107.22 × 68.87 mm with explicit corner relief; it is still a provisional tolerance design.
 
 ## U6 encoder: THT fallback and bench technique
 

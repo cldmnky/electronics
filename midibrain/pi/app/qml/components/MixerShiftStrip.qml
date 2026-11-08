@@ -111,7 +111,7 @@ Rectangle {
                 focusId: "shift.mixer.out34." + root.stripIndex
                 onMoved: (value) => mixer.setOut34(root.stripIndex, value)
             }
-            // W1: the same mode word the strip pill shows; one tap cycles and
+            // the same mode word the strip pill shows; one tap cycles and
             // the full four-way choice is in the channel popout.
             TouchButton {
                 width: (parent.width - Style.gapTight) / 2

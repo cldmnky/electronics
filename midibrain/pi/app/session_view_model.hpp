@@ -51,7 +51,7 @@ class SessionViewModel final : public QObject {
   Q_PROPERTY(bool usbClock READ usbClock WRITE setUsbClock NOTIFY clockChanged)
   Q_PROPERTY(bool usbTransport READ usbTransport WRITE setUsbTransport NOTIFY clockChanged)
   Q_PROPERTY(QString clockText READ clockText NOTIFY clockChanged)
-  // D8: the clock-source choice on SYSTEM SHIFT > OUTPUT. 0 internal, 1 follow
+  // the clock-source choice on SYSTEM SHIFT > OUTPUT. 0 internal, 1 follow
   // TRS IN1, 2 follow USB. USB is not a clock source in this engine (the Pico
   // has no USB-device view), so choice 2 sets transportFollow[2] only and
   // leaves the generator internal; the row says so.

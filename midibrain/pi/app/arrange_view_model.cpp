@@ -1062,7 +1062,7 @@ void ArrangeViewModel::applySongToEngine() {
     }
   }
   // The engine clip scheduler only takes over when at least one lane resolved.
-  // An empty (or entirely missing-take) SONG ON project keeps the W1
+  // An empty (or entirely missing-take) SONG ON project keeps the
   // Active-take path audible instead of silently playing nothing.
   audio_.setSongMode(settings_.songMode && appliedAny);
   if (skipped > 0 && settings_.songMode) {

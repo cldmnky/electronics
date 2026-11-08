@@ -63,11 +63,12 @@ corner may be occluded.
 - [ ] Joystick walks every screen's controls in a sane order
 - [ ] Press enters/activates; encoder edits the focused value everywhere
 - [ ] SHIFT toggles each screen's second face; EXIT unwinds every overlay
-- [ ] Renames and IMPORT TAKE complete fully from the panel (G7)
+- [ ] Renames and IMPORT TAKE complete fully from the panel
 
 ## Hardware follow-ups (gates cannot certify)
 
 - [ ] Pi-side `--unittests` + `--ui-taps` run (CLAP discovery on the device:
-      which plugins its search finds; DELAY/REVERB audible there)
+      which plugins its search finds; DELAY/REVERB audible there). Tracked in
+      [TODO.md](TODO.md).
 - [ ] POWER button: press = on/graceful shutdown, long-press = PMIC force
       (app hook: flush + SAFE TO POWER OFF screen)

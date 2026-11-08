@@ -118,7 +118,7 @@ Rectangle {
                 }
             }
 
-            // W2b: the rack's neighbour - where the recorder taps this channel.
+            // the rack's neighbour - where the recorder taps this channel.
             // Setting it here keeps REC SOURCE next to the FX it can print.
             Row {
                 width: parent.width
