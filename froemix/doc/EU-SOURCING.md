@@ -29,6 +29,9 @@ Buying does:
   hand here, not scraped.
 - **Electrokit** — the English storefront is public, prices in SEK including
   VAT, delivery inside Sweden.
+- **LCSC** — a public catalogue with unit prices in EUR and delivery from
+  Shenzhen. The parts bought in for the build are in `library/components.csv`
+  with their LCSC part numbers.
 
 Automated Conrad data needs more than an account: a business account plus
 activation on `developer.conrad.com`. That portal sits behind a login and no
@@ -74,7 +77,7 @@ report to a comma-separated subset of `rs,digikey,electrokit,conrad`.
 
 `library/components.csv` holds the parts to reuse: through-hole parts,
 capacitors and character displays, each with the article number at Conrad
-Sweden and Electrokit, one price snapshot and one date. It is not a
+Sweden, Electrokit and LCSC, one price snapshot and one date. It is not a
 BOM. It is the list a new BOM is chosen from.
 
 ```bash

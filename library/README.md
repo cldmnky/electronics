@@ -10,10 +10,16 @@ at the two primary EU suppliers:
 | --- | --- | --- | --- |
 | `conrad` | Conrad Electronic | Sweden, `conrad.se` | SEK, excluding VAT |
 | `electrokit` | Electrokit | Sweden, `electrokit.com` (English store) | SEK, including VAT |
+| `lcsc` | LCSC | Shenzhen, `lcsc.com` (JLCPCB group) | EUR, unit price |
 
-The shop column holds the **article number** the shop prints. Leave it empty
-when the shop does not stock the part. Never copy an article number between
-shops.
+The shop column holds the **article number** the shop prints: a Conrad article
+number, an Electrokit `Art.no` or an LCSC part number such as `C470294`. Leave
+it empty when the shop does not stock the part. Never copy an article number
+between shops.
+
+Two rows may share category, value and package when they are alternatives, for
+example a red 3 mm LED from Electrokit and the one bought in from LCSC. The
+`id`, the shop columns and the `status` tell them apart.
 
 The file is `library/components.csv`, one row per part. It is plain CSV so a
 spreadsheet opens it and a script reads it. `library/parts_library.py` checks
@@ -43,9 +49,10 @@ it, searches it, and matches a project BOM against it.
 
 ## The list as it stands
 
-The first pass holds 39 parts, all `draft`, recorded on 2026-11-09: all 39
-carry an Electrokit article number and one of them also carries a Conrad
-article number. Each article number was checked against its own shop page.
+The list holds 56 parts, all `draft`, recorded on 2026-11-09: 39 with an
+Electrokit article number, 17 bought in from LCSC, and one of the Electrokit
+parts also from Conrad. Each article number was checked against its own shop
+page or, for LCSC, against the order that was placed.
 
 - **Electrokit** is the broadest source: THT carbon film resistors, ceramic and
   electrolytic capacitors, diodes, LEDs, TO-92 transistors, DIP op-amps and
@@ -57,6 +64,11 @@ article number. Each article number was checked against its own shop page.
   `library/searches.txt`, and the owner copies the article number by hand.
 - **Electrokit** gaps: no 20x4 character LCD, no 1 uF 50 V radial (the list
   uses 1 uF 100 V), and ceramic capacitors only at 22, 33, 47 and 100 nF.
+- **LCSC** fills the gaps that Swedish shops leave in small connectors: 2 mm
+  headers and sockets, 2x3/2x6/2x8 headers, a 12x12 mm tactile switch, an XUNPU
+  5-way navigation switch, ALPS RK09 pots, 3.5 mm PJ-301M jacks, a SH1106
+  1.3 inch OLED and a 24 V to 5 V isolated DC-DC module. Delivery comes from
+  China, so it is a stock source, not a same-week source.
 
 ## Accounts
 
@@ -68,6 +80,8 @@ Browsing and searching need no account at either shop. Ordering does.
   answers bots with a Cloudflare challenge, so this repository records Conrad
   article numbers by hand.
 - **Electrokit** — an account at checkout; the catalogue is public.
+- **LCSC** — an account at checkout; the catalogue is public. LCSC ships from
+  Shenzhen, so confirm the lead time in the order before you rely on a part.
 
 ## Use
 

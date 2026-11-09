@@ -44,19 +44,29 @@ SHOPS = {
         "price": "electrokit_price_sek",
         "moq": "electrokit_moq",
     },
+    "lcsc": {
+        # Stock bought in from JLCPCB in Shenzhen; longer delivery than Sweden.
+        "name": "LCSC",
+        "currency": "EUR",
+        "search": "https://www.lcsc.com/search?q={q}",
+        "sku": "lcsc_sku",
+        "price": "lcsc_price_eur",
+        "moq": "lcsc_moq",
+    },
 }
 
 COLUMNS = [
     "id", "category", "description", "value", "package", "rating", "tolerance",
     "conrad_sku", "conrad_price_sek", "conrad_moq",
     "electrokit_sku", "electrokit_price_sek", "electrokit_moq",
+    "lcsc_sku", "lcsc_price_eur", "lcsc_moq",
     "datasheet", "status", "updated", "notes",
 ]
 
 CATEGORIES = {
     "resistor", "cap-ceramic", "cap-electrolytic", "cap-film",
     "diode", "led", "transistor", "ic", "header", "display",
-    "jack", "potentiometer", "knob", "switch",
+    "jack", "potentiometer", "knob", "switch", "power",
 }
 
 STATUSES = ("preferred", "alternate", "draft", "avoid")
@@ -84,10 +94,13 @@ def search_url(shop: str, text: str) -> str:
 
 
 def product_url(shop: str, sku: str) -> str:
-    """Where to look for one recorded article: its shop's search for the sku."""
+    """Where to look for one recorded article: its shop page, or a search."""
     if not sku.strip():
         raise LibraryError(f"{shop}: no sku to look up")
-    return search_url(shop, sku.strip())
+    sku = sku.strip()
+    if shop == "lcsc" and re.fullmatch(r"C\d+", sku, re.I):
+        return f"https://www.lcsc.com/product-detail/{sku.upper()}.html"
+    return search_url(shop, sku)
 
 
 def parse_date(text: str, context: str) -> date:
@@ -150,7 +163,6 @@ def validate(rows: list[dict], today: date | None = None,
     warnings: list[str] = []
     today = today or date.today()
     seen: dict[str, str] = {}
-    identities: dict[tuple[str, str, str], str] = {}
     for row in rows:
         where = f"line {row.get('_line', '?')} ({row.get('id') or 'no id'})"
         part_id = row["id"]
@@ -175,19 +187,14 @@ def validate(rows: list[dict], today: date | None = None,
                 warnings.append(f"{where}: price snapshot is {age} days old")
         except LibraryError as exc:
             errors.append(str(exc))
-        key = (row["category"], norm(row["value"]), norm(row["package"]))
-        if key[1] and key in identities:
-            warnings.append(f"{where}: same category, value and package as {identities[key]}")
-        elif key[1]:
-            identities[key] = part_id
         shops_with_sku = 0
         for shop, info in SHOPS.items():
-            sku = row[info["sku"]]
+            sku = (row.get(info["sku"]) or "").strip()
             if sku:
                 shops_with_sku += 1
             try:
-                price = parse_price(row[info["price"]], where)
-                parse_moq(row[info["moq"]], where)
+                price = parse_price(row.get(info["price"], ""), where)
+                parse_moq(row.get(info["moq"], ""), where)
             except LibraryError as exc:
                 errors.append(str(exc))
                 continue
@@ -337,9 +344,11 @@ def command_find(args) -> int:
         for row in matches:
             print(f"{row['id']:24} {row['description']}")
             for shop, info in SHOPS.items():
-                if row[info["sku"]]:
-                    print(f"  {SHOPS[shop]['name']:18} {row[info['sku']]}  {row[info['price']]} {info['currency']}")
-            print(f"  search: {search_url(args.shop, row['value'] or row['description'])}")
+                sku = row[info["sku"]]
+                if sku:
+                    print(f"  {SHOPS[shop]['name']:10} {sku:10} {row[info['price']]:>8} {info['currency']}"
+                          f"  {product_url(shop, sku)}")
+            print(f"  search   {search_url(args.shop, row['value'] or row['description'])}")
     return 0 if matches else 1
 
 
