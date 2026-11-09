@@ -295,7 +295,10 @@ front and rear circuit JSON geometry is identical in order.
 
 ## Tests
 
-`make mechanical` runs the pure tests, which need no CAD library:
+`make mechanical` runs the geometry tests. It needs **bun** for the panel silk
+check (that test exports and parses the real Legend Gerber and FAILS, never
+skips, when bun or `tscircuit/node_modules` is missing). It needs **no CAD
+library** for any of them:
 
 - `mechanical/test_step_geometry.py` — the collision rule, the exact 0.45 mm
   projection and its mutations, coordinate-drift refusals, the output-directory
@@ -306,6 +309,12 @@ front and rear circuit JSON geometry is identical in order.
   including the cases where it must report a difference.
 - `tscircuit/lib/panel-cutouts.test.ts` (bun) — the canonical panel apertures and
   drills against the built `dist/panel/circuit.json`, element by element.
+- `mechanical/test_panel_silk_gerber.py` — the emitted `F_SilkScreen.gbr` against
+  every panel opening and drill (parser, geometry, zip safety, and the real
+  export with its PLAY START mutation). Pure parser/geometry/zip tests only:
+  `python3 -m unittest mechanical.test_panel_silk_gerber.GerberParserTest
+  mechanical.test_panel_silk_gerber.ClearanceGeometryTest
+  mechanical.test_panel_silk_gerber.ZipSafetyTest`
 - `mechanical/test_cad_roundtrip.py` — with a real kernel and the vendor model:
   the display placement (glass datum, plane order, rotation not mirror, mounting
   centres, boards unchanged), the archive and STEP hash refusals, and the exports

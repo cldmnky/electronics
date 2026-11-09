@@ -12,7 +12,7 @@ acceptance items remain pending.
 | --- | --- | --- |
 | Front/UI, 128 × 112 mm | MIDI inputs/outputs, six transport/shift switches, three LEDs, NAV, encoder and J5 | SMT on top/panel side. J5 THT body faces rearward; other THT controls face the panel. |
 | Rear/base, 101.6 × 112 mm | Pico sockets, Pi/front ribbons, SPI buffers, reset and power branch | SMT on bottom/rear side; THT headers/sockets fitted separately. |
-| Panel, 30HP/3U (152.0 × 128.5 mm) | FR-4 1.6 mm, white legends, cutouts/light-pipe holes | No components or copper; no copper finish is required. Confirm no-solder-mask fabrication with JLCPCB. |
+| Panel, 30HP/3U (152.0 × 128.5 mm) — button opening **UNRESOLVED** (provisional Ø12.4 mm, unsourced; see docs/mechanical-stack.md) | FR-4 1.6 mm, white legends, cutouts/light-pipe holes | No components or copper; no copper finish is required. Confirm no-solder-mask fabrication with JLCPCB. |
 
 The encoder is **not** an unconditional hand-solder line item: the selected
 THT part has no catalog SMD detentless 24 PPR equivalent, and Bourns does not

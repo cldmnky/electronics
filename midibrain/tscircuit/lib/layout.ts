@@ -801,7 +801,15 @@ export const FRONT_CONCEPT: readonly FrontConceptPoint[] = [
 
 // ---- Panel openings (front FR-4 panel) ----
 export const PANEL_CUTOUTS = {
-  button: 12.4, // B3F-4055 transport button, circular opening
+  // UNVERIFIED PROVISIONAL VALUE, NOT SOURCED. No Omron drawing states a
+  // 12.4 mm round panel opening. The B3F-4055 (primary drawing, SHA-256
+  // be9cf69e...) has a SQUARE 3.8 +-0.1 mm projected plunger and a 12 +-0.2 mm
+  // square body; the compatible B32 cap families (SHA-256 90834f79...) show a
+  // 12.2 x 12.2 mm square or a Ø9.7 mm round reference cutout. A square cap
+  // corner cannot pass a Ø12.4 round hole. Kept only until the owner chooses a
+  // switch extension, a cap, or a stack redesign; see docs/mechanical-stack.md
+  // and the pending `control_actuator` acceptance item.
+  button: 12.4,
   led: 4.0,     // Bivar PLP2-400-C light pipe over the 0805 LED
   control: 7.2, // PEC11R M7 x 0.75 bushing (7.0 mm thread) / SKRHABE010 nav actuator
   jack: 6.2,    // PJ-301M-3-B barrel
@@ -909,6 +917,9 @@ const FEEDTHROUGH_LABEL: Record<string, string> = {
 const JACK_LABEL: Record<string, string> = {
   "MIDI IN 1": "IN 1", "MIDI IN 2": "IN 2", "MIDI OUT 1": "OUT 1", "MIDI OUT 2": "OUT 2",
 }
+/** PLAY START label row, above its button (see PANEL_LABELS). */
+export const PLAY_START_LABEL_Y = -25.5
+
 const LABEL_OFFSET = {
   // -9.5 -> -6.0: the panel window top is 45.435, so the USB labels move up to
   // y 47.5 (bottom 46.6) to stay on FR-4 with 1.165 mm to the window and
@@ -951,6 +962,11 @@ export const PANEL_LABELS: readonly PanelLabel[] = [
   // POWER sits under its cutout: the +7 row above belongs to PLAY START.
   { text: "POWER", x: POWER_BUTTON.x, y: POWER_BUTTON.y + POWER_LABEL_OFFSET_Y },
   ...FRONT_COLUMNS.map(c => ({ text: c.button, x: c.x, y: TRANSPORT_Y + LABEL_OFFSET.transport })),
-  { text: PLAY_START.button, x: PLAY_START.x, y: TRANSPORT_Y + LABEL_OFFSET.transport },
+  // PLAY START's label sits ABOVE its button, not below like the transport row:
+  // below it the ink ran into the POWER button opening at (52.5, -48). At
+  // y -25.5 the 1.8 mm text keeps 1.2 mm to the LCD window bottom (-23.435) and
+  // 1.4 mm to the button opening top (-27.8). Only the label moves; no control,
+  // opening or board coordinate changes.
+  { text: PLAY_START.button, x: PLAY_START.x, y: PLAY_START_LABEL_Y },
   ...FRONT_COLUMNS.map(c => ({ text: JACK_LABEL[c.jack] ?? c.jack, x: c.x, y: JACK_Y + LABEL_OFFSET.jack })),
 ]

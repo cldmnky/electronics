@@ -223,6 +223,39 @@ board source, SMT side or stackup is changed for it:
 This needs an owner decision and a PCB revision. Until then the CAD model keeps the current board orientation and
 makes no compliance claim. Recorded in the assumptions file as `board_face_convention`.
 
+## Panel button opening — UNRESOLVED, provisional 12.4 mm round
+
+`PANEL_CUTOUTS.button = 12.4` is an **unverified provisional** value. No Omron
+drawing states a 12.4 mm round opening, and the primary data does not support
+one. Sources (retrieved 2026-11-08):
+
+| Source | SHA-256 | What it states |
+|---|---|---|
+| [Omron B3F datasheet](https://omronfs.omron.com/en_US/ecb/products/pdf/en-b3f.pdf) | `be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f` | B3F-4055: projected plunger **square □3.8 ±0.1 mm**, body **12 ±0.2 mm square**, total height **7.3 ±0.2 mm** |
+| [Omron B32 datasheet](https://omronfs.omron.com/en_US/ecb/products/pdf/en-b32.pdf) | `90834f79bcb19ed59fc242f0a005d8ca47fcdbf2f4583bc53695695bb675d28f` | a **12 × 12 mm square key top** with a **12.2 × 12.2 mm +0.05/0** reference cutout, and a **Ø9.5 ±0.2 mm round key top** with a **Ø9.7 mm +0.05/0** reference cutout |
+
+Consequences, all unresolved:
+
+- The plunger is **square**, and a square cap cannot pass a Ø12.4 mm round hole
+  (a 12.2 mm square's diagonal is 17.25 mm). The round opening is therefore not
+  demonstrated to accept any of the listed caps.
+- The cap families are **not selected**. Choosing one is an owner decision, and
+  it interacts with the opening shape and the stack.
+- The reference cutouts carry a **+0.05/0 mm** tolerance. This document does
+  **not** claim JLCPCB can hold 0.05 mm on a routed panel cutout; that is
+  unverified.
+- **Arithmetic only, with the physical stack unmeasured:** in the provisional
+  17.45 mm panel-rear-to-board-top gap, Omron's reference board-to-cap-face
+  figures put neither key top at the panel plane — square reference
+  **10.0 ±0.4 mm** leaves 17.45 − 10.0 = **7.45 mm** (7.05…7.85 mm range), and
+  round **11.5 ±0.4 mm** leaves 17.45 − 11.5 = **5.95 mm** (5.55…6.35 mm). These
+  are subtractions on a provisional gap, not measurements.
+
+The `control_actuator` acceptance item stays **pending**. The owner must choose a
+switch extension, a cap, or a stack redesign before the opening is changed. **Do
+not change Ø12.4 on the strength of this section**, and do not treat any value
+here as a fitted dimension.
+
 ## Board-to-board relationship
 
 Both boards are centred on their own origin, so the 128 mm front board overhangs the 101.6 mm rear board by

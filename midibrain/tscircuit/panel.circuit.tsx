@@ -65,8 +65,11 @@ export default () => (
       <Fragment key={`panel-hole-${i}`}><hole name={h.name} diameter={`${h.diameter}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
     ))}
 
-    {/* White silkscreen graphics only; no copper and no solder mask. */}
-    <silkscreenrect pcbX="0mm" pcbY="0mm" width="130.08mm" height="126.5mm" strokeWidth="0.3mm" layer="top" />
+    {/* White silkscreen graphics only; no copper and no solder mask.
+        A decorative full-panel border rect used to be drawn here (130.08 x
+        126.5 mm). It was removed by owner request: the board edge is the outline,
+        and an inner square border reads as a second, wrong panel edge. Do not
+        reintroduce it. */}
     {PANEL_TITLES.map((t, i) => (
       <Fragment key={`title-${i}`}><silkscreentext text={t.text} pcbX={`${t.x}mm`} pcbY={`${t.y}mm`} fontSize={`${t.fontSize}mm`} anchorAlignment="center" layer="top" /></Fragment>
     ))}

@@ -80,6 +80,7 @@ electrical:
 # production output; full CAD remains optional and tool-dependent.
 mechanical:
 	@if [ -f tscircuit/scripts/export-mechanical.ts ] && [ -d mechanical ]; then \
+	  export MIDIBRAIN_BUNX="$$(command -v $(BUN) 2>/dev/null || printf '%s' '$(BUN)')"; \
 	  cd tscircuit && $(BUN) run scripts/export-mechanical.ts --check && cd .. && \
 	  $(PYTHON) -m unittest discover -s mechanical -p 'test_*.py'; \
 	else \
