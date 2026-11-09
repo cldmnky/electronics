@@ -640,6 +640,19 @@ export const mechanicalExport = () => ({
   frontRearMount: FRONT_REAR_MOUNT,
   mountHoleDiameter: MOUNT_HOLE_DIAMETER,
   feedthroughs: USB_FEEDTHROUGHS,
+  // Every drilled hole the STEP/STL verification models need, so no CAD script
+  // restates a coordinate. Adding a key here is additive: no position moves.
+  railHoles: RAIL_HOLES,
+  railHoleDiameter: RAIL_HOLE_DIAMETER,
+  frontBoardHoles: FRONT_BOARD_HOLES,
+  // The canonical panel openings, so the CAD panel cannot drift from the board.
+  panelApertures: PANEL_APERTURES,
+  panelDrills: PANEL_DRILLS,
+  panelMountHoles: PANEL_MOUNT_HOLES,
+  lcdMountHoles: LCD_MOUNT_HOLES,
+  displayBossPattern: DISPLAY_BOSS_PATTERN,
+  piHoles: PI_HOLES,
+  piMount: PI_MOUNT,
 })
 
 // ---- Right-hand control column ----
@@ -761,6 +774,92 @@ export const PANEL_CUTOUTS = {
 // Ring band 3.625…4.175: 0.5 mm web to the 6.2 mm barrel hole, 2.8 mm to the
 // transport button cutouts above, 1.1 mm to the OUT labels below.
 export const OUT_RING = { radius: 3.9, stroke: 0.55 } as const
+
+// ---- Canonical panel apertures and drills ----
+// The panel's openings, in the order `panel.circuit.tsx` emits them. Every
+// value is DERIVED from the constants above; this block adds no coordinate.
+// `panel.circuit.tsx` and `mechanicalExport()` both consume it, so the built
+// panel and the STEP/STL mockups cannot drift apart. Element order is part of
+// the contract: `lib/panel-cutouts.test.ts` compares this list with the built
+// `dist/panel/circuit.json` element by element, and any change to the order or
+// the geometry fails there.
+export type PanelDrill = { name: string; x: number; y: number; diameter: number }
+export type PanelAperture = {
+  shape: "polygon" | "rect" | "circle"
+  name: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  radius?: number
+  points?: readonly { x: number; y: number }[]
+  drills?: readonly PanelDrill[]
+}
+
+const feedthroughDrills = (f: (typeof USB_FEEDTHROUGHS)[number], i: number): PanelDrill[] =>
+  f.holeSpacing > 0
+    ? [-1, 1].map(sx => ({
+        name: `USB_${i}_${sx}`,
+        x: f.x + sx * f.holeSpacing / 2,
+        y: f.y,
+        diameter: f.holeDiameter,
+      }))
+    : []
+
+export const PANEL_APERTURES: readonly PanelAperture[] = [
+  // 1. LCD glass aperture: rounded rectangle with explicit corner relief.
+  { shape: "polygon", name: "LCD_APERTURE", points: roundedRectOutline(PANEL_LCD_CUTOUT) },
+  // 2. The three USB panel feedthroughs, each with its two panel screw holes.
+  ...USB_FEEDTHROUGHS.map((f, i) => ({
+    shape: "rect" as const,
+    name: `USB_FEEDTHROUGH_${i}`,
+    x: f.x,
+    y: f.y,
+    width: f.cutoutWidth,
+    height: f.cutoutHeight,
+    drills: feedthroughDrills(f, i),
+  })),
+  // 3. Transport buttons, then PLAY START and SHIFT/EXIT.
+  ...FRONT_COLUMNS.map(c => ({
+    shape: "circle" as const, name: `${c.button} BUTTON`,
+    x: c.x, y: TRANSPORT_Y, radius: PANEL_CUTOUTS.button / 2,
+  })),
+  { shape: "circle", name: "PLAY START BUTTON", x: PLAY_START.x, y: TRANSPORT_Y, radius: PANEL_CUTOUTS.button / 2 },
+  { shape: "circle", name: "SHIFT/EXIT BUTTON", x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y, radius: PANEL_CUTOUTS.button / 2 },
+  // 4. LED light-pipe openings, 12 mm beside REC / OVER DUB / PLAY.
+  ...FRONT_COLUMNS.filter(c => c.button in LED_ID).map(c => {
+    const p = ledPosition(c.x)
+    return {
+      shape: "circle" as const,
+      name: LED_ID[c.button as keyof typeof LED_ID],
+      x: p.x, y: p.y, radius: PANEL_CUTOUTS.led / 2,
+    }
+  }),
+  // 5. Encoder, POWER button, NAV switch: the right-hand control column.
+  { shape: "circle", name: "VALUE ENCODER", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y, radius: PANEL_CUTOUTS.control / 2 },
+  { shape: "circle", name: "POWER BUTTON", x: POWER_BUTTON.x, y: POWER_BUTTON.y, radius: PANEL_CUTOUTS.button / 2 },
+  { shape: "circle", name: "NAV", x: RIGHT_CONTROLS.NAV.x, y: RIGHT_CONTROLS.NAV.y, radius: PANEL_CUTOUTS.control / 2 },
+  // 6. MIDI jack barrels in the four transport columns.
+  ...FRONT_COLUMNS.map(c => ({
+    shape: "circle" as const, name: `${c.jack} JACK`,
+    x: c.x, y: JACK_Y, radius: PANEL_CUTOUTS.jack / 2,
+  })),
+]
+
+// Panel-to-front-board standoffs and Eurorack rail holes. `panel.circuit.tsx`
+// emits these after the silkscreen, so they are kept out of PANEL_APERTURES and
+// the built element order stays unchanged.
+export const PANEL_MOUNT_HOLES: readonly PanelDrill[] = [
+  ...FRONT_BOARD_HOLES.map((h, i) => ({ name: `STAND_${i + 1}`, x: h.x, y: h.y, diameter: MOUNT_HOLE_DIAMETER })),
+  ...RAIL_HOLES.map((h, i) => ({ name: `RACK_${i + 1}`, x: h.x, y: h.y, diameter: RAIL_HOLE_DIAMETER })),
+]
+
+// Every drilled hole in the panel, flat, for the CAD model: the feedthrough
+// screw holes first, then the standoffs and the rail holes.
+export const PANEL_DRILLS: readonly PanelDrill[] = [
+  ...PANEL_APERTURES.flatMap(a => a.drills ?? []),
+  ...PANEL_MOUNT_HOLES,
+]
 
 // ---- White-silkscreen panel labels ----
 // Short panel text for the full concept ids, plus per-control label offsets;

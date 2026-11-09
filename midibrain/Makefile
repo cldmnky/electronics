@@ -1,4 +1,4 @@
-.PHONY: test release gate reports electrical mechanical mechanical-export host midifx spice panel-preview firmware order bench-test bench-clock
+.PHONY: test release gate reports electrical mechanical mechanical-export mechanical-cad host midifx spice panel-preview firmware order bench-test bench-clock
 
 # Defaults cover the setup in firmware/README.md; override on the command
 # line (PICO_SDK_PATH=/path/to/sdk make firmware) if yours lives elsewhere.
@@ -91,6 +91,19 @@ mechanical:
 
 mechanical-export:
 	cd tscircuit && $(BUN) run scripts/export-mechanical.ts
+
+# The STEP verification assembly and the printable 1:1 mockups (mechanical work
+# item). All output is generated, gitignored CAD data - nothing here is a
+# released drawing or a fit approval. CadQuery is optional and never installed
+# into the system Python; point CAD_PYTHON at a private environment, and
+# CAD_OUT at an output directory (default mechanical/cad-out). See
+# docs/mechanical-cad.md.
+CAD_PYTHON ?= python3
+CAD_OUT ?= mechanical/cad-out
+CAD_ARGS ?=
+mechanical-cad:
+	@echo "STEP/STL verification model: PROVISIONAL, not a released drawing"
+	$(CAD_PYTHON) mechanical/step_assembly.py --out "$(CAD_OUT)" $(CAD_ARGS)
 
 host: midifx
 	@set -eu; exe=$$(mktemp "$${TMPDIR:-/tmp}/midibrain-test.XXXXXX"); trap 'rm -f "$$exe"' EXIT; \

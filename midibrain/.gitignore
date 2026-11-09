@@ -10,6 +10,10 @@ fab/
 # bracket STL/STEP are generated from mechanical/layout.json — do not commit binaries)
 *.stl
 *.step
+# The STEP/STL verification model writes its whole output set here, including
+# assumptions.json and print-checklist.md, which are generated too
+# (`make mechanical-cad`, docs/mechanical-cad.md).
+mechanical/cad-out/
 # CWD droppings from `tsci export` runs (release keeps canonical copies in fab/)
 *.circuit-pcb.svg
 # Generated board SVGs (reproducible via tsci export; not linked from docs)

@@ -227,6 +227,13 @@ export const FINGERPRINT_FILES = [
   // invalidate a DFM/CPL or fit result even when lib/layout.ts is unchanged.
   "mechanical/feedthrough_bracket.py",
   "mechanical/bracket_geometry.py",
+  // The STEP/STL verification model is the same kind of source: it decides
+  // which envelopes are drawn, which axis is treated as unknown and whether a
+  // collision result is definitive, and it builds the mockups a first article
+  // is checked against. A change to any of these must invalidate old evidence.
+  "mechanical/step_assembly.py",
+  "mechanical/step_geometry.py",
+  "mechanical/light_pipe_reach.py",
   "jlc-order.json",
   "tscircuit/scripts/sourcing-extras.csv",
 ]

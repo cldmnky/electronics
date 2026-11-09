@@ -238,6 +238,17 @@ generated into `mechanical/layout.json`; the first draft hardcoded slots at −4
 20/40/40 mm slots that touched each other. The bracket is generated from `layout.ts`; the CAD self-check lives in
 `mechanical/feedthrough_bracket.py` + `mechanical/bracket_geometry.py` and is not run by `make test` (CadQuery is optional).
 
+### STEP assembly and printable mockups (verification only)
+
+`mechanical/step_assembly.py` builds a named-solid STEP assembly and individual
+1:1 panel/front-board/rear-board STL mockups from `mechanical/layout.json`, plus
+a printer scale bar and a light-pipe reach gauge. The flange-versus-board result
+stays **UNDETERMINED**: the 0.45 mm overlap is an XY projection and the Adafruit
+908 drawing states no flange depth. `make mechanical` runs the pure tests; the
+CAD exports are gitignored and regenerated on demand. Paths, the collision rule,
+the vendor STEP hash check and the print checklist are in
+[mechanical-cad.md](mechanical-cad.md).
+
 ## Hardware process notes
 
 - **Encoder (Bourns PEC11R-4015F-S0024, C143789):** the manufacturer does not recommend hand soldering this part; it needs a
