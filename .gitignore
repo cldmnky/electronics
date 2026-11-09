@@ -1,2 +1,4 @@
 .DS_Store
 .opencode/
+__pycache__/
+*.pyc

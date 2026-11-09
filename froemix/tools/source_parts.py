@@ -3,6 +3,10 @@
 
 Search results are leads, never approved substitutes. See doc/EU-SOURCING.md.
 Python standard library only; no purchasing, scraping, or credential storage.
+
+Shop coverage needs no account and no network: RS Sweden, DigiKey Sweden,
+Electrokit, conrad.se and 3u-shop.de. Only DigiKey has a live query, because a
+public self-service search API was confirmed there alone.
 """
 from __future__ import annotations
 
@@ -21,11 +25,32 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-SUPPLIERS = ("rs", "digikey", "electrokit")
+SUPPLIERS = ("rs", "digikey", "electrokit", "conrad", "u3shop")
+# Free text of the shop for messages, with the storefront each link opens.
+SHOPS = {
+    "rs": ("RS Sweden", "https://se.rs-online.com/"),
+    "digikey": ("DigiKey Sweden", "https://www.digikey.se/"),
+    "electrokit": ("Electrokit", "https://www.electrokit.com/en/"),
+    "conrad": ("Conrad Sweden", "https://www.conrad.se/"),
+    "u3shop": ("3U-Shop (German shop)", "https://www.3u-shop.de/"),
+}
 
 
 class SourcingError(Exception):
     pass
+
+
+def supplier_list(text: str) -> tuple[str, ...]:
+    """Parse a --suppliers value such as 'conrad,u3shop'."""
+    names = tuple(name.strip().lower() for name in text.split(",") if name.strip())
+    if not names:
+        raise SourcingError("--suppliers needs at least one of: " + ", ".join(SUPPLIERS))
+    unknown = [name for name in names if name not in SUPPLIERS]
+    if unknown:
+        raise SourcingError("unknown supplier(s): " + ", ".join(unknown) +
+                            " (choose from: " + ", ".join(SUPPLIERS) + ")")
+    # Keep the canonical order so two runs with the same set agree.
+    return tuple(name for name in SUPPLIERS if name in names)
 
 
 def search_url(supplier: str, query: str) -> str:
@@ -36,6 +61,12 @@ def search_url(supplier: str, query: str) -> str:
         return f"https://www.digikey.se/en/products/result?keywords={q}"
     if supplier == "electrokit":
         return f"https://www.electrokit.com/en/search.php?keyword={q}&search="
+    if supplier == "conrad":
+        # Swedish storefront, B2B prices shown excluding VAT.
+        return f"https://www.conrad.se/sv/search.html?search={q}"
+    if supplier == "u3shop":
+        # German Shopware shop; German part words give better hits than English.
+        return f"https://www.3u-shop.de/search?q={q}"
     raise ValueError(f"unknown supplier: {supplier}")
 
 
@@ -178,7 +209,8 @@ class DigiKey:
         return results
 
 
-def build_report(parts: list[dict], client: DigiKey | None, limit: int) -> tuple[dict, bool]:
+def build_report(parts: list[dict], client: DigiKey | None, limit: int,
+                 suppliers: tuple[str, ...] = SUPPLIERS) -> tuple[dict, bool]:
     failed = False
     # Repeated exact searches do not need repeat API calls within a run.
     cache: dict[str, dict] = {}
@@ -186,7 +218,7 @@ def build_report(parts: list[dict], client: DigiKey | None, limit: int) -> tuple
     for part in parts:
         query = part["query"]
         part["suppliers"] = {}
-        for supplier in SUPPLIERS:
+        for supplier in suppliers:
             part["suppliers"][supplier] = {"search_url": search_url(supplier, query) if query else None,
                                             "status": "manual_search" if query else "query_required",
                                             "candidates": []}
@@ -207,9 +239,10 @@ def build_report(parts: list[dict], client: DigiKey | None, limit: int) -> tuple
             if cache[query]["status"] == "error":
                 failed = True
     return ({"generated_at_utc": datetime.now(timezone.utc).isoformat(),
-             "market": "Sweden: RS Sweden, DigiKey Sweden (SE/SEK), Electrokit English storefront",
+             "market": "; ".join(f"{SHOPS[name][0]} ({SHOPS[name][1]})" for name in suppliers),
              "notice": "Search leads only; no compatibility, stock or EU shipment is certified. "
-                       "Review datasheets, quantities, shipping and checkout for every part.",
+                       "Review datasheets, quantities, shipping and checkout for every part. "
+                       "Searching needs no account; ordering and any vendor API do.",
              "parts": parts}, failed)
 
 
@@ -249,17 +282,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base-bom", type=Path, default=ROOT / "fab/froemix-bom-hand.csv")
     parser.add_argument("--euro-bom", type=Path, default=ROOT / "fab/euro/euro-bom-hand.csv")
     parser.add_argument("--extras", type=Path, default=ROOT / "tools/sourcing-extras.csv")
-    parser.add_argument("--digikey-live", action="store_true", help="query DigiKey v4 (requires API credentials); RS/Electrokit remain manual links")
+    parser.add_argument("--digikey-live", action="store_true", help="query DigiKey v4 (requires API credentials); every other shop stays a manual link")
+    parser.add_argument("--suppliers", default=SUPPLIERS[0] + "," + ",".join(SUPPLIERS[1:]),
+                        metavar="LIST", help="comma-separated subset of " + ",".join(SUPPLIERS) +
+                        " (default: all)")
+    parser.add_argument("--query", action="append", metavar="TEXT", default=None,
+                        help="search this text instead of the BOMs; repeat for more parts")
     parser.add_argument("--limit", type=int, choices=range(1, 51), default=5, metavar="1..50")
     parser.add_argument("--format", choices=("json", "csv"), default="json", help="JSON (default) or spreadsheet-friendly CSV")
     parser.add_argument("--output", type=Path, help="write report to this path; default stdout")
     args = parser.parse_args(argv)
     try:
-        parts = read_bom(args.base_bom, "base") + read_bom(args.euro_bom, "euro") + read_extras(args.extras)
+        suppliers = supplier_list(args.suppliers)
+        if args.query is not None:
+            parts = [{"board": "ad-hoc", "designators": "-", "quantity": 1, "mpn": "",
+                      "comment": "", "lcsc_reference": "", "query": text.strip(),
+                      "source": "command line"} for text in args.query if text.strip()]
+            if len(parts) != len(args.query):
+                raise SourcingError("--query needs non-empty search text")
+        else:
+            parts = read_bom(args.base_bom, "base") + read_bom(args.euro_bom, "euro") + read_extras(args.extras)
         if not parts:
             raise SourcingError("no parts found")
         client = DigiKey(os.environ.get("DIGIKEY_CLIENT_ID", ""), os.environ.get("DIGIKEY_CLIENT_SECRET", "")) if args.digikey_live else None
-        report, failed = build_report(parts, client, args.limit)
+        report, failed = build_report(parts, client, args.limit, suppliers)
         output = render_csv(report) if args.format == "csv" else json.dumps(report, indent=2, ensure_ascii=False) + "\n"
         if args.output:
             args.output.write_text(output, encoding="utf-8")
