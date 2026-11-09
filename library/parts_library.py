@@ -2,9 +2,9 @@
 """Keep one reusable list of through-hole parts and source it from EU shops.
 
 The list is `library/components.csv`: through-hole parts, capacitors and
-character displays, bought from three primary shops (Conrad Sweden, Electrokit
-and 3U-Shop). A row holds the part's own facts and the shop article number for
-each shop. Every price is a recorded snapshot with a date, never a live quote.
+character displays, bought from Conrad Sweden and Electrokit. A row holds the
+part's own facts and the shop article number for each shop. Every price is a
+recorded snapshot with a date, never a live quote.
 
 Browsing and searching need no shop account. Ordering does. Automated data
 needs a vendor API; only the tool in froemix/tools has one (DigiKey).
@@ -44,21 +44,12 @@ SHOPS = {
         "price": "electrokit_price_sek",
         "moq": "electrokit_moq",
     },
-    "u3shop": {
-        "name": "3U-Shop (German)",
-        "currency": "EUR",
-        "search": "https://www.3u-shop.de/search?q={q}",
-        "sku": "u3shop_sku",
-        "price": "u3shop_price_eur",
-        "moq": "u3shop_moq",
-    },
 }
 
 COLUMNS = [
     "id", "category", "description", "value", "package", "rating", "tolerance",
     "conrad_sku", "conrad_price_sek", "conrad_moq",
     "electrokit_sku", "electrokit_price_sek", "electrokit_moq",
-    "u3shop_sku", "u3shop_price_eur", "u3shop_moq",
     "datasheet", "status", "updated", "notes",
 ]
 
@@ -93,11 +84,9 @@ def search_url(shop: str, text: str) -> str:
 
 
 def product_url(shop: str, sku: str) -> str:
-    """Where to look for one recorded article. 3U-Shop keys a part by its slug."""
+    """Where to look for one recorded article: its shop's search for the sku."""
     if not sku.strip():
         raise LibraryError(f"{shop}: no sku to look up")
-    if shop == "u3shop" and re.fullmatch(r"[a-z0-9][a-z0-9-]*", sku.strip()):
-        return f"https://www.3u-shop.de/p/{sku.strip()}"
     return search_url(shop, sku.strip())
 
 
@@ -354,9 +343,34 @@ def command_find(args) -> int:
     return 0 if matches else 1
 
 
+def read_search_terms(path: Path) -> list[str]:
+    """Read one search term per line; `#` starts a comment."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise LibraryError(f"cannot read {path}: {exc.strerror}") from exc
+    terms = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            terms.append(line)
+    return terms
+
+
 def command_links(args) -> int:
-    for shop in SHOPS:
-        print(f"{SHOPS[shop]['name']:18} {search_url(shop, args.text)}")
+    terms: list[str] = []
+    if args.from_file:
+        terms += read_search_terms(args.from_file)
+    terms += [term.strip() for term in args.text if term.strip()]
+    if not terms:
+        raise LibraryError("links needs search text, or --from FILE")
+    shops = [args.shop] if args.shop else list(SHOPS)
+    for index, term in enumerate(terms):
+        if index:
+            print()
+        print(term)
+        for shop in shops:
+            print(f"  {SHOPS[shop]['name']:14} {search_url(shop, term)}")
     return 0
 
 
@@ -399,8 +413,11 @@ def build_parser() -> argparse.ArgumentParser:
     find_parser.add_argument("--format", choices=("text", "json"), default="text")
     find_parser.set_defaults(func=command_find)
 
-    links = subparsers.add_parser("links", help="search links for text at all three shops")
-    links.add_argument("text")
+    links = subparsers.add_parser("links", help="search links for one or more texts")
+    links.add_argument("text", nargs="*", help="search text; repeat for more")
+    links.add_argument("--shop", choices=tuple(SHOPS), help="one shop only (default: every shop)")
+    links.add_argument("--from", dest="from_file", type=Path, metavar="FILE",
+                       help="read search terms from a file, one per line, # for a comment")
     links.set_defaults(func=command_links)
 
     bom = subparsers.add_parser("bom", help="match a BOM against the library")

@@ -1,8 +1,7 @@
 # Hand-assembly EU sourcing
 
-The three **primary suppliers** are Conrad Sweden (`conrad.se`), Electrokit
-and 3U-Shop (`3u-shop.de`). RS Components and DigiKey with EU sales stay as
-**alternates**. JLCPCB/LCSC may still supply the SMT placements that JLC
+The **primary suppliers** are Conrad Sweden (`conrad.se`) and Electrokit.
+RS Components and DigiKey with EU sales stay as **alternates**. JLCPCB/LCSC may still supply the SMT placements that JLC
 assembles. An LCSC identifier in a generated hand BOM is a design reference,
 **not evidence of an approved source**.
 
@@ -30,9 +29,6 @@ Buying does:
   hand here, not scraped.
 - **Electrokit** — the English storefront is public, prices in SEK including
   VAT, delivery inside Sweden.
-- **3U-Shop** — the shop is public and in German, prices in EUR including VAT.
-  B2C delivery goes to Germany and Switzerland only; a business order from
-  another EU country needs an e-mail to `post@3u-shop.de`.
 
 Automated Conrad data needs more than an account: a business account plus
 activation on `developer.conrad.com`. That portal sits behind a login and no
@@ -47,7 +43,7 @@ From `froemix/`:
 make release  # regenerate BOTH hand BOMs from the intended board revision
 python3 tools/source_parts.py --output /tmp/froemix-sourcing.json
 python3 tools/source_parts.py --format csv --output /tmp/froemix-sourcing.csv
-python3 tools/source_parts.py --suppliers conrad,electrokit,u3shop --format csv --output /tmp/froemix-primary.csv
+python3 tools/source_parts.py --suppliers conrad,electrokit --format csv --output /tmp/froemix-primary.csv
 python3 tools/source_parts.py --query NE555 --query "3.5mm jack" --suppliers conrad
 python3 tools/test_source_parts.py
 ```
@@ -72,15 +68,13 @@ supply an appropriate query in a copy of the input BOM. `manual_search` is a
 link only—not a search result, stock check or approved match. BOM quantities
 are for one board; multiply for your order and allow spares. `--query TEXT`
 searches one text without reading a BOM, and `--suppliers LIST` limits the
-report to a comma-separated subset of `rs,digikey,electrokit,conrad,u3shop`.
-Searches use the shop's own words: 3U-Shop answers German best, so search
-`Klinkenbuchse` or `Potentiometer` there, not `jack`.
+report to a comma-separated subset of `rs,digikey,electrokit,conrad`.
 
 ## Shared part library
 
 `library/components.csv` holds the parts to reuse: through-hole parts,
 capacitors and character displays, each with the article number at Conrad
-Sweden, Electrokit and 3U-Shop, one price snapshot and one date. It is not a
+Sweden and Electrokit, one price snapshot and one date. It is not a
 BOM. It is the list a new BOM is chosen from.
 
 ```bash
@@ -92,8 +86,7 @@ python3 library/test_parts_library.py
 ```
 
 A price in the library is what one person read on one day, in the shop's own
-currency and tax convention (Conrad excludes VAT, Electrokit and 3U-Shop
-include it). Confirm it at checkout. A row marked `draft` is recorded but not
+currency and tax convention (Conrad excludes VAT, Electrokit includes it). Confirm it at checkout. A row marked `draft` is recorded but not
 yet checked by a person; `preferred` means it passed a datasheet and footprint
 check.
 

@@ -5,8 +5,8 @@ Search results are leads, never approved substitutes. See doc/EU-SOURCING.md.
 Python standard library only; no purchasing, scraping, or credential storage.
 
 Shop coverage needs no account and no network: RS Sweden, DigiKey Sweden,
-Electrokit, conrad.se and 3u-shop.de. Only DigiKey has a live query, because a
-public self-service search API was confirmed there alone.
+Electrokit and conrad.se. Only DigiKey has a live query, because a public
+self-service search API was confirmed there alone.
 """
 from __future__ import annotations
 
@@ -25,14 +25,13 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-SUPPLIERS = ("rs", "digikey", "electrokit", "conrad", "u3shop")
+SUPPLIERS = ("rs", "digikey", "electrokit", "conrad")
 # Free text of the shop for messages, with the storefront each link opens.
 SHOPS = {
     "rs": ("RS Sweden", "https://se.rs-online.com/"),
     "digikey": ("DigiKey Sweden", "https://www.digikey.se/"),
     "electrokit": ("Electrokit", "https://www.electrokit.com/en/"),
     "conrad": ("Conrad Sweden", "https://www.conrad.se/"),
-    "u3shop": ("3U-Shop (German shop)", "https://www.3u-shop.de/"),
 }
 
 
@@ -41,7 +40,7 @@ class SourcingError(Exception):
 
 
 def supplier_list(text: str) -> tuple[str, ...]:
-    """Parse a --suppliers value such as 'conrad,u3shop'."""
+    """Parse a --suppliers value such as 'conrad,electrokit'."""
     names = tuple(name.strip().lower() for name in text.split(",") if name.strip())
     if not names:
         raise SourcingError("--suppliers needs at least one of: " + ", ".join(SUPPLIERS))
@@ -64,9 +63,6 @@ def search_url(supplier: str, query: str) -> str:
     if supplier == "conrad":
         # Swedish storefront, B2B prices shown excluding VAT.
         return f"https://www.conrad.se/sv/search.html?search={q}"
-    if supplier == "u3shop":
-        # German Shopware shop; German part words give better hits than English.
-        return f"https://www.3u-shop.de/search?q={q}"
     raise ValueError(f"unknown supplier: {supplier}")
 
 

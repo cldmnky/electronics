@@ -29,7 +29,6 @@ GOOD = {
     "value": "10k", "package": "0207", "rating": "250 V", "tolerance": "1%",
     "conrad_sku": "140023", "conrad_price_sek": "0.35", "conrad_moq": "10",
     "electrokit_sku": "41000510", "electrokit_price_sek": "0.10", "electrokit_moq": "1",
-    "u3shop_sku": "", "u3shop_price_eur": "", "u3shop_moq": "",
     "datasheet": "", "status": "preferred", "updated": "2026-11-20", "notes": "",
 }
 
@@ -41,7 +40,7 @@ def fresh(**changes) -> dict:
 class UrlTests(unittest.TestCase):
     def test_search_urls_escape_query(self):
         query = '1×16 / 2mm + "test"'
-        keys = {"conrad": "search", "electrokit": "keyword", "u3shop": "q"}
+        keys = {"conrad": "search", "electrokit": "keyword"}
         from urllib.parse import parse_qs, urlparse
         for shop, key in keys.items():
             with self.subTest(shop=shop):
@@ -49,9 +48,7 @@ class UrlTests(unittest.TestCase):
         with self.assertRaises(p.LibraryError):
             p.search_url("mouser", "x")
 
-    def test_product_url_uses_the_3u_shop_slug(self):
-        self.assertEqual(p.product_url("u3shop", "pj398sm-3-5mm-monobuchse"),
-                         "https://www.3u-shop.de/p/pj398sm-3-5mm-monobuchse")
+    def test_product_url_is_the_shop_search_for_the_sku(self):
         self.assertIn("keyword=40350001", p.product_url("electrokit", "40350001"))
         self.assertIn("search=152184", p.product_url("conrad", "152184"))
         with self.assertRaises(p.LibraryError):
@@ -97,7 +94,7 @@ class LoadAndValidateTests(unittest.TestCase):
             "status": fresh(status="favourite"),
             "no sku": fresh(conrad_sku="", conrad_price_sek="", electrokit_sku="", electrokit_price_sek=""),
             "price without sku": fresh(electrokit_sku="", electrokit_price_sek="0.10"),
-            "sku without price": fresh(u3shop_sku="12345", u3shop_price_eur=""),
+            "sku without price": fresh(electrokit_sku="12345", electrokit_price_sek=""),
             "price text": fresh(conrad_price_sek="about 1 kr"),
             "negative price": fresh(conrad_price_sek="-1"),
             "moq zero": fresh(conrad_moq="0"),
@@ -221,9 +218,10 @@ class BomTests(unittest.TestCase):
         self.assertEqual(order[0]["quantity"], 3)
 
     def test_order_list_reports_unfilled_lines(self):
-        rows = p.load(write_library(Path(tempfile.mkdtemp()) / "c.csv", [GOOD]))
+        rows = p.load(write_library(Path(tempfile.mkdtemp()) / "c.csv",
+                                    [fresh(conrad_sku="", conrad_price_sek="")]))
         planned = p.plan_bom(rows, [{"value": "10k", "quantity": 1, "footprint": "", "designators": "R1"}])
-        order, missing = p.order_lines(rows, planned, "u3shop")
+        order, missing = p.order_lines(rows, planned, "conrad")
         self.assertEqual(order, [])
         self.assertEqual(missing[0]["value"], "10k")
 
@@ -260,15 +258,34 @@ class MainTests(unittest.TestCase):
 
     def test_missing_shop_sku_is_reported_and_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = write_library(Path(tmp) / "c.csv", [GOOD])
+            path = write_library(Path(tmp) / "c.csv",
+                                 [fresh(conrad_sku="", conrad_price_sek="")])
             bom = Path(tmp) / "bom.csv"
             bom.write_text("Quantity,Value\n1,10k\n", encoding="utf-8")
             out, err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                status = p.main(["--library", str(path), "bom", str(bom), "--shop", "u3shop"])
+                status = p.main(["--library", str(path), "bom", str(bom), "--shop", "conrad"])
             self.assertEqual(status, 2)
             self.assertIn("NO SKU 10k", err.getvalue())
-            self.assertIn("no 3U-Shop", err.getvalue())
+            self.assertIn("no Conrad Sweden", err.getvalue())
+
+    def test_links_reads_terms_from_a_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "terms.txt"
+            path.write_text("# a comment\npot 10k\n\nDIP switch\n", encoding="utf-8")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(p.main(["links", "--from", str(path), "--shop", "conrad"]), 0)
+            text = out.getvalue()
+        self.assertEqual(text.count("Conrad Sweden"), 2)
+        self.assertIn("DIP%20switch", text)
+        self.assertNotIn("a comment", text)
+
+    def test_links_needs_a_term(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(p.main(["links"]), 1)
+        self.assertIn("links needs", err.getvalue())
 
     def test_find_json_and_links(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -280,7 +297,8 @@ class MainTests(unittest.TestCase):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 self.assertEqual(p.main(["links", "NE555"]), 0)
-            self.assertEqual(len(out.getvalue().strip().splitlines()), len(p.SHOPS))
+            # One heading line, then one link line per shop.
+            self.assertEqual(len(out.getvalue().strip().splitlines()), len(p.SHOPS) + 1)
 
 
 if __name__ == "__main__":

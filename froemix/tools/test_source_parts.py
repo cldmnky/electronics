@@ -17,14 +17,14 @@ class SourcingTests(unittest.TestCase):
     def test_search_urls_escape_query(self):
         query = '1×16 / 2mm + "test"'
         expected = {'rs': 'searchTerm', 'digikey': 'keywords', 'electrokit': 'keyword',
-                    'conrad': 'search', 'u3shop': 'q'}
+                    'conrad': 'search'}
         self.assertEqual(set(expected), set(s.SUPPLIERS))
         for supplier, key in expected.items():
             with self.subTest(supplier=supplier):
                 self.assertEqual(parse_qs(urlparse(s.search_url(supplier, query)).query)[key], [query])
 
     def test_supplier_filter_keeps_canonical_order(self):
-        self.assertEqual(s.supplier_list('u3shop, conrad'), ('conrad', 'u3shop'))
+        self.assertEqual(s.supplier_list('electrokit, conrad'), ('electrokit', 'conrad'))
         self.assertEqual(s.supplier_list('CONRAD'), ('conrad',))
         for bad in ('', ' , ', 'mouser', 'conrad,mouser'):
             with self.subTest(value=bad), self.assertRaises(s.SourcingError):
@@ -33,7 +33,7 @@ class SourcingTests(unittest.TestCase):
     def test_adhoc_query_skips_bom_files(self):
         out = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(out):
-            status = s.main(['--query', 'NE555', '--suppliers', 'conrad,u3shop',
+            status = s.main(['--query', 'NE555', '--suppliers', 'conrad,electrokit',
                              '--base-bom', str(Path(tmp) / 'absent.csv'),
                              '--euro-bom', str(Path(tmp) / 'absent.csv'),
                              '--extras', str(Path(tmp) / 'absent.csv')])
@@ -41,10 +41,10 @@ class SourcingTests(unittest.TestCase):
         report = json.loads(out.getvalue())
         part = report['parts'][0]
         self.assertEqual(part['query'], 'NE555')
-        self.assertEqual(sorted(part['suppliers']), ['conrad', 'u3shop'])
+        self.assertEqual(sorted(part['suppliers']), ['conrad', 'electrokit'])
         self.assertEqual(part['suppliers']['conrad']['status'], 'manual_search')
         self.assertIn('conrad.se', part['suppliers']['conrad']['search_url'])
-        self.assertEqual(report['parts'][0]['suppliers']['u3shop']['status'], 'manual_search')
+        self.assertEqual(report['parts'][0]['suppliers']['electrokit']['status'], 'manual_search')
 
     def test_empty_adhoc_query_fails(self):
         err = io.StringIO()
@@ -83,7 +83,7 @@ class SourcingTests(unittest.TestCase):
             self.assertEqual(report['parts'][0]['suppliers'][vendor]['status'], 'manual_search')
             self.assertEqual(report['parts'][0]['suppliers'][vendor]['candidates'], [])
         self.assertIn('Conrad Sweden', report['market'])
-        self.assertIn('3U-Shop', report['market'])
+
 
     def test_live_api_token_request_response_and_cache(self):
         calls = []
