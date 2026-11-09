@@ -25,7 +25,10 @@ beside REC/OVER DUB/PLAY at y = −34; MIDI jacks at y = −47.5 in the four tra
 
 The chain rests on two **explicit assumptions** and the vendor depth figures. It does not certify a gap.
 
-- Assumption A: the display glass front sits flush with the panel front face (Z = 0). Nothing has measured this.
+- Assumption A: the display glass front sits flush with the panel front face (Z = 0). Nothing has measured this. The
+  vendor model puts its touch/frame forward face **1.90 mm in front of the glass front face**, so an illustrative
+  placement with the glass at Z = 0 puts that frame at Z = −1.90 mm (1.90 mm proud of the panel). That is a property of
+  the supplied model, not a fit: the real touch layer, frame relief and seating are unmeasured.
 - Assumption B: the display standoff is **9.0 mm** (front-board top face to the display PCB **rear** face).
 - Vendor figures for the 4.3-inch module: **14.05 mm overall** (wiki FAQ, the vendor's stated maximum), split
   provisionally as 10.05 mm from the **glass front face to the display PCB rear face** plus the **4.0 mm** boss
@@ -43,6 +46,46 @@ The chain rests on two **explicit assumptions** and the vendor depth figures. It
 | Front-board top face | 19.05 | Display PCB rear face + 9.0 mm standoff (assumption B). |
 | Front-board rear face | 20.65 | 1.6 mm board. |
 | Panel rear → front-board top | 17.45 | Falls out of A and B; a consequence, not evidence. |
+
+### The vendor model's own planes — measured, and separate from the two chains
+
+The hash-verified reference STEP was re-inspected with a real CAD kernel
+(`mechanical/tools/inspect_display_step.py`, CadQuery 2.8.0, 394 solids). Its own
+planes are:
+
+| Vendor-model plane | Vendor z (mm) | Basis |
+|---|---:|---|
+| Touch/frame forward face | **+4.80** | planar face, 106.10 × 67.80 mm |
+| Cover-glass front face (`43H-800480-IPS`) | **+2.90** | planar face, 105.42 × 67.07 mm |
+| Cover-glass rear face | 0.00 | planar face, 105.42 × 67.07 mm |
+| PCB front face | −1.74 | planar face, 106.00 × 68.00 mm |
+| PCB rear face | **−3.34** | planar face, 106.00 × 68.00 mm |
+| SMT boss ends (`SMTSO-M2_5-4ET`) | **−7.34** | 8 boss bodies, 5.5 mm cube |
+| Rear-most modelled feature | −9.02 | 2.5 × 22.0 mm body, not a boss |
+| Union bounding box | −9.02…+4.80 (13.82) | 106.10 × 68.363 × 13.82 mm |
+
+It follows from those planes, and only from them:
+
+- glass front → PCB rear = **6.24 mm**,
+- PCB rear → boss ends = **4.00 mm** (this agrees with the 4.0 mm boss projection
+  used below),
+- boss ends → rear-most feature = 1.68 mm,
+- touch/frame forward face = **1.90 mm in front of the glass front face**.
+
+**In-plane orientation is not established.** The Z reversal is forced (the vendor +Z points out of the glass), but
+the in-plane axis is not: the model is drawn with a 180° rotation about Y and the 180° rotation about X is an equal
+candidate. The drawing shows readable rear-side silkscreen and may be a rear view, so matching the recorded
+`DISPLAY_STANDOFFS` is consistency with the layout's own no-flip premise, not independent proof. A real front/rear
+labelled photograph of the module, or the physical part, settles it. Both candidates are recorded in
+`mechanical/step_geometry.py` (`DISPLAY_ORIENTATION`, status PENDING) and in the assumptions file.
+
+**These are model planes and nothing else.** The 6.24 mm is NOT the provisional
+10.05 mm glass-front-to-PCB-rear chain, and the 13.82 mm model depth is NOT the
+vendor's stated 14.05 mm maximum overall depth. The three sets answer different
+questions and must not be equated: the 10.05 mm chain is a design assumption, the
+14.05 mm is the vendor's stated maximum, and 6.24 mm is what the supplied model
+draws. The provisional chain stands unchanged; the first article measures the
+real part.
 
 **Spacer length is not the plane separation.** The spacer screws onto the boss ends, which already reach 4.0 mm below the
 display PCB rear face, so:
@@ -94,9 +137,11 @@ is measured. Check the Bivar drawing and the actual LED, and expect a different 
 | Mounting pattern (used) | **99.30 × 61.80 mm**, insets 3.35 / 3.10, 4× Ø4.30 | vendor drawing; STEP `SMTSO-M2_5-4ET` threaded SMT bosses sit here |
 | Inner hole pattern (alternative) | 58.00 × 49.04 mm, insets 25.62 / 22.38 / 9.50 / 9.46, 4× Ø4.30 | vendor drawing; plain plated holes, no thread |
 | Overall thickness | **14.05 mm (wiki FAQ)** vs **13.82 mm (STEP bbox)** | RESOLVED as far as the sources allow: the wiki FAQ states the vendor's overall thickness 14.05; the reference STEP's union bbox (CadQuery import, 106.10 × 68.36 × 13.82) is 0.23 mm thinner, and **no modelled solid reaches the 14.05 plane**. The model's only overhangs past the 106 × 68 PCB envelope are in X/Y (front frame 106.10 × 67.80, union y 68.362, i.e. ≤ 0.18 mm past the PCB edge) — nothing in Z explains the difference, so it is the vendor's stated maximum vs. modelled nominal, not glass overhang or feet. The stack uses the LARGER (14.05) so the panel gap cannot be optimistic. |
-| 15-pin DSI FPC connector | body **21.412 × 4.826 mm**, 15-pin, rear face, right-hand long edge (rear view); module-local centre (+48.34, +0.7) → absolute (**38.84, 11.7**) | Body from the STEP (two extruded solids 106739 / 107488); position from the drawing at 7.11 px/mm because the STEP does not resolve that body's assembly placement (bar 21.8 mm long, centre 33.3 mm from the top edge, outer face 2.25 mm inboard of the edge; ±0.4 mm). Recorded as `DISPLAY_FPC_CONNECTOR` / `DISPLAY_FPC_CONNECTOR_AT` in `tscircuit/lib/layout.ts`. It does not move the PCB — the cable leaves at the module edge, 1.5 mm inside the 128 mm board — but the plug and the first bend sit over the J5 IDC corridor (X ≈ 29–39, Y −10…+30), so that is a first-article cable-bend check. |
+| Recorded connector data — **UNVERIFIED** | 15-pin, rear face, right-hand long edge in the drawing's view; body 21.412 × 4.826 mm; module-local centre (+48.34, +0.7) → absolute 38.84, 11.7 — all recorded design values, not established | drawing record only (7.11 px/mm, ±0.4 mm); see the model check below the table |
 | Panel-to-front-board gap | **17.45 mm provisional** | Assumption A (glass front flush with the panel front face, z = 0) + Assumption B (9.0 mm plane separation to the PCB rear) + 10.05 mm glass-front-to-PCB rear + 1.60 mm panel − 1.60 mm panel … see `PROVISIONAL_Z` in `tscircuit/lib/layout.ts`. Was 14.10 mm for the withdrawn 3.5-inch module. |
 | Light-pipe reach | 10.16 mm pipe vs 17.45 mm gap | **7.29 mm unaccounted, PENDING**: a longer pipe (or a different optical path) is required; no LED height or seating allowance is claimed. |
+
+**Connector model check (2026-11-08, corrected).** The STEP's XCAF label tree shows the two 21.412 × 4.826 mm bodies are `EXTRUDED-106739` / `EXTRUDED-107488` inside `TFT1_ASM` — TFT flex bonds, **not** a panel connector. An earlier revision treated them as the FPC connector and inferred a ~24 mm disagreement with the drawing; that reading is withdrawn. The nearest named body to the recorded position is `DISPLAY_CAM` (4.822 × 22.400 × 5.680 mm, vendor x −51.975…−47.153, y −13.570…8.830, z −9.020…−3.340), placed centre (40.064, 11.000) mm against the recorded (38.837, 11.700) mm — an observation of 1.413 mm, **not a match**. Identity, pin count, electrical side, the long-axis wording and the rear/front frame mapping all stay unverified and need independent re-derivation. The recorded position does not move the PCB. Whether the connector, plug or first bend intersects the J5 IDC corridor remains unknown and needs a first-article check. The CAD model draws the connector only as `DISPLAY_CONNECTOR_PLANNING_MARKER` on the provisional Z 10.05 plane.
 
 Display window (owner decision D1): the aperture follows the GLASS, not the 106 × 68 PCB envelope, and not the
 95.54 × 54.36 printed border. Window = glass + 0.9 mm per side = 107.22 × 68.87 mm, centred on the module at
@@ -126,34 +171,18 @@ display stack slot and the drop to the Pi (the provisional path is ~60 mm; 50 mm
 separation = 4.0 mm boss projection + 5.0 mm spacer remains provisional against the kit pillars and is verified by
 acceptance item `display_boss_pattern`.
 
-### Display FPC ↔ J5 IDC coexistence (resolved on paper, gated as `display_fpc_idc`)
+### Display FPC ↔ J5 IDC coexistence (unverified; `display_fpc_idc` pending)
 
-The 15-pin FPC connector sits on the module rear face at absolute (38.84, 11.7) — inside the J5 IDC corridor plan area
-(X ≈ 29–39, Y −3.5…+23.5). **In Z the two never share a plane:**
+The earlier planning position (38.84, 11.7), connector identity and body dimensions require re-derivation.
+The STEP features previously used for the FPC height were identified as TFT flex bonds, not as a verified
+connector. The drawn planning marker is not on the placed vendor model's PCB-rear plane. Consequently neither the
+connector's location nor its clearance to J5 is established. The proposed front-board face change may also change
+which side carries J5.
 
-| Feature | Provisional Z | Basis |
-|---|---:|---|
-| Display PCB rear face | 10.05 | PROVISIONAL_Z chain (glass front flush, 10.05 mm glass-front → PCB-rear) |
-| FPC connector stack top | ≤ 12.9 | STEP bodies 1.0 + 0.8 mm over the PCB rear + ~1 mm folded flex; not measured |
-| Front-board top face | 19.05 | PROVISIONAL_Z (assumption B) |
-| J5 IDC plug bottom | ≥ 19.05 | the plug stands on the front board's top face |
-
-So the FPC body/bend zone clears the front-board plane by ≥ 6.1 mm, and the IDC plug exists only above 19.05, where
-the display stack has already ended (≤ 14.05). The ribbon and the flex coexist **provided the flex never lies on the
-front-board top face while crossing the corridor; that is the route contract:**
-
-1. From the ZIF mouth the flex folds rearward inside the display-stack slot (display rear-most 14.05 → board top
-   19.05, a 5.0 mm slot) and runs in the panel-to-board gap (z < 19.05).
-2. In that gap it travels right along the module's right edge (+43.5) into the free corridor x 43.5…64 — clear below
-   z 19.05 except the light pipes at x −41…+7, which are not in that x range.
-3. It crosses the board plane beyond the board edge (x ≥ +64) — NOT through the relief notch, which the feedthrough
-   bracket and the IDC hardware own — then runs rackward at x ≥ +64 where no board exists (rear board ±50.8).
-4. Rackward it only descends toward the Pi DSI1 (x ≈ 33) at z ≥ 42, above the IDC stack's z band (20.65…40.65).
-
-A 50 mm kit cable covers ~55 mm of that path with no slack: it fails the route contract. The 120 mm 15→22 cable is
-the design pick and the route above is the mechanical yardstick (item `display_fpc_idc`). Two 90° folds of a 15-pin
-0.5 mm-pitch flex need ~2 mm radius each; the 5.0 mm slot and the open rack cavity provide that. First article still
-measures the real bend — the table above is derived from vendor numbers, not a measurement.
+The provisional stack puts the front-board top plane at Z = 19.05 mm, but that is not a measurement and does not
+prove a usable FPC bend corridor. The 120 mm 15→22 cable is a candidate, not an approved route. Measure the actual
+connector, cable path, bends, latch and J5 plug together on the first article before claiming clearance. Do not
+use the former 12.9 mm connector-stack, 6.1 mm clearance, or 2 mm bend-radius estimates as verified values.
 
 The display source is the 4.3-inch drawing and reference STEP recorded above; the withdrawn 3.5-inch 2D/3D files are no
 longer a source. The active area is centred on the module outline (`DISPLAY_ACTIVE_OFFSET_X = 0`); only the front-board
@@ -173,6 +202,21 @@ overlaps board material by **0.45 mm at its lower edge** and extends past the bo
 raise the feedthrough centres, trim the flange, or lower the notch (the notch cannot go below y = 47.85 without breaking
 into the bracket mount holes). This is a named physical gate — measure the purchased flange first.
 
+## Board face convention — requested, not implemented (pending)
+
+A separate requirement asks for **both boards' CAD-bottom faces toward the panel**. It is not implemented, and no
+board source, SMT side or stackup is changed for it:
+
+- The printed board models in the CAD file are plain slabs. A bare slab has no top/bottom feature marker, so a
+  flipped slab would look identical and prove nothing.
+- The front/UI board carries its SMT parts and the control actuators on the **top** face today, and the rear/base
+  board already carries its SMT parts on the **bottom** face.
+- Putting either board's bottom face toward the panel is therefore a real PCB layer/side reassignment: it moves every
+  part, the silkscreen, the assembly drawing and the CPL side.
+
+This needs an owner decision and a PCB revision. Until then the CAD model keeps the current board orientation and
+makes no compliance claim. Recorded in the assumptions file as `board_face_convention`.
+
 ## Board-to-board relationship
 
 Both boards are centred on their own origin, so the 128 mm front board overhangs the 101.6 mm rear board by
@@ -187,11 +231,11 @@ decision.
   0.50 → 1.47 mm; ±46 was tried and rejected — the rear autorouter then placed a via at (50.46, 6.56) with 0.118 mm
   of copper to the board edge, under the published 0.20 mm rule.)
 - Panel↔front standoffs: 4 × M2.5 at (±61, ±53), 1.65 mm edge ligament; length TBD.
-- J5 corridor (X ≈29–39, Y −3.5…+23.5): the 106 mm module now extends past it (right edge +43.5), so the corridor
-  region overlaps the display's plan area; the FPC/IDC Z-clearance argument above covers it, and the IDC plug bottom
-  (≥ 19.05) vs the display stack top (≤ 14.05) keeps ≥ 5.0 mm in Z even where their plans overlap.
-- Display top edge (+45.0) vs the bracket bar (bottom 42.0): they overlap in PLAN but not in Z (display stack ends at
-  14.05, the bar sits behind the board from 20.65). Display left (−62.5) to front-PCB edge (−64): 1.5 mm ligament
+- J5 corridor (X ≈29–39, Y −3.5…+23.5): the 106 mm module extends over this plan area. Its actual FPC/IDC
+  coexistence is unverified, including the board-face convention, connector heights and cable bend; see
+  `display_fpc_idc` above.
+- Display top edge (+45.0) vs the bracket bar (bottom 42.0): they overlap in PLAN. Their Z separation follows from
+  provisional stack assumptions and requires physical verification. Display left (−62.5) to front-PCB edge (−64): 1.5 mm ligament
   (owner decision D2).
 - C5 (50, 46) against the right bracket mount (55, 46.5) and the top spacer pair (±45, 43): centre distances 9.66 /
   5.83 mm, screw-head class; sample check.

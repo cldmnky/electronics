@@ -18,9 +18,9 @@ mounting, control or board coordinate.
 | `PANEL_32HP_3U` | 162.56 × 128.5 × 1.6 mm; 20 apertures and 14 drills from `PANEL_APERTURES` / `PANEL_DRILLS`: LCD, three feedthroughs with six screw holes, six buttons, three LED light-pipe openings, encoder, POWER, NAV, four jacks, four standoffs, four rail holes | outlines, diameters and positions are canonical (the same arrays `panel.circuit.tsx` renders) |
 | `FRONT_BOARD_PROVISIONAL_Z` | 128 × 112 × 1.6 mm at Z 19.05…20.65; top relief notch, 4 × Ø4.3 LCD boss holes, standoff, front↔rear and bracket mount holes | XY canonical; **Z is the `PROVISIONAL_Z` chain (assumptions A and B)** |
 | `REAR_BOARD_PROVISIONAL_Z` | 101.6 × 112 × 1.6 mm at Z 40.65…42.25; front↔rear and Pi mount holes | XY canonical; Z adds the **candidate** 20 mm board-to-board gap |
-| `DISPLAY_WAVESHARE_VENDOR_STEP` | the vendor STEP, SHA-256 verified, bounding-box centre on the module centre, bounding-box minimum Z on the panel front face | vendor geometry; model depth 13.82 mm against the stack's 14.05 mm vendor maximum |
+| `DISPLAY_WAVESHARE_VENDOR_STEP` | the vendor STEP, SHA-256 verified, placed by a rigid 180° rotation so the glass front face is at Z = 0 and the electronics point rearward; X/Y from the outer SMT boss pattern centre. The rotation about **Y is the drawn candidate only** — the in-plane axis is pending | vendor geometry; model depth 13.82 mm is the model, not the 14.05 mm vendor maximum |
 | `DISPLAY_ENVELOPE_PROVISIONAL` | 106 × 68 mm, Z 0…14.05, drawn only when no verified vendor STEP is supplied | an envelope, not vendor geometry |
-| `DISPLAY_FPC_CONNECTOR_PROVISIONAL` | 21.412 × 4.826 × 1.8 mm on the display PCB rear face at (38.84, 11.7) | body size from the STEP; placement from the drawing |
+| `DISPLAY_CONNECTOR_PLANNING_MARKER` | 21.412 × 4.826 × 1.8 mm box at (38.84, 11.7) on the **provisional** design-chain plane Z 10.05, not the model's drawn PCB rear Z 6.24 | **legacy unverified planning data, not a verified connector.** The size has no reliable source: the model's 21.412 × 4.826 mm bodies are TFT1 flex bonds (`EXTRUDED-106739` / `EXTRUDED-107488`), not this connector. Position is an unverified drawing record; routing and fit are unknown |
 | `FEEDTHROUGH_*_FLANGE_PLAN_MARKER` | the Adafruit 908 flange outline, 38.30 × 11.90 mm, as a 0.2 mm marker on the panel rear face | flange size from the drawing; **no depth is published, so no flange volume exists** |
 | `USB_C_CANDIDATE_FLANGE_NON_APPROVED` | opt-in only (`--usbc-candidate-envelope`): advertised 25 × 10.2 × 5 mm from a marketplace listing | NON-APPROVED advertisement, no pitch, no current rating, no PD result |
 
@@ -32,6 +32,87 @@ feedthrough screws, four standoffs, four rails). Both lists come from
 two element by element against the built `dist/panel/circuit.json`, so the CAD
 panel cannot drift from the board. A before/after check of the whole built panel
 (Gerbers and circuit JSON) is in the Tool section below.
+
+## Display placement — glass datum, and what it does not prove
+
+The vendor frame points the other way: its **+Z leaves the glass**, its +X is mirrored relative to the layout frame,
+and only its +Y agrees with the layout frame. Placing the model by its bounding-box minimum — the earlier defect —
+put the boss ends at Z ≈ 1.7 mm and the glass at Z ≈ 11.9 mm, i.e. the electronics toward the panel.
+
+The placement is now a **rigid rotation plus translation**:
+
+    rotation     180 deg about Y:  (x, y, z) -> (-x, y, -z)     determinant +1 (a rotation, not a mirror)
+    translation  glass front face -> Z = 0; outer SMT boss pattern centre -> the module centre
+
+**The in-plane axis is NOT settled (status PENDING).** Reversing Z with a rotation always mirrors one in-plane axis, so
+the choice is X or Y. Both are recorded:
+
+| Candidate | Mapping | Inner plain-hole pattern |
+|---|---|---|
+| about Y (**used for drawing**) | (x, y, z) → (−x, y, −z) | lands on the recorded `DISPLAY_STANDOFFS` |
+| about X | (x, y, z) → (x, −y, −z) | does not |
+
+Matching `DISPLAY_STANDOFFS` is **not independent proof**: the drawing shows readable rear-side silkscreen and may be
+a **rear view**, so mapping drawing left/right straight into the front-view layout may itself mirror the pattern - and
+`DISPLAY_STANDOFFS` carries that same no-flip premise. The match shows only that the drawn candidate is consistent
+with the layout's own premise. The outer 99.30 × 61.80 mm boss pattern is symmetric, so it fixes the centre and cannot
+decide the axis.
+
+What would settle it: a real front/rear **labelled photograph** of the delivered module, or the physical part offered
+to the front board. Until then no document and no test may call either axis proven.
+
+Planes in the illustrative placement (Z = 0 is the panel front face, +Z rearward):
+
+| Plane | Vendor z | Placed global z |
+|---|---:|---:|
+| Touch/frame forward face | +4.80 | **−1.90** |
+| Glass front (datum) | +2.90 | **0.00** |
+| Glass rear | 0.00 | 2.90 |
+| PCB front | −1.74 | 4.64 |
+| PCB rear | −3.34 | **6.24** |
+| Boss ends | −7.34 | 10.24 |
+| Rear-most modelled feature | −9.02 | **11.92** |
+
+**Disclosure.** In this placement the touch/frame forward face sits **1.90 mm in front of the panel front face**
+(global Z = −1.90 mm). It is NOT flush with the panel and NOT a fit: the real touch layer, frame relief, aperture
+relief and seating are unmeasured. The model's frame is 106.10 × 67.80 mm against the recorded 107.22 × 68.87 mm
+aperture; that arithmetic is illustrative and is not a clearance result.
+
+**The model's own planes are separate from the two recorded chains.** Measured from the model: glass front → PCB rear
+**6.24 mm**, PCB rear → boss ends **4.00 mm**, frame 1.90 mm ahead of the glass. Those are model planes. They are not
+the vendor's stated **14.05 mm** maximum overall depth, and not the provisional **10.05 mm** glass-front-to-PCB-rear
+design chain. No equation relates the three; the automated tests assert that 6.24 and 10.05 are not equated.
+
+**Connector — identity not established.** An earlier revision of this file called the two 21.412 × 4.826 mm bodies
+the DSI FPC connector and reported a ~24 mm disagreement with the drawing. **That was a misidentification and is
+withdrawn.** Reading the STEP's XCAF label tree shows those two bodies are `EXTRUDED-106739` / `EXTRUDED-107488`
+inside `TFT1_ASM` — TFT flex bonds, not a panel connector — and that they carry no connector-position evidence.
+
+The body nearest the recorded connector position is a separate named part, `DISPLAY_CAM`, a direct child of
+`4_3INCH-DSI-LCD-PCBA_ASM`: 4.822 × 22.400 × 5.680 mm at vendor x −51.975…−47.153, y −13.570…8.830,
+z −9.020…−3.340. Under the drawn candidate its centre is (40.064, 11.000) mm, an offset of (+1.227, −0.700) mm
+(1.413 mm) from the recorded (38.837, 11.700) mm.
+
+That offset is an **observation, not a match**: the name says camera; the body is 22.400 mm long against the recorded
+21.412 mm; a second small solid sits under the same label; and no body in the file is named as a DSI, FPC or 15-pin
+connector. So this file asserts **no** connector identity, pin count, electrical pinout or physical side. Both the
+recorded position and the rear/front frame mapping are **UNVERIFIED**, and the drawing's position and length
+arithmetic (the long-axis wording is disputed) needs independent re-derivation. No board coordinate changed; the
+first-article gate `display_fpc_idc` stays pending.
+
+## Board face convention — requested, not implemented
+
+The separate request for both boards' CAD-bottom faces toward the panel is **not implemented**, and no PCB source, SMT
+side or stackup is changed for it:
+
+- the board models are plain slabs, so a flipped slab looks identical and proves nothing;
+- the front/UI board puts its SMT parts and the control actuators on top today, and the rear/base board already puts
+  its SMT parts on the bottom;
+- turning either board over is a real PCB layer/side reassignment that moves every part, the silkscreen, the assembly
+  drawing and the CPL side.
+
+It needs an owner decision and a PCB revision. The model keeps the current orientation and makes no compliance claim;
+`assumptions.json` records it under `board_face_convention`.
 
 ## The collision rule
 
@@ -169,6 +250,10 @@ front and rear circuit JSON geometry is identical in order.
   including the cases where it must report a difference.
 - `tscircuit/lib/panel-cutouts.test.ts` (bun) — the canonical panel apertures and
   drills against the built `dist/panel/circuit.json`, element by element.
+- `mechanical/test_cad_roundtrip.py` — with a real kernel and the vendor model:
+  the display placement (glass datum, plane order, rotation not mirror, mounting
+  centres, boards unchanged), the archive and STEP hash refusals, and the exports
+  re-imported at 1:1.
 
 `mechanical/test_cad_roundtrip.py` re-imports the exports with the real kernel
 (CadQuery for the STEP, VTK for the STL meshes) and skips with a stated reason

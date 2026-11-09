@@ -13,6 +13,7 @@ and never reports the assembly clear while the flange depth is unknown.
 from __future__ import annotations
 
 import copy
+import inspect
 import json
 import unittest
 from pathlib import Path
@@ -424,6 +425,180 @@ class CoordinateDriftTest(unittest.TestCase):
         pipe = env["LIGHT_PIPE_PLP2_400_C"]
         self.assertIsNone(pipe.z, "the reach is an interval, not a modelled body")
         self.assertIn("light_pipe_reach.py", pipe.note)
+
+
+class DisplayPlaneTest(unittest.TestCase):
+    """The display must face the panel; a reversed placement must fail."""
+
+    def test_the_placed_planes_follow_from_the_measured_vendor_planes(self) -> None:
+        planes = sg.placed_display_planes()
+        self.assertAlmostEqual(planes["glass_front"], 0.0, places=6)
+        self.assertAlmostEqual(planes["touch_frame_front"], -1.9, places=6)
+        self.assertAlmostEqual(planes["glass_rear"], 2.9, places=6)
+        self.assertAlmostEqual(planes["pcb_front"], 4.64, places=6)
+        self.assertAlmostEqual(planes["pcb_rear"], 6.24, places=6)
+        self.assertAlmostEqual(planes["boss_rear"], 10.24, places=6)
+        self.assertAlmostEqual(planes["rear_most"], 11.92, places=6)
+
+    def test_the_correct_placement_passes_the_order_check(self) -> None:
+        sg.check_display_plane_order(sg.placed_display_planes())
+
+    def test_a_reversed_placement_is_rejected(self) -> None:
+        """Mapping the vendor bbox minimum to Z = 0 is the reported defect."""
+        m = sg.VENDOR_DISPLAY_MODEL
+        # Vendor z -> global z with the bbox minimum at 0 (the old placement).
+        reversed_planes = {
+            "touch_frame_front": m["touch_frame_front_z"] - m["bbox_z_mm"][0],
+            "glass_front": m["glass_front_z"] - m["bbox_z_mm"][0],
+            "glass_rear": m["glass_rear_z"] - m["bbox_z_mm"][0],
+            "pcb_front": m["pcb_front_z"] - m["bbox_z_mm"][0],
+            "pcb_rear": m["pcb_rear_z"] - m["bbox_z_mm"][0],
+            "boss_rear": m["boss_rear_z"] - m["bbox_z_mm"][0],
+            "rear_most": m["rear_most_z"] - m["bbox_z_mm"][0],
+        }
+        self.assertLess(reversed_planes["boss_rear"], reversed_planes["glass_front"],
+                        "the reversed placement really does put the bosses in front")
+        with self.assertRaises(sg.GeometryError):
+            sg.check_display_plane_order(reversed_planes)
+
+    def test_glass_behind_the_pcb_is_rejected(self) -> None:
+        planes = sg.placed_display_planes()
+        swapped = dict(planes, glass_front=8.0, glass_rear=10.0)
+        with self.assertRaises(sg.GeometryError):
+            sg.check_display_plane_order(swapped)
+
+    def test_equal_planes_are_rejected(self) -> None:
+        planes = sg.placed_display_planes()
+        with self.assertRaises(sg.GeometryError):
+            sg.check_display_plane_order(dict(planes, pcb_front=planes["pcb_rear"]))
+
+    def test_an_incomplete_report_is_rejected(self) -> None:
+        planes = sg.placed_display_planes()
+        broken = dict(planes)
+        del broken["pcb_rear"]
+        with self.assertRaises(sg.GeometryError):
+            sg.check_display_plane_order(broken)
+
+
+class DisplayRotationTest(unittest.TestCase):
+    """Both in-plane candidates are admissible; neither axis is proven."""
+
+    def test_the_transform_is_a_rotation(self) -> None:
+        self.assertAlmostEqual(sg.rotation_determinant(), 1.0, places=9)
+
+    def test_the_transform_reverses_z_only(self) -> None:
+        self.assertAlmostEqual(sg.apply_rotation((0.0, 0.0, 1.0))[2], -1.0, places=9)
+        self.assertAlmostEqual(sg.apply_rotation((1.0, 0.0, 0.0))[1], 0.0, places=9)
+
+    def test_both_candidates_are_recorded(self) -> None:
+        candidates = sg.rotation_candidates()
+        self.assertEqual(sorted(candidates), ["about_x", "about_y"])
+        for name in candidates:
+            self.assertAlmostEqual(sg.rotation_determinant(candidates[name]), 1.0, places=9)
+
+    def test_neither_candidate_is_claimed_proven(self) -> None:
+        status = sg.DISPLAY_ORIENTATION
+        self.assertEqual(status["status"], "PENDING")
+        self.assertIn("may be a REAR view", status["why_not_proven"])
+        self.assertIn("not evidence about", status["why_not_proven"])
+        self.assertIn("symmetric", status["why_not_proven"])
+        self.assertIn("photograph", status["resolving_evidence"])
+        self.assertIn("which in-plane axis is correct", status["not_asserted"])
+        self.assertIn("front/rear mapping of the drawing", status["not_asserted"])
+
+    def test_the_outer_boss_pattern_cannot_decide_the_axis(self) -> None:
+        m = sg.VENDOR_DISPLAY_MODEL
+        self.assertEqual(m["mount_pattern_mm"], (99.300, 61.800))
+        # Both candidates map the symmetric pattern onto itself, so it only
+        # fixes the centre.
+        cx, cy = m["mount_pattern_centre_xy"]
+        half_x, half_y = m["mount_pattern_mm"][0] / 2, m["mount_pattern_mm"][1] / 2
+        corners = [(cx + sx * half_x, cy + sy * half_y) for sx in (-1, 1) for sy in (-1, 1)]
+        for name in sg.rotation_candidates():
+            mapped = sorted((round(sg.apply_rotation((x, y, 0.0), name)[0], 6),
+                             round(sg.apply_rotation((x, y, 0.0), name)[1], 6))
+                            for x, y in corners)
+            self.assertEqual(len(mapped), 4)
+            self.assertAlmostEqual(abs(sum(p[0] for p in mapped) / 4), abs(cx), places=6)
+
+    def test_the_candidate_patterns_are_both_reported_with_a_caveat(self) -> None:
+        pattern = sg.inner_pattern_candidates()
+        self.assertEqual(pattern["status"], "PENDING")
+        self.assertIn("not independent proof", pattern["caveat"])
+        self.assertEqual(sorted(pattern["candidates"]), ["about_x", "about_y"])
+        # The asymmetric insets make the two candidates different: that is why the
+        # pattern distinguishes them, and why one of them matches the layout.
+        self.assertNotEqual(pattern["candidates"]["about_x"], pattern["candidates"]["about_y"])
+
+    def test_matching_the_layout_is_consistency_not_proof(self) -> None:
+        """The layout uses the same no-flip premise being questioned."""
+        pattern = sg.inner_pattern_candidates()
+        recorded = [(o["x"], o["y"]) for o in layout()["displayStandoffs"]]
+        def matches(name: str) -> bool:
+            found = pattern["candidates"][name]
+            return all(max(abs(a[0] - b[0]), abs(a[1] - b[1])) <= 0.02
+                       for a, b in zip(found, sorted(recorded)))
+        self.assertTrue(matches("about_y"))
+        self.assertFalse(matches("about_x"))
+        self.assertIn("no-flip premise", pattern["caveat"])
+        # And no source comment may call that match proof.
+        source = inspect.getsource(sg)
+        self.assertNotIn("proves the axis", source)
+        self.assertNotIn("the in-plane orientation is wrong", source)
+
+
+class DisplayModelSeparationTest(unittest.TestCase):
+    """Model planes, the stated maximum and the provisional chain stay apart."""
+
+    def test_the_model_separations_are_the_measured_ones(self) -> None:
+        sep = sg.vendor_model_separations()
+        self.assertAlmostEqual(sep["glass_to_pcb_rear_mm"], 6.24, places=6)
+        self.assertAlmostEqual(sep["pcb_rear_to_boss_rear_mm"], 4.00, places=6)
+        self.assertAlmostEqual(sep["frame_forward_of_glass_mm"], 1.90, places=6)
+        self.assertAlmostEqual(sep["overall_depth_mm"], 13.82, places=6)
+        self.assertAlmostEqual(sep["boss_rear_to_rear_most_mm"], 1.68, places=6)
+
+    def test_the_model_is_not_the_stated_maximum_or_the_provisional_chain(self) -> None:
+        sep = sg.vendor_model_separations()
+        self.assertNotAlmostEqual(sep["glass_to_pcb_rear_mm"], 10.05, places=1)
+        self.assertNotAlmostEqual(sep["overall_depth_mm"], 14.05, places=1)
+
+    def test_the_document_keeps_the_three_sets_apart(self) -> None:
+        doc = sg.assumptions_document(layout())["display_model_planes"]
+        self.assertAlmostEqual(doc["vendor_stated_maximum_mm"], 14.05, places=6)
+        self.assertAlmostEqual(doc["provisional_chain_mm"]["glass_front_to_pcb_rear"], 10.05,
+                              places=6)
+        self.assertAlmostEqual(doc["vendor_model"]["separations_mm"]["glass_to_pcb_rear_mm"],
+                              6.24, places=6)
+        self.assertIn("no equation", doc["vendor_model"]["note"])
+        self.assertIn("1.90 mm", doc["placement"]["disclosure"])
+        self.assertIn("Not flush", doc["placement"]["disclosure"])
+
+    def test_the_connector_size_is_never_sourced_to_the_vendor_step(self) -> None:
+        """The withdrawn claim must not come back in code or docs."""
+        root = Path(__file__).resolve().parent
+        assembly = (root / "step_assembly.py").read_text()
+        self.assertNotIn("from the STEP's two extruded bodies", assembly)
+        self.assertNotIn('solids["DISPLAY_FPC_CONNECTOR_PROVISIONAL"]', assembly)
+        cad_doc = (root.parent / "docs" / "mechanical-cad.md").read_text()
+        self.assertNotIn("body size from the STEP", cad_doc)
+        self.assertIn("DISPLAY_CONNECTOR_PLANNING_MARKER", cad_doc)
+        stack_doc = (root.parent / "docs" / "mechanical-stack.md").read_text()
+        self.assertNotIn("| 15-pin DSI FPC connector |", stack_doc)
+        self.assertIn("Recorded connector data — **UNVERIFIED**", stack_doc)
+
+    def test_the_two_design_gap_rows_are_in_todo(self) -> None:
+        todo = (Path(__file__).resolve().parent.parent / "docs" / "TODO.md").read_text()
+        self.assertIn("Display in-plane orientation axis", todo)
+        self.assertIn("Board face convention (owner decision)", todo)
+        # They are design gaps, not physical evidence rows.
+        self.assertIn("All 28 items pending", todo)
+
+    def test_the_board_face_convention_is_recorded_as_pending(self) -> None:
+        block = sg.assumptions_document(layout())["board_face_convention"]
+        self.assertFalse(block["implemented"])
+        self.assertEqual(block["status"], "PENDING owner decision")
+        self.assertIn("no PCB source", block["action"])
 
 
 class OutputDirectoryTest(unittest.TestCase):

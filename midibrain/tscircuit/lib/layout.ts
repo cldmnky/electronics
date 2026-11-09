@@ -651,6 +651,14 @@ export const mechanicalExport = () => ({
   panelMountHoles: PANEL_MOUNT_HOLES,
   lcdMountHoles: LCD_MOUNT_HOLES,
   displayBossPattern: DISPLAY_BOSS_PATTERN,
+  // The recorded ALTERNATIVE inner (plain-hole) pattern, module-local. It is
+  // asymmetric in x (25.62 vs 22.38 mm insets), so it can DISTINGUISH the two
+  // candidate in-plane rotations of the vendor model. It does NOT decide which
+  // one is correct: this record uses the same no-flip premise that is itself
+  // questioned (the drawing may be a rear view). The orientation stays pending
+  // until a labelled front/rear photograph or the physical part is available; a
+  // candidate that reproduces these positions is consistent only.
+  displayStandoffs: DISPLAY_STANDOFFS,
   piHoles: PI_HOLES,
   piMount: PI_MOUNT,
 })

@@ -64,10 +64,18 @@ from pathlib import Path
 from bracket_geometry import GeometryError, load_layout
 from light_pipe_reach import ReachInputs, compute_reach
 from step_geometry import (
+    DISPLAY_ORIENTATION,
+    VENDOR_DISPLAY_MODEL,
     assembly_envelopes,
     assumptions_document,
+    check_display_plane_order,
+    display_rotation,
+    inner_pattern_candidates,
+    placed_display_planes,
     print_checklist_markdown,
     resolve_output_dir,
+    rotation_determinant,
+    vendor_model_separations,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -187,6 +195,280 @@ def resolve_display_archive(archive: str) -> tuple[Path, dict]:
     info["note"] = ("vendor archive AND its STEP member, both SHA-256 verified against "
                     "the recorded source")
     return step_path, info
+
+
+def planar_z_planes(cq, shape) -> dict[float, dict]:
+    """Planar faces whose normal is +-Z, grouped by their Z plane."""
+    planes: dict[float, dict] = {}
+    for face in shape.Faces():
+        if face.geomType() != "PLANE":
+            continue
+        if abs(abs(face.normalAt().z) - 1.0) > 1e-6:
+            continue
+        key = round(face.Center().z, 4)
+        fb = face.BoundingBox()
+        entry = planes.setdefault(key, {"area": 0.0, "x": [1e9, -1e9], "y": [1e9, -1e9]})
+        entry["area"] += face.Area()
+        entry["x"] = [min(entry["x"][0], fb.xmin), max(entry["x"][1], fb.xmax)]
+        entry["y"] = [min(entry["y"][0], fb.ymin), max(entry["y"][1], fb.ymax)]
+    return planes
+
+
+def boss_centres(shape) -> list[tuple[float, float]]:
+    """Centres of the 5.5 mm SMT standoff bodies (the mounting bosses)."""
+    out: list[tuple[float, float]] = []
+    for solid in shape.Solids():
+        b = solid.BoundingBox()
+        if 5.0 <= b.xlen <= 6.0 and 5.0 <= b.ylen <= 6.0 and 5.0 <= b.zlen <= 6.0:
+            c = solid.Center()
+            out.append((round(c.x, 4), round(c.y, 4)))
+    return sorted(out)
+
+
+def check_vendor_model(shape) -> dict:
+    """Assert the imported model IS the model the recorded numbers describe.
+
+    The SHA-256 pins the file; this pins the geometry the placement depends on,
+    so a substituted or re-exported file cannot silently move the display.
+    """
+    b = shape.BoundingBox()
+    m = VENDOR_DISPLAY_MODEL
+    problems = []
+    if abs(b.zmin - m["bbox_z_mm"][0]) > 0.02 or abs(b.zmax - m["bbox_z_mm"][1]) > 0.02:
+        problems.append(f"z bbox is {b.zmin:.3f}..{b.zmax:.3f}, expected "
+                        f"{m['bbox_z_mm'][0]:.3f}..{m['bbox_z_mm'][1]:.3f}")
+    planes = planar_z_planes(None, shape)
+    for name, key in (("glass front", "glass_front_z"), ("touch/frame", "touch_frame_front_z"),
+                      ("PCB rear", "pcb_rear_z")):
+        z = round(m[key], 4)
+        if z not in planes:
+            problems.append(f"no planar face at the {name} plane z={z}")
+    if round(m["glass_front_z"], 4) in planes:
+        g = planes[round(m["glass_front_z"], 4)]
+        if abs((g["x"][1] - g["x"][0]) - 105.42) > 0.05 or abs((g["y"][1] - g["y"][0]) - 67.07) > 0.05:
+            problems.append("the glass plane is not 105.42 x 67.07 mm")
+    bosses = boss_centres(shape)
+    if len(bosses) != 8:
+        problems.append(f"expected 8 SMT bosses, found {len(bosses)}")
+    if problems:
+        raise GeometryError("the vendor display model does not match its recorded planes: "
+                            + "; ".join(problems))
+    return {"bbox": [b.xlen, b.ylen, b.zlen], "bosses": len(bosses)}
+
+
+def place_display(cq, shape, layout: dict) -> tuple[object, dict]:
+    """Place the vendor model: glass front on the panel front face, electronics rearward.
+
+    Z is forced: the vendor +Z points out of the glass, the layout +Z points
+    rearward, so any placement must reverse Z. The IN-PLANE AXIS IS NOT SETTLED
+    (`step_geometry.DISPLAY_ORIENTATION`, status PENDING). The model is drawn
+    with the 180 degree Y candidate because a drawing must pick one; the 180
+    degree X candidate is recorded as an equal alternative. X and Y are then set
+    from source geometry: the outer SMT boss pattern centre, which equals the PCB
+    outline centre, is moved onto the module centre in lib/layout.ts. That
+    pattern is symmetric, so it fixes the centre only.
+    """
+    check_vendor_model(shape)
+    d = layout["display"]
+    m = VENDOR_DISPLAY_MODEL
+
+    rotated = shape.rotate((0, 0, 0), (0, 1, 0), 180)
+    planes = planar_z_planes(cq, rotated)
+    # After the rotation the glass front plane sits at -(vendor glass z).
+    glass_z_rotated = round(-m["glass_front_z"], 4)
+    if glass_z_rotated not in planes:
+        raise GeometryError(
+            f"the rotated model has no glass plane at z={glass_z_rotated}; refusing to place it")
+    dz = 0.0 - glass_z_rotated
+
+    bosses = boss_centres(rotated)
+    if len(bosses) != 8:
+        raise GeometryError(f"expected 8 SMT bosses after rotation, found {len(bosses)}")
+    xs = sorted({b[0] for b in bosses})
+    ys = sorted({b[1] for b in bosses})
+    # The outer pattern is the widest pair in each axis and is symmetric: its
+    # centre is the module centre.
+    outer = [(x, y) for x, y in bosses
+             if abs(abs(x) - m["mount_pattern_mm"][0] / 2) < 0.02]
+    if len(outer) != 4:
+        raise GeometryError(
+            f"could not identify the four outer boss positions, found {outer}")
+    cx = sum(p[0] for p in outer) / 4
+    cy = sum(p[1] for p in outer) / 4
+    if abs(abs(cx) - 0.0) > 0.02:
+        raise GeometryError(f"the outer boss pattern x centre is {cx:.3f}, expected 0")
+    if abs((max(xs) - min(xs)) - m["mount_pattern_mm"][0]) > 0.05 or \
+            abs((max(ys) - min(ys)) - m["mount_pattern_mm"][1]) > 0.05:
+        raise GeometryError("the rotated boss pattern is not 99.30 x 61.80 mm")
+    dx = d["x"] - cx
+    dy = d["y"] - cy
+    placed = rotated.translate((dx, dy, dz))
+
+    # ---- verification on the placed solid ----
+    expected = placed_display_planes()
+    check_display_plane_order(expected)
+    placed_planes = planar_z_planes(cq, placed)
+    found = {}
+    for name, key in (("glass_front", "glass_front_z"), ("glass_rear", "glass_rear_z"),
+                      ("touch_frame_front", "touch_frame_front_z"),
+                      ("pcb_front", "pcb_front_z"), ("pcb_rear", "pcb_rear_z"),
+                      ("boss_rear", "boss_rear_z"), ("rear_most", "rear_most_z")):
+        z = round(expected[name], 3)
+        match = [p for p in placed_planes if abs(p - z) < 0.02]
+        if not match and name != "rear_most":
+            raise GeometryError(
+                f"the placed model has no plane at {name} z={z}: the placement moved it")
+        found[name] = z
+
+    placed_bosses = [(round(x, 3), round(y, 3)) for x, y in boss_centres(placed)]
+    expected_mounts = [(round(h["x"], 3), round(h["y"], 3)) for h in layout["lcdMountHoles"]]
+    for mount in expected_mounts:
+        nearest = min(placed_bosses, key=lambda b: (b[0] - mount[0]) ** 2 + (b[1] - mount[1]) ** 2)
+        if max(abs(nearest[0] - mount[0]), abs(nearest[1] - mount[1])) > 0.05:
+            raise GeometryError(
+                f"boss {mount} is {nearest} after placement: the mounting pattern does not "
+                "land on the front-board hole pattern")
+
+    # The inner plain-hole pattern is asymmetric, so it distinguishes the two
+    # candidate rotations. Matching the recorded DISPLAY_STANDOFFS proves only
+    # that the modelled candidate is consistent with the layout's own no-flip
+    # premise - NOT that the axis is correct. Both candidate patterns are
+    # recorded; the status stays PENDING.
+    pattern = inner_pattern_candidates()
+    used = "about_y"
+    expected_inner = sorted((round(d["x"] + o["x"], 3), round(d["y"] + o["y"], 3))
+                            for o in layout["displayStandoffs"])
+    modelled_inner = sorted((round(d["x"] + x, 3), round(d["y"] + y, 3))
+                            for x, y in pattern["candidates"][used])
+    premise_consistent = len(modelled_inner) == 4 and all(
+        max(abs(a[0] - b[0]), abs(a[1] - b[1])) <= 0.05
+        for a, b in zip(modelled_inner, expected_inner))
+
+    # ---- connector: observation only, no identification -------------------
+    # The two 21.412 x 4.826 mm bodies belong to TFT1_ASM (verified by XCAF
+    # label paths), so they are TFT flex bonds and NOT the panel connector. An
+    # earlier revision of this file called them the FPC connector and reported a
+    # ~24 mm disagreement with the drawing; that was a misidentification.
+    fpc_expected = layout["fpcConnector"]["at"]
+    cam = m["display_cam"]
+    # Y candidate: x -> -x, y kept. The centre is a POSITION COMPARISON only.
+    candidate_placed = {
+        "x": round(dx - (cam["x_mm"][0] + cam["x_mm"][1]) / 2, 3),
+        "y": round(dy + (cam["y_mm"][0] + cam["y_mm"][1]) / 2, 3),
+    }
+    candidate_offset = [round(candidate_placed["x"] - fpc_expected["x"], 3),
+                        round(candidate_placed["y"] - fpc_expected["y"], 3)]
+    candidate_offset_magnitude = round(
+        (candidate_offset[0] ** 2 + candidate_offset[1] ** 2) ** 0.5, 3)
+
+    separations = vendor_model_separations()
+    info = {
+        "source": str(VENDOR_DISPLAY_MODEL["source"]),
+        "transform": {
+            "rotation": "180 deg about the Y axis: (x, y, z) -> (-x, y, -z)",
+            "rotation_matrix": [list(row) for row in display_rotation()],
+            "determinant": round(rotation_determinant(), 6),
+            "is_rigid_rotation_not_mirror": abs(rotation_determinant() - 1.0) < 1e-9,
+            "translation_mm": [round(dx, 4), round(dy, 4), round(dz, 4)],
+            "xy_datum": ("outer SMT boss pattern centre (= PCB outline centre), placed on the "
+                         "module centre from lib/layout.ts"),
+        },
+        "vendor_frame_checks": {
+            "bbox_z_mm": list(VENDOR_DISPLAY_MODEL["bbox_z_mm"]),
+            "glass_front_z": m["glass_front_z"],
+            "touch_frame_front_z": m["touch_frame_front_z"],
+            "pcb_rear_z": m["pcb_rear_z"],
+            "boss_rear_z": m["boss_rear_z"],
+            "rear_most_z": m["rear_most_z"],
+            "bosses": 8,
+            "outer_pattern_mm": list(m["mount_pattern_mm"]),
+            "inner_pattern_x": list(m["inner_hole_x"]),
+            "inner_pattern_y": list(m["inner_hole_y"]),
+        },
+        "vendor_model_separations_mm": separations,
+        "placed_global_z_mm": {k: round(v, 3) for k, v in found.items()},
+        "glass_datum": ("the vendor glass FRONT face at the panel front face, Z = 0 "
+                        "(assumption A); illustrative placement, not a fit"),
+        "front_frame_disclosure": (
+            "the vendor touch/frame forward face is 1.90 mm IN FRONT of the glass front "
+            "face in the model, so this placement puts it at global Z = -1.90 mm, i.e. "
+            "1.90 mm proud of the panel front face. It is NOT flush with the panel and "
+            "NOT a fit: the real frame/touch layer, the aperture relief and the seating "
+            "are unmeasured"),
+        "mounting_centres_verified": True,
+        "orientation": {
+            "status": DISPLAY_ORIENTATION["status"],
+            "candidate_used_for_drawing": DISPLAY_ORIENTATION["candidate_used_for_drawing"],
+            "alternative_candidate": DISPLAY_ORIENTATION["alternative_candidate"],
+            "z_reversal_required": DISPLAY_ORIENTATION["z_reversal_required"],
+            "why_not_proven": DISPLAY_ORIENTATION["why_not_proven"],
+            "resolving_evidence": DISPLAY_ORIENTATION["resolving_evidence"],
+            "inner_pattern_observation": {
+                "vendor_offsets_xy": pattern["vendor_offsets_xy"],
+                "modelled_candidate": pattern["candidates"]["about_y"],
+                "alternative_candidate": pattern["candidates"]["about_x"],
+                "recorded_drawing_positions": expected_inner,
+                "candidate_matches_recorded_positions": premise_consistent,
+                "caveat": pattern["caveat"],
+            },
+            "not_asserted": DISPLAY_ORIENTATION["not_asserted"],
+        },
+        "connector": {
+            "identification": "NOT ESTABLISHED",
+            "tft1_flex_bonds": {
+                "names": list(m["tft1_flex_bonds"]["names"]),
+                "label_path": m["tft1_flex_bonds"]["label_path"],
+                "local_span_mm": list(m["tft1_flex_bonds"]["local_span_mm"][:2]),
+                "placed_centre_xy_mm": list(m["tft1_flex_bonds"]["placed_centre_xy_mm"]),
+                "correction": (
+                    "these two bodies are TFT flex bonds inside TFT1_ASM. An earlier "
+                    "revision of this file called them the DSI FPC connector and reported a "
+                    "~24 mm disagreement with the drawing; that was a misidentification and "
+                    "is withdrawn"),
+            },
+            "candidate_at_drawing_position": {
+                "name": cam["name"],
+                "label_path": cam["label_path"],
+                "vendor_bounds_x_mm": list(cam["x_mm"]),
+                "vendor_bounds_y_mm": list(cam["y_mm"]),
+                "vendor_bounds_z_mm": list(cam["z_mm"]),
+                "vendor_size_mm": list(cam["size_mm"]),
+                "placed_centre_xy_mm": [candidate_placed["x"], candidate_placed["y"]],
+                "status": cam["status"],
+            },
+            "recorded_design_position_xy_mm": [fpc_expected["x"], fpc_expected["y"]],
+            "position_offset_mm": candidate_offset,
+            "position_offset_magnitude_mm": candidate_offset_magnitude,
+            "drawing_position_status": (
+                "UNVERIFIED. The recorded position and the 21.412 x 4.826 mm body size are "
+                "drawing-derived; the long-axis wording is disputed, so the drawing "
+                "position/length arithmetic needs independent re-derivation"),
+            "rear_front_frame_mapping": (
+                "UNVERIFIED: which face of the module the drawing shows is not established"),
+            "not_asserted": [
+                "that DISPLAY_CAM is the 15-pin DSI connector",
+                "a pin count, an electrical pinout or a physical side",
+                "that the model and the drawing agree",
+            ],
+        },
+        "status": ("ILLUSTRATIVE: the vendor model placed to show the stack. No physical "
+                   "fit is claimed; every physical gate stays pending"),
+    }
+    m2 = placed.BoundingBox()
+    info["placed_bbox_mm"] = [m2.xlen, m2.ylen, m2.zlen]
+    info["pending"] = [
+        "in-plane orientation: 180 deg about X and 180 deg about Y are both admissible",
+        "front touch/frame plane 1.90 mm forward of the glass datum in this placement",
+        "connector identity, pin count, electrical side and its real clearance",
+        "the drawing's position/length arithmetic (long-axis wording disputed)",
+        "the real glass, touch layer and frame thicknesses at the panel aperture",
+    ]
+    if not premise_consistent:
+        raise GeometryError(
+            "the modelled orientation candidate no longer matches the layout's recorded "
+            "inner-hole premise; this is a premise-consistency guard, not a proof: "
+            f"{modelled_inner} vs {expected_inner}")
+    return placed, info
 
 
 def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> dict:
@@ -311,26 +593,12 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
     }
 
     # ---- display ------------------------------------------------------
-    d = layout["display"]
     if display_step is not None:
         shape = cq.importers.importStep(str(display_step)).val()
-        bb = shape.BoundingBox()
-        moved = shape.moved(cq.Location(cq.Vector(
-            d["x"] - (bb.xmin + bb.xmax) / 2,
-            d["y"] - (bb.ymin + bb.ymax) / 2,
-            0.0 - bb.zmin)))
-        mb = moved.BoundingBox()
+        moved, placement = place_display(cq, shape, layout)
         solids["DISPLAY_WAVESHARE_VENDOR_STEP"] = moved
-        meta["DISPLAY_WAVESHARE_VENDOR_STEP"] = {
-            "source": str(display_step),
-            "placement": ("bounding-box centre to the module centre and bounding-box minimum Z "
-                          "to the panel front face (assumption A); the vendor model's own Z "
-                          "origin is not documented"),
-            "bbox_mm": [mb.xlen, mb.ylen, mb.zlen],
-            "solids": len(moved.Solids()),
-            "note": ("vendor geometry as supplied; the reference model is 13.82 mm deep, while "
-                     "the stack uses the vendor's stated 14.05 mm maximum"),
-        }
+        placement["solids"] = len(moved.Solids())
+        meta["DISPLAY_WAVESHARE_VENDOR_STEP"] = placement
     else:
         e = env["DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z"]
         solids["DISPLAY_ENVELOPE_PROVISIONAL"] = span_box(e, grow=0.0)
@@ -340,19 +608,40 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
                      "depth; it is not vendor geometry"),
         }
 
-    # ---- display FPC connector (provisional) --------------------------
+    # ---- display connector PLANNING MARKER ------------------------------
+    # LEGACY, UNVERIFIED planning data from lib/layout.ts (drawing-derived).
+    # This is NOT a verified connector: the 21.412 x 4.826 mm size has no
+    # reliable source in the vendor model (the bodies that carry that size are
+    # TFT1 flex bonds, see VENDOR_DISPLAY_MODEL["tft1_flex_bonds"]), and the
+    # marker sits on the PROVISIONAL design-chain plane (displayPcbRear =
+    # 10.05 mm), not on the vendor model's drawn PCB rear plane (6.24 mm).
+    # Routing, connector identity and fit are unknown.
     fpc = layout["fpcConnector"]
+    vendor_pcb_rear = placed_display_planes()["pcb_rear"]
     fpc_wp = box(fpc["at"]["x"] - fpc["bodyWidth"] / 2,
                  fpc["at"]["y"] - fpc["bodyLength"] / 2,
                  pz["displayPcbRear"],
                  fpc["at"]["x"] + fpc["bodyWidth"] / 2,
                  fpc["at"]["y"] + fpc["bodyLength"] / 2,
                  pz["displayPcbRear"] + 1.8)
-    solids["DISPLAY_FPC_CONNECTOR_PROVISIONAL"] = fpc_wp
-    meta["DISPLAY_FPC_CONNECTOR_PROVISIONAL"] = {
-        "note": ("body 21.412 x 4.826 mm on the display PCB rear face, 1.8 mm of stack from "
-                 "the STEP's two extruded bodies; the placement on the rear face is the "
-                 "drawing's, not a measured assembly transform"),
+    solids["DISPLAY_CONNECTOR_PLANNING_MARKER"] = fpc_wp
+    meta["DISPLAY_CONNECTOR_PLANNING_MARKER"] = {
+        "kind": "PLANNING MARKER, not a verified connector",
+        "data_source": ("legacy drawing-derived values in tscircuit/lib/layout.ts "
+                        "(DISPLAY_FPC_CONNECTOR / DISPLAY_FPC_CONNECTOR_AT)"),
+        "size_mm": [fpc["bodyLength"], fpc["bodyWidth"], 1.8],
+        "size_source": ("UNVERIFIED. No reliable source: the vendor model's 21.412 x 4.826 mm "
+                        "bodies are TFT1 flex bonds (EXTRUDED-106739 / EXTRUDED-107488), not "
+                        "this connector"),
+        "position_xy_mm": [fpc["at"]["x"], fpc["at"]["y"]],
+        "position_source": ("UNVERIFIED drawing-derived record; the long-axis wording is "
+                            "disputed and the position/length arithmetic needs independent "
+                            "re-derivation"),
+        "z_mm": [round(pz["displayPcbRear"], 3), round(pz["displayPcbRear"] + 1.8, 3)],
+        "z_basis": ("the PROVISIONAL design-chain plane (assumption A + B + the 10.05 mm "
+                    f"glass-to-PCB-rear split). The drawn vendor model puts its PCB rear face "
+                    f"at global Z = {vendor_pcb_rear:.2f} mm, so this marker is not on it"),
+        "fit_and_routing": "UNKNOWN: no clearance, bend radius or cable route is claimed",
     }
 
     # ---- Adafruit 908 flange volumes ----------------------------------

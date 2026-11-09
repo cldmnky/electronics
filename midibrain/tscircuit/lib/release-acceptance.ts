@@ -234,6 +234,10 @@ export const FINGERPRINT_FILES = [
   "mechanical/step_assembly.py",
   "mechanical/step_geometry.py",
   "mechanical/light_pipe_reach.py",
+  // The vendor-model inspector produced the display landmark planes the
+  // placement depends on. Changing what it measures can invalidate a first
+  // article result, so it is a hardware source too.
+  "mechanical/tools/inspect_display_step.py",
   "jlc-order.json",
   "tscircuit/scripts/sourcing-extras.csv",
 ]

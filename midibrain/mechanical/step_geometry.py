@@ -67,6 +67,216 @@ ADAFRUIT_908 = {
 
 
 # ---------------------------------------------------------------------------
+# The vendor display model's own planes.
+# ---------------------------------------------------------------------------
+# Measured from the hash-verified vendor STEP with a real CAD kernel
+# (mechanical/tools/inspect_display_step.py), 2026-11-08. These are MODEL
+# planes: they are NOT the vendor's stated 14.05 mm maximum overall depth and
+# they are NOT the provisional 10.05 + 4.00 mm design chain. The three sets of
+# numbers are kept apart on purpose, because they answer different questions.
+#
+# Vendor frame: +Z points FORWARD out of the glass, +X points the opposite way
+# to the layout frame, +Y agrees with the layout frame (proved by the inner
+# plain-hole pattern insets below).
+VENDOR_DISPLAY_MODEL = {
+    "source": "mechanical/reference/waveshare-4.3inch-dsi-lcd.step (SHA-256 verified)",
+    "tool": "mechanical/tools/inspect_display_step.py, CadQuery 2.8.0",
+    "inspected": "2026-11-08",
+    "solids": 394,
+    "bbox_z_mm": (-9.020, 4.800),
+    "bbox_xy_mm": (106.100, 68.363),
+    "glass_front_z": 2.900,          # 43H-800480-IPS cover glass, front face
+    "glass_rear_z": 0.000,           # glass is 2.9 mm thick in the model
+    "touch_frame_front_z": 4.800,    # front touch/frame, 1.9 mm in front of the glass
+    "pcb_front_z": -1.740,
+    "pcb_rear_z": -3.340,
+    "boss_rear_z": -7.340,           # SMTSO boss ends, 4.00 mm behind the PCB rear
+    "rear_most_z": -9.020,           # rear-most modelled feature, not a boss
+    "mount_pattern_mm": (99.300, 61.800),   # outer SMTSO pattern, symmetric
+    "mount_pattern_centre_xy": (0.000, -2.370),  # = the PCB outline centre
+    # Inner plain-hole pattern (the drawing's 25.62/22.38 and 9.50/9.46 insets).
+    # It is asymmetric, so it decides the in-plane orientation of the module.
+    "inner_hole_x": (-30.616, 27.384),
+    "inner_hole_y": (-26.912, 22.138),
+    # Where the two 21.412 x 4.826 bodies actually live. Verified by XCAF label
+    # path: they are TFT flex bonds inside TFT1_ASM, NOT a panel connector.
+    "tft1_flex_bonds": {
+        "names": ("EXTRUDED-106739", "EXTRUDED-107488"),
+        "label_path": ("4_3INCH-DSI-LCD-PCBA_ASM > 4_3INCH_DSI_LCD_V2_2_ASM > "
+                       "PCB_ASM > TFT1_ASM"),
+        "local_span_mm": (21.412, 4.826, (1.000, 0.800)),
+        "placed_centre_xy_mm": (-24.316, 5.755),
+        "note": ("an earlier revision called these the DSI FPC connector and reported a "
+                 "~24 mm disagreement with the drawing. That was a misidentification"),
+    },
+    # The body nearest the drawing-derived connector position, by NAME only. The
+    # name is not proof of a pinout, a pin count or an electrical side, and the
+    # mapping is not independent evidence.
+    "display_cam": {
+        "name": "DISPLAY_CAM",
+        "label_path": "4_3INCH-DSI-LCD_ASM > 4_3INCH-DSI-LCD-PCBA_ASM > DISPLAY_CAM",
+        "x_mm": (-51.975, -47.153),
+        "y_mm": (-13.570, 8.830),
+        "z_mm": (-9.020, -3.340),
+        "size_mm": (4.822, 22.400, 5.680),
+        "status": "UNVERIFIED CANDIDATE: identity, pin count and electrical side not established",
+    },
+}
+
+
+def vendor_model_separations() -> dict:
+    """The vendor model's own separations, in mm, from its measured planes."""
+    m = VENDOR_DISPLAY_MODEL
+    return {
+        "overall_depth_mm": round(m["bbox_z_mm"][1] - m["bbox_z_mm"][0], 3),
+        "frame_forward_of_glass_mm": round(m["touch_frame_front_z"] - m["glass_front_z"], 3),
+        "glass_to_pcb_rear_mm": round(m["glass_front_z"] - m["pcb_rear_z"], 3),
+        "pcb_thickness_mm": round(m["pcb_front_z"] - m["pcb_rear_z"], 3),
+        "pcb_rear_to_boss_rear_mm": round(m["pcb_rear_z"] - m["boss_rear_z"], 3),
+        "boss_rear_to_rear_most_mm": round(m["boss_rear_z"] - m["rear_most_z"], 3),
+    }
+
+
+# In-plane orientation: PENDING. The Z reversal is forced (the vendor +Z points
+# out of the glass, the layout +Z points rearward); the choice of in-plane axis
+# is NOT settled, because a rotation that reverses Z must mirror one in-plane
+# axis and the drawing's own view direction is not established.
+DISPLAY_ORIENTATION = {
+    "status": "PENDING",
+    "candidate_used_for_drawing": "180 deg about Y: (x, y, z) -> (-x, y, -z)",
+    "alternative_candidate": "180 deg about X: (x, y, z) -> (x, -y, -z)",
+    "z_reversal_required": ("the vendor frame's +Z points out of the glass; the layout's "
+                            "+Z points rearward, so Z must be reversed by any placement"),
+    "why_not_proven": (
+        "the drawing shows readable rear-side silkscreen and may be a REAR view, so moving "
+        "drawing left/right straight into the front-view layout may mirror the inner-hole "
+        "pattern. The layout's own DISPLAY_STANDOFFS uses that no-flip premise, so the "
+        "candidate that reproduces it is consistent with the layout, not evidence about "
+        "the real part. The outer SMTSO pattern is symmetric and cannot decide the axis"),
+    "resolving_evidence": (
+        "a real front/rear labelled photograph of the delivered module, or the physical "
+        "part offered to the front board"),
+    "not_asserted": ["which in-plane axis is correct", "front/rear mapping of the drawing"],
+}
+
+# The two admissible rigid placements. Both reverse Z; they differ only in which
+# in-plane axis they mirror. Neither is claimed correct.
+def rotation_candidates() -> dict[str, tuple[tuple[float, float, float], ...]]:
+    return {
+        "about_y": ((-1.0, 0.0, 0.0),
+                    (0.0, 1.0, 0.0),
+                    (0.0, 0.0, -1.0)),
+        "about_x": ((1.0, 0.0, 0.0),
+                    (0.0, -1.0, 0.0),
+                    (0.0, 0.0, -1.0)),
+    }
+
+
+def display_rotation() -> tuple[tuple[float, float, float], ...]:
+    """The PROVISIONAL candidate the model is drawn with: 180 deg about Y.
+
+    This is a candidate for drawing only. `DISPLAY_ORIENTATION` states the X and
+    Y ambiguity and the evidence that would settle it; no test and no document
+    may call this axis proven.
+    """
+    return rotation_candidates()["about_y"]
+
+
+def rotation_determinant(matrix=None) -> float:
+    """Determinant of a 3x3 matrix. +1 is a rotation, -1 would be a mirror."""
+    m = display_rotation() if matrix is None else matrix
+    a, b, c = m[0]
+    d, e, f = m[1]
+    g, h, i = m[2]
+    return a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+
+
+def apply_rotation(point: tuple[float, float, float],
+                   candidate: str = "about_y") -> tuple[float, float, float]:
+    m = rotation_candidates()[candidate]
+    x, y, z = point
+    return tuple(m[r][0] * x + m[r][1] * y + m[r][2] * z for r in range(3))  # type: ignore[return-value]
+
+
+def inner_pattern_candidates() -> dict:
+    """Both candidate inner-hole patterns, with the caveat that neither is proof.
+
+    The inner plain-hole pattern is asymmetric in X (25.62 vs 22.38 mm insets),
+    so it distinguishes the candidates. It does NOT identify the correct one:
+    the layout's recorded positions carry the same no-flip premise that the
+    drawing's view direction is being questioned for.
+    """
+    m = VENDOR_DISPLAY_MODEL
+    cx, cy = m["mount_pattern_centre_xy"]
+    offsets = [(x - cx, y - cy) for x in m["inner_hole_x"] for y in m["inner_hole_y"]]
+    patterns = {}
+    for name in rotation_candidates():
+        patterns[name] = sorted(
+            (round(apply_rotation((x, y, 0.0), name)[0], 3),
+             round(apply_rotation((x, y, 0.0), name)[1], 3)) for x, y in offsets)
+    return {
+        "vendor_offsets_xy": sorted((round(x, 3), round(y, 3)) for x, y in offsets),
+        "candidates": patterns,
+        "status": "PENDING",
+        "caveat": ("a candidate matching the recorded DISPLAY_STANDOFFS is consistent with "
+                   "the layout only: the layout uses the same no-flip premise, so it is not "
+                   "independent proof"),
+    }
+
+
+# Z = 0 at the panel FRONT face, +Z rearward.
+DISPLAY_GLASS_DATUM_Z = 0.0
+
+
+def placed_display_planes() -> dict[str, float]:
+    """Where the vendor model's planes land when its glass front is at Z = 0.
+
+    Derived from the measured vendor planes, never typed in: the placement puts
+    the glass front face on the panel front face (assumption A) and this is
+    what follows for every other plane.
+    """
+    m = VENDOR_DISPLAY_MODEL
+    def place(vendor_z: float) -> float:
+        return round(DISPLAY_GLASS_DATUM_Z + (m["glass_front_z"] - vendor_z), 6)
+    return {
+        "touch_frame_front": place(m["touch_frame_front_z"]),  # negative: in FRONT of the panel
+        "glass_front": place(m["glass_front_z"]),
+        "glass_rear": place(m["glass_rear_z"]),
+        "pcb_front": place(m["pcb_front_z"]),
+        "pcb_rear": place(m["pcb_rear_z"]),
+        "boss_rear": place(m["boss_rear_z"]),
+        "rear_most": place(m["rear_most_z"]),
+    }
+
+
+def check_display_plane_order(planes: dict[str, float]) -> None:
+    """Fail when the display is reversed: glass must be forward of the PCB.
+
+    Z increases rearward, so a correct placement has
+
+        touch_frame_front < glass_front <= glass_rear < pcb_front < pcb_rear
+                          < boss_rear <= rear_most
+
+    A placement that maps the bounding-box minimum to Z = 0 puts the boss ends
+    in front of the glass and fails here.
+    """
+    required = ("touch_frame_front", "glass_front", "glass_rear", "pcb_front",
+                "pcb_rear", "boss_rear", "rear_most")
+    missing = [k for k in required if k not in planes]
+    if missing:
+        raise GeometryError(f"display plane report is incomplete: {missing}")
+    pairs = [("touch_frame_front", "glass_front"), ("glass_front", "glass_rear"),
+             ("glass_rear", "pcb_front"), ("pcb_front", "pcb_rear"),
+             ("pcb_rear", "boss_rear"), ("boss_rear", "rear_most")]
+    for front, back in pairs:
+        if not planes[front] < planes[back]:
+            raise GeometryError(
+                f"the display is reversed: {front} ({planes[front]:.3f} mm) is not "
+                f"forward of {back} ({planes[back]:.3f} mm). The glass must face the "
+                "panel and the electronics must point rearward.")
+
+
+# ---------------------------------------------------------------------------
 # A one-dimensional extent, in millimetres.
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
@@ -761,11 +971,85 @@ def assumptions_document(layout: dict | None = None, *,
         "unknowns": [
             "Adafruit 908 flange depth, seat plane and body envelope",
             "SparkFun CAB-15455 flange and body envelope",
+            "the display connector identity, pin count, electrical side and its real "
+            "position (the model's DISPLAY_CAM name is not proof)",
             "M2.5 screw-head and washer envelope",
             "display underside component map and FPC latch height",
             "LED position, LED height and light-pipe seat allowance",
             "measured panel, board and standoff thicknesses",
         ],
+        "display_model_planes": {
+            # Three separate things, never interchangeable.
+            "vendor_model": {
+                "source": VENDOR_DISPLAY_MODEL["source"],
+                "tool": VENDOR_DISPLAY_MODEL["tool"],
+                "inspected": VENDOR_DISPLAY_MODEL["inspected"],
+                "frame": "vendor frame: +Z points out of the glass, +X is mirrored vs the layout frame",
+                "planes_z_mm": {
+                    "glass_front": VENDOR_DISPLAY_MODEL["glass_front_z"],
+                    "glass_rear": VENDOR_DISPLAY_MODEL["glass_rear_z"],
+                    "touch_frame_front": VENDOR_DISPLAY_MODEL["touch_frame_front_z"],
+                    "pcb_front": VENDOR_DISPLAY_MODEL["pcb_front_z"],
+                    "pcb_rear": VENDOR_DISPLAY_MODEL["pcb_rear_z"],
+                    "boss_rear": VENDOR_DISPLAY_MODEL["boss_rear_z"],
+                    "rear_most": VENDOR_DISPLAY_MODEL["rear_most_z"],
+                },
+                "separations_mm": vendor_model_separations(),
+                "note": ("these are the MODEL's own planes. They are not the vendor's stated "
+                         "14.05 mm maximum and not the provisional 10.05 + 4.00 mm design "
+                         "chain; no equation may be written between the three"),
+            },
+            "vendor_stated_maximum_mm": 14.05,
+            "vendor_stated_maximum_source": "Waveshare wiki FAQ, overall thickness",
+            "provisional_chain_mm": {
+                "glass_front_to_pcb_rear": 10.05,
+                "boss_projection": 4.00,
+                "status": "PROVISIONAL design assumption (docs/mechanical-stack.md); it does "
+                          "not reproduce the model's 6.24 mm glass-to-PCB separation and is "
+                          "not a measurement",
+            },
+            "placed_illustrative_global_z_mm": placed_display_planes(),
+            "placement": {
+                "rotation_candidate_used": DISPLAY_ORIENTATION["candidate_used_for_drawing"],
+                "rotation_alternative": DISPLAY_ORIENTATION["alternative_candidate"],
+                "rotation_determinant": round(rotation_determinant(), 6),
+                "glass_datum": "vendor glass front face at the panel front face, Z = 0",
+                "disclosure": ("the model's touch/frame forward face is 1.90 mm in front of "
+                               "the glass, so it sits at global Z = -1.90 mm: 1.90 mm proud "
+                               "of the panel front face. Not flush, not a fit"),
+            },
+            "orientation": {
+                "status": DISPLAY_ORIENTATION["status"],
+                "why_not_proven": DISPLAY_ORIENTATION["why_not_proven"],
+                "resolving_evidence": DISPLAY_ORIENTATION["resolving_evidence"],
+                "not_asserted": DISPLAY_ORIENTATION["not_asserted"],
+                "inner_pattern_candidates": inner_pattern_candidates(),
+            },
+            "connector": {
+                "identification": "NOT ESTABLISHED",
+                "tft1_flex_bonds": VENDOR_DISPLAY_MODEL["tft1_flex_bonds"],
+                "candidate_at_drawing_position": VENDOR_DISPLAY_MODEL["display_cam"],
+                "drawing_position": ("UNVERIFIED; the long-axis wording is disputed and the "
+                                     "position/length arithmetic needs independent "
+                                     "re-derivation"),
+                "rear_front_frame_mapping": "UNVERIFIED",
+            },
+            "status": "ILLUSTRATIVE placement; every display gate stays pending",
+        },
+        "board_face_convention": {
+            "requested": ("both boards' CAD-bottom faces toward the panel"),
+            "implemented": False,
+            "status": "PENDING owner decision",
+            "conflict": (
+                "the bare board models are plain slabs with no top/bottom feature marker. The "
+                "existing front/UI board carries its SMT parts and the control actuators on "
+                "top, and the rear/base board already has its SMT parts on the bottom. Moving "
+                "either board's CAD bottom toward the panel is a real PCB layer/side "
+                "reassignment, not a display transform: it would change the assembly, the "
+                "silkscreen and every part placement"),
+            "action": ("no PCB source, SMT side or stackup was changed. The request needs an "
+                       "owner decision and a PCB revision before any model follows it"),
+        },
         "flange_source": flange_source,
         "flange_projections": overlaps,
         "envelopes": envelopes,
@@ -804,6 +1088,9 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "LCD mount holes; the top relief notch must clear all three feedthrough bodies.",
     "Check the panel-to-board gap with the light-pipe reach gauge: 17.45 mm is a "
     "PROVISIONAL chain, not a measurement.",
+    "Offer the real display to the panel aperture from behind and measure the touch "
+    "layer, frame and glass: the model places the touch/frame plane 1.90 mm in FRONT "
+    "of the glass datum, so the panel relief and seating are still unknown.",
     "Do not record any result as accepted: every mockup is a print check, not "
     "dimensional evidence. Enter measurements in docs/evidence/ with a date and name.",
 )
