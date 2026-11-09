@@ -448,6 +448,9 @@ def classify(a: Envelope, b: Envelope, *, eps: float = EPS) -> CollisionVerdict:
     def assumed_blocker(axis_name: str) -> bool:
         nonlocal illustrative
         illustrative = True
+        if axis_name not in undetermined:
+            # the axis has a value, but it is a candidate: report it as untrusted
+            undetermined.append(axis_name)
         reasons.append(
             f"axis {axis_name} is a candidate value, not a documented one, so the "
             f"result stays undetermined (see the envelope note)")
@@ -502,6 +505,71 @@ def classify(a: Envelope, b: Envelope, *, eps: float = EPS) -> CollisionVerdict:
     reasons.append("no axis proves a separation and not all axes prove an overlap: undetermined")
     return CollisionVerdict(UNDETERMINED, None, None, None, tuple(axes),
                             tuple(undetermined), tuple(reasons), illustrative)
+
+
+# ---------------------------------------------------------------------------
+# LCD mount: the model gap, the design-chain candidate and the residual.
+# ---------------------------------------------------------------------------
+# The four LCD mount axes come from the exported layout (lcdMountHoles). The
+# SPAN comes from the drawn solids: the vendor model's SMT boss rear plane and
+# the drawn front-board top face. Two different numbers exist and they must not
+# be conflated:
+#
+#   model gap    boss rear -> board top face        8.81 mm   (drawn solids)
+#   chain spacer the existing design assumption      5.00 mm   (9.0 - 4.0)
+#   residual     what a 5.00 mm spacer misses       3.81 mm   (14.05 vs 10.24)
+#
+# Neither number is an approved dimension and the two chains do NOT agree.
+DISPLAY_MOUNT_PLACEHOLDER = {
+    "name_prefix": "MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED",
+    "status": "GEOMETRIC PLACEHOLDER ONLY - non-approved, not a part, not a fit",
+    "outer_diameter_mm": 5.0,   # assumed, illustration only
+    "inner_diameter_mm": 2.7,   # assumed clearance, illustration only
+    "dimension_basis": ("OD 5.0 and ID 2.7 are ASSUMED for the drawing only. They are not a "
+                        "specification, not a part number, and not a thread call-out. OD exceeds "
+                        "the board's 4.3 mm LCD hole so the placeholder shows a bearing annulus"),
+}
+
+
+def display_mount_gap(layout: dict | None = None) -> dict:
+    """The model-derived mount gap, the design-chain candidate and the residual.
+
+    Everything here is arithmetic on measured model planes plus one documented
+    design assumption. It is NOT an approved spacer length: the correct length,
+    the standoff diameter, the glass seating, the mounting thread and the
+    assembly sequence are all first-article tasks.
+    """
+    data = layout if layout is not None else load_layout()
+    planes = placed_display_planes()
+    boss_rear = planes["boss_rear"]                 # 10.24, model boss ends
+    board_top = float(data["provisionalZ"]["frontBoardTop"])   # 19.05
+    chain = float(data["displayStandoff"]["spacerLength"])     # 5.00 design assumption
+    gap = round(board_top - boss_rear, 3)                       # 8.81
+    chain_end = round(board_top - chain, 3)                     # 14.05
+    residual = round(chain_end - boss_rear, 3)                  # 3.81
+    return {
+        "axes_xy": [(h["x"], h["y"]) for h in data["lcdMountHoles"]],
+        "boss_rear_z_mm": round(boss_rear, 3),
+        "board_top_z_mm": round(board_top, 3),
+        "model_gap_mm": gap,
+        "design_chain_spacer_mm": round(chain, 3),
+        "design_chain_display_end_z_mm": chain_end,
+        "residual_mm": residual,
+        "chains_agree": False,
+        "chains_agree_note": ("the 5.00 mm design candidate and the 8.81 mm model gap are two "
+                              "different chains; they do not agree and neither is approved"),
+        "spacer_length_mm": gap,
+        "length_status": "model-derived placeholder length, NOT an approved dimension",
+        "outer_diameter_mm": DISPLAY_MOUNT_PLACEHOLDER["outer_diameter_mm"],
+        "inner_diameter_mm": DISPLAY_MOUNT_PLACEHOLDER["inner_diameter_mm"],
+        "dimension_status": "OD and ID are assumed for illustration, no dimensional claim",
+        "first_article_tasks": [
+            "the correct spacer length (measure the real display boss plane and board face)",
+            "the standoff diameter and the glass seating plane",
+            "the mounting thread (M2.5?) and its engagement depth",
+            "the assembly order and the torque/retention method",
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -682,8 +750,8 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
 
     env: dict[str, Envelope] = {}
 
-    env["PANEL_32HP_3U"] = Envelope(
-        name="PANEL_32HP_3U",
+    env["PANEL_30HP_3U"] = Envelope(
+        name="PANEL_30HP_3U",
         provenance=PROVENANCE["canonical"],
         x=Span(-panel["width"] / 2, panel["width"] / 2),
         y=Span(-panel["height"] / 2, panel["height"] / 2),
@@ -691,13 +759,17 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
         note="front panel outline; the LCD aperture, feedthrough cutouts and holes are cut from it",
     )
 
+    # assumed_axes: the Z span rests on the unmeasured PROVISIONAL_Z chain, so any
+    # verdict that depends on it must downgrade to undetermined. XY is canonical.
     env["FRONT_BOARD_PROVISIONAL_Z"] = Envelope(
         name="FRONT_BOARD_PROVISIONAL_Z",
         provenance=PROVENANCE["provisional-z"],
         x=Span(-front["width"] / 2, front["width"] / 2),
         y=Span(-front["height"] / 2, front["height"] / 2),
         z=Span(pz["frontBoardTop"], pz["frontBoardRear"]),
-        note=("top face at the PROVISIONAL_Z value: assumptions A and B, not a measurement"),
+        assumed_axes=("z",),
+        note=("top face at the PROVISIONAL_Z value: assumptions A and B, not a measurement. "
+              "The Z axis is a candidate value, so no Z-based verdict is definitive"),
     )
 
     env["REAR_BOARD_PROVISIONAL_Z"] = Envelope(
@@ -706,8 +778,10 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
         x=Span(-rear["width"] / 2, rear["width"] / 2),
         y=Span(-rear["height"] / 2, rear["height"] / 2),
         z=Span(rear_front_z, rear_rear_z),
+        assumed_axes=("z",),
         note=("Z from PROVISIONAL_Z plus the candidate front-to-rear gap "
-              f"({depth['frontToRearGap']:.2f} mm); the spacer length is still open"),
+              f"({depth['frontToRearGap']:.2f} mm); the spacer length is still open, so the "
+              "Z axis is a candidate value and no Z-based verdict is definitive"),
     )
 
     env["DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z"] = Envelope(
@@ -716,8 +790,10 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
         x=Span.around(d["x"], d["width"]),
         y=Span.around(d["y"], d["height"]),
         z=Span(pz["displayGlassFront"], pz["displayRearMost"]),
-        note=("XY from the module outline (106 x 68); Z spans glass front (assumed flush, "
-              "assumption A) to the 14.05 mm vendor overall depth"),
+        assumed_axes=("z",),
+        note=("XY from the module outline (106 x 68) and therefore documented; Z spans the "
+              "glass front (assumed flush, assumption A) to the 14.05 mm vendor overall depth, "
+              "so the Z axis is a candidate value and no Z-based verdict is definitive"),
     )
 
     for f in layout["feedthroughs"]:
@@ -764,13 +840,42 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
     return env
 
 
+# The STEP/STL body legend. Every drawn body appears here with what it means and
+# what its status is, so the visualization cannot imply more than it shows.
+BODY_LEGEND = (
+    {"name": "PANEL_30HP_3U", "meaning": "bare 30HP panel, 152.0 mm actual",
+     "status": "provisional model, not a released drawing"},
+    {"name": "FRONT_BOARD_PROVISIONAL_Z", "meaning": "128 x 112 mm front/UI board",
+     "status": "XY canonical, Z provisional (assumption A and B)"},
+    {"name": "REAR_BOARD_PROVISIONAL_Z", "meaning": "101.6 x 112 mm rear/base board",
+     "status": "XY canonical, Z provisional (candidate gap)"},
+    {"name": "DISPLAY_WAVESHARE_VENDOR_STEP",
+     "meaning": "vendor display model, SHA-256 verified",
+     "status": "illustrative placement; in-plane axis PENDING"},
+    {"name": "DISPLAY_ENVELOPE_PROVISIONAL",
+     "meaning": "106 x 68 mm display envelope used when no vendor model is supplied",
+     "status": "envelope, not vendor geometry"},
+    {"name": "MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_1..4",
+     "meaning": "four annuli spanning the model gap, to show the LCD mount",
+     "status": "GEOMETRIC PLACEHOLDER, non-approved, not a part"},
+    {"name": "DISPLAY_CONNECTOR_PLANNING_MARKER",
+     "meaning": "legacy connector record drawn as a box on the provisional 10.05 plane",
+     "status": "unverified planning data, not a verified connector"},
+    {"name": "FEEDTHROUGH_*_FLANGE_PLAN_MARKER",
+     "meaning": "Adafruit 908 flange outline on the panel rear face",
+     "status": "plan marker; the drawing publishes no depth"},
+    {"name": "USB_C_CANDIDATE_FLANGE_NON_APPROVED",
+     "meaning": "opt-in advertised USB-C flange",
+     "status": "NON-APPROVED candidate, no fit claim"},
+)
+
 # Pairs whose relationship the metadata reports. Order is fixed so the file is
 # byte-stable across runs.
 COLLISION_PAIRS: tuple[tuple[str, str], ...] = (
     ("FEEDTHROUGH_UMC_AUDIO_USB_FLANGE", "FRONT_BOARD_PROVISIONAL_Z"),
     ("FEEDTHROUGH_MIDI_HUB_USB_FLANGE", "FRONT_BOARD_PROVISIONAL_Z"),
     ("FEEDTHROUGH_USB_C_POWER_FLANGE", "FRONT_BOARD_PROVISIONAL_Z"),
-    ("FEEDTHROUGH_UMC_AUDIO_USB_FLANGE", "PANEL_32HP_3U"),
+    ("FEEDTHROUGH_UMC_AUDIO_USB_FLANGE", "PANEL_30HP_3U"),
     ("FEEDTHROUGH_UMC_AUDIO_USB_FLANGE", "DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z"),
     ("DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z", "FRONT_BOARD_PROVISIONAL_Z"),
     ("FRONT_BOARD_PROVISIONAL_Z", "REAR_BOARD_PROVISIONAL_Z"),
@@ -978,6 +1083,15 @@ def assumptions_document(layout: dict | None = None, *,
             "LED position, LED height and light-pipe seat allowance",
             "measured panel, board and standoff thicknesses",
         ],
+        "display_mount_placeholders": {
+            **display_mount_gap(data),
+            "placeholder_definition": DISPLAY_MOUNT_PLACEHOLDER,
+            "arithmetic_vs_proof": (
+                "the 8.81 mm span and the 3.81 mm residual are ARITHMETIC on the drawn "
+                "model planes plus one design assumption. They are not a proof of fit, not "
+                "an approved dimension and not a hardware selection"),
+        },
+        "body_legend": list(BODY_LEGEND),
         "display_model_planes": {
             # Three separate things, never interchangeable.
             "vendor_model": {
@@ -1091,6 +1205,9 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "Offer the real display to the panel aperture from behind and measure the touch "
     "layer, frame and glass: the model places the touch/frame plane 1.90 mm in FRONT "
     "of the glass datum, so the panel relief and seating are still unknown.",
+    "Do NOT print or buy the four MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED bodies: they "
+    "are 5.0/2.7 mm geometric placeholders over the model's 8.81 mm gap, not a part. "
+    "Measure the real boss plane, board face, standoff diameter and thread first.",
     "Do not record any result as accepted: every mockup is a print check, not "
     "dimensional evidence. Enter measurements in docs/evidence/ with a date and name.",
 )

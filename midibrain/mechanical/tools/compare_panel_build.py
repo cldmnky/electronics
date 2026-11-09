@@ -16,11 +16,42 @@ Two kinds of evidence, both covered:
                    these lines.
   * ``--json``     two ``circuit.json`` files (panel, front or rear board). The
                    element list is compared in ORDER, element by element and
-                   field by field. Two pre-existing non-deterministic fields are
-                   exempt - ``source_filesystem_md5_hash`` (a hash of the
-                   sources) and the random ``*_warning_id`` suffix - and warning
-                   elements are compared as a set because the builder emits them
-                   in a varying order. Nothing else is exempt.
+                   field by field. Only two things are exempt: the
+                   ``source_filesystem_md5_hash`` field (a hash of the sources)
+                   and the random ``*_warning_id`` suffix on warning elements,
+                   whose elements are compared as a set because the builder
+                   emits them in a varying order.
+
+THE ID INVARIANT - read this before trusting an "identical" result:
+
+The builder RENUMBERS identifiers between two runs of unchanged sources (a
+rebuild moved ``pcb_via_id`` 136 -> 68 while every coordinate stayed the same).
+So a TOP-LEVEL field whose name ends in ``_id`` and whose value ends in
+``_<digits>`` is compared BY OCCURRENCE PATTERN: the value is replaced by the
+index of its first appearance in that document, per namespace (everything before
+the last ``_<digits>``). Every other field, including every nested value, is
+compared exactly.
+
+WHAT THIS PROVES: the element order, every non-identifier field, and every
+top-level identifier up to a consistent relabelling are unchanged.
+
+WHAT THIS DOES NOT PROVE - each limitation has its own test:
+
+  1. A token that occurs ONCE can be relabelled freely, because its occurrence
+     index is the same either way. A changed SINGLETON reference is therefore
+     NOT guaranteed to be detected - not even a reference that dangles and
+     points at no element at all.
+  2. ANY value ending in ``_<digits>`` is normalised, including COMPOUND values
+     such as ``schematic_port_3-schematic_port_11``. The whole string is one
+     token, so changing only its trailing digits keeps a singleton token and is
+     absorbed.
+  3. NESTED dicts and arrays are compared RAW. An identifier inside a nested
+     object is never normalised, so a consistent renumbering there makes the
+     comparison FAIL. That is a false failure, never a false pass.
+
+This is **not a netlist check** and it does **not establish link integrity**.
+It is a document comparison: geometry, element order, and identifier pattern up
+to per-namespace relabelling, with the three limits above.
 
 Usage:
 
@@ -57,9 +88,15 @@ TIMESTAMP_PATTERNS = (
     re.compile(r"^; #@! TF\.CreationDate,.*$"),
 )
 
-# Fields that are non-deterministic or source-identity only, never geometry.
+# Source-identity only, never geometry. This is the ONLY field exempt from the
+# comparison. Identifiers are NOT exempt: they are normalised as a bijection per
+# numeric namespace (see the module docstring), so a changed link still fails.
 EXEMPT_FIELDS = ("source_filesystem_md5_hash",)
-WARNING_SUFFIX = "_warning_id"
+WARNING_ID_SUFFIX = "_warning_id"
+
+# A numeric identifier is "<namespace>_<digits>". Only such identifiers are
+# normalised; anything else must match exactly.
+NUMERIC_ID = re.compile(r"^(.*)_(\d+)$")
 
 
 def normalise_lines(text: str) -> list[str]:
@@ -90,10 +127,54 @@ def compare_gerbers(before: Path, after: Path) -> list[str]:
     return problems
 
 
-def _clean(element: dict) -> dict:
-    clean = {k: v for k, v in element.items()
-             if k not in EXEMPT_FIELDS and not k.endswith(WARNING_SUFFIX)}
-    return clean
+def _clean(element: dict, *, drop_warning_ids: bool) -> dict:
+    """Copy an element without the exempt source hash (and warning ids)."""
+    out = {}
+    for key, value in element.items():
+        if key in EXEMPT_FIELDS:
+            continue
+        if drop_warning_ids and key.endswith(WARNING_ID_SUFFIX):
+            continue
+        out[key] = value
+    return out
+
+
+def id_bijections(document: list[dict]) -> dict[str, dict[str, str]]:
+    """One consistent identifier bijection per numeric namespace.
+
+    Derived from the FIRST OCCURRENCE of each identifier in document order, so a
+    consistent renumbering of the whole document is absorbed, while any change
+    to which identifier an element carries or points at changes the sequence.
+    Non-numeric identifiers are never mapped.
+    """
+    maps: dict[str, dict[str, str]] = {}
+    for element in document:
+        for key, value in element.items():
+            if not (isinstance(key, str) and key.endswith("_id")):
+                continue
+            match = NUMERIC_ID.match(value) if isinstance(value, str) else None
+            if not match:
+                continue
+            namespace = match.group(1)
+            table = maps.setdefault(namespace, {})
+            if value not in table:
+                table[value] = f"{namespace}#{len(table)}"
+    return maps
+
+
+def normalise_ids(document: list[dict]) -> list[dict]:
+    """Apply this document's identifier bijections to every identifier field."""
+    maps = id_bijections(document)
+    out = []
+    for element in document:
+        clean = _clean(element, drop_warning_ids=False)
+        for key, value in list(clean.items()):
+            if isinstance(key, str) and key.endswith("_id") and isinstance(value, str):
+                match = NUMERIC_ID.match(value)
+                if match:
+                    clean[key] = maps[match.group(1)][value]
+        out.append(clean)
+    return out
 
 
 def _is_warning(element: dict) -> bool:
@@ -104,8 +185,10 @@ def compare_json(before: Path, after: Path) -> list[str]:
     problems: list[str] = []
     a = json.loads(before.read_text())
     b = json.loads(after.read_text())
-    geometry_a = [_clean(e) for e in a if not _is_warning(e)]
-    geometry_b = [_clean(e) for e in b if not _is_warning(e)]
+    normalised_a = normalise_ids(a)
+    normalised_b = normalise_ids(b)
+    geometry_a = [e for e, raw in zip(normalised_a, a) if not _is_warning(raw)]
+    geometry_b = [e for e, raw in zip(normalised_b, b) if not _is_warning(raw)]
     if len(geometry_a) != len(geometry_b):
         problems.append(f"geometry element count {len(geometry_a)} -> {len(geometry_b)}")
     for i, (x, y) in enumerate(zip(geometry_a, geometry_b)):
@@ -121,8 +204,10 @@ def compare_json(before: Path, after: Path) -> list[str]:
         if len(problems) > 40:
             problems.append("... stopping after 40 differences")
             break
-    warnings_a = sorted(json.dumps(_clean(e), sort_keys=True) for e in a if _is_warning(e))
-    warnings_b = sorted(json.dumps(_clean(e), sort_keys=True) for e in b if _is_warning(e))
+    warnings_a = sorted(json.dumps(_clean(e, drop_warning_ids=True), sort_keys=True)
+                        for e in a if _is_warning(e))
+    warnings_b = sorted(json.dumps(_clean(e, drop_warning_ids=True), sort_keys=True)
+                        for e in b if _is_warning(e))
     if warnings_a != warnings_b:
         problems.append(f"warning set differs: {len(warnings_a)} -> {len(warnings_b)}")
     return problems
@@ -158,7 +243,8 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
         json_problems = compare_json(before, after)
         print(f"json:    {before} vs {after}: "
-              + ("geometry identical in order, warnings set-equal"
+              + ("geometry and element order identical, top-level identifiers matched by "
+                 "occurrence, warnings set-equal (NOT a netlist or link-integrity check)"
                  if not json_problems else f"{len(json_problems)} difference(s)"))
         problems += json_problems
 

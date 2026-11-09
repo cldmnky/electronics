@@ -68,11 +68,26 @@ const point = (id: string) => {
   return p
 }
 
-test("the concept is 32HP and tentative points stay on panel", () => {
-  // 32HP = 162.56 mm (owner decision 2026-11-07): M3 rail-hole edge 72.18
-  // against the glass-derived window left edge -63.11 leaves 9.07 mm of
-  // ligament, and 17.45 mm of panel edge margin.
-  expect(PANEL.width).toBeCloseTo(32 * 5.08, 6)
+/** Shortest distance from a point to a closed polygon, in mm. */
+const polygonDistance = (px: number, py: number, pts: readonly { x: number; y: number }[]) => {
+  let best = Infinity
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]!
+    const b = pts[(i + 1) % pts.length]!
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const l2 = dx * dx + dy * dy
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / l2))
+    best = Math.min(best, Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy)))
+  }
+  return best
+}
+
+test("the concept is 30HP at 152.0 mm and tentative points stay on panel", () => {
+  // 30HP nominal is 30 x 5.08 = 152.4 mm. 152.0 mm is an engineering choice
+  // with a 0.4 mm total (0.2 mm per side) nominal allowance - not an
+  // owner-specified exact value and not a manufacturer mandate.
+  expect(PANEL.width).toBe(152.0)
   expect(PANEL.height).toBe(128.5)
   expect(new Set(FRONT_CONCEPT.map(x => x.id)).size).toBe(FRONT_CONCEPT.length)
   for (const p of FRONT_CONCEPT) {
@@ -691,13 +706,136 @@ test("the module fits the front board and clears the owner-fixed control column"
   expect(d.x - d.width / 2).toBe((-FRONT_PCB.width / 2) + 1.5)
   expect(RIGHT_COLUMN.x).toBe(52)
   expect((RIGHT_CONTROLS.TEMPO.x - 6.25) - (d.x + d.width / 2)).toBeCloseTo(2.25, 6)
-  // The window keeps more than 9 mm to the M3 rail-hole edge at 32HP (the rule
-  // that fixes the panel width). See docs/decisions.md.
+  // The rail-hole edge and the window LEFT edge are separated in X only; they
+  // sit at different Y, so the x projection is NOT a web. The real 2D distance
+  // is measured from the emitted aperture polygon in the rail test below.
   const railHoleEdge = Math.abs(RAIL_HOLES[0]!.x) - RAIL_HOLE_DIAMETER / 2
-  expect(PANEL.width).toBeCloseTo(32 * 5.08, 6)
+  expect(railHoleEdge).toBeCloseTo(66.98, 6)
   const apertureLeftEdge = PANEL_LCD_CUTOUT.x - PANEL_LCD_CUTOUT.width / 2
-  expect(railHoleEdge + apertureLeftEdge).toBeCloseTo(9.07, 2)
+  expect(railHoleEdge + apertureLeftEdge).toBeCloseTo(3.87, 2)
   expect(FRONT_PCB.width / 2 - (RIGHT_COLUMN.x + 6.25)).toBeCloseTo(5.75, 6)
+})
+
+test("the 30HP rail grid is on the 5.08 mm pitch and inside the panel", () => {
+  // Doepfer A-100 rule (https://doepfer.de/a100_man/a100m_e.htm): rail-hole
+  // spacing must be a multiple of 5.08 mm.
+  const PITCH = 5.08
+  const xs = [...new Set(RAIL_HOLES.map(h => h.x))].sort((a, b) => a - b)
+  const ys = [...new Set(RAIL_HOLES.map(h => h.y))].sort((a, b) => a - b)
+  expect(xs).toEqual([-68.58, 68.58])
+  expect(ys).toEqual([-61.25, 61.25])
+  const spacing = xs[1]! - xs[0]!
+  expect(spacing).toBeCloseTo(137.16, 6)
+  expect(spacing / PITCH).toBeCloseTo(27, 9)
+  expect(Math.abs(spacing / PITCH - Math.round(spacing / PITCH))).toBeLessThan(1e-9)
+  // The replaced 32HP grid was 147.56 mm = 29 x 5.08 + 0.24, i.e. off-grid.
+  // Recorded as off-grid; this is NOT a claim that those holes fail the nuts.
+  const replacedSpacing = 147.56
+  expect(replacedSpacing / PITCH).toBeCloseTo(29.047, 3)
+  expect(Math.abs(replacedSpacing / PITCH - Math.round(replacedSpacing / PITCH)))
+    .toBeGreaterThan(0.04)
+  // 152.0 mm panel: 7.42 mm centre inset and 5.82 mm hole edge to panel edge.
+  expect(PANEL.width / 2 - Math.abs(xs[0]!)).toBeCloseTo(7.42, 6)
+  expect(PANEL.width / 2 - (Math.abs(xs[0]!) + RAIL_HOLE_DIAMETER / 2)).toBeCloseTo(5.82, 6)
+  // The Doepfer hole figure (A100FP.gif) draws a 7.5 mm horizontal inset; the
+  // fixed grid on our estimated 152.0 mm width is 0.08 mm tighter. Recorded, not
+  // corrected: neither value is a fitted measurement.
+  const figureInset = 7.5
+  const ourInset = PANEL.width / 2 - Math.abs(xs[0]!)
+  expect(figureInset - ourInset).toBeCloseTo(0.08, 6)
+  // The figure's vertical inset and hole size are what we use.
+  expect(PANEL.height).toBe(128.5)
+  // the figure's 3.0 mm is a CENTRE inset, like its 7.5 mm horizontal one
+  expect(PANEL.height / 2 - Math.abs(ys[0]!)).toBeCloseTo(3.0, 6)
+  expect(RAIL_HOLE_DIAMETER).toBe(3.2)
+})
+
+test("the panel width keeps the rail grid and a printable edge", () => {
+  // Band from geometry: 5.0 mm of material outside each rail hole, up to the
+  // 30HP nominal width 30 x 5.08 = 152.4 mm. 152.0 sits inside it.
+  const halfSpan = Math.abs(RAIL_HOLES[0]!.x) + RAIL_HOLE_DIAMETER / 2
+  const minWidth = 2 * (halfSpan + 5.0)
+  const nominalWidth = 30 * 5.08
+  expect(minWidth).toBeCloseTo(150.36, 6)
+  expect(nominalWidth).toBeCloseTo(152.4, 6)
+  expect(PANEL.width).toBeGreaterThanOrEqual(minWidth)
+  expect(PANEL.width).toBeLessThanOrEqual(nominalWidth)
+  // Mutations the contract rejects: too narrow, and wider than the nominal.
+  expect(150.0).toBeLessThan(minWidth)
+  expect(152.56).toBeGreaterThan(nominalWidth)
+  for (const h of RAIL_HOLES) {
+    expect(Math.abs(h.x) + RAIL_HOLE_DIAMETER / 2).toBeLessThan(PANEL.width / 2)
+    expect(Math.abs(h.y) + RAIL_HOLE_DIAMETER / 2).toBeLessThan(PANEL.height / 2)
+  }
+})
+
+test("the LCD aperture to rail-hole clearance is measured in two dimensions", () => {
+  // The rail hole and the window LEFT edge differ by 3.87 mm in X only, and the
+  // two features sit at different Y. That projection is NOT a web and NOT a
+  // shortest clearance; the real distance comes from the emitted polygon.
+  const aperture = roundedRectOutline(PANEL_LCD_CUTOUT)
+  const edges = RAIL_HOLES.map(h => polygonDistance(h.x, h.y, aperture) - RAIL_HOLE_DIAMETER / 2)
+  const nearest = Math.min(...edges)
+  // Measured from the polygon: the upper-left rail hole is the closest one.
+  expect(nearest).toBeCloseTo(15.423, 2)
+  const railEdge = Math.abs(RAIL_HOLES[0]!.x) - RAIL_HOLE_DIAMETER / 2
+  const windowLeftEdge = PANEL_LCD_CUTOUT.x - PANEL_LCD_CUTOUT.width / 2
+  const projection = railEdge + windowLeftEdge
+  expect(railEdge).toBeCloseTo(66.98, 6)
+  expect(windowLeftEdge).toBeCloseTo(-63.11, 6)
+  expect(projection).toBeCloseTo(3.87, 2)
+  // The 2D figure is an order of magnitude larger than the projection: the two
+  // features are far apart in Y, which is why the projection is meaningless.
+  expect(nearest).toBeGreaterThan(projection + 10)
+})
+
+test("the panel-edge and rail-hole distances quoted in the docs are canonical", () => {
+  // docs/mechanical-stack.md ("Display window, owner decision D1") quotes these
+  // numbers. The two rail-hole figures are X PROJECTIONS at a different Y; the
+  // 2D figures are reported beside them and both are asserted here, so the
+  // paragraph cannot drift again.
+  const r = RAIL_HOLE_DIAMETER / 2
+  const panelEdge = PANEL.width / 2
+  const railEdge = Math.abs(RAIL_HOLES[0]!.x) - r
+  const windowLeft = PANEL_LCD_CUTOUT.x - PANEL_LCD_CUTOUT.width / 2
+  const aperture = roundedRectOutline(PANEL_LCD_CUTOUT)
+  // perpendicular to the vertical panel edge: a true 2D distance
+  expect(panelEdge + windowLeft).toBeCloseTo(12.89, 2)
+  // X projection only (the rail hole is at a different Y)
+  expect(railEdge + windowLeft).toBeCloseTo(3.87, 2)
+  // true 2D distance from the emitted polygon to the nearest rail-hole edge
+  const nearest = Math.min(...RAIL_HOLES.map(h =>
+    polygonDistance(h.x, h.y, aperture) - r))
+  expect(nearest).toBeCloseTo(15.423, 2)
+  // value knob body (Ø12.5 at x = 52, y = 30)
+  const knobX = RIGHT_CONTROLS.TEMPO.x
+  const knobY = RIGHT_CONTROLS.TEMPO.y
+  const knobRight = knobX + 6.25
+  expect(panelEdge - knobRight).toBeCloseTo(17.75, 2)
+  expect(railEdge - knobRight).toBeCloseTo(8.73, 2)
+  const knobToRail = Math.min(...RAIL_HOLES.map(h =>
+    Math.hypot(knobX - h.x, knobY - h.y) - 6.25 - r))
+  expect(knobToRail).toBeCloseTo(27.526, 2)
+  // the projections are strictly smaller than the 2D figures, which is why the
+  // paragraph must never call them webs
+  expect(nearest).toBeGreaterThan(railEdge + windowLeft)
+  expect(knobToRail).toBeGreaterThan(railEdge - knobRight)
+})
+
+test("the standoff-hole to rail-hole web is measured from the canon data", () => {
+  let best = Infinity
+  for (const s of FRONT_BOARD_HOLES) {
+    for (const r of RAIL_HOLES) {
+      best = Math.min(best, Math.hypot(s.x - r.x, s.y - r.y))
+    }
+  }
+  // Nearest pair: standoff (-61, -53) and rail (-68.58, -61.25).
+  expect(best).toBeCloseTo(11.204, 3)
+  const web = best - MOUNT_HOLE_DIAMETER / 2 - RAIL_HOLE_DIAMETER / 2
+  expect(web).toBeCloseTo(8.254, 3)
+  // Camera-heads/nuts are NOT sized here: the hardware envelope is unmeasured
+  // and stays a pending physical check (see docs/mechanical-stack.md).
+  expect(web).toBeGreaterThan(0)
 })
 
 test("the aperture clears the transport row and the feedthrough label row", () => {

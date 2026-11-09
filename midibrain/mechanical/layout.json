@@ -2,7 +2,7 @@
   "units": "mm",
   "note": "Generated from tscircuit/lib/layout.ts. Provisional planning data; not a verified clearance.",
   "panel": {
-    "width": 162.56,
+    "width": 152,
     "height": 128.5,
     "thickness": 1.6
   },
@@ -380,19 +380,19 @@
   ],
   "railHoles": [
     {
-      "x": -73.78,
+      "x": -68.58,
       "y": -61.25
     },
     {
-      "x": 73.78,
+      "x": 68.58,
       "y": -61.25
     },
     {
-      "x": -73.78,
+      "x": -68.58,
       "y": 61.25
     },
     {
-      "x": 73.78,
+      "x": 68.58,
       "y": 61.25
     }
   ],
@@ -776,25 +776,25 @@
     },
     {
       "name": "RACK_1",
-      "x": -73.78,
+      "x": -68.58,
       "y": -61.25,
       "diameter": 3.2
     },
     {
       "name": "RACK_2",
-      "x": 73.78,
+      "x": 68.58,
       "y": -61.25,
       "diameter": 3.2
     },
     {
       "name": "RACK_3",
-      "x": -73.78,
+      "x": -68.58,
       "y": 61.25,
       "diameter": 3.2
     },
     {
       "name": "RACK_4",
-      "x": 73.78,
+      "x": 68.58,
       "y": 61.25,
       "diameter": 3.2
     }
@@ -826,25 +826,25 @@
     },
     {
       "name": "RACK_1",
-      "x": -73.78,
+      "x": -68.58,
       "y": -61.25,
       "diameter": 3.2
     },
     {
       "name": "RACK_2",
-      "x": 73.78,
+      "x": 68.58,
       "y": -61.25,
       "diameter": 3.2
     },
     {
       "name": "RACK_3",
-      "x": -73.78,
+      "x": -68.58,
       "y": 61.25,
       "diameter": 3.2
     },
     {
       "name": "RACK_4",
-      "x": 73.78,
+      "x": 68.58,
       "y": 61.25,
       "diameter": 3.2
     }

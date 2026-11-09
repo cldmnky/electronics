@@ -27,7 +27,7 @@ evidence exists against the current hardware fingerprint.
 | `touch_window_alignment` | 107.22 × 68.87 mm window; active area 95.04 × 53.856 mm | Touch mapping checked with the display seated | Corner/edge alignment recorded |
 | `pi_microsd` | Pi held on a 58 × 49 mm grid on the rear board | microSD insert/remove with the Pi in the stack and case closed | Clearance recorded |
 | `cooler_hat_ssd` | Full-size M.2 HAT+ and Active Cooler are candidates | Stack height, airflow and connector clearance measured | Measurements recorded |
-| `case_fit` | 32HP/3U panel, 20HP rear board, rail holes ±73.78 / ±61.25 | Every rail/standoff position fitted in the case | Installed-depth and fit record |
+| `case_fit` | 30HP/3U panel (152.0 mm), 20HP rear board, rail holes ±68.58 / ±61.25 (spacing 137.16 = 27 × 5.08) | Every rail/standoff position fitted in the case | Installed-depth and fit record |
 | `usb_c_5a_path` | CAB-15455 is 3 A and rejected for the 5 A path | An exact 5 A rated panel feedthrough from a primary source | Part, rating and source recorded |
 | `usb_pd_droop_thermal` | 27 W Pi PSU is a candidate only | Full-load PD negotiation, droop and temperature in both orientations | Measurements in both orientations |
 | `encoder_solder_process` | PEC11R-4015F-S0024 (C143789), THT; bench technique in `assembly.md`; Bourns does not recommend hand soldering | Selective/wave or validated manual process with profile and inspection | Process record per `encoder_solder_process` |

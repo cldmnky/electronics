@@ -8,11 +8,24 @@
 // All positions stay tentative pending the physical checks listed in
 // docs/mechanical-stack.md.
 
-// 32HP x 3U = 162.56 mm (owner decision 2026-11-07): the narrowest panel whose
-// M3 rail-hole edge (±72.18) clears the glass-derived LCD window (±53.61 at
-// DISPLAY_CONCEPT.x) by more than 9 mm, while the 106 mm display module keeps
-// the value-knob body clear (see DISPLAY_CONCEPT).
-export const PANEL = { width: 32 * 5.08, height: 128.5, thickness: 1.6 } as const // 32HP x 3U = 162.56
+// 30HP x 3U front panel, 152.0 mm ACTUAL width. Owner decision 2026-11-08: the
+// 32HP / 162.56 mm panel of 2026-11-07 is REPLACED and superseded.
+//
+// 30HP nominal is 30 x 5.08 = 152.4 mm. 152.0 mm is an ENGINEERING CHOICE that
+// leaves a 0.4 mm total nominal allowance (0.2 mm per side) against that
+// nominal width. It is NOT an owner-specified exact value, NOT a manufacturer
+// mandate and NOT a guaranteed fit.
+//
+// Primary sources: Doepfer A-100 mechanical information,
+// https://doepfer.de/a100_man/a100m_e.htm and its hole figure,
+// https://doepfer.de/a100_man/A100FP.gif. They state that actual panel widths
+// are a few tenths of a millimetre smaller than the nominal HP width, that the
+// rail-hole spacing must be a multiple of 5.08 mm, and the figure dimensions
+// 128.5 mm height, 7.5 mm horizontal and 3.0 mm vertical hole inset, Ø3.2 mm
+// holes. That page publishes NO 30HP width. 152.0 mm is therefore OUR ESTIMATE
+// (0.4 mm under the 152.4 mm nominal), not a Doepfer-stated 30HP value, and it
+// is not a guaranteed fit.
+export const PANEL = { width: 152.0, height: 128.5, thickness: 1.6 } as const // 30HP x 3U, 152.0 actual
 // Preliminary board bounding boxes only. Positions/Z, cutouts, spacers and the
 // actual stack remain unresolved; see docs/mechanical-stack.md.
 //
@@ -25,8 +38,8 @@ export const PANEL = { width: 32 * 5.08, height: 128.5, thickness: 1.6 } as cons
 // is Z and is untouched.
 export const FRONT_PCB = { width: 128, height: 112, thickness: 1.6 } as const
 // Rear/base PCB is 20HP (101.6 mm) wide, mounted behind the display/Pi stack.
-// The front panel is 32HP; the extra 12HP is the right-hand control column and
-// the wider display.
+// The front panel is 30HP (152.0 mm actual); the extra 10HP carries the
+// right-hand control column and the wider display.
 export const REAR_PCB = { width: 20 * 5.08, height: 112, thickness: 1.6 } as const
 
 // M2.5 screw clearance for board and panel standoff holes; M3 for the rails.
@@ -67,14 +80,29 @@ export const FRONT_REAR_MOUNT = [
   { x: -44, y: -52 }, { x: 44, y: -52 }, { x: -45, y: 43 }, { x: 45, y: 43 },
 ] as const
 
-// Eurorack rail holes in the panel (M3 rack screws). Doepfer 3U, same rule as
-// Froemix: X inset 7.5 mm, Y inset 3.0 mm from the panel edge. At 32HP the X
-// inset is 162.56/2 - 7.5 = 73.78, so the M3 hole edge is 72.18 and the window
-// left edge (DISPLAY_CONCEPT.x - 53.61 = -63.11) leaves 9.07 mm of ligament,
-// with 17.45 mm to the panel edge. Both are asserted in layout.test.ts.
+// Eurorack rail holes in the panel (M3 rack screws), Y inset 3.0 mm from the
+// panel edge (unchanged; the Doepfer figure A100FP.gif dimensions 3.0 mm and
+// Ø3.2 mm holes, matching these). The X spacing MUST be a multiple of 5.08 mm
+// (Doepfer A-100 rule, https://doepfer.de/a100_man/a100m_e.htm): 137.16 =
+// 27 x 5.08, so the holes sit at +/-68.58. On our 152.0 mm panel that is a
+// 7.42 mm centre inset, and the 3.2 mm hole edge clears the panel edge by
+// 5.82 mm. The figure draws a 7.5 mm edge inset, so this fixed-grid choice is
+// 0.08 mm tighter than the figure: DISCLOSED, not adjusted, and neither value
+// is a fitted measurement.
+//
+// The replaced 32HP panel used +/-73.78, i.e. a spacing of 147.56 mm =
+// 29 x 5.08 + 0.24: 0.24 mm off the 5.08 mm grid. That is recorded as an
+// off-grid value. It is NOT a claim that the old holes necessarily fail the
+// sliding nuts.
+//
+// The rail-hole edge (-66.98) and the LCD window LEFT edge (-63.11) differ by
+// 3.87 mm in X ONLY. Those two features sit at different Y, so that number is
+// an x projection: it is NOT a web and NOT a shortest clearance. The real 2D
+// distance is measured from the emitted aperture polygon in layout.test.ts,
+// together with the standoff-hole to rail-hole web.
 export const RAIL_HOLES = [
-  { x: -73.78, y: -61.25 }, { x: 73.78, y: -61.25 },
-  { x: -73.78, y: 61.25 }, { x: 73.78, y: 61.25 },
+  { x: -68.58, y: -61.25 }, { x: 68.58, y: -61.25 },
+  { x: -68.58, y: 61.25 }, { x: 68.58, y: 61.25 },
 ] as const
 
 // Pi 5 mounting holes, portrait (49 across X, 58 vertical — the reference
@@ -208,8 +236,9 @@ export const DISPLAY_BOSS_PATTERN = [
 // Centre (-9.5, 11). The horizontal position is fixed by owner decision D2:
 //   module left edge -62.5 vs FRONT_PCB left edge -64   -> 1.5 mm ligament
 //   module right edge +43.5 vs knob body left 45.75     -> 2.25 mm clear
-//   window left edge -63.11 vs M3 rail-hole edge -72.18 -> 9.07 mm ligament
-//   window left edge to panel edge -81.28               -> 18.17 mm
+//   window left edge -63.11 vs M3 rail-hole edge -66.98 -> 3.87 mm in X ONLY,
+//   at a different Y, so not a web; the real 2D distance is in layout.test.ts
+//   window left edge to panel edge -76.0                -> 12.89 mm (30HP panel)
 // width/height are the MODULE OUTLINE (the physical envelope behind the panel).
 // innerWidth/innerHeight are the ACTIVE area; bezelWidth/bezelHeight are the
 // printed border; glassWidth/glassHeight are what the panel aperture follows.

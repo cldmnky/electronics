@@ -2,10 +2,10 @@
 
 ## Confirmed by owner
 
-- Two custom PCBs and a separate **32HP/3U** front panel. The front/UI PCB is
+- Two custom PCBs and a separate **30HP/3U** front panel. The front/UI PCB is
   **128 × 112 mm**; the rear/base PCB is **20HP (101.6 × 112 mm)**; installed
   depth target ≤110 mm. CAD top faces the panel and the rear faces the rack
-  cavity. 32HP and the knob-column move (47 → 52 mm) are owner decisions
+  cavity. The 30HP panel width (which replaced 32HP on 2026-11-08) and the knob-column move (47 → 52 mm) are owner decisions
   recorded in [decisions.md](decisions.md).
 - Removable Raspberry Pi 5, mechanically supported through its mounting holes;
   removable Pico 2. Pi ↔ Pico SPI with READY/IRQ and common ground.

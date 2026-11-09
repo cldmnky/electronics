@@ -1,11 +1,11 @@
 # mnkybox
 
-A **32HP/3U** Eurorack recorder and MIDI hub (module name **mnkybox**;
+A **30HP/3U** Eurorack recorder and MIDI hub (module name **mnkybox**;
 `midibrain/` stays the project/repo identifier): a removable Raspberry Pi 5
 runs the DAW app, a socketed Pico 2 owns MIDI, the panel and the master clock,
 and a UMC1820 (plus ADA8200 over S/PDIF) provides 18 inputs at 48 kHz/24-bit.
 The front/UI PCB is **128 × 112 mm**, the rear/base PCB is **20HP
-(101.6 × 112 mm)**, the panel is a separate 32HP FR-4 board. The display is the
+(101.6 × 112 mm)**, the panel is a separate 30HP (152.0 mm) FR-4 board. The display is the
 Waveshare **4.3inch DSI LCD** (ElectroKit 4103 5687), 800 × 480 with DSI video
 and I2C touch on one 15-pin cable.
 

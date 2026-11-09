@@ -112,7 +112,7 @@ class CanonicalDataTest(unittest.TestCase):
             self.assertLess(abs(hole["x"]), half_w)
             self.assertLess(abs(hole["y"]), half_h)
         xs = sorted(h["x"] for h in data["railHoles"])
-        self.assertEqual(xs, [-73.78, -73.78, 73.78, 73.78])
+        self.assertEqual(xs, [-68.58, -68.58, 68.58, 68.58])
 
     def test_lcd_mount_holes_are_the_display_boss_pattern(self) -> None:
         data = layout()
@@ -287,18 +287,43 @@ class FlangeProjectionTest(unittest.TestCase):
         for name in ("FEEDTHROUGH_UMC_AUDIO_USB_FLANGE|FRONT_BOARD_PROVISIONAL_Z",
                      "FEEDTHROUGH_MIDI_HUB_USB_FLANGE|FRONT_BOARD_PROVISIONAL_Z",
                      "FEEDTHROUGH_USB_C_POWER_FLANGE|FRONT_BOARD_PROVISIONAL_Z",
-                     "FEEDTHROUGH_UMC_AUDIO_USB_FLANGE|PANEL_32HP_3U"):
+                     "FEEDTHROUGH_UMC_AUDIO_USB_FLANGE|PANEL_30HP_3U"):
             self.assertEqual(reports[name].verdict.status, sg.UNDETERMINED, name)
             self.assertIsNone(reports[name].verdict.overlap_mm)
             self.assertIn("z", reports[name].verdict.undetermined_axes, name)
 
-    def test_display_clears_the_front_board_under_the_provisional_stack(self) -> None:
+    def test_a_z_only_separation_is_never_a_definitive_physical_verdict(self) -> None:
+        """The display/front-board 5.00 mm is arithmetic on an unmeasured Z chain."""
         reports = {f"{p.a}|{p.b}": p for p in sg.pair_reports(layout())}
         verdict = reports[
             "DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z|FRONT_BOARD_PROVISIONAL_Z"].verdict
+        self.assertEqual(verdict.status, sg.UNDETERMINED)
+        self.assertFalse(verdict.definitive)
+        self.assertIsNone(verdict.clearance_mm)
+        self.assertIn("z", verdict.undetermined_axes)
+        self.assertTrue(any("candidate value" in r for r in verdict.reasons))
+
+    def test_a_z_only_separation_downgrades_even_when_the_boxes_are_apart(self) -> None:
+        """Synthetic: apart in Z only, with Z marked as a candidate value."""
+        a = box("A", (0, 10), (0, 10), (0, 10), assumed=("z",))
+        b = box("B", (0, 10), (0, 10), (15, 20))
+        verdict = sg.classify(a, b)
+        self.assertEqual(verdict.status, sg.UNDETERMINED)
+        self.assertFalse(verdict.definitive)
+        # the same pair with a documented Z is a clear separation
+        a_doc = box("A", (0, 10), (0, 10), (0, 10))
+        verdict_doc = sg.classify(a_doc, b)
+        self.assertEqual(verdict_doc.status, sg.CLEAR)
+        self.assertAlmostEqual(verdict_doc.clearance_mm, 5.0, places=6)
+
+    def test_documented_xy_disjointness_stays_definitive(self) -> None:
+        """The flange/display pair is separated in Y, which is documented data."""
+        reports = {f"{p.a}|{p.b}": p for p in sg.pair_reports(layout())}
+        verdict = reports[
+            "FEEDTHROUGH_UMC_AUDIO_USB_FLANGE|DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z"].verdict
         self.assertEqual(verdict.status, sg.CLEAR)
-        self.assertAlmostEqual(verdict.clearance_mm, 5.0, places=6)
-        self.assertEqual(verdict.decisive_axis, "z")
+        self.assertTrue(verdict.definitive)
+        self.assertEqual(verdict.decisive_axis, "y")
 
     def test_flange_clears_the_display_because_y_is_disjoint(self) -> None:
         reports = {f"{p.a}|{p.b}": p for p in sg.pair_reports(layout())}
@@ -307,11 +332,12 @@ class FlangeProjectionTest(unittest.TestCase):
         self.assertEqual(verdict.status, sg.CLEAR)
         self.assertAlmostEqual(verdict.clearance_mm, 2.55, places=6)
 
-    def test_the_two_boards_keep_the_candidate_gap(self) -> None:
+    def test_the_two_boards_keep_the_candidate_gap_as_undetermined(self) -> None:
         reports = {f"{p.a}|{p.b}": p for p in sg.pair_reports(layout())}
         verdict = reports["FRONT_BOARD_PROVISIONAL_Z|REAR_BOARD_PROVISIONAL_Z"].verdict
-        self.assertEqual(verdict.status, sg.CLEAR)
-        self.assertAlmostEqual(verdict.clearance_mm, 20.0, places=6)
+        self.assertEqual(verdict.status, sg.UNDETERMINED)
+        self.assertFalse(verdict.definitive)
+        self.assertIn("z", verdict.undetermined_axes)
 
     def test_the_usb_c_envelope_is_explicitly_unknown(self) -> None:
         """No verified 5 A part exists, so no envelope may be drawn for it."""
@@ -410,7 +436,7 @@ class CoordinateDriftTest(unittest.TestCase):
         data = copy.deepcopy(layout())
         data["provisionalZ"]["panelRear"] = 2.4
         env = sg.assembly_envelopes(data)
-        self.assertAlmostEqual(env["PANEL_32HP_3U"].z.hi, 2.4)
+        self.assertAlmostEqual(env["PANEL_30HP_3U"].z.hi, 2.4)
 
     def test_envelope_z_follows_the_provisional_chain(self) -> None:
         env = sg.assembly_envelopes(layout())
@@ -418,7 +444,7 @@ class CoordinateDriftTest(unittest.TestCase):
         self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.hi, 20.65)
         self.assertAlmostEqual(env["DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z"].z.hi, 14.05)
         self.assertAlmostEqual(env["REAR_BOARD_PROVISIONAL_Z"].z.lo, 40.65)
-        self.assertAlmostEqual(env["PANEL_32HP_3U"].z.hi, 1.6)
+        self.assertAlmostEqual(env["PANEL_30HP_3U"].z.hi, 1.6)
 
     def test_the_light_pipe_is_not_drawn_as_a_placed_body(self) -> None:
         env = sg.assembly_envelopes(layout())
@@ -601,6 +627,50 @@ class DisplayModelSeparationTest(unittest.TestCase):
         self.assertIn("no PCB source", block["action"])
 
 
+class DisplayMountGapTest(unittest.TestCase):
+    """The model gap, the design-chain candidate and the residual stay apart."""
+
+    def test_the_model_gap_is_measured_from_the_drawn_planes(self) -> None:
+        gap = sg.display_mount_gap(layout())
+        self.assertAlmostEqual(gap["boss_rear_z_mm"], 10.24, places=6)
+        self.assertAlmostEqual(gap["board_top_z_mm"], 19.05, places=6)
+        self.assertAlmostEqual(gap["model_gap_mm"], 8.81, places=6)
+
+    def test_the_chain_candidate_is_a_different_chain(self) -> None:
+        gap = sg.display_mount_gap(layout())
+        self.assertAlmostEqual(gap["design_chain_spacer_mm"], 5.00, places=6)
+        self.assertAlmostEqual(gap["design_chain_display_end_z_mm"], 14.05, places=6)
+        self.assertAlmostEqual(gap["residual_mm"], 3.81, places=6)
+        self.assertFalse(gap["chains_agree"])
+        self.assertIn("do not agree", gap["chains_agree_note"])
+
+    def test_the_four_axes_are_the_exported_mount_holes(self) -> None:
+        gap = sg.display_mount_gap(layout())
+        self.assertEqual(gap["axes_xy"], [(-59.15, 41.9), (40.15, 41.9),
+                                          (-59.15, -19.9), (40.15, -19.9)])
+
+    def test_the_placeholder_dimensions_are_assumed_not_specified(self) -> None:
+        self.assertEqual(sg.DISPLAY_MOUNT_PLACEHOLDER["outer_diameter_mm"], 5.0)
+        self.assertEqual(sg.DISPLAY_MOUNT_PLACEHOLDER["inner_diameter_mm"], 2.7)
+        self.assertIn("ASSUMED", sg.DISPLAY_MOUNT_PLACEHOLDER["dimension_basis"])
+        self.assertIn("not a part", sg.DISPLAY_MOUNT_PLACEHOLDER["status"].lower())
+        # OD must exceed the board hole so a bearing annulus is visible
+        self.assertGreater(sg.DISPLAY_MOUNT_PLACEHOLDER["outer_diameter_mm"],
+                           layout()["display"]["stack"]["holeDiameter"])
+
+    def test_the_document_records_the_placeholders_and_the_legend(self) -> None:
+        doc = sg.assumptions_document(layout())
+        block = doc["display_mount_placeholders"]
+        self.assertAlmostEqual(block["model_gap_mm"], 8.81, places=6)
+        self.assertAlmostEqual(block["design_chain_spacer_mm"], 5.0, places=6)
+        self.assertAlmostEqual(block["residual_mm"], 3.81, places=6)
+        self.assertFalse(block["chains_agree"])
+        self.assertIn("ARITHMETIC", block["arithmetic_vs_proof"].upper())
+        self.assertGreaterEqual(len(doc["body_legend"]), 6)
+        names = " ".join(item["name"] for item in doc["body_legend"])
+        self.assertIn("MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED", names)
+
+
 class OutputDirectoryTest(unittest.TestCase):
     """An explicit output directory, and nothing else ever touched."""
 
@@ -713,7 +783,10 @@ class AssumptionsDocumentTest(unittest.TestCase):
         self.assertIn("100.00 mm", text)
         self.assertIn("PROVISIONAL", text)
         self.assertIn("28", text)
-        self.assertNotIn("approved", text.lower())
+        low = text.lower()
+        for claim in ("is approved", "approved for", "approved to print", "fit approval "):
+            self.assertNotIn(claim, low.replace("not a fit approval", ""))
+        self.assertIn("non_approved", low)
         self.assertGreaterEqual(len(sg.PRINT_CHECKLIST), 6)
 
 

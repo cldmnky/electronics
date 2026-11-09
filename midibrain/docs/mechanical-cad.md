@@ -15,11 +15,12 @@ mounting, control or board coordinate.
 
 | Body | Geometry | What is certain |
 |---|---|---|
-| `PANEL_32HP_3U` | 162.56 × 128.5 × 1.6 mm; 20 apertures and 14 drills from `PANEL_APERTURES` / `PANEL_DRILLS`: LCD, three feedthroughs with six screw holes, six buttons, three LED light-pipe openings, encoder, POWER, NAV, four jacks, four standoffs, four rail holes | outlines, diameters and positions are canonical (the same arrays `panel.circuit.tsx` renders) |
+| `PANEL_30HP_3U` | 152.0 × 128.5 × 1.6 mm; 20 apertures and 14 drills from `PANEL_APERTURES` / `PANEL_DRILLS`: LCD, three feedthroughs with six screw holes, six buttons, three LED light-pipe openings, encoder, POWER, NAV, four jacks, four standoffs, four rail holes | outlines, diameters and positions are canonical (the same arrays `panel.circuit.tsx` renders) |
 | `FRONT_BOARD_PROVISIONAL_Z` | 128 × 112 × 1.6 mm at Z 19.05…20.65; top relief notch, 4 × Ø4.3 LCD boss holes, standoff, front↔rear and bracket mount holes | XY canonical; **Z is the `PROVISIONAL_Z` chain (assumptions A and B)** |
 | `REAR_BOARD_PROVISIONAL_Z` | 101.6 × 112 × 1.6 mm at Z 40.65…42.25; front↔rear and Pi mount holes | XY canonical; Z adds the **candidate** 20 mm board-to-board gap |
 | `DISPLAY_WAVESHARE_VENDOR_STEP` | the vendor STEP, SHA-256 verified, placed by a rigid 180° rotation so the glass front face is at Z = 0 and the electronics point rearward; X/Y from the outer SMT boss pattern centre. The rotation about **Y is the drawn candidate only** — the in-plane axis is pending | vendor geometry; model depth 13.82 mm is the model, not the 14.05 mm vendor maximum |
 | `DISPLAY_ENVELOPE_PROVISIONAL` | 106 × 68 mm, Z 0…14.05, drawn only when no verified vendor STEP is supplied | an envelope, not vendor geometry |
+| `MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_1..4` | four annuli (OD 5.0, ID 2.7 mm **assumed for illustration**) spanning Z 10.24…19.05 mm on the exported LCD mount axes | **geometric placeholder only**: the span 8.81 mm comes from the drawn boss rear plane and the drawn board top face, but length, diameter, thread and assembly are first-article tasks |
 | `DISPLAY_CONNECTOR_PLANNING_MARKER` | 21.412 × 4.826 × 1.8 mm box at (38.84, 11.7) on the **provisional** design-chain plane Z 10.05, not the model's drawn PCB rear Z 6.24 | **legacy unverified planning data, not a verified connector.** The size has no reliable source: the model's 21.412 × 4.826 mm bodies are TFT1 flex bonds (`EXTRUDED-106739` / `EXTRUDED-107488`), not this connector. Position is an unverified drawing record; routing and fit are unknown |
 | `FEEDTHROUGH_*_FLANGE_PLAN_MARKER` | the Adafruit 908 flange outline, 38.30 × 11.90 mm, as a 0.2 mm marker on the panel rear face | flange size from the drawing; **no depth is published, so no flange volume exists** |
 | `USB_C_CANDIDATE_FLANGE_NON_APPROVED` | opt-in only (`--usbc-candidate-envelope`): advertised 25 × 10.2 × 5 mm from a marketplace listing | NON-APPROVED advertisement, no pitch, no current rating, no PD result |
@@ -99,6 +100,43 @@ connector. So this file asserts **no** connector identity, pin count, electrical
 recorded position and the rear/front frame mapping are **UNVERIFIED**, and the drawing's position and length
 arithmetic (the long-axis wording is disputed) needs independent re-derivation. No board coordinate changed; the
 first-article gate `display_fpc_idc` stays pending.
+
+## LCD mount placeholders — geometry, not a part
+
+Four bodies named `MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_1` … `_4` show where a
+standoff would sit. They are drawn only when a verified vendor model is supplied,
+because their span comes from two drawn planes:
+
+    vendor SMT boss rear plane   Z 10.24   (model)
+    front-board top face         Z 19.05   (drawn board solid)
+    model gap                     8.81 mm  = 19.05 - 10.24
+
+Two other numbers must not be confused with that gap:
+
+| Number | Value | What it is |
+|---|---:|---|
+| model gap | **8.81 mm** | arithmetic on the drawn solids |
+| design-chain spacer | **5.00 mm** | the existing assumption, plane separation 9.0 less boss projection 4.0 - a DIFFERENT chain |
+| residual | **3.81 mm** | a 5.00 mm spacer anchored on the board face ends at Z 14.05 and misses the drawn boss ends (10.24) by 3.81 mm |
+
+**The two chains do not agree, and neither is approved.** No document may call
+8.81 mm an approved dimension or 5.00 mm a tested part.
+
+The placeholders use an **assumed** OD 5.0 mm and ID 2.7 mm, illustration only, no
+dimensional claim. OD exceeds the board's 4.3 mm LCD hole so a bearing annulus is
+visible, and it fits inside the 5.5 mm boss body. Each placeholder is checked to
+have **no positive-volume intrusion** against the display or the board: the
+boolean overlap at the touching faces measures about 1e-5 mm³ and the limit is
+1e-3 mm³, so a real penetration fails.
+
+Not claimed: the correct spacer length, the standoff diameter, the glass seating
+plane, the mounting thread and its engagement, the assembly order, and any
+physical fit. Those are first-article tasks. In envelope mode (no verified vendor
+STEP) the placeholders are **skipped and recorded as skipped**, because the
+14.05 mm envelope maximum is not a boss plane.
+
+`assumptions.json` records the mount block, the residual and a `body_legend` that
+names every drawn body with its status.
 
 ## Board face convention — requested, not implemented
 
@@ -229,8 +267,26 @@ What it tolerates, and why:
   diffing. Every coordinate, aperture, drill hit and silk line is compared.
 - **circuit JSON**: `source_filesystem_md5_hash` (a hash of the sources) and the
   random `*_warning_id` suffix are ignored, and warning elements are compared as
-  a set because the builder emits them in a varying order. Every other element is
-  compared in order, field by field, so a moved or reordered feature fails.
+  a set because the builder emits them in a varying order. Every other field is
+  compared in order, element by element.
+
+**What the JSON comparison does and does not prove.** The builder renumbers
+identifiers between runs, so a *top-level* `_id` value ending in `_<digits>` is
+compared **by occurrence pattern**: each value becomes the index of its first
+appearance in that document, per namespace. That absorbs a consistent
+renumbering, and it does **not** establish link integrity. Three limits are
+stated in the tool's docstring and each has its own regression test:
+
+1. a token used **once** can be relabelled freely, so a changed **singleton**
+   reference is not guaranteed to be detected - even a dangling one;
+2. any value ending in `_<digits>` is one token, so changing only the trailing
+   digits of a **compound** value such as `schematic_port_3-schematic_port_11`
+   is absorbed;
+3. **nested** dicts and arrays are compared **raw**, so a consistent renumbering
+   inside one is a *false failure* (never a false pass).
+
+The comparison is a document check: geometry, element order and identifier
+pattern. It is **not a netlist check**.
 
 The consolidation of the panel apertures into `layout.ts` was checked this way:
 all twelve panel files (nine Gerbers, the drill file, `bom.csv`,

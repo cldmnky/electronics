@@ -76,7 +76,7 @@ def build_sheet(root: pathlib.Path, fab: pathlib.Path) -> list[str]:
 
     lines = [
         "=== JLCPCB order: MIDI Brain =======================================",
-        "boards  : front/UI, rear/base (20HP) and panel (32HP/3U)",
+        "boards  : front/UI, rear/base (20HP) and panel (30HP/3U, 152.0 mm)",
         "intent  : production order for all three boards",
         "settings: fab/jlc-order.json (copied from the canonical jlc-order.json)",
         "guide   : docs/JLC-ASSEMBLY.md + fab/JLC-ASSEMBLY.md (order page);",

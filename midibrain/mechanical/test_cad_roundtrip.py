@@ -26,6 +26,7 @@ What is checked, on the files the builder really wrote:
 """
 from __future__ import annotations
 
+import json
 import os
 import unittest
 from pathlib import Path
@@ -86,7 +87,7 @@ class StepRoundTripTest(unittest.TestCase):
             argv += ["--display-step", display]
         cls.code = sa.main(argv)
         cls.out = out
-        cls.document = __import__("json").loads((out / sa.ASSUMPTIONS).read_text())
+        cls.document = json.loads((out / sa.ASSUMPTIONS).read_text())
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -100,22 +101,39 @@ class StepRoundTripTest(unittest.TestCase):
             self.assertTrue((self.out / name).is_file(), f"{name} was not written")
 
     def test_the_step_reimports_with_every_named_body(self) -> None:
+        """Named bodies follow the MODE: the spacers exist only with a vendor model."""
         path = self.out / sa.STEP_NAME
         shape = cq.importers.importStep(str(path)).val()
         self.assertGreaterEqual(len(shape.Solids()), 7)
         text = path.read_text(errors="replace")
+        # metadata-only blocks are not solids
+        metadata_only = {"LCD_MOUNT_PLACEHOLDERS"}
         for name in self.document["bodies"]:
+            if name in metadata_only:
+                continue
             self.assertIn(name, text, f"{name} is not a named body in the STEP file")
+        placeholders = self.document["bodies"]["LCD_MOUNT_PLACEHOLDERS"]
+        if self.document["display_step"]["status"] == "verified":
+            # vendor mode: all four model-fit placeholders are drawn
+            self.assertEqual(placeholders["kind"], "MODEL-FIT GEOMETRIC PLACEHOLDER, non-approved")
+            for index in (1, 2, 3, 4):
+                self.assertIn(f"MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_{index}", text)
+        else:
+            # envelope mode: no drawn boss plane, so the spacers are SKIPPED
+            self.assertEqual(placeholders["kind"], "SKIPPED")
+            self.assertIn("14.05 mm design envelope is NOT used", placeholders["reason"])
+            for index in (1, 2, 3, 4):
+                self.assertNotIn(f"MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_{index}", text)
 
     def test_the_panel_mockup_is_1_to_1_and_has_its_aperture_cut(self) -> None:
         lo, hi, cells = stl_bounds(self.out / sa.STL_PANEL)
         self.assertGreater(cells, 1000)
-        self.assertAlmostEqual(hi[0] - lo[0], 162.56, delta=0.01)
+        self.assertAlmostEqual(hi[0] - lo[0], 152.0, delta=0.01)
         self.assertAlmostEqual(hi[1] - lo[1], 128.50, delta=0.01)
         self.assertAlmostEqual(hi[2] - lo[2], 1.60, delta=0.01)
         data = sg.load_layout()
         solid_plate = data["panel"]["width"] * data["panel"]["height"] * data["panel"]["thickness"]
-        panel_volume = self.document["volumes_mm3"]["PANEL_32HP_3U"]
+        panel_volume = self.document["volumes_mm3"]["PANEL_30HP_3U"]
         self.assertLess(panel_volume, solid_plate, "the aperture and holes removed nothing")
         self.assertGreater(panel_volume, 0.5 * solid_plate, "too much material was removed")
 
@@ -208,7 +226,7 @@ class DisplayPlacementTest(unittest.TestCase):
         argv = ["--out", str(out)]
         argv += (["--display-archive", archive] if archive else ["--display-step", display])
         cls.code = sa.main(argv)
-        cls.doc = __import__("json").loads((out / sa.ASSUMPTIONS).read_text())
+        cls.doc = json.loads((out / sa.ASSUMPTIONS).read_text())
         cls.body = cls.doc["bodies"]["DISPLAY_WAVESHARE_VENDOR_STEP"]
 
     @classmethod
@@ -306,16 +324,16 @@ class DisplayPlacementTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             out = Path(tmp) / "no-display"
             self.assertEqual(sa.main(["--out", str(out)]), 0)
-            plain = __import__("json").loads((out / sa.ASSUMPTIONS).read_text())
-        for name in ("PANEL_32HP_3U", "FRONT_BOARD_PROVISIONAL_Z", "REAR_BOARD_PROVISIONAL_Z"):
+            plain = json.loads((out / sa.ASSUMPTIONS).read_text())
+        for name in ("PANEL_30HP_3U", "FRONT_BOARD_PROVISIONAL_Z", "REAR_BOARD_PROVISIONAL_Z"):
             self.assertAlmostEqual(self.doc["volumes_mm3"][name],
                                    plain["volumes_mm3"][name], places=3)
             self.assertEqual(self.doc["stl_bounding_boxes_mm"].get(
-                {"PANEL_32HP_3U": sa.STL_PANEL,
+                {"PANEL_30HP_3U": sa.STL_PANEL,
                  "FRONT_BOARD_PROVISIONAL_Z": sa.STL_FRONT,
                  "REAR_BOARD_PROVISIONAL_Z": sa.STL_REAR}[name]),
                 plain["stl_bounding_boxes_mm"].get(
-                    {"PANEL_32HP_3U": sa.STL_PANEL,
+                    {"PANEL_30HP_3U": sa.STL_PANEL,
                      "FRONT_BOARD_PROVISIONAL_Z": sa.STL_FRONT,
                      "REAR_BOARD_PROVISIONAL_Z": sa.STL_REAR}[name]))
 
@@ -334,6 +352,145 @@ class DisplayPlacementTest(unittest.TestCase):
         }
         with self.assertRaises(sg.GeometryError):
             sg.check_display_plane_order(reversed_planes)
+
+
+@unittest.skipIf(cq is None, SKIP_REASON)
+@unittest.skipUnless(os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
+                     or os.environ.get("MIDIBRAIN_DISPLAY_STEP"),
+                     "no vendor display STEP: the model gap cannot be measured")
+class SpacerPlaceholderTest(unittest.TestCase):
+    """The four LCD mount placeholders: geometry, checks, and negative cases."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        archive = os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
+        step = os.environ.get("MIDIBRAIN_DISPLAY_STEP")
+        if archive:
+            cls.source_args = ["--display-archive", archive]
+            cls.step_path, _ = sa.resolve_display_archive(archive)
+        else:
+            cls.source_args = ["--display-step", step]
+            cls.step_path, _ = sa.resolve_display_step(step)
+        cls.layout = sa.load_layout()
+        cls.built = sa.build(cq, cls.layout, cls.step_path, False)
+        cls.solids = cls.built["solids"]
+        cls.meta = cls.built["meta"]["LCD_MOUNT_PLACEHOLDERS"]
+        cls.gap = sg.display_mount_gap(cls.layout)
+
+    def _spacers(self) -> list[dict]:
+        return [b for n, b in self.solids.items()
+                if n.startswith("MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED")]
+
+    def test_four_placeholders_exist_with_distinct_names(self) -> None:
+        names = sorted(n for n in self.solids
+                       if n.startswith("MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED"))
+        self.assertEqual(names, [f"MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_{i}"
+                                 for i in (1, 2, 3, 4)])
+        self.assertEqual(self.meta["count"], 4)
+
+    def test_the_span_comes_from_the_drawn_solids(self) -> None:
+        for body in self.meta["spacers"]:
+            self.assertAlmostEqual(body["z_mm"][0], 10.24, places=2)   # boss rear
+            self.assertAlmostEqual(body["z_mm"][1], 19.05, places=2)   # board top face
+            self.assertAlmostEqual(body["length_mm"], 8.81, places=2)
+
+    def test_the_axes_are_the_exported_mount_holes(self) -> None:
+        axes = sorted(tuple(b["axis_xy_mm"]) for b in self.meta["spacers"])
+        expected = sorted((h["x"], h["y"]) for h in self.layout["lcdMountHoles"])
+        self.assertEqual(axes, expected)
+
+    def test_od_and_id_are_only_the_assumed_illustration(self) -> None:
+        for body in self.meta["spacers"]:
+            self.assertAlmostEqual(body["outer_diameter_mm"], 5.0, places=6)
+            self.assertAlmostEqual(body["inner_diameter_mm"], 2.7, places=6)
+            # OD exceeds the board hole, so a bearing annulus is visible
+            self.assertGreater(body["annulus_bearing_width_mm"], 0.0)
+
+    def test_no_positive_volume_intrusion_against_display_or_board(self) -> None:
+        for body in self.meta["spacers"]:
+            for volume in body["intrusion_volume_mm3"].values():
+                self.assertLessEqual(volume, sa.INTRUSION_EPS_MM3)
+
+    def test_the_placeholders_carry_no_fit_or_approval_claim(self) -> None:
+        """Non-approval metadata, not a vacuous substring check."""
+        # the block and its definition both say placeholder / non-approved
+        self.assertIn("PLACEHOLDER", self.meta["kind"])
+        self.assertIn("non-approved", self.meta["kind"])
+        self.assertIn("not a part", sg.DISPLAY_MOUNT_PLACEHOLDER["status"])
+        # every denial the reviewer asked for is present
+        denials = " ".join(self.meta["not_claimed"]).lower()
+        for phrase in ("approved", "part", "thread", "fit"):
+            self.assertIn(phrase, denials)
+        # and no string in the block claims a fit, a clearance or an approval
+        joined = json.dumps(self.meta).lower()
+        for claim in ("fits", "verified fit", "fit is", "is approved", "approved length",
+                      "clearance to"):
+            self.assertNotIn(claim, joined)
+        # the assumed dimensions are marked as illustration, not specification
+        definition = sg.DISPLAY_MOUNT_PLACEHOLDER
+        self.assertIn("ASSUMED", definition["dimension_basis"])
+        self.assertIn("not a specification", definition["dimension_basis"])
+
+    def test_a_5_00_mm_spacer_does_not_reach_the_drawn_boss_plane(self) -> None:
+        """The design-chain candidate is 3.81 mm short of the model's boss ends."""
+        board_top = self.gap["board_top_z_mm"]
+        chain_end = board_top - self.gap["design_chain_spacer_mm"]
+        self.assertAlmostEqual(chain_end, 14.05, places=6)
+        self.assertAlmostEqual(chain_end - self.gap["boss_rear_z_mm"], 3.81, places=6)
+        display = self.solids["DISPLAY_WAVESHARE_VENDOR_STEP"]
+        # A 5.00 mm spacer ANCHORED ON THE BOARD TOP FACE: it spans 14.05..19.05,
+        # so it stops 3.81 mm short of the drawn boss ends at 10.24.
+        short = (cq.Workplane("XY").workplane(offset=chain_end)
+                 .center(-59.15, 41.9).circle(2.5).circle(1.35).extrude(5.0))
+        intrusions = sa.spacer_intrusions(cq, short, display,
+                                          self.solids["FRONT_BOARD_PROVISIONAL_Z"].val())
+        self.assertEqual(intrusions["display_mm3"], 0.0)
+        bb = short.val().BoundingBox()
+        self.assertAlmostEqual(bb.zmin, 14.05, places=2)
+        self.assertAlmostEqual(bb.zmax, 19.05, places=2)
+        self.assertAlmostEqual(bb.zmin - self.gap["boss_rear_z_mm"], 3.81, places=2)
+
+    def test_an_over_long_placeholder_is_rejected(self) -> None:
+        """Negative regression: extending a placeholder must fail the limit."""
+        display = self.solids["DISPLAY_WAVESHARE_VENDOR_STEP"]
+        board = self.solids["FRONT_BOARD_PROVISIONAL_Z"].val()
+        over = (cq.Workplane("XY").workplane(offset=10.24).center(-59.15, 41.9)
+                .circle(2.5).circle(1.35).extrude(8.81 + 0.2))
+        intrusions = sa.spacer_intrusions(cq, over, display, board)
+        self.assertGreater(max(intrusions.values()), sa.INTRUSION_EPS_MM3)
+
+    def test_the_exported_step_carries_four_spacer_solids(self) -> None:
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "cad"
+            # both documented source paths are supported: --display-archive and
+            # --display-step; the class recorded which one this run uses
+            self.assertEqual(sa.main(["--out", str(out), *self.source_args]), 0)
+            shape = cq.importers.importStep(str(out / sa.STEP_NAME)).val()
+            tubes = [s for s in shape.Solids()
+                     if abs(s.BoundingBox().zlen - 8.81) < 0.02
+                     and abs(s.BoundingBox().xlen - 5.0) < 0.05
+                     and abs(s.BoundingBox().ylen - 5.0) < 0.05]
+            self.assertEqual(len(tubes), 4)
+            axes = sorted((round((t.BoundingBox().xmin + t.BoundingBox().xmax) / 2, 2),
+                           round((t.BoundingBox().ymin + t.BoundingBox().ymax) / 2, 2))
+                          for t in tubes)
+            expected = sorted((h["x"], h["y"]) for h in self.layout["lcdMountHoles"])
+            self.assertEqual(axes, expected)
+
+
+class EnoughPlaceholdersEnvelopeModeTest(unittest.TestCase):
+    """Without a verified vendor model the placeholders are skipped, not faked."""
+
+    @unittest.skipIf(cq is None, SKIP_REASON)
+    def test_envelope_mode_skips_the_placeholders_with_a_reason(self) -> None:
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "cad"
+            self.assertEqual(sa.main(["--out", str(out)]), 0)
+            document = json.loads((out / sa.ASSUMPTIONS).read_text())
+        block = document["bodies"]["LCD_MOUNT_PLACEHOLDERS"]
+        self.assertEqual(block["kind"], "SKIPPED")
+        self.assertIn("14.05 mm design envelope is NOT used", block["reason"])
+        self.assertFalse(any("MODEL_FIT_SPACER" in n for n in document["bodies"]))
 
 
 class WitnessTest(unittest.TestCase):

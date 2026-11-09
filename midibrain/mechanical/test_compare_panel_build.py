@@ -39,7 +39,7 @@ DRILL = """; DRILL file {{tscircuit}} date {stamp}
 M48
 METRIC
 T10C3.200000
-X-73.78Y-61.25
+X-68.58Y-61.25
 M30
 """
 
@@ -54,7 +54,7 @@ def write_gerbers(root: Path, stamp: str, silk_x: int = 10000) -> Path:
 
 def panel_json(cutoffs: list[dict] | None = None, warnings: list[dict] | None = None) -> list:
     elements: list[dict] = [
-        {"type": "pcb_board", "width": 162.56, "height": 128.5, "thickness": 1.6},
+        {"type": "pcb_board", "width": 152.0, "height": 128.5, "thickness": 1.6},
         {"type": "pcb_cutout", "shape": "circle", "center": {"x": -53.0, "y": -34.0}, "radius": 6.2},
         {"type": "pcb_cutout", "shape": "rect", "center": {"x": -38.0, "y": 53.5},
          "width": 12.6, "height": 7.6},
@@ -67,6 +67,36 @@ def panel_json(cutoffs: list[dict] | None = None, warnings: list[dict] | None = 
     if warnings:
         elements.extend(warnings)
     return elements
+
+
+def linked_json(net_ids: tuple[str, str] = ("source_net_4", "source_net_7"),
+                via_ids: tuple[str, str] = ("pcb_via_136", "pcb_via_137"),
+                component_ids: tuple[str, str] = ("source_component_12", "source_component_13"),
+                link_swap: bool = False) -> list:
+    """A document with identifiers that are LINKED across elements.
+
+    Two vias, each carrying its own id and pointing at a component and a net.
+    ``link_swap`` makes the second via point at the first via's net, which is a
+    changed association with no geometry change.
+    """
+    first_net, second_net = net_ids
+    first_via, second_via = via_ids
+    first_comp, second_comp = component_ids
+    net_of_second = first_net if link_swap else second_net
+    return [
+        {"type": "pcb_board", "width": 152.0, "height": 128.5, "thickness": 1.6},
+        {"type": "source_net", "source_net_id": first_net, "name": "GND"},
+        {"type": "source_net", "source_net_id": second_net, "name": "VSYS"},
+        {"type": "source_component", "source_component_id": first_comp, "name": "U1"},
+        {"type": "source_component", "source_component_id": second_comp, "name": "U2"},
+        {"type": "pcb_via", "pcb_via_id": first_via, "x": 1.0, "y": 2.0,
+         "outer_diameter": 0.6, "hole_diameter": 0.3,
+         "source_net_id": first_net, "source_component_id": first_comp},
+        {"type": "pcb_via", "pcb_via_id": second_via, "x": 9.0, "y": 2.0,
+         "outer_diameter": 0.6, "hole_diameter": 0.3,
+         "source_net_id": net_of_second, "source_component_id": second_comp},
+        {"type": "source_project_metadata", "source_filesystem_md5_hash": "aaaa"},
+    ]
 
 
 class GerberCompareTest(unittest.TestCase):
@@ -200,6 +230,184 @@ class JsonCompareTest(unittest.TestCase):
             b.write_text(json.dumps(data))
             problems = cpb.compare_json(a, b)
             self.assertTrue(any("count" in p for p in problems))
+
+
+class IdentifierInvariantTest(unittest.TestCase):
+    """What the comparison proves about identifiers, and what it rejects."""
+
+    def _compare(self, a: list, b: list) -> list[str]:
+        with TemporaryDirectory() as tmp:
+            pa = Path(tmp) / "a.json"
+            pb = Path(tmp) / "b.json"
+            pa.write_text(json.dumps(a))
+            pb.write_text(json.dumps(b))
+            return cpb.compare_json(pa, pb)
+
+    def test_a_consistent_renumbering_is_absorbed(self) -> None:
+        """Every identifier moves by a constant; every link is unchanged."""
+        a = linked_json()
+        b = linked_json(net_ids=("source_net_104", "source_net_107"),
+                        via_ids=("pcb_via_1136", "pcb_via_1137"),
+                        component_ids=("source_component_112", "source_component_113"))
+        self.assertEqual(self._compare(a, b), [])
+
+    def test_a_changed_net_link_fails(self) -> None:
+        """The required negative: only a referenced net changes."""
+        problems = self._compare(linked_json(), linked_json(link_swap=True))
+        self.assertTrue(problems, "a changed net link must fail the comparison")
+        self.assertIn("source_net_id", " ".join(problems))
+
+    def test_a_changed_component_link_fails(self) -> None:
+        a = linked_json()
+        b = linked_json()
+        b[5] = dict(b[5], source_component_id="source_component_13")
+        problems = self._compare(a, b)
+        self.assertTrue(problems, "a changed component link must fail")
+        self.assertIn("source_component_id", " ".join(problems))
+
+    def test_exchanging_labels_is_absorbed_but_exchanging_links_fails(self) -> None:
+        """A label carries no meaning; where it points does."""
+        a = linked_json()
+        swapped_labels = linked_json(via_ids=("pcb_via_137", "pcb_via_136"))
+        self.assertEqual(self._compare(a, swapped_labels), [],
+                         "exchanging two labels is the same relabelling")
+        # Both vias now point at the other's net: every label is unchanged, the
+        # association is not. That must fail.
+        swapped_links = linked_json()
+        swapped_links[5] = dict(swapped_links[5], source_net_id="source_net_7")
+        swapped_links[6] = dict(swapped_links[6], source_net_id="source_net_4")
+        problems = self._compare(a, swapped_links)
+        self.assertTrue(problems, "exchanging two link targets must fail")
+        self.assertIn("source_net_id", " ".join(problems))
+
+    def test_a_non_numeric_identifier_must_match_exactly(self) -> None:
+        a = linked_json()
+        b = linked_json()
+        b.append({"type": "pcb_port", "pcb_port_id": "available-net-orientation-11-GND",
+                  "x": 0.0, "y": 0.0})
+        self.assertTrue(self._compare(a, b))
+        c = linked_json()
+        c.append({"type": "pcb_port", "pcb_port_id": "available-net-orientation-12-GND",
+                  "x": 0.0, "y": 0.0})
+        self.assertEqual(self._compare(a, a), [])
+        b2 = linked_json()
+        b2.append({"type": "pcb_port", "pcb_port_id": "available-net-orientation-11-GND",
+                   "x": 0.0, "y": 0.0})
+        self.assertEqual(self._compare(b2, b2), [])
+        # same position, different non-numeric id -> fails
+        d = linked_json()
+        d.append({"type": "pcb_port", "pcb_port_id": "available-net-orientation-11-GND",
+                  "x": 0.0, "y": 0.0})
+        e = linked_json()
+        e.append({"type": "pcb_port", "pcb_port_id": "available-net-orientation-99-GND",
+                  "x": 0.0, "y": 0.0})
+        problems = self._compare(d, e)
+        # These ids have no trailing _<digits>, so they are NOT normalised: a
+        # changed non-numeric identifier must fail.
+        self.assertTrue(problems, "a non-numeric identifier must match exactly")
+        f = linked_json()
+        f.append({"type": "pcb_port", "pcb_port_id": "available-net-orientation-GND",
+                  "x": 0.0, "y": 0.0})
+        g = linked_json()
+        g.append({"type": "pcb_port", "pcb_port_id": "available-net-orientation-VSYS",
+                  "x": 0.0, "y": 0.0})
+        self.assertTrue(self._compare(f, g))
+
+    def test_the_documented_invariant_is_what_is_implemented(self) -> None:
+        doc = " ".join((cpb.__doc__ or "").lower().split())
+        self.assertIn("occurrence pattern", doc)
+        self.assertIn("not a netlist check", doc)
+        self.assertIn("does not establish link integrity", doc.replace("**", ""))
+        self.assertIn("top-level field", doc)
+        # and no blanket identifier exemption exists in the code
+        import inspect
+        source = inspect.getsource(cpb)
+        self.assertNotIn("EXEMPT_SUFFIXES", source)
+
+
+class IdentifierLimitationTest(unittest.TestCase):
+    """The three documented limits, demonstrated - not hidden.
+
+    These tests PASS when the limitation is real. If a future change makes one of
+    them detectable, the test fails and the docstring must be updated with it.
+    """
+
+    def _compare(self, a: list, b: list) -> list[str]:
+        with TemporaryDirectory() as tmp:
+            pa = Path(tmp) / "a.json"
+            pb = Path(tmp) / "b.json"
+            pa.write_text(json.dumps(a))
+            pb.write_text(json.dumps(b))
+            return cpb.compare_json(pa, pb)
+
+    def test_limit_1_a_changed_singleton_dangling_reference_is_absorbed(self) -> None:
+        """A token used once is compared by position, so relabelling it is invisible."""
+        a = [{"type": "pcb_trace", "pcb_trace_id": "pcb_trace_1", "x": 0.0,
+              "source_net_id": "source_net_99"}]      # no source_net_99 anywhere
+        b = [{"type": "pcb_trace", "pcb_trace_id": "pcb_trace_1", "x": 0.0,
+              "source_net_id": "source_net_42"}]      # also dangling, different label
+        self.assertEqual(self._compare(a, b), [],
+                         "DOCUMENTED LIMIT: a changed singleton reference is absorbed")
+
+    def test_limit_1b_a_singleton_reference_can_also_become_defined(self) -> None:
+        a = [{"type": "pcb_trace", "pcb_trace_id": "pcb_trace_1", "source_net_id": "source_net_99"}]
+        b = [{"type": "pcb_trace", "pcb_trace_id": "pcb_trace_1", "source_net_id": "source_net_99"},
+             {"type": "source_net", "source_net_id": "source_net_99", "name": "GND"}]
+        # an added element is of course detected - but that is the element, not the link
+        self.assertTrue(self._compare(a, b))
+        # with equal element counts, the singleton link may still change silently
+        c = [{"type": "pcb_trace", "pcb_trace_id": "pcb_trace_1", "source_net_id": "source_net_99"},
+             {"type": "source_net", "source_net_id": "source_net_99", "name": "GND"}]
+        d = [{"type": "pcb_trace", "pcb_trace_id": "pcb_trace_1", "source_net_id": "source_net_98"},
+             {"type": "source_net", "source_net_id": "source_net_98", "name": "GND"}]
+        self.assertEqual(self._compare(c, d), [],
+                         "DOCUMENTED LIMIT: a consistent singleton relabelling is absorbed")
+
+    def test_limit_2_a_compound_singleton_token_change_is_absorbed(self) -> None:
+        """Any value ending _<digits> is one token, compound names included."""
+        a = [{"type": "schematic_component",
+              "schematic_port_id": "schematic_port_3-schematic_port_11"}]
+        b = [{"type": "schematic_component",
+              "schematic_port_id": "schematic_port_3-schematic_port_19"}]
+        self.assertEqual(self._compare(a, b), [],
+                         "DOCUMENTED LIMIT: a compound singleton change keeps the same token")
+        # changing the leading number is NOT absorbed, because the namespace changes
+        c = [{"type": "schematic_component",
+              "schematic_port_id": "schematic_port_7-schematic_port_11"}]
+        self.assertTrue(self._compare(a, c),
+                        "a different compound namespace is still detected")
+
+    def test_limit_3_nested_identifiers_are_compared_raw(self) -> None:
+        """Nested dicts and arrays are not normalised: renumbering them FAILS."""
+        a = [{"type": "pcb_component", "pcb_component_id": "pcb_component_1",
+              "fields": {"source_net_id": "source_net_4"}}]
+        b = [{"type": "pcb_component", "pcb_component_id": "pcb_component_1",
+              "fields": {"source_net_id": "source_net_7"}}]
+        self.assertTrue(self._compare(a, b),
+                        "DOCUMENTED LIMIT: a nested change is raw-compared (and detected)")
+        # a consistent renumbering inside a nested object is a FALSE FAILURE
+        c = [{"type": "pcb_component", "pcb_component_id": "pcb_component_1",
+              "fields": {"source_net_id": "source_net_104"}}]
+        d = [{"type": "pcb_component", "pcb_component_id": "pcb_component_1",
+              "fields": {"source_net_id": "source_net_107"}}]
+        self.assertTrue(self._compare(c, d) if c == d else self._compare(a, c),
+                        "a nested identifier is compared raw, so it is never normalised")
+        # arrays inside an element are raw as well
+        e = [{"type": "x", "pads": [{"source_net_id": "source_net_4"}]}]
+        f = [{"type": "x", "pads": [{"source_net_id": "source_net_104"}]}]
+        self.assertTrue(self._compare(e, f))
+
+    def test_the_docstring_states_all_three_limits(self) -> None:
+        doc = " ".join((cpb.__doc__ or "").lower().split())
+        self.assertIn("singleton reference", doc)
+        self.assertIn("compound", doc)
+        self.assertIn("nested dicts and arrays are compared raw", doc)
+        self.assertIn("not a netlist check", doc)
+        self.assertIn("does not establish link integrity", doc.replace("**", ""))
+        self.assertIn("a token that occurs once can be relabelled", doc)
+        # the old overclaim must be gone
+        self.assertNotIn("so a changed link always fails", doc)
+        self.assertNotIn("every identifier relationship", doc)
 
 
 class CommandLineTest(unittest.TestCase):

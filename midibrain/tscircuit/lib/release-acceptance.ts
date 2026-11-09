@@ -97,7 +97,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "case_fit",
     title: "Case fit",
-    requirement: "32HP/3U panel, 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth.",
+    requirement: "30HP/3U panel (152.0 mm actual), 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth.",
   },
   {
     id: "usb_c_5a_path",

@@ -94,7 +94,7 @@
     "board": {
       "layers": 2,
       "dimensions_mm": [
-        162.56,
+        152.0,
         128.5
       ],
       "thickness_mm": 1.6,

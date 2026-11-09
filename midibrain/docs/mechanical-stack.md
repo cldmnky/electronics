@@ -12,7 +12,7 @@ X direction.
 
 | Item | Value | Note |
 |---|---|---|
-| Front panel | **32HP × 3U, 162.56 × 128.5 × 1.6** (owner decision 2026-11-07) | Rail holes X ±73.78, Y ±61.25 (7.5 / 3.0 mm edge insets, Doepfer 3U rule). Display window 107.22 × 68.87 mm centred on the module. |
+| Front panel | **30HP × 3U, 152.0 × 128.5 × 1.6 actual** (owner decision 2026-11-08, replaces the 32HP/162.56 mm panel of 2026-11-07) | Rail holes X ±68.58, Y ±61.25, Ø3.2 (spacing 137.16 = 27 × 5.08, the Doepfer multiple rule; 7.42 mm centre inset, 5.82 mm hole edge to panel edge). 152.0 is OUR ESTIMATE, 0.4 mm under the 152.4 mm nominal (0.2 mm per side): not a Doepfer-stated 30HP value, not owner-exact, not a mandate and not a guaranteed fit. Sources: [Doepfer A-100 mechanical information](https://doepfer.de/a100_man/a100m_e.htm) and its [hole figure A100FP.gif](https://doepfer.de/a100_man/A100FP.gif), which gives 128.5 mm height, a 7.5 mm horizontal and 3.0 mm vertical hole inset, and Ø3.2 mm holes but publishes no 30HP width. The fixed 27 × 5.08 grid on 152.0 mm gives 7.42 mm, i.e. **0.08 mm tighter than the figure's 7.5 mm** - disclosed, not corrected. Display window 107.22 × 68.87 mm centred on the module, unchanged. |
 | Front/UI PCB | **128 × 112 × 1.6 (unchanged)** | Four display mounting holes on the module's threaded SMTSO boss pattern: 99.30 × 61.80 mm centres (3.35 / 3.10 insets), i.e. layout x −49.65 / +49.65, y +30.90 / −30.90 from the module centre (−9.5, 11). The drawn 58.00 × 49.04 plain-hole pattern stays as the recorded alternative (`DISPLAY_STANDOFFS`). |
 | Rear/base PCB | 101.6 × 112 × 1.6 (20HP) | Pi hole grid 58 × 49 mm (portrait), Pico on the left. |
 | Installed depth target | ≤110 mm | Target retained. Not verified; see the depth section. |
@@ -94,7 +94,7 @@ display PCB rear face, so:
 |---|---:|---|
 | Plane separation | 9.0 mm | Front-board top face to display PCB **rear face**. |
 | Boss projection | 4.0 mm | Boss ends stand 4.0 mm behind that PCB rear face (primary model). |
-| Spacer length | 5.0 mm | What to order: plane separation − boss projection. |
+| Spacer length | 5.0 mm (design-chain candidate only) | What that chain would order: plane separation − boss projection. **Not** the vendor model's gap: the drawn boss ends sit at global Z 10.24 and the drawn board top face at 19.05, a **model gap of 8.81 mm**. A 5.00 mm spacer anchored on the board face ends at 14.05 and misses those boss ends by **3.81 mm**. The two chains do not agree and neither is approved; the correct length, diameter, thread and assembly are first-article tasks. The STEP model draws four non-approved placeholders over the 8.81 mm gap so the mount is visible. |
 
 Ordering a 9 mm spacer while intending a 9 mm plane separation would add the boss projection a second time and push the
 display through the panel. The old `3.5 mm` may have meant the free length beyond the bosses; that reading is withdrawn in
@@ -149,10 +149,16 @@ Display window (owner decision D1): the aperture follows the GLASS, not the 106 
 sit above the buttons, so the authorised fallback (3) was applied — the REC / OVER DUB / PLAY light pipes moved 12 mm
 beside their buttons. The band is then +49.70 (feedthrough cutout floor) to −27.80 (transport-button opening top) =
 77.50 mm, and the window keeps 4.365 mm to the button openings, 1.165 mm to the feedthrough labels (moved from y 44.0
-to 47.5) and 2.865 mm … 7.935 mm of panel web around it. Horizontal: the window left edge −63.11 keeps 9.07 mm to
-the M3 rail-hole edge (72.18) and 18.17 mm to the panel edge (−81.28); the knob at x = 52 (body right edge 58.25)
-keeps 13.93 mm to the rail-hole edge and 23.03 mm to the panel edge, so the +5 mm column move stays off the rails; the module left edge −62.5 keeps 1.5 mm to
-the 128 mm board edge and the module right edge +43.5 keeps 2.25 mm to the value-knob body (Ø12.5 at x = 52).
+to 47.5) and 2.865 mm … 7.935 mm of panel web around it. Horizontal, all values recomputed from `mechanical/layout.json`: the window left edge −63.11 keeps **12.89 mm to the
+panel edge** (−76.0), a true perpendicular distance. Its **X projection** to the M3 rail-hole edge (66.98) is
+**3.87 mm**, but the rail hole sits at a different Y, so the true 2D distance from the emitted aperture polygon to the
+nearest rail-hole edge is **15.423 mm**. The knob at x = 52 (Ø12.5 body, right edge 58.25) keeps **17.75 mm to the
+panel edge**, again perpendicular; its **X projection** to the rail-hole edge is **8.73 mm**, and the true 2D distance
+from the knob body to the nearest Ø3.2 rail hole is **27.526 mm**. Those projections are labelled as projections and are
+not webs or shortest clearances; the 2D figures are asserted in `tscircuit/lib/layout.test.ts`. Every figure here is
+planning geometry: rail nut/washer fit, neighbour-module fit and the physical print remain pending. The module left edge
+−62.5 keeps 1.5 mm to the 128 mm board edge and the module right edge +43.5 keeps 2.25 mm to the value-knob body
+(Ø12.5 at x = 52).
 
 Reference CAD path: `mechanical/reference/waveshare-4.3inch-dsi-lcd.step` (STEP SHA-256
 `01eef9172ff4364691f4de37ff98f95437e96caa647b94b4bd4a1c54ac4519ed`, downloaded from the wiki's
@@ -261,8 +267,8 @@ Case data from the Thomann product page: 2 × 140 HP, 6U, M3 slide nuts, +12 V/3
 112 × 723 × 311 mm, **maximum module depth 40 mm (lower row) and 62 mm (upper row)**. The module draws nothing from
 the Eurorack bus.
 
-- Width/height: 32HP (162.56 mm) fits a 140 HP row with 2 × (140 − 32) HP of space left; 128.5 mm fits 3U; rail holes are at the Doepfer 3U positions
-  Y ±61.25 after the 2026-11 fix. Round Ø3.2 holes suit the Go's sliding M3 nuts; slotted holes are still recommended.
+- Width/height: 30HP (152.0 mm actual) fits a 140 HP row with (140 − 30) = 110 HP of space left; 128.5 mm fits 3U; rail holes are at the Doepfer 3U positions
+  Y ±61.25 after the 2026-11 fix (30HP panel: X ±68.58, spacing 137.16 = 27 × 5.08). The horizontal inset is 7.42 mm, i.e. 0.08 mm inside the 7.5 mm the Doepfer hole figure (A100FP.gif) draws; the vertical inset stays the figure's 3.0 mm with Ø3.2 mm holes, and the 128.5 mm height matches it. Round Ø3.2 holes suit the Go's sliding M3 nuts; slotted holes are still recommended. Rail nut/washer fit, neighbour-module fit and the print remain pending.
 - Depth: the provisional stack is **≈63–75 mm behind the panel back** (76.25 − 1.6 = 74.65 mm at the high end; the
   low end of the candidate ranges is 62.65 mm). That exceeds the 40 mm lower row by 23–35 mm and is at or over the
   62 mm upper row before tolerances, ribbon folds, the Pico USB plug and airflow.

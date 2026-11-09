@@ -64,11 +64,13 @@ from pathlib import Path
 from bracket_geometry import GeometryError, load_layout
 from light_pipe_reach import ReachInputs, compute_reach
 from step_geometry import (
+    DISPLAY_MOUNT_PLACEHOLDER,
     DISPLAY_ORIENTATION,
     VENDOR_DISPLAY_MODEL,
     assembly_envelopes,
     assumptions_document,
     check_display_plane_order,
+    display_mount_gap,
     display_rotation,
     inner_pattern_candidates,
     placed_display_planes,
@@ -471,6 +473,42 @@ def place_display(cq, shape, layout: dict) -> tuple[object, dict]:
     return placed, info
 
 
+# Boolean noise at a touching face. A placeholder that only touches measures
+# about 1e-5 mm^3; a REAL intrusion of 1 um over the 13.9 mm^2 annulus measures
+# about 0.014 mm^3. The limit sits between them, so noise passes and any real
+# penetration fails.
+INTRUSION_EPS_MM3 = 1e-3
+
+
+def spacer_intrusions(cq, spacer, display_shape, board_shape) -> dict:
+    """Positive-volume overlap of one placeholder against the display and board.
+
+    Touching faces give at most boolean noise (about 1e-5 mm^3 measured); a real
+    intrusion is orders of magnitude larger. The raw volumes are reported so a
+    reader can see which case applies.
+    """
+    return {
+        "display_mm3": round(spacer.val().intersect(display_shape).Volume(), 6),
+        "board_mm3": round(spacer.val().intersect(board_shape).Volume(), 6),
+    }
+
+
+def boss_at(shape, axis: tuple[float, float]) -> tuple[float, float, float, float] | None:
+    """Bounding box (x0, x1, y0, y1) of the SMT boss body nearest an axis."""
+    best = None
+    for solid in shape.Solids():
+        b = solid.BoundingBox()
+        if not (5.0 <= b.xlen <= 6.0 and 5.0 <= b.ylen <= 6.0 and 5.0 <= b.zlen <= 6.0):
+            continue
+        cx, cy = (b.xmin + b.xmax) / 2, (b.ymin + b.ymax) / 2
+        distance = ((cx - axis[0]) ** 2 + (cy - axis[1]) ** 2) ** 0.5
+        if best is None or distance < best[0]:
+            best = (distance, b.xmin, b.xmax, b.ymin, b.ymax)
+    if best is None or best[0] > 0.05:
+        return None
+    return (best[1], best[2], best[3], best[4])
+
+
 def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> dict:
     """Build every solid and return name -> object, ready to export."""
     pz = layout["provisionalZ"]
@@ -496,7 +534,7 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
     meta: dict[str, dict] = {}
 
     # ---- panel --------------------------------------------------------
-    e = env["PANEL_32HP_3U"]
+    e = env["PANEL_30HP_3U"]
     panel_wp = span_box(e, grow=0.0)
     # Every panel opening and every panel drill comes from the canonical
     # PANEL_APERTURES / PANEL_DRILLS arrays in layout.ts, the same data the
@@ -541,8 +579,8 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
         panel_wp = panel_wp.cut(tool)
     if panel_wp.solids().size() != 1:
         raise GeometryError(f"the panel is {panel_wp.solids().size()} solids after its cuts")
-    solids["PANEL_32HP_3U"] = panel_wp
-    meta["PANEL_32HP_3U"] = {
+    solids["PANEL_30HP_3U"] = panel_wp
+    meta["PANEL_30HP_3U"] = {
         "features": [label for label, _ in cuts],
         "feature_count": len(cuts),
         "note": ("20 canonical apertures and 14 canonical drills, the same arrays "
@@ -606,6 +644,97 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
             "note": ("no verified vendor STEP was supplied, so this is the 106 x 68 mm module "
                      "outline between the assumed flush glass front and the 14.05 mm overall "
                      "depth; it is not vendor geometry"),
+        }
+
+    # ---- LCD mount placeholders (model-fit, non-approved) ----------------
+    # Four annuli that span the gap measured from the drawn solids: the vendor
+    # SMT boss rear plane to the front-board top face. They are GEOMETRIC
+    # PLACEHOLDERS: not a part, not a fit, not a thread, not an approved length.
+    # Without a verified vendor model there is no model-derived boss plane, so
+    # they are skipped rather than fabricated from the 14.05 mm envelope.
+    mount = display_mount_gap(layout)
+    if display_step is not None:
+        board_bb = front_wp.val().BoundingBox()
+        board_top_z = round(board_bb.zmin, 4)
+        if abs(board_top_z - mount["board_top_z_mm"]) > 0.01:
+            raise GeometryError(
+                f"the drawn front board top face is Z {board_top_z}, not the recorded "
+                f"{mount['board_top_z_mm']}; the placeholder span would be wrong")
+        boss_rear_z = round(placement["placed_global_z_mm"]["boss_rear"], 4)
+        if abs(boss_rear_z - mount["boss_rear_z_mm"]) > 0.01:
+            raise GeometryError(
+                f"the drawn boss rear plane is Z {boss_rear_z}, not the recorded "
+                f"{mount['boss_rear_z_mm']}")
+        length = round(board_top_z - boss_rear_z, 4)
+        if abs(length - mount["model_gap_mm"]) > 0.01:
+            raise GeometryError(f"the placeholder length {length} is not the model gap "
+                                f"{mount['model_gap_mm']}")
+        od, idia = mount["outer_diameter_mm"], mount["inner_diameter_mm"]
+        hole = float(layout["display"]["stack"]["holeDiameter"])
+        if od / 2 <= hole / 2:
+            raise GeometryError(
+                f"OD {od} does not exceed the board hole {hole}: no bearing annulus would show")
+        spacer_meta = []
+        for index, axis in enumerate(mount["axes_xy"], start=1):
+            name = f"{DISPLAY_MOUNT_PLACEHOLDER['name_prefix']}_{index}"
+            spacer = (cq.Workplane("XY").workplane(offset=boss_rear_z)
+                      .center(axis[0], axis[1])
+                      .circle(od / 2).circle(idia / 2)
+                      .extrude(length))
+            bb = spacer.val().BoundingBox()
+            if abs(bb.zmin - boss_rear_z) > 0.01 or abs(bb.zmax - board_top_z) > 0.01:
+                raise GeometryError(f"{name} does not span the model gap")
+            intrusions = spacer_intrusions(cq, spacer, moved, front_wp.val())
+            if max(intrusions.values()) > INTRUSION_EPS_MM3:
+                raise GeometryError(
+                    f"{name} intrudes: {intrusions} exceeds the {INTRUSION_EPS_MM3} mm^3 "
+                    "boolean-noise limit")
+            boss = boss_at(moved, axis)
+            if boss is None:
+                raise GeometryError(f"{name}: no SMT boss body found on axis {axis}")
+            if not (boss[0] - 1e-6 <= axis[0] - od / 2 and axis[0] + od / 2 <= boss[1] + 1e-6
+                    and boss[2] - 1e-6 <= axis[1] - od / 2 and axis[1] + od / 2 <= boss[3] + 1e-6):
+                raise GeometryError(
+                    f"{name}: OD {od} is not contained by the boss body "
+                    f"x {boss[0]:.2f}..{boss[1]:.2f} y {boss[2]:.2f}..{boss[3]:.2f}")
+            solids[name] = spacer
+            spacer_meta.append({
+                "name": name,
+                "axis_xy_mm": [axis[0], axis[1]],
+                "z_mm": [round(bb.zmin, 3), round(bb.zmax, 3)],
+                "length_mm": round(bb.zmax - bb.zmin, 3),
+                "outer_diameter_mm": od,
+                "inner_diameter_mm": idia,
+                "boss_body_xy_mm": [round(boss[0], 3), round(boss[1], 3),
+                                    round(boss[2], 3), round(boss[3], 3)],
+                "intrusion_volume_mm3": intrusions,
+                "board_hole_diameter_mm": hole,
+                "annulus_bearing_width_mm": round((od - hole) / 2, 3),
+            })
+        meta["LCD_MOUNT_PLACEHOLDERS"] = {
+            "kind": "MODEL-FIT GEOMETRIC PLACEHOLDER, non-approved",
+            "count": len(spacer_meta),
+            "span_mm": [boss_rear_z, board_top_z],
+            "spacers": spacer_meta,
+            "not_claimed": [
+                "an approved spacer length",
+                "a part, part number or supplier",
+                "a standoff diameter or a thread",
+                "thread engagement, torque or assembly order",
+                "any physical fit",
+            ],
+            "first_article_tasks": mount["first_article_tasks"],
+            "intrusion_limit_mm3": INTRUSION_EPS_MM3,
+            "intrusion_note": ("the reported volumes are boolean overlaps. Touching faces "
+                               "measure about 1e-5 mm^3; the limit separates that noise from a "
+                               "real penetration"),
+        }
+    else:
+        meta["LCD_MOUNT_PLACEHOLDERS"] = {
+            "kind": "SKIPPED",
+            "reason": ("no verified vendor display STEP was supplied, so there is no drawn "
+                       "boss plane. The 14.05 mm design envelope is NOT used to fabricate "
+                       "one"),
         }
 
     # ---- display connector PLANNING MARKER ------------------------------
@@ -799,7 +928,7 @@ def main(argv: list[str] | None = None) -> int:
     roundtrip = verify_roundtrip(cq, step_path, sorted(solids))
 
     stls = {}
-    for name, file_name in (("PANEL_32HP_3U", STL_PANEL),
+    for name, file_name in (("PANEL_30HP_3U", STL_PANEL),
                             ("FRONT_BOARD_PROVISIONAL_Z", STL_FRONT),
                             ("REAR_BOARD_PROVISIONAL_Z", STL_REAR)):
         cq.exporters.export(solids[name], str(out / file_name))
@@ -818,6 +947,10 @@ def main(argv: list[str] | None = None) -> int:
         "files": [STEP_NAME] + sorted(stls) + [ASSUMPTIONS, CHECKLIST],
     }
     document["display_step"] = display_info
+    # The pure document already carries the mount block and the body legend;
+    # add what only the built solids know.
+    document["display_mount_placeholders"]["bodies"] = built["meta"].get(
+        "LCD_MOUNT_PLACEHOLDERS", {})
     document["bodies"] = built["meta"]
     document["step_roundtrip"] = roundtrip
     document["volumes_mm3"] = {name: round(volume_of(solids[name]), 3)

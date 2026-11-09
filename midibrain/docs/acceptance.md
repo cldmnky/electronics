@@ -96,7 +96,7 @@ instead of being skipped. Print it with
 
 | `pi_microsd` | microSD insert/remove with the Pi in the stack and the case closed; clearance recorded |
 | `cooler_hat_ssd` | Active Cooler + M.2 HAT+ + SSD stacked; height, airflow, connector clearance |
-| `case_fit` | 32HP/3U panel, 20HP base board and all rail/standoff positions in the case |
+| `case_fit` | 30HP/3U panel (152.0 mm), 20HP base board and all rail/standoff positions in the case |
 | `usb_c_5a_path` | An exact 5 A rated feedthrough from a primary source; CAB-15455 is 3 A and rejected for this path |
 | `usb_pd_droop_thermal` | Full-load PD negotiation, voltage droop, connector/feedthrough temperature, both orientations |
 | `encoder_solder_process` | Bourns PEC11R process qualified (selective/wave or validated manual) with profile and inspection |

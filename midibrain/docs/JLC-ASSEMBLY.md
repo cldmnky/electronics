@@ -30,8 +30,9 @@ hand-edit generated fabrication files to repair a source problem.
 
 ## Board options
 
-- Front 128 × 112 mm; rear 101.6 × 112 mm (20HP); panel 162.56 × 128.5 mm
-  (32HP/3U). Each board is 2-layer, 1.6 mm FR-4.
+- Front 128 × 112 mm; rear 101.6 × 112 mm (20HP); panel 152.0 × 128.5 mm
+  (30HP/3U, 152.0 actual against the 152.4 mm nominal). Each board is 2-layer,
+  1.6 mm FR-4.
 - Front and rear use 1 oz copper and candidate lead-free HASL. Apply the
   actual emitted source rules, reviewed Gerbers and
   [fab-check.md](fab-check.md), not obsolete defaults from an older export.
