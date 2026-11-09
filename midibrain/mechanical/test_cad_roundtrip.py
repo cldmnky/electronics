@@ -153,16 +153,23 @@ class StepRoundTripTest(unittest.TestCase):
         self.assertAlmostEqual(hi[1] - lo[1], 10.0, delta=0.01)
         self.assertAlmostEqual(hi[2] - lo[2], 3.0, delta=0.01)
 
-    def test_the_reach_gauge_shows_the_documented_two_heights(self) -> None:
+    def test_the_reach_gauge_uses_one_datum_and_the_nominal_tip(self) -> None:
+        """tall = board near face 19.05, low = nominal tip 16.5, step 2.55."""
         data = sg.load_layout()
         lo, hi, _ = stl_bounds(self.out / sa.STL_GAUGE)
-        self.assertAlmostEqual(hi[2] - lo[2], data["panelToFrontBoardGap"], delta=0.01)
-        # The low step is the candidate pipe length: probe the mesh height at the
-        # low half and the full height at the tall half.
-        self.assertAlmostEqual(self.document["light_pipe_reach"]["gauge_mm"]["low"],
-                               data["lightPipe"]["length"], delta=1e-9)
+        self.assertAlmostEqual(hi[2] - lo[2], data["lightPipeReach"]["boardNearFaceZ"],
+                               delta=0.01)
         height = self.document["light_pipe_reach"]["gauge_mm"]
-        self.assertAlmostEqual(height["tall"] - height["low"], 7.29, delta=1e-6)
+        self.assertAlmostEqual(height["tall"], 19.05, delta=1e-9)
+        self.assertAlmostEqual(height["low"], 16.5, delta=1e-9)
+        self.assertAlmostEqual(height["tall"] - height["low"], 2.55, delta=1e-6)
+        self.assertIn("Not an LED gap", height["step_meaning"])
+        self.assertIn("panel FRONT face", height["datum"])
+        # the gauge must not present itself as a physical LED gap or fit
+        reach = self.document["light_pipe_reach"]
+        self.assertIsNone(reach["optical_gap_mm"])
+        self.assertEqual(reach["status"], "incomplete")
+        self.assertIn("PGN25L165", reach["part"])
 
     def test_the_connector_marker_is_planning_data_only(self) -> None:
         """The withdrawn 21.412 x 4.826 mm connector claim (finding 1)."""

@@ -121,7 +121,7 @@ test("the canonical apertures cover every opening class with its own diameter", 
     return a.radius ?? NaN
   }
   expect(radius("REC BUTTON")).toBe(6.2)   // 12.4 mm B3F
-  expect(radius("REC LED")).toBe(2.0)      // 4.0 mm light pipe
+  expect(radius("REC LED")).toBe(1.3)      // Ø2.6 provisional PGN25L165 hole
   expect(radius("VALUE ENCODER")).toBe(3.6) // 7.2 mm bushing
   expect(radius("MIDI IN 1 JACK")).toBe(3.1) // 6.2 mm barrel
   const lcd = byName.get("LCD_APERTURE")

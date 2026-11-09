@@ -1,48 +1,43 @@
 #!/usr/bin/env python3
-"""Light-pipe reach: a parametric interval computation with an explicit hole in it.
+"""Light-pipe optical gap: one datum, one parameterisation, no length fallback.
 
-The two recorded numbers are 17.45 mm (panel rear face to the front-board top
-face, from the PROVISIONAL_Z chain) and 10.16 mm (the candidate Bivar
-PLP2-400-C). Their difference is 17.45 - 10.16 = **7.29 mm**. That is arithmetic
-and nothing more: it is NOT a shortfall, NOT a bound and NOT a verdict, because
-the two reference planes the pipe actually spans are unknown:
+HISTORY - ALL OF THIS IS WITHDRAWN AND UNUSED: the retired subtraction used the
+retired Bivar PLP2-400-C length 10.16 mm and the 17.45 mm panel-rear gap, and
+printed the withdrawn 7.29 mm difference as the withdrawn "unaccounted" figure.
+That subtraction compared two different reference planes, and the withdrawn
+10.16 mm reference is not in the current Bivar datasheet. Nothing replaces it:
+17.45 - 16.5 or 17.45 - 17.5 would be equally meaningless.
 
-  * where the pipe's REAR face sits (on the LED top, on the board top face, in a
-    board hole, or on a spacer), and
-  * where the pipe's FRONT face must sit (the panel rear face, a counterbore or
-    a front flange inside the panel, or proud of the panel).
+The owner-selected candidate is the Signal Construct PGN25L165 (drawing
+https://static.rapidonline.com/pdf/07-1015_v1.pdf, SHA-256
+5350ad1f0a795e0d688dc74e223239c82cfb3e27951244a10cb43873eeeaa46b):
+shaft Ø2.5 ±0.05 mm, x = 16.5 ±0.1 mm from the head underside to the tip, head
+Ø3 ±0.05 mm, head height 1.0 mm, mounting hole Ø2.6 −0.05 mm (2.55-2.60 mm). The
+owner's screenshot for this MPN states 17.5 mm overall, which is 16.5 + 1.0.
 
-A part with a front flange or a front seat changes the FRONT reference plane, so
-the plane separation is not automatically the distance the pipe must cover. No
-inequality between the offsets is assumed: nothing here forces the rear seat to
-be smaller than an LED height, or the front seat to be zero.
+Datum: Z = 0 at the panel FRONT face; +Z points rearward (into the rack).
 
-Until every offset and tolerance is measured, the result is ``incomplete`` and
-``shortfall_mm`` is None. There is no code path that turns an unknown reference
-plane into "the pipe is too short" or into a bound.
+    head underside plane   H = 0 + head_underside_offset      ASSUMPTION: 0
+    pipe tip plane         T = H + shaft_length                nominal 16.5
+    board near face        B = 19.05 (provisional)             unmeasured
+    LED top plane          L = B - led_height                  the LED rises
+                                                               TOWARD the panel,
+                                                               i.e. in -Z, so its
+                                                               offset is NEGATIVE
+    optical gap            g = L - T
+    nominal tip to board   t = B - T                           nominal 2.55
 
-Geometry, with the project datum (Z = 0 at the panel FRONT face, +Z rearward):
+`optical_gap` is **None** and the status is **incomplete** until the head
+underside plane, the shaft length with its tolerance, the board near face, the
+LED height and the stack tolerances are all recorded. There is no "gap minus
+pipe length" step: this module cannot produce one.
 
-    panel rear face        P = 1.60 mm        (panel thickness, documented)
-    front-board top face   B = 19.05 mm       (PROVISIONAL_Z, not measured)
-    gap                    g = B - P = 17.45 mm
-    pipe rear face         R = B + rear_offset_mm      (signed, unknown)
-    pipe front face        F = P + front_offset_mm     (signed, unknown)
-    required length        L_req = R - F = g + rear_offset - front_offset
-    shortfall              s = L_req - pipe_length
+Even a complete result is labelled ``arithmetic_only``. It says nothing about
+brightness, coupling, retention in 1.6 mm FR-4, the real panel hole tolerance or
+any physical fit. The +-0.1 mm shaft tolerance alone never yields a bound: the
+stack tolerance is unknown.
 
-``rear_offset_mm`` is measured REARWARD (+Z) from the board top face: 0 means the
-pipe rests on the board, a positive value means it sits up over the LED, a
-negative value means it enters a board hole. ``front_offset_mm`` is measured
-REARWARD (+Z) from the panel rear face: 0 means the pipe must reach the panel
-rear face, positive means a flange or recess stops it short, negative means the
-pipe must stand proud of the panel rear face.
-
-Units: millimetres throughout.
-
-    cd midibrain && python3 mechanical/light_pipe_reach.py
-
-No CAD library is imported, so the rules run everywhere.
+Units: millimetres. No CAD library, so the rules run everywhere.
 """
 from __future__ import annotations
 
@@ -51,16 +46,16 @@ from dataclasses import dataclass
 
 from bracket_geometry import load_layout
 
-# Status vocabulary. `incomplete` is a first-class result, not an error.
+# Status vocabulary. `incomplete` is the normal state today.
 INCOMPLETE = "incomplete"
-SUFFICIENT = "reach_sufficient"
-INSUFFICIENT = "reach_insufficient"
-UNCERTAIN = "undetermined_uncertainty"
+ARITHMETIC_ONLY = "arithmetic_only"
 
-# The wording this module must never use, because it would claim knowledge of an
-# unmeasured reference plane. tests/test_light_pipe_reach.py enforces this.
-FORBIDDEN_CLAIMS = ("largest", "smallest", "upper bound", "lower bound",
-                    "at most", "at least", "worst case", "best case")
+# Claim PHRASES that would turn arithmetic into a fit claim. Bare words such as
+# "bound" are allowed in a disclaimer ("never yields a bound"); these phrases are
+# not.
+FORBIDDEN_CLAIMS = ("is guaranteed", "will fit", "fits the panel", "fits the led",
+                    "clearance is verified", "therefore fits", "at most", "at least",
+                    "worst case", "best case", "proven fit")
 
 
 class ReachInputError(ValueError):
@@ -117,175 +112,171 @@ class Interval:
 
 @dataclass(frozen=True)
 class ReachInputs:
-    """Every term the reach depends on, each with its own measurement status.
+    """Every plane the optical gap needs, each independently unknown-able.
 
-    ``board_top_to_panel_rear_mm``  the documented gap g (17.45 mm provisional)
-    ``gap_tolerance_mm``            measured +/- of g; None = unrecorded
-    ``pipe_length_mm``              candidate pipe overall length (10.16 mm)
-    ``pipe_length_tolerance_mm``    vendor/measured +/- of that length; None = unrecorded
-    ``rear_reference_offset_mm``    R - B, signed, +Z from the board top face;
-                                    None = the rear reference plane is unmeasured
-    ``front_reference_offset_mm``   F - P, signed, +Z from the panel rear face;
-                                    None = the front reference plane is unmeasured
+    ``head_underside_offset_mm``  panel FRONT face -> head underside, +Z rearward
+                                  (None = the seated position is not measured)
+    ``shaft_length_mm``           head underside -> tip, nominal 16.5
+    ``board_near_face_z_mm``      panel FRONT face -> the PCB face the LED sits on
+    ``led_height_mm``             LED body height above that face, rising TOWARD
+                                  the panel, so it SUBTRACTS from the board plane
+    ``stack_tolerance_mm``        measured +/- of the whole stack, not the shaft
     """
 
-    board_top_to_panel_rear_mm: Interval
-    gap_tolerance_mm: Interval | None
-    pipe_length_mm: Interval
-    pipe_length_tolerance_mm: Interval | None
-    rear_reference_offset_mm: Interval | None
-    front_reference_offset_mm: Interval | None
+    head_underside_offset_mm: Interval | None
+    shaft_length_mm: Interval | None
+    board_near_face_z_mm: Interval | None
+    led_height_mm: Interval | None
+    stack_tolerance_mm: Interval | None
 
     @classmethod
     def from_layout(cls, layout: dict | None = None) -> "ReachInputs":
-        """The documented values only: no reference plane, no tolerance."""
+        """The documented values only: the seated plane, LED and tolerances are unknown."""
         data = layout if layout is not None else load_layout()
-        reach = data["lightPipeReach"]
+        pipe = data["lightPipe"]
         return cls(
-            board_top_to_panel_rear_mm=Interval.point(float(reach["gap"])),
-            gap_tolerance_mm=None,
-            pipe_length_mm=Interval.point(float(reach["pipeLength"])),
-            pipe_length_tolerance_mm=None,
-            rear_reference_offset_mm=None,
-            front_reference_offset_mm=None,
+            head_underside_offset_mm=None,
+            shaft_length_mm=Interval.around(float(pipe["shaftLength"]),
+                                           float(pipe["shaftLengthTolerance"])),
+            board_near_face_z_mm=Interval.point(float(data["provisionalZ"]["frontBoardTop"])),
+            led_height_mm=None,
+            stack_tolerance_mm=None,
         )
 
 
 @dataclass(frozen=True)
 class ReachResult:
-    """The reach, and what could not be computed."""
+    """Nominal planes are documented numbers; measured planes are intervals/None.
+
+    ``nominal_*`` come from the documented model plus the seated-position
+    ASSUMPTION. ``tip_z_mm`` / ``tip_to_board_plane_mm`` require a MEASURED seat
+    and stay None until one exists. ``optical_gap_mm`` also needs the LED height
+    and the stack tolerance.
+    """
 
     status: str
     complete: bool
     missing: tuple[str, ...]
-    nominal_gap_minus_length_mm: float
-    gap_minus_length_mm: Interval
-    required_length_mm: Interval | None
-    shortfall_mm: Interval | None
+    nominal_tip_z_mm: float
+    nominal_tip_to_board_plane_mm: float
+    tip_z_mm: Interval | None
+    tip_to_board_plane_mm: Interval | None
+    optical_gap_mm: Interval | None
     notes: tuple[str, ...]
 
     @property
-    def verdict(self) -> str | None:
-        """None while the result is incomplete: no verdict is possible."""
-        return None if self.status == INCOMPLETE else self.status
+    def verdict(self) -> None:
+        """Always None: this module never returns a fit or optical verdict."""
+        return None
+
+
+def nominal_tip_z(layout: dict | None = None) -> float:
+    """The nominal tip plane under the head-underside-on-panel-front ASSUMPTION."""
+    data = layout if layout is not None else load_layout()
+    return round(float(data["lightPipe"]["shaftLength"]), 6)
+
+
+def nominal_tip_to_board_plane(layout: dict | None = None) -> float:
+    """Nominal tip to the provisional board near face - arithmetic, not a gap to an LED."""
+    data = layout if layout is not None else load_layout()
+    return round(float(data["provisionalZ"]["frontBoardTop"])
+                 - float(data["lightPipe"]["shaftLength"]), 6)
 
 
 def compute_reach(inputs: ReachInputs) -> ReachResult:
-    """Compute the required pipe length as an interval, or report it incomplete.
-
-    required length = gap + rear offset - front offset
-    shortfall       = required length - pipe length   (positive = too short)
-
-    A result is ``complete`` only when the gap, the pipe length, both tolerances
-    and both reference offsets are recorded. Until then ``shortfall_mm`` is None
-    and no bound of any kind is reported.
-    """
-    if inputs.pipe_length_mm.lo <= 0:
-        raise ReachInputError(f"pipe length must be positive: {inputs.pipe_length_mm}")
-    if inputs.board_top_to_panel_rear_mm.lo < 0:
+    """Compute the planes, and the optical gap ONLY when every input is recorded."""
+    if inputs.shaft_length_mm is not None and inputs.shaft_length_mm.lo <= 0:
+        raise ReachInputError(f"shaft length must be positive: {inputs.shaft_length_mm}")
+    if inputs.led_height_mm is not None and inputs.led_height_mm.lo < 0:
+        raise ReachInputError(f"LED height must not be negative: {inputs.led_height_mm}")
+    if inputs.stack_tolerance_mm is not None and inputs.stack_tolerance_mm.lo < 0:
         raise ReachInputError(
-            "the distance from the panel rear face to the board top face cannot be "
-            f"negative: {inputs.board_top_to_panel_rear_mm}")
-    if inputs.pipe_length_tolerance_mm is not None and inputs.pipe_length_tolerance_mm.lo < 0:
-        raise ReachInputError(
-            f"a tolerance magnitude cannot be negative: {inputs.pipe_length_tolerance_mm}")
-    if inputs.gap_tolerance_mm is not None and inputs.gap_tolerance_mm.lo < 0:
-        raise ReachInputError(
-            f"a tolerance magnitude cannot be negative: {inputs.gap_tolerance_mm}")
-
-    # Arithmetic only: the documented gap minus the candidate length. This is
-    # the recorded 7.29 mm and it carries no claim about any reference plane.
-    gap_minus_length = inputs.board_top_to_panel_rear_mm - inputs.pipe_length_mm
+            f"a stack tolerance magnitude cannot be negative: {inputs.stack_tolerance_mm}")
 
     missing: list[str] = []
     for name, value in (
-        ("gap_tolerance_mm", inputs.gap_tolerance_mm),
-        ("pipe_length_tolerance_mm", inputs.pipe_length_tolerance_mm),
-        ("rear_reference_offset_mm", inputs.rear_reference_offset_mm),
-        ("front_reference_offset_mm", inputs.front_reference_offset_mm),
+        ("head_underside_offset_mm", inputs.head_underside_offset_mm),
+        ("shaft_length_mm", inputs.shaft_length_mm),
+        ("board_near_face_z_mm", inputs.board_near_face_z_mm),
+        ("led_height_mm", inputs.led_height_mm),
+        ("stack_tolerance_mm", inputs.stack_tolerance_mm),
     ):
         if value is None:
             missing.append(name)
 
     notes = [
-        "the gap is the PROVISIONAL_Z chain (assumptions A and B), not a measurement",
-        "the nominal difference is arithmetic only: the documented gap minus the "
-        "candidate pipe length, with no reference plane assumed",
+        "the datum is the panel FRONT face, Z = 0, with +Z rearward",
+        "the head underside on the panel front face is an ASSUMPTION, not a measurement",
+        "the LED rises TOWARD the panel, so its height SUBTRACTS from the board plane",
+        "no 'gap minus pipe length' subtraction exists: the retired 7.29 mm compared "
+        "different reference planes and is withdrawn",
     ]
 
+    # Planes that are computable without the unknowns.
+    tip = None
+    tip_to_board = None
+    if inputs.head_underside_offset_mm is not None and inputs.shaft_length_mm is not None:
+        tip = inputs.head_underside_offset_mm + inputs.shaft_length_mm
+    if tip is not None and inputs.board_near_face_z_mm is not None:
+        tip_to_board = inputs.board_near_face_z_mm - tip
+
+    nominal_tip = None
+    nominal_to_board = None
+    if inputs.shaft_length_mm is not None:
+        nominal_tip = round(inputs.shaft_length_mm.nominal, 6)
+        if inputs.board_near_face_z_mm is not None:
+            nominal_to_board = round(inputs.board_near_face_z_mm.nominal - nominal_tip, 6)
+
     if missing:
-        notes.append("no reach verdict: " + ", ".join(missing) + " unrecorded")
-        return ReachResult(
-            status=INCOMPLETE,
-            complete=False,
-            missing=tuple(missing),
-            nominal_gap_minus_length_mm=gap_minus_length.nominal,
-            gap_minus_length_mm=gap_minus_length,
-            required_length_mm=None,
-            shortfall_mm=None,
-            notes=tuple(notes),
-        )
+        notes.append("no optical gap: " + ", ".join(missing) + " unrecorded")
+        return ReachResult(status=INCOMPLETE, complete=False, missing=tuple(missing),
+                           nominal_tip_z_mm=nominal_tip, nominal_tip_to_board_plane_mm=nominal_to_board,
+                           tip_z_mm=tip, tip_to_board_plane_mm=tip_to_board,
+                           optical_gap_mm=None, notes=tuple(notes))
 
-    assert inputs.gap_tolerance_mm is not None
-    assert inputs.pipe_length_tolerance_mm is not None
-    assert inputs.rear_reference_offset_mm is not None
-    assert inputs.front_reference_offset_mm is not None
-
-    # Each recorded tolerance is a +/- magnitude around its documented value.
-    gap = Interval(inputs.board_top_to_panel_rear_mm.lo - inputs.gap_tolerance_mm.hi,
-                   inputs.board_top_to_panel_rear_mm.hi + inputs.gap_tolerance_mm.hi)
-    pipe = Interval(inputs.pipe_length_mm.lo - inputs.pipe_length_tolerance_mm.hi,
-                    inputs.pipe_length_mm.hi + inputs.pipe_length_tolerance_mm.hi)
-    if pipe.lo <= 0:
-        raise ReachInputError(
-            f"the pipe length tolerance reaches a non-positive length: {pipe}")
-
-    # Required = gap + rear offset - front offset. Interval arithmetic carries
-    # the sign of each offset; no inequality between the offsets is imposed.
-    required = (gap + inputs.rear_reference_offset_mm) - inputs.front_reference_offset_mm
-    shortfall = required - pipe
-
-    if shortfall.lo > 0.0:
-        status = INSUFFICIENT
-        notes.append("every value in the shortfall interval is positive: the pipe "
-                     "cannot span the recorded planes")
-    elif shortfall.hi <= 0.0:
-        status = SUFFICIENT
-        notes.append("every value in the shortfall interval is zero or negative: the "
-                     "pipe spans the recorded planes in the modelled range")
-    else:
-        status = UNCERTAIN
-        notes.append("the shortfall interval straddles zero: the recorded ranges decide "
-                     "the result, so the reach is not proven")
-    return ReachResult(
-        status=status,
-        complete=True,
-        missing=(),
-        nominal_gap_minus_length_mm=gap_minus_length.nominal,
-        gap_minus_length_mm=gap_minus_length,
-        required_length_mm=required,
-        shortfall_mm=shortfall,
-        notes=tuple(notes),
-    )
+    assert tip is not None and tip_to_board is not None
+    assert inputs.led_height_mm is not None
+    assert inputs.stack_tolerance_mm is not None
+    # LED top plane: the board face MINUS the LED height (the LED comes toward us).
+    led_top = inputs.board_near_face_z_mm - inputs.led_height_mm
+    gap = led_top - tip
+    # A measured stack tolerance widens the gap uncertainty.
+    tol = inputs.stack_tolerance_mm.hi
+    gap = Interval(gap.lo - tol, gap.hi + tol)
+    notes.append("ARITHMETIC ONLY: brightness, coupling, retention, the real hole "
+                 "tolerance and any physical fit are unmeasured")
+    return ReachResult(status=ARITHMETIC_ONLY, complete=True, missing=(),
+                       nominal_tip_z_mm=nominal_tip, nominal_tip_to_board_plane_mm=nominal_to_board,
+                       tip_z_mm=tip, tip_to_board_plane_mm=tip_to_board,
+                       optical_gap_mm=gap, notes=tuple(notes))
 
 
 def report(data: dict | None = None) -> list[str]:
     """Print-ready lines for the documented-only inputs."""
     layout = data if data is not None else load_layout()
     result = compute_reach(ReachInputs.from_layout(layout))
+    pipe = layout["lightPipe"]
     lines = [
-        f"panel-to-board gap (PROVISIONAL_Z)  {layout['lightPipeReach']['gap']:.2f} mm",
-        f"candidate pipe length                {layout['lightPipeReach']['pipeLength']:.2f} mm",
-        f"gap minus length (arithmetic only)   {result.nominal_gap_minus_length_mm:.2f} mm",
-        f"status                               {result.status}",
+        f"candidate part                         {pipe['part']}",
+        f"shaft length x (head underside->tip)   {pipe['shaftLength']:.2f} mm "
+        f"+-{pipe['shaftLengthTolerance']:.2f}",
+        f"overall length (16.5 shaft + 1.0 head) {pipe['overallLength']:.2f} mm",
+        f"head OD / shaft OD / panel hole        {pipe['headDiameter']:.2f} / "
+        f"{pipe['shaftDiameter']:.2f} / {pipe['panelHoleDiameter']:.2f} mm",
+        f"nominal tip plane from panel front     {nominal_tip_z(layout):.2f} mm (ASSUMPTION: "
+        "head underside on the panel front face)",
+        f"nominal tip to board near face         {nominal_tip_to_board_plane(layout):.2f} mm "
+        "(arithmetic, NOT an LED gap)",
+        f"optical gap                            {result.optical_gap_mm} "
+        f"({result.status})",
     ]
-    lines += [f"missing input                        {name}" for name in result.missing]
-    lines += [f"note                                 {note}" for note in result.notes]
+    lines += [f"missing input                          {name}" for name in result.missing]
+    lines += [f"note                                   {note}" for note in result.notes]
     return lines
 
 
 if __name__ == "__main__":  # pragma: no cover - manual run
     for line in report():
         print(line)
-    print("No reach verdict is possible until both reference planes and the tolerances "
-          "are measured. 7.29 mm is arithmetic, not a bound.")
+    print("No optical gap and no fit is claimed. The LED height, retention in 1.6 mm "
+          "FR-4, the real panel hole tolerance and the stack tolerances are unmeasured.")

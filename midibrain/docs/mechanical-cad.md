@@ -185,7 +185,7 @@ files it does not write — unless `--force` is passed. Nothing is ever deleted.
 | `mockup-front-board.stl` | 1:1 front/UI board mockup |
 | `mockup-rear-board.stl` | 1:1 rear/base board mockup |
 | `scale-check-100mm.stl` | 100.00 × 10.00 × 3.00 mm printer scale bar |
-| `light-pipe-reach-gauge.stl` | step gauge: 17.45 mm tall, 10.16 mm low step |
+| `light-pipe-reach-gauge.stl` | same-datum step gauge: 19.05 mm tall (provisional board face), 16.5 mm low (nominal tip plane), 2.55 mm step — arithmetic, not an LED gap |
 | `assumptions.json` | provenance, unknowns, pair verdicts, volumes, round-trip result |
 | `print-checklist.md` | the physical print check |
 
@@ -329,36 +329,43 @@ LD_LIBRARY_PATH=<prefix>/usr/lib64 MIDIBRAIN_DISPLAY_STEP=4_3inch-dsi-lcd-V1.stp
   /tmp/cq-venv/bin/python -m unittest discover -s mechanical -p 'test_*.py'
 ```
 
-## Light-pipe reach — an incomplete result, on purpose
+## Light-pipe reach — one datum, optical gap unknown
 
-`mechanical/light_pipe_reach.py` works with two signed reference offsets, because
-the two planes a light pipe spans are not the panel and the board:
+`mechanical/light_pipe_reach.py` uses ONE datum — the panel FRONT face, Z = 0,
++Z rearward — and the candidate's own dimensions:
 
-    Z = 0 at the panel FRONT face, +Z rearward
-    panel rear face      P = 1.60 mm   (documented panel thickness)
-    front-board top      B = 19.05 mm  (PROVISIONAL_Z, not measured)
-    gap                  g = B - P = 17.45 mm
-    pipe rear face       R = B + rear_reference_offset_mm    (signed, unknown)
-    pipe front face      F = P + front_reference_offset_mm   (signed, unknown)
-    required length      L = R - F = g + rear offset - front offset
-    shortfall            s = L - pipe length
+    panel front face        Z = 0                              datum
+    head underside          H = 0 + head_underside_offset      ASSUMPTION: 0
+    pipe tip                T = H + shaft_length               nominal 16.5
+    board near face         B = 19.05                          provisional
+    LED top                 L = B - led_height                 the LED rises
+                                                              TOWARD the panel,
+                                                              so it SUBTRACTS
+    optical gap             g = L - T                          None (unknown)
+    nominal tip to board    t = B - T                          nominal 2.55
 
-The front offset is the term a front flange or a front seat inside the panel
-sets; the rear offset is the term the LED, a socket or a board hole sets. No
-inequality between them is assumed, and nothing forces either one to zero.
+The candidate is the owner-selected **Signal Construct PGN25L165**: shaft Ø2.5
+±0.05 mm, x = 16.5 ±0.1 mm head-underside-to-tip, head Ø3 ±0.05 mm, head height
+1.0 mm, mounting hole Ø2.6 −0.05 mm (2.55-2.60). Its source is pinned in
+`mechanical/reference/pgn25l165.source.json` (URL and SHA-256; no third-party PDF
+is committed). The owner's screenshot states 17.5 mm overall, which is 16.5 + 1.0.
 
-The only recorded numbers are the 17.45 mm gap and the 10.16 mm candidate pipe.
-Their difference, **17.45 − 10.16 = 7.29 mm, is arithmetic and nothing else**:
-it is not a shortfall, not a bound and not a verdict, because both reference
-planes are unmeasured. While any offset or tolerance is unknown the status is
-`incomplete`, `required_length_mm` and `shortfall_mm` are `None`, and no bound of
-any kind is reported. `mechanical/test_light_pipe_reach.py` checks that an
-unknown front offset cannot produce a verdict and that no output uses
-bound-claiming words.
+Two things this section deliberately does not do:
 
-The gauge prints the two documented numbers as heights (17.45 mm and 10.16 mm),
-so a bench check can start from them. It is a scale reference, not a reach
-measurement: the pipe's own reference planes must be measured first.
+- it does not turn 16.5 or 17.5 into a subtraction against 17.45 mm. The retired
+  Bivar PLP2-400-C 10.16 mm reference and the `17.45 − 10.16 = 7.29 mm` figure
+  are **withdrawn**: they compared different reference planes and the 10.16 mm
+  value is not in the current Bivar datasheet;
+- it does not call the 2.55 mm an LED gap. The optical gap needs the LED height,
+  the seated plane, the stack tolerances, retention in 1.6 mm FR-4 and the real
+  hole tolerance; all are unmeasured, so `optical_gap_mm` is `None` and the
+  status is `incomplete`.
+
+The gauge (still named `light-pipe-reach-gauge.stl` for compatibility) uses the
+same datum: **tall 19.05 mm** = the provisional board near face, **low 16.5 mm**
+= the nominal pipe tip plane (the shaft length), **step 2.55 mm** = the nominal
+tip-to-board-plane distance. The step is arithmetic between two assumed planes:
+it is **not an LED gap, not a fit and not a measured stack value**.
 
 ## Physical print checklist
 

@@ -82,13 +82,40 @@
     "source": "manufacturer drawing p.15, max installed height 2.1 +-0.1 mm"
   },
   "lightPipe": {
-    "part": "Bivar PLP2-400-C",
-    "length": 10.16
+    "part": "Signal Construct PGN25L165",
+    "status": "candidate, not a production fit",
+    "sourceUrl": "https://static.rapidonline.com/pdf/07-1015_v1.pdf",
+    "sourceSha256": "5350ad1f0a795e0d688dc74e223239c82cfb3e27951244a10cb43873eeeaa46b",
+    "shaftLength": 16.5,
+    "shaftLengthTolerance": 0.1,
+    "overallLength": 17.5,
+    "headHeight": 1,
+    "headDiameter": 3,
+    "headDiameterTolerance": 0.05,
+    "shaftDiameter": 2.5,
+    "shaftDiameterTolerance": 0.05,
+    "panelHoleDiameter": 2.6,
+    "panelHoleToleranceMinus": 0.05,
+    "ribs": 3
   },
   "lightPipeReach": {
-    "gap": 17.45,
-    "pipeLength": 10.16,
-    "unaccounted": 7.29
+    "part": "Signal Construct PGN25L165",
+    "datum": "panel FRONT face, Z = 0; +Z rearward",
+    "mountingAssumption": "head underside on the panel front face (ASSUMPTION)",
+    "shaftLength": 16.5,
+    "overallLength": 17.5,
+    "headHeight": 1,
+    "nominalTipZ": 16.5,
+    "boardNearFaceZ": 19.05,
+    "nominalTipToBoardPlane": 2.55,
+    "opticalGap": null,
+    "status": "incomplete",
+    "missing": [
+      "LED body height above the front-board top face",
+      "measured board standoff / stack tolerances",
+      "proven retention in 1.6 mm FR-4 and the real panel hole tolerance",
+      "brightness and optical coupling"
+    ]
   },
   "panelToFrontBoardGap": 17.45,
   "depthTarget": 110,
@@ -647,21 +674,21 @@
       "name": "REC LED",
       "x": -41,
       "y": -34,
-      "radius": 2
+      "radius": 1.3
     },
     {
       "shape": "circle",
       "name": "OVERDUB LED",
       "x": -17,
       "y": -34,
-      "radius": 2
+      "radius": 1.3
     },
     {
       "shape": "circle",
       "name": "PLAY LED",
       "x": 31,
       "y": -34,
-      "radius": 2
+      "radius": 1.3
     },
     {
       "shape": "circle",

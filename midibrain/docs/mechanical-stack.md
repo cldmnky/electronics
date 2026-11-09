@@ -112,9 +112,41 @@ Toshiba 11-4L1S body, **maximum installed height 2.1 ± 0.1 mm (drawing p. 15)**
 that part. That figure does **not** prove the display underside: the display's own underside component map, its 15-pin
 FPC latch and the module tolerance are unmapped. Keep this as a gate.
 
-**Light pipe — reach pending, and now clearly short.** The Bivar PLP2-400-C is 10.16 mm long and the provisional
-panel-to-board gap is 17.45 mm, so 7.29 mm is unaccounted. No LED height or seat allowance is recorded, because neither
-is measured. Check the Bivar drawing and the actual LED, and expect a different (longer) light pipe to be needed.
+**Light pipe — owner-selected candidate, one datum, optical gap unknown.** The candidate is the Signal Construct
+**PGN25L165** (manufacturer drawing <https://static.rapidonline.com/pdf/07-1015_v1.pdf>, SHA-256
+`5350ad1f0a795e0d688dc74e223239c82cfb3e27951244a10cb43873eeeaa46b`, retrieved 2026-11-09). The drawing gives
+shaft Ø2.5 ±0.05 mm, **x = 16.5 ±0.1 mm from the head underside to the tip**, head Ø3 ±0.05 mm, head height 1.0 mm,
+three longitudinal ribs and a **Ø2.6 −0.05 mm mounting hole** (2.55-2.60 mm). The owner's screenshot for this MPN
+states **17.5 mm overall**, which is 16.5 + 1.0. The panel openings are therefore 3 × Ø2.6 mm nominal, at their
+unchanged LED positions (−41 / −17 / +31, y −34).
+
+Datum: panel FRONT face Z = 0, +Z rearward. With the head underside on the panel front face — an **assumption, not a
+measurement** — the nominal tip plane is **16.5 mm**, and the provisional board near face at 19.05 mm puts the tip
+**2.55 mm** in front of that plane. That is arithmetic between two assumed planes and **not the LED-to-pipe optical
+gap**. The LED height, brightness/coupling, retention in 1.6 mm FR-4, the real hole tolerance and the stack tolerances
+are all unmeasured, so the gap is **null** and the status **incomplete**. No bound follows from the ±0.1 mm shaft
+tolerance alone.
+
+The earlier Bivar **PLP2-400-C 10.16 mm** reference and the `17.45 − 10.16 = 7.29 mm` subtraction are **withdrawn**:
+the 10.16 mm value is not in the current Bivar datasheet, that family's Ø3.3 mm flange falls through the old Ø4.0 mm
+opening, and the subtraction compared different reference planes. Neither 17.45 − 16.5 nor 17.45 − 17.5 replaces it.
+
+Manufacturer facts that are **not** stated: any user cutting instruction for the shaft, and any proven retention in
+1.6 mm FR-4. Trimming is **not documented**; it is not claimed to be forbidden either. The distributor SKU
+(Conrad 2435525) appears only in an externally reported search and the site could not be reached, so it is
+**PROVISIONAL**. The ribs are visible on the drawing; their grip is unknown. The `light_pipes` acceptance item stays
+pending, and no physical fit is claimed.
+
+**The 2.55-2.60 mm hole is NOT a guaranteed fabrication result.** The drawing's hole range is 2.55-2.60 mm, and the
+JLCPCB sources conflict: standard NPTH is quoted as **±0.05 mm** in one place and **±0.08 mm** in another, while the
+capabilities page gives **+0.13/−0.08 mm** for through holes with **no NPTH-specific split**
+([capabilities](https://jlcpcb.com/capabilities/pcb-capabilities),
+[NPTH design guide](https://jlcpcb.com/blog/npth-design-guide)). No band is adopted here and none is promised.
+
+The panel also emits **each circular cutout in both `drill_npth.drl` and `Edge_Cuts.gbr`**, and CAM de-duplication of
+drill versus routing is **unverified**. Before any order, the **JLC viewer and JLC support** must confirm (a) how that
+duplicate feature is processed and (b) whether 2.55-2.60 mm can be held on this panel. The CAD and the tests assert
+the **intended nominal** Ø2.6 mm geometry only; they make no manufacturing-capability claim.
 
 ## LCD aperture (panel cutout)
 
@@ -139,7 +171,7 @@ is measured. Check the Bivar drawing and the actual LED, and expect a different 
 | Overall thickness | **14.05 mm (wiki FAQ)** vs **13.82 mm (STEP bbox)** | RESOLVED as far as the sources allow: the wiki FAQ states the vendor's overall thickness 14.05; the reference STEP's union bbox (CadQuery import, 106.10 × 68.36 × 13.82) is 0.23 mm thinner, and **no modelled solid reaches the 14.05 plane**. The model's only overhangs past the 106 × 68 PCB envelope are in X/Y (front frame 106.10 × 67.80, union y 68.362, i.e. ≤ 0.18 mm past the PCB edge) — nothing in Z explains the difference, so it is the vendor's stated maximum vs. modelled nominal, not glass overhang or feet. The stack uses the LARGER (14.05) so the panel gap cannot be optimistic. |
 | Recorded connector data — **UNVERIFIED** | 15-pin, rear face, right-hand long edge in the drawing's view; body 21.412 × 4.826 mm; module-local centre (+48.34, +0.7) → absolute 38.84, 11.7 — all recorded design values, not established | drawing record only (7.11 px/mm, ±0.4 mm); see the model check below the table |
 | Panel-to-front-board gap | **17.45 mm provisional** | Assumption A (glass front flush with the panel front face, z = 0) + Assumption B (9.0 mm plane separation to the PCB rear) + 10.05 mm glass-front-to-PCB rear + 1.60 mm panel − 1.60 mm panel … see `PROVISIONAL_Z` in `tscircuit/lib/layout.ts`. Was 14.10 mm for the withdrawn 3.5-inch module. |
-| Light-pipe reach | 10.16 mm pipe vs 17.45 mm gap | **7.29 mm unaccounted, PENDING**: a longer pipe (or a different optical path) is required; no LED height or seating allowance is claimed. |
+| Light-pipe reach | PGN25L165: shaft 16.5 ±0.1, overall 17.5, head 1.0 | Nominal tip plane **16.5** from the panel front, **2.55** to the provisional 19.05 board plane — arithmetic, not an LED gap. Optical gap **null**, status **incomplete**; LED height, retention and stack tolerances pending. The retired 10.16 / 7.29 figures are **withdrawn**. |
 
 **Connector model check (2026-11-08, corrected).** The STEP's XCAF label tree shows the two 21.412 × 4.826 mm bodies are `EXTRUDED-106739` / `EXTRUDED-107488` inside `TFT1_ASM` — TFT flex bonds, **not** a panel connector. An earlier revision treated them as the FPC connector and inferred a ~24 mm disagreement with the drawing; that reading is withdrawn. The nearest named body to the recorded position is `DISPLAY_CAM` (4.822 × 22.400 × 5.680 mm, vendor x −51.975…−47.153, y −13.570…8.830, z −9.020…−3.340), placed centre (40.064, 11.000) mm against the recorded (38.837, 11.700) mm — an observation of 1.413 mm, **not a match**. Identity, pin count, electrical side, the long-axis wording and the rear/front frame mapping all stay unverified and need independent re-derivation. The recorded position does not move the PCB. Whether the connector, plug or first bend intersects the J5 IDC corridor remains unknown and needs a first-article check. The CAD model draws the connector only as `DISPLAY_CONNECTOR_PLANNING_MARKER` on the provisional Z 10.05 plane.
 

@@ -827,15 +827,20 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
     if include_usbc_candidate:
         env["USB_C_CANDIDATE_FLANGE_NON_APPROVED"] = usbc_candidate_envelope(layout)
 
-    env["LIGHT_PIPE_PLP2_400_C"] = Envelope(
-        name="LIGHT_PIPE_PLP2_400_C",
-        provenance=PROVENANCE["documented"],
+    # NO BODY IS MODELLED for the light pipe: its seated plane, the LED height, the
+    # retention and the stack tolerances are unmeasured, so every axis is unknown.
+    # The name carries the ACTIVE candidate; the retired Bivar reference is history.
+    env["LIGHT_PIPE_PGN25L165_PLACEHOLDER"] = Envelope(
+        name="LIGHT_PIPE_PGN25L165_PLACEHOLDER",
+        provenance=PROVENANCE["unknown"],
         x=None,
         y=None,
         z=None,
-        note=("the candidate pipe length is documented (10.16 mm) but its LED position, LED "
-              "height and seat allowance are not, so the reach is computed by "
-              "mechanical/light_pipe_reach.py and not drawn as a placed body"),
+        note=("candidate Signal Construct PGN25L165: shaft x 16.5 +-0.1, overall 17.5, head "
+              "Ø3, mounting hole Ø2.6 -0.05. NO body is modelled and no axis is known; the "
+              "nominal tip plane (16.5 from the panel front) and the tip-to-board-plane "
+              "distance (2.55) are arithmetic, not an LED gap. The optical gap is None; see "
+              "mechanical/light_pipe_reach.py"),
     )
     return env
 
@@ -1170,17 +1175,29 @@ def assumptions_document(layout: dict | None = None, *,
         "pairs": pairs,
         "usbc_candidate": usbc_candidate,
         "light_pipe": {
-            # The gap and the length are documented; their difference is
-            # arithmetic. It is not a shortfall, a bound or a verdict, because
-            # neither reference plane the pipe spans is measured.
-            "gap_mm": data["lightPipeReach"]["gap"],
-            "pipe_length_mm": data["lightPipeReach"]["pipeLength"],
-            "gap_minus_length_arithmetic_mm": round(
-                data["lightPipeReach"]["gap"] - data["lightPipeReach"]["pipeLength"], 6),
+            # One datum (panel FRONT face, +Z rearward), one parameterisation.
+            # The nominal tip plane is the SHAFT length, not the overall length,
+            # and the 2.55 mm to the board plane is arithmetic, not an LED gap.
+            "part": data["lightPipe"]["part"],
+            "candidate_status": data["lightPipe"]["status"],
+            "source_url": data["lightPipe"]["sourceUrl"],
+            "source_sha256": data["lightPipe"]["sourceSha256"],
+            "shaft_length_mm": data["lightPipe"]["shaftLength"],
+            "shaft_tolerance_mm": data["lightPipe"]["shaftLengthTolerance"],
+            "overall_length_mm": data["lightPipe"]["overallLength"],
+            "head_height_mm": data["lightPipe"]["headHeight"],
+            "head_diameter_mm": data["lightPipe"]["headDiameter"],
+            "shaft_diameter_mm": data["lightPipe"]["shaftDiameter"],
+            "panel_hole_diameter_mm": data["lightPipe"]["panelHoleDiameter"],
+            "nominal_tip_z_mm": data["lightPipeReach"]["nominalTipZ"],
+            "nominal_tip_to_board_plane_mm": data["lightPipeReach"]["nominalTipToBoardPlane"],
+            "optical_gap_mm": None,
             "status": "incomplete",
-            "reason": ("the pipe's rear and front reference planes and the tolerances "
-                       "are unmeasured; mechanical/light_pipe_reach.py holds the interval "
-                       "computation and returns no verdict until they are recorded"),
+            "reason": ("the seated head plane, the LED height, the retention in 1.6 mm FR-4 "
+                       "and the stack tolerances are unmeasured. 16.5 is the nominal tip "
+                       "plane and 2.55 is the nominal tip-to-board-plane distance; neither "
+                       "is an LED gap or a fit. The retired 10.16 mm / 7.29 mm subtraction "
+                       "is withdrawn, not replaced by another subtraction"),
         },
     }
 
@@ -1200,8 +1217,9 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "from flange seat to the rear-most body point. That number is missing today.",
     "Lay the front-board mockup over the real display bosses and check the four "
     "LCD mount holes; the top relief notch must clear all three feedthrough bodies.",
-    "Check the panel-to-board gap with the light-pipe reach gauge: 17.45 mm is a "
-    "PROVISIONAL chain, not a measurement.",
+    "Check the light-pipe gauge on its own datum: the tall 19.05 mm end is the "
+    "provisional board near face and the 16.5 mm end is the nominal PGN25L165 tip "
+    "plane. The 2.55 mm step is arithmetic, NOT an LED gap and NOT a fit.",
     "Offer the real display to the panel aperture from behind and measure the touch "
     "layer, frame and glass: the model places the touch/frame plane 1.90 mm in FRONT "
     "of the glass datum, so the panel relief and seating are still unknown.",

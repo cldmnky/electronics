@@ -574,13 +574,28 @@ test("display underside gap and light-pipe reach stay pending, not claimed", () 
   expect(DISPLAY_UNDERSIDE_GAP).toBeCloseTo(5.0, 6)
   expect(FRONT_TOP_SMD_MAX_HEIGHT.height).toBe(2.2)
   expect(DISPLAY_UNDERSIDE_GAP - FRONT_TOP_SMD_MAX_HEIGHT.height).toBeCloseTo(2.8, 6)
-  // Light-pipe reach is unproven and now far worse: a 10.16 mm pipe against a
-  // 17.45 mm gap leaves 7.29 mm unexplained, so a longer pipe (or a different
-  // optical path) is required. No LED height and no seat allowance is stored.
-  expect(LIGHT_PIPE.length).toBe(10.16)
-  expect(LIGHT_PIPE_REACH.unaccounted).toBeCloseTo(PANEL_TO_FRONT_BOARD_GAP - LIGHT_PIPE.length, 6)
-  expect(LIGHT_PIPE_REACH.unaccounted).toBeCloseTo(7.29, 6)
-  expect("seatAllowance" in LIGHT_PIPE).toBe(false)
+  // The owner-selected candidate is the Signal Construct PGN25L165. Its nominal
+  // tip plane is 16.5 mm from the panel front face (head underside on the panel
+  // front is an ASSUMPTION), which puts it 2.55 mm in front of the provisional
+  // 19.05 mm board near face. That is arithmetic between two assumed planes and
+  // NOT the LED-to-pipe optical gap: the LED height and the stack tolerances are
+  // unmeasured, so the gap stays null and the status stays incomplete.
+  expect(LIGHT_PIPE.part).toBe("Signal Construct PGN25L165")
+  expect(LIGHT_PIPE.shaftLength).toBe(16.5)
+  expect(LIGHT_PIPE.overallLength).toBe(17.5)
+  expect(LIGHT_PIPE.overallLength - LIGHT_PIPE.shaftLength).toBeCloseTo(LIGHT_PIPE.headHeight, 6)
+  expect(LIGHT_PIPE.headHeight).toBe(1.0)
+  expect(LIGHT_PIPE.headDiameter).toBe(3.0)
+  expect(LIGHT_PIPE.shaftDiameter).toBe(2.5)
+  expect(LIGHT_PIPE.panelHoleDiameter).toBe(2.6)
+  expect(LIGHT_PIPE.panelHoleDiameter - LIGHT_PIPE.panelHoleToleranceMinus).toBeCloseTo(2.55, 6)
+  expect(LIGHT_PIPE_REACH.nominalTipZ).toBeCloseTo(16.5, 6)
+  expect(LIGHT_PIPE_REACH.nominalTipToBoardPlane).toBeCloseTo(2.55, 6)
+  expect(LIGHT_PIPE_REACH.opticalGap).toBeNull()
+  expect(LIGHT_PIPE_REACH.status).toBe("incomplete")
+  // the retired Bivar reference must not come back as an active value
+  expect("length" in LIGHT_PIPE).toBe(false)
+  expect("unaccounted" in LIGHT_PIPE_REACH).toBe(false)
 })
 
 test("provisional depth chain stays inside the owner target", () => {

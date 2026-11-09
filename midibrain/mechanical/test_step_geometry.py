@@ -74,10 +74,29 @@ class CanonicalDataTest(unittest.TestCase):
         data = layout()
         by_name = {a["name"]: a for a in data["panelApertures"]}
         self.assertEqual(by_name["REC BUTTON"]["radius"], 6.2)   # 12.4 mm B3F
-        self.assertEqual(by_name["REC LED"]["radius"], 2.0)      # 4.0 mm light pipe
+        self.assertEqual(by_name["REC LED"]["radius"], 1.3)      # Ø2.6 provisional PGN25L165
         self.assertEqual(by_name["VALUE ENCODER"]["radius"], 3.6)  # 7.2 mm bushing
         self.assertEqual(by_name["MIDI IN 1 JACK"]["radius"], 3.1)  # 6.2 mm barrel
         self.assertEqual({d["diameter"] for d in data["panelDrills"]}, {3.2, 3.5, 2.7})
+
+    def test_the_three_led_holes_are_2_6_and_keep_their_positions(self) -> None:
+        """Three nominal Ø2.6 openings at the LED axes; no other opening changed."""
+        data = layout()
+        leds = [a for a in data["panelApertures"] if a["name"].endswith(" LED")]
+        self.assertEqual(sorted(a["name"] for a in leds),
+                         ["OVERDUB LED", "PLAY LED", "REC LED"])
+        for aperture in leds:
+            self.assertEqual(aperture["shape"], "circle")
+            self.assertAlmostEqual(aperture["radius"], 1.3, places=9)
+        # the XY positions are the documented LED row, 12 mm beside their buttons
+        axes = sorted((a["x"], a["y"]) for a in leds)
+        self.assertEqual(axes, [(-41, -34), (-17, -34), (31, -34)])
+        # every other circle opening keeps its radius
+        others = {a["name"]: a["radius"] for a in data["panelApertures"]
+                  if a["shape"] == "circle" and not a["name"].endswith(" LED")}
+        self.assertEqual(others["REC BUTTON"], 6.2)
+        self.assertEqual(others["VALUE ENCODER"], 3.6)
+        self.assertEqual(others["MIDI IN 1 JACK"], 3.1)
 
     def test_every_canonical_panel_feature_sits_inside_the_panel(self) -> None:
         data = layout()
@@ -448,9 +467,17 @@ class CoordinateDriftTest(unittest.TestCase):
 
     def test_the_light_pipe_is_not_drawn_as_a_placed_body(self) -> None:
         env = sg.assembly_envelopes(layout())
-        pipe = env["LIGHT_PIPE_PLP2_400_C"]
+        self.assertNotIn("LIGHT_PIPE_PLP2_400_C", env,
+                         "the retired Bivar envelope must not be an active body")
+        pipe = env["LIGHT_PIPE_PGN25L165_PLACEHOLDER"]
+        self.assertIn("PGN25L165", pipe.name)
+        self.assertIsNone(pipe.x)
+        self.assertIsNone(pipe.y)
         self.assertIsNone(pipe.z, "the reach is an interval, not a modelled body")
+        self.assertEqual(pipe.provenance, sg.PROVENANCE["unknown"])
         self.assertIn("light_pipe_reach.py", pipe.note)
+        self.assertIn("NO body is modelled", pipe.note)
+        self.assertIn("not an LED gap", pipe.note)
 
 
 class DisplayPlaneTest(unittest.TestCase):
@@ -764,9 +791,16 @@ class AssumptionsDocumentTest(unittest.TestCase):
 
     def test_the_light_pipe_stays_incomplete(self) -> None:
         doc = sg.assumptions_document(layout())
-        self.assertEqual(doc["light_pipe"]["status"], "incomplete")
-        self.assertAlmostEqual(doc["light_pipe"]["gap_minus_length_arithmetic_mm"],
-                               7.29, places=6)
+        block = doc["light_pipe"]
+        self.assertEqual(block["status"], "incomplete")
+        self.assertIsNone(block["optical_gap_mm"])
+        self.assertAlmostEqual(block["nominal_tip_z_mm"], 16.5, places=6)
+        self.assertAlmostEqual(block["nominal_tip_to_board_plane_mm"], 2.55, places=6)
+        self.assertIn("PGN25L165", block["part"])
+        self.assertIn("5350ad1f", block["source_sha256"])
+        # the withdrawn subtraction must not come back as a field
+        self.assertNotIn("gap_minus_length_arithmetic_mm", block)
+        self.assertNotIn("unaccounted", block)
 
     def test_the_light_pipe_gauge_is_named_for_its_purpose(self) -> None:
         doc = sg.assumptions_document(layout())

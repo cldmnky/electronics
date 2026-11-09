@@ -407,6 +407,31 @@ class EmittedPanelSilkTest(unittest.TestCase):
         self.assertEqual(len(labels), 1)
         self.assertAlmostEqual(labels[0]["anchor_position"]["y"], -25.5, places=6)
 
+    def test_the_led_cutouts_are_emitted_in_both_layers(self) -> None:
+        """A FACT about our export: circular cutouts appear as drills AND routes.
+
+        This is not a capability claim. It is why the JLC viewer and support
+        must confirm CAM de-duplication before ordering (docs/mechanical-stack.md).
+        """
+        import re
+        gerbers = self.silk.parent
+        edges = (gerbers / "Edge_Cuts.gbr").read_text(errors="replace")
+        drill = (gerbers / "drill_npth.drl").read_text(errors="replace")
+        radius = 1.3  # nominal Ø2.6
+        # Numeric, so the exporter's leading-zero style cannot make this fragile.
+        arcs = [(int(a), int(b), int(c))
+                for a, b, c in re.findall(r"X(-?\d+)Y(-?\d+)I(-?\d+)J-?\d+D01\*", edges)]
+        scaled = [(x / 1e6, y / 1e6, i / 1e6) for x, y, i in arcs]
+        for x in (-41.0, -17.0, 31.0):
+            endpoints = {(round(px, 3), round(py, 3))
+                         for px, py, i in scaled
+                         if abs(abs(i) - radius) < 1e-6 and abs(py + 34.0) < 1e-6
+                         and abs(px - (x - radius)) < 1e-6}
+            self.assertTrue(endpoints, f"no routed arc of radius {radius} at x {x}")
+            self.assertIn(f"X{x:.4f}Y-34.0000", drill,
+                          "the LED circle is drilled in the NPTH file")
+        self.assertIn("C2.600000", drill, "the NPTH tool is the nominal 2.6 mm")
+
     def test_the_play_start_label_no_longer_crosses_the_power_button(self) -> None:
         # every stroke in the label band must clear the POWER BUTTON opening
         band = [s for s in self.strokes

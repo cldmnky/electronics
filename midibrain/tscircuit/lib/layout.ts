@@ -472,17 +472,68 @@ export const PROVISIONAL_Z = {
 // consequence of a design target, not evidence for it, and it is not certified.
 export const PANEL_TO_FRONT_BOARD_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear) // 17.45
 
-// Light-pipe reach is NOT proven, and it does not look adequate. The Bivar
-// PLP2-400-C is 10.16 mm long against a 17.45 mm panel-to-board gap, so
-// 7.29 mm is unaccounted. No LED height and no seating allowance is recorded
-// here: both are unmeasured, and inventing them would fake a reach check.
-// Pending: the Bivar drawing, the actual LED, and very likely a different
-// (longer) light pipe.
-export const LIGHT_PIPE = { part: "Bivar PLP2-400-C", length: 10.16 } as const
+// Light-pipe reach: the retired Bivar PLP2-400-C 10.16 mm reference and the
+// 17.45 - 10.16 = 7.29 mm subtraction are WITHDRAWN and kept only as history
+// (that 10.16 mm value is not in the current Bivar datasheet, its family Ø3.3 mm
+// flange falls through the old Ø4.0 mm opening, and the subtraction compared
+// different reference planes). The active candidate follows in the next block.
+// OWNER-SELECTED CANDIDATE, NOT A PRODUCTION FIT: Signal Construct PGN25L165.
+// Manufacturer drawing: https://static.rapidonline.com/pdf/07-1015_v1.pdf,
+// SHA-256 5350ad1f0a795e0d688dc74e223239c82cfb3e27951244a10cb43873eeeaa46b,
+// retrieved 2026-11-09. Dimensions read off that drawing: shaft Ø2.5 +-0.05 mm;
+// x = 16.5 +-0.1 mm from the head underside to the tip; head Ø3 +-0.05 mm; head
+// height 1.0 mm; three longitudinal ribs; mounting hole Ø2.6 -0.05 mm
+// (2.55-2.60 mm). The owner's screenshot for this MPN states 17.5 mm overall,
+// which is 16.5 shaft + 1.0 head. The datasheet states no user cutting
+// instruction and no proven retention in 1.6 mm FR-4; neither is claimed here.
+//
+// The retired Bivar PLP2-400-C is HISTORICAL: the current Bivar datasheet does
+// not show that 10.16 mm reference, and its family Ø3.3 mm flange falls through
+// the old Ø4.0 mm opening. Do not use it as an active candidate.
+export const LIGHT_PIPE = {
+  part: "Signal Construct PGN25L165",
+  status: "candidate, not a production fit",
+  sourceUrl: "https://static.rapidonline.com/pdf/07-1015_v1.pdf",
+  sourceSha256: "5350ad1f0a795e0d688dc74e223239c82cfb3e27951244a10cb43873eeeaa46b",
+  shaftLength: 16.5,            // x, head underside -> tip
+  shaftLengthTolerance: 0.1,    // +-0.1 mm on x
+  overallLength: 17.5,          // owner screenshot for this MPN
+  headHeight: 1.0,
+  headDiameter: 3.0,            // +-0.05
+  headDiameterTolerance: 0.05,
+  shaftDiameter: 2.5,           // +-0.05
+  shaftDiameterTolerance: 0.05,
+  panelHoleDiameter: 2.6,       // -0.05, i.e. 2.55-2.60
+  panelHoleToleranceMinus: 0.05,
+  ribs: 3,
+} as const
+
+// Placing the head underside on the panel FRONT face is an ASSUMPTION, not a
+// measurement: nothing has fitted the part. With Z = 0 at the panel front face
+// and +Z rearward, the nominal tip plane is 16.5 mm. The provisional front-board
+// near face is 19.05 mm, so the NOMINAL tip-to-board-plane distance is 2.55 mm.
+// That is arithmetic between two assumed planes. It is NOT the LED-to-pipe
+// optical gap: the LED height, the brightness/coupling, the retention and the
+// stack tolerance are unknown, so `opticalGap` stays null and the status stays
+// incomplete. No bound may be inferred from the +-0.1 mm shaft tolerance alone.
 export const LIGHT_PIPE_REACH = {
-  gap: PANEL_TO_FRONT_BOARD_GAP,                            // 17.45
-  pipeLength: LIGHT_PIPE.length,                            // 10.16
-  unaccounted: mm3(PANEL_TO_FRONT_BOARD_GAP - LIGHT_PIPE.length), // 7.29, PENDING
+  part: LIGHT_PIPE.part,
+  datum: "panel FRONT face, Z = 0; +Z rearward",
+  mountingAssumption: "head underside on the panel front face (ASSUMPTION)",
+  shaftLength: LIGHT_PIPE.shaftLength,                 // 16.5
+  overallLength: LIGHT_PIPE.overallLength,             // 17.5
+  headHeight: LIGHT_PIPE.headHeight,                   // 1.0
+  nominalTipZ: LIGHT_PIPE.shaftLength,                 // 16.5 from the panel front
+  boardNearFaceZ: PROVISIONAL_Z.frontBoardTop,         // 19.05, provisional
+  nominalTipToBoardPlane: mm3(PROVISIONAL_Z.frontBoardTop - LIGHT_PIPE.shaftLength), // 2.55
+  opticalGap: null,                                    // UNKNOWN: LED height unmeasured
+  status: "incomplete",
+  missing: [
+    "LED body height above the front-board top face",
+    "measured board standoff / stack tolerances",
+    "proven retention in 1.6 mm FR-4 and the real panel hole tolerance",
+    "brightness and optical coupling",
+  ],
 } as const
 
 // Tallest front-board top-side part with a manufacturer-stated height: the
@@ -810,7 +861,26 @@ export const PANEL_CUTOUTS = {
   // switch extension, a cap, or a stack redesign; see docs/mechanical-stack.md
   // and the pending `control_actuator` acceptance item.
   button: 12.4,
-  led: 4.0,     // Bivar PLP2-400-C light pipe over the 0805 LED
+  // 2.6 is the owner-approved PROVISIONAL mounting hole for the candidate
+  // Signal Construct PGN25L165 (manufacturer drawing, SHA-256 5350ad1f...:
+  // mounting hole Ø2.6 -0.05 mm, i.e. 2.55-2.60). It is NOT a fit approval and
+  // it is NOT the head: the head is Ø3 +-0.05 mm and sits on the panel FRONT
+  // face under the placement assumption below. The earlier 4.0 mm opening was
+  // sized for the retired Bivar PLP2 family whose Ø3.3 mm flange falls through
+  // it; that family is no longer an active candidate.
+  //
+  // FABRICATION IS NOT GUARANTEED. The drawing's hole tolerance is 2.55-2.60 mm,
+  // and the JLCPCB sources conflict: standard NPTH +-0.05 vs +-0.08, while the
+  // capabilities page gives +0.13/-0.08 for through holes with no NPTH split
+  // (https://jlcpcb.com/capabilities/pcb-capabilities,
+  // https://jlcpcb.com/blog/npth-design-guide). No band is chosen as guaranteed
+  // here. The exporter also emits each circular cutout in BOTH
+  // drill_npth.drl and Edge_Cuts.gbr, and CAM drill/routing de-duplication is
+  // unverified: the JLC viewer and support must confirm both how the duplicate
+  // is processed and whether 2.55-2.60 mm can be held. The ribs are visible on
+  // the drawing; grip is unknown. Retention in 1.6 mm FR-4 and the LED coupling
+  // are unverified.
+  led: 2.6,
   control: 7.2, // PEC11R M7 x 0.75 bushing (7.0 mm thread) / SKRHABE010 nav actuator
   jack: 6.2,    // PJ-301M-3-B barrel
 } as const

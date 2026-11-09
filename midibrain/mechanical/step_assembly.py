@@ -18,7 +18,10 @@ holds files it does not write):
     mockup-front-board.stl         1:1 front/UI board mockup
     mockup-rear-board.stl          1:1 rear/base board mockup
     scale-check-100mm.stl          100.00 x 10.00 x 3.00 mm printer scale bar
-    light-pipe-reach-gauge.stl     17.45 / 10.16 mm step gauge (see below)
+    light-pipe-reach-gauge.stl     19.05 / 16.5 mm same-datum step gauge:
+                                   provisional board near face and the nominal
+                                   PGN25L165 tip plane; the 2.55 mm step is NOT
+                                   an LED gap and NOT a fit (see below)
     assumptions.json               provenance, unknowns and pair verdicts
     print-checklist.md             the physical print check
 
@@ -807,18 +810,31 @@ def build_scale_check(cq):
 
 
 def build_reach_gauge(cq, layout: dict):
-    """A step gauge whose two heights are the two documented numbers.
+    """A same-datum step gauge built from two documented planes.
 
-    17.45 mm is the provisional panel-to-board gap; 10.16 mm is the candidate
-    pipe length; the step between them is the 7.29 mm that nothing accounts for.
-    No text is engraved, and no dimension is claimed as measured.
+    Both heights start at the panel FRONT face (Z = 0, +Z rearward):
+
+      tall 19.05 mm = the provisional front-board NEAR face (PROVISIONAL_Z)
+      low  16.5 mm  = the nominal PGN25L165 tip plane (the shaft length x)
+      step 2.55 mm  = the NOMINAL tip-to-board-PLANE distance, arithmetic between
+                      two assumed planes
+
+    The step is NOT an LED gap, NOT an optical result and NOT a fit. The head
+    underside on the panel front is an ASSUMPTION; the LED height, retention and
+    stack tolerances are unmeasured. No text is engraved and no dimension is
+    claimed as measured.
     """
-    gap = float(layout["panelToFrontBoardGap"])
-    pipe = float(layout["lightPipe"]["length"])
+    # Both heights are measured from the panel FRONT face (Z = 0, +Z rearward):
+    # tall = the provisional front-board near face (19.05);
+    # low  = the nominal pipe tip plane (16.5 = the shaft length).
+    # The step is the nominal tip-to-board-plane distance only. It is NOT an LED
+    # gap, NOT a fit and NOT a measured stack value.
+    gap = float(layout["lightPipeReach"]["boardNearFaceZ"])          # 19.05
+    pipe = float(layout["lightPipeReach"]["nominalTipZ"])            # 16.5
     if pipe >= gap:
         raise GeometryError(
-            f"the candidate pipe ({pipe} mm) is not shorter than the gap ({gap} mm); "
-            "the gauge would have no step to show")
+            f"the nominal tip plane ({pipe} mm) is not in front of the board face "
+            f"({gap} mm); the gauge would have no step to show")
     width, depth = 20.0, 8.0
     tall = (cq.Workplane("XY").box(depth, width / 2, gap)
             .translate((depth / 2, -width / 4, gap / 2)))
@@ -958,13 +974,25 @@ def main(argv: list[str] | None = None) -> int:
     document["stl_bounding_boxes_mm"] = stls
     reach = compute_reach(ReachInputs.from_layout(layout))
     document["light_pipe_reach"] = {
+        "part": layout["lightPipe"]["part"],
+        "candidate_status": layout["lightPipe"]["status"],
+        "shaft_length_mm": layout["lightPipe"]["shaftLength"],
+        "overall_length_mm": layout["lightPipe"]["overallLength"],
+        "head_height_mm": layout["lightPipe"]["headHeight"],
+        "nominal_tip_z_mm": reach.nominal_tip_z_mm,
+        "nominal_tip_to_board_plane_mm": reach.nominal_tip_to_board_plane_mm,
+        "optical_gap_mm": reach.optical_gap_mm,
         "status": reach.status,
         "missing": list(reach.missing),
-        "gap_minus_length_arithmetic_mm": round(reach.nominal_gap_minus_length_mm, 6),
-        "gauge_mm": {"tall": float(layout["panelToFrontBoardGap"]),
-                     "low": float(layout["lightPipe"]["length"]),
-                     "step": round(float(layout["panelToFrontBoardGap"])
-                                   - float(layout["lightPipe"]["length"]), 6)},
+        "gauge_mm": {
+            "datum": "panel FRONT face, Z = 0, +Z rearward",
+            "tall": float(layout["lightPipeReach"]["boardNearFaceZ"]),
+            "low": float(layout["lightPipeReach"]["nominalTipZ"]),
+            "step": round(float(layout["lightPipeReach"]["boardNearFaceZ"])
+                          - float(layout["lightPipeReach"]["nominalTipZ"]), 6),
+            "step_meaning": ("nominal tip-plane to provisional board-plane distance only. "
+                             "Not an LED gap, not a fit, not a measured stack value"),
+        },
     }
     (out / ASSUMPTIONS).write_text(json.dumps(document, indent=2) + "\n")
     (out / CHECKLIST).write_text(print_checklist_markdown())
