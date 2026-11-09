@@ -26,9 +26,9 @@ led-3mm-red,led,"3 mm red LED, diffuse",red 3 mm,THT 3 mm,1300 mcd,,,,,40307000,
 led-5mm-green,led,5 mm green LED,green 5 mm,THT 5 mm,,,,,,40307032,5,1,,,,,draft,2026-11-09,"shop 'from' price, incl. VAT"
 oled-096-i2c,display,"0.96 inch 128x64 OLED, I2C, blue",0.96 in 128x64,module,3.3/5 V,,,,,41035586,71.1,1,,,,,draft,2026-11-09,"shop 'from' price, incl. VAT"
 oled-13-spi-i2c,display,"1.3 inch 128x64 OLED, SPI/I2C, white",1.3 in 128x64,module,3.3/5 V,,,,,41024144,98.1,1,,,,,draft,2026-11-09,"shop 'from' price, incl. VAT"
-pot-100k-lin-9mm,potentiometer,Alpha 9 mm pot 100 kOhm linear plastic shaft,100k,9 mm vertical,,,,,,,,,potentiometer-plastikachse-kurz-6-35mm-basis-9mm-vertikal,1.19,1,,draft,2026-11-09,choose Wert 100 K Ohm and Kennlinie B - lin
+pot-100k-lin-9mm,potentiometer,Alpha 9 mm pot 100 kOhm linear plastic shaft,100k lin,9 mm vertical,,,,,,,,,potentiometer-plastikachse-kurz-6-35mm-basis-9mm-vertikal,1.19,1,,draft,2026-11-09,choose Wert 100 K Ohm and Kennlinie B - lin
 pot-100k-log-9mm,potentiometer,Alpha 9 mm pot 100 kOhm logarithmic plastic shaft,100k log,9 mm vertical,,,,,,,,,potentiometer-plastikachse-kurz-6-35mm-basis-9mm-vertikal,1.19,1,,draft,2026-11-09,choose Wert 100 K Ohm and Kennlinie A - log
-pot-10k-lin-9mm,potentiometer,Alpha 9 mm pot 10 kOhm linear plastic shaft,10k,9 mm vertical,,,,,,,,,potentiometer-plastikachse-kurz-6-35mm-basis-9mm-vertikal,1.19,1,,draft,2026-11-09,choose Wert 10 K Ohm and Kennlinie B - lin; one page serves 1K to 1M and A/B/C taper
+pot-10k-lin-9mm,potentiometer,Alpha 9 mm pot 10 kOhm linear plastic shaft,10k lin,9 mm vertical,,,,,,,,,potentiometer-plastikachse-kurz-6-35mm-basis-9mm-vertikal,1.19,1,,draft,2026-11-09,choose Wert 10 K Ohm and Kennlinie B - lin; one page serves 1K to 1M and A/B/C taper
 res-10-025w,resistor,10 Ohm 1/4 W carbon film,10,axial 0.25 W,,,,,,40810110,0.15,1,,,,,draft,2026-11-09,"shop 'from' price, incl. VAT"
 res-100-025w,resistor,100 Ohm 1/4 W carbon film,100,axial 0.25 W,,,,,,40810210,0.15,1,,,,,draft,2026-11-09,"shop 'from' price, incl. VAT"
 res-100k-025w,resistor,100 kOhm 1/4 W carbon film,100k,axial 0.25 W,,,,,,40810510,0.15,1,,,,,draft,2026-11-09,"shop 'from' price, incl. VAT"

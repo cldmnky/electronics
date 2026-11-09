@@ -221,16 +221,23 @@ def find(rows: list[dict], text: str) -> list[dict]:
 
 
 def match_bom(rows: list[dict], value: str, footprint: str = "") -> list[str]:
-    """Candidate library ids for one BOM line. Never a silent substitution."""
+    """Candidate library ids for one BOM line. Never a silent substitution.
+
+    The value must match exactly. A footprint only ranks: it removes a
+    candidate when its package text appears in the footprint, and it removes
+    none when no package matches, because a library package may be prose
+    ("radial 5x11 mm") where the BOM holds a KiCad footprint name.
+    """
     wanted = norm(value)
     if not wanted:
         return []
     candidates = [row for row in rows if norm(row["value"]) == wanted]
-    if footprint:
-        # A footprint can only narrow the list, never widen it.
+    if footprint and len(candidates) > 1:
         package = norm(footprint)
-        candidates = [row for row in candidates
-                      if norm(row["package"]) and norm(row["package"]) in package]
+        ranked = [row for row in candidates
+                  if norm(row["package"]) and norm(row["package"]) in package]
+        if ranked:
+            candidates = ranked
     return [row["id"] for row in candidates]
 
 
@@ -364,11 +371,15 @@ def command_bom(args) -> int:
             for line in order:
                 print(f"{line['quantity']:4} x {line['sku']:14} {line['description']}  [{line['id']}]")
                 print(f"       {line['url']}")
+            reasons = {"ambiguous": "two library parts fit, choose one",
+                       "unmatched": "not in the library"}
             for line in missing:
-                print(f"  MISSING {line['value']} x{line['quantity']} ({line['status']})", file=sys.stderr)
-        else:
-            print(json.dumps(planned, indent=2, ensure_ascii=False))
-    return 0 if all(line["status"] == "matched" for line in planned) else 2
+                reason = reasons.get(line["status"],
+                                     f"no {SHOPS[args.shop]['name']} article number")
+                print(f"  NO SKU {line['value']} x{line['quantity']} ({reason})", file=sys.stderr)
+            return 0 if not missing else 2
+        print(json.dumps(planned, indent=2, ensure_ascii=False))
+        return 0 if all(line["status"] == "matched" for line in planned) else 2
 
 
 def build_parser() -> argparse.ArgumentParser:

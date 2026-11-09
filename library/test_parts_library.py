@@ -171,6 +171,14 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(p.match_bom(self.rows, "10k", ""), ["res-10k-025w", "res-10k-0204"])
         self.assertEqual(p.match_bom(self.rows, "10k", "R_0207"), ["res-10k-025w"])
         self.assertEqual(p.match_bom(self.rows, "47k"), [])
+        self.assertEqual(p.match_bom(self.rows, "1k", "R_0207"), ["res-1k-025w"])
+
+    def test_a_prose_package_does_not_lose_the_part(self):
+        rows = p.load(write_library(Path(tempfile.mkdtemp()) / "c.csv", [
+            fresh(id="res-10k-025w", description="10 kOhm carbon film", value="10k",
+                  package="axial 0.25 W")]))
+        line = {"value": "10k", "quantity": 2, "footprint": "R_0207", "designators": "R1 R2"}
+        self.assertEqual(p.plan_bom(rows, [line])[0]["status"], "matched")
 
     def test_plan_statuses(self):
         planned = p.plan_bom(self.rows, [
@@ -249,6 +257,18 @@ class MainTests(unittest.TestCase):
             self.assertEqual(status, 0)
             self.assertIn("140023", out.getvalue())
             self.assertIn("10 x", out.getvalue())
+
+    def test_missing_shop_sku_is_reported_and_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_library(Path(tmp) / "c.csv", [GOOD])
+            bom = Path(tmp) / "bom.csv"
+            bom.write_text("Quantity,Value\n1,10k\n", encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                status = p.main(["--library", str(path), "bom", str(bom), "--shop", "u3shop"])
+            self.assertEqual(status, 2)
+            self.assertIn("NO SKU 10k", err.getvalue())
+            self.assertIn("no 3U-Shop", err.getvalue())
 
     def test_find_json_and_links(self):
         with tempfile.TemporaryDirectory() as tmp:
