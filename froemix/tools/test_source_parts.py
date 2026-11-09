@@ -112,6 +112,20 @@ class SourcingTests(unittest.TestCase):
         self.assertNotIn('secret', json.dumps(report))
         self.assertEqual(report['parts'][2]['suppliers']['rs']['status'], 'query_required')
 
+    def test_live_query_skips_a_supplier_it_cannot_use(self):
+        client = s.DigiKey('id', 'secret')
+        with patch.object(client, 'search', side_effect=AssertionError('must not be called')):
+            report, failed = s.build_report([{'query': 'ABC'}], client, 5, ('conrad',))
+        self.assertFalse(failed)
+        self.assertEqual(sorted(report['parts'][0]['suppliers']), ['conrad'])
+
+    def test_digikey_live_needs_digikey_in_the_filter(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            status = s.main(['--query', 'ABC', '--suppliers', 'conrad', '--digikey-live'])
+        self.assertEqual(status, 1)
+        self.assertIn('digikey', err.getvalue())
+
     def test_csv_flatten_and_formula_safety(self):
         part = {'board': 'base', 'designators': 'CN1,CN2', 'quantity': 2, 'mpn': '=unsafe', 'query': 'part'}
         report, _ = s.build_report([part], None, 5)

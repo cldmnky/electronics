@@ -222,7 +222,7 @@ def build_report(parts: list[dict], client: DigiKey | None, limit: int,
             part["suppliers"][supplier] = {"search_url": search_url(supplier, query) if query else None,
                                             "status": "manual_search" if query else "query_required",
                                             "candidates": []}
-        if client and query:
+        if client and query and "digikey" in part["suppliers"]:
             if query not in cache:
                 if halted:
                     cache[query] = {"status": "error", "candidates": [],
@@ -294,6 +294,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         suppliers = supplier_list(args.suppliers)
+        if args.digikey_live and "digikey" not in suppliers:
+            raise SourcingError("--digikey-live needs digikey in --suppliers")
         if args.query is not None:
             parts = [{"board": "ad-hoc", "designators": "-", "quantity": 1, "mpn": "",
                       "comment": "", "lcsc_reference": "", "query": text.strip(),

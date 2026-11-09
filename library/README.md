@@ -101,8 +101,10 @@ python3 library/test_parts_library.py
 ```
 
 `bom` matches each BOM line to the library by `value`, narrowed by `Footprint`.
-A line gets `matched`, `ambiguous` (two rows fit, so choose one) or
-`unmatched`. With `--shop`, the tool prints a paste-ready order list with the
+A footprint only narrows the list when the library `package` text appears in
+it, because a package may be prose ("axial 0.25 W") where the BOM holds a
+KiCad footprint name; a prose package therefore never loses the part. A line
+gets `matched`, `ambiguous` (two rows fit, so choose one) or `unmatched`. With `--shop`, the tool prints a paste-ready order list with the
 quantity raised to each part's minimum order. It prints no order line for a
 line it cannot fill; it reports that line as `NO SKU` with the reason. The
 exit status is 2 while any line is not `matched`, or while a chosen shop has no
