@@ -1,4 +1,6 @@
-* MODE: R8=10k pull-up; R7=1k plus switch LED to button node.
+* MODE: R8=10k pull-up (euro BUTTON.pullupR); R7=1k plus switch LED to the
+* button node (euro BUTTON.seriesR). source_link.py checks both values against
+* euro/lib/layout.ts, so a changed pull-up fails before the numbers are read.
 * Released under an illustrative 1uA sink; pressed via 0.1 ohm switch.
 * Simplified sample-and-hold: connect an initially discharged 100pF cap to
 * MODE at 1us through 250 ohms. Not a CD4051 or STM32 datasheet model.
@@ -15,6 +17,12 @@ RSW pressed 0 0.1
 SAMPLE mode adc ctrl 0 SWMOD
 VCTRL ctrl 0 PULSE(0 3.3 1u 1n 1n 12u 30u)
 CADC adc 0 100p IC=0
+* negative case from DESIGN-REVIEW: the LED alone as the "pull-up" leaves the
+* released node at an undefined intermediate level. Same LED, no R8.
+VCCN vccn 0 3.3
+R7N vccn led_an 1k
+D1N led_an moden DLED
+ILEAKN moden 0 1u
 .model DLED D(IS=1e-20 N=2)
 .model SWMOD SW(RON=250 ROFF=1e12 VT=1.65 VH=0)
 .control
@@ -22,7 +30,11 @@ set noaskquit
 set wr_singlescale
 set wr_vecnames
 tran 10n 12u uic
-wrdata out/front_mode.dat v(mode) v(pressed) i(vcc) v(adc) v(led_a) v(led_ap)
+wrdata out/front_mode.dat v(mode) v(pressed) i(vcc) v(adc) v(led_a) v(led_ap) v(moden) v(led_an)
+meas tran released FIND v(mode) AT=0.9u
+meas tran pressed FIND v(pressed) AT=10u
+meas tran sampled FIND v(adc) AT=10u
+meas tran nopullup FIND v(moden) AT=0.9u
 quit
 .endc
 .end

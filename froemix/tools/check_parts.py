@@ -29,6 +29,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kicad2tscircuit import TSCIRCUIT_ONLY_REFS, build_components  # noqa: E402
+from kicad_cli import KicadCliError, resolve_kicad_cli  # noqa: E402
 
 JLC_API = "https://jlcpcb.com/api/overseas-pcb-order/v1/shoppingCart/smtGood/selectSmtComponentList"
 
@@ -154,13 +155,16 @@ def main():
     ap.add_argument("--circuit", default=os.path.join(root, "tscircuit", "dist", "index", "circuit.json"))
     ap.add_argument("--src", default=os.path.join(root, "tmp"))
     ap.add_argument("--pcb", default=os.path.join(root, "tmp", "froemix.kicad_pcb"))
-    ap.add_argument(
-        "--kicad-cli",
-        default="/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
-    )
+    # Portable default (explicit path, KICAD_CLI, PATH, macOS bundle): the
+    # hard-coded macOS path made this check unusable on any other host.
+    ap.add_argument("--kicad-cli", default=None)
     ap.add_argument("--offline", action="store_true")
     ap.add_argument("--cache", default=os.path.join(root, "tscircuit", ".parts-cache.json"))
     args = ap.parse_args()
+    try:
+        args.kicad_cli = resolve_kicad_cli(args.kicad_cli)
+    except KicadCliError as exc:
+        sys.exit(f"cannot run check:parts: {exc}")
 
     # what tscircuit ended up with (supplier parts, DNP)
     circuit = json.load(open(args.circuit))

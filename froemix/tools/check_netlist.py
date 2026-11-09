@@ -21,6 +21,7 @@ from kicad2tscircuit import (  # noqa: E402
     net_name,
     parse_schematics,
 )
+from kicad_cli import KicadCliError, resolve_kicad_cli  # noqa: E402
 
 
 def kicad_nets(src_dir: str, kicad_cli: str):
@@ -106,14 +107,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default=os.path.join(root, "tmp"))
     ap.add_argument("--circuit", default=os.path.join(root, "tscircuit", "dist", "index", "circuit.json"))
-    ap.add_argument(
-        "--kicad-cli",
-        default="/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
-    )
+    # Portable default: an explicit --kicad-cli, then KICAD_CLI, then PATH, then
+    # the macOS bundle. The hard-coded macOS path made this check fail on every
+    # other host (or, worse, quietly compare against nothing).
+    ap.add_argument("--kicad-cli", default=None)
     args = ap.parse_args()
 
     if not os.path.exists(args.circuit):
         sys.exit(f"missing {args.circuit} - run `bunx tsci build` first")
+
+    try:
+        args.kicad_cli = resolve_kicad_cli(args.kicad_cli)
+    except KicadCliError as exc:
+        sys.exit(f"cannot run check:netlist: {exc}")
 
     expected = kicad_nets(args.src, args.kicad_cli)
     actual = tscircuit_nets(args.circuit)

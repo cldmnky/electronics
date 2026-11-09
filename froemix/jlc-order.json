@@ -25,17 +25,19 @@
     "stencil": "bottom only, if separately required",
     "through_hole": "hand solder",
     "through_hole_parts": ["CN1", "CN2", "CN3", "CN4", "H1", "J1", "J2", "C24", "C25", "U16"],
-    "through_hole_note": "kept in the BOM but excluded from the CPL; add them back on the order page only if you pay for JLCPCB THT assembly",
+    "through_hole_note": "Excluded from the SMT upload BOM and CPL. The combined and hand BOMs are reference lists. Hand-fitted parts require reviewed RS, Electrokit or DigiKey EU sourcing; LCSC numbers do not constitute an approved hand-parts order. A different THT assembly process requires a separately validated order packet.",
     "do_not_place": ["DaisySeed1"],
     "do_not_place_note": "Daisy Seed module is already owned; it is absent from BOM and CPL by design. Hand-solder two separately purchased 1x20 female socket strips to its footprint; no socket part is selected or included in the generated BOM.",
     "fiducials": "4 x 1mm bare copper with 0.5mm mask window at (+-33, +-63)mm - verify bright in the placement preview",
     "files": {
       "gerbers": "froemix-gerbers.zip",
-      "bom": "froemix-bom-jlc.csv",
-      "cpl": "froemix-cpl-jlc.csv"
+      "bom": "froemix-bom-smt.csv",
+      "cpl": "froemix-cpl-jlc.csv",
+      "bom_reference": "froemix-bom-jlc.csv",
+      "hand_parts_reference": "froemix-bom-hand.csv"
     },
     "expected_counts": {
-      "bom_unique_parts": 38,
+      "bom_unique_parts": 40,
       "bom_placements": 117,
       "cpl_smt_placements": 107,
       "through_hole_excluded": 10

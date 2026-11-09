@@ -86,8 +86,8 @@ sample time and scan rate; no particular delay has been qualified.
 | --- | --- | --- |
 | 1 | `J_MIDI_IN_TIP` | MIDI IN TRS tip — DIN pin 5, the sender's current **sink**; reaches the opto cathode through the `J1` Type A shunts |
 | 2 | `J_MIDI_IN_RING` | MIDI IN TRS ring — DIN pin 4, the sender's current **source**; reaches the opto anode through `R47` |
-| 3 | `J_MIDI_OUT_TIP` | MIDI OUT TRS tip — this board's current **sink** (DIN pin 5): `R60` 33 Ω 1 W to GND |
-| 4 | `J_MIDI_OUT_RING` | MIDI OUT TRS ring — this board's current **source** (DIN pin 4): `Q2` (MMBT3906 PNP) switches `P3V3_D` into `R59` 22 Ω 1 W |
+| 3 | `J_MIDI_OUT_TIP` | MIDI OUT TRS tip — this board's current **sink** (DIN pin 5): `R60` **22 Ω** 1 W to GND, **no transistor in this leg** |
+| 4 | `J_MIDI_OUT_RING` | MIDI OUT TRS ring — this board's current **source** (DIN pin 4): `Q2` (**AO3401A P-channel MOSFET**) switches `P3V3_D` into `R59` **33 Ω** 1 W |
 | 5–12 | `M_ADC_0` … `M_ADC_7` | **§1 applies** — pot / joystick / button wipers only |
 | 13 | `LED` | Seed `ADC_1` pin driven as an output; the panel LED needs its own series resistor |
 | 14 | `P3V3_D` | 3.3 V digital, from the Seed's onboard regulator — see §5 |
@@ -102,24 +102,37 @@ front board only wires tip/ring through to the socket.
 through** (tip → tip, ring → ring on both the IN and the OUT socket).
 
 - **MIDI OUT: Type A transmitter.** The **ring** carries the current source
-  (`Q2` switches `P3V3_D` into `R59` 22 Ω 1 W, **4.48 mA ≈ 4.5 mA** worst-case
-  loop current into a receiver at the TLP2362's 1.7 V maximum Vf), and the
-  **tip** is the sink (`R60` 33 Ω 1 W to GND). `Q2` is a high-side PNP, so it
-  is **off at idle** (UART high or high-Z) and a start bit turns it on — the
-  loop current is present only while data is being sent, as MIDI requires. Do
-  not cross tip/ring on the panel: a crossover would turn the pair into Type B
-  and every Type A device would see reversed polarity.
+  (`Q2`, an **AO3401A P-channel MOSFET** (`C15127`), switches `P3V3_D` into
+  `R59` **33 Ω 1 W**; the gate comes from `USART1_TX` through `R58` 180 Ω and is
+  held at the source by `R61` 2.2 kΩ), and the **tip** is the sink (`R60`
+  **22 Ω** 1 W to GND, nothing else in that leg). Worst-case loop current into a
+  CA-033 receiver (LED + 220 Ω, VF 1.9 V) is **4.31 mA**. For scale: the CA-033
+  nominal loop is 5 mA, its PC900V benchmark is 4 mA, and its own 33/10 Ω
+  reference calculation gives 4.472 mA under ±5 % resistor assumptions. The
+  22 Ω tip is fault-driven and costs about 0.2 mA against that calculation
+  (`doc/ELECTRICAL-VERIFICATION.md` §3–§4). `Q2` is a high-side switch,
+  so it is **off at idle** (UART high or high-Z, |VGS| ≤ 0.370 V) and a start
+  bit turns it on — the loop current is present only while data is being sent,
+  as MIDI requires. Do not cross tip/ring on the panel: a crossover would turn
+  the pair into Type B and every Type A device would see reversed polarity.
 - **MIDI IN: defaults to Type A via shunts 3–5 + 4–6** on `J1`. Type B (4–2 +
   3–1) is available for Type B gear; the front board does not decide it. A
   2.54 mm shunt only bridges pads 2.54 mm apart, and 4–5 is a 3.59 mm diagonal,
   so it can never be one of the pairs.
-- **Receiver threshold limitation:** the on-board receiver is a **TLP2362 with
-  a 5 mA maximum switching threshold** (recommended on-current from 7.5 mA),
-  while this board's own transmitter delivers **4.48 mA (≈4.5 mA) worst case**
-  into a worst-case receiver. A source that only just meets CA-033 — or a
-  receiver here driven by a marginal transmitter — can therefore be
-  intermittent. That is a component-choice limit, not a wiring error: expect to
-  verify interoperability with the actual units before relying on it.
+- **Receiver threshold:** the on-board receiver is a **TLP2361** (`C107626`) —
+  **IFHL ≤ 1.6 mA at 125 °C** (1.3 mA at 105 °C) with a recommended on-current
+  of 2…6 mA, and an inverting **totem-pole** output, so the UART idle level and
+  the firmware contract are unchanged. This board's own transmitter delivers
+  **5.34 mA worst case** into it, i.e. **3.34×** the threshold. The TLP2362 this
+  replaced needed 5.0 mA maximum with a 7.5 mA recommended on-current and was
+  **not** guaranteed at 5.34 mA; that is why the part changed
+  (`doc/ELECTRICAL-VERIFICATION.md` §5).
+- **Remaining interoperability corners** (measured, not hidden): our own loop
+  reaches 6.54 mA typical, above the TLP2361's 6 mA recommended on-current but
+  inside its 10 mA absolute maximum; and a non-compliant 5 V source using
+  33 Ω/10 Ω legs would drive 14.8 mA into the receiver, above that absolute
+  maximum. Nothing on this board clamps the input loop. Verify with the real
+  units before relying on a 5 V-native source.
 
 ## 3. CV in — `J_CV_IN_1` / `J_CV_IN_2`
 

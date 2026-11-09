@@ -25,6 +25,12 @@ import shutil
 import subprocess
 import sys
 
+# portable kicad-cli resolution (see kicad_cli.py); this module is also imported
+# as a library by the check scripts, so the path has to be set here as well as
+# in the scripts themselves.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from kicad_cli import resolve_kicad_cli  # noqa: E402
+
 # --------------------------------------------------------------------------- #
 # sexpr parsing
 # --------------------------------------------------------------------------- #
@@ -98,6 +104,10 @@ def child(node, key):
 
 
 def export_netlist(kicad_cli: str, sch: str) -> list:
+    # Resolve the tool portably (explicit --kicad-cli path, KICAD_CLI, PATH,
+    # macOS bundle - in that order) and never invent one: the old hard-coded
+    # macOS path is what made the netlist gate fail on every other host.
+    kicad_cli = resolve_kicad_cli(kicad_cli)
     out = os.path.join("/tmp", "froemix.net")
     subprocess.run(
         [kicad_cli, "sch", "export", "netlist", "--format", "kicadsexpr", "-o", out, sch],
@@ -380,14 +390,31 @@ PART_OVERRIDES = {
         "brand": "YLPTEC",
         "why": "24V in (21.6-26.4V) for VCC-VEE ~23.4V, and 2W/400mA because the worst-case P5V load is 267mA with H1 fitted",
     },
-    # TLP2362 VO is open-collector: 33k gives sloppy rise times at 31.25kbps.
-    # 2.2k is the proven center value for 3.3V MIDI.
+    # The old TLP2362 receiver had an open-collector VO, so 33k gave sloppy rise
+    # times at 31.25kbps. 2.2k is the proven center value for 3.3V MIDI. U15 is
+    # now a TLP2361 with a totem-pole output (DESIGN-REVIEW R02, third round), so
+    # the pull-up is only a fail-safe high level when U15 is not fitted; it is
+    # kept because it is harmless (1.5mA when VO is low, 3.2mA VOL rating) and a
+    # board population option this late is not worth a netlist change.
     "R48": {
         "lcsc": "C4190",
         "mpn": "0603WAF2201T5E",
         "brand": "UNI-ROYAL(Uniroyal Elec)",
         "value": "2.2K",
-        "why": "TLP2362 open-collector pull-up too weak at 33k for MIDI; 2.2k",
+        "why": "USART1_RX pull-up: 33k was too weak; 2.2k also defines the idle level while U15 is not fitted",
+    },
+    # U15 changed part, not pin map: the TLP2362 (C37658, IFHL max 5.0mA with a
+    # 7.5mA recommended on-current) cannot be guaranteed on by a 3.3V Type A
+    # transmitter that delivers 4.3..5.3mA. The TLP2361 (C107626) is the same
+    # Toshiba SO6 11-4L1S with pins 1=A, 3=K, 4=GND, 5=VO, 6=VCC and an IFHL
+    # maximum of 1.3mA (-40..105C) / 1.6mA (-40..125C) at a recommended 2..6mA.
+    # The KiCad project is frozen, so the override carries the part and MPN;
+    # the KiCad footprint, pads, pin numbers and nets are untouched.
+    "U15": {
+        "lcsc": "C107626",
+        "mpn": "TLP2361(TPL,E",
+        "brand": "TOSHIBA",
+        "why": "TLP2362 IFHL 5.0mA/n 7.5mA does not fit a 3.3V Type A source; TLP2361 same SO6 pin map, IFHL 1.6mA max",
     },
     # Sync/gate out series R: 5V/100R = 50mA into a short exceeds what a TL074
     # can source. 1k like the audio/CV outs.
@@ -471,10 +498,11 @@ PART_OVERRIDES = {
 # project. Mirror them into KiCad and remove them here when convenient.
 # (ref, kind, value, kicad footprint, sheet, {pin: net}, lcsc, mpn, why)
 EXTRA_COMPONENTS = [
-    # TLP2362 datasheet: 0.1uF bypass pin6-pin4 within 1cm, mandatory.
+    # TLP2361 datasheet section 8 note 2: a 0.1uF ceramic between pin 6 and
+    # pin 4 within 1cm is mandatory (the TLP2362 required the same).
     ("C28", "C", "100nF", "jclpcb:C0603", "midi",
      {"1": "P3V3_D", "2": "GND"}, "C14663", "CC0603KRX7R9BB104",
-     "TLP2362 VCC bypass, datasheet-mandatory"),
+     "TLP2361 VCC bypass, datasheet-mandatory"),
     # P3V3_D has no decoupling on the base board (only P3V3_A has C19).
     ("C29", "C", "100nF", "jclpcb:C0603", "main",
      {"1": "P3V3_D", "2": "GND"}, "C14663", "CC0603KRX7R9BB104",
@@ -528,39 +556,54 @@ EXTRA_COMPONENTS = [
     ("R57", "R", "47K", "jclpcb:R0603", "main",
      {"1": "SD_CMD", "2": "P3V3_D"}, "C25819", "0603WAF4702T5E",
      "SD CMD pull-up, cf. Patch R5"),
-    # MIDI OUT, DESIGN-REVIEW R02: the fitted 33R 0603 parts (C23140, 100mW)
-    # dissipated 3.3^2/33 = 330mW into a grounded ring (367mW at 3.465V over
-    # 32.67R) and R50 sat between the MCU pin and the jack. R59/R60 are the 1W
-    # 2512 replacement behind Q2+R58, which move the MCU pin out of the fault
-    # path.
+    # MIDI OUT, DESIGN-REVIEW R02 (second and third rounds): the fitted 33R 0603
+    # parts (C23140, 100mW) dissipated 3.3^2/33 = 330mW into a grounded ring
+    # (367mW at 3.465V over 32.67R) and R50 sat between the MCU pin and the
+    # jack. The MCU pin is now out of the jack path entirely: Q2 switches
+    # P3V3_D into R59, and R60 is the permanent tip sink.
     #
     # The jack is TRS Type A: ring = DIN pin 4 = current SOURCE, tip = DIN pin 5
-    # = current SINK (Type B is the swap). So R59 22R sources P3V3_D into the
-    # RING through Q2 and R60 33R is the TIP sink to GND. 22R keeps the source
-    # >=4.5mA into a worst-case receiver (1.235V over 275.6R = 4.48mA); a ring
-    # shorted to GND with the driver on is 3.3/22 = 150mA (below Q2's 200mA) and
-    # 0.50W in R59, and a tip shorted to 3.3V is 330mW in R60 - both 1W parts.
+    # = current SINK (Type B is the swap).
     #
-    # Q2 is a PNP (MMBT3906) high-side switch, not the NPN open collector this
-    # started as: a UART idles HIGH, so an NPN sink conducted at idle and broke
-    # the loop on the start bit, i.e. inverted MIDI. The PNP is OFF at idle/high-Z
-    # (R61 10k holds base at emitter) and ON for the start bit, so no firmware
-    # inversion is needed. Pin 1/2/3 = base/emitter/collector.
-    ("Q2", "Q", "MMBT3906", "jclpcb:SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR", "midi",
-     {"1": "NET_Q2_B", "2": "P3V3_D", "3": "NET_Q2_C"}, "C53444", "MMBT3906LT1G",
-     "MIDI OUT PNP high-side driver, off at idle, keeps the MCU pin off the jack"),
-    ("R58", "R", "4K7", "jclpcb:R0603", "midi",
-     {"1": "USART1_TX", "2": "NET_Q2_B"}, "C23162", "0603WAF4701T5E",
-     "MIDI OUT driver base resistor for Q2"),
-    ("R59", "R", "22R", "jclpcb:R2512", "midi",
-     {"1": "J_MIDI_OUT_RING", "2": "NET_Q2_C"}, "C118189", "25121WF220JT4E",
-     "MIDI OUT Type A ring current source 22R 1W 2512, replaces R49"),
-    ("R60", "R", "33R", "jclpcb:R2512", "midi",
-     {"1": "J_MIDI_OUT_TIP", "2": "GND"}, "C53728", "25121WF330JT4E",
-     "MIDI OUT Type A tip current sink 33R 1W 2512 to GND, replaces R50"),
-    ("R61", "R", "10K", "jclpcb:R0603", "midi",
-     {"1": "NET_Q2_B", "2": "P3V3_D"}, "C25804", "0603WAF1002T5E",
-     "MIDI OUT driver base pull-up, holds Q2 off while USART1_TX is high-Z"),
+    # Third round (this revision): the MMBT3906 PNP became an AO3401A P-channel
+    # MOSFET, and the two 1W resistors swapped roles:
+    #   - Q2 AO3401A (C15127): -4.0A / -30V, RDS(on) <= 85mOhm at VGS = -2.5V
+    #     (<= 60mOhm at -4.5V), VGS(max) +-12V, no 3D model in
+    #     lib/lcsc_models.json, so it is pad-only in 3D. Pins 1/2/3 =
+    #     gate/source/drain; the nets are the old base/emitter/collector nets.
+    #   - R58 180R (C22828, 0603WAF1800T5E): gate resistor, not a base-current
+    #     resistor. The peak bound is 3.465/(180 x 0.99) = 19.44mA, under the
+    #     assumed 20mA per-pin MCU limit; VGS(on) worst case is -2.528V and the
+    #     DC current through R61 is 1.5mA. 100R could not be shown compliant
+    #     (34.6mA peak), so it was rejected.
+    #   - R61 2.2k (C4190, 0603WAF2201T5E): gate pull-up, holds the FET off at
+    #     idle/reset/high-Z (was 10k on the PNP base).
+    #   - R59 33R 1W 1% (C53728, 25121WF330JT4E): the MOSFET-path (ring) source
+    #     resistor; grounded ring = 3.3/33 = 100mA, 0.33W at the zero-RDS(on)
+    #     bound, 1.3mW in the FET at the RDS(on) maximum.
+    #   - R60 22R 1W 1% (C118189, 25121WF220JT4E): the permanently grounded tip
+    #     sink with NO transistor in the leg, so 22R is set by the fault alone:
+    #     3.3^2/22 = 0.495W (10R would be 1.09W and fail the 1W part). Cost:
+    #     (RA+RC) = 55R instead of CA-033's 43R.
+    # Q2 is emitted below as a generic kind "Q" row, which the generator would
+    # render as <transistor>; the tree carries a hand-written <mosfet> with the
+    # same three pins and nets, so regen:check reports it as an expected delta
+    # (AGENTS.md section 1 already lists the EXTRA_COMPONENTS blocks as such).
+    ("Q2", "Q", "AO3401A", "jclpcb:SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR", "midi",
+     {"1": "NET_Q2_B", "2": "P3V3_D", "3": "NET_Q2_C"}, "C15127", "AO3401A",
+     "MIDI OUT P-FET high-side driver, off at idle, keeps the MCU pin off the jack"),
+    ("R58", "R", "180R", "jclpcb:R0603", "midi",
+     {"1": "USART1_TX", "2": "NET_Q2_B"}, "C22828", "0603WAF1800T5E",
+     "MIDI OUT gate resistor: 19.44mA peak bound, VGS(on) -2.528V worst case"),
+    ("R59", "R", "33R", "jclpcb:R2512", "midi",
+     {"1": "J_MIDI_OUT_RING", "2": "NET_Q2_C"}, "C53728", "25121WF330JT4E",
+     "MIDI OUT Type A ring current source 33R 1W 2512, in the MOSFET path"),
+    ("R60", "R", "22R", "jclpcb:R2512", "midi",
+     {"1": "J_MIDI_OUT_TIP", "2": "GND"}, "C118189", "25121WF220JT4E",
+     "MIDI OUT Type A tip current sink 22R 1W 2512 to GND, no transistor in the leg"),
+    ("R61", "R", "2.2K", "jclpcb:R0603", "midi",
+     {"1": "NET_Q2_B", "2": "P3V3_D"}, "C4190", "0603WAF2201T5E",
+     "MIDI OUT gate pull-up, holds the AO3401A off while USART1_TX is high-Z"),
     # SYNC IN reverse base-emitter clamp, DESIGN-REVIEW R04: Q1 is MMBT3904 with
     # the emitter at GND and its base fed from J_SYNC_IN through R22 100k, so a
     # -10V patch pulls the base to -9.1V against a 6V emitter-base rating. The
@@ -1029,6 +1072,9 @@ PIN_LABELS = {
         "5": "INB_P", "6": "INB_N", "7": "OUTB", "8": "VDD",
     },
     "jclpcb:LM4040C10IDBZR": {"1": "CATHODE", "2": "ANODE", "3": "NC"},
+    # The KiCad symbol library id is frozen (the KiCad project is a read-only
+    # reference), so it still says TLP2362; the part on the board is the TLP2361
+    # (C107626, same SO6 11-4L1S pin map) - see PART_OVERRIDES["U15"].
     "jclpcb:TLP2362(TPL,E(T": {
         "1": "ANODE", "3": "CATHODE", "4": "GND", "5": "VO", "6": "VCC",
     },
@@ -1056,7 +1102,7 @@ PIN_CONST = {
     "4xxx:4051": "CD4051_PINS",
     "jclpcb:MCP6002T-I_SN": "MCP6002_PINS",
     "jclpcb:LM4040C10IDBZR": "LM4040_PINS",
-    "jclpcb:TLP2362(TPL,E(T": "TLP2362_PINS",
+    "jclpcb:TLP2362(TPL,E(T": "TLP2361_PINS",
     "jclpcb:B1205S-1WR3_C5365649": "B2405S_2W_PINS",
     "jclpcb:MMBT3904_C181119": "MMBT3904_PINS",
     "MCU_Module:Electrosmith_Daisy_Seed_Rev4": "DAISY_SEED_PINS",

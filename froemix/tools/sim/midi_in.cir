@@ -1,0 +1,172 @@
+* =====================================================================
+* froemix midi_in.cir -- MIDI IN: TLP2361 opto receiver on the 220R loop
+* =====================================================================
+* Source of truth: tscircuit/sections/midi.tsx (net names unchanged):
+*
+*   J_MIDI_IN_RING -- J1 pins 3-5 (Type A) -- NET_J1_2
+*   NET_J1_2 -- R47 220 -- NET_D1_K -- U15 ANODE
+*   U15 TLP2361: ANODE NET_D1_K, CATHODE NET_D1_A, VO USART1_RX,
+*                VCC P3V3_D, GND GND
+*   D1 1N4148WS antiparallel to the LED: anode NET_D1_A, cathode NET_D1_K
+*   NET_D1_A -- J1 pins 4-6 (Type A) -- J_MIDI_IN_TIP
+*   USART1_RX -- R48 2.2k -- P3V3_D   (fail-safe high level if U15 is absent)
+*
+* The expectations are the ones doc/ELECTRICAL-VERIFICATION.md §5 derives by
+* hand for the five loop cases, so a changed value has to show up in a
+* measurement instead of only in a comment.
+*
+* EXPECTED (documented in doc/ELECTRICAL-VERIFICATION.md)
+*   this board's own transmitter (worst case): 5.34 mA
+*       (3.135 - 1.65) / (55 x 1.01 + 220 x 1.01 + 0.1275)
+*   the same loop, typical rail:             6.54 mA  at 3.465 V
+*   a CA-033 receiver (VF 1.9 V, 220 +-5 %):  4.31 mA
+*   a 5 V legacy transmitter (2 x 220, +5 %): 5.63 mA
+*   a NON-COMPLIANT 5 V transmitter (33/10 legs): 14.8 mA -- above the
+*       TLP2361 10 mA absolute maximum and nothing on this board clamps it
+*       (pending item, doc §7.4)
+*
+* TWO LIMITS, NOT ONE. The datasheet page 3 absolute maximum is 10 mA AT 25 C
+* and derates by 0.13 mA/C above 110 C, i.e. 8.05 mA at 125 C. The strongest
+* LEGAL loop (3.3 V +5 %, 33/10 legs, VF 1.35 V) reaches 8.18 mA: inside the
+* 25 C figure and OUTSIDE the 125 C derated figure. That is an open
+* high-current/temperature risk (models.tlp2361_if_abs_max), not something this
+* model resolves. The 2...6 mA recommended current is a separate, softer limit.
+* The 1.35 V VF used there is a 25 C datasheet number; the -2 mV/C coefficient
+* is TYPICAL only, so the 1.15 V / 8.95 mA hot case below is an ILLUSTRATION of
+* the trend, not a guaranteed corner, and no temperature range is claimed.
+* The output is a TOTEM-POLE INVERTER (datasheet page 1), not an open collector:
+* it drives USART1_RX both ways, and R48 is a fail-safe pull-up, not a load.
+*   reverse polarity: D1 conducts, the LED sees < 0.8 V reverse
+*   VO is inverting: current flows -> USART1_RX low; no current -> high (R48)
+*
+* Threshold: TLP2361 IFHL <= 1.6 mA at 125 C; recommended on-current 2...6 mA.
+* The absolute maximum IF is 10 mA at 25 C and derates to 8.05 mA at 125 C, so
+* the two limits are kept apart below. The replaced TLP2362 needed <= 5 mA with a 7.5 mA recommended
+* on-current, which this loop does not guarantee; that is the negative case.
+*
+* ASSUMPTIONS (declared in models.py MIDI_ASSUMPTIONS, NOT primary verified):
+*   the sender is modelled as a voltage source plus its loop resistances; the
+*   opto LED is a fixed forward drop (VF corner) plus an ideal diode; the
+*   TLP2361 threshold is the datasheet limit value, not a measured sample.
+*
+* Run: ngspice -b midi_in.cir   (or: bash run.sh, from this directory)
+* Raw output: out/midi_in_static.dat
+* =====================================================================
+
+* --- TLP2361 receiver model: LED branch with a fixed forward drop, and an
+* --- inverting totem-pole output that switches at the datasheet threshold.
+* --- VF is a case parameter so every VF corner in the table above can be run.
+.subckt TLP2361 A K VO VCC GND PARAMS: VF=1.65 ITH=1.6m
+RSNS  A   A1 1m
+DIDE  A1  A2 DMINI
+VFX   A2  K  {VF}
+* the 1 ohm RSNS turns the LED current into a voltage the behavioural output
+* can use (a device current inside a B source did not converge); the extra
+* 1 ohm is 0.4 % of the loop and is part of the model, not a board part
+BVO   VOI 0  V = v(VCC)*max(0,min(1,({ITH}-(v(A)-v(A1))/1m)/(0.5*{ITH})))
+ROUT  VOI VO 100
+.model DMINI D(IS=1e-9 N=1m)
+.ends
+
+* --- one receiver loop, parameterised; terminal RING exists so the loop
+* --- current can be measured from outside: I = (V(RING) - V(ANODE)) / R47
+.subckt RXCHAIN RING PARAMS: VSRC=3.3 RSRC=55 R47=220 VF=1.65 R48=2.2k
+VSRCX SRC 0 DC {VSRC}
+RSRCS SRC RING {RSRC}
+R47S RING AN {R47}
+XU   AN  CT  USART1_RX VCC 0 TLP2361 PARAMS: VF={VF} ITH=1.6m
+DS   CT  AN  D1N4148WS
+RSHB CT  0   1u
+R48S USART1_RX VCC {R48}
+VCC  VCC 0 DC 3.3
+.ends
+
+* --- MAIN CHAIN on the board's own nets, fitted values, nominal sender
+VP33  P3V3_D 0 DC 3.3
+VIN   SRC 0 DC 3.3
+RSRC  SRC J_MIDI_IN_RING 55
+RJ1A  J_MIDI_IN_RING NET_J1_2 1u
+R47   NET_J1_2 NET_D1_K 220
+XU15  NET_D1_K NET_D1_A USART1_RX P3V3_D 0 TLP2361 PARAMS: VF=1.65 ITH=1.6m
+D1    NET_D1_A NET_D1_K D1N4148WS
+R48   USART1_RX P3V3_D 2.2k
+RJ1B  J_MIDI_IN_TIP NET_D1_A 1u
+VTIP  J_MIDI_IN_TIP 0 DC 0
+.model D1N4148WS D(IS=2.52n N=1.752)
+
+* --- loop cases (doc §5). R47 tolerance is the part's own; the sender's loop
+* --- resistance is R59+R60 of this board (55 ohm) or the other device's legs.
+* own transmitter, every tolerance: 5.34 mA
+XR_OWN   N_R1  RXCHAIN PARAMS: VSRC=3.135 RSRC=55.55 R47=222.2 VF=1.65
+* the same loop at the high rail (typical): 6.54 mA
+XR_TYP   N_R2  RXCHAIN PARAMS: VSRC=3.465 RSRC=55    R47=220   VF=1.65
+* a CA-033 receiver: 220 ohm +-5 %, VF 1.9 V: 4.31 mA
+XR_CA033 N_R3  RXCHAIN PARAMS: VSRC=3.135 RSRC=55.55 R47=231   VF=1.9
+* a 5 V legacy transmitter, 2 x 220 ohm at +5 %: 5.63 mA
+XR_5V    N_R4  RXCHAIN PARAMS: VSRC=5.25  RSRC=418   R47=220   VF=1.65
+* CA-033 5 V +-10 %, RA/RC 220 +-5 %, R47 at its tolerance, the WEAKEST legal
+* loop: 4.5 V - 0.3 V driver loss - 1.85 V VF over (2 x 220 x 1.05) + 222.2
+* = 3.4347 mA
+XR_CA5V_LO N_R8 RXCHAIN PARAMS: VSRC=4.2 RSRC=462 R47=222.2 VF=1.85
+* CA-033 5 V +-10 %, same legs, the STRONGEST legal loop: 5.5 - 0 - 1.35 V
+* over (2 x 220 x 0.95) + 217.8 = 6.5272 mA
+XR_CA5V_HI N_R9 RXCHAIN PARAMS: VSRC=5.5 RSRC=418 R47=217.8 VF=1.35
+* CA-033 3.3 V +-5 %, RA 33 / RC 10 +-5 %, WEAKEST loop:
+* 3.135 - 0.3 - 1.85 over (43 x 1.05) + 222.2 = 3.6843 mA
+XR_CA33_LO N_R10 RXCHAIN PARAMS: VSRC=2.835 RSRC=45.15 R47=222.2 VF=1.85
+* the same legs, STRONGEST loop: 3.465 - 0 - 1.35 over (43 x 0.95) + 217.8
+* = 8.1771 mA -- inside the 25 C 10 mA absolute maximum, OUTSIDE the 125 C
+* 8.05 mA derated maximum
+XR_CA33_HI N_R11 RXCHAIN PARAMS: VSRC=3.465 RSRC=40.85 R47=217.8 VF=1.35
+* ILLUSTRATION, not a guaranteed corner: VF 1.15 V = the 25 C minimum plus the
+* TYPICAL -2 mV/C coefficient over 100 C. Gives about 8.95 mA, still inside the
+* 25 C 10 mA figure and further outside the 125 C derated figure.
+XR_CA33_HOT N_R12 RXCHAIN PARAMS: VSRC=3.465 RSRC=40.85 R47=217.8 VF=1.15
+* a NON-COMPLIANT 5 V transmitter (33/10 legs at -5 %): 14.8 mA
+XR_5VLEG N_R5  RXCHAIN PARAMS: VSRC=5.5   RSRC=40.85 R47=220   VF=1.65
+* reverse polarity: D1 conducts, the LED must not see a reverse voltage
+XR_REV   N_R6  RXCHAIN PARAMS: VSRC=-3.135 RSRC=55.55 R47=222.2 VF=1.65
+* no sender current (idle loop): VO must sit high through R48
+XR_IDLE  N_R7  RXCHAIN PARAMS: VSRC=0     RSRC=55.55 R47=222.2 VF=1.65
+
+* --- dummy source: one two-point sweep reads every case at once
+VDUM DUM 0 DC 0
+
+.control
+set noaskquit
+dc VDUM 0 1 1
+wrdata out/midi_in_static.dat v(NET_D1_K) v(NET_D1_A) v(USART1_RX) v(J_MIDI_IN_RING)
+meas dc main_ring FIND v(J_MIDI_IN_RING) AT=1
+meas dc main_anode FIND v(NET_D1_K) AT=1
+meas dc main_cathode FIND v(NET_D1_A) AT=1
+meas dc main_vo FIND v(USART1_RX) AT=1
+meas dc own_ring FIND v(N_R1) AT=1
+meas dc own_anode FIND v(XR_OWN.AN) AT=1
+meas dc own_vo FIND v(XR_OWN.USART1_RX) AT=1
+meas dc typ_ring FIND v(N_R2) AT=1
+meas dc typ_anode FIND v(XR_TYP.AN) AT=1
+meas dc ca_ring FIND v(N_R3) AT=1
+meas dc ca_anode FIND v(XR_CA033.AN) AT=1
+meas dc ca_cathode FIND v(XR_CA033.CT) AT=1
+meas dc v5_ring FIND v(N_R4) AT=1
+meas dc v5_anode FIND v(XR_5V.AN) AT=1
+meas dc leg_ring FIND v(N_R5) AT=1
+meas dc ca5lo_ring FIND v(N_R8) AT=1
+meas dc ca5lo_anode FIND v(XR_CA5V_LO.AN) AT=1
+meas dc ca5hi_ring FIND v(N_R9) AT=1
+meas dc ca5hi_anode FIND v(XR_CA5V_HI.AN) AT=1
+meas dc ca33lo_ring FIND v(N_R10) AT=1
+meas dc ca33lo_anode FIND v(XR_CA33_LO.AN) AT=1
+meas dc ca33hi_ring FIND v(N_R11) AT=1
+meas dc hot_ring FIND v(N_R12) AT=1
+meas dc hot_anode FIND v(XR_CA33_HOT.AN) AT=1
+meas dc ca33hi_anode FIND v(XR_CA33_HI.AN) AT=1
+meas dc leg_anode FIND v(XR_5VLEG.AN) AT=1
+meas dc rev_ring FIND v(N_R6) AT=1
+meas dc rev_anode FIND v(XR_REV.AN) AT=1
+meas dc rev_cathode FIND v(XR_REV.CT) AT=1
+meas dc idle_anode FIND v(XR_IDLE.AN) AT=1
+meas dc idle_vo FIND v(XR_IDLE.USART1_RX) AT=1
+quit
+.endc
+.end

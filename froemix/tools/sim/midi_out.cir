@@ -1,0 +1,165 @@
+* =====================================================================
+* froemix midi_out.cir -- MIDI OUT: AO3401A high-side driver on the ring
+* =====================================================================
+* Source of truth: tscircuit/sections/midi.tsx (net names unchanged):
+*
+*   P3V3_D -- R61 2.2k -- NET_Q2_B (gate) -- R58 180 -- USART1_TX
+*   P3V3_D -- Q2 AO3401A source; drain = NET_Q2_C
+*   NET_Q2_C -- R59 33R 1W -- J_MIDI_OUT_RING   (the current SOURCE, Type A)
+*   J_MIDI_OUT_TIP -- R60 22R 1W -- GND         (the current SINK, no FET)
+*   receiver (other end): 220R + opto LED between ring and tip
+*
+* The numbers in the expectations are the ones doc/ELECTRICAL-VERIFICATION.md
+* §3/§4 derives by hand; this deck makes the same circuit solve them, so a
+* changed value has to show up in a measurement, not only in a comment.
+*
+* EXPECTED (documented in doc/ELECTRICAL-VERIFICATION.md)
+*   VGS(on)   = -2.528 V  (rail 3.135 V -5 %, USART1_TX VOL 0.4 V, R58 180,
+*                          R61 2.2k: gate 0.607 V) -- just inside the -2.5 V
+*                          RDS(on) spec point, hence RDS = 85 mOhm
+*   gate charge peak = 3.465 / (180 x 0.99) = 19.44 mA  (worst-case R58, the
+*                          gate still at the rail when the pin goes low)
+*    VGS off = -0.370 V at VOH min 2.735 V and rail 3.135 V (below the -0.5 V
+*                          minimum threshold, so the FET is off)
+*    VGS off = 0 V with the pin high-Z in reset (R61 holds the gate at source)
+*   loop current, worst CA-033 receiver = (3.135 - 1.9) / (55 x 1.01 +
+*                          220 x 1.05 + 0.1275) = 4.31 mA
+*   loop current, nominal = (3.3 - 1.65) / (55 + 220 + 0.085) = 6.00 mA
+*   loop current, typical into this board's receiver = 6.54 mA at 3.465 V
+*   ring fault (ring to GND, RDS = 0)  = 106.1 mA, 0.368 W in R59
+*   ring fault (RDS = 127.5 mOhm)      = 105.6 mA, 0.365 W in R59, 1.4 mW in Q2
+*   tip forced to 3.465 V (no MOSFET in that leg) = 159.1 mA, 0.551 W in R60
+*
+* ASSUMPTIONS (doc/ELECTRICAL-VERIFICATION.md §2, NOT primary verified):
+*   the STM32H750 per-I/O absolute maximum is +/-20 mA, VOL <= 0.4 V,
+*   VOH >= VDD - 0.4 V, and USART1_TX is high-Z in reset. The primary
+*   datasheet could not be obtained, so these are declared in models.py
+*   (MIDI_ASSUMPTIONS) and nothing here claims them as measured or verified.
+*   RDS(on) 85 mOhm at VGS -2.5 V, 25 C; x1.5 = 127.5 mOhm at 125 C (the
+*   datasheet's own temperature factor). Ciss = 645 pF for the charge peak.
+*   The opto LED is a fixed forward drop (VF corner) plus an ideal diode for
+*   reverse blocking: the real LED curve is not modelled.
+*
+* Run: ngspice -b midi_out.cir   (or: bash run.sh, from this directory)
+* Raw output: out/midi_out_static.dat, out/midi_out_edge.dat
+* =====================================================================
+
+* --- source of truth: the source_link.py table below can only pass when the
+* --- values here (R58 180, R61 2.2k, R59 33, R60 22, Q2 gate/source/drain)
+* --- still match tscircuit/sections/midi.tsx
+
+* --- P-channel MOSFET as a behavioural switch: on when V(source)-V(gate)
+* --- exceeds VT; RDS is an explicit resistor so the fault cases can set 0.
+.subckt AOFET G S D PARAMS: RDS=0.085 VT=0.5
+BVGS VS 0 V = v(S)-v(G)-{VT}
+RSD S SD {RDS}
+SSW SD D VS 0 SWFET
+.model SWFET SW(RON=1m ROFF=1e12 VT=0 VH=1m)
+.ends
+
+* --- receiver LED: a fixed forward drop with an ideal diode for blocking
+.subckt OPTOLED A K PARAMS: VF=1.65
+DIDE A X DMINI
+VFX  X K {VF}
+.model DMINI D(IS=1e-9 N=1m)
+.ends
+
+* --- one transmitter chain, parameterised so the corner cases can be run
+* --- side by side. Terminals: TX (MCU pin), RING, TIP (jack nets).
+.subckt TXCASE TX RING TIP PARAMS: RAIL=3.3 R58=180 R61=2.2k R59=33 R60=22 RDS=0.085 VF=1.65 RRX=220 CISS=1f
+VNR  NR  0     DC {RAIL}
+RG   TX  G     {R58}
+RP   G   NR    {R61}
+XQ   G   NR    D AOFET PARAMS: RDS={RDS} VT=0.5
+R59S RING D    {R59}
+R60S TIP  0    {R60}
+RRXS RING RX   {RRX}
+XRXS RX  TIP   OPTOLED PARAMS: VF={VF}
+CG   G   NR    {CISS}
+.ends
+
+* --- MAIN CHAIN on the board's own nets, fitted nominal values. The pin is
+* --- held low here (VOL), so this chain is the "transmitting" state.
+VP33 P3V3_D 0 DC 3.3
+VTX  USART1_TX 0 DC 0.4
+R58  USART1_TX NET_Q2_B 180
+R61  NET_Q2_B P3V3_D 2.2k
+XQ2  NET_Q2_B P3V3_D NET_Q2_C AOFET PARAMS: RDS=0.085 VT=0.5
+R59  J_MIDI_OUT_RING NET_Q2_C 33
+R60  J_MIDI_OUT_TIP 0 22
+RRX  J_MIDI_OUT_RING RX_A 220
+XRX  RX_A J_MIDI_OUT_TIP OPTOLED PARAMS: VF=1.65
+
+* --- corner and fault cases (case nets; see doc §3/§4)
+* nominal loop: 6.00 mA
+XC_NOM   N_TX1 N_RING1 N_TIP1 TXCASE PARAMS: RAIL=3.3   R58=180   R61=2.2k R59=33    R60=22    RDS=0.085  VF=1.65 RRX=220
+VTX1 N_TX1 0 DC 0.4
+* turn-on corner: VGS = -2.528 V (documented)
+XC_ON    N_TX2 N_RING2 N_TIP2 TXCASE PARAMS: RAIL=3.135 R58=180   R61=2.2k R59=33    R60=22    RDS=0.1275 VF=1.65 RRX=220
+VTX2 N_TX2 0 DC 0.4
+* worst-case loop current: 4.31 mA (CA-033 receiver, every tolerance)
+XC_ONTOL N_TX3 N_RING3 N_TIP3 TXCASE PARAMS: RAIL=3.135 R58=181.8 R61=2178 R59=33.33 R60=22.22 RDS=0.1275 VF=1.9  RRX=231
+VTX3 N_TX3 0 DC 0.4
+* off, UART high at VOH min: |VGS| = 0.370 V
+XC_OFF   N_TX4 N_RING4 N_TIP4 TXCASE PARAMS: RAIL=3.135 R58=180   R61=2.2k R59=33    R60=22    RDS=0.1275 VF=1.65 RRX=220
+VTX4 N_TX4 0 DC 2.735
+* off, reset: the pin is high-Z, so R61 holds the gate at the source
+XC_RESET N_TX5 N_RING5 N_TIP5 TXCASE PARAMS: RAIL=3.465 R58=180   R61=2.2k R59=33    R60=22    RDS=0.085  VF=1.65 RRX=220
+VTX5 N_TX5 0 DC 3.465
+* typical current into this board's own receiver: 6.54 mA at the high rail
+XC_TYPRX N_TX6 N_RING6 N_TIP6 TXCASE PARAMS: RAIL=3.465 R58=180   R61=2.2k R59=33    R60=22    RDS=0.085  VF=1.65 RRX=220
+VTX6 N_TX6 0 DC 0.4
+* FAULT: ring to GND with RDS = 0 -- worst case for R59, best case for Q2
+XC_RINGF N_TX7 0 N_TIP7 TXCASE PARAMS: RAIL=3.465 R58=178.2 R61=2178 R59=32.67 R60=21.78 RDS=1e-6 VF=1.9 RRX=231
+VTX7 N_TX7 0 DC 0.4
+* FAULT: ring to GND with RDS at 125 C -- the FET's own dissipation
+XC_RINGH N_TX8 0 N_TIP8 TXCASE PARAMS: RAIL=3.465 R58=178.2 R61=2178 R59=32.67 R60=21.78 RDS=0.1275 VF=1.9 RRX=231
+VTX8 N_TX8 0 DC 0.4
+* FAULT: tip forced to the rail -- no MOSFET in that leg
+XC_TIPF N_TX9 N_RING9 N_TIP9 TXCASE PARAMS: RAIL=3.465 R58=178.2 R61=2178 R59=32.67 R60=21.78 RDS=0.085 VF=1.9 RRX=231
+VTX9 N_TX9 0 DC 0.4
+VTIPF N_TIP9 0 DC 3.465
+RRING9 N_RING9 0 1meg
+
+* --- gate edge: the charge peak. The gate capacitance is the AOS Ciss value.
+XC_PKC  N_TXP1 N_RINGP1 N_TIPP1 TXCASE PARAMS: RAIL=3.465 R58=178.2 R61=2178 R59=33 R60=22 RDS=0.085 VF=1.65 RRX=220 CISS=645p
+VTXP1 N_TXP1 0 PULSE(3.465 0 1u 1n 1n 100u 200u)
+* --- negative case: the rejected 100R gate resistor
+XC_PK100 N_TXP2 N_RINGP2 N_TIPP2 TXCASE PARAMS: RAIL=3.465 R58=99 R61=2178 R59=33 R60=22 RDS=0.085 VF=1.65 RRX=220 CISS=645p
+VTXP2 N_TXP2 0 PULSE(3.465 0 1u 1n 1n 100u 200u)
+
+* --- dummy source: one two-point sweep reads every static case at once
+VDUM DUM 0 DC 0
+
+.control
+set noaskquit
+dc VDUM 0 1 1
+wrdata out/midi_out_static.dat v(NET_Q2_B) v(NET_Q2_C) v(J_MIDI_OUT_RING) v(J_MIDI_OUT_TIP)
+meas dc main_gate FIND v(NET_Q2_B) AT=1
+meas dc main_tip FIND v(J_MIDI_OUT_TIP) AT=1
+meas dc nom_gate FIND v(XC_NOM.G) AT=1
+meas dc nom_tip FIND v(N_TIP1) AT=1
+meas dc on_gate FIND v(XC_ON.G) AT=1
+meas dc on_rail FIND v(XC_ON.NR) AT=1
+meas dc ontol_gate FIND v(XC_ONTOL.G) AT=1
+meas dc ontol_rail FIND v(XC_ONTOL.NR) AT=1
+meas dc ontol_tip FIND v(N_TIP3) AT=1
+meas dc off_gate FIND v(XC_OFF.G) AT=1
+meas dc off_rail FIND v(XC_OFF.NR) AT=1
+meas dc off_tip FIND v(N_TIP4) AT=1
+meas dc reset_gate FIND v(XC_RESET.G) AT=1
+meas dc reset_rail FIND v(XC_RESET.NR) AT=1
+meas dc typrx_tip FIND v(N_TIP6) AT=1
+meas dc ringf_drain FIND v(XC_RINGF.D) AT=1
+meas dc ringf_rail FIND v(XC_RINGF.NR) AT=1
+meas dc ringh_drain FIND v(XC_RINGH.D) AT=1
+meas dc ringh_rail FIND v(XC_RINGH.NR) AT=1
+meas dc tipf_tip FIND v(N_TIP9) AT=1
+tran 1n 3u
+wrdata out/midi_out_edge.dat v(XC_PKC.G) v(XC_PK100.G) v(N_TXP1) v(N_TXP2)
+meas tran pk_gate FIND v(XC_PKC.G) AT=1.002u
+meas tran pk_gate100 FIND v(XC_PK100.G) AT=1.002u
+meas tran pk_gate_settled FIND v(XC_PKC.G) AT=3u
+quit
+.endc
+.end

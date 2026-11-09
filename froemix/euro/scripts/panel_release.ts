@@ -14,6 +14,11 @@
 // It releases the PANEL ONLY: no board, no BOM, no placement data. Everything
 // lands in dist/panel-release/ (gitignored) and nothing outside it is touched.
 // Nothing here commits, pushes or places an order.
+//
+// This is a production entry point, so it is gated: `checkPhysicalAcceptance`
+// runs first and refuses before dist/panel-release/ is created, written or
+// deleted. Mechanical prototypes stay available through mechanical_release.ts;
+// they are not production certification. See ../../doc/acceptance.md.
 
 import { createHash } from "node:crypto"
 import { spawnSync } from "node:child_process"
@@ -29,6 +34,11 @@ import {
 } from "../lib/panel-art"
 import { checkBuiltPanel } from "./panel_check"
 import { verifyPanelRelease } from "../lib/panel-gerber"
+import {
+  hardwareFingerprintReport,
+  loadState,
+  validateAcceptance,
+} from "../../tools/release/acceptance"
 import { renderPanelPreviewSvg, renderPreviewHtml, renderPrintTemplateSvg } from "../lib/panel-render"
 
 const HERE = new URL(".", import.meta.url).pathname
@@ -94,6 +104,37 @@ const walk = (dir: string): string[] => {
   return out
 }
 
+/**
+ * Physical acceptance guard for this production entry point. Runs the same
+ * validator as `tools/release/gate.ts --check`, before anything is written or
+ * deleted, and returns the reasons when it blocks.
+ */
+export const checkPhysicalAcceptance = (root: string): { ok: boolean; problems: string[] } => {
+  const sources = hardwareFingerprintReport(root)
+  const problems: string[] = []
+  for (const path of sources.missing) problems.push(`missing hardware source: ${path}`)
+  for (const path of sources.missingDirectories) problems.push(`missing hardware source directory: ${path}`)
+  if (problems.length > 0) {
+    problems.push("the hardware fingerprint would be partial, so no acceptance can be checked")
+    return { ok: false, problems }
+  }
+  const statePath = join(root, "hardware-acceptance.json")
+  if (!existsSync(statePath)) {
+    problems.push(`no acceptance record at ${statePath}`)
+    return { ok: false, problems }
+  }
+  let state: unknown
+  try {
+    state = loadState(statePath)
+  } catch (error) {
+    problems.push((error as Error).message)
+    return { ok: false, problems }
+  }
+  const result = validateAcceptance(state, { rootDir: root, fingerprint: sources.fingerprint })
+  problems.push(...result.failures)
+  return { ok: problems.length === 0, problems }
+}
+
 export const main = (argv: string[]): number => {
   const designArg = argv.indexOf("--design")
   const requested = designArg >= 0 ? argv[designArg + 1]! : (process.env.FROEMIX_PANEL_DESIGN ?? DEFAULT_PANEL_DESIGN)
@@ -102,6 +143,20 @@ export const main = (argv: string[]): number => {
     return 1
   }
   const design: PanelDesignId = requested
+
+  // Fail closed BEFORE the first write or delete: a physical item is pending or
+  // the record is invalid, so dist/panel-release/ stays exactly as it is.
+  const acceptance = checkPhysicalAcceptance(join(ROOT, ".."))
+  if (!acceptance.ok) {
+    for (const problem of acceptance.problems) console.error(`  FAIL ${problem}`)
+    console.error(
+      `\nPANEL RELEASE BLOCKED: physical acceptance is not complete (${acceptance.problems.length} reason(s)).`,
+    )
+    console.error("Nothing was built, exported or deleted; dist/panel-release/ is untouched.")
+    console.error("A pending item is normal today: see ../doc/acceptance.md and ../doc/evidence/README.md.")
+    return 1
+  }
+
   mkdirSync(OUT, { recursive: true })
   // release.sh reads this so the file names it copies cannot drift from the
   // design panel_release.ts actually exported.

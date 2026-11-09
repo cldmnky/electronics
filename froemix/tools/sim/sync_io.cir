@@ -1,0 +1,119 @@
+* =====================================================================
+* froemix sync_io.cir -- SYNC input protection/shaping and SYNC output scaler
+* =====================================================================
+* Source of truth: tscircuit/sections/cv.tsx (net names match the schematic).
+* Q1 = MMBT3904 NPN, D5 = 1N4148WS, U11B/U11C = TL074, ±12 V.
+*
+* --- SYNC IN: J_SYNC_IN -> SYNC_IN (Daisy ADC_6, read as a logic level)
+*   J_SYNC_IN --R22 100k-- NET_Q1_1 (base)
+*               D5 cathode at NET_Q1_1, anode GND   (DESIGN-REVIEW R04 clamp)
+*               R23 1Meg NET_Q1_1 -> GND            (base pull-down)
+*   Q1 emitter GND, collector NET_Q1_3
+*   NET_Q1_3 --R25 10k--> P3V3_A       collector pull-up
+*   NET_Q1_3 --R27 1k---> SYNC_IN      series R into the ADC pin
+*
+* EXPECTED (SYNC IN)
+*   Base clamp (D5, R04): with a -10 V patch at J_SYNC_IN the base is held at
+*   -0.6...-0.75 V instead of the -9.1 V that R22 alone would produce, i.e.
+*   inside Q1's 6 V emitter-base rating. R22 limits the clamp current to
+*   (10 - 0.7) / 100k = 93 uA, so the diode and the base see no stress.
+*   With +10 V at the jack the base-emitter junction clamps at ~0.75 V and the
+*   100k limits the base current to ~93 uA; Q1 saturates, the collector falls
+*   to Vce(sat) and SYNC_IN reads LOW. Negative input turns Q1 off and R25
+*   pulls SYNC_IN HIGH. Levels asserted: SYNC_IN < 0.4 V at +5 V in and
+*   > 3.0 V at -5 V in (3.3 V pull-up, no ADC load drawn here).
+*   The input is inverting: a positive sync edge at the jack gives a falling
+*   edge at the ADC, which is what the firmware must expect.
+*   The diode clamp is what the negative case below removes: without D5 the
+*   same -10 V input pulls the base to about -9 V.
+*   Not modelled: Q1's stray capacitances, propagation delay and the ADC
+*   leakage; those need a bench measurement, not this deck.
+*
+* --- SYNC OUT: SYNC_OUT (Seed ADC_5 pin driven as an output) -> J_SYNC_OUT
+*   SYNC_OUT --R21 33k--> U11B_IN_N    inverting x1.512
+*               R24 49.9k -> NET_R24_2 (U11B out)
+*   NET_R24_2 --R26 100k--> U11C_IN_N  inverting x1
+*                R28 100k -> NET_R28_2 (U11C out)
+*   NET_R28_2 --R29 1k---> J_SYNC_OUT  series output R, 100k load
+*
+* EXPECTED (SYNC OUT)
+*   gain = (49.9/33) * (100/100) = 1.5121 before R29, and
+*   1.5121 * 100k/101k = 1.4971 at the jack into a 100k load.
+*   A 0...3.3 V logic level therefore becomes 0...4.94 V, inside the TL074's
+*   ±10 V swing. The 1k R29 is the short-circuit current limit (~5 mA), the
+*   same protection argument as the CV outputs.
+*
+* Models: the op-amp subcircuit is in models.py (TL074 typical values, not a
+* manufacturer SPICE model); Q1 is an illustrative NPN (IS/BF/VAF, not a
+* supplier model); D5 is the 1N4148 forward characteristic. source_link.py
+* fails when a linked value or connection in sections/cv.tsx changes.
+*
+* Run: ngspice -b sync_io.cir   (or: bash run.sh, from this directory)
+* Raw output: out/sync_in_dc.dat, out/sync_out_dc.dat, out/sync_tran.dat
+* =====================================================================
+
+* --- single-pole opamp: A0 = gm*RP, fp = GBW/A0, output clamped to the rails
+.subckt OPAMP INP INN OUT VP VM PARAMS: A0=2e5 GBW=3e6 HEAD=1.5
+RIN   INP INN 1T
+G1    0   NI  INP INN 1m
+RP    NI  0   {A0*1k}
+CP    NI  0   {1m/(6.283185307*GBW)}
+B1    OUT 0   V = max(min(V(NI), V(VP)-HEAD), V(VM)+HEAD)
+.ends
+
+* --- illustrative small-signal NPN (MMBT3904 class), NOT a supplier model
+.model QNPN NPN(IS=6.7e-15 BF=200 VAF=75 RB=10)
+* --- 1N4148/1N4148WS forward characteristic, illustrative
+.model D1N4148WS D(IS=2.52n N=1.752)
+
+VCC VCC 0 DC 12
+VEE VEE 0 DC -12
+VP33 P3V3_A 0 DC 3.3
+
+* --- SYNC IN: the fitted protection
+* DC value sweeps the input; the PULSE drives the transient run below
+VIN J_SYNC_IN 0 DC 0 PULSE(-5 5 0.1m 100n 100n 0.9m 1m)
+R22 J_SYNC_IN NET_Q1_1 100k
+D5  0 NET_Q1_1 D1N4148WS
+R23 NET_Q1_1 0 1Meg
+Q1  NET_Q1_3 NET_Q1_1 0 QNPN
+R25 P3V3_A NET_Q1_3 10k
+R27 NET_Q1_3 SYNC_IN 1k
+
+* --- negative case: the same input without D5 (base unprotected)
+R22N J_SYNC_IN NB_1 100k
+R23N NB_1 0 1Meg
+Q1N  NB_3 NB_1 0 QNPN
+R25N P3V3_A NB_3 10k
+R27N NB_3 NB_IN 1k
+
+* --- SYNC OUT
+VSYNCOUT SYNC_OUT 0 DC 0
+R21 SYNC_OUT U11B_IN_N 33k
+R24 U11B_IN_N NET_R24_2 49.9k
+XU11B 0 U11B_IN_N NET_R24_2 VCC VEE OPAMP
+R26 NET_R24_2 U11C_IN_N 100k
+R28 U11C_IN_N NET_R28_2 100k
+XU11C 0 U11C_IN_N NET_R28_2 VCC VEE OPAMP
+R29 NET_R28_2 J_SYNC_OUT 1k
+RLOAD J_SYNC_OUT 0 100k
+
+.control
+set noaskquit
+* --- input sweep: clamp, logic levels, clamp current (I = (Vin-Vbase)/100k)
+dc VIN -10 10 0.1
+wrdata out/sync_in_dc.dat v(NET_Q1_1) v(SYNC_IN) v(NB_1) v(NB_IN)
+* --- output sweep: 0..3.3 V logic level at the Seed pin
+dc VSYNCOUT 0 3.3 0.01
+wrdata out/sync_out_dc.dat v(J_SYNC_OUT) v(NET_R28_2)
+meas dc syncout_at_max MAX v(J_SYNC_OUT)
+meas dc syncout_pre_max MAX v(NET_R28_2)
+* --- a 1 kHz square at the jack: the ADC pin must follow, inverted, and stay
+* --- inside the 0...3.3 V ADC range
+tran 100n 3m
+wrdata out/sync_tran.dat v(J_SYNC_IN) v(SYNC_IN)
+meas tran sync_max MAX v(SYNC_IN) FROM=1m TO=3m
+meas tran sync_min MIN v(SYNC_IN) FROM=1m TO=3m
+quit
+.endc
+.end

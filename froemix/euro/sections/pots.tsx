@@ -9,14 +9,14 @@
 // pin1 = CCW (GND), pin2 = wiper (M_ADC_n), pin3 = CW (3.3V), so turning
 // clockwise raises the value the firmware reads.
 
+import { Fragment } from "react"
 import { POTS } from "../lib/layout"
 import { FP_POT_RK09K_R90 } from "../lib/footprints"
 
 export const PotsSection = () => (
   <>
     {POTS.map((pot) => (
-      <potentiometer
-        key={pot.name}
+      <Fragment key={pot.name}><potentiometer
         name={pot.name}
         footprint={FP_POT_RK09K_R90}
         maxResistance="10k"
@@ -24,13 +24,12 @@ export const PotsSection = () => (
         supplierPartNumbers={{ jlcpcb: ["C470294"] }}
         pcbX={`${pot.x}mm`}
         pcbY={`${pot.y}mm`}
-        schPinArrangement={{ leftSide: [1, 3], rightSide: [2] }}
         connections={{
           pin1: "net.GND",
           pin2: `net.${pot.net}`,
           pin3: "net.P3V3_A",
         }}
-      />
+      /></Fragment>
     ))}
   </>
 )
