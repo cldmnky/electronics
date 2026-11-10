@@ -1,0 +1,57 @@
+{
+  "part": "Signal Construct PGN25L165 (owner-selected provisional candidate, not a production fit)",
+  "source_url": "https://static.rapidonline.com/pdf/07-1015_v1.pdf",
+  "local_copy_used_for_review": "/tmp/PGN25L145-datasheet.pdf",
+  "sha256": "5350ad1f0a795e0d688dc74e223239c82cfb3e27951244a10cb43873eeeaa46b",
+  "retrieved_date": "2026-11-09",
+  "drawing_dimensions_mm": {
+    "shaft_diameter": 2.5,
+    "shaft_diameter_tolerance": 0.05,
+    "shaft_length_x_head_underside_to_tip": 16.5,
+    "shaft_length_tolerance": 0.1,
+    "head_diameter": 3.0,
+    "head_diameter_tolerance": 0.05,
+    "head_height": 1.0,
+    "longitudinal_ribs": 3,
+    "mounting_hole_diameter": 2.6,
+    "mounting_hole_tolerance_minus": 0.05,
+    "mounting_hole_range": [
+      2.55,
+      2.6
+    ]
+  },
+  "owner_screenshot_statement": {
+    "overall_length_mm": 17.5,
+    "note": "owner-supplied screenshot for this MPN; 17.5 = 16.5 shaft + 1.0 head"
+  },
+  "not_stated_by_the_manufacturer": [
+    "any user cutting instruction",
+    "proven retention in 1.6 mm FR-4",
+    "which PCB side or LED the pipe is intended for"
+  ],
+  "distributor_note": "Conrad 2435525 appears only in an externally reported search; the Conrad site is blocked here, so the SKU is PROVISIONAL until confirmed directly.",
+  "status": "Provisional candidate. No physical fit, retention, hole tolerance or optical coupling is claimed. All physical acceptance items remain pending.",
+  "third_party_document": "No copyrighted PDF is stored in this repository; only these quoted dimensions and the hash above.",
+  "fabrication_note": {
+    "status": "NOT GUARANTEED - open fabrication question",
+    "drawing_hole_range_mm": [
+      2.55,
+      2.6
+    ],
+    "jlcpcb_sources": {
+      "capabilities": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "npth_design_guide": "https://jlcpcb.com/blog/npth-design-guide"
+    },
+    "conflict": "JLCPCB sources conflict: standard NPTH is given as +-0.05 mm in one place and +-0.08 mm in another, and the capabilities page states +0.13/-0.08 mm for through holes without an NPTH-specific split. None is selected here.",
+    "duplicate_emission": "this panel emits each circular cutout in BOTH drill_npth.drl and Edge_Cuts.gbr; CAM de-duplication of drill versus routing is unverified",
+    "required_confirmation": [
+      "JLC viewer and support: how the duplicate drill/routing feature is processed",
+      "JLC support: whether a 2.55-2.60 mm hole can be held for this panel"
+    ],
+    "unknowns": [
+      "retention in 1.6 mm FR-4",
+      "grip of the three ribs (visible on the drawing)",
+      "LED height and optical coupling"
+    ]
+  }
+}

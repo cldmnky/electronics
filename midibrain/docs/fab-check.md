@@ -115,7 +115,7 @@ guard).
 
 ## Front panel
 
-`panel.circuit.tsx` builds a bare 32HP × 3U FR-4 panel: no copper, no components,
+`panel.circuit.tsx` builds a bare 30HP × 3U FR-4 panel (152.0 × 128.5 mm): no copper, no components,
 no solder mask, white silkscreen, ENIG. It has the LCD/control/USB/TRS cutouts and
 three 4 mm LED light-pipe holes. This is a **panel PCB**, not part of the
 electrical netlist. Verify the "no solder mask both sides" option with JLCPCB

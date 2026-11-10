@@ -8,11 +8,24 @@
 // All positions stay tentative pending the physical checks listed in
 // docs/mechanical-stack.md.
 
-// 32HP x 3U = 162.56 mm (owner decision 2026-11-07): the narrowest panel whose
-// M3 rail-hole edge (±72.18) clears the glass-derived LCD window (±53.61 at
-// DISPLAY_CONCEPT.x) by more than 9 mm, while the 106 mm display module keeps
-// the value-knob body clear (see DISPLAY_CONCEPT).
-export const PANEL = { width: 32 * 5.08, height: 128.5, thickness: 1.6 } as const // 32HP x 3U = 162.56
+// 30HP x 3U front panel, 152.0 mm ACTUAL width. Owner decision 2026-11-08: the
+// 32HP / 162.56 mm panel of 2026-11-07 is REPLACED and superseded.
+//
+// 30HP nominal is 30 x 5.08 = 152.4 mm. 152.0 mm is an ENGINEERING CHOICE that
+// leaves a 0.4 mm total nominal allowance (0.2 mm per side) against that
+// nominal width. It is NOT an owner-specified exact value, NOT a manufacturer
+// mandate and NOT a guaranteed fit.
+//
+// Primary sources: Doepfer A-100 mechanical information,
+// https://doepfer.de/a100_man/a100m_e.htm and its hole figure,
+// https://doepfer.de/a100_man/A100FP.gif. They state that actual panel widths
+// are a few tenths of a millimetre smaller than the nominal HP width, that the
+// rail-hole spacing must be a multiple of 5.08 mm, and the figure dimensions
+// 128.5 mm height, 7.5 mm horizontal and 3.0 mm vertical hole inset, Ø3.2 mm
+// holes. That page publishes NO 30HP width. 152.0 mm is therefore OUR ESTIMATE
+// (0.4 mm under the 152.4 mm nominal), not a Doepfer-stated 30HP value, and it
+// is not a guaranteed fit.
+export const PANEL = { width: 152.0, height: 128.5, thickness: 1.6 } as const // 30HP x 3U, 152.0 actual
 // Preliminary board bounding boxes only. Positions/Z, cutouts, spacers and the
 // actual stack remain unresolved; see docs/mechanical-stack.md.
 //
@@ -25,8 +38,8 @@ export const PANEL = { width: 32 * 5.08, height: 128.5, thickness: 1.6 } as cons
 // is Z and is untouched.
 export const FRONT_PCB = { width: 128, height: 112, thickness: 1.6 } as const
 // Rear/base PCB is 20HP (101.6 mm) wide, mounted behind the display/Pi stack.
-// The front panel is 32HP; the extra 12HP is the right-hand control column and
-// the wider display.
+// The front panel is 30HP (152.0 mm actual); the extra 10HP carries the
+// right-hand control column and the wider display.
 export const REAR_PCB = { width: 20 * 5.08, height: 112, thickness: 1.6 } as const
 
 // M2.5 screw clearance for board and panel standoff holes; M3 for the rails.
@@ -67,14 +80,29 @@ export const FRONT_REAR_MOUNT = [
   { x: -44, y: -52 }, { x: 44, y: -52 }, { x: -45, y: 43 }, { x: 45, y: 43 },
 ] as const
 
-// Eurorack rail holes in the panel (M3 rack screws). Doepfer 3U, same rule as
-// Froemix: X inset 7.5 mm, Y inset 3.0 mm from the panel edge. At 32HP the X
-// inset is 162.56/2 - 7.5 = 73.78, so the M3 hole edge is 72.18 and the window
-// left edge (DISPLAY_CONCEPT.x - 53.61 = -63.11) leaves 9.07 mm of ligament,
-// with 17.45 mm to the panel edge. Both are asserted in layout.test.ts.
+// Eurorack rail holes in the panel (M3 rack screws), Y inset 3.0 mm from the
+// panel edge (unchanged; the Doepfer figure A100FP.gif dimensions 3.0 mm and
+// Ø3.2 mm holes, matching these). The X spacing MUST be a multiple of 5.08 mm
+// (Doepfer A-100 rule, https://doepfer.de/a100_man/a100m_e.htm): 137.16 =
+// 27 x 5.08, so the holes sit at +/-68.58. On our 152.0 mm panel that is a
+// 7.42 mm centre inset, and the 3.2 mm hole edge clears the panel edge by
+// 5.82 mm. The figure draws a 7.5 mm edge inset, so this fixed-grid choice is
+// 0.08 mm tighter than the figure: DISCLOSED, not adjusted, and neither value
+// is a fitted measurement.
+//
+// The replaced 32HP panel used +/-73.78, i.e. a spacing of 147.56 mm =
+// 29 x 5.08 + 0.24: 0.24 mm off the 5.08 mm grid. That is recorded as an
+// off-grid value. It is NOT a claim that the old holes necessarily fail the
+// sliding nuts.
+//
+// The rail-hole edge (-66.98) and the LCD window LEFT edge (-63.11) differ by
+// 3.87 mm in X ONLY. Those two features sit at different Y, so that number is
+// an x projection: it is NOT a web and NOT a shortest clearance. The real 2D
+// distance is measured from the emitted aperture polygon in layout.test.ts,
+// together with the standoff-hole to rail-hole web.
 export const RAIL_HOLES = [
-  { x: -73.78, y: -61.25 }, { x: 73.78, y: -61.25 },
-  { x: -73.78, y: 61.25 }, { x: 73.78, y: 61.25 },
+  { x: -68.58, y: -61.25 }, { x: 68.58, y: -61.25 },
+  { x: -68.58, y: 61.25 }, { x: 68.58, y: 61.25 },
 ] as const
 
 // Pi 5 mounting holes, portrait (49 across X, 58 vertical — the reference
@@ -208,8 +236,9 @@ export const DISPLAY_BOSS_PATTERN = [
 // Centre (-9.5, 11). The horizontal position is fixed by owner decision D2:
 //   module left edge -62.5 vs FRONT_PCB left edge -64   -> 1.5 mm ligament
 //   module right edge +43.5 vs knob body left 45.75     -> 2.25 mm clear
-//   window left edge -63.11 vs M3 rail-hole edge -72.18 -> 9.07 mm ligament
-//   window left edge to panel edge -81.28               -> 18.17 mm
+//   window left edge -63.11 vs M3 rail-hole edge -66.98 -> 3.87 mm in X ONLY,
+//   at a different Y, so not a web; the real 2D distance is in layout.test.ts
+//   window left edge to panel edge -76.0                -> 12.89 mm (30HP panel)
 // width/height are the MODULE OUTLINE (the physical envelope behind the panel).
 // innerWidth/innerHeight are the ACTIVE area; bezelWidth/bezelHeight are the
 // printed border; glassWidth/glassHeight are what the panel aperture follows.
@@ -443,17 +472,68 @@ export const PROVISIONAL_Z = {
 // consequence of a design target, not evidence for it, and it is not certified.
 export const PANEL_TO_FRONT_BOARD_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear) // 17.45
 
-// Light-pipe reach is NOT proven, and it does not look adequate. The Bivar
-// PLP2-400-C is 10.16 mm long against a 17.45 mm panel-to-board gap, so
-// 7.29 mm is unaccounted. No LED height and no seating allowance is recorded
-// here: both are unmeasured, and inventing them would fake a reach check.
-// Pending: the Bivar drawing, the actual LED, and very likely a different
-// (longer) light pipe.
-export const LIGHT_PIPE = { part: "Bivar PLP2-400-C", length: 10.16 } as const
+// Light-pipe reach: the retired Bivar PLP2-400-C 10.16 mm reference and the
+// 17.45 - 10.16 = 7.29 mm subtraction are WITHDRAWN and kept only as history
+// (that 10.16 mm value is not in the current Bivar datasheet, its family Ø3.3 mm
+// flange falls through the old Ø4.0 mm opening, and the subtraction compared
+// different reference planes). The active candidate follows in the next block.
+// OWNER-SELECTED CANDIDATE, NOT A PRODUCTION FIT: Signal Construct PGN25L165.
+// Manufacturer drawing: https://static.rapidonline.com/pdf/07-1015_v1.pdf,
+// SHA-256 5350ad1f0a795e0d688dc74e223239c82cfb3e27951244a10cb43873eeeaa46b,
+// retrieved 2026-11-09. Dimensions read off that drawing: shaft Ø2.5 +-0.05 mm;
+// x = 16.5 +-0.1 mm from the head underside to the tip; head Ø3 +-0.05 mm; head
+// height 1.0 mm; three longitudinal ribs; mounting hole Ø2.6 -0.05 mm
+// (2.55-2.60 mm). The owner's screenshot for this MPN states 17.5 mm overall,
+// which is 16.5 shaft + 1.0 head. The datasheet states no user cutting
+// instruction and no proven retention in 1.6 mm FR-4; neither is claimed here.
+//
+// The retired Bivar PLP2-400-C is HISTORICAL: the current Bivar datasheet does
+// not show that 10.16 mm reference, and its family Ø3.3 mm flange falls through
+// the old Ø4.0 mm opening. Do not use it as an active candidate.
+export const LIGHT_PIPE = {
+  part: "Signal Construct PGN25L165",
+  status: "candidate, not a production fit",
+  sourceUrl: "https://static.rapidonline.com/pdf/07-1015_v1.pdf",
+  sourceSha256: "5350ad1f0a795e0d688dc74e223239c82cfb3e27951244a10cb43873eeeaa46b",
+  shaftLength: 16.5,            // x, head underside -> tip
+  shaftLengthTolerance: 0.1,    // +-0.1 mm on x
+  overallLength: 17.5,          // owner screenshot for this MPN
+  headHeight: 1.0,
+  headDiameter: 3.0,            // +-0.05
+  headDiameterTolerance: 0.05,
+  shaftDiameter: 2.5,           // +-0.05
+  shaftDiameterTolerance: 0.05,
+  panelHoleDiameter: 2.6,       // -0.05, i.e. 2.55-2.60
+  panelHoleToleranceMinus: 0.05,
+  ribs: 3,
+} as const
+
+// Placing the head underside on the panel FRONT face is an ASSUMPTION, not a
+// measurement: nothing has fitted the part. With Z = 0 at the panel front face
+// and +Z rearward, the nominal tip plane is 16.5 mm. The provisional front-board
+// near face is 19.05 mm, so the NOMINAL tip-to-board-plane distance is 2.55 mm.
+// That is arithmetic between two assumed planes. It is NOT the LED-to-pipe
+// optical gap: the LED height, the brightness/coupling, the retention and the
+// stack tolerance are unknown, so `opticalGap` stays null and the status stays
+// incomplete. No bound may be inferred from the +-0.1 mm shaft tolerance alone.
 export const LIGHT_PIPE_REACH = {
-  gap: PANEL_TO_FRONT_BOARD_GAP,                            // 17.45
-  pipeLength: LIGHT_PIPE.length,                            // 10.16
-  unaccounted: mm3(PANEL_TO_FRONT_BOARD_GAP - LIGHT_PIPE.length), // 7.29, PENDING
+  part: LIGHT_PIPE.part,
+  datum: "panel FRONT face, Z = 0; +Z rearward",
+  mountingAssumption: "head underside on the panel front face (ASSUMPTION)",
+  shaftLength: LIGHT_PIPE.shaftLength,                 // 16.5
+  overallLength: LIGHT_PIPE.overallLength,             // 17.5
+  headHeight: LIGHT_PIPE.headHeight,                   // 1.0
+  nominalTipZ: LIGHT_PIPE.shaftLength,                 // 16.5 from the panel front
+  boardNearFaceZ: PROVISIONAL_Z.frontBoardTop,         // 19.05, provisional
+  nominalTipToBoardPlane: mm3(PROVISIONAL_Z.frontBoardTop - LIGHT_PIPE.shaftLength), // 2.55
+  opticalGap: null,                                    // UNKNOWN: LED height unmeasured
+  status: "incomplete",
+  missing: [
+    "LED body height above the front-board top face",
+    "measured board standoff / stack tolerances",
+    "proven retention in 1.6 mm FR-4 and the real panel hole tolerance",
+    "brightness and optical coupling",
+  ],
 } as const
 
 // Tallest front-board top-side part with a manufacturer-stated height: the
@@ -640,6 +720,27 @@ export const mechanicalExport = () => ({
   frontRearMount: FRONT_REAR_MOUNT,
   mountHoleDiameter: MOUNT_HOLE_DIAMETER,
   feedthroughs: USB_FEEDTHROUGHS,
+  // Every drilled hole the STEP/STL verification models need, so no CAD script
+  // restates a coordinate. Adding a key here is additive: no position moves.
+  railHoles: RAIL_HOLES,
+  railHoleDiameter: RAIL_HOLE_DIAMETER,
+  frontBoardHoles: FRONT_BOARD_HOLES,
+  // The canonical panel openings, so the CAD panel cannot drift from the board.
+  panelApertures: PANEL_APERTURES,
+  panelDrills: PANEL_DRILLS,
+  panelMountHoles: PANEL_MOUNT_HOLES,
+  lcdMountHoles: LCD_MOUNT_HOLES,
+  displayBossPattern: DISPLAY_BOSS_PATTERN,
+  // The recorded ALTERNATIVE inner (plain-hole) pattern, module-local. It is
+  // asymmetric in x (25.62 vs 22.38 mm insets), so it can DISTINGUISH the two
+  // candidate in-plane rotations of the vendor model. It does NOT decide which
+  // one is correct: this record uses the same no-flip premise that is itself
+  // questioned (the drawing may be a rear view). The orientation stays pending
+  // until a labelled front/rear photograph or the physical part is available; a
+  // candidate that reproduces these positions is consistent only.
+  displayStandoffs: DISPLAY_STANDOFFS,
+  piHoles: PI_HOLES,
+  piMount: PI_MOUNT,
 })
 
 // ---- Right-hand control column ----
@@ -751,8 +852,35 @@ export const FRONT_CONCEPT: readonly FrontConceptPoint[] = [
 
 // ---- Panel openings (front FR-4 panel) ----
 export const PANEL_CUTOUTS = {
-  button: 12.4, // B3F-4055 transport button, circular opening
-  led: 4.0,     // Bivar PLP2-400-C light pipe over the 0805 LED
+  // UNVERIFIED PROVISIONAL VALUE, NOT SOURCED. No Omron drawing states a
+  // 12.4 mm round panel opening. The B3F-4055 (primary drawing, SHA-256
+  // be9cf69e...) has a SQUARE 3.8 +-0.1 mm projected plunger and a 12 +-0.2 mm
+  // square body; the compatible B32 cap families (SHA-256 90834f79...) show a
+  // 12.2 x 12.2 mm square or a Ø9.7 mm round reference cutout. A square cap
+  // corner cannot pass a Ø12.4 round hole. Kept only until the owner chooses a
+  // switch extension, a cap, or a stack redesign; see docs/mechanical-stack.md
+  // and the pending `control_actuator` acceptance item.
+  button: 12.4,
+  // 2.6 is the owner-approved PROVISIONAL mounting hole for the candidate
+  // Signal Construct PGN25L165 (manufacturer drawing, SHA-256 5350ad1f...:
+  // mounting hole Ø2.6 -0.05 mm, i.e. 2.55-2.60). It is NOT a fit approval and
+  // it is NOT the head: the head is Ø3 +-0.05 mm and sits on the panel FRONT
+  // face under the placement assumption below. The earlier 4.0 mm opening was
+  // sized for the retired Bivar PLP2 family whose Ø3.3 mm flange falls through
+  // it; that family is no longer an active candidate.
+  //
+  // FABRICATION IS NOT GUARANTEED. The drawing's hole tolerance is 2.55-2.60 mm,
+  // and the JLCPCB sources conflict: standard NPTH +-0.05 vs +-0.08, while the
+  // capabilities page gives +0.13/-0.08 for through holes with no NPTH split
+  // (https://jlcpcb.com/capabilities/pcb-capabilities,
+  // https://jlcpcb.com/blog/npth-design-guide). No band is chosen as guaranteed
+  // here. The exporter also emits each circular cutout in BOTH
+  // drill_npth.drl and Edge_Cuts.gbr, and CAM drill/routing de-duplication is
+  // unverified: the JLC viewer and support must confirm both how the duplicate
+  // is processed and whether 2.55-2.60 mm can be held. The ribs are visible on
+  // the drawing; grip is unknown. Retention in 1.6 mm FR-4 and the LED coupling
+  // are unverified.
+  led: 2.6,
   control: 7.2, // PEC11R M7 x 0.75 bushing (7.0 mm thread) / SKRHABE010 nav actuator
   jack: 6.2,    // PJ-301M-3-B barrel
 } as const
@@ -761,6 +889,92 @@ export const PANEL_CUTOUTS = {
 // Ring band 3.625…4.175: 0.5 mm web to the 6.2 mm barrel hole, 2.8 mm to the
 // transport button cutouts above, 1.1 mm to the OUT labels below.
 export const OUT_RING = { radius: 3.9, stroke: 0.55 } as const
+
+// ---- Canonical panel apertures and drills ----
+// The panel's openings, in the order `panel.circuit.tsx` emits them. Every
+// value is DERIVED from the constants above; this block adds no coordinate.
+// `panel.circuit.tsx` and `mechanicalExport()` both consume it, so the built
+// panel and the STEP/STL mockups cannot drift apart. Element order is part of
+// the contract: `lib/panel-cutouts.test.ts` compares this list with the built
+// `dist/panel/circuit.json` element by element, and any change to the order or
+// the geometry fails there.
+export type PanelDrill = { name: string; x: number; y: number; diameter: number }
+export type PanelAperture = {
+  shape: "polygon" | "rect" | "circle"
+  name: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  radius?: number
+  points?: readonly { x: number; y: number }[]
+  drills?: readonly PanelDrill[]
+}
+
+const feedthroughDrills = (f: (typeof USB_FEEDTHROUGHS)[number], i: number): PanelDrill[] =>
+  f.holeSpacing > 0
+    ? [-1, 1].map(sx => ({
+        name: `USB_${i}_${sx}`,
+        x: f.x + sx * f.holeSpacing / 2,
+        y: f.y,
+        diameter: f.holeDiameter,
+      }))
+    : []
+
+export const PANEL_APERTURES: readonly PanelAperture[] = [
+  // 1. LCD glass aperture: rounded rectangle with explicit corner relief.
+  { shape: "polygon", name: "LCD_APERTURE", points: roundedRectOutline(PANEL_LCD_CUTOUT) },
+  // 2. The three USB panel feedthroughs, each with its two panel screw holes.
+  ...USB_FEEDTHROUGHS.map((f, i) => ({
+    shape: "rect" as const,
+    name: `USB_FEEDTHROUGH_${i}`,
+    x: f.x,
+    y: f.y,
+    width: f.cutoutWidth,
+    height: f.cutoutHeight,
+    drills: feedthroughDrills(f, i),
+  })),
+  // 3. Transport buttons, then PLAY START and SHIFT/EXIT.
+  ...FRONT_COLUMNS.map(c => ({
+    shape: "circle" as const, name: `${c.button} BUTTON`,
+    x: c.x, y: TRANSPORT_Y, radius: PANEL_CUTOUTS.button / 2,
+  })),
+  { shape: "circle", name: "PLAY START BUTTON", x: PLAY_START.x, y: TRANSPORT_Y, radius: PANEL_CUTOUTS.button / 2 },
+  { shape: "circle", name: "SHIFT/EXIT BUTTON", x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y, radius: PANEL_CUTOUTS.button / 2 },
+  // 4. LED light-pipe openings, 12 mm beside REC / OVER DUB / PLAY.
+  ...FRONT_COLUMNS.filter(c => c.button in LED_ID).map(c => {
+    const p = ledPosition(c.x)
+    return {
+      shape: "circle" as const,
+      name: LED_ID[c.button as keyof typeof LED_ID],
+      x: p.x, y: p.y, radius: PANEL_CUTOUTS.led / 2,
+    }
+  }),
+  // 5. Encoder, POWER button, NAV switch: the right-hand control column.
+  { shape: "circle", name: "VALUE ENCODER", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y, radius: PANEL_CUTOUTS.control / 2 },
+  { shape: "circle", name: "POWER BUTTON", x: POWER_BUTTON.x, y: POWER_BUTTON.y, radius: PANEL_CUTOUTS.button / 2 },
+  { shape: "circle", name: "NAV", x: RIGHT_CONTROLS.NAV.x, y: RIGHT_CONTROLS.NAV.y, radius: PANEL_CUTOUTS.control / 2 },
+  // 6. MIDI jack barrels in the four transport columns.
+  ...FRONT_COLUMNS.map(c => ({
+    shape: "circle" as const, name: `${c.jack} JACK`,
+    x: c.x, y: JACK_Y, radius: PANEL_CUTOUTS.jack / 2,
+  })),
+]
+
+// Panel-to-front-board standoffs and Eurorack rail holes. `panel.circuit.tsx`
+// emits these after the silkscreen, so they are kept out of PANEL_APERTURES and
+// the built element order stays unchanged.
+export const PANEL_MOUNT_HOLES: readonly PanelDrill[] = [
+  ...FRONT_BOARD_HOLES.map((h, i) => ({ name: `STAND_${i + 1}`, x: h.x, y: h.y, diameter: MOUNT_HOLE_DIAMETER })),
+  ...RAIL_HOLES.map((h, i) => ({ name: `RACK_${i + 1}`, x: h.x, y: h.y, diameter: RAIL_HOLE_DIAMETER })),
+]
+
+// Every drilled hole in the panel, flat, for the CAD model: the feedthrough
+// screw holes first, then the standoffs and the rail holes.
+export const PANEL_DRILLS: readonly PanelDrill[] = [
+  ...PANEL_APERTURES.flatMap(a => a.drills ?? []),
+  ...PANEL_MOUNT_HOLES,
+]
 
 // ---- White-silkscreen panel labels ----
 // Short panel text for the full concept ids, plus per-control label offsets;
@@ -773,6 +987,9 @@ const FEEDTHROUGH_LABEL: Record<string, string> = {
 const JACK_LABEL: Record<string, string> = {
   "MIDI IN 1": "IN 1", "MIDI IN 2": "IN 2", "MIDI OUT 1": "OUT 1", "MIDI OUT 2": "OUT 2",
 }
+/** PLAY START label row, above its button (see PANEL_LABELS). */
+export const PLAY_START_LABEL_Y = -25.5
+
 const LABEL_OFFSET = {
   // -9.5 -> -6.0: the panel window top is 45.435, so the USB labels move up to
   // y 47.5 (bottom 46.6) to stay on FR-4 with 1.165 mm to the window and
@@ -815,6 +1032,11 @@ export const PANEL_LABELS: readonly PanelLabel[] = [
   // POWER sits under its cutout: the +7 row above belongs to PLAY START.
   { text: "POWER", x: POWER_BUTTON.x, y: POWER_BUTTON.y + POWER_LABEL_OFFSET_Y },
   ...FRONT_COLUMNS.map(c => ({ text: c.button, x: c.x, y: TRANSPORT_Y + LABEL_OFFSET.transport })),
-  { text: PLAY_START.button, x: PLAY_START.x, y: TRANSPORT_Y + LABEL_OFFSET.transport },
+  // PLAY START's label sits ABOVE its button, not below like the transport row:
+  // below it the ink ran into the POWER button opening at (52.5, -48). At
+  // y -25.5 the 1.8 mm text keeps 1.2 mm to the LCD window bottom (-23.435) and
+  // 1.4 mm to the button opening top (-27.8). Only the label moves; no control,
+  // opening or board coordinate changes.
+  { text: PLAY_START.button, x: PLAY_START.x, y: PLAY_START_LABEL_Y },
   ...FRONT_COLUMNS.map(c => ({ text: JACK_LABEL[c.jack] ?? c.jack, x: c.x, y: JACK_Y + LABEL_OFFSET.jack })),
 ]
