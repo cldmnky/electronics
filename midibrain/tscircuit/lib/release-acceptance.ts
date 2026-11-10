@@ -97,7 +97,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "case_fit",
     title: "Case fit",
-    requirement: "32HP/3U panel, 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth.",
+    requirement: "30HP/3U panel (152.0 mm actual), 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth.",
   },
   {
     id: "usb_c_5a_path",
@@ -227,6 +227,17 @@ export const FINGERPRINT_FILES = [
   // invalidate a DFM/CPL or fit result even when lib/layout.ts is unchanged.
   "mechanical/feedthrough_bracket.py",
   "mechanical/bracket_geometry.py",
+  // The STEP/STL verification model is the same kind of source: it decides
+  // which envelopes are drawn, which axis is treated as unknown and whether a
+  // collision result is definitive, and it builds the mockups a first article
+  // is checked against. A change to any of these must invalidate old evidence.
+  "mechanical/step_assembly.py",
+  "mechanical/step_geometry.py",
+  "mechanical/light_pipe_reach.py",
+  // The vendor-model inspector produced the display landmark planes the
+  // placement depends on. Changing what it measures can invalidate a first
+  // article result, so it is a hardware source too.
+  "mechanical/tools/inspect_display_step.py",
   "jlc-order.json",
   "tscircuit/scripts/sourcing-extras.csv",
 ]

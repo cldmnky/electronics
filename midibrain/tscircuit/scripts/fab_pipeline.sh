@@ -105,7 +105,8 @@ fab = Path(sys.argv[1])
 # export (mechanical/layout.json, generated from lib/layout.ts and freshness-
 # checked by `make mechanical` earlier in this pipeline) instead of restated
 # here. A re-stated copy is what let this gate keep a withdrawn 136 x 112 / 30HP
-# draft while owner decision D2 shipped 128 x 112 and 32HP.
+# draft while owner decision D2 shipped 128 x 112; the panel is 30HP (152.0 mm)
+# since the 2026-11-08 owner decision that replaced 32HP.
 _layout = json.loads((fab.parent / "mechanical" / "layout.json").read_text())
 BOUNDS = {
     "front": (_layout["frontPcb"]["width"], _layout["frontPcb"]["height"]),

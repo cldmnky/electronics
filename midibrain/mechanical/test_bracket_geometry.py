@@ -421,10 +421,19 @@ class DisplayEnvelopeTest(unittest.TestCase):
         self.assertAlmostEqual(self.data["displayUndersideGap"],
                                self.z["frontBoardTop"] - self.z["displayRearMost"], places=6)
 
-    def test_light_pipe_reach_is_pending_and_short(self) -> None:
+    def test_the_light_pipe_model_is_the_pgn25_candidate(self) -> None:
+        """The retired 10.16 / 7.29 subtraction must not come back."""
         reach = self.data["lightPipeReach"]
-        self.assertAlmostEqual(reach["unaccounted"], 7.29, places=6)
-        self.assertNotIn("seatAllowance", self.data["lightPipe"])
+        pipe = self.data["lightPipe"]
+        self.assertNotIn("unaccounted", reach)
+        self.assertIn("PGN25L165", pipe["part"])
+        self.assertAlmostEqual(pipe["shaftLength"], 16.5, places=6)
+        self.assertAlmostEqual(pipe["overallLength"], 17.5, places=6)
+        self.assertAlmostEqual(reach["nominalTipZ"], pipe["shaftLength"], places=6)
+        self.assertAlmostEqual(reach["nominalTipToBoardPlane"], 2.55, places=6)
+        self.assertIsNone(reach["opticalGap"])
+        self.assertEqual(reach["status"], "incomplete")
+        self.assertNotIn("seatAllowance", pipe)
 
 
 class ProvisionalDataTest(unittest.TestCase):
@@ -441,7 +450,16 @@ class ProvisionalDataTest(unittest.TestCase):
     def test_light_pipe_reach_is_recorded_as_pending(self) -> None:
         data = layout()
         reach = data["lightPipeReach"]
-        self.assertAlmostEqual(reach["gap"] - reach["pipeLength"], reach["unaccounted"], places=6)
+        # One datum: the tip plane is the SHAFT length, and the board plane is
+        # provisional. The step is arithmetic, never an LED gap.
+        self.assertAlmostEqual(reach["nominalTipZ"], data["lightPipe"]["shaftLength"], places=6)
+        self.assertAlmostEqual(reach["boardNearFaceZ"], data["provisionalZ"]["frontBoardTop"],
+                               places=6)
+        self.assertAlmostEqual(reach["nominalTipToBoardPlane"],
+                               reach["boardNearFaceZ"] - reach["nominalTipZ"], places=6)
+        self.assertIsNone(reach["opticalGap"])
+        self.assertEqual(reach["status"], "incomplete")
+        self.assertTrue(reach["missing"])
         # No LED height or seat allowance may be invented here.
         self.assertNotIn("seatAllowance", data["lightPipe"])
 

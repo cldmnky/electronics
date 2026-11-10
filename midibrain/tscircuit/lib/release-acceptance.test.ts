@@ -311,6 +311,10 @@ describe("hardware fingerprint", () => {
   for (const [label, rel] of [
     ["the feedthrough bracket generator", "mechanical/feedthrough_bracket.py"],
     ["the bracket geometry module", "mechanical/bracket_geometry.py"],
+    ["the STEP/STL assembly builder", "mechanical/step_assembly.py"],
+    ["the STEP collision geometry module", "mechanical/step_geometry.py"],
+    ["the light-pipe reach computation", "mechanical/light_pipe_reach.py"],
+    ["the vendor display inspector", "mechanical/tools/inspect_display_step.py"],
     ["the JLCPCB order settings", "jlc-order.json"],
     ["the curated sourcing selection", "tscircuit/scripts/sourcing-extras.csv"],
   ] as const) {

@@ -1,7 +1,7 @@
 {
   "schema": "midibrain-hardware-acceptance/1",
   "note": "Physical acceptance state for the MIDI Brain hardware. An item moves to \"accepted\" only with measured evidence in docs/evidence/ that names a reviewer, a date and the current hardware fingerprint. The fingerprint covers the canonical PCB/panel sources, the mechanical TS-to-CAD bridge and its exported layout, the CAD algorithm, the JLCPCB order settings and the curated cable/hardware selection, so any hardware, algorithm, order-setting or part-selection change makes old evidence stale. Refresh hardware_fingerprint with `bun run scripts/release_gate.ts --fingerprint` after such a change; a documentation-only commit does not change it. There is no override key: unknown keys are errors. See docs/acceptance.md.",
-  "hardware_fingerprint": "553dc82866febe7b5f0eae2fb3d19fb8b201e5286ed877ce3e61d7f0574aaf38",
+  "hardware_fingerprint": "a2ef49abe74bcf991f8f611fab511280ab268d1eff9266e297ea9f1b7ae43330",
   "items": [
     {
       "id": "zstack",
@@ -61,7 +61,7 @@
     {
       "id": "case_fit",
       "state": "pending",
-      "note": "32HP/3U panel, 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth."
+      "note": "30HP/3U panel (152.0 mm actual), 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth."
     },
     {
       "id": "usb_c_5a_path",

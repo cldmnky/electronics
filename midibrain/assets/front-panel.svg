@@ -1,31 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 178.56 148.5">
-<title>mnkybox 32HP 4.3-inch DSI concept — not a cutting template</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 148.5">
+<title>mnkybox 30HP 4.3-inch DSI concept — not a cutting template</title>
 <rect width="100%" height="100%" fill="#e8e8e4"/>
-<text x="8" y="5" font-family="sans-serif" font-size="2.4" font-weight="bold" fill="#49544e">mnkybox — 32HP FRONT CONCEPT</text>
+<text x="8" y="5" font-family="sans-serif" font-size="2.4" font-weight="bold" fill="#49544e">mnkybox — 30HP FRONT CONCEPT</text>
 <g transform="translate(8 8)" font-family="sans-serif">
-<rect width="162.56" height="128.5" rx="0.7" fill="#19211e"/>
-<rect x="18.17" y="18.814999999999998" width="107.22" height="68.87" fill="#080f0c" stroke="#829a8b" stroke-width="0.35"/>
-<rect x="23.759999999999998" y="25.822" width="96.04" height="54.856" fill="#112820"/>
-<text x="71.78" y="51.25" text-anchor="middle" fill="#b8e5cf" font-size="2.4">4.3-inch 800 × 480 DSI / CAPACITIVE TOUCH</text>
-<text x="71.78" y="55.25" text-anchor="middle" fill="#86bba1" font-size="1.8">PANEL CUTOUT 107.22 × 68.87 — ILLUSTRATIVE</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="37.78" y="8.75" width="11" height="4" rx="0.8"/></g><text x="43.28" y="15.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">USB-C POWER</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="70.78" y="8.75" width="11" height="4" rx="0.8"/></g><text x="76.28" y="15.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">UMC AUDIO USB</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="110.78" y="8.75" width="11" height="4" rx="0.8"/></g><text x="116.28" y="15.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI HUB USB</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="133.28" cy="34.25" r="5.5"/><path d="M 133.28 29.75 v 2.2" fill="none" stroke="#e0eae3" stroke-width="0.5"/></g><text x="133.28" y="42.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">VALUE</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="128.28" y="48.25" width="10" height="10" rx="0.7"/><circle cx="133.28" cy="53.25" r="0.8"/></g><text x="133.28" y="61.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">NAV</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="130.08" y="69.65" width="6.4" height="5.2" rx="0.5"/></g><text x="133.28" y="77.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">SHIFT / EXIT</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="25.080000000000002" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="28.28" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">REC</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="49.08" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="52.28" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">OVER DUB</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="73.08" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="76.28" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">STOP</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="97.08" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="100.28" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">PLAY</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="130.08" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="133.28" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">PLAY START</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="40.28" cy="98.25" r="1"/></g><text x="40.28" y="102.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">REC LED</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="64.28" cy="98.25" r="1"/></g><text x="64.28" y="102.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">OVERDUB LED</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="112.28" cy="98.25" r="1"/></g><text x="112.28" y="102.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">PLAY LED</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="28.28" cy="111.75" r="3.2"/></g><text x="28.28" y="116.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI IN 1</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="52.28" cy="111.75" r="3.2"/></g><text x="52.28" y="116.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI IN 2</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="76.28" cy="111.75" r="3.2"/></g><text x="76.28" y="116.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI OUT 1</text>
-<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="100.28" cy="111.75" r="3.2"/></g><text x="100.28" y="116.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI OUT 2</text>
+<rect width="152" height="128.5" rx="0.7" fill="#19211e"/>
+<rect x="12.89" y="18.814999999999998" width="107.22" height="68.87" fill="#080f0c" stroke="#829a8b" stroke-width="0.35"/>
+<rect x="18.479999999999997" y="25.822" width="96.04" height="54.856" fill="#112820"/>
+<text x="66.5" y="51.25" text-anchor="middle" fill="#b8e5cf" font-size="2.4">4.3-inch 800 × 480 DSI / CAPACITIVE TOUCH</text>
+<text x="66.5" y="55.25" text-anchor="middle" fill="#86bba1" font-size="1.8">PANEL CUTOUT 107.22 × 68.87 — ILLUSTRATIVE</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="32.5" y="8.75" width="11" height="4" rx="0.8"/></g><text x="38" y="15.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">USB-C POWER</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="65.5" y="8.75" width="11" height="4" rx="0.8"/></g><text x="71" y="15.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">UMC AUDIO USB</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="105.5" y="8.75" width="11" height="4" rx="0.8"/></g><text x="111" y="15.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI HUB USB</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="128" cy="34.25" r="5.5"/><path d="M 128 29.75 v 2.2" fill="none" stroke="#e0eae3" stroke-width="0.5"/></g><text x="128" y="42.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">VALUE</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="123" y="48.25" width="10" height="10" rx="0.7"/><circle cx="128" cy="53.25" r="0.8"/></g><text x="128" y="61.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">NAV</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="124.8" y="69.65" width="6.4" height="5.2" rx="0.5"/></g><text x="128" y="77.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">SHIFT / EXIT</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="19.8" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="23" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">REC</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="43.8" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="47" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">OVER DUB</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="67.8" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="71" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">STOP</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="91.8" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="95" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">PLAY</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><rect x="124.8" y="95.65" width="6.4" height="5.2" rx="0.5"/></g><text x="128" y="103.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">PLAY START</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="35" cy="98.25" r="1"/></g><text x="35" y="102.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">REC LED</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="59" cy="98.25" r="1"/></g><text x="59" y="102.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">OVERDUB LED</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="107" cy="98.25" r="1"/></g><text x="107" y="102.25" text-anchor="middle" font-size="1.55" fill="#d5e4da">PLAY LED</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="23" cy="111.75" r="3.2"/></g><text x="23" y="116.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI IN 1</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="47" cy="111.75" r="3.2"/></g><text x="47" y="116.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI IN 2</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="71" cy="111.75" r="3.2"/></g><text x="71" y="116.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI OUT 1</text>
+<g fill="#344940" stroke="#a3b7aa" stroke-width="0.3"><circle cx="95" cy="111.75" r="3.2"/></g><text x="95" y="116.75" text-anchor="middle" font-size="1.55" fill="#d5e4da">MIDI OUT 2</text>
 </g>
 <text x="8" y="142.5" font-family="sans-serif" font-size="2.1" fill="#9b4234">ILLUSTRATIVE ONLY — NOT A CUTTING TEMPLATE OR FIT APPROVAL</text>
 </svg>

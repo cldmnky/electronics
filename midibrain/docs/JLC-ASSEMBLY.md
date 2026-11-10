@@ -30,8 +30,9 @@ hand-edit generated fabrication files to repair a source problem.
 
 ## Board options
 
-- Front 128 × 112 mm; rear 101.6 × 112 mm (20HP); panel 162.56 × 128.5 mm
-  (32HP/3U). Each board is 2-layer, 1.6 mm FR-4.
+- Front 128 × 112 mm; rear 101.6 × 112 mm (20HP); panel 152.0 × 128.5 mm
+  (30HP/3U, 152.0 actual against the 152.4 mm nominal). Each board is 2-layer,
+  1.6 mm FR-4.
 - Front and rear use 1 oz copper and candidate lead-free HASL. Apply the
   actual emitted source rules, reviewed Gerbers and
   [fab-check.md](fab-check.md), not obsolete defaults from an older export.
@@ -95,8 +96,7 @@ never edit a CPL merely to force a match.
 
 - CAB-15455 is **3 A and rejected for the 5 A power path**. The exact suitable
   feedthrough/cable chain and PD/droop/temperature tests are still pending.
-- Bivar PLP2-400-C is a **10.16 mm reference, not an approved fit** to the
-  provisional 17.45 mm panel gap. Select the final part after reach/seating checks.
+- Light pipe: owner-selected **candidate** Signal Construct PGN25L165 (Ø2.6 panel hole, shaft 16.5 ±0.1, overall 17.5). Not an approved fit: the seated plane, LED height, retention in 1.6 mm FR-4, hole tolerance and stack tolerances are unmeasured, and the optical gap is null. The retired Bivar PLP2-400-C 10.16 mm reference and the 7.29 mm subtraction are withdrawn. Select the final part after the reach and seating checks. The 2.55-2.60 mm hole is NOT guaranteed: the JLCPCB NPTH bands conflict and the panel emits each circular cutout in both the NPTH drill file and Edge_Cuts; the JLC viewer and support must confirm the de-duplication and the achievable hole size.
 - The display uses a **5 mm provisional spacer beyond 4 mm bosses**, producing
   9 mm PCB-plane separation. Plane separation is not the spacer purchase length.
 - Knob, NAV/button actuators, Pi spacers, ribbons and cooler/HAT/SSD remain

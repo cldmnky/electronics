@@ -87,7 +87,7 @@ instead of being skipped. Print it with
 | `zstack` | Board, standoff, display, Pi, HAT, cooler and panel thicknesses that add up; installed depth recorded |
 | `control_actuator` | Knob, button caps and 5-way nav actuator fitted and measured against the panel; direction legends |
 | `jack_retention` | TRS barrel/nut/panel-hole fit, tip/ring/sleeve continuity, pull-out retention |
-| `light_pipes` | Fitted PLP2-400-C length and LED-to-pipe gap; LED visible through each of three holes |
+| `light_pipes` | Fitted PGN25L165 (candidate) seated plane, measured LED-to-pipe distance and LED visible through each of the three Ø2.6 mm nominal holes |
 | `display_dsi` | Waveshare 4.3" DSI panel mounted at the fitted SMTSO boss pattern with one of the kit DSI cables (50 mm or 120 mm 15→22) routed; bend radius, latch and underside clearance |
 | `display_boss_pattern` | The module's own SMTSO-M2.5 bosses (99.30 × 61.80 pattern) confirmed as the only threading; 9.0 mm plane separation = 4.0 mm boss + 5.0 mm spacer measured |
 | `display_fpc_idc` | Display FPC plug/cable and J5 IDC plug/ribbon coexist: Z clearances and the routed bend recorded against the route contract in mechanical-stack.md |
@@ -96,7 +96,7 @@ instead of being skipped. Print it with
 
 | `pi_microsd` | microSD insert/remove with the Pi in the stack and the case closed; clearance recorded |
 | `cooler_hat_ssd` | Active Cooler + M.2 HAT+ + SSD stacked; height, airflow, connector clearance |
-| `case_fit` | 32HP/3U panel, 20HP base board and all rail/standoff positions in the case |
+| `case_fit` | 30HP/3U panel (152.0 mm), 20HP base board and all rail/standoff positions in the case |
 | `usb_c_5a_path` | An exact 5 A rated feedthrough from a primary source; CAB-15455 is 3 A and rejected for this path |
 | `usb_pd_droop_thermal` | Full-load PD negotiation, voltage droop, connector/feedthrough temperature, both orientations |
 | `encoder_solder_process` | Bourns PEC11R process qualified (selective/wave or validated manual) with profile and inspection |
