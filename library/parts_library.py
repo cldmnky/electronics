@@ -2,9 +2,10 @@
 """Keep one reusable list of through-hole parts and source it from EU shops.
 
 The list is `library/components.csv`: through-hole parts, capacitors and
-character displays, bought from Conrad Sweden and Electrokit. A row holds the
-part's own facts and the shop article number for each shop. Every price is a
-recorded snapshot with a date, never a live quote.
+character displays, bought from Electrokit, DigiKey Sweden and Conrad Sweden.
+A row holds the part's own facts and the article number it carries at each
+shop. LCSC holds stock that was bought in; it is not a main source. Every
+price is a recorded snapshot with a date, never a live quote.
 
 Browsing and searching need no shop account. Ordering does. Automated data
 needs a vendor API; only the tool in froemix/tools has one (DigiKey).
@@ -36,6 +37,14 @@ SHOPS = {
         "price": "conrad_price_sek",
         "moq": "conrad_moq",
     },
+    "digikey": {
+        "name": "DigiKey Sweden",
+        "currency": "SEK",
+        "search": "https://www.digikey.se/en/products/result?keywords={q}",
+        "sku": "digikey_sku",
+        "price": "digikey_price_sek",
+        "moq": "digikey_moq",
+    },
     "electrokit": {
         "name": "Electrokit",
         "currency": "SEK",
@@ -58,6 +67,7 @@ SHOPS = {
 COLUMNS = [
     "id", "category", "description", "value", "package", "rating", "tolerance",
     "conrad_sku", "conrad_price_sek", "conrad_moq",
+    "digikey_sku", "digikey_price_sek", "digikey_moq",
     "electrokit_sku", "electrokit_price_sek", "electrokit_moq",
     "lcsc_sku", "lcsc_price_eur", "lcsc_moq",
     "datasheet", "status", "updated", "notes",
@@ -346,7 +356,7 @@ def command_find(args) -> int:
             for shop, info in SHOPS.items():
                 sku = row[info["sku"]]
                 if sku:
-                    print(f"  {SHOPS[shop]['name']:10} {sku:10} {row[info['price']]:>8} {info['currency']}"
+                    print(f"  {SHOPS[shop]['name']:14} {sku:10} {row[info['price']]:>8} {info['currency']}"
                           f"  {product_url(shop, sku)}")
             print(f"  search   {search_url(args.shop, row['value'] or row['description'])}")
     return 0 if matches else 1

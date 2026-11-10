@@ -4,18 +4,20 @@ One list of through-hole parts to reuse across projects: resistors,
 capacitors, diodes, LEDs, transistors, DIP parts, headers, character and OLED
 displays, and through-hole control hardware (pots, switches, knobs, jacks).
 Every part has a stable `id`, its own facts, and the article number it carries
-at the two primary EU suppliers:
+at each shop. The **main sources** are the three EU ones; LCSC holds stock that
+was bought in and is not a main source:
 
-| key | shop | market | currency |
-| --- | --- | --- | --- |
-| `conrad` | Conrad Electronic | Sweden, `conrad.se` | SEK, excluding VAT |
-| `electrokit` | Electrokit | Sweden, `electrokit.com` (English store) | SEK, including VAT |
-| `lcsc` | LCSC | Shenzhen, `lcsc.com` (JLCPCB group) | EUR, unit price |
+| key | shop | market | currency | role |
+| --- | --- | --- | --- | --- |
+| `conrad` | Conrad Electronic | Sweden, `conrad.se` | SEK, excluding VAT | main |
+| `digikey` | DigiKey Sweden | Sweden, `digikey.se` | SEK, excluding VAT | main |
+| `electrokit` | Electrokit | Sweden, `electrokit.com` (English store) | SEK, including VAT | main |
+| `lcsc` | LCSC | Shenzhen, `lcsc.com` (JLCPCB group) | EUR, unit price | stock bought in |
 
 The shop column holds the **article number** the shop prints: a Conrad article
-number, an Electrokit `Art.no` or an LCSC part number such as `C470294`. Leave
-it empty when the shop does not stock the part. Never copy an article number
-between shops.
+number, a DigiKey part number such as `NE555P-ND`, an Electrokit `Art.no` or an
+LCSC part number such as `C470294`. Leave it empty when the shop does not stock
+the part. Never copy an article number between shops.
 
 Two rows may share category, value and package when they are alternatives, for
 example a red 3 mm LED from Electrokit and the one bought in from LCSC. The
@@ -52,7 +54,8 @@ it, searches it, and matches a project BOM against it.
 The list holds 56 parts, all `draft`, recorded on 2026-11-09: 39 with an
 Electrokit article number, 17 bought in from LCSC, and one of the Electrokit
 parts also from Conrad. Each article number was checked against its own shop
-page or, for LCSC, against the order that was placed.
+page or, for LCSC, against the order that was placed. The **DigiKey column is
+still empty**: fill it from the search links, in the same way as Conrad.
 
 - **Electrokit** is the broadest source: THT carbon film resistors, ceramic and
   electrolytic capacitors, diodes, LEDs, TO-92 transistors, DIP op-amps and
@@ -62,6 +65,9 @@ page or, for LCSC, against the order that was placed.
   Cloudflare challenge (HTTP 403). So this repository does not scrape it: the
   tool prints a search link for every part and for every term in
   `library/searches.txt`, and the owner copies the article number by hand.
+- **DigiKey Sweden** carries the parts the Swedish consumer shops lack, with
+  a Swedish storefront and SEK prices. Its Product Information v4 API is the
+  one live query this repository can make; see `froemix/doc/EU-SOURCING.md`.
 - **Electrokit** gaps: no 20x4 character LCD, no 1 uF 50 V radial (the list
   uses 1 uF 100 V), and ceramic capacitors only at 22, 33, 47 and 100 nF.
 - **LCSC** fills the gaps that Swedish shops leave in small connectors: 2 mm
@@ -72,13 +78,16 @@ page or, for LCSC, against the order that was placed.
 
 ## Accounts
 
-Browsing and searching need no account at either shop. Ordering does.
+Browsing and searching need no account at any shop. Ordering does.
 
 - **Conrad Sweden** — a customer account at checkout (business or private).
   Automated search needs more: a business account and activation on
   `developer.conrad.com`. The portal sits behind a login, and `conrad.se`
   answers bots with a Cloudflare challenge, so this repository records Conrad
   article numbers by hand.
+- **DigiKey Sweden** — an account at checkout. The live API needs an
+  application with client-credentials access, registered at
+  `developer.digikey.com`.
 - **Electrokit** — an account at checkout; the catalogue is public.
 - **LCSC** — an account at checkout; the catalogue is public. LCSC ships from
   Shenzhen, so confirm the lead time in the order before you rely on a part.

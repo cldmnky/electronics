@@ -28,6 +28,7 @@ GOOD = {
     "id": "res-10k-025w", "category": "resistor", "description": "10 kOhm 1/4 W metal film",
     "value": "10k", "package": "0207", "rating": "250 V", "tolerance": "1%",
     "conrad_sku": "140023", "conrad_price_sek": "0.35", "conrad_moq": "10",
+    "digikey_sku": "", "digikey_price_sek": "", "digikey_moq": "",
     "electrokit_sku": "41000510", "electrokit_price_sek": "0.10", "electrokit_moq": "1",
     "lcsc_sku": "", "lcsc_price_eur": "", "lcsc_moq": "",
     "datasheet": "", "status": "preferred", "updated": "2026-11-20", "notes": "",
@@ -41,7 +42,7 @@ def fresh(**changes) -> dict:
 class UrlTests(unittest.TestCase):
     def test_search_urls_escape_query(self):
         query = '1×16 / 2mm + "test"'
-        keys = {"conrad": "search", "electrokit": "keyword", "lcsc": "q"}
+        keys = {"conrad": "search", "digikey": "keywords", "electrokit": "keyword", "lcsc": "q"}
         from urllib.parse import parse_qs, urlparse
         for shop, key in keys.items():
             with self.subTest(shop=shop):
@@ -51,6 +52,7 @@ class UrlTests(unittest.TestCase):
 
     def test_product_url_points_at_the_article(self):
         self.assertIn("keyword=40350001", p.product_url("electrokit", "40350001"))
+        self.assertIn("keywords=NE555P-ND", p.product_url("digikey", "NE555P-ND"))
         self.assertIn("search=152184", p.product_url("conrad", "152184"))
         self.assertEqual(p.product_url("lcsc", "c470294"),
                          "https://www.lcsc.com/product-detail/C470294.html")
@@ -64,7 +66,7 @@ class UrlTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         sys.modules["source_parts_shared"] = module
         spec.loader.exec_module(module)
-        for shop in ("conrad", "electrokit"):
+        for shop in ("conrad", "digikey", "electrokit"):
             with self.subTest(shop=shop):
                 self.assertEqual(p.search_url(shop, "NE555 / 8"), module.search_url(shop, "NE555 / 8"))
 
