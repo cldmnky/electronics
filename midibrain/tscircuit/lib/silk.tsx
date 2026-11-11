@@ -43,6 +43,7 @@ import {
   REAR_PCB,
   POWER_BUTTON,
   POWER_HEADER,
+  REAR_INTERCONNECT,
   RIGHT_CONTROLS,
   SILK_ADVANCE_RATIO,
   TRANSPORT_Y,
@@ -170,8 +171,9 @@ export const FRONT_SILK: BoardSilkSpec = {
     { ref: "U6", x: RIGHT_CONTROLS.TEMPO.x - 4.0, y: RIGHT_CONTROLS.TEMPO.y + 7.9, source: "silk" },
     // TRS jacks: pin 1 is the tip contact at the panel end of the footprint.
     ...frontJacks.map(({ ref, x }) => ({ ref, x: x - 1.9, y: JACK_Y + FRONT_JACK_PIN1_DY, source: "silk" as const })),
-    // 2x13 front/rear interconnect (bottom side).
-    { ref: "J5", x: 36.6, y: 25.24, source: "silk" },
+    // 2 x 13 direct interconnect, female socket on the bottom face. The mark
+    // is derived from the shared placement so a move cannot strand it.
+    { ref: "J5", x: FRONT_INTERCONNECT.x + 2.6, y: FRONT_INTERCONNECT.y + 15.24, source: "silk" },
   ],
   texts: [
     // Bottom-right corner block: the panel POWER button, its jumper header and
@@ -184,14 +186,15 @@ export const FRONT_SILK: BoardSilkSpec = {
     // Board identity and the hand-solder summary (JLC places every SMD line).
     { text: "MIDI BRAIN FRONT/UI", x: 33, y: -46.4, fontSize: 1.0, role: "note" },
     { text: "HAND THT: J1-4 SW1-6 J5 SW7", x: 33, y: -48.2, fontSize: 0.8, role: "note" },
-    // J_PWR tag sits right above the header (4 mm rule), clear of its pads and
-    // of the M2.5 hole at (44, -52).
-    { text: "J_PWR - TO PI PWR", x: 37.5, y: -50.2, fontSize: 0.7, role: "hint", part: "J_PWR" },
+    // J_PWR moved to the REAR face at the top notch (lib/layout.ts
+    // POWER_HEADER), so this panel-side tag names the part and points over it;
+    // the part's own refdes prints on the bottom silk where it is fitted.
+    { text: "J_PWR - REAR FACE, TO PI PWR", x: POWER_HEADER.x, y: POWER_HEADER.y - 1.4, fontSize: 0.7, role: "hint", part: "J_PWR" },
     // U6 is the one part whose manual process is qualified, not assumed:
     // lugs first as the mechanical anchor, then a preheated quick joint
     // (docs/assembly.md "U6 encoder: THT fallback and bench technique").
     { text: "U6 THT - LUGS FIRST", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y - 10.2, fontSize: 0.8, role: "hint", part: "U6" },
-    { text: "J5 THT", x: FRONT_INTERCONNECT.x, y: 31.8, fontSize: 0.8, role: "hint", part: "J5" },
+    { text: "J5 SOCKET THT", x: FRONT_INTERCONNECT.x, y: FRONT_INTERCONNECT.y + 21.8, fontSize: 0.8, role: "hint", part: "J5" },
     ...frontJacks.map(({ ref, x }) => ({ text: `${ref} THT`, x, y: -40.65, fontSize: 0.7, role: "hint" as const, part: ref })),
     // Hand-soldered buttons: the ref print sits above each body, so the tag
     // goes on the same line just left of it ("THT SW1"). Below the body it
@@ -221,8 +224,8 @@ export const FRONT_SILK: BoardSilkSpec = {
       { text: "A", x: x - FRONT_LED_PAD_DX, y: LED_Y + FRONT_LED_MARK_DY, fontSize: 0.6, role: "polarity" as const, part: ref },
       { text: "K", x: x + FRONT_LED_PAD_DX, y: LED_Y + FRONT_LED_MARK_DY, fontSize: 0.6, role: "polarity" as const, part: ref },
     ]),
-    // Pin-1 number for the 2x13 interconnect, where the pinout matters.
-    { text: "1", x: 37.5, y: 27.4, fontSize: 0.8, role: "pin1", part: "J5" },
+    // Pin-1 number for the 2 x 13 interconnect, where the pinout matters.
+    { text: "1", x: FRONT_INTERCONNECT.x + 3.5, y: FRONT_INTERCONNECT.y + 17.4, fontSize: 0.8, role: "pin1", part: "J5" },
   ],
 }
 
@@ -249,7 +252,10 @@ export const REAR_SILK: BoardSilkSpec = {
     { ref: "J_PICO_L", x: REAR_PICO_X.L, y: -25.45, source: "silk" },
     { ref: "J_PICO_R", x: -29.0, y: REAR_PICO_PIN1_Y.R, source: "silk" },
     { ref: "J_PI", x: 26.0, y: 46.9, source: "silk" },
-    { ref: "J_FRONT", x: 47.6, y: 16.4, source: "silk" },
+    // Direct 2 x 13 interconnect, male header on the TOP face. Its body is on
+    // the far side of this board, so the bottom-side marks sit where the 26
+    // tails are soldered; both are derived from the shared placement.
+    { ref: "J_FRONT", x: REAR_INTERCONNECT.x + 2.6, y: REAR_INTERCONNECT.y + 16.4, source: "silk" },
   ],
   texts: [
     { text: "MIDI BRAIN REAR/BASE", x: 30, y: -37, fontSize: 1.0, role: "note" },
@@ -262,9 +268,9 @@ export const REAR_SILK: BoardSilkSpec = {
     { text: "1", x: 35.7, y: -10.65, fontSize: 0.6, role: "pin1", part: "U3" },
     { text: "1", x: 35.9, y: -5.55, fontSize: 0.6, role: "pin1", part: "U4" },
     { text: "J_PI THT", x: 14, y: 54.5, fontSize: 0.7, role: "hint", part: "J_PI" },
-    { text: "J_FRONT THT", x: 44.9, y: 21.6, fontSize: 0.7, role: "hint", part: "J_FRONT" },
+    { text: "J_FRONT THT", x: REAR_INTERCONNECT.x - 0.1, y: REAR_INTERCONNECT.y + 21.6, fontSize: 0.7, role: "hint", part: "J_FRONT" },
     { text: "1", x: 27.2, y: 47.9, fontSize: 0.7, role: "pin1", part: "J_PI" },
-    { text: "1", x: 48.4, y: 17.6, fontSize: 0.7, role: "pin1", part: "J_FRONT" },
+    { text: "1", x: REAR_INTERCONNECT.x + 3.4, y: REAR_INTERCONNECT.y + 17.6, fontSize: 0.7, role: "pin1", part: "J_FRONT" },
     // Probe points: one net label per pad, derived from lib/probe-points.ts so
     // a pad can never carry a label that belongs to another net. The automatic
     // reference designator (TP1..TP15, 0.4 mm) prints beside each pad from its

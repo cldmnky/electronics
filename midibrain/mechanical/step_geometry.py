@@ -779,9 +779,12 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
         y=Span(-rear["height"] / 2, rear["height"] / 2),
         z=Span(rear_front_z, rear_rear_z),
         assumed_axes=("z",),
-        note=("Z from PROVISIONAL_Z plus the candidate front-to-rear gap "
-              f"({depth['frontToRearGap']:.2f} mm); the spacer length is still open, so the "
-              "Z axis is a candidate value and no Z-based verdict is definitive"),
+        note=("Z from PROVISIONAL_Z plus the front-to-rear gap "
+              f"({depth['frontToRearGap']:.2f} mm). That gap is now the direct 2 x 13 "
+              "mating pair's NOMINAL seat-to-seat drawing dimension, not a measured gap: "
+              "board flatness, support, solder-joint height and the fitted pair are "
+              "unverified, so the Z axis is a candidate value and no Z-based verdict is "
+              "definitive"),
     )
 
     env["DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z"] = Envelope(

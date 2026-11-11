@@ -173,7 +173,7 @@ the **intended nominal** Ø2.6 mm geometry only; they make no manufacturing-capa
 | Panel-to-front-board gap | **17.45 mm provisional** | Assumption A (glass front flush with the panel front face, z = 0) + Assumption B (9.0 mm plane separation to the PCB rear) + 10.05 mm glass-front-to-PCB rear + 1.60 mm panel − 1.60 mm panel … see `PROVISIONAL_Z` in `tscircuit/lib/layout.ts`. Was 14.10 mm for the withdrawn 3.5-inch module. |
 | Light-pipe reach | PGN25L165: shaft 16.5 ±0.1, overall 17.5, head 1.0 | Nominal tip plane **16.5** from the panel front, **2.55** to the provisional 19.05 board plane — arithmetic, not an LED gap. Optical gap **null**, status **incomplete**; LED height, retention and stack tolerances pending. The retired 10.16 / 7.29 figures are **withdrawn**. |
 
-**Connector model check (2026-11-08, corrected).** The STEP's XCAF label tree shows the two 21.412 × 4.826 mm bodies are `EXTRUDED-106739` / `EXTRUDED-107488` inside `TFT1_ASM` — TFT flex bonds, **not** a panel connector. An earlier revision treated them as the FPC connector and inferred a ~24 mm disagreement with the drawing; that reading is withdrawn. The nearest named body to the recorded position is `DISPLAY_CAM` (4.822 × 22.400 × 5.680 mm, vendor x −51.975…−47.153, y −13.570…8.830, z −9.020…−3.340), placed centre (40.064, 11.000) mm against the recorded (38.837, 11.700) mm — an observation of 1.413 mm, **not a match**. Identity, pin count, electrical side, the long-axis wording and the rear/front frame mapping all stay unverified and need independent re-derivation. The recorded position does not move the PCB. Whether the connector, plug or first bend intersects the J5 IDC corridor remains unknown and needs a first-article check. The CAD model draws the connector only as `DISPLAY_CONNECTOR_PLANNING_MARKER` on the provisional Z 10.05 plane.
+**Connector model check (2026-11-08, corrected).** The STEP's XCAF label tree shows the two 21.412 × 4.826 mm bodies are `EXTRUDED-106739` / `EXTRUDED-107488` inside `TFT1_ASM` — TFT flex bonds, **not** a panel connector. An earlier revision treated them as the FPC connector and inferred a ~24 mm disagreement with the drawing; that reading is withdrawn. The nearest named body to the recorded position is `DISPLAY_CAM` (4.822 × 22.400 × 5.680 mm, vendor x −51.975…−47.153, y −13.570…8.830, z −9.020…−3.340), placed centre (40.064, 11.000) mm against the recorded (38.837, 11.700) mm — an observation of 1.413 mm, **not a match**. Identity, pin count, electrical side, the long-axis wording and the rear/front frame mapping all stay unverified and need independent re-derivation. The recorded position does not move the PCB. Whether the connector, plug or first bend intersects the front board's top-side parts remains unknown and needs a first-article check. The CAD model draws the connector only as `DISPLAY_CONNECTOR_PLANNING_MARKER` on the provisional Z 10.05 plane.
 
 Display window (owner decision D1): the aperture follows the GLASS, not the 106 × 68 PCB envelope, and not the
 95.54 × 54.36 printed border. Window = glass + 0.9 mm per side = 107.22 × 68.87 mm, centred on the module at
@@ -209,17 +209,18 @@ display stack slot and the drop to the Pi (the provisional path is ~60 mm; 50 mm
 separation = 4.0 mm boss projection + 5.0 mm spacer remains provisional against the kit pillars and is verified by
 acceptance item `display_boss_pattern`.
 
-### Display FPC ↔ J5 IDC coexistence (unverified; `display_fpc_idc` pending)
+### Display FPC ↔ J5 coexistence (unverified; `display_fpc_idc` pending)
 
 The earlier planning position (38.84, 11.7), connector identity and body dimensions require re-derivation.
 The STEP features previously used for the FPC height were identified as TFT flex bonds, not as a verified
 connector. The drawn planning marker is not on the placed vendor model's PCB-rear plane. Consequently neither the
 connector's location nor its clearance to J5 is established. The proposed front-board face change may also change
-which side carries J5.
+which side carried J5. The owner has since required the direct 2 × 13 mate: the female socket is on the front board's
+bottom (rear-facing) face and the male header on the rear board's top face, opposite the Pi.
 
 The provisional stack puts the front-board top plane at Z = 19.05 mm, but that is not a measurement and does not
 prove a usable FPC bend corridor. The 120 mm 15→22 cable is a candidate, not an approved route. Measure the actual
-connector, cable path, bends, latch and J5 plug together on the first article before claiming clearance. Do not
+connector, cable path, bends, latch and the J5 socket together on the first article before claiming clearance. Do not
 use the former 12.9 mm connector-stack, 6.1 mm clearance, or 2 mm bend-radius estimates as verified values.
 
 The display source is the 4.3-inch drawing and reference STEP recorded above; the withdrawn 3.5-inch 2D/3D files are no
@@ -296,15 +297,24 @@ board (edge ligament 5.45 mm). The right-hand control column at x = 52 is outsid
 its hardware overhangs; a left-flush rear board (26.4 mm one side) is a different, unchosen arrangement and would be an owner
 decision.
 
-- Front↔rear spacers: length TBD (~18–20 mm pending the J5 IDC bend mockup). The top pair at (±45, 43) sits inside
+- Front↔rear spacers: length = the direct 2 × 13 pair's **11.20 ±0.20 mm** nominal seat-to-seat drawing dimension
+  (Sullins 11091 sheet 2), not a measured gap and not a purchased-part choice until the pair is fitted and measured.
+  The top pair at (±45, 43) sits inside
   the feedthrough bracket envelope, so the printed bracket carries head-clearance slots there; the M2.5 head/washer
   envelope is unmeasured. (±44 → ±45 was forced by the new display boss hole at (+40.15, +41.90): the web goes
   0.50 → 1.47 mm; ±46 was tried and rejected — the rear autorouter then placed a via at (50.46, 6.56) with 0.118 mm
   of copper to the board edge, under the published 0.20 mm rule.)
 - Panel↔front standoffs: 4 × M2.5 at (±61, ±53), 1.65 mm edge ligament; length TBD.
-- J5 corridor (X ≈29–39, Y −3.5…+23.5): the 106 mm module extends over this plan area. Its actual FPC/IDC
-  coexistence is unverified, including the board-face convention, connector heights and cable bend; see
-  `display_fpc_idc` above.
+- Direct interconnect (X 5.6…14.4, Y −15.3…25.3): the J5 female socket body and the J_FRONT male shroud stand in
+  the 11.20 mm gap here, with the 106 mm module above the same plan area. The recorded FPC connector is a planning
+  marker only (identity, side and position unverified), so no clearance from it is claimed. The remaining FPC
+  question is the front board's own top-side parts and the female tail (3.20 mm from the seating face, i.e. a nominal
+  1.60 mm beyond a 1.60 mm PCB, fillet unmeasured; see `display_fpc_idc` above).
+- Pi side of J_FRONT: the male tail is **3.00 mm from the connector seating face** (drawing 11091 sheet 1), so it
+  protrudes a **nominal 1.40 mm beyond a 1.60 mm rear PCB**; the 26 pads lie over the Pi PCB area. A **candidate** Pi
+  spacer of 3.5 mm is recorded, but it is a candidate only and NOT a safety claim: the solder fillet height, the PCB
+  thickness tolerance, the Pi hardware, the actual clearance, the Pi's own connectors and the cooler/HAT stack are all
+  unmeasured, so this stays pending.
 - Display top edge (+45.0) vs the bracket bar (bottom 42.0): they overlap in PLAN. Their Z separation follows from
   provisional stack assumptions and requires physical verification. Display left (−62.5) to front-PCB edge (−64): 1.5 mm ligament
   (owner decision D2).
@@ -316,11 +326,11 @@ decision.
 | Segment | Provisional | Basis |
 |---|---:|---|
 | Front-board rear face | 20.65 | See the Z stack. |
-| Front↔rear gap (J5 IDC plug + cable bend) | 20 | Candidate range 18–22. |
+| Front↔rear gap (direct 2 × 13 mate, seat to seat) | 11.2 | Drawing 11091 sheet 2, ±0.20 mm; not measured. |
 | Rear/base PCB | 1.6 | 1.6 mm FR-4. |
-| Pi spacer + Pi PCB | 4 | Candidate. |
+| Pi spacer + Pi PCB | 5.1 | 3.5 mm **candidate** spacer + 1.6 mm Pi PCB. The male tail is 3.00 mm from the seating face = a nominal 1.40 mm protrusion beyond a 1.6 mm PCB; the fillet and clearance are unmeasured, so the 3.5 mm is not a safety claim. |
 | Pi cooler + M.2 HAT+ + SSD | 30 | Candidate range 20–30. |
-| **Total from the panel front face** | **76.25** | Sum of the above; `provisionalInstalledDepth()` in `layout.ts`. |
+| **Total from the panel front face** | **68.55** | Sum of the above; `provisionalInstalledDepth()` in `layout.ts`. |
 
 The ≤110 mm target therefore holds on paper at the high end of every candidate, and `lib/layout.test.ts` keeps the
 chain inside it. That is arithmetic on unmeasured candidates, not a verified installed depth: no cooler/HAT/SSD,
@@ -340,6 +350,28 @@ the Eurorack bus.
 - **Verdict: not approved for the Eurorack Go. Do not plan this module for that case.** No fabrication release until
   the case is reselected or the Pi/cooler/NVMe stack leaves the rack. The ≤110 mm target was never compatible with a
   40 mm row.
+
+### Panel power header vs feedthrough bracket (blocked; `power_header_mount` pending)
+
+The owner requires J_PWR on the front board's REAR face at the middle of the top relief notch (x ≈ −2.5 mm, pads
+on board material below y = 48 mm, pins into the notch). On that same face the printed bracket is a 3 mm bar from
+y 42.0 to 56.0 mm, with open slots whose floors are at y 48.20 / 48.35 / 48.35 mm and the UMC AUDIO slot spanning
+x −13.95…3.95 mm. A right-angle header's body (candidate Harwin M20-9960245: 4.80 mm body above the PCB, 6.10 mm
+exposed pin, 2.54 mm body width) plus its 2.54 mm female housing therefore intersect the bracket's solid material
+below the slot floor, and the UMC AUDIO cable tail occupies the same slot. The owner approved a pocket in that bracket (2026-11-10), so the plan is recorded in `tscircuit/lib/layout.ts`:
+`POWER_HEADER` (rear face, x = −2.5 mm, y = 47.00 mm = notch 48 mm − pad 1.60/2 − 0.2 mm edge rule, mating axis +Y),
+`POWER_HEADER_KEEPOUT` and `BRACKET_POWER_POCKET` (the pocket opens into the UMC AUDIO slot at its floor y = 48.35 mm and
+reaches the bar's top edge; the bar's 3.00 mm thickness and its three slots stay unchanged). **Implemented**: the independent architect reading fixed the orientation (long 6.10 mm mating pins parallel to the PCB,
+short 3.00 mm PC tails perpendicular, a true right angle), so `J_PWR` is placed at x = −2.5 mm, y = 47.00 mm on the rear
+face at 180° with the mating axis toward global +Y, and the bracket carries the owner-approved through pocket
+`BRACKET_POWER_POCKET` (x −6.81…1.81 mm, y 43.96…56 mm). `mechanical/feedthrough_bracket.py` cuts it and self-checks:
+**one connected solid**, no material inside the declared `POWER_HEADER_KEEPOUT` box over its 4.80 mm height, 1.96 mm of
+bar below the pocket and 7.14/2.14 mm beside it, the other two slots untouched. The exact hole-to-housing offset is
+**still unresolved** (the 4.80 mm datum is unclear, sheet 1 of 2 missing), the 1.60 mm pad and 8.00 mm plug reach are
+engineering assumptions, the DuPont-style plug is unmeasured, UMC AUDIO cable access is **unverified**, and the printed
+pocket fit is unproven. Sourcing is
+UNVERIFIED (digikey.se Cloudflare 403; no SKU or stock claimed), and the Electrokit breakaway strip was proposed by
+the researcher, not selected by the owner. `lib/power-header.test.ts` checks the built board and the pocket; `power_header_mount` stays pending.
 
 ### Feedthrough bracket
 

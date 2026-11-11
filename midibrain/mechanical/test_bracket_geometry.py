@@ -226,6 +226,86 @@ class BracketTieHoleTest(unittest.TestCase):
         self.assertEqual(inside, [], "a tie hole is inside a slot")
 
 
+class PowerPocketTest(unittest.TestCase):
+    """Owner-approved J_PWR pocket: through, open, and it keeps the bar whole."""
+
+    def setUp(self) -> None:
+        self.data = layout()
+        self.g = bg.bracket_geometry(self.data)
+        self.pocket = self.g.power_pocket
+        self.assertIsNotNone(self.pocket, "the J_PWR pocket is missing from the layout")
+
+    def test_pocket_is_open_to_the_top_edge_and_inside_the_outline(self) -> None:
+        o = self.g.outline
+        self.assertGreaterEqual(self.pocket.y2, o.y2 - 1e-9)
+        self.assertTrue(self.pocket.clamp_to(o))
+
+    def test_pocket_opens_into_the_umc_audio_slot(self) -> None:
+        slot = self.g.slots[self.g.slot_ids.index("UMC AUDIO USB")]
+        self.assertTrue(self.pocket.overlaps(slot, gap=0.0),
+                        "the pocket must merge with the UMC AUDIO slot, not be an island")
+
+    def test_pocket_keeps_the_material_rule_below_and_beside_it(self) -> None:
+        slot = self.g.slots[self.g.slot_ids.index("UMC AUDIO USB")]
+        o = self.g.outline
+        self.assertGreaterEqual(self.pocket.y1 - o.y1 + 1e-9, self.g.material_to_cuts,
+                                "the bar below the pocket is too thin: it would be cut in two")
+        self.assertGreaterEqual(self.pocket.x1 - slot.x1 + 1e-9, self.g.material_to_cuts)
+        self.assertGreaterEqual(slot.x2 - self.pocket.x2 + 1e-9, self.g.material_to_cuts)
+
+    def test_pocket_contains_the_declared_provisional_keepout(self) -> None:
+        keepout = self.g.power_keepout
+        self.assertIsNotNone(keepout)
+        self.assertLessEqual(self.pocket.x1, keepout.x1)
+        self.assertGreaterEqual(self.pocket.x2, keepout.x2)
+        self.assertLessEqual(self.pocket.y1, keepout.y1)
+        # The keepout height is the declared 4.80 bound, taller than the bar.
+        self.assertGreater(self.data["powerHeader"]["keepout"]["heightAboveBoard"],
+                           self.g.thickness)
+
+    def test_pocket_touches_no_tie_hole_mount_or_other_slot(self) -> None:
+        for tie in self.g.tie_holes:
+            self.assertGreater(tie.clearance_to_rect(self.pocket), 0.0)
+        for m in self.g.mounts:
+            self.assertGreater(m.clearance_to_rect(self.pocket), 0.0)
+        for slot, slot_id in zip(self.g.slots, self.g.slot_ids):
+            if slot_id == "UMC AUDIO USB":
+                continue
+            self.assertTrue(self.pocket.x2 <= slot.x1 + 1e-9
+                            or self.pocket.x1 >= slot.x2 - 1e-9,
+                            f"the pocket reaches the {slot_id} slot")
+
+
+class PowerPocketRejectionTest(unittest.TestCase):
+    """Drift the pocket and prove the rules refuse it (no silent waiver)."""
+
+    def _with_pocket(self, **changes: float) -> dict:
+        data = copy.deepcopy(layout())
+        data["bracket"]["powerPocket"].update(changes)
+        return data
+
+    def test_a_pocket_that_cuts_the_bar_in_two_is_refused(self) -> None:
+        data = self._with_pocket(y1=layout()["bracket"]["outline"]["y1"] + 0.5)
+        with self.assertRaises(bg.GeometryError):
+            bg.validate(bg.bracket_geometry(data), data)
+
+    def test_a_pocket_eating_the_slot_web_is_refused(self) -> None:
+        data = self._with_pocket(x2=4.0)
+        with self.assertRaises(bg.GeometryError):
+            bg.validate(bg.bracket_geometry(data), data)
+
+    def test_a_pocket_that_misses_the_keepout_is_refused(self) -> None:
+        keepout = layout()["powerHeader"]["keepout"]
+        data = self._with_pocket(y1=keepout["y1"] + 1.0)
+        with self.assertRaises(bg.GeometryError):
+            bg.validate(bg.bracket_geometry(data), data)
+
+    def test_a_blind_pocket_is_refused(self) -> None:
+        data = self._with_pocket(y2=50.0)
+        with self.assertRaises(bg.GeometryError):
+            bg.validate(bg.bracket_geometry(data), data)
+
+
 class CutIntersectionTest(unittest.TestCase):
     def test_no_two_cuts_intersect(self) -> None:
         g = bg.bracket_geometry(layout())

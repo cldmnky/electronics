@@ -1,18 +1,19 @@
 import { Fragment } from "react"
 import { B5819W_SL } from "./imports/B5819W_SL"
-import { BH254V_26P } from "./imports/BH254V_26P"
 import { BH254V_40P } from "./imports/BH254V_40P"
 import { C8545_2N7002 } from "./imports/C8545_2N7002"
 import { SN74LVC1G126DBVR } from "./imports/SN74LVC1G126DBVR"
 import { BOARD_POLICY } from "./lib/electrical"
-import { FRONT_REAR_MOUNT, PI_HOLES, REAR_PCB } from "./lib/layout"
+import { INTERCONNECT_NETS, SBH11_PBPC_D13_ST_BK } from "./lib/interconnect"
+import { FRONT_REAR_MOUNT, PI_HOLES, REAR_INTERCONNECT, REAR_PCB } from "./lib/layout"
 import { PROBE_FOOTPRINT, PROBE_HOLE_DIAMETER_MM, PROBE_PAD_DIAMETER_MM, PROBE_POINTS } from "./lib/probe-points"
 import { RearSilk } from "./lib/silk"
 
 // REAR/BASE BOARD, 20HP x 112 mm. Prototype schematic/placement; not a
 // fabrication release. The Pi 5 is mounted on the rear side using its 58 x 49
-// hole grid; the Pico is on the left, the front interconnect on the right, and
-// the Pi ribbon header at the top. All parts are on the rear side.
+// hole grid; the Pico is on the left and the Pi ribbon header at the top. All
+// SMT parts are on the rear (bottom) side; the front/rear male interconnect is
+// the one THT body on the front-facing top side, opposite the Pi.
 
 type RProps = { name: string; value: string; x: string; y: string; lcsc: string; mpn: string; p1: string; p2: string; rot?: string; sec?: string }
 const R = ({ name, value, x, y, lcsc, mpn, p1, p2, rot, sec = "isolation" }: RProps) => (
@@ -87,17 +88,10 @@ const SPARE_PI_PINS = Object.fromEntries(
     .map(pin => [`pin${pin}`, { doNotConnect: true }]),
 ) as Record<string, { doNotConnect: true }>
 
-// Front-board interconnect, 2 x 13. Both connectors (J_FRONT here and J5 on
-// the front board) use this table, so a straight 2x13 ribbon is pin-for-pin.
-const frontInterconnect = {
-  pin1: "net.P3V3", pin2: "net.GND", pin3: "net.MIDI_IN_1_RX", pin4: "net.MIDI_OUT_1_TX",
-  pin5: "net.MIDI_IN_2_RX", pin6: "net.MIDI_OUT_2_TX", pin7: "net.NAV_UP", pin8: "net.NAV_DOWN",
-  pin9: "net.NAV_LEFT", pin10: "net.NAV_RIGHT", pin11: "net.NAV_PRESS", pin12: "net.ENC_A",
-  pin13: "net.ENC_B", pin14: "net.ENC_SW", pin15: "net.REC", pin16: "net.OVER_DUB",
-  pin17: "net.STOP", pin18: "net.PLAY", pin19: "net.PLAY_START", pin20: "net.REC_LED",
-  pin21: "net.OVERDUB_LED", pin22: "net.P3V3", pin23: "net.PLAY_LED", pin24: "net.GND",
-  pin25: "net.GND", pin26: "net.SHIFT_EXIT",
-} as const
+// Front/rear interconnect, 2 x 13: ONE net table for both boards, imported
+// from lib/interconnect.tsx so the front socket and this male header can never
+// disagree. Pin n carries the same net on both boards and lands on the same
+// physical pad; lib/interconnect.test.ts proves that on the built JSON.
 
 export default () => (
   <board
@@ -138,11 +132,14 @@ export default () => (
       schSectionName="headers"
       connections={picoLeft}
     />
-    {/* Pico polarity/label facts: physical pin 15 (GND on a Pico 2 pinout),
-        17 and 20 carry no net in this design - the Pico module sits on its own
-        contacts - so the ports are declared do-not-connect here rather than
-        left to print a missing-trace warning. A wired pin that loses its net
-        still prints and still fails the report check. */}
+    {/* J_PICO_R polarity/label facts. Each 1 x 20 socket numbers its own pads
+        1-20, so THIS CONNECTOR's pin 15 is the Pico module's physical pin 35,
+        ADC_VREF, which this design leaves unconnected. Ports pin15, pin17 and
+        pin20 are therefore declared do-not-connect rather than left to print a
+        missing-trace warning; a wired pin that loses its net still prints and
+        still fails the report check. On the LEFT row, J_PICO_L pin 15 is module
+        physical pin 15 = GP11 = ENC_A, NOT a ground; the left-row grounds are
+        module physical pins 3, 8, 13 and 18 (`picoLeft` pins 3, 8, 13, 18). */}
     <connector
       name="J_PICO_R"
       pinCount={20}
@@ -179,17 +176,26 @@ export default () => (
       connections={piHeader}
     />
 
-    {/* Front-board interconnect on the right edge, XFCN BH254V-26P,
-        C48687629 - the same part as J5 on the front board. */}
-    <BH254V_26P
+    {/* Direct 2 x 13 interconnect, MALE side: Sullins SBH11-PBPC-D13-ST-BK
+        straight box header on the rear board's TOP face, opposite the Pi. It
+        shares REAR_INTERCONNECT with the front board's J5 (one constant), so
+        the 26 pads coincide: the front socket plugs straight onto it with no
+        plug and no ribbon. Its tail is 3.00 mm FROM THE CONNECTOR SEATING FACE,
+        i.e. a NOMINAL 1.40 mm protrusion beyond a 1.60 mm rear PCB, and the 26
+        pads lie over the Pi PCB area; the 3.5 mm Pi spacer is a CANDIDATE, not a
+        safety claim, because the fillet and clearance are unmeasured
+        (lib/layout.ts INTERCONNECT_PROTRUSION, PROVISIONAL_DEPTH). Physical
+        fit, keying and pre-power continuity are pending (acceptance item
+        interconnect_mate). */}
+    <SBH11_PBPC_D13_ST_BK
       name="J_FRONT"
-      pcbX="45mm"
-      pcbY="0mm"
-      pcbRotation="90deg"
-      layer="bottom"
+      pcbX={`${REAR_INTERCONNECT.x}mm`}
+      pcbY={`${REAR_INTERCONNECT.y}mm`}
+      pcbRotation={`${REAR_INTERCONNECT.rotation}deg`}
+      layer="top"
       schSheetName="rear"
       schSectionName="headers"
-      connections={frontInterconnect}
+      connections={INTERCONNECT_NETS}
     />
 
     <SN74LVC1G126DBVR
@@ -279,7 +285,9 @@ export default () => (
         marks. Every position and its clearance proof live in lib/silk.tsx. */}
     <RearSilk />
 
-    {/* Rear-side ground pour; all parts are on the bottom layer. */}
+    {/* Ground pour on the rear board's TOP layer. All SMT parts are on the
+        bottom (Pi) side; the only body on this top side is the J_FRONT male
+        interconnect, which is THT and added after SMT. */}
     <copperpour name="GND_POUR_TOP" layer="top" connectsTo="net.GND" boardEdgeMargin="0.3mm" />
   </board>
 )

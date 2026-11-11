@@ -16,7 +16,7 @@
     "assembly": {
       "service": "JLCPCB SMT assembly",
       "sides": 1,
-      "sides_reason": "All 31 SMT placements are on the top (panel side). The rear face carries only the J5 THT body and THT tails.",
+      "sides_reason": "All 31 SMT placements are on the top (panel side). The rear face carries the direct interconnect's J5 THT female socket body and the solder tails of the other through-hole parts.",
       "through_hole": "hand solder except U6: request JLCPCB THT/hand-solder assembly for U6 if offered, else bench-qualify per docs/assembly.md; the 2026-11-06 JLC/LCSC search found no SMD 0-detent 24 PPR encoder with THT anchor lugs, and a lug-less SMD knob encoder is NOT accepted",
       "through_hole_parts": [
         "J1",
@@ -46,7 +46,7 @@
         "cpl_smt_bottom": 0,
         "tht_excluded": 14
       },
-      "through_hole_note": "J1-J4 and SW1-SW6 are hand-solderable. U6 is the Bourns PEC11R-4015F-S0024 (C143789), 0 detents / 24 pulses per revolution with push switch and two THT anchor lugs. The 2026-11-06 JLC/LCSC catalog search found no SMD encoder with 0 detents, 24+ PPR and through-hole anchor lugs: the SMD PEC11S/PEC11J/EC11J families are 30 detents / 15 pulses, the PEC11R K suffix is a knurled shaft rather than an SMD terminal, and a lug-less SMD knob encoder is not accepted. U6 therefore stays THT and out of the SMT CPL; its soldering process stays open until acceptance item encoder_solder_process records the qualified process. SW7 (panel POWER momentary, C84931) and J_PWR (generic 1x2 2.54 mm male header, no LCSC number) are hand-soldered THT added by the panel-power change; they take the front hand BOM from 12 to 14 exclusions and the combined BOM from 43 to 45 placements while the SMT CPL stays at 31. The two conductors leave on J_PWR to the owner's 6-inch F-F DuPont pair - no IDC conductor and no rear-board part."
+      "through_hole_note": "J1-J4 and SW1-SW7 are hand-solderable. U6 is the Bourns PEC11R-4015F-S0024 (C143789), 0 detents / 24 pulses per revolution with push switch and two THT anchor lugs; no SMD equivalent was found, so it stays THT and out of the SMT CPL until acceptance item encoder_solder_process records the qualified process. J_PWR is now the Harwin M20-9960245 right-angle 2-way header on the front board's REAR (bottom) face at the top relief notch (x -2.5 mm, y 47.00 mm, mating axis +Y), not a generic straight header. J5 is the Sullins SFH11-PBPC-D13-ST-BK female socket of the direct 2 x 13 mate. Both connectors have no LCSC number and are non-SMT hardware. Sourcing: the DigiKey listing was observed once in a live browser on 2026-11-10 with no committed snapshot and digikey.se returns Cloudflare 403 to scripted clients, so stock is subject to reconfirmation, this is a checked-date source lead and NOT an approved DigiKey source; Conrad is the owner's target for non-SMT parts and the owner's DigiKey exception covers switches and caps only. That takes the front hand BOM to 14 THT exclusions and the combined BOM to 45 placements while the SMT CPL stays at 31. The power-button conductors leave on J_PWR to the owner's 6-inch F-F DuPont pair: no interconnect conductor and no rear-board part. The Pi end of that pair is J2, which the Raspberry Pi power-button documentation (retrieved 2026-11-10) and its official images/j2.jpg show as TWO BARE PADS, so a correctly fitted header or a qualified wired connection is required there (pending)."
     }
   },
   "rear": {
@@ -65,7 +65,7 @@
     "assembly": {
       "service": "JLCPCB SMT assembly",
       "sides": 1,
-      "sides_reason": "All 20 SMT placements are on the bottom (C13/C14 added by the electrical work: 18 -> 20); THT sockets/headers are hand-soldered after SMT.",
+      "sides_reason": "All 20 SMT placements are on the bottom (Pi side); THT sockets/headers are hand-soldered after SMT. The one body on the front-facing top side is the direct interconnect's J_FRONT male header, opposite the Pi.",
       "stencil": "bottom only, if separately required",
       "through_hole": "hand solder",
       "through_hole_parts": [
@@ -74,7 +74,7 @@
         "J_PI",
         "J_FRONT"
       ],
-      "through_hole_note": "J_PI/J_FRONT use the selected XFCN imported headers with reference C-numbers; Pico sockets need exact bench sourcing. All four headers/sockets are THT and stay out of the SMT CPL.",
+      "through_hole_note": "J_PI uses the selected XFCN imported header with its reference C-number; the Pico sockets need exact bench sourcing. J_FRONT is the Sullins SBH11-PBPC-D13-ST-BK male box header of the direct 2 x 13 mate, THT on the rear board's TOP (front-facing) face opposite the Pi; its 1.00 mm drill is the manufacturer recommendation and it has no LCSC number. Sourcing is a checked-date source lead only (DigiKey observed once in a live browser on 2026-11-10, no snapshot, stock subject to reconfirmation; not an approved DigiKey source; Conrad is the owner's target). All four headers/sockets are THT and stay out of the SMT CPL.",
       "files": {
         "gerbers": "fab/rear/rear-gerbers.zip",
         "bom": "fab/rear/rear-bom-smt.csv",

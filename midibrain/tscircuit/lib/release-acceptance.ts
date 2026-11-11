@@ -47,7 +47,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "control_actuator",
     title: "Control actuators",
-    requirement: "Knob, button caps and the 5-way nav actuator fitted and measured against the panel: shaft, detent, cap height and direction legends.",
+    requirement: "Knob, button caps and the 5-way nav actuator fitted and measured against the panel: shaft, detent, cap height and direction legends. Include a sample continuity check on each B3F-4055: the Omron B3F drawing (page 6) shows pins 1-2 internally common and 3-4 internally common, with the switch opening/closing between those pairs, and the boards wire pin 1 to ground and pin 3 to the signal. That pairing is a source-design reading, not a sample measurement, so every fitted switch needs its pair checked on the bench.",
   },
   {
     id: "jack_retention",
@@ -71,8 +71,13 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   },
   {
     id: "display_fpc_idc",
-    title: "Display FPC / IDC coexistence",
-    requirement: "The display FPC plug and the J5 IDC plug/ribbon coexist in the assembled stack: the provisional Z clearances (FPC stack top <= ~12.9 mm vs the front-board top face 19.05 mm and the IDC plug >= 19.05 mm) plus the routed bend at the display's right edge recorded per the route contract in docs/mechanical-stack.md.",
+    title: "Display FPC coexistence",
+    requirement: "The display FPC plug, its latch and the first cable bend coexist with the front board's top-side parts in the assembled stack: the FPC stack rear-most <= ~12.9 mm against the front board top face 19.05 mm, the routed bend at the display's right edge recorded per the route contract in docs/mechanical-stack.md, and the clearance to the J5 female solder tails and their joints recorded (the quoted 3.20 mm is from the SEATING FACE, so the nominal protrusion below a 1.60 mm PCB is 1.60 mm; fillet and PCB tolerance unmeasured). The recorded FPC connector position is a planning marker only: its identity, side and location are unverified, so no distance from it is claimed. The 2 x 13 link is a direct male/female pair with no plug and no ribbon.",
+  },
+  {
+    id: "interconnect_mate",
+    title: "Direct 2 x 13 interconnect mate, stack support and continuity",
+    requirement: "The direct 2 x 13 pair fitted and measured before any power is applied: front female Sullins SFH11-PBPC-D13-ST-BK on the front board's bottom face and rear male SBH11-PBPC-D13-ST-BK on the rear board's top face opposite the Pi, with the seat-to-seat board gap measured against the 11.20 +-0.20 mm drawing dimension, the spacer/support that holds that gap recorded with its hardware, the centred polarizing key engaging in one orientation only, all 26 contacts continuity-tested pin for pin against the net list with each pair recorded on its own, the 1.00 mm drill recorded as the male manufacturer recommendation and as a PROVISIONAL assumption for the female (no published female hole), and the male's solder tail recorded as a 3.00 mm SEATING-FACE dimension, i.e. a NOMINAL 1.40 mm protrusion below a 1.60 mm PCB, with the fillet, the PCB tolerance, the Pi hardware and the actual clearance to the Pi PCB and spacer measured (the 3.5 mm Pi spacer is a candidate, not a proven clearance). The measured gap, the keying result and the 26 continuity records are required evidence; this item stays pending until they exist.",
   },
   {
     id: "module_label_sku_read",
@@ -115,6 +120,11 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
     requirement: "Bourns PEC11R process qualified: selective/wave soldering or a validated manual process with recorded profile and inspection.",
   },
   {
+    id: "power_header_mount",
+    title: "Panel power header on the rear face at the notch",
+    requirement: "J_PWR fitted as a right-angle through-hole 1 x 2 header on the front board's REAR (bottom) face near x = -2.5 mm, with its PCB pads on board material below the top relief notch (y < 48 mm) and its pins pointing outward into the notch, using a purchased header whose manufacturer drawing records the body, tail and pin direction. The owner approved a pocket in the printed feedthrough bracket and a provisional generic 2.54 mm DuPont-style female plug on 2026-11-10. The footprint is placed (POWER_HEADER and POWER_HEADER_KEEPOUT in tscircuit/lib/layout.ts, imports/M20_9960245.tsx) and the owner-approved bracket pocket BRACKET_POWER_POCKET is cut by mechanical/feedthrough_bracket.py. No measured housing offset, plug or cable data exists yet: the 4.80 mm datum is unresolved (sheet 1 of 2 missing), the 1.60 mm pad and 8.00 mm plug reach are engineering assumptions, and the plug is a generic DuPont-style housing. The candidate is Harwin M20-9960245, verified ACTIVE with drawing SHA-256 3cd367d6b76e7c6be501578c87a4a9c89721e36a4a8bc36d5e8340646bdcd61b (Ø1.02 +-0.05 mm hole, 2.54 mm pitch, 0.64 +-0.02 mm square pin, 6.10 mm mating length); an independent architect reading fixed the orientation (long mating pins parallel to the PCB, short PC tails perpendicular), so the evidence must record the measured housing offset, the printed pocket, and that the plug and cable fit inside the declared keepout in 3D. Sourcing is unverified: the DigiKey listing was observed once in a live browser on 2026-11-10 and no snapshot is committed, digikey.se returns Cloudflare HTTP 403 to scripted clients, so stock is subject to reconfirmation, this is a checked-date source lead and not an approved DigiKey source, no availability is claimed and the block must not be bypassed; an Electrokit breakaway strip was proposed but not selected by the owner and must not be substituted; the mating plug is a generic DuPont-style housing, so its measured size is required. Evidence must record the header MPN with its drawing, the pad row and body, the plug housing envelope and cable bend, the pocket cut size with the bracket's remaining material, and the clearance to the UMC AUDIO feedthrough's cable tail in that same slot. It must also record the two switch contacts continuity-tested from SW7 through J_PWR to the Pi 5 remote PWR header BEFORE power, that each fitted B3F-4055 closes between its 1-2 and 3-4 common pairs (Omron B3F drawing page 6; a source reading, not a sample), that SW7 is open at rest, and access for soldering, plugging and unplugging with the assembly state. The Pi end of the jumper is NOT a connector: the Raspberry Pi documentation page https://raw.githubusercontent.com/raspberrypi/documentation/master/documentation/asciidoc/computers/raspberry-pi/power-button.adoc (retrieved 2026-11-10) and its official images/j2.jpg show J2 as TWO BARE PADS between the RTC battery connector and the board edge. A female DuPont jumper cannot connect to bare pads, so the Pi end needs a correctly fitted header or a qualified wired connection; its exact pitch, part, clearance, insulation and assembly method are pending, no JST-SH or pad pitch may be assumed, and the wiring must be dry-contact only. Hardware fit is pending: the part is placed and the bracket pocket is cut, but the housing offset, the plug, the pocket print and every clearance are unmeasured.",
+  },
+  {
     id: "midi_threshold",
     title: "MIDI input threshold",
     requirement: "Measured receiver threshold against the MIDI CA-033 <5 mA requirement at the recorded supply and temperature.",
@@ -137,7 +147,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "midi_current_faults",
     title: "MIDI current-loop faults",
-    requirement: "Short, open, reverse and over-current cases on both MIDI inputs and outputs measured against the protection parts.",
+    requirement: "Short, open, reverse and over-current cases on both MIDI inputs and outputs measured against the protection parts. The current analysis covers the board rail only: an externally driven +-12 V mispatch on a MIDI input or output is NOT modelled, so no survival and no exact fault current may be claimed. The owner must first choose the voltage/fault-survival requirement, because the test can be destructive.",
   },
   {
     id: "scope_spi",
@@ -147,7 +157,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "scope_power_sequences",
     title: "Scoped power sequencing",
-    requirement: "Power-up and power-down order for Pi, Pico, display and 3.3 V rails captured with no backfeed or latch-up.",
+    requirement: "Power-up and power-down order for Pi, Pico, display and 3.3 V rails captured with no backfeed or latch-up. Include the Pi powered with the Pico unpowered and the Pico absent: that case is not assumed safe and its behaviour must be measured.",
   },
   {
     id: "scope_thermal",
@@ -202,6 +212,9 @@ export const FINGERPRINT_FILES = [
   "tscircuit/panel.circuit.tsx",
   "tscircuit/lib/layout.ts",
   "tscircuit/lib/pin-map.ts",
+  // The direct 2 x 13 interconnect: part numbers, the pad table, the quoted
+  // manufacturer dimensions and the net table all define the hardware.
+  "tscircuit/lib/interconnect.tsx",
   "tscircuit/lib/jack.tsx",
   "tscircuit/lib/panel-art.ts",
   // Board silkscreen artwork prints on the PCB, so it is hardware definition

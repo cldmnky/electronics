@@ -81,7 +81,10 @@ PICO_RIGHT = {
     13: "GND", 14: "SHIFT_EXIT", 16: "P3V3", 18: "GND", 19: "VSYS",
 }
 
-# 2 x 13 front/rear interconnect. Identical on both boards: straight ribbon.
+# 2 x 13 front/rear interconnect. Identical on both boards: a DIRECT mating
+# pair (front female SFH11 socket on the bottom face, rear male SBH11 header on
+# the top face), so the same pin number must carry the same net on the same
+# physical pad. There is no plug and no ribbon.
 INTERCONNECT = {
     1: "P3V3", 2: "GND", 3: "MIDI_IN_1_RX", 4: "MIDI_OUT_1_TX",
     5: "MIDI_IN_2_RX", 6: "MIDI_OUT_2_TX", 7: "NAV_UP", 8: "NAV_DOWN",
@@ -249,6 +252,12 @@ UNCONNECTED = re.compile(r"^Port pin(\d+) on (\S+) is missing a trace$")
 RAIL_PAD_TO_PIN_MAX_MM = 3.0
 GROUND_STRAIGHT_MAX_MM = 5.0
 IDC_PITCH_MM = 2.54
+# Direct 2 x 13 mating pair: 1.00 mm drill is the MALE's manufacturer
+# recommendation (Sullins drawing 11091 sheet 1); for the female it is a
+# PROVISIONAL design assumption (no female PCB hole is published on the pages
+# read). 1.60 mm pad keeps a 0.30 mm ring.
+INTERCONNECT_DRILL_MM = 1.0
+INTERCONNECT_PAD_MM = 1.6
 
 # Rear board: parts on the bottom, ground plane on top. Front board: parts on
 # the top, ground plane on the bottom.
@@ -256,8 +265,11 @@ EXPECTED_POUR = {"index": "top", "front": "bottom"}
 EXPECTED_SMT_SIDE = {"index": "bottom", "front": "top"}
 # Through-hole parts: the box headers, the Pico sockets, the TRS jacks, the
 # tactile switches and the encoder. U5 (SKRHABE010) is an SMD part.
+# J_PWR (right-angle 1 x 2) and SW7 (panel POWER) are THT too: J_PWR sits on the
+# REAR (bottom) face at the top notch, so without it here the single-sided SMT
+# rule would wrongly flag it.
 THT_PARTS = {"J5", "J_PI", "J_FRONT", "J_PICO_L", "J_PICO_R", "J1", "J2", "J3", "J4",
-             "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "U6"}
+             "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "SW7", "J_PWR", "U6"}
 
 # ---------------------------------------------------------------------------
 # Probe points (rear board only): bare plated through-holes with no part.
@@ -294,14 +306,19 @@ PROBE_PART_GAP_MM = 2.0           # pad edge to another component's pad/hole
 PROBE_POSITION_TOL_MM = 0.01
 # Planning envelopes a probe PAD must stay out of; same boxes as
 # lib/probe-points.ts, restated here on purpose. Sources: Pico 2 datasheet
-# (51 x 21 mm module, micro-USB at the pin-1 end), Pi 5 85 x 56 mm board on the
-# 58 x 49 mm hole grid, J_PI / J_FRONT body plus ribbon space.
+# (51 x 21 mm module, micro-USB at the pin-1 end), the Pi 5 PCB envelope on the
+# 58 x 49 mm hole grid (portrait: 56.5 mm across X, 85.6 mm along Y - the
+# conservative bound of the drawing's approximate 85 x 56 mm), J_PI / J_FRONT
+# body plus connector space.
 PROBE_KEEPOUTS = {
     "pico_module": (-50.2, -25.5, -28.8, 25.5),
     "pico_usb_plug": (-43.5, -45.0, -35.5, -25.5),
-    "pi_pcb": (-22.0, -42.5, 34.0, 42.5),
+    # PI_MOUNT (6, 0) +- (56.5 / 2, 85.6 / 2): short edge along X, long along Y.
+    "pi_pcb": (-22.25, -42.8, 34.25, 42.8),
     "j_pi_body": (-26.0, 45.0, 26.0, 53.0),
-    "j_front_body": (41.0, -19.0, 50.0, 19.0),
+    # Male SBH11 body envelope (40.52 x 8.80 mm) at the direct interconnect's
+    # shared placement (10, 5) rotated 90 deg.
+    "j_front_body": (5.6, -15.3, 14.4, 25.3),
 }
 
 
@@ -895,7 +912,7 @@ def check_probe_points(checker: Checker, rear: BoardModel) -> None:
             gap = box_distance(pad["x"], pad["y"], box)
             if gap <= PROBE_PAD_RADIUS_MM:
                 keepout_problems.append(f"{ref} inside {name}")
-    checker.check("rear: no probe pad sits in a Pico/Pi/connector/ribbon envelope",
+    checker.check("rear: no probe pad sits in a Pico/Pi/connector envelope",
                   not keepout_problems, ", ".join(keepout_problems[:4]))
 
     # Physical probing: a pad edge must clear another component's pad or a bare
@@ -1293,15 +1310,29 @@ def main() -> int:
     for model in (rear, front):
         check_copper(checker, model)
 
+    # Direct mate: the two connectors are on opposite board faces and tscircuit
+    # mirrors the bottom one, so equal net names alone do not prove a mate. Every
+    # corresponding pad must sit at the same board X/Y as well.
     problems = []
     for pin in range(1, 27):
         a, b = rear.pad("J_FRONT", pin), front.pad("J5", pin)
         if not a or not b:
             problems.append(f"pin {pin} missing on one board")
-        elif a["net"] != b["net"]:
+            continue
+        if a["net"] != b["net"]:
             problems.append(f"pin {pin}: rear {a['net']!r} vs front {b['net']!r}")
-    checker.check("both boards: J_FRONT and J5 agree pin for pin (straight ribbon)", not problems,
-                  "; ".join(problems[:4]))
+        gap = math.hypot(a["x"] - b["x"], a["y"] - b["y"])
+        if gap > 1e-6:
+            problems.append(f"pin {pin} pads are {gap:.3f} mm apart")
+        for label, pad in (("rear", a), ("front", b)):
+            hole = pad["raw"].get("hole_diameter")
+            pad_d = pad["raw"].get("outer_diameter")
+            if abs((hole or 0) - INTERCONNECT_DRILL_MM) > 1e-9:
+                problems.append(f"pin {pin}: {label} drill {hole} mm is not {INTERCONNECT_DRILL_MM} mm")
+            if abs((pad_d or 0) - INTERCONNECT_PAD_MM) > 1e-9:
+                problems.append(f"pin {pin}: {label} pad {pad_d} mm is not {INTERCONNECT_PAD_MM} mm")
+    checker.check("both boards: J_FRONT and J5 mate pin for pin on the same pads (direct pair)",
+                  not problems, "; ".join(problems[:4]))
 
     check_midi_current(checker)
     check_output_stage(checker)

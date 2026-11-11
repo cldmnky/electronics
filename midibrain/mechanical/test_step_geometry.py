@@ -462,7 +462,9 @@ class CoordinateDriftTest(unittest.TestCase):
         self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.lo, 19.05)
         self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.hi, 20.65)
         self.assertAlmostEqual(env["DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z"].z.hi, 14.05)
-        self.assertAlmostEqual(env["REAR_BOARD_PROVISIONAL_Z"].z.lo, 40.65)
+        # 20.65 mm front-board rear face + the direct 2 x 13 pair's 11.20 mm
+        # nominal seat-to-seat drawing dimension (NOT a measured gap).
+        self.assertAlmostEqual(env["REAR_BOARD_PROVISIONAL_Z"].z.lo, 31.85)
         self.assertAlmostEqual(env["PANEL_30HP_3U"].z.hi, 1.6)
 
     def test_the_light_pipe_is_not_drawn_as_a_placed_body(self) -> None:

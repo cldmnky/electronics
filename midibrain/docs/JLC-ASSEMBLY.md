@@ -49,11 +49,12 @@ hand-edit generated fabrication files to repair a source problem.
 
 ### Front
 
-Expected raw source/BOM count: **43**. Expected SMT CPL count: **31**, all on
+Expected raw source/BOM count: **45** = **31** SMT placements + **14** THT exclusions, matching `jlc-order.json` and the built board. Expected SMT CPL count: **31**, all on
 **top/panel side**. This includes the MIDI circuits, passives, LEDs and NAV.
-The rear face carries the J5 THT body and solder tails, not SMT.
+The rear face carries the J5 THT female socket body and the solder tails of the
+other through-hole parts, not SMT.
 
-THT exclusions: `J1`–`J4`, `SW1`–`SW6`, `U6`, `J5`. They remain in the bench/
+THT exclusions: `J1`–`J4`, `SW1`–`SW7`, `U6`, `J5`, `J_PWR`. They remain in the bench/
 combined BOM. `U6` is the Bourns PEC11R-4015F-S0024 (C143789), detentless
 24 PPR with two THT anchor lugs; the 2026-11-06 JLC/LCSC search found no SMD
 encoder with 0 detents, 24+ PPR and through-hole anchor lugs (the SMD
@@ -68,11 +69,16 @@ process, profile and inspection must be accepted before production.
 Expected raw source/BOM count: **24**. Expected SMT CPL count: **20**, all on
 **bottom/rear side**, including the two new local bypass capacitors C13/C14.
 
-THT exclusions: `J_PICO_L`, `J_PICO_R`, `J_PI`, `J_FRONT`. The latter two use
-XFCN BH254V-40P/BH254V-26P imports with reference C-numbers; they are no longer
-perimeter-numbered generic headers. Pico sockets still need exact sourcing.
-Check actual ribbon keying, pin 1 and continuity; do not substitute another
-body without reviewing geometry and first-article fit.
+THT exclusions: `J_PICO_L`, `J_PICO_R`, `J_PI`, `J_FRONT`. `J_PI` uses the
+XFCN BH254V-40P import with its reference C-number (not a perimeter-numbered
+generic header). `J_FRONT` is the Sullins SBH11-PBPC-D13-ST-BK male box header
+of the **direct 2 × 13 mate** and has no LCSC number, so it is non-SMT hardware.
+Pico sockets still need exact sourcing. The male's Ø1.00 mm drill is the
+manufacturer recommendation (drawing 11091 sheet 1); the front female
+SFH11-PBPC-D13-ST-BK uses the same drill as a **provisional assumption**
+because no female PCB hole is published. Do not substitute a -M181 (no key)
+variant or another body without re-running the mate test and reviewing the
+first-article fit.
 
 Counts are validated against `jlc-order.json` and the generated files. A source
 change that changes these quantities must update the reviewed order settings;
@@ -99,8 +105,9 @@ never edit a CPL merely to force a match.
 - Light pipe: owner-selected **candidate** Signal Construct PGN25L165 (Ø2.6 panel hole, shaft 16.5 ±0.1, overall 17.5). Not an approved fit: the seated plane, LED height, retention in 1.6 mm FR-4, hole tolerance and stack tolerances are unmeasured, and the optical gap is null. The retired Bivar PLP2-400-C 10.16 mm reference and the 7.29 mm subtraction are withdrawn. Select the final part after the reach and seating checks. The 2.55-2.60 mm hole is NOT guaranteed: the JLCPCB NPTH bands conflict and the panel emits each circular cutout in both the NPTH drill file and Edge_Cuts; the JLC viewer and support must confirm the de-duplication and the achievable hole size.
 - The display uses a **5 mm provisional spacer beyond 4 mm bosses**, producing
   9 mm PCB-plane separation. Plane separation is not the spacer purchase length.
-- Knob, NAV/button actuators, Pi spacers, ribbons and cooler/HAT/SSD remain
-  subject to the recorded physical acceptance checks.
+- Knob, NAV/button actuators, Pi spacers (provisional 3.5 mm), the direct
+  2 × 13 connector pair, the Pi GPIO ribbon and cooler/HAT/SSD remain subject
+  to the recorded physical acceptance checks.
 - The bracket generator and CAD self-check now agree with canonical layout
   data. STL/STEP are reproducible, ignored outputs; actual printed fit and
   strain relief are still pending.

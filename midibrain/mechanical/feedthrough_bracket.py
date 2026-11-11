@@ -98,6 +98,10 @@ def main() -> int:
         features.append((f"head clearance {i}", cylinder(head.x, head.y, head.radius)))
     for i, tie in enumerate(geo.tie_holes):
         features.append((f"tie hole {i}", cylinder(tie.x, tie.y, tie.radius)))
+    pocket = geo.power_pocket
+    if pocket is not None:
+        # Owner-approved J_PWR pocket: a through cut, open to the top edge.
+        features.append(("J_PWR pocket", box(pocket.x1, pocket.y1, pocket.x2, o.y2 + 1.0)))
 
     # 1. Every intended cut must actually remove material from the uncut plate.
     for name, tool in features:
@@ -144,13 +148,47 @@ def main() -> int:
         for y in (opening_bottom, opening_bottom + 0.5, feedthrough["y"]):
             if body.isInside(cq.Vector(slot.centre[0], y, t / 2)):
                 fail(f"slot {slot_id} excludes the declared opening at y {y:.2f}")
-        if not body.isInside(cq.Vector(slot.centre[0], slot.y1 - 0.5, t / 2)):
-            fail(f"slot {slot_id} has no floor at y {slot.y1:.2f}")
+        # Floor: the J_PWR pocket deliberately removes the floor at the UMC AUDIO
+        # slot centre, so the floor is sampled BESIDE the pocket, and the pocket
+        # must carry its own floor (material below it).
+        floor_x = [slot.centre[0]]
+        if (pocket is not None and slot.x1 < pocket.x1 - 1e-9
+                and pocket.x2 < slot.x2 - 1e-9
+                and pocket.x1 < slot.centre[0] < pocket.x2):
+            floor_x = [slot.x1 + 0.5, slot.x2 - 0.5]
+        for x in floor_x:
+            if not body.isInside(cq.Vector(x, slot.y1 - 0.5, t / 2)):
+                fail(f"slot {slot_id} has no floor at y {slot.y1:.2f} (x {x:.2f})")
+        if floor_x != [slot.centre[0]]:
+            if not body.isInside(cq.Vector(slot.centre[0], pocket.y1 - 0.5, t / 2)):
+                fail(f"the J_PWR pocket has no floor at y {pocket.y1:.2f}: the bar is cut in two")
 
     # 6. Head clearance: the spacer hardware must be able to pass the bar.
     for i, head in enumerate(geo.head_clearance):
         if body.isInside(cq.Vector(head.x, head.y, t / 2)):
             fail(f"head clearance {i} is blocked at its centre")
+
+    # 7. The owner-approved J_PWR pocket must clear the DECLARED provisional
+    #    keepout over the bar's full thickness, and must not cut the bar in two.
+    if pocket is not None:
+        keepout = layout["powerHeader"]["keepout"]
+        height = float(keepout["heightAboveBoard"])
+        keep = box(keepout["x1"], keepout["y1"], keepout["x2"], keepout["y2"], 0.0, height)
+        left = body.intersect(keep.val()).Volume()
+        if left > VOLUME_EPS:
+            fail(f"the bracket keeps {left:.3f} mm^3 inside the declared J_PWR keepout")
+        for x in (pocket.x1 + 0.5, (pocket.x1 + pocket.x2) / 2, pocket.x2 - 0.5):
+            y = o.y1 + geo.material_to_cuts / 2
+            if not body.isInside(cq.Vector(x, y, t / 2)):
+                fail(f"no material under the J_PWR pocket at x {x:.2f}, y {y:.2f}")
+        # The side webs exist BELOW the UMC AUDIO slot floor, not beside the slot
+        # (above the floor the slot is open by design).
+        floor_y = next((sl.y1 for sl, sid in zip(geo.slots, geo.slot_ids)
+                        if sid == "UMC AUDIO USB"), pocket.y1)
+        side_y = (pocket.y1 + min(floor_y, pocket.y2)) / 2
+        for x in (pocket.x1 - geo.material_to_cuts / 2, pocket.x2 + geo.material_to_cuts / 2):
+            if not body.isInside(cq.Vector(x, side_y, t / 2)):
+                fail(f"no material beside the J_PWR pocket at x {x:.2f}, y {side_y:.2f}")
 
     volume = body.Volume()
     bb = body.BoundingBox()

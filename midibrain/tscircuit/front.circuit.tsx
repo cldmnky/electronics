@@ -2,9 +2,10 @@ import { Fragment } from "react"
 import { A_1N4148WS } from "./imports/A_1N4148WS"
 import { C15127_AO3401A } from "./imports/C15127_AO3401A"
 import { B3F_4055 } from "./imports/B3F_4055"
-import { BH254V_26P } from "./imports/BH254V_26P"
 import { PEC11R_4015F_S0024 } from "./imports/PEC11R_4015F_S0024"
 import { BOARD_POLICY } from "./lib/electrical"
+import { M20_9960245 } from "./imports/M20_9960245"
+import { INTERCONNECT_NETS, SFH11_PBPC_D13_ST_BK } from "./lib/interconnect"
 import { MIDI_OUT_SERIES_OHM, MIDI_OUT_GATE_OHM, MIDI_RECEIVER_OHM } from "./lib/electrical-midi"
 import { FP_JACK_TRS } from "./lib/jack"
 import { SKRHABE010 } from "./imports/SKRHABE010"
@@ -278,8 +279,10 @@ export default () => (
 
     {/* All SMT on the panel side for single-sided JLCPCB assembly: MIDI
         opto/output drivers under the LCD (top layer); jacks in the four
-        shared transport/MIDI columns at the bottom edge. J5 stays bottom:
-        its THT body must mate rearward into the front-rear ribbon. */}
+        shared transport/MIDI columns at the bottom edge. J5 stays bottom: the
+        female socket's body is on the rear-facing side so the rear board's
+        male header plugs straight into it, and its solder tails are the only
+        through-hole joints on the panel side. */}
     <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={-45} y={10} />
     <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={-15} y={10} />
     {/* ch1 cluster shifted 4 mm left (x -45 -> -49) to clear the 4.3-inch
@@ -351,7 +354,14 @@ export default () => (
     <C name="C5" value="10uF" sec="power" x="50mm" y="46mm" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
     <C name="C6" value="100nF" sec="power" x="60mm" y="-20mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
 
-    <BH254V_26P
+    {/* Direct 2 x 13 interconnect, FEMALE side: Sullins SFH11-PBPC-D13-ST-BK
+        straight socket on the front board's BOTTOM face, mating the rear
+        board's male box header with no plug and no ribbon. Its 26 pads carry
+        INTERCONNECT_NETS, the same table the rear board uses, and
+        lib/interconnect.test.ts proves on the built JSON that both boards put
+        every net on the same physical pad. Physical fit, keying and pre-power
+        continuity are pending (acceptance item interconnect_mate). */}
+    <SFH11_PBPC_D13_ST_BK
       name="J5"
       pcbX={`${FRONT_INTERCONNECT.x}mm`}
       pcbY={`${FRONT_INTERCONNECT.y}mm`}
@@ -359,42 +369,20 @@ export default () => (
       layer="bottom"
       schSheetName="front"
       schSectionName="headers"
-      connections={{
-        pin1: "net.P3V3",
-        pin2: "net.GND",
-        pin3: "net.MIDI_IN_1_RX",
-        pin4: "net.MIDI_OUT_1_TX",
-        pin5: "net.MIDI_IN_2_RX",
-        pin6: "net.MIDI_OUT_2_TX",
-        pin7: "net.NAV_UP",
-        pin8: "net.NAV_DOWN",
-        pin9: "net.NAV_LEFT",
-        pin10: "net.NAV_RIGHT",
-        pin11: "net.NAV_PRESS",
-        pin12: "net.ENC_A",
-        pin13: "net.ENC_B",
-        pin14: "net.ENC_SW",
-        pin15: "net.REC",
-        pin16: "net.OVER_DUB",
-        pin17: "net.STOP",
-        pin18: "net.PLAY",
-        pin19: "net.PLAY_START",
-        pin20: "net.REC_LED",
-        pin21: "net.OVERDUB_LED",
-        pin22: "net.P3V3",
-        pin23: "net.PLAY_LED",
-        pin24: "net.GND",
-        pin25: "net.GND",
-        pin26: "net.SHIFT_EXIT",
-      }}
+      connections={INTERCONNECT_NETS}
     />
 
     {/* Panel POWER button (owner-approved): a plain momentary contact pair, no
         power circuitry. The two INNER contacts (pin1/pin3) go to J_PWR; the
         duplicated outer contacts (pin2/pin4) stay open and are declared
-        noConnect, exactly like the transport row. From J_PWR the owner's
-        6-inch F-F DuPont jumpers run straight to the Pi 5 remote PWR header,
-        so nothing here touches the 2x13 ribbon or the rear board. */}
+        noConnect, exactly like the transport row; the Omron B3F drawing
+        (page 6) documents 1-2 and 3-4 as internally common pairs. From J_PWR
+        the owner's 6-inch F-F DuPont jumpers leave the board. The Pi end is
+        NOT a connector: the Raspberry Pi power-button documentation and its
+        official images/j2.jpg (retrieved 2026-11-10) show J2 as two BARE PADS,
+        so a fitted header or a qualified wired connection is needed there and
+        its pitch, part, clearance, insulation and method are pending. Nothing
+        here touches the 2 x 13 interconnect, ground or a rail. */}
     <B3F_4055
       name="SW7"
       pcbX={`${POWER_BUTTON.x}mm`}
@@ -406,16 +394,21 @@ export default () => (
       noConnect={["pin2", "pin4"]}
       connections={{ pin1: "net.PWR_SW_A", pin3: "net.PWR_SW_B" }}
     />
-    {/* 1x2 2.54 mm male header, THT hand-solder: the front-board end of the
-        jumper pair. Generic part, no LCSC number (hand-soldered). */}
-    <connector
+    {/* Direct 2 x 13 interconnect owner decision: J_PWR is now the right-angle
+        Harwin M20-9960245 on the REAR (bottom) face at the middle of the long
+        top relief notch, with its mating axis toward +Y into the notch. Its
+        pads sit on board material below y = 48 mm, and the owner-approved
+        bracket pocket clears the provisional keepout (lib/layout.ts
+        POWER_HEADER, POWER_HEADER_KEEPOUT, BRACKET_POWER_POCKET). Sourced:
+        2 ways, 2.54 mm pitch, Ø1.02 mm hole. ASSUMED and gated: the 1.60 mm
+        pad, the housing offset (the 4.80 mm datum is ambiguous), the generic
+        DuPont-style plug, access and the UMC AUDIO cable tail. */}
+    <M20_9960245
       name="J_PWR"
-      pinCount={2}
-      footprint="pinrow2_p2.54mm"
-      manufacturerPartNumber="1x2 2.54 mm male pin header (generic)"
       pcbX={`${POWER_HEADER.x}mm`}
       pcbY={`${POWER_HEADER.y}mm`}
-      layer="top"
+      pcbRotation={`${POWER_HEADER.rotation}deg`}
+      layer={POWER_HEADER.layer}
       schSheetName="front"
       schSectionName="headers"
       connections={{ pin1: "net.PWR_SW_A", pin2: "net.PWR_SW_B" }}
@@ -425,8 +418,9 @@ export default () => (
         marks. Every position and its clearance proof live in lib/silk.tsx. */}
     <FrontSilk />
 
-    {/* Panel-side ground pour. Every SMD part is on the top layer and J5 (THT)
-        is on the bottom, so the free bottom copper is the ground plane. */}
+    {/* Panel-side ground pour. Every SMD part is on the top layer and J5 (THT
+        female) is on the bottom, so the free bottom copper is the ground
+        plane. */}
     <copperpour name="GND_POUR_BOTTOM" layer="bottom" connectsTo="net.GND" boardEdgeMargin="0.3mm" />
   </board>
 )

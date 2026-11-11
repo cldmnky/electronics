@@ -27,7 +27,7 @@ cd ../spice && python3 run_tests.py
 `J_PI` (Pi 40-pin) and `J_FRONT` (2 × 13 interconnect) used the generic
 `pinrow40_p2.54mm_rows2` and `pinrow26_p2.54mm_rows2` footprints. Those number
 pads around the perimeter: pins 1…20 down one row, 21…40 back along the other.
-A 2 × N IDC header and the Raspberry Pi GPIO header number pins the other way:
+A 2 × N IDC-style header and the Raspberry Pi GPIO header number pins the other way:
 odd pins in one row, even pins in the other, pairs (1,2), (3,4), ….
 
 The logical net names were right; the copper was not. Pin 3 landed 5.08 mm
@@ -40,8 +40,16 @@ the historical design-review record (removed in the 2026-11-06 consolidation; gi
 | Ref | Part | LCSC | Pads |
 |---|---|---|---|
 | `J_PI` | XFCN BH254V-40P | C48687632 | 2 × 20, 2.54 mm, 1.1 mm drill |
-| `J_FRONT` | XFCN BH254V-26P | C48687629 | 2 × 13, 2.54 mm, 1.02 mm drill |
-| `J5` (front board) | XFCN BH254V-26P | C48687629 | unchanged, same part |
+| `J_FRONT` (rear board, top face) | Sullins SBH11-PBPC-D13-ST-BK (male) | none: THT hand-solder | 2 × 13, 2.54 mm, 1.00 mm drill |
+| `J5` (front board, bottom face) | Sullins SFH11-PBPC-D13-ST-BK (female) | none: THT hand-solder | 2 × 13, 2.54 mm, 1.00 mm drill p |
+
+The 2 × 13 link is a **direct keyed male/female pair, not a ribbon**. The male's
+1.00 mm drill is the manufacturer's recommendation (Sullins drawing 11091 sheet
+1); the same drill for the female is a **provisional design assumption** because
+no female PCB hole is published. Both connectors take their pads from ONE table
+(`lib/interconnect.tsx`), and `lib/interconnect.test.ts` proves on the built JSON
+that pin *n* of both parts sits at the same board X/Y with the same net, and that
+a reversed, mirrored, 180°-rotated or one-pitch-shifted placement would fail.
 
 The imports are `<connector>` elements, not generic chips, and both footprints
 declare `insertionDirection="from_above"` in their unrotated local orientation.
@@ -379,7 +387,7 @@ Pico's micro-USB plug in two rows (three points at 3 mm pitch, two below). No
 two probe pads are closer than **3.0 mm**, every pad keeps **2.0 mm** to the
 board edge, the pads are outside the Pico module (51 × 21 mm, Pico 2 datasheet),
 the Pi PCB (85 × 56 mm on the 58 × 49 mm hole grid), the J_PI and J_FRONT bodies
-with their ribbons and the spacer holes, and the nearest other component pad or
+with their connector space and the spacer holes, and the nearest other component pad or
 hole is 2.85 mm away. The 2.0 mm edge target is one source constant,
 `PROBE_EDGE_MM` in `lib/probe-points.ts`; `lib/probe-points.test.ts` checks the
 envelopes, the edge target and the labels, and `check_electrical.py` re-checks
@@ -445,7 +453,11 @@ built output. It derives each pad's physical pin number and net from
 - conventional 2 × N numbering **by pad coordinate** for `J_PI`, `J_FRONT` and
   `J5`, plus the expected net on every pin (Pi header, Pico sockets,
   interconnect, TRS jacks);
-- that `J_FRONT` and `J5` agree pin for pin (one straight ribbon);
+- that `J_FRONT` and `J5` agree pin for pin **and pad for pad**: the two boards
+  put the same net on the same board X/Y, which is what a direct male/female
+  pair needs (tscircuit mirrors a bottom-layer footprint, so equal net names
+  alone would not prove a mate); the Ø1.00 mm drill and the 1.60 mm pad are
+  checked on every one of the 26 contacts;
 - Q3 pad 1/2/3 = gate/source/drain, and that the three pads form a SOT-23 land
   pattern;
 - TLP2361 on both MIDI inputs with the right pinout, and no BOM line or part
@@ -462,7 +474,7 @@ built output. It derives each pad's physical pin number and net from
   ring ≥ 0.25 mm, exact net, exact position, `doNotPlace` only, no supplier or
   manufacturer part number, a routed trace at the pad with other pads on the
   same net, pitch ≥ 3.0 mm, 2.0 mm to the board edge, 2 mm to the nearest other
-  pad or hole, the Pico/Pi/ribbon envelopes, and that no component sits on both
+  pad or hole, the Pico/Pi/connector envelopes, and that no component sits on both
   `PI_3V3` and `P3V3`;
 - the analytical loop current of section 4 against hand-calculated reference
   values (3.435/6.527 mA and 3.684/8.177 mA), the 125 °C threshold and the
@@ -614,8 +626,9 @@ fixed:
    recheck at order.
 5. **Autoroute cache warning** is upstream and unresolved (section 6).
 6. **Schematic readability** items in section 9.
-7. **Not re-verified here:** SN74LVC1G126 pinout and maximum height, MMBT3906
-   pinout, B5819W polarity (the checker verifies the net pair only), TRS jack
+7. **Not re-verified here:** SN74LVC1G126 pinout and maximum height, AO3401A
+   pinout (the checker verifies pad 1/2/3 = gate/source/drain on the built
+   pads), B5819W polarity (the checker verifies the net pair only), TRS jack
    contact continuity, and every mechanical question in
    the historical design-review record. The 2.2 mm TLP2361 height fits the existing SO-6
    land area; no 3D clearance check was run.

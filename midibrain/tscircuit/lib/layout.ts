@@ -1,5 +1,6 @@
 // Millimetres, front view: +X right, +Y up. Illustrative planning only.
 // Nothing here is an approved cutout, footprint or complete component envelope.
+import { INTERCONNECT_MECH } from "./interconnect"
 //
 // SINGLE SOURCE OF LAYOUT COORDINATES. panel.circuit.tsx (panel openings and
 // silkscreen labels), front.circuit.tsx (component placement and display
@@ -59,8 +60,10 @@ export const FRONT_BOARD_HOLES = [
   { x: -61, y: -53 }, { x: 61, y: -53 }, { x: -61, y: 53 }, { x: 61, y: 53 },
 ] as const
 
-// Front-to-rear-board spacer grid (M2.5, spacer length TBD ~18–20 mm pending
-// the J5 IDC cable-bend mockup). Shared by both boards; the panel does NOT
+// Front-to-rear-board spacer grid (M2.5, spacer length = the direct mating
+// pair's 11.20 mm nominal seat-to-seat dimension, see PROVISIONAL_DEPTH and
+// INTERCONNECT_MECH; it is a drawing-derived NOMINAL, not a measured gap).
+// Shared by both boards; the panel does NOT
 // carry these (internal stack only). Top pair sits between the display top
 // (45.0) and the relief-notch bottom (48.0) while clearing the U6 courtyard
 // (top 38.4) and C5; bottom pair sits below the jack courtyards (bottom
@@ -109,17 +112,41 @@ export const RAIL_HOLES = [
 // 58 × 49 grid rotated so the 56 mm Pi edge runs along X). Centre is +6 east
 // of the board origin: the Pico module's right edge sits at X −29, so a
 // centred Pi (left edge −28) would overlap it by 1 mm and foul the Pico
-// (10–12 mm tall) against the Pi PCB (2.5 mm spacer). At +6 the Pi spans
-// X −22…+34: 7 mm clear of the Pico, 2.5 mm clear of U3/U4, 8.5 mm clear of
-// J_FRONT, 3 mm clear of J_PI. All Pi links are flexible cables (DSI, GPIO
-// ribbon, panel pigtails), so nothing else moves. R13–R18/Q3 now sit under
-// the Pi PCB — fine for 0603/SOT at a 2.5 mm spacer, but verify the Pi 5
-// microSD card (bottom side) against that zone; else use 5 mm spacers.
+// (10–12 mm tall) against the Pi PCB (spacer). At +6 the Pi spans X −22…+34:
+// 7 mm clear of the Pico, 2.5 mm clear of U3/U4. All Pi links are flexible
+// cables (DSI, GPIO ribbon, panel pigtails), so nothing else moves.
+// R13–R18/Q3 sit under the Pi PCB — fine for 0603/SOT. The Pi spacer is a 3.5 mm
+// CANDIDATE: the male tail is 3.00 mm FROM THE SEATING FACE (drawing), so its
+// nominal protrusion below a 1.60 mm PCB is 1.40 mm (INTERCONNECT_PROTRUSION),
+// and the 26 pads lie over the Pi PCB area (see
+// PROVISIONAL_DEPTH.piStandoffAndPcb). The solder fillet, the PCB tolerance,
+// the Pi hardware and every clearance are unmeasured: 3.5 mm is NOT claimed
+// safe or adequate. The Pi 5 microSD card and the Pi's own connectors stay
+// unverified.
 export const PI_MOUNT = { x: 6, y: 0, pitchX: 49, pitchY: 58 } as const
 export const PI_HOLES = [-1, 1].flatMap(sx => [-1, 1].map(sy => ({
   x: PI_MOUNT.x + sx * PI_MOUNT.pitchX / 2,
   y: PI_MOUNT.y + sy * PI_MOUNT.pitchY / 2,
 })))
+
+// Pi 5 PCB envelope in the layout frame. PI_MOUNT is the 58 x 49 mm hole grid
+// rotated so the 56 mm edge runs along X, so the SHORT edge is across X and the
+// LONG edge along Y. Never re-type this rectangle elsewhere: a transposed copy
+// is how a clearance test passes on the wrong geometry.
+//
+// SOURCE: Raspberry Pi 5 mechanical drawing RP-008347-DS-1, page 1, records
+// 85 x 56 mm and states that its dimensions are approximate and not production
+// data. The 85.6 x 56.5 mm outline widely quoted for the board is carried as
+// the CONSERVATIVE bound, so no test uses the smaller rectangle. Neither value
+// is a measurement, and the Pi's connectors, cooler, HAT and microSD card are
+// not modelled: physical Pi clearance stays pending.
+export const PI_PCB = { acrossX: 56.5, alongY: 85.6, drawingAcrossX: 56, drawingAlongY: 85 } as const
+export const PI_PCB_BOX = {
+  x1: PI_MOUNT.x - PI_PCB.acrossX / 2,
+  x2: PI_MOUNT.x + PI_PCB.acrossX / 2,
+  y1: PI_MOUNT.y - PI_PCB.alongY / 2,
+  y2: PI_MOUNT.y + PI_PCB.alongY / 2,
+} as const
 
 // ---- 4.3-inch DSI LCD, Waveshare "4.3inch DSI LCD" (ElectroKit art 4103 5687)
 // Replaces the unsourced 3.5-inch module (SKU 33087). SAME 800 x 480 resolution,
@@ -367,10 +394,11 @@ export const PANEL_LCD_CUTOUT = {
 // It does not move the PCB this rev: the connector faces the front board's rear
 // side and sits 20.5 mm inside the 128 mm board edge (module right edge +43.5
 // against board edge +64.0), so the cable leaves over the front board rather
-// than beside it. At absolute (38.84, 11.7) it sits over the J5 IDC corridor,
-// so the DSI plug, its latch and the first bend are a first-article check
-// against the J5 header height (docs/mechanical-stack.md). No board change is
-// made on that basis now.
+// than beside it. The identity, side and position of this connector are
+// unverified (docs/mechanical-stack.md), so NO clearance from it is claimed:
+// the DSI plug, its latch and the first bend are a first-article check against
+// the front board's top-side parts, including the J5 female solder tails. The
+// 2 x 13 link is a direct male/female pair and has no plug or ribbon.
 export const DISPLAY_FPC_CONNECTOR = {
   pins: 15,
   face: "rear" as const,
@@ -556,11 +584,28 @@ export const DEPTH_TARGET = 110 as const
 
 // Provisional rear chain, panel front face to the rear-most point. Candidates,
 // not measurements.
+//
+// frontToRearGap is no longer a cable-bend estimate: the direct 2 x 13 male/
+// female pair fixes the distance between the front board's rear face and the
+// rear board's front face to the drawing's seat-to-seat dimension, 11.20 mm
+// +-0.20 (Sullins drawing 11091 sheet 2). It is a NOMINAL drawing value, not a
+// measured gap, and it says nothing about board flatness, solder-joint height
+// or the fitted pair.
+//
+// piStandoffAndPcb = the candidate 3.5 mm Pi spacer + the 1.6 mm Pi PCB. The
+// male tail is 3.00 mm FROM THE SEATING FACE, i.e. a NOMINAL 1.40 mm protrusion
+// below a 1.60 mm PCB (INTERCONNECT_PROTRUSION), and the 26 pads lie over the
+// Pi PCB area. 3.5 mm is a candidate that leaves nominal room for that
+// protrusion plus a fillet; the fillet height, the PCB tolerance, the Pi
+// hardware and the real clearance are unmeasured, so 3.5 mm is NOT claimed safe
+// or adequate and the Pi's own connectors/cooler stack is unproven.
 export const PROVISIONAL_DEPTH = {
-  frontToRearGap: 20,   // J5 IDC plug plus cable bend; candidate range 18-22
-  piStandoffAndPcb: 4,  // Pi spacer plus Pi PCB
+  frontToRearGap: INTERCONNECT_MECH.seatToSeat,
+  piStandoffAndPcb: 5.1,
   piStackRearward: 30,  // Active Cooler + M.2 HAT+ + SSD; candidate range 20-30
 } as const
+// The Pi spacer alone: a CANDIDATE 3.5 mm, not a proven clearance.
+export const PI_SPACER_MM = 3.5 as const
 export const provisionalInstalledDepth = (d = PROVISIONAL_DEPTH): number =>
   mm3(PROVISIONAL_Z.frontBoardRear + d.frontToRearGap + REAR_PCB.thickness + d.piStandoffAndPcb + d.piStackRearward)
 
@@ -686,6 +731,98 @@ export const FEEDTHROUGH_BRACKET = {
   tieHoles: bracketTieHoles,
 } as const
 
+// ---- Panel POWER header (J_PWR) ----
+// PLACED on the front board's REAR (bottom) face at the middle of the long top
+// relief notch, mating axis toward +Y into the notch. Owner decisions: a
+// right-angle header on the rear face at the notch middle, a pocket in the
+// printed bracket, and a provisional generic 2.54 mm DuPont-style female plug.
+//
+// SOURCED (Harwin M20-9960245, verified ACTIVE; drawing SHA-256
+// 3cd367d6b76e7c6be501578c87a4a9c89721e36a4a8bc36d5e8340646bdcd61b): 2 ways,
+// 2.54 +-0.10 mm pitch, Ø1.02 +-0.05 mm recommended hole, 0.64 +-0.02 mm square
+// pin, 6.10 mm mating length, and a true right angle: the long mating pins are
+// PARALLEL to the PCB, the short 3.00 mm PC tails PERPENDICULAR to it.
+//
+// ENGINEERING ASSUMPTIONS, not measurements: the 1.60 mm pad (the drill is
+// sourced, the pad is ours); and the housing envelope. The exact hole-to-housing
+// offset is NOT established - the drawing's 4.80 mm datum is unclear and sheet 1
+// of 2 is missing - so POWER_HEADER_KEEPOUT covers both plausible readings of
+// 4.80 mm (as a height above the PCB and as a forward extent along the board)
+// plus a 2.54 mm backward housing wall. The plug is generic and unmeasured; its
+// 8.00 mm reach is a planning allowance.
+export const POWER_HEADER_LAND = {
+  ways: 2,
+  pitch: 2.54,   // sourced
+  drill: 1.02,   // sourced, +-0.05
+  pad: 1.6,      // ASSUMPTION: 0.29 mm ring
+  copperToEdge: 0.2, // project fabrication rule
+} as const
+export const POWER_HEADER = {
+  x: FRONT_TOP_NOTCH.x, // -2.5: middle of the long top relief notch
+  // The pad row sits as high as the notch allows: pad edge + edge rule = 48.
+  y: mm3(NOTCH_BOTTOM - POWER_HEADER_LAND.pad / 2 - POWER_HEADER_LAND.copperToEdge), // 47.00
+  rotation: 180, // bottom face: the footprint's local +Y maps to global +Y
+  layer: "bottom" as const,
+  matingAxis: "+Y (into the notch)",
+} as const
+// Deliberately conservative provisional keepout. It is the union of the
+// plausible 4.80 mm readings, so the tests can prove the bracket pocket clears
+// it. It is NOT a part envelope and NOT a measured plug.
+export const POWER_HEADER_KEEPOUT = {
+  x1: mm3(POWER_HEADER.x - 1.5 * POWER_HEADER_LAND.pitch), // -6.31
+  x2: mm3(POWER_HEADER.x + 1.5 * POWER_HEADER_LAND.pitch), //  1.31
+  y1: mm3(POWER_HEADER.y - POWER_HEADER_LAND.pitch),       // 44.46: 2.54 wall behind the pads
+  y2: mm3(POWER_HEADER.y + 4.8 + 6.1 + 8.0),               // 65.90: 4.80 forward + 6.10 pin + 8.00 plug
+  heightAboveBoard: 4.8,
+  basis: "covers 4.80 mm as a height and as a forward extent, plus the sourced 6.10 mm pin and an 8.00 mm plug planning reach",
+} as const
+
+// Printed-bracket pocket. Owner-approved 2026-11-10. It opens into the UMC
+// AUDIO slot, so the bar keeps material below it and beside it, and stays one
+// connected solid. The cut is sized to CLEAR the provisional keepout with a
+// 0.50 mm cutter allowance, and it never goes below the 1.00 mm cut rule.
+export const BRACKET_POWER_POCKET = {
+  purpose: "J_PWR pocket: clears the provisional header/plug keepout",
+  clearance: 0.5,
+  x1: mm3(POWER_HEADER_KEEPOUT.x1 - 0.5), // -6.81
+  x2: mm3(POWER_HEADER_KEEPOUT.x2 + 0.5), //  1.81
+  y1: mm3(Math.max(
+    FEEDTHROUGH_BRACKET.outline.y1 + BRACKET_ALLOWANCE.materialToCuts,
+    POWER_HEADER_KEEPOUT.y1 - 0.5,
+  )), // 43.96
+  y2: FEEDTHROUGH_BRACKET.outline.y2, // 56: open to the bracket top edge
+} as const
+
+/**
+ * The identified header candidate, as facts and as open questions.
+ */
+export const POWER_HEADER_CANDIDATE = {
+  mpn: "Harwin M20-9960245",
+  description: "2.54 mm pitch SIL horizontal PC tail pin header assembly, 2 ways, through-hole, right angle",
+  drawingUrl: "https://www.harwin.com/products/M20-9960245/",
+  drawingSha256: "3cd367d6b76e7c6be501578c87a4a9c89721e36a4a8bc36d5e8340646bdcd61b",
+  retrieved: "2026-11-10",
+  // Quoted on that drawing, not measured:
+  drill: 1.02,
+  drillTolerance: 0.05,
+  pinSquare: 0.64,
+  pinSquareTolerance: 0.02,
+  matingLength: 6.1,
+  pitch: 2.54,
+  ways: 2,
+  orientationResolved: true,
+  orientationNote: "an independent architect reading resolved the orientation: the long 6.10 mm mating pins are parallel to the PCB and the short 3.00 mm PC tails perpendicular to it, a true right angle",
+  heightAbovePcb: 2.54,
+  housingOffsetResolved: false,
+  housingOffsetNote: "the exact hole-to-housing offset is unresolved: the 4.80 mm datum is unclear and sheet 1 of 2 is missing; POWER_HEADER_KEEPOUT covers both plausible readings",
+  sourcingVerified: false,
+  sourcingNote: "digikey.se returned Cloudflare HTTP 403 on 2026-11-10, so SKU and stock are UNVERIFIED; the block is not bypassed and no stock is claimed",
+  notSelected: [
+    "an Electrokit breakaway strip was proposed by the researcher, not selected by the owner: do not substitute it",
+    "the provisional mating plug is a generic DuPont-style housing, not a measured part",
+  ],
+} as const
+
 // ---- Shared mechanical export ----
 // The single bridge to the CAD script. `bun run scripts/export-mechanical.ts`
 // writes this object to mechanical/layout.json; layout.test.ts fails if that
@@ -716,7 +853,9 @@ export const mechanicalExport = () => ({
   frontTopNotch: FRONT_TOP_NOTCH,
   notchBounds: NOTCH_BOUNDS,
   bracketAllowance: BRACKET_ALLOWANCE,
-  bracket: FEEDTHROUGH_BRACKET,
+  // The owner-approved J_PWR pocket travels with the bracket data so the CAD
+  // cuts it and the geometry checks see it; it is declared below this block.
+  bracket: { ...FEEDTHROUGH_BRACKET, powerPocket: BRACKET_POWER_POCKET },
   frontRearMount: FRONT_REAR_MOUNT,
   mountHoleDiameter: MOUNT_HOLE_DIAMETER,
   feedthroughs: USB_FEEDTHROUGHS,
@@ -741,6 +880,33 @@ export const mechanicalExport = () => ({
   displayStandoffs: DISPLAY_STANDOFFS,
   piHoles: PI_HOLES,
   piMount: PI_MOUNT,
+  piSpacer: PI_SPACER_MM,
+  // J_PWR plan and the bracket pocket plan: DATA ONLY. No footprint, no cut and
+  // no board change follows from these keys.
+  powerHeader: {
+    placement: POWER_HEADER,
+    land: POWER_HEADER_LAND,
+    keepout: POWER_HEADER_KEEPOUT,
+    pocket: BRACKET_POWER_POCKET,
+    candidate: POWER_HEADER_CANDIDATE,
+  },
+  // Direct 2 x 13 interconnect: one placement for both boards plus the quoted
+  // manufacturer model. The pads are not restated here - the circuit files own
+  // the footprint and lib/interconnect.test.ts proves the built coordinates.
+  interconnect: {
+    front: FRONT_INTERCONNECT,
+    rear: REAR_INTERCONNECT,
+    seatToSeat: INTERCONNECT_MECH.seatToSeat,
+    seatToSeatTolerance: INTERCONNECT_MECH.seatToSeatTolerance,
+    bodyLength: INTERCONNECT_MECH.bodyLength,
+    bodyEnvelope: INTERCONNECT_MECH.bodyEnvelope,
+    maleHeight: INTERCONNECT_MECH.maleHeight,
+    maleTail: INTERCONNECT_MECH.maleTail,
+    femaleHeight: INTERCONNECT_MECH.femaleHeight,
+    femaleTail: INTERCONNECT_MECH.femaleTail,
+    frontBoardRearToRearBoardTop: PROVISIONAL_DEPTH.frontToRearGap,
+    gapStatus: "nominal drawing dimension, not a measured gap; support and flatness unverified",
+  },
 })
 
 // ---- Right-hand control column ----
@@ -772,15 +938,15 @@ export const PLAY_START = { button: "PLAY START", x: RIGHT_COLUMN.x } as const
 // of PLAY START (11.4 mm centre-to-centre) so nothing in the transport row can
 // be pressed by accident, and it clears the M2.5 holes at (44, -52) and
 // (61, -53) and the board edge by the margins asserted in layout.test.ts.
-// The contact pair leaves the front board on a plain 1x2 2.54 mm male header
-// (J_PWR); the owner's 6-inch F-F DuPont jumpers go straight to the Pi 5
-// remote PWR connector. No power circuitry, no IDC conductor, no rear-board
-// part: the 2x13 ribbon keeps all three ground conductors.
+// The contact pair leaves the front board on J_PWR, the right-angle 1x2 header
+// on the REAR face at the top notch (POWER_HEADER above); the owner's 6-inch
+// F-F DuPont jumpers go straight to the Pi 5 remote PWR connector. No power
+// circuitry, no interconnect conductor, no rear-board part: the direct 2 x 13
+// pair keeps all three ground contacts.
 // Rotated 90 deg: the 15 x 12.5 mm B3F courtyard cannot fit between the
 // two M2.5 corner holes at (44, -52) and (61, -53) unrotated; at 90 deg it is
 // 12.5 mm wide and sits clear of both with no hole inside its courtyard.
 export const POWER_BUTTON = { x: 52.5, y: -48, rotation: 90 } as const
-export const POWER_HEADER = { x: 43, y: -48 } as const
 /** Panel label sits below the new cutout: PLAY START's label owns the row above. */
 export const POWER_LABEL_OFFSET_Y = -8.5
 
@@ -825,13 +991,35 @@ export const midiJackX = (jack: string): number => {
   return col.x
 }
 
-// Front-board 2x13 interconnect (J5) to the rear-board J_FRONT. It sits in the
-// corridor between the display and the right-hand control column: the header's
-// ~41 mm courtyard cannot clear the column at the previous right-edge spot
-// (x = 58) once the column moved onto x = 47 (courtyard overlap with the value
-// knob,
-// SHIFT/EXIT and PLAY START). IDC plug height between the boards is unverified.
-export const FRONT_INTERCONNECT = { x: 34, y: 10, rotation: 90 } as const
+// Direct 2 x 13 interconnect: J5 (female, front board BOTTOM face) and J_FRONT
+// (male, rear board TOP face) share this ONE position and rotation, so their 26
+// pads coincide in board X/Y. The position is chosen from the BUILT geometry of
+// both boards, not by eye:
+//   * measured on the BUILT boards, the nearest copper EDGE-to-EDGE gap is
+//     13.16 mm: the front socket's pad at (8.73, 12.62) to the D2 pad at
+//     (-5.83, 12.00). On the rear board the same measure is 18.48 mm (J_FRONT
+//     pad at (11.27, 10.08) to R17's pad at (31.18, 10.00));
+//   * the 40.52 x 8.80 mm body envelope keeps >= 13 mm to the Pi mounting holes,
+//     the four front-to-rear spacers and every through-hole solder joint on the
+//     face it is mounted to (asserted on the built output, not by eye);
+//   * the 26 pads stay outside the display FPC PLANNING MARKER's plan box. The
+//     marker's identity and position are unverified, so that is a plan-geometry
+//     statement about the marker, NOT a clearance to a real connector;
+//   * the male tail is 3.00 mm from the connector seating face, i.e. a NOMINAL
+//     1.40 mm protrusion beyond a 1.60 mm PCB (INTERCONNECT_PROTRUSION), and
+//     those tails sit over the Pi PCB area. A 3.5 mm Pi spacer is a CANDIDATE
+//     only, not a safety claim: the fillet and clearance are unmeasured (see
+//     PROVISIONAL_DEPTH).
+// Superseded candidates: J5 at (34, 10) with J_FRONT there would have put the
+// male body over the Pi hole at (30.5, 29) and its 26 holes through Q3,
+// R16–R18; J5 at (45, 0) put the socket body on SW6's and U5's pads and under
+// the DSI connector. Nothing is waived by moving the pair: the pad, body and
+// tail clearances above are asserted by lib/interconnect.test.ts on the built
+// circuit JSON.
+export const FRONT_INTERCONNECT = { x: 10, y: 5, rotation: 90 } as const
+// The rear board carries the male at the SAME coordinate. One constant, not
+// two: the coincidence test compares the BUILT pads.
+export const REAR_INTERCONNECT = FRONT_INTERCONNECT
 
 // ---- Concept points for the generated preview artwork ----
 // Point positions only. Preview symbols do not represent physical part sizes.

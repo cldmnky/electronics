@@ -90,7 +90,8 @@ instead of being skipped. Print it with
 | `light_pipes` | Fitted PGN25L165 (candidate) seated plane, measured LED-to-pipe distance and LED visible through each of the three Ø2.6 mm nominal holes |
 | `display_dsi` | Waveshare 4.3" DSI panel mounted at the fitted SMTSO boss pattern with one of the kit DSI cables (50 mm or 120 mm 15→22) routed; bend radius, latch and underside clearance |
 | `display_boss_pattern` | The module's own SMTSO-M2.5 bosses (99.30 × 61.80 pattern) confirmed as the only threading; 9.0 mm plane separation = 4.0 mm boss + 5.0 mm spacer measured |
-| `display_fpc_idc` | Display FPC plug/cable and J5 IDC plug/ribbon coexist: Z clearances and the routed bend recorded against the route contract in mechanical-stack.md |
+| `display_fpc_idc` | Display FPC plug/cable coexist with the front board's top-side parts: Z clearances, the routed bend per the route contract in mechanical-stack.md, and the clearance to the J5 female solder tails. The 2 × 13 link is a direct pair, so there is no plug or ribbon |
+| `interconnect_mate` | Direct 2 × 13 pair fitted and measured **before any power**: 11.20 ±0.20 mm seat-to-seat gap with the support recorded, keyed in one orientation only, all 26 contacts continuity-tested pin for pin against the net list, the Ø1.00 mm drill recorded as the male recommendation and a provisional female assumption, and the male's tail recorded as 3.00 mm from the connector seating face, i.e. a nominal 1.40 mm protrusion beyond a 1.60 mm PCB, with the solder fillet and the actual clearance to the Pi PCB and the candidate 3.5 mm spacer measured (the spacer is not a safety claim) |
 | `module_label_sku_read` | The delivered module label/SKU read and matches the selected Waveshare 4.3inch DSI LCD (ElectroKit 4103 5687) |
 | `touch_window_alignment` | With the display seated in the 107.22 × 68.87 window, touch input stays aligned with the UI across the active area |
 

@@ -126,6 +126,8 @@ class BracketGeometry:
     board: Rect
     spacer_top: float
     material_to_cuts: float
+    power_pocket: Rect | None = None
+    power_keepout: Rect | None = None
 
     # -- derived checks -----------------------------------------------------
     def slot_webs(self) -> list[tuple[float, float]]:
@@ -184,6 +186,8 @@ def bracket_geometry(layout: dict | None = None) -> BracketGeometry:
     data = layout if layout is not None else load_layout()
     b = data["bracket"]
     o = b["outline"]
+    pocket_data = b.get("powerPocket")
+    keepout_data = data.get("powerHeader", {}).get("keepout")
     notch = data["notchBounds"]
     front = data["frontPcb"]
     slots = [Rect(s["x"] - s["width"] / 2, s["yBottom"], s["x"] + s["width"] / 2, s["yTop"])
@@ -203,6 +207,10 @@ def bracket_geometry(layout: dict | None = None) -> BracketGeometry:
         # front/rear spacer row whose heads the bar must clear.
         spacer_top=max(h["y"] for h in data["frontRearMount"] if h["y"] > 0),
         material_to_cuts=data["bracketAllowance"]["materialToCuts"],
+        power_pocket=(Rect(pocket_data["x1"], pocket_data["y1"], pocket_data["x2"], pocket_data["y2"])
+                      if pocket_data else None),
+        power_keepout=(Rect(keepout_data["x1"], keepout_data["y1"], keepout_data["x2"], keepout_data["y2"])
+                       if keepout_data else None),
     )
 
 
@@ -223,6 +231,14 @@ def describe(g: BracketGeometry) -> list[str]:
         "tie holes: " + ", ".join(
             f"({c.x:.2f}, {c.y:.2f}) D{c.diameter:.2f}" for c in g.tie_holes),
     ]
+    if g.power_pocket is not None:
+        lines.append(
+            f"J_PWR pocket: x {g.power_pocket.x1:.2f}..{g.power_pocket.x2:.2f}, "
+            f"y {g.power_pocket.y1:.2f}..{g.power_pocket.y2:.2f} (open to the top edge)")
+    if g.power_keepout is not None:
+        lines.append(
+            f"J_PWR keepout: x {g.power_keepout.x1:.2f}..{g.power_keepout.x2:.2f}, "
+            f"y {g.power_keepout.y1:.2f}..{g.power_keepout.y2:.2f}")
     return lines
 
 
@@ -328,6 +344,52 @@ def validate(g: BracketGeometry, layout: dict | None = None) -> list[str]:
     #    counts on, and the CAD boolean would hide it.
     for na, nb, clearance in g.cut_clearances():
         need(clearance > 0.0 - EPS, f"cuts {na} and {nb} intersect (clearance {clearance:.2f} mm)")
+
+    # 7b. The owner-approved J_PWR pocket: through the bar, open to the top edge,
+    #     inside the UMC AUDIO slot's own span so it cannot eat a web to another
+    #     slot, keeping the cut rule below and beside it, and containing the
+    #     declared provisional keepout for the bracket's plan area.
+    if g.power_pocket is not None:
+        pocket = g.power_pocket
+        slot_index = g.slot_ids.index("UMC AUDIO USB") if "UMC AUDIO USB" in g.slot_ids else None
+        need(slot_index is not None, "the J_PWR pocket needs the UMC AUDIO slot for its opening")
+        slot = g.slots[slot_index]  # type: ignore[index]
+        need(pocket.y2 >= g.outline.y2 - EPS,
+             f"J_PWR pocket top {pocket.y2:.2f} does not reach the bracket top edge")
+        need(pocket.overlaps(slot, gap=0.0),
+             "J_PWR pocket does not open into the UMC AUDIO slot")
+        need(pocket.x1 - slot.x1 + EPS >= g.material_to_cuts,
+             f"J_PWR pocket leaves {pocket.x1 - slot.x1:.2f} mm on the slot's left side, "
+             f"under the {g.material_to_cuts:.2f} mm rule")
+        need(slot.x2 - pocket.x2 + EPS >= g.material_to_cuts,
+             f"J_PWR pocket leaves {slot.x2 - pocket.x2:.2f} mm on the slot's right side, "
+             f"under the {g.material_to_cuts:.2f} mm rule")
+        need(pocket.y1 - g.outline.y1 + EPS >= g.material_to_cuts,
+             f"J_PWR pocket leaves {pocket.y1 - g.outline.y1:.2f} mm below it, "
+             f"under the {g.material_to_cuts:.2f} mm rule (the bar would be cut in two)")
+        need(pocket.clamp_to(g.outline), "J_PWR pocket is not inside the bracket outline")
+        for tie in g.tie_holes:
+            need(tie.clearance_to_rect(pocket) > 0.0,
+                 f"J_PWR pocket touches tie hole ({tie.x:.2f}, {tie.y:.2f})")
+        for m in g.mounts:
+            need(m.clearance_to_rect(pocket) > 0.0,
+                 f"J_PWR pocket touches mount ({m.x:.2f}, {m.y:.2f})")
+        # Other cable slots are untouched: the pocket stays inside its own slot's x span.
+        for other, other_id in zip(g.slots, g.slot_ids):
+            if other_id == "UMC AUDIO USB":
+                continue
+            need(pocket.x2 <= other.x1 + EPS or pocket.x1 >= other.x2 - EPS,
+                 f"J_PWR pocket reaches the {other_id} slot")
+        if g.power_keepout is not None:
+            k = g.power_keepout
+            need(k.x1 + EPS >= pocket.x1 and k.x2 <= pocket.x2 + EPS and k.y1 + EPS >= pocket.y1,
+                 "J_PWR pocket does not contain the declared provisional keepout "
+                 f"(keepout x {k.x1:.2f}..{k.x2:.2f}, y {k.y1:.2f}..{k.y2:.2f})")
+        notices.append(
+            "PROVISIONAL: J_PWR pocket is sized to a DECLARED keepout, not to a measured "
+            "part; the header housing offset (the drawing's unclear 4.80 mm datum), the "
+            "generic DuPont-style plug, cable access and the UMC AUDIO tail in the same "
+            "slot are all unverified (acceptance item power_header_mount)")
 
     # 8. Physical gates that the model cannot settle stay visible.
     notices.append(
