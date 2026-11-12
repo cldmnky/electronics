@@ -534,3 +534,31 @@ search tool and review requirements; the root `AGENTS.md` and
   board/panel redesign and first-article checks.
 - `tools/source_parts.py` generates supplier search links and optional DigiKey
   API candidates, not compatibility approvals or a complete shopping list.
+
+## 10. Firmware (`firmware/`)
+
+The Daisy Seed firmware lives in `firmware/` and is **M0 scaffold: it builds and
+links but has never run on hardware**. `doc/FIRMWARE.md` is its contract; keep
+it true. Board rules that matter to it:
+
+- **`src/pins.hpp` is the only place a Seed pin is bound to a net**, and it is
+  checked against the board: `python3 tools/check_firmware_pins.py` re-derives
+  the binding from `tscircuit/lib/pins.ts`, `tscircuit/sections/main.tsx` and the
+  Electrosmith symbol in `tmp/library/`. `make -C firmware check-pins` runs it.
+  A board respin that changes a net must fail that check, not the firmware.
+- **Board properties are constants, not tuning values.** The CV in/out transfer,
+  audio gains, mux map, ladder levels, MIDI baud and the **DAC buffer DISABLED**
+  rule live in `src/contracts.hpp` with their document source. Changing one is a
+  board change or a documented measurement, and `doc/FIRMWARE.md` must say which.
+- **Never treat an unmeasured quantity as known.** The mux settle time and the
+  sync-out maximum rate have no qualified value on this board; the code says so
+  and `doc/FIRMWARE.md` §7 lists the bench work that would qualify them.
+- **Dependencies are pinned, never vendored.** `make deps` clones libDaisy
+  `v9.0.0` and a DaisySP SHA into gitignored `external/` and applies the one
+  local patch (`patches/0001-libdaisy-sai-tdm-slots.patch`, SAI TDM - upstream
+  has none). Nothing else in libDaisy may be modified; a bump re-runs
+  `make deps`, and a patch that no longer applies is a hard error.
+- **USB is not available at runtime** (the mux selects sit on USB D-/D+) and
+  there is no serial console: diagnostics are MIDI SysEx and the OLED.
+- Do not edit `firmware/external/` or `firmware/build/` by hand, and do not
+  commit them. Generated images belong in `firmware/build/` only.

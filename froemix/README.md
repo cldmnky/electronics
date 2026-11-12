@@ -43,6 +43,14 @@ froemix/
 │   │   ├── pins.ts          pin labels (KiCad pin number -> label) per IC
 │   │   └── footprints.tsx   exact footprints for every part on the board
 │   └── scripts/             gate.sh / release.sh (`bun run gate` / `release`)
+├── firmware/            Daisy Seed firmware (M0 scaffold, never run on hardware yet)
+│   ├── src/pins.hpp         board net -> Seed pin, checked against tscircuit/
+│   ├── src/contracts.hpp    hardware contracts as constants + static asserts
+│   ├── src/audio/audio6.*   6 channels: Seed SAI1 stereo + eurorack-pmod SAI2 TDM
+│   ├── src/engine/          the engine seam (only a Silent implementation)
+│   ├── src/hw/              ak4619, pmod, controls, cv, sync, midi, display
+│   ├── patches/             the one local libDaisy change (SAI TDM slots)
+│   └── scripts/             fetch_deps.sh (pinned libDaisy + DaisySP)
 └── fab/                 release output (gitignored): gerbers, bom, pnp, svg, step
 ```
 
@@ -628,12 +636,37 @@ some ribbons swap; align the pin-1 stripe).
 - **Power:** their 3V3 IN load (codec digital + LEDs + expanders, roughly
   50–150mA) rides on the Daisy's 3V3_D rail next to our OLED/SD/U15 load.
   Measure the rail in bring-up; if it sags, the euro board gets its own 3V3.
-- **Clocking (firmware):** AK4619 MCLK must come from Daisy SAI2_MCLK at a
-  multiple the codec accepts (e.g. 256fs); SAI1 stays on the Seed codec.
-  I2C control rides the same I2C1 the R51/R52 pull-ups already serve.
+- **Clocking (firmware):** AK4619 MCLK comes from Daisy SAI2_MCLK at 256fs;
+  SAI1 stays on the Seed codec. I2C control rides the same I2C1 the R51/R52
+  pull-ups already serve. The implementation (4-slot TDM, register image,
+  channel order, dependency pinning) is in [`doc/FIRMWARE.md`](doc/FIRMWARE.md)
+  §2/§4.
 - This also answers the old "mezzanine" question: no board-to-board mating,
   just a ribbon to an external module. H1 stays where the packer put it
   (proven DRC-clean); the cable drapes +X over the empty lower-right area.
+
+## Firmware
+
+`firmware/` is the Daisy Seed firmware: `Board::Init()` brings up the mux, both
+CV inputs, sync, MIDI, the OLED, both DACs (buffer disabled) and the
+eurorack-pmod codec + LED driver; `Audio6` runs six channels at 48 kHz (Seed
+SAI1 stereo for the board's own jacks, SAI2 4-slot TDM for the eurorack-pmod);
+`Selftest` reports over MIDI SysEx and the OLED because this board has no serial
+console. The only engine is `engine::Silent` (the seam the DSP goes behind
+later), so the audio path runs but nothing is synthesised.
+
+```bash
+cd firmware
+make deps                   # pinned libDaisy v9.0.0 + DaisySP, applies patches/
+make                        # -> build/froemix.bin (QSPI app, APP_TYPE=BOOT_QSPI)
+make check-pins             # firmware pin map vs the board source
+make program-dfu            # hold BOOT, tap RESET on the Seed
+```
+
+Dependencies are the latest Daisy releases plus exactly one local libDaisy patch
+(SAI TDM, which upstream does not have). Status, contracts, the bench checklist
+and milestones: [`doc/FIRMWARE.md`](doc/FIRMWARE.md). Note that **USB is not
+usable at runtime** - the mux selects `S1`/`S2` sit on the Seed's USB data pins.
 
 ## 3D view
 
