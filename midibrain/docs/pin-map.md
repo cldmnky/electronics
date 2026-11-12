@@ -36,15 +36,16 @@ paralleling the onboard power button — no custom power logic):
 
 | Function | Path | Notes |
 |---|---|---|
-| POWER | front-board SW7 → front-board 1x2 2.54 mm male header J_PWR → 2x 6-inch 2.54 mm female-female DuPont jumpers (user-supplied) → Pi 5 PWR connector | off→press = power on; on→press = graceful shutdown request (OS handles clean halt); long-press = PMIC hard cut, last resort only |
+| POWER | front-board SW7 → J_PWR (right-angle Harwin M20-9960245, 1 x 2, on the front board's REAR face at the top notch, mating axis +Y) → 2x 6-inch 2.54 mm female-female DuPont jumpers (user-supplied) → the Pi end: J2 is TWO BARE PADS (Raspberry Pi power-button documentation and `images/j2.jpg`, retrieved 2026-11-10), so a correctly fitted header or a qualified wired connection is required and pending | off→press = power on; on→press = graceful shutdown request (OS handles clean halt); long-press = PMIC hard cut, last resort only |
 
 The jumpers are **ACC A-0270 stock 6-inch F-F DuPont** leads the owner already
 owns; they are not a board part. The earlier "front SW7 → 2 IDC conductors →
-rear J_PWR" route is superseded: the 2x13 front/rear IDC keeps every
+rear J_PWR" route is superseded: the direct 2 x 13 front/rear pair keeps every
 conductor it had (all three ground conductors stay ground), the rear board
-carries no power-button part, and no net in `frontInterconnect` changes.
-J_PWR is a plain 1x2 male pin header for those leads only — it has no
-connection to any power rail.
+carries no power-button part, and no net in the 2 x 13 interconnect table (`INTERCONNECT_NETS` in
+`tscircuit/lib/interconnect.tsx`, used by both boards) changes.
+J_PWR is the right-angle Harwin M20-9960245 for those leads only — it has no
+connection to any power rail, and its two nets reach only SW7.
 
 Placement: away from the transport row (no accidental presses — panel
 corner, see layout). The app hooks the shutdown path: project flush +

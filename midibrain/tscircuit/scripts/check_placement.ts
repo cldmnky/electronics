@@ -25,6 +25,7 @@ import {
   POWER_BUTTON,
   POWER_HEADER,
   RAIL_HOLES,
+  REAR_INTERCONNECT,
   RIGHT_CONTROLS,
   TRANSPORT_Y,
   transportButtonX,
@@ -240,14 +241,17 @@ for (const p of LED_PARTS) {
   at(`front: ${p.res} series resistor`, comp(p.res), { x: ledPosition(transportButtonX(p.button)).x, y: LED_Y + 4.5 })
 }
 
-// Interconnect header in the corridor between display and control column.
-at("front: J5 interconnect", comp("J5"), { x: FRONT_INTERCONNECT.x, y: FRONT_INTERCONNECT.y })
+// Direct 2 x 13 interconnect: the female socket on this board and the male
+// header on the rear board share one placement, so their pads coincide.
+at("front: J5 female interconnect", comp("J5"), { x: FRONT_INTERCONNECT.x, y: FRONT_INTERCONNECT.y })
 ok(`front: J5 rotated ${FRONT_INTERCONNECT.rotation} deg`, comp("J5")?.rotation === FRONT_INTERCONNECT.rotation)
-// Single-sided JLCPCB assembly: every front footprint on top, except J5
-// (THT body mating rearward into the front-rear ribbon).
+// Single-sided JLCPCB assembly: every front SMT footprint on top. Two THT parts
+// sit on the rear face: J5 (female interconnect socket) and J_PWR (the
+// right-angle panel power header at the top notch).
+const FRONT_REAR_THT = ["J5", "J_PWR"]
 for (const c of byType(front, "pcb_component")) {
   const name = src.get(c.source_component_id)?.name ?? c.pcb_component_id
-  const want = name === "J5" ? "bottom" : "top"
+  const want = FRONT_REAR_THT.includes(name) ? "bottom" : "top"
   ok(`front: ${name} on ${want} side`, c.layer === want)
 }
 
@@ -290,6 +294,44 @@ for (const h of FRONT_REAR_MOUNT.filter(hh => hh.y > 0)) {
   ok(`front: top spacer (${h.x}, ${h.y}) inside the bracket envelope, head clearance required`,
     h.x > b.x1 && h.x < b.x2 && h.y > b.y1 && h.y < b.y2)
 }
+
+// Rear-board placements: the male interconnect sits at the shared point on the
+// front-facing (top) side, opposite the Pi. No other body may share that side.
+const rearSrc = new Map(byType(rear, "source_component").map(s => [s.source_component_id, s]))
+const rearComp = (name: string) => {
+  const id = byType(rear, "source_component").find(s => s.name === name)?.source_component_id
+  const c = byType(rear, "pcb_component").find(c => c.source_component_id === id)
+  return c ? { x: c.footprint_origin.x, y: c.footprint_origin.y, rotation: c.rotation, layer: c.layer } : undefined
+}
+at("rear: J_FRONT male interconnect", rearComp("J_FRONT"), { x: REAR_INTERCONNECT.x, y: REAR_INTERCONNECT.y })
+ok(`rear: J_FRONT rotated ${REAR_INTERCONNECT.rotation} deg`, rearComp("J_FRONT")?.rotation === REAR_INTERCONNECT.rotation)
+ok("rear: J_FRONT is on the TOP (front-facing) side, opposite the Pi", rearComp("J_FRONT")?.layer === "top")
+ok("rear: J_FRONT and front J5 share one placement",
+  REAR_INTERCONNECT.x === FRONT_INTERCONNECT.x && REAR_INTERCONNECT.y === FRONT_INTERCONNECT.y &&
+  REAR_INTERCONNECT.rotation === FRONT_INTERCONNECT.rotation)
+const rearTopBodies = byType(rear, "pcb_component").filter(c => c.layer === "top")
+  .map(c => rearSrc.get(c.source_component_id)?.name)
+ok(`rear: ${rearTopBodies.length} body on the front-facing side (J_FRONT only)`,
+  rearTopBodies.length === 1 && rearTopBodies[0] === "J_FRONT")
+// The 26 pads must coincide: same X/Y for the same pin, on both built boards.
+const padsOf = (json: any[], name: string) => {
+  const id = byType(json, "source_component").find(s => s.name === name)?.source_component_id
+  const pcb = byType(json, "pcb_component").find(c => c.source_component_id === id)
+  const out = new Map<number, { x: number; y: number }>()
+  for (const hole of byType(json, "pcb_plated_hole")) {
+    if (hole.pcb_component_id !== pcb?.pcb_component_id) continue
+    const hint = (hole.port_hints ?? []).find((h: string) => /^pin\d+$/.test(h))
+    if (hint) out.set(Number(hint.slice(3)), { x: hole.x, y: hole.y })
+  }
+  return out
+}
+const j5Pads = padsOf(front, "J5")
+const jfPads = padsOf(rear, "J_FRONT")
+const misaligned = [...Array(26)].map((_, i) => {
+  const a = j5Pads.get(i + 1), b = jfPads.get(i + 1)
+  return a && b && close(a.x, b.x) && close(a.y, b.y) ? null : i + 1
+}).filter(pin => pin !== null)
+ok(`both boards: all 26 interconnect pads coincide (${misaligned.length} mismatched)`, misaligned.length === 0)
 
 // Top relief notch and display annotations.
 const notch = byType(front, "pcb_cutout").find(c => c.shape === "rect")

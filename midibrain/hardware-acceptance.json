@@ -1,7 +1,7 @@
 {
   "schema": "midibrain-hardware-acceptance/1",
   "note": "Physical acceptance state for the MIDI Brain hardware. An item moves to \"accepted\" only with measured evidence in docs/evidence/ that names a reviewer, a date and the current hardware fingerprint. The fingerprint covers the canonical PCB/panel sources, the mechanical TS-to-CAD bridge and its exported layout, the CAD algorithm, the JLCPCB order settings and the curated cable/hardware selection, so any hardware, algorithm, order-setting or part-selection change makes old evidence stale. Refresh hardware_fingerprint with `bun run scripts/release_gate.ts --fingerprint` after such a change; a documentation-only commit does not change it. There is no override key: unknown keys are errors. See docs/acceptance.md.",
-  "hardware_fingerprint": "a2ef49abe74bcf991f8f611fab511280ab268d1eff9266e297ea9f1b7ae43330",
+  "hardware_fingerprint": "479e1826530c13a31cd8e70554a45456e9a683fea219923ab59bb1fa367f07af",
   "items": [
     {
       "id": "zstack",
@@ -11,7 +11,7 @@
     {
       "id": "control_actuator",
       "state": "pending",
-      "note": "Knob, button caps and the 5-way nav actuator fitted and measured against the panel: shaft, detent, cap height and direction legends."
+      "note": "Knob, button caps and the 5-way nav actuator fitted and measured against the panel: shaft, detent, cap height and direction legends. Include a sample continuity check on every fitted B3F-4055: the Omron B3F drawing (page 6) shows pins 1-2 internally common and 3-4 internally common with the switch opening/closing between those pairs, and the boards wire pin 1 to ground and pin 3 to the signal. That pairing is a source-design reading, not a sample measurement."
     },
     {
       "id": "jack_retention",
@@ -36,7 +36,12 @@
     {
       "id": "display_fpc_idc",
       "state": "pending",
-      "note": "The display FPC plug and the J5 IDC plug/ribbon coexist in the assembled stack: the provisional Z clearances (FPC stack top <= ~12.9 mm vs the front-board top face 19.05 mm and the IDC plug >= 19.05 mm) plus the routed bend at the display's right edge recorded per the route contract in docs/mechanical-stack.md."
+      "note": "The display FPC plug, its latch and the first cable bend coexist with the front board's top-side parts: the FPC stack rear-most <= ~12.9 mm against the front board top face 19.05 mm, plus the routed bend at the display's right edge per the route contract in docs/mechanical-stack.md, plus the clearance to the J5 female solder tails and their joints recorded. The 2 x 13 link is a direct male/female pair: no plug and no ribbon."
+    },
+    {
+      "id": "interconnect_mate",
+      "state": "pending",
+      "note": "Direct 2 x 13 pair fitted and measured BEFORE any power is applied: front female Sullins SFH11-PBPC-D13-ST-BK on the front board's bottom face and rear male SBH11-PBPC-D13-ST-BK on the rear board's top face opposite the Pi; seat-to-seat board gap measured against the 11.20 +-0.20 mm drawing dimension with the spacer/support recorded; centred polarizing key engaging in one orientation only; all 26 contacts continuity-tested pin for pin against the net list, each pair recorded separately; the 1.00 mm drill recorded as the male manufacturer recommendation and as a PROVISIONAL assumption for the female (no published female hole); the male's 3.00 mm solder tails and joints measured against the Pi PCB and the provisional 3.5 mm Pi spacer. Hardware fit remains unverified."
     },
     {
       "id": "module_label_sku_read",
@@ -79,6 +84,11 @@
       "note": "Bourns PEC11R process qualified: selective/wave soldering or a validated manual process with recorded profile and inspection."
     },
     {
+      "id": "power_header_mount",
+      "state": "pending",
+      "note": "J_PWR as the right-angle Harwin M20-9960245 on the front board's rear (bottom) face at x = -2.5 mm, y = 47.00 mm, mating axis toward +Y into the notch. Owner approved 2026-11-10: a pocket in the printed USB bracket, and a generic 2.54 mm DuPont-style female plug (no measured size). PLACED: imports/M20_9960245.tsx from POWER_HEADER in tscircuit/lib/layout.ts; the bracket pocket BRACKET_POWER_POCKET is cut by mechanical/feedthrough_bracket.py, whose self-check reports one connected solid and no material inside the declared POWER_HEADER_KEEPOUT over its 4.80 mm height. The exact hole-to-housing offset is UNRESOLVED (the 4.80 mm datum is unclear, sheet 1 of 2 missing), so the keepout is an envelope, not a part; the 1.60 mm pad and 8.00 mm plug reach are engineering assumptions; the plug is generic; UMC AUDIO cable access in the same slot is unverified; the printed pocket fit is unproven. Sourcing: the DigiKey listing was observed once in a live browser on 2026-11-10 with no committed snapshot and digikey.se returns Cloudflare 403 to scripted clients, so stock is subject to reconfirmation, this is a checked-date source lead and not an approved DigiKey source, and the Electrokit breakaway strip was proposed, not selected. The Pi end is NOT a connector: the Raspberry Pi documentation power-button page (retrieved 2026-11-10, with its official images/j2.jpg) shows J2 as TWO BARE PADS between the RTC battery connector and the board edge, so a female DuPont jumper cannot connect there; a correctly fitted header or a qualified wired connection is required, with exact pitch, part, clearance, insulation and assembly method pending, dry-contact only, and no JST-SH or pad pitch assumed. Evidence must record the measured housing offset, the plug housing and cable bend, the pocket print and fit, the UMC AUDIO tail coexistence, switch continuity from SW7 through J_PWR to the Pi end BEFORE power, that each fitted B3F-4055 closes between its 1-2 and 3-4 common pairs (Omron B3F drawing page 6, a source reading), that SW7 is open at rest, and soldering/plugging access. Hardware fit pending."
+    },
+    {
       "id": "midi_threshold",
       "state": "pending",
       "note": "Measured receiver threshold against the MIDI CA-033 <5 mA requirement at the recorded supply and temperature."
@@ -101,7 +111,7 @@
     {
       "id": "midi_current_faults",
       "state": "pending",
-      "note": "Short, open, reverse and over-current cases on both MIDI inputs and outputs measured against the protection parts."
+      "note": "Short, open, reverse and over-current cases on both MIDI inputs and outputs measured against the protection parts. The analysis covers the board rail only: an externally driven +-12 V mispatch on a MIDI input or output is NOT modelled, so no survival and no exact fault current may be claimed. The owner must choose the voltage/fault-survival requirement first, because that test can be destructive."
     },
     {
       "id": "scope_spi",
@@ -111,7 +121,7 @@
     {
       "id": "scope_power_sequences",
       "state": "pending",
-      "note": "Power-up and power-down order for Pi, Pico, display and 3.3 V rails captured with no backfeed or latch-up."
+      "note": "Power-up and power-down order for Pi, Pico, display and 3.3 V rails captured with no backfeed or latch-up. Include the Pi powered with the Pico unpowered and with the Pico absent: that case is not assumed safe and its behaviour must be measured."
     },
     {
       "id": "scope_thermal",

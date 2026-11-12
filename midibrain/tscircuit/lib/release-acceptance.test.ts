@@ -84,8 +84,8 @@ const validate = (state: unknown) =>
 describe("required item list", () => {
   test("covers the plan's physical items", () => {
     for (const id of ["zstack", "control_actuator", "jack_retention", "light_pipes",
-      "display_dsi", "pi_microsd", "cooler_hat_ssd", "case_fit", "usb_c_5a_path",
-      "usb_pd_droop_thermal", "encoder_solder_process", "midi_threshold",
+      "display_dsi", "display_fpc_idc", "interconnect_mate", "pi_microsd", "cooler_hat_ssd", "case_fit", "usb_c_5a_path",
+      "usb_pd_droop_thermal", "encoder_solder_process", "power_header_mount", "midi_threshold",
       "midi_receiver_high_current_thermal", "midi_out_legacy", "midi_interop", "midi_current_faults",
       "scope_spi", "scope_power_sequences", "scope_thermal", "scope_dfm_cpl",
       "autoroute_upstream_warning", "first_article"]) {

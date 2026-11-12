@@ -120,8 +120,8 @@
   "panelToFrontBoardGap": 17.45,
   "depthTarget": 110,
   "provisionalDepth": {
-    "frontToRearGap": 20,
-    "piStandoffAndPcb": 4,
+    "frontToRearGap": 11.2,
+    "piStandoffAndPcb": 5.1,
     "piStackRearward": 30
   },
   "lcdCutout": {
@@ -355,7 +355,15 @@
         "y": 52.1,
         "diameter": 3.2
       }
-    ]
+    ],
+    "powerPocket": {
+      "purpose": "J_PWR pocket: clears the provisional header/plug keepout",
+      "clearance": 0.5,
+      "x1": -6.81,
+      "x2": 1.81,
+      "y1": 43.96,
+      "y2": 56
+    }
   },
   "frontRearMount": [
     {
@@ -953,5 +961,85 @@
     "y": 0,
     "pitchX": 49,
     "pitchY": 58
+  },
+  "piSpacer": 3.5,
+  "powerHeader": {
+    "placement": {
+      "x": -2.5,
+      "y": 47,
+      "rotation": 180,
+      "layer": "bottom",
+      "matingAxis": "+Y (into the notch)"
+    },
+    "land": {
+      "ways": 2,
+      "pitch": 2.54,
+      "drill": 1.02,
+      "pad": 1.6,
+      "copperToEdge": 0.2
+    },
+    "keepout": {
+      "x1": -6.31,
+      "x2": 1.31,
+      "y1": 44.46,
+      "y2": 65.9,
+      "heightAboveBoard": 4.8,
+      "basis": "covers 4.80 mm as a height and as a forward extent, plus the sourced 6.10 mm pin and an 8.00 mm plug planning reach"
+    },
+    "pocket": {
+      "purpose": "J_PWR pocket: clears the provisional header/plug keepout",
+      "clearance": 0.5,
+      "x1": -6.81,
+      "x2": 1.81,
+      "y1": 43.96,
+      "y2": 56
+    },
+    "candidate": {
+      "mpn": "Harwin M20-9960245",
+      "description": "2.54 mm pitch SIL horizontal PC tail pin header assembly, 2 ways, through-hole, right angle",
+      "drawingUrl": "https://www.harwin.com/products/M20-9960245/",
+      "drawingSha256": "3cd367d6b76e7c6be501578c87a4a9c89721e36a4a8bc36d5e8340646bdcd61b",
+      "retrieved": "2026-11-10",
+      "drill": 1.02,
+      "drillTolerance": 0.05,
+      "pinSquare": 0.64,
+      "pinSquareTolerance": 0.02,
+      "matingLength": 6.1,
+      "pitch": 2.54,
+      "ways": 2,
+      "orientationResolved": true,
+      "orientationNote": "an independent architect reading resolved the orientation: the long 6.10 mm mating pins are parallel to the PCB and the short 3.00 mm PC tails perpendicular to it, a true right angle",
+      "heightAbovePcb": 2.54,
+      "housingOffsetResolved": false,
+      "housingOffsetNote": "the exact hole-to-housing offset is unresolved: the 4.80 mm datum is unclear and sheet 1 of 2 is missing; POWER_HEADER_KEEPOUT covers both plausible readings",
+      "sourcingVerified": false,
+      "sourcingNote": "digikey.se returned Cloudflare HTTP 403 on 2026-11-10, so SKU and stock are UNVERIFIED; the block is not bypassed and no stock is claimed",
+      "notSelected": [
+        "an Electrokit breakaway strip was proposed by the researcher, not selected by the owner: do not substitute it",
+        "the provisional mating plug is a generic DuPont-style housing, not a measured part"
+      ]
+    }
+  },
+  "interconnect": {
+    "front": {
+      "x": 10,
+      "y": 5,
+      "rotation": 90
+    },
+    "rear": {
+      "x": 10,
+      "y": 5,
+      "rotation": 90
+    },
+    "seatToSeat": 11.2,
+    "seatToSeatTolerance": 0.2,
+    "bodyLength": 40.52,
+    "bodyEnvelope": 8.8,
+    "maleHeight": 9.1,
+    "maleTail": 3,
+    "femaleHeight": 8.5,
+    "femaleTail": 3.2,
+    "frontBoardRearToRearBoardTop": 11.2,
+    "gapStatus": "nominal drawing dimension, not a measured gap; support and flatness unverified"
   }
 }

@@ -23,6 +23,8 @@
 // assembled is unverified: see docs/ELECTRICAL-VERIFICATION.md and acceptance
 // item `probe_point_access`.
 
+import { PI_PCB_BOX } from "./layout"
+
 /** Drill of every probe point, in mm (also a valid JLCPCB plated drill). */
 export const PROBE_HOLE_DIAMETER_MM = 0.8
 /** Copper pad diameter of every probe point, in mm. */
@@ -155,16 +157,18 @@ export const PROBE_KEEPOUTS: Readonly<Record<string, Box & { readonly note: stri
     note: "micro-USB plug envelope in front of the Pico's USB end (module pin 1 end, y = -25.5); the cable is used for Pico programming and the USB case of acceptance item scope_spi",
   },
   pi_pcb: {
-    x1: -22, y1: -42.5, x2: 34, y2: 42.5,
-    note: "Raspberry Pi 5 PCB 85 x 56 mm on the 58 x 49 mm hole grid (layout.ts PI_MOUNT, portrait)",
+    x1: PI_PCB_BOX.x1, y1: PI_PCB_BOX.y1, x2: PI_PCB_BOX.x2, y2: PI_PCB_BOX.y2,
+    note: "Raspberry Pi 5 PCB envelope from layout.ts PI_PCB_BOX: portrait, 56.5 mm across X, 85.6 mm along Y, about PI_MOUNT. Planning bound, not a measurement",
   },
   j_pi_body: {
     x1: -26, y1: 45, x2: 26, y2: 53,
     note: "J_PI 2 x 20 header body and its 40-pin GPIO ribbon",
   },
   j_front_body: {
-    x1: 41, y1: -19, x2: 50, y2: 19,
-    note: "J_FRONT 2 x 13 header body and its front-rear IDC ribbon",
+    // Male SBH11 body envelope 40.52 x 8.80 mm at the direct interconnect's
+    // shared placement (10, 5) rotated 90 deg (lib/layout.ts).
+    x1: 5.6, y1: -15.3, x2: 14.4, y2: 25.3,
+    note: "J_FRONT 2 x 13 male header body of the direct mate (no ribbon)",
   },
 } as const
 
