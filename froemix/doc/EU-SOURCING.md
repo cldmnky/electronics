@@ -1,16 +1,47 @@
 # Hand-assembly EU sourcing
 
-The approved sales channels for hand-fitted parts are **RS Components,
-Electrokit and DigiKey with EU sales**. JLCPCB/LCSC may still supply the SMT
-placements that JLC assembles. An LCSC identifier in a generated hand BOM is a
-design reference, **not evidence of an approved source**.
+The **main suppliers** are Electrokit, DigiKey Sweden (`digikey.se`) and
+Conrad Sweden (`conrad.se`). RS Components stays in `tools/source_parts.py` as
+an **alternate**. JLCPCB/LCSC may still supply the SMT placements that JLC
+assembles, and it is the **stock source** for the small connectors and control
+parts the Swedish shops do not carry. An LCSC identifier in a generated hand
+BOM is a design reference, **not evidence of an approved source**.
+
+Hand-fitted parts belong in one place, `library/components.csv`, so the same
+part is bought the same way in every project. `library/parts_library.py`
+checks that list, searches it, and matches a project BOM against it. See
+`library/README.md` for the columns, the rules and the accounts. This document
+covers the shops and the per-project sourcing run.
 
 `tools/source_parts.py` helps research the generated base and euro **hand BOMs**.
-It creates search links for all three Swedish storefronts; optionally it queries
-the official DigiKey Product Information v4 keyword API. It does not scrape RS
-or Electrokit, place orders, approve substitutions, or assert that a product is
-in stock. No public self-service product API was confirmed for RS or Electrokit;
+It creates search links for every storefront; optionally it queries
+the official DigiKey Product Information v4 keyword API. It does not scrape any
+shop, place orders, approve substitutions, or assert that a product is in
+stock. No public self-service product API was confirmed for the other shops;
 those entries are marked `manual_search`. Website URLs may change.
+
+## Accounts and delivery
+
+Searching and browsing need no account at any of the three main shops.
+Buying does:
+
+- **Conrad Sweden** — a customer account at checkout, business or private. The
+  storefront shows B2B prices excluding VAT. Conrad answers automated clients
+  with a Cloudflare challenge (HTTP 403), so article numbers are recorded by
+  hand here, not scraped.
+- **DigiKey Sweden** — the Swedish storefront is public, prices in SEK
+  excluding VAT, delivery inside Sweden. The live API needs an application
+  with client-credentials access at `developer.digikey.com`.
+- **Electrokit** — the English storefront is public, prices in SEK including
+  VAT, delivery inside Sweden.
+- **LCSC** — a public catalogue with unit prices in EUR and delivery from
+  Shenzhen. It is a stock source, not a main source. The parts bought in for
+  the build are in `library/components.csv` with their LCSC part numbers.
+
+Automated Conrad data needs more than an account: a business account plus
+activation on `developer.conrad.com`. That portal sits behind a login and no
+public endpoint documentation was confirmed, so this repository records
+Conrad article numbers by hand.
 
 ## Usage
 
@@ -20,6 +51,8 @@ From `froemix/`:
 make release  # regenerate BOTH hand BOMs from the intended board revision
 python3 tools/source_parts.py --output /tmp/froemix-sourcing.json
 python3 tools/source_parts.py --format csv --output /tmp/froemix-sourcing.csv
+python3 tools/source_parts.py --suppliers conrad,electrokit --format csv --output /tmp/froemix-primary.csv
+python3 tools/source_parts.py --query NE555 --query "3.5mm jack" --suppliers conrad
 python3 tools/test_source_parts.py
 ```
 
@@ -41,7 +74,29 @@ is a flattened view and does not include the JSON report metadata. `query_requir
 usable search: e.g. `C65114` is only an LCSC code. Research it manually or
 supply an appropriate query in a copy of the input BOM. `manual_search` is a
 link only—not a search result, stock check or approved match. BOM quantities
-are for one board; multiply for your order and allow spares.
+are for one board; multiply for your order and allow spares. `--query TEXT`
+searches one text without reading a BOM, and `--suppliers LIST` limits the
+report to a comma-separated subset of `rs,digikey,electrokit,conrad`.
+
+## Shared part library
+
+`library/components.csv` holds the parts to reuse: through-hole parts,
+capacitors and character displays, each with the article number at Conrad
+Sweden, DigiKey Sweden, Electrokit and LCSC, one price snapshot and one date.
+It is not a BOM. It is the list a new BOM is chosen from.
+
+```bash
+python3 library/parts_library.py check
+python3 library/parts_library.py find "100n"
+python3 library/parts_library.py links "PJ398SM"
+python3 library/parts_library.py bom fab/froemix-bom-hand.csv --shop electrokit
+python3 library/test_parts_library.py
+```
+
+A price in the library is what one person read on one day, in the shop's own
+currency and tax convention (Conrad excludes VAT, Electrokit includes it). Confirm it at checkout. A row marked `draft` is recorded but not
+yet checked by a person; `preferred` means it passed a datasheet and footprint
+check.
 
 ### Optional: live DigiKey search
 

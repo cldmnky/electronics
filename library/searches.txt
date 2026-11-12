@@ -1,0 +1,40 @@
+# Search terms for parts the library does not hold yet.
+#
+#   python3 library/parts_library.py links --from library/searches.txt
+#   python3 library/parts_library.py links --from library/searches.txt --shop conrad
+#
+# One term per line. `#` starts a comment. Conrad Sweden and Electrokit answer
+# Swedish or English words; the English word is often the better hit.
+# Copy the shop article number, the price and the date into components.csv.
+
+# Potentiometers
+potentiometer 10k linjär
+potentiometer 100k linjär
+potentiometer 100k logaritmisk
+trimmer potentiometer 10k
+slidpotentiometer 10k
+
+# Switches
+vridomkopplare 2-pol
+strömbrytare SPDT
+tryckknapp PCB
+DIP switch 8-pol
+
+# Knobs
+ratt 6 mm
+ratt 6,35 mm
+ratt aluminium 15 mm
+
+# Capacitors, through-hole
+keramisk kondensator 100nF
+keramisk kondensator 10nF
+elektrolytkondensator 10uF 25V
+elektrolytkondensator 100uF 25V
+filmkondensator 100nF
+foliekondensator 1uF 63V
+
+# Other through-hole parts
+stiftlist 2,54 mm
+hylslist 2,54 mm
+monokontakt 3,5 mm
+DIL-sockel 8-pol
