@@ -83,7 +83,9 @@ report to a comma-separated subset of `rs,digikey,electrokit,conrad`.
 `library/components.csv` holds the parts to reuse: through-hole parts,
 capacitors and character displays, each with the article number at Conrad
 Sweden, DigiKey Sweden, Electrokit and LCSC, one price snapshot and one date.
-It is not a BOM. It is the list a new BOM is chosen from.
+A ready part also carries a datasheet, a footprint, a STEP model and CAD
+provenance; a `draft` may omit them. It is not a BOM. It is the list a new BOM
+is chosen from. See `library/README.md` and `library/cad/README.md`.
 
 ```bash
 python3 library/parts_library.py check
@@ -94,9 +96,9 @@ python3 library/test_parts_library.py
 ```
 
 A price in the library is what one person read on one day, in the shop's own
-currency and tax convention (Conrad excludes VAT, Electrokit includes it). Confirm it at checkout. A row marked `draft` is recorded but not
-yet checked by a person; `preferred` means it passed a datasheet and footprint
-check.
+currency and tax convention (Conrad excludes VAT, Electrokit includes it).
+Confirm it at checkout. A row marked `draft` is recorded but not yet checked by
+a person; `preferred` means it passed a datasheet, footprint and STEP check.
 
 ### Optional: live DigiKey search
 

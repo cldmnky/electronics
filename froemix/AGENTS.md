@@ -510,17 +510,25 @@ release`; no item is aspirational.
 ## 9. Sourcing rule (both boards)
 
 JLCPCB/LCSC may supply the parts JLC places. **All hand-soldered parts must be
-sourced from RS Components, Electrokit or DigiKey with EU sales.** LCSC numbers
-in existing hand BOMs are design references, not approved sources. Some parts
-and mechanically compatible replacements are still unresolved; do not treat the
+sourced from the shared library (`../library/components.csv`) and bought from
+Electrokit, DigiKey Sweden or Conrad Sweden with EU sales.** RS Components is
+an alternate in `tools/source_parts.py`, not a main source. LCSC numbers in
+existing hand BOMs are design references, not approved sources. Some parts and
+mechanically compatible replacements are still unresolved; do not treat the
 current hand BOM as an EU shopping list. `doc/EU-SOURCING.md` describes the
-search tool and review requirements.
+search tool and review requirements; the root `AGENTS.md` and
+`.pi/skills/component-library/` define the library and CAD gate.
 
 - For machine-placed SMT, prefer an LCSC part that is **basic** at JLCPCB;
   `check_parts.py` validates that supplier data.
-- For hand-fitted components and loose assembly hardware, find an approved EU
-  seller before ordering and verify the exact part's electrical, footprint,
-  mechanical and mating requirements. Record the reviewed supplier and MPN.
+- For hand-fitted components and loose assembly hardware, use the shared
+  library row. Add or update the part there, with its datasheet, footprint,
+  STEP model and CAD provenance; do not keep a project-local THT list.
+- A `preferred`/`alternate` library row passed the library gate. A `draft` is a
+  lead: do not design it in or buy it; if this project already uses one, close
+  the datasheet/CAD gate before the next order. Verify the exact part's
+  electrical, footprint, mechanical and mating requirements before ordering,
+  and record the reviewed supplier and MPN.
 - Do not silently substitute an unavailable or discontinued part. A change to
   board-to-board headers, jacks, display, actuator or converter can require a
   board/panel redesign and first-article checks.

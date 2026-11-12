@@ -27,6 +27,8 @@ def write_library(path: Path, rows: list[dict]) -> Path:
 GOOD = {
     "id": "res-10k-025w", "category": "resistor", "description": "10 kOhm 1/4 W metal film",
     "value": "10k", "package": "0207", "rating": "250 V", "tolerance": "1%",
+    "manufacturer": "Vishay", "mpn": "CFR-25JB-52-10K",
+    "datasheet": "", "footprint": "", "step": "", "cad_source": "", "cad_license": "",
     "conrad_sku": "140023", "conrad_price_sek": "0.35", "conrad_moq": "10",
     "digikey_sku": "", "digikey_price_sek": "", "digikey_moq": "",
     "electrokit_sku": "41000510", "electrokit_price_sek": "0.10", "electrokit_moq": "1",
@@ -37,6 +39,28 @@ GOOD = {
 
 def fresh(**changes) -> dict:
     return {**GOOD, **changes}
+
+
+def write_cad(root: Path, part_id: str = "res-10k-025w") -> dict:
+    """Create a minimal footprint and STEP model under a temporary library."""
+    folder = root / "cad" / part_id
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "footprint.kicad_mod").write_text('(footprint "test")\n', encoding="utf-8")
+    (folder / "model.step").write_text(
+        "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((''),'2;1');\nENDSEC;\n"
+        "DATA;\nENDSEC;\nEND-ISO-10303-21;\n", encoding="utf-8")
+    (folder / "SOURCE.md").write_text("# test provenance\n", encoding="utf-8")
+    return {
+        "datasheet": "https://example.com/res-10k-025w.pdf",
+        "footprint": f"cad/{part_id}/footprint.kicad_mod",
+        "step": f"cad/{part_id}/model.step",
+        "cad_source": "https://example.com/cad/res-10k-025w",
+        "cad_license": "CC-BY-4.0",
+    }
+
+
+def ready(root: Path, **changes) -> dict:
+    return fresh(**{**write_cad(root), **changes})
 
 
 class UrlTests(unittest.TestCase):
@@ -87,8 +111,10 @@ class LoadAndValidateTests(unittest.TestCase):
                 p.load(Path(tmp) / "absent.csv")
 
     def test_good_row_passes(self):
-        errors, warnings = p.validate([p.load(write_library(Path(tempfile.mkdtemp()) / "c.csv", [GOOD]))[0]],
-                                      today=p.date(2026, 11, 21))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = write_library(root / "c.csv", [ready(root)])
+            errors, warnings = p.validate(p.load(path), today=p.date(2026, 11, 21), root=root)
         self.assertEqual(errors, [])
         self.assertEqual(warnings, [])
 
@@ -120,18 +146,22 @@ class LoadAndValidateTests(unittest.TestCase):
         self.assertTrue(any("duplicate id" in error for error in errors))
 
     def test_warnings_do_not_block(self):
-        rows = p.load(write_library(Path(tempfile.mkdtemp()) / "c.csv", [
-            fresh(updated="2024-01-01", notes="old"),
-            fresh(id="cap-cer-100n-50v", category="cap-ceramic", value="100n", package="2.5mm",
-                  status="draft", updated="2026-11-01"),
-        ]))
-        errors, warnings = p.validate(rows, today=p.date(2026, 11, 21))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = write_library(root / "c.csv", [
+                ready(root, updated="2024-01-01", notes="old"),
+                fresh(id="cap-cer-100n-50v", category="cap-ceramic", value="100n", package="2.5mm",
+                      status="draft", updated="2026-11-01"),
+            ])
+            errors, warnings = p.validate(p.load(path), today=p.date(2026, 11, 21), root=root)
         self.assertEqual(errors, [])
         self.assertTrue(any("days old" in warning for warning in warnings))
 
     def test_missing_value_warns(self):
-        rows = p.load(write_library(Path(tempfile.mkdtemp()) / "c.csv", [fresh(value="")]))
-        errors, warnings = p.validate(rows, today=p.date(2026, 11, 21))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = write_library(root / "c.csv", [ready(root, value="")])
+            errors, warnings = p.validate(p.load(path), today=p.date(2026, 11, 21), root=root)
         self.assertEqual(errors, [])
         self.assertTrue(any("value is empty" in warning for warning in warnings))
 
@@ -147,9 +177,81 @@ class LoadAndValidateTests(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_future_date_is_a_warning(self):
-        errors, warnings = p.validate([fresh(updated="2027-01-01")], today=p.date(2026, 11, 21))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            errors, warnings = p.validate([ready(root, updated="2027-01-01")],
+                                          today=p.date(2026, 11, 21), root=root)
         self.assertEqual(errors, [])
         self.assertTrue(any("future" in warning for warning in warnings))
+
+    def test_a_ready_part_needs_cad_and_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            errors, _ = p.validate([GOOD], today=p.date(2026, 11, 21), root=root)
+        for field in ("datasheet", "footprint", "step", "cad_source", "cad_license"):
+            self.assertTrue(any(field in error for error in errors), field)
+
+    def test_a_ready_part_needs_a_main_shop_sku(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row = ready(root, conrad_sku="", conrad_price_sek="", electrokit_sku="",
+                        electrokit_price_sek="", digikey_sku="", digikey_price_sek="",
+                        lcsc_sku="C1", lcsc_price_eur="0.1")
+            errors, _ = p.validate([row], today=p.date(2026, 11, 21), root=root)
+        self.assertTrue(any("main-shop" in error for error in errors))
+
+    def test_cad_assets_must_exist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row = ready(root)
+            (root / row["step"]).unlink()
+            errors, _ = p.validate([row], today=p.date(2026, 11, 21), root=root)
+        self.assertTrue(any("step" in error and "does not exist" in error for error in errors))
+
+    def test_a_ready_part_needs_source_md(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row = ready(root)
+            (root / "cad" / "res-10k-025w" / "SOURCE.md").unlink()
+            errors, _ = p.validate([row], today=p.date(2026, 11, 21), root=root)
+        self.assertTrue(any("SOURCE.md" in error for error in errors))
+
+    def test_step_file_must_have_a_step_header(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row = ready(root)
+            (root / row["step"]).write_text("not a step file\n", encoding="utf-8")
+            errors, _ = p.validate([row], today=p.date(2026, 11, 21), root=root)
+        self.assertTrue(any("ISO-10303-21" in error for error in errors))
+
+    def test_asset_paths_stay_inside_the_library(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row = ready(root, footprint="../outside.kicad_mod")
+            errors, _ = p.validate([row], today=p.date(2026, 11, 21), root=root)
+        self.assertTrue(any("inside library" in error for error in errors))
+
+    def test_a_knob_may_omit_the_pcb_footprint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row = fresh(**{**write_cad(root), "category": "knob", "footprint": ""})
+            errors, _ = p.validate([row], today=p.date(2026, 11, 21), root=root)
+        self.assertEqual(errors, [])
+
+    def test_a_draft_with_cad_still_needs_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row = fresh(**{**write_cad(root), "status": "draft", "cad_source": "", "cad_license": ""})
+            errors, _ = p.validate([row], today=p.date(2026, 11, 21), root=root)
+        self.assertTrue(any("CAD assets need cad_source" in error for error in errors))
+        self.assertTrue(any("CAD assets need cad_license" in error for error in errors))
+
+    def test_avoid_may_be_incomplete(self):
+        row = fresh(status="avoid", conrad_sku="", conrad_price_sek="",
+                    electrokit_sku="", electrokit_price_sek="", datasheet="",
+                    footprint="", step="", cad_source="", cad_license="")
+        errors, _ = p.validate([row], today=p.date(2026, 11, 21))
+        self.assertEqual(errors, [])
 
 
 class MatchTests(unittest.TestCase):
@@ -158,7 +260,8 @@ class MatchTests(unittest.TestCase):
             fresh(),
             fresh(id="res-10k-0204", description="10 kOhm 1/4 W small", value="10k", package="0204",
                   updated="2026-11-20"),
-            fresh(id="res-1k-025w", description="1 kOhm 1/4 W", value="1k"),
+            fresh(id="res-1k-025w", description="1 kOhm 1/4 W", value="1k",
+                  mpn="CFR-25JB-52-1K"),
         ]
 
     def test_find_and_empty_text(self):
@@ -166,6 +269,8 @@ class MatchTests(unittest.TestCase):
                          ["res-10k-025w", "res-10k-0204", "res-1k-025w"])
         self.assertEqual([row["id"] for row in p.find(self.rows, "10K")],
                          ["res-10k-025w", "res-10k-0204"])
+        self.assertEqual([row["id"] for row in p.find(self.rows, "CFR-25JB-52-1K")],
+                         ["res-1k-025w"])
         with self.assertRaises(p.LibraryError):
             p.find(self.rows, "  ")
 
@@ -240,6 +345,16 @@ class BomTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
+    def test_check_resolves_assets_next_to_the_library(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = write_library(root / "c.csv", [ready(root)])
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                status = p.main(["--library", str(path), "check"])
+            self.assertEqual(status, 0, err.getvalue())
+            self.assertIn("footprint 1", out.getvalue())
+
     def test_check_reports_and_fails_on_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = write_library(Path(tmp) / "c.csv", [fresh(category="inductor")])

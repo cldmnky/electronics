@@ -22,7 +22,7 @@ import re
 import sys
 from datetime import date
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 LIBRARY = ROOT / "library/components.csv"
@@ -65,12 +65,14 @@ SHOPS = {
 }
 
 COLUMNS = [
-    "id", "category", "description", "value", "package", "rating", "tolerance",
+    "id", "category", "description", "manufacturer", "mpn",
+    "value", "package", "rating", "tolerance",
+    "datasheet", "footprint", "step", "cad_source", "cad_license",
     "conrad_sku", "conrad_price_sek", "conrad_moq",
     "digikey_sku", "digikey_price_sek", "digikey_moq",
     "electrokit_sku", "electrokit_price_sek", "electrokit_moq",
     "lcsc_sku", "lcsc_price_eur", "lcsc_moq",
-    "datasheet", "status", "updated", "notes",
+    "status", "updated", "notes",
 ]
 
 CATEGORIES = {
@@ -81,6 +83,11 @@ CATEGORIES = {
 
 STATUSES = ("preferred", "alternate", "draft", "avoid")
 
+# A ready part needs CAD and identity; a draft is allowed to be incomplete.
+MAIN_SHOPS = ("conrad", "digikey", "electrokit")
+FOOTPRINT_SUFFIXES = (".kicad_mod", ".tsx", ".json")
+STEP_SUFFIXES = (".step", ".stp")
+MECHANICAL_CATEGORIES = {"knob"}
 REQUIRED = ("id", "category", "description", "status", "updated")
 
 MAX_AGE_DAYS = 365
@@ -146,6 +153,65 @@ def parse_moq(text: str, context: str) -> int:
     return value
 
 
+def asset_path(root: Path, text: str, context: str) -> Path:
+    """Resolve a library-relative asset and keep it inside the library."""
+    relative = Path(text)
+    if relative.is_absolute():
+        raise LibraryError(f"{context}: asset path must be relative to library/, not absolute")
+    if ".." in relative.parts:
+        raise LibraryError(f"{context}: asset path must stay inside library/")
+    library_root = root.resolve()
+    candidate = (library_root / relative).resolve()
+    if candidate != library_root and library_root not in candidate.parents:
+        raise LibraryError(f"{context}: asset path must stay inside library/")
+    return candidate
+
+
+def is_url(text: str) -> bool:
+    parsed = urlparse(text.strip())
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+def check_file(path: Path, suffixes: tuple[str, ...], context: str) -> list[str]:
+    """Check one asset exists and has an allowed suffix."""
+    errors: list[str] = []
+    if path.suffix.lower() not in suffixes:
+        errors.append(f"{context}: expected {' or '.join(suffixes)}, got {path.name}")
+    if not path.is_file():
+        errors.append(f"{context}: file does not exist: {path}")
+    return errors
+
+
+def provenance_files(root: Path, row: dict) -> list[Path]:
+    """SOURCE.md beside a recorded footprint or STEP file, if the path is valid."""
+    paths = []
+    for field in ("footprint", "step"):
+        text = row[field]
+        if not text:
+            continue
+        try:
+            path = asset_path(root, text, field)
+        except LibraryError:
+            continue
+        paths.append(path.parent / "SOURCE.md")
+    return paths
+
+
+def check_step_file(path: Path, context: str) -> list[str]:
+    """A STEP file is ASCII and starts with ISO-10303-21."""
+    errors = check_file(path, STEP_SUFFIXES, context)
+    if errors:
+        return errors
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(4096)
+    except OSError as exc:
+        return [f"{context}: cannot read {path}: {exc.strerror}"]
+    if b"ISO-10303-21" not in head:
+        errors.append(f"{context}: {path.name} is not a STEP file (no ISO-10303-21 header)")
+    return errors
+
+
 def load(path: Path = LIBRARY) -> list[dict]:
     """Read the library and check its columns. Row rules live in validate()."""
     try:
@@ -167,13 +233,20 @@ def load(path: Path = LIBRARY) -> list[dict]:
 
 
 def validate(rows: list[dict], today: date | None = None,
-             max_age_days: int = MAX_AGE_DAYS) -> tuple[list[str], list[str]]:
-    """Return (errors, warnings). Errors stop a release; warnings do not."""
+             max_age_days: int = MAX_AGE_DAYS,
+             root: Path | None = None) -> tuple[list[str], list[str]]:
+    """Return (errors, warnings). Errors stop a release; warnings do not.
+
+    Asset paths are relative to the library directory (the CSV's parent).
+    """
     errors: list[str] = []
     warnings: list[str] = []
     today = today or date.today()
+    root = root or LIBRARY.parent
     seen: dict[str, str] = {}
-    for row in rows:
+    for raw in rows:
+        row = {name: "" for name in COLUMNS}
+        row.update(raw)
         where = f"line {row.get('_line', '?')} ({row.get('id') or 'no id'})"
         part_id = row["id"]
         if not re.fullmatch(r"[a-z0-9][a-z0-9.-]*", part_id):
@@ -198,10 +271,13 @@ def validate(rows: list[dict], today: date | None = None,
         except LibraryError as exc:
             errors.append(str(exc))
         shops_with_sku = 0
+        main_shops_with_sku = 0
         for shop, info in SHOPS.items():
             sku = (row.get(info["sku"]) or "").strip()
             if sku:
                 shops_with_sku += 1
+                if shop in MAIN_SHOPS:
+                    main_shops_with_sku += 1
             try:
                 price = parse_price(row.get(info["price"], ""), where)
                 parse_moq(row.get(info["moq"], ""), where)
@@ -212,8 +288,62 @@ def validate(rows: list[dict], today: date | None = None,
                 errors.append(f"{where}: {shop} sku needs a price")
             elif price is not None and not sku:
                 errors.append(f"{where}: {shop} price needs a sku")
-        if shops_with_sku == 0 and row["status"] != "draft":
+
+        ready = row["status"] in ("preferred", "alternate")
+        if ready and shops_with_sku == 0:
             errors.append(f"{where}: status {row['status']} needs at least one shop sku")
+        if ready and main_shops_with_sku == 0:
+            errors.append(f"{where}: status {row['status']} needs a main-shop sku "
+                          f"({', '.join(SHOPS[shop]['name'] for shop in MAIN_SHOPS)}); "
+                          "LCSC is stock only")
+
+        if ready:
+            required = ["datasheet", "step", "cad_source", "cad_license"]
+            if row["category"] not in MECHANICAL_CATEGORIES:
+                required.insert(1, "footprint")
+            for field in required:
+                if not row[field]:
+                    errors.append(f"{where}: status {row['status']} needs {field}")
+            if not row["mpn"]:
+                warnings.append(f"{where}: status {row['status']} has no mpn")
+            if not row["manufacturer"]:
+                warnings.append(f"{where}: status {row['status']} has no manufacturer")
+            if not any(path.is_file() for path in provenance_files(root, row)):
+                errors.append(f"{where}: status {row['status']} needs SOURCE.md "
+                              "beside the footprint or step")
+        elif row["footprint"] or row["step"]:
+            for field in ("cad_source", "cad_license"):
+                if not row[field]:
+                    errors.append(f"{where}: CAD assets need {field}")
+
+        datasheet = row["datasheet"]
+        if datasheet and not is_url(datasheet):
+            try:
+                path = asset_path(root, datasheet, f"{where}: datasheet")
+            except LibraryError as exc:
+                errors.append(str(exc))
+            else:
+                if not path.is_file():
+                    errors.append(f"{where}: datasheet file does not exist: {path}")
+
+        if row["footprint"]:
+            try:
+                path = asset_path(root, row["footprint"], f"{where}: footprint")
+            except LibraryError as exc:
+                errors.append(str(exc))
+            else:
+                errors.extend(check_file(path, FOOTPRINT_SUFFIXES, f"{where}: footprint"))
+
+        if row["step"]:
+            try:
+                path = asset_path(root, row["step"], f"{where}: step")
+            except LibraryError as exc:
+                errors.append(str(exc))
+            else:
+                errors.extend(check_step_file(path, f"{where}: step"))
+
+        if row["cad_source"] and not is_url(row["cad_source"]):
+            errors.append(f"{where}: cad_source must be an http(s) URL")
     return errors, warnings
 
 
@@ -222,7 +352,7 @@ def find(rows: list[dict], text: str) -> list[dict]:
     needle = norm(text)
     if not needle:
         raise LibraryError("find needs search text")
-    fields = ("id", "description", "value", "package", "rating", "notes")
+    fields = ("id", "description", "manufacturer", "mpn", "value", "package", "rating", "notes")
     return [row for row in rows if any(needle in norm(row[name]) for name in fields)]
 
 
@@ -331,7 +461,8 @@ def render_plan_csv(planned: list[dict]) -> str:
 
 def command_check(args) -> int:
     rows = load(args.library)
-    errors, warnings = validate(rows, max_age_days=args.max_age_days)
+    errors, warnings = validate(rows, max_age_days=args.max_age_days,
+                                root=args.library.parent)
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)
     for error in errors:
@@ -341,6 +472,12 @@ def command_check(args) -> int:
     states = {status: sum(1 for row in rows if row["status"] == status) for status in STATUSES}
     print(f"{len(rows)} parts, {len(errors)} errors, {len(warnings)} warnings")
     print("with a sku: " + ", ".join(f"{SHOPS[shop]['name']} {count}" for shop, count in covered.items()))
+    print("with identity: " + ", ".join(
+        f"{field} {sum(1 for row in rows if row[field])}" for field in ("manufacturer", "mpn")))
+    print("with CAD: " + ", ".join(
+        f"{field} {sum(1 for row in rows if row[field])}" for field in ("datasheet", "footprint", "step")))
+    print("with CAD provenance: " + ", ".join(
+        f"{field} {sum(1 for row in rows if row[field])}" for field in ("cad_source", "cad_license")))
     print("by status: " + ", ".join(f"{status} {count}" for status, count in states.items()))
     return 1 if errors else 0
 
@@ -353,6 +490,12 @@ def command_find(args) -> int:
     else:
         for row in matches:
             print(f"{row['id']:24} {row['description']}")
+            print(f"  {'status':14} {row['status']}  updated {row['updated']}")
+            if row["mpn"]:
+                print(f"  {'part':14} {row['manufacturer']} {row['mpn']}".rstrip())
+            for field in ("datasheet", "footprint", "step"):
+                if row[field]:
+                    print(f"  {field:14} {row[field]}")
             for shop, info in SHOPS.items():
                 sku = row[info["sku"]]
                 if sku:
