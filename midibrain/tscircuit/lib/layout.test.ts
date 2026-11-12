@@ -6,6 +6,7 @@ import { renderMechanical, run } from "../scripts/export-mechanical"
 import {
   BRACKET_ALLOWANCE,
   DEPTH_TARGET,
+  EURORACK_GO_MAX_MODULE_DEPTH,
   DISPLAY_CONCEPT,
   DISPLAY_ACTIVE_OFFSET_X,
   DISPLAY_DATUM,
@@ -26,6 +27,8 @@ import {
   PROVISIONAL_Z,
   mechanicalExport,
   provisionalInstalledDepth,
+  provisionalModuleDepthBehindPanel,
+  provisionalPiPanelDepth,
   roundedRectOutline,
   FEEDTHROUGH_BRACKET,
   FRONT_BOARD_HOLES,
@@ -605,6 +608,14 @@ test("provisional depth chain stays inside the owner target", () => {
   // the front board stays 128 mm (D2), so no extra width was bought for the
   // 106 mm-wide module.
   expect((FRONT_PCB.width - REAR_PCB.width) / 2).toBeCloseTo(13.2, 6)
+  // The Pi left the module for its own 20HP mounting panel (owner decision
+  // 2026-11-12), so the module chain ends at the socketed Pico stack. Both
+  // chains stay inside the Eurorack Go's 62 mm UPPER row on paper, and the Pi
+  // panel does NOT fit the 40 mm lower row with the NVMe HAT candidate stack:
+  // that is the doc's claim, pinned here as a tripwire, not a fit approval.
+  expect(provisionalModuleDepthBehindPanel()).toBeLessThanOrEqual(EURORACK_GO_MAX_MODULE_DEPTH.upperRow)
+  expect(provisionalPiPanelDepth()).toBeLessThanOrEqual(EURORACK_GO_MAX_MODULE_DEPTH.upperRow)
+  expect(provisionalPiPanelDepth()).toBeGreaterThan(EURORACK_GO_MAX_MODULE_DEPTH.lowerRow)
 })
 
 // ---- Export script: generation and non-writing --check --------------------

@@ -28,6 +28,27 @@ Pico pins 39 (VSYS), 40 (VBUS), 36 (3V3 OUT), 37 (3V3 EN), 30 (RUN) are not gene
 
 Connector part, mating-face pin order, wire length, shielding, decoupling and power branch protection remain open. Hardware pin mux and continuity must be tested with actual Pi OS/Pico SDK versions.
 
+## Pi mounting panel and the harness (owner decision 2026-11-12)
+
+The Pi 5 (with Active Cooler + M.2 HAT+ + NVMe SSD) bolts behind its own 20HP/3U
+mounting panel in a second rack position; the table above is unchanged as a
+logical allocation, but every Pi signal now crosses **the 40-wire GPIO ribbon
+from `J_PI` (rear board, BH254V-40P) to the Pi's 40-pin header** instead of a
+header on the rear board. Plan 150–350 mm runs (adjacent rack positions).
+Before power: pin-1 orientation of the ribbon and all-40 continuity from `J_PI`
+to the Pi header against the net list. The 1 MHz SPI link, the 100 Ω series
+resistors and the buffered MISO/READY are unchanged.
+
+Three more runs span the same gap and none has a proven length: the display DSI
+FPC (kit cables are 50/120 mm, so a longer 15-pin 0.5 mm FPC plus the 22-pin
+adaptation is expected), the J_PWR power-button pigtail to the Pi's bare `J2`
+pads (longer than the recorded 2 × 6-inch DuPont pair), and the three USB
+feedthrough cables — the feedthroughs themselves stay on the 30HP panel,
+unchanged. The M.2 HAT+ must leave the 40-pin header free for the ribbon; the
+fitted HAT's MPN and connection method are pending (`docs/TODO.md`). Evidence:
+acceptance item `pi_panel_harness`; geometry: `PI_PANEL_*` in
+`tscircuit/lib/layout.ts`.
+
 ## Panel POWER button (owner-approved 2026-11-06; pigtail amended 2026-11-06)
 
 A panel momentary switch (B3F-4055 family, same as the transport row) is

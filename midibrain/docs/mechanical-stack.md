@@ -14,7 +14,8 @@ X direction.
 |---|---|---|
 | Front panel | **30HP × 3U, 152.0 × 128.5 × 1.6 actual** (owner decision 2026-11-08, replaces the 32HP/162.56 mm panel of 2026-11-07) | Rail holes X ±68.58, Y ±61.25, Ø3.2 (spacing 137.16 = 27 × 5.08, the Doepfer multiple rule; 7.42 mm centre inset, 5.82 mm hole edge to panel edge). 152.0 is OUR ESTIMATE, 0.4 mm under the 152.4 mm nominal (0.2 mm per side): not a Doepfer-stated 30HP value, not owner-exact, not a mandate and not a guaranteed fit. Sources: [Doepfer A-100 mechanical information](https://doepfer.de/a100_man/a100m_e.htm) and its [hole figure A100FP.gif](https://doepfer.de/a100_man/A100FP.gif), which gives 128.5 mm height, a 7.5 mm horizontal and 3.0 mm vertical hole inset, and Ø3.2 mm holes but publishes no 30HP width. The fixed 27 × 5.08 grid on 152.0 mm gives 7.42 mm, i.e. **0.08 mm tighter than the figure's 7.5 mm** - disclosed, not corrected. Display window 107.22 × 68.87 mm centred on the module, unchanged. |
 | Front/UI PCB | **128 × 112 × 1.6 (unchanged)** | Four display mounting holes on the module's threaded SMTSO boss pattern: 99.30 × 61.80 mm centres (3.35 / 3.10 insets), i.e. layout x −49.65 / +49.65, y +30.90 / −30.90 from the module centre (−9.5, 11). The drawn 58.00 × 49.04 plain-hole pattern stays as the recorded alternative (`DISPLAY_STANDOFFS`). |
-| Rear/base PCB | 101.6 × 112 × 1.6 (20HP) | Pi hole grid 58 × 49 mm (portrait), Pico on the left. |
+| Rear/base PCB | 101.6 × 112 × 1.6 (20HP) | Pi hole grid 58 × 49 mm (portrait), Pico on the left. The Pi hole grid stays drilled as a **retained mechanical option**; the Pi itself moved to the mounting panel below (2026-11-12). |
+| Pi mounting panel | **20HP × 3U, 101.2 × 128.5 × 1.6 actual** (owner decision 2026-11-12) | Pure mechanical JLCPCB FR-4, no copper and no components, fabricated like the 30HP panel. Same width convention (20 × 5.08 − 0.4) and the same Doepfer rail-hole rule as the 30HP panel: X spacing 86.36 = 17 × 5.08 at the same 7.42 mm centre inset (holes ±43.18), Y ±61.25, Ø3.2. Pi 5 (with Active Cooler + M.2 HAT+ + NVMe SSD) bolts to the panel's **rear** face on standoffs on the 58 × 49 grid, **landscape** and centred (M2.5, Ø2.7). Source `tscircuit/pi-panel.circuit.tsx`, geometry `PI_PANEL_*` in `lib/layout.ts`, guard `lib/pi-panel.test.ts`. USB stays as-is on the 30HP panel: its three feedthroughs do not move. |
 | Installed depth target | ≤110 mm | Target retained. Not verified; see the depth section. |
 
 Owner control centres are unchanged and must not be moved: transport buttons REC/OVER DUB/STOP/PLAY at
@@ -323,18 +324,41 @@ decision.
 
 ## Provisional installed-depth chain
 
+Two rack modules since the Pi moved to its own mounting panel (owner decision
+2026-11-12). Both chains are arithmetic on unmeasured candidates, not verified
+installed depths: no cooler/HAT/SSD, cable-bend or airflow model exists.
+
+**Main module (30HP panel + boards + socketed Pico), panel front face to its
+rear-most point:**
+
 | Segment | Provisional | Basis |
 |---|---:|---|
 | Front-board rear face | 20.65 | See the Z stack. |
 | Front↔rear gap (direct 2 × 13 mate, seat to seat) | 11.2 | Drawing 11091 sheet 2, ±0.20 mm; not measured. |
 | Rear/base PCB | 1.6 | 1.6 mm FR-4. |
-| Pi spacer + Pi PCB | 5.1 | 3.5 mm **candidate** spacer + 1.6 mm Pi PCB. The male tail is 3.00 mm from the seating face = a nominal 1.40 mm protrusion beyond a 1.6 mm PCB; the fillet and clearance are unmeasured, so the 3.5 mm is not a safety claim. |
-| Pi cooler + M.2 HAT+ + SSD | 30 | Candidate range 20–30. |
-| **Total from the panel front face** | **68.55** | Sum of the above; `provisionalInstalledDepth()` in `layout.ts`. |
+| Pico socket stack | 12.7 | CANDIDATE: ~8.5 mm female header + the Pico 2's 1.0 mm PCB (Pico 2 datasheet: "1 mm thick PCB") + a ~3.2 mm micro-USB body (unmeasured). The console USB plug adds its own bend; unmeasured. |
+| Harness allowance | 10 | Ribbon fold and cable bends at the module exit (feedthrough bracket slots); unmeasured. |
+| **Total from the panel front face** | **56.15** | `provisionalInstalledDepth()`; **54.55 mm behind the panel back** = `provisionalModuleDepthBehindPanel()`. |
 
-The ≤110 mm target therefore holds on paper at the high end of every candidate, and `lib/layout.test.ts` keeps the
-chain inside it. That is arithmetic on unmeasured candidates, not a verified installed depth: no cooler/HAT/SSD,
-cable-bend or airflow model exists.
+With the Pi on the mounting panel, the J_FRONT male tails (nominal 1.40 mm
+protrusion below the rear PCB) point into open air under the rear board. The
+3.5 mm `PI_SPACER_MM` belongs to the **retained rear-board Pi option** only
+(the hole grid is still drilled): if the Pi is ever remounted there, that
+option adds 5.1 + 20–30 mm to this chain again and is **not** the designed
+arrangement.
+
+**Pi mounting panel (20HP), its panel back face to the rear-most point:**
+
+| Segment | Provisional | Basis |
+|---|---:|---|
+| Pi standoff + Pi PCB | 5.1 | CANDIDATE 3.5 mm standoff (must clear the Pi underside/microSD slot; unmeasured) + the Pi's 1.6 mm PCB. |
+| Pi cooler + M.2 HAT+ + SSD | 30 | Candidate range 20–30; the owner decision 2026-11-12 keeps the NVMe HAT. |
+| Harness allowance | 10 | USB/DSI/ribbon/pigtail bends at the Pi; unmeasured. |
+| **Behind the panel back** | **45.1** | `provisionalPiPanelDepth()`. |
+
+The ≤110 mm target therefore holds on paper for both modules at the high end of
+every candidate, and `lib/layout.test.ts` keeps the chains inside it. That is
+arithmetic on unmeasured candidates, not a verified installed depth.
 
 ### Behringer Eurorack Go fit (design check, no approval)
 
@@ -342,14 +366,54 @@ Case data from the Thomann product page: 2 × 140 HP, 6U, M3 slide nuts, +12 V/3
 112 × 723 × 311 mm, **maximum module depth 40 mm (lower row) and 62 mm (upper row)**. The module draws nothing from
 the Eurorack bus.
 
-- Width/height: 30HP (152.0 mm actual) fits a 140 HP row with (140 − 30) = 110 HP of space left; 128.5 mm fits 3U; rail holes are at the Doepfer 3U positions
-  Y ±61.25 after the 2026-11 fix (30HP panel: X ±68.58, spacing 137.16 = 27 × 5.08). The horizontal inset is 7.42 mm, i.e. 0.08 mm inside the 7.5 mm the Doepfer hole figure (A100FP.gif) draws; the vertical inset stays the figure's 3.0 mm with Ø3.2 mm holes, and the 128.5 mm height matches it. Round Ø3.2 holes suit the Go's sliding M3 nuts; slotted holes are still recommended. Rail nut/washer fit, neighbour-module fit and the print remain pending.
-- Depth: the provisional stack is **≈63–75 mm behind the panel back** (76.25 − 1.6 = 74.65 mm at the high end; the
-  low end of the candidate ranges is 62.65 mm). That exceeds the 40 mm lower row by 23–35 mm and is at or over the
-  62 mm upper row before tolerances, ribbon folds, the Pico USB plug and airflow.
-- **Verdict: not approved for the Eurorack Go. Do not plan this module for that case.** No fabrication release until
-  the case is reselected or the Pi/cooler/NVMe stack leaves the rack. The ≤110 mm target was never compatible with a
-  40 mm row.
+- Width/height: 30HP (152.0 mm actual) + the 20HP Pi mounting panel (101.2 mm actual) = 50 HP of a 140 HP row; 128.5 mm fits 3U on both panels. Rail holes are at the Doepfer 3U positions
+  Y ±61.25 after the 2026-11 fix (30HP panel: X ±68.58, spacing 137.16 = 27 × 5.08; 20HP panel: X ±43.18, spacing 86.36 = 17 × 5.08). The horizontal inset is 7.42 mm on both, i.e. 0.08 mm inside the 7.5 mm the Doepfer hole figure (A100FP.gif) draws; the vertical inset stays the figure's 3.0 mm with Ø3.2 mm holes, and the 128.5 mm height matches it. Round Ø3.2 holes suit the Go's sliding M3 nuts; slotted holes are still recommended. Rail nut/washer fit, neighbour-module fit and the print remain pending.
+- Depth (two-module arrangement, owner decision 2026-11-12): the main module is **54.55 mm behind its panel back**
+  (56.15 from the panel front face) and the Pi mounting panel is **45.1 mm behind its panel back**, both on the
+  candidate chains above. Both sit inside the 62 mm upper row on paper; **both are over the 40 mm lower row**, so the
+  two modules claim the upper row. Historical, single module: the stack was ≈63–75 mm behind the panel back (76.25 −
+  1.6 = 74.65 mm at the high end; the low end of the candidate ranges was 62.65 mm), which exceeded the 40 mm lower
+  row by 23–35 mm and sat at or over the 62 mm upper row before tolerances, ribbon folds, the Pico USB plug and
+  airflow.
+- **Verdict: the single module was NOT approved for the Eurorack Go (2026-11), and that verdict is why the Pi moved
+  to its own panel. The two-module arrangement is the designed fit for the Go's upper row ON PAPER ONLY — no
+  approval.** Every number above is a candidate: the harness runs, the ribbon fold, the Pico console USB plug,
+  airflow and neighbour clearance are unmeasured. No fabrication release claims a case fit; the physical evidence is
+  acceptance items `case_fit`, `pi_panel_harness` and `zstack`. The ≤110 mm target was never compatible with a 40 mm
+  row.
+
+### Pi mounting panel and the inter-module harness (owner decision 2026-11-12)
+
+The Pi 5 (Active Cooler + M.2 HAT+ + NVMe SSD) bolts to the **rear face** of
+its own pure-mechanical 20HP × 3U FR-4 panel (`tscircuit/pi-panel.circuit.tsx`,
+geometry `PI_PANEL_*` in `lib/layout.ts`). The panel carries no copper and no
+components; JLCPCB fabricates it like the 30HP panel. The Pi is **landscape**:
+the 85 mm edge runs across the panel, the GPIO header on the top edge (ribbon
+to `J_PI`), the DSI/PCIe FPCs on the bottom edge, USB-C + micro-HDMI at the
+left short edge and USB-A + RJ45 at the right, all plugs inserting in the
+panel plane. The rear board keeps its 58 × 49 Pi hole grid as a retained
+mechanical option for deeper cases only.
+
+**USB stays as-is on the 30HP panel**: the three feedthroughs (USB-C POWER,
+UMC AUDIO USB, MIDI HUB USB) do not move and no USB opening is added to the
+mounting panel. The harness between the two rack positions is six runs, all
+PLANNING lengths (adjacent rack positions put the run in the 150–350 mm
+class); nothing is measured or proven:
+
+| Run | From | To | Open points |
+|---|---|---|---|
+| USB-C power feed | 30HP panel feedthrough (x −38) | Pi USB-C inlet | Must be 5 A-rated end to end. The feedthrough itself is unresolved (`usb_c_5a_path`: CAB-15455 is 3 A and rejected); droop and heating over the longer run are `usb_pd_droop_thermal` + `pi_panel_harness`. |
+| UMC AUDIO USB | feedthrough (x −5) | Pi USB-A | USB 2.0 extension; shielded, keep ≤1 m. |
+| MIDI HUB USB | feedthrough (x +35) | Pi USB-A | Same. |
+| Display DSI FPC | display FPC connector on the front board (planning marker only) | Pi MIPI connector (22-pin) | The kit ships 50 mm and 120 mm cables; a longer 15-pin 0.5 mm FPC plus the kit's 22-pin adaptation is expected. Contact orientation (A/A vs A/B), latch, bend radius, touch I²C and DSI signal integrity over the fitted length are unverified. |
+| 40-wire GPIO ribbon | `J_PI` (rear board, BH254V-40P) | Pi 40-pin header | 1:1 IDC. Pin-1 orientation and all-40 continuity to the net list are required before power. **The M.2 HAT+ must not occupy the GPIO header the ribbon needs**: the fitted HAT's MPN and its GPIO/PCIe connection method decide whether a pass-through or stacking arrangement is needed. |
+| J_PWR pigtail | front board `J_PWR` (top notch) | Pi `J2` bare pads | Longer than the recorded 2 × 6-inch DuPont pair; strain relief and a qualified connection to the bare `J2` pads stay pending (`power_header_mount`). |
+
+The bundle leaves the main module through the feedthrough bracket's three
+cable slots (15.6 / 17.9 / 17.9 mm wide); their existing strain-relief holes
+can take the tie. The mounting panel itself needs no cable cutout: every run
+reaches the Pi behind it. Acceptance item `pi_panel_harness` carries the
+evidence list.
 
 ### Panel power header vs feedthrough bracket (blocked; `power_header_mount` pending)
 

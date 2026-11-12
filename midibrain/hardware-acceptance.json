@@ -1,7 +1,7 @@
 {
   "schema": "midibrain-hardware-acceptance/1",
   "note": "Physical acceptance state for the MIDI Brain hardware. An item moves to \"accepted\" only with measured evidence in docs/evidence/ that names a reviewer, a date and the current hardware fingerprint. The fingerprint covers the canonical PCB/panel sources, the mechanical TS-to-CAD bridge and its exported layout, the CAD algorithm, the JLCPCB order settings and the curated cable/hardware selection, so any hardware, algorithm, order-setting or part-selection change makes old evidence stale. Refresh hardware_fingerprint with `bun run scripts/release_gate.ts --fingerprint` after such a change; a documentation-only commit does not change it. There is no override key: unknown keys are errors. See docs/acceptance.md.",
-  "hardware_fingerprint": "479e1826530c13a31cd8e70554a45456e9a683fea219923ab59bb1fa367f07af",
+  "hardware_fingerprint": "bbc65bd4364525083b0f8e26c6c4b4132d56b393f6d84ab589df10bbf8d39029",
   "items": [
     {
       "id": "zstack",
@@ -42,6 +42,11 @@
       "id": "interconnect_mate",
       "state": "pending",
       "note": "Direct 2 x 13 pair fitted and measured BEFORE any power is applied: front female Sullins SFH11-PBPC-D13-ST-BK on the front board's bottom face and rear male SBH11-PBPC-D13-ST-BK on the rear board's top face opposite the Pi; seat-to-seat board gap measured against the 11.20 +-0.20 mm drawing dimension with the spacer/support recorded; centred polarizing key engaging in one orientation only; all 26 contacts continuity-tested pin for pin against the net list, each pair recorded separately; the 1.00 mm drill recorded as the male manufacturer recommendation and as a PROVISIONAL assumption for the female (no published female hole); the male's 3.00 mm solder tails and joints measured against the Pi PCB and the provisional 3.5 mm Pi spacer. Hardware fit remains unverified."
+    },
+    {
+      "id": "pi_panel_harness",
+      "state": "pending",
+      "note": "Owner decision 2026-11-12: the Pi 5 (Active Cooler + M.2 HAT+ + NVMe SSD) moved from the rear board to its own 20HP x 3U Pi mounting panel (101.2 x 128.5 mm bare FR-4, JLCPCB fabrication only). Nothing is measured: the standoffs, the six harness runs (3 USB feedthrough cables, DSI FPC extension, 40-wire GPIO ribbon to J_PI, J_PWR pigtail), the M.2 HAT+ coexistence with the GPIO ribbon, the DSI signal integrity over the longer run, and both modules' installed depth in the Eurorack Go upper row all need first-article evidence."
     },
     {
       "id": "module_label_sku_read",

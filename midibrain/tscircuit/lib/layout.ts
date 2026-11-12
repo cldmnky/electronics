@@ -118,11 +118,12 @@ export const RAIL_HOLES = [
 // R13–R18/Q3 sit under the Pi PCB — fine for 0603/SOT. The Pi spacer is a 3.5 mm
 // CANDIDATE: the male tail is 3.00 mm FROM THE SEATING FACE (drawing), so its
 // nominal protrusion below a 1.60 mm PCB is 1.40 mm (INTERCONNECT_PROTRUSION),
-// and the 26 pads lie over the Pi PCB area (see
-// PROVISIONAL_DEPTH.piStandoffAndPcb). The solder fillet, the PCB tolerance,
-// the Pi hardware and every clearance are unmeasured: 3.5 mm is NOT claimed
-// safe or adequate. The Pi 5 microSD card and the Pi's own connectors stay
-// unverified.
+// and the 26 pads lie over the Pi PCB area (see PI_SPACER_MM). The solder
+// fillet, the PCB tolerance, the Pi hardware and every clearance are unmeasured:
+// 3.5 mm is NOT claimed safe or adequate. The Pi 5 microSD card and the Pi's
+// own connectors stay unverified. The Pi itself moved to PI_PANEL (owner
+// decision 2026-11-12); this grid stays drilled as a retained mechanical
+// option and PI_SPACER_MM is its candidate spacer.
 export const PI_MOUNT = { x: 6, y: 0, pitchX: 49, pitchY: 58 } as const
 export const PI_HOLES = [-1, 1].flatMap(sx => [-1, 1].map(sy => ({
   x: PI_MOUNT.x + sx * PI_MOUNT.pitchX / 2,
@@ -146,6 +147,51 @@ export const PI_PCB_BOX = {
   x2: PI_MOUNT.x + PI_PCB.acrossX / 2,
   y1: PI_MOUNT.y - PI_PCB.alongY / 2,
   y2: PI_MOUNT.y + PI_PCB.alongY / 2,
+} as const
+
+// ---- 20HP Pi mounting panel (owner decision 2026-11-12) ----
+// The Pi 5 (with Active Cooler + M.2 HAT+ + SSD) no longer sits in the rack
+// module: it bolts to the REAR face of its own pure-mechanical 20HP x 3U FR-4
+// panel in a second rack position. That is what makes the main module shallow
+// enough for the Behringer Eurorack Go rows (docs/mechanical-stack.md). The
+// panel carries no copper and no components; JLCPCB fabricates it like the
+// 30HP panel (same no-mask white-silk bare board). USB stays as-is on the 30HP
+// panel - its three feedthroughs do not move - and the harness between the two
+// rack positions is the three USB feedthrough cables, the display DSI FPC, the
+// 40-wire GPIO ribbon to J_PI and the J_PWR power-button pigtail. Those are
+// planning runs; no length is proven (docs/TODO.md).
+//
+// Width follows the PANEL convention (30HP): actual = N x 5.08 - 0.4, i.e.
+// 101.2 mm for 20HP. The rail holes follow the RAIL_HOLES Doepfer rule: the X
+// spacing is a multiple of 5.08 at the same 7.42 mm centre inset, so 86.36 =
+// 17 x 5.08 at +/-43.18. Y is the Doepfer 3U position, +/-61.25.
+export const PI_PANEL = { hp: 20, width: 101.2, height: 128.5, thickness: 1.6 } as const
+export const PI_PANEL_RAIL_HOLES = [
+  { x: -43.18, y: -61.25 }, { x: 43.18, y: -61.25 },
+  { x: -43.18, y: 61.25 }, { x: 43.18, y: 61.25 },
+] as const
+
+// Pi 5 on the mounting panel: LANDSCAPE, the 85 mm edge across the panel, so
+// every plug (USB-C/micro-HDMI at one short edge, USB-A/RJ45 at the other)
+// inserts in the panel plane instead of toward the rails. The GPIO header is
+// on the TOP long edge (the 40-wire ribbon exits upward toward J_PI), the
+// display DSI FPC and the PCIe FPC on the BOTTOM long edge. Holes are the
+// reference 58 x 49 grid UNROTATED and centred; the M2.5 clearance drill is
+// the same 2.7 mm as the rear-board PI_HOLES. The Pi hangs behind the panel on
+// standoffs, component side away from the panel (basis of the depth chain in
+// PI_PANEL_PROVISIONAL_DEPTH).
+export const PI_PANEL_PI_MOUNT = { x: 0, y: 0, pitchX: 58, pitchY: 49, holeDiameter: 2.7 } as const
+export const PI_PANEL_PI_HOLES = [-1, 1].flatMap(sx => [-1, 1].map(sy => ({
+  x: PI_PANEL_PI_MOUNT.x + sx * PI_PANEL_PI_MOUNT.pitchX / 2,
+  y: PI_PANEL_PI_MOUNT.y + sy * PI_PANEL_PI_MOUNT.pitchY / 2,
+})))
+// Landscape envelope: the LONG edge runs across X. Same conservative
+// 85.6 x 56.5 bound and source as PI_PCB above (RP-008347-DS-1, page 1).
+export const PI_PANEL_PI_BOX = {
+  x1: PI_PANEL_PI_MOUNT.x - PI_PCB.alongY / 2,
+  x2: PI_PANEL_PI_MOUNT.x + PI_PCB.alongY / 2,
+  y1: PI_PANEL_PI_MOUNT.y - PI_PCB.acrossX / 2,
+  y2: PI_PANEL_PI_MOUNT.y + PI_PCB.acrossX / 2,
 } as const
 
 // ---- 4.3-inch DSI LCD, Waveshare "4.3inch DSI LCD" (ElectroKit art 4103 5687)
@@ -592,22 +638,51 @@ export const DEPTH_TARGET = 110 as const
 // measured gap, and it says nothing about board flatness, solder-joint height
 // or the fitted pair.
 //
-// piStandoffAndPcb = the candidate 3.5 mm Pi spacer + the 1.6 mm Pi PCB. The
-// male tail is 3.00 mm FROM THE SEATING FACE, i.e. a NOMINAL 1.40 mm protrusion
-// below a 1.60 mm PCB (INTERCONNECT_PROTRUSION), and the 26 pads lie over the
-// Pi PCB area. 3.5 mm is a candidate that leaves nominal room for that
-// protrusion plus a fillet; the fillet height, the PCB tolerance, the Pi
-// hardware and the real clearance are unmeasured, so 3.5 mm is NOT claimed safe
-// or adequate and the Pi's own connectors/cooler stack is unproven.
+// Provisional depth chains, ONE PER RACK MODULE. Candidates, not
+// measurements. The Pi left the main module for PI_PANEL (owner decision
+// 2026-11-12), so the main module's rear-most point is now the socketed Pico
+// stack on the rear board's rear face, and the Pi stack belongs to the
+// mounting panel's chain.
+//
+// Main module: panel front face -> its rear-most point. picoSocketStack is a
+// candidate built from a standard 2.54 mm female header (~8.5 mm), the Pico 2
+// board (Pico 2 datasheet: "1 mm thick PCB", figure/section 1), and a ~3.2 mm
+// micro-USB body (UNMEASURED connector figure). harnessAllowance covers the
+// 40-wire ribbon fold and the cable bends at the module exit (feedthrough
+// bracket slots); unmeasured.
 export const PROVISIONAL_DEPTH = {
   frontToRearGap: INTERCONNECT_MECH.seatToSeat,
-  piStandoffAndPcb: 5.1,
-  piStackRearward: 30,  // Active Cooler + M.2 HAT+ + SSD; candidate range 20-30
+  picoSocketStack: 12.7,
+  harnessAllowance: 10,
 } as const
-// The Pi spacer alone: a CANDIDATE 3.5 mm, not a proven clearance.
+// Pi mounting panel: its panel rear face -> the rear-most point of the Pi
+// stack. piStandoffAndPcb is the candidate panel standoff + the Pi 1.6 mm PCB:
+// the standoff must clear the Pi underside (microSD slot and its card), which
+// is unmeasured. piStackRearward is the Active Cooler + M.2 HAT+ + SSD
+// candidate 20-30 mm; the owner decision 2026-11-12 keeps the NVMe HAT.
+// harnessAllowance covers the USB/DSI/ribbon/pigtail bends at the Pi; unmeasured.
+export const PI_PANEL_PROVISIONAL_DEPTH = {
+  piStandoffAndPcb: 5.1,
+  piStackRearward: 30,
+  harnessAllowance: 10,
+} as const
+// Behringer Eurorack Go module-depth limits (Thomann product page, the source
+// docs/mechanical-stack.md cites): 40 mm lower row, 62 mm upper row. A DESIGN
+// CHECK bound only: nothing here proves a fit; that is a first-article task.
+export const EURORACK_GO_MAX_MODULE_DEPTH = { lowerRow: 40, upperRow: 62 } as const
+// The Pi spacer of the RETAINED rear-board Pi option (the hole grid is still
+// drilled): a CANDIDATE 3.5 mm, not a proven clearance. The male tail is
+// 3.00 mm FROM THE SEATING FACE, i.e. a NOMINAL 1.40 mm protrusion below a
+// 1.60 mm PCB (INTERCONNECT_PROTRUSION); the fillet height, the PCB tolerance,
+// the Pi hardware and every clearance are unmeasured.
 export const PI_SPACER_MM = 3.5 as const
 export const provisionalInstalledDepth = (d = PROVISIONAL_DEPTH): number =>
-  mm3(PROVISIONAL_Z.frontBoardRear + d.frontToRearGap + REAR_PCB.thickness + d.piStandoffAndPcb + d.piStackRearward)
+  mm3(PROVISIONAL_Z.frontBoardRear + d.frontToRearGap + REAR_PCB.thickness + d.picoSocketStack + d.harnessAllowance)
+// What a case row must swallow: the chain minus the panel plate itself.
+export const provisionalModuleDepthBehindPanel = (total = provisionalInstalledDepth()): number =>
+  mm3(total - PANEL.thickness)
+export const provisionalPiPanelDepth = (d = PI_PANEL_PROVISIONAL_DEPTH): number =>
+  mm3(d.piStandoffAndPcb + d.piStackRearward + d.harnessAllowance)
 
 // Front-board top opening for the panel-feedthrough bodies. The LCD is mounted
 // on the front board; only the USB feedthroughs need this top-edge relief notch.
@@ -881,6 +956,19 @@ export const mechanicalExport = () => ({
   piHoles: PI_HOLES,
   piMount: PI_MOUNT,
   piSpacer: PI_SPACER_MM,
+  // The 20HP Pi mounting panel (owner decision 2026-11-12): the Pi hangs
+  // behind this panel in its own rack position. Geometry only; the harness
+  // lengths between the two rack positions stay planning values in the docs.
+  piPanel: {
+    ...PI_PANEL,
+    railHoles: PI_PANEL_RAIL_HOLES,
+    railHoleDiameter: RAIL_HOLE_DIAMETER,
+    piMount: PI_PANEL_PI_MOUNT,
+    piMountHoles: PI_PANEL_PI_HOLES,
+    piPcbBox: PI_PANEL_PI_BOX,
+  },
+  piPanelProvisionalDepth: PI_PANEL_PROVISIONAL_DEPTH,
+  eurorackGoMaxModuleDepth: EURORACK_GO_MAX_MODULE_DEPTH,
   // J_PWR plan and the bracket pocket plan: DATA ONLY. No footprint, no cut and
   // no board change follows from these keys.
   powerHeader: {
@@ -1203,6 +1291,23 @@ export const SILK_ADVANCE_RATIO = 0.69 as const
 // IN 2 / OUT 1 labels either side, 2.8 mm below the jack barrels.
 export const PANEL_TITLES = [
   { text: "MIDI TRS TYPE A", x: -17, y: -54, fontSize: 1.2 },
+] as const
+// Pi mounting panel silkscreen: identification and harness/orientation hints.
+// The panel is viewed from the FRONT, the Pi hangs behind it, so the side
+// labels name the Pi edges that sit behind the panel. Widths are checked
+// against the board by lib/pi-panel.test.ts with SILK_ADVANCE_RATIO.
+export const PI_PANEL_TITLES = [
+  { text: "mnkybox PI MOUNT", x: 0, y: 56, fontSize: 2.0 },
+  { text: "20HP / 3U - Pi 5 + M.2 HAT", x: 0, y: 52, fontSize: 1.2 },
+] as const
+export const PI_PANEL_LABELS: readonly PanelLabel[] = [
+  { text: "GPIO RIBBON to J_PI", x: 0, y: 33 },
+  { text: "DSI FPC to display", x: 0, y: -33 },
+  { text: "USB-C POWER / HDMI", x: -32, y: 44 },
+  { text: "USB + RJ45", x: 32, y: 44 },
+  // Pin 1 of the Pi GPIO header is at the top-LEFT of the landscape Pi
+  // (USB-C/HDMI edge left, GPIO edge up): a bare "1" beside that corner.
+  { text: "1", x: -27.5, y: 30.5 },
 ] as const
 export const panelTitleExtents = (t: { text: string; x: number; y: number; fontSize: number }) => {
   const w = t.text.length * t.fontSize * SILK_ADVANCE_RATIO

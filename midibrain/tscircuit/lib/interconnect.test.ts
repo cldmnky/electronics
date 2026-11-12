@@ -31,6 +31,7 @@ import {
   FRONT_INTERCONNECT,
   PI_PCB_BOX,
   PI_SPACER_MM,
+  PI_PANEL_PROVISIONAL_DEPTH,
   PROVISIONAL_DEPTH,
   REAR_INTERCONNECT,
 } from "./layout"
@@ -301,7 +302,9 @@ describe("2 x 13 direct interconnect on the built boards", () => {
     // the nominal protrusion plus a named allowance; it does not claim the
     // spacer is safe or adequate, and the fillet is still unmeasured.
     expect(PI_SPACER_MM).toBeGreaterThanOrEqual(INTERCONNECT_PROTRUSION.male + 0.5)
-    expect(PROVISIONAL_DEPTH.piStandoffAndPcb).toBeGreaterThan(PI_SPACER_MM)
+    // The Pi now hangs behind its own 20HP mounting panel, so the standoff
+    // candidate of that panel's chain is what the spacer check bounds.
+    expect(PI_PANEL_PROVISIONAL_DEPTH.piStandoffAndPcb).toBeGreaterThan(PI_SPACER_MM)
     // Orientation tripwire: the box must be taller than it is wide.
     expect(PI_PCB_BOX.y2 - PI_PCB_BOX.y1).toBeGreaterThan(PI_PCB_BOX.x2 - PI_PCB_BOX.x1)
   })

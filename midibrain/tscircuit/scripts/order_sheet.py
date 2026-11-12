@@ -19,13 +19,14 @@ import json
 import pathlib
 import sys
 
-BOARDS = ("front", "rear", "panel")
+BOARDS = ("front", "rear", "panel", "pi-panel")
 UPLOAD_FILES = {
     "front": ("front/front-gerbers.zip", "front/front-bom-smt.csv",
               "front/front-cpl-jlc.csv", "front/front-bom-hand.csv"),
     "rear": ("rear/rear-gerbers.zip", "rear/rear-bom-smt.csv",
              "rear/rear-cpl-jlc.csv", "rear/rear-bom-hand.csv"),
     "panel": ("panel/panel-gerbers.zip",),
+    "pi-panel": ("pi-panel/pi-panel-gerbers.zip",),
 }
 
 
@@ -45,7 +46,7 @@ def board_line(name: str, entry: dict) -> str:
         dims_text += " mm"
     bits = [dims_text, f"{num(board.get('layers'))} layers",
             f"{num(board.get('thickness_mm'))} mm"]
-    if name == "panel":
+    if name in ("panel", "pi-panel"):
         bits.append("no copper, no solder mask, fabrication only")
     else:
         bits.append(f"{num(board.get('outer_copper_oz'))} oz copper")
@@ -76,8 +77,9 @@ def build_sheet(root: pathlib.Path, fab: pathlib.Path) -> list[str]:
 
     lines = [
         "=== JLCPCB order: MIDI Brain =======================================",
-        "boards  : front/UI, rear/base (20HP) and panel (30HP/3U, 152.0 mm)",
-        "intent  : production order for all three boards",
+        "boards  : front/UI, rear/base (20HP), panel (30HP/3U, 152.0 mm) and",
+        "          pi-panel (20HP/3U, 101.2 mm, Pi mount)",
+        "intent  : production order for all four boards",
         "settings: fab/jlc-order.json (copied from the canonical jlc-order.json)",
         "guide   : docs/JLC-ASSEMBLY.md + fab/JLC-ASSEMBLY.md (order page);",
         "          docs/assembly.md + fab/assembly.md (bench assembly)",
@@ -105,13 +107,21 @@ def build_sheet(root: pathlib.Path, fab: pathlib.Path) -> list[str]:
         "  gerbers : fab/panel/panel-gerbers.zip",
         "  no BOM / no CPL: the panel has zero components",
         "",
+        "pi-panel - upload these (fabrication only):",
+        "  gerbers : fab/pi-panel/pi-panel-gerbers.zip",
+        "  no BOM / no CPL: the Pi mounting panel has zero components",
+        "  the Pi 5 + Active Cooler + M.2 HAT+ + SSD bolt to its REAR face on",
+        "  standoffs (M2.5, 58 x 49 grid); harness to the main module is bench:",
+        "  3 USB feedthrough cables, DSI FPC, 40-wire GPIO ribbon, J_PWR pigtail",
+        "",
         "bench sourcing: fab/sourcing-bom.csv (modules, cables and hardware; JLC does not mount THT)",
         "",
         "order-page tick list:",
-        "  [ ] three orders: front + rear with SMT assembly; panel fabrication only",
+        "  [ ] four orders: front + rear with SMT assembly; panel + pi-panel fabrication only",
         f"  [ ] front: 2 layers, 1.6 mm, 1 oz, lead-free HASL, SMT top only ({num(fc.get('cpl_smt_placements'))})",
         f"  [ ] rear : 2 layers, 1.6 mm, 1 oz, lead-free HASL, SMT bottom only ({num(rc.get('cpl_smt_placements'))})",
         "  [ ] panel: 2 layers, 1.6 mm, no copper, no solder mask both sides (confirm JLC accepts)",
+        "  [ ] pi-panel: 2 layers, 1.6 mm, no copper, no solder mask both sides (same rule)",
         "  [ ] THT: buy/fit the hand BOMs separately; U6 PEC11R-4015F-S0024 C143789 (THT)",
         "      JLC THT assembly if offered, else bench-qualify per docs/assembly.md;",
         "      no catalog SMD 0-detent 24 PPR encoder with anchor lugs; lug-less SMD not accepted",

@@ -556,9 +556,20 @@ class ProvisionalDataTest(unittest.TestCase):
     def test_depth_chain_stays_inside_the_owner_target(self) -> None:
         data = layout()
         z, depth = data["provisionalZ"], data["provisionalDepth"]
+        # The Pi left the module for the 20HP Pi mounting panel (owner decision
+        # 2026-11-12), so the module chain ends at the socketed Pico stack.
         total = (z["frontBoardRear"] + depth["frontToRearGap"] + data["rearPcb"]["thickness"]
-                 + depth["piStandoffAndPcb"] + depth["piStackRearward"])
+                 + depth["picoSocketStack"] + depth["harnessAllowance"])
         self.assertLessEqual(total, data["depthTarget"])
+        # Both module chains sit inside the Eurorack Go's 62 mm upper row on
+        # the candidate values, and the Pi panel is over the 40 mm lower row
+        # with the NVMe HAT candidate stack. DESIGN CHECKS, not fit approvals.
+        go = data["eurorackGoMaxModuleDepth"]
+        self.assertLessEqual(total - data["panel"]["thickness"], go["upperRow"])
+        pi = data["piPanelProvisionalDepth"]
+        pi_depth = pi["piStandoffAndPcb"] + pi["piStackRearward"] + pi["harnessAllowance"]
+        self.assertLessEqual(pi_depth, go["upperRow"])
+        self.assertGreater(pi_depth, go["lowerRow"])
         # The rear-board overhang is 13.2 mm per side when the boards share a
         # centre: the front board stays 128 mm (owner decision D2), so no width
         # was bought for the 106 mm-wide module.

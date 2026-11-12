@@ -88,16 +88,17 @@ instead of being skipped. Print it with
 | `control_actuator` | Knob, button caps and 5-way nav actuator fitted and measured against the panel; direction legends |
 | `jack_retention` | TRS barrel/nut/panel-hole fit, tip/ring/sleeve continuity, pull-out retention |
 | `light_pipes` | Fitted PGN25L165 (candidate) seated plane, measured LED-to-pipe distance and LED visible through each of the three Ø2.6 mm nominal holes |
-| `display_dsi` | Waveshare 4.3" DSI panel mounted at the fitted SMTSO boss pattern with one of the kit DSI cables (50 mm or 120 mm 15→22) routed; bend radius, latch and underside clearance |
+| `display_dsi` | Waveshare 4.3" DSI panel mounted at the fitted SMTSO boss pattern with a DSI cable routed; bend radius, latch and underside clearance. The kit ships 50/120 mm 15→22 cables; the Pi now sits on its own mounting panel, so the fitted (longer) cable and its result are recorded under `pi_panel_harness` |
 | `display_boss_pattern` | The module's own SMTSO-M2.5 bosses (99.30 × 61.80 pattern) confirmed as the only threading; 9.0 mm plane separation = 4.0 mm boss + 5.0 mm spacer measured |
 | `display_fpc_idc` | Display FPC plug/cable coexist with the front board's top-side parts: Z clearances, the routed bend per the route contract in mechanical-stack.md, and the clearance to the J5 female solder tails. The 2 × 13 link is a direct pair, so there is no plug or ribbon |
 | `interconnect_mate` | Direct 2 × 13 pair fitted and measured **before any power**: 11.20 ±0.20 mm seat-to-seat gap with the support recorded, keyed in one orientation only, all 26 contacts continuity-tested pin for pin against the net list, the Ø1.00 mm drill recorded as the male recommendation and a provisional female assumption, and the male's tail recorded as 3.00 mm from the connector seating face, i.e. a nominal 1.40 mm protrusion beyond a 1.60 mm PCB, with the solder fillet and the actual clearance to the Pi PCB and the candidate 3.5 mm spacer measured (the spacer is not a safety claim) |
+| `pi_panel_harness` | The 20HP/3U Pi mounting panel (101.2 × 128.5 mm bare FR-4) fitted in its rack position with the Pi 5 + Active Cooler + M.2 HAT+ + SSD bolted to its rear face on recorded standoffs, its installed depth measured against the Go's 62 mm upper row (the 40 mm lower row is not claimed), and all six harness runs recorded end to end: the three USB feedthrough cables (5 A power feed droop/temperature included), the DSI FPC run (cable/extension, 15→22 adaptation, touch and signal integrity over the fitted length), the 40-wire GPIO ribbon (pin-1, all-40 continuity, coexistence with the M.2 HAT+'s GPIO usage) and the J_PWR pigtail to the bare J2 pads |
 | `module_label_sku_read` | The delivered module label/SKU read and matches the selected Waveshare 4.3inch DSI LCD (ElectroKit 4103 5687) |
 | `touch_window_alignment` | With the display seated in the 107.22 × 68.87 window, touch input stays aligned with the UI across the active area |
 
-| `pi_microsd` | microSD insert/remove with the Pi in the stack and the case closed; clearance recorded |
+| `pi_microsd` | microSD insert/remove with the Pi bolted on its mounting panel and the case closed; clearance recorded |
 | `cooler_hat_ssd` | Active Cooler + M.2 HAT+ + SSD stacked; height, airflow, connector clearance |
-| `case_fit` | 30HP/3U panel (152.0 mm), 20HP base board and all rail/standoff positions in the case |
+| `case_fit` | 30HP/3U panel (152.0 mm), 20HP base board, the 20HP/3U Pi mounting panel (101.2 mm) and all rail/standoff positions in the case for both rack positions, with the harness routed clear |
 | `usb_c_5a_path` | An exact 5 A rated feedthrough from a primary source; CAB-15455 is 3 A and rejected for this path |
 | `usb_pd_droop_thermal` | Full-load PD negotiation, voltage droop, connector/feedthrough temperature, both orientations |
 | `encoder_solder_process` | Bourns PEC11R process qualified (selective/wave or validated manual) with profile and inspection |

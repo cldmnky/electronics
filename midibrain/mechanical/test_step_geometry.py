@@ -41,13 +41,19 @@ class CanonicalDataTest(unittest.TestCase):
         data = layout()
         for key in ("railHoles", "railHoleDiameter", "frontBoardHoles", "lcdMountHoles",
                     "displayBossPattern", "piHoles", "piMount", "frontRearMount",
-                    "mountHoleDiameter", "lcdCutoutOutline", "notchBounds", "bracket"):
+                    "mountHoleDiameter", "lcdCutoutOutline", "notchBounds", "bracket",
+                    "piPanel", "piPanelProvisionalDepth", "eurorackGoMaxModuleDepth"):
             self.assertIn(key, data, f"{key} is missing from mechanical/layout.json")
         self.assertEqual(data["railHoleDiameter"], 3.2)
         self.assertEqual(len(data["railHoles"]), 4)
         self.assertEqual(len(data["frontBoardHoles"]), 4)
         self.assertEqual(len(data["lcdMountHoles"]), 4)
         self.assertEqual(len(data["piHoles"]), 4)
+        # The 20HP Pi mounting panel carries its own two hole sets (owner
+        # decision 2026-11-12): the M2.5 Pi grid and the Eurorack rail holes.
+        self.assertEqual(data["piPanel"]["hp"], 20)
+        self.assertEqual(len(data["piPanel"]["piMountHoles"]), 4)
+        self.assertEqual(len(data["piPanel"]["railHoles"]), 4)
 
     def test_the_canonical_panel_features_are_complete(self) -> None:
         """20 apertures and 14 drills: every opening the panel board renders."""

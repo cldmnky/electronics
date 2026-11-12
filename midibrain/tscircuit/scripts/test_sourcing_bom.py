@@ -385,8 +385,9 @@ class ExpectedCountsTest(unittest.TestCase):
 
 
 class PanelTest(unittest.TestCase):
-    def test_empty_panel_passes(self):
-        sb.verify_panel_empty([], [])
+    def test_empty_bare_board_passes(self):
+        for name in ("panel", "pi-panel"):
+            sb.verify_bare_board(name, [], [])
 
     def test_zero_byte_panel_csv_is_read_as_empty(self):
         import zipfile
@@ -415,9 +416,11 @@ class PanelTest(unittest.TestCase):
                                     sb.BOM_REQUIRED_COLUMNS)
             self.assertIn("is empty", str(ctx.exception))
 
-    def test_panel_with_parts_fails(self):
-        with self.assertRaises(sb.SourcingError):
-            sb.verify_panel_empty([{"Designator": "C1"}], [])
+    def test_bare_board_with_parts_fails(self):
+        for name in ("panel", "pi-panel"):
+            with self.assertRaises(sb.SourcingError) as ctx:
+                sb.verify_bare_board(name, [{"Designator": "C1"}], [])
+            self.assertIn(name, str(ctx.exception))
 
 
 class MergeTest(unittest.TestCase):

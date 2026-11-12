@@ -399,11 +399,12 @@ def verify_expected_counts(order_path: pathlib.Path,
         raise SourcingError("; ".join(problems))
 
 
-def verify_panel_empty(bom_rows: list[dict[str, str]],
-                       pnp_rows: list[dict[str, str]]) -> None:
+def verify_bare_board(name: str, bom_rows: list[dict[str, str]],
+                      pnp_rows: list[dict[str, str]]) -> None:
+    """A fabrication-only board (panel, pi-panel) may carry no component."""
     if bom_rows or pnp_rows:
         raise SourcingError(
-            f"panel: expected no components, got BOM rows {len(bom_rows)} "
+            f"{name}: expected no components, got BOM rows {len(bom_rows)} "
             f"PNP rows {len(pnp_rows)}")
 
 
@@ -433,16 +434,17 @@ def main(argv: Sequence[str]) -> int:
                   f"{counts[name]['cpl_smt_placements']} placements "
                   f"(all {EXPECTED_SMT_SIDE[name]}, single-sided)")
 
-        pd = fab / "panel"
-        with zipfile.ZipFile(pd / "panel-gerbers.zip") as zf:
-            # The panel has no components, so the exporter emits zero-byte
-            # bom.csv/pick_and_place.csv. That is the documented shape; any
-            # parsed row still fails verify_panel_empty below.
-            _, panel_bom = read_zip_csv(zf, "bom.csv", "panel", allow_empty=True)
-            _, panel_pnp = read_zip_csv(zf, "pick_and_place.csv", "panel",
-                                        allow_empty=True)
-        verify_panel_empty(panel_bom, panel_pnp)
-        print("    panel: no components (fabrication only, no BOM/CPL)")
+        for bare in ("panel", "pi-panel"):
+            pd = fab / bare
+            with zipfile.ZipFile(pd / f"{bare}-gerbers.zip") as zf:
+                # The bare boards have no components, so the exporter emits
+                # zero-byte bom.csv/pick_and_place.csv. That is the documented
+                # shape; any parsed row still fails verify_bare_board below.
+                _, bare_bom = read_zip_csv(zf, "bom.csv", bare, allow_empty=True)
+                _, bare_pnp = read_zip_csv(zf, "pick_and_place.csv", bare,
+                                           allow_empty=True)
+            verify_bare_board(bare, bare_bom, bare_pnp)
+            print(f"    {bare}: no components (fabrication only, no BOM/CPL)")
 
         verify_expected_counts(order, counts)
         print("    jlc-order.json placement counts match the generated files")

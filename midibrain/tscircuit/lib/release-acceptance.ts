@@ -62,7 +62,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "display_dsi",
     title: "Display and DSI cable",
-    requirement: "Waveshare 4.3 inch DSI panel mounted on the front board at the fitted SMTSO boss pattern with one of the kit DSI cables (50 mm or 120 mm, 15-pin to 22-pin) routed, bend radius and latch verified, and the display underside clearance recorded.",
+    requirement: "Waveshare 4.3 inch DSI panel mounted on the front board at the fitted SMTSO boss pattern with a DSI cable routed, bend radius and latch verified, and the display underside clearance recorded. The kit ships 50 mm and 120 mm 15-pin to 22-pin cables; the Pi now sits on its own mounting panel, so a longer run is expected and the fitted cable is recorded under pi_panel_harness together with its signal-integrity and touch result.",
   },
   {
     id: "display_boss_pattern",
@@ -80,6 +80,11 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
     requirement: "The direct 2 x 13 pair fitted and measured before any power is applied: front female Sullins SFH11-PBPC-D13-ST-BK on the front board's bottom face and rear male SBH11-PBPC-D13-ST-BK on the rear board's top face opposite the Pi, with the seat-to-seat board gap measured against the 11.20 +-0.20 mm drawing dimension, the spacer/support that holds that gap recorded with its hardware, the centred polarizing key engaging in one orientation only, all 26 contacts continuity-tested pin for pin against the net list with each pair recorded on its own, the 1.00 mm drill recorded as the male manufacturer recommendation and as a PROVISIONAL assumption for the female (no published female hole), and the male's solder tail recorded as a 3.00 mm SEATING-FACE dimension, i.e. a NOMINAL 1.40 mm protrusion below a 1.60 mm PCB, with the fillet, the PCB tolerance, the Pi hardware and the actual clearance to the Pi PCB and spacer measured (the 3.5 mm Pi spacer is a candidate, not a proven clearance). The measured gap, the keying result and the 26 continuity records are required evidence; this item stays pending until they exist.",
   },
   {
+    id: "pi_panel_harness",
+    title: "Pi mounting panel and the inter-module harness",
+    requirement: "The 20HP x 3U Pi mounting panel (101.2 x 128.5 mm, bare FR-4, 4 x M2.5 Pi holes on the 58 x 49 grid, 4 x 3.2 mm rail holes) fitted in its rack position with the Pi 5 + Active Cooler + M.2 HAT+ + SSD bolted to its REAR face on recorded standoffs, and the installed depth behind that panel measured against the Eurorack Go's 62 mm upper row (the 40 mm lower row is not claimed with the NVMe HAT stack). The six harness runs between the two rack positions are recorded end to end: the three USB feedthrough cables from the unchanged 30HP panel feedthroughs (USB-C POWER, UMC AUDIO USB, MIDI HUB USB) with the power feed's conductor/current rating and droop measured at Pi load; the display DSI FPC run (the kit 50/120 mm cables may not span the new distance, so the fitted cable/extension, its 15-pin to 22-pin adaptation, contact orientation, bend/latch and touch function are recorded, and DSI signal integrity over the fitted length is demonstrated); the 40-wire GPIO ribbon from J_PI to the Pi header with pin-1 orientation, all-40 continuity to the net list and its coexistence with the M.2 HAT+ (the HAT must not occupy the GPIO header the ribbon needs - the fitted HAT's MPN, its GPIO/PCIe connection method and any pass-through or stacking hardware are recorded); and the J_PWR power-button pigtail reaching the Pi's bare J2 pads with strain relief. Record the measured depths of both modules in the case and the cable bend/strain at every exit. Every number here is a planning value until this evidence exists.",
+  },
+  {
     id: "module_label_sku_read",
     title: "Module label SKU read",
     requirement: "The delivered display module label/SKU read and matched the selected part (Waveshare 4.3inch DSI LCD, ElectroKit 4103 5687) that the drawing and STEP model were sourced from.",
@@ -92,7 +97,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "pi_microsd",
     title: "Pi microSD access",
-    requirement: "microSD card inserted and removed with the Pi in the stack and the case closed; recorded clearance.",
+    requirement: "microSD card inserted and removed with the Pi bolted on its mounting panel and the case closed; recorded clearance.",
   },
   {
     id: "cooler_hat_ssd",
@@ -102,7 +107,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "case_fit",
     title: "Case fit",
-    requirement: "30HP/3U panel (152.0 mm actual), 20HP base board and every rail/standoff position fitted in the rack case at the recorded installed depth.",
+    requirement: "30HP/3U panel (152.0 mm actual), 20HP base board, the 20HP/3U Pi mounting panel (101.2 mm actual) and every rail/standoff position fitted in the rack case at the recorded installed depth for BOTH rack positions; the harness between them routed without fouling the rails or the neighbours.",
   },
   {
     id: "usb_c_5a_path",
@@ -210,6 +215,7 @@ export const FINGERPRINT_FILES = [
   "tscircuit/front.circuit.tsx",
   "tscircuit/index.circuit.tsx",
   "tscircuit/panel.circuit.tsx",
+  "tscircuit/pi-panel.circuit.tsx",
   "tscircuit/lib/layout.ts",
   "tscircuit/lib/pin-map.ts",
   // The direct 2 x 13 interconnect: part numbers, the pad table, the quoted

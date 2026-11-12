@@ -121,8 +121,8 @@
   "depthTarget": 110,
   "provisionalDepth": {
     "frontToRearGap": 11.2,
-    "piStandoffAndPcb": 5.1,
-    "piStackRearward": 30
+    "picoSocketStack": 12.7,
+    "harnessAllowance": 10
   },
   "lcdCutout": {
     "x": -9.5,
@@ -963,6 +963,71 @@
     "pitchY": 58
   },
   "piSpacer": 3.5,
+  "piPanel": {
+    "hp": 20,
+    "width": 101.2,
+    "height": 128.5,
+    "thickness": 1.6,
+    "railHoles": [
+      {
+        "x": -43.18,
+        "y": -61.25
+      },
+      {
+        "x": 43.18,
+        "y": -61.25
+      },
+      {
+        "x": -43.18,
+        "y": 61.25
+      },
+      {
+        "x": 43.18,
+        "y": 61.25
+      }
+    ],
+    "railHoleDiameter": 3.2,
+    "piMount": {
+      "x": 0,
+      "y": 0,
+      "pitchX": 58,
+      "pitchY": 49,
+      "holeDiameter": 2.7
+    },
+    "piMountHoles": [
+      {
+        "x": -29,
+        "y": -24.5
+      },
+      {
+        "x": -29,
+        "y": 24.5
+      },
+      {
+        "x": 29,
+        "y": -24.5
+      },
+      {
+        "x": 29,
+        "y": 24.5
+      }
+    ],
+    "piPcbBox": {
+      "x1": -42.8,
+      "x2": 42.8,
+      "y1": -28.25,
+      "y2": 28.25
+    }
+  },
+  "piPanelProvisionalDepth": {
+    "piStandoffAndPcb": 5.1,
+    "piStackRearward": 30,
+    "harnessAllowance": 10
+  },
+  "eurorackGoMaxModuleDepth": {
+    "lowerRow": 40,
+    "upperRow": 62
+  },
   "powerHeader": {
     "placement": {
       "x": -2.5,

@@ -20,6 +20,7 @@ gate. Recheck exact parts, stock, package and assembly previews before payment.
 | Rear SMT BOM | **`fab/rear/rear-bom-smt.csv`** |
 | Rear SMT CPL | `fab/rear/rear-cpl-jlc.csv` |
 | Panel fabrication only | `fab/panel/panel-gerbers.zip` |
+| Pi-panel fabrication only | `fab/pi-panel/pi-panel-gerbers.zip` |
 | Bench sourcing | `fab/sourcing-bom.csv` and each board's `*-bom-hand.csv` |
 | Reference only | Raw `bom.csv`, `pnp-all.csv`, combined `*-bom-jlc.csv`, STEP and schematic/PCB views |
 
@@ -31,8 +32,9 @@ hand-edit generated fabrication files to repair a source problem.
 ## Board options
 
 - Front 128 × 112 mm; rear 101.6 × 112 mm (20HP); panel 152.0 × 128.5 mm
-  (30HP/3U, 152.0 actual against the 152.4 mm nominal). Each board is 2-layer,
-  1.6 mm FR-4.
+  (30HP/3U, 152.0 actual against the 152.4 mm nominal); pi-panel 101.2 ×
+  128.5 mm (20HP/3U, the Pi mounting panel — bare FR-4 like the 30HP panel).
+  Each board is 2-layer, 1.6 mm FR-4.
 - Front and rear use 1 oz copper and candidate lead-free HASL. Apply the
   actual emitted source rules, reviewed Gerbers and
   [fab-check.md](fab-check.md), not obsolete defaults from an older export.

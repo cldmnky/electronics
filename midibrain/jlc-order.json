@@ -107,5 +107,24 @@
     "files": {
       "gerbers": "fab/panel/panel-gerbers.zip"
     }
+  },
+  "pi-panel": {
+    "board": {
+      "layers": 2,
+      "dimensions_mm": [
+        101.2,
+        128.5
+      ],
+      "thickness_mm": 1.6,
+      "surface_finish": "none required (no copper)",
+      "solder_mask": "none, both sides",
+      "silkscreen": "white",
+      "assembly": false,
+      "acceptance_note": "Confirm JLCPCB accepts a no-solder-mask both-sides FR-4 order before paying; same open item as the 30HP panel."
+    },
+    "files": {
+      "gerbers": "fab/pi-panel/pi-panel-gerbers.zip"
+    },
+    "note": "20HP x 3U Pi mounting panel (owner decision 2026-11-12). Pure mechanical: 4 x M2.5 Pi holes (58 x 49, landscape, centred) + 4 x 3.2 mm rail holes. The Pi 5 with Active Cooler + M.2 HAT+ + SSD bolts to the REAR face on standoffs; the harness to the main module (3 USB feedthrough cables, DSI FPC, 40-wire GPIO ribbon to J_PI, J_PWR pigtail) is bench-fitted and not an order item. Zero components by design: the sourcing step fails if a component ever lands on it."
   }
 }

@@ -23,9 +23,11 @@
 # `pick_and_place.csv` (JLCPCB rotation convention), so this script exports the
 # zip once per board and extracts those two CSVs next to it.
 #
-# Three boards, three upload sets: front (UI), rear (base), panel (bare FR-4,
-# fabrication only - its bom/pick_and_place exports are empty by design and the
-# script fails if a component ever lands on the panel file).
+# Three boards plus the Pi mounting panel, four upload sets: front (UI), rear
+# (base), panel (bare FR-4, fabrication only - its bom/pick_and_place exports
+# are empty by design and the script fails if a component ever lands on the
+# panel file) and pi-panel (the 20HP bare FR-4 Pi mounting panel, owner
+# decision 2026-11-12, same fabrication-only rule as the 30HP panel).
 #
 # Neither the gate nor this script writes to git, and nothing outside
 # midibrain/fab/ is deleted (that directory is generated output).
@@ -54,7 +56,7 @@ sed 's/^/    /' "$ROOT/tscircuit/dist/reports-summary.txt"
 
 printf '\n########## fab exports ##########\n'
 rm -rf "$FAB_DIR"
-mkdir -p "$FAB_DIR/front" "$FAB_DIR/rear" "$FAB_DIR/panel"
+mkdir -p "$FAB_DIR/front" "$FAB_DIR/rear" "$FAB_DIR/panel" "$FAB_DIR/pi-panel"
 
 export_fmt() { # export_fmt <entry> <format> <output-file>
   local entry=$1
@@ -70,7 +72,7 @@ export_fmt() { # export_fmt <entry> <format> <output-file>
   printf ' ok (%ds)\n' "$((SECONDS - start))"
 }
 
-for spec in "front.circuit.tsx front" "index.circuit.tsx rear" "panel.circuit.tsx panel"; do
+for spec in "front.circuit.tsx front" "index.circuit.tsx rear" "panel.circuit.tsx panel" "pi-panel.circuit.tsx pi-panel"; do
   # shellcheck disable=SC2086
   set -- $spec
   entry=$1
@@ -112,6 +114,7 @@ BOUNDS = {
     "front": (_layout["frontPcb"]["width"], _layout["frontPcb"]["height"]),
     "rear": (_layout["rearPcb"]["width"], _layout["rearPcb"]["height"]),
     "panel": (_layout["panel"]["width"], _layout["panel"]["height"]),
+    "pi-panel": (_layout["piPanel"]["width"], _layout["piPanel"]["height"]),
 }
 GUARD = 0.5
 
