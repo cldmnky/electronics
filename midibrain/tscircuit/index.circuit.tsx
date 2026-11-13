@@ -111,9 +111,9 @@ export default () => (
     </schematicsheet>
 
     {/* Front-board spacer grid (shared XY, see lib/layout.ts FRONT_REAR_MOUNT). */}
-    {FRONT_REAR_MOUNT.map((h, i) => (
-      <Fragment key={`mount-${i}`}><hole name={`H${i + 1}`} diameter="2.7mm" pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
-    ))}
+    {/* 2026-11-13 (owner): mounting holes removed for now, front and rear, until
+        the fastening scheme is re-decided (see front.circuit.tsx and
+        docs/TODO.md). FRONT_REAR_MOUNT is kept so they can be restored. */}
 
     {/* Pico sockets on the left margin; 51 mm module length vertical. */}
     <connector

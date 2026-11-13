@@ -16,6 +16,8 @@ import {
   FEEDTHROUGH_BRACKET,
   FRONT_BOARD_HOLES,
   FRONT_DISPLAY_OPENING,
+  FRONT_DISPLAY_OPENING_POLYGON,
+  FRONT_TOP_NOTCH_POLYGON,
   FRONT_DISPLAY_KEEPOUT,
   FRONT_INTERCONNECT,
   FRONT_PCB,
@@ -256,27 +258,28 @@ export default () => (
       <schematicsection name="power" displayName="Rail decoupling" />
       <schematicsection name="headers" displayName="Rear interconnect" />
     </schematicsheet>
-    <cutout shape="rect" width={`${FRONT_TOP_NOTCH.width}mm`} height={`${FRONT_TOP_NOTCH.height}mm`} pcbX={`${FRONT_TOP_NOTCH.x}mm`} pcbY={`${FRONT_TOP_NOTCH.y}mm`} />
+    <cutout shape="polygon" points={FRONT_TOP_NOTCH_POLYGON} />
     {/* Display opening. At the 10 mm panel the module's body (glass front 0 ->
         rear-most 14.05 mm) crosses this board's 10.0...11.6 mm plane, so no
         board material may sit under it. The module hangs from the rear board's
         printed carrier; this board only has to let it through. */}
-    <cutout shape="rect" width={`${FRONT_DISPLAY_OPENING.width}mm`} height={`${FRONT_DISPLAY_OPENING.height}mm`} pcbX={`${FRONT_DISPLAY_OPENING.x}mm`} pcbY={`${FRONT_DISPLAY_OPENING.y}mm`} />
+    <cutout shape="polygon" points={FRONT_DISPLAY_OPENING_POLYGON} />
     <keepout shape="rect" width={`${FRONT_DISPLAY_KEEPOUT.width}mm`} height={`${FRONT_DISPLAY_KEEPOUT.height}mm`} pcbX={`${FRONT_DISPLAY_KEEPOUT.x}mm`} pcbY={`${FRONT_DISPLAY_KEEPOUT.y}mm`} excludeRefs={[".J_PWR"]} />
-    {FRONT_BOARD_HOLES.map((h, i) => (
+    {/* 2026-11-13 (owner): ALL mounting holes are removed for now - panel
+        standoffs, front/rear spacer grid and the feedthrough-bracket screws.
+        The boards are still positioned by the four jack bushings, the encoder
+        bushings and the 2 x 13 interconnect; how the stack is finally fastened
+        is an open item (docs/TODO.md). The constants in lib/layout.ts are kept,
+        so putting them back is a one-line change per group. */}
+    {[].map((h: { x: number; y: number }, i: number) => (
       <Fragment key={`board-hole-${i}`}><hole name={`BOARD_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
-    ))}
-    {FRONT_REAR_MOUNT.map((h, i) => (
-      <Fragment key={`mount-hole-${i}`}><hole name={`MOUNT_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
     ))}
     {/* The module used to be screwed to four SMTSO bosses on this face. It now
         hangs from the rear board's printed carrier, so this board carries no
         display holes and no display silk - only the opening above. One note is
         kept so a builder knows what the hole is for. */}
     <silkscreentext text="DISPLAY OPENING" pcbX={`${FRONT_DISPLAY_OPENING.x}mm`} pcbY={`${FRONT_DISPLAY_OPENING.y - FRONT_DISPLAY_OPENING.height / 2 - 2}mm`} fontSize="0.9mm" anchorAlignment="center" layer="top" />
-    {FEEDTHROUGH_BRACKET.mountX.map((x, i) => (
-      <Fragment key={`bracket-${i}`}><hole name={`BRACKET_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${x}mm`} pcbY={`${FEEDTHROUGH_BRACKET.mountY}mm`} /></Fragment>
-    ))}
+    {/* bracket screws: removed with the rest of the mounting holes (2026-11-13) */}
 
     {/* All SMT on the panel side for single-sided JLCPCB assembly. Since the
         2026-11-13 respin the display is an opening, so all four MIDI clusters
@@ -288,13 +291,13 @@ export default () => (
         female socket's body is on the rear-facing side so the rear board's
         male header plugs straight into it, and its solder tails are the only
         through-hole joints on the panel side. */}
-    <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={64} y={2} />
-    <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={64} y={-27} />
+    <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={51} y={-48} />
+    <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={64.6} y={-30} />
     {/* ch1 cluster shifted 4 mm left (x -45 -> -49) to clear the 4.3-inch
         module's bottom-left LCD_4 hole at (-41.88, -13.54), which the new
         58.00 x 49.04 mounting pattern puts inside the old Q1 courtyard. */}
-    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={66} y={-13} />
-    <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} x={66} y={-40} />
+    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={66.6} y={-46.05} />
+    <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} x={66.6} y={-8} />
 
     <SKRHABE010
       name="U5"

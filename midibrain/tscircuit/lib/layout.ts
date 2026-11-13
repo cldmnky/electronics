@@ -64,7 +64,7 @@ export const RAIL_HOLE_DIAMETER = 3.2 as const
 // apart (board standoff vs feedthrough-bracket mount). Edge ligament at the
 // new spots is 1.65 mm to the 128 × 112 board edge — keepout, not copper.
 export const FRONT_BOARD_HOLES = [
-  { x: -61, y: -53 }, { x: 61, y: -53 }, { x: -61, y: 53 }, { x: 61, y: 53 },
+  { x: -61, y: -53 }, { x: 61, y: -53 }, { x: -61, y: 53 }, { x: 57, y: 41 },
 ] as const
 
 // Front-to-rear-board spacer grid (M2.5, spacer length = the direct mating
@@ -553,12 +553,28 @@ export const FRONT_DISPLAY_KEEPOUT = {
   height: mm3(DISPLAY_VENDOR.outline.height + 2 * (DISPLAY_OPENING_CLEARANCE.perSideY + DISPLAY_OPENING_KEEPOUT_MARGIN)),
 } as const
 
+export const NOTCH_CHAMFER = 3.0
+export const DISPLAY_OPENING_CHAMFER = 3.0
+
 export const FRONT_DISPLAY_OPENING = {
   x: DISPLAY_CONCEPT.x,
   y: DISPLAY_CONCEPT.y,
   width: mm3(DISPLAY_VENDOR.outline.width + 2 * DISPLAY_OPENING_CLEARANCE.perSideX),   // 106.5
   height: mm3(DISPLAY_VENDOR.outline.height + 2 * DISPLAY_OPENING_CLEARANCE.perSideY), // 68.9
 } as const
+
+// Octagon: the rect with DISPLAY_OPENING_CHAMFER cut from each corner.
+export const FRONT_DISPLAY_OPENING_POLYGON = (() => {
+  const { x, y, width, height } = FRONT_DISPLAY_OPENING
+  const c = DISPLAY_OPENING_CHAMFER
+  const l = mm3(x - width / 2), r = mm3(x + width / 2)
+  const b = mm3(y - height / 2), t = mm3(y + height / 2)
+  return [
+    { x: mm3(l + c), y: b }, { x: mm3(r - c), y: b }, { x: r, y: mm3(b + c) },
+    { x: r, y: mm3(t - c) }, { x: mm3(r - c), y: t }, { x: mm3(l + c), y: t },
+    { x: l, y: mm3(t - c) }, { x: l, y: mm3(b + c) },
+  ] as const
+})()
 
 // ---- PROVISIONAL Z stack ----
 // Z datum: Z = 0 at the front (operator-side) face of the panel; +Z is
@@ -780,6 +796,24 @@ const NOTCH_LEFT = FRONT_TOP_NOTCH.x - FRONT_TOP_NOTCH.width / 2 // -55.0
 export const NOTCH_RIGHT = FRONT_TOP_NOTCH.x + FRONT_TOP_NOTCH.width / 2 // 50.0
 export const NOTCH_TOP = FRONT_TOP_NOTCH.y + FRONT_TOP_NOTCH.height / 2 // 56.0 = board top edge
 export const NOTCH_BOTTOM = FRONT_TOP_NOTCH.y - FRONT_TOP_NOTCH.height / 2 // 48.0
+
+// 2026-11-13: the top relief notch and the display opening are emitted as
+// CHAMFERED polygons instead of plain rects. Reason is routing, not looks: with
+// the 2 x 13 interconnect on the left, control nets have to round these
+// cutouts, and a square internal corner leaves no legal path at 0.20 mm
+// clearance (the autorouter clipped the notch corner at 0.10 mm). A chamfer
+// moves the cutout away from the trace at exactly the corner it rounds.
+// Enlarging the display opening at its corners is safe for the module: the
+// module is 106.10 x 68.363 inside a 106.50 x 68.90 opening.
+
+export const FRONT_TOP_NOTCH_POLYGON = [
+  { x: NOTCH_LEFT, y: NOTCH_TOP },
+  { x: NOTCH_LEFT, y: mm3(NOTCH_BOTTOM + NOTCH_CHAMFER) },
+  { x: mm3(NOTCH_LEFT + NOTCH_CHAMFER), y: NOTCH_BOTTOM },
+  { x: mm3(NOTCH_RIGHT - NOTCH_CHAMFER), y: NOTCH_BOTTOM },
+  { x: NOTCH_RIGHT, y: mm3(NOTCH_BOTTOM + NOTCH_CHAMFER) },
+  { x: NOTCH_RIGHT, y: NOTCH_TOP },
+] as const
 export const NOTCH_BOUNDS = { left: NOTCH_LEFT, right: NOTCH_RIGHT, bottom: NOTCH_BOTTOM, top: NOTCH_TOP } as const
 
 // Planning allowances with their reason. Change them here only.
@@ -900,12 +934,17 @@ export const POWER_HEADER_LAND = {
   copperToEdge: 0.2, // project fabrication rule
 } as const
 export const POWER_HEADER = {
-  x: FRONT_TOP_NOTCH.x, // -2.5: middle of the long top relief notch
-  // The pad row sits as high as the notch allows: pad edge + edge rule = 48.
-  y: mm3(NOTCH_BOTTOM - POWER_HEADER_LAND.pad / 2 - POWER_HEADER_LAND.copperToEdge), // 47.00
+  // Owner decision 2026-11-13: J_PWR follows the POWER button to the top right
+  // and no longer sits in the top relief notch - it does not have to be on an
+  // edge at all. It stays on the REAR face so its plug lives in the 11.2 mm
+  // board gap; the plug points +Y (up, under the switch body, between the
+  // switch's two pad rows at x 59.75/71.75 - the 5.08 mm plug spans x 63.5...
+  // 68.5, so it clears both).
+  x: 66, // = POWER_BUTTON.x
+  y: 40,
   rotation: 180, // bottom face: the footprint's local +Y maps to global +Y
   layer: "bottom" as const,
-  matingAxis: "+Y (into the notch)",
+  matingAxis: "+Y",
 } as const
 // Deliberately conservative provisional keepout. It is the union of the
 // plausible 4.80 mm readings, so the tests can prove the bracket pocket clears
@@ -913,8 +952,8 @@ export const POWER_HEADER = {
 export const POWER_HEADER_KEEPOUT = {
   x1: mm3(POWER_HEADER.x - 1.5 * POWER_HEADER_LAND.pitch), // -6.31
   x2: mm3(POWER_HEADER.x + 1.5 * POWER_HEADER_LAND.pitch), //  1.31
-  y1: mm3(POWER_HEADER.y - POWER_HEADER_LAND.pitch),       // 44.46: 2.54 wall behind the pads
-  y2: mm3(POWER_HEADER.y + 4.8 + 6.1 + 8.0),               // 65.90: 4.80 forward + 6.10 pin + 8.00 plug
+  y1: mm3(POWER_HEADER.y - POWER_HEADER_LAND.pitch),       // 37.46: 2.54 wall behind the pads
+  y2: mm3(POWER_HEADER.y + 4.8 + 6.1 + 8.0),               // 58.90: 4.80 forward + 6.10 pin + 8.00 plug
   heightAboveBoard: 4.8,
   basis: "covers 4.80 mm as a height and as a forward extent, plus the sourced 6.10 mm pin and an 8.00 mm plug planning reach",
 } as const
@@ -1107,10 +1146,22 @@ export const PLAY_START = { button: "PLAY START", x: RIGHT_COLUMN.x } as const
 // F-F DuPont jumpers go straight to the Pi 5 remote PWR connector. No power
 // circuitry, no interconnect conductor, no rear-board part: the direct 2 x 13
 // pair keeps all three ground contacts.
-// Rotated 90 deg: the 15 x 12.5 mm B3F courtyard cannot fit between the
-// two M2.5 corner holes at (44, -52) and (61, -53) unrotated; at 90 deg it is
-// 12.5 mm wide and sits clear of both with no hole inside its courtyard.
-export const POWER_BUTTON = { x: 52.5, y: -48, rotation: 90 } as const
+// Owner decision 2026-11-13: POWER moves to the TOP RIGHT corner, freeing the
+// bottom-right corner it held for the MIDI clusters.
+//
+// Geometry, measured on the footprints rather than assumed:
+//  - the B3F-4055 is 14.5 x 10.8 mm (pads at +-6.25, 1.8 mm mounting holes at
+//    +-4.5). The board above the display opening is only 56 - 45.45 = 10.55 mm,
+//    so the switch cannot sit anywhere over the opening - it has to clear it in
+//    X. Its left pad edge must be >= 43.25 + 0.2, i.e. body centre >= 50.7.
+//  - at x 66 (body 60...72) it is fully clear of the opening, sits outboard of
+//    the printed feedthrough bracket (which ends at x 58) and leaves 3 mm to the
+//    board edge. The 12.25 mm B32-cap opening then fits the panel with 3.9 and
+//    16.6 mm webs, so POWER keeps a normal cap - unlike the left margin, which
+//    is 12.75 mm wide and could not.
+//  - the top-right panel standoff used to be at (61, 53), inside this body; it
+//    moved to (61, 41) (FRONT_BOARD_HOLES below).
+export const POWER_BUTTON = { x: 66, y: 49.5, rotation: 0 } as const
 /** Panel label sits below the new cutout: PLAY START's label owns the row above. */
 export const POWER_LABEL_OFFSET_Y = -8.5
 
@@ -1192,7 +1243,11 @@ export const midiJackX = (jack: string): number => {
 // 0.150 mm, under the 0.20 mm rule, and the autorouter ignored the keepout.
 // A left-margin position was tried first and rejected: it dragged SW5-SW7, U5
 // and U6 across the whole board.
-export const FRONT_INTERCONNECT = { x: 66, y: 31, rotation: 90 } as const
+// Owner decision 2026-11-13: the 2 x 13 interconnect moves to the LEFT of the
+// display, i.e. into the 11.75 mm left strip (body 7.60 x 40.52 at 90 deg, so it
+// fits with 1.7 / 2.4 mm margins). That empties the right strip for the POWER
+// button and the four MIDI clusters. The rear board's J_FRONT follows this.
+export const FRONT_INTERCONNECT = { x: 66, y: 16, rotation: 90 } as const
 // The rear board carries the male at the SAME coordinate. One constant, not
 // two: the coincidence test compares the BUILT pads.
 export const REAR_INTERCONNECT = FRONT_INTERCONNECT
