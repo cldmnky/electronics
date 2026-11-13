@@ -114,6 +114,15 @@ export interface BoardReportRules {
   allowedPinWarnings: RegExp[]
   /** Placement notes allowed on this board (informational only). */
   allowedPlacementRotations: string[]
+  /**
+   * Refs of bodies that are drawn for the 3D view but are NOT assembled onto
+   * the board's copper (no pads, mounted on spacers above it). The placement
+   * report has no Z, so such a body's 106 x 68 mm outline is measured as
+   * intruding into the SMT parts underneath. Only an issue line that says
+   * "footprint intrusion" AND names one of these refs is excused; any other
+   * flag on the body, or any flag on a real part, still fails.
+   */
+  referenceBodies: string[]
   /** Marker text every shorts / pcb-style run must print. */
   markers: Partial<Record<CheckFormat, string>>
 }
@@ -148,6 +157,10 @@ export const BOARD_RULES: Record<string, BoardReportRules> = {
     // front.circuit.tsx on the earlier note, so `tsci check placement` reports
     // "no placement issues". A flagged component is a failure again.
     allowedPlacementRotations: [],
+    // DISP1 is the 4.3-inch display envelope: hand-fitted on spacers above the
+    // board, no pads, and the report cannot see the 5 mm gap (see the field's
+    // doc comment). Nothing else is excused.
+    referenceBodies: ["DISP1"],
     markers: {
       shorts: "No shorts detected in front.circuit.tsx",
       "pcb-style": "No PCB style issues detected in front.circuit.tsx",
@@ -157,6 +170,7 @@ export const BOARD_RULES: Record<string, BoardReportRules> = {
     counters: ["source", "pin_specification", "netlist", "placement"],
     allowedPinWarnings: [],
     allowedPlacementRotations: [],
+    referenceBodies: [],
     markers: {
       shorts: "No shorts detected in index.circuit.tsx",
       "pcb-style": "No PCB style issues detected in index.circuit.tsx",
@@ -265,8 +279,15 @@ export function analyseReport(
       failures.push(`${label}: "flagged components:" section is empty or unparseable`)
       statusOk = false
     }
+    const intrusionOfReferenceBody = (issue: string) =>
+      /footprint intrusion/i.test(issue) &&
+      rules.referenceBodies.some(ref => new RegExp(`\\b${ref}\\b`).test(issue))
     for (const component of flagged) {
       notes.push(`${label}: flagged ${component.ref}: ${component.issues.join(" / ")}`)
+      if (component.issues.length > 0 && component.issues.every(intrusionOfReferenceBody)) {
+        // The body has no pads and sits above the board; the report has no Z.
+        continue
+      }
       if (!rules.allowedPlacementRotations.includes(component.ref)) {
         failures.push(`${label}: unexpected flagged component ${component.ref}`)
         statusOk = false

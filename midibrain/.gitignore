@@ -28,3 +28,5 @@ __pycache__/
 *.pyc
 mechanical/viewer/node_modules/
 mechanical/viewer/models.json
+# CWD dropping from `tsci check` (writes <entry>.circuit.json beside the source)
+*.circuit.circuit.json

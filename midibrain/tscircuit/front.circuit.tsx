@@ -30,6 +30,7 @@ import {
   midiJackX,
   RIGHT_CONTROLS,
   DISPLAY_CONCEPT,
+  DISPLAY_STACK,
   TRANSPORT_Y,
   transportButtonX,
   displayAnnotationXY,
@@ -239,6 +240,29 @@ const FRONT_LED_PARTS = [
   { name: "D5", button: "PLAY", lcsc: "C2297", mpn: "KT-0805G", drive: "net.PLAY_LED", anode: "net.PLAY_LED_A" },
 ] as const
 
+// The display envelope as twelve 0.5 mm rods: a wireframe box. A solid box of
+// the same size hides the SMT area underneath and reads as a second board,
+// while this is only a reference - the module's underside map, FPC exit and
+// installed height are unverified (display_fpc_idc, display_boss_pattern).
+// Every dimension comes from DISPLAY_STACK; nothing here is re-typed.
+const DISPLAY_ROD = 0.5
+const displayEnvelopeWireframe = (() => {
+  const w = DISPLAY_STACK.outlineWidth
+  const d = DISPLAY_STACK.outlineHeight
+  const h = DISPLAY_STACK.overallDepth
+  const hx = w / 2 - DISPLAY_ROD / 2
+  const hy = d / 2 - DISPLAY_ROD / 2
+  const hz = h / 2 - DISPLAY_ROD / 2
+  const rods: { size: number[]; at: number[] }[] = []
+  for (const sy of [-1, 1]) for (const sz of [-1, 1]) rods.push({ size: [w, DISPLAY_ROD, DISPLAY_ROD], at: [0, sy * hy, sz * hz] })
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) rods.push({ size: [DISPLAY_ROD, d, DISPLAY_ROD], at: [sx * hx, 0, sz * hz] })
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) rods.push({ size: [DISPLAY_ROD, DISPLAY_ROD, h], at: [sx * hx, sy * hy, 0] })
+  return {
+    type: "union",
+    shapes: rods.map(r => ({ type: "translate", vector: r.at, shape: { type: "cuboid", size: r.size } })),
+  }
+})()
+
 export default () => (
   <board
     width={`${FRONT_PCB.width}mm`}
@@ -281,6 +305,44 @@ export default () => (
         </Fragment>
       )
     })}
+    {/* Display reference body for the 3D view (tsci dev, GLB, STEP). The
+        module bolts to the four SMTSO bosses but is NOT a board part, so this
+        is the only way tscircuit can draw it: the engine skips CAD for a
+        doNotPlace part, and a standalone <cadmodel> has no parent component.
+        The box is the vendor envelope from DISPLAY_STACK and nothing else -
+        106.00 x 68.00 x 14.05 mm, rear face at planeSeparation -
+        bossProjection = 5.0 mm above the board's top face, glass front on the
+        panel-front plane of PROVISIONAL_Z. It is drawn as a 0.5 mm wireframe
+        cage, not a solid slab, so the SMT parts beneath it stay visible.
+        REFERENCE BOX, NOT A FIT: the
+        underside map, the FPC exit, the boss projection and the installed
+        height are unverified (display_fpc_idc, display_boss_pattern); the
+        envelope is the vendor outline, the depth is the wiki FAQ's 14.05 mm.
+
+        CONSEQUENCE: because it is not `doNotPlace` it is a placement. It has no
+        pads, so it stays off the SMT BOM and CPL (sourcing_bom.py classifies it
+        THT for the front board) and appears in the hand BOM instead - which is
+        correct, the module is hand-fitted and already was in sourcing-extras. */}
+    <chip
+      name="DISP1"
+      layer="top"
+      showAsTranslucentModel
+      manufacturerPartNumber="Waveshare 4.3inch DSI LCD"
+      pcbX={`${DISPLAY_CONCEPT.x}mm`}
+      pcbY={`${DISPLAY_CONCEPT.y}mm`}
+      footprint={<footprint name="display-module-envelope" />}
+      cadModel={{
+        jscad: displayEnvelopeWireframe,
+        positionOffset: { x: 0, y: 0, z: DISPLAY_STACK.overallDepth / 2 },
+        zOffsetFromSurface: DISPLAY_STACK.planeSeparation - DISPLAY_STACK.bossProjection,
+        size: {
+          x: DISPLAY_STACK.outlineWidth,
+          y: DISPLAY_STACK.outlineHeight,
+          z: DISPLAY_STACK.overallDepth,
+        },
+        showAsTranslucentModel: true,
+      }}
+    />
     {FEEDTHROUGH_BRACKET.mountX.map((x, i) => (
       <Fragment key={`bracket-${i}`}><hole name={`BRACKET_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${x}mm`} pcbY={`${FEEDTHROUGH_BRACKET.mountY}mm`} /></Fragment>
     ))}

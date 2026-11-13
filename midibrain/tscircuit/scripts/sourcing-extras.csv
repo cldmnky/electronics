@@ -1,7 +1,6 @@
 Board,Designators,Quantity,MPN,LCSC,Package,Side,Method,Source,Notes
 module,RPi5,1,Raspberry Pi 5 (RAM size TBD),,,pi-panel,hand,Pi reseller,"Mounted on the 20HP Pi mounting panel (rear face, landscape). HAT/cooler combo candidate and unproven; see docs/mechanical-stack.md"
 module,Pico1,1,Raspberry Pi Pico 2 (fit 2x20 male headers; or Pico 2 H),,,rear,hand,Pi reseller,Sockets J_PICO_L/R are on the rear board; plain Pico 2 needs headers soldered first
-module,DISP1,1,Waveshare 4.3inch DSI LCD,,module,front,hand,ElectroKit art 4103 5687 (Waveshare 4.3inch DSI LCD),800x480 IPS DSI; 106.00 x 68.00 mm PCB; ships 50/120/160 mm DSI cables + screws/standoffs
 module,HAT1,1,Raspberry Pi M.2 HAT+ (candidate),,,pi-panel,hand,Pi reseller,Candidate only; stacking height unproven in the enclosure
 module,COOL1,1,Raspberry Pi Active Cooler (candidate),,,pi-panel,hand,Pi reseller,Candidate only; unproven with HAT in the enclosure
 module,SSD1,1,M.2 NVMe SSD (capacity TBD; candidate),,,pi-panel,hand,,Model TBD; target is 18ch 48 kHz/24-bit capture

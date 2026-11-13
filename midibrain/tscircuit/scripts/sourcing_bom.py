@@ -53,7 +53,13 @@ THT = {
               # Panel POWER momentary and the 1x2 jumper header that takes the
               # owner's 6-inch F-F DuPont pair to the Pi 5 PWR connector.
               "SW7", "J_PWR",
-              "U6", "J5"},
+              "U6", "J5",
+              # The 4.3-inch DSI module bolts to the four SMTSO bosses on the
+              # front face. It carries no pads, so nothing about it is SMT; the
+              # tscircuit render draws it as a translucent envelope
+              # (front.circuit.tsx) and it is hand-fitted like the other THT
+              # parts.
+              "DISP1"},
     "rear": {"J_PICO_L", "J_PICO_R", "J_PI", "J_FRONT"},
 }
 
@@ -87,6 +93,15 @@ THT_QUALIFIED_PROCESS = {
             "Encoder U6: hand solder not recommended by the manufacturer; "
             "process not yet qualified - pending acceptance item "
             "encoder_solder_process",
+        ),
+        "DISP1": (
+            "hand - module, bolted to the four SMTSO bosses (not a board part)",
+            "ElectroKit art 4103 5687, Waveshare 4.3inch DSI LCD, 800x480 IPS "
+            "DSI, 106.00 x 68.00 mm PCB; ships 50/120/160 mm DSI cables plus "
+            "screws and standoffs. Listed on the front board because it is "
+            "mechanically part of it and the 3D view needs it; it has no pads "
+            "and no LCSC part. Boss pattern, FPC exit and installed height are "
+            "unverified (display_boss_pattern, display_fpc_idc)",
         ),
     },
 }

@@ -51,12 +51,12 @@ hand-edit generated fabrication files to repair a source problem.
 
 ### Front
 
-Expected raw source/BOM count: **45** = **31** SMT placements + **14** THT exclusions, matching `jlc-order.json` and the built board. Expected SMT CPL count: **31**, all on
+Expected raw source/BOM count: **46** = **31** SMT placements + **15** hand/BOM-only lines, matching `jlc-order.json` and the built board. Expected SMT CPL count: **31**, all on
 **top/panel side**. This includes the MIDI circuits, passives, LEDs and NAV.
 The rear face carries the J5 THT female socket body and the solder tails of the
 other through-hole parts, not SMT.
 
-THT exclusions: `J1`–`J4`, `SW1`–`SW7`, `U6`, `J5`, `J_PWR`. They remain in the bench/
+THT exclusions: `J1`–`J4`, `SW1`–`SW7`, `U6`, `J5`, `J_PWR` and `DISP1`. They remain in the bench/
 combined BOM. `U6` is the Bourns PEC11R-4015F-S0024 (C143789), detentless
 24 PPR with two THT anchor lugs; the 2026-11-06 JLC/LCSC search found no SMD
 encoder with 0 detents, 24+ PPR and through-hole anchor lugs (the SMD
@@ -65,6 +65,15 @@ not accepted. It stays THT and out of the SMT CPL: request JLCPCB THT/hand-
 solder assembly for it if offered, otherwise bench-qualify per
 [assembly.md](assembly.md). Bourns does not recommend hand soldering, so the
 process, profile and inspection must be accepted before production.
+
+`DISP1` is the 4.3-inch DSI module. It bolts to the four SMTSO bosses on the
+front face, so it is part of the board mechanically, but it has no pads and no
+LCSC part: it is drawn in the tscircuit 3D view as a translucent envelope from
+`DISPLAY_STACK` (106.00 x 68.00 x 14.05 mm, rear face 5.0 mm above the board
+top) and it appears on the hand BOM with the ElectroKit article. It is not on
+the SMT CPL. The envelope is a reference box - the boss pattern, the FPC exit
+and the installed height are unverified (`display_boss_pattern`,
+`display_fpc_idc`).
 
 ### Rear
 

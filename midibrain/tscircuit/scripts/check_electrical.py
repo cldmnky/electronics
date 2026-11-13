@@ -278,7 +278,9 @@ EXPECTED_SMT_SIDE = {"index": "bottom", "front": "top"}
 # REAR (bottom) face at the top notch, so without it here the single-sided SMT
 # rule would wrongly flag it.
 THT_PARTS = {"J5", "J_PI", "J_FRONT", "J_PICO_L", "J_PICO_R", "J1", "J2", "J3", "J4",
-             "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "SW7", "J_PWR", "U6"}
+             "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "SW7", "J_PWR", "U6",
+             # The display is bolted to the front face but is not an SMT part.
+             "DISP1"}
 
 # ---------------------------------------------------------------------------
 # Probe points (rear board only): bare plated through-holes with no part.

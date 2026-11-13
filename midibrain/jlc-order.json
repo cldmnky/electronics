@@ -16,7 +16,7 @@
     "assembly": {
       "service": "JLCPCB SMT assembly",
       "sides": 1,
-      "sides_reason": "All 31 SMT placements are on the top (panel side). The rear face carries the direct interconnect's J5 THT female socket body and the solder tails of the other through-hole parts.",
+      "sides_reason": "All 31 SMT placements are on the top (panel side); the 32nd top-side body is the hand-fitted display module, which has no pads. The rear face carries the direct interconnect's J5 THT female socket body and the solder tails of the other through-hole parts.",
       "through_hole": "hand solder except U6: request JLCPCB THT/hand-solder assembly for U6 if offered, else bench-qualify per docs/assembly.md; the 2026-11-06 JLC/LCSC search found no SMD 0-detent 24 PPR encoder with THT anchor lugs, and a lug-less SMD knob encoder is NOT accepted",
       "through_hole_parts": [
         "J1",
@@ -32,7 +32,8 @@
         "U6",
         "J5",
         "SW7",
-        "J_PWR"
+        "J_PWR",
+        "DISP1"
       ],
       "files": {
         "gerbers": "fab/front/front-gerbers.zip",
@@ -40,13 +41,13 @@
         "cpl": "fab/front/front-cpl-jlc.csv"
       },
       "expected_counts": {
-        "bom_placements": 45,
+        "bom_placements": 46,
         "cpl_smt_placements": 31,
         "cpl_smt_top": 31,
         "cpl_smt_bottom": 0,
-        "tht_excluded": 14
+        "tht_excluded": 15
       },
-      "through_hole_note": "J1-J4 and SW1-SW7 are hand-solderable. U6 is the Bourns PEC11R-4015F-S0024 (C143789), 0 detents / 24 pulses per revolution with push switch and two THT anchor lugs; no SMD equivalent was found, so it stays THT and out of the SMT CPL until acceptance item encoder_solder_process records the qualified process. J_PWR is now the Harwin M20-9960245 right-angle 2-way header on the front board's REAR (bottom) face at the top relief notch (x -2.5 mm, y 47.00 mm, mating axis +Y), not a generic straight header. J5 is the Sullins SFH11-PBPC-D13-ST-BK female socket of the direct 2 x 13 mate. Both connectors have no LCSC number and are non-SMT hardware. Sourcing: the DigiKey listing was observed once in a live browser on 2026-11-10 with no committed snapshot and digikey.se returns Cloudflare 403 to scripted clients, so stock is subject to reconfirmation, this is a checked-date source lead and NOT an approved DigiKey source; Conrad is the owner's target for non-SMT parts and the owner's DigiKey exception covers switches and caps only. That takes the front hand BOM to 14 THT exclusions and the combined BOM to 45 placements while the SMT CPL stays at 31. The power-button conductors leave on J_PWR to the owner's 6-inch F-F DuPont pair: no interconnect conductor and no rear-board part. The Pi end of that pair is J2, which the Raspberry Pi power-button documentation (retrieved 2026-11-10) and its official images/j2.jpg show as TWO BARE PADS, so a correctly fitted header or a qualified wired connection is required there (pending)."
+      "through_hole_note": "J1-J4 and SW1-SW7 are hand-solderable. U6 is the Bourns PEC11R-4015F-S0024 (C143789), 0 detents / 24 pulses per revolution with push switch and two THT anchor lugs; no SMD equivalent was found, so it stays THT and out of the SMT CPL until acceptance item encoder_solder_process records the qualified process. J_PWR is now the Harwin M20-9960245 right-angle 2-way header on the front board's REAR (bottom) face at the top relief notch (x -2.5 mm, y 47.00 mm, mating axis +Y), not a generic straight header. J5 is the Sullins SFH11-PBPC-D13-ST-BK female socket of the direct 2 x 13 mate. Both connectors have no LCSC number and are non-SMT hardware. Sourcing: the DigiKey listing was observed once in a live browser on 2026-11-10 with no committed snapshot and digikey.se returns Cloudflare 403 to scripted clients, so stock is subject to reconfirmation, this is a checked-date source lead and NOT an approved DigiKey source; Conrad is the owner's target for non-SMT parts and the owner's DigiKey exception covers switches and caps only. That takes the front hand BOM to 14 THT exclusions and the combined BOM to 45 placements while the SMT CPL stays at 31. The power-button conductors leave on J_PWR to the owner's 6-inch F-F DuPont pair: no interconnect conductor and no rear-board part. The Pi end of that pair is J2, which the Raspberry Pi power-button documentation (retrieved 2026-11-10) and its official images/j2.jpg show as TWO BARE PADS, so a correctly fitted header or a qualified wired connection is required there (pending). DISP1 is the 4.3-inch DSI module: it bolts to the four SMTSO bosses on the front face, has no pads, and is drawn in the tscircuit 3D view as a translucent envelope (DISPLAY_STACK dimensions, rear face 5.0 mm above the board top). It is classified THT so it stays in the hand BOM only - the SMT CPL stays at 31 - and its hand line carries the ElectroKit article and the unverified-fit caveats."
     }
   },
   "rear": {
