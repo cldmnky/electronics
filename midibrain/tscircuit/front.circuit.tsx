@@ -363,8 +363,8 @@ export default () => (
     {/* C5/C6 rotate 180 deg after the board widened and the interconnect moved:
         `tsci check placement` flagged both as "connections cross the routing path
         between its pads" at 0 deg. Value, net and footprint unchanged. */}
-    <C name="C5" value="10uF" sec="power" x="49mm" y="19.2mm" rot="180deg" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
-    <C name="C6" value="100nF" sec="power" x="54.6mm" y="19.2mm" rot="180deg" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+    <C name="C5" value="10uF" sec="power" x="49mm" y="18.4mm" rot="180deg" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
+    <C name="C6" value="100nF" sec="power" x="54.6mm" y="18.4mm" rot="180deg" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
 
     {/* Direct 2 x 13 interconnect, FEMALE side: Sullins SFH11-PBPC-D13-ST-BK
         straight socket on the front board's BOTTOM face, mating the rear
