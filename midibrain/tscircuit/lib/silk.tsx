@@ -38,6 +38,7 @@ import {
   FRONT_INTERCONNECT,
   FRONT_PCB,
   JACK_Y,
+  MIDI_CLUSTERS,
   LED_Y,
   ledPosition,
   REAR_PCB,
@@ -167,12 +168,16 @@ const frontLeds = [
 // 1N4148WS cathodes - is derived from these, so moving a cluster can never
 // strand its silk on the old spot (it did, twice, while the 10 mm respin was in
 // progress). Keep in step with front.circuit.tsx.
-const FRONT_CLUSTERS = {
-  in1: { u: { x: 51, y: -48 } },
-  in2: { u: { x: 64.6, y: -30 } },
-  out1: { q: { x: 66.6, y: -46.05 }, d: { x: 59, y: -46 } },
-  out2: { q: { x: 66.6, y: -8 }, d: { x: 72.6, y: -28 } },
-} as const
+// MIDI cluster geometry is NOT restated here: lib/layout.ts MIDI_CLUSTERS is the
+// one origin per cluster, and front.circuit.tsx uses the same offsets
+// (CLUSTER_LOCAL there). The clamp diodes D1/D2 belong to the IN clusters - they
+// sit across the opto input - which an earlier draft of this table got wrong by
+// filing them under the OUT clusters.
+const FRONT_CLUSTER_LOCAL = { diode: { x: 8, y: 2 } } as const
+const frontClusterDiode = (k: "in1" | "in2") => ({
+  x: MIDI_CLUSTERS[k].x + FRONT_CLUSTER_LOCAL.diode.x,
+  y: MIDI_CLUSTERS[k].y + FRONT_CLUSTER_LOCAL.diode.y,
+})
 // SOT-23 pin 1 sits at (-1.14, +0.95) from the gate's centre on this footprint
 // (measured from the built pads: pin1 65.46,-45.10 with the body at 66.6,-46.05).
 const FRONT_GATE_PIN1 = { dx: -1.14, dy: 0.95 }
@@ -207,15 +212,15 @@ export const FRONT_SILK: BoardSilkSpec = {
     // sits a further 1.3 mm out, clear of the pill pad.
     ...(["in1", "in2"] as const).map((k) => ({
       ref: k === "in1" ? "U1" : "U2",
-      x: FRONT_CLUSTERS[k].u.x + 3.15 + 1.3,
-      y: FRONT_CLUSTERS[k].u.y - 1.27 - 1.3,
+      x: MIDI_CLUSTERS[k].x + 3.15 + 1.3,
+      y: MIDI_CLUSTERS[k].y - 1.27 - 1.3,
       source: "silk" as const,
     })),
     // SOT-23 gates: dot outboard of pin 1.
     ...(["out1", "out2"] as const).map((k) => ({
       ref: k === "out1" ? "Q1" : "Q2",
-      x: FRONT_CLUSTERS[k].q.x + FRONT_GATE_PIN1.dx + FRONT_GATE_DOT.dx,
-      y: FRONT_CLUSTERS[k].q.y + FRONT_GATE_PIN1.dy + FRONT_GATE_DOT.dy,
+      x: MIDI_CLUSTERS[k].x + FRONT_GATE_PIN1.dx + FRONT_GATE_DOT.dx,
+      y: MIDI_CLUSTERS[k].y + FRONT_GATE_PIN1.dy + FRONT_GATE_DOT.dy,
       source: "silk" as const,
     })),
     // Derived from the control column, which owner decision D2 moved 47 -> 52
@@ -275,22 +280,25 @@ export const FRONT_SILK: BoardSilkSpec = {
     // and lib/silk.tsx is the one place that decides where they land).
     ...(["out1", "out2"] as const).map((k) => ({
       text: k === "out1" ? "Q1" : "Q2",
-      x: FRONT_CLUSTERS[k].q.x + FRONT_GATE_REF_OFFSET.dx,
-      y: FRONT_CLUSTERS[k].q.y + FRONT_GATE_REF_OFFSET.dy,
+      x: MIDI_CLUSTERS[k].x + FRONT_GATE_REF_OFFSET.dx,
+      y: MIDI_CLUSTERS[k].y + FRONT_GATE_REF_OFFSET.dy,
       fontSize: 0.8,
       role: "ref" as const,
       part: k === "out1" ? "Q1" : "Q2",
     })),
     // 1N4148WS cathodes: the clamp diodes are the only polarised two-pin parts
     // on this board besides the LEDs, so their cathode is printed, not implied.
-    ...(["out1", "out2"] as const).map((k) => ({
-      text: "K",
-      x: FRONT_CLUSTERS[k].d.x + FRONT_DIODE_CATHODE_DX + FRONT_DIODE_K_OFFSET.dx,
-      y: FRONT_CLUSTERS[k].d.y + FRONT_DIODE_K_OFFSET.dy,
-      fontSize: 0.7,
-      role: "polarity" as const,
-      part: k === "out1" ? "D1" : "D2",
-    })),
+    ...(["in1", "in2"] as const).map((k) => {
+      const d = frontClusterDiode(k)
+      return {
+        text: "K",
+        x: d.x + FRONT_DIODE_CATHODE_DX + FRONT_DIODE_K_OFFSET.dx,
+        y: d.y + FRONT_DIODE_K_OFFSET.dy,
+        fontSize: 0.7,
+        role: "polarity" as const,
+        part: k === "in1" ? "D1" : "D2",
+      }
+    }),
     // LED polarity: anode/cathode beside their pads; the footprint also draws
     // the cathode bar on the cathode side.
     ...frontLeds.flatMap(({ ref, x }) => [

@@ -23,6 +23,7 @@ import {
   FRONT_REAR_MOUNT,
   FRONT_TOP_NOTCH,
   JACK_Y,
+  MIDI_CLUSTERS,
   LED_Y,
   ledPosition,
   midiJackX,
@@ -94,9 +95,32 @@ const C = ({ name, value, x, y, lcsc, mpn, p1, p2, footprint = "0603", rot, sec 
 // Sleeve decoupling cap follows its jack: 7 mm left, 5.5 mm above the barrel.
 // (7 mm keeps the 0603 1.2 mm clear of the jack-body courtyard now that all
 // SMT shares the panel side with the THT bodies.)
-const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: number; x: number; y: number }) => {
+// Cluster geometry lives in CLUSTER_LOCAL: the opto is the origin, everything
+// else is an offset from it, rendered inside a <group pcbX pcbY>. Moving a
+// cluster is therefore one number in lib/layout.ts (MIDI_CLUSTERS) and the
+// internal layout cannot drift; before this, every offset was `x + 8`-style
+// arithmetic over an absolute coordinate, and lib/silk.tsx kept its own copy of
+// the origins (which is how two silkscreen marks got stranded during the
+// 10 mm respin).
+const CLUSTER_LOCAL = {
+  inDiode: { x: 8, y: 2 },      // 1N4148WS across the opto input
+  inRingR: { x: -2, y: -5 },    // 220R in series with RING
+  inPullup: { x: 8, y: -3.5 },  // 2.2k on the opto output
+  inDecoup: { x: 4, y: 3 },     // 100nF at the opto's VCC/GND
+  outTxR: { x: -2, y: 5 },      // 100R gate resistor
+  outPullup: { x: 6, y: 5 },    // 2.2k gate pull-up
+  outRingR: { x: -2, y: -6 },   // 33R 2512 on the drain
+  outTipR: { x: 4.5, y: -6 },   // 220R 2512 on the tip
+} as const
+
+const MidiIn = ({ ch, jackX, jackY, at }: { ch: 1 | 2; jackX: number; jackY: number; at: { x: number; y: number } }) => {
   const j = `J${ch}`, u = `U${ch}`, d = `D${ch}`
-  const rx = `${x}mm`, ry = `${y}mm`
+  // Absolute position = cluster origin (lib/layout.ts MIDI_CLUSTERS) + a
+  // CLUSTER_LOCAL offset. A <group pcbX pcbY> was tried first and rejected: the
+  // group anchors on its children's bounding box, not on its own origin, so
+  // every part landed ~7 mm off (measured, not assumed).
+  const px = (dx: number) => `${at.x + dx}mm`
+  const py = (dy: number) => `${at.y + dy}mm`
   const ring = `net.MIDI_IN_${ch}_RING`
   const tip = `net.MIDI_IN_${ch}_TIP`
   const anode = `net.MIDI_IN_${ch}_ANODE`
@@ -123,10 +147,13 @@ const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: n
       />
       {/* Toshiba TLP2361(TPL,E, C107626: inverting totem-pole output, IFHL
           1.3 mA max to 105 C. Pin 1 anode, 3 cathode, 4 GND, 5 VO, 6 VCC. */}
+      {/* The jack's 100 nF decouples the SLEEVE at the connector, so it stays
+          jack-relative and OUTSIDE the cluster group below. */}
+      <C name={`C${ch}`} value="100nF" sec="midi_in" x={`${jackX - 7}mm`} y={`${jackY + 5.5}mm`} rot={ch === 2 ? "180deg" : undefined} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
       <TLP2361_TPL_E
         name={u}
-        pcbX={rx}
-        pcbY={ry}
+        pcbX={px(0)}
+        pcbY={py(0)}
         layer="top"
         schSheetName="front"
         schSectionName="midi_in"
@@ -141,26 +168,27 @@ const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: n
       />
       <A_1N4148WS
         name={d}
-        pcbX={`${x + 8}mm`}
-        pcbY={`${y + 2}mm`}
+        pcbX={px(CLUSTER_LOCAL.inDiode.x)}
+        pcbY={py(CLUSTER_LOCAL.inDiode.y)}
         layer="top"
         schSheetName="front"
         schSectionName="midi_in"
         connections={{ cathode: anode, anode: tip }}
       />
-      <R name={`R${ch}`} value={`${MIDI_RECEIVER_OHM}`} sec="midi_in" schX={ch === 1 ? "-21.5" : undefined} schY={ch === 1 ? "-1.3" : undefined} x={`${x - 2}mm`} y={`${y - 5}mm`} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
-      <R name={`R${ch + 2}`} value="2.2k" sec="midi_in" x={`${x + 8}mm`} y={`${y - 3.5}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={rxNet} p2="net.P3V3" />
+      <R name={`R${ch}`} value={`${MIDI_RECEIVER_OHM}`} sec="midi_in" schX={ch === 1 ? "-21.5" : undefined} schY={ch === 1 ? "-1.3" : undefined} x={px(CLUSTER_LOCAL.inRingR.x)} y={py(CLUSTER_LOCAL.inRingR.y)} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
+      <R name={`R${ch + 2}`} value="2.2k" sec="midi_in" x={px(CLUSTER_LOCAL.inPullup.x)} y={py(CLUSTER_LOCAL.inPullup.y)} lcsc="C4190" mpn="0603WAF2201T5E" p1={rxNet} p2="net.P3V3" />
       {/* C2 carries the placement note ("connections cross the routing path
           between its pads"), C1 does not; a 0603 X7R cap is non-polarized, so
           rotating it moves no polarity mark. */}
-      <C name={`C${ch}`} value="100nF" sec="midi_in" x={`${jackX - 7}mm`} y={`${jackY + 5.5}mm`} rot={ch === 2 ? "180deg" : undefined} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
-      <C name={`C${ch + 2}`} value="100nF" sec="midi_in" x={`${x + 4}mm`} y={`${y + 3}mm`} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+      <C name={`C${ch + 2}`} value="100nF" sec="midi_in" x={px(CLUSTER_LOCAL.inDecoup.x)} y={py(CLUSTER_LOCAL.inDecoup.y)} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
     </>
   )
 }
 
-const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: number; x: number; y: number }) => {
+const MidiOut = ({ ch, jackX, jackY, at }: { ch: 1 | 2; jackX: number; jackY: number; at: { x: number; y: number } }) => {
   const j = `J${ch + 2}`, q = `Q${ch}`
+  const px = (dx: number) => `${at.x + dx}mm`
+  const py = (dy: number) => `${at.y + dy}mm`
   const ring = `net.MIDI_OUT_${ch}_RING`
   const tip = `net.MIDI_OUT_${ch}_TIP`
   const gate = `net.MIDI_OUT_${ch}_GATE`
@@ -192,25 +220,25 @@ const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: 
           through 100 Ohm when the UART pin goes low. */}
       <C15127_AO3401A
         name={q}
-        pcbX={`${x}mm`}
-        pcbY={`${y}mm`}
+        pcbX={px(0)}
+        pcbY={py(0)}
         layer="top"
         schSheetName="front"
         schSectionName="midi_out"
         connections={{ gate, source: "net.P3V3", drain }}
       />
-      <R name={`R${ch + 4}`} value={`${MIDI_OUT_GATE_OHM.series}`} sec="midi_out" x={`${x - 2}mm`} y={`${y + 5}mm`} lcsc="C22775" mpn="0603WAF1000T5E" p1={tx} p2={gate} />
-      <R name={`R${ch + 6}`} value={`${MIDI_OUT_GATE_OHM.pullup}`} sec="midi_out" x={`${x + 6}mm`} y={`${y + 5}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={gate} p2="net.P3V3" />
+      <R name={`R${ch + 4}`} value={`${MIDI_OUT_GATE_OHM.series}`} sec="midi_out" x={px(CLUSTER_LOCAL.outTxR.x)} y={py(CLUSTER_LOCAL.outTxR.y)} lcsc="C22775" mpn="0603WAF1000T5E" p1={tx} p2={gate} />
+      <R name={`R${ch + 6}`} value={`${MIDI_OUT_GATE_OHM.pullup}`} sec="midi_out" x={px(CLUSTER_LOCAL.outPullup.x)} y={py(CLUSTER_LOCAL.outPullup.y)} lcsc="C4190" mpn="0603WAF2201T5E" p1={gate} p2="net.P3V3" />
       {/* R9/R10 rotate 270 deg, not 0/90: `tsci check placement` flagged the
           90 deg pads as "connections cross the routing path between its pads",
           and 270 puts pad 1 on the routed side. Value, net and footprint are
           unchanged. */}
-      <R name={`R${ch + 8}`} value={`${MIDI_OUT_SERIES_OHM.ring}`} sec="midi_out" x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C53728" mpn="25121WF330JT4E" footprint="2512" rot="270deg" p1={drain} p2={ring} />
+      <R name={`R${ch + 8}`} value={`${MIDI_OUT_SERIES_OHM.ring}`} sec="midi_out" x={px(CLUSTER_LOCAL.outRingR.x)} y={py(CLUSTER_LOCAL.outRingR.y)} lcsc="C53728" mpn="25121WF330JT4E" footprint="2512" rot="270deg" p1={drain} p2={ring} />
       {/* R11/R12 rotate 180 deg after the cluster moved to x = -49 for the
           4.3-inch module's LCD hole: `tsci check placement` flags their pads as
           "connections cross the routing path between its pads". Value, net and
           footprint are unchanged. */}
-      <R name={`R${ch + 10}`} value={`${MIDI_OUT_SERIES_OHM.tip}`} sec="midi_out" x={`${x + 4.5}mm`} y={`${y - 6}mm`} rot="180deg" lcsc="C118189" mpn="25121WF220JT4E" footprint="2512" p1={tip} p2="net.GND" />
+      <R name={`R${ch + 10}`} value={`${MIDI_OUT_SERIES_OHM.tip}`} sec="midi_out" x={px(CLUSTER_LOCAL.outTipR.x)} y={py(CLUSTER_LOCAL.outTipR.y)} rot="180deg" lcsc="C118189" mpn="25121WF220JT4E" footprint="2512" p1={tip} p2="net.GND" />
     </>
   )
 }
@@ -292,13 +320,13 @@ export default () => (
         female socket's body is on the rear-facing side so the rear board's
         male header plugs straight into it, and its solder tails are the only
         through-hole joints on the panel side. */}
-    <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={51} y={-48} />
-    <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={64.6} y={-30} />
+    <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} at={MIDI_CLUSTERS.in1} />
+    <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} at={MIDI_CLUSTERS.in2} />
     {/* ch1 cluster shifted 4 mm left (x -45 -> -49) to clear the 4.3-inch
         module's bottom-left LCD_4 hole at (-41.88, -13.54), which the new
         58.00 x 49.04 mounting pattern puts inside the old Q1 courtyard. */}
-    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={66.6} y={-46.05} />
-    <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} x={66.6} y={-8} />
+    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} at={MIDI_CLUSTERS.out1} />
+    <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} at={MIDI_CLUSTERS.out2} />
 
     <SKRHABE010
       name="U5"

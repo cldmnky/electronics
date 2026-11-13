@@ -1159,6 +1159,20 @@ export const mechanicalExport = () => ({
 // explicit rather than an arithmetic progression: TEMPO 31, NAV 12, SHIFT/EXIT
 // -5. Keep the explicit values - deriving NAV/SHIFT from TEMPO would drag them
 // along every time TEMPO moves.
+// ---- MIDI clusters (front board) ----
+// ONE source of truth for where each opto/LED cluster sits. front.circuit.tsx
+// renders each cluster inside a <group pcbX pcbY> and works in cluster-LOCAL
+// coordinates, so moving a cluster is one number here and its silkscreen marks
+// (lib/silk.tsx derives from these) can never be stranded on the old spot - they
+// were, twice, while this board was being re-placed by hand.
+export const MIDI_CLUSTERS = {
+  // in1/in2 origin = the TLP2361 body centre; out1/out2 origin = the AO3401A.
+  in1: { x: 51, y: -48 },
+  in2: { x: 64.6, y: -30 },
+  out1: { x: 66.6, y: -46.05 },
+  out2: { x: 66.6, y: -8 },
+} as const
+
 export const RIGHT_COLUMN = { x: 52 } as const
 // Owner decision 2026-11-13: SW7 sits alone at y 49 and TEMPO/NAV moved up to
 // 26/9. TEMPO then moved up another 3 (to 29) so the 3.4 mm band below U6's
