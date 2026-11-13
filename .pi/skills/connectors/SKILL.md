@@ -113,3 +113,73 @@ solder-lug jack.
       neighbour and the panel.
 - [ ] Library row created (`draft` until CAD exists), inventory row linked to the
       project and reference designator.
+
+## Verified jack pin maps (2026-11-13)
+
+The owner decision is that the **PCB-mountable Thonkiconn family is the
+preferred 3.5 mm connector**: `WQP518MA` (mono) for audio and CV, `WQP419GR`
+(stereo) for TRS MIDI. Both are M6 × 0.5, so they suit the 6.2 mm panel hole.
+What is verified about the pins, and what is not:
+
+| Part | Drawing says | Verified pad geometry | Status |
+| --- | --- | --- | --- |
+| `WQP518MA` mono | 1 = sleeve, 2 = tip, 3 = switch | KiCad official `Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical`: **S** at 0, **TN** at 3.1, **T** at 11.4 mm from the sleeve pad, barrel 6.48 mm in front of S. Sleeve nearest the panel, tip farthest | both projects match: froemix `FP_JACK_MONO` pad +6.48 = sleeve, +3.38 = switch, −4.92 = tip, barrel at origin ✓ |
+| `WQP419GR` stereo | 1 = sleeve, 2 = tip, 3 = ring | **verified** via clacktronics/AudioJacks `Jack_3.5mm_QingPu_WQP-PJ366ST_Vertical`: S 6.48 / R 3.38 / T −4.92 mm from the barrel datum, all collinear, so the **middle pad is R** (on the mono it is TN). The same file set gives the mono the same three positions with TN in the middle | froemix and midibrain both place these pads already; the defect was the *pin numbering*, not the geometry. Label the pads S/R/T, not 1/2/3 |
+
+The rule, stated once so it is not re-derived: the three pads are **collinear**,
+**3.10 mm apart at one end and 8.30 mm at the other**, with the **sleeve at
+6.48 mm from the barrel datum**, the **outermost pad**, the middle one being TN
+(mono) or R (stereo) and the tip at 4.92 mm on the other side of the datum.
+Sleeve is GND on every jack in both projects. (An earlier note in this file
+claimed the sleeve was 3.1 mm off-axis; that was a misreading of Thonk's
+drawing - the 3.10 there is the sleeve-to-switch spacing. Both Clacktronics
+footprints agree with this and are the authority.)
+
+For a jack of unknown provenance, settle it with the part in hand, not from the
+drawing:
+
+1. Meter the **barrel/thread** to each pad: the sleeve reads 0 Ω.
+2. Plug in a TRS cable: plug **tip** to a pad (0 Ω), plug **ring** to a pad,
+   plug **sleeve** to the sleeve pad. That identifies all three.
+3. Only then decide whether the footprint or the netlist is wrong: on a board
+   already at fab the copper is fixed, so the fix is wiring by function and a
+   documented rev-B pad swap; on a board still in design, fix the footprint's
+   `portHints` and its consumers together and re-run the project gate.
+
+## Jack CAD status
+
+CAD is in place (2026-11-13): `library/cad/jack-35-wqp518ma/` and
+`library/cad/jack-35-wqp419gr/` each hold the Clacktronics KiCad footprint and
+STEP model (MIT, (c) 2021 Barwise) with a `SOURCE.md` carrying the URL, the
+pinned commit, the SHA-256 and an explicit "upstream says untested" caveat.
+
+Thonk publishes the family datasheet (verified downloadable, 2026-11-13):
+`https://www.thonk.co.uk/wp-content/uploads/2014/02/Thonkiconn_Jack_Datasheet.pdf`
+— mono "PJ301M-12", one page, with the PCB layout, the 3 mm barrel-hole note and
+an Eagle library link. The stereo page carries no drawing or 3D file.
+
+Neither Thonkiconn has a footprint or STEP in `library/cad/` yet, so their
+library rows stay `draft` and cannot be promoted to `preferred`: the gate needs
+`footprint`, `step`, `cad_source`, `cad_license` and a **main-shop** SKU
+(Electrokit / DigiKey / Conrad — Exploding Shed is not one). Note that KiCad's
+official footprint references
+`Connector_Audio.3dshapes/Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical.step`, which
+is **not shipped** with KiCad, so there is nothing to copy locally. Get the
+model from the manufacturer or from Thonk's published CAD, record licence and
+SHA-256 in `SOURCE.md`, or derive one from the drawing and say so explicitly -
+never place a model whose origin, axis and body are unverified.
+
+### Known 3D-model sources that do not fit
+
+`https://github.com/elektrofon/eda-3d-models` (MIT, Elektrofon 2021) is worth
+knowing about and worth checking before commissioning CAD, but as of 2026-11-13
+it holds only:
+
+- `WQP-PJ398SM.FCStd` - the **collinear** family member, in FreeCAD's native
+  format. tscircuit needs STEP/OBJ, so it must be exported with FreeCAD first,
+  and its pad layout is *not* the Thonkiconn layout (sleeve off-axis).
+- `WQP-PJ399SM.blend` - a Git-LFS pointer (68 MB object), not a model.
+
+So it cannot supply the preferred part's model. A valid STEP still has to come
+from the vendor, from Thonk, or from a derivation made from the drawing and
+labelled as such.
