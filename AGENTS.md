@@ -97,6 +97,30 @@ are in the `component-library` skill at
 `references/tscircuit-common.md`). `library/README.md` is the column
 reference.
 
+## Purchased stock
+
+`inventory.csv` (repo root) records **parts that have been bought**, one row
+per order line, with the shop's own part number, MPN, quantity, unit price,
+currency and VAT convention. `INVENTORY.md` describes the schema, the two orders
+recorded so far and the known problems with the current stock.
+
+- **A stock row is not an approval.** It means "this is on the shelf". A part may
+  only be designed into a board when it also has a `library/components.csv` row
+  that passed the library gate. `library/` owns identity and CAD; the inventory
+  owns quantities and order history.
+- Every row carries `status` and `notes`. The note states the verification state
+  ("body 4.3 mm, matches drawing") or the trap ("too short for an 11 mm gap"). A
+  row without that is worse than no row.
+- Never copy an article number between shops and never invent an MPN. A search
+  result stays out of the inventory until the part arrives.
+- When a stock part is fitted, link it: `intended_for` names the project and the
+  reference designators, and the library row records the shop SKUs.
+
+Connector and interconnect knowledge (pitch families, mating-height arithmetic,
+pin-order traps, IDC rules, debug headers, 3.5 mm jack families) lives in the
+`connectors` skill at `.pi/skills/connectors/SKILL.md`. Read it before choosing
+or replacing any connector.
+
 ## Project boundaries
 
 - `froemix/AGENTS.md` and `midibrain/AGENTS.md` are the project contracts;
