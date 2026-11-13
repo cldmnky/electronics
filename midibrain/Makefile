@@ -78,10 +78,16 @@ electrical:
 # export. Regenerate deliberately with `make mechanical-export` after an
 # intentional layout change, and commit the result. Neither step fabricates a
 # production output; full CAD remains optional and tool-dependent.
+# `mechanical/printed` is NOT a python package on purpose (its tests import a
+# sibling geometry module by name), so `unittest discover -s mechanical` does not
+# recurse into it. It therefore gets its own step, run in its own directory. The
+# CadQuery-dependent tests skip cleanly when CadQuery is absent; the pure
+# geometry and committed-STL checks still run.
 mechanical:
 	@if [ -f tscircuit/scripts/export-mechanical.ts ] && [ -d mechanical ]; then \
 	  export MIDIBRAIN_BUNX="$$(command -v $(BUN) 2>/dev/null || printf '%s' '$(BUN)')"; \
 	  cd tscircuit && $(BUN) run scripts/export-mechanical.ts --check && cd .. && \
+	  ( cd mechanical/printed && $(PYTHON) -m unittest test_printed_parts ) && \
 	  $(PYTHON) -m unittest discover -s mechanical -p 'test_*.py'; \
 	else \
 	  echo "PENDING: the mechanical bridge (tscircuit/scripts/export-mechanical.ts,"; \
