@@ -6,9 +6,12 @@ No CAD dependency: these run everywhere.
     cd midibrain && python3 -m unittest discover -s mechanical -p 'test_*.py'
 
 Each test states the rule it protects. The mutation tests at the bottom take the
-reviewed finding - a 0.45 mm XY projection between the Adafruit 908 flange and
-the front board - and prove that this module never reports it as a 3D collision
-and never reports the assembly clear while the flange depth is unknown.
+reviewed finding - an XY projection between the Adafruit 908 flange and the front
+board - and prove that this module never reports it as a 3D collision and never
+reports the assembly clear while the flange depth is unknown. The review finding
+was measured on the pre-respin top relief notch (0.45 mm); the display opening
+now runs through the board's top edge, so the canonical projection is empty and
+the mutation tests move the cut edge back to reproduce the strip.
 """
 from __future__ import annotations
 
@@ -71,13 +74,20 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertEqual(ys, [-24.5, 24.5])
 
     def test_the_canonical_panel_features_are_complete(self) -> None:
-        """20 apertures and 14 drills: every opening the panel board renders."""
+        """20 apertures and 10 drills: every opening the panel board renders.
+
+        The drills are the six feedthrough screw holes plus the four RACK
+        fixings. The panel standoff holes (STAND_*) were removed with the rest of
+        the panel mounting, so PANEL_MOUNT_HOLES is the RACK set alone.
+        """
         data = layout()
         apertures = data["panelApertures"]
         drills = data["panelDrills"]
         self.assertEqual(len(apertures), 20)
-        self.assertEqual(len(drills), 14)
-        self.assertEqual(len(data["panelMountHoles"]), 8)
+        self.assertEqual(len(drills), 10)
+        self.assertEqual(len(data["panelMountHoles"]), 4)
+        self.assertEqual([h["name"] for h in data["panelMountHoles"]],
+                         ["RACK_1", "RACK_2", "RACK_3", "RACK_4"])
         names = [a["name"] for a in apertures]
         self.assertEqual(names[0], "LCD_APERTURE")
         self.assertEqual(len(set(names)), len(names), "aperture names must be unique")
@@ -87,8 +97,8 @@ class CanonicalDataTest(unittest.TestCase):
             self.assertIn(required, names)
         self.assertEqual([d["name"] for d in drills],
                          ["USB_0_-1", "USB_0_1", "USB_1_-1", "USB_1_1",
-                          "USB_2_-1", "USB_2_1", "STAND_1", "STAND_2", "STAND_3",
-                          "STAND_4", "RACK_1", "RACK_2", "RACK_3", "RACK_4"])
+                          "USB_2_-1", "USB_2_1", "RACK_1", "RACK_2", "RACK_3",
+                          "RACK_4"])
 
     def test_the_canonical_panel_diameters_are_the_documented_ones(self) -> None:
         """Diameters come from PANEL_CUTOUTS; nothing is re-derived here."""
@@ -100,7 +110,10 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertEqual(by_name["REC LED"]["radius"], 1.3)      # Ø2.6 provisional PGN25L165
         self.assertEqual(by_name["VALUE ENCODER"]["radius"], 3.6)  # 7.2 mm bushing
         self.assertEqual(by_name["MIDI IN 1 JACK"]["radius"], 3.1)  # 6.2 mm barrel
-        self.assertEqual({d["diameter"] for d in data["panelDrills"]}, {3.2, 3.5, 2.7})
+        # The feedthrough screws: 3.2 mm for the USB-C slot and the RACK holes,
+        # 3.5 mm for the two Adafruit 908 flanges. The 2.7 mm STAND_ drills went
+        # with the panel standoffs.
+        self.assertEqual({d["diameter"] for d in data["panelDrills"]}, {3.2, 3.5})
 
     def test_the_three_led_holes_are_2_6_and_keep_their_positions(self) -> None:
         """Three nominal Ø2.6 openings at the LED axes; no other opening changed."""
@@ -111,9 +124,11 @@ class CanonicalDataTest(unittest.TestCase):
         for aperture in leds:
             self.assertEqual(aperture["shape"], "circle")
             self.assertAlmostEqual(aperture["radius"], 1.3, places=9)
-        # the XY positions are the documented LED row, 12 mm beside their buttons
+        # the XY positions are the documented LED row: 12 mm BESIDE their
+        # buttons, so REC -46 -> -34, OVER DUB -22 -> -10 and PLAY +26 -> +38,
+        # all on the -34 mm transport row.
         axes = sorted((a["x"], a["y"]) for a in leds)
-        self.assertEqual(axes, [(-41, -34), (-17, -34), (31, -34)])
+        self.assertEqual(axes, [(-34, -34), (-10, -34), (38, -34)])
         # every other circle opening keeps its radius (the buttons are squares now)
         others = {a["name"]: a["radius"] for a in data["panelApertures"]
                   if a["shape"] == "circle" and not a["name"].endswith(" LED")}
@@ -142,8 +157,15 @@ class CanonicalDataTest(unittest.TestCase):
         data = layout()
         centres = {(a.get("x"), a.get("y")) for a in data["panelApertures"]
                    if a["shape"] != "polygon"}
-        for centre in {(-53, -34), (-29, -34), (-5, -34), (19, -34), (52, -34),
-                       (52.5, -48), (52, 20), (52, 1), (52, -18), (-53, -47.5)}:
+        for centre in (
+                # transport row: TRANSPORT_LEFT_X -46 + 24 mm pitch, y -34
+                (-46, -34), (-22, -34), (2, -34), (26, -34),
+                # PLAY START keeps the right column's x at the transport row
+                (52, -34),
+                # the right control column at x 52: SHIFT/EXIT, NAV, TEMPO, POWER
+                (52, -5), (52, 12), (52, 31), (52, 49),
+                # the grouped jack block: MIDI_JACK_LEFT_X -62 + 12 mm pitch
+                (-62, -47.5), (-50, -47.5), (-38, -47.5), (-26, -47.5)):
             self.assertIn(centre, centres, f"control centre {centre} moved")
 
     def test_rail_holes_are_the_panel_corners(self) -> None:
@@ -290,7 +312,15 @@ class ClassifyTest(unittest.TestCase):
 
 
 class FlangeProjectionTest(unittest.TestCase):
-    """The 0.45 mm finding, exactly, and how it moves."""
+    """The 908 flanges against the front board's one U-shaped cut.
+
+    History: while the board still carried a separate 105 x 8 mm top relief
+    notch, the UMC flange crossed the notch's y 48 mm bottom edge by 0.45 mm and
+    the hub flange crossed its x 50 mm right edge. The display opening now runs
+    through the board's top edge over x -63.25...43.25, so both flanges hang
+    inside that one cut and project over NO board material. The mutation tests
+    below move the cut edge back and reproduce the same strips exactly.
+    """
 
     def test_both_908_flanges_are_projected(self) -> None:
         overlaps = sg.flange_overlaps(layout())
@@ -302,27 +332,55 @@ class FlangeProjectionTest(unittest.TestCase):
             self.assertFalse(o.depth_known)
             self.assertIn("not a collision", o.z_note)
 
-    def test_umc_flange_overlaps_the_board_by_exactly_0_45_mm(self) -> None:
-        umc = sg.flange_overlaps(layout())[0]
-        self.assertEqual(len(umc.overlap_rects), 1, "one strip at the lower flange edge")
-        rect = umc.overlap_rects[0]
-        self.assertAlmostEqual(rect.y1, 47.55, places=6)   # 53.5 - 11.90/2
-        self.assertAlmostEqual(rect.y2, 48.00, places=6)   # the notch bottom
-        self.assertAlmostEqual(rect.height, 0.45, places=6)
-        self.assertAlmostEqual(rect.x1, -24.15, places=6)
-        self.assertAlmostEqual(rect.x2, 14.15, places=6)
-        self.assertAlmostEqual(umc.max_overlap_y_mm, 0.45, places=6)
-        self.assertAlmostEqual(umc.overlap_area_mm2, 38.30 * 0.45, places=6)
+    def test_neither_908_flange_projects_over_board_material(self) -> None:
+        """Both flanges sit inside the cut, so the plan overlap is empty.
 
-    def test_the_plus_35_flange_also_overlaps_beside_the_notch(self) -> None:
-        hub = sg.flange_overlaps(layout())[1]
-        self.assertEqual(len(hub.overlap_rects), 2)
-        lower, right = hub.overlap_rects
-        self.assertAlmostEqual(lower.height, 0.45, places=6)
-        self.assertAlmostEqual(right.x1, 50.0, places=6)   # notch right edge
-        self.assertAlmostEqual(right.x2, 54.15, places=6)  # 35 + 38.30/2
-        self.assertAlmostEqual(right.height, 8.0, places=6)
-        self.assertAlmostEqual(hub.overlap_area_mm2, 50.435, places=6)
+        This is still an XY PROJECTION, not a fit: the flange depth is not in the
+        drawing, so `test_the_projection_is_undetermined_in_three_dimensions`
+        keeps the 3D verdict undetermined.
+        """
+        data = layout()
+        opening, front = data["frontBoardOpening"], data["frontPcb"]
+        for overlap in sg.flange_overlaps(data):
+            self.assertEqual(overlap.overlap_rects, (), overlap.feedthrough_id)
+            self.assertAlmostEqual(overlap.overlap_area_mm2, 0.0, places=6,
+                                   msg=overlap.feedthrough_id)
+            self.assertAlmostEqual(overlap.max_overlap_x_mm, 0.0, places=6,
+                                   msg=overlap.feedthrough_id)
+            self.assertAlmostEqual(overlap.max_overlap_y_mm, 0.0, places=6,
+                                   msg=overlap.feedthrough_id)
+            # ... and it really is inside the cut in X and above its bottom edge
+            self.assertGreater(overlap.flange.x1, opening["left"], overlap.feedthrough_id)
+            self.assertLess(overlap.flange.x2, opening["right"], overlap.feedthrough_id)
+            self.assertGreater(overlap.flange.y1, opening["bottom"], overlap.feedthrough_id)
+            # the flange still reaches past the board's TOP edge, which is why the
+            # open question is the flange depth, not the plan area
+            self.assertGreater(overlap.flange.y2, front["height"] / 2,
+                               overlap.feedthrough_id)
+
+    def test_a_flange_moved_over_a_leg_projects_a_strip(self) -> None:
+        """The flange follows its feedthrough: move it over a leg and it overlaps.
+
+        This replaces the pre-respin "+35 mm flange overlaps beside the notch"
+        check: the strip is bounded by the cut's right edge on one side and the
+        board's top edge on the other, both read from the layout.
+        """
+        data = copy.deepcopy(layout())
+        opening, front = data["frontBoardOpening"], data["frontPcb"]
+        half_w, half_h = front["width"] / 2, front["height"] / 2
+        for f in data["feedthroughs"]:
+            if f["id"] == "MIDI HUB USB":
+                f["x"] = (opening["right"] + half_w) / 2   # the middle of the right leg
+        hub = sg.flange_overlaps(data)[1]
+        self.assertEqual(len(hub.overlap_rects), 1)
+        strip = hub.overlap_rects[0]
+        self.assertAlmostEqual(strip.x1, opening["right"], places=6)
+        self.assertAlmostEqual(strip.x2, half_w, places=6)        # the board's top-right corner
+        self.assertAlmostEqual(strip.y1, hub.flange.y1, places=6)  # 53.5 - 11.90/2
+        self.assertAlmostEqual(strip.y2, half_h, places=6)         # the board's top edge
+        self.assertAlmostEqual(hub.overlap_area_mm2,
+                               (half_w - opening["right"]) * (half_h - hub.flange.y1),
+                               places=6)
 
     def test_the_projection_is_undetermined_in_three_dimensions(self) -> None:
         reports = {f"{p.a}|{p.b}": p for p in sg.pair_reports(layout())}
@@ -399,54 +457,102 @@ class FlangeProjectionTest(unittest.TestCase):
 
 
 class FlangeMutationTest(unittest.TestCase):
-    """The 0.45 mm overlap is geometry, not a threshold: mutate it and watch it move."""
+    """The strip is geometry read from the cut edge, not a threshold: move the edge."""
 
-    def test_raising_the_feedthrough_by_0_45_mm_removes_the_bottom_strip(self) -> None:
-        data = copy.deepcopy(layout())
-        for f in data["feedthroughs"]:
-            f["y"] += 0.45
-        umc = sg.flange_overlaps(data)[0]
+    @staticmethod
+    def _leg_strip_height(data: dict, flange: sg.Rect) -> float:
+        """How tall a leg strip can get: flange lower edge to the board's top edge."""
+        return data["frontPcb"]["height"] / 2 - flange.y1
+
+    def _with_left_edge_through(self, base: dict, flange: sg.Rect, dx: float) -> dict:
+        """Move the cut's left (leg) edge to `flange.x1 + dx`."""
+        data = copy.deepcopy(base)
+        data["frontBoardOpening"]["left"] = flange.x1 + dx
+        return data
+
+    def test_a_cut_edge_exactly_on_the_flange_edge_is_not_an_overlap(self) -> None:
+        base = layout()
+        flange = sg.flange_overlaps(base)[0].flange
+        umc = sg.flange_overlaps(self._with_left_edge_through(base, flange, 0.0))[0]
         self.assertEqual(umc.overlap_rects, (),
-                         "the flange lower edge now sits exactly on the notch bottom")
-        self.assertAlmostEqual(umc.overlap_area_mm2, 0.0)
-        self.assertEqual(umc.max_overlap_y_mm, 0.0)
+                         "a cut edge on the flange edge is contact, not overlap")
+        self.assertAlmostEqual(umc.overlap_area_mm2, 0.0, places=6)
+        self.assertAlmostEqual(umc.max_overlap_x_mm, 0.0, places=6)
 
-    def test_raising_the_feedthrough_by_0_44_mm_leaves_a_0_01_mm_strip(self) -> None:
-        data = copy.deepcopy(layout())
-        for f in data["feedthroughs"]:
-            f["y"] += 0.44
+    def test_a_cut_edge_0_01_mm_inside_the_flange_leaves_a_0_01_mm_strip(self) -> None:
+        """0.01 mm of penetration is 0.01 mm of strip: nothing rounds it away."""
+        base = layout()
+        flange = sg.flange_overlaps(base)[0].flange
+        umc = sg.flange_overlaps(self._with_left_edge_through(base, flange, 0.01))[0]
+        self.assertEqual(len(umc.overlap_rects), 1)
+        self.assertAlmostEqual(umc.max_overlap_x_mm, 0.01, places=9)
+        self.assertAlmostEqual(umc.overlap_area_mm2,
+                               0.01 * self._leg_strip_height(base, flange), places=9)
+
+    def test_a_cut_edge_0_45_mm_inside_the_flange_leaves_the_0_45_mm_strip(self) -> None:
+        """The reviewed 0.45 mm projection, now measured across the cut's X edge."""
+        base = layout()
+        flange = sg.flange_overlaps(base)[0].flange
+        umc = sg.flange_overlaps(self._with_left_edge_through(base, flange, 0.45))[0]
+        self.assertEqual(len(umc.overlap_rects), 1)
+        strip = umc.overlap_rects[0]
+        self.assertAlmostEqual(strip.x1, flange.x1, places=6)
+        self.assertAlmostEqual(strip.x2, flange.x1 + 0.45, places=6)
+        self.assertAlmostEqual(umc.max_overlap_x_mm, 0.45, places=6)
+        self.assertAlmostEqual(umc.overlap_area_mm2,
+                               0.45 * self._leg_strip_height(base, flange), places=6)
+
+    def test_the_whole_flange_over_a_leg_gives_the_full_flange_area(self) -> None:
+        """Penetration is capped by the flange itself, never by a constant."""
+        base = layout()
+        flange = sg.flange_overlaps(base)[0].flange
+        umc = sg.flange_overlaps(self._with_left_edge_through(base, flange,
+                                                             flange.width))[0]
+        self.assertEqual(len(umc.overlap_rects), 1)
+        self.assertAlmostEqual(umc.max_overlap_x_mm, flange.width, places=6)
+        self.assertAlmostEqual(umc.overlap_area_mm2,
+                               flange.width * self._leg_strip_height(base, flange),
+                               places=6)
+
+    def test_the_pre_respin_notch_bottom_reproduces_the_documented_0_45_mm(self) -> None:
+        """The historical 0.45 mm / 17.235 mm2 came from the notch, not the code.
+
+        Moving the cut's Y edge back to where the pre-respin notch's bottom edge
+        was (the flange's lower edge + the documented 0.45 mm) reproduces exactly
+        those figures; the canonical edge leaves nothing.
+        """
+        base = layout()
+        flange = sg.flange_overlaps(base)[0].flange
+        self.assertEqual(sg.flange_overlaps(base)[0].overlap_rects, ())
+        data = copy.deepcopy(base)
+        data["frontBoardOpening"]["bottom"] = flange.y1 + 0.45
         umc = sg.flange_overlaps(data)[0]
         self.assertEqual(len(umc.overlap_rects), 1)
-        self.assertAlmostEqual(umc.max_overlap_y_mm, 0.01, places=9)
-        self.assertAlmostEqual(umc.overlap_area_mm2, 0.383, places=9)
+        self.assertAlmostEqual(umc.max_overlap_y_mm, 0.45, places=6)
+        self.assertAlmostEqual(umc.overlap_area_mm2, 17.235, places=6)
 
-    def test_lowering_the_feedthrough_by_0_45_mm_doubles_nothing_but_adds_0_9(self) -> None:
-        data = copy.deepcopy(layout())
-        for f in data["feedthroughs"]:
-            f["y"] -= 0.45
-        umc = sg.flange_overlaps(data)[0]
-        self.assertAlmostEqual(umc.max_overlap_y_mm, 0.90, places=6)
+    def test_a_lowered_cut_edge_removes_the_strip_again(self) -> None:
+        base = layout()
+        flange = sg.flange_overlaps(base)[0].flange
+        lowered = copy.deepcopy(base)
+        lowered["frontBoardOpening"]["bottom"] = flange.y1 - 0.45
+        self.assertLess(lowered["frontBoardOpening"]["bottom"], flange.y1)
+        self.assertEqual(sg.flange_overlaps(lowered)[0].overlap_rects, ())
 
-    def test_a_raised_notch_bottom_grows_the_same_overlap(self) -> None:
-        """The overlap is read from the notch in the data, never hardcoded."""
-        data = copy.deepcopy(layout())
-        data["notchBounds"]["bottom"] = 49.0
-        umc = sg.flange_overlaps(data)[0]
-        self.assertAlmostEqual(umc.max_overlap_y_mm, 1.45, places=6)
-
-    def test_a_lowered_notch_bottom_removes_the_overlap(self) -> None:
-        data = copy.deepcopy(layout())
-        data["notchBounds"]["bottom"] = 47.0
-        umc = sg.flange_overlaps(data)[0]
-        self.assertEqual(umc.overlap_rects, ())
-
-    def test_a_widened_notch_removes_the_plus_35_side_strip(self) -> None:
-        data = copy.deepcopy(layout())
-        data["notchBounds"]["right"] = 55.0
-        hub = sg.flange_overlaps(data)[1]
-        self.assertEqual(len(hub.overlap_rects), 1)
-        self.assertAlmostEqual(hub.max_overlap_y_mm, 0.45, places=6)
-        self.assertAlmostEqual(hub.overlap_area_mm2, 38.30 * 0.45, places=6)
+    def test_widening_the_cut_edge_past_the_hub_flange_removes_the_side_strip(self) -> None:
+        """A narrowed cut edge turns the hub's side strip on; widening removes it."""
+        base = layout()
+        hub_flange = sg.flange_overlaps(base)[1].flange
+        narrowed = copy.deepcopy(base)
+        narrowed["frontBoardOpening"]["right"] = hub_flange.x2 - 0.15
+        strip = sg.flange_overlaps(narrowed)[1]
+        self.assertEqual(len(strip.overlap_rects), 1)
+        self.assertAlmostEqual(strip.max_overlap_x_mm, 0.15, places=6)
+        # widening the cut back past the flange removes it again
+        self.assertGreater(base["frontBoardOpening"]["right"], hub_flange.x2)
+        widened = copy.deepcopy(narrowed)
+        widened["frontBoardOpening"]["right"] = base["frontBoardOpening"]["right"]
+        self.assertEqual(sg.flange_overlaps(widened)[1].overlap_rects, ())
 
 
 class CoordinateDriftTest(unittest.TestCase):
@@ -482,12 +588,12 @@ class CoordinateDriftTest(unittest.TestCase):
 
     def test_envelope_z_follows_the_provisional_chain(self) -> None:
         env = sg.assembly_envelopes(layout())
-        self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.lo, 19.05)
-        self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.hi, 20.65)
+        self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.lo, 10.0)   # frontBoardTop
+        self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.hi, 11.6)   # frontBoardRear
         self.assertAlmostEqual(env["DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z"].z.hi, 14.05)
-        # 20.65 mm front-board rear face + the direct 2 x 13 pair's 11.20 mm
+        # 11.60 mm front-board rear face + the direct 2 x 13 pair's 11.20 mm
         # nominal seat-to-seat drawing dimension (NOT a measured gap).
-        self.assertAlmostEqual(env["REAR_BOARD_PROVISIONAL_Z"].z.lo, 31.85)
+        self.assertAlmostEqual(env["REAR_BOARD_PROVISIONAL_Z"].z.lo, 22.8)
         self.assertAlmostEqual(env["PANEL_30HP_3U"].z.hi, 1.6)
 
     def test_the_light_pipe_is_not_drawn_as_a_placed_body(self) -> None:
@@ -685,21 +791,29 @@ class DisplayMountGapTest(unittest.TestCase):
     def test_the_model_gap_is_measured_from_the_drawn_planes(self) -> None:
         gap = sg.display_mount_gap(layout())
         self.assertAlmostEqual(gap["boss_rear_z_mm"], 10.24, places=6)
-        self.assertAlmostEqual(gap["board_top_z_mm"], 19.05, places=6)
-        self.assertAlmostEqual(gap["model_gap_mm"], 8.81, places=6)
+        self.assertAlmostEqual(gap["board_top_z_mm"], 10.0, places=6)  # PROVISIONAL_Z
+        # the board's top face is 10.00 and the vendor boss rear plane 10.24: the
+        # drawn bodies OVERLAP by 0.24 mm, which is why no spacer is a fit
+        self.assertAlmostEqual(gap["model_gap_mm"], -0.24, places=6)
 
     def test_the_chain_candidate_is_a_different_chain(self) -> None:
         gap = sg.display_mount_gap(layout())
-        self.assertAlmostEqual(gap["design_chain_spacer_mm"], 5.00, places=6)
-        self.assertAlmostEqual(gap["design_chain_display_end_z_mm"], 14.05, places=6)
-        self.assertAlmostEqual(gap["residual_mm"], 3.81, places=6)
+        self.assertAlmostEqual(gap["design_chain_spacer_mm"], 8.75, places=6)
+        self.assertAlmostEqual(gap["design_chain_display_end_z_mm"], 1.25, places=6)
+        self.assertAlmostEqual(gap["residual_mm"], -8.99, places=6)
         self.assertFalse(gap["chains_agree"])
         self.assertIn("do not agree", gap["chains_agree_note"])
 
     def test_the_four_axes_are_the_exported_mount_holes(self) -> None:
-        gap = sg.display_mount_gap(layout())
-        self.assertEqual(gap["axes_xy"], [(-59.15, 41.9), (40.15, 41.9),
-                                          (-59.15, -19.9), (40.15, -19.9)])
+        data = layout()
+        gap = sg.display_mount_gap(data)
+        self.assertEqual(len(gap["axes_xy"]), 4)
+        self.assertEqual(gap["axes_xy"], [(h["x"], h["y"]) for h in data["lcdMountHoles"]])
+        # the pattern is the display boss pattern mirrored about the module centre
+        d = data["display"]
+        for x, y in gap["axes_xy"]:
+            self.assertAlmostEqual(abs(x - d["x"]), 49.65, places=6)
+            self.assertAlmostEqual(abs(y - d["y"]), 30.90, places=6)
 
     def test_the_placeholder_dimensions_are_assumed_not_specified(self) -> None:
         self.assertEqual(sg.DISPLAY_MOUNT_PLACEHOLDER["outer_diameter_mm"], 5.0)
@@ -713,9 +827,9 @@ class DisplayMountGapTest(unittest.TestCase):
     def test_the_document_records_the_placeholders_and_the_legend(self) -> None:
         doc = sg.assumptions_document(layout())
         block = doc["display_mount_placeholders"]
-        self.assertAlmostEqual(block["model_gap_mm"], 8.81, places=6)
-        self.assertAlmostEqual(block["design_chain_spacer_mm"], 5.0, places=6)
-        self.assertAlmostEqual(block["residual_mm"], 3.81, places=6)
+        self.assertAlmostEqual(block["model_gap_mm"], -0.24, places=6)
+        self.assertAlmostEqual(block["design_chain_spacer_mm"], 8.75, places=6)
+        self.assertAlmostEqual(block["residual_mm"], -8.99, places=6)
         self.assertFalse(block["chains_agree"])
         self.assertIn("ARITHMETIC", block["arithmetic_vs_proof"].upper())
         self.assertGreaterEqual(len(doc["body_legend"]), 6)
@@ -795,9 +909,16 @@ class AssumptionsDocumentTest(unittest.TestCase):
         self.assertIsNone(doc["flange_source"]["depth_mm"])
         self.assertEqual(len(doc["flange_projections"]), 2)
         umc = doc["flange_projections"][0]
+        # the display opening runs through the top edge, so the flange projects
+        # over no board material - but the verdict stays UNDETERMINED, because
+        # the drawing publishes no flange depth
         self.assertEqual(umc["status"], sg.UNDETERMINED)
-        self.assertAlmostEqual(umc["max_overlap_y_mm"], 0.45, places=6)
-        self.assertAlmostEqual(umc["board_overlap_area_mm2"], 38.30 * 0.45, places=6)
+        self.assertEqual(umc["board_overlap_rects_mm"], [])
+        self.assertAlmostEqual(umc["max_overlap_x_mm"], 0.0, places=6)
+        self.assertAlmostEqual(umc["max_overlap_y_mm"], 0.0, places=6)
+        self.assertAlmostEqual(umc["board_overlap_area_mm2"], 0.0, places=6)
+        self.assertAlmostEqual(umc["flange_y_mm"][0], 47.55, places=6)   # 53.5 - 11.90/2
+        self.assertAlmostEqual(umc["flange_y_mm"][1], 59.45, places=6)
 
     def test_no_pair_is_reported_as_a_collision_or_as_a_proven_fit(self) -> None:
         doc = sg.assumptions_document(layout())
@@ -820,7 +941,10 @@ class AssumptionsDocumentTest(unittest.TestCase):
         self.assertEqual(block["status"], "incomplete")
         self.assertIsNone(block["optical_gap_mm"])
         self.assertAlmostEqual(block["nominal_tip_z_mm"], 16.5, places=6)
-        self.assertAlmostEqual(block["nominal_tip_to_board_plane_mm"], 2.55, places=6)
+        # 10.00 mm provisional board face - 16.5 mm shaft: the tip is 6.50 mm
+        # BEHIND the board plane, so the selected part is too long for this stack
+        self.assertAlmostEqual(block["nominal_tip_to_board_plane_mm"], -6.5, places=6)
+        self.assertLess(block["nominal_tip_to_board_plane_mm"], 0.0)
         self.assertIn("PGN25L165", block["part"])
         self.assertIn("5350ad1f", block["source_sha256"])
         # the withdrawn subtraction must not come back as a field
@@ -881,7 +1005,7 @@ class UsbcCandidateTest(unittest.TestCase):
         self.assertAlmostEqual(flange.y.length, 10.2, places=6)
         self.assertAlmostEqual(flange.z.lo, 0.0, places=6)
         self.assertAlmostEqual(flange.z.hi, 5.0, places=6)
-        self.assertAlmostEqual(flange.x.centre, -38.0, places=6)  # panel cutout centre
+        self.assertAlmostEqual(flange.x.centre, -52.0, places=6)  # USB-C panel cutout centre
 
     def test_the_candidate_never_produces_a_definitive_result(self) -> None:
         reports = {f"{p.a}|{p.b}": p for p in

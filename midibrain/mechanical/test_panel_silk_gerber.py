@@ -20,8 +20,9 @@ To run only the pure parser and geometry tests (no bun, no export):
 
 Regression history: with the PLAY START label at y -42 the ink overlapped the
 POWER BUTTON opening by 0.862 mm (measured on the emitted file, not estimated).
-The mutation test below re-creates that geometry from the real export and must
-fail again if it ever returns.
+That button has since moved to (52, 49) and the 12.25 mm PLAY START opening took
+its place at (52, -34); the mutation test below drops the same label ink onto
+the opening that now sits in that column and must fail again.
 """
 from __future__ import annotations
 
@@ -46,13 +47,10 @@ ROOT = Path(__file__).resolve().parent.parent
 TSCIRCUIT = ROOT / "tscircuit"
 PANEL_JSON = TSCIRCUIT / "dist" / "panel" / "circuit.json"
 MIN_CLEARANCE_MM = 0.3
-# The PLAY START label row before the fix, and its current row.
-OLD_LABEL_Y = -42.0
-LABEL_SHIFT_MM = -16.5          # -25.5 -> -42
-# Overlap of the old label row with the POWER opening: -0.862 mm against the old
-# round 12.4 mm opening; -0.081 mm against the 12.25 mm square now. Still negative,
-# so the regression is still caught.
-OLD_OVERLAP_MM = -0.081
+# The PLAY START legend row, and the opening it has to clear. The mutation test
+# moves the SAME ink down onto that opening: a control legend belongs ABOVE or
+# BELOW its own opening (owner rule 2026-11-13), never on it.
+LABEL_ROW_Y = -25.5             # PLAY_START_LABEL_Y in lib/layout.ts
 BORDER_RECT_MM = (130.08, 126.5)
 
 # The Makefile passes MIDIBRAIN_BUNX so `make test BUN=/abs/path/bun` works even
@@ -344,10 +342,10 @@ class ClearanceGeometryTest(unittest.TestCase):
         openings = gs.openings_from_layout(layout)
         self.assertEqual(len(openings), len(layout["panelApertures"]) + len(layout["panelDrills"]))
         self.assertEqual(sum(1 for o in openings if o.kind == "polygon"), 1)
-        # 3 USB feedthroughs and 7 B3F-4055 button squares are rects; the rest are circles
-        # (9 apertures + 14 drills).
+        # 3 USB feedthroughs and 7 B3F-4055 button squares are rects; the rest are
+        # circles (9 apertures + 10 drills: 6 feedthrough screws and 4 RACK).
         self.assertEqual(sum(1 for o in openings if o.kind == "rect"), 10)
-        self.assertEqual(sum(1 for o in openings if o.kind == "circle"), 23)
+        self.assertEqual(sum(1 for o in openings if o.kind == "circle"), 19)
 
 
 class EmittedPanelSilkTest(unittest.TestCase):
@@ -417,48 +415,67 @@ class EmittedPanelSilkTest(unittest.TestCase):
 
         This is not a capability claim. It is why the JLC viewer and support
         must confirm CAM de-duplication before ordering (docs/mechanical-stack.md).
+        The three LED axes come from the canonical panel data, never a literal.
         """
         import re
         gerbers = self.silk.parent
         edges = (gerbers / "Edge_Cuts.gbr").read_text(errors="replace")
         drill = (gerbers / "drill_npth.drl").read_text(errors="replace")
-        radius = 1.3  # nominal Ø2.6
+        leds = [a for a in self.layout["panelApertures"] if a["name"].endswith(" LED")]
+        self.assertEqual(len(leds), 3, "three light pipes, three LED openings")
         # Numeric, so the exporter's leading-zero style cannot make this fragile.
         arcs = [(int(a), int(b), int(c))
                 for a, b, c in re.findall(r"X(-?\d+)Y(-?\d+)I(-?\d+)J-?\d+D01\*", edges)]
         scaled = [(x / 1e6, y / 1e6, i / 1e6) for x, y, i in arcs]
-        for x in (-41.0, -17.0, 31.0):
+        for led in leds:
+            x, y, radius = led["x"], led["y"], led["radius"]
+            self.assertAlmostEqual(radius * 2, 2.6, places=9)   # nominal Ø2.6
             endpoints = {(round(px, 3), round(py, 3))
                          for px, py, i in scaled
-                         if abs(abs(i) - radius) < 1e-6 and abs(py + 34.0) < 1e-6
+                         if abs(abs(i) - radius) < 1e-6 and abs(py - y) < 1e-6
                          and abs(px - (x - radius)) < 1e-6}
             self.assertTrue(endpoints, f"no routed arc of radius {radius} at x {x}")
-            self.assertIn(f"X{x:.4f}Y-34.0000", drill,
+            self.assertIn(f"X{x:.4f}Y{y:.4f}", drill,
                           "the LED circle is drilled in the NPTH file")
         self.assertIn("C2.600000", drill, "the NPTH tool is the nominal 2.6 mm")
 
-    def test_the_play_start_label_no_longer_crosses_the_power_button(self) -> None:
-        # every stroke in the label band must clear the POWER BUTTON opening
+    def test_the_play_start_label_clears_its_own_button(self) -> None:
+        # every stroke in the label band must clear the opening it belongs to
         band = [s for s in self.strokes
                 if 44.0 <= (s.x1 + s.x2) / 2 <= 60.0
                 and -27.5 <= (s.y1 + s.y2) / 2 <= -23.5]
         self.assertGreater(len(band), 20, "the PLAY START label band was not found")
-        power = next(o for o in self.openings if o.name == "POWER BUTTON")
-        worst = min(gs.stroke_clearance(s, power) for s in band)
+        play = next(o for o in self.openings if o.name == "PLAY START BUTTON")
+        worst = min(gs.stroke_clearance(s, play) for s in band)
         self.assertGreaterEqual(worst, MIN_CLEARANCE_MM)
+        self.assertAlmostEqual((min(min(s.y1, s.y2) for s in band)
+                                + max(max(s.y1, s.y2) for s in band)) / 2,
+                               LABEL_ROW_Y, delta=0.2,
+                               msg="the PLAY START legend row moved")
 
     def test_mutation_the_old_label_row_fails(self) -> None:
-        """The exact regression: shift the label strokes back to y -42."""
+        """The regression class: a legend row ON its own opening must fail.
+
+        The pre-fix row (y -42) crossed the round POWER BUTTON opening by
+        0.862 mm. POWER is now at (52, 49) and the 12.25 mm PLAY START opening
+        holds that column at (52, -34), so the mutation moves the SAME ink onto
+        the opening that replaced it. Every stroke then lies over the opening,
+        which is a clearance of minus the pen radius - never positive.
+        """
         band = [s for s in self.strokes
                 if 44.0 <= (s.x1 + s.x2) / 2 <= 60.0
                 and -27.5 <= (s.y1 + s.y2) / 2 <= -23.5]
-        moved = [gs.Stroke(s.x1, s.y1 + LABEL_SHIFT_MM, s.x2, s.y2 + LABEL_SHIFT_MM,
-                           s.width, s.kind) for s in band]
-        power = next(o for o in self.openings if o.name == "POWER BUTTON")
-        worst = min(gs.stroke_clearance(s, power) for s in moved)
-        self.assertLess(worst, 0.0, "the old label row must overlap the POWER BUTTON")
-        self.assertAlmostEqual(worst, OLD_OVERLAP_MM, delta=0.05)
-        self.assertTrue(gs.violations(moved, [power], MIN_CLEARANCE_MM))
+        self.assertGreater(len(band), 20, "the PLAY START label band was not found")
+        play = next(o for o in self.openings if o.name == "PLAY START BUTTON")
+        row_y = (min(min(s.y1, s.y2) for s in band)
+                 + max(max(s.y1, s.y2) for s in band)) / 2
+        shift = (play.y1 + play.y2) / 2 - row_y
+        moved = [gs.Stroke(s.x1, s.y1 + shift, s.x2, s.y2 + shift, s.width, s.kind)
+                 for s in band]
+        worst = min(gs.stroke_clearance(s, play) for s in moved)
+        self.assertLess(worst, 0.0, "a legend on its own opening must overlap it")
+        self.assertAlmostEqual(worst, -max(s.radius for s in moved), places=6)
+        self.assertEqual(len(gs.violations(moved, [play], MIN_CLEARANCE_MM)), len(moved))
 
 
 class NegativeControlTest(unittest.TestCase):

@@ -7,7 +7,8 @@ The rules under test:
 
   * the datum is the panel FRONT face with +Z rearward;
   * the nominal tip plane is the SHAFT length 16.5, not the overall 17.5;
-  * the nominal tip-to-board-plane distance is 2.55 mm and is NOT an LED gap;
+  * the nominal tip-to-board-plane distance is -6.50 mm (the provisional board
+    face is 10.00, the tip 16.5) and is NOT an LED gap;
   * the optical gap is None and the status incomplete while any plane or the
     stack tolerance is unrecorded,
   * an LED rises TOWARD the panel, so its height SUBTRACTS from the board plane;
@@ -64,7 +65,10 @@ class DocumentedOnlyTest(unittest.TestCase):
     def test_the_nominal_planes_are_still_reported(self) -> None:
         result = lp.compute_reach(lp.ReachInputs.from_layout())
         self.assertAlmostEqual(result.nominal_tip_z_mm, 16.5, places=6)
-        self.assertAlmostEqual(result.nominal_tip_to_board_plane_mm, 2.55, places=6)
+        # 10.00 mm provisional board face - 16.5 mm shaft = -6.50 mm: the tip is
+        # BEHIND the board plane, i.e. the selected part is too long for this stack
+        self.assertAlmostEqual(result.nominal_tip_to_board_plane_mm, -6.5, places=6)
+        self.assertLess(result.nominal_tip_to_board_plane_mm, 0.0)
         # a MEASURED seat does not exist yet, so the measured planes are None
         self.assertIsNone(result.tip_z_mm)
         self.assertIsNone(result.tip_to_board_plane_mm)
@@ -79,8 +83,8 @@ class DocumentedOnlyTest(unittest.TestCase):
 
     def test_tip_to_board_is_not_called_an_led_gap(self) -> None:
         result = lp.compute_reach(lp.ReachInputs.from_layout())
-        self.assertAlmostEqual(result.nominal_tip_to_board_plane_mm, 2.55, places=6)
-        self.assertIsNone(result.optical_gap_mm, "2.55 mm must never be reported as an LED gap")
+        self.assertAlmostEqual(result.nominal_tip_to_board_plane_mm, -6.5, places=6)
+        self.assertIsNone(result.optical_gap_mm, "-6.50 mm must never be reported as an LED gap")
 
     def test_there_is_no_gap_minus_length_field(self) -> None:
         result = lp.compute_reach(lp.ReachInputs.from_layout())
@@ -282,7 +286,8 @@ class ReportTest(unittest.TestCase):
         self.assertIn("PGN25L165", lines)
         self.assertIn("16.50 mm", lines)
         self.assertIn("17.50 mm", lines)
-        self.assertIn("2.55 mm", lines)
+        # the current board face (10.00) puts the tip 6.50 mm BEHIND the plane
+        self.assertIn("-6.50 mm", lines)
         self.assertIn("None", lines)
         self.assertIn("incomplete", lines)
         self.assertIn("NOT an LED gap", lines)
@@ -338,9 +343,14 @@ class SourceMetadataTest(unittest.TestCase):
             # the intended nominal geometry, and nothing about a tolerance band
             self.assertAlmostEqual(aperture["radius"] * 2, 2.6, places=9)
             self.assertNotIn("tolerance", json.dumps(aperture).lower())
-        # the reach model carries no manufacturing promise
-        self.assertIsNone(layout["lightPipeReach"]["opticalGap"])
-        self.assertEqual(layout["lightPipeReach"]["status"], "incomplete")
+        # the reach model carries no manufacturing promise, and it records WHY it
+        # is incomplete: the tip plane is behind the board plane
+        reach = layout["lightPipeReach"]
+        self.assertIsNone(reach["opticalGap"])
+        self.assertTrue(reach["status"].startswith(lp.INCOMPLETE), reach["status"])
+        self.assertIn("too long for this stack", reach["status"])
+        self.assertLess(reach["nominalTipToBoardPlane"], 0.0)
+        self.assertLess(reach["requiredShaftLength"], reach["shaftLength"])
 
     def test_the_record_states_the_provisional_status_and_gaps(self) -> None:
         ref = json.loads(REFERENCE.read_text())
