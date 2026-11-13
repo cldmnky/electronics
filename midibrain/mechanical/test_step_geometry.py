@@ -163,7 +163,7 @@ class CanonicalDataTest(unittest.TestCase):
                 # PLAY START keeps the right column's x at the transport row
                 (52, -34),
                 # the right control column at x 52: SHIFT/EXIT, NAV, TEMPO, POWER
-                (52, -5), (52, 12), (52, 31), (52, 49),
+                (52, -5), (52, 12), (52, 31), (52, 48.9),
                 # the grouped jack block: MIDI_JACK_LEFT_X -62 + 12 mm pitch
                 (-62, -47.5), (-50, -47.5), (-38, -47.5), (-26, -47.5)):
             self.assertIn(centre, centres, f"control centre {centre} moved")

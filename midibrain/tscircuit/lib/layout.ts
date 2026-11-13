@@ -1336,7 +1336,11 @@ export const PLAY_START = { button: "PLAY START", x: RIGHT_COLUMN.x } as const
 // reads as its own control at the top of the leg. Its panel legend prints ABOVE
 // the opening (owner rule 2026-11-13); the offset is LABEL_OFFSET.button in the
 // panel-label block below.
-export const POWER_BUTTON = { x: RIGHT_COLUMN.x, y: 49, rotation: 0 } as const
+// y 48.9, not 49.0: the B3F-4055 footprint draws its body outline 6.5 mm above
+// the part centre, so at 49.0 that line sat at y 55.50 - exactly the 0.5 mm
+// guard the release silk gate allows, which it then failed on rounding. 48.9
+// leaves 0.6 mm to the board edge and changes nothing an operator can feel.
+export const POWER_BUTTON = { x: RIGHT_COLUMN.x, y: 48.9, rotation: 0 } as const
 
 // ---- Transport / MIDI columns under the display ----
 // Four equally spaced columns; each column shares its X between the transport

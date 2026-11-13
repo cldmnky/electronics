@@ -140,10 +140,10 @@ test("the canonical apertures cover every opening class with its own diameter", 
   expect(lcd?.points?.length).toBe(28)
   const positions = PANEL_APERTURES.filter(a => a.shape !== "polygon").map(a => `${a.x},${a.y}`)
   // Control centres come from the shared constants. The right control column
-  // is explicit (TEMPO 31, NAV 12, SHIFT/EXIT -5); POWER moved to (52, 49), the
+  // is explicit (TEMPO 31, NAV 12, SHIFT/EXIT -5); POWER sits at (52, 48.9) - 49
   // transport row is centred on the U opening (-46/-22/2/26) and the jacks are
   // their own block 12 mm apart from -62.
-  for (const p of ["52,31", "52,12", "52,-5", "52,-34", "52,49",
+  for (const p of ["52,31", "52,12", "52,-5", "52,-34", "52,48.9",
                    "-46,-34", "-22,-34", "2,-34", "26,-34",
                    "-62,-47.5", "-50,-47.5", "-38,-47.5", "-26,-47.5"]) {
     expect(positions).toContain(p)
