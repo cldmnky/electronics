@@ -23,8 +23,6 @@
 // assembled is unverified: see docs/ELECTRICAL-VERIFICATION.md and acceptance
 // item `probe_point_access`.
 
-import { PI_PCB_BOX } from "./layout"
-
 /** Drill of every probe point, in mm (also a valid JLCPCB plated drill). */
 export const PROBE_HOLE_DIAMETER_MM = 0.8
 /** Copper pad diameter of every probe point, in mm. */
@@ -64,7 +62,7 @@ export type ProbePoint = {
 // empty top-left block (logic: two columns 5 mm apart, 5 rows 3 mm apart) and
 // in the open pocket right of the Pico USB plug (MIDI: two rows of 3 mm pitch).
 // No two pads are closer than 3 mm anywhere. Neither block is under the Pico
-// module, the Pi PCB or either ribbon connector; see PROBE_KEEPOUTS.
+// module, the J_PI body or either ribbon connector; see PROBE_KEEPOUTS.
 // The built-pad checker separately checks spacing from mounting holes. Cable
 // clearance and actual probe access remain subject to physical qualification. The nearest neighbour of every pad is
 // measured by `lib/probe-points.test.ts` and by `check_electrical.py` on the
@@ -155,10 +153,6 @@ export const PROBE_KEEPOUTS: Readonly<Record<string, Box & { readonly note: stri
   pico_usb_plug: {
     x1: -43.5, y1: -45, x2: -35.5, y2: -25.5,
     note: "micro-USB plug envelope in front of the Pico's USB end (module pin 1 end, y = -25.5); the cable is used for Pico programming and the USB case of acceptance item scope_spi",
-  },
-  pi_pcb: {
-    x1: PI_PCB_BOX.x1, y1: PI_PCB_BOX.y1, x2: PI_PCB_BOX.x2, y2: PI_PCB_BOX.y2,
-    note: "Raspberry Pi 5 PCB envelope from layout.ts PI_PCB_BOX: portrait, 56.5 mm across X, 85.6 mm along Y, about PI_MOUNT. Planning bound, not a measurement",
   },
   j_pi_body: {
     x1: -26, y1: 45, x2: 26, y2: 53,

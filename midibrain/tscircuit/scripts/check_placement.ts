@@ -16,7 +16,6 @@ import {
   midiJackX,
   PANEL_LCD_CUTOUT,
   PANEL_CUTOUTS,
-  PI_HOLES,
   OUT_RING,
   PANEL,
   PANEL_LABELS,
@@ -61,6 +60,7 @@ const rear = read("dist/index/circuit.json")
 // ---- Panel openings ----
 const cutouts = byType(panel, "pcb_cutout")
 const circles = (radius: number) => cutouts.filter(c => c.shape === "circle" && close(c.radius, radius))
+const squares = (side: number) => cutouts.filter(c => c.shape === "rect" && close(c.width, side) && close(c.height, side))
 
 // LCD glass aperture. tscircuit has no rounded-rect cutout, so the panel emits
 // a rounded-rect polygon (see lib/layout.ts); this check proves the BUILT
@@ -126,9 +126,9 @@ const buttonOpenings = [
   { x: POWER_BUTTON.x, y: POWER_BUTTON.y },
 ]
 for (const p of buttonOpenings) {
-  at(`panel: button opening Ø${PANEL_CUTOUTS.button}`, centre(circles(PANEL_CUTOUTS.button / 2).find(c => close(c.center.x, p.x) && close(c.center.y, p.y))), p)
+  at(`panel: ${PANEL_CUTOUTS.button} mm square button opening`, centre(squares(PANEL_CUTOUTS.button).find(c => close(c.center.x, p.x) && close(c.center.y, p.y))), p)
 }
-ok(`panel: ${buttonOpenings.length} button openings, no extras`, circles(PANEL_CUTOUTS.button / 2).length === buttonOpenings.length)
+ok(`panel: ${buttonOpenings.length} button openings, no extras`, squares(PANEL_CUTOUTS.button).length === buttonOpenings.length)
 
 // LED light-pipe openings BESIDE REC / OVER DUB / PLAY (fallback 3): the
 // glass-derived window owns the row above the transport buttons.
@@ -266,10 +266,9 @@ const rearHoles = byType(rear, "pcb_hole").filter(h => close(h.hole_diameter, 2.
 for (const h of FRONT_REAR_MOUNT) {
   at(`rear: shared mount hole at (${h.x}, ${h.y})`, rearHoles.find(hh => close(hh.x, h.x) && close(hh.y, h.y)), h)
 }
-// Pi holes follow the portrait-shifted grid from the shared source.
-for (const h of PI_HOLES) {
-  at(`rear: Pi hole at (${h.x}, ${h.y})`, rearHoles.find(hh => close(hh.x, h.x) && close(hh.y, h.y)), h)
-}
+// The Pi is on its own mounting panel now, so the rear board carries no Pi
+// holes: its only 2.7 mm holes are the shared front/rear mount grid.
+ok("rear: no Pi holes (the Pi is on the 20HP mounting panel)", rearHoles.length === FRONT_REAR_MOUNT.length)
 for (const x of FEEDTHROUGH_BRACKET.mountX) {
   at("front: bracket mount hole", holes.find(hh => close(hh.x, x) && close(hh.y, FEEDTHROUGH_BRACKET.mountY)), { x, y: FEEDTHROUGH_BRACKET.mountY })
 }

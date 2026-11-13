@@ -296,7 +296,9 @@ def cases() -> list[tuple[str, str, callable]]:
     def probe_rx2_inside_pi(dist: Path) -> None:
         circuit = load(dist, "index")
         pad = pad_of(circuit, "TP14")
-        pad["x"], pad["y"] = -20.0, -33.0
+        # Inside the J_PI body envelope (PROBE_KEEPOUTS j_pi_body). The Pi no
+        # longer sits on this board, so there is no Pi envelope to test.
+        pad["x"], pad["y"] = 0.0, 49.0
         save(dist, "index", circuit)
 
     def probe_floating(dist: Path) -> None:
@@ -402,7 +404,7 @@ def cases() -> list[tuple[str, str, callable]]:
         ("probe pad inside the Pico envelope", "no probe pad sits in a Pico/Pi/connector envelope", probe_inside_pico),
         ("probe pad left floating", "TP14 is on a routed, already-existing net", probe_floating),
         ("MIDI TX2 point on the channel-1 net", "TP13 is on net MIDI_OUT_2_TX", probe_tx2_wrong_net),
-        ("MIDI RX2 point inside the Pi envelope", "no probe pad sits in a Pico/Pi/connector envelope", probe_rx2_inside_pi),
+        ("MIDI RX2 point inside the J_PI envelope", "no probe pad sits in a Pico/Pi/connector envelope", probe_rx2_inside_pi),
         ("probe point removed", "the probe-point set is exactly the approved pads", probe_renamed),
         ("two probe pads on one spot", "no two probe pads are closer than 3.0 mm", probe_overlap),
         ("invented probe part number", "TP2 carries no supplier or manufacturer part number", probe_invented_mpn),

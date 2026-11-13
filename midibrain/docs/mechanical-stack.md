@@ -14,8 +14,8 @@ X direction.
 |---|---|---|
 | Front panel | **30HP × 3U, 152.0 × 128.5 × 1.6 actual** (owner decision 2026-11-08, replaces the 32HP/162.56 mm panel of 2026-11-07) | Rail holes X ±68.58, Y ±61.25, Ø3.2 (spacing 137.16 = 27 × 5.08, the Doepfer multiple rule; 7.42 mm centre inset, 5.82 mm hole edge to panel edge). 152.0 is OUR ESTIMATE, 0.4 mm under the 152.4 mm nominal (0.2 mm per side): not a Doepfer-stated 30HP value, not owner-exact, not a mandate and not a guaranteed fit. Sources: [Doepfer A-100 mechanical information](https://doepfer.de/a100_man/a100m_e.htm) and its [hole figure A100FP.gif](https://doepfer.de/a100_man/A100FP.gif), which gives 128.5 mm height, a 7.5 mm horizontal and 3.0 mm vertical hole inset, and Ø3.2 mm holes but publishes no 30HP width. The fixed 27 × 5.08 grid on 152.0 mm gives 7.42 mm, i.e. **0.08 mm tighter than the figure's 7.5 mm** - disclosed, not corrected. Display window 107.22 × 68.87 mm centred on the module, unchanged. |
 | Front/UI PCB | **128 × 112 × 1.6 (unchanged)** | Four display mounting holes on the module's threaded SMTSO boss pattern: 99.30 × 61.80 mm centres (3.35 / 3.10 insets), i.e. layout x −49.65 / +49.65, y +30.90 / −30.90 from the module centre (−9.5, 11). The drawn 58.00 × 49.04 plain-hole pattern stays as the recorded alternative (`DISPLAY_STANDOFFS`). |
-| Rear/base PCB | 101.6 × 112 × 1.6 (20HP) | Pi hole grid 58 × 49 mm (portrait), Pico on the left. The Pi hole grid stays drilled as a **retained mechanical option**; the Pi itself moved to the mounting panel below (2026-11-12). |
-| Pi mounting panel | **20HP × 3U, 101.2 × 128.5 × 1.6 actual** (owner decision 2026-11-12) | Pure mechanical JLCPCB FR-4, no copper and no components, fabricated like the 30HP panel. Same width convention (20 × 5.08 − 0.4) and the same Doepfer rail-hole rule as the 30HP panel: X spacing 86.36 = 17 × 5.08 at the same 7.42 mm centre inset (holes ±43.18), Y ±61.25, Ø3.2. Pi 5 (with Active Cooler + M.2 HAT+ + NVMe SSD) bolts to the panel's **rear** face on standoffs on the 58 × 49 grid, **landscape** and centred (M2.5, Ø2.7). Source `tscircuit/pi-panel.circuit.tsx`, geometry `PI_PANEL_*` in `lib/layout.ts`, guard `lib/pi-panel.test.ts`. USB stays as-is on the 30HP panel: its three feedthroughs do not move. |
+| Rear/base PCB | 101.6 × 112 × 1.6 (20HP) | Pico sockets on the left, J_PI (40-pin ribbon header) at the top. The Pi and its hole grid are **not** on this board: the Pi moved to its own mounting panel on 2026-11-12, and the Pi holes were removed in the 2026-11 review fix. |
+| Pi mounting panel | **20HP × 3U, 101.2 × 128.5 × 1.6 actual** (owner decision 2026-11-12) | Pure mechanical JLCPCB FR-4, no copper and no components, fabricated like the 30HP panel. Same width convention (20 × 5.08 − 0.4) and the same Doepfer rail-hole rule as the 30HP panel: X spacing 86.36 = 17 × 5.08 at the same 7.42 mm centre inset (holes ±43.18), Y ±61.25, Ø3.2. Pi 5 (with Active Cooler + M.2 HAT+ + NVMe SSD) bolts to the panel's **rear** face on 3.5 mm candidate standoffs, **landscape** and mirrored (component side away from the panel): the Pi 5's 58 × 49 pattern (M2.5, Ø2.7) sits 10 mm toward +X, with holes at (−19, ±24.5) and (+39, ±24.5). The Pi board is ±42.5 × ±28 and its connectors reach −45.8…+44.2 × −29.7…+28 (`piBoardToPanel`; Pi 5 drawing RP-008347-DS-1, read from its vector data). Source `tscircuit/pi-panel.circuit.tsx`, geometry `PI_PANEL_*` in `lib/layout.ts`, guard `lib/pi-panel.test.ts`. USB stays as-is on the 30HP panel: its three feedthroughs do not move. |
 | Installed depth target | ≤110 mm | Target retained. Not verified; see the depth section. |
 
 Owner control centres are unchanged and must not be moved: transport buttons REC/OVER DUB/STOP/PLAY at
@@ -180,8 +180,8 @@ Display window (owner decision D1): the aperture follows the GLASS, not the 106 
 95.54 × 54.36 printed border. Window = glass + 0.9 mm per side = 107.22 × 68.87 mm, centred on the module at
 (−9.5, 11). Vertical fit: the glass-derived window is 68.87 mm against a 65.10 mm free band when the LED light pipes
 sit above the buttons, so the authorised fallback (3) was applied — the REC / OVER DUB / PLAY light pipes moved 12 mm
-beside their buttons. The band is then +49.70 (feedthrough cutout floor) to −27.80 (transport-button opening top) =
-77.50 mm, and the window keeps 4.365 mm to the button openings, 1.165 mm to the feedthrough labels (moved from y 44.0
+beside their buttons. The band is then +49.70 (feedthrough cutout floor) to −27.875 (transport-button opening top, 12.25 mm square) =
+77.575 mm, and the window keeps 4.44 mm to the button openings, 1.165 mm to the feedthrough labels (moved from y 44.0
 to 47.5) and 2.865 mm … 7.935 mm of panel web around it. Horizontal, all values recomputed from `mechanical/layout.json`: the window left edge −63.11 keeps **12.89 mm to the
 panel edge** (−76.0), a true perpendicular distance. Its **X projection** to the M3 rail-hole edge (66.98) is
 **3.87 mm**, but the rail hole sits at a different Y, so the true 2D distance from the emitted aperture polygon to the
@@ -217,7 +217,7 @@ The STEP features previously used for the FPC height were identified as TFT flex
 connector. The drawn planning marker is not on the placed vendor model's PCB-rear plane. Consequently neither the
 connector's location nor its clearance to J5 is established. The proposed front-board face change may also change
 which side carried J5. The owner has since required the direct 2 × 13 mate: the female socket is on the front board's
-bottom (rear-facing) face and the male header on the rear board's top face, opposite the Pi.
+bottom (rear-facing) face and the male header on the rear board's top face. The Pi no longer sits on this board (2026-11-12).
 
 The provisional stack puts the front-board top plane at Z = 19.05 mm, but that is not a measurement and does not
 prove a usable FPC bend corridor. The 120 mm 15→22 cable is a candidate, not an approved route. Measure the actual
@@ -257,38 +257,68 @@ board source, SMT side or stackup is changed for it:
 This needs an owner decision and a PCB revision. Until then the CAD model keeps the current board orientation and
 makes no compliance claim. Recorded in the assumptions file as `board_face_convention`.
 
-## Panel button opening — UNRESOLVED, provisional 12.4 mm round
+## Panel button opening: 12.25 mm square; actuator stack NOT resolved
 
-`PANEL_CUTOUTS.button = 12.4` is an **unverified provisional** value. No Omron
-drawing states a 12.4 mm round opening, and the primary data does not support
-one. Sources (retrieved 2026-11-08):
+Every B3F-4055 button (SW1–SW7) takes an Omron/ARATAS **B32-1380** key top: red,
+12 × 12 mm square, one per switch. The black equivalent is **B32-1310**; the
+Omron page 1 table places the red B32-1380 in the 12 × 12 mm column. Facts from
+the Omron B32 datasheet (SHA-256 `90834f79bcb19ed59fc242f0a005d8ca47fcdbf2f4583bc53695695bb675d28f`,
+re-read 2026-11-12, page 3):
 
-| Source | SHA-256 | What it states |
-|---|---|---|
-| [Omron B3F datasheet](https://omronfs.omron.com/en_US/ecb/products/pdf/en-b3f.pdf) | `be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f` | B3F-4055: projected plunger **square □3.8 ±0.1 mm**, body **12 ±0.2 mm square**, total height **7.3 ±0.2 mm** |
-| [Omron B32 datasheet](https://omronfs.omron.com/en_US/ecb/products/pdf/en-b32.pdf) | `90834f79bcb19ed59fc242f0a005d8ca47fcdbf2f4583bc53695695bb675d28f` | a **12 × 12 mm square key top** with a **12.2 × 12.2 mm +0.05/0** reference cutout, and a **Ø9.5 ±0.2 mm round key top** with a **Ø9.7 mm +0.05/0** reference cutout |
+| Fact | Value |
+|---|---|
+| Key top | 12 ±0.15 mm square |
+| **Reference: PC board to the panel FRONT face** | **10.0 ±0.4 mm** |
+| Panel thickness range | 1.0 to 2.0 mm |
+| Reference panel cutout | **12.2 +0.05/0 mm square** |
+| Corner radii | R0.5 on the key top, R0.2 on the skirt |
 
-Consequences, all unresolved:
+The 10.0 ±0.4 dimension is **not** a cap height. The reference drawing shows the
+panel's front face 10 mm above the PCB and the cap top just below the panel's
+rear face. With a 1.0–2.0 mm panel that puts the panel rear 8.0–9.0 mm above the
+PCB; Omron does not dimension the cap top, so no exact cap height is claimed
+here. The B3F-4055 datasheet (SHA-256
+`be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f`) is unchanged:
+a square 3.8 ±0.1 mm projected plunger on a 12 ±0.2 mm square body, 7.3 ±0.2 mm
+total switch height.
 
-- The plunger is **square**, and a square cap cannot pass a Ø12.4 mm round hole
-  (a 12.2 mm square's diagonal is 17.25 mm). The round opening is therefore not
-  demonstrated to accept any of the listed caps.
-- The cap families are **not selected**. Choosing one is an owner decision, and
-  it interacts with the opening shape and the stack.
-- The reference cutouts carry a **+0.05/0 mm** tolerance. This document does
-  **not** claim JLCPCB can hold 0.05 mm on a routed panel cutout; that is
-  unverified.
-- **Arithmetic only, with the physical stack unmeasured:** in the provisional
-  17.45 mm panel-rear-to-board-top gap, Omron's reference board-to-cap-face
-  figures put neither key top at the panel plane — square reference
-  **10.0 ±0.4 mm** leaves 17.45 − 10.0 = **7.45 mm** (7.05…7.85 mm range), and
-  round **11.5 ±0.4 mm** leaves 17.45 − 11.5 = **5.95 mm** (5.55…6.35 mm). These
-  are subtractions on a provisional gap, not measurements.
+**Panel opening.** `PANEL_CUTOUTS.button = 12.25` mm square (sharp corners; the
+cap's R0.5 corners sit inside the square). 12.25 is the top of Omron's
+12.2 +0.05/0 band, so the largest cap (12.15 mm) clears by 0.05 mm per side. The
+1.6 mm panel is inside the 1.0–2.0 mm range. The routed-square tolerance at
+JLCPCB is **not verified**; confirm it before ordering.
 
-The `control_actuator` acceptance item stays **pending**. The owner must choose a
-switch extension, a cap, or a stack redesign before the opening is changed. **Do
-not change Ø12.4 on the strength of this section**, and do not treat any value
-here as a fitted dimension.
+**Actuator stack: the board is about 9 mm too far behind the panel.** Z datum:
+panel front face Z = 0, +Z rearward. The front board top is at Z 19.05
+(`PROVISIONAL_Z`), so the board-to-panel-front distance is 19.05 mm and the
+board-to-panel-rear distance is 17.45 mm.
+
+| Quantity | Value |
+|---|---:|
+| Omron reference board-to-panel-front | 10.0 mm (9.6…10.4) |
+| Our provisional board-to-panel-front | 19.05 mm |
+| **Stack depth excess vs the reference** | **9.05 mm (8.65…9.45)** |
+| Omron reference panel rear above PCB (1.6 mm panel) | 8.4 mm |
+| Our provisional panel rear above PCB | 17.45 mm |
+
+If the board were at Omron's reference plane, its front face would be at Z 9.05
+(`BUTTON_STACK.omronReferencePanelFrontZ`). Our actual panel front is Z 0. The
+key top is not dimensioned, so the exact cap-to-panel gap is unknown: it is at
+least the 9.05 mm stack excess and must be measured on a fitted sample.
+Recorded as `BUTTON_STACK` in `lib/layout.ts` and guarded by `lib/layout.test.ts`.
+
+Options for the owner, none selected:
+
+- an actuator extension of about 9 mm (possibly more from the real cap top)
+  between the B3F-4055 plunger and the cap (no part chosen; it must keep the
+  3.8 mm plunger coupling and the panel 1.0–2.0 mm range);
+- a different actuator family with a longer projected travel;
+- a stack change. The front board sits 19.05 mm behind the panel front and the
+  display standoffs fix that height, so this is a mechanical redesign.
+
+The `control_actuator` acceptance item stays **pending**. Do not claim the buttons
+operate from the panel until an extension or stack change is recorded and the
+press is measured on a fitted sample.
 
 ## Board-to-board relationship
 
@@ -312,7 +342,7 @@ decision.
   question is the front board's own top-side parts and the female tail (3.20 mm from the seating face, i.e. a nominal
   1.60 mm beyond a 1.60 mm PCB, fillet unmeasured; see `display_fpc_idc` above).
 - Pi side of J_FRONT: the male tail is **3.00 mm from the connector seating face** (drawing 11091 sheet 1), so it
-  protrudes a **nominal 1.40 mm beyond a 1.60 mm rear PCB**; the 26 pads lie over the Pi PCB area. A **candidate** Pi
+  protrudes a **nominal 1.40 mm beyond a 1.60 mm rear PCB**; the 26 pads have no Pi board above them (the Pi is on its own panel). A **candidate** Pi
   spacer of 3.5 mm is recorded, but it is a candidate only and NOT a safety claim: the solder fillet height, the PCB
   thickness tolerance, the Pi hardware, the actual clearance, the Pi's own connectors and the cooler/HAT stack are all
   unmeasured, so this stays pending.
@@ -340,12 +370,10 @@ rear-most point:**
 | Harness allowance | 10 | Ribbon fold and cable bends at the module exit (feedthrough bracket slots); unmeasured. |
 | **Total from the panel front face** | **56.15** | `provisionalInstalledDepth()`; **54.55 mm behind the panel back** = `provisionalModuleDepthBehindPanel()`. |
 
-With the Pi on the mounting panel, the J_FRONT male tails (nominal 1.40 mm
+With the Pi on its own panel, the J_FRONT male tails (nominal 1.40 mm
 protrusion below the rear PCB) point into open air under the rear board. The
-3.5 mm `PI_SPACER_MM` belongs to the **retained rear-board Pi option** only
-(the hole grid is still drilled): if the Pi is ever remounted there, that
-option adds 5.1 + 20–30 mm to this chain again and is **not** the designed
-arrangement.
+rear board carries no Pi holes (removed in the 2026-11 review fix). The 3.5 mm
+`PI_SPACER_MM` is the candidate standoff of the **Pi mounting panel** only.
 
 **Pi mounting panel (20HP), its panel back face to the rear-most point:**
 
@@ -387,18 +415,22 @@ the Eurorack bus.
 The Pi 5 (Active Cooler + M.2 HAT+ + NVMe SSD) bolts to the **rear face** of
 its own pure-mechanical 20HP × 3U FR-4 panel (`tscircuit/pi-panel.circuit.tsx`,
 geometry `PI_PANEL_*` in `lib/layout.ts`). The panel carries no copper and no
-components; JLCPCB fabricates it like the 30HP panel. The Pi is **landscape**:
-the 85 mm edge runs across the panel, the GPIO header on the top edge (ribbon
-to `J_PI`), the DSI/PCIe FPCs on the bottom edge, USB-C + micro-HDMI at the
-left short edge and USB-A + RJ45 at the right, all plugs inserting in the
-panel plane. The rear board keeps its 58 × 49 Pi hole grid as a retained
-mechanical option for deeper cases only.
+components; JLCPCB fabricates it like the 30HP panel. The module sits **beside
+the main module in the same row** (the added HP), not behind it. The Pi is
+**landscape** with its component side away from the panel, so the panel sees
+it mirrored: the GPIO header runs along the panel's top edge (ribbon to
+`J_PI`), USB-C and micro-HDMI face the bottom edge, USB-A ×2 and RJ45 face the
+left edge (3.3 mm beyond the board), and the drawing's left edge (microSD side,
+1.7 mm beyond the board) faces the right edge. All plugs insert in the panel
+plane. The DSI and PCIe connector positions are not established by the drawing
+and are not claimed.
 
 **USB stays as-is on the 30HP panel**: the three feedthroughs (USB-C POWER,
 UMC AUDIO USB, MIDI HUB USB) do not move and no USB opening is added to the
-mounting panel. The harness between the two rack positions is six runs, all
-PLANNING lengths (adjacent rack positions put the run in the 150–350 mm
-class); nothing is measured or proven:
+mounting panel. The harness between the two modules is six runs, all PLANNING lengths (the
+modules sit side by side, so the run is a lateral route across the row;
+150–350 mm is a planning estimate for a chosen placement, not a measurement);
+nothing is measured or proven:
 
 | Run | From | To | Open points |
 |---|---|---|---|
@@ -412,7 +444,7 @@ class); nothing is measured or proven:
 The bundle leaves the main module through the feedthrough bracket's three
 cable slots (15.6 / 17.9 / 17.9 mm wide); their existing strain-relief holes
 can take the tie. The mounting panel itself needs no cable cutout: every run
-reaches the Pi behind it. Acceptance item `pi_panel_harness` carries the
+reaches the Pi module. Acceptance item `pi_panel_harness` carries the
 evidence list.
 
 ### Panel power header vs feedthrough bracket (blocked; `power_header_mount` pending)

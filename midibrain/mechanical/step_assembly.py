@@ -18,6 +18,9 @@ holds files it does not write):
     mockup-front-board.stl         1:1 front/UI board mockup
     mockup-rear-board.stl          1:1 rear/base board mockup
     scale-check-100mm.stl          100.00 x 10.00 x 3.00 mm printer scale bar
+    midibrain-pi-panel.step        the 20HP Pi mounting panel and a placeholder
+                                   Pi 5 board behind it (its own frame)
+    mockup-pi-panel.stl            1:1 Pi mounting panel mockup
     light-pipe-reach-gauge.stl     19.05 / 16.5 mm same-datum step gauge:
                                    provisional board near face and the nominal
                                    PGN25L165 tip plane; the 2.55 mm step is NOT
@@ -59,6 +62,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 import tempfile
 import zipfile
@@ -93,6 +97,11 @@ STL_FRONT = "mockup-front-board.stl"
 STL_REAR = "mockup-rear-board.stl"
 STL_SCALE = "scale-check-100mm.stl"
 STL_GAUGE = "light-pipe-reach-gauge.stl"
+PI_PANEL_STEP = "midibrain-pi-panel.step"
+STL_PI_PANEL = "mockup-pi-panel.stl"
+PI_PANEL_BODY = "PI_PANEL_20HP_3U"
+PI_BOARD_BODY = "PI5_BOARD_PLACEHOLDER_NON_APPROVED"
+COINCIDENCE_TOL_MM = 0.01
 ASSUMPTIONS = "assumptions.json"
 CHECKLIST = "print-checklist.md"
 
@@ -620,8 +629,6 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
     rear_wp = box(e.x.lo, e.y.lo, e.z.lo, e.x.hi, e.y.hi, e.z.hi)
     rear_holes = [(f"front-rear mount {i}", h, layout["mountHoleDiameter"])
                   for i, h in enumerate(layout["frontRearMount"])]
-    rear_holes += [(f"Pi mount hole {i}", h, layout["mountHoleDiameter"])
-                   for i, h in enumerate(layout["piHoles"])]
     for label, hole, diameter in rear_holes:
         tool = cylinder(hole["x"], hole["y"], e.z.lo - 1.0, e.z.hi + 1.0, diameter / 2)
         if rear_wp.val().intersect(tool.val()).Volume() <= VOLUME_EPS:
@@ -849,6 +856,102 @@ def build_reach_gauge(cq, layout: dict):
     return gauge
 
 
+# ---------------------------------------------------------------------------
+# The 20HP Pi mounting panel (owner decision 2026-11-12): a verification model in
+# its own frame. The panel, and a PLACEHOLDER Pi board hung behind it on
+# standoffs. The Pi board's holes are derived HERE in the board frame from the
+# drawing constants and mapped through the mirror. They must coincide with the
+# panel's holes in layout.json, so a mirror or pattern error fails the build.
+# ---------------------------------------------------------------------------
+def pi_board_to_panel(layout: dict, bx: float, by: float) -> tuple[float, float]:
+    """Component side AWAY from the panel: the board X is mirrored and both axes
+    are centred. Must match piBoardToPanel in tscircuit/lib/layout.ts."""
+    b = layout["piBoard"]
+    return (b["length"] / 2 - bx, by - b["width"] / 2)
+
+
+def board_hole_centres(layout: dict) -> list[tuple[float, float]]:
+    """The Pi 5's four mounting-hole centres in the BOARD frame (drawing)."""
+    b = layout["piBoard"]
+    i = b["holeInset"]
+    px, py = b["holePitch"]["x"], b["holePitch"]["y"]
+    return [(i, i), (i, i + py), (i + px, i), (i + px, i + py)]
+
+
+def build_pi_panel(cq, layout: dict) -> dict:
+    """Return the panel and placeholder Pi board solids and the checks made."""
+    pp = layout["piPanel"]
+    b = layout["piBoard"]
+    width, height, thick = float(pp["width"]), float(pp["height"]), float(pp["thickness"])
+    board_z = thick + float(layout["piSpacer"])   # candidate standoff, unmeasured
+    d_pi = float(pp["piMount"]["holeDiameter"])
+    d_rail = float(pp["railHoleDiameter"])
+
+    def cylinder(x, y, z1, z2, radius):
+        return (cq.Workplane("XY").workplane(offset=z1).center(x, y)
+                .circle(radius).extrude(z2 - z1))
+
+    # Z datum as the rest of the model: the panel front face is Z = 0, +Z rearward.
+    panel = cq.Workplane("XY").box(width, height, thick, centered=(True, True, False))
+    for h in pp["piMountHoles"]:
+        panel = panel.cut(cylinder(h["x"], h["y"], -1.0, thick + 1.0, d_pi / 2))
+    for h in pp["railHoles"]:
+        panel = panel.cut(cylinder(h["x"], h["y"], -1.0, thick + 1.0, d_rail / 2))
+    if panel.solids().size() != 1:
+        raise GeometryError(f"the Pi panel is {panel.solids().size()} solids")
+
+    board = (cq.Workplane("XY")
+             .box(b["length"], b["width"], b["thickness"], centered=(True, True, False))
+             .translate((0, 0, board_z)))
+    derived = []
+    for bx, by in board_hole_centres(layout):
+        x, y = pi_board_to_panel(layout, bx, by)
+        derived.append((x, y))
+        board = board.cut(cylinder(x, y, board_z - 1.0,
+                                   board_z + b["thickness"] + 1.0, b["holeDiameter"] / 2))
+
+    # Independent check: every board hole derived from the drawing lands on a
+    # panel hole, and the panel has no hole the board does not use.
+    panel_holes = [(float(h["x"]), float(h["y"])) for h in pp["piMountHoles"]]
+    worst = 0.0
+    for dx, dy in derived:
+        nearest = min(math.hypot(dx - px, dy - py) for px, py in panel_holes)
+        worst = max(worst, nearest)
+        if nearest > COINCIDENCE_TOL_MM:
+            raise GeometryError(
+                f"Pi hole derived from the drawing at ({dx:.3f}, {dy:.3f}) misses every "
+                f"panel hole by {nearest:.3f} mm: the mirror or the pattern is wrong")
+    if len(panel_holes) != len(derived):
+        raise GeometryError("the panel and the Pi board carry different hole counts")
+
+    # The board must sit inside the panel with its holes clear of the edges.
+    half_w, half_h = width / 2, height / 2
+    for x, y in derived:
+        if abs(x) >= half_w or abs(y) >= half_h:
+            raise GeometryError("a Pi hole lies outside the panel")
+    if b["length"] / 2 >= half_w or b["width"] / 2 >= half_h:
+        raise GeometryError("the Pi board does not fit inside the panel")
+
+    # The connector envelope recorded in layout.json must match the mirror too.
+    env = pp["piEnvelope"]
+    env_x1, _ = pi_board_to_panel(layout, b["length"] + layout["piProtrusion"]["right"], 0)
+    env_x2, _ = pi_board_to_panel(layout, -layout["piProtrusion"]["left"], 0)
+    if abs(env_x1 - env["x1"]) > COINCIDENCE_TOL_MM or abs(env_x2 - env["x2"]) > COINCIDENCE_TOL_MM:
+        raise GeometryError("piEnvelope in layout.json disagrees with the mirrored connector edges")
+
+    return {
+        "solids": {PI_PANEL_BODY: panel, PI_BOARD_BODY: board},
+        "checks": {
+            "mirrored_x": True,
+            "board_holes_derived_from_drawing": [list(map(lambda v: round(v, 3), p)) for p in derived],
+            "worst_hole_offset_mm": round(worst, 6),
+            "coincidence_tolerance_mm": COINCIDENCE_TOL_MM,
+            "board_z_mm": round(board_z, 3),
+            "standoff_mm_candidate": float(layout["piSpacer"]),
+        },
+    }
+
+
 def export_assembly(cq, solids: dict, path: Path) -> None:
     assy = cq.Assembly()
     palette = {
@@ -933,6 +1036,7 @@ def main(argv: list[str] | None = None) -> int:
         built = build(cq, layout, display_step, args.usbc_candidate_envelope)
         gauge = build_reach_gauge(cq, layout)
         scale = build_scale_check(cq)
+        pi_panel = build_pi_panel(cq, layout)
     except GeometryError as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 1
@@ -956,13 +1060,23 @@ def main(argv: list[str] | None = None) -> int:
     gbb = gauge.val().BoundingBox()
     stls[STL_GAUGE] = {"mm": [gbb.xlen, gbb.ylen, gbb.zlen]}
 
+    pi_step = out / PI_PANEL_STEP
+    export_assembly(cq, pi_panel["solids"], pi_step)
+    pi_roundtrip = verify_roundtrip(cq, pi_step, sorted(pi_panel["solids"]))
+    cq.exporters.export(pi_panel["solids"][PI_PANEL_BODY], str(out / STL_PI_PANEL))
+    pbb = pi_panel["solids"][PI_PANEL_BODY].val().BoundingBox()
+    stls[STL_PI_PANEL] = {"mm": [pbb.xlen, pbb.ylen, pbb.zlen]}
+
     document = assumptions_document(layout,
                                     include_usbc_candidate=args.usbc_candidate_envelope)
     document["outputs"] = {
         "directory": str(out),
-        "files": [STEP_NAME] + sorted(stls) + [ASSUMPTIONS, CHECKLIST],
+        "files": [STEP_NAME, PI_PANEL_STEP] + sorted(stls) + [ASSUMPTIONS, CHECKLIST],
     }
     document["display_step"] = display_info
+    document["pi_panel"] = {**pi_panel["checks"],
+                            "bodies": sorted(pi_panel["solids"]),
+                            "step_roundtrip": pi_roundtrip}
     # The pure document already carries the mount block and the body legend;
     # add what only the built solids know.
     document["display_mount_placeholders"]["bodies"] = built["meta"].get(
@@ -1004,7 +1118,9 @@ def main(argv: list[str] | None = None) -> int:
           f"{roundtrip['solids']} solids on re-import, {roundtrip['volume_mm3']:.1f} mm^3")
     print(f"STEP bbox             x {roundtrip['bbox_mm'][0]:.2f} "
           f"y {roundtrip['bbox_mm'][1]:.2f} z {roundtrip['bbox_mm'][2]:.2f} mm")
-    for file_name in [STEP_NAME] + sorted(stls):
+    print(f"Pi panel model        {len(pi_panel['solids'])} bodies, Pi holes coincide with the "
+          f"drawing-derived holes within {pi_panel['checks']['worst_hole_offset_mm']:.4f} mm")
+    for file_name in [STEP_NAME, PI_PANEL_STEP] + sorted(stls):
         print(f"  wrote {out / file_name}")
     print("pair verdicts:")
     for pair in document["pairs"]:

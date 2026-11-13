@@ -3,17 +3,16 @@
 ## Confirmed by owner
 
 - Two custom PCBs, a separate **30HP/3U** front panel and a separate **20HP/3U
-  Pi mounting panel** (owner decision 2026-11-12) in a second rack position.
+  Pi mounting panel** (owner decision 2026-11-12) beside the main module in the same row.
   The front/UI PCB is **128 × 112 mm**; the rear/base PCB is **20HP (101.6 ×
   112 mm)**; the Pi mounting panel is 101.2 × 128.5 mm; installed depth target
   ≤110 mm per module. CAD top faces the panel and the rear faces the rack
   cavity. The 30HP panel width (which replaced 32HP on 2026-11-08) and the knob-column move (47 → 52 mm) are owner decisions
   recorded in [decisions.md](decisions.md).
 - Removable Raspberry Pi 5, mechanically supported through its mounting holes
-  on the Pi mounting panel (the base board keeps its Pi hole grid as a retained
-  option); removable Pico 2, socketed on the base board. Pi ↔ Pico SPI with
+  on the Pi mounting panel (the base board carries no Pi holes); removable Pico 2, socketed on the base board. Pi ↔ Pico SPI with
   READY/IRQ and common ground runs over the 40-wire GPIO ribbon between the two
-  rack positions. USB stays as-is on the 30HP panel: its three feedthroughs
+  modules. USB stays as-is on the 30HP panel: its three feedthroughs
   (USB-C power, UMC audio, MIDI hub) do not move.
 - UMC1820 plus ADA8200 are independently powered; audio and headphone I/O stay
   on those units. Capture 18 channels at 48 kHz/24-bit to NVMe; playback
@@ -40,8 +39,8 @@
 ## Provisional, not a requirement freeze
 
 - Front/UI PCB 128 × 112 mm and rear/base PCB 101.6 × 112 mm, each 1.6 mm and
-  two layers. The rear board has a 58 × 49 mm Pi mounting-hole grid plus
-  board-to-front-board standoff holes. The Pi drawing is not production data.
+  two layers. The rear board has the board-to-front-board standoff holes only (the Pi
+  is on its own panel). The Pi drawing is not production data.
   Both boards contain prototype circuits and routed copper but are **not
   fabrication-released**.
 - Positions and dimensions in `tscircuit/lib/layout.ts` are planning values.

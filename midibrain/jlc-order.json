@@ -125,6 +125,6 @@
     "files": {
       "gerbers": "fab/pi-panel/pi-panel-gerbers.zip"
     },
-    "note": "20HP x 3U Pi mounting panel (owner decision 2026-11-12). Pure mechanical: 4 x M2.5 Pi holes (58 x 49, landscape, centred) + 4 x 3.2 mm rail holes. The Pi 5 with Active Cooler + M.2 HAT+ + SSD bolts to the REAR face on standoffs; the harness to the main module (3 USB feedthrough cables, DSI FPC, 40-wire GPIO ribbon to J_PI, J_PWR pigtail) is bench-fitted and not an order item. Zero components by design: the sourcing step fails if a component ever lands on it."
+    "note": "20HP x 3U Pi mounting panel (owner decision 2026-11-12). Pure mechanical: 4 x M2.5 Pi holes on the Pi 5 58 x 49 pattern (landscape, mirrored because the component side faces away from the panel; the pattern centre sits 10 mm toward +X, from the Raspberry Pi 5 drawing RP-008347-DS-1) + 4 x 3.2 mm rail holes. The Pi 5 with Active Cooler + M.2 HAT+ + SSD bolts to the REAR face on 3.5 mm candidate standoffs; the harness to the main module (3 USB feedthrough cables, DSI FPC, 40-wire GPIO ribbon to J_PI, J_PWR pigtail) is bench-fitted and not an order item. Zero components by design: the sourcing step fails if a component ever lands on it."
   }
 }

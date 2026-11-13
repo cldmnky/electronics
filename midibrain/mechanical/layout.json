@@ -47,11 +47,7 @@
       "bossProjection": 4,
       "planeSeparation": 9,
       "spacerLength": 5,
-      "holeDiameter": 4.3,
-      "piWidth": 85,
-      "piHeight": 56,
-      "piMountPitchLong": 58,
-      "piMountPitchShort": 49
+      "holeDiameter": 4.3
     }
   },
   "displayDatum": {
@@ -636,46 +632,52 @@
       ]
     },
     {
-      "shape": "circle",
+      "shape": "rect",
       "name": "REC BUTTON",
       "x": -53,
       "y": -34,
-      "radius": 6.2
+      "width": 12.25,
+      "height": 12.25
     },
     {
-      "shape": "circle",
+      "shape": "rect",
       "name": "OVER DUB BUTTON",
       "x": -29,
       "y": -34,
-      "radius": 6.2
+      "width": 12.25,
+      "height": 12.25
     },
     {
-      "shape": "circle",
+      "shape": "rect",
       "name": "STOP BUTTON",
       "x": -5,
       "y": -34,
-      "radius": 6.2
+      "width": 12.25,
+      "height": 12.25
     },
     {
-      "shape": "circle",
+      "shape": "rect",
       "name": "PLAY BUTTON",
       "x": 19,
       "y": -34,
-      "radius": 6.2
+      "width": 12.25,
+      "height": 12.25
     },
     {
-      "shape": "circle",
+      "shape": "rect",
       "name": "PLAY START BUTTON",
       "x": 52,
       "y": -34,
-      "radius": 6.2
+      "width": 12.25,
+      "height": 12.25
     },
     {
-      "shape": "circle",
+      "shape": "rect",
       "name": "SHIFT/EXIT BUTTON",
       "x": 52,
       "y": -8,
-      "radius": 6.2
+      "width": 12.25,
+      "height": 12.25
     },
     {
       "shape": "circle",
@@ -706,11 +708,12 @@
       "radius": 3.6
     },
     {
-      "shape": "circle",
+      "shape": "rect",
       "name": "POWER BUTTON",
       "x": 52.5,
       "y": -48,
-      "radius": 6.2
+      "width": 12.25,
+      "height": 12.25
     },
     {
       "shape": "circle",
@@ -938,29 +941,23 @@
       "y": -24.54
     }
   ],
-  "piHoles": [
-    {
-      "x": -18.5,
-      "y": -29
+  "piBoard": {
+    "length": 85,
+    "width": 56,
+    "thickness": 1.6,
+    "holeInset": 3.5,
+    "holePitch": {
+      "x": 58,
+      "y": 49
     },
-    {
-      "x": -18.5,
-      "y": 29
-    },
-    {
-      "x": 30.5,
-      "y": -29
-    },
-    {
-      "x": 30.5,
-      "y": 29
-    }
-  ],
-  "piMount": {
-    "x": 6,
-    "y": 0,
-    "pitchX": 49,
-    "pitchY": 58
+    "holeDiameter": 2.7,
+    "headerCentreX": 32.5
+  },
+  "piProtrusion": {
+    "left": 1.7,
+    "right": 3.3,
+    "bottom": 1.7,
+    "top": 0
   },
   "piSpacer": 3.5,
   "piPanel": {
@@ -988,7 +985,7 @@
     ],
     "railHoleDiameter": 3.2,
     "piMount": {
-      "x": 0,
+      "x": 10,
       "y": 0,
       "pitchX": 58,
       "pitchY": 49,
@@ -996,28 +993,35 @@
     },
     "piMountHoles": [
       {
-        "x": -29,
+        "x": 39,
         "y": -24.5
       },
       {
-        "x": -29,
+        "x": 39,
         "y": 24.5
       },
       {
-        "x": 29,
+        "x": -19,
         "y": -24.5
       },
       {
-        "x": 29,
+        "x": -19,
         "y": 24.5
       }
     ],
-    "piPcbBox": {
-      "x1": -42.8,
-      "x2": 42.8,
-      "y1": -28.25,
-      "y2": 28.25
-    }
+    "piBoardBox": {
+      "x1": -42.5,
+      "x2": 42.5,
+      "y1": -28,
+      "y2": 28
+    },
+    "piEnvelope": {
+      "x1": -45.8,
+      "x2": 44.2,
+      "y1": -29.7,
+      "y2": 28
+    },
+    "mirroredX": true
   },
   "piPanelProvisionalDepth": {
     "piStandoffAndPcb": 5.1,

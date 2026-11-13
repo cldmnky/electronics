@@ -40,7 +40,7 @@ class CanonicalDataTest(unittest.TestCase):
     def test_layout_json_carries_the_hole_sets(self) -> None:
         data = layout()
         for key in ("railHoles", "railHoleDiameter", "frontBoardHoles", "lcdMountHoles",
-                    "displayBossPattern", "piHoles", "piMount", "frontRearMount",
+                    "displayBossPattern", "piBoard", "piProtrusion", "frontRearMount",
                     "mountHoleDiameter", "lcdCutoutOutline", "notchBounds", "bracket",
                     "piPanel", "piPanelProvisionalDepth", "eurorackGoMaxModuleDepth"):
             self.assertIn(key, data, f"{key} is missing from mechanical/layout.json")
@@ -48,12 +48,27 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertEqual(len(data["railHoles"]), 4)
         self.assertEqual(len(data["frontBoardHoles"]), 4)
         self.assertEqual(len(data["lcdMountHoles"]), 4)
-        self.assertEqual(len(data["piHoles"]), 4)
-        # The 20HP Pi mounting panel carries its own two hole sets (owner
-        # decision 2026-11-12): the M2.5 Pi grid and the Eurorack rail holes.
+        self.assertEqual(len(data["frontRearMount"]), 4)
+        # The rear board carries no Pi holes: the Pi is on the 20HP panel.
+        self.assertNotIn("piHoles", data)
+        # The 20HP Pi mounting panel carries its own hole sets (owner decision
+        # 2026-11-12): the Pi 5 pattern and the Eurorack rail holes.
         self.assertEqual(data["piPanel"]["hp"], 20)
         self.assertEqual(len(data["piPanel"]["piMountHoles"]), 4)
         self.assertEqual(len(data["piPanel"]["railHoles"]), 4)
+        # The Pi 5 board in its own frame: the drawing's 85 x 56 mm board, the
+        # 58 x 49 mm hole pattern, and the 3.5 mm inset (RP-008347-DS-1).
+        pi = data["piBoard"]
+        self.assertEqual((pi["length"], pi["width"]), (85, 56))
+        self.assertEqual((pi["holePitch"]["x"], pi["holePitch"]["y"]), (58, 49))
+        self.assertEqual(pi["holeInset"], 3.5)
+        self.assertEqual(pi["headerCentreX"], 32.5)
+        # Independent check of the mirror: the four panel holes are the board
+        # holes mapped through x' = 42.5 - x, y' = y - 28 (see step_assembly).
+        xs = sorted({round(h["x"], 6) for h in data["piPanel"]["piMountHoles"]})
+        ys = sorted({round(h["y"], 6) for h in data["piPanel"]["piMountHoles"]})
+        self.assertEqual(xs, [-19.0, 39.0])
+        self.assertEqual(ys, [-24.5, 24.5])
 
     def test_the_canonical_panel_features_are_complete(self) -> None:
         """20 apertures and 14 drills: every opening the panel board renders."""
@@ -79,7 +94,9 @@ class CanonicalDataTest(unittest.TestCase):
         """Diameters come from PANEL_CUTOUTS; nothing is re-derived here."""
         data = layout()
         by_name = {a["name"]: a for a in data["panelApertures"]}
-        self.assertEqual(by_name["REC BUTTON"]["radius"], 6.2)   # 12.4 mm B3F
+        # Every B3F-4055 opening is a 12.25 mm square (Omron B32 reference 12.2 +0.05/0).
+        self.assertEqual((by_name["REC BUTTON"]["shape"], by_name["REC BUTTON"]["width"],
+                          by_name["REC BUTTON"]["height"]), ("rect", 12.25, 12.25))
         self.assertEqual(by_name["REC LED"]["radius"], 1.3)      # Ø2.6 provisional PGN25L165
         self.assertEqual(by_name["VALUE ENCODER"]["radius"], 3.6)  # 7.2 mm bushing
         self.assertEqual(by_name["MIDI IN 1 JACK"]["radius"], 3.1)  # 6.2 mm barrel
@@ -97,10 +114,10 @@ class CanonicalDataTest(unittest.TestCase):
         # the XY positions are the documented LED row, 12 mm beside their buttons
         axes = sorted((a["x"], a["y"]) for a in leds)
         self.assertEqual(axes, [(-41, -34), (-17, -34), (31, -34)])
-        # every other circle opening keeps its radius
+        # every other circle opening keeps its radius (the buttons are squares now)
         others = {a["name"]: a["radius"] for a in data["panelApertures"]
                   if a["shape"] == "circle" and not a["name"].endswith(" LED")}
-        self.assertEqual(others["REC BUTTON"], 6.2)
+        self.assertNotIn("REC BUTTON", others)
         self.assertEqual(others["VALUE ENCODER"], 3.6)
         self.assertEqual(others["MIDI IN 1 JACK"], 3.1)
 
@@ -124,7 +141,7 @@ class CanonicalDataTest(unittest.TestCase):
         """The owner's control centres, straight from the canonical data."""
         data = layout()
         centres = {(a.get("x"), a.get("y")) for a in data["panelApertures"]
-                   if a["shape"] == "circle"}
+                   if a["shape"] != "polygon"}
         for centre in {(-53, -34), (-29, -34), (-5, -34), (19, -34), (52, -34),
                        (52.5, -48), (52, 30), (52, 11), (52, -8), (-53, -47.5)}:
             self.assertIn(centre, centres, f"control centre {centre} moved")

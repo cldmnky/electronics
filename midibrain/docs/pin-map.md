@@ -30,11 +30,11 @@ Connector part, mating-face pin order, wire length, shielding, decoupling and po
 
 ## Pi mounting panel and the harness (owner decision 2026-11-12)
 
-The Pi 5 (with Active Cooler + M.2 HAT+ + NVMe SSD) bolts behind its own 20HP/3U
-mounting panel in a second rack position; the table above is unchanged as a
+The Pi 5 (with Active Cooler + M.2 HAT+ + NVMe SSD) bolts to the rear face of its
+own 20HP/3U mounting panel beside the main module in the same row; the table above is unchanged as a
 logical allocation, but every Pi signal now crosses **the 40-wire GPIO ribbon
 from `J_PI` (rear board, BH254V-40P) to the Pi's 40-pin header** instead of a
-header on the rear board. Plan 150–350 mm runs (adjacent rack positions).
+header on the rear board. Plan 150–350 mm runs (side by side in the row; a planning estimate).
 Before power: pin-1 orientation of the ribbon and all-40 continuity from `J_PI`
 to the Pi header against the net list. The 1 MHz SPI link, the 100 Ω series
 resistors and the buffered MISO/READY are unchanged.

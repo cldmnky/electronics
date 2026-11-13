@@ -386,7 +386,7 @@ apart, 5 rows 3 mm apart) and the MIDI points sit in the open pocket right of th
 Pico's micro-USB plug in two rows (three points at 3 mm pitch, two below). No
 two probe pads are closer than **3.0 mm**, every pad keeps **2.0 mm** to the
 board edge, the pads are outside the Pico module (51 × 21 mm, Pico 2 datasheet),
-the Pi PCB (85 × 56 mm on the 58 × 49 mm hole grid), the J_PI and J_FRONT bodies
+the J_PI and J_FRONT bodies (the Pi is on its own panel, so it has no keepout here)
 with their connector space and the spacer holes, and the nearest other component pad or
 hole is 2.85 mm away. The 2.0 mm edge target is one source constant,
 `PROBE_EDGE_MM` in `lib/probe-points.ts`; `lib/probe-points.test.ts` checks the
@@ -511,7 +511,7 @@ built output. It derives each pad's physical pin number and net from
 | `doNotPlace` removed from a probe pad | the do-not-place set check |
 | the trace at a MIDI RX2 pad deleted | the routed, already-existing-net check |
 | a MIDI TX2 pad moved onto the channel-1 TX net | the exact-net check |
-| a MIDI RX2 pad moved inside the Pi envelope | the envelope check |
+| a MIDI RX2 pad moved inside the J_PI body envelope | the envelope check |
 | R19 moved so a part sits on both 3.3 V rails | the rail-coupling check |
 
 ## 8. SPICE: what it now does and does not show

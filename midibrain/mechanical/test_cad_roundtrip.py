@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 import unittest
+from unittest import mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -59,6 +60,28 @@ SKIP_REASON = "; ".join(
 ) or "CAD not available"
 
 
+def display_argv() -> list[str]:
+    """Arguments that choose the vendor display model.
+
+    An archive or a STEP from the environment, or nothing: the builder then uses
+    the committed reference STEP, which it verifies by SHA-256 before use.
+    """
+    archive = os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
+    display = os.environ.get("MIDIBRAIN_DISPLAY_STEP")
+    if archive:
+        return ["--display-archive", archive]
+    if display:
+        return ["--display-step", display]
+    return []
+
+
+# The vendor model is available whenever the committed reference is in the tree
+# (it is, and its hash is recorded), so the display tests run by default.
+DISPLAY_AVAILABLE = bool(os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
+                         or os.environ.get("MIDIBRAIN_DISPLAY_STEP")
+                         or sa.DEFAULT_DISPLAY_STEP.is_file())
+
+
 def stl_bounds(path: Path) -> tuple[tuple[float, float, float], tuple[float, float, float], int]:
     """Read an STL mesh with VTK and return its bounds and cell count."""
     reader = vtk.vtkSTLReader()
@@ -78,14 +101,7 @@ class StepRoundTripTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._tmp = TemporaryDirectory()
         out = Path(cls._tmp.name) / "cad-out"
-        archive = os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
-        display = os.environ.get("MIDIBRAIN_DISPLAY_STEP")
-        argv = ["--out", str(out)]
-        if archive:
-            argv += ["--display-archive", archive]
-        elif display:
-            argv += ["--display-step", display]
-        cls.code = sa.main(argv)
+        cls.code = sa.main(["--out", str(out), *display_argv()])
         cls.out = out
         cls.document = json.loads((out / sa.ASSUMPTIONS).read_text())
 
@@ -212,15 +228,17 @@ class StepRoundTripTest(unittest.TestCase):
                 self.document["bodies"]["DISPLAY_WAVESHARE_VENDOR_STEP"]["placed_bbox_mm"][2],
                 13.82, delta=0.02)
         else:
-            self.assertEqual(display["status"], "absent")
-            self.assertIn("DISPLAY_ENVELOPE_PROVISIONAL", self.document["bodies"])
+            # The committed reference STEP is the default. The builder verified it
+            # by SHA-256, so the vendor body is drawn and the envelope is not.
+            self.assertEqual(display["status"], "verified")
+            self.assertEqual(display["step_sha256_actual"], display["step_sha256_expected"])
+            self.assertIn("DISPLAY_WAVESHARE_VENDOR_STEP", self.document["bodies"])
+            self.assertNotIn("DISPLAY_ENVELOPE_PROVISIONAL", self.document["bodies"])
 
 
 @unittest.skipIf(cq is None, SKIP_REASON)
 @unittest.skipIf(cq is None, SKIP_REASON)
-@unittest.skipUnless(os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
-                     or os.environ.get("MIDIBRAIN_DISPLAY_STEP"),
-                     "no vendor display STEP: set MIDIBRAIN_DISPLAY_ARCHIVE")
+@unittest.skipUnless(DISPLAY_AVAILABLE, "no vendor display STEP in the tree")
 class DisplayPlacementTest(unittest.TestCase):
     """The vendor display faces the panel, and a reversed placement would fail."""
 
@@ -228,11 +246,7 @@ class DisplayPlacementTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._tmp = TemporaryDirectory()
         out = Path(cls._tmp.name) / "cad"
-        archive = os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
-        display = os.environ.get("MIDIBRAIN_DISPLAY_STEP")
-        argv = ["--out", str(out)]
-        argv += (["--display-archive", archive] if archive else ["--display-step", display])
-        cls.code = sa.main(argv)
+        cls.code = sa.main(["--out", str(out), *display_argv()])
         cls.doc = json.loads((out / sa.ASSUMPTIONS).read_text())
         cls.body = cls.doc["bodies"]["DISPLAY_WAVESHARE_VENDOR_STEP"]
 
@@ -362,22 +376,18 @@ class DisplayPlacementTest(unittest.TestCase):
 
 
 @unittest.skipIf(cq is None, SKIP_REASON)
-@unittest.skipUnless(os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
-                     or os.environ.get("MIDIBRAIN_DISPLAY_STEP"),
-                     "no vendor display STEP: the model gap cannot be measured")
+@unittest.skipUnless(DISPLAY_AVAILABLE, "no vendor display STEP in the tree")
 class SpacerPlaceholderTest(unittest.TestCase):
     """The four LCD mount placeholders: geometry, checks, and negative cases."""
 
     @classmethod
     def setUpClass(cls) -> None:
         archive = os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
-        step = os.environ.get("MIDIBRAIN_DISPLAY_STEP")
+        cls.source_args = display_argv()
         if archive:
-            cls.source_args = ["--display-archive", archive]
             cls.step_path, _ = sa.resolve_display_archive(archive)
         else:
-            cls.source_args = ["--display-step", step]
-            cls.step_path, _ = sa.resolve_display_step(step)
+            cls.step_path, _ = sa.resolve_display_step(os.environ.get("MIDIBRAIN_DISPLAY_STEP"))
         cls.layout = sa.load_layout()
         cls.built = sa.build(cq, cls.layout, cls.step_path, False)
         cls.solids = cls.built["solids"]
@@ -490,10 +500,14 @@ class EnoughPlaceholdersEnvelopeModeTest(unittest.TestCase):
 
     @unittest.skipIf(cq is None, SKIP_REASON)
     def test_envelope_mode_skips_the_placeholders_with_a_reason(self) -> None:
-        with TemporaryDirectory() as tmp:
+        # Envelope mode is the run WITHOUT a vendor model. Point the default at a
+        # file that is not in the tree, so the builder has nothing to verify.
+        missing = Path("/nonexistent/waveshare-4.3inch-dsi-lcd.step")
+        with mock.patch.object(sa, "DEFAULT_DISPLAY_STEP", missing), TemporaryDirectory() as tmp:
             out = Path(tmp) / "cad"
             self.assertEqual(sa.main(["--out", str(out)]), 0)
             document = json.loads((out / sa.ASSUMPTIONS).read_text())
+        self.assertEqual(document["display_step"]["status"], "absent")
         block = document["bodies"]["LCD_MOUNT_PLACEHOLDERS"]
         self.assertEqual(block["kind"], "SKIPPED")
         self.assertIn("14.05 mm design envelope is NOT used", block["reason"])

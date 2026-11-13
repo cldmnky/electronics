@@ -14,7 +14,7 @@ import {
   brandBounds,
   minGlyphClearance,
 } from "./panel-art"
-import { FRONT_COLUMNS, JACK_Y, OUT_RING, PANEL, TRANSPORT_Y } from "./layout"
+import { FRONT_COLUMNS, JACK_Y, OUT_RING, PANEL, PANEL_CUTOUTS, TRANSPORT_Y } from "./layout"
 
 test("mnkybox wordmark ink stays on the panel", () => {
   const b = brandBounds(0, -59)
@@ -66,8 +66,8 @@ test("OUT rings clear barrels, buttons and labels", () => {
   expect(outs).toHaveLength(2)
   const top = JACK_Y + outer
   const bottom = JACK_Y - outer
-  // Transport button cutouts above (r6.2 at TRANSPORT_Y).
-  expect(TRANSPORT_Y - 6.2 - top).toBeGreaterThanOrEqual(0.3)
+  // Transport button cutouts above (12.25 mm square, half-side at TRANSPORT_Y).
+  expect(TRANSPORT_Y - PANEL_CUTOUTS.button / 2 - top).toBeGreaterThanOrEqual(0.3)
   // OUT labels below (1.8 mm text centred at JACK_Y - 6.5).
   expect(bottom - (JACK_Y - 6.5 - 0.9)).toBeGreaterThanOrEqual(0.3)
 })

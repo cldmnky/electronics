@@ -12,7 +12,7 @@
 // CAD model (the stale-binary trap).
 import { expect, test } from "bun:test"
 import { existsSync, readFileSync } from "node:fs"
-import { PANEL_APERTURES, PANEL_DRILLS, PANEL_MOUNT_HOLES } from "./layout"
+import { BUTTON_CAP, PANEL_APERTURES, PANEL_CUTOUTS, PANEL_DRILLS, PANEL_MOUNT_HOLES } from "./layout"
 
 const PANEL_JSON = new URL("../dist/panel/circuit.json", import.meta.url)
 
@@ -120,14 +120,24 @@ test("the canonical apertures cover every opening class with its own diameter", 
     if (!a || a.shape !== "circle") throw new Error(`${name} is not a circle aperture`)
     return a.radius ?? NaN
   }
-  expect(radius("REC BUTTON")).toBe(6.2)   // 12.4 mm B3F
+  // Every B3F-4055 opening is a 12.25 mm square (Omron B32 reference cutout).
+  for (const name of ["REC BUTTON", "OVER DUB BUTTON", "STOP BUTTON", "PLAY BUTTON",
+                      "PLAY START BUTTON", "SHIFT/EXIT BUTTON", "POWER BUTTON"]) {
+    const a = byName.get(name)
+    expect({ name, shape: a?.shape, w: a?.width, h: a?.height }).toEqual(
+      { name, shape: "rect", w: PANEL_CUTOUTS.button, h: PANEL_CUTOUTS.button })
+  }
+  expect(PANEL_CUTOUTS.button).toBeGreaterThanOrEqual(BUTTON_CAP.referenceCutoutSquare)
+  expect(PANEL_CUTOUTS.button).toBeLessThanOrEqual(BUTTON_CAP.referenceCutoutSquare + BUTTON_CAP.referenceCutoutTolerance.plus)
+  // The largest cap (12 +0.15 mm) passes the opening with a positive margin.
+  expect(PANEL_CUTOUTS.button - (BUTTON_CAP.topSquare + BUTTON_CAP.topSquareTolerance)).toBeGreaterThan(0)
   expect(radius("REC LED")).toBe(1.3)      // Ø2.6 provisional PGN25L165 hole
   expect(radius("VALUE ENCODER")).toBe(3.6) // 7.2 mm bushing
   expect(radius("MIDI IN 1 JACK")).toBe(3.1) // 6.2 mm barrel
   const lcd = byName.get("LCD_APERTURE")
   expect(lcd?.shape).toBe("polygon")
   expect(lcd?.points?.length).toBe(28)
-  const positions = PANEL_APERTURES.filter(a => a.shape === "circle").map(a => `${a.x},${a.y}`)
+  const positions = PANEL_APERTURES.filter(a => a.shape !== "polygon").map(a => `${a.x},${a.y}`)
   // Control centres are the owner's and never move (docs/mechanical-stack.md).
   for (const p of ["52,30", "52,11", "52,-8", "52,-34", "52.5,-48", "-53,-34", "-29,-34", "-5,-34", "19,-34"]) {
     expect(positions).toContain(p)

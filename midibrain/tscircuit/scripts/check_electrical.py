@@ -306,15 +306,12 @@ PROBE_PART_GAP_MM = 2.0           # pad edge to another component's pad/hole
 PROBE_POSITION_TOL_MM = 0.01
 # Planning envelopes a probe PAD must stay out of; same boxes as
 # lib/probe-points.ts, restated here on purpose. Sources: Pico 2 datasheet
-# (51 x 21 mm module, micro-USB at the pin-1 end), the Pi 5 PCB envelope on the
-# 58 x 49 mm hole grid (portrait: 56.5 mm across X, 85.6 mm along Y - the
-# conservative bound of the drawing's approximate 85 x 56 mm), J_PI / J_FRONT
-# body plus connector space.
+# (51 x 21 mm module, micro-USB at the pin-1 end), J_PI / J_FRONT body plus
+# connector space. The Pi 5 no longer sits on the rear board (2026-11-12), so
+# it has no keepout here.
 PROBE_KEEPOUTS = {
     "pico_module": (-50.2, -25.5, -28.8, 25.5),
     "pico_usb_plug": (-43.5, -45.0, -35.5, -25.5),
-    # PI_MOUNT (6, 0) +- (56.5 / 2, 85.6 / 2): short edge along X, long along Y.
-    "pi_pcb": (-22.25, -42.8, 34.25, 42.8),
     "j_pi_body": (-26.0, 45.0, 26.0, 53.0),
     # Male SBH11 body envelope (40.52 x 8.80 mm) at the direct interconnect's
     # shared placement (10, 5) rotated 90 deg.

@@ -49,7 +49,10 @@ MIN_CLEARANCE_MM = 0.3
 # The PLAY START label row before the fix, and its current row.
 OLD_LABEL_Y = -42.0
 LABEL_SHIFT_MM = -16.5          # -25.5 -> -42
-OLD_OVERLAP_MM = -0.862         # measured on the old emitted Gerber
+# Overlap of the old label row with the POWER opening: -0.862 mm against the old
+# round 12.4 mm opening; -0.081 mm against the 12.25 mm square now. Still negative,
+# so the regression is still caught.
+OLD_OVERLAP_MM = -0.081
 BORDER_RECT_MM = (130.08, 126.5)
 
 # The Makefile passes MIDIBRAIN_BUNX so `make test BUN=/abs/path/bun` works even
@@ -341,8 +344,10 @@ class ClearanceGeometryTest(unittest.TestCase):
         openings = gs.openings_from_layout(layout)
         self.assertEqual(len(openings), len(layout["panelApertures"]) + len(layout["panelDrills"]))
         self.assertEqual(sum(1 for o in openings if o.kind == "polygon"), 1)
-        self.assertEqual(sum(1 for o in openings if o.kind == "rect"), 3)
-        self.assertEqual(sum(1 for o in openings if o.kind == "circle"), 30)
+        # 3 USB feedthroughs and 7 B3F-4055 button squares are rects; the rest are circles
+        # (9 apertures + 14 drills).
+        self.assertEqual(sum(1 for o in openings if o.kind == "rect"), 10)
+        self.assertEqual(sum(1 for o in openings if o.kind == "circle"), 23)
 
 
 class EmittedPanelSilkTest(unittest.TestCase):

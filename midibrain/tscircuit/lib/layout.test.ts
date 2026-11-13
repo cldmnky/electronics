@@ -5,6 +5,8 @@ import { dirname, join } from "node:path"
 import { renderMechanical, run } from "../scripts/export-mechanical"
 import {
   BRACKET_ALLOWANCE,
+  BUTTON_CAP,
+  BUTTON_STACK,
   DEPTH_TARGET,
   EURORACK_GO_MAX_MODULE_DEPTH,
   DISPLAY_CONCEPT,
@@ -51,8 +53,6 @@ import {
   PANEL_LCD_CUTOUT,
   PANEL_LABELS,
   PANEL_TITLES,
-  PI_HOLES,
-  PI_MOUNT,
   panelTitleExtents,
   PLAY_START,
   REAR_PCB,
@@ -204,14 +204,10 @@ test("transport columns align with their LEDs and MIDI jacks", () => {
   }
 })
 
-test("4.3-inch DSI mounting holes match the Pi hole grid", () => {
-  expect(PI_HOLES).toHaveLength(4)
-  // Portrait Pi, shifted +6 east: holes at 6 ± 24.5 / ±29.
-  expect([...new Set(PI_HOLES.map(p => p.x))].sort((a,b) => a-b)).toEqual([-18.5, 30.5])
-  expect([...new Set(PI_HOLES.map(p => p.y))].sort((a,b) => a-b)).toEqual([-29, 29])
-  // 56-wide Pi board spans X −22…+34: 7 mm clear of the Pico right edge
-  // (X −29: 21 mm module centred on the −39.5 socket midpoint).
-  expect((PI_MOUNT.x - 56 / 2) - (-39.5 + 21 / 2)).toBeCloseTo(7, 6)
+test("the rear board carries no Pi holes and the display mount grid is unchanged", () => {
+  // The Pi moved to its own 20HP panel (owner decision 2026-11-12). The rear
+  // board keeps only the shared front/rear mount grid as 2.7 mm holes.
+  expect(FRONT_REAR_MOUNT).toHaveLength(4)
   expect(DISPLAY_STANDOFFS).toHaveLength(4)
   const xs = [...new Set(DISPLAY_STANDOFFS.map(p => p.x))].sort((a,b) => a-b)
   const ys = [...new Set(DISPLAY_STANDOFFS.map(p => p.y))].sort((a,b) => a-b)
@@ -373,7 +369,7 @@ test("the glass passes through the panel, flush with its front face", () => {
   // D1 sizing means the window clears the glass on every side, so the glass
   // front face sits at the panel front face (Assumption A, restored) and the
   // panel occludes nothing. The vertical fit works because the LED light pipes
-  // moved beside their buttons (fallback 3): the free band is 77.50 mm against
+  // moved beside their buttons (fallback 3): the free band is 77.575 mm against
   // a 68.87 mm window.
   expect(PROVISIONAL_Z.displayGlassFront).toBe(0)
   expect(PANEL_LCD_CUTOUT.width).toBeGreaterThan(DISPLAY_VENDOR.glass.width)
@@ -565,6 +561,20 @@ test("provisional Z stack follows the vendor side view, with a stated datum", ()
   expect(PANEL_TO_FRONT_BOARD_GAP).toBeCloseTo(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear, 6)
   // The installed-depth chain still passes the owner's 110 mm target.
   expect(provisionalInstalledDepth()).toBeLessThan(DEPTH_TARGET)
+})
+
+test("the B32 reference stack is shallower than the current panel stack", () => {
+  // Omron's 10.0 +/-0.4 mm is the PC BOARD to PANEL FRONT face reference, not
+  // the cap height. Our front board top is Z 19.05 and the panel front face is
+  // Z 0, so the current stack is 9.05 mm (8.65-9.45) deeper than Omron's. The
+  // cap top is not dimensioned, so no cap-top Z is asserted here.
+  expect(BUTTON_CAP.referenceBoardToPanelFront).toBe(10)
+  expect(BUTTON_STACK.omronReferencePanelFrontZ).toBeCloseTo(9.05, 6)
+  expect(BUTTON_STACK.stackDepthExcess).toBeCloseTo(9.05, 6)
+  expect(BUTTON_STACK.stackDepthExcess).toBeGreaterThan(0)
+  // The panel is inside the cap's stated panel-thickness range.
+  expect(PANEL.thickness).toBeGreaterThanOrEqual(BUTTON_CAP.panelThickness.min)
+  expect(PANEL.thickness).toBeLessThanOrEqual(BUTTON_CAP.panelThickness.max)
 })
 
 test("display underside gap and light-pipe reach stay pending, not claimed", () => {
@@ -874,7 +884,7 @@ test("the aperture clears the transport row and the feedthrough label row", () =
   expect(cut.y - cut.height / 2).toBeCloseTo(-23.435, 3)
   expect(cut.y - cut.height / 2).toBeGreaterThan(LED_Y + PANEL_CUTOUTS.led / 2)
   const buttonTop = TRANSPORT_Y + PANEL_CUTOUTS.button / 2
-  expect(cut.y - cut.height / 2 - buttonTop).toBeCloseTo(4.365, 3)
+  expect(cut.y - cut.height / 2 - buttonTop).toBeCloseTo(4.44, 3)
   // The LED row is now on the transport centreline, so the whole row below the
   // window is the button row; the light pipes sit beside the buttons, not
   // between them and the window.

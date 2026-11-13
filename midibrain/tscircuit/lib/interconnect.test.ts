@@ -29,7 +29,6 @@ import {
   DISPLAY_FPC_CONNECTOR,
   DISPLAY_FPC_CONNECTOR_AT,
   FRONT_INTERCONNECT,
-  PI_PCB_BOX,
   PI_SPACER_MM,
   PI_PANEL_PROVISIONAL_DEPTH,
   PROVISIONAL_DEPTH,
@@ -280,15 +279,9 @@ describe("2 x 13 direct interconnect on the built boards", () => {
   })
 
   test("the male tail is a seating-face dimension, not a protrusion, and the Pi spacer is a candidate", () => {
-    // The Pi PCB envelope comes from lib/layout.ts (PI_PCB_BOX): the short edge
-    // runs along X, the long edge along Y, because PI_MOUNT is portrait. Do not
-    // re-type the rectangle here - a transposed copy is how a clearance test
-    // passes on the wrong geometry.
-    const overPi = [...JFRONT.pads.values()].filter(
-      p => p.x > PI_PCB_BOX.x1 && p.x < PI_PCB_BOX.x2 && p.y > PI_PCB_BOX.y1 && p.y < PI_PCB_BOX.y2,
-    )
-    // The finding, stated rather than waived: every pad is over the Pi PCB area.
-    expect(overPi.length).toBe(INTERCONNECT_PIN_COUNT)
+    // The Pi no longer sits on the rear board (owner decision 2026-11-12): it is
+    // on its own 20HP panel beside the main module. Nothing is mounted above the
+    // 26 male pads, so there is no Pi overlap to test on this board.
     // The quoted 3.00 / 3.20 mm are measured FROM THE SEATING FACE. The nominal
     // protrusion below a 1.60 mm PCB is 1.40 / 1.60 mm; the fillet, the PCB
     // tolerance, the Pi hardware and every clearance are unmeasured.
@@ -305,8 +298,6 @@ describe("2 x 13 direct interconnect on the built boards", () => {
     // The Pi now hangs behind its own 20HP mounting panel, so the standoff
     // candidate of that panel's chain is what the spacer check bounds.
     expect(PI_PANEL_PROVISIONAL_DEPTH.piStandoffAndPcb).toBeGreaterThan(PI_SPACER_MM)
-    // Orientation tripwire: the box must be taller than it is wide.
-    expect(PI_PCB_BOX.y2 - PI_PCB_BOX.y1).toBeGreaterThan(PI_PCB_BOX.x2 - PI_PCB_BOX.x1)
   })
 
   test("the female pads stay out of the display FPC PLANNING MARKER's plan box", () => {

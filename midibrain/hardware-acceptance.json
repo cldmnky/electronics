@@ -1,7 +1,7 @@
 {
   "schema": "midibrain-hardware-acceptance/1",
   "note": "Physical acceptance state for the MIDI Brain hardware. An item moves to \"accepted\" only with measured evidence in docs/evidence/ that names a reviewer, a date and the current hardware fingerprint. The fingerprint covers the canonical PCB/panel sources, the mechanical TS-to-CAD bridge and its exported layout, the CAD algorithm, the JLCPCB order settings and the curated cable/hardware selection, so any hardware, algorithm, order-setting or part-selection change makes old evidence stale. Refresh hardware_fingerprint with `bun run scripts/release_gate.ts --fingerprint` after such a change; a documentation-only commit does not change it. There is no override key: unknown keys are errors. See docs/acceptance.md.",
-  "hardware_fingerprint": "bbc65bd4364525083b0f8e26c6c4b4132d56b393f6d84ab589df10bbf8d39029",
+  "hardware_fingerprint": "cc6f615d052e625384348f8e7b8cc8c42ce8b9266bf7b2d2bcd0ab66efdc0cbd",
   "items": [
     {
       "id": "zstack",

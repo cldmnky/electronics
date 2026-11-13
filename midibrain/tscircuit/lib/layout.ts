@@ -108,56 +108,57 @@ export const RAIL_HOLES = [
   { x: -68.58, y: 61.25 }, { x: 68.58, y: 61.25 },
 ] as const
 
-// Pi 5 mounting holes, portrait (49 across X, 58 vertical — the reference
-// 58 × 49 grid rotated so the 56 mm Pi edge runs along X). Centre is +6 east
-// of the board origin: the Pico module's right edge sits at X −29, so a
-// centred Pi (left edge −28) would overlap it by 1 mm and foul the Pico
-// (10–12 mm tall) against the Pi PCB (spacer). At +6 the Pi spans X −22…+34:
-// 7 mm clear of the Pico, 2.5 mm clear of U3/U4. All Pi links are flexible
-// cables (DSI, GPIO ribbon, panel pigtails), so nothing else moves.
-// R13–R18/Q3 sit under the Pi PCB — fine for 0603/SOT. The Pi spacer is a 3.5 mm
-// CANDIDATE: the male tail is 3.00 mm FROM THE SEATING FACE (drawing), so its
-// nominal protrusion below a 1.60 mm PCB is 1.40 mm (INTERCONNECT_PROTRUSION),
-// and the 26 pads lie over the Pi PCB area (see PI_SPACER_MM). The solder
-// fillet, the PCB tolerance, the Pi hardware and every clearance are unmeasured:
-// 3.5 mm is NOT claimed safe or adequate. The Pi 5 microSD card and the Pi's
-// own connectors stay unverified. The Pi itself moved to PI_PANEL (owner
-// decision 2026-11-12); this grid stays drilled as a retained mechanical
-// option and PI_SPACER_MM is its candidate spacer.
-export const PI_MOUNT = { x: 6, y: 0, pitchX: 49, pitchY: 58 } as const
-export const PI_HOLES = [-1, 1].flatMap(sx => [-1, 1].map(sy => ({
-  x: PI_MOUNT.x + sx * PI_MOUNT.pitchX / 2,
-  y: PI_MOUNT.y + sy * PI_MOUNT.pitchY / 2,
-})))
-
-// Pi 5 PCB envelope in the layout frame. PI_MOUNT is the 58 x 49 mm hole grid
-// rotated so the 56 mm edge runs along X, so the SHORT edge is across X and the
-// LONG edge along Y. Never re-type this rectangle elsewhere: a transposed copy
-// is how a clearance test passes on the wrong geometry.
+// ---- Raspberry Pi 5 board geometry (the Pi lives on the 20HP panel only) ----
+// The Pi no longer sits on the rear board (owner decision 2026-11-12). This
+// block is the single source for the Pi's board, hole and connector geometry;
+// the Pi panel (PI_PANEL_*) and the tests that guard it read from here.
 //
-// SOURCE: Raspberry Pi 5 mechanical drawing RP-008347-DS-1, page 1, records
-// 85 x 56 mm and states that its dimensions are approximate and not production
-// data. The 85.6 x 56.5 mm outline widely quoted for the board is carried as
-// the CONSERVATIVE bound, so no test uses the smaller rectangle. Neither value
-// is a measurement, and the Pi's connectors, cooler, HAT and microSD card are
-// not modelled: physical Pi clearance stays pending.
-export const PI_PCB = { acrossX: 56.5, alongY: 85.6, drawingAcrossX: 56, drawingAlongY: 85 } as const
-export const PI_PCB_BOX = {
-  x1: PI_MOUNT.x - PI_PCB.acrossX / 2,
-  x2: PI_MOUNT.x + PI_PCB.acrossX / 2,
-  y1: PI_MOUNT.y - PI_PCB.alongY / 2,
-  y2: PI_MOUNT.y + PI_PCB.alongY / 2,
-} as const
+// SOURCE: Raspberry Pi 5 mechanical drawing RP-008347-DS-1, page 1 (sha256
+// 5dd680d6c1f5e7aa9c7b020695e315d04aac862df82ff01d4e9041cd0668d7f2, retrieved
+// 2026-11-12). The drawing says its dimensions are approximate and not
+// production data. The values were read from the drawing's vector data: the
+// dimension extension lines give the board edges (x 0 and 85, y 0 and 56), the
+// tick marks give the hole centres (x 3.5 and 61.5, y 3.5 and 52.5), the GPIO
+// header body is centred on the hole pattern (x 32.5), and the outline minus the
+// board gives the connector protrusions. Expect about +/-0.1 mm.
+//
+// Board frame: origin at the left-bottom corner seen from the COMPONENT side.
+// X runs along the 85 mm edge, Y along the 56 mm edge, and the GPIO header is on
+// the top (Y = 56) edge.
+export const PI_BOARD = { length: 85, width: 56, thickness: 1.6 } as const
+/** M2.5 clearance hole (drawing dia 2.7). */
+export const PI_HOLE_DIAMETER = 2.7 as const
+/** Hole centres sit this far from the left and bottom edges. */
+export const PI_HOLE_INSET = 3.5 as const
+export const PI_HOLE_PITCH = { x: 58, y: 49 } as const
+/**
+ * Connectors that stand beyond the board outline. Left 1.7 (the drawing's left
+ * edge, microSD side), right 3.3 (USB-A x2 and RJ45), bottom 1.7 (USB-C and
+ * micro-HDMI). Top 0.
+ */
+export const PI_PROTRUSION = { left: 1.7, right: 3.3, bottom: 1.7, top: 0 } as const
+/** The GPIO header and the hole pattern share the centre line x = 32.5 mm. */
+export const PI_HEADER_CENTRE_X = PI_HOLE_INSET + PI_HOLE_PITCH.x / 2
+
+// Mounting: the Pi hangs behind the panel with its COMPONENT SIDE AWAY from the
+// panel, so the panel looks at the board from underneath and its X axis is
+// mirrored. The board is centred on the panel origin.
+//   panel X = PI_BOARD.length / 2 - board x   (the USB-A/RJ45 edge goes to -X)
+//   panel Y = board y - PI_BOARD.width / 2    (the GPIO header goes to +Y)
+export const piBoardToPanel = (bx: number, by: number) => ({
+  x: PI_BOARD.length / 2 - bx,
+  y: by - PI_BOARD.width / 2,
+})
 
 // ---- 20HP Pi mounting panel (owner decision 2026-11-12) ----
 // The Pi 5 (with Active Cooler + M.2 HAT+ + SSD) no longer sits in the rack
 // module: it bolts to the REAR face of its own pure-mechanical 20HP x 3U FR-4
-// panel in a second rack position. That is what makes the main module shallow
+// panel beside the main module. That is what keeps the main module shallow
 // enough for the Behringer Eurorack Go rows (docs/mechanical-stack.md). The
 // panel carries no copper and no components; JLCPCB fabricates it like the
 // 30HP panel (same no-mask white-silk bare board). USB stays as-is on the 30HP
 // panel - its three feedthroughs do not move - and the harness between the two
-// rack positions is the three USB feedthrough cables, the display DSI FPC, the
+// modules is the three USB feedthrough cables, the display DSI FPC, the
 // 40-wire GPIO ribbon to J_PI and the J_PWR power-button pigtail. Those are
 // planning runs; no length is proven (docs/TODO.md).
 //
@@ -171,27 +172,39 @@ export const PI_PANEL_RAIL_HOLES = [
   { x: -43.18, y: 61.25 }, { x: 43.18, y: 61.25 },
 ] as const
 
-// Pi 5 on the mounting panel: LANDSCAPE, the 85 mm edge across the panel, so
-// every plug (USB-C/micro-HDMI at one short edge, USB-A/RJ45 at the other)
-// inserts in the panel plane instead of toward the rails. The GPIO header is
-// on the TOP long edge (the 40-wire ribbon exits upward toward J_PI), the
-// display DSI FPC and the PCIe FPC on the BOTTOM long edge. Holes are the
-// reference 58 x 49 grid UNROTATED and centred; the M2.5 clearance drill is
-// the same 2.7 mm as the rear-board PI_HOLES. The Pi hangs behind the panel on
-// standoffs, component side away from the panel (basis of the depth chain in
-// PI_PANEL_PROVISIONAL_DEPTH).
-export const PI_PANEL_PI_MOUNT = { x: 0, y: 0, pitchX: 58, pitchY: 49, holeDiameter: 2.7 } as const
-export const PI_PANEL_PI_HOLES = [-1, 1].flatMap(sx => [-1, 1].map(sy => ({
-  x: PI_PANEL_PI_MOUNT.x + sx * PI_PANEL_PI_MOUNT.pitchX / 2,
-  y: PI_PANEL_PI_MOUNT.y + sy * PI_PANEL_PI_MOUNT.pitchY / 2,
-})))
-// Landscape envelope: the LONG edge runs across X. Same conservative
-// 85.6 x 56.5 bound and source as PI_PCB above (RP-008347-DS-1, page 1).
+// Pi 5 on the mounting panel: LANDSCAPE, the 85 mm edge across the panel. The
+// 40-pin GPIO header runs along the panel's TOP edge (the ribbon toward J_PI
+// leaves upward), USB-C and micro-HDMI face the BOTTOM edge, USB-A x2 and RJ45
+// face the LEFT edge (panel -X), and the drawing's left edge (microSD side)
+// faces the RIGHT edge. Those plugs insert in the panel plane. The M2.5 holes
+// are the drawing's 58 x 49 pattern mapped through piBoardToPanel, so the
+// pattern centre sits 10 mm toward +X, where the header is centred on it.
+export const PI_PANEL_PI_MOUNT = {
+  x: piBoardToPanel(PI_HEADER_CENTRE_X, 0).x,
+  y: 0,
+  pitchX: PI_HOLE_PITCH.x,
+  pitchY: PI_HOLE_PITCH.y,
+  holeDiameter: PI_HOLE_DIAMETER,
+} as const
+export const PI_PANEL_PI_HOLES = [
+  piBoardToPanel(PI_HOLE_INSET, PI_HOLE_INSET),
+  piBoardToPanel(PI_HOLE_INSET, PI_HOLE_INSET + PI_HOLE_PITCH.y),
+  piBoardToPanel(PI_HOLE_INSET + PI_HOLE_PITCH.x, PI_HOLE_INSET),
+  piBoardToPanel(PI_HOLE_INSET + PI_HOLE_PITCH.x, PI_HOLE_INSET + PI_HOLE_PITCH.y),
+]
+// The board outline in the panel frame (the mirror swaps the two X limits).
 export const PI_PANEL_PI_BOX = {
-  x1: PI_PANEL_PI_MOUNT.x - PI_PCB.alongY / 2,
-  x2: PI_PANEL_PI_MOUNT.x + PI_PCB.alongY / 2,
-  y1: PI_PANEL_PI_MOUNT.y - PI_PCB.acrossX / 2,
-  y2: PI_PANEL_PI_MOUNT.y + PI_PCB.acrossX / 2,
+  x1: piBoardToPanel(PI_BOARD.length, 0).x,
+  x2: piBoardToPanel(0, 0).x,
+  y1: piBoardToPanel(0, 0).y,
+  y2: piBoardToPanel(0, PI_BOARD.width).y,
+} as const
+// The same outline including the connectors that stand beyond it.
+export const PI_PANEL_PI_ENVELOPE = {
+  x1: piBoardToPanel(PI_BOARD.length + PI_PROTRUSION.right, 0).x,
+  x2: piBoardToPanel(-PI_PROTRUSION.left, 0).x,
+  y1: piBoardToPanel(0, -PI_PROTRUSION.bottom).y,
+  y2: piBoardToPanel(0, PI_BOARD.width + PI_PROTRUSION.top).y,
 } as const
 
 // ---- 4.3-inch DSI LCD, Waveshare "4.3inch DSI LCD" (ElectroKit art 4103 5687)
@@ -356,10 +369,6 @@ export const DISPLAY_STACK = {
   planeSeparation: DISPLAY_STANDOFF.planeSeparation,
   spacerLength: DISPLAY_STANDOFF.spacerLength,
   holeDiameter: DISPLAY_VENDOR.holeDiameter,
-  piWidth: 85,
-  piHeight: 56,
-  piMountPitchLong: 58,
-  piMountPitchShort: 49,
 } as const
 // Display depth behind the display PCB, to the rear-most point: the boss ends.
 export const DISPLAY_BEHIND_PCB = DISPLAY_VENDOR.pcbRearToBossEnd // 4.0
@@ -396,8 +405,8 @@ export const LCD_WINDOW = {
 // (y = -22.00) that the earlier layout was built around. The authorised
 // fallback (3) is therefore applied: the REC / OVER DUB / PLAY light pipes move
 // from 10 mm ABOVE their buttons to 12 mm BESIDE them (LED_Y = TRANSPORT_Y).
-// The free band becomes +49.70 -> transport-button opening top (-27.80) =
-// 77.50 mm, and the window keeps 7.935 mm above (to the feedthrough labels,
+// The free band becomes +49.70 -> transport-button opening top (-27.875) =
+// 77.575 mm, and the window keeps 7.935 mm above (to the feedthrough labels,
 // moved from y 44.0 to 47.5) and 2.865 mm below (to the button openings).
 //
 // Clearance per side, each term stated:
@@ -953,19 +962,25 @@ export const mechanicalExport = () => ({
   // until a labelled front/rear photograph or the physical part is available; a
   // candidate that reproduces these positions is consistent only.
   displayStandoffs: DISPLAY_STANDOFFS,
-  piHoles: PI_HOLES,
-  piMount: PI_MOUNT,
+  // The Pi 5 board in its OWN frame (drawing constants). The Pi panel's holes
+  // are derived from these through piBoardToPanel; mechanical/step_assembly.py
+  // re-derives them independently and fails if they disagree.
+  piBoard: { ...PI_BOARD, holeInset: PI_HOLE_INSET, holePitch: PI_HOLE_PITCH,
+    holeDiameter: PI_HOLE_DIAMETER, headerCentreX: PI_HEADER_CENTRE_X },
+  piProtrusion: PI_PROTRUSION,
   piSpacer: PI_SPACER_MM,
-  // The 20HP Pi mounting panel (owner decision 2026-11-12): the Pi hangs
-  // behind this panel in its own rack position. Geometry only; the harness
-  // lengths between the two rack positions stay planning values in the docs.
+  // The 20HP Pi mounting panel (owner decision 2026-11-12). It sits BESIDE the
+  // main module in the same row (the added HP), with its own depth check.
+  // Geometry only; the harness lengths stay planning values in the docs.
   piPanel: {
     ...PI_PANEL,
     railHoles: PI_PANEL_RAIL_HOLES,
     railHoleDiameter: RAIL_HOLE_DIAMETER,
     piMount: PI_PANEL_PI_MOUNT,
     piMountHoles: PI_PANEL_PI_HOLES,
-    piPcbBox: PI_PANEL_PI_BOX,
+    piBoardBox: PI_PANEL_PI_BOX,
+    piEnvelope: PI_PANEL_PI_ENVELOPE,
+    mirroredX: true,
   },
   piPanelProvisionalDepth: PI_PANEL_PROVISIONAL_DEPTH,
   eurorackGoMaxModuleDepth: EURORACK_GO_MAX_MODULE_DEPTH,
@@ -1048,12 +1063,12 @@ export const TRANSPORT_Y = -34
 // LEDs sit BESIDE their buttons, not above them (owner-authorised fallback 3,
 // 2026-11-07): the glass-derived panel window reaches down to y -24.94, and a
 // light pipe at y -24 would sit inside it. 12 mm to the right keeps a 3.8 mm
-// FR-4 web to the 4.0 mm cutout and the 12.4 mm button opening beside it, and
+// FR-4 web to the 4.0 mm cutout and the 12.25 mm button opening beside it, and
 // is clear of the next column's button (24 mm pitch).
 export const LED_Y = TRANSPORT_Y
 const LED_X_OFFSET = 12
-// button r6.2 + LED r2 needs >8.2 mm spacing for a routable FR4 web (1.8 mm);
-// 12 mm gives 3.8 mm.
+// button half-side 6.125 + LED r1.3 needs under 12 mm for a routable FR4 web;
+// 12 mm gives 4.6 mm to the square edge.
 export const JACK_Y = -47.5
 const TRANSPORT_BUTTON_NAMES = ["REC", "OVER DUB", "STOP", "PLAY"] as const
 const MIDI_JACK_NAMES = ["MIDI IN 1", "MIDI IN 2", "MIDI OUT 1", "MIDI OUT 2"] as const
@@ -1095,7 +1110,8 @@ export const midiJackX = (jack: string): number => {
 //     statement about the marker, NOT a clearance to a real connector;
 //   * the male tail is 3.00 mm from the connector seating face, i.e. a NOMINAL
 //     1.40 mm protrusion beyond a 1.60 mm PCB (INTERCONNECT_PROTRUSION), and
-//     those tails sit over the Pi PCB area. A 3.5 mm Pi spacer is a CANDIDATE
+//     no Pi board sits above those tails (the Pi is on its own panel). A 3.5 mm
+//     Pi spacer is a CANDIDATE
 //     only, not a safety claim: the fillet and clearance are unmeasured (see
 //     PROVISIONAL_DEPTH).
 // Superseded candidates: J5 at (34, 10) with J_FRONT there would have put the
@@ -1126,17 +1142,52 @@ export const FRONT_CONCEPT: readonly FrontConceptPoint[] = [
   ...FRONT_COLUMNS.map(c => ({ id: c.jack, x: c.x, y: JACK_Y, kind: "jack" as const })),
 ]
 
+// ---- Button key top: Omron/ARATAS B32-1380 (red) on the B3F-4055 ----
+// Dimensions as printed on the Omron B32 datasheet, page 3 (B32-13x0 drawing),
+// tolerance +/-0.4 unless stated. The B32-1380 is the RED 12 x 12 mm square key
+// top; the black 12 x 12 mm equivalent is B32-1310 (page 1 table). The 10.0 mm
+// reference dimension is from the PC BOARD to the PANEL FRONT FACE, not to the
+// cap top: the drawing shows the cap top just below the panel's rear face.
+export const BUTTON_CAP = {
+  part: "Omron/ARATAS B32-1380",
+  colour: "red",
+  topSquare: 12.0,
+  topSquareTolerance: 0.15,
+  // Reference dimension: PC board to the panel FRONT face (not the cap top).
+  referenceBoardToPanelFront: 10.0,
+  referenceBoardToPanelFrontTolerance: 0.4,
+  panelThickness: { min: 1.0, max: 2.0 },
+  referenceCutoutSquare: 12.2,
+  referenceCutoutTolerance: { plus: 0.05, minus: 0 },
+  source: "https://omronfs.omron.com/en_US/ecb/products/pdf/en-b32.pdf (SHA-256 90834f79bcb19ed59fc242f0a005d8ca47fcdbf2f4583bc53695695bb675d28f)",
+} as const
+
+// The CURRENT stack compared with Omron's reference. Z datum: the panel front
+// face is Z = 0, +Z rearward (docs/mechanical-stack.md). The switch stands on
+// the front board's top face (PROVISIONAL_Z.frontBoardTop = 19.05). Omron's
+// reference puts the panel front 10.0 +/-0.4 mm above the PCB; our board sits
+// 19.05 mm behind it, so the stack is 9.05 mm deeper than the reference. The
+// cap top is NOT dimensioned in the drawing, so a fitted extension must be
+// measured on a sample: do not convert 10.0 mm into a cap height here.
+export const BUTTON_STACK = {
+  omronReferencePanelFrontZ: mm3(PROVISIONAL_Z.frontBoardTop - BUTTON_CAP.referenceBoardToPanelFront),
+  panelFrontZ: PROVISIONAL_Z.panelFront,
+  panelRearZ: PROVISIONAL_Z.panelRear,
+  stackDepthExcess: mm3(PROVISIONAL_Z.frontBoardTop - BUTTON_CAP.referenceBoardToPanelFront - PROVISIONAL_Z.panelFront),
+  stackDepthExcessTolerance: BUTTON_CAP.referenceBoardToPanelFrontTolerance,
+} as const
+
 // ---- Panel openings (front FR-4 panel) ----
 export const PANEL_CUTOUTS = {
-  // UNVERIFIED PROVISIONAL VALUE, NOT SOURCED. No Omron drawing states a
-  // 12.4 mm round panel opening. The B3F-4055 (primary drawing, SHA-256
-  // be9cf69e...) has a SQUARE 3.8 +-0.1 mm projected plunger and a 12 +-0.2 mm
-  // square body; the compatible B32 cap families (SHA-256 90834f79...) show a
-  // 12.2 x 12.2 mm square or a Ø9.7 mm round reference cutout. A square cap
-  // corner cannot pass a Ø12.4 round hole. Kept only until the owner chooses a
-  // switch extension, a cap, or a stack redesign; see docs/mechanical-stack.md
-  // and the pending `control_actuator` acceptance item.
-  button: 12.4,
+  // B3F-4055 buttons take an Omron/ARATAS B32 SQUARE key top, 12 x 12 mm
+  // (B32-13x0). Omron's reference panel cutout for it is 12.2 +0.05/-0 mm square
+  // (B32 datasheet en-b32.pdf, SHA-256 90834f79..., page 3). 12.25 mm is the top
+  // of that band, so the largest cap (12 +0.15 = 12.15 mm) clears by 0.05 mm per
+  // side. The 1.6 mm panel is inside Omron's 1.0-2.0 mm panel range. The square
+  // is a routed cut: confirm JLCPCB's routed tolerance before ordering. THE CAP
+  // DOES NOT MATCH Omron's reference stack: see BUTTON_STACK below.
+  // Opening side length, mm (square).
+  button: 12.25,
   // 2.6 is the owner-approved PROVISIONAL mounting hole for the candidate
   // Signal Construct PGN25L165 (manufacturer drawing, SHA-256 5350ad1f...:
   // mounting hole Ø2.6 -0.05 mm, i.e. 2.55-2.60). It is NOT a fit approval and
@@ -1212,11 +1263,11 @@ export const PANEL_APERTURES: readonly PanelAperture[] = [
   })),
   // 3. Transport buttons, then PLAY START and SHIFT/EXIT.
   ...FRONT_COLUMNS.map(c => ({
-    shape: "circle" as const, name: `${c.button} BUTTON`,
-    x: c.x, y: TRANSPORT_Y, radius: PANEL_CUTOUTS.button / 2,
+    shape: "rect" as const, name: `${c.button} BUTTON`,
+    x: c.x, y: TRANSPORT_Y, width: PANEL_CUTOUTS.button, height: PANEL_CUTOUTS.button,
   })),
-  { shape: "circle", name: "PLAY START BUTTON", x: PLAY_START.x, y: TRANSPORT_Y, radius: PANEL_CUTOUTS.button / 2 },
-  { shape: "circle", name: "SHIFT/EXIT BUTTON", x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y, radius: PANEL_CUTOUTS.button / 2 },
+  { shape: "rect", name: "PLAY START BUTTON", x: PLAY_START.x, y: TRANSPORT_Y, width: PANEL_CUTOUTS.button, height: PANEL_CUTOUTS.button },
+  { shape: "rect", name: "SHIFT/EXIT BUTTON", x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y, width: PANEL_CUTOUTS.button, height: PANEL_CUTOUTS.button },
   // 4. LED light-pipe openings, 12 mm beside REC / OVER DUB / PLAY.
   ...FRONT_COLUMNS.filter(c => c.button in LED_ID).map(c => {
     const p = ledPosition(c.x)
@@ -1228,7 +1279,7 @@ export const PANEL_APERTURES: readonly PanelAperture[] = [
   }),
   // 5. Encoder, POWER button, NAV switch: the right-hand control column.
   { shape: "circle", name: "VALUE ENCODER", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y, radius: PANEL_CUTOUTS.control / 2 },
-  { shape: "circle", name: "POWER BUTTON", x: POWER_BUTTON.x, y: POWER_BUTTON.y, radius: PANEL_CUTOUTS.button / 2 },
+  { shape: "rect", name: "POWER BUTTON", x: POWER_BUTTON.x, y: POWER_BUTTON.y, width: PANEL_CUTOUTS.button, height: PANEL_CUTOUTS.button },
   { shape: "circle", name: "NAV", x: RIGHT_CONTROLS.NAV.x, y: RIGHT_CONTROLS.NAV.y, radius: PANEL_CUTOUTS.control / 2 },
   // 6. MIDI jack barrels in the four transport columns.
   ...FRONT_COLUMNS.map(c => ({
@@ -1302,12 +1353,12 @@ export const PI_PANEL_TITLES = [
 ] as const
 export const PI_PANEL_LABELS: readonly PanelLabel[] = [
   { text: "GPIO RIBBON to J_PI", x: 0, y: 33 },
-  { text: "DSI FPC to display", x: 0, y: -33 },
-  { text: "USB-C POWER / HDMI", x: -32, y: 44 },
-  { text: "USB + RJ45", x: 32, y: 44 },
-  // Pin 1 of the Pi GPIO header is at the top-LEFT of the landscape Pi
-  // (USB-C/HDMI edge left, GPIO edge up): a bare "1" beside that corner.
-  { text: "1", x: -27.5, y: 30.5 },
+  { text: "USB-C + micro-HDMI", x: 0, y: -34 },
+  { text: "USB-A x2 + RJ45", x: -33, y: 0 },
+  { text: "microSD", x: 33, y: 0 },
+  // Pi pin 1 sits 24.13 mm from the header centre (the 40-pin span / 2), on the
+  // outer row just above the board's top edge.
+  { text: "1", x: PI_PANEL_PI_MOUNT.x + 24.13, y: 29 },
 ] as const
 export const panelTitleExtents = (t: { text: string; x: number; y: number; fontSize: number }) => {
   const w = t.text.length * t.fontSize * SILK_ADVANCE_RATIO
@@ -1328,7 +1379,7 @@ export const PANEL_LABELS: readonly PanelLabel[] = [
   // PLAY START's label sits ABOVE its button, not below like the transport row:
   // below it the ink ran into the POWER button opening at (52.5, -48). At
   // y -25.5 the 1.8 mm text keeps 1.2 mm to the LCD window bottom (-23.435) and
-  // 1.4 mm to the button opening top (-27.8). Only the label moves; no control,
+  // 1.4 mm to the button opening top (-27.875). Only the label moves; no control,
   // opening or board coordinate changes.
   { text: PLAY_START.button, x: PLAY_START.x, y: PLAY_START_LABEL_Y },
   ...FRONT_COLUMNS.map(c => ({ text: JACK_LABEL[c.jack] ?? c.jack, x: c.x, y: JACK_Y + LABEL_OFFSET.jack })),

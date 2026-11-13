@@ -5,15 +5,16 @@ import { C8545_2N7002 } from "./imports/C8545_2N7002"
 import { SN74LVC1G126DBVR } from "./imports/SN74LVC1G126DBVR"
 import { BOARD_POLICY } from "./lib/electrical"
 import { INTERCONNECT_NETS, SBH11_PBPC_D13_ST_BK } from "./lib/interconnect"
-import { FRONT_REAR_MOUNT, PI_HOLES, REAR_INTERCONNECT, REAR_PCB } from "./lib/layout"
+import { FRONT_REAR_MOUNT, REAR_INTERCONNECT, REAR_PCB } from "./lib/layout"
 import { PROBE_FOOTPRINT, PROBE_HOLE_DIAMETER_MM, PROBE_PAD_DIAMETER_MM, PROBE_POINTS } from "./lib/probe-points"
 import { RearSilk } from "./lib/silk"
 
 // REAR/BASE BOARD, 20HP x 112 mm. Prototype schematic/placement; not a
-// fabrication release. The Pi 5 is mounted on the rear side using its 58 x 49
-// hole grid; the Pico is on the left and the Pi ribbon header at the top. All
-// SMT parts are on the rear (bottom) side; the front/rear male interconnect is
-// the one THT body on the front-facing top side, opposite the Pi.
+// fabrication release. The Pi 5 no longer sits on this board (owner decision
+// 2026-11-12): it is on its own 20HP mounting panel, reached through the 40-wire
+// ribbon at J_PI. The Pico sockets are on the left and J_PI at the top. All SMT
+// parts are on the rear (bottom) side; the front/rear male interconnect is the
+// one THT body on the front-facing top side.
 
 type RProps = { name: string; value: string; x: string; y: string; lcsc: string; mpn: string; p1: string; p2: string; rot?: string; sec?: string }
 const R = ({ name, value, x, y, lcsc, mpn, p1, p2, rot, sec = "isolation" }: RProps) => (
@@ -109,10 +110,6 @@ export default () => (
       <schematicsection name="probe" displayName="Probe points (bare copper, no parts)" />
     </schematicsheet>
 
-    {/* Pi 5 mounting holes: 58 x 49 grid, portrait orientation. */}
-    {PI_HOLES.map((h, i) => (
-      <Fragment key={`pi-hole-${i}`}><hole name={`PI_H${i + 1}`} diameter="2.7mm" pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
-    ))}
     {/* Front-board spacer grid (shared XY, see lib/layout.ts FRONT_REAR_MOUNT). */}
     {FRONT_REAR_MOUNT.map((h, i) => (
       <Fragment key={`mount-${i}`}><hole name={`H${i + 1}`} diameter="2.7mm" pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
@@ -182,7 +179,8 @@ export default () => (
         the 26 pads coincide: the front socket plugs straight onto it with no
         plug and no ribbon. Its tail is 3.00 mm FROM THE CONNECTOR SEATING FACE,
         i.e. a NOMINAL 1.40 mm protrusion beyond a 1.60 mm rear PCB, and the 26
-        pads lie over the Pi PCB area; the 3.5 mm Pi spacer is a CANDIDATE, not a
+        pads have no Pi board above them (the Pi is on its own panel); the 3.5 mm Pi
+        spacer is a CANDIDATE, not a
         safety claim, because the fillet and clearance are unmeasured
         (lib/layout.ts INTERCONNECT_PROTRUSION, PROVISIONAL_DEPTH). Physical
         fit, keying and pre-power continuity are pending (acceptance item
