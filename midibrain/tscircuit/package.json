@@ -18,10 +18,10 @@
   },
   "dependencies": {
     "@tscircuit/alphabet": "0.0.25",
-    "tscircuit": "0.0.3044"
+    "tscircuit": "0.0.3169"
   },
   "devDependencies": {
-    "@tscircuit/cli": "0.1.2427",
+    "@tscircuit/cli": "0.1.2454",
     "@types/react": "19.3.0",
     "bun-types": "1.4.4",
     "typescript": "5.9.3"
