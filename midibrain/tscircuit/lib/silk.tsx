@@ -119,7 +119,12 @@ export type BoardSilkSpec = {
 //    panel art); it is not an operator label and nothing else fits there;
 //  * the block below the jack field (y < -42, x > 25) is empty - board
 //    identity and the hand-solder legend live there.
-const FRONT_JACK_PIN1_DY = 4.92 // lib/jack.tsx: pin 1 (tip) above the barrel centre
+// Pin 1 is the SLEEVE pad on this part (QingPu/Thonkiconn WQP419GR: pads are
+// S / R / T, and lib/jack.tsx labels them that way). The vendor schematic also
+// numbers 1 = sleeve. The dot therefore sits at the sleeve pad, 6.48 mm below
+// the barrel centre - it used to sit at the tip pad when the footprint called
+// pin 1 the tip.
+const FRONT_JACK_PIN1_DY = -6.48 // lib/jack.tsx: pin 1 (sleeve) below the barrel centre
 const FRONT_LED_PAD_DX = 1.0 // 0805 anode/cathode pads sit +-0.91 mm from centre
 const FRONT_LED_MARK_DY = -1.6
 
@@ -169,7 +174,7 @@ export const FRONT_SILK: BoardSilkSpec = {
     // Derived from the control column, which owner decision D2 moved 47 -> 52.
     { ref: "U5", x: RIGHT_CONTROLS.NAV.x - 4.9, y: RIGHT_CONTROLS.NAV.y + 1.43, source: "silk" },
     { ref: "U6", x: RIGHT_CONTROLS.TEMPO.x - 4.0, y: RIGHT_CONTROLS.TEMPO.y + 7.9, source: "silk" },
-    // TRS jacks: pin 1 is the tip contact at the panel end of the footprint.
+    // TRS jacks: pin 1 is the sleeve contact, the pad furthest from the panel.
     ...frontJacks.map(({ ref, x }) => ({ ref, x: x - 1.9, y: JACK_Y + FRONT_JACK_PIN1_DY, source: "silk" as const })),
     // 2 x 13 direct interconnect, female socket on the bottom face. The mark
     // is derived from the shared placement so a move cannot strand it.

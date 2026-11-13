@@ -108,15 +108,19 @@ const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: n
         name={j}
         footprint={FP_JACK_TRS}
         pinCount={3}
-        pinLabels={{ pin1: "tip", pin2: "ring", pin3: "sleeve" }}
-        manufacturerPartNumber="PJ-301M-3-B"
-        supplierPartNumbers={{ jlcpcb: ["C381127"] }}
+        pinLabels={{ pin1: "S", pin2: "R", pin3: "T" }}
+        manufacturerPartNumber="WQP419GR"
+        cadModel={{
+          stepUrl: "https://raw.githubusercontent.com/clacktronics/AudioJacks/14a88866e93b8ce4a31ad376b0c6eb85cd4d2cf3/AudioJacks.3dshapes/PJ366ST.step",
+          pcbRotationOffset: 0,
+          modelOriginPosition: { x: 0, y: 0, z: 0 },
+        }}
         pcbX={`${jackX}mm`}
         pcbY={`${jackY}mm`}
         layer="top"
         schSheetName="front"
         schSectionName="midi_in"
-        connections={{ tip, ring, sleeve: `net.MIDI_IN_${ch}_SLEEVE` }}
+        connections={{ T: tip, R: ring, S: `net.MIDI_IN_${ch}_SLEEVE` }}
       />
       {/* Toshiba TLP2361(TPL,E, C107626: inverting totem-pole output, IFHL
           1.3 mA max to 105 C. Pin 1 anode, 3 cathode, 4 GND, 5 VO, 6 VCC. */}
@@ -169,15 +173,19 @@ const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: 
         name={j}
         footprint={FP_JACK_TRS}
         pinCount={3}
-        pinLabels={{ pin1: "tip", pin2: "ring", pin3: "sleeve" }}
-        manufacturerPartNumber="PJ-301M-3-B"
-        supplierPartNumbers={{ jlcpcb: ["C381127"] }}
+        pinLabels={{ pin1: "S", pin2: "R", pin3: "T" }}
+        manufacturerPartNumber="WQP419GR"
+        cadModel={{
+          stepUrl: "https://raw.githubusercontent.com/clacktronics/AudioJacks/14a88866e93b8ce4a31ad376b0c6eb85cd4d2cf3/AudioJacks.3dshapes/PJ366ST.step",
+          pcbRotationOffset: 0,
+          modelOriginPosition: { x: 0, y: 0, z: 0 },
+        }}
         pcbX={`${jackX}mm`}
         pcbY={`${jackY}mm`}
         layer="top"
         schSheetName="front"
         schSectionName="midi_out"
-        connections={{ tip, ring, sleeve: "net.GND" }}
+        connections={{ T: tip, R: ring, S: "net.GND" }}
       />
       {/* High-side P-channel switch: AO3401A (C15127), pad 1 gate, 2 source,
           3 drain. The gate is pulled to the 3.3 V rail by 2.2 kOhm so the

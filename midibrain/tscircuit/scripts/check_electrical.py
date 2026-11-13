@@ -95,9 +95,18 @@ INTERCONNECT = {
     25: "GND", 26: "SHIFT_EXIT",
 }
 
-# TRS Type A: tip = DIN 5, ring = DIN 4, sleeve = DIN 2. The PJ-301M-3-B
-# footprint places pin 1 = tip, pin 2 = ring, pin 3 = sleeve.
-TRS_CONTACT = {1: "tip", 2: "ring", 3: "sleeve"}
+# TRS Type A: tip = DIN 5, ring = DIN 4, sleeve = DIN 2.
+#
+# The contact map is keyed by PAD NUMBER and must follow the footprint, not the
+# part's terminal numbering. `lib/jack.tsx` is the authority: it labels the three
+# pads by function (S / R / T) for the QingPu/Thonkiconn WQP419GR, whose vendor
+# drawing numbers them 1 = sleeve, 2 = tip, 3 = ring - the reverse of the
+# retired PJ-301M-3-B assignment. Each physical pad keeps its net across that
+# change (tip at +4.92, ring at -3.38, sleeve at -6.48 mm from the barrel), so a
+# number-only check is exactly how a tip/sleeve swap would slip through.
+TRS_CONTACT = {1: "sleeve", 2: "ring", 3: "tip"}
+# Contact name -> pad number on the current footprint, derived (never re-typed).
+TRS_PAD = {contact: pin for pin, contact in TRS_CONTACT.items()}
 
 # Pins that may be open, derived from the connectivity tables above: every
 # header pin that no table entry uses, plus the second contact pair of each
@@ -979,8 +988,8 @@ def check_front(checker: Checker, front: BoardModel) -> None:
                     problems.append(f"sleeve (pin 3) carries {pad['net']!r}, expected GND")
             elif not (pad["net"] or "").startswith("MIDI_"):
                 problems.append(f"{contact} (pin {pin}) carries {pad['net']!r}")
-        checker.check(f"front: {jack} pin 1 = tip, pin 2 = ring, pin 3 = sleeve", not problems,
-                      "; ".join(problems))
+        checker.check(f"front: {jack} pads by function ({', '.join(f'{c} = pin {p}' for p, c in TRS_CONTACT.items())})",
+                      not problems, "; ".join(problems))
 
     for channel in (1, 2):
         check_midi_in(checker, front, channel)
@@ -1000,7 +1009,7 @@ def check_front(checker: Checker, front: BoardModel) -> None:
 
 def check_midi_in(checker: Checker, front: BoardModel, channel: int) -> None:
     jack, opto, res = f"J{channel}", f"U{channel}", f"R{channel}"
-    ring, tip = front.pad(jack, 2), front.pad(jack, 1)
+    ring, tip = front.pad(jack, TRS_PAD["ring"]), front.pad(jack, TRS_PAD["tip"])
     problems: list[str] = []
     if not ring or not tip or ring["net"] is None or tip["net"] is None:
         checker.check(f"front: MIDI IN {channel} Type A polarity", False, "jack pads are unconnected")
@@ -1049,7 +1058,7 @@ def check_midi_out(checker: Checker, front: BoardModel, channel: int) -> None:
     jack, switch = f"J{channel + 2}", f"Q{channel}"
     gate_res, pullup_res = f"R{channel + 4}", f"R{channel + 6}"
     ring_res, tip_res = f"R{channel + 8}", f"R{channel + 10}"
-    ring, tip = front.pad(jack, 2), front.pad(jack, 1)
+    ring, tip = front.pad(jack, TRS_PAD["ring"]), front.pad(jack, TRS_PAD["tip"])
     problems: list[str] = []
     if not ring or not tip or ring["net"] is None or tip["net"] is None:
         checker.check(f"front: MIDI OUT {channel} Type A polarity", False, "jack pads are unconnected")
