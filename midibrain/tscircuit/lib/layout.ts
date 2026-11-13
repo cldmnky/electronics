@@ -1032,7 +1032,10 @@ export const mechanicalExport = () => ({
 // left edge 45.75, 2.25 mm clear). The knob body then keeps 5.75 mm to the
 // board edge at 64.
 export const RIGHT_COLUMN = { x: 52, pitch: 19 } as const
-const RIGHT_TEMPO_Y = 30
+// Owner decision 2026-11-13: the whole right-hand column moves down 10 mm
+// (TEMPO 30 -> 20) to free the top-right corner for the POWER button and its
+// header. U6, U5 and SW6 shift with it; the panel labels derive from here.
+const RIGHT_TEMPO_Y = 20
 export const RIGHT_CONTROLS = {
   TEMPO: { x: RIGHT_COLUMN.x, y: RIGHT_TEMPO_Y },
   NAV: { x: RIGHT_COLUMN.x, y: RIGHT_TEMPO_Y - RIGHT_COLUMN.pitch },

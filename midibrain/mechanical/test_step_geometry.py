@@ -143,7 +143,7 @@ class CanonicalDataTest(unittest.TestCase):
         centres = {(a.get("x"), a.get("y")) for a in data["panelApertures"]
                    if a["shape"] != "polygon"}
         for centre in {(-53, -34), (-29, -34), (-5, -34), (19, -34), (52, -34),
-                       (52.5, -48), (52, 30), (52, 11), (52, -8), (-53, -47.5)}:
+                       (52.5, -48), (52, 20), (52, 1), (52, -18), (-53, -47.5)}:
             self.assertIn(centre, centres, f"control centre {centre} moved")
 
     def test_rail_holes_are_the_panel_corners(self) -> None:

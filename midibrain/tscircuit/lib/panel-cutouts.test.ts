@@ -138,8 +138,10 @@ test("the canonical apertures cover every opening class with its own diameter", 
   expect(lcd?.shape).toBe("polygon")
   expect(lcd?.points?.length).toBe(28)
   const positions = PANEL_APERTURES.filter(a => a.shape !== "polygon").map(a => `${a.x},${a.y}`)
-  // Control centres are the owner's and never move (docs/mechanical-stack.md).
-  for (const p of ["52,30", "52,11", "52,-8", "52,-34", "52.5,-48", "-53,-34", "-29,-34", "-5,-34", "19,-34"]) {
+  // Control centres are the owner's. The right column moved down 10 mm on
+  // 2026-11-13 (owner decision) to free the top-right corner for the POWER
+  // button, so TEMPO/NAV/SHIFT are 20/1/-18; everything else is unchanged.
+  for (const p of ["52,20", "52,1", "52,-18", "52,-34", "52.5,-48", "-53,-34", "-29,-34", "-5,-34", "19,-34"]) {
     expect(positions).toContain(p)
   }
 })

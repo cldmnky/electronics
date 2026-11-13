@@ -848,7 +848,7 @@ test("the panel-edge and rail-hole distances quoted in the docs are canonical", 
   const nearest = Math.min(...RAIL_HOLES.map(h =>
     polygonDistance(h.x, h.y, aperture) - r))
   expect(nearest).toBeCloseTo(15.423, 2)
-  // value knob body (Ø12.5 at x = 52, y = 30)
+  // value knob body (Ø12.5 at x = 52; y = 20 since the 2026-11-13 column move)
   const knobX = RIGHT_CONTROLS.TEMPO.x
   const knobY = RIGHT_CONTROLS.TEMPO.y
   const knobRight = knobX + 6.25
@@ -856,7 +856,8 @@ test("the panel-edge and rail-hole distances quoted in the docs are canonical", 
   expect(railEdge - knobRight).toBeCloseTo(8.73, 2)
   const knobToRail = Math.min(...RAIL_HOLES.map(h =>
     Math.hypot(knobX - h.x, knobY - h.y) - 6.25 - r))
-  expect(knobToRail).toBeCloseTo(27.526, 2)
+  // recomputed for y = 20: hypot(16.58, 41.25) - 6.25 - 1.60
+  expect(knobToRail).toBeCloseTo(36.607, 2)
   // the projections are strictly smaller than the 2D figures, which is why the
   // paragraph must never call them webs
   expect(nearest).toBeGreaterThan(railEdge + windowLeft)
