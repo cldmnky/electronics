@@ -85,17 +85,23 @@ export type SilkTextMark = {
   fontSize: number
   role: SilkTextRole
   part?: string
+  /** CCW rotation in degrees. 90 is used for the left-strip spine: after the
+   *  display opening took the middle of the board the only generous free zone
+   *  on the front face is the 11.75 mm strip left of the opening, and long
+   *  notes only fit there turned on their side. */
+  rotation?: number
 }
 
 /**
  * A pin-1 index mark. `silk` marks are emitted by this module; `footprint`
- * marks are drawn by the part's own footprint (the SO6 chamfer) and are listed
- * here so one table still proves every pin 1 is marked.
+ * marks are drawn by the part's own footprint and are listed here so one table
+ * still proves every pin 1 is marked. Nothing on the front board qualifies any
+ * more: the optos' vendor footprint turned out to draw no mark at all.
  */
 export type Pin1Mark = { ref: string; x: number; y: number; source: "silk" | "footprint" }
 
-export type WordmarkSpec = { x: number; y: number; capHeight: number; stroke: number }
-export type OshwSpec = { x: number; y: number; width: number; stroke: number }
+export type WordmarkSpec = { x: number; y: number; capHeight: number; stroke: number; rotation?: number }
+export type OshwSpec = { x: number; y: number; width: number; stroke: number; rotation?: number }
 
 export type BoardSilkSpec = {
   board: "front" | "rear"
@@ -109,16 +115,24 @@ export type BoardSilkSpec = {
 }
 
 // ---- Front/UI board ----
-// Free zones were mapped from the routed board before placing anything:
-//  * the strip between the display module's outline top (45.0: the 4.3-inch
-//    module is 68 mm tall on y = 11) and the top relief notch bottom (48.0) is
-//    only 3 mm, shorter than the 3.5 mm the 2.8 mm-cap wordmark inks, so the
-//    brand lockup stays on the strip below it at y 43.5 and clears the two
-//    front-to-rear spacer holes at (+-44, 43) instead. It is board identity on
-//    a face that is covered by the module (the operator-facing wordmark is the
-//    panel art); it is not an operator label and nothing else fits there;
-//  * the block below the jack field (y < -42, x > 25) is empty - board
-//    identity and the hand-solder legend live there.
+// 2026-11-13, after the display left this board: where silk may go changed
+// completely, so the free zones were re-mapped from the routed outline rather
+// than nudged:
+//  * the display opening (x -63.25...43.25, y -23.45...45.45) is a HOLE. The
+//    board wordmark used to sit at (-20, 43.5), which is inside that hole - it
+//    printed 119 stroke paths into thin air. The strip between the opening's
+//    top edge and the relief notch is 2.55 mm, less than the 2.8 mm cap, so the
+//    top of the board is unusable for identity;
+//  * the LEFT strip (x -75...-63.25, 11.75 mm wide, 112 mm tall) is now
+//    completely empty of parts - J5, SW7 and J_PWR all live on the right - so
+//    the wordmark, the OSHW gear and the long legends live there, turned 90
+//    degrees. That is the only place a 23 mm wordmark fits on this board;
+//  * the right strip has pockets: (44...58, 37...44) under the POWER button,
+//    x 70...74 beside J5, and the gaps between the MIDI clusters;
+//  * the bottom strip belongs to the jack field, the transport row and the
+//    cluster passives - only the note above the opening's bottom edge and the
+//    per-part marks go there.
+const FRONT_LEFT_STRIP_X = -69.2 // centre of the empty left strip, 5.8 mm from either edge
 // Pin 1 is the SLEEVE pad on this part (QingPu/Thonkiconn WQP419GR: pads are
 // S / R / T, and lib/jack.tsx labels them that way). The vendor schematic also
 // numbers 1 = sleeve. The dot therefore sits at the sleeve pad, 6.48 mm below
@@ -134,9 +148,10 @@ const frontJacks = FRONT_COLUMNS.map((column, i) => ({
   x: midiJackX(column.jack),
 }))
 const frontSwitches = [
-  ...FRONT_COLUMNS.map((column, i) => ({ ref: `SW${i + 1}`, x: transportButtonX(column.button) })),
-  { ref: "SW5", x: transportButtonX("PLAY START") },
-  { ref: "SW6", x: RIGHT_CONTROLS.SHIFT_EXIT.x },
+  ...FRONT_COLUMNS.map((column, i) => ({ ref: `SW${i + 1}`, x: transportButtonX(column.button), y: TRANSPORT_Y })),
+  { ref: "SW5", x: transportButtonX("PLAY START"), y: TRANSPORT_Y },
+  { ref: "SW6", x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y },
+  { ref: "SW7", x: POWER_BUTTON.x, y: POWER_BUTTON.y },
 ]
 // REC / OVER DUB / PLAY indicators: same positions as the panel light pipes,
 // i.e. 12 mm BESIDE the transport button, so the polarity letters follow
@@ -146,83 +161,129 @@ const frontLeds = [
   { ref: "D4", x: ledPosition(transportButtonX("OVER DUB")).x },
   { ref: "D5", x: ledPosition(transportButtonX("PLAY")).x },
 ]
-// MIDI OUT gate transistors (AO3401A SOT-23, front.circuit.tsx <MidiOut>): the
-// pin-1 pad side and, 2.1 mm right / 1.6 mm up from it, the ref designator. Q1's
-// cluster moved 45 -> 49 mm left when the 4.3-inch module's bottom-left LCD
-// hole landed inside the old courtyard at (-41.88, -13.54), so both marks are
-// derived from this one pair: the designator cannot strand itself on the old
-// spot (it did, at x -45.2, until this table was reconciled to the layout).
-const frontGates = [
-  { ref: "Q1", x: 63.7, y: -11.3 },
-  { ref: "Q2", x: 63.7, y: -38.3 },
-]
+// MIDI cluster placements, ONE pair per cluster (front.circuit.tsx <MidiIn> and
+// <MidiOut> take them as props). Every mark below that belongs to a cluster -
+// reference designators, pin-1 dots for the optos, the SOT-23 gates and the
+// 1N4148WS cathodes - is derived from these, so moving a cluster can never
+// strand its silk on the old spot (it did, twice, while the 10 mm respin was in
+// progress). Keep in step with front.circuit.tsx.
+const FRONT_CLUSTERS = {
+  in1: { u: { x: 51, y: -48 } },
+  in2: { u: { x: 64.6, y: -30 } },
+  out1: { q: { x: 66.6, y: -46.05 }, d: { x: 59, y: -46 } },
+  out2: { q: { x: 66.6, y: -8 }, d: { x: 72.6, y: -28 } },
+} as const
+// SOT-23 pin 1 sits at (-1.14, +0.95) from the gate's centre on this footprint
+// (measured from the built pads: pin1 65.46,-45.10 with the body at 66.6,-46.05).
+const FRONT_GATE_PIN1 = { dx: -1.14, dy: 0.95 }
+const FRONT_GATE_DOT = { dx: -1.4, dy: 0 }
 const FRONT_GATE_REF_OFFSET = { dx: 2.1, dy: 1.6 }
+// 1N4148WS: cathode pad is 1.17 mm LEFT of the body centre, anode 1.17 right.
+const FRONT_DIODE_CATHODE_DX = -1.17
+const FRONT_DIODE_K_OFFSET = { dx: -2.4, dy: 0 }
 
+// Known and accepted, measured 2026-11-13 on the built board: four VENDOR
+// footprints draw their own silk across their own pads - AO3401A's two body
+// verticals (24% and 19% of each segment inside pin 3 / pin 1), the PEC11R's two
+// 0.70 mm nicks at pins 5 and 3 (5% each) and the M20-9960245 housing edge at
+// pin 1 (19%). They are library geometry, not this table's ink: the fab clips
+// silk over exposed copper, so they print as clean outlines. Redrawing them is
+// a footprint change that has to be re-verified against the datasheets, so it is
+// deliberately NOT done here. Everything this module draws is clean: 90 marks,
+// 0 off-board, 0 inside either cutout, 0 over a pad, 0 text over text.
 export const FRONT_SILK: BoardSilkSpec = {
   board: "front",
   layer: "top",
   width: FRONT_PCB.width,
   height: FRONT_PCB.height,
-  wordmark: { x: -20, y: 43.5, capHeight: BOARD_WORDMARK_CAP, stroke: BOARD_WORDMARK_STROKE },
-  oshw: { x: -38.6, y: 43.5, width: OSHW_WIDTH, stroke: OSHW_STROKE },
+  // Wordmark and gear read bottom-to-top in the empty left strip.
+  wordmark: { x: FRONT_LEFT_STRIP_X, y: 30, capHeight: BOARD_WORDMARK_CAP, stroke: BOARD_WORDMARK_STROKE, rotation: 90 },
+  oshw: { x: FRONT_LEFT_STRIP_X, y: 8, width: OSHW_WIDTH, stroke: OSHW_STROKE, rotation: 90 },
   pin1: [
-    // SO6 chamfer marks drawn by the TLP2361 footprint itself.
-    { ref: "U1", x: 67.05, y: -0.29, source: "footprint" },
-    { ref: "U2", x: 67.05, y: -29.29, source: "footprint" },
-    // SOT-23 gates (derived from the cluster, see frontGates) and the two
-    // multi-pin modules.
-    ...frontGates.map((gate) => ({ ref: gate.ref, x: gate.x, y: gate.y, source: "silk" as const })),
-    // Derived from the control column, which owner decision D2 moved 47 -> 52.
+    // TLP2361 optos: the vendor footprint draws NO pin-1 mark (its silk is a
+    // plain body outline with pad gaps - checked in imports/TLP2361_TPL_E.tsx,
+    // which has zero circles and no chamfer), so this module draws the dot.
+    // Pin 1 is at +3.15/-1.27 from the body centre on this footprint; the dot
+    // sits a further 1.3 mm out, clear of the pill pad.
+    ...(["in1", "in2"] as const).map((k) => ({
+      ref: k === "in1" ? "U1" : "U2",
+      x: FRONT_CLUSTERS[k].u.x + 3.15 + 1.3,
+      y: FRONT_CLUSTERS[k].u.y - 1.27 - 1.3,
+      source: "silk" as const,
+    })),
+    // SOT-23 gates: dot outboard of pin 1.
+    ...(["out1", "out2"] as const).map((k) => ({
+      ref: k === "out1" ? "Q1" : "Q2",
+      x: FRONT_CLUSTERS[k].q.x + FRONT_GATE_PIN1.dx + FRONT_GATE_DOT.dx,
+      y: FRONT_CLUSTERS[k].q.y + FRONT_GATE_PIN1.dy + FRONT_GATE_DOT.dy,
+      source: "silk" as const,
+    })),
+    // Derived from the control column, which owner decision D2 moved 47 -> 52
+    // and the 2026-11-13 column move dropped to y 20/1/-18.
     { ref: "U5", x: RIGHT_CONTROLS.NAV.x - 4.9, y: RIGHT_CONTROLS.NAV.y + 1.43, source: "silk" },
     { ref: "U6", x: RIGHT_CONTROLS.TEMPO.x - 4.0, y: RIGHT_CONTROLS.TEMPO.y + 7.9, source: "silk" },
     // TRS jacks: pin 1 is the sleeve contact, the pad furthest from the panel.
     ...frontJacks.map(({ ref, x }) => ({ ref, x: x + FRONT_JACK_PIN1_DX, y: JACK_Y + FRONT_JACK_PIN1_DY, source: "silk" as const })),
-    // 2 x 13 direct interconnect, female socket on the bottom face. The mark
-    // is derived from the shared placement so a move cannot strand it.
-    { ref: "J5", x: FRONT_INTERCONNECT.x + 2.6, y: FRONT_INTERCONNECT.y + 15.24, source: "silk" },
+    // 2 x 13 direct interconnect, female socket on the bottom face. Pin 1 is the
+    // +X end of the top row; the dot sits above it, clear of the J_PWR keepout.
+    { ref: "J5", x: FRONT_INTERCONNECT.x + 2.6, y: FRONT_INTERCONNECT.y + 16.3, source: "silk" },
+    // J_PWR 1x2 right-angle header: pin 1 is the -X pad.
+    { ref: "J_PWR", x: POWER_HEADER.x - 1.9, y: POWER_HEADER.y + 1.7, source: "silk" },
+    // B3F-4055 buttons: pin 1 is the +X, -Y pad. Marked because the owner asked
+    // for pin 1 on every multi-pin part; note the switch is symmetric (1-2 and
+    // 3-4 are internally common), so this is placement aid, not polarity.
+    ...frontSwitches.map(({ ref, x, y }) => ({ ref, x: x + 6.25, y: y - 4.2, source: "silk" as const })),
   ],
   texts: [
-    // Bottom-right corner block: the panel POWER button, its jumper header and
-    // then board identity. Kept clear of the M2.5 holes at (44, -52)/(61, -53)
-    // and of the J4 jack courtyard.
-    { text: "POWER", x: 45.5, y: -42.6, fontSize: 1.4, role: "note" },
+    // ---- left strip: identity and legends, turned on their side ----
+    { text: "C1-C6: MLCC, NO POLARITY", x: FRONT_LEFT_STRIP_X, y: -3, fontSize: 0.7, role: "note", rotation: 90 },
+    { text: "HAND THT: J1-4 SW1-7 J5 J_PWR", x: FRONT_LEFT_STRIP_X, y: -21, fontSize: 0.7, role: "note", rotation: 90 },
+    { text: "MIDI BRAIN FRONT/UI", x: FRONT_LEFT_STRIP_X, y: -40, fontSize: 1.0, role: "note", rotation: 90 },
+
+    // ---- right strip, pocket under the POWER button ----
+    { text: "POWER", x: 52.5, y: 43.0, fontSize: 1.4, role: "note" },
     // SW7 is the Pi's remote power button: a plain contact pair, no power
     // circuitry. Press = power on / graceful shutdown request.
-    { text: "POWER: PRESS = ON / SHUTDOWN", x: 45.5, y: -44.4, fontSize: 0.7, role: "hint", part: "SW7" },
-    // Board identity and the hand-solder summary (JLC places every SMD line).
-    { text: "MIDI BRAIN FRONT/UI", x: 33, y: -46.4, fontSize: 1.0, role: "note" },
-    { text: "HAND THT: J1-4 SW1-6 J5 SW7", x: 33, y: -48.2, fontSize: 0.8, role: "note" },
-    // J_PWR moved to the REAR face at the top notch (lib/layout.ts
-    // POWER_HEADER), so this panel-side tag names the part and points over it;
-    // the part's own refdes prints on the bottom silk where it is fitted.
-    { text: "J_PWR - REAR FACE, TO PI PWR", x: POWER_HEADER.x, y: POWER_HEADER.y - 1.4, fontSize: 0.7, role: "hint", part: "J_PWR" },
-    // U6 is the one part whose manual process is qualified, not assumed:
-    // lugs first as the mechanical anchor, then a preheated quick joint
-    // (docs/assembly.md "U6 encoder: THT fallback and bench technique").
+    { text: "PRESS=ON", x: 52.5, y: 41.4, fontSize: 0.7, role: "hint", part: "SW7" },
+    { text: "HOLD=OFF", x: 52.5, y: 40.2, fontSize: 0.7, role: "hint", part: "SW7" },
+    { text: "SW7 THT", x: 52.5, y: 38.8, fontSize: 0.7, role: "hint", part: "SW7" },
+    // J5's refdes is printed by its own footprint on the body; this is the
+    // hand-solder tag, turned 90 in the 4 mm strip beside the connector.
+    { text: "J5 SOCKET THT", x: 72.0, y: 20, fontSize: 0.8, role: "hint", part: "J5", rotation: 90 },
+    // ---- notes over the board, under the display opening ----
+    { text: "DISPLAY OPENING", x: -10, y: -25.45, fontSize: 0.9, role: "note" },
+    // ---- bottom strip ----
     { text: "U6 THT - LUGS FIRST", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y - 10.2, fontSize: 0.8, role: "hint", part: "U6" },
-    { text: "J5 SOCKET THT", x: FRONT_INTERCONNECT.x, y: FRONT_INTERCONNECT.y + 21.8, fontSize: 0.8, role: "hint", part: "J5" },
-    ...frontJacks.map(({ ref, x }) => ({ text: `${ref} THT`, x, y: -40.65, fontSize: 0.7, role: "hint" as const, part: ref })),
+    ...frontJacks.map(({ ref, x }) => ({ text: `${ref} THT`, x, y: JACK_Y + 7.5, fontSize: 0.7, role: "hint" as const, part: ref })),
     // Hand-soldered buttons: the ref print sits above each body, so the tag
-    // goes on the same line just left of it ("THT SW1"). Below the body it
-    // would collide with the LED polarity letters.
-    ...frontSwitches.map(({ ref, x }) => ({
+    // goes on the same line just left of it ("THT SW1").
+    ...frontSwitches.slice(0, 6).map(({ ref, x, y }) => ({
       text: "THT",
       x: x - 4.5,
-      y: ref === "SW6" ? RIGHT_CONTROLS.SHIFT_EXIT.y + 7 : TRANSPORT_Y + 7,
+      y: y + 7,
       fontSize: 0.7,
       role: "hint" as const,
       part: ref,
     })),
-    // Reference designators the builder otherwise cannot see: tscircuit prints
-    // none for transistors or for the jack footprint. Derived from the gate
-    // marks so the designator follows its part.
-    ...frontGates.map((gate) => ({
-      text: gate.ref,
-      x: gate.x + FRONT_GATE_REF_OFFSET.dx,
-      y: gate.y + FRONT_GATE_REF_OFFSET.dy,
+    // Gate reference designators (tscircuit prints none for transistors here,
+    // and lib/silk.tsx is the one place that decides where they land).
+    ...(["out1", "out2"] as const).map((k) => ({
+      text: k === "out1" ? "Q1" : "Q2",
+      x: FRONT_CLUSTERS[k].q.x + FRONT_GATE_REF_OFFSET.dx,
+      y: FRONT_CLUSTERS[k].q.y + FRONT_GATE_REF_OFFSET.dy,
       fontSize: 0.8,
       role: "ref" as const,
-      part: gate.ref,
+      part: k === "out1" ? "Q1" : "Q2",
+    })),
+    // 1N4148WS cathodes: the clamp diodes are the only polarised two-pin parts
+    // on this board besides the LEDs, so their cathode is printed, not implied.
+    ...(["out1", "out2"] as const).map((k) => ({
+      text: "K",
+      x: FRONT_CLUSTERS[k].d.x + FRONT_DIODE_CATHODE_DX + FRONT_DIODE_K_OFFSET.dx,
+      y: FRONT_CLUSTERS[k].d.y + FRONT_DIODE_K_OFFSET.dy,
+      fontSize: 0.7,
+      role: "polarity" as const,
+      part: k === "out1" ? "D1" : "D2",
     })),
     // LED polarity: anode/cathode beside their pads; the footprint also draws
     // the cathode bar on the cathode side.
@@ -231,7 +292,7 @@ export const FRONT_SILK: BoardSilkSpec = {
       { text: "K", x: x + FRONT_LED_PAD_DX, y: LED_Y + FRONT_LED_MARK_DY, fontSize: 0.6, role: "polarity" as const, part: ref },
     ]),
     // Pin-1 number for the 2 x 13 interconnect, where the pinout matters.
-    { text: "1", x: FRONT_INTERCONNECT.x + 3.5, y: FRONT_INTERCONNECT.y + 17.4, fontSize: 0.8, role: "pin1", part: "J5" },
+    { text: "1", x: FRONT_INTERCONNECT.x + 3.5, y: FRONT_INTERCONNECT.y + 18.2, fontSize: 0.8, role: "pin1", part: "J5" },
   ],
 }
 
@@ -296,30 +357,50 @@ export const BOARD_SILK: Record<BoardSilkSpec["board"], BoardSilkSpec> = {
 // ---- Geometry helpers (measured by the tests, emitted by the component) ----
 
 /** Ink box of one text mark, using the exporter's measured advance ratio. */
-export const textBounds = (mark: Pick<SilkTextMark, "text" | "x" | "y" | "fontSize">): Bounds => {
-  const width = mark.text.length * mark.fontSize * SILK_ADVANCE_RATIO
+export const textBounds = (
+  mark: Pick<SilkTextMark, "text" | "x" | "y" | "fontSize"> & { rotation?: number },
+): Bounds => {
+  const advance = mark.text.length * mark.fontSize * SILK_ADVANCE_RATIO
+  const turned = Math.abs((mark.rotation ?? 0) % 180) === 90
+  const width = turned ? mark.fontSize : advance
+  const height = turned ? advance : mark.fontSize
   return {
     minX: mark.x - width / 2,
-    minY: mark.y - mark.fontSize / 2,
+    minY: mark.y - height / 2,
     maxX: mark.x + width / 2,
-    maxY: mark.y + mark.fontSize / 2,
+    maxY: mark.y + height / 2,
     width,
-    height: mark.fontSize,
+    height,
     cx: mark.x,
     cy: mark.y,
   }
 }
 
+/** Rotate a point list CCW about (cx, cy) by `degrees`. */
+export const rotatePoints = (points: Pt[], cx: number, cy: number, degrees: number): Pt[] => {
+  if (!degrees) return points
+  const a = (degrees * Math.PI) / 180
+  const cos = Math.cos(a), sin = Math.sin(a)
+  return points.map((q) => {
+    const dx = q.x - cx, dy = q.y - cy
+    return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }
+  })
+}
+
 /** Wordmark ink, mirrored on the bottom layer the way it is printed. */
 export const wordmarkPaths = (spec: BoardSilkSpec): Pt[][] => {
-  const { x, y, capHeight } = spec.wordmark
+  const { x, y, capHeight, rotation } = spec.wordmark
   const paths = textPaths(WORDMARK_TEXT, capHeight, x, y, "center")
-  return spec.layer === "bottom" ? paths.map((p) => p.map((q) => ({ x: 2 * x - q.x, y: q.y }))) : paths
+  const rotated = rotation ? paths.map((p) => rotatePoints(p, x, y, rotation)) : paths
+  return spec.layer === "bottom" ? rotated.map((p) => p.map((q) => ({ x: 2 * x - q.x, y: q.y }))) : rotated
 }
 
 /** OSHW gear ink; the mark is mirrored on the bottom layer. */
-export const oshwRoutes = (spec: BoardSilkSpec): Pt[][] =>
-  oshwPaths(spec.oshw.x, spec.oshw.y, spec.oshw.width, spec.layer === "bottom")
+export const oshwRoutes = (spec: BoardSilkSpec): Pt[][] => {
+  const { x, y, width, rotation } = spec.oshw
+  const routes = oshwPaths(x, y, width, spec.layer === "bottom")
+  return rotation ? routes.map((r) => rotatePoints(r, x, y, rotation)) : routes
+}
 
 /** Every piece of ink this module prints, for the clearance checks. */
 export const silkInk = (spec: BoardSilkSpec): { stroke: number; paths: Pt[][] }[] => [
@@ -388,6 +469,7 @@ export const BoardSilkSection = ({ spec }: { spec: BoardSilkSpec }) => (
           layer={spec.layer}
           pcbX={`${mark.x}mm`}
           pcbY={`${mark.y}mm`}
+          pcbRotation={`${mark.rotation ?? 0}deg`}
         />
       </Fragment>
     ))}

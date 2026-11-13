@@ -278,7 +278,8 @@ export default () => (
         hangs from the rear board's printed carrier, so this board carries no
         display holes and no display silk - only the opening above. One note is
         kept so a builder knows what the hole is for. */}
-    <silkscreentext text="DISPLAY OPENING" pcbX={`${FRONT_DISPLAY_OPENING.x}mm`} pcbY={`${FRONT_DISPLAY_OPENING.y - FRONT_DISPLAY_OPENING.height / 2 - 2}mm`} fontSize="0.9mm" anchorAlignment="center" layer="top" />
+    {/* The "DISPLAY OPENING" note lives in lib/silk.tsx with every other silk
+        mark; printing it here as well duplicated the ink. */}
     {/* bracket screws: removed with the rest of the mounting holes (2026-11-13) */}
 
     {/* All SMT on the panel side for single-sided JLCPCB assembly. Since the
@@ -399,6 +400,9 @@ export default () => (
       pcbX={`${POWER_BUTTON.x}mm`}
       pcbY={`${POWER_BUTTON.y}mm`}
       pcbRotation={`${POWER_BUTTON.rotation}deg`}
+      // "SW7" prints to the LEFT of the body: the default 7 mm above it would
+      // land at y 56.5, off the board.
+      refTextAt={{ x: -9.2, y: 0 }}
       layer="top"
       schSheetName="front"
       schSectionName="controls"

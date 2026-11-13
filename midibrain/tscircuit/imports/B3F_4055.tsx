@@ -7,8 +7,14 @@ const pinLabels = {
   pin4: ["pin4"]
 } as const
 
-export const B3F_4055 = (props: PushButtonProps<typeof pinLabels>) => {
-  const { name = "SW1", ...restProps } = props
+/** Optional placement of this part's printed reference designator, in the
+ *  footprint's own frame. Default is the Omron drawing's above-body spot; SW7
+ *  overrides it because it sits 6.5 mm from the board's top edge and the
+ *  default puts "SW7" off the board. */
+type RefTextAt = { x: number; y: number }
+
+export const B3F_4055 = (props: PushButtonProps<typeof pinLabels> & { refTextAt?: RefTextAt }) => {
+  const { name = "SW1", refTextAt = { x: -0.00254, y: 7.002147 }, ...restProps } = props
 
   return (
     <pushbutton
@@ -39,7 +45,7 @@ export const B3F_4055 = (props: PushButtonProps<typeof pinLabels>) => {
 <silkscreenpath route={[{"x":6.010148000000015,"y":-5.9973209999999995},{"x":-5.989827999999989,"y":-5.9973209999999995}]} />
 <silkscreenpath route={[{"x":-5.989827999999989,"y":-5.9973209999999995},{"x":-5.989827999999989,"y":-3.7314124000000106}]} />
 <silkscreenpath route={[{"x":-5.989827999999989,"y":1.259535200000002},{"x":-5.989827999999989,"y":-1.2871449999999953}]} />
-<silkscreentext text="{NAME}" pcbX="-0.00254mm" pcbY="7.002147mm" anchorAlignment="center" fontSize="1mm" />
+<silkscreentext text="{NAME}" pcbX={`${refTextAt.x}mm`} pcbY={`${refTextAt.y}mm`} anchorAlignment="center" fontSize="1mm" />
 <courtyardoutline outline={[{"x":-7.499921999999998,"y":6.253112200000004},{"x":7.499922000000012,"y":6.253112200000004},{"x":7.499922000000012,"y":-6.246863799999986},{"x":-7.499921999999998,"y":-6.246863799999986},{"x":-7.499921999999998,"y":6.253112200000004}]} />
       </footprint>}
       cadModel={{
