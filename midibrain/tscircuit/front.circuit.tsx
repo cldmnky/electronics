@@ -311,6 +311,7 @@ export default () => (
         mark; printing it here as well duplicated the ink. */}
     {/* bracket screws: removed with the rest of the mounting holes (2026-11-13) */}
 
+
     {/* All SMT on the panel side for single-sided JLCPCB assembly. Since the
         2026-11-13 respin the display is an opening, so all four MIDI clusters
         live in the right-hand strip (x 58.3...75), stacked above the 2 x 13
