@@ -300,8 +300,10 @@ export default () => (
         bushings and the 2 x 13 interconnect; how the stack is finally fastened
         is an open item (docs/TODO.md). The constants in lib/layout.ts are kept,
         so putting them back is a one-line change per group. */}
-    {[].map((h: { x: number; y: number }, i: number) => (
-      <Fragment key={`board-hole-${i}`}><hole name={`BOARD_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
+    {/* 2026-11-13 (owner): the front-to-rear spacer holes are back (the panel
+        standoffs are not - see lib/layout.ts). */}
+    {FRONT_REAR_MOUNT.map((h, i) => (
+      <Fragment key={`mount-hole-${i}`}><hole name={`MOUNT_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
     ))}
     {/* The module used to be screwed to four SMTSO bosses on this face. It now
         hangs from the rear board's printed carrier, so this board carries no

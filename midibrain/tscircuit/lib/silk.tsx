@@ -187,15 +187,18 @@ const FRONT_GATE_REF_OFFSET = { dx: 2.1, dy: 1.6 }
 const FRONT_DIODE_CATHODE_DX = -1.17
 const FRONT_DIODE_K_OFFSET = { dx: -2.4, dy: 0 }
 
-// Known and accepted, measured 2026-11-13 on the built board: four VENDOR
-// footprints draw their own silk across their own pads - AO3401A's two body
-// verticals (24% and 19% of each segment inside pin 3 / pin 1), the PEC11R's two
-// 0.70 mm nicks at pins 5 and 3 (5% each) and the M20-9960245 housing edge at
-// pin 1 (19%). They are library geometry, not this table's ink: the fab clips
-// silk over exposed copper, so they print as clean outlines. Redrawing them is
-// a footprint change that has to be re-verified against the datasheets, so it is
-// deliberately NOT done here. Everything this module draws is clean: 90 marks,
-// 0 off-board, 0 inside either cutout, 0 over a pad, 0 text over text.
+// Known and accepted, re-measured 2026-11-13 on the built boards: the vendor
+// footprints draw their own body outlines across their own pads - C1-C6 (0603 /
+// 1206 bodies), D1-D5, Q1-Q3, U5/U6 (encoder marks), J5/J_FRONT (the 2 x 13 body
+// outline), J_PWR and C7-C14. That is library geometry, not this table's ink: the
+// fab clips silk over exposed copper, so they print as clean outlines. Redrawing
+// them is a footprint change that has to be re-verified against the datasheets,
+// so it is deliberately NOT done here.
+// Everything this module draws is clean on BOTH boards: 418 marks on the front and
+// 316 on the rear, with 0 off-board, 0 inside a cutout, 0 over a pad and 0 text
+// over text. The rear board's LCD carrier marks are the exception to "this module
+// draws everything": they are on the TOP face (where the carrier goes) and are
+// emitted from index.circuit.tsx for that reason.
 export const FRONT_SILK: BoardSilkSpec = {
   board: "front",
   layer: "top",
@@ -243,7 +246,9 @@ export const FRONT_SILK: BoardSilkSpec = {
     // ---- left strip: identity and legends, turned on their side ----
     { text: "C1-C6: MLCC, NO POLARITY", x: FRONT_LEFT_STRIP_X, y: -3, fontSize: 0.7, role: "note", rotation: 90 },
     { text: "HAND THT: J1-4 SW1-7 J5 J_PWR", x: FRONT_LEFT_STRIP_X, y: -21, fontSize: 0.7, role: "note", rotation: 90 },
-    { text: "MIDI BRAIN FRONT/UI", x: FRONT_LEFT_STRIP_X, y: -40, fontSize: 1.0, role: "note", rotation: 90 },
+    // y -46: the spine text is 13.1 mm long, and the front/rear spacer hole at
+    // (-69, -35) now sits in this strip - at y -40 the label ran through it.
+    { text: "MIDI BRAIN FRONT/UI", x: FRONT_LEFT_STRIP_X, y: -46, fontSize: 1.0, role: "note", rotation: 90 },
 
     // ---- right of the POWER button ----
     // SW7 owns the top of the right leg on its own (y 49), so the legend prints

@@ -5,7 +5,7 @@ import { C8545_2N7002 } from "./imports/C8545_2N7002"
 import { SN74LVC1G126DBVR } from "./imports/SN74LVC1G126DBVR"
 import { BOARD_POLICY } from "./lib/electrical"
 import { INTERCONNECT_NETS, SBH11_PBPC_D13_ST_BK } from "./lib/interconnect"
-import { FRONT_REAR_MOUNT, REAR_INTERCONNECT, REAR_PCB } from "./lib/layout"
+import { DISPLAY_CONCEPT, DISPLAY_VENDOR, FRONT_REAR_MOUNT, LCD_MOUNT_HOLES, MOUNT_HOLE_DIAMETER, REAR_INTERCONNECT, REAR_PCB } from "./lib/layout"
 import { PROBE_FOOTPRINT, PROBE_HOLE_DIAMETER_MM, PROBE_PAD_DIAMETER_MM, PROBE_POINTS } from "./lib/probe-points"
 import { RearSilk } from "./lib/silk"
 
@@ -111,9 +111,57 @@ export default () => (
     </schematicsheet>
 
     {/* Front-board spacer grid (shared XY, see lib/layout.ts FRONT_REAR_MOUNT). */}
-    {/* 2026-11-13 (owner): mounting holes removed for now, front and rear, until
-        the fastening scheme is re-decided (see front.circuit.tsx and
-        docs/TODO.md). FRONT_REAR_MOUNT is kept so they can be restored. */}
+    {/* 2026-11-13 (owner): the front-to-rear spacer holes are back on both
+        boards; the PANEL standoff holes stay removed.
+
+        The DISPLAY CARRIER holes are NOT in that category and are added here:
+        the 4.3" DSI module left the front board when the panel went to 10.0 mm,
+        and it now hangs on a printed carrier bolted to this board's top face.
+        The centres are the module's own SMTSO boss pattern (the only M2.5
+        threads it offers), offset by the display's placement - lib/layout.ts
+        LCD_MOUNT_HOLES, so the carrier cannot drift from the front board's
+        opening. R19 moved off the (39.65, -19.90) hole to (34, -22.5). */}
+    {FRONT_REAR_MOUNT.map((h, i) => (
+      <Fragment key={`spacer-${i}`}>
+        <hole name={`H${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} />
+      </Fragment>
+    ))}
+    {LCD_MOUNT_HOLES.map((h, i) => (
+      <Fragment key={`lcd-${i}`}>
+        <hole name={`LCD_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} />
+      </Fragment>
+    ))}
+
+    {/* ---- Display carrier markers, TOP layer ----
+        The silk module prints the rear board's BOTTOM face, where the parts are.
+        The 4.3" DSI module and its printed carrier live on this board's TOP face,
+        so its markers are emitted here instead, on the layer a builder looks at
+        while fitting the carrier. Everything is derived from LCD_MOUNT_HOLES, and
+        the labels sit OUTBOARD of the module outline (the module is 106.1 x 68.4
+        and hides anything under it): the outline here is 2 mm larger than the
+        module, so it stays visible as a register mark. */}
+    {/* Register marks, not a closed rectangle: a 110 x 72 outline crosses the
+        Pico sockets' pads at y -25.4 and the probe pads at y 41-47 (measured). Four
+        L-shaped corner ticks 4 mm outboard of the module outline say the same
+        thing and touch nothing. */}
+    {[[-1,-1],[1,-1],[-1,1],[1,1]].map(([sx, sy], i) => {
+      const cx = DISPLAY_CONCEPT.x + sx * (DISPLAY_VENDOR.outline.width / 2 + 4)
+      const cy = DISPLAY_CONCEPT.y + sy * (DISPLAY_VENDOR.outline.height / 2 + 4)
+      return (
+        <Fragment key={`lcd-tick-${i}`}>
+          <silkscreenpath layer="top" strokeWidth="0.2mm"
+            route={[{ x: cx, y: cy - sy * 6 }, { x: cx, y: cy }, { x: cx - sx * 6, y: cy }]} />
+        </Fragment>
+      )
+    })}
+    {LCD_MOUNT_HOLES.map((h, i) => (
+      <Fragment key={`lcd-label-${i}`}>
+        <silkscreentext layer="top" text={`LCD${i + 1}`} fontSize="1.1mm" anchorAlignment="center"
+          pcbX={`${h.x + (h.x < DISPLAY_CONCEPT.x ? 9 : -9)}mm`} pcbY={`${h.y + (h.y > DISPLAY_CONCEPT.y ? 5 : -5)}mm`} />
+      </Fragment>
+    ))}
+    <silkscreentext layer="top" text="DISPLAY CARRIER - 4x M2.5" fontSize="1.2mm" anchorAlignment="center"
+      pcbX={`${DISPLAY_CONCEPT.x}mm`} pcbY={`${DISPLAY_CONCEPT.y + DISPLAY_VENDOR.outline.height / 2 + 8.5}mm`} />
 
     {/* Pico sockets on the left margin; 51 mm module length vertical. */}
     <connector
@@ -216,9 +264,9 @@ export default () => (
     />
 
     <R name="R13" value="100" x="33mm" y="-16mm" lcsc="C22775" mpn="0603WAF1000T5E" p1="net.SPI_MOSI_PI" p2="net.SPI_MOSI_PICO" />
-    <R name="R14" value="100" x="33mm" y="-13mm" lcsc="C22775" mpn="0603WAF1000T5E" p1="net.SPI_SCLK_PI" p2="net.SPI_SCLK_PICO" />
-    <R name="R15" value="100" x="33mm" y="-10mm" lcsc="C22775" mpn="0603WAF1000T5E" p1="net.SPI_CS_PI" p2="net.SPI_CS_PICO" />
-    <R name="R19" value="100" x="38mm" y="-20mm" rot="180deg" lcsc="C22775" mpn="0603WAF1000T5E" p1="net.PI_3V3" p2="net.OE" />
+    <R name="R14" value="100" x="33mm" y="-12.5mm" lcsc="C22775" mpn="0603WAF1000T5E" p1="net.SPI_SCLK_PI" p2="net.SPI_SCLK_PICO" />
+    <R name="R15" value="100" x="33mm" y="-9mm" lcsc="C22775" mpn="0603WAF1000T5E" p1="net.SPI_CS_PI" p2="net.SPI_CS_PICO" />
+    <R name="R19" value="100" x="34mm" y="-22.5mm" rot="180deg" lcsc="C22775" mpn="0603WAF1000T5E" p1="net.PI_3V3" p2="net.OE" />
     <R name="R20" value="100k" x="38mm" y="-17mm" lcsc="C25803" mpn="0603WAF1003T5E" p1="net.OE" p2="net.GND" />
 
     {/* 2N7002, LCSC C8545: pad 1 gate, pad 2 source, pad 3 drain. */}
@@ -254,7 +302,7 @@ export default () => (
         in docs/ELECTRICAL-VERIFICATION.md and asserted by
         scripts/check_electrical.py (limit 3 mm). */}
     <C name="C13" value="100nF" x="37.55mm" y="-10.45mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
-    <C name="C14" value="100nF" x="37.55mm" y="-5.45mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+    <C name="C14" value="100nF" x="30.5mm" y="-6.5mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
 
     {/* Probe points: bare plated through-holes on nets that already exist, one
         source in lib/probe-points.ts. They add no part and bridge no rail; the

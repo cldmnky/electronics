@@ -86,8 +86,19 @@ export const FRONT_BOARD_HOLES = [
 // hole (+40.15, −19.90) is 32 mm above it and nothing else asked for the
 // move. See docs/mechanical-stack.md for the residual: top positions need
 // bracket clearance holes at regen time.
+// 2026-11-13 (owner): the front-to-rear spacers are back, at positions chosen
+// for the board the front one is NOW - a U with two 11.75/31.75 mm legs and a
+// bottom bar that is full of jacks, clusters and buttons. Both boards must have
+// material at every position:
+//   x -69.0  front left leg (-75...-63.25), rear board (-74...74)  -> 1.35 mm web
+//   x  71.5  front right leg (43.25...75), rear board edge at 74   -> 1.15 mm web
+//   y  46.0  above J5/J_FRONT's courtyard (which ends at 40.51) and clear of the
+//            relief cutout's top edge; bottom at -35.0 sits between the MIDI
+//            clusters' band (-40.8) and the leg, both boards solid there.
+// The old grid (±44/±45, -52/43) is dead: on the U board (-44,-52) lands on the
+// jack row and (45,43) on the right leg's cut edge.
 export const FRONT_REAR_MOUNT = [
-  { x: -44, y: -52 }, { x: 44, y: -52 }, { x: -45, y: 43 }, { x: 45, y: 43 },
+  { x: -69, y: -35 }, { x: 71.5, y: -35 }, { x: -69, y: 46 }, { x: 71.5, y: 46 },
 ] as const
 
 // Eurorack rail holes in the panel (M3 rack screws), Y inset 3.0 mm from the
