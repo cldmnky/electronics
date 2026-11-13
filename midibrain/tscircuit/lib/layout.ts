@@ -802,12 +802,21 @@ export const provisionalPiPanelDepth = (d = PI_PANEL_PROVISIONAL_DEPTH): number 
 export const FRONT_TOP_NOTCH = { x: -2.5, y: 52, width: 105, height: 8 } as const
 
 // Panel feedthroughs: exact vendor cutouts and mounting-hole spacing.
+// 2026-11-13 (owner): moved left and tightened. The pitch is NOT set by the
+// cutouts but by the vendor flange screws, which are fixed by the parts: the
+// nearest pair of holes between two neighbouring feedthroughs is
+//   P - 9 - 15  (USB-C on 18 mm centres next to a 30 mm flange)  and
+//   P - 15 - 15 (two 30 mm flanges),
+// and a 1.00 mm FR-4 web between hole edges needs that to be >= 4.35 / 4.50 mm.
+// Hence the 28.50 / 34.50 pitches below, not the 24 / 30 the cutouts alone would
+// allow. All three sit inside the board's U-opening (-63.25...43.25) so their
+// cable tails reach the Pi behind the front board.
 export const USB_FEEDTHROUGHS = [
   // SparkFun CAB-15455: 8 x 26.4 flange; 18 x 6 panel slot; no screw ears.
-  { id: "USB-C POWER", x: -38, y: 53.5, cutoutWidth: 12.6, cutoutHeight: 7.6, holeSpacing: 18, holeDiameter: 3.2 },
+  { id: "USB-C POWER", x: -52, y: 53.5, cutoutWidth: 12.6, cutoutHeight: 7.6, holeSpacing: 18, holeDiameter: 3.2 },
   // Adafruit 908: 38.30 x 11.90 flange; 14.65 x 7.10 opening; 2x Ø3.5 on 30 mm centres.
-  { id: "UMC AUDIO USB", x: -5, y: 53.5, cutoutWidth: 14.9, cutoutHeight: 7.3, holeSpacing: 30, holeDiameter: 3.5 },
-  { id: "MIDI HUB USB", x: 35, y: 53.5, cutoutWidth: 14.9, cutoutHeight: 7.3, holeSpacing: 30, holeDiameter: 3.5 },
+  { id: "UMC AUDIO USB", x: -23.5, y: 53.5, cutoutWidth: 14.9, cutoutHeight: 7.3, holeSpacing: 30, holeDiameter: 3.5 },
+  { id: "MIDI HUB USB", x: 11, y: 53.5, cutoutWidth: 14.9, cutoutHeight: 7.3, holeSpacing: 30, holeDiameter: 3.5 },
 ] as const
 
 // ---- Feedthrough / strain-relief bracket (3D-printed PETG) ----
@@ -1488,15 +1497,21 @@ export const PANEL_APERTURES: readonly PanelAperture[] = [
   // 6. MIDI jack barrels in the four transport columns.
   ...FRONT_COLUMNS.map(c => ({
     shape: "circle" as const, name: `${c.jack} JACK`,
-    x: c.x, y: JACK_Y, radius: PANEL_CUTOUTS.jack / 2,
+    // The jack's OWN x, not the transport column's: since 2026-11-13 the jacks
+    // are one grouped block at the left and no longer share the button X.
+    x: midiJackX(c.jack), y: JACK_Y, radius: PANEL_CUTOUTS.jack / 2,
   })),
 ]
 
 // Panel-to-front-board standoffs and Eurorack rail holes. `panel.circuit.tsx`
 // emits these after the silkscreen, so they are kept out of PANEL_APERTURES and
 // the built element order stays unchanged.
+// 2026-11-13 (owner): the four STAND_ holes are gone. They only ever existed to
+// pass a screw into a panel standoff on the front board, and the board's mounting
+// holes were removed in the same pass ("we will revisit them later"). The four
+// RACK_ holes stay - those are the Doepfer/3U rail fixings, which the module
+// needs to be mounted at all.
 export const PANEL_MOUNT_HOLES: readonly PanelDrill[] = [
-  ...FRONT_BOARD_HOLES.map((h, i) => ({ name: `STAND_${i + 1}`, x: h.x, y: h.y, diameter: MOUNT_HOLE_DIAMETER })),
   ...RAIL_HOLES.map((h, i) => ({ name: `RACK_${i + 1}`, x: h.x, y: h.y, diameter: RAIL_HOLE_DIAMETER })),
 ]
 
@@ -1545,7 +1560,9 @@ export const SILK_ADVANCE_RATIO = 0.69 as const
 // (-53…+19 -> centre -17) at 1.2 mm: about +-6.2 wide, 3+ mm clear of the
 // IN 2 / OUT 1 labels either side, 2.8 mm below the jack barrels.
 export const PANEL_TITLES = [
-  { text: "MIDI TRS TYPE A", x: -17, y: -54, fontSize: 1.2 },
+  // Below the jack captions, not beside them: at the new 12 mm jack pitch the
+  // note overlapped the "OUT 2" caption by 0.3 mm.
+  { text: "MIDI TRS TYPE A", x: -44, y: -58.5, fontSize: 1.2 },
 ] as const
 // Pi mounting panel silkscreen: identification and harness/orientation hints.
 // The panel is viewed from the FRONT, the Pi hangs behind it, so the side
@@ -1586,5 +1603,5 @@ export const PANEL_LABELS: readonly PanelLabel[] = [
   // 1.4 mm to the button opening top (-27.875). Only the label moves; no control,
   // opening or board coordinate changes.
   { text: PLAY_START.button, x: PLAY_START.x, y: PLAY_START_LABEL_Y },
-  ...FRONT_COLUMNS.map(c => ({ text: JACK_LABEL[c.jack] ?? c.jack, x: c.x, y: JACK_Y + LABEL_OFFSET.jack })),
+  ...FRONT_COLUMNS.map(c => ({ text: JACK_LABEL[c.jack] ?? c.jack, x: midiJackX(c.jack), y: JACK_Y + LABEL_OFFSET.jack })),
 ]

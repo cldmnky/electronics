@@ -3,6 +3,7 @@ import { brandArtPaths } from "./lib/panel-art"
 import {
   FRONT_COLUMNS,
   JACK_Y,
+  midiJackX,
   OUT_RING,
   PANEL,
   PANEL_APERTURES,
@@ -54,7 +55,7 @@ export default () => (
     ))}
     {/* Signal-style bold rings around the MIDI OUT barrels (inputs plain) */}
     {FRONT_COLUMNS.filter(c => c.jack.startsWith("MIDI OUT")).map((c, i) => (
-      <Fragment key={`out-ring-${i}`}><silkscreencircle pcbX={`${c.x}mm`} pcbY={`${JACK_Y}mm`} radius={`${OUT_RING.radius}mm`} strokeWidth={`${OUT_RING.stroke}mm`} layer="top" /></Fragment>
+      <Fragment key={`out-ring-${i}`}><silkscreencircle pcbX={`${midiJackX(c.jack)}mm`} pcbY={`${JACK_Y}mm`} radius={`${OUT_RING.radius}mm`} strokeWidth={`${OUT_RING.stroke}mm`} layer="top" /></Fragment>
     ))}
     {/* mnkybox wordmark + flanking waves, drawn paths (see lib/panel-art.ts) */}
     {brandArtPaths(0, -59).flatMap((g, i) => g.paths.map((p, j) => (
