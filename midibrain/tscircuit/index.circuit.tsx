@@ -300,9 +300,21 @@ export default () => (
     <C name="C12" value="100nF" x="-30mm" y="30mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
     {/* Local bypass at the two buffer VCC/GND pads: measured pad distances are
         in docs/ELECTRICAL-VERIFICATION.md and asserted by
-        scripts/check_electrical.py (limit 3 mm). */}
+        scripts/check_electrical.py (limit 3 mm).
+
+        Keep C14 at the position that record documents (37.55, -5.45). It was
+        briefly moved to (30.5, -6.5) in 02a643b to clear a SILK collision (U3's
+        printed refdes landed on C14's pad, C14's own refdes on U4's pad), and
+        that put the 100 nF 8.37 mm from U4's VCC pad, i.e. out of reach of the
+        pin it exists for. The overlap is the known-and-accepted class in
+        lib/silk.tsx (vendor footprints draw their own outlines across their own
+        pads; the fab clips silk over exposed copper), and silk.test.ts cannot
+        see it because it checks only the marks lib/silk.tsx emits, not refdes
+        printed by the vendored footprints. Fix such a collision in the import
+        (B3F_4055 takes a refTextAt prop, M20_9960245 prints its own {NAME} at a
+        chosen spot), never by moving the capacitor. */}
     <C name="C13" value="100nF" x="37.55mm" y="-10.45mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
-    <C name="C14" value="100nF" x="30.5mm" y="-6.5mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+    <C name="C14" value="100nF" x="37.55mm" y="-5.45mm" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
 
     {/* Probe points: bare plated through-holes on nets that already exist, one
         source in lib/probe-points.ts. They add no part and bridge no rail; the
