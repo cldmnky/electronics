@@ -1156,7 +1156,7 @@ export const mechanicalExport = () => ({
 // 2026-11-13 (owner): one column at x 52. It started as three evenly spaced
 // controls at a 17 mm pitch; SW7 then moved up on its own (y 49) and TEMPO kept
 // climbing (29 -> 33) as the owner made room below it, so the column is now
-// explicit rather than an arithmetic progression: TEMPO 28, NAV 12, SHIFT/EXIT
+// explicit rather than an arithmetic progression: TEMPO 31, NAV 12, SHIFT/EXIT
 // -5. Keep the explicit values - deriving NAV/SHIFT from TEMPO would drag them
 // along every time TEMPO moves.
 export const RIGHT_COLUMN = { x: 52 } as const
@@ -1164,7 +1164,7 @@ export const RIGHT_COLUMN = { x: 52 } as const
 // 26/9. TEMPO then moved up another 3 (to 29) so the 3.4 mm band below U6's
 // courtyard (20.60) can take C5 and C6 side by side. The column keeps its 17 mm
 // pitch: TEMPO 29, NAV 12, SHIFT/EXIT -5.
-const RIGHT_TEMPO_Y = 28
+const RIGHT_TEMPO_Y = 31
 export const RIGHT_CONTROLS = {
   TEMPO: { x: RIGHT_COLUMN.x, y: RIGHT_TEMPO_Y },
   NAV: { x: RIGHT_COLUMN.x, y: 12 },

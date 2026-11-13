@@ -256,10 +256,10 @@ export const FRONT_SILK: BoardSilkSpec = {
     // ---- notes over the board, under the display opening ----
     { text: "DISPLAY OPENING", x: -10, y: -25.45, fontSize: 0.9, role: "note" },
     // ---- bottom strip ----
-    // The encoder's manual sequence. It sits in the 5.35 mm band above U6's
-    // courtyard (37.4) and below SW7's (42.75) - the band between the two
-    // encoders is now taken by C5/C6.
-    { text: "U6: LUGS FIRST", x: 52, y: 39.0, fontSize: 0.8, role: "hint", part: "U6" },
+    // The encoder's manual sequence, in the 3.35 mm band above TEMPO's courtyard
+    // (39.4) and below SW7's (42.75) - the band between the two encoders is now
+    // taken by C5/C6.
+    { text: "U6: LUGS FIRST", x: 52, y: 41.2, fontSize: 0.8, role: "hint", part: "U6" },
     ...frontJacks.map(({ ref, x }) => ({ text: `${ref} THT`, x, y: JACK_Y + 7.5, fontSize: 0.7, role: "hint" as const, part: ref })),
     // Hand-soldered buttons: the ref print sits above each body, so the tag
     // goes on the same line just left of it ("THT SW1").
