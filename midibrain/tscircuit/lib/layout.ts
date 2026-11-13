@@ -30,18 +30,25 @@ export const PANEL = { width: 152.0, height: 128.5, thickness: 1.6 } as const //
 // Preliminary board bounding boxes only. Positions/Z, cutouts, spacers and the
 // actual stack remain unresolved; see docs/mechanical-stack.md.
 //
-// The front board STAYS 128 mm (owner decision D2 2026-11-07). It carries the
+// The front board was 128 mm (owner decision D2 2026-11-07) and grows to
+// 150 mm with the 2026-11-13 respin: the display leaves the board for a
+// 106.5 x 68.9 mm opening, and the MIDI circuit has to live in the margins
+// beside it. 150 mm leaves 1 mm per side inside the 152.0 mm panel. It carries the
 // 106 mm-wide module only because the value-knob column moved 47 -> 52 mm: the
 // module then spans -62.5..+43.5 (1.5 mm ligament to the board edge) and the
 // knob body (Ø12.5 at x = 52, left edge 45.75) keeps 2.25 mm clear of it. The
 // previous 136 mm proposal is withdrawn: growing the board forced 8HP of extra
 // panel for no mechanical gain. Width only; the <=110 mm installed-depth rule
 // is Z and is untouched.
-export const FRONT_PCB = { width: 128, height: 112, thickness: 1.6 } as const
-// Rear/base PCB is 20HP (101.6 mm) wide, mounted behind the display/Pi stack.
-// The front panel is 30HP (152.0 mm actual); the extra 10HP carries the
-// right-hand control column and the wider display.
-export const REAR_PCB = { width: 20 * 5.08, height: 112, thickness: 1.6 } as const
+export const FRONT_PCB = { width: 150, height: 112, thickness: 1.6 } as const
+// Rear/base PCB, mounted behind the front board. Owner decision 2026-11-13:
+// 145 mm wide (3.5 mm per side inside the 152.0 mm panel), replacing the 20HP
+// (101.6 mm) board of 2026-11-07. Reason: the front board carries a display
+// opening, so the only board material left for the direct 2 x 13 interconnect
+// is the side margins, and those lie outside a 101.6 mm rear board. The extra
+// width also puts all four display-carrier bolt points on the board. The panel
+// itself is unchanged; the Pi mounting panel stays 101.2 mm.
+export const REAR_PCB = { width: 145, height: 112, thickness: 1.6 } as const
 
 // M2.5 screw clearance for board and panel standoff holes; M3 for the rails.
 export const MOUNT_HOLE_DIAMETER = 2.7 as const
@@ -1120,7 +1127,12 @@ export const midiJackX = (jack: string): number => {
 // the DSI connector. Nothing is waived by moving the pair: the pad, body and
 // tail clearances above are asserted by lib/interconnect.test.ts on the built
 // circuit JSON.
-export const FRONT_INTERCONNECT = { x: 10, y: 5, rotation: 90 } as const
+// Moved 2026-11-13 with the display opening: (10, 5) was inside it, and the
+// 40.52 mm body cannot sit in the bottom strip (32.55 mm tall, free bands 3.05
+// and 1.1 mm). The right margin outside the opening is now 43.75...75 mm and
+// this x keeps the 8.80 mm body clear of the control column (which ends at
+// 58.3) and of the board edge.
+export const FRONT_INTERCONNECT = { x: 66, y: 5, rotation: 90 } as const
 // The rear board carries the male at the SAME coordinate. One constant, not
 // two: the coincidence test compares the BUILT pads.
 export const REAR_INTERCONNECT = FRONT_INTERCONNECT

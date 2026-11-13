@@ -29,10 +29,12 @@ import {
   DISPLAY_FPC_CONNECTOR,
   DISPLAY_FPC_CONNECTOR_AT,
   FRONT_INTERCONNECT,
-  PI_SPACER_MM,
+  FRONT_PCB,
   PI_PANEL_PROVISIONAL_DEPTH,
+  PI_SPACER_MM,
   PROVISIONAL_DEPTH,
   REAR_INTERCONNECT,
+  REAR_PCB,
 } from "./layout"
 
 type Json = any
@@ -246,9 +248,10 @@ describe("2 x 13 direct interconnect on the built boards", () => {
           const gap = gapTo(o, pad) - INTERCONNECT_PAD_MM / 2
           if (gap < worst.gap) worst = { gap, what: `${o.ref} (${o.kind}) at (${o.x.toFixed(2)}, ${o.y.toFixed(2)}) pin ${pad.pin}` }
         }
-        // Board edge: copper keeps its own margin on a 101.6 x 112 or 128 x 112 outline.
-        const halfW = name === "J5" ? 64 : 50.8
-        const edge = Math.min(halfW - Math.abs(pad.x), 56 - Math.abs(pad.y)) - INTERCONNECT_PAD_MM / 2
+        // Board edge: copper keeps its own margin on this board's outline.
+        const halfW = (name === "J5" ? FRONT_PCB.width : REAR_PCB.width) / 2
+        const halfH = (name === "J5" ? FRONT_PCB.height : REAR_PCB.height) / 2
+        const edge = Math.min(halfW - Math.abs(pad.x), halfH - Math.abs(pad.y)) - INTERCONNECT_PAD_MM / 2
         if (edge < worst.gap) worst = { gap: edge, what: "board edge" }
       }
       expect({ name, clear: worst.gap >= MIN_COPPER_GAP, worst: worst.what }).toEqual({
@@ -414,8 +417,9 @@ describe("silkscreen marks sit where the BUILT pads are", () => {
     const keyHalf = INTERCONNECT_MECH.keySlot / 2
     for (const [name, key] of [["J5", frontKey], ["J_FRONT", rearKey]] as const) {
       const offset = key.mid.x - cx
+      // Tolerance: the mark's X is now 66 +- 4.4, which is not exact in binary.
       expect({ name, onBodyEdge: Math.abs(Math.abs(offset) - INTERCONNECT_MECH.bodyEnvelope / 2) }).toEqual({
-        name, onBodyEdge: 0,
+        name, onBodyEdge: expect.closeTo(0, 6),
       })
       expect(Math.abs((key.route[0]!.y - key.route[1]!.y))).toBeCloseTo(2 * keyHalf, 9)
     }

@@ -570,10 +570,11 @@ class ProvisionalDataTest(unittest.TestCase):
         pi_depth = pi["piStandoffAndPcb"] + pi["piStackRearward"] + pi["harnessAllowance"]
         self.assertLessEqual(pi_depth, go["upperRow"])
         self.assertGreater(pi_depth, go["lowerRow"])
-        # The rear-board overhang is 13.2 mm per side when the boards share a
-        # centre: the front board stays 128 mm (owner decision D2), so no width
-        # was bought for the 106 mm-wide module.
-        self.assertAlmostEqual((data["frontPcb"]["width"] - data["rearPcb"]["width"]) / 2, 13.2, places=6)
+        # Both boards share a centre. 2026-11-13: the front board grew to 150 mm
+        # and the rear board to 145 mm, so the front overhangs by 2.5 mm per
+        # side (it was 13.2 mm when the rear board was 20HP and the front board
+        # did not have to carry a display opening).
+        self.assertAlmostEqual((data["frontPcb"]["width"] - data["rearPcb"]["width"]) / 2, 2.5, places=6)
 
 
 if __name__ == "__main__":

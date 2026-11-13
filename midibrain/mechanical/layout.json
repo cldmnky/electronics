@@ -7,12 +7,12 @@
     "thickness": 1.6
   },
   "frontPcb": {
-    "width": 128,
+    "width": 150,
     "height": 112,
     "thickness": 1.6
   },
   "rearPcb": {
-    "width": 101.6,
+    "width": 145,
     "height": 112,
     "thickness": 1.6
   },
@@ -1091,12 +1091,12 @@
   },
   "interconnect": {
     "front": {
-      "x": 10,
+      "x": 66,
       "y": 5,
       "rotation": 90
     },
     "rear": {
-      "x": 10,
+      "x": 66,
       "y": 5,
       "rotation": 90
     },

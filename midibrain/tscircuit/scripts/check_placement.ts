@@ -2,10 +2,12 @@ import { readFileSync } from "node:fs"
 import {
   DISPLAY_ANNOTATIONS,
   DISPLAY_CONCEPT,
+  displayAnnotationXY,
   FEEDTHROUGH_BRACKET,
   FRONT_BOARD_HOLES,
   FRONT_COLUMNS,
   FRONT_INTERCONNECT,
+  FRONT_PCB,
   FRONT_REAR_MOUNT,
   FRONT_TOP_NOTCH,
   JACK_Y,
@@ -14,11 +16,11 @@ import {
   LED_Y,
   ledPosition,
   midiJackX,
-  PANEL_LCD_CUTOUT,
-  PANEL_CUTOUTS,
   OUT_RING,
   PANEL,
+  PANEL_CUTOUTS,
   PANEL_LABELS,
+  PANEL_LCD_CUTOUT,
   PANEL_TITLES,
   PLAY_START,
   POWER_BUTTON,
@@ -26,11 +28,10 @@ import {
   RAIL_HOLES,
   REAR_INTERCONNECT,
   RIGHT_CONTROLS,
+  roundedRectOutline,
   TRANSPORT_Y,
   transportButtonX,
   USB_FEEDTHROUGHS,
-  displayAnnotationXY,
-  roundedRectOutline,
 } from "../lib/layout"
 import { brandArtPaths } from "../lib/panel-art"
 
@@ -288,7 +289,7 @@ for (const x of FEEDTHROUGH_BRACKET.mountX) {
     x > b.x1 && x < b.x2 && FEEDTHROUGH_BRACKET.mountY > b.y1 && FEEDTHROUGH_BRACKET.mountY < b.y2)
 }
 ok(`front: bracket outline ${b.width} x ${b.height} at (${b.x1}..${b.x2}, ${b.y1}..${b.y2}) inside the front board`,
-  b.x1 > -128 / 2 && b.x2 < 128 / 2 && b.y1 > -112 / 2 && b.y2 <= 112 / 2)
+  b.x1 > -FRONT_PCB.width / 2 && b.x2 < FRONT_PCB.width / 2 && b.y1 > -FRONT_PCB.height / 2 && b.y2 <= FRONT_PCB.height / 2)
 for (const h of FRONT_REAR_MOUNT.filter(hh => hh.y > 0)) {
   ok(`front: top spacer (${h.x}, ${h.y}) inside the bracket envelope, head clearance required`,
     h.x > b.x1 && h.x < b.x2 && h.y > b.y1 && h.y < b.y2)

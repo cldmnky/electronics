@@ -166,10 +166,12 @@ test("right-hand controls share one centreline with equal 19 mm spacing", () => 
     expect(Math.abs(c.x)).toBeLessThan(FRONT_PCB.width / 2)
     expect(Math.abs(c.y)).toBeLessThan(FRONT_PCB.height / 2)
   }
-  // Interconnect header clears the control column courtyards:
-  // B3F courtyard half-width 7.5 at x = 47; 2x13 socket courtyard half-width
-  // ~4.75 rotated onto x. The build placement check re-verifies the pads.
-  expect(FRONT_INTERCONNECT.x + 4.75).toBeLessThan(RIGHT_COLUMN.x - 7.5)
+  // Interconnect header clears the control column courtyards. It moved from
+  // the display centre to the right margin in the 2026-11-13 respin, so the
+  // clearance is now on the column's RIGHT side: 2x13 socket courtyard
+  // half-width ~4.75 rotated onto x against the B3F courtyard half-width 7.5
+  // at x = 52. The build placement check re-verifies the pads.
+  expect(FRONT_INTERCONNECT.x - 4.75).toBeGreaterThan(RIGHT_COLUMN.x + 7.5)
   expect(Math.abs(FRONT_INTERCONNECT.x)).toBeLessThan(FRONT_PCB.width / 2)
 })
 
@@ -213,7 +215,7 @@ test("the rear board carries no Pi holes and the display mount grid is unchanged
   const ys = [...new Set(DISPLAY_STANDOFFS.map(p => p.y))].sort((a,b) => a-b)
   expect(xs[1] - xs[0]).toBeCloseTo(58.0, 6)
   expect(ys[1] - ys[0]).toBeCloseTo(49.04, 6)
-  expect(REAR_PCB.width).toBeCloseTo(20 * 5.08, 6)
+  expect(REAR_PCB.width).toBe(145)
   expect(REAR_PCB.height).toBe(112)
 })
 
@@ -283,7 +285,7 @@ test("panel standoffs and the shared front-rear grid clear parts and edges", () 
     { x: -44, y: -52 }, { x: 44, y: -52 }, { x: -45, y: 43 }, { x: 45, y: 43 },
   ])
   for (const h of FRONT_REAR_MOUNT) {
-    expect(Math.abs(h.x)).toBeLessThan(101.6 / 2 - 3)
+    expect(Math.abs(h.x)).toBeLessThan(REAR_PCB.width / 2 - 3)
     expect(Math.abs(h.y)).toBeLessThan(112 / 2 - 3)
   }
   for (const h of FRONT_REAR_MOUNT.filter(h => h.y > 0)) {
@@ -614,10 +616,10 @@ test("display underside gap and light-pipe reach stay pending, not claimed", () 
 test("provisional depth chain stays inside the owner target", () => {
   expect(DEPTH_TARGET).toBe(110)
   expect(provisionalInstalledDepth()).toBeLessThanOrEqual(DEPTH_TARGET)
-  // Rear board overhang is 13.2 mm per side when both boards share a centre:
-  // the front board stays 128 mm (D2), so no extra width was bought for the
-  // 106 mm-wide module.
-  expect((FRONT_PCB.width - REAR_PCB.width) / 2).toBeCloseTo(13.2, 6)
+  // Both boards share a centre. The rear board grew 101.6 -> 145 mm on
+  // 2026-11-13 so the interconnect and the display carrier can sit on it; the
+  // front board (150 mm) overhangs it by 2.5 mm per side.
+  expect((FRONT_PCB.width - REAR_PCB.width) / 2).toBeCloseTo(2.5, 6)
   // The Pi left the module for its own 20HP mounting panel (owner decision
   // 2026-11-12), so the module chain ends at the socketed Pico stack. Both
   // chains stay inside the Eurorack Go's 62 mm UPPER row on paper, and the Pi
@@ -736,10 +738,11 @@ test("display patterns follow the drawing's asymmetric insets, never a mirrored 
 
 test("the module fits the front board and clears the owner-fixed control column", () => {
   const d = DISPLAY_CONCEPT
-  // The board stays 128 mm (owner decision D2) and the module keeps a 1.5 mm
-  // ligament on the left because the value knob moved 47 -> 52.
-  expect(FRONT_PCB.width).toBe(128)
-  expect(d.x - d.width / 2).toBe((-FRONT_PCB.width / 2) + 1.5)
+  // The 2026-11-13 respin grows the board 128 -> 150 mm: the module leaves the
+  // board for an opening, so the left side is now a 12.5 mm margin that carries
+  // the MIDI circuit instead of a 1.5 mm ligament.
+  expect(FRONT_PCB.width).toBe(150)
+  expect(d.x - d.width / 2).toBe((-FRONT_PCB.width / 2) + 12.5)
   expect(RIGHT_COLUMN.x).toBe(52)
   expect((RIGHT_CONTROLS.TEMPO.x - 6.25) - (d.x + d.width / 2)).toBeCloseTo(2.25, 6)
   // The rail-hole edge and the window LEFT edge are separated in X only; they
@@ -749,7 +752,9 @@ test("the module fits the front board and clears the owner-fixed control column"
   expect(railHoleEdge).toBeCloseTo(66.98, 6)
   const apertureLeftEdge = PANEL_LCD_CUTOUT.x - PANEL_LCD_CUTOUT.width / 2
   expect(railHoleEdge + apertureLeftEdge).toBeCloseTo(3.87, 2)
-  expect(FRONT_PCB.width / 2 - (RIGHT_COLUMN.x + 6.25)).toBeCloseTo(5.75, 6)
+  // Right margin: board edge to the knob body, now wide enough for the
+  // interconnect and one MIDI channel (2026-11-13 respin).
+  expect(FRONT_PCB.width / 2 - (RIGHT_COLUMN.x + 6.25)).toBeCloseTo(16.75, 6)
 })
 
 test("the 30HP rail grid is on the 5.08 mm pitch and inside the panel", () => {
