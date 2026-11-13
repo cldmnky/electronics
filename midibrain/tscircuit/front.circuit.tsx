@@ -31,6 +31,8 @@ import {
   RIGHT_CONTROLS,
   DISPLAY_CONCEPT,
   DISPLAY_STACK,
+  DISPLAY_VENDOR,
+  DISPLAY_BOSS_PATTERN,
   TRANSPORT_Y,
   transportButtonX,
   displayAnnotationXY,
@@ -240,12 +242,22 @@ const FRONT_LED_PARTS = [
   { name: "D5", button: "PLAY", lcsc: "C2297", mpn: "KT-0805G", drive: "net.PLAY_LED", anode: "net.PLAY_LED_A" },
 ] as const
 
-// The display envelope as twelve 0.5 mm rods: a wireframe box. A solid box of
-// the same size hides the SMT area underneath and reads as a second board,
-// while this is only a reference - the module's underside map, FPC exit and
-// installed height are unverified (display_fpc_idc, display_boss_pattern).
-// Every dimension comes from DISPLAY_STACK; nothing here is re-typed.
+// The display as a reference body: a 0.5 mm wireframe cage for the module
+// envelope, plus the four spacers and the module's four bosses that hold it up.
+// A bare cage floats above the board with nothing under it, which reads as a
+// modelling error; a solid slab hides the SMT area instead. Every dimension is
+// derived from DISPLAY_STACK / DISPLAY_BOSS_PATTERN - nothing is re-typed.
+//
+// Z chain in this model's frame (origin = the module centre, and the cad
+// component is placed planeSeparation - bossProjection = 5.0 mm above the
+// board's top face): the board's top face is at -(5.0 + depth/2), the module's
+// rear-most plane (boss ends) at -depth/2, and the cage spans +-depth/2.
+//   board top ---- 5.0 mm spacer ---- boss end -- 4.0 mm boss -- display PCB rear
+// The module's underside map, FPC exit and installed height are unverified
+// (display_fpc_idc, display_boss_pattern): this shows the DESIGN CHAIN.
 const DISPLAY_ROD = 0.5
+const DISPLAY_SPACER_D = 3.5 // M2.5 spacer body, drawn square
+const DISPLAY_BOSS_D = DISPLAY_VENDOR.bossDiameter
 const displayEnvelopeWireframe = (() => {
   const w = DISPLAY_STACK.outlineWidth
   const d = DISPLAY_STACK.outlineHeight
@@ -253,14 +265,22 @@ const displayEnvelopeWireframe = (() => {
   const hx = w / 2 - DISPLAY_ROD / 2
   const hy = d / 2 - DISPLAY_ROD / 2
   const hz = h / 2 - DISPLAY_ROD / 2
-  const rods: { size: number[]; at: number[] }[] = []
-  for (const sy of [-1, 1]) for (const sz of [-1, 1]) rods.push({ size: [w, DISPLAY_ROD, DISPLAY_ROD], at: [0, sy * hy, sz * hz] })
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) rods.push({ size: [DISPLAY_ROD, d, DISPLAY_ROD], at: [sx * hx, 0, sz * hz] })
-  for (const sx of [-1, 1]) for (const sy of [-1, 1]) rods.push({ size: [DISPLAY_ROD, DISPLAY_ROD, h], at: [sx * hx, sy * hy, 0] })
-  return {
-    type: "union",
-    shapes: rods.map(r => ({ type: "translate", vector: r.at, shape: { type: "cuboid", size: r.size } })),
+  const hzOuter = h / 2 // the envelope's bottom/top FACE (hz is the rod centre line)
+  const spacer = DISPLAY_STACK.planeSeparation - DISPLAY_STACK.bossProjection // 5.0
+  const boss = DISPLAY_STACK.bossProjection // 4.0
+  const shapes: object[] = []
+  const rod = (size: number[], at: number[]) =>
+    shapes.push({ type: "translate", vector: at, shape: { type: "cuboid", size } })
+  for (const sy of [-1, 1]) for (const sz of [-1, 1]) rod([w, DISPLAY_ROD, DISPLAY_ROD], [0, sy * hy, sz * hz])
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) rod([DISPLAY_ROD, d, DISPLAY_ROD], [sx * hx, 0, sz * hz])
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) rod([DISPLAY_ROD, DISPLAY_ROD, h], [sx * hx, sy * hy, 0])
+  for (const p of DISPLAY_BOSS_PATTERN) {
+    // 5.0 mm spacer: board top face up to the module's rear-most plane.
+    rod([DISPLAY_SPACER_D, DISPLAY_SPACER_D, spacer], [p.x, p.y, -hzOuter - spacer / 2])
+    // 4.0 mm boss: that plane up to the module PCB's rear face.
+    rod([DISPLAY_BOSS_D, DISPLAY_BOSS_D, boss], [p.x, p.y, -hzOuter + boss / 2])
   }
+  return { type: "union", shapes }
 })()
 
 export default () => (
@@ -313,7 +333,9 @@ export default () => (
         106.00 x 68.00 x 14.05 mm, rear face at planeSeparation -
         bossProjection = 5.0 mm above the board's top face, glass front on the
         panel-front plane of PROVISIONAL_Z. It is drawn as a 0.5 mm wireframe
-        cage, not a solid slab, so the SMT parts beneath it stay visible.
+        cage standing on four 5.0 mm spacers and the module's own 4.0 mm
+        bosses, not as a solid slab: a slab hides the SMT area, and a bare cage
+        floats with nothing under it.
         REFERENCE BOX, NOT A FIT: the
         underside map, the FPC exit, the boss projection and the installed
         height are unverified (display_fpc_idc, display_boss_pattern); the
@@ -335,10 +357,13 @@ export default () => (
         jscad: displayEnvelopeWireframe,
         positionOffset: { x: 0, y: 0, z: DISPLAY_STACK.overallDepth / 2 },
         zOffsetFromSurface: DISPLAY_STACK.planeSeparation - DISPLAY_STACK.bossProjection,
+        // What is DRAWN, not just the module: the envelope plus the 5.0 mm
+        // spacer gap below it. tscircuit fits the mesh into this box, so a
+        // 14.05 value would shrink the whole body by 14.05/19.05.
         size: {
           x: DISPLAY_STACK.outlineWidth,
           y: DISPLAY_STACK.outlineHeight,
-          z: DISPLAY_STACK.overallDepth,
+          z: DISPLAY_STACK.overallDepth + (DISPLAY_STACK.planeSeparation - DISPLAY_STACK.bossProjection),
         },
         showAsTranslucentModel: true,
       }}
