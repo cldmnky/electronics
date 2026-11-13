@@ -125,6 +125,7 @@ export type BoardSilkSpec = {
 // the barrel centre - it used to sit at the tip pad when the footprint called
 // pin 1 the tip.
 const FRONT_JACK_PIN1_DY = -6.48 // lib/jack.tsx: pin 1 (sleeve) below the barrel centre
+const FRONT_JACK_PIN1_DX = -2.2  // clear of the sleeve's 3.1 mm land, which is 1.55 mm half-width
 const FRONT_LED_PAD_DX = 1.0 // 0805 anode/cathode pads sit +-0.91 mm from centre
 const FRONT_LED_MARK_DY = -1.6
 
@@ -175,7 +176,7 @@ export const FRONT_SILK: BoardSilkSpec = {
     { ref: "U5", x: RIGHT_CONTROLS.NAV.x - 4.9, y: RIGHT_CONTROLS.NAV.y + 1.43, source: "silk" },
     { ref: "U6", x: RIGHT_CONTROLS.TEMPO.x - 4.0, y: RIGHT_CONTROLS.TEMPO.y + 7.9, source: "silk" },
     // TRS jacks: pin 1 is the sleeve contact, the pad furthest from the panel.
-    ...frontJacks.map(({ ref, x }) => ({ ref, x: x - 1.9, y: JACK_Y + FRONT_JACK_PIN1_DY, source: "silk" as const })),
+    ...frontJacks.map(({ ref, x }) => ({ ref, x: x + FRONT_JACK_PIN1_DX, y: JACK_Y + FRONT_JACK_PIN1_DY, source: "silk" as const })),
     // 2 x 13 direct interconnect, female socket on the bottom face. The mark
     // is derived from the shared placement so a move cannot strand it.
     { ref: "J5", x: FRONT_INTERCONNECT.x + 2.6, y: FRONT_INTERCONNECT.y + 15.24, source: "silk" },
