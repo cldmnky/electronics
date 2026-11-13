@@ -384,3 +384,13 @@ it is **not an LED gap, not a fit and not a measured stack value**.
 6. Check the panel-to-board gap with the reach gauge. 17.45 mm is provisional.
 7. Record nothing as accepted. Enter measurements in `docs/evidence/` with a
    reviewer and a date; all 28 acceptance items stay pending until then.
+
+## Looking at the models
+
+`make mechanical-view` serves `mechanical/` to a local STEP viewer
+(`mechanical/viewer/`, three.js + OpenCascade via `occt-import-js`, dependencies
+from npm, offline after the first install). It loads the vendor display STEP and,
+when present, the composed assembly from `make mechanical-cad`; a "stack boxes"
+overlay draws the panel, front board, jacks and buttons from the dimensions in
+`tscircuit/lib/layout.ts`. Reads only - it can never change or approve anything,
+and its own README records the display model's vendor axis orientation.

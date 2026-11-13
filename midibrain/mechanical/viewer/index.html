@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>midibrain mechanical view</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; background: #14161a; color: #e6e8eb; }
+      #wrap { position: fixed; inset: 0; }
+      canvas { display: block; }
+      #hud {
+        position: fixed; top: 0; left: 0; right: 0; padding: 8px 12px;
+        background: rgba(20, 22, 26, 0.86); border-bottom: 1px solid #2a2f37;
+        display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap;
+      }
+      #hud strong { font-weight: 600; }
+      #status { color: #9aa4b2; }
+      #status.error { color: #ff7b72; }
+      label { color: #9aa4b2; }
+      input[type="number"] { width: 64px; background: #1c2027; color: #e6e8eb; border: 1px solid #2a2f37; }
+      button { background: #232833; color: #e6e8eb; border: 1px solid #333a46; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
+      button:hover { background: #2b3140; }
+      #legend { position: fixed; bottom: 0; left: 0; padding: 8px 12px; color: #6f7987; }
+      #files { max-width: 46ch; }
+    </style>
+  </head>
+  <body>
+    <div id="wrap"></div>
+    <div id="hud">
+      <strong>midibrain mechanical view</strong>
+      <span id="files"></span>
+      <label>Z cut (mm) <input id="zcut" type="number" step="1" value="-1" /> </label>
+      <button id="fit">fit view</button>
+      <button id="wire">shaded / wireframe</button>
+      <button id="stack">show stack boxes</button>
+      <span id="status">starting…</span>
+    </div>
+    <div id="legend">Drag = orbit · wheel = zoom · right-drag = pan. Models are vendor/placeholder CAD, not a fit approval.</div>
+
+    <script src="./node_modules/occt-import-js/dist/occt-import-js.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./node_modules/three/build/three.module.js",
+          "three/addons/": "./node_modules/three/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

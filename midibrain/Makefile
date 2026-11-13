@@ -1,4 +1,4 @@
-.PHONY: test release gate reports electrical mechanical mechanical-export mechanical-cad host midifx spice panel-preview firmware order bench-test bench-clock
+.PHONY: test release gate reports electrical mechanical mechanical-export mechanical-cad mechanical-view host midifx spice panel-preview firmware order bench-test bench-clock
 
 # Defaults cover the setup in firmware/README.md; override on the command
 # line (PICO_SDK_PATH=/path/to/sdk make firmware) if yours lives elsewhere.
@@ -105,6 +105,13 @@ CAD_ARGS ?=
 mechanical-cad:
 	@echo "STEP/STL verification model: PROVISIONAL, not a released drawing"
 	$(CAD_PYTHON) mechanical/step_assembly.py --out "$(CAD_OUT)" $(CAD_ARGS)
+
+# Local web viewer for the mechanical STEP models (panel, display, boards,
+# composed assembly). Not part of the gate: it renders vendor/placeholder CAD as
+# a viewing aid, so it can never approve a fit. `make mechanical-cad` first if
+# you want the composed assembly in the list. PORT and NOOPEN are honoured.
+mechanical-view:
+	@PORT="$(PORT)" NOOPEN="$(NOOPEN)" bash mechanical/viewer/serve.sh
 
 host: midifx
 	@set -eu; exe=$$(mktemp "$${TMPDIR:-/tmp}/midibrain-test.XXXXXX"); trap 'rm -f "$$exe"' EXIT; \

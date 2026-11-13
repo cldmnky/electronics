@@ -26,3 +26,5 @@ assets/front-3d.png
 # Python caches
 __pycache__/
 *.pyc
+mechanical/viewer/node_modules/
+mechanical/viewer/models.json

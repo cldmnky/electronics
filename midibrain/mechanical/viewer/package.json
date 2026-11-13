@@ -1,0 +1,11 @@
+{
+  "name": "midibrain-mechanical-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local web viewer for the midibrain mechanical STEP models. Not part of the build gate.",
+  "type": "module",
+  "dependencies": {
+    "occt-import-js": "^0.0.23",
+    "three": "^0.180.0"
+  }
+}
