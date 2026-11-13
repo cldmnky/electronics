@@ -11,7 +11,10 @@ build` already wrote:
   * per-net length for every MIDI_* net,
   * vertices and layer changes per net (a detour signature: a net that bounces
     between layers is squeezing through a corridor something else owns),
-  * the minimum copper-to-cutout clearance and which net owns it.
+  * the minimum copper-to-cutout clearance and which net owns it,
+  * vias: total, size classes, the nets that own the most, via-in-pad (must be
+    zero) and the tightest pair, measured both hole-edge to hole-edge (the rule
+    the DRC applies) and copper edge to copper edge (what the fab sees).
 
 Usage:  python3 scripts/measure_routing.py [front|index]
 
@@ -95,5 +98,45 @@ for t in midi:
 for k in sorted(rows):
     a = rows[k]
     print('   %-24s %6.1f mm  %3d vertices  %2d layer changes' % (k, a['len'], a['pts'], a['flips']))
-print('min copper->cutout clearance: %.3f mm  (%s)' % (worst, who))
+print('min copper->cutout clearance: %s' % ('%.3f mm  (%s)' % (worst, who) if cut else 'n/a - this board has no cutouts'))
+
+# ---- vias ----
+import collections
+d = json.load(open('dist/%s/circuit.json' % BOARD))
+src_names = {t['source_trace_id']: t.get('display_name', '') for t in d if t.get('type') == 'source_trace'}
+trace_net = {}
+for e in d:
+    if e.get('type') == 'pcb_trace':
+        trace_net[e.get('pcb_trace_id')] = src_names.get(e.get('source_trace_id'), '')
+vias = [e for e in d if e.get('type') == 'pcb_via']
+pads_rect = [(e['x'], e['y'], e.get('width', 0), e.get('height', 0)) for e in d if e.get('type') == 'pcb_smtpad']
+vip = [v for v in vias for (px, py, w, h) in pads_rect if abs(v['x'] - px) <= w/2 and abs(v['y'] - py) <= h/2]
+sizes = collections.Counter((round(v.get('hole_diameter', 0), 3), round(v.get('outer_diameter', 0), 3)) for v in vias)
+per_net = collections.Counter(trace_net.get(v.get('pcb_trace_id'), '?') for v in vias)
+closest = (1e9, None)
+for i in range(len(vias)):
+    for j in range(i+1, len(vias)):
+        dd = math.dist((vias[i]['x'], vias[i]['y']), (vias[j]['x'], vias[j]['y']))
+        if dd < closest[0]:
+            closest = (dd, (vias[i], vias[j]))
+print('vias: %d   sizes (hole,pad): %s' % (len(vias), dict(sizes)))
+for nm, n in per_net.most_common(5):
+    print('   %-42s %3d vias' % (nm[:42], n))
+print('vias inside an SMT pad (must be 0): %d' % len(vip))
+if closest[1]:
+    a, b = closest[1]
+    pad = a.get('outer_diameter', 0)
+    hole = a.get('hole_diameter', 0)
+    print('closest via pair: %.3f mm centres  -> hole edges %.3f mm, copper edges %.3f mm (max(%.3f,%.3f), %s / %s)'
+          % (closest[0], closest[0] - hole, closest[0] - pad, a['x'], a['y'],
+             trace_net.get(a.get('pcb_trace_id'), '?')[:34], trace_net.get(b.get('pcb_trace_id'), '?')[:34]))
+drills = len([e for e in d if e.get('type') in ('pcb_hole', 'pcb_plated_hole')])
+print('drilled holes: %d plated+plain + %d vias = %d drills' % (drills, len(vias), drills + len(vias)))
+# a via whose copper touches a drilled hole is a short waiting to happen
+holes = [e for e in d if e.get('type') in ('pcb_plated_hole', 'pcb_hole')]
+def hole_r(h):
+    return (h.get('outer_diameter') or h.get('outer_width') or h.get('hole_diameter') or 0) / 2
+clash = [1 for v in vias for h in holes
+         if math.dist((v['x'], v['y']), (h['x'], h['y'])) < v.get('outer_diameter', 0) / 2 + hole_r(h)]
+print('vias whose copper overlaps a drilled hole (must be 0): %d' % len(clash))
 print('DRC cutout violations: %d' % len(cut_errs))
