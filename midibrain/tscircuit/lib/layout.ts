@@ -1236,12 +1236,11 @@ export const PLAY_START = { button: "PLAY START", x: RIGHT_COLUMN.x } as const
 //    moved to (61, 41) (FRONT_BOARD_HOLES below).
 // Owner decision 2026-11-13: SW7 sits ALONE further up the column (y 49, i.e.
 // its courtyard 42.75...55.25, 0.75 mm inside the top edge) rather than one pitch
-// above TEMPO. TEMPO and NAV keep their even 17 mm spacing; the power button
-// reads as its own control at the top of the leg, and its legend prints to the
-// RIGHT of it in the 9...15 mm of board between the switch body and the edge.
+// above TEMPO. TEMPO and NAV keep their even 19 mm spacing; the power button
+// reads as its own control at the top of the leg. Its panel legend prints ABOVE
+// the opening (owner rule 2026-11-13); the offset is LABEL_OFFSET.button in the
+// panel-label block below.
 export const POWER_BUTTON = { x: RIGHT_COLUMN.x, y: 49, rotation: 0 } as const
-/** Panel label sits below the new cutout: PLAY START's label owns the row above. */
-export const POWER_LABEL_OFFSET_Y = -8.5
 
 // ---- Transport / MIDI columns under the display ----
 // Four equally spaced columns; each column shares its X between the transport
@@ -1547,16 +1546,28 @@ const JACK_LABEL: Record<string, string> = {
 /** PLAY START label row, above its button (see PANEL_LABELS). */
 export const PLAY_START_LABEL_Y = -25.5
 
+// Owner rule 2026-11-13: a control legend sits ABOVE or BELOW its own opening,
+// never beside it. The whole panel uses one letterform and one silk web to the
+// opening edge it faces, so `labelAbove` is the only "above" number.
+export const PANEL_LABEL_FONT_SIZE = 1.8 as const
+const LABEL_HALF_HEIGHT = PANEL_LABEL_FONT_SIZE / 2
+// Silk web between the label box and the opening edge it faces.
+const LABEL_WEB = 0.8
+/** Distance from an opening's CENTRE to the centre of a label ABOVE it. */
+const labelAbove = (openingExtent: number) => mm3(openingExtent / 2 + LABEL_HALF_HEIGHT + LABEL_WEB)
+
 const LABEL_OFFSET = {
-  // -9.5 -> -6.0: the panel window top is 45.435, so the USB labels move up to
-  // y 47.5 (bottom 46.6) to stay on FR-4 with 1.165 mm to the window and
-  // 1.3 mm to their cutouts. They cannot go above the cutouts: the M3 rail-hole
-  // row at y 61.25 leaves no label band there.
-  feedthrough: -6.0, // below the USB cutouts
-  transport: -8,     // below the button cutouts, above the jack cutouts
-  jack: -6.5,        // below the jack cutouts
-  above: 7,          // above the VALUE / NAV cutouts
-  below: -7.5,       // below the SHIFT/EXIT cutout
+  // ABOVE the USB cutouts. Sized off the TALLEST one (the 7.6 mm USB-C slot,
+  // top edge 57.30) so a growing cutout cannot reach the row: 59.0. The rail
+  // holes at (+-68.58, +-61.25) sit outside this row's x span (-58.8...+16.0).
+  feedthrough: labelAbove(Math.max(...USB_FEEDTHROUGHS.map(f => f.cutoutHeight))),
+  transport: -8,     // BELOW the button cutouts, above the jack cutouts
+  jack: -6.5,        // BELOW the jack cutouts, clear of the OUT ring band
+  encoder: 7,        // ABOVE the VALUE / NAV cutouts
+  // ABOVE the 12.25 mm button cutouts: POWER 49 -> 56.825, SHIFT/EXIT -5 ->
+  // 2.825. SHIFT/EXIT fits between its own cutout (top edge 1.125) and the NAV
+  // cutout (bottom edge 8.40), i.e. inside that 2.5...7.0 band.
+  button: labelAbove(PANEL_CUTOUTS.button),
 }
 
 // tscircuit2024 stroke-font advance, measured from built Gerber output:
@@ -1602,17 +1613,16 @@ export const PANEL_LABELS: readonly PanelLabel[] = [
   // The knob is the generic value encoder (tempo only as its home context), so
   // the legend names the control, not one of the things it can edit. "VALUE" at
   // the 1.8 mm label font is 6.21 mm wide in a 19 mm column: no in-bounds risk.
-  { text: "VALUE", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y + LABEL_OFFSET.above },
-  { text: "NAV", x: RIGHT_CONTROLS.NAV.x, y: RIGHT_CONTROLS.NAV.y + LABEL_OFFSET.above },
-  { text: "SHIFT / EXIT", x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y + LABEL_OFFSET.below },
-  // POWER sits under its cutout: the +7 row above belongs to PLAY START.
-  { text: "POWER", x: POWER_BUTTON.x, y: POWER_BUTTON.y + POWER_LABEL_OFFSET_Y },
+  { text: "VALUE", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y + LABEL_OFFSET.encoder },
+  { text: "NAV", x: RIGHT_CONTROLS.NAV.x, y: RIGHT_CONTROLS.NAV.y + LABEL_OFFSET.encoder },
+  // The two right-column buttons wear their legend ABOVE the opening.
+  { text: "SHIFT / EXIT", x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y + LABEL_OFFSET.button },
+  { text: "POWER", x: POWER_BUTTON.x, y: POWER_BUTTON.y + LABEL_OFFSET.button },
   ...FRONT_COLUMNS.map(c => ({ text: c.button, x: c.x, y: TRANSPORT_Y + LABEL_OFFSET.transport })),
-  // PLAY START's label sits ABOVE its button, not below like the transport row:
-  // below it the ink ran into the POWER button opening at (52.5, -48). At
-  // y -25.5 the 1.8 mm text keeps 1.2 mm to the LCD window bottom (-23.435) and
-  // 1.4 mm to the button opening top (-27.875). Only the label moves; no control,
-  // opening or board coordinate changes.
+  // Owner rule 2026-11-13 keeps PLAY START's legend ABOVE its button (the four
+  // transport buttons carry theirs below). At y -25.5 the 1.8 mm text keeps
+  // 1.2 mm to the LCD window bottom (-23.435) and 1.4 mm to the button opening
+  // top (-27.875).
   { text: PLAY_START.button, x: PLAY_START.x, y: PLAY_START_LABEL_Y },
   ...FRONT_COLUMNS.map(c => ({ text: JACK_LABEL[c.jack] ?? c.jack, x: midiJackX(c.jack), y: JACK_Y + LABEL_OFFSET.jack })),
 ]

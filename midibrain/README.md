@@ -4,10 +4,11 @@ A **30HP/3U** Eurorack recorder and MIDI hub (module name **mnkybox**;
 `midibrain/` stays the project/repo identifier): a removable Raspberry Pi 5
 runs the DAW app, a socketed Pico 2 owns MIDI, the panel and the master clock,
 and a UMC1820 (plus ADA8200 over S/PDIF) provides 18 inputs at 48 kHz/24-bit.
-The front/UI PCB is **128 × 112 mm**, the rear/base PCB is **20HP
-(101.6 × 112 mm)**, the panel is a separate 30HP (152.0 mm) FR-4 board. The display is the
-Waveshare **4.3inch DSI LCD** (ElectroKit 4103 5687), 800 × 480 with DSI video
-and I2C touch on one 15-pin cable.
+The front/UI PCB is **150 × 112 mm** (U-shaped: a 106.50 × 68.90 mm opening lets the display
+module through), the rear/base PCB is **148 × 112 mm**, the panel is a separate 30HP (152.0 mm)
+FR-4 board. The display is the Waveshare **4.3inch DSI LCD** (ElectroKit 4103 5687), 800 × 480
+with DSI video and I2C touch on one 15-pin cable; it hangs on a printed carrier bolted to the
+rear board, and the panel front sits 10.0 mm above the front board's top face.
 
 Manufacturing target: **JLCPCB fabrication and SMD assembly**, SMD parts from
 JLCPCB/LCSC. Through-hole parts are hand-soldered except the Bourns PEC11R
@@ -50,7 +51,11 @@ make test          # prototype verification: typecheck, Bun/Python/host C++ test
 ```
 
 `make test` proves the sources, netlist, placement, geometry, host code and
-simplified SPICE models agree with each other. It does **not** prove a light
+simplified SPICE models agree with each other. **On the 10 mm respin branch
+(`wip/10mm-panel`, 2026-11-13) it is red**: `tsci build` is green (four
+circuits, 0 DRC errors) but the geometry tests and `mechanical/layout.json` still
+describe the previous layout and are being re-derived (see
+[docs/TODO.md](docs/TODO.md)). It does **not** prove a light
 pipe fits, a cable bends, a receiver stays inside its current limit, the stack
 depth, the encoder solder process, JLCPCB's CAM or a first article. The SPICE
 models are behavioural, not datasheet models.

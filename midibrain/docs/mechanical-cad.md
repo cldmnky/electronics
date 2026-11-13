@@ -15,20 +15,20 @@ mounting, control or board coordinate.
 
 | Body | Geometry | What is certain |
 |---|---|---|
-| `PANEL_30HP_3U` | 152.0 × 128.5 × 1.6 mm; 20 apertures and 14 drills from `PANEL_APERTURES` / `PANEL_DRILLS`: LCD, three feedthroughs with six screw holes, six buttons, three LED light-pipe openings, encoder, POWER, NAV, four jacks, four standoffs, four rail holes | outlines, diameters and positions are canonical (the same arrays `panel.circuit.tsx` renders) |
-| `FRONT_BOARD_PROVISIONAL_Z` | 128 × 112 × 1.6 mm at Z 19.05…20.65; top relief notch, 4 × Ø4.3 LCD boss holes, standoff, front↔rear and bracket mount holes | XY canonical; **Z is the `PROVISIONAL_Z` chain (assumptions A and B)** |
-| `REAR_BOARD_PROVISIONAL_Z` | 101.6 × 112 × 1.6 mm at Z 31.85…33.45; the front↔rear mount holes only (no Pi holes since 2026-11) | XY canonical; Z is the 11.20 mm direct-mate seat-to-seat gap on `PROVISIONAL_Z` |
+| `PANEL_30HP_3U` | 152.0 × 128.5 × 1.6 mm; 20 apertures and **10 drills** from `PANEL_APERTURES` / `PANEL_DRILLS`: LCD, three feedthroughs with six screw holes, six buttons, three LED light-pipe openings, encoder, POWER, NAV, four jacks, four rail holes (no panel standoffs since 2026-11-13) | outlines, diameters and positions are canonical (the same arrays `panel.circuit.tsx` renders) |
+| `FRONT_BOARD_PROVISIONAL_Z` | **150 × 112 × 1.6 mm at Z 10.00…11.60**; one U-shaped opening (the old notch merged into the display opening, through the top edge), the four front↔rear spacer holes; **no** display holes, no panel standoffs, no bracket screws | XY canonical; **Z is the `PROVISIONAL_Z` chain, derived from the owner's 10.0 mm `PANEL_TO_FRONT_BOARD_TOP`** |
+| `REAR_BOARD_PROVISIONAL_Z` | **148 × 112 × 1.6 mm at Z 22.80…24.40**; the four front↔rear spacer holes and the four Ø2.7 display-carrier holes (`LCD_MOUNT_HOLES`), no Pi holes since 2026-11-12 | XY canonical; Z is the 11.20 mm direct-mate seat-to-seat gap on `PROVISIONAL_Z` |
 | `DISPLAY_WAVESHARE_VENDOR_STEP` | the vendor STEP, SHA-256 verified, placed by a rigid 180° rotation so the glass front face is at Z = 0 and the electronics point rearward; X/Y from the outer SMT boss pattern centre. The rotation about **Y is the drawn candidate only** — the in-plane axis is pending | vendor geometry; model depth 13.82 mm is the model, not the 14.05 mm vendor maximum |
 | `DISPLAY_ENVELOPE_PROVISIONAL` | 106 × 68 mm, Z 0…14.05, drawn only when no verified vendor STEP is supplied | an envelope, not vendor geometry |
-| `MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_1..4` | four annuli (OD 5.0, ID 2.7 mm **assumed for illustration**) spanning Z 10.24…19.05 mm on the exported LCD mount axes | **geometric placeholder only**: the span 8.81 mm comes from the drawn boss rear plane and the drawn board top face, but length, diameter, thread and assembly are first-article tasks |
+| `MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_1..4` | four annuli (OD 5.0, ID 2.7 mm **assumed for illustration**) drawn across the gap between the drawn boss rear plane and the board face | **geometric placeholder only, and currently on the SUPERSEDED chain**: the carrier now sits on the rear board with an 8.75 mm adjustable spacer (`DISPLAY_STANDOFF`), so the placeholders and their 8.81 mm model gap are pre-respin geometry until the export is regenerated. Length, diameter, thread and assembly are first-article tasks |
 | `DISPLAY_CONNECTOR_PLANNING_MARKER` | 21.412 × 4.826 × 1.8 mm box at (38.84, 11.7) on the **provisional** design-chain plane Z 10.05, not the model's drawn PCB rear Z 6.24 | **legacy unverified planning data, not a verified connector.** The size has no reliable source: the model's 21.412 × 4.826 mm bodies are TFT1 flex bonds (`EXTRUDED-106739` / `EXTRUDED-107488`), not this connector. Position is an unverified drawing record; routing and fit are unknown |
 | `FEEDTHROUGH_*_FLANGE_PLAN_MARKER` | the Adafruit 908 flange outline, 38.30 × 11.90 mm, as a 0.2 mm marker on the panel rear face | flange size from the drawing; **no depth is published, so no flange volume exists** |
 | `USB_C_CANDIDATE_FLANGE_NON_APPROVED` | opt-in only (`--usbc-candidate-envelope`): advertised 25 × 10.2 × 5 mm from a marketplace listing | NON-APPROVED advertisement, no pitch, no current rating, no PD result |
 | `PI_MOUNTING_PANEL_20HP_3U` | 101.2 × 128.5 × 1.6 mm, 4 × M2.5 Pi holes on the Pi 5 58 × 49 pattern (landscape, mirrored, pattern centre 10 mm toward +X) and 4 × Ø3.2 rail holes. Also a separate verification model, `midibrain-pi-panel.step` and `mockup-pi-panel.stl`, carrying the panel and a placeholder Pi board | geometry canonical via `PI_PANEL_*` in `lib/layout.ts`, guarded by `lib/pi-panel.test.ts`; `step_assembly.py` derives the Pi board's holes from the drawing and fails the build unless they coincide with the panel's holes. The Pi is not in the main-module assembly |
 
 The panel carries every opening: 20 apertures (LCD, three feedthroughs, six
-buttons, three LEDs, encoder, POWER, NAV, four jacks) and 14 drills (six
-feedthrough screws, four standoffs, four rails). Both lists come from
+buttons, three LEDs, encoder, POWER, NAV, four jacks) and 10 drills (six
+feedthrough screws, four rails). Both lists come from
 `PANEL_APERTURES` / `PANEL_DRILLS` in `tscircuit/lib/layout.ts`, the same data
 `panel.circuit.tsx` renders. `tscircuit/lib/panel-cutouts.test.ts` compares the
 two element by element against the built `dist/panel/circuit.json`, so the CAD
@@ -109,19 +109,24 @@ standoff would sit. They are drawn only when a verified vendor model is supplied
 because their span comes from two drawn planes:
 
     vendor SMT boss rear plane   Z 10.24   (model)
-    front-board top face         Z 19.05   (drawn board solid)
+    front-board top face         Z 19.05   (PRE-RESPIN drawn board solid)
     model gap                     8.81 mm  = 19.05 - 10.24
 
-Two other numbers must not be confused with that gap:
+**All three of those planes are superseded.** The board top face is now Z 10.00,
+the display no longer hangs off the front board at all, and the carrier spacers
+span 8.75 mm from the REAR board's front face (`DISPLAY_STANDOFF`). The
+placeholders are therefore drawing geometry from the 19.05 mm chain and must be
+re-derived when `mechanical/layout.json` is regenerated. The current numbers,
+for reference, are:
 
 | Number | Value | What it is |
 |---|---:|---|
-| model gap | **8.81 mm** | arithmetic on the drawn solids |
-| design-chain spacer | **5.00 mm** | the existing assumption, plane separation 9.0 less boss projection 4.0 - a DIFFERENT chain |
-| residual | **3.81 mm** | a 5.00 mm spacer anchored on the board face ends at Z 14.05 and misses the drawn boss ends (10.24) by 3.81 mm |
+| old model gap | **8.81 mm** | arithmetic on the drawn solids, pre-respin |
+| old design-chain spacer | **5.00 mm** | plane separation 9.0 less boss projection 4.0, superseded |
+| current spacer | **8.75 mm** | rear-board front face to boss ends (`DISPLAY_STANDOFF.spacerLength`) |
+| current plane separation | **12.75 mm** | rear-board front face to display PCB rear |
 
-**The two chains do not agree, and neither is approved.** No document may call
-8.81 mm an approved dimension or 5.00 mm a tested part.
+No document may call 8.81 mm or 5.00 mm a current or approved dimension.
 
 The placeholders use an **assumed** OD 5.0 mm and ID 2.7 mm, illustration only, no
 dimensional claim. OD exceeds the board's 4.3 mm LCD hole so a bearing annulus is
@@ -164,13 +169,14 @@ It needs an owner decision and a PCB revision. The model keeps the current orien
   or a result that depends on a candidate value. This is the fail-closed case.
 
 A documented **XY overlap is a projection, not a collision**. The Adafruit 908
-flange spans y 47.55…59.45 at its canonical centre while the front board's
-relief notch starts at y = 48, so the projection overlaps board material by
-0.45 mm (17.235 mm² at x = −5; 50.435 mm² at x = +35, which also overlaps
-beside the notch). The flange's depth below the panel is not in the drawing, so
-the flange-versus-board result is **UNDETERMINED**. There is no threshold in the
-code that converts an unknown depth into a verdict, and a candidate Z volume
-used for drawing can never produce a definitive result.
+flange spans y 47.55…59.45 and extends past the board's top edge; since the
+display opening now runs through that edge over x −63.25…43.25, the flange no
+longer projects over board material where it used to. The flange's depth below
+the panel is not in the drawing, so the flange-versus-board result is
+**UNDETERMINED**. There is no threshold in the code that converts an unknown
+depth into a verdict, and a candidate Z volume used for drawing can never
+produce a definitive result. The recorded 0.45 mm / 17.235 mm² / 50.435 mm²
+figures were measured on the pre-respin notch.
 
 ## Outputs
 
@@ -186,7 +192,7 @@ files it does not write — unless `--force` is passed. Nothing is ever deleted.
 | `mockup-front-board.stl` | 1:1 front/UI board mockup |
 | `mockup-rear-board.stl` | 1:1 rear/base board mockup |
 | `scale-check-100mm.stl` | 100.00 × 10.00 × 3.00 mm printer scale bar |
-| `light-pipe-reach-gauge.stl` | same-datum step gauge: 19.05 mm tall (provisional board face), 16.5 mm low (nominal tip plane), 2.55 mm step — arithmetic, not an LED gap |
+| `light-pipe-reach-gauge.stl` | same-datum step gauge built on the OLD 19.05 mm board face; the current board face is 10.00 mm and the selected 16.5 mm pipe is too long, so regenerate the gauge before using it |
 | `assumptions.json` | provenance, unknowns, pair verdicts, volumes, round-trip result |
 | `print-checklist.md` | the physical print check |
 
@@ -338,12 +344,12 @@ LD_LIBRARY_PATH=<prefix>/usr/lib64 MIDIBRAIN_DISPLAY_STEP=4_3inch-dsi-lcd-V1.stp
     panel front face        Z = 0                              datum
     head underside          H = 0 + head_underside_offset      ASSUMPTION: 0
     pipe tip                T = H + shaft_length               nominal 16.5
-    board near face         B = 19.05                          provisional
+    board near face         B = 10.00                          provisional (PANEL_TO_FRONT_BOARD_TOP)
     LED top                 L = B - led_height                 the LED rises
                                                               TOWARD the panel,
                                                               so it SUBTRACTS
     optical gap             g = L - T                          None (unknown)
-    nominal tip to board    t = B - T                          nominal 2.55
+    nominal tip to board    t = B - T                          nominal -6.50 (the tip PASSES the board: the pipe is too long)
 
 The candidate is the owner-selected **Signal Construct PGN25L165**: shaft Ø2.5
 ±0.05 mm, x = 16.5 ±0.1 mm head-underside-to-tip, head Ø3 ±0.05 mm, head height
@@ -353,20 +359,21 @@ is committed). The owner's screenshot states 17.5 mm overall, which is 16.5 + 1.
 
 Two things this section deliberately does not do:
 
-- it does not turn 16.5 or 17.5 into a subtraction against 17.45 mm. The retired
+- it does not turn 16.5 or 17.5 into a subtraction against a stack: the retired
   Bivar PLP2-400-C 10.16 mm reference and the `17.45 − 10.16 = 7.29 mm` figure
-  are **withdrawn**: they compared different reference planes and the 10.16 mm
-  value is not in the current Bivar datasheet;
-- it does not call the 2.55 mm an LED gap. The optical gap needs the LED height,
+  are **withdrawn** (they compared different reference planes and the 10.16 mm
+  value is not in the current Bivar datasheet);
+- it does not call the resulting number an LED gap. The optical gap needs the LED height,
   the seated plane, the stack tolerances, retention in 1.6 mm FR-4 and the real
   hole tolerance; all are unmeasured, so `optical_gap_mm` is `None` and the
   status is `incomplete`.
 
-The gauge (still named `light-pipe-reach-gauge.stl` for compatibility) uses the
-same datum: **tall 19.05 mm** = the provisional board near face, **low 16.5 mm**
-= the nominal pipe tip plane (the shaft length), **step 2.55 mm** = the nominal
-tip-to-board-plane distance. The step is arithmetic between two assumed planes:
-it is **not an LED gap, not a fit and not a measured stack value**.
+The committed gauge (still named `light-pipe-reach-gauge.stl` for compatibility)
+still uses the **old** datum: tall 19.05 mm, low 16.5 mm, step 2.55 mm. On the
+current 10.00 mm board face the same pipe would pass the board by 6.50 mm
+(`LIGHT_PIPE_REACH.nominalTipToBoardPlane = -6.50`), which is why the gauge must
+be regenerated before it can check anything. No step here is an LED gap, a fit
+or a measured stack value.
 
 ## Physical print checklist
 
@@ -376,12 +383,15 @@ it is **not an LED gap, not a fit and not a measured stack value**.
 3. Check the LCD aperture against the real module glass (105.42 × 67.07 mm) and
    offer the display to it from behind: 0.9 mm clearance per side. Test the
    button, LED, jack, encoder, NAV and POWER openings against the real parts:
-   the mockup carries all 34 panel features, so every opening can be tried.
+   the mockup carries every panel feature, so every opening can be tried.
 4. Fit the Adafruit 908 through its panel openings and measure the depth from
    the flange seat to the rear-most body point. That number is missing today.
-5. Lay the front-board mockup over the real display bosses and confirm the four
-   Ø4.3 LCD holes and the top relief notch against all three feedthrough bodies.
-6. Check the panel-to-board gap with the reach gauge. 17.45 mm is provisional.
+5. Offer the front-board mockup to the real display module: the module must
+   pass through the 106.50 × 68.90 mm opening, and the four display-carrier
+   holes are on the REAR board (not the front board).
+6. Check the panel-to-board gap with the reach gauge: 8.4 mm panel rear to
+   board top is provisional, and the reach gauge itself is still cut for the
+   old 19.05 mm board face.
 7. Record nothing as accepted. Enter measurements in `docs/evidence/` with a
    reviewer and a date; all 28 acceptance items stay pending until then.
 

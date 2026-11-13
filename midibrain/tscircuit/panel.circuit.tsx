@@ -8,6 +8,7 @@ import {
   PANEL,
   PANEL_APERTURES,
   PANEL_LABELS,
+  PANEL_LABEL_FONT_SIZE,
   PANEL_MOUNT_HOLES,
   PANEL_TITLES,
 } from "./lib/layout"
@@ -76,7 +77,7 @@ export default () => (
     ))}
     {/* Control labels derive from the shared positions in lib/layout.ts. */}
     {PANEL_LABELS.map((l, i) => (
-      <Fragment key={`label-${i}`}><silkscreentext text={l.text} pcbX={`${l.x}mm`} pcbY={`${l.y}mm`} fontSize="1.8mm" anchorAlignment="center" layer="top" /></Fragment>
+      <Fragment key={`label-${i}`}><silkscreentext text={l.text} pcbX={`${l.x}mm`} pcbY={`${l.y}mm`} fontSize={`${PANEL_LABEL_FONT_SIZE}mm`} anchorAlignment="center" layer="top" /></Fragment>
     ))}
   </board>
 )

@@ -38,14 +38,18 @@ claim and it is not HDI.
 
 ## Geometry results
 
-`python3 tscircuit/scripts/fab_check.py` (measured on the 2026-11-08 build; the
+`python3 tscircuit/scripts/fab_check.py` (measured on the **2026-11-08 pre-respin build**; the
 autorouter is deliberately re-run per build, so trace/via counts and the exact
 via/route geometry are build-dependent and move between builds, while the SMT
 pad, PTH and NPTH hole sets do not):
 
+**Re-run this script after the 10 mm respin before quoting any row below.** The board sizes are
+current; every routed-element, drill and NPTH count in the table was measured on the older boards
+and still describes the 128 × 112 mm / 101.6 × 112 mm pair.
+
 | Item | Front/UI | Rear/base | Limit |
 |---|---|---|---|
-| Size | 128 × 112 mm | 101.6 × 112 mm | ≥ 3 × 3 mm |
+| Size | **150 × 112 mm** (U-shaped) | **148 × 112 mm** | ≥ 3 × 3 mm |
 | Layers / thickness | 2 / 1.6 mm | 2 / 1.6 mm | 2 / 1.6 mm |
 | Routed elements (build-dependent) | 93 traces, 68 vias, 76 SMT pads, 61 round plated holes, 30 NPTH | 102 traces, 316 vias, 47 SMT pads, 121 round plated holes, 8 NPTH | required data |
 | Min trace | 0.200 mm (built widths 0.200/0.225/0.250 mm) | 0.200 mm (same widths) | ≥ 0.10 mm |

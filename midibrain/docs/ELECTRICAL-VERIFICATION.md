@@ -4,9 +4,10 @@ Status: **prototype definition.** Nothing here is a fabrication release, a
 hardware measurement or a signal-integrity claim. Every number comes from a
 datasheet limit, a stated tolerance, or the built circuit JSON in `dist/`.
 
-Boards: rear/base `index.circuit.tsx` (101.6 × 112 mm, 2 layers, parts on the
-bottom) and front/UI `front.circuit.tsx` (128 × 112 mm, 2 layers, parts on the
-top).
+Boards: rear/base `index.circuit.tsx` (148 × 112 mm, 2 layers, parts on the
+bottom) and front/UI `front.circuit.tsx` (150 × 112 mm, U-shaped, 2 layers, parts
+on the top). The numbers below were measured on a pre-respin build; re-run the
+scripts after the respin before quoting them as current.
 
 ## 1. How to reproduce
 

@@ -57,7 +57,7 @@ paralleling the onboard power button — no custom power logic):
 
 | Function | Path | Notes |
 |---|---|---|
-| POWER | front-board SW7 → J_PWR (right-angle Harwin M20-9960245, 1 x 2, on the front board's REAR face at the top notch, mating axis +Y) → 2x 6-inch 2.54 mm female-female DuPont jumpers (user-supplied) → the Pi end: J2 is TWO BARE PADS (Raspberry Pi power-button documentation and `images/j2.jpg`, retrieved 2026-11-10), so a correctly fitted header or a qualified wired connection is required and pending | off→press = power on; on→press = graceful shutdown request (OS handles clean halt); long-press = PMIC hard cut, last resort only |
+| POWER | front-board SW7 at (52, 49) → J_PWR (right-angle Harwin M20-9960245, 1 x 2, on the front board's REAR face at (64, 44.5), rotation 180, mating axis +Y into the 11.2 mm board gap) → 2x 6-inch 2.54 mm female-female DuPont jumpers (user-supplied) → the Pi end: J2 is TWO BARE PADS (Raspberry Pi power-button documentation and `images/j2.jpg`, retrieved 2026-11-10), so a correctly fitted header or a qualified wired connection is required and pending | off→press = power on; on→press = graceful shutdown request (OS handles clean halt); long-press = PMIC hard cut, last resort only |
 
 The jumpers are **ACC A-0270 stock 6-inch F-F DuPont** leads the owner already
 owns; they are not a board part. The earlier "front SW7 → 2 IDC conductors →

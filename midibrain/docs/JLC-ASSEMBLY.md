@@ -31,10 +31,17 @@ hand-edit generated fabrication files to repair a source problem.
 
 ## Board options
 
-- Front 128 × 112 mm; rear 101.6 × 112 mm (20HP); panel 152.0 × 128.5 mm
-  (30HP/3U, 152.0 actual against the 152.4 mm nominal); pi-panel 101.2 ×
-  128.5 mm (20HP/3U, the Pi mounting panel — bare FR-4 like the 30HP panel).
-  Each board is 2-layer, 1.6 mm FR-4.
+- Front **150 × 112 mm** (U-shaped, 106.50 × 68.90 mm opening through the top edge); rear
+  **148 × 112 mm**; panel 152.0 × 128.5 mm (30HP/3U, 152.0 actual against the 152.4 mm
+  nominal); pi-panel 101.2 × 128.5 mm (20HP/3U, the Pi mounting panel — bare FR-4 like the
+  30HP panel). Each board is 2-layer, 1.6 mm FR-4. The sizes and the board count come from
+  `FRONT_PCB`/`REAR_PCB` in `tscircuit/lib/layout.ts`.
+
+  **This packet is stale.** The generated `fab/` files are dated 2026-11-13 12:47, before the
+  10 mm decision commit (`45ddd1c`, 13:14) and the later panel/board commits, so they describe
+  the pre-respin boards. Re-export (`make order`) and re-check every count, side and aperture
+  before uploading anything (`docs/TODO.md`, "Tests not re-derived"), and confirm the panel CAM
+  items in the panel bullet below.
 - Front and rear use 1 oz copper and candidate lead-free HASL. Apply the
   actual emitted source rules, reviewed Gerbers and
   [fab-check.md](fab-check.md), not obsolete defaults from an older export.
@@ -44,14 +51,20 @@ hand-edit generated fabrication files to repair a source problem.
   white legends. No copper finish is required. Obtain fabricator confirmation
   of the no-mask/copperless order and review routed apertures and tolerances.
 - The LCD opening is a rounded-rectangle polygon, **107.22 × 68.87 mm** with
-  1 mm corner relief, derived from lens dimensions rather than PCB height.
-  Physical display and rail fit remain acceptance items.
+  1 mm corner relief, derived from the glass dimensions rather than PCB height.
+  The panel also carries six button openings of **12.25 mm square** (Omron
+  reference 12.2 +0.05/0), three Ø2.6 mm light-pipe holes and three USB cutouts;
+  its only drilled holes are the six feedthrough screws and the four Ø3.2 rail
+  holes — the panel standoff holes were removed on 2026-11-13. Physical display
+  and rail fit remain acceptance items, and the routed-square and Ø2.6 hole
+  tolerances plus the duplicate drill/routing feature still need JLCPCB's
+  answer.
 
 ## SMT and THT assignment
 
 ### Front
 
-Expected raw source/BOM count: **46** = **31** SMT placements + **15** hand/BOM-only lines, matching `jlc-order.json` and the built board. Expected SMT CPL count: **31**, all on
+Expected raw source/BOM count: **46** = **31** SMT placements + **15** hand/BOM-only lines, matching `jlc-order.json`; **re-verify both numbers from the regenerated export** after the respin before uploading. Expected SMT CPL count: **31**, all on
 **top/panel side**. This includes the MIDI circuits, passives, LEDs and NAV.
 The rear face carries the J5 THT female socket body and the solder tails of the
 other through-hole parts, not SMT.
@@ -66,18 +79,19 @@ solder assembly for it if offered, otherwise bench-qualify per
 [assembly.md](assembly.md). Bourns does not recommend hand soldering, so the
 process, profile and inspection must be accepted before production.
 
-`DISP1` is the 4.3-inch DSI module. It bolts to the four SMTSO bosses on the
-front face, so it is part of the board mechanically, but it has no pads and no
-LCSC part: it is drawn in the tscircuit 3D view as a translucent envelope from
-`DISPLAY_STACK` (106.00 x 68.00 x 14.05 mm, rear face 5.0 mm above the board
-top) and it appears on the hand BOM with the ElectroKit article. It is not on
-the SMT CPL. The envelope is a reference box - the boss pattern, the FPC exit
-and the installed height are unverified (`display_boss_pattern`,
-`display_fpc_idc`).
+`DISP1` is the 4.3-inch DSI module. Since the 2026-11-13 respin it is **not**
+bolted to the front board: the front board carries a 106.50 × 68.90 mm opening
+and the module hangs on a printed carrier bolted to the **rear** board's top
+face at `LCD_MOUNT_HOLES`, on 8.75 mm adjustable spacers. It has no pads and no
+LCSC part, is drawn in the tscircuit 3D view as a translucent envelope from
+`DISPLAY_STACK` (106.00 x 68.00 x 14.05 mm) and appears on the hand BOM with the
+ElectroKit article. It is not on the SMT CPL. The envelope is a reference box -
+the boss pattern, the FPC exit, the carrier and the installed height are
+unverified (`display_boss_pattern`, `display_fpc_idc`).
 
 ### Rear
 
-Expected raw source/BOM count: **24**. Expected SMT CPL count: **20**, all on
+Expected raw source/BOM count: **24**. Expected SMT CPL count: **20** (re-verify from the regenerated export), all on
 **bottom/rear side**, including the two new local bypass capacitors C13/C14.
 
 THT exclusions: `J_PICO_L`, `J_PICO_R`, `J_PI`, `J_FRONT`. `J_PI` uses the
@@ -113,9 +127,12 @@ never edit a CPL merely to force a match.
 
 - CAB-15455 is **3 A and rejected for the 5 A power path**. The exact suitable
   feedthrough/cable chain and PD/droop/temperature tests are still pending.
-- Light pipe: owner-selected **candidate** Signal Construct PGN25L165 (Ø2.6 panel hole, shaft 16.5 ±0.1, overall 17.5). Not an approved fit: the seated plane, LED height, retention in 1.6 mm FR-4, hole tolerance and stack tolerances are unmeasured, and the optical gap is null. The retired Bivar PLP2-400-C 10.16 mm reference and the 7.29 mm subtraction are withdrawn. Select the final part after the reach and seating checks. The 2.55-2.60 mm hole is NOT guaranteed: the JLCPCB NPTH bands conflict and the panel emits each circular cutout in both the NPTH drill file and Edge_Cuts; the JLC viewer and support must confirm the de-duplication and the achievable hole size.
-- The display uses a **5 mm provisional spacer beyond 4 mm bosses**, producing
-  9 mm PCB-plane separation. Plane separation is not the spacer purchase length.
+- Light pipe: candidate Signal Construct PGN25L165 (Ø2.6 panel hole, shaft 16.5 ±0.1, overall 17.5), which is **6.5 mm too long** for the 10.0 mm stack (`LIGHT_PIPE_REACH`; ~9.2 mm is needed and no part is selected). Not an approved fit: the seated plane, LED height, retention in 1.6 mm FR-4, hole tolerance and stack tolerances are unmeasured, and the optical gap is null. The retired Bivar PLP2-400-C 10.16 mm reference and the 7.29 mm subtraction are withdrawn. Select the final part after the reach and seating checks. The 2.55-2.60 mm hole is NOT guaranteed: the JLCPCB NPTH bands conflict and the panel emits each circular cutout in both the NPTH drill file and Edge_Cuts; the JLC viewer and support must confirm the de-duplication and the achievable hole size.
+- The display uses **8.75 mm adjustable spacer length beyond the 4.0 mm bosses**,
+  measured from the rear board's front face, giving a 12.75 mm plane separation
+  (`DISPLAY_STANDOFF`). Plane separation is not the spacer purchase length, and
+  both numbers are provisional design values until the carrier is drawn and a
+  sample measured.
 - Knob, NAV/button actuators, Pi spacers (provisional 3.5 mm), the direct
   2 × 13 connector pair, the Pi GPIO ribbon and cooler/HAT/SSD remain subject
   to the recorded physical acceptance checks.

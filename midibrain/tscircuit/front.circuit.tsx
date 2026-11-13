@@ -292,7 +292,7 @@ export default () => (
         rear-most 14.05 mm) crosses this board's 10.0...11.6 mm plane, so no
         board material may sit under it. The module hangs from the rear board's
         printed carrier; this board only has to let it through. */}
-    <cutout shape="polygon" points={FRONT_BOARD_OPENING_POLYGON} />
+    <cutout shape="polygon" points={[...FRONT_BOARD_OPENING_POLYGON]} />
     <keepout shape="rect" width={`${FRONT_DISPLAY_KEEPOUT.width}mm`} height={`${FRONT_DISPLAY_KEEPOUT.height}mm`} pcbX={`${FRONT_DISPLAY_KEEPOUT.x}mm`} pcbY={`${FRONT_DISPLAY_KEEPOUT.y}mm`} excludeRefs={[".J_PWR"]} />
     {/* 2026-11-13 (owner): ALL mounting holes are removed for now - panel
         standoffs, front/rear spacer grid and the feedthrough-bracket screws.

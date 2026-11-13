@@ -30,6 +30,19 @@ export const C15127_AO3401A = (props: Props) => {
       supplierPartNumbers={{
         jlcpcb: ["C15127"],
       }}
+
+      /* 3D model: tscircuit model CDN copy of the JLCPCB/EasyEDA model for
+         C15127, fetched 2026-11-13 (HTTP 200, 2774137 bytes). Verified against this
+         footprint before use: the STEP bounding box is 2.506 x 2.904 x 1.373 mm, which matches the
+         pad geometry here (pads 1.14 and 1.81 mm from the origin on 0.95 pitch), z runs 0..1.373 so the body sits ON the board,
+         and the axes already agree with the footprint's - hence no
+         pcbRotationOffset and no modelOriginPosition fudge. */
+      cadModel={{
+        objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C15127.obj",
+        stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C15127.step",
+        pcbRotationOffset: 0,
+        modelOriginPosition: { x: 0, y: 0, z: 0 },
+      }}
       footprint={
         <footprint>
           <smtpad portHints={["pin1"]} pcbX="-1.1375mm" pcbY="0.95mm" width="1.325mm" height="0.6mm" shape="rect" />

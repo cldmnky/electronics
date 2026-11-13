@@ -4,9 +4,10 @@
 
 - Two custom PCBs, a separate **30HP/3U** front panel and a separate **20HP/3U
   Pi mounting panel** (owner decision 2026-11-12) beside the main module in the same row.
-  The front/UI PCB is **128 × 112 mm**; the rear/base PCB is **20HP (101.6 ×
-  112 mm)**; the Pi mounting panel is 101.2 × 128.5 mm; installed depth target
-  ≤110 mm per module. CAD top faces the panel and the rear faces the rack
+  The front/UI PCB is **150 × 112 mm** (U-shaped, with the display opening through
+  its top edge); the rear/base PCB is **148 × 112 mm**; the Pi mounting panel is
+  101.2 × 128.5 mm; installed depth target ≤110 mm per module. The panel front sits
+  **10.0 mm** above the front board's top face (owner decision 2026-11-13). CAD top faces the panel and the rear faces the rack
   cavity. The 30HP panel width (which replaced 32HP on 2026-11-08) and the knob-column move (47 → 52 mm) are owner decisions
   recorded in [decisions.md](decisions.md).
 - Removable Raspberry Pi 5, mechanically supported through its mounting holes
@@ -38,9 +39,10 @@
 
 ## Provisional, not a requirement freeze
 
-- Front/UI PCB 128 × 112 mm and rear/base PCB 101.6 × 112 mm, each 1.6 mm and
-  two layers. The rear board has the board-to-front-board standoff holes only (the Pi
-  is on its own panel). The Pi drawing is not production data.
+- Front/UI PCB 150 × 112 mm and rear/base PCB 148 × 112 mm, each 1.6 mm and
+  two layers. The front↔rear spacer holes are on both boards, the display-carrier
+  holes on the rear board, and the panel standoff holes are removed (the Pi is on its
+  own panel). The Pi drawing is not production data.
   Both boards contain prototype circuits and routed copper but are **not
   fabrication-released**.
 - Positions and dimensions in `tscircuit/lib/layout.ts` are planning values.

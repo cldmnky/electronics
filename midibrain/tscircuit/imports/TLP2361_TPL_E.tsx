@@ -68,6 +68,19 @@ export const TLP2361_TPL_E = (props: ChipProps<typeof pinLabels>) => {
         jlcpcb: ["C107626"],
       }}
       manufacturerPartNumber="TLP2361(TPL,E"
+
+      /* 3D model: tscircuit model CDN copy of the JLCPCB/EasyEDA model for
+         C107626, fetched 2026-11-13 (HTTP 200, 1321216 bytes). Verified against this
+         footprint before use: the STEP bounding box is 7.000 x 3.837 x 2.469 mm, which matches the
+         pad geometry here (pads at x +-3.15 on 1.27 pitch), z runs 0..2.469 so the body sits ON the board,
+         and the axes already agree with the footprint's - hence no
+         pcbRotationOffset and no modelOriginPosition fudge. */
+      cadModel={{
+        objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C107626.obj",
+        stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C107626.step",
+        pcbRotationOffset: 0,
+        modelOriginPosition: { x: 0, y: 0, z: 0 },
+      }}
       footprint={<footprint>
         <smtpad portHints={["pin6"]} pcbX="-3.149854mm" pcbY="-1.27mm" width="1.999996mm" height="0.6500114mm" radius="0.3250057mm" shape="pill" />
 <smtpad portHints={["pin3"]} pcbX="3.175mm" pcbY="1.27mm" width="1.999996mm" height="0.6500114mm" radius="0.3250057mm" shape="pill" />
