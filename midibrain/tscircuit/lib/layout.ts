@@ -42,13 +42,13 @@ export const PANEL = { width: 152.0, height: 128.5, thickness: 1.6 } as const //
 // is Z and is untouched.
 export const FRONT_PCB = { width: 150, height: 112, thickness: 1.6 } as const
 // Rear/base PCB, mounted behind the front board. Owner decision 2026-11-13:
-// 145 mm wide (3.5 mm per side inside the 152.0 mm panel), replacing the 20HP
+// 148 mm wide (2 mm per side inside the 152.0 mm panel), replacing the 20HP
 // (101.6 mm) board of 2026-11-07. Reason: the front board carries a display
 // opening, so the only board material left for the direct 2 x 13 interconnect
 // is the side margins, and those lie outside a 101.6 mm rear board. The extra
 // width also puts all four display-carrier bolt points on the board. The panel
 // itself is unchanged; the Pi mounting panel stays 101.2 mm.
-export const REAR_PCB = { width: 145, height: 112, thickness: 1.6 } as const
+export const REAR_PCB = { width: 148, height: 112, thickness: 1.6 } as const
 
 // M2.5 screw clearance for board and panel standoff holes; M3 for the rails.
 export const MOUNT_HOLE_DIAMETER = 2.7 as const
@@ -336,7 +336,11 @@ export const DISPLAY_BOSS_PATTERN = [
 // innerWidth/innerHeight are the ACTIVE area; bezelWidth/bezelHeight are the
 // printed border; glassWidth/glassHeight are what the panel aperture follows.
 export const DISPLAY_CONCEPT = {
-  x: -9.5,
+  // 2026-11-13: -9.5 -> -10.0. With the display opening cut, the encoder and NAV
+  // pad fields (column at x = 52) reach x = 43.59, which left only 0.16 mm to the
+  // opening edge at 43.75; the cutout rule needs 0.20. A 0.5 mm shift keeps the
+  // module's 2.25 mm clearance to the knob body and gives the pads 0.66 mm.
+  x: -10.0,
   y: 11,
   width: DISPLAY_VENDOR.outline.width,
   height: DISPLAY_VENDOR.outline.height,
@@ -354,9 +358,15 @@ export const DISPLAY_CONCEPT = {
 // plane separation from the front-board top face to the display PCB REAR face.
 // planeSeparation = 9.0 stays the provisional design target. spacerLength is
 // derived, never re-typed: 9.0 - 4.0 (boss projection) = 5.0 mm.
+// 2026-11-13: the module no longer sits on the front board. It bolts to a
+// printed carrier fixed to the REAR board's front face, so both distances are
+// measured from that face. planeSeparation = rear-board front face -> display
+// PCB rear (12.75); spacerLength = rear-board front face -> the module's
+// boss ends (8.75), which is the adjustable length that trims the glass plane
+// to the panel front at assembly.
 export const DISPLAY_STANDOFF = {
-  planeSeparation: 9.0,                                              // provisional
-  spacerLength: mm3(9.0 - DISPLAY_VENDOR.pcbRearToBossEnd),           // 5.0
+  planeSeparation: 12.75,                                             // provisional
+  spacerLength: mm3(12.75 - DISPLAY_VENDOR.pcbRearToBossEnd),          // 8.75
 } as const
 
 export const DISPLAY_STACK = {
@@ -524,6 +534,32 @@ export const displayAnnotationXY = (a: { dx: number; dy: number }) => ({
   y: DISPLAY_CONCEPT.y + a.dy,
 })
 
+// ---- Front-board display opening ----
+// At the 10 mm panel the module's body (glass front 0 -> rear-most 14.05 mm)
+// crosses the front board's 10.0...11.6 mm plane, so no board material may sit
+// under it. The opening is the vendor outline plus a uniform assembly
+// allowance; the module's own X/Y position is set by the rear-board carrier and
+// is unmeasured, so the allowance is a design margin, not a proven clearance.
+export const DISPLAY_OPENING_CLEARANCE = { perSideX: 0.25, perSideY: 0.45 } as const
+// The autorouter hugs the opening's edge at ~0.15 mm, under the 0.20 mm
+// copper-to-cutout rule, so a keepout 1.0 mm larger than the opening pushes the
+// router clear of it (0.3 mm was not enough); 0.5 keeps J_PWR's pads, which
+// sit 0.75 mm above the opening, out of the keepout.
+export const DISPLAY_OPENING_KEEPOUT_MARGIN = 0.5 as const
+export const FRONT_DISPLAY_KEEPOUT = {
+  x: DISPLAY_CONCEPT.x,
+  y: DISPLAY_CONCEPT.y,
+  width: mm3(DISPLAY_VENDOR.outline.width + 2 * (DISPLAY_OPENING_CLEARANCE.perSideX + DISPLAY_OPENING_KEEPOUT_MARGIN)),
+  height: mm3(DISPLAY_VENDOR.outline.height + 2 * (DISPLAY_OPENING_CLEARANCE.perSideY + DISPLAY_OPENING_KEEPOUT_MARGIN)),
+} as const
+
+export const FRONT_DISPLAY_OPENING = {
+  x: DISPLAY_CONCEPT.x,
+  y: DISPLAY_CONCEPT.y,
+  width: mm3(DISPLAY_VENDOR.outline.width + 2 * DISPLAY_OPENING_CLEARANCE.perSideX),   // 106.5
+  height: mm3(DISPLAY_VENDOR.outline.height + 2 * DISPLAY_OPENING_CLEARANCE.perSideY), // 68.9
+} as const
+
 // ---- PROVISIONAL Z stack ----
 // Z datum: Z = 0 at the front (operator-side) face of the panel; +Z is
 // rearward, into the rack cavity. Millimetres.
@@ -549,18 +585,27 @@ export const DISPLAY_GLASS_FRONT_Z = 0 as const // Assumption A, not a measureme
 
 // Depths chain from the GLASS FRONT face, which now sits flush with the panel
 // front face: 0.00 + 10.05 = 10.05 display PCB rear, + 4.00 = 14.05 rear-most.
+// Owner decision 2026-11-13: the panel front sits 10.0 mm above the front
+// board's top face, because that is where the ordered Thonkiconn jacks, the
+// B3F-4055 + B32 caps (Omron reference 10.0 +- 0.4) and the PEC11R bushings all
+// put it. The chain below is derived from that ONE number, not the other way
+// round: the display used to set it (assumptions A and B), which left every
+// panel control 8.5-10.5 mm short.
+export const PANEL_TO_FRONT_BOARD_TOP = 10.0 as const
 export const PROVISIONAL_Z = {
   panelFront: 0,
   panelRear: PANEL.thickness,                                                        // 1.60
   displayGlassFront: DISPLAY_GLASS_FRONT_Z,                                          // 0.00 (assumed flush)
   displayPcbRear: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.glassFrontToPcbRear),     // 10.05
   displayRearMost: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.overallDepth),          // 14.05
-  frontBoardTop: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.glassFrontToPcbRear + DISPLAY_STANDOFF.planeSeparation), // 19.05
-  frontBoardRear: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.glassFrontToPcbRear + DISPLAY_STANDOFF.planeSeparation + FRONT_PCB.thickness), // 20.65
+  frontBoardTop: PANEL_TO_FRONT_BOARD_TOP,                                           // 10.00
+  frontBoardRear: mm3(PANEL_TO_FRONT_BOARD_TOP + FRONT_PCB.thickness),                // 11.60
+  rearBoardFront: mm3(PANEL_TO_FRONT_BOARD_TOP + FRONT_PCB.thickness + INTERCONNECT_MECH.seatToSeat), // 22.80
+  rearBoardRear: mm3(PANEL_TO_FRONT_BOARD_TOP + FRONT_PCB.thickness + INTERCONNECT_MECH.seatToSeat + REAR_PCB.thickness), // 24.40
 } as const
 // The panel-to-board gap FALLS OUT of assumptions A and B. It is a
 // consequence of a design target, not evidence for it, and it is not certified.
-export const PANEL_TO_FRONT_BOARD_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear) // 17.45
+export const PANEL_TO_FRONT_BOARD_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear) // 8.40
 
 // Light-pipe reach: the retired Bivar PLP2-400-C 10.16 mm reference and the
 // 17.45 - 10.16 = 7.29 mm subtraction are WITHDRAWN and kept only as history
@@ -614,10 +659,14 @@ export const LIGHT_PIPE_REACH = {
   overallLength: LIGHT_PIPE.overallLength,             // 17.5
   headHeight: LIGHT_PIPE.headHeight,                   // 1.0
   nominalTipZ: LIGHT_PIPE.shaftLength,                 // 16.5 from the panel front
-  boardNearFaceZ: PROVISIONAL_Z.frontBoardTop,         // 19.05, provisional
-  nominalTipToBoardPlane: mm3(PROVISIONAL_Z.frontBoardTop - LIGHT_PIPE.shaftLength), // 2.55
+  boardNearFaceZ: PROVISIONAL_Z.frontBoardTop,         // 10.00, provisional
+  nominalTipToBoardPlane: mm3(PROVISIONAL_Z.frontBoardTop - LIGHT_PIPE.shaftLength), // -6.50
   opticalGap: null,                                    // UNKNOWN: LED height unmeasured
-  status: "incomplete",
+  // The 16.5 mm shaft is now 6.5 mm too LONG for a 10 mm panel: the tip would
+  // pass the front board. A ~9.2 mm pipe (10.0 minus the ~0.8 mm LED body) is
+  // needed and no part is selected.
+  requiredShaftLength: mm3(PROVISIONAL_Z.frontBoardTop - 0.8), // 9.20, eyeballed LED height
+  status: "incomplete - the selected part is too long for this stack",
   missing: [
     "LED body height above the front-board top face",
     "measured board standoff / stack tolerances",
@@ -638,7 +687,9 @@ export const FRONT_TOP_SMD_MAX_HEIGHT = {
   height: 2.2,
   source: "manufacturer drawing p.15, max installed height 2.1 +-0.1 mm",
 } as const
-export const DISPLAY_UNDERSIDE_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost) // 2.30
+// Negative: at the 10 mm panel the module's rear 4.05 mm sits BEHIND the front
+// board's top face, which is why the board carries an opening.
+export const DISPLAY_UNDERSIDE_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost) // -4.05
 
 // Installed-depth target from the owner. Unchanged; every depth figure below
 // is provisional and none of them releases the target.
@@ -1130,12 +1181,14 @@ export const midiJackX = (jack: string): number => {
 // the DSI connector. Nothing is waived by moving the pair: the pad, body and
 // tail clearances above are asserted by lib/interconnect.test.ts on the built
 // circuit JSON.
-// Moved 2026-11-13 with the display opening: (10, 5) was inside it, and the
+// Moved 2026-11-13 with the display opening: (10, 5) is inside it, and the
 // 40.52 mm body cannot sit in the bottom strip (32.55 mm tall, free bands 3.05
-// and 1.1 mm). The right margin outside the opening is now 43.75...75 mm and
-// this x keeps the 8.80 mm body clear of the control column (which ends at
-// 58.3) and of the board edge.
-export const FRONT_INTERCONNECT = { x: 66, y: 5, rotation: 90 } as const
+// and 1.1 mm). It sits at the bottom of the right-hand strip, below the four
+// MIDI clusters: y -30 puts the body at -50.26...-9.74, inside the board edge
+// (-56) and inside the 148 mm rear board, and it keeps every control and MIDI
+// net within ~20 mm of the connector. A left-margin position was tried first
+// and rejected: it dragged SW5-SW7, U5 and U6 across the whole board.
+export const FRONT_INTERCONNECT = { x: 66, y: -30, rotation: 90 } as const
 // The rear board carries the male at the SAME coordinate. One constant, not
 // two: the coincidence test compares the BUILT pads.
 export const REAR_INTERCONNECT = FRONT_INTERCONNECT

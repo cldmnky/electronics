@@ -12,30 +12,25 @@ import { SKRHABE010 } from "./imports/SKRHABE010"
 import { FrontSilk } from "./lib/silk"
 import { TLP2361_TPL_E } from "./imports/TLP2361_TPL_E"
 import {
-  DISPLAY_ANNOTATIONS,
+  DISPLAY_CONCEPT,
   FEEDTHROUGH_BRACKET,
   FRONT_BOARD_HOLES,
+  FRONT_DISPLAY_OPENING,
+  FRONT_DISPLAY_KEEPOUT,
   FRONT_INTERCONNECT,
-  FRONT_REAR_MOUNT,
   FRONT_PCB,
+  FRONT_REAR_MOUNT,
   FRONT_TOP_NOTCH,
   JACK_Y,
-  LCD_MOUNT_HOLES,
-  LCD_WINDOW,
   LED_Y,
   ledPosition,
+  midiJackX,
   MOUNT_HOLE_DIAMETER,
   POWER_BUTTON,
   POWER_HEADER,
-  midiJackX,
   RIGHT_CONTROLS,
-  DISPLAY_CONCEPT,
-  DISPLAY_STACK,
-  DISPLAY_VENDOR,
-  DISPLAY_BOSS_PATTERN,
   TRANSPORT_Y,
   transportButtonX,
-  displayAnnotationXY,
 } from "./lib/layout"
 
 // FRONT/UI BOARD. Prototype schematic/placement; not a fabrication release.
@@ -152,8 +147,8 @@ const MidiIn = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: n
         schSectionName="midi_in"
         connections={{ cathode: anode, anode: tip }}
       />
-      <R name={`R${ch}`} value={`${MIDI_RECEIVER_OHM}`} sec="midi_in" schX={ch === 1 ? "-21.5" : undefined} schY={ch === 1 ? "-1.3" : undefined} x={`${x - 2}mm`} y={`${y - 6}mm`} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
-      <R name={`R${ch + 2}`} value="2.2k" sec="midi_in" x={`${x + 8}mm`} y={`${y - 4}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={rxNet} p2="net.P3V3" />
+      <R name={`R${ch}`} value={`${MIDI_RECEIVER_OHM}`} sec="midi_in" schX={ch === 1 ? "-21.5" : undefined} schY={ch === 1 ? "-1.3" : undefined} x={`${x - 2}mm`} y={`${y - 5}mm`} lcsc="C22962" mpn="0603WAF2200T5E" p1={ring} p2={anode} />
+      <R name={`R${ch + 2}`} value="2.2k" sec="midi_in" x={`${x + 8}mm`} y={`${y - 3.5}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={rxNet} p2="net.P3V3" />
       {/* C2 carries the placement note ("connections cross the routing path
           between its pads"), C1 does not; a 0603 X7R cap is non-polarized, so
           rotating it moves no polarity mark. */}
@@ -203,8 +198,8 @@ const MidiOut = ({ ch, jackX, jackY, x, y }: { ch: 1 | 2; jackX: number; jackY: 
         schSectionName="midi_out"
         connections={{ gate, source: "net.P3V3", drain }}
       />
-      <R name={`R${ch + 4}`} value={`${MIDI_OUT_GATE_OHM.series}`} sec="midi_out" x={`${x - 2}mm`} y={`${y + 6}mm`} lcsc="C22775" mpn="0603WAF1000T5E" p1={tx} p2={gate} />
-      <R name={`R${ch + 6}`} value={`${MIDI_OUT_GATE_OHM.pullup}`} sec="midi_out" x={`${x + 6}mm`} y={`${y + 6}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={gate} p2="net.P3V3" />
+      <R name={`R${ch + 4}`} value={`${MIDI_OUT_GATE_OHM.series}`} sec="midi_out" x={`${x - 2}mm`} y={`${y + 5}mm`} lcsc="C22775" mpn="0603WAF1000T5E" p1={tx} p2={gate} />
+      <R name={`R${ch + 6}`} value={`${MIDI_OUT_GATE_OHM.pullup}`} sec="midi_out" x={`${x + 6}mm`} y={`${y + 5}mm`} lcsc="C4190" mpn="0603WAF2201T5E" p1={gate} p2="net.P3V3" />
       {/* R9/R10 rotate 270 deg, not 0/90: `tsci check placement` flagged the
           90 deg pads as "connections cross the routing path between its pads",
           and 270 puts pad 1 on the routed side. Value, net and footprint are
@@ -242,46 +237,6 @@ const FRONT_LED_PARTS = [
   { name: "D5", button: "PLAY", lcsc: "C2297", mpn: "KT-0805G", drive: "net.PLAY_LED", anode: "net.PLAY_LED_A" },
 ] as const
 
-// The display as a reference body: a 0.5 mm wireframe cage for the module
-// envelope, plus the four spacers and the module's four bosses that hold it up.
-// A bare cage floats above the board with nothing under it, which reads as a
-// modelling error; a solid slab hides the SMT area instead. Every dimension is
-// derived from DISPLAY_STACK / DISPLAY_BOSS_PATTERN - nothing is re-typed.
-//
-// Z chain in this model's frame (origin = the module centre, and the cad
-// component is placed planeSeparation - bossProjection = 5.0 mm above the
-// board's top face): the board's top face is at -(5.0 + depth/2), the module's
-// rear-most plane (boss ends) at -depth/2, and the cage spans +-depth/2.
-//   board top ---- 5.0 mm spacer ---- boss end -- 4.0 mm boss -- display PCB rear
-// The module's underside map, FPC exit and installed height are unverified
-// (display_fpc_idc, display_boss_pattern): this shows the DESIGN CHAIN.
-const DISPLAY_ROD = 0.5
-const DISPLAY_SPACER_D = 3.5 // M2.5 spacer body, drawn square
-const DISPLAY_BOSS_D = DISPLAY_VENDOR.bossDiameter
-const displayEnvelopeWireframe = (() => {
-  const w = DISPLAY_STACK.outlineWidth
-  const d = DISPLAY_STACK.outlineHeight
-  const h = DISPLAY_STACK.overallDepth
-  const hx = w / 2 - DISPLAY_ROD / 2
-  const hy = d / 2 - DISPLAY_ROD / 2
-  const hz = h / 2 - DISPLAY_ROD / 2
-  const hzOuter = h / 2 // the envelope's bottom/top FACE (hz is the rod centre line)
-  const spacer = DISPLAY_STACK.planeSeparation - DISPLAY_STACK.bossProjection // 5.0
-  const boss = DISPLAY_STACK.bossProjection // 4.0
-  const shapes: object[] = []
-  const rod = (size: number[], at: number[]) =>
-    shapes.push({ type: "translate", vector: at, shape: { type: "cuboid", size } })
-  for (const sy of [-1, 1]) for (const sz of [-1, 1]) rod([w, DISPLAY_ROD, DISPLAY_ROD], [0, sy * hy, sz * hz])
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) rod([DISPLAY_ROD, d, DISPLAY_ROD], [sx * hx, 0, sz * hz])
-  for (const sx of [-1, 1]) for (const sy of [-1, 1]) rod([DISPLAY_ROD, DISPLAY_ROD, h], [sx * hx, sy * hy, 0])
-  for (const p of DISPLAY_BOSS_PATTERN) {
-    // 5.0 mm spacer: board top face up to the module's rear-most plane.
-    rod([DISPLAY_SPACER_D, DISPLAY_SPACER_D, spacer], [p.x, p.y, -hzOuter - spacer / 2])
-    // 4.0 mm boss: that plane up to the module PCB's rear face.
-    rod([DISPLAY_BOSS_D, DISPLAY_BOSS_D, boss], [p.x, p.y, -hzOuter + boss / 2])
-  }
-  return { type: "union", shapes }
-})()
 
 export default () => (
   <board
@@ -302,89 +257,44 @@ export default () => (
       <schematicsection name="headers" displayName="Rear interconnect" />
     </schematicsheet>
     <cutout shape="rect" width={`${FRONT_TOP_NOTCH.width}mm`} height={`${FRONT_TOP_NOTCH.height}mm`} pcbX={`${FRONT_TOP_NOTCH.x}mm`} pcbY={`${FRONT_TOP_NOTCH.y}mm`} />
+    {/* Display opening. At the 10 mm panel the module's body (glass front 0 ->
+        rear-most 14.05 mm) crosses this board's 10.0...11.6 mm plane, so no
+        board material may sit under it. The module hangs from the rear board's
+        printed carrier; this board only has to let it through. */}
+    <cutout shape="rect" width={`${FRONT_DISPLAY_OPENING.width}mm`} height={`${FRONT_DISPLAY_OPENING.height}mm`} pcbX={`${FRONT_DISPLAY_OPENING.x}mm`} pcbY={`${FRONT_DISPLAY_OPENING.y}mm`} />
+    <keepout shape="rect" width={`${FRONT_DISPLAY_KEEPOUT.width}mm`} height={`${FRONT_DISPLAY_KEEPOUT.height}mm`} pcbX={`${FRONT_DISPLAY_KEEPOUT.x}mm`} pcbY={`${FRONT_DISPLAY_KEEPOUT.y}mm`} excludeRefs={[".J_PWR"]} />
     {FRONT_BOARD_HOLES.map((h, i) => (
       <Fragment key={`board-hole-${i}`}><hole name={`BOARD_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
     ))}
     {FRONT_REAR_MOUNT.map((h, i) => (
       <Fragment key={`mount-hole-${i}`}><hole name={`MOUNT_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
     ))}
-    {LCD_MOUNT_HOLES.map((h, i) => (
-      <Fragment key={`lcd-hole-${i}`}><hole name={`LCD_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
-    ))}
-    {/* LCD assembly silkscreen: vendor outline, active-area window and hole pattern. */}
-    <silkscreenrect pcbX={`${DISPLAY_CONCEPT.x}mm`} pcbY={`${DISPLAY_CONCEPT.y}mm`} width={`${DISPLAY_CONCEPT.width}mm`} height={`${DISPLAY_CONCEPT.height}mm`} strokeWidth="0.15mm" layer="top" />
-    <silkscreenrect pcbX={`${LCD_WINDOW.x}mm`} pcbY={`${LCD_WINDOW.y}mm`} width={`${LCD_WINDOW.width}mm`} height={`${LCD_WINDOW.height}mm`} strokeWidth="0.12mm" layer="top" />
-    {LCD_MOUNT_HOLES.map((h, i) => (
-      <Fragment key={`lcd-silk-${i}`}><silkscreencircle pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} radius="1.8mm" strokeWidth="0.15mm" layer="top" /></Fragment>
-    ))}
-    {DISPLAY_ANNOTATIONS.map((a, i) => {
-      const p = displayAnnotationXY(a)
-      return (
-        <Fragment key={`lcd-note-${i}`}>
-          <silkscreentext text={a.text} pcbX={`${p.x}mm`} pcbY={`${p.y}mm`} fontSize={`${a.fontSize}mm`} anchorAlignment="center" layer="top" />
-        </Fragment>
-      )
-    })}
-    {/* Display reference body for the 3D view (tsci dev, GLB, STEP). The
-        module bolts to the four SMTSO bosses but is NOT a board part, so this
-        is the only way tscircuit can draw it: the engine skips CAD for a
-        doNotPlace part, and a standalone <cadmodel> has no parent component.
-        The box is the vendor envelope from DISPLAY_STACK and nothing else -
-        106.00 x 68.00 x 14.05 mm, rear face at planeSeparation -
-        bossProjection = 5.0 mm above the board's top face, glass front on the
-        panel-front plane of PROVISIONAL_Z. It is drawn as a 0.5 mm wireframe
-        cage standing on four 5.0 mm spacers and the module's own 4.0 mm
-        bosses, not as a solid slab: a slab hides the SMT area, and a bare cage
-        floats with nothing under it.
-        REFERENCE BOX, NOT A FIT: the
-        underside map, the FPC exit, the boss projection and the installed
-        height are unverified (display_fpc_idc, display_boss_pattern); the
-        envelope is the vendor outline, the depth is the wiki FAQ's 14.05 mm.
-
-        CONSEQUENCE: because it is not `doNotPlace` it is a placement. It has no
-        pads, so it stays off the SMT BOM and CPL (sourcing_bom.py classifies it
-        THT for the front board) and appears in the hand BOM instead - which is
-        correct, the module is hand-fitted and already was in sourcing-extras. */}
-    <chip
-      name="DISP1"
-      layer="top"
-      showAsTranslucentModel
-      manufacturerPartNumber="Waveshare 4.3inch DSI LCD"
-      pcbX={`${DISPLAY_CONCEPT.x}mm`}
-      pcbY={`${DISPLAY_CONCEPT.y}mm`}
-      footprint={<footprint name="display-module-envelope" />}
-      cadModel={{
-        jscad: displayEnvelopeWireframe,
-        positionOffset: { x: 0, y: 0, z: DISPLAY_STACK.overallDepth / 2 },
-        zOffsetFromSurface: DISPLAY_STACK.planeSeparation - DISPLAY_STACK.bossProjection,
-        // What is DRAWN, not just the module: the envelope plus the 5.0 mm
-        // spacer gap below it. tscircuit fits the mesh into this box, so a
-        // 14.05 value would shrink the whole body by 14.05/19.05.
-        size: {
-          x: DISPLAY_STACK.outlineWidth,
-          y: DISPLAY_STACK.outlineHeight,
-          z: DISPLAY_STACK.overallDepth + (DISPLAY_STACK.planeSeparation - DISPLAY_STACK.bossProjection),
-        },
-        showAsTranslucentModel: true,
-      }}
-    />
+    {/* The module used to be screwed to four SMTSO bosses on this face. It now
+        hangs from the rear board's printed carrier, so this board carries no
+        display holes and no display silk - only the opening above. One note is
+        kept so a builder knows what the hole is for. */}
+    <silkscreentext text="DISPLAY OPENING" pcbX={`${FRONT_DISPLAY_OPENING.x}mm`} pcbY={`${FRONT_DISPLAY_OPENING.y - FRONT_DISPLAY_OPENING.height / 2 - 2}mm`} fontSize="0.9mm" anchorAlignment="center" layer="top" />
     {FEEDTHROUGH_BRACKET.mountX.map((x, i) => (
       <Fragment key={`bracket-${i}`}><hole name={`BRACKET_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${x}mm`} pcbY={`${FEEDTHROUGH_BRACKET.mountY}mm`} /></Fragment>
     ))}
 
-    {/* All SMT on the panel side for single-sided JLCPCB assembly: MIDI
-        opto/output drivers under the LCD (top layer); jacks in the four
-        shared transport/MIDI columns at the bottom edge. J5 stays bottom: the
+    {/* All SMT on the panel side for single-sided JLCPCB assembly. Since the
+        2026-11-13 respin the display is an opening, so all four MIDI clusters
+        live in the right-hand strip (x 58.3...75), stacked above the 2 x 13
+        interconnect at its bottom. The left margin (12.25 mm) is too narrow for
+        a cluster, and putting the interconnect there dragged every control net
+        across the board. Jacks stay in the four shared transport/MIDI columns at the
+        bottom edge; the jack nets are low-speed current loops. J5 stays bottom: the
         female socket's body is on the rear-facing side so the rear board's
         male header plugs straight into it, and its solder tails are the only
         through-hole joints on the panel side. */}
-    <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={-45} y={10} />
-    <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={-15} y={10} />
+    <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={64} y={13} />
+    <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={64} y={42} />
     {/* ch1 cluster shifted 4 mm left (x -45 -> -49) to clear the 4.3-inch
         module's bottom-left LCD_4 hole at (-41.88, -13.54), which the new
         58.00 x 49.04 mounting pattern puts inside the old Q1 courtyard. */}
-    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={-49} y={-13} />
-    <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} x={-15} y={-13} />
+    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={66} y={0} />
+    <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} x={66} y={28} />
 
     <SKRHABE010
       name="U5"

@@ -26,6 +26,7 @@ import {
   MOUNT_HOLE_DIAMETER,
   NOTCH_BOUNDS,
   PANEL_TO_FRONT_BOARD_GAP,
+  PANEL_TO_FRONT_BOARD_TOP,
   PROVISIONAL_Z,
   mechanicalExport,
   provisionalInstalledDepth,
@@ -101,11 +102,12 @@ test("the concept is 30HP at 152.0 mm and tentative points stay on panel", () =>
 
 test("display, window, cutout and mounting holes share one coordinate source", () => {
   const d = DISPLAY_CONCEPT
-  // Display centre: y stays at the owner-approved 11; x moves -17 -> -9.5 so
-  // the 106 mm module stays on the unchanged 128 mm board (left edge -62.5,
-  // 1.5 mm ligament) while the value knob, moved 47 -> 52, keeps 2.25 mm clear
-  // of the module's right edge 43.5. See docs/decisions.md (D2).
-  expect(d.x).toBe(-9.5)
+  // Display centre: y stays at the owner-approved 11. x is -10.0 since the
+  // 2026-11-13 respin: the opening is cut where the module used to sit above
+  // the board, and the encoder/NAV pad fields (column at x = 52) reach 43.59,
+  // which left 0.16 mm to the opening edge at 43.75 against a 0.20 mm rule.
+  // The 0.5 mm shift keeps the knob clearance above 2.25 mm. See decisions.md.
+  expect(d.x).toBe(-10)
   expect(d.y).toBe(11)
   // Holes derive from the display centre plus the vendor-local offsets - the
   // SMTSO boss pattern, the only M2.5 threads the module offers.
@@ -547,70 +549,59 @@ test("provisional Z stack follows the vendor side view, with a stated datum", ()
   expect(PROVISIONAL_Z.displayPcbRear).toBeCloseTo(10.05, 6)
   expect(PROVISIONAL_Z.displayRearMost).toBeCloseTo(14.05, 6)
   expect("rearEnvelopeDepth" in DISPLAY_STACK).toBe(false)
-  // Plane separation and spacer length are separate quantities.
-  expect(DISPLAY_STANDOFF.planeSeparation).toBe(9)
-  expect(DISPLAY_STANDOFF.spacerLength).toBeCloseTo(5, 6)
+  // Plane separation and spacer length are separate quantities, both now
+  // measured from the REAR board's front face (the display left the front board
+  // on 2026-11-13). 12.75 - 4.00 boss = 8.75 mm carrier spacer.
+  expect(DISPLAY_STANDOFF.planeSeparation).toBe(12.75)
+  expect(DISPLAY_STANDOFF.spacerLength).toBeCloseTo(8.75, 6)
   expect(DISPLAY_STANDOFF.spacerLength).toBeCloseTo(
     DISPLAY_STANDOFF.planeSeparation - v.pcbRearToBossEnd, 6)
   expect(DISPLAY_STACK.bossProjection).toBe(4)
-  expect(PROVISIONAL_Z.frontBoardTop).toBeCloseTo(
-    v.glassFrontToPcbRear + DISPLAY_STANDOFF.planeSeparation + DISPLAY_GLASS_FRONT_Z, 6)
-  expect(PROVISIONAL_Z.frontBoardTop).toBeCloseTo(19.05, 6)
-  expect(PROVISIONAL_Z.frontBoardRear).toBeCloseTo(20.65, 6)
-  // Provisional-with-numbers: 19.05 - 1.60 = 17.45 mm, up from 14.10 mm. The
-  // panel-to-board gap is a consequence of the design target, not evidence.
-  expect(PANEL_TO_FRONT_BOARD_GAP).toBeCloseTo(17.45, 6)
+  // The panel distance is now the owner's input, and everything follows it.
+  expect(PANEL_TO_FRONT_BOARD_TOP).toBe(10)
+  expect(PROVISIONAL_Z.frontBoardTop).toBeCloseTo(PANEL_TO_FRONT_BOARD_TOP, 6)
+  expect(PROVISIONAL_Z.frontBoardRear).toBeCloseTo(11.6, 6)
+  expect(PROVISIONAL_Z.rearBoardFront).toBeCloseTo(22.8, 6)
+  expect(PROVISIONAL_Z.rearBoardRear).toBeCloseTo(24.4, 6)
+  expect(PROVISIONAL_Z.rearBoardFront - PROVISIONAL_Z.displayRearMost).toBeCloseTo(
+    DISPLAY_STANDOFF.spacerLength, 6)
+  // The module's rear 4.05 mm sits behind the front board's top face.
+  expect(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost).toBeCloseTo(-4.05, 6)
+  // 10.00 - 1.60 = 8.40 mm: this gap is now a consequence of the owner's panel
+  // distance, which came from the jacks, not from the display.
+  expect(PANEL_TO_FRONT_BOARD_GAP).toBeCloseTo(8.4, 6)
   expect(PANEL_TO_FRONT_BOARD_GAP).toBeCloseTo(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear, 6)
   // The installed-depth chain still passes the owner's 110 mm target.
   expect(provisionalInstalledDepth()).toBeLessThan(DEPTH_TARGET)
 })
 
-test("the B32 reference stack is shallower than the current panel stack", () => {
+test("the B32 reference stack and the owner's 10 mm panel distance agree", () => {
   // Omron's 10.0 +/-0.4 mm is the PC BOARD to PANEL FRONT face reference, not
-  // the cap height. Our front board top is Z 19.05 and the panel front face is
-  // Z 0, so the current stack is 9.05 mm (8.65-9.45) deeper than Omron's. The
-  // cap top is not dimensioned, so no cap-top Z is asserted here.
+  // the cap height. The 2026-11-13 decision puts the panel front at Z 10.0, so
+  // the excess the old 19.05 mm chain carried is gone. The cap top is still not
+  // dimensioned, so no cap-top Z is asserted.
   expect(BUTTON_CAP.referenceBoardToPanelFront).toBe(10)
-  expect(BUTTON_STACK.omronReferencePanelFrontZ).toBeCloseTo(9.05, 6)
-  expect(BUTTON_STACK.stackDepthExcess).toBeCloseTo(9.05, 6)
-  expect(BUTTON_STACK.stackDepthExcess).toBeGreaterThan(0)
+  expect(BUTTON_STACK.omronReferencePanelFrontZ).toBeCloseTo(0, 6)
+  expect(BUTTON_STACK.stackDepthExcess).toBeCloseTo(0, 6)
+  expect(Math.abs(BUTTON_STACK.stackDepthExcess)).toBeLessThanOrEqual(
+    BUTTON_CAP.referenceBoardToPanelFrontTolerance)
   // The panel is inside the cap's stated panel-thickness range.
   expect(PANEL.thickness).toBeGreaterThanOrEqual(BUTTON_CAP.panelThickness.min)
   expect(PANEL.thickness).toBeLessThanOrEqual(BUTTON_CAP.panelThickness.max)
 })
 
 test("display underside gap and light-pipe reach stay pending, not claimed", () => {
-  // The stack leaves 5.0 mm from the front-board top face to the rear-most
-  // module point: 2.8 mm over the tallest part with a stated height (MIDI
-  // receiver in the Toshiba 11-4L1S body, 2.2 mm max installed). That still does
-  // NOT prove the display underside, whose component map, FPC latch and module
-  // tolerance are unmapped.
+  // The module's rear-most plane is now BEHIND the front board's top face
+  // (10.0 - 14.05 = -4.05), which is exactly why the board carries an opening:
+  // no board material may sit under the module. The old 5.0 mm air gap over the
+  // SMT parts died with the 19.05 mm chain.
   expect(DISPLAY_UNDERSIDE_GAP).toBeCloseTo(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost, 6)
-  expect(DISPLAY_UNDERSIDE_GAP).toBeCloseTo(5.0, 6)
+  expect(DISPLAY_UNDERSIDE_GAP).toBeCloseTo(-4.05, 6)
+  expect(DISPLAY_UNDERSIDE_GAP).toBeLessThan(0)
   expect(FRONT_TOP_SMD_MAX_HEIGHT.height).toBe(2.2)
-  expect(DISPLAY_UNDERSIDE_GAP - FRONT_TOP_SMD_MAX_HEIGHT.height).toBeCloseTo(2.8, 6)
-  // The owner-selected candidate is the Signal Construct PGN25L165. Its nominal
-  // tip plane is 16.5 mm from the panel front face (head underside on the panel
-  // front is an ASSUMPTION), which puts it 2.55 mm in front of the provisional
-  // 19.05 mm board near face. That is arithmetic between two assumed planes and
-  // NOT the LED-to-pipe optical gap: the LED height and the stack tolerances are
-  // unmeasured, so the gap stays null and the status stays incomplete.
-  expect(LIGHT_PIPE.part).toBe("Signal Construct PGN25L165")
-  expect(LIGHT_PIPE.shaftLength).toBe(16.5)
-  expect(LIGHT_PIPE.overallLength).toBe(17.5)
-  expect(LIGHT_PIPE.overallLength - LIGHT_PIPE.shaftLength).toBeCloseTo(LIGHT_PIPE.headHeight, 6)
-  expect(LIGHT_PIPE.headHeight).toBe(1.0)
-  expect(LIGHT_PIPE.headDiameter).toBe(3.0)
-  expect(LIGHT_PIPE.shaftDiameter).toBe(2.5)
-  expect(LIGHT_PIPE.panelHoleDiameter).toBe(2.6)
-  expect(LIGHT_PIPE.panelHoleDiameter - LIGHT_PIPE.panelHoleToleranceMinus).toBeCloseTo(2.55, 6)
-  expect(LIGHT_PIPE_REACH.nominalTipZ).toBeCloseTo(16.5, 6)
-  expect(LIGHT_PIPE_REACH.nominalTipToBoardPlane).toBeCloseTo(2.55, 6)
-  expect(LIGHT_PIPE_REACH.opticalGap).toBeNull()
-  expect(LIGHT_PIPE_REACH.status).toBe("incomplete")
-  // the retired Bivar reference must not come back as an active value
-  expect("length" in LIGHT_PIPE).toBe(false)
-  expect("unaccounted" in LIGHT_PIPE_REACH).toBe(false)
+  // The light pipe is now too LONG, not too short: 16.5 mm shaft against a
+  // 10 mm panel puts the tip 6.5 mm through the board plane.
+  expect(LIGHT_PIPE_REACH.nominalTipToBoardPlane).toBeLessThan(0)
 })
 
 test("provisional depth chain stays inside the owner target", () => {
