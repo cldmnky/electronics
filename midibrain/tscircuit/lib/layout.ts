@@ -663,6 +663,16 @@ export const PROVISIONAL_Z = {
 // consequence of a design target, not evidence for it, and it is not certified.
 export const PANEL_TO_FRONT_BOARD_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear) // 8.40
 
+// Where a body at a given panel Z sits in the FRONT BOARD's own 3D frame.
+// A cad model on that board is drawn with jscad +z along the board normal and
+// its origin on the board's MID-plane (measured on the exported GLB, `tsci
+// export -f glb`, node translations plus mesh bounds); the panel is on that
+// board's top face, so +z points AWAY from panel +Z. Callers hand panel Z to
+// this and get the jscad z the 3D renderer wants - it is what draws the printed
+// parts and the assembled stack.
+export const FRONT_BOARD_MID_PANEL_Z = mm3(PROVISIONAL_Z.frontBoardTop + FRONT_PCB.thickness / 2) // 10.80
+export const frontBoardUpZ = (panelZ: number) => mm3(FRONT_BOARD_MID_PANEL_Z - panelZ)
+
 // Light-pipe reach: the retired Bivar PLP2-400-C 10.16 mm reference and the
 // 17.45 - 10.16 = 7.29 mm subtraction are WITHDRAWN and kept only as history
 // (that 10.16 mm value is not in the current Bivar datasheet, its family Ø3.3 mm
@@ -1086,6 +1096,9 @@ export const mechanicalExport = () => ({
   displayDatum: DISPLAY_DATUM,
   displayStandoff: DISPLAY_STANDOFF,
   provisionalZ: PROVISIONAL_Z,
+  // The two 3D-printed front-panel parts: shape and position, panel
+  // coordinates. printed_geometry.py reads this block instead of owning a copy.
+  printedParts: PRINTED_PARTS,
   displayUndersideGap: DISPLAY_UNDERSIDE_GAP,
   frontTopSmdMaxHeight: FRONT_TOP_SMD_MAX_HEIGHT,
   lightPipe: LIGHT_PIPE,
@@ -1222,6 +1235,70 @@ export const RIGHT_CONTROLS = {
   TEMPO: { x: RIGHT_COLUMN.x, y: RIGHT_TEMPO_Y },
   NAV: { x: RIGHT_COLUMN.x, y: 12 },
   SHIFT_EXIT: { x: RIGHT_COLUMN.x, y: -5 },
+} as const
+
+// ---- 3D-printed front-panel parts (owner's two printed parts) ----
+// One keytop for the NAV switch U5 (ALPS Alpine SKRHABE010) and one value knob
+// for the encoder U6 (Bourns PEC11R-4015F-S0024). Both are printed plastic, so
+// neither is a board part and neither has pads: they are drawn in the front
+// board's 3D view as reference envelopes and BUILT by mechanical/printed/.
+//
+// This block is the single source of truth for their SHAPE AND POSITION.
+// mechanical/layout.json carries it (mechanicalExport below), and
+// mechanical/printed/printed_geometry.py reads it instead of keeping its own
+// copy. Python still owns the datasheet inputs and the tolerance chain, and
+// re-derives zFront/zRear from them: nav_keytop() and knob() fail if that
+// derivation disagrees with the envelope stated here, so the two cannot drift.
+//
+// Z datum is the same as PROVISIONAL_Z: 0 at the panel FRONT face, +Z rearward.
+//
+// NOT A FIT MODEL: every number below is a design intent that the first article
+// has to measure. The parts' own README lists what is assumed.
+const NAV_KEYTOP_HEAD_HEIGHT = 4.0     // 3-5 mm proud of the panel front
+const NAV_KEYTOP_SOCKET_DEPTH = 1.5    // under the ALPS 1.7 mm keytop fitting area
+// ALPS SKRH drawing No.1: overall switch height above the mounting surface. The
+// socket floor floats this far minus the free play above the front-board top.
+const NAV_SWITCH_HEIGHT_ABOVE_BOARD = 5.0
+const NAV_KEYTOP_AXIAL_FREE_PLAY = 0.15
+const KNOB_HEIGHT = 16.0
+// Panel front to the knob's rear face: the assumed supplied M7 nut + flat
+// washer (2.50) plus 0.20 mm of air. The PEC11R datasheet states they are
+// supplied but does not dimension them, so this is an assumption, not a fact.
+const KNOB_REAR_STANDOFF = 2.7
+
+export const PRINTED_PARTS = {
+  navKeytop: {
+    part: "ALPS Alpine SKRHABE010 keytop",
+    model: "mechanical/printed/nav-keytop",
+    // U5's centre: the keytop is coaxial with the switch stem.
+    x: RIGHT_CONTROLS.NAV.x,
+    y: RIGHT_CONTROLS.NAV.y,
+    // Revolved envelope. Head and neck are one diameter because the head leads
+    // when the cap is fitted through the panel aperture from the rear; the
+    // flange then traps it on the panel's rear face.
+    headHeight: NAV_KEYTOP_HEAD_HEIGHT,
+    neckDiameter: 7.0,                 // 7.20 panel aperture - 0.20 sliding fit
+    flangeDiameter: 9.6,
+    flangeThickness: 1.2,
+    shankDiameter: 5.6,
+    socketBore: 3.2,                   // D3.00 stem + 0.20 clearance
+    socketDepth: NAV_KEYTOP_SOCKET_DEPTH,
+    zFront: mm3(PROVISIONAL_Z.panelFront - NAV_KEYTOP_HEAD_HEIGHT),                     // -4.00 head front
+    zRear: mm3(PROVISIONAL_Z.frontBoardTop - NAV_SWITCH_HEIGHT_ABOVE_BOARD
+      - NAV_KEYTOP_AXIAL_FREE_PLAY + NAV_KEYTOP_SOCKET_DEPTH),                          // 6.35 socket mouth
+  },
+  knob: {
+    part: "Bourns PEC11R-4015F-S0024 value knob",
+    model: "mechanical/printed/knob",
+    // U6's centre: the knob is coaxial with the encoder shaft.
+    x: RIGHT_CONTROLS.TEMPO.x,
+    y: RIGHT_CONTROLS.TEMPO.y,
+    bodyDiameter: 12.5,
+    height: KNOB_HEIGHT,
+    boreDiameter: 6.2,                 // D6.00 shaft + 0.20 clearance
+    zRear: mm3(PROVISIONAL_Z.panelFront - KNOB_REAR_STANDOFF),                          // -2.70
+    zFront: mm3(PROVISIONAL_Z.panelFront - KNOB_REAR_STANDOFF - KNOB_HEIGHT),           // -18.70
+  },
 } as const
 
 // PLAY START completes the transport row inside the right-hand control column,

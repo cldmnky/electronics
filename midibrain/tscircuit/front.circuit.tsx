@@ -1,4 +1,5 @@
 import { Fragment } from "react"
+import { assembly } from "tscircuit"
 import { A_1N4148WS } from "./imports/A_1N4148WS"
 import { C15127_AO3401A } from "./imports/C15127_AO3401A"
 import { B3F_4055 } from "./imports/B3F_4055"
@@ -13,6 +14,7 @@ import { FrontSilk } from "./lib/silk"
 import { TLP2361_TPL_E } from "./imports/TLP2361_TPL_E"
 import {
   DISPLAY_CONCEPT,
+  frontBoardUpZ,
   FEEDTHROUGH_BRACKET,
   FRONT_BOARD_HOLES,
   FRONT_DISPLAY_OPENING,
@@ -30,6 +32,8 @@ import {
   MOUNT_HOLE_DIAMETER,
   POWER_BUTTON,
   POWER_HEADER,
+  PRINTED_PARTS,
+  PROVISIONAL_Z,
   RIGHT_CONTROLS,
   TRANSPORT_Y,
   transportButtonX,
@@ -267,6 +271,66 @@ const FRONT_LED_PARTS = [
   { name: "D5", button: "PLAY", lcsc: "C2297", mpn: "KT-0805G", drive: "net.PLAY_LED", anode: "net.PLAY_LED_A" },
 ] as const
 
+// ---- Printed-part reference bodies (3D view only) ----
+// The owner's two 3D-printed parts - the NAV keytop on U5 and the value knob on
+// U6 - are not board parts: no pads, no footprint, no schematic symbol. They are
+// drawn here so the 3D view shows what sits on the finished panel, the same way
+// the display module's envelope used to be drawn. They are `assembly.printedpart`
+// elements, NOT `<chip>`s: tscircuit still skips CAD for a `doNotPlace` part, so
+// the old route (a padless chip per body) made each body a real placement in the
+// hand BOM and in the placement report. `assembly.printedpart` has no PCB
+// footprint at all, so it emits one cad_component and nothing else - the PCB,
+// the BOM, the CPL and `tsci check placement` do not see them.
+//
+// REFERENCE ENVELOPES, NOT FIT MODELS. Each body is the revolved outline of the
+// part (cylinders, union then subtract for the bore), built only from
+// PRINTED_PARTS. Chamfers, the knob flutes and the grub-screw pilot are omitted:
+// the geometry that has to be trusted lives in mechanical/printed/*.stl, and this
+// is the same envelope those files are checked against.
+
+// A solid cylinder on the part's own axis, between two panel-Z planes. JSCAD's
+// cylinder is centred on its origin, so the translate carries the midpoint.
+type JscadShape = Record<string, unknown>
+const printCylinder = (diameter: number, zAt: number, zTo: number): JscadShape => ({
+  type: "translate",
+  vector: [0, 0, (frontBoardUpZ(zAt) + frontBoardUpZ(zTo)) / 2],
+  shape: {
+    type: "cylinder",
+    radius: diameter / 2,
+    height: Math.abs(frontBoardUpZ(zTo) - frontBoardUpZ(zAt)),
+  },
+})
+
+const NAV_KEYTOP = PRINTED_PARTS.navKeytop
+const NAV_FLANGE_REAR_Z = PROVISIONAL_Z.panelRear + NAV_KEYTOP.flangeThickness
+const navKeytopEnvelope = {
+  type: "subtract",
+  shapes: [
+    {
+      type: "union",
+      shapes: [
+        // head + neck are one diameter through the panel aperture
+        printCylinder(NAV_KEYTOP.neckDiameter, NAV_KEYTOP.zFront, PROVISIONAL_Z.panelRear),
+        // flange bearing on the panel rear face
+        printCylinder(NAV_KEYTOP.flangeDiameter, PROVISIONAL_Z.panelRear, NAV_FLANGE_REAR_Z),
+        // shank down to the socket mouth
+        printCylinder(NAV_KEYTOP.shankDiameter, NAV_FLANGE_REAR_Z, NAV_KEYTOP.zRear),
+      ],
+    },
+    // the stem socket
+    printCylinder(NAV_KEYTOP.socketBore, NAV_KEYTOP.zRear - NAV_KEYTOP.socketDepth, NAV_KEYTOP.zRear),
+  ],
+}
+
+const VALUE_KNOB = PRINTED_PARTS.knob
+const knobEnvelope = {
+  type: "subtract",
+  shapes: [
+    printCylinder(VALUE_KNOB.bodyDiameter, VALUE_KNOB.zFront, VALUE_KNOB.zRear),
+    // the shaft bore runs right through
+    printCylinder(VALUE_KNOB.boreDiameter, VALUE_KNOB.zFront, VALUE_KNOB.zRear),
+  ],
+}
 
 export default () => (
   <board
@@ -354,6 +418,29 @@ export default () => (
       schSheetName="front"
       schSectionName="controls"
       connections={{ A: "net.ENC_A", B: "net.ENC_B", C: "net.GND", pin1: "net.GND", pin2: "net.ENC_SW", MT1: "net.GND", MT2: "net.GND" }}
+    />
+    {/* The two printed parts, drawn as reference envelopes (see the block above
+        FRONT_LED_PARTS). Position comes from PRINTED_PARTS.x/y, which is U5's and
+        U6's own centre; Z comes from PRINTED_PARTS.zFront/zRear on the
+        PROVISIONAL_Z datum. Translucent so the switch and the encoder stay
+        visible through them. */}
+    <assembly.printedpart
+      name="PRINT_NAV_KEYTOP"
+      color="#3f6f8f"
+      cadModel={{
+        jscad: navKeytopEnvelope,
+        positionOffset: { x: NAV_KEYTOP.x, y: NAV_KEYTOP.y, z: 0 },
+        showAsTranslucentModel: true,
+      }}
+    />
+    <assembly.printedpart
+      name="PRINT_KNOB"
+      color="#7a5c3e"
+      cadModel={{
+        jscad: knobEnvelope,
+        positionOffset: { x: VALUE_KNOB.x, y: VALUE_KNOB.y, z: 0 },
+        showAsTranslucentModel: true,
+      }}
     />
     {/* B3F-4055 is a 4-pin button with two internal contact pairs (1-2 and
         3-4). Only pin1 (GND) and pin3 (signal) are wired; pin2/pin4 are the

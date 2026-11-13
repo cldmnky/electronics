@@ -177,22 +177,30 @@ Everything in this table is a print or assembly tolerance, not a datasheet
 value. They are named constants in `printed_geometry.py` and listed in its
 `ASSUMPTIONS` tuple; the first article measures them.
 
+The parts' SHAPE AND POSITION is not an assumption this module owns: it is
+declared as `PRINTED_PARTS` in `lib/layout.ts`, carried by
+`mechanical/layout.json` and read from there, so the printed STL and the front
+board's 3D view cannot describe different parts. `printed_geometry.py`
+re-derives the two Z planes of each part from the datasheet input and the
+tolerances below and fails when its derivation leaves the declared envelope.
+The table keeps the rows whose value moved, marked **layout.ts**.
+
 | assumption | value | why |
 | --- | --- | --- |
 | aperture sliding fit | 0.20 mm diametral (0.10 per side) | printed neck vs an FR-4 hole |
-| socket bore clearance | 0.20 mm diametral over the D3.0 stem | slides on, little enough to hold |
+| socket bore clearance | 0.20 mm diametral over the D3.0 stem (**layout.ts**: `socketBore` 3.20) | slides on, little enough to hold |
 | axial free play | 0.15 mm | the switch must not be pre-loaded at rest |
-| socket depth | 1.50 mm | 0.2 mm margin under the ALPS 1.7 mm fitting area |
-| flange diameter / thickness | 9.60 / 1.20 mm | inside the owner's 9-10 mm band; 1.20 mm bearing ring |
-| shank diameter | 5.60 mm | 1.20 mm wall around the socket |
-| head height / chamfer | 4.00 / 0.80 mm | inside the owner's 3-5 mm band; print and finger edge |
+| socket depth | 1.50 mm (**layout.ts**: `socketDepth`) | 0.2 mm margin under the ALPS 1.7 mm fitting area |
+| flange diameter / thickness | 9.60 / 1.20 mm (**layout.ts**: `flangeDiameter`, `flangeThickness`) | inside the owner's 9-10 mm band; 1.20 mm bearing ring |
+| shank diameter | 5.60 mm (**layout.ts**: `shankDiameter`) | 1.20 mm wall around the socket |
+| head height / chamfer | 4.00 / 0.80 mm (height **layout.ts**: `headHeight`) | inside the owner's 3-5 mm band; print and finger edge |
 | flange rear chamfer | 0.60 mm 45 deg | the flange rear face is the only overhang in the print |
 | socket mouth chamfer | 0.40 mm 45 deg | lead-in over the stem |
 | minimum wall | 0.80 mm | 0.4 mm nozzle, two perimeters |
 | supplied nut + washer stack | 2.50 mm | the datasheet only says they are supplied - MEASURE IT |
 | knob rear air | 0.20 mm | air between nut and knob |
-| knob height | 16.00 mm | 18.5 mm of shaft proud of the panel, minus the nut standoff |
-| knob bore clearance | 0.20 mm diametral | slides on cold, grub screw takes the torque |
+| knob height | 16.00 mm (**layout.ts**: `height`) | 18.5 mm of shaft proud of the panel, minus the nut standoff |
+| knob bore clearance | 0.20 mm diametral (**layout.ts**: `boreDiameter` 6.20) | slides on cold, grub screw takes the torque |
 | knob bore mouth chamfer | 0.50 mm | lead-in onto the shaft |
 | knob edge chamfers | 0.80 front / 0.40 rear | print and finger edge |
 | shaft flat clocking | 0 deg (+X) | the encoder's rotation on the board is not in the sources |

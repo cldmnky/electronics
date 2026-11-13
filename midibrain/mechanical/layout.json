@@ -73,6 +73,34 @@
     "rearBoardFront": 22.8,
     "rearBoardRear": 24.4
   },
+  "printedParts": {
+    "navKeytop": {
+      "part": "ALPS Alpine SKRHABE010 keytop",
+      "model": "mechanical/printed/nav-keytop",
+      "x": 52,
+      "y": 12,
+      "headHeight": 4,
+      "neckDiameter": 7,
+      "flangeDiameter": 9.6,
+      "flangeThickness": 1.2,
+      "shankDiameter": 5.6,
+      "socketBore": 3.2,
+      "socketDepth": 1.5,
+      "zFront": -4,
+      "zRear": 6.35
+    },
+    "knob": {
+      "part": "Bourns PEC11R-4015F-S0024 value knob",
+      "model": "mechanical/printed/knob",
+      "x": 52,
+      "y": 31,
+      "bodyDiameter": 12.5,
+      "height": 16,
+      "boreDiameter": 6.2,
+      "zRear": -2.7,
+      "zFront": -18.7
+    }
+  },
   "displayUndersideGap": -4.05,
   "frontTopSmdMaxHeight": {
     "part": "MIDI receiver, Toshiba 11-4L1S body",

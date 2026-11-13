@@ -21,10 +21,15 @@ aperture, the display opening and the knob column are all defined there):
     owner-approved knob body diameter and column.
 
 ``mechanical/layout.json`` (generated export of the same source; carries the
-panel stack and the real aperture list):
+panel stack, the real aperture list and the printed parts' envelope):
 
   * ``panel.thickness``, ``provisionalZ.panelFront/panelRear/frontBoardTop``
   * ``panelApertures`` entries ``NAV`` and ``VALUE ENCODER``
+  * ``printedParts`` -- the shape and position of both printed parts, i.e. the
+    flange, shank, socket bore, head height, socket depth, knob body, height,
+    bore and the two Z planes of each part. This module does not keep a second
+    copy of any of those numbers; it re-derives the Z planes from the datasheet
+    and tolerance chain below and fails when the two disagree.
 
 ``lib/layout.ts`` owns the display opening and the knob column, so those are
 parsed from the source and never read from the export's ``display`` block:
@@ -127,15 +132,11 @@ class Assumption:
 
 # NAV keytop. The aperture, stem and heights come from the sources above; each
 # number below is a print or assembly tolerance that the first article has to
-# confirm (README.md, "first article").
+# confirm (README.md, "first article"). The printed SHAPE (flange, shank, socket
+# bore, head height, socket depth) is not declared here: lib/layout.ts owns it in
+# PRINTED_PARTS and this module reads it from the export.
 NAV_APERTURE_FIT_TOTAL = 0.20          # 0.10 mm per side, printed sliding fit in the panel hole
-NAV_SOCKET_BORE_CLEARANCE = 0.20       # 0.10 mm per side over the D3.0 stem
 NAV_AXIAL_FREE_PLAY = 0.15             # 0.10-0.20 mm band; the cap must not pre-load the switch
-NAV_SOCKET_DEPTH = 1.50                # under the 1.7 mm "keytop fitting area"
-NAV_FLANGE_DIAMETER = 9.60             # 9.0-10.0 mm band; trapped behind the panel
-NAV_FLANGE_THICKNESS = 1.20
-NAV_SHANK_DIAMETER = 5.60              # 1.20 mm wall around the socket bore
-NAV_HEAD_HEIGHT = 4.00                 # 3-5 mm proud of the panel front
 NAV_HEAD_EDGE_CHAMFER = 0.80           # print + finger friendly
 NAV_FLANGE_REAR_CHAMFER = 0.60         # 45 deg, removes the flange overhang
 NAV_SOCKET_MOUTH_CHAMFER = 0.40        # lead-in over the stem
@@ -144,8 +145,6 @@ NAV_ASSEMBLY_CLEARANCE_MIN = 0.50      # cap bottom to the switch body top
 # Value knob.
 KNOB_NUT_AND_WASHER_STACK = 2.50       # generic M7 x 0.75 nut + flat washer
 KNOB_REAR_AIR = 0.20                   # air between the nut and the knob rear face
-KNOB_HEIGHT = 16.00                    # 12-16 mm band
-KNOB_BORE_CLEARANCE = 0.20             # 0.10 mm per side over the D6.0 shaft
 KNOB_BORE_MOUTH_CHAMFER = 0.50         # lead-in onto the shaft
 KNOB_EDGE_CHAMFER_FRONT = 0.80
 KNOB_EDGE_CHAMFER_REAR = 0.40
@@ -163,22 +162,9 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
     Assumption("NAV_APERTURE_FIT_TOTAL", NAV_APERTURE_FIT_TOTAL,
                "0.10 mm per side sliding fit in the 7.2 mm panel aperture; "
                "measure the printed neck on the first article"),
-    Assumption("NAV_SOCKET_BORE_CLEARANCE", NAV_SOCKET_BORE_CLEARANCE,
-               "0.10 mm per side over the D3.0 stem: enough to slide on, little "
-               "enough that the collar in the aperture carries the side load"),
     Assumption("NAV_AXIAL_FREE_PLAY", NAV_AXIAL_FREE_PLAY,
                "0.10-0.20 mm band: the socket floor must not touch the stem top "
                "at rest, or the switch is pre-loaded"),
-    Assumption("NAV_SOCKET_DEPTH", NAV_SOCKET_DEPTH,
-               "under the ALPS 1.7 mm keytop fitting area, leaving 0.2 mm margin"),
-    Assumption("NAV_FLANGE_DIAMETER", NAV_FLANGE_DIAMETER,
-               "9.0-10.0 mm band: wide enough to trap the cap behind the 7.2 mm "
-               "aperture and to bear on the panel rear face"),
-    Assumption("NAV_FLANGE_THICKNESS", NAV_FLANGE_THICKNESS, "print floor + stiffness"),
-    Assumption("NAV_SHANK_DIAMETER", NAV_SHANK_DIAMETER,
-               "1.2 mm wall around the socket bore, printable and stiff enough "
-               "to carry the 4 mm head without whipping"),
-    Assumption("NAV_HEAD_HEIGHT", NAV_HEAD_HEIGHT, "3-5 mm band above the panel front"),
     Assumption("NAV_HEAD_EDGE_CHAMFER", NAV_HEAD_EDGE_CHAMFER, "print + finger edge break"),
     Assumption("NAV_FLANGE_REAR_CHAMFER", NAV_FLANGE_REAR_CHAMFER,
                "45 deg: the flange rear face is the part's only overhang"),
@@ -191,12 +177,6 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
                "a generic M7 x 0.75 nut (2.0) + flat washer (0.5) is assumed. "
                "The knob rear face must clear it: MEASURE THE SUPPLIED STACK"),
     Assumption("KNOB_REAR_AIR", KNOB_REAR_AIR, "air gap between nut and knob"),
-    Assumption("KNOB_HEIGHT", KNOB_HEIGHT,
-               "12-16 mm band, taken at 16 mm because the shaft is 18.5 mm proud "
-               "of the panel front and the nut has to sit behind the knob"),
-    Assumption("KNOB_BORE_CLEARANCE", KNOB_BORE_CLEARANCE,
-               "0.10 mm per side over the D6.0 shaft: the metal shaft must slide "
-               "on cold, the grub screw takes the torque"),
     Assumption("KNOB_BORE_MOUTH_CHAMFER", KNOB_BORE_MOUTH_CHAMFER, "lead-in onto the shaft"),
     Assumption("KNOB_EDGE_CHAMFER_FRONT", KNOB_EDGE_CHAMFER_FRONT, "print + finger edge break"),
     Assumption("KNOB_EDGE_CHAMFER_REAR", KNOB_EDGE_CHAMFER_REAR, "print edge break"),
@@ -242,6 +222,30 @@ def read_layout_ts(path: Path | str = LAYOUT_TS) -> str:
         raise GeometryError(f"{p} is missing: the display opening and the knob "
                             "column are defined there and cannot be assumed")
     return p.read_text()
+
+
+def printed_part(layout: dict, key: str) -> dict:
+    """One printed part's envelope from the export. Never invent a dimension."""
+    block = layout.get("printedParts")
+    if not isinstance(block, dict):
+        raise GeometryError(
+            "mechanical/layout.json has no 'printedParts' block: lib/layout.ts "
+            "PRINTED_PARTS is the single source of both printed parts' shape and "
+            "position. Regenerate with: cd tscircuit && "
+            "bun run scripts/export-mechanical.ts")
+    part = block.get(key)
+    if not isinstance(part, dict):
+        raise GeometryError(
+            f"mechanical/layout.json has no printedParts.{key}; the printed parts "
+            "read their envelope from PRINTED_PARTS in lib/layout.ts")
+    return part
+
+
+def part_z(part: dict, key: str) -> float:
+    """One Z plane of a printed part, panel front = 0 and +Z rearward (mm)."""
+    if key not in part:
+        raise GeometryError(f"printed part {part.get('part')!r} has no {key} Z plane")
+    return float(part[key])
 
 
 # ---------------------------------------------------------------------------
@@ -596,8 +600,33 @@ def nav_keytop(layout: dict | None = None, source: str | LayoutSource | None = N
          f"mechanical/layout.json aperture {ap.name} is D{ap.diameter:.2f} but "
          f"lib/layout.ts PANEL_CUTOUTS.control is {src.panel_control_aperture:.2f}: "
          "the export is stale, regenerate it before printing this part")
+    part = printed_part(data, "navKeytop")
+    need(abs(float(part["x"]) - ap.x) <= EPS_MM and abs(float(part["y"]) - ap.y) <= EPS_MM,
+         f"PRINTED_PARTS.navKeytop sits at ({part['x']}, {part['y']}) but the panel "
+         f"aperture is at ({ap.x}, {ap.y}): the keytop must be coaxial with U5")
 
+    # The neck is the aperture fit: the printed D must follow the panel hole.
     neck = ap.diameter - NAV_APERTURE_FIT_TOTAL
+    need(abs(neck - float(part["neckDiameter"])) <= EPS_MM,
+         f"PRINTED_PARTS.navKeytop.neckDiameter is {part['neckDiameter']} but a "
+         f"D{ap.diameter:.2f} aperture with a {NAV_APERTURE_FIT_TOTAL:.2f} mm sliding "
+         f"fit gives {neck:.2f}: the two sources disagree")
+
+    # The Z chain is re-derived here from the datasheet and the tolerance band and
+    # must land on the envelope lib/layout.ts declares. Change either side alone
+    # and this fails instead of exporting a cap the 3D view does not show.
+    head_front_z = stack.panel_front_z - float(part["headHeight"])
+    socket_floor_z = stack.board_top_z - NAV_HEIGHT_ABOVE_MOUNTING - NAV_AXIAL_FREE_PLAY
+    socket_mouth_z = socket_floor_z + float(part["socketDepth"])
+    for label, derived, declared in (("zFront", head_front_z, part_z(part, "zFront")),
+                                     ("zRear", socket_mouth_z, part_z(part, "zRear"))):
+        need(abs(derived - declared) <= EPS_MM,
+             f"PRINTED_PARTS.navKeytop.{label} is {declared:.3f} mm but the datasheet "
+             f"and tolerance chain gives {derived:.3f} mm (panel stack "
+             f"{stack.panel_front_z:.2f}/{stack.panel_rear_z:.2f}/{stack.board_top_z:.2f}, "
+             f"head {part['headHeight']}, socket {part['socketDepth']}): update "
+             "lib/layout.ts or the assumptions, they must agree")
+
     return NavKeytop(
         stack=stack,
         aperture=ap,
@@ -605,17 +634,14 @@ def nav_keytop(layout: dict | None = None, source: str | LayoutSource | None = N
         stem_top_z=stack.board_top_z - NAV_HEIGHT_ABOVE_MOUNTING,
         switch_body_top_z=stack.board_top_z - NAV_BODY_HEIGHT_ABOVE_MOUNTING,
         fitting_area_max=NAV_KEYTOP_FITTING_AREA_MAX,
-        head_height=NAV_HEAD_HEIGHT,
-        neck_diameter=neck,
-        flange_diameter=NAV_FLANGE_DIAMETER,
-        flange_thickness=NAV_FLANGE_THICKNESS,
-        shank_diameter=NAV_SHANK_DIAMETER,
-        socket_bore=NAV_STEM_DIAMETER + NAV_SOCKET_BORE_CLEARANCE,
-        # The floor sits above the stem top by the free play; the socket depth
-        # then fixes the mouth, and the shank length falls out of the two.
-        socket_floor_z=stack.board_top_z - NAV_HEIGHT_ABOVE_MOUNTING - NAV_AXIAL_FREE_PLAY,
-        socket_mouth_z=(stack.board_top_z - NAV_HEIGHT_ABOVE_MOUNTING
-                        - NAV_AXIAL_FREE_PLAY + NAV_SOCKET_DEPTH),
+        head_height=float(part["headHeight"]),
+        neck_diameter=float(part["neckDiameter"]),
+        flange_diameter=float(part["flangeDiameter"]),
+        flange_thickness=float(part["flangeThickness"]),
+        shank_diameter=float(part["shankDiameter"]),
+        socket_bore=float(part["socketBore"]),
+        socket_floor_z=socket_floor_z,
+        socket_mouth_z=socket_mouth_z,
         head_edge_chamfer=NAV_HEAD_EDGE_CHAMFER,
         flange_rear_chamfer=NAV_FLANGE_REAR_CHAMFER,
         mouth_chamfer=NAV_SOCKET_MOUTH_CHAMFER,
@@ -873,24 +899,44 @@ def knob(layout: dict | None = None, source: str | LayoutSource | None = None) -
          f"mechanical/layout.json aperture {ap.name} is D{ap.diameter:.2f} but "
          f"lib/layout.ts PANEL_CUTOUTS.control is {src.panel_control_aperture:.2f}: "
          "the export is stale, regenerate it before printing this part")
+    part = printed_part(data, "knob")
+    need(abs(float(part["x"]) - ap.x) <= EPS_MM and abs(float(part["y"]) - ap.y) <= EPS_MM,
+         f"PRINTED_PARTS.knob sits at ({part['x']}, {part['y']}) but the panel "
+         f"aperture is at ({ap.x}, {ap.y}): the knob must be coaxial with U6")
+    need(abs(float(part["bodyDiameter"]) - src.knob_body_diameter) <= EPS_MM,
+         f"PRINTED_PARTS.knob.bodyDiameter is {part['bodyDiameter']} but the "
+         f"layout's knob-body note says {src.knob_body_diameter}: the two sources "
+         "disagree")
+
+    # The Z chain: the rear face clears the assumed supplied nut + washer, the
+    # front face is one knob height further forward. Both must match the
+    # envelope lib/layout.ts declares.
+    rear = stack.panel_front_z - (KNOB_NUT_AND_WASHER_STACK + KNOB_REAR_AIR)
+    front = rear - float(part["height"])
+    for label, derived, declared in (("zRear", rear, part_z(part, "zRear")),
+                                     ("zFront", front, part_z(part, "zFront"))):
+        need(abs(derived - declared) <= EPS_MM,
+             f"PRINTED_PARTS.knob.{label} is {declared:.3f} mm but the assumed "
+             f"nut/washer stack gives {derived:.3f} mm: update lib/layout.ts or "
+             f"the assumptions, they must agree")
 
     bushing_face = stack.board_top_z - (ENC_BODY_TO_MOUNTING_SURFACE + ENC_THREAD_LENGTH)
-    rear = stack.panel_front_z - (KNOB_NUT_AND_WASHER_STACK + KNOB_REAR_AIR)
     shaft_flat = ENC_SHAFT_DIAMETER / 2 - ENC_SHAFT_FLAT_DEPTH
+    bore = float(part["boreDiameter"])
     return Knob(
         stack=stack,
         aperture=ap,
         display_opening_right=src.display_opening_right,
         column_x=src.knob_column_x,
-        body_diameter=src.knob_body_diameter,
+        body_diameter=float(part["bodyDiameter"]),
         shaft_diameter=ENC_SHAFT_DIAMETER,
         shaft_length=ENC_SHAFT_LENGTH,
         shaft_flat_depth=ENC_SHAFT_FLAT_DEPTH,
         bushing_face_z=bushing_face,
-        height=KNOB_HEIGHT,
+        height=float(part["height"]),
         rear_z=rear,
-        bore_diameter=ENC_SHAFT_DIAMETER + KNOB_BORE_CLEARANCE,
-        bore_flat_plane=shaft_flat + KNOB_BORE_CLEARANCE / 2,
+        bore_diameter=bore,
+        bore_flat_plane=shaft_flat + (bore - ENC_SHAFT_DIAMETER) / 2,
         flat_angle_deg=KNOB_FLAT_ANGLE_DEG,
         flute_count=KNOB_FLUTE_COUNT,
         flute_radius=KNOB_FLUTE_RADIUS,
