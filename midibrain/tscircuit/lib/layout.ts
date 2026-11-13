@@ -1167,10 +1167,10 @@ export const mechanicalExport = () => ({
 // were, twice, while this board was being re-placed by hand.
 export const MIDI_CLUSTERS = {
   // in1/in2 origin = the TLP2361 body centre; out1/out2 origin = the AO3401A.
-  in1: { x: 51, y: -48 },
-  in2: { x: 64.6, y: -30 },
-  out1: { x: 66.6, y: -46.05 },
-  out2: { x: 66.6, y: -8 },
+  in1: { x: -16, y: -48 },
+  in2: { x: 2, y: -48 },
+  out1: { x: 20, y: -46.1 },
+  out2: { x: 38, y: -46.1 },
 } as const
 
 export const RIGHT_COLUMN = { x: 52 } as const
@@ -1227,7 +1227,12 @@ export const POWER_LABEL_OFFSET_Y = -8.5
 // Four equally spaced columns; each column shares its X between the transport
 // button, its LED (REC / OVER DUB / PLAY only) and its MIDI jack. These are
 // visual columns only; electrical assignments live in lib/pin-map.ts.
-const TRANSPORT_LEFT_X = -53
+// 2026-11-13 (owner): the transport row is centred under the LCD cutout. The
+// opening spans x -63.25...43.25, centre -10.00, so a 24 mm pitch puts REC /
+// OVER DUB / PLAY / STOP on -46, -22, +2, +26. The LEDs and their 330R series
+// resistors derive from these (ledPosition), and the jacks no longer share the
+// column X, so nothing drags.
+const TRANSPORT_LEFT_X = -46
 export const TRANSPORT_COLUMN_PITCH = 24
 export const TRANSPORT_Y = -34
 // LEDs sit BESIDE their buttons, not above them (owner-authorised fallback 3,
@@ -1258,10 +1263,21 @@ export const transportButtonX = (button: string): number => {
   if (!col) throw new Error(`unknown transport button ${button}`)
   return col.x
 }
+// 2026-11-13 (owner, ergonomics): the MIDI jacks no longer share their X with
+// the transport buttons. Four cables leave the board far better from one grouped
+// block at the left of the bottom edge than from under SW1-SW4, where they foul
+// the buttons and the hand pressing them. The WQP419GR's THT pads are only
+// 3.10 mm wide and its courtyard 10.00 x 14.83 mm (both measured from the built
+// footprint), so 12 mm pitch is legal: 2 mm between courtyards.
+export const MIDI_JACK_PITCH = 12
+export const MIDI_JACK_LEFT_X = -62
+export const MIDI_JACK_X: Record<string, number> = Object.fromEntries(
+  MIDI_JACK_NAMES.map((name, i) => [name, MIDI_JACK_LEFT_X + i * MIDI_JACK_PITCH]),
+)
 export const midiJackX = (jack: string): number => {
-  const col = FRONT_COLUMNS.find(c => c.jack === jack)
-  if (!col) throw new Error(`unknown MIDI jack ${jack}`)
-  return col.x
+  const x = MIDI_JACK_X[jack]
+  if (x === undefined) throw new Error(`unknown MIDI jack ${jack}`)
+  return x
 }
 
 // Direct 2 x 13 interconnect: J5 (female, front board BOTTOM face) and J_FRONT
@@ -1327,7 +1343,7 @@ export const FRONT_CONCEPT: readonly FrontConceptPoint[] = [
   ...FRONT_COLUMNS.filter(c => c.button in LED_ID).map(c => ({
     id: LED_ID[c.button as keyof typeof LED_ID], ...ledPosition(c.x), kind: "led" as const,
   })),
-  ...FRONT_COLUMNS.map(c => ({ id: c.jack, x: c.x, y: JACK_Y, kind: "jack" as const })),
+  ...FRONT_COLUMNS.map(c => ({ id: c.jack, x: midiJackX(c.jack), y: JACK_Y, kind: "jack" as const })),
 ]
 
 // ---- Button key top: Omron/ARATAS B32-1380 (red) on the B3F-4055 ----

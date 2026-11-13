@@ -147,9 +147,10 @@ const MidiIn = ({ ch, jackX, jackY, at }: { ch: 1 | 2; jackX: number; jackY: num
       />
       {/* Toshiba TLP2361(TPL,E, C107626: inverting totem-pole output, IFHL
           1.3 mA max to 105 C. Pin 1 anode, 3 cathode, 4 GND, 5 VO, 6 VCC. */}
-      {/* The jack's 100 nF decouples the SLEEVE at the connector, so it stays
-          jack-relative and OUTSIDE the cluster group below. */}
-      <C name={`C${ch}`} value="100nF" sec="midi_in" x={`${jackX - 7}mm`} y={`${jackY + 5.5}mm`} rot={ch === 2 ? "180deg" : undefined} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
+      {/* Sleeve decoupling. It used to sit 7 mm beside its jack; at the new
+          12 mm jack pitch there is no room between the 10 mm jack courtyards, so
+          it moves into the cluster and the sleeve net becomes a short stub. */}
+      <C name={`C${ch}`} value="100nF" sec="midi_in" x={px(0)} y={py(6)} lcsc="C14663" mpn="CC0603KRX7R9BB104" p1={`net.MIDI_IN_${ch}_SLEEVE`} p2="net.GND" />
       <TLP2361_TPL_E
         name={u}
         pcbX={px(0)}
