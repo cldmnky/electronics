@@ -576,6 +576,35 @@ export const FRONT_DISPLAY_OPENING_POLYGON = (() => {
   ] as const
 })()
 
+// 2026-11-13 (owner): the front board is a U. The 105 x 8 top relief notch and
+// the display opening are now ONE cut: the opening runs from y -23.45 straight
+// through the top edge at y 56, so the board keeps only two legs (11.75 mm left,
+// 31.75 mm right) joined by the bottom bar. The USB feedthroughs (panel apertures
+// at y 53.5, x -38 / -5 / 35) and their cable tails have more room this way than
+// they had through the notch, which is why the notch is not needed at all.
+// Everything that used to be checked against NOTCH_BOTTOM for clearance now has
+// open air above it instead.
+export const FRONT_BOARD_OPENING = {
+  left: mm3(FRONT_DISPLAY_OPENING.x - FRONT_DISPLAY_OPENING.width / 2),   // -63.25
+  right: mm3(FRONT_DISPLAY_OPENING.x + FRONT_DISPLAY_OPENING.width / 2),  //  43.25
+  bottom: mm3(FRONT_DISPLAY_OPENING.y - FRONT_DISPLAY_OPENING.height / 2), // -23.45
+  top: mm3(FRONT_PCB.height / 2 + 2),                                     //  58.00: past the edge
+} as const
+
+export const FRONT_BOARD_OPENING_POLYGON = (() => {
+  const { left, right, bottom, top } = FRONT_BOARD_OPENING
+  const c = DISPLAY_OPENING_CHAMFER
+  return [
+    { x: left, y: mm3(bottom + c) },
+    { x: mm3(left + c), y: bottom },
+    { x: mm3(right - c), y: bottom },
+    { x: right, y: mm3(bottom + c) },
+    { x: right, y: top },
+    { x: left, y: top },
+  ] as const
+})()
+
+
 // ---- PROVISIONAL Z stack ----
 // Z datum: Z = 0 at the front (operator-side) face of the panel; +Z is
 // rearward, into the rack cavity. Millimetres.
@@ -940,8 +969,11 @@ export const POWER_HEADER = {
   // board gap; the plug points +Y (up, under the switch body, between the
   // switch's two pad rows at x 59.75/71.75 - the 5.08 mm plug spans x 63.5...
   // 68.5, so it clears both).
-  x: 66, // = POWER_BUTTON.x
-  y: 40,
+  // Owner decision 2026-11-13: up, so it sits right under the POWER button
+  // (SW7's courtyard ends at y 42.75) and above J5's courtyard (44.5 - 1.6 =
+  // 42.9). 7.9 x 3.25 mm pocket between them, at x 60.05...67.95.
+  x: 64,
+  y: 44.5,
   rotation: 180, // bottom face: the footprint's local +Y maps to global +Y
   layer: "bottom" as const,
   matingAxis: "+Y",
@@ -1121,15 +1153,22 @@ export const mechanicalExport = () => ({
 // front board can carry the 106 mm module (module right edge 43.5, knob body
 // left edge 45.75, 2.25 mm clear). The knob body then keeps 5.75 mm to the
 // board edge at 64.
-export const RIGHT_COLUMN = { x: 52, pitch: 19 } as const
-// Owner decision 2026-11-13: the whole right-hand column moves down 10 mm
-// (TEMPO 30 -> 20) to free the top-right corner for the POWER button and its
-// header. U6, U5 and SW6 shift with it; the panel labels derive from here.
-const RIGHT_TEMPO_Y = 20
+// 2026-11-13 (owner): one column at x 52. It started as three evenly spaced
+// controls at a 17 mm pitch; SW7 then moved up on its own (y 49) and TEMPO kept
+// climbing (29 -> 33) as the owner made room below it, so the column is now
+// explicit rather than an arithmetic progression: TEMPO 33, NAV 12, SHIFT/EXIT
+// -5. Keep the explicit values - deriving NAV/SHIFT from TEMPO would drag them
+// along every time TEMPO moves.
+export const RIGHT_COLUMN = { x: 52 } as const
+// Owner decision 2026-11-13: SW7 sits alone at y 49 and TEMPO/NAV moved up to
+// 26/9. TEMPO then moved up another 3 (to 29) so the 3.4 mm band below U6's
+// courtyard (20.60) can take C5 and C6 side by side. The column keeps its 17 mm
+// pitch: TEMPO 29, NAV 12, SHIFT/EXIT -5.
+const RIGHT_TEMPO_Y = 33
 export const RIGHT_CONTROLS = {
   TEMPO: { x: RIGHT_COLUMN.x, y: RIGHT_TEMPO_Y },
-  NAV: { x: RIGHT_COLUMN.x, y: RIGHT_TEMPO_Y - RIGHT_COLUMN.pitch },
-  SHIFT_EXIT: { x: RIGHT_COLUMN.x, y: RIGHT_TEMPO_Y - 2 * RIGHT_COLUMN.pitch },
+  NAV: { x: RIGHT_COLUMN.x, y: 12 },
+  SHIFT_EXIT: { x: RIGHT_COLUMN.x, y: -5 },
 } as const
 
 // PLAY START completes the transport row inside the right-hand control column,
@@ -1161,7 +1200,12 @@ export const PLAY_START = { button: "PLAY START", x: RIGHT_COLUMN.x } as const
 //    is 12.75 mm wide and could not.
 //  - the top-right panel standoff used to be at (61, 53), inside this body; it
 //    moved to (61, 41) (FRONT_BOARD_HOLES below).
-export const POWER_BUTTON = { x: 66, y: 49.5, rotation: 0 } as const
+// Owner decision 2026-11-13: SW7 sits ALONE further up the column (y 49, i.e.
+// its courtyard 42.75...55.25, 0.75 mm inside the top edge) rather than one pitch
+// above TEMPO. TEMPO and NAV keep their even 17 mm spacing; the power button
+// reads as its own control at the top of the leg, and its legend prints to the
+// RIGHT of it in the 9...15 mm of board between the switch body and the edge.
+export const POWER_BUTTON = { x: RIGHT_COLUMN.x, y: 49, rotation: 0 } as const
 /** Panel label sits below the new cutout: PLAY START's label owns the row above. */
 export const POWER_LABEL_OFFSET_Y = -8.5
 
@@ -1247,7 +1291,10 @@ export const midiJackX = (jack: string): number => {
 // display, i.e. into the 11.75 mm left strip (body 7.60 x 40.52 at 90 deg, so it
 // fits with 1.7 / 2.4 mm margins). That empties the right strip for the POWER
 // button and the four MIDI clusters. The rear board's J_FRONT follows this.
-export const FRONT_INTERCONNECT = { x: 66, y: 16, rotation: 90 } as const
+// Owner decision 2026-11-13: J5 sits slightly higher (16 -> 20) now that J_PWR
+// moved up with it; its courtyard is -0.51...40.51 and the top pad row is at
+// 37.78, leaving 3 mm to J_PWR's courtyard.
+export const FRONT_INTERCONNECT = { x: 66, y: 20, rotation: 90 } as const
 // The rear board carries the male at the SAME coordinate. One constant, not
 // two: the coincidence test compares the BUILT pads.
 export const REAR_INTERCONNECT = FRONT_INTERCONNECT

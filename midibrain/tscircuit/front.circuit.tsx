@@ -16,8 +16,7 @@ import {
   FEEDTHROUGH_BRACKET,
   FRONT_BOARD_HOLES,
   FRONT_DISPLAY_OPENING,
-  FRONT_DISPLAY_OPENING_POLYGON,
-  FRONT_TOP_NOTCH_POLYGON,
+  FRONT_BOARD_OPENING_POLYGON,
   FRONT_DISPLAY_KEEPOUT,
   FRONT_INTERCONNECT,
   FRONT_PCB,
@@ -258,12 +257,13 @@ export default () => (
       <schematicsection name="power" displayName="Rail decoupling" />
       <schematicsection name="headers" displayName="Rear interconnect" />
     </schematicsheet>
-    <cutout shape="polygon" points={FRONT_TOP_NOTCH_POLYGON} />
+    {/* The notch and the display opening are one cut now: the board is a U. */}
+
     {/* Display opening. At the 10 mm panel the module's body (glass front 0 ->
         rear-most 14.05 mm) crosses this board's 10.0...11.6 mm plane, so no
         board material may sit under it. The module hangs from the rear board's
         printed carrier; this board only has to let it through. */}
-    <cutout shape="polygon" points={FRONT_DISPLAY_OPENING_POLYGON} />
+    <cutout shape="polygon" points={FRONT_BOARD_OPENING_POLYGON} />
     <keepout shape="rect" width={`${FRONT_DISPLAY_KEEPOUT.width}mm`} height={`${FRONT_DISPLAY_KEEPOUT.height}mm`} pcbX={`${FRONT_DISPLAY_KEEPOUT.x}mm`} pcbY={`${FRONT_DISPLAY_KEEPOUT.y}mm`} excludeRefs={[".J_PWR"]} />
     {/* 2026-11-13 (owner): ALL mounting holes are removed for now - panel
         standoffs, front/rear spacer grid and the feedthrough-bracket screws.
@@ -363,8 +363,8 @@ export default () => (
     {/* C5/C6 rotate 180 deg after the board widened and the interconnect moved:
         `tsci check placement` flagged both as "connections cross the routing path
         between its pads" at 0 deg. Value, net and footprint unchanged. */}
-    <C name="C5" value="10uF" sec="power" x="55mm" y="33mm" rot="180deg" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
-    <C name="C6" value="100nF" sec="power" x="59.5mm" y="33mm" rot="180deg" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+    <C name="C5" value="10uF" sec="power" x="49mm" y="19.2mm" rot="180deg" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
+    <C name="C6" value="100nF" sec="power" x="54.6mm" y="19.2mm" rot="180deg" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
 
     {/* Direct 2 x 13 interconnect, FEMALE side: Sullins SFH11-PBPC-D13-ST-BK
         straight socket on the front board's BOTTOM face, mating the rear
@@ -400,9 +400,8 @@ export default () => (
       pcbX={`${POWER_BUTTON.x}mm`}
       pcbY={`${POWER_BUTTON.y}mm`}
       pcbRotation={`${POWER_BUTTON.rotation}deg`}
-      // "SW7" prints to the LEFT of the body: the default 7 mm above it would
-      // land at y 56.5, off the board.
-      refTextAt={{ x: -9.2, y: 0 }}
+      // "SW7" prints to the RIGHT of the body: 7 mm above it would be off the board.
+      refTextAt={{ x: 9.2, y: 0 }}
       layer="top"
       schSheetName="front"
       schSectionName="controls"

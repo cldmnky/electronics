@@ -240,20 +240,26 @@ export const FRONT_SILK: BoardSilkSpec = {
     { text: "HAND THT: J1-4 SW1-7 J5 J_PWR", x: FRONT_LEFT_STRIP_X, y: -21, fontSize: 0.7, role: "note", rotation: 90 },
     { text: "MIDI BRAIN FRONT/UI", x: FRONT_LEFT_STRIP_X, y: -40, fontSize: 1.0, role: "note", rotation: 90 },
 
-    // ---- right strip, pocket under the POWER button ----
-    { text: "POWER", x: 52.5, y: 43.0, fontSize: 1.4, role: "note" },
+    // ---- right of the POWER button ----
+    // SW7 owns the top of the right leg on its own (y 49), so the legend prints
+    // beside it in the 9...15 mm of board between its body (ends x 59.5) and the
+    // edge, above J_PWR's refdes at y 43.4.
+    { text: "POWER", x: 67, y: 51.5, fontSize: 1.4, role: "note" },
     // SW7 is the Pi's remote power button: a plain contact pair, no power
     // circuitry. Press = power on / graceful shutdown request.
-    { text: "PRESS=ON", x: 52.5, y: 41.4, fontSize: 0.7, role: "hint", part: "SW7" },
-    { text: "HOLD=OFF", x: 52.5, y: 40.2, fontSize: 0.7, role: "hint", part: "SW7" },
-    { text: "SW7 THT", x: 52.5, y: 38.8, fontSize: 0.7, role: "hint", part: "SW7" },
+    { text: "PRESS=ON", x: 67, y: 50.0, fontSize: 0.7, role: "hint", part: "SW7" },
+    { text: "HOLD=OFF", x: 67, y: 48.8, fontSize: 0.7, role: "hint", part: "SW7" },
+    { text: "SW7 THT", x: 67, y: 47.4, fontSize: 0.7, role: "hint", part: "SW7" },
     // J5's refdes is printed by its own footprint on the body; this is the
     // hand-solder tag, turned 90 in the 4 mm strip beside the connector.
-    { text: "J5 SOCKET THT", x: 72.0, y: 20, fontSize: 0.8, role: "hint", part: "J5", rotation: 90 },
+    { text: "J5 SOCKET THT", x: 72.0, y: FRONT_INTERCONNECT.y, fontSize: 0.8, role: "hint", part: "J5", rotation: 90 },
     // ---- notes over the board, under the display opening ----
     { text: "DISPLAY OPENING", x: -10, y: -25.45, fontSize: 0.9, role: "note" },
     // ---- bottom strip ----
-    { text: "U6 THT - LUGS FIRST", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y - 10.2, fontSize: 0.8, role: "hint", part: "U6" },
+    // The encoder's manual sequence. It sits in the 5.35 mm band above U6's
+    // courtyard (37.4) and below SW7's (42.75) - the band between the two
+    // encoders is now taken by C5/C6.
+    { text: "U6: LUGS FIRST", x: 52, y: 40.3, fontSize: 0.8, role: "hint", part: "U6" },
     ...frontJacks.map(({ ref, x }) => ({ text: `${ref} THT`, x, y: JACK_Y + 7.5, fontSize: 0.7, role: "hint" as const, part: ref })),
     // Hand-soldered buttons: the ref print sits above each body, so the tag
     // goes on the same line just left of it ("THT SW1").

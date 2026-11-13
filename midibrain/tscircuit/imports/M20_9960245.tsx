@@ -52,9 +52,9 @@ export const M20_9960245 = (props: ConnectorProps) => {
         <silkscreenpath route={[{ x: 2.9, y: 1.4 }, { x: 2.9, y: -0.2 }]} strokeWidth="0.25mm" />
         <silkscreenpath route={[{ x: 2.45, y: 0.25 }, { x: 2.9, y: -0.2 }]} strokeWidth="0.25mm" />
         <silkscreenpath route={[{ x: 3.35, y: 0.25 }, { x: 2.9, y: -0.2 }]} strokeWidth="0.25mm" />
-        {/* 2026-11-13: printed to the LEFT of the body. Above it, "J_PWR" landed inside
-              the POWER button's body once both moved to the top-right corner. */}
-        <silkscreentext text="{NAME}" pcbX="-7.5mm" pcbY="0mm" anchorAlignment="center" fontSize="0.8mm" />
+        {/* 2026-11-13: printed BELOW the body. Above it, "J_PWR" collided with the
+              POWER legend once the header moved up under the power button. */}
+        <silkscreentext text="{NAME}" pcbX="0mm" pcbY="-3.4mm" anchorAlignment="center" fontSize="0.8mm" />
         {/* Courtyard: the housing's board-side footprint only. The overhang and
             the plug are covered by the layout keepout tests, not by this box. */}
         <courtyardoutline
