@@ -1184,11 +1184,15 @@ export const midiJackX = (jack: string): number => {
 // Moved 2026-11-13 with the display opening: (10, 5) is inside it, and the
 // 40.52 mm body cannot sit in the bottom strip (32.55 mm tall, free bands 3.05
 // and 1.1 mm). It sits at the bottom of the right-hand strip, below the four
-// MIDI clusters: y -30 puts the body at -50.26...-9.74, inside the board edge
-// (-56) and inside the 148 mm rear board, and it keeps every control and MIDI
-// net within ~20 mm of the connector. A left-margin position was tried first
-// and rejected: it dragged SW5-SW7, U5 and U6 across the whole board.
-export const FRONT_INTERCONNECT = { x: 66, y: -30, rotation: 90 } as const
+// MIDI clusters stack BELOW it: y 31 puts the body at 10.74...51.26, inside the
+// board edge
+// (-56) and inside the 148 mm rear board. The clusters sit BELOW it and the
+// jacks are on the bottom edge, so no MIDI net has to cross the display opening
+// - the older y -30 position forced J2's ring trace to hug the cutout at
+// 0.150 mm, under the 0.20 mm rule, and the autorouter ignored the keepout.
+// A left-margin position was tried first and rejected: it dragged SW5-SW7, U5
+// and U6 across the whole board.
+export const FRONT_INTERCONNECT = { x: 66, y: 31, rotation: 90 } as const
 // The rear board carries the male at the SAME coordinate. One constant, not
 // two: the coincidence test compares the BUILT pads.
 export const REAR_INTERCONNECT = FRONT_INTERCONNECT

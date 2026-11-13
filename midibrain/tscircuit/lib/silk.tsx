@@ -153,8 +153,8 @@ const frontLeds = [
 // derived from this one pair: the designator cannot strand itself on the old
 // spot (it did, at x -45.2, until this table was reconciled to the layout).
 const frontGates = [
-  { ref: "Q1", x: 63.7, y: 1.7 },
-  { ref: "Q2", x: 63.7, y: 29.7 },
+  { ref: "Q1", x: 63.7, y: -11.3 },
+  { ref: "Q2", x: 63.7, y: -38.3 },
 ]
 const FRONT_GATE_REF_OFFSET = { dx: 2.1, dy: 1.6 }
 
@@ -167,8 +167,8 @@ export const FRONT_SILK: BoardSilkSpec = {
   oshw: { x: -38.6, y: 43.5, width: OSHW_WIDTH, stroke: OSHW_STROKE },
   pin1: [
     // SO6 chamfer marks drawn by the TLP2361 footprint itself.
-    { ref: "U1", x: 67.05, y: 10.71, source: "footprint" },
-    { ref: "U2", x: 67.05, y: 39.71, source: "footprint" },
+    { ref: "U1", x: 67.05, y: -0.29, source: "footprint" },
+    { ref: "U2", x: 67.05, y: -29.29, source: "footprint" },
     // SOT-23 gates (derived from the cluster, see frontGates) and the two
     // multi-pin modules.
     ...frontGates.map((gate) => ({ ref: gate.ref, x: gate.x, y: gate.y, source: "silk" as const })),

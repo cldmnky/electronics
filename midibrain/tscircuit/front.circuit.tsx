@@ -288,13 +288,13 @@ export default () => (
         female socket's body is on the rear-facing side so the rear board's
         male header plugs straight into it, and its solder tails are the only
         through-hole joints on the panel side. */}
-    <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={64} y={13} />
-    <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={64} y={42} />
+    <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} x={64} y={2} />
+    <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} x={64} y={-27} />
     {/* ch1 cluster shifted 4 mm left (x -45 -> -49) to clear the 4.3-inch
         module's bottom-left LCD_4 hole at (-41.88, -13.54), which the new
         58.00 x 49.04 mounting pattern puts inside the old Q1 courtyard. */}
-    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={66} y={0} />
-    <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} x={66} y={28} />
+    <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} x={66} y={-13} />
+    <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} x={66} y={-40} />
 
     <SKRHABE010
       name="U5"
