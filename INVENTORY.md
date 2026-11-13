@@ -26,10 +26,19 @@ designed into a new board.
 | --- | --- | --- | --- | --- | --- | --- |
 | DigiKey Sweden | `2026-11-13T025511` | 2026-11-13 | 13 | 47 | 762.30 SEK | excl. VAT (add 25 % at checkout) |
 | LCSC | `WM2611030774` | 2026-11-13 | 17 | 148 | 59.14 EUR | excl. VAT |
+| Exploding Shed | not recorded | 2026-11-13 | 3 | 60 | 22.59 EUR | incl. 25 % VAT |
 
 Source files: `~/Downloads/2026-11-13T025511.csv` (DigiKey cart export) and
-`~/Downloads/LCSC__WM2611030774_20261113172334.csv`. Prices are a snapshot from
-those files; confirm before reordering.
+`~/Downloads/LCSC__WM2611030774_20261113172334.csv`; the Exploding Shed lines
+come from the shop's invoice copy (article numbers only, no order number - add
+it when the confirmation is to hand). Prices are a snapshot; confirm before
+reordering.
+
+The Exploding Shed lines are three **20-piece packs**, so `qty` is 1 pack and
+the piece count is in the row's `notes`: 20 × Thonkiconn mono `WQP518MA`, 20 ×
+Thonkiconn stereo `WQP419GR`, 20 × M6 × 0.5 hex nuts. They are the PCB-mount,
+M6-bushing jack family the euro board's pad line was dimensioned from, so they
+supersede the XKB solder-lug jacks (item 5 below) for this build.
 
 ## Known problems in the current stock
 
@@ -48,9 +57,16 @@ here so nobody discovers them at the soldering bench:
 4. **J1 needs 2 low-profile shunts per board — none were ordered.** Header plus
    shunts must stay ≤9.5 mm or the front board cannot seat.
 5. **`PJ-301M-2-B` / `-3-B` are solder-lug jacks, not 3-pin THT jacks.** One
-   bottom tag, two rearward tags. Wire them to the euro board's pads, or buy the
-   Thonkiconn family (`WQP518MA` mono / `WQP419GR` stereo, M6 × 0.5) and drop
-   them onto the pads directly.
+   bottom tag, two rearward tags, so they need wires to the euro board's pads.
+   **Resolved for this build:** 20 × `WQP518MA` (mono) and 20 × `WQP419GR`
+   (stereo) Thonkiconn jacks plus 20 hex nuts were ordered from Exploding Shed.
+   They are PCB-mount with the M6 × 0.5 bushing the 6.2 mm panel hole was cut
+   for, so the jacks solder straight to the existing pads and the 20 mm panel-gap
+   problem disappears. Remaining trap: the TRS footprint labels pad 1 "tip" and
+   pad 3 "sleeve" while the part is 1 = sleeve / 2 = tip / 3 = ring - solder by
+   function, never by pad number (barrel/thread to sleeve is the 0 Ω check).
+   The 30 XKB mono jacks and 5 stereo jacks stay on the shelf as spares or for a
+   wire-mounted build.
 6. **`310-43-107-41-001000` (DS1 socket) is discontinued at DigiKey** — only two
    were available. Any 2.79 mm-body machined 1×7 does the same job.
 7. **Daisy sockets:** 4 × 1×20 Würth were ordered; a board needs **two**, so
