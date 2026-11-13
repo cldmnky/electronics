@@ -865,102 +865,10 @@ export const FRONT_TOP_NOTCH_POLYGON = [
 ] as const
 export const NOTCH_BOUNDS = { left: NOTCH_LEFT, right: NOTCH_RIGHT, bottom: NOTCH_BOTTOM, top: NOTCH_TOP } as const
 
-// Planning allowances with their reason. Change them here only.
-export const BRACKET_ALLOWANCE = {
-  thickness: 3.0,            // printed bar thickness (unchanged from the first draft)
-  mountEdgeWall: 3.0,        // M2.5 nut circumradius ~2.5 mm + 0.5 mm material around it
-  mountHeadClearance: 6.5,   // PROVISIONAL M2.5 head/washer envelope; measure the real hardware
-  slotClearancePerSide: 1.5, // PROVISIONAL body, cable-bundle and screwdriver access
-  spacerHeadWall: 1.0,       // bar bottom below the top spacer row (rear side)
-  tieHoleDiameter: 3.2,      // 2.5 mm cable tie
-  materialToCuts: 1.0,       // minimum remaining web between two cuts
-} as const
-
-// Bracket mounting holes: the front board carries the same two holes
-// (`front.circuit.tsx`), 1.65 mm edge ligament to the 8 mm notch mouths.
-const BRACKET_MOUNT_X = [-60, 55] as const
-const BRACKET_MOUNT_Y = 46.5
-
-const bracketOutline = {
-  x1: mm3(Math.min(...BRACKET_MOUNT_X) - BRACKET_ALLOWANCE.mountEdgeWall), // -63.0
-  x2: mm3(Math.max(...BRACKET_MOUNT_X) + BRACKET_ALLOWANCE.mountEdgeWall), // 58.0
-  // The bar is on the REAR side of the front board, so the front-side display
-  // envelope does NOT constrain it: with the 4.3-inch module (68 mm tall, top
-  // edge y 45) a display-derived bottom edge would be 47.5 and would leave the
-  // two mount holes (y 46.5) and the top spacer row (y 43) outside the part.
-  // Its bottom edge is therefore set below the top front/rear spacer row, whose
-  // heads it still has to clear with the slots derived further down.
-  y1: mm3(Math.min(...FRONT_REAR_MOUNT.filter(h => h.y > 0).map(h => h.y)) - BRACKET_ALLOWANCE.spacerHeadWall), // 42.0
-  y2: NOTCH_TOP, // 56.0
-}
-
-// Open-top cable slots, derived per feedthrough in BOTH directions. Width is
-// the VENDOR PANEL CUTOUT plus access clearance; the previous 20/40/40 mm slots
-// were flange-sized and touched each other, leaving a 0 mm web between two
-// 40 mm slots at x = -5 and +35.
-//
-// Height: the slot floor is derived from each feedthrough's declared vertical
-// opening plus the same per-side clearance, NOT from a fixed y. A fixed floor
-// at y = 50 cut into even the declared panel openings (USB-C reaches
-// 53.5 - 3.8 = 49.7, USB-A 53.5 - 3.65 = 49.85). The floor must also stay
-// above the notch bottom (48.0), because below that the board is solid.
-// All slots must satisfy slotFloorY(f) >= NOTCH_BOTTOM; layout.test.ts and
-// mechanical/bracket_geometry.py both enforce it, so a future feedthrough that
-// needs a deeper slot fails the checks instead of being silently clamped.
-//
-// This is still only the PANEL OPENING plus clearance. The rear body, flange
-// and cable-bundle envelopes are unmeasured, and a panel opening does not prove
-// them: that remains a named physical gate.
-const bracketSlotFloorY = (f: { y: number; cutoutHeight: number }) =>
-  mm3(f.y - f.cutoutHeight / 2 - BRACKET_ALLOWANCE.slotClearancePerSide)
-
-const bracketSlots = USB_FEEDTHROUGHS.map(f => ({
-  id: f.id,
-  x: f.x,
-  width: mm3(f.cutoutWidth + 2 * BRACKET_ALLOWANCE.slotClearancePerSide), // 15.6 / 17.9 / 17.9
-  yBottom: bracketSlotFloorY(f), // 48.20 / 48.35 / 48.35
-  yTop: bracketOutline.y2, // open to the top edge, so a cable can be laid in
-}))
-const bracketSlotEdges = bracketSlots.map(s => ({ left: s.x - s.width / 2, right: s.x + s.width / 2 }))
-
-// The top front/rear spacer hardware (`FRONT_REAR_MOUNT`) sits in the same
-// 3 mm layer behind the front board, so the bracket must clear it. The head
-// envelope itself is unmeasured: a named physical gate.
-const bracketHeadClearance = FRONT_REAR_MOUNT.filter(h => h.y > 0).map(h => ({
-  x: h.x,
-  y: h.y,
-  diameter: BRACKET_ALLOWANCE.mountHeadClearance,
-}))
-
-// Cable ties sit in the webs between the slots (and between the end slots and
-// the mount holes), never in a slot or in a mount ligament.
-const bracketTieY = (bracketSlots[0]!.yBottom + bracketOutline.y2) / 2
-const bracketTieHoles = [
-  (BRACKET_MOUNT_X[0] + MOUNT_HOLE_DIAMETER / 2 + bracketSlotEdges[0]!.left) / 2,
-  ...bracketSlotEdges.slice(1).map((e, i) => (bracketSlotEdges[i]!.right + e.left) / 2),
-  (BRACKET_MOUNT_X[1] - MOUNT_HOLE_DIAMETER / 2 + bracketSlotEdges.at(-1)!.right) / 2,
-].map(x => ({ x: mm3(x), y: mm3(bracketTieY), diameter: BRACKET_ALLOWANCE.tieHoleDiameter }))
-
-export const FEEDTHROUGH_BRACKET = {
-  mountX: BRACKET_MOUNT_X,
-  mountY: BRACKET_MOUNT_Y,
-  mountHoleDiameter: MOUNT_HOLE_DIAMETER,
-  thickness: BRACKET_ALLOWANCE.thickness,
-  outline: {
-    ...bracketOutline,
-    width: mm3(bracketOutline.x2 - bracketOutline.x1),   // 121.0
-    height: mm3(bracketOutline.y2 - bracketOutline.y1),  // 14.5
-  },
-  slots: bracketSlots,
-  mountHeadClearance: bracketHeadClearance,
-  tieHoles: bracketTieHoles,
-} as const
-
 // ---- Panel POWER header (J_PWR) ----
-// PLACED on the front board's REAR (bottom) face at the middle of the long top
-// relief notch, mating axis toward +Y into the notch. Owner decisions: a
-// right-angle header on the rear face at the notch middle, a pocket in the
-// printed bracket, and a provisional generic 2.54 mm DuPont-style female plug.
+// PLACED on the front board's REAR (bottom) face at the top right, mating axis
+// toward +Y. Owner decisions: a right-angle header on the rear face, a pocket
+// in the printed bracket, and a provisional generic 2.54 mm DuPont-style plug.
 //
 // SOURCED (Harwin M20-9960245, verified ACTIVE; drawing SHA-256
 // 3cd367d6b76e7c6be501578c87a4a9c89721e36a4a8bc36d5e8340646bdcd61b): 2 ways,
@@ -1002,30 +910,137 @@ export const POWER_HEADER = {
 // plausible 4.80 mm readings, so the tests can prove the bracket pocket clears
 // it. It is NOT a part envelope and NOT a measured plug.
 export const POWER_HEADER_KEEPOUT = {
-  x1: mm3(POWER_HEADER.x - 1.5 * POWER_HEADER_LAND.pitch), // -6.31
-  x2: mm3(POWER_HEADER.x + 1.5 * POWER_HEADER_LAND.pitch), //  1.31
-  y1: mm3(POWER_HEADER.y - POWER_HEADER_LAND.pitch),       // 37.46: 2.54 wall behind the pads
-  y2: mm3(POWER_HEADER.y + 4.8 + 6.1 + 8.0),               // 58.90: 4.80 forward + 6.10 pin + 8.00 plug
+  x1: mm3(POWER_HEADER.x - 1.5 * POWER_HEADER_LAND.pitch), // 60.19
+  x2: mm3(POWER_HEADER.x + 1.5 * POWER_HEADER_LAND.pitch), // 67.81
+  y1: mm3(POWER_HEADER.y - POWER_HEADER_LAND.pitch),       // 41.96: 2.54 wall behind the pads
+  y2: mm3(POWER_HEADER.y + 4.8 + 6.1 + 8.0),               // 63.40: 4.80 forward + 6.10 pin + 8.00 plug
   heightAboveBoard: 4.8,
   basis: "covers 4.80 mm as a height and as a forward extent, plus the sourced 6.10 mm pin and an 8.00 mm plug planning reach",
 } as const
 
-// Printed-bracket pocket. Owner-approved 2026-11-10. It opens into the UMC
-// AUDIO slot, so the bar keeps material below it and beside it, and stays one
-// connected solid. The cut is sized to CLEAR the provisional keepout with a
-// 0.50 mm cutter allowance, and it never goes below the 1.00 mm cut rule.
+// Planning allowances with their reason. Change them here only.
+export const BRACKET_ALLOWANCE = {
+  thickness: 3.0,            // printed bar thickness (unchanged from the first draft)
+  mountEdgeWall: 3.0,        // M2.5 nut circumradius ~2.5 mm + 0.5 mm material around it
+  mountHeadClearance: 6.5,   // PROVISIONAL M2.5 head/washer envelope; measure the real hardware
+  slotClearancePerSide: 1.5, // PROVISIONAL body, cable-bundle and screwdriver access
+  spacerHeadWall: 1.0,       // bar bottom below the top spacer row (rear side)
+  tieHoleDiameter: 3.2,      // 2.5 mm cable tie
+  materialToCuts: 1.0,       // minimum remaining web between two cuts
+} as const
+
+// The J_PWR pocket is a cut in the bar, re-anchored to the header after the
+// 2026-11-13 move to the top right. The keepout's own y1 (2.54 mm behind the
+// pad row) is the pocket's bottom edge: it already contains that backward wall,
+// and adding another 0.5 mm here would push the bar's bottom web into the J5
+// socket body (top 40.26). The 0.50 mm cutter allowance is kept on X.
 export const BRACKET_POWER_POCKET = {
   purpose: "J_PWR pocket: clears the provisional header/plug keepout",
   clearance: 0.5,
-  x1: mm3(POWER_HEADER_KEEPOUT.x1 - 0.5), // -6.81
-  x2: mm3(POWER_HEADER_KEEPOUT.x2 + 0.5), //  1.81
-  y1: mm3(Math.max(
-    FEEDTHROUGH_BRACKET.outline.y1 + BRACKET_ALLOWANCE.materialToCuts,
-    POWER_HEADER_KEEPOUT.y1 - 0.5,
-  )), // 43.96
-  y2: FEEDTHROUGH_BRACKET.outline.y2, // 56: open to the bracket top edge
+  x1: mm3(POWER_HEADER_KEEPOUT.x1 - 0.5), // 59.69
+  x2: mm3(POWER_HEADER_KEEPOUT.x2 + 0.5), // 68.31
+  y1: POWER_HEADER_KEEPOUT.y1,            // 41.96: contains the 2.54 mm wall
+  y2: NOTCH_TOP,                          // 56: open to the bracket top edge
 } as const
 
+// Bracket mounts: one on each front-board leg. The old -60 mm mount sat over
+// the U opening (-63.25...43.25), which removed the material under it. The
+// mounts sit 3 mm inside the bracket's top edge, above the top front/rear
+// spacer head at (-69, 46): at y 53 the D6.5 head envelope clears the D2.7
+// hole by 2.83 mm. The left mount at x -66.5 is on the left leg
+// (-75...-63.25); the right at 55 is on the right leg (43.25...75). The left
+// x also leaves 1.07 mm of web to the first 3.2 mm tie hole and to the USB-C
+// slot, over the 1.0 mm cut rule.
+const BRACKET_MOUNT_X = [-66.5, 55] as const
+const BRACKET_MOUNT_Y = mm3(NOTCH_TOP - BRACKET_ALLOWANCE.mountEdgeWall) // 53.0
+
+const bracketOutline = {
+  x1: mm3(Math.min(...BRACKET_MOUNT_X) - BRACKET_ALLOWANCE.mountEdgeWall), // -69.5
+  x2: mm3(Math.max(
+    Math.max(...BRACKET_MOUNT_X) + BRACKET_ALLOWANCE.mountEdgeWall, // 58.0
+    BRACKET_POWER_POCKET.x2,                                        // 68.31
+  )),
+  // The bar is on the REAR side of the front board, so the front-side display
+  // envelope does NOT constrain it. Its bottom edge clears the top spacer row
+  // AND keeps a full material web below the J_PWR pocket; the J5 socket body
+  // (top 40.26) then stays 0.70 mm clear of it.
+  y1: mm3(Math.min(
+    Math.min(...FRONT_REAR_MOUNT.filter(h => h.y > 0).map(h => h.y)) - BRACKET_ALLOWANCE.spacerHeadWall, // 45.0
+    BRACKET_POWER_POCKET.y1 - BRACKET_ALLOWANCE.materialToCuts, // 40.96
+  )),
+  y2: NOTCH_TOP, // 56.0
+}
+
+// Open-top cable slots, derived per feedthrough in BOTH directions. Width is
+// the VENDOR PANEL CUTOUT plus access clearance; the previous 20/40/40 mm slots
+// were flange-sized and touched each other, leaving a 0 mm web between two
+// 40 mm slots at x = -5 and +35.
+//
+// Height: the slot floor is derived from each feedthrough's declared vertical
+// opening plus the same per-side clearance, NOT from a fixed y. A fixed floor
+// at y = 50 cut into even the declared panel openings (USB-C reaches
+// 53.5 - 3.8 = 49.7, USB-A 53.5 - 3.65 = 49.85). The floor must also stay
+// above the U opening's bottom (-23.45), because below that the board is solid.
+// All slots must satisfy slotFloorY(f) >= FRONT_BOARD_OPENING.bottom;
+// layout.test.ts and mechanical/bracket_geometry.py both enforce it, so a
+// future feedthrough that needs a deeper slot fails the checks instead of being
+// silently clamped.
+//
+// This is still only the PANEL OPENING plus clearance. The rear body, flange
+// and cable-bundle envelopes are unmeasured, and a panel opening does not prove
+// them: that remains a named physical gate.
+const bracketSlotFloorY = (f: { y: number; cutoutHeight: number }) =>
+  mm3(f.y - f.cutoutHeight / 2 - BRACKET_ALLOWANCE.slotClearancePerSide)
+
+const bracketSlots = USB_FEEDTHROUGHS.map(f => ({
+  id: f.id,
+  x: f.x,
+  width: mm3(f.cutoutWidth + 2 * BRACKET_ALLOWANCE.slotClearancePerSide), // 15.6 / 17.9 / 17.9
+  yBottom: bracketSlotFloorY(f), // 48.20 / 48.35 / 48.35
+  yTop: bracketOutline.y2, // open to the top edge, so a cable can be laid in
+}))
+const bracketSlotEdges = bracketSlots.map(s => ({ left: s.x - s.width / 2, right: s.x + s.width / 2 }))
+
+// The top front/rear spacer hardware (`FRONT_REAR_MOUNT`) sits in the same
+// 3 mm layer behind the front board, so the bracket must clear every head whose
+// centre lies under the bar's plan. The right spacer at (71.5, 46) is outside
+// the bar (x2 68.31) and therefore needs no cut. The head envelope itself is
+// unmeasured: a named physical gate.
+const bracketHeadClearance = FRONT_REAR_MOUNT
+  .filter(h => h.y > 0)
+  .filter(h => h.x >= bracketOutline.x1 && h.x <= bracketOutline.x2 &&
+               h.y >= bracketOutline.y1 && h.y <= bracketOutline.y2)
+  .map(h => ({
+    x: h.x,
+    y: h.y,
+    diameter: BRACKET_ALLOWANCE.mountHeadClearance,
+  }))
+
+// Cable ties sit in the webs between the slots (and between the end slots and
+// the mount holes), never in a slot or in a mount ligament.
+const bracketTieY = (bracketSlots[0]!.yBottom + bracketOutline.y2) / 2
+const bracketTieHoles = [
+  (BRACKET_MOUNT_X[0] + MOUNT_HOLE_DIAMETER / 2 + bracketSlotEdges[0]!.left) / 2,
+  ...bracketSlotEdges.slice(1).map((e, i) => (bracketSlotEdges[i]!.right + e.left) / 2),
+  (BRACKET_MOUNT_X[1] - MOUNT_HOLE_DIAMETER / 2 + bracketSlotEdges.at(-1)!.right) / 2,
+].map(x => ({ x: mm3(x), y: mm3(bracketTieY), diameter: BRACKET_ALLOWANCE.tieHoleDiameter }))
+
+export const FEEDTHROUGH_BRACKET = {
+  mountX: BRACKET_MOUNT_X,
+  mountY: BRACKET_MOUNT_Y,
+  mountHoleDiameter: MOUNT_HOLE_DIAMETER,
+  thickness: BRACKET_ALLOWANCE.thickness,
+  outline: {
+    ...bracketOutline,
+    width: mm3(bracketOutline.x2 - bracketOutline.x1),   // 137.81
+    height: mm3(bracketOutline.y2 - bracketOutline.y1),  // 15.04
+  },
+  slots: bracketSlots,
+  mountHeadClearance: bracketHeadClearance,
+  tieHoles: bracketTieHoles,
+} as const
+
+// ---- Panel POWER header (J_PWR) candidate facts ----
 /**
  * The identified header candidate, as facts and as open questions.
  */
@@ -1085,6 +1100,10 @@ export const mechanicalExport = () => ({
   lcdCutoutOutline: roundedRectOutline(PANEL_LCD_CUTOUT),
   frontTopNotch: FRONT_TOP_NOTCH,
   notchBounds: NOTCH_BOUNDS,
+  // The cut the front board actually emits: one U-shaped polygon. The
+  // notch bounds above are retained planning data, not a board edge.
+  frontBoardOpening: FRONT_BOARD_OPENING,
+  frontBoardOpeningPolygon: FRONT_BOARD_OPENING_POLYGON,
   bracketAllowance: BRACKET_ALLOWANCE,
   // The owner-approved J_PWR pocket travels with the bracket data so the CAD
   // cuts it and the geometry checks see it; it is declared below this block.

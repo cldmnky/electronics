@@ -26,7 +26,7 @@ import {
   wordmarkPaths,
   type BoardSilkSpec,
 } from "./silk"
-import { DISPLAY_ANNOTATIONS, POWER_BUTTON, displayAnnotationXY } from "./layout"
+import { DISPLAY_CONCEPT, DISPLAY_VENDOR, LCD_MOUNT_HOLES, POWER_BUTTON } from "./layout"
 import { MIN_STROKE_WIDTH, WORDMARK_TEXT, textInkWidth } from "./panel-art"
 import { OSHW_ROW_PITCH } from "./oshw"
 
@@ -171,18 +171,19 @@ test("every emitted text is centre-anchored, printable and on the documented sid
 })
 
 test("board silk is exactly the table: no stray text, dot or artwork", () => {
-  const annotations = DISPLAY_ANNOTATIONS.map((a) => {
-    const p = displayAnnotationXY(a)
-    return `${a.text}@${p.x},${p.y}`
-  })
   for (const { spec, built } of BOARDS) {
     const looseTexts = built
       .filter((e) => e.type === "pcb_silkscreen_text" && !e.pcb_component_id)
       .map((t) => `${t.text}@${t.anchor_position.x},${t.anchor_position.y}`)
-    const expectedTexts = [
-      ...spec.texts.map((m) => `${m.text}@${m.x},${m.y}`),
-      ...(spec.board === "front" ? annotations : []),
-    ]
+    // The rear board's display-carrier marks are emitted from index.circuit.tsx
+    // on its TOP face (the face the carrier bolts to); they are derived from the
+    // same LCD_MOUNT_HOLES, so they belong in this table's whitelist.
+    const carrierTexts = spec.board === "rear" ? [
+      ...LCD_MOUNT_HOLES.map((h, i) =>
+        `LCD${i + 1}@${h.x + (h.x < DISPLAY_CONCEPT.x ? 9 : -9)},${h.y + (h.y > DISPLAY_CONCEPT.y ? 5 : -5)}`),
+      `DISPLAY CARRIER - 4x M2.5@${DISPLAY_CONCEPT.x},${DISPLAY_CONCEPT.y + DISPLAY_VENDOR.outline.height / 2 + 8.5}`,
+    ] : []
+    const expectedTexts = [...spec.texts.map((m) => `${m.text}@${m.x},${m.y}`), ...carrierTexts]
     expect(looseTexts.sort()).toEqual(expectedTexts.sort())
 
     const dots = built.filter((e) => e.type === "pcb_silkscreen_circle" && !e.pcb_component_id && e.radius === PIN1_DOT_RADIUS)
@@ -201,10 +202,32 @@ test("board silk is exactly the table: no stray text, dot or artwork", () => {
     }
 
     const loosePaths = built.filter((e) => e.type === "pcb_silkscreen_path" && !e.pcb_component_id)
-    expect(loosePaths).toHaveLength(wordmarkPaths(spec).length + oshwRoutes(spec).length)
-    for (const p of loosePaths) {
+    const boardPaths = loosePaths.filter((p) => p.layer === spec.layer)
+    expect(boardPaths).toHaveLength(wordmarkPaths(spec).length + oshwRoutes(spec).length)
+    for (const p of boardPaths) {
       expect([spec.wordmark.stroke, spec.oshw.stroke]).toContain(p.stroke_width)
-      expect(p.layer).toBe(spec.layer)
+    }
+    // The rear board's TOP-face carrier ticks are the only loose ink that is
+    // not this module's: four L-shaped corner marks 4 mm outboard of the
+    // module outline, from index.circuit.tsx.
+    const offLayer = loosePaths.filter((p) => p.layer !== spec.layer)
+    if (spec.board === "rear") {
+      const ticks = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => {
+        const cx = DISPLAY_CONCEPT.x + sx * (DISPLAY_VENDOR.outline.width / 2 + 4)
+        const cy = DISPLAY_CONCEPT.y + sy * (DISPLAY_VENDOR.outline.height / 2 + 4)
+        return [{ x: cx, y: cy - sy * 6 }, { x: cx, y: cy }, { x: cx - sx * 6, y: cy }]
+      })
+      expect(offLayer).toHaveLength(ticks.length)
+      for (const route of ticks) {
+        const hit = offLayer.filter((p) => p.layer === "top" &&
+          p.route.length === route.length &&
+          p.route.every((q: Point, i: number) =>
+            Math.abs(q.x - route[i]!.x) < 1e-6 && Math.abs(q.y - route[i]!.y) < 1e-6))
+        expect(hit).toHaveLength(1)
+        expect(hit[0]!.stroke_width).toBe(0.2)
+      }
+    } else {
+      expect(offLayer).toHaveLength(0)
     }
   }
 })
@@ -305,14 +328,18 @@ test("every hand-soldered through-hole part has a ref and a hint at its own posi
     const texts = built.filter((e) => e.type === "pcb_silkscreen_text")
     for (const ref of tht) {
       // A reference designator: the auto refdes, or a table mark starting with
-      // the ref (J1 THT / J5 THT / U6 THT - LUGS FIRST).
-      expect({ ref, refPrinted: texts.some((t) => t.text === ref || t.text.startsWith(`${ref} `)) }).toEqual({
+      // the ref (J1 THT / J5 SOCKET THT / U6: LUGS FIRST).
+      expect({ ref, refPrinted: texts.some((t) => t.text === ref || t.text.startsWith(`${ref} `) || t.text.startsWith(`${ref}:`)) }).toEqual({
         ref,
         refPrinted: true,
       })
       const hints = spec.texts.filter((m) => m.role === "hint" && m.part === ref)
-      expect({ ref, hints: hints.length }).toEqual({ ref, hints: 1 })
-      // The hint sits at the part: within 4 mm of its pads plus its own ink.
+      // One or more hints per hand-soldered part. SW7 (the Pi power button)
+      // carries three operating hints; J_PWR (a 2-pad right-angle header) carries
+      // none and is identified by its printed refdes. Every hint that DOES exist
+      // must sit at its own part, within 4 mm of its pads plus its own ink.
+      if (ref !== "J_PWR") expect({ ref, someHint: hints.length > 0 }).toEqual({ ref, someHint: true })
+      else expect({ ref, hints: hints.length }).toEqual({ ref, hints: 0 })
       const inkNear = built.filter(
         (e) =>
           e.pcb_component_id &&
@@ -328,15 +355,20 @@ test("every hand-soldered through-hole part has a ref and a hint at its own posi
         (acc, b) => box(Math.min(acc.x1, b.x1), Math.min(acc.y1, b.y1), Math.max(acc.x2, b.x2), Math.max(acc.y2, b.y2)),
         box(Infinity, Infinity, -Infinity, -Infinity),
       )
-      const reach = 4
-      expect({
-        ref,
-        atPart:
-          hints[0]!.x >= partBox.x1 - reach &&
-          hints[0]!.x <= partBox.x2 + reach &&
-          hints[0]!.y >= partBox.y1 - reach &&
-          hints[0]!.y <= partBox.y2 + reach,
-      }).toEqual({ ref, atPart: true })
+      // SW7's three operating hints sit in the free strip to the RIGHT of its
+      // body (9...15 mm from its centre); every other hint is within 4 mm.
+      const reach = ref === "SW7" ? 12 : 4
+      for (const hint of hints) {
+        expect({
+          ref,
+          text: hint.text,
+          atPart:
+            hint.x >= partBox.x1 - reach &&
+            hint.x <= partBox.x2 + reach &&
+            hint.y >= partBox.y1 - reach &&
+            hint.y <= partBox.y2 + reach,
+        }).toEqual({ ref, text: hint.text, atPart: true })
+      }
     }
   }
 })
@@ -364,10 +396,12 @@ test("every IC and multi-pin connector has a pin-1 mark beside pin 1", () => {
         // ICs, transistors, connectors and the two multi-contact panel
         // controls (U5 the 5-way nav switch, U6 the encoder - modelled as
         // switches in their imports, so they are `simple_switch` here). A
-        // 4-pad pushbutton has no orientation and is not in this set.
+        // 4-pad pushbutton is not in this set. Connectors with two pads (J_PWR)
+        // ARE marked: the owner asked for pin 1 on every multi-pin part.
         const needsOrientation = ftype === "simple_chip" || ftype === "simple_transistor"
           || ftype === "simple_connector" || ftype === "simple_switch"
-        return needsOrientation && p.pads.length >= 3
+          || ftype === "simple_push_button"
+        return needsOrientation && p.pads.length >= 2
       })
       .map(([ref]) => ref)
       .sort()
@@ -473,39 +507,45 @@ test("the board wordmark reuses the panel letterforms at bold silk weight", () =
   for (const { spec } of BOARDS) {
     const paths = wordmarkPaths(spec)
     expect(paths.length).toBeGreaterThan(10)
-    const xs = paths.flat().map((p) => p.x)
+    // The front marks are rotated 90 deg into the left strip; the rear ones are
+    // upright. Measure the ink ACROSS its own spine and along it, not on a fixed
+    // axis: the x projection of rotated ink is its cap height, not its width.
+    const turned = Math.abs((spec.wordmark.rotation ?? 0) % 180) === 90
+    const across = paths.flat().map((p) => (turned ? p.x : p.y))
+    const along = paths.flat().map((p) => (turned ? p.y : p.x))
     // Same letterforms as the panel source: identical drawn ink width.
-    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(textInkWidth(WORDMARK_TEXT, spec.wordmark.capHeight), 6)
+    expect(Math.max(...along) - Math.min(...along)).toBeCloseTo(textInkWidth(WORDMARK_TEXT, spec.wordmark.capHeight), 6)
     const oshw = oshwRoutes(spec)
     expect(oshw.length).toBeGreaterThan(20)
-    const oshwXs = oshw.flat().map((p) => p.x)
-    const oshwYs = oshw.flat().map((p) => p.y)
-    // Beside the wordmark on one baseline, never touching it.
-    expect(Math.min(...xs) - Math.max(...oshwXs)).toBeGreaterThan(1.5)
-    expect(Math.abs(spec.oshw.y - spec.wordmark.y)).toBeLessThan(0.01)
-    expect(Math.max(...oshwYs) - Math.min(...oshwYs)).toBeLessThanOrEqual(spec.oshw.width)
+    const oshwAcross = oshw.flat().map((p) => (turned ? p.x : p.y))
+    const oshwAlong = oshw.flat().map((p) => (turned ? p.y : p.x))
+    // They share one spine and sit one after the other along it, never touching.
+    expect(Math.abs((turned ? spec.oshw.x : spec.oshw.y) - (turned ? spec.wordmark.x : spec.wordmark.y))).toBeLessThan(0.01)
+    const gap = Math.min(...along) - Math.max(...oshwAlong)
+    expect(gap).toBeGreaterThan(1.5)
+    expect(Math.max(...oshwAcross) - Math.min(...oshwAcross)).toBeLessThanOrEqual(spec.oshw.width)
   }
 })
 
 test("the panel POWER button has a label and a jumper tag on the front board", () => {
   const label = FRONT_SILK.texts.find((m) => m.text === "POWER" && m.role === "note")
   expect(label?.fontSize).toBe(1.4)
-  // Beside SW7 (the top-left quadrant of its courtyard), never on the button.
-  expect(Math.hypot(label!.x - POWER_BUTTON.x, label!.y - POWER_BUTTON.y)).toBeLessThan(12)
+  // In the free strip to the RIGHT of SW7 (body ends x 59.25), above J5's
+  // refdes; never on the button itself.
+  expect(label!.x).toBeGreaterThan(POWER_BUTTON.x + 7.25)
+  expect(Math.abs(label!.y - POWER_BUTTON.y)).toBeLessThan(3)
   expect(label!.text).toBe("POWER")
   const sw7 = FRONT_SILK.texts.filter((m) => m.role === "hint" && m.part === "SW7")
-  expect(sw7).toHaveLength(1)
-  expect(sw7[0]!.text).toMatch(/POWER/)
+  expect(sw7.map(m => m.text).sort()).toEqual(["HOLD=OFF", "PRESS=ON", "SW7 THT"])
   const jpwr = FRONT_SILK.texts.filter((m) => m.role === "hint" && m.part === "J_PWR")
-  expect(jpwr).toHaveLength(1)
-  expect(jpwr[0]!.text).toContain("PI PWR")
-  // The header itself is a 2-pad part: it gets a tag, not a pin-1 dot.
-  expect(FRONT_SILK.pin1.some((m) => m.ref === "J_PWR")).toBe(false)
+  expect(jpwr).toHaveLength(0)
+  // The header itself gets a pin-1 dot; that is the current table.
+  expect(FRONT_SILK.pin1.some((m) => m.ref === "J_PWR")).toBe(true)
 })
 
 test("the U6 hint matches the qualified process in docs/assembly.md", () => {
   const hint = FRONT_SILK.texts.find((m) => m.part === "U6" && m.role === "hint")
-  expect(hint?.text).toBe("U6 THT - LUGS FIRST")
+  expect(hint?.text).toBe("U6: LUGS FIRST")
   const assembly = readFileSync("../docs/assembly.md", "utf8")
   expect(assembly).toMatch(/lugs first/i)
   expect(assembly).toMatch(/preheat/i)

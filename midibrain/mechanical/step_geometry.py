@@ -515,9 +515,9 @@ def classify(a: Envelope, b: Envelope, *, eps: float = EPS) -> CollisionVerdict:
 # the drawn front-board top face. Two different numbers exist and they must not
 # be conflated:
 #
-#   model gap    boss rear -> board top face        8.81 mm   (drawn solids)
-#   chain spacer the existing design assumption      5.00 mm   (9.0 - 4.0)
-#   residual     what a 5.00 mm spacer misses       3.81 mm   (14.05 vs 10.24)
+#   model gap    boss rear -> board top face       -0.24 mm   (drawn solids)
+#   chain spacer the existing design assumption      8.75 mm   (12.75 - 4.0)
+#   residual     what an 8.75 mm spacer misses      -8.99 mm   (1.25 vs 10.24)
 #
 # Neither number is an approved dimension and the two chains do NOT agree.
 DISPLAY_MOUNT_PLACEHOLDER = {
@@ -542,9 +542,9 @@ def display_mount_gap(layout: dict | None = None) -> dict:
     data = layout if layout is not None else load_layout()
     planes = placed_display_planes()
     boss_rear = planes["boss_rear"]                 # 10.24, model boss ends
-    board_top = float(data["provisionalZ"]["frontBoardTop"])   # 19.05
-    chain = float(data["displayStandoff"]["spacerLength"])     # 5.00 design assumption
-    gap = round(board_top - boss_rear, 3)                       # 8.81
+    board_top = float(data["provisionalZ"]["frontBoardTop"])   # 10.00
+    chain = float(data["displayStandoff"]["spacerLength"])     # 8.75 design assumption
+    gap = round(board_top - boss_rear, 3)                       # -0.24
     chain_end = round(board_top - chain, 3)                     # 14.05
     residual = round(chain_end - boss_rear, 3)                  # 3.81
     return {
@@ -556,7 +556,7 @@ def display_mount_gap(layout: dict | None = None) -> dict:
         "design_chain_display_end_z_mm": chain_end,
         "residual_mm": residual,
         "chains_agree": False,
-        "chains_agree_note": ("the 5.00 mm design candidate and the 8.81 mm model gap are two "
+        "chains_agree_note": ("the 8.75 mm design candidate and the -0.24 mm model gap are two "
                               "different chains; they do not agree and neither is approved"),
         "spacer_length_mm": gap,
         "length_status": "model-derived placeholder length, NOT an approved dimension",
@@ -599,13 +599,19 @@ def subtract_rect(outer: Rect, cut: Rect, *, eps: float = EPS) -> list[Rect]:
 
 
 def board_plan_rects(layout: dict) -> list[Rect]:
-    """The front board's plan area, split by the top relief notch."""
+    """The front board's plan area, split by the U-shaped display opening.
+
+    The old rectangular top relief notch is no longer cut; ``frontBoardOpening``
+    is the one polygon the front board emits. For the flange rows at y 47.55...
+    59.45 the polygon's chamfered bottom corners are far below, so the
+    rectangle bounds are exact there.
+    """
     front = layout["frontPcb"]
     board = Rect(-front["width"] / 2, -front["height"] / 2,
                  front["width"] / 2, front["height"] / 2)
-    n = layout["notchBounds"]
-    notch = Rect(n["left"], n["bottom"], n["right"], n["top"])
-    return subtract_rect(board, notch)
+    o = layout["frontBoardOpening"]
+    opening = Rect(o["left"], o["bottom"], o["right"], o["top"])
+    return subtract_rect(board, opening)
 
 
 @dataclass(frozen=True)
@@ -842,7 +848,7 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
         note=("candidate Signal Construct PGN25L165: shaft x 16.5 +-0.1, overall 17.5, head "
               "Ø3, mounting hole Ø2.6 -0.05. NO body is modelled and no axis is known; the "
               "nominal tip plane (16.5 from the panel front) and the tip-to-board-plane "
-              "distance (2.55) are arithmetic, not an LED gap. The optical gap is None; see "
+              "distance (-6.50) are arithmetic, not an LED gap. The optical gap is None; see "
               "mechanical/light_pipe_reach.py"),
     )
     return env
@@ -853,9 +859,9 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
 BODY_LEGEND = (
     {"name": "PANEL_30HP_3U", "meaning": "bare 30HP panel, 152.0 mm actual",
      "status": "provisional model, not a released drawing"},
-    {"name": "FRONT_BOARD_PROVISIONAL_Z", "meaning": "128 x 112 mm front/UI board",
+    {"name": "FRONT_BOARD_PROVISIONAL_Z", "meaning": "150 x 112 mm front/UI board with the U opening",
      "status": "XY canonical, Z provisional (assumption A and B)"},
-    {"name": "REAR_BOARD_PROVISIONAL_Z", "meaning": "101.6 x 112 mm rear/base board",
+    {"name": "REAR_BOARD_PROVISIONAL_Z", "meaning": "148 x 112 mm rear/base board",
      "status": "XY canonical, Z provisional (candidate gap)"},
     {"name": "DISPLAY_WAVESHARE_VENDOR_STEP",
      "meaning": "vendor display model, SHA-256 verified",
@@ -1095,7 +1101,7 @@ def assumptions_document(layout: dict | None = None, *,
             **display_mount_gap(data),
             "placeholder_definition": DISPLAY_MOUNT_PLACEHOLDER,
             "arithmetic_vs_proof": (
-                "the 8.81 mm span and the 3.81 mm residual are ARITHMETIC on the drawn "
+                "the -0.24 mm span and the -8.99 mm residual are ARITHMETIC on the drawn "
                 "model planes plus one design assumption. They are not a proof of fit, not "
                 "an approved dimension and not a hardware selection"),
         },
@@ -1180,7 +1186,7 @@ def assumptions_document(layout: dict | None = None, *,
         "light_pipe": {
             # One datum (panel FRONT face, +Z rearward), one parameterisation.
             # The nominal tip plane is the SHAFT length, not the overall length,
-            # and the 2.55 mm to the board plane is arithmetic, not an LED gap.
+            # and the -6.50 mm to the board plane is arithmetic, not an LED gap.
             "part": data["lightPipe"]["part"],
             "candidate_status": data["lightPipe"]["status"],
             "source_url": data["lightPipe"]["sourceUrl"],
@@ -1198,7 +1204,7 @@ def assumptions_document(layout: dict | None = None, *,
             "status": "incomplete",
             "reason": ("the seated head plane, the LED height, the retention in 1.6 mm FR-4 "
                        "and the stack tolerances are unmeasured. 16.5 is the nominal tip "
-                       "plane and 2.55 is the nominal tip-to-board-plane distance; neither "
+                       "plane and -6.50 is the nominal tip-to-board-plane distance; neither "
                        "is an LED gap or a fit. The retired 10.16 mm / 7.29 mm subtraction "
                        "is withdrawn, not replaced by another subtraction"),
         },
@@ -1213,21 +1219,22 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "LCD aperture against the module glass (105.42 x 67.07 mm).",
     "Try every real part in the panel mockup: six buttons, three 4 mm light pipes, "
     "four MIDI jack barrels, the encoder bushing, NAV and POWER. All 20 apertures "
-    "and 14 drills come from the canonical panel data.",
+    "and 10 drills come from the canonical panel data.",
     "Offer the real display to the aperture from behind: the glass must pass with "
     "0.9 mm clearance per side. Record what you measure.",
     "Fit the Adafruit 908 flanges through their panel openings and measure the depth "
     "from flange seat to the rear-most body point. That number is missing today.",
     "Lay the front-board mockup over the real display bosses and check the four "
     "LCD mount holes; the top relief notch must clear all three feedthrough bodies.",
-    "Check the light-pipe gauge on its own datum: the tall 19.05 mm end is the "
-    "provisional board near face and the 16.5 mm end is the nominal PGN25L165 tip "
-    "plane. The 2.55 mm step is arithmetic, NOT an LED gap and NOT a fit.",
+    "Check the light-pipe datum: the provisional board near face is 10.00 mm and "
+    "the nominal PGN25L165 tip plane is 16.5 mm, so the tip is 6.50 mm BEHIND the "
+    "board plane. There is no positive step to print; the arithmetic is NOT an LED "
+    "gap and NOT a fit.",
     "Offer the real display to the panel aperture from behind and measure the touch "
     "layer, frame and glass: the model places the touch/frame plane 1.90 mm in FRONT "
     "of the glass datum, so the panel relief and seating are still unknown.",
     "Do NOT print or buy the four MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED bodies: they "
-    "are 5.0/2.7 mm geometric placeholders over the model's 8.81 mm gap, not a part. "
+    "are 5.0/2.7 mm geometric placeholders over the model's -0.24 mm gap, not a part. "
     "Measure the real boss plane, board face, standoff diameter and thread first.",
     "Do not record any result as accepted: every mockup is a print check, not "
     "dimensional evidence. Enter measurements in docs/evidence/ with a date and name.",

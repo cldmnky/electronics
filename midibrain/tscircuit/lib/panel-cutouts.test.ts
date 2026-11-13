@@ -65,9 +65,10 @@ test("the built panel exists and carries every canonical aperture and drill", ()
   expect(cutouts.length).toBe(PANEL_APERTURES.length)
   expect(holes.length).toBe(PANEL_DRILLS.length)
   // 20 openings (LCD, 3 feedthroughs, 6 buttons, 3 LEDs, encoder, POWER, NAV,
-  // 4 jacks) and 14 holes (6 feedthrough screws, 4 standoffs, 4 rails).
+  // 4 jacks) and 10 holes (6 feedthrough screws + 4 rails). The four panel
+  // standoff holes are gone: the front board carries no standoffs.
   expect(cutouts.length).toBe(20)
-  expect(holes.length).toBe(14)
+  expect(holes.length).toBe(10)
 })
 
 test("every canonical aperture is built, in order and at its exact geometry", () => {
@@ -99,18 +100,18 @@ test("every canonical panel hole is built, in order and at its exact diameter", 
   expect(built).toEqual(PANEL_DRILLS.map(drillSignature))
 })
 
-test("PANEL_DRILLS is the feedthrough screws, then the standoffs, then the rails", () => {
-  expect(PANEL_DRILLS.length).toBe(14)
-  expect(PANEL_MOUNT_HOLES.length).toBe(8)
+test("PANEL_DRILLS is the feedthrough screws, then the rail holes", () => {
+  expect(PANEL_DRILLS.length).toBe(10)
+  expect(PANEL_MOUNT_HOLES.length).toBe(4)
   expect(PANEL_DRILLS.slice(0, 6).map(d => d.name)).toEqual([
     "USB_0_-1", "USB_0_1", "USB_1_-1", "USB_1_1", "USB_2_-1", "USB_2_1",
   ])
   expect(PANEL_DRILLS.slice(6).map(d => d.name)).toEqual([
-    "STAND_1", "STAND_2", "STAND_3", "STAND_4",
     "RACK_1", "RACK_2", "RACK_3", "RACK_4",
   ])
-  // The diameters are the canonical ones; nothing is invented here.
-  expect(new Set(PANEL_DRILLS.map(d => d.diameter))).toEqual(new Set([3.2, 3.5, 2.7]))
+  // The diameters are the canonical ones; nothing is invented here. The D2.7
+  // tool is gone with the panel standoffs.
+  expect(new Set(PANEL_DRILLS.map(d => d.diameter))).toEqual(new Set([3.2, 3.5]))
 })
 
 test("the canonical apertures cover every opening class with its own diameter", () => {
@@ -138,10 +139,13 @@ test("the canonical apertures cover every opening class with its own diameter", 
   expect(lcd?.shape).toBe("polygon")
   expect(lcd?.points?.length).toBe(28)
   const positions = PANEL_APERTURES.filter(a => a.shape !== "polygon").map(a => `${a.x},${a.y}`)
-  // Control centres are the owner's. The right column moved down 10 mm on
-  // 2026-11-13 (owner decision) to free the top-right corner for the POWER
-  // button, so TEMPO/NAV/SHIFT are 20/1/-18; everything else is unchanged.
-  for (const p of ["52,20", "52,1", "52,-18", "52,-34", "52.5,-48", "-53,-34", "-29,-34", "-5,-34", "19,-34"]) {
+  // Control centres come from the shared constants. The right control column
+  // is explicit (TEMPO 31, NAV 12, SHIFT/EXIT -5); POWER moved to (52, 49), the
+  // transport row is centred on the U opening (-46/-22/2/26) and the jacks are
+  // their own block 12 mm apart from -62.
+  for (const p of ["52,31", "52,12", "52,-5", "52,-34", "52,49",
+                   "-46,-34", "-22,-34", "2,-34", "26,-34",
+                   "-62,-47.5", "-50,-47.5", "-38,-47.5", "-26,-47.5"]) {
     expect(positions).toContain(p)
   }
 })

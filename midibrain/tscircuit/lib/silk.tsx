@@ -184,8 +184,10 @@ const FRONT_GATE_PIN1 = { dx: -1.14, dy: 0.95 }
 const FRONT_GATE_DOT = { dx: -1.4, dy: 0 }
 const FRONT_GATE_REF_OFFSET = { dx: 2.1, dy: 1.6 }
 // 1N4148WS: cathode pad is 1.17 mm LEFT of the body centre, anode 1.17 right.
+// The printed K sits 1.2 mm BELOW the cathode pad: beside it, C3's 0805 pad (at
+// -11.175, -45) and U1's opto pad (-12.825, -46.73) leave no clear spot.
 const FRONT_DIODE_CATHODE_DX = -1.17
-const FRONT_DIODE_K_OFFSET = { dx: -2.4, dy: 0 }
+const FRONT_DIODE_K_OFFSET = { dx: 0, dy: -1.2 }
 
 // Known and accepted, re-measured 2026-11-13 on the built boards: the vendor
 // footprints draw their own body outlines across their own pads - C1-C6 (0603 /

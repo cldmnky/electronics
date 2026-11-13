@@ -21,8 +21,6 @@ import {
   BRACKET_POWER_POCKET,
   FEEDTHROUGH_BRACKET,
   FRONT_PCB,
-  FRONT_TOP_NOTCH,
-  NOTCH_BOTTOM,
   POWER_HEADER,
   POWER_HEADER_CANDIDATE,
   POWER_HEADER_KEEPOUT,
@@ -63,7 +61,7 @@ const silkPathsOf = (name: string) => {
 const round = (v: number) => Math.round(v * 1000) / 1000
 
 describe("J_PWR on the built front board", () => {
-  test("it is on the REAR (bottom) face at the planned notch position", () => {
+  test("it is on the REAR (bottom) face at the planned top-right position", () => {
     const pcb = pcbOf("J_PWR")
     expect(pcb.layer).toBe("bottom")
     expect(POWER_HEADER.layer).toBe("bottom")
@@ -71,8 +69,10 @@ describe("J_PWR on the built front board", () => {
     expect({ x: pcb.footprint_origin.x, y: pcb.footprint_origin.y }).toEqual({
       x: POWER_HEADER.x, y: POWER_HEADER.y,
     })
-    // The owner's position: the middle of the long top relief notch.
-    expect(POWER_HEADER.x).toBe(FRONT_TOP_NOTCH.x)
+    // The 2026-11-13 owner decision moved the header out of the top relief
+    // notch to the top right, under the POWER button on the right leg.
+    expect(POWER_HEADER.x).toBe(64)
+    expect(POWER_HEADER.y).toBe(44.5)
   })
 
   test("the mating axis points to global +Y, into the notch", () => {
@@ -107,13 +107,11 @@ describe("J_PWR on the built front board", () => {
     expect(round(pads[1]!.x)).toBe(round(POWER_HEADER.x + POWER_HEADER_LAND.pitch / 2))
   })
 
-  test("both pads keep the copper-to-edge rule to the notch and the board edges", () => {
+  test("both pads keep the copper-to-edge rule to the board edges", () => {
     const pads = padsOf("J_PWR")
     for (const pad of pads) {
       const r = POWER_HEADER_LAND.pad / 2
-      // Notch edge (the board is void above y = 48 in the notch span).
-      expect(round(NOTCH_BOTTOM - (pad.y + r))).toBeGreaterThanOrEqual(POWER_HEADER_LAND.copperToEdge)
-      // Board outline (front board 128 x 112, centred).
+      // Board outline (front board 150 x 112, centred).
       const edge = Math.min(
         FRONT_PCB.width / 2 - (pad.x + r),
         FRONT_PCB.width / 2 + (pad.x - r),
@@ -174,24 +172,26 @@ describe("the owner-approved bracket pocket clears the keepout", () => {
     expect(BRACKET_POWER_POCKET.y2).toBeLessThanOrEqual(POWER_HEADER_KEEPOUT.y2)
   })
 
-  test("the pocket keeps the bracket's material rules and its other slots", () => {
+  test("the pocket keeps the bracket's material rules and stays one connected part", () => {
     const materialToCuts = 1.0 // bracketAllowance.materialToCuts, restated here
-    // Bottom web under the pocket.
+    // Bottom web under the pocket: the bar is not cut in two.
     expect(round(BRACKET_POWER_POCKET.y1 - FEEDTHROUGH_BRACKET.outline.y1))
       .toBeGreaterThanOrEqual(materialToCuts)
-    // Webs to either side inside the UMC AUDIO slot's own span.
-    const slot = FEEDTHROUGH_BRACKET.slots.find(s => s.id === "UMC AUDIO USB")!
-    const slotX1 = slot.x - slot.width / 2
-    const slotX2 = slot.x + slot.width / 2
-    expect(round(BRACKET_POWER_POCKET.x1 - slotX1)).toBeGreaterThanOrEqual(materialToCuts)
-    expect(round(slotX2 - BRACKET_POWER_POCKET.x2)).toBeGreaterThanOrEqual(materialToCuts)
-    // It opens into that slot, so the bar stays one connected piece.
-    expect(BRACKET_POWER_POCKET.y2).toBe(slot.yTop)
-    expect(BRACKET_POWER_POCKET.y2).toBeGreaterThan(slot.yBottom)
+    // The pocket is open to the bracket's top and right edges (the header/plug
+    // reach past both), so there is no closed cut island to leave behind. The
+    // bar still has solid material to its left.
+    expect(BRACKET_POWER_POCKET.y2).toBe(FEEDTHROUGH_BRACKET.outline.y2)
+    expect(BRACKET_POWER_POCKET.x2).toBeCloseTo(FEEDTHROUGH_BRACKET.outline.x2, 9)
+    expect(BRACKET_POWER_POCKET.x1 - FEEDTHROUGH_BRACKET.outline.x1)
+      .toBeGreaterThan(materialToCuts)
+    // It no longer has to reach the UMC AUDIO slot: the header left the notch.
     // The other two slots are untouched.
     expect(FEEDTHROUGH_BRACKET.slots.map(s => s.id)).toEqual([
       "USB-C POWER", "UMC AUDIO USB", "MIDI HUB USB",
     ])
+    for (const slot of FEEDTHROUGH_BRACKET.slots) {
+      expect(BRACKET_POWER_POCKET.x1).toBeGreaterThan(slot.x + slot.width / 2)
+    }
   })
 
   test("no tie hole or mount ligament is touched by the pocket", () => {

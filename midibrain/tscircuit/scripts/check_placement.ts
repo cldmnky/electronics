@@ -1,20 +1,20 @@
 import { readFileSync } from "node:fs"
 import {
-  DISPLAY_ANNOTATIONS,
   DISPLAY_CONCEPT,
-  displayAnnotationXY,
   FEEDTHROUGH_BRACKET,
   FRONT_BOARD_HOLES,
+  FRONT_BOARD_OPENING,
+  FRONT_BOARD_OPENING_POLYGON,
   FRONT_COLUMNS,
   FRONT_INTERCONNECT,
   FRONT_PCB,
   FRONT_REAR_MOUNT,
-  FRONT_TOP_NOTCH,
   JACK_Y,
   LCD_MOUNT_HOLES,
   LED_ID,
   LED_Y,
   ledPosition,
+  MIDI_CLUSTERS,
   midiJackX,
   OUT_RING,
   PANEL,
@@ -147,19 +147,29 @@ for (const c of [RIGHT_CONTROLS.TEMPO, RIGHT_CONTROLS.NAV]) {
 }
 ok("panel: 2 control openings, no extras", circles(PANEL_CUTOUTS.control / 2).length === 2)
 
-// MIDI jack barrels.
+// MIDI jack barrels, in their own grouped block at the left of the bottom edge.
 for (const c of FRONT_COLUMNS) {
-  at(`panel: ${c.jack} barrel Ø${PANEL_CUTOUTS.jack}`, centre(circles(PANEL_CUTOUTS.jack / 2).find(o => close(o.center.x, c.x) && close(o.center.y, JACK_Y))), { x: c.x, y: JACK_Y })
+  const x = midiJackX(c.jack)
+  at(`panel: ${c.jack} barrel Ø${PANEL_CUTOUTS.jack}`,
+    centre(circles(PANEL_CUTOUTS.jack / 2).find(o => close(o.center.x, x) && close(o.center.y, JACK_Y))),
+    { x, y: JACK_Y })
+  ok(`panel: ${c.jack} barrel is off the transport column`,
+    !circles(PANEL_CUTOUTS.jack / 2).some(o => close(o.center.x, c.x) && close(o.center.y, JACK_Y)))
 }
 ok(`panel: ${FRONT_COLUMNS.length} jack openings, no extras`, circles(PANEL_CUTOUTS.jack / 2).length === FRONT_COLUMNS.length)
 
-// Standoff and rail holes.
+// Panel holes: the four RACK fixings and the six feedthrough screws. The four
+// STAND_ holes are gone with the front-board standoffs.
 const panelHoles = byType(panel, "pcb_hole")
-for (const h of [...FRONT_BOARD_HOLES, ...RAIL_HOLES]) {
-  at("panel: standoff/rail hole", panelHoles.find(hh => close(hh.x, h.x) && close(hh.y, h.y)), h)
+for (const h of RAIL_HOLES) {
+  at("panel: rail hole", panelHoles.find(hh => close(hh.x, h.x) && close(hh.y, h.y)), h)
 }
-ok(`panel: ${FRONT_BOARD_HOLES.length + RAIL_HOLES.length} standoff/rail holes, no extras`,
-  panelHoles.length === FRONT_BOARD_HOLES.length + RAIL_HOLES.length + USB_FEEDTHROUGHS.length * 2)
+ok(`panel: ${RAIL_HOLES.length + USB_FEEDTHROUGHS.length * 2} rail/feedthrough holes, no extras`,
+  panelHoles.length === RAIL_HOLES.length + USB_FEEDTHROUGHS.length * 2)
+for (const h of FRONT_BOARD_HOLES) {
+  ok(`panel: no panel-standoff hole at (${h.x}, ${h.y})`,
+    !panelHoles.some(hh => close(hh.x, h.x) && close(hh.y, h.y)))
+}
 
 // Titles consume the shared PANEL_TITLES with center anchoring only.
 for (const t of PANEL_TITLES) {
@@ -173,7 +183,8 @@ for (const t of PANEL_TITLES) {
 const rings = byType(panel, "pcb_silkscreen_circle")
 const outCols = FRONT_COLUMNS.filter(c => c.jack.startsWith("MIDI OUT"))
 for (const c of outCols) {
-  const r = rings.find(o => close(o.center.x, c.x, 1e-4) && close(o.center.y, JACK_Y, 1e-4))
+  const x = midiJackX(c.jack)
+  const r = rings.find(o => close(o.center.x, x, 1e-4) && close(o.center.y, JACK_Y, 1e-4))
   ok(`panel: OUT ring over ${c.jack}`, !!r && close(r.radius, OUT_RING.radius, 1e-4))
 }
 ok("panel: rings on OUT barrels only", rings.length === outCols.length)
@@ -227,7 +238,8 @@ for (const [i, c] of FRONT_COLUMNS.entries()) {
   at(`front: ${c.jack} jack`, comp(`J${i + 1}`), { x: midiJackX(c.jack), y: JACK_Y })
 }
 for (const [i, jack] of ["MIDI IN 1", "MIDI IN 2"].entries()) {
-  at(`front: ${jack} sleeve decoupling cap`, comp(`C${i + 1}`), { x: midiJackX(jack) - 7, y: JACK_Y + 5.5 })
+  const at1 = MIDI_CLUSTERS[i === 0 ? "in1" : "in2"]
+  at(`front: ${jack} sleeve decoupling cap`, comp(`C${i + 1}`), { x: at1.x, y: at1.y + 6 })
 }
 
 // LEDs beside REC / OVER DUB / PLAY with their 330R series resistors 4.5 mm
@@ -256,43 +268,54 @@ for (const c of byType(front, "pcb_component")) {
   ok(`front: ${name} on ${want} side`, c.layer === want)
 }
 
-// Non-plated Ø2.7 holes: panel standoffs, shared front-rear grid, LCD
-// standoffs, bracket mounts.
+// Non-plated Ø2.7 holes on the FRONT board: only the shared front-rear grid.
+// The panel standoffs, the LCD mount holes and the bracket mounts are NOT
+// drilled there any more (2026-11-13); the data is retained in lib/layout.ts.
 const holes = byType(front, "pcb_hole").filter(h => close(h.hole_diameter, 2.7))
-for (const h of [...FRONT_BOARD_HOLES, ...FRONT_REAR_MOUNT, ...LCD_MOUNT_HOLES]) {
-  at(`front: Ø2.7 hole at (${h.x}, ${h.y})`, holes.find(hh => close(hh.x, h.x) && close(hh.y, h.y)), h)
+for (const h of FRONT_REAR_MOUNT) {
+  at(`front: front-rear mount hole at (${h.x}, ${h.y})`, holes.find(hh => close(hh.x, h.x) && close(hh.y, h.y)), h)
 }
-// Rear board carries the same shared grid (its only mechanical home).
+ok(`front: exactly ${FRONT_REAR_MOUNT.length} Ø2.7 holes (the front-rear grid)`, holes.length === FRONT_REAR_MOUNT.length)
+for (const h of FRONT_BOARD_HOLES) {
+  ok(`front: no panel-standoff hole at (${h.x}, ${h.y})`,
+    !holes.some(hh => close(hh.x, h.x) && close(hh.y, h.y)))
+}
+for (const h of LCD_MOUNT_HOLES) {
+  ok(`front: no LCD mount hole at (${h.x}, ${h.y}) (the module hangs from the rear carrier)`,
+    !holes.some(hh => close(hh.x, h.x) && close(hh.y, h.y)))
+}
+for (const x of FEEDTHROUGH_BRACKET.mountX) {
+  ok(`front: no bracket mount hole at (${x}, ${FEEDTHROUGH_BRACKET.mountY})`,
+    !holes.some(hh => close(hh.x, x) && close(hh.y, FEEDTHROUGH_BRACKET.mountY)))
+}
+// The rear board carries the shared grid AND the four display-carrier holes
+// (LCD_MOUNT_HOLES, added in index.circuit.tsx); it carries no Pi holes.
 const rearHoles = byType(rear, "pcb_hole").filter(h => close(h.hole_diameter, 2.7))
 for (const h of FRONT_REAR_MOUNT) {
   at(`rear: shared mount hole at (${h.x}, ${h.y})`, rearHoles.find(hh => close(hh.x, h.x) && close(hh.y, h.y)), h)
 }
-// The Pi is on its own mounting panel now, so the rear board carries no Pi
-// holes: its only 2.7 mm holes are the shared front/rear mount grid.
-ok("rear: no Pi holes (the Pi is on the 20HP mounting panel)", rearHoles.length === FRONT_REAR_MOUNT.length)
-for (const x of FEEDTHROUGH_BRACKET.mountX) {
-  at("front: bracket mount hole", holes.find(hh => close(hh.x, x) && close(hh.y, FEEDTHROUGH_BRACKET.mountY)), { x, y: FEEDTHROUGH_BRACKET.mountY })
+for (const h of LCD_MOUNT_HOLES) {
+  at(`rear: display-carrier hole at (${h.x}, ${h.y})`, rearHoles.find(hh => close(hh.x, h.x) && close(hh.y, h.y)), h)
 }
+ok("rear: only the front-rear grid and the display carrier holes; no Pi holes",
+  rearHoles.length === FRONT_REAR_MOUNT.length + LCD_MOUNT_HOLES.length)
 // Bracket consistency against the BUILT front board: both mounts sit on board
-// material outside the top relief notch and inside the bracket outline, and
-// the bracket outline is fully backed by the board outline. The top
-// front-to-rear spacer holes then necessarily fall inside the bracket, which
-// is why the printed part carries the head-clearance slots from lib/layout.ts.
-const notchLeft = FRONT_TOP_NOTCH.x - FRONT_TOP_NOTCH.width / 2
-const notchRight = FRONT_TOP_NOTCH.x + FRONT_TOP_NOTCH.width / 2
-const notchBottom = FRONT_TOP_NOTCH.y - FRONT_TOP_NOTCH.height / 2
+// material outside the U opening and inside the bracket outline, and the
+// bracket outline is backed by the board. Only a top spacer whose centre lies
+// under the bar needs a head clearance.
 const b = FEEDTHROUGH_BRACKET.outline
 for (const x of FEEDTHROUGH_BRACKET.mountX) {
-  const onBoard = holes.some(hh => close(hh.x, x) && close(hh.y, FEEDTHROUGH_BRACKET.mountY))
-  ok(`front: bracket mount (${x}, ${FEEDTHROUGH_BRACKET.mountY}) on board, outside the notch`,
-    onBoard && (x < notchLeft || x > notchRight) && FEEDTHROUGH_BRACKET.mountY < notchBottom &&
+  ok(`front: bracket mount (${x}, ${FEEDTHROUGH_BRACKET.mountY}) on board material, outside the U opening`,
+    (x < FRONT_BOARD_OPENING.left || x > FRONT_BOARD_OPENING.right) &&
     x > b.x1 && x < b.x2 && FEEDTHROUGH_BRACKET.mountY > b.y1 && FEEDTHROUGH_BRACKET.mountY < b.y2)
 }
 ok(`front: bracket outline ${b.width} x ${b.height} at (${b.x1}..${b.x2}, ${b.y1}..${b.y2}) inside the front board`,
   b.x1 > -FRONT_PCB.width / 2 && b.x2 < FRONT_PCB.width / 2 && b.y1 > -FRONT_PCB.height / 2 && b.y2 <= FRONT_PCB.height / 2)
 for (const h of FRONT_REAR_MOUNT.filter(hh => hh.y > 0)) {
-  ok(`front: top spacer (${h.x}, ${h.y}) inside the bracket envelope, head clearance required`,
-    h.x > b.x1 && h.x < b.x2 && h.y > b.y1 && h.y < b.y2)
+  const underBar = h.x >= b.x1 && h.x <= b.x2 && h.y >= b.y1 && h.y <= b.y2
+  const cleared = FEEDTHROUGH_BRACKET.mountHeadClearance.some(c => close(c.x, h.x) && close(c.y, h.y))
+  ok(`front: top spacer (${h.x}, ${h.y}) ${underBar ? "has a head clearance" : "is outside the bracket"}`,
+    underBar ? cleared : !cleared)
 }
 
 // Rear-board placements: the male interconnect sits at the shared point on the
@@ -333,16 +356,31 @@ const misaligned = [...Array(26)].map((_, i) => {
 }).filter(pin => pin !== null)
 ok(`both boards: all 26 interconnect pads coincide (${misaligned.length} mismatched)`, misaligned.length === 0)
 
-// Top relief notch and display annotations.
-const notch = byType(front, "pcb_cutout").find(c => c.shape === "rect")
-ok("front: top relief notch",
-  !!notch && close(notch.center.x, FRONT_TOP_NOTCH.x) && close(notch.center.y, FRONT_TOP_NOTCH.y) &&
-  close(notch.width, FRONT_TOP_NOTCH.width) && close(notch.height, FRONT_TOP_NOTCH.height))
-for (const a of DISPLAY_ANNOTATIONS) {
-  const p = displayAnnotationXY(a)
-  const t = byType(front, "pcb_silkscreen_text").find(t => t.text === a.text && t.layer === "top")
-  ok(`front: display annotation "${a.text}" at (${p.x}, ${p.y})`,
-    !!t && close(t.anchor_position.x, p.x, 1e-4) && close(t.anchor_position.y, p.y, 1e-4))
+// The front board emits ONE polygon cutout: the U-shaped display opening. The
+// old rectangular top relief notch is no longer cut.
+const frontCutouts = byType(front, "pcb_cutout")
+const opening = frontCutouts.filter(c => c.shape === "polygon")
+ok("front: exactly one polygon cutout (the U-shaped display opening)", opening.length === 1)
+ok("front: no rectangular top relief notch", frontCutouts.every(c => c.shape !== "rect"))
+const openingPoints: { x: number; y: number }[] = opening[0]?.points ?? []
+ok(`front: U opening has ${FRONT_BOARD_OPENING_POLYGON.length} points`,
+  openingPoints.length === FRONT_BOARD_OPENING_POLYGON.length)
+for (const p of FRONT_BOARD_OPENING_POLYGON) {
+  ok(`front: U opening vertex (${p.x}, ${p.y})`,
+    openingPoints.some(q => close(q.x, p.x) && close(q.y, p.y)))
+}
+const openingXs = openingPoints.map(p => p.x)
+const openingYs = openingPoints.map(p => p.y)
+ok(`front: U opening spans x ${FRONT_BOARD_OPENING.left}..${FRONT_BOARD_OPENING.right}`,
+  openingXs.length > 0 && close(Math.min(...openingXs), FRONT_BOARD_OPENING.left) && close(Math.max(...openingXs), FRONT_BOARD_OPENING.right))
+ok(`front: U opening breaks through the top edge (bottom ${FRONT_BOARD_OPENING.bottom})`,
+  openingYs.length > 0 && close(Math.min(...openingYs), FRONT_BOARD_OPENING.bottom) && Math.max(...openingYs) > FRONT_PCB.height / 2)
+// The five DISPLAY_ANNOTATIONS are data only; the display left the board, so no
+// annotation may print on it.
+for (const a of ["LCD 4.3in 106.00 x 68.00", "ACTIVE 95.04 x 53.86", "BEZEL 95.54 x 54.36",
+                 "MOUNT 99.30 x 61.80", "DSI 15P"]) {
+  ok(`front: no display annotation "${a}" printed on the board`,
+    !byType(front, "pcb_silkscreen_text").some(t => t.text === a))
 }
 
 console.log(`\n${pass} pass, ${fail} fail (design/output consistency only, not physical fit)`)

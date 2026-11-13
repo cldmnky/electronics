@@ -5,6 +5,7 @@ import { dirname, join } from "node:path"
 import { renderMechanical, run } from "../scripts/export-mechanical"
 import {
   BRACKET_ALLOWANCE,
+  BRACKET_POWER_POCKET,
   BUTTON_CAP,
   BUTTON_STACK,
   DEPTH_TARGET,
@@ -24,7 +25,6 @@ import {
   LIGHT_PIPE,
   LIGHT_PIPE_REACH,
   MOUNT_HOLE_DIAMETER,
-  NOTCH_BOUNDS,
   PANEL_TO_FRONT_BOARD_GAP,
   PANEL_TO_FRONT_BOARD_TOP,
   PROVISIONAL_Z,
@@ -35,15 +35,18 @@ import {
   roundedRectOutline,
   FEEDTHROUGH_BRACKET,
   FRONT_BOARD_HOLES,
+  FRONT_BOARD_OPENING,
   FRONT_COLUMNS,
   FRONT_CONCEPT,
+  FRONT_DISPLAY_OPENING,
   FRONT_INTERCONNECT,
   FRONT_PCB,
   FRONT_REAR_MOUNT,
-  FRONT_TOP_NOTCH,
   JACK_Y,
   LCD_MOUNT_HOLES,
   LCD_WINDOW,
+  MIDI_JACK_LEFT_X,
+  MIDI_JACK_PITCH,
   midiJackX,
   LED_ID,
   LED_Y,
@@ -153,12 +156,18 @@ test("display, window, cutout and mounting holes share one coordinate source", (
   expect(LCD_WINDOW.height).toBeCloseTo(d.innerHeight + 1, 6)
 })
 
-test("right-hand controls share one centreline with equal 19 mm spacing", () => {
+test("right-hand controls are one explicit column, not a pitch", () => {
   const rc = RIGHT_CONTROLS
-  expect(new Set([rc.TEMPO.x, rc.NAV.x, rc.SHIFT_EXIT.x]).size).toBe(1)
-  expect(rc.TEMPO.x).toBe(RIGHT_COLUMN.x)
-  expect(rc.TEMPO.y - rc.NAV.y).toBe(RIGHT_COLUMN.pitch)
-  expect(rc.NAV.y - rc.SHIFT_EXIT.y).toBe(RIGHT_COLUMN.pitch)
+  // The 2026-11-13 column is explicit: TEMPO/NAV/SHIFT-EXIT are 19 and then
+  // 17 mm apart, deliberately not an arithmetic progression. Deriving NAV from
+  // TEMPO would drag NAV every time TEMPO moves.
+  expect([rc.TEMPO, rc.NAV, rc.SHIFT_EXIT]).toEqual([
+    { x: RIGHT_COLUMN.x, y: 31 },
+    { x: RIGHT_COLUMN.x, y: 12 },
+    { x: RIGHT_COLUMN.x, y: -5 },
+  ])
+  expect(rc.TEMPO.y - rc.NAV.y).toBe(19)
+  expect(rc.NAV.y - rc.SHIFT_EXIT.y).toBe(17)
   for (const [id, c] of [["VALUE", rc.TEMPO], ["NAV", rc.NAV], ["SHIFT / EXIT", rc.SHIFT_EXIT]] as const) {
     expect(point(id)).toMatchObject({ x: c.x, y: c.y })
   }
@@ -178,7 +187,7 @@ test("right-hand controls share one centreline with equal 19 mm spacing", () => 
 })
 
 test("transport columns align with their LEDs and MIDI jacks", () => {
-  expect(FRONT_COLUMNS.map(c => c.x)).toEqual([-53, -29, -5, 19])
+  expect(FRONT_COLUMNS.map(c => c.x)).toEqual([-46, -22, 2, 26])
   for (let i = 1; i < FRONT_COLUMNS.length; i++) {
     expect(FRONT_COLUMNS[i].x - FRONT_COLUMNS[i - 1].x).toBe(TRANSPORT_COLUMN_PITCH)
   }
@@ -187,12 +196,20 @@ test("transport columns align with their LEDs and MIDI jacks", () => {
   expect(point("PLAY START")).toMatchObject({ x: PLAY_START.x, y: TRANSPORT_Y })
   // All five transport buttons share one centreline.
   expect(new Set(["REC", "OVER DUB", "STOP", "PLAY", "PLAY START"].map(id => point(id).y)).size).toBe(1)
-  // All four jacks share one centreline, below the buttons.
+  // All four jacks share one centreline, below the buttons, in their OWN
+  // grouped block: since 2026-11-13 they no longer share the transport X.
   expect(new Set(FRONT_COLUMNS.map(c => point(c.jack).y)).size).toBe(1)
   expect(JACK_Y).toBeLessThan(TRANSPORT_Y)
+  expect(FRONT_COLUMNS.map(c => midiJackX(c.jack))).toEqual([
+    MIDI_JACK_LEFT_X,
+    MIDI_JACK_LEFT_X + MIDI_JACK_PITCH,
+    MIDI_JACK_LEFT_X + 2 * MIDI_JACK_PITCH,
+    MIDI_JACK_LEFT_X + 3 * MIDI_JACK_PITCH,
+  ])
   for (const c of FRONT_COLUMNS) {
     expect(point(c.button)).toMatchObject({ x: c.x, y: TRANSPORT_Y })
-    expect(point(c.jack)).toMatchObject({ x: c.x, y: JACK_Y })
+    expect(point(c.jack)).toMatchObject({ x: midiJackX(c.jack), y: JACK_Y })
+    expect(midiJackX(c.jack)).not.toBe(c.x)
   }
   // LEDs sit BESIDE REC / OVER DUB / PLAY only (owner-authorised fallback 3:
   // the glass-derived window owns the row above the buttons).
@@ -217,7 +234,7 @@ test("the rear board carries no Pi holes and the display mount grid is unchanged
   const ys = [...new Set(DISPLAY_STANDOFFS.map(p => p.y))].sort((a,b) => a-b)
   expect(xs[1] - xs[0]).toBeCloseTo(58.0, 6)
   expect(ys[1] - ys[0]).toBeCloseTo(49.04, 6)
-  expect(REAR_PCB.width).toBe(145)
+  expect(REAR_PCB.width).toBe(148)
   expect(REAR_PCB.height).toBe(112)
 })
 
@@ -229,8 +246,8 @@ test("3.5-inch DSI display and requested control centres follow the concept", ()
   expect(REAR_PCB.width).toBeLessThan(FRONT_PCB.width)
   for (const p of FRONT_CONCEPT) {
     if (p.kind === "cable") {
-      // Feedthroughs sit in the front board top relief opening.
-      expect(p.y).toBeGreaterThanOrEqual(FRONT_TOP_NOTCH.y - FRONT_TOP_NOTCH.height / 2)
+      // Feedthroughs sit inside the front board's U opening, above its bottom.
+      expect(p.y).toBeGreaterThanOrEqual(FRONT_BOARD_OPENING.bottom)
     } else {
       expect(Math.abs(p.x)).toBeLessThan(FRONT_PCB.width / 2)
       expect(Math.abs(p.y)).toBeLessThan(FRONT_PCB.height / 2)
@@ -252,55 +269,60 @@ test("3.5-inch DSI display and requested control centres follow the concept", ()
   for (const id of ["USB-C POWER", "UMC AUDIO USB", "MIDI HUB USB"]) {
     expect(point(id).y).toBeGreaterThan(d.y + d.height / 2)
   }
-  expect(FRONT_TOP_NOTCH.y + FRONT_TOP_NOTCH.height / 2).toBe(FRONT_PCB.height / 2)
-  const notchLeft = FRONT_TOP_NOTCH.x - FRONT_TOP_NOTCH.width / 2
-  const notchRight = FRONT_TOP_NOTCH.x + FRONT_TOP_NOTCH.width / 2
+  // The opening breaks through the top edge and is exactly the display
+  // opening in X/Y: one U-shaped cut, not a notch plus a window.
+  expect(FRONT_BOARD_OPENING.top).toBeGreaterThan(FRONT_PCB.height / 2)
+  expect(FRONT_BOARD_OPENING.left).toBeCloseTo(DISPLAY_CONCEPT.x - FRONT_DISPLAY_OPENING.width / 2, 6)
+  expect(FRONT_BOARD_OPENING.right).toBeCloseTo(DISPLAY_CONCEPT.x + FRONT_DISPLAY_OPENING.width / 2, 6)
+  expect(FRONT_BOARD_OPENING.bottom).toBeCloseTo(DISPLAY_CONCEPT.y - FRONT_DISPLAY_OPENING.height / 2, 6)
+  // Both bracket mounts sit on board material: the left on the 11.75 mm left
+  // leg, the right on the 31.75 mm right leg, never over the opening.
   for (const x of FEEDTHROUGH_BRACKET.mountX) {
     expect(Math.abs(x)).toBeLessThan(FRONT_PCB.width / 2)
-    expect(x < notchLeft || x > notchRight).toBe(true)
+    expect(x < FRONT_BOARD_OPENING.left || x > FRONT_BOARD_OPENING.right).toBe(true)
   }
   // Display annotations follow the display (display-local offsets).
   expect(displayAnnotationXY({ dx: 0, dy: 0 })).toEqual({ x: d.x, y: d.y })
   // These are centre/box relationships only, not component collision checks.
 })
 
-test("panel standoffs and the shared front-rear grid clear parts and edges", () => {
-  // Panel-to-front standoffs live at the board corners with 1.65 mm edge
-  // ligament to the 128 x 112 front board.
-  expect(FRONT_BOARD_HOLES).toEqual([
-    { x: -61, y: -53 }, { x: 61, y: -53 }, { x: -61, y: 53 }, { x: 61, y: 53 },
-  ])
+test("the retained standoff data is inside the board; the drilled grid is front-rear", () => {
+  // The panel-to-front standoffs are retained as DATA only: front.circuit.tsx
+  // deliberately drills none of them (2026-11-13 owner decision). They still
+  // have to sit inside the board for a future mounting decision.
+  expect(FRONT_BOARD_HOLES).toHaveLength(4)
   for (const h of FRONT_BOARD_HOLES) {
     expect(FRONT_PCB.width / 2 - Math.abs(h.x)).toBeGreaterThanOrEqual(3)
     expect(FRONT_PCB.height / 2 - Math.abs(h.y)).toBeGreaterThanOrEqual(3)
   }
-  // Bottom-left standoff head (M2.5, r2.5 at (-61, -53)) clears the J1 MIDI
-  // jack courtyard (X -58..-48): 0.5 mm to the courtyard edge.
-  const j1 = FRONT_COLUMNS[0]!
-  expect(-58 - (-61 + 2.5)).toBeCloseTo(0.5, 6)
-  expect(j1.x).toBe(-53)
-  // Shared front-rear spacer grid: inside both boards, top pair below the
-  // relief notch (bottom 48.0), bottom pair below the jack courtyards. The
-  // top pair moved ±44 → ±45 to keep FR-4 web against the new SMTSO-pattern
-  // display hole at (+40.15, +41.90); ±46 was tried and rejected (see layout.ts).
+  // The board-to-board grid that IS drilled, one hole on each leg:
+  // -69 on the left leg (-75...-63.25), 71.5 on the right leg (43.25...75).
   expect(FRONT_REAR_MOUNT).toEqual([
-    { x: -44, y: -52 }, { x: 44, y: -52 }, { x: -45, y: 43 }, { x: 45, y: 43 },
+    { x: -69, y: -35 }, { x: 71.5, y: -35 }, { x: -69, y: 46 }, { x: 71.5, y: 46 },
   ])
   for (const h of FRONT_REAR_MOUNT) {
-    expect(Math.abs(h.x)).toBeLessThan(REAR_PCB.width / 2 - 3)
-    expect(Math.abs(h.y)).toBeLessThan(112 / 2 - 3)
+    const onLeftLeg = h.x < FRONT_BOARD_OPENING.left && h.x > -FRONT_PCB.width / 2
+    const onRightLeg = h.x > FRONT_BOARD_OPENING.right && h.x < FRONT_PCB.width / 2
+    expect(onLeftLeg || onRightLeg).toBe(true)
+    expect(Math.abs(h.y)).toBeLessThan(FRONT_PCB.height / 2 - 3)
   }
-  for (const h of FRONT_REAR_MOUNT.filter(h => h.y > 0)) {
-    expect(h.y + 1.35).toBeLessThan(FRONT_TOP_NOTCH.y - FRONT_TOP_NOTCH.height / 2)
+  // Right-leg web to the 148 mm rear board edge (74): 1.15 mm.
+  for (const h of FRONT_REAR_MOUNT.filter(h => h.x > 0)) {
+    expect(REAR_PCB.width / 2 - (h.x + MOUNT_HOLE_DIAMETER / 2)).toBeCloseTo(1.15, 6)
   }
-  for (const h of FRONT_REAR_MOUNT.filter(h => h.y < 0)) {
-    expect(h.y).toBeLessThan(JACK_Y - 3)
+  // The top pair sits above the tallest MIDI cluster courtyard (40.8) and the
+  // bottom pair between that band and the bottom bar.
+  for (const h of FRONT_REAR_MOUNT.filter(h => h.y > 0)) expect(h.y).toBeGreaterThan(40.8)
+  for (const h of FRONT_REAR_MOUNT.filter(h => h.y < 0)) expect(h.y).toBeGreaterThan(-40.8)
+  // No retained standoff datum hides on top of a drilled mount.
+  for (const a of FRONT_BOARD_HOLES) {
+    for (const b of FRONT_REAR_MOUNT) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(3)
   }
 })
 
-test("panel caption stays on the board (no center_left overflow)", () => {
+test("panel caption stays on the board below the jack row (no center_left overflow)", () => {
   // The wordmark is drawn paths now (panel-art); this text primitive is the
-  // jack-field caption, centred between the IN 2 and OUT 1 columns.
+  // jack-field caption, centred under the four jacks and below their labels.
   expect(PANEL_TITLES).toHaveLength(1)
   const t = PANEL_TITLES[0]!
   expect(t.text).toBe("MIDI TRS TYPE A")
@@ -309,11 +331,12 @@ test("panel caption stays on the board (no center_left overflow)", () => {
   expect(e.x2).toBeLessThan(PANEL.width / 2 - 1)
   expect(e.y1).toBeGreaterThan(-PANEL.height / 2 + 1)
   expect(e.y2).toBeLessThan(PANEL.height / 2 - 1)
-  expect(e.x2).toBeLessThan(midiJackX("MIDI OUT 1") - 2)
-  expect(e.x1).toBeGreaterThan(midiJackX("MIDI IN 2") + 2)
-  // Below the jack barrels, above the wordmark ink.
-  expect(t.y).toBeLessThan(JACK_Y - 3)
-  expect(t.y).toBeGreaterThan(-57)
+  // Centred on the jack block (IN 1 ... OUT 2), not between two jack labels.
+  expect(t.x).toBeCloseTo((midiJackX("MIDI IN 1") + midiJackX("MIDI OUT 2")) / 2, 6)
+  // Below the jack label row (JACK_Y - 6.5, 1.8 mm text) with a clear gap.
+  const jackLabelBottom = JACK_Y - 6.5 - 1.8 / 2
+  expect(t.y).toBeLessThan(JACK_Y - 6)
+  expect(e.y2).toBeLessThan(jackLabelBottom - 1)
 })
 
 test("allocated GPIO and physical pins are unique", () => {
@@ -428,23 +451,42 @@ const ligament = (x: number) => Math.min(
 
 test("bracket stock spans both mounts with a nut wall around them", () => {
   const b = FEEDTHROUGH_BRACKET
-  expect(b.mountX).toEqual([-60, 55])
-  // 3.0 mm from each mount centre to the outline: 1.65 mm of material outside a
-  // D2.7 hole, which leaves 0.5 mm around an M2.5 nut (circumradius 2.5 mm).
-  for (const x of b.mountX) expect(ligament(x)).toBeCloseTo(1.65, 6)
-  expect(b.outline.width).toBeCloseTo(121, 6)
-  expect(b.outline.height).toBeCloseTo(14, 6)
+  expect(b.mountX).toEqual([-66.5, 55])
+  // Both mounts are on the bracket's top edge minus the 3.0 mm nut wall, above
+  // the top front/rear spacer head at (-69, 46).
+  expect(b.mountY).toBeCloseTo(FRONT_PCB.height / 2 - BRACKET_ALLOWANCE.mountEdgeWall, 6)
+  expect(b.mountY).toBe(53)
+  // One mount per board leg, never over the U opening.
+  for (const x of b.mountX) {
+    expect(x < FRONT_BOARD_OPENING.left || x > FRONT_BOARD_OPENING.right).toBe(true)
+    expect(Math.abs(x)).toBeLessThan(FRONT_PCB.width / 2)
+    expect(b.mountY).toBeLessThan(FRONT_PCB.height / 2)
+    // At least 1.65 mm of material outside the D2.7 hole: 0.5 mm around an M2.5
+    // nut (circumradius 2.5 mm).
+    expect(ligament(x)).toBeGreaterThanOrEqual(
+      BRACKET_ALLOWANCE.mountEdgeWall - MOUNT_HOLE_DIAMETER / 2 - 1e-9)
+  }
+  // The left mount is the one on the edge: exactly the 3.0 mm wall to x1.
+  expect(ligament(-66.5)).toBeCloseTo(1.65, 6)
+  // Outline: max(mount + wall, J_PWR pocket) on X, pocket web / spacer row on Y.
+  expect(b.outline.width).toBeCloseTo(137.81, 6)
+  expect(b.outline.height).toBeCloseTo(15.04, 6)
+  expect(b.outline.x1).toBeCloseTo(Math.min(...b.mountX) - BRACKET_ALLOWANCE.mountEdgeWall, 6)
+  expect(b.outline.x2).toBeCloseTo(BRACKET_POWER_POCKET.x2, 6)
   expect(b.outline.x1).toBeGreaterThan(-PANEL.width / 2)
   expect(b.outline.x2).toBeLessThan(PANEL.width / 2)
   // Backed by the front board, and clear of the display below it.
   expect(b.outline.x1).toBeGreaterThan(-FRONT_PCB.width / 2)
   expect(b.outline.x2).toBeLessThan(FRONT_PCB.width / 2)
-  expect(b.outline.y2).toBeLessThanOrEqual(FRONT_PCB.height / 2)
+  expect(b.outline.y2).toBe(FRONT_PCB.height / 2)
   // The bar is REAR-side, so the front-side display envelope does not set its
-  // bottom: it sits 1.0 mm below the top spacer row, which is what the bar has
-  // to carry the head-clearance slots for.
+  // bottom: it sits below the top spacer row AND keeps a full material web
+  // under the J_PWR pocket.
   const topSpacer = Math.max(...FRONT_REAR_MOUNT.filter(h => h.y > 0).map(h => h.y))
-  expect(b.outline.y1).toBeCloseTo(topSpacer - BRACKET_ALLOWANCE.spacerHeadWall, 6)
+  expect(b.outline.y1).toBeCloseTo(Math.min(
+    topSpacer - BRACKET_ALLOWANCE.spacerHeadWall,
+    BRACKET_POWER_POCKET.y1 - BRACKET_ALLOWANCE.materialToCuts,
+  ), 6)
   expect(b.outline.height).toBeCloseTo(b.outline.y2 - b.outline.y1, 6)
   for (const h of FRONT_REAR_MOUNT) {
     if (h.y > 0) expect(h.y).toBeGreaterThan(b.outline.y1)
@@ -459,10 +501,10 @@ test("bracket slots follow the feedthrough cutouts and keep a printable web", ()
     expect(slot.id).toBe(f.id)
     expect(slot.x).toBe(f.x)
     expect(slot.width).toBeCloseTo(f.cutoutWidth + 2 * BRACKET_ALLOWANCE.slotClearancePerSide, 6)
-    // Inside the board notch in X: outside it the board is solid, so a slot
-    // there could not pass a cable.
-    expect(slot.x - slot.width / 2).toBeGreaterThanOrEqual(NOTCH_BOUNDS.left)
-    expect(slot.x + slot.width / 2).toBeLessThanOrEqual(NOTCH_BOUNDS.right)
+    // Inside the U opening in X: outside it the board is solid, so a slot there
+    // could not pass a cable. NOTCH_BOUNDS is no longer a cut edge.
+    expect(slot.x - slot.width / 2).toBeGreaterThanOrEqual(FRONT_BOARD_OPENING.left)
+    expect(slot.x + slot.width / 2).toBeLessThanOrEqual(FRONT_BOARD_OPENING.right)
     // Open to the top edge.
     expect(slot.yTop).toBeCloseTo(b.outline.y2, 6)
     // Height clearance, not only width: the floor must clear the whole declared
@@ -471,8 +513,8 @@ test("bracket slots follow the feedthrough cutouts and keep a printable web", ()
     const openingBottom = f.y - f.cutoutHeight / 2
     expect(slot.yBottom).toBeLessThanOrEqual(openingBottom)
     expect(slot.yBottom).toBeCloseTo(openingBottom - BRACKET_ALLOWANCE.slotClearancePerSide, 6)
-    // ... and it must stay inside the board notch: below it the board is solid.
-    expect(slot.yBottom).toBeGreaterThanOrEqual(NOTCH_BOUNDS.bottom)
+    // ... and it must stay inside the U opening: below it the board is solid.
+    expect(slot.yBottom).toBeGreaterThanOrEqual(FRONT_BOARD_OPENING.bottom)
   })
   // The reviewed defect: 40 mm slots at x = -5 and +35 touched, giving a 0 mm
   // web. Slots may never touch, and the webs must be printable.
@@ -487,22 +529,29 @@ test("bracket slots follow the feedthrough cutouts and keep a printable web", ()
   }
 })
 
-test("bracket slot floors stay above the notch bottom for every feedthrough", () => {
+test("bracket slot floors stay above the U opening bottom for every feedthrough", () => {
   // A future feedthrough that needs a deeper slot must fail here rather than be
-  // silently clamped: the notch bottom is solid board.
+  // silently clamped: below the opening the board is solid.
   for (const f of USB_FEEDTHROUGHS) {
     const floor = f.y - f.cutoutHeight / 2 - BRACKET_ALLOWANCE.slotClearancePerSide
-    expect(floor).toBeGreaterThan(NOTCH_BOUNDS.bottom)
+    expect(floor).toBeGreaterThan(FRONT_BOARD_OPENING.bottom)
   }
 })
 
 test("bracket clears the top front-rear spacer hardware and carries tie holes", () => {
   const b = FEEDTHROUGH_BRACKET
   const topPair = FRONT_REAR_MOUNT.filter(h => h.y > 0)
-  expect(b.mountHeadClearance).toHaveLength(topPair.length)
+  // Only a spacer whose centre lies under the bar needs a head clearance. The
+  // left one is under the bar's end; the right one (71.5) is outside x2.
+  const underBar = topPair.filter(h =>
+    h.x >= b.outline.x1 && h.x <= b.outline.x2 &&
+    h.y >= b.outline.y1 && h.y <= b.outline.y2)
+  expect(b.mountHeadClearance.map(h => h.x)).toEqual(underBar.map(h => h.x))
+  expect(underBar.map(h => h.x)).toEqual([-69])
+  expect(Math.max(...topPair.map(h => h.x))).toBeGreaterThan(b.outline.x2)
   b.mountHeadClearance.forEach((head, i) => {
-    expect(head.x).toBe(topPair[i]!.x)
-    expect(head.y).toBe(topPair[i]!.y)
+    expect(head.x).toBe(underBar[i]!.x)
+    expect(head.y).toBe(underBar[i]!.y)
     // PROVISIONAL envelope: bigger than the D2.7 clearance hole, and off both
     // bracket mounts so the bar keeps its nut material. The real head is a gate.
     expect(head.diameter).toBeGreaterThan(MOUNT_HOLE_DIAMETER)
@@ -511,12 +560,32 @@ test("bracket clears the top front-rear spacer hardware and carries tie holes", 
         head.diameter / 2 + MOUNT_HOLE_DIAMETER / 2)
     }
   })
-  // One tie hole per web: between the slots and outside the end slots.
+  // One tie hole per web: between the slots and outside the end slots. The
+  // old first tie sat at -59.225, inside the 15.6 mm USB-C slot; this is the
+  // regression the left mount move also has to clear.
   expect(b.tieHoles).toHaveLength(b.slots.length + 1)
+  expect(b.tieHoles[0]!.x).toBeCloseTo(-62.475, 3)
   for (const tie of b.tieHoles) {
     for (const slot of b.slots) {
-      const dx = Math.max(slot.x - slot.width / 2 - tie.x, 0, tie.x - (slot.x + slot.width / 2))
-      expect(dx).toBeGreaterThan(0)
+      const gapX = Math.max(
+        slot.x - slot.width / 2 - (tie.x + tie.diameter / 2),
+        (tie.x - tie.diameter / 2) - (slot.x + slot.width / 2),
+        0,
+      )
+      const gapY = Math.max(
+        slot.yBottom - (tie.y + tie.diameter / 2),
+        (tie.y - tie.diameter / 2) - slot.yTop,
+        0,
+      )
+      expect(Math.hypot(gapX, gapY)).toBeGreaterThan(0)
+    }
+    for (const x of b.mountX) {
+      expect(Math.hypot(tie.x - x, tie.y - b.mountY))
+        .toBeGreaterThan(tie.diameter / 2 + MOUNT_HOLE_DIAMETER / 2)
+    }
+    for (const head of b.mountHeadClearance) {
+      expect(Math.hypot(tie.x - head.x, tie.y - head.y))
+        .toBeGreaterThan(tie.diameter / 2 + head.diameter / 2)
     }
     expect(tie.x - tie.diameter / 2).toBeGreaterThan(b.outline.x1)
     expect(tie.x + tie.diameter / 2).toBeLessThan(b.outline.x2)
@@ -607,10 +676,10 @@ test("display underside gap and light-pipe reach stay pending, not claimed", () 
 test("provisional depth chain stays inside the owner target", () => {
   expect(DEPTH_TARGET).toBe(110)
   expect(provisionalInstalledDepth()).toBeLessThanOrEqual(DEPTH_TARGET)
-  // Both boards share a centre. The rear board grew 101.6 -> 145 mm on
+  // Both boards share a centre. The rear board grew 101.6 -> 148 mm on
   // 2026-11-13 so the interconnect and the display carrier can sit on it; the
-  // front board (150 mm) overhangs it by 2.5 mm per side.
-  expect((FRONT_PCB.width - REAR_PCB.width) / 2).toBeCloseTo(2.5, 6)
+  // front board (150 mm) overhangs it by 1.0 mm per side.
+  expect((FRONT_PCB.width - REAR_PCB.width) / 2).toBeCloseTo(1.0, 6)
   // The Pi left the module for its own 20HP mounting panel (owner decision
   // 2026-11-12), so the module chain ends at the socketed Pico stack. Both
   // chains stay inside the Eurorack Go's 62 mm UPPER row on paper, and the Pi
@@ -730,19 +799,19 @@ test("display patterns follow the drawing's asymmetric insets, never a mirrored 
 test("the module fits the front board and clears the owner-fixed control column", () => {
   const d = DISPLAY_CONCEPT
   // The 2026-11-13 respin grows the board 128 -> 150 mm: the module leaves the
-  // board for an opening, so the left side is now a 12.5 mm margin that carries
+  // board for an opening, so the left side is now a 12.0 mm margin that carries
   // the MIDI circuit instead of a 1.5 mm ligament.
   expect(FRONT_PCB.width).toBe(150)
-  expect(d.x - d.width / 2).toBe((-FRONT_PCB.width / 2) + 12.5)
+  expect(d.x - d.width / 2).toBe((-FRONT_PCB.width / 2) + 12.0)
   expect(RIGHT_COLUMN.x).toBe(52)
-  expect((RIGHT_CONTROLS.TEMPO.x - 6.25) - (d.x + d.width / 2)).toBeCloseTo(2.25, 6)
+  expect((RIGHT_CONTROLS.TEMPO.x - 6.25) - (d.x + d.width / 2)).toBeCloseTo(2.75, 6)
   // The rail-hole edge and the window LEFT edge are separated in X only; they
   // sit at different Y, so the x projection is NOT a web. The real 2D distance
   // is measured from the emitted aperture polygon in the rail test below.
   const railHoleEdge = Math.abs(RAIL_HOLES[0]!.x) - RAIL_HOLE_DIAMETER / 2
   expect(railHoleEdge).toBeCloseTo(66.98, 6)
   const apertureLeftEdge = PANEL_LCD_CUTOUT.x - PANEL_LCD_CUTOUT.width / 2
-  expect(railHoleEdge + apertureLeftEdge).toBeCloseTo(3.87, 2)
+  expect(railHoleEdge + apertureLeftEdge).toBeCloseTo(3.37, 2)
   // Right margin: board edge to the knob body, now wide enough for the
   // interconnect and one MIDI channel (2026-11-13 respin).
   expect(FRONT_PCB.width / 2 - (RIGHT_COLUMN.x + 6.25)).toBeCloseTo(16.75, 6)
@@ -802,20 +871,20 @@ test("the panel width keeps the rail grid and a printable edge", () => {
 })
 
 test("the LCD aperture to rail-hole clearance is measured in two dimensions", () => {
-  // The rail hole and the window LEFT edge differ by 3.87 mm in X only, and the
+  // The rail hole and the window LEFT edge differ by 3.37 mm in X only, and the
   // two features sit at different Y. That projection is NOT a web and NOT a
   // shortest clearance; the real distance comes from the emitted polygon.
   const aperture = roundedRectOutline(PANEL_LCD_CUTOUT)
   const edges = RAIL_HOLES.map(h => polygonDistance(h.x, h.y, aperture) - RAIL_HOLE_DIAMETER / 2)
   const nearest = Math.min(...edges)
   // Measured from the polygon: the upper-left rail hole is the closest one.
-  expect(nearest).toBeCloseTo(15.423, 2)
+  expect(nearest).toBeCloseTo(15.247, 2)
   const railEdge = Math.abs(RAIL_HOLES[0]!.x) - RAIL_HOLE_DIAMETER / 2
   const windowLeftEdge = PANEL_LCD_CUTOUT.x - PANEL_LCD_CUTOUT.width / 2
   const projection = railEdge + windowLeftEdge
   expect(railEdge).toBeCloseTo(66.98, 6)
-  expect(windowLeftEdge).toBeCloseTo(-63.11, 6)
-  expect(projection).toBeCloseTo(3.87, 2)
+  expect(windowLeftEdge).toBeCloseTo(-63.61, 6)
+  expect(projection).toBeCloseTo(3.37, 2)
   // The 2D figure is an order of magnitude larger than the projection: the two
   // features are far apart in Y, which is why the projection is meaningless.
   expect(nearest).toBeGreaterThan(projection + 10)
@@ -832,14 +901,14 @@ test("the panel-edge and rail-hole distances quoted in the docs are canonical", 
   const windowLeft = PANEL_LCD_CUTOUT.x - PANEL_LCD_CUTOUT.width / 2
   const aperture = roundedRectOutline(PANEL_LCD_CUTOUT)
   // perpendicular to the vertical panel edge: a true 2D distance
-  expect(panelEdge + windowLeft).toBeCloseTo(12.89, 2)
+  expect(panelEdge + windowLeft).toBeCloseTo(12.39, 2)
   // X projection only (the rail hole is at a different Y)
-  expect(railEdge + windowLeft).toBeCloseTo(3.87, 2)
+  expect(railEdge + windowLeft).toBeCloseTo(3.37, 2)
   // true 2D distance from the emitted polygon to the nearest rail-hole edge
   const nearest = Math.min(...RAIL_HOLES.map(h =>
     polygonDistance(h.x, h.y, aperture) - r))
-  expect(nearest).toBeCloseTo(15.423, 2)
-  // value knob body (Ø12.5 at x = 52; y = 20 since the 2026-11-13 column move)
+  expect(nearest).toBeCloseTo(15.247, 2)
+  // value knob body (Ø12.5 at x = 52; y = 31 since the 2026-11-13 column move)
   const knobX = RIGHT_CONTROLS.TEMPO.x
   const knobY = RIGHT_CONTROLS.TEMPO.y
   const knobRight = knobX + 6.25
@@ -847,28 +916,27 @@ test("the panel-edge and rail-hole distances quoted in the docs are canonical", 
   expect(railEdge - knobRight).toBeCloseTo(8.73, 2)
   const knobToRail = Math.min(...RAIL_HOLES.map(h =>
     Math.hypot(knobX - h.x, knobY - h.y) - 6.25 - r))
-  // recomputed for y = 20: hypot(16.58, 41.25) - 6.25 - 1.60
-  expect(knobToRail).toBeCloseTo(36.607, 2)
+  // recomputed for y = 31: hypot(16.58, 30.25) - 6.25 - 1.60
+  expect(knobToRail).toBeCloseTo(26.646, 2)
   // the projections are strictly smaller than the 2D figures, which is why the
   // paragraph must never call them webs
   expect(nearest).toBeGreaterThan(railEdge + windowLeft)
   expect(knobToRail).toBeGreaterThan(railEdge - knobRight)
 })
 
-test("the standoff-hole to rail-hole web is measured from the canon data", () => {
-  let best = Infinity
+test("the retained standoff data is inside the board and is not a drilled hole", () => {
+  // FRONT_BOARD_HOLES is DATA only: the front board drills none of it. This
+  // test keeps the retained positions on board material and far enough from the
+  // rail holes that a future decision can use them; it no longer claims a
+  // physical web for a hole that is not in the board.
   for (const s of FRONT_BOARD_HOLES) {
+    expect(Math.abs(s.x) + MOUNT_HOLE_DIAMETER / 2).toBeLessThan(FRONT_PCB.width / 2)
+    expect(Math.abs(s.y) + MOUNT_HOLE_DIAMETER / 2).toBeLessThan(FRONT_PCB.height / 2)
     for (const r of RAIL_HOLES) {
-      best = Math.min(best, Math.hypot(s.x - r.x, s.y - r.y))
+      expect(Math.hypot(s.x - r.x, s.y - r.y))
+        .toBeGreaterThan(MOUNT_HOLE_DIAMETER / 2 + RAIL_HOLE_DIAMETER / 2)
     }
   }
-  // Nearest pair: standoff (-61, -53) and rail (-68.58, -61.25).
-  expect(best).toBeCloseTo(11.204, 3)
-  const web = best - MOUNT_HOLE_DIAMETER / 2 - RAIL_HOLE_DIAMETER / 2
-  expect(web).toBeCloseTo(8.254, 3)
-  // Camera-heads/nuts are NOT sized here: the hardware envelope is unmeasured
-  // and stays a pending physical check (see docs/mechanical-stack.md).
-  expect(web).toBeGreaterThan(0)
 })
 
 test("the aperture clears the transport row and the feedthrough label row", () => {

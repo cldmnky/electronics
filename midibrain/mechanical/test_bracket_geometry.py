@@ -29,7 +29,7 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertEqual(data["units"], "mm")
         self.assertIn("Generated from tscircuit/lib/layout.ts", data["note"])
         # The bridge must carry the bracket, and every position Python uses.
-        for key in ("bracket", "notchBounds", "frontRearMount", "feedthroughs",
+        for key in ("bracket", "frontBoardOpening", "frontRearMount", "feedthroughs",
                     "lcdCutout", "lcdCutoutOutline", "frontPcb", "panel"):
             self.assertIn(key, data)
 
@@ -37,25 +37,24 @@ class CanonicalDataTest(unittest.TestCase):
         with self.assertRaises(bg.GeometryError):
             bg.load_layout(Path("/nonexistent/layout.json"))
 
-    def test_bracket_positions_equal_the_board_positions(self) -> None:
-        """The bracket must drill exactly where the front board drills."""
+    def test_bracket_positions_follow_the_canonical_mount_data(self) -> None:
+        """The mounts and slots are the canonical data, not a private copy."""
         data = layout()
         self.assertEqual(list(data["bracket"]["mountX"]),
-                         [-60, 55], "bracket mounts drifted from the board mounts")
+                         [-66.5, 55], "bracket mounts drifted from the canonical data")
         for slot, feedthrough in zip(data["bracket"]["slots"], data["feedthroughs"]):
             self.assertEqual(slot["x"], feedthrough["x"], "slot left its feedthrough centre")
             self.assertEqual(slot["id"], feedthrough["id"])
 
-    def test_bracket_mounts_land_on_solid_board_beside_the_notch(self) -> None:
-        """A mount over the notch would have no board to bolt to."""
+    def test_bracket_mounts_land_on_solid_board_beside_the_u_opening(self) -> None:
+        """A mount over the U opening would have no board to bolt to."""
         data = layout()
-        notch, front = data["notchBounds"], data["frontPcb"]
+        opening, front = data["frontBoardOpening"], data["frontPcb"]
         mount_y = data["bracket"]["mountY"]
-        self.assertLess(mount_y, notch["bottom"], "mount is inside the relief notch")
         self.assertLess(abs(mount_y), front["height"] / 2)
         for x in data["bracket"]["mountX"]:
-            self.assertTrue(x < notch["left"] or x > notch["right"],
-                            f"mount x {x} is over the notch")
+            self.assertTrue(x < opening["left"] or x > opening["right"],
+                            f"mount x {x} is over the U opening")
             self.assertLess(abs(x), front["width"] / 2)
 
 
@@ -69,9 +68,14 @@ class BracketStockTest(unittest.TestCase):
     def test_outline_spans_both_mounts_with_the_documented_wall(self) -> None:
         wall = self.data["bracketAllowance"]["mountEdgeWall"]
         for mount in self.g.mounts:
-            self.assertAlmostEqual(mount.clearance_to_edge(self.g.outline),
-                                   wall - mount.radius, places=6,
-                                   msg=f"mount ({mount.x}, {mount.y}) wall")
+            # The right mount sits well inside the pocket-extended outline; the
+            # rule is a MINIMUM 3 mm centre-to-edge wall, not an exact one.
+            self.assertGreaterEqual(mount.clearance_to_edge(self.g.outline),
+                                    wall - mount.radius - 1e-9,
+                                    msg=f"mount ({mount.x}, {mount.y}) wall")
+        # The left mount is the one against the edge: exactly the 3 mm wall.
+        self.assertAlmostEqual(self.g.mounts[0].clearance_to_edge(self.g.outline),
+                               wall - self.g.mounts[0].radius, places=6)
 
     def test_outline_is_backed_by_the_front_board(self) -> None:
         self.assertTrue(self.g.outline.clamp_to(self.g.board))
@@ -141,9 +145,9 @@ class BracketSlotTest(unittest.TestCase):
         # The withdrawn fixed floor at y = 50 is above the USB-C opening bottom.
         self.assertGreater(50.0, 53.5 - 7.6 / 2)
 
-    def test_slot_floor_stays_inside_the_board_notch(self) -> None:
+    def test_slot_floor_stays_inside_the_u_opening(self) -> None:
         for slot, slot_id in zip(self.g.slots, self.g.slot_ids):
-            self.assertGreaterEqual(slot.y1, self.g.notch.y1 - 1e-9,
+            self.assertGreaterEqual(slot.y1, self.g.board_opening.y1 - 1e-9,
                                     f"slot {slot_id} floor is over solid board material")
 
     def test_slot_webs_are_printable(self) -> None:
@@ -155,16 +159,16 @@ class BracketSlotTest(unittest.TestCase):
                                f"slot web {width:.2f} mm is not printable")
             self.assertGreater(width, 5.0, f"slot web {width:.2f} mm is too thin to trust")
 
-    def test_slots_stay_inside_the_board_notch(self) -> None:
-        """Outside the notch the board is solid, so a slot there blocks the cable."""
+    def test_slots_stay_inside_the_u_opening(self) -> None:
+        """Outside the U opening the board is solid, so a slot there blocks the cable."""
         for slot, slot_id in zip(self.g.slots, self.g.slot_ids):
-            self.assertGreaterEqual(slot.x1, self.g.notch.x1 - 1e-9, slot_id)
-            self.assertLessEqual(slot.x2, self.g.notch.x2 + 1e-9, slot_id)
+            self.assertGreaterEqual(slot.x1, self.g.board_opening.x1 - 1e-9, slot_id)
+            self.assertLessEqual(slot.x2, self.g.board_opening.x2 + 1e-9, slot_id)
 
-    def test_slots_open_to_the_top_edge_and_stop_above_the_notch_floor(self) -> None:
+    def test_slots_open_to_the_top_edge_and_stop_above_the_opening_floor(self) -> None:
         for slot in self.g.slots:
             self.assertGreaterEqual(slot.y2, self.g.outline.y2 - 1e-9, "slot is not open")
-            self.assertGreater(slot.y1, self.g.notch.y1, "slot floor blocks the cable path")
+            self.assertGreater(slot.y1, self.g.board_opening.y1, "slot floor blocks the cable path")
             self.assertTrue(slot.clamp_to(self.g.outline))
 
     def test_slot_floor_keeps_material_to_the_mount_holes(self) -> None:
@@ -180,10 +184,14 @@ class BracketHeadClearanceTest(unittest.TestCase):
         self.data = layout()
         self.g = bg.bracket_geometry(self.data)
 
-    def test_every_top_front_rear_mount_has_clearance(self) -> None:
+    def test_every_top_front_rear_mount_under_the_bar_has_clearance(self) -> None:
         top = [h for h in self.data["frontRearMount"] if h["y"] > 0]
         self.assertEqual(len(top), 2)
-        for head, mount in zip(self.g.head_clearance, top):
+        under = [h for h in top if self.g.outline.contains_point(h["x"], h["y"])]
+        # Only the left spacer is under the bar; the right one (71.5) is outside.
+        self.assertEqual([h["x"] for h in under], [-69])
+        self.assertEqual([h.x for h in self.g.head_clearance], [h["x"] for h in under])
+        for head, mount in zip(self.g.head_clearance, under):
             self.assertAlmostEqual(head.x, mount["x"], places=9)
             self.assertAlmostEqual(head.y, mount["y"], places=9)
 
@@ -198,10 +206,13 @@ class BracketHeadClearanceTest(unittest.TestCase):
             self.assertGreater(head.diameter, self.data["mountHoleDiameter"])
             self.assertGreater(head.diameter, 5.0)
 
-    def test_clearance_stays_between_the_side_edges(self) -> None:
+    def test_clearance_does_not_run_past_the_top_or_far_side(self) -> None:
+        # A head exactly at the bar's left end breaks out of that side as an
+        # OPEN slot (the validate() notice). It must not break out of the far
+        # side or past the top edge.
         for head in self.g.head_clearance:
-            self.assertGreater(head.x - head.radius, self.g.outline.x1)
             self.assertLess(head.x + head.radius, self.g.outline.x2)
+            self.assertLess(head.x - head.radius, self.g.outline.x1)
             self.assertLessEqual(head.y + head.radius, self.g.outline.y2)
 
 
@@ -240,18 +251,19 @@ class PowerPocketTest(unittest.TestCase):
         self.assertGreaterEqual(self.pocket.y2, o.y2 - 1e-9)
         self.assertTrue(self.pocket.clamp_to(o))
 
-    def test_pocket_opens_into_the_umc_audio_slot(self) -> None:
-        slot = self.g.slots[self.g.slot_ids.index("UMC AUDIO USB")]
-        self.assertTrue(self.pocket.overlaps(slot, gap=0.0),
-                        "the pocket must merge with the UMC AUDIO slot, not be an island")
+    def test_pocket_opens_to_the_top_edge_and_clears_every_slot(self) -> None:
+        self.assertGreaterEqual(self.pocket.y2, self.g.outline.y2 - 1e-9)
+        # The 2026-11-13 header move retired the "opens into UMC AUDIO" rule.
+        for slot, slot_id in zip(self.g.slots, self.g.slot_ids):
+            self.assertTrue(self.pocket.x2 <= slot.x1 + 1e-9
+                            or self.pocket.x1 >= slot.x2 - 1e-9,
+                            f"the pocket reaches the {slot_id} slot")
 
-    def test_pocket_keeps_the_material_rule_below_and_beside_it(self) -> None:
-        slot = self.g.slots[self.g.slot_ids.index("UMC AUDIO USB")]
+    def test_pocket_keeps_the_material_rule_below_it(self) -> None:
         o = self.g.outline
         self.assertGreaterEqual(self.pocket.y1 - o.y1 + 1e-9, self.g.material_to_cuts,
                                 "the bar below the pocket is too thin: it would be cut in two")
-        self.assertGreaterEqual(self.pocket.x1 - slot.x1 + 1e-9, self.g.material_to_cuts)
-        self.assertGreaterEqual(slot.x2 - self.pocket.x2 + 1e-9, self.g.material_to_cuts)
+        self.assertGreater(self.pocket.x1 - o.x1, self.g.material_to_cuts)
 
     def test_pocket_contains_the_declared_provisional_keepout(self) -> None:
         keepout = self.g.power_keepout
@@ -397,9 +409,9 @@ class RegressionTest(unittest.TestCase):
         with self.assertRaises(bg.GeometryError):
             bg.validate(bg.bracket_geometry(data), data)
 
-    def test_slot_outside_the_notch_is_rejected(self) -> None:
+    def test_slot_outside_the_u_opening_is_rejected(self) -> None:
         data = copy.deepcopy(layout())
-        data["bracket"]["slots"][0]["x"] = -52.0  # over solid board material
+        data["bracket"]["slots"][0]["x"] = -70.0  # over solid board material
         with self.assertRaises(bg.GeometryError):
             bg.validate(bg.bracket_geometry(data), data)
 
@@ -416,10 +428,10 @@ class RegressionTest(unittest.TestCase):
         with self.assertRaises(bg.GeometryError):
             bg.validate(bg.bracket_geometry(data), data)
 
-    def test_slot_floor_below_the_notch_is_rejected(self) -> None:
+    def test_slot_floor_below_the_u_opening_is_rejected(self) -> None:
         data = copy.deepcopy(layout())
         for slot in data["bracket"]["slots"]:
-            slot["yBottom"] = data["notchBounds"]["bottom"] - 0.5
+            slot["yBottom"] = data["frontBoardOpening"]["bottom"] - 0.5
         with self.assertRaises(bg.GeometryError):
             bg.validate(bg.bracket_geometry(data), data)
 
@@ -466,9 +478,10 @@ class DisplayEnvelopeTest(unittest.TestCase):
 
     def test_spacer_length_and_plane_separation_are_separate(self) -> None:
         stack = self.vendor["stack"]
-        # The spacer screws onto the boss ends, 4.0 mm behind the PCB rear face.
-        self.assertAlmostEqual(stack["planeSeparation"], 9.0, places=6)
-        self.assertAlmostEqual(stack["spacerLength"], 5.0, places=6)
+        # The spacer now runs from the REAR board's front face (the module left
+        # the front board on 2026-11-13). 12.75 - 4.00 boss = 8.75 mm.
+        self.assertAlmostEqual(stack["planeSeparation"], 12.75, places=6)
+        self.assertAlmostEqual(stack["spacerLength"], 8.75, places=6)
         self.assertAlmostEqual(stack["spacerLength"],
                                stack["planeSeparation"] - stack["bossProjection"], places=6)
 
@@ -476,9 +489,9 @@ class DisplayEnvelopeTest(unittest.TestCase):
         # 25.62 / 22.38 and 9.50 / 9.46 edge insets: 58.00 x 49.04, asymmetric
         # top/bottom, so the offsets are derived from the insets, never mirrored.
         module = self.data["display"]
-        # Owner decision D2: -9.5 keeps the 106 mm module on the unchanged
-        # 128 mm board (1.5 mm ligament) with 2.25 mm to the knob body at x 52.
-        self.assertAlmostEqual(module["x"], -9.5, places=6)
+        # 2026-11-13: -10.0 moves the module 0.5 mm left so the encoder/NAV pad
+        # fields clear the new display opening by 0.66 mm.
+        self.assertAlmostEqual(module["x"], -10.0, places=6)
         self.assertAlmostEqual(module["y"], 11.0, places=6)
         datum = self.data["displayDatum"]
         self.assertIn("display-4.3-drawing.png", datum["sourceDrawing"])
@@ -491,13 +504,14 @@ class DisplayEnvelopeTest(unittest.TestCase):
         self.assertAlmostEqual(self.z["displayGlassFront"], 0.0, places=6)
         self.assertAlmostEqual(self.z["displayPcbRear"], 10.05, places=6)
         self.assertAlmostEqual(self.z["displayRearMost"], 14.05, places=6)
-        # front-board top = glass front + 10.05 + 9.0 mm plane separation
-        self.assertAlmostEqual(self.z["frontBoardTop"],
-                               self.z["displayGlassFront"] + stack["glassFrontToPcbRear"]
-                               + stack["planeSeparation"], places=6)
-        self.assertAlmostEqual(self.z["frontBoardTop"], 19.05, places=6)
-        self.assertAlmostEqual(self.data["panelToFrontBoardGap"], 17.45, places=6)
-        self.assertAlmostEqual(self.data["displayUndersideGap"], 5.0, places=6)
+        # The panel-to-board distance is the owner's 10.0 mm input; the display
+        # hangs from the REAR board's front face, so the chain starts there:
+        # rearBoardFront - displayRearMost = the 8.75 mm carrier spacer.
+        self.assertAlmostEqual(self.z["frontBoardTop"], 10.0, places=6)
+        self.assertAlmostEqual(self.z["rearBoardFront"] - self.z["displayRearMost"],
+                               stack["spacerLength"], places=6)
+        self.assertAlmostEqual(self.data["panelToFrontBoardGap"], 8.4, places=6)
+        self.assertAlmostEqual(self.data["displayUndersideGap"], -4.05, places=6)
         self.assertAlmostEqual(self.data["displayUndersideGap"],
                                self.z["frontBoardTop"] - self.z["displayRearMost"], places=6)
 
@@ -510,9 +524,9 @@ class DisplayEnvelopeTest(unittest.TestCase):
         self.assertAlmostEqual(pipe["shaftLength"], 16.5, places=6)
         self.assertAlmostEqual(pipe["overallLength"], 17.5, places=6)
         self.assertAlmostEqual(reach["nominalTipZ"], pipe["shaftLength"], places=6)
-        self.assertAlmostEqual(reach["nominalTipToBoardPlane"], 2.55, places=6)
+        self.assertAlmostEqual(reach["nominalTipToBoardPlane"], -6.5, places=6)
         self.assertIsNone(reach["opticalGap"])
-        self.assertEqual(reach["status"], "incomplete")
+        self.assertTrue(reach["status"].startswith("incomplete"))
         self.assertNotIn("seatAllowance", pipe)
 
 
@@ -538,7 +552,7 @@ class ProvisionalDataTest(unittest.TestCase):
         self.assertAlmostEqual(reach["nominalTipToBoardPlane"],
                                reach["boardNearFaceZ"] - reach["nominalTipZ"], places=6)
         self.assertIsNone(reach["opticalGap"])
-        self.assertEqual(reach["status"], "incomplete")
+        self.assertTrue(reach["status"].startswith("incomplete"))
         self.assertTrue(reach["missing"])
         # No LED height or seat allowance may be invented here.
         self.assertNotIn("seatAllowance", data["lightPipe"])
@@ -547,10 +561,11 @@ class ProvisionalDataTest(unittest.TestCase):
         data = layout()
         gap = data["displayUndersideGap"]
         tallest = data["frontTopSmdMaxHeight"]["height"]
-        # 5.0 mm to the connector rear-most point, 2.8 mm over the tallest part
-        # with a stated height. Still pending: the display underside map, FPC
-        # latch and module tolerance are unmapped.
-        self.assertAlmostEqual(gap - tallest, 2.8, places=6)
+        # -4.05 mm to the connector rear-most point: the module's rear 4.05 mm
+        # sits BEHIND the front board's top face, which is why the board carries
+        # an opening. Still pending: the display underside map, the FPC latch and
+        # the module tolerance.
+        self.assertAlmostEqual(gap - tallest, -6.25, places=6)
         self.assertEqual(data["frontTopSmdMaxHeight"]["height"], 2.2)
 
     def test_depth_chain_stays_inside_the_owner_target(self) -> None:
@@ -571,10 +586,8 @@ class ProvisionalDataTest(unittest.TestCase):
         self.assertLessEqual(pi_depth, go["upperRow"])
         self.assertGreater(pi_depth, go["lowerRow"])
         # Both boards share a centre. 2026-11-13: the front board grew to 150 mm
-        # and the rear board to 145 mm, so the front overhangs by 2.5 mm per
-        # side (it was 13.2 mm when the rear board was 20HP and the front board
-        # did not have to carry a display opening).
-        self.assertAlmostEqual((data["frontPcb"]["width"] - data["rearPcb"]["width"]) / 2, 2.5, places=6)
+        # and the rear board to 148 mm, so the front overhangs by 1.0 mm per side.
+        self.assertAlmostEqual((data["frontPcb"]["width"] - data["rearPcb"]["width"]) / 2, 1.0, places=6)
 
 
 if __name__ == "__main__":

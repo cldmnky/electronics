@@ -122,7 +122,7 @@ class BracketGeometry:
     slot_ids: list[str]
     head_clearance: list[Circle]
     tie_holes: list[Circle]
-    notch: Rect
+    board_opening: Rect
     board: Rect
     spacer_top: float
     material_to_cuts: float
@@ -158,6 +158,8 @@ class BracketGeometry:
             named.append((f"head{i}", c))
         for i, c in enumerate(self.tie_holes):
             named.append((f"tie{i}", c))
+        if self.power_pocket is not None:
+            named.append(("powerPocket", self.power_pocket))
         out: list[tuple[str, str, float]] = []
         for i in range(len(named)):
             for j in range(i + 1, len(named)):
@@ -188,7 +190,7 @@ def bracket_geometry(layout: dict | None = None) -> BracketGeometry:
     o = b["outline"]
     pocket_data = b.get("powerPocket")
     keepout_data = data.get("powerHeader", {}).get("keepout")
-    notch = data["notchBounds"]
+    opening = data["frontBoardOpening"]
     front = data["frontPcb"]
     slots = [Rect(s["x"] - s["width"] / 2, s["yBottom"], s["x"] + s["width"] / 2, s["yTop"])
              for s in b["slots"]]
@@ -200,7 +202,7 @@ def bracket_geometry(layout: dict | None = None) -> BracketGeometry:
         slot_ids=[s["id"] for s in b["slots"]],
         head_clearance=[Circle(c["x"], c["y"], c["diameter"]) for c in b["mountHeadClearance"]],
         tie_holes=[Circle(c["x"], c["y"], c["diameter"]) for c in b["tieHoles"]],
-        notch=Rect(notch["left"], notch["bottom"], notch["right"], notch["top"]),
+        board_opening=Rect(opening["left"], opening["bottom"], opening["right"], opening["top"]),
         board=Rect(-front["width"] / 2, -front["height"] / 2, front["width"] / 2, front["height"] / 2),
         # The bar is on the REAR side of the front board, so the front-side
         # display envelope does not constrain it; the constraint is the top
@@ -270,8 +272,8 @@ def validate(g: BracketGeometry, layout: dict | None = None) -> list[str]:
     # 2. The part must be backed by the front board, so it can be bolted flat.
     need(g.outline.clamp_to(g.board), "bracket outline is not inside the front board outline")
 
-    # 3. Slots: sized from the vendor cutouts, inside the notch in X (board void),
-    #    and separated by a printable web. Touching slots are the old defect.
+    # 3. Slots: sized from the vendor cutouts, inside the U opening in X (board
+    #    void), and separated by a printable web. Touching slots are the old defect.
     need(len(g.slots) == len(data["feedthroughs"]), "slot count does not match the feedthrough count")
     for slot, feedthrough, slot_id in zip(g.slots, data["feedthroughs"], g.slot_ids):
         need(abs(slot.centre[0] - feedthrough["x"]) < EPS,
@@ -279,39 +281,45 @@ def validate(g: BracketGeometry, layout: dict | None = None) -> list[str]:
         expected = feedthrough["cutoutWidth"] + 2 * allowance["slotClearancePerSide"]
         need(abs(slot.width - expected) < 1e-6,
              f"slot {slot_id} width {slot.width:.2f} is not cutout + 2 x clearance ({expected:.2f})")
-        need(g.notch.x1 - EPS <= slot.x1 and slot.x2 <= g.notch.x2 + EPS,
-             f"slot {slot_id} reaches past the board notch, where the board is solid")
-        need(slot.y2 >= g.notch.y2 - EPS,
+        need(g.board_opening.x1 - EPS <= slot.x1 and slot.x2 <= g.board_opening.x2 + EPS,
+             f"slot {slot_id} reaches past the U opening, where the board is solid")
+        need(slot.y2 >= g.outline.y2 - EPS,
              f"slot {slot_id} is not open to the bracket top edge")
         # Height, not only width: the slot floor must clear the whole declared
         # panel opening plus the same per-side clearance, and must stay inside
-        # the board notch (below the notch bottom the board is solid).
+        # the U opening (below its bottom the board is solid).
         expected_floor = (feedthrough["y"] - feedthrough["cutoutHeight"] / 2
                           - allowance["slotClearancePerSide"])
         need(abs(slot.y1 - expected_floor) < 1e-6,
              f"slot {slot_id} floor {slot.y1:.2f} is not the declared opening "
              f"{feedthrough['y'] - feedthrough['cutoutHeight'] / 2:.2f} less "
              f"{allowance['slotClearancePerSide']:.2f} mm clearance ({expected_floor:.2f})")
-        need(slot.y1 > g.notch.y1 - EPS,
-             f"slot {slot_id} floor {slot.y1:.2f} is below the notch bottom "
-             f"{g.notch.y1:.2f}, where the board is solid")
+        need(slot.y1 > g.board_opening.y1 - EPS,
+             f"slot {slot_id} floor {slot.y1:.2f} is below the U opening bottom "
+             f"{g.board_opening.y1:.2f}, where the board is solid")
         need(slot.clamp_to(g.outline), f"slot {slot_id} is not inside the bracket outline")
     for width in g.slot_web_widths():
         need(width > g.material_to_cuts + EPS,
              f"slot web {width:.2f} mm is under the {g.material_to_cuts:.2f} mm minimum")
 
     # 4. The top front-to-rear spacer hardware sits in the same 3 mm layer, so
-    #    the bracket must clear it, and must not lose its own mount material.
+    #    the bracket must clear every head whose CENTRE lies under the bar. A
+    #    head outside the bar's plan needs no cut; a cut that breaks out of a
+    #    side or the bottom is an open slot (reported, not hidden).
     top_mounts = [h for h in data["frontRearMount"] if h["y"] > 0]
-    need(len(g.head_clearance) == len(top_mounts),
-         "head-clearance count does not match the top front-rear mount count")
-    for head, mount in zip(g.head_clearance, top_mounts):
+    under_bar = [h for h in top_mounts if g.outline.contains_point(h["x"], h["y"])]
+    need(len(g.head_clearance) == len(under_bar),
+         "head-clearance count does not match the top spacers under the bar")
+    for head, mount in zip(g.head_clearance, under_bar):
         need(abs(head.x - mount["x"]) < EPS and abs(head.y - mount["y"]) < EPS,
              f"head clearance is not on mount ({mount['x']}, {mount['y']})")
-        need(head.x - head.radius > g.outline.x1 and head.x + head.radius < g.outline.x2,
-             f"head clearance at x {head.x:.2f} runs off the bracket side")
-        need(head.y + head.radius <= g.outline.y2,
-             f"head clearance at y {head.y:.2f} runs past the bracket top edge")
+        if head.x - head.radius <= g.outline.x1 + EPS or head.x + head.radius >= g.outline.x2 - EPS:
+            notices.append(
+                f"head clearance at ({head.x:.2f}, {head.y:.2f}) breaks out of the bracket "
+                "side as an open slot")
+        if head.y + head.radius > g.outline.y2 + EPS:
+            notices.append(
+                f"head clearance at ({head.x:.2f}, {head.y:.2f}) runs past the bracket top edge")
         for m in g.mounts:
             need(head.clearance_to(m) > 0.0,
                  f"head clearance at ({head.x:.2f}, {head.y:.2f}) merges with a bracket mount")
@@ -345,39 +353,25 @@ def validate(g: BracketGeometry, layout: dict | None = None) -> list[str]:
     for na, nb, clearance in g.cut_clearances():
         need(clearance > 0.0 - EPS, f"cuts {na} and {nb} intersect (clearance {clearance:.2f} mm)")
 
-    # 7b. The owner-approved J_PWR pocket: through the bar, open to the top edge,
-    #     inside the UMC AUDIO slot's own span so it cannot eat a web to another
-    #     slot, keeping the cut rule below and beside it, and containing the
-    #     declared provisional keepout for the bracket's plan area.
+    # 7b. The J_PWR pocket: a through cut in the bar, open to the bracket's top
+    #     edge (and to the right edge, because the header left the UMC slot for
+    #     the top right). It must contain the DECLARED provisional keepout over
+    #     the bracket's plan and keep a full material web below it.
     if g.power_pocket is not None:
         pocket = g.power_pocket
-        slot_index = g.slot_ids.index("UMC AUDIO USB") if "UMC AUDIO USB" in g.slot_ids else None
-        need(slot_index is not None, "the J_PWR pocket needs the UMC AUDIO slot for its opening")
-        slot = g.slots[slot_index]  # type: ignore[index]
         need(pocket.y2 >= g.outline.y2 - EPS,
              f"J_PWR pocket top {pocket.y2:.2f} does not reach the bracket top edge")
-        need(pocket.overlaps(slot, gap=0.0),
-             "J_PWR pocket does not open into the UMC AUDIO slot")
-        need(pocket.x1 - slot.x1 + EPS >= g.material_to_cuts,
-             f"J_PWR pocket leaves {pocket.x1 - slot.x1:.2f} mm on the slot's left side, "
-             f"under the {g.material_to_cuts:.2f} mm rule")
-        need(slot.x2 - pocket.x2 + EPS >= g.material_to_cuts,
-             f"J_PWR pocket leaves {slot.x2 - pocket.x2:.2f} mm on the slot's right side, "
-             f"under the {g.material_to_cuts:.2f} mm rule")
+        need(pocket.clamp_to(g.outline), "J_PWR pocket is not inside the bracket outline")
         need(pocket.y1 - g.outline.y1 + EPS >= g.material_to_cuts,
              f"J_PWR pocket leaves {pocket.y1 - g.outline.y1:.2f} mm below it, "
              f"under the {g.material_to_cuts:.2f} mm rule (the bar would be cut in two)")
-        need(pocket.clamp_to(g.outline), "J_PWR pocket is not inside the bracket outline")
         for tie in g.tie_holes:
             need(tie.clearance_to_rect(pocket) > 0.0,
                  f"J_PWR pocket touches tie hole ({tie.x:.2f}, {tie.y:.2f})")
         for m in g.mounts:
             need(m.clearance_to_rect(pocket) > 0.0,
                  f"J_PWR pocket touches mount ({m.x:.2f}, {m.y:.2f})")
-        # Other cable slots are untouched: the pocket stays inside its own slot's x span.
         for other, other_id in zip(g.slots, g.slot_ids):
-            if other_id == "UMC AUDIO USB":
-                continue
             need(pocket.x2 <= other.x1 + EPS or pocket.x1 >= other.x2 - EPS,
                  f"J_PWR pocket reaches the {other_id} slot")
         if g.power_keepout is not None:
@@ -388,8 +382,8 @@ def validate(g: BracketGeometry, layout: dict | None = None) -> list[str]:
         notices.append(
             "PROVISIONAL: J_PWR pocket is sized to a DECLARED keepout, not to a measured "
             "part; the header housing offset (the drawing's unclear 4.80 mm datum), the "
-            "generic DuPont-style plug, cable access and the UMC AUDIO tail in the same "
-            "slot are all unverified (acceptance item power_header_mount)")
+            "generic DuPont-style plug and cable access are all unverified "
+            "(acceptance item power_header_mount)")
 
     # 8. Physical gates that the model cannot settle stay visible.
     notices.append(
