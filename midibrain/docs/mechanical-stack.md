@@ -76,7 +76,15 @@ The chain is anchored on **one part dimension** - the Thonkiconn jack's 9.0 mm s
   outside its band: the printed cap does not depend on the B32 reference, and a bought B32-13x0 alternative now sits
   0.60 mm deeper with its undimensioned top still to be measured.
 - The PEC11R M7 thread spans about 6.5…13.5 mm above the board, so its bushing still stands proud of the 10.6 mm
-  panel front.
+  panel front. **This chain is measured from the encoder's seating plane, and the encoder's STEP body sits
+  4.50 mm low in `front.step`**: the vendor STEP's seating plane is at model-local z -4.50 (the large
+  down-facing face spanning the 12.5 mm body; the -4.70 planes beside the terminals and the -8.20 lugs are not
+  the seat) and tscircuit's STEP exporter drops `model_origin_position`, so no value in the import can lift it.
+  `front.step` is therefore **not fit truth for U6's seating or bushing height** - read the OBJ/3D view or the
+  vendor drawing until that is resolved. The mechanical viewer applies a documented, self-healing 4.50 mm
+  compensation (`mechanical/viewer/README.md`) and asserts the result; that number is a rendering correction,
+  not a measurement, and the bushing height above the panel still has to be re-checked against this 10.60 mm
+  stack (`docs/TODO.md`).
 - The display is NOT an independent datum. It hangs on the rear-board carrier at `DISPLAY_STANDOFF.spacerLength`
   (8.75 mm) behind that board's front face, so its glass front falls out of the chain at Z **0.60**: 0.60 mm BEHIND
   the panel front, still inside the 1.6 mm aperture. The adjustable carrier spacers trim it flush at assembly; that

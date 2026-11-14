@@ -91,6 +91,17 @@ export const PEC11R_4015F_S0024 = (props: ChipProps<typeof pinLabels>) => {
         objUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C143789.obj?uuid=80dcd71b767c46f0b1face608b10b9c4",
         stepUrl: "https://modelcdn.tscircuit.com/easyeda_models/assets/C143789.step?uuid=80dcd71b767c46f0b1face608b10b9c4",
         pcbRotationOffset: 0,
+        // Keep the vendor value: it is what the OBJ/3D view needs, and it has no
+        // effect on the exported STEP. The vendor STEP's SEATING PLANE (the
+        // large down-facing face spanning the 12.5 mm body - not the -4.70
+        // terminal shoulders at y 7.101, and not the lugs that reach -8.20)
+        // sits at model-local z -4.50, so this z is a datum offset, not a part
+        // height. @tscircuit/cli's STEP exporter (WXo() in dist/lib/index.js)
+        // ignores model_origin_position outright and places the part from
+        // cad_component.position alone, so no value here can lift the body in
+        // mechanical/viewer/models/front.step. The mechanical viewer compensates
+        // for the resulting 4.50 mm drop by defect signature; see
+        // mechanical/viewer/README.md and docs/mechanical-stack.md.
         modelOriginPosition: { x: 0, y: -0.25001270000007025, z: -0.000006999999999646178 },
       }}
       {...props}

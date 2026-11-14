@@ -11,7 +11,7 @@ import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 
 const statusEl = document.getElementById("status")
-const readout = { files: [], meshes: 0, status: "starting", error: null, silk: null }
+const readout = { files: [], meshes: 0, status: "starting", error: null, silk: null, encoders: [] }
 const modelGroups = []
 window.__viewer = readout
 window.__scene = { camera: null, controls: null, scene: null }
@@ -127,6 +127,143 @@ async function loadStep(url, colourIndex) {
 
   const box = new THREE.Box3().setFromObject(group)
   return { group, box, materials: [material], meshes: result.meshes.length }
+}
+
+// ------------------------------- PEC11R encoder STEP datum (WORKAROUND)
+// The vendor STEP behind U6 (Bourns PEC11R-4015F-S0024, LCSC C143789) draws its
+// SEATING PLANE at model-local z -4.50 instead of on z 0: the large down-facing
+// face spanning the 12.5 mm body is 4.50 mm below the model origin, while the
+// -4.70 planes beside the terminals and the lugs that reach -8.20 belong to the
+// terminal shoulders, not to the seat. tscircuit's STEP exporter drops
+// `model_origin_position` completely, so the exported front.step carries the
+// body 4.50 mm BELOW the front board's top face (seating face at scene z -15.10
+// against a board top of -10.60) even though its own 3D view, which reads the
+// same part through the OBJ importer, looks right. That is why
+// tscircuit/imports/PEC11R_4015F_S0024.tsx keeps the vendor
+// `modelOriginPosition`: changing it moves the 3D view and cannot move the STEP.
+//
+// So the viewer finds the defect by its SIGNATURE and lifts that one mesh. This
+// is a WORKAROUND for an exporter defect, NOT a model fix, and it SELF-HEALS:
+// if the signature is absent (exporter fixed upstream, or a re-datumed STEP is
+// vendored) nothing is shifted and the console says so. Do not turn it into an
+// unconditional offset, and do not delete it while front.step still draws the
+// body 4.5 mm low - see mechanical/viewer/README.md and docs/TODO.md.
+const ENCODER_SHIFT_MM = 4.5 // seating plane -> board top face, measured off front.step
+const ENCODER_SIGNATURE_BELOW_BOARD_MM = 4 // a mesh reaching this far behind the board...
+const ENCODER_SIGNATURE_ABOVE_BOARD_MM = 8 // ...and this far in front of it is the encoder
+const ENCODER_SEAT_TOL_MM = 0.05
+
+function meshBox(mesh) {
+  mesh.geometry.computeBoundingBox()
+  return mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld)
+}
+
+// The board of a board export is the flat plate covering the most area; every
+// part height is measured from its two faces.
+function boardFaces(group) {
+  let slab = null
+  group.traverse((object) => {
+    if (!object.isMesh) return
+    const box = meshBox(object)
+    const thickness = box.max.z - box.min.z
+    if (thickness < 1.2 || thickness > 2.0) return
+    const area = (box.max.x - box.min.x) * (box.max.y - box.min.y)
+    if (!slab || area > slab.area) slab = { area, top: box.max.z, bottom: box.min.z }
+  })
+  return slab
+}
+
+// The seating plane is the body's largest face turned toward the board. It is
+// read off the drawn mesh rather than from a constant, so the guard measures the
+// geometry that is actually on screen.
+const faceA = new THREE.Vector3(), faceB = new THREE.Vector3(), faceC = new THREE.Vector3()
+const faceAB = new THREE.Vector3(), faceAC = new THREE.Vector3(), faceN = new THREE.Vector3()
+function seatingFaceZ(meshes) {
+  const areas = new Map()
+  for (const mesh of meshes) {
+    const position = mesh.geometry.attributes.position
+    const index = mesh.geometry.index
+    const count = index ? index.count : position.count
+    for (let i = 0; i < count; i += 3) {
+      const a = index ? index.getX(i) : i
+      const b = index ? index.getX(i + 1) : i + 1
+      const c = index ? index.getX(i + 2) : i + 2
+      faceA.fromBufferAttribute(position, a).applyMatrix4(mesh.matrixWorld)
+      faceB.fromBufferAttribute(position, b).applyMatrix4(mesh.matrixWorld)
+      faceC.fromBufferAttribute(position, c).applyMatrix4(mesh.matrixWorld)
+      faceN.crossVectors(faceAB.subVectors(faceB, faceA), faceAC.subVectors(faceC, faceA))
+      const length = faceN.length()
+      if (length === 0 || faceN.z > -0.9 * length) continue // keep faces turned toward -scene z
+      const z = Math.round(((faceA.z + faceB.z + faceC.z) / 3) * 50) / 50
+      areas.set(z, (areas.get(z) ?? 0) + length / 2)
+    }
+  }
+  let seat = null
+  for (const [z, area] of areas) if (!seat || area > seat.area) seat = { z, area }
+  return seat
+}
+
+// Lift the encoder mesh only when the defect signature is present, then assert
+// the result: seating face on the board's top face, shaft/bushing toward the
+// panel (+scene z), legs through the board.
+function correctEncoderDatum(group, model) {
+  group.updateMatrixWorld(true)
+  const board = boardFaces(group)
+  if (!board) return
+  const hits = []
+  group.traverse((object) => {
+    if (!object.isMesh) return
+    const box = meshBox(object)
+    if (box.min.z < board.bottom - ENCODER_SIGNATURE_BELOW_BOARD_MM &&
+        box.max.z > board.top + ENCODER_SIGNATURE_ABOVE_BOARD_MM) hits.push({ mesh: object, box })
+  })
+  const entry = {
+    model: model.label,
+    applied: false,
+    boardTopZ: +board.top.toFixed(2),
+    boardBottomZ: +board.bottom.toFixed(2),
+    signatureMeshes: hits.length,
+  }
+  readout.encoders.push(entry)
+  if (hits.length === 0) {
+    console.info(`encoder datum: no defect signature in ${model.label} - no shift applied (the correction is no longer needed for this file)`)
+    return
+  }
+  if (hits.length > 1) {
+    // One encoder, so more than one match means the signature is no longer
+    // specific. Do not guess: leave the model as exported and say so.
+    entry.note = `${hits.length} meshes match the signature, expected 1 - no shift applied`
+    console.warn(`encoder datum: ${entry.note} (${model.label})`)
+    return
+  }
+  const { mesh, box: before } = hits[0]
+  // The mesh lives in the model's group, whose z the manifest scales by -1, so a
+  // SCENE +z is a LOCAL -z.
+  mesh.position.z += ENCODER_SHIFT_MM / (model.scaleZ ?? 1)
+  mesh.updateMatrixWorld(true)
+  const after = meshBox(mesh)
+  const seat = seatingFaceZ([mesh])
+  const seatDelta = seat.z - board.top
+  const guard = {
+    seatOnBoardTop: Math.abs(seatDelta) <= ENCODER_SEAT_TOL_MM,
+    shaftTowardPanel: after.max.z > board.top && after.max.z > seat.z,
+    legsThroughBoard: after.min.z < board.bottom,
+  }
+  entry.applied = true
+  entry.shiftMm = ENCODER_SHIFT_MM
+  entry.before = { z: [+before.min.z.toFixed(2), +before.max.z.toFixed(2)] }
+  entry.after = { z: [+after.min.z.toFixed(2), +after.max.z.toFixed(2)] }
+  entry.seat = { z: +seat.z.toFixed(2), areaMm2: +seat.area.toFixed(1), deltaFromBoardTopMm: +seatDelta.toFixed(3) }
+  entry.guard = guard
+  entry.ok = guard.seatOnBoardTop && guard.shaftTowardPanel && guard.legsThroughBoard
+  console.info(
+    `encoder datum: WORKAROUND +${ENCODER_SHIFT_MM.toFixed(2)} mm scene z in ${model.label}; ` +
+    `board top ${board.top.toFixed(2)} bottom ${board.bottom.toFixed(2)}; ` +
+    `mesh z ${before.min.z.toFixed(2)}..${before.max.z.toFixed(2)} -> ${after.min.z.toFixed(2)}..${after.max.z.toFixed(2)}; ` +
+    `seating face ${seat.z.toFixed(2)} (${seatDelta.toFixed(3)} mm from the board top, ${seat.area.toFixed(1)} mm2); ` +
+    `shaft tip ${(after.max.z - board.top).toFixed(2)} mm in front of the board, ` +
+    `legs ${(board.bottom - after.min.z).toFixed(2)} mm behind its far face; ` +
+    `guard ${entry.ok ? "ok" : "FAILED"}`)
 }
 
 
@@ -313,6 +450,9 @@ async function main() {
     group.visible = model.visible !== false
     modelGroups.push({ group, model })
     scene.add(group)
+    // Before the placed box is read out, so the readout and the camera show the
+    // corrected position (see correctEncoderDatum).
+    correctEncoderDatum(group, model)
     // Fit on the PLACED box: `box` from loadStep is in the file's own frame.
     group.updateMatrixWorld(true)
     readout_placed = new THREE.Box3().setFromObject(group)
@@ -358,7 +498,12 @@ async function main() {
   window.__scene.camera = camera
   window.__scene.scene = scene
   window.__scene.controls = controls
-  setStatus(`loaded ${manifest.models.length} file(s), ${loaded} solids`)
+  const failures = readout.encoders.filter((e) => e.applied && !e.ok)
+  setStatus(
+    `loaded ${manifest.models.length} file(s), ${loaded} solids` +
+      (failures.length ? ` - ENCODER DATUM GUARD FAILED: ${failures.map((e) => e.model).join(", ")}` : ""),
+    failures.length > 0,
+  )
   window.__viewer.ready = true
 }
 

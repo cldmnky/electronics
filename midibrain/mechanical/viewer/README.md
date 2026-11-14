@@ -86,6 +86,61 @@ scene z >= -cut, so it still peels the stack along the viewing direction.
   (`display_boss_pattern` is open); the spacer and pad diameters are named
   placeholders, so read this as "where it bolts", not as a part.
 
+### The encoder's STEP datum (a viewer workaround, not a model fix)
+
+`front.step` draws U6 (Bourns PEC11R-4015F-S0024, C143789) **4.50 mm too low**.
+The cause is in the vendor CAD, not in the placement: the vendor STEP puts the
+body's **seating plane** - the large down-facing face spanning its 12.5 mm body,
+i.e. the face that stands on the board - at model-local z **-4.50** instead of
+on z 0. (The -4.70 planes beside the terminals and the lugs that reach -8.20 are
+the terminal shoulders and the mounting lugs, not the seat.) tscircuit's STEP
+exporter (`WXo()` in `@tscircuit/cli`'s `dist/lib/index.js`) drops
+`model_origin_position` and places every part from `cad_component.position`
+alone, so no `modelOriginPosition.z` in
+`tscircuit/imports/PEC11R_4015F_S0024.tsx` can move the exported file. Its 3D
+view reads the same part through the OBJ importer and looks right, so the import
+keeps the vendor value and the viewer compensates.
+
+`main.js` (`correctEncoderDatum()`) finds the part by **defect signature**, not
+by name or coordinate. In each loaded board model it locates the board plate
+(the flat body covering the most area) and takes a mesh that
+
+- reaches more than **4 mm behind** the board's far face (`min.z < bottom - 4`), and
+- reaches more than **8 mm in front** of the board's top face (`max.z > top + 8`)
+
+as the encoder. Exactly one mesh matches in `front.step` and in `assembly.step`;
+none matches in `panel.step`, `pi-panel.step` or `rear.step`. That mesh is
+lifted **+4.50 mm** in scene z, and the viewer then asserts the result, logging
+every number to the console:
+
+| check | measured on front.step |
+| --- | --- |
+| seating face on the board's top face (±0.05 mm) | largest face turned toward the board, 128.8 mm², at scene z -10.60: delta **0.000 mm** |
+| shaft/bushing toward the panel (+scene z) | bbox top +16.90, i.e. **27.50 mm** in front of the board's top face |
+| legs through the board | bbox bottom -14.30, i.e. **2.10 mm** behind the board's far face |
+
+Before the shift the same mesh ran scene z -18.80…+12.40, which puts the seat at
+-15.10, i.e. 4.50 mm below the board's top face.
+
+It **self-heals**: if the export is fixed upstream, or a re-datumed STEP is
+vendored, the signature stops matching, nothing is shifted, and the console
+says `no defect signature ... the correction is no longer needed`. If more than
+one mesh matches it refuses to guess and says so. The results are also on the
+page as `window.__viewer.encoders`. **Remove the workaround only when the
+exporter honours `model_origin_position` or `front.step` is re-datumed** - it is
+not a model fix, and it must not be turned into an unconditional offset.
+
+![encoder side view](../../assets/viewer-encoder-side.png)
+
+Profile from +x with the panel edge-on, after the workaround: left to right are
+the printed knob envelope (opaque in the STEP viewer, translucent in
+tscircuit's 3D view), the shaft, the panel's edge and the M7 bushing standing
+through its VALUE aperture, then the encoder body in the 9 mm gap above the
+front board. The 4.50 mm the workaround restores is exactly that gap between
+the body's seating face and the board's top face (scene z -15.10 → -10.60); the
+legs, on the far face, are 2.10 mm short of the bbox and are asserted
+numerically rather than drawn in this view.
+
 ### Panel silkscreen (a texture, not geometry)
 
 A STEP carries surfaces, so `panel.step` has the outline and every aperture but
