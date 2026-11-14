@@ -785,8 +785,11 @@ class ClaimRecurrenceTest(unittest.TestCase):
         self.assertAlmostEqual(g.overall_length, 10.95, places=9)
         self.assertAlmostEqual(g.switch_body_clearance, 1.85, places=9)
         data = layout()
-        self.assertAlmostEqual(data["displayStandoff"]["spacerLength"], 9.35, places=9)
-        self.assertAlmostEqual(data["displayStandoff"]["planeSeparation"], 13.35, places=9)
+        # 12.75 / 8.75: the owner's carrier pair. Reaching flush EXTENDS the
+        # 8.75 mm spacer to 9.35 mm; it is never cut shorter.
+        self.assertAlmostEqual(data["displayStandoff"]["spacerLength"], 8.75, places=9)
+        self.assertAlmostEqual(data["displayStandoff"]["planeSeparation"], 12.75, places=9)
+        self.assertAlmostEqual(data["provisionalZ"]["displayGlassFront"], 0.6, places=9)
         self.assertAlmostEqual(data["lightPipeReach"]["nominalTipToBoardPlane"], -5.9, places=9)
         self.assertIsNone(data["lightPipeReach"]["opticalGap"])
 

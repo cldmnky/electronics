@@ -11,7 +11,10 @@ import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 
 const statusEl = document.getElementById("status")
-const readout = { files: [], meshes: 0, status: "starting", error: null, silk: null }
+const readout = {
+  files: [], meshes: 0, status: "starting", error: null, silk: null, encoders: [],
+  encoderWarnings: [],
+}
 const modelGroups = []
 window.__viewer = readout
 window.__scene = { camera: null, controls: null, scene: null }
@@ -127,6 +130,306 @@ async function loadStep(url, colourIndex) {
 
   const box = new THREE.Box3().setFromObject(group)
   return { group, box, materials: [material], meshes: result.meshes.length }
+}
+
+// ------------------------------- PEC11R encoder STEP datum (WORKAROUND)
+// The vendor STEP behind U6 (Bourns PEC11R-4015F-S0024, LCSC C143789) draws its
+// SEATING PLANE at model-local z -4.50 instead of on z 0: the large down-facing
+// face spanning the 12.5 mm body is 4.50 mm below the model origin, while the
+// -4.70 planes beside the terminals and the lugs that reach -8.20 belong to the
+// terminal shoulders, not to the seat. tscircuit's STEP exporter drops
+// `model_origin_position` completely, so the exported front.step carries the
+// body 4.50 mm BELOW the front board's top face (seating face at scene z -15.10
+// against a board top of -10.60) even though its own 3D view, which reads the
+// same part through the OBJ importer, looks right. That is why
+// tscircuit/imports/PEC11R_4015F_S0024.tsx keeps the vendor
+// `modelOriginPosition`: changing it moves the 3D view and cannot move the STEP.
+//
+// So the viewer finds the defect by its SIGNATURE and lifts that one mesh. This
+// is a WORKAROUND for an exporter defect, NOT a model fix, and it SELF-HEALS:
+// if the signature is absent (exporter fixed upstream, or a re-datumed STEP is
+// vendored) nothing is shifted. "Absent" is NOT evidence that the model is now
+// right - it only means this viewer cannot identify the encoder in it, and the
+// page says so. Exactly ONE mesh must match: more than one is ambiguous, and an
+// ambiguous match is refused and shown on the page, not guessed. Do not turn
+// this into an unconditional offset, and do not delete it while front.step still
+// draws the body 4.5 mm low - see mechanical/viewer/README.md and docs/TODO.md.
+//
+// NOTHING IN THIS VIEWER PROVES THE ENCODER'S PHYSICAL FIT. It draws a STEP
+// model; it does not measure a part, and a guard that passes only says the
+// shifted MESH sits where the arithmetic expects.
+const ENCODER_SHIFT_MM = 4.5 // seating plane -> board top face, measured off front.step
+const ENCODER_SIGNATURE_BELOW_BOARD_MM = 4 // a mesh reaching this far behind the board...
+const ENCODER_SIGNATURE_ABOVE_BOARD_MM = 8 // ...and this far in front of it is the encoder
+const ENCODER_SEAT_TOL_MM = 0.05
+// The shaft height the drawn STEP reaches after the shift, against the height the
+// vendor's own L15 drawing dimensions. They DISAGREE and the difference is
+// UNRESOLVED: the drawn shaft is 6.00 mm longer than the drawing's, so the mesh
+// number is a property of this model, not a part measurement and not a fit.
+const ENCODER_MESH_SHAFT_TIP_MM = 27.5 // bbox top above the board's top face, front.step
+const ENCODER_DRAWING_SHAFT_TIP_MM = 21.5 // vendor L15 drawing, PCB top -> shaft tip
+// A model's plate only counts as its board when its footprint matches the
+// documented board. The assembly export can carry other 1.2-2.0 mm plates (the
+// panel is one), and shifting a mesh against the wrong plate would move the
+// encoder to a place nothing checked.
+const BOARD_FOOTPRINT_TOL_MM = 1.5
+
+function meshBox(mesh) {
+  mesh.geometry.computeBoundingBox()
+  return mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld)
+}
+
+// The board of a board export is the flat plate covering the most area; every
+// part height is measured from its two faces. The largest such plate is NOT
+// necessarily the board - the assembly export also carries the panel, and any
+// plate in the 1.2-2.0 mm window could win - so the caller hands in the board's
+// documented footprint and a plate that does not match it is refused instead of
+// guessed at.
+function boardFaces(group, board) {
+  let slab = null
+  group.traverse((object) => {
+    if (!object.isMesh) return
+    const box = meshBox(object)
+    const thickness = box.max.z - box.min.z
+    if (thickness < 1.2 || thickness > 2.0) return
+    const width = box.max.x - box.min.x
+    const height = box.max.y - box.min.y
+    const area = width * height
+    if (!slab || area > slab.area) {
+      slab = { area, top: box.max.z, bottom: box.min.z, width, height, thickness }
+    }
+  })
+  if (!slab) return { slab: null, reason: "no plate in the 1.2-2.0 mm slab window" }
+  if (!board) return { slab, reason: null, checked: false }
+  const matches =
+    Math.abs(slab.width - board.width) <= BOARD_FOOTPRINT_TOL_MM &&
+    Math.abs(slab.height - board.height) <= BOARD_FOOTPRINT_TOL_MM
+  if (!matches) {
+    return {
+      slab,
+      checked: true,
+      matches: false,
+      reason:
+        `the largest plate is ${slab.width.toFixed(2)} x ${slab.height.toFixed(2)} mm, ` +
+        `not the documented ${board.kind} board (${board.width} x ${board.height} mm)`,
+    }
+  }
+  return { slab, checked: true, matches: true, reason: null }
+}
+
+// One visible place for anything this viewer must not hide: the encoder datum
+// was refused or a guard failed. A console line alone is not enough - the page
+// is what a person reads.
+function warnOnPage(text) {
+  readout.encoderWarnings.push(text)
+  console.warn(`encoder datum: ${text}`)
+  // The element lives in the HUD, NOT in #models: renderToggles() clears
+  // #models, and a warning that disappears when the board list is drawn is
+  // worse than no warning. It is created once and then only updated.
+  let el = document.getElementById("encoder-warning")
+  if (!el) {
+    el = document.createElement("div")
+    el.id = "encoder-warning"
+    el.style.color = "#e2703a"
+    el.style.maxWidth = "52ch"
+    el.style.whiteSpace = "normal"
+    el.style.fontSize = "12px"
+    document.getElementById("hud").appendChild(el)
+  }
+  el.textContent = `viewer warning (${readout.encoderWarnings.length}): ` +
+    readout.encoderWarnings.join("; ")
+}
+
+// The seating plane is the body's largest face turned toward the board. It is
+// read off the drawn mesh rather than from a constant, so the guard measures the
+// geometry that is actually on screen.
+const faceA = new THREE.Vector3(), faceB = new THREE.Vector3(), faceC = new THREE.Vector3()
+const faceAB = new THREE.Vector3(), faceAC = new THREE.Vector3(), faceN = new THREE.Vector3()
+function seatingFaceZ(meshes) {
+  const areas = new Map()
+  for (const mesh of meshes) {
+    const position = mesh.geometry.attributes.position
+    const index = mesh.geometry.index
+    const count = index ? index.count : position.count
+    for (let i = 0; i < count; i += 3) {
+      const a = index ? index.getX(i) : i
+      const b = index ? index.getX(i + 1) : i + 1
+      const c = index ? index.getX(i + 2) : i + 2
+      faceA.fromBufferAttribute(position, a).applyMatrix4(mesh.matrixWorld)
+      faceB.fromBufferAttribute(position, b).applyMatrix4(mesh.matrixWorld)
+      faceC.fromBufferAttribute(position, c).applyMatrix4(mesh.matrixWorld)
+      faceN.crossVectors(faceAB.subVectors(faceB, faceA), faceAC.subVectors(faceC, faceA))
+      const length = faceN.length()
+      if (length === 0 || faceN.z > -0.9 * length) continue // keep faces turned toward -scene z
+      const z = Math.round(((faceA.z + faceB.z + faceC.z) / 3) * 50) / 50
+      areas.set(z, (areas.get(z) ?? 0) + length / 2)
+    }
+  }
+  let seat = null
+  for (const [z, area] of areas) if (!seat || area > seat.area) seat = { z, area }
+  return seat
+}
+
+// Lift the encoder mesh only when the defect signature is present, then assert
+// the result. Every outcome is one of four named states and each is visible:
+//   "applied"        exactly one match, shifted, guard passed
+//   "guard-failed"   exactly one match, shifted, guard FAILED (or no seat found)
+//   "ambiguous"      more than one match - refused, no shift
+//   "not-applicable" no match or no board - no shift, and NOT a failure
+function correctEncoderDatum(group, model) {
+  group.updateMatrixWorld(true)
+  if (!model.board) {
+    // The heuristic is only valid where the manifest says which board is in the
+    // file. A reference/vendor STEP, the pi-panel or an unlabelled export must
+    // never be shifted, so the correction is REFUSED rather than guessed.
+    const refused = {
+      model: model.label,
+      status: "not-applicable",
+      applied: false,
+      note: "the manifest does not identify a front board in this file - encoder correction refused",
+    }
+    readout.encoders.push(refused)
+    console.info(`encoder datum: ${model.label}: ${refused.note}`)
+    return
+  }
+  if (model.board.carriesFrontBoard === false) {
+    const refused = {
+      model: model.label,
+      status: "not-applicable",
+      applied: false,
+      note: "the manifest marks this file as carrying no front board - encoder correction refused",
+    }
+    readout.encoders.push(refused)
+    console.info(`encoder datum: ${model.label}: ${refused.note}`)
+    return
+  }
+  const found = boardFaces(group, model.board)
+  const board = found.slab
+  const entry = {
+    model: model.label,
+    status: "not-applicable",
+    applied: false,
+    boardChecked: found.checked ?? false,
+    boardMatches: found.matches ?? null,
+    boardTopZ: board ? +board.top.toFixed(2) : null,
+    boardBottomZ: board ? +board.bottom.toFixed(2) : null,
+    signatureMeshes: 0,
+  }
+  readout.encoders.push(entry)
+  if (!board) {
+    entry.note = `no board plate: ${found.reason}`
+    return
+  }
+  if (found.checked && !found.matches) {
+    entry.note = `no shift: ${found.reason}`
+    warnOnPage(`${model.label}: ${found.reason}; no encoder datum shift applied`)
+    return
+  }
+  const hits = []
+  group.traverse((object) => {
+    if (!object.isMesh) return
+    const box = meshBox(object)
+    if (box.min.z < board.bottom - ENCODER_SIGNATURE_BELOW_BOARD_MM &&
+        box.max.z > board.top + ENCODER_SIGNATURE_ABOVE_BOARD_MM) hits.push({ mesh: object, box })
+  })
+  entry.signatureMeshes = hits.length
+  if (hits.length === 0) {
+    // No match is NOT a fix and NOT a failure: it means this viewer cannot
+    // identify the encoder in this file, so it shifts nothing and says only that.
+    entry.note = "no mesh matches the defect signature (0 of 1) - no shift applied; " +
+      "this neither confirms nor clears the encoder model"
+    console.info(`encoder datum: ${model.label}: ${entry.note}`)
+    return
+  }
+  if (hits.length > 1) {
+    // One encoder, so more than one match means the signature is no longer
+    // specific. Do not guess: leave the model as exported and say so on the page.
+    entry.status = "ambiguous"
+    entry.note = `${hits.length} meshes match the signature, expected 1 - no shift applied`
+    warnOnPage(`${model.label}: ${entry.note}`)
+    return
+  }
+  const { mesh, box: before } = hits[0]
+  const originalZ = mesh.position.z
+  // Put the mesh back exactly as exported. A shift that cannot be checked must
+  // not stay in the scene: a wrong shift is worse than the defect it hides.
+  const restore = () => {
+    mesh.position.z = originalZ
+    mesh.updateMatrixWorld(true)
+    entry.applied = false
+    entry.restored = true
+  }
+  // The mesh lives in the model's group, whose z the manifest scales by -1, so a
+  // SCENE +z is a LOCAL -z.
+  mesh.position.z += ENCODER_SHIFT_MM / (model.scaleZ ?? 1)
+  mesh.updateMatrixWorld(true)
+  const after = meshBox(mesh)
+  const seat = seatingFaceZ([mesh])
+  if (!seat) {
+    // No face turned toward the board: the guard cannot run, so it FAILS rather
+    // than assume the shift was right, and the shift is REVERSED. Must not throw.
+    restore()
+    entry.status = "guard-failed"
+    entry.note = "no seating face found after the shift - guard could not run, shift reverted"
+    warnOnPage(`${model.label}: ${entry.note}`)
+    return
+  }
+  const seatDelta = seat.z - board.top
+  const guard = {
+    seatOnBoardTop: Math.abs(seatDelta) <= ENCODER_SEAT_TOL_MM,
+    shaftTowardPanel: after.max.z > board.top && after.max.z > seat.z,
+    legsThroughBoard: after.min.z < board.bottom,
+  }
+  entry.ok = guard.seatOnBoardTop && guard.shaftTowardPanel && guard.legsThroughBoard
+  if (!entry.ok) {
+    // A guard failure means the shifted position is not proven: put the mesh back
+    // and say so, rather than leave a wrong datum on the page.
+    const failedBox = after
+    restore()
+    entry.before = { z: [+before.min.z.toFixed(2), +before.max.z.toFixed(2)] }
+    entry.shifted = { z: [+failedBox.min.z.toFixed(2), +failedBox.max.z.toFixed(2)] }
+    entry.seat = { z: +seat.z.toFixed(2), areaMm2: +seat.area.toFixed(1), deltaFromBoardTopMm: +seatDelta.toFixed(3) }
+    entry.guard = guard
+    entry.status = "guard-failed"
+    entry.note = "encoder datum guard FAILED - shift reverted, model left as exported"
+    warnOnPage(`${model.label}: ${entry.note} (seat delta ${seatDelta.toFixed(3)} mm)`)
+    console.info(
+      `encoder datum: GUARD FAILED in ${model.label}; shift reverted; ` +
+      `guard ${JSON.stringify(guard)}; seat delta ${seatDelta.toFixed(3)} mm`)
+    return
+  }
+  entry.applied = true
+  entry.shiftMm = ENCODER_SHIFT_MM
+  entry.before = { z: [+before.min.z.toFixed(2), +before.max.z.toFixed(2)] }
+  entry.after = { z: [+after.min.z.toFixed(2), +after.max.z.toFixed(2)] }
+  entry.seat = { z: +seat.z.toFixed(2), areaMm2: +seat.area.toFixed(1), deltaFromBoardTopMm: +seatDelta.toFixed(3) }
+  entry.guard = guard
+  entry.status = "applied"
+  // The drawn shaft against the vendor drawing. Both numbers are reported and
+  // the disagreement is named as UNRESOLVED: the mesh is not a measured part.
+  entry.shaft = {
+    meshAboveBoardMm: +(after.max.z - board.top).toFixed(2),
+    drawingL15AboveBoardMm: ENCODER_DRAWING_SHAFT_TIP_MM,
+    differenceMm: +((after.max.z - board.top) - ENCODER_DRAWING_SHAFT_TIP_MM).toFixed(2),
+    status: "UNRESOLVED - the drawn shaft in this STEP is longer than the vendor's L15 dimension; " +
+      "neither number is a measurement and neither is a fit result",
+  }
+  readout.encoderFit = {
+    status: "UNRESOLVED",
+    meshShaftTipAboveBoardMm: ENCODER_MESH_SHAFT_TIP_MM,
+    drawingL15ShaftTipAboveBoardMm: ENCODER_DRAWING_SHAFT_TIP_MM,
+    note: "the STEP model draws a 27.50 mm shaft tip where the vendor L15 drawing gives 21.50 mm; " +
+      "the viewer shows the model, proves nothing about the part, and no physical fit is claimed",
+  }
+  console.info(
+    `encoder datum: WORKAROUND +${ENCODER_SHIFT_MM.toFixed(2)} mm scene z in ${model.label}; ` +
+    `board top ${board.top.toFixed(2)} bottom ${board.bottom.toFixed(2)}; ` +
+    `mesh z ${before.min.z.toFixed(2)}..${before.max.z.toFixed(2)} -> ${after.min.z.toFixed(2)}..${after.max.z.toFixed(2)}; ` +
+    `seating face ${seat.z.toFixed(2)} (${seatDelta.toFixed(3)} mm from the board top, ${seat.area.toFixed(1)} mm2); ` +
+    `drawn shaft tip ${(after.max.z - board.top).toFixed(2)} mm above the board ` +
+    `(vendor L15 drawing ${ENCODER_DRAWING_SHAFT_TIP_MM.toFixed(2)} mm - UNRESOLVED); ` +
+    `legs ${(board.bottom - after.min.z).toFixed(2)} mm behind its far face; ` +
+    `guard ${entry.ok ? "ok" : "FAILED"}`)
 }
 
 
@@ -299,9 +602,13 @@ async function main() {
     group.scale.z = model.scaleZ ?? 1
     group.position.z = model.positionZ ?? 0
     if (model.align) {
-      // Own-frame model: align on the loaded bbox. Centre it on the display
-      // position and park its screen face on the panel-front plane (scene z 0),
-      // so the screen points at the panel and the module reaches displayRearMost.
+      // Own-frame model: align on the loaded bbox, centre it on the display
+      // position, and park the bbox FRONT on frontSceneZ. SCENE Z RUNS NEGATIVE
+      // REARWARD (scene z = -panel z), so the glass datum +0.60 is scene -0.60.
+      // For the VERIFIED vendor STEP the bbox front is the touch/frame plane,
+      // 1.90 mm in front of the glass, so the manifest's frontSceneZ is +1.30;
+      // for any other STEP the 1.90 mm offset is NOT applied and the bbox front
+      // is aligned to the glass, which the manifest marks as unproven.
       // `scale.z` is applied first, so the scene-space bbox is already final.
       group.updateMatrixWorld(true)
       const b = new THREE.Box3().setFromObject(group)
@@ -309,10 +616,33 @@ async function main() {
       group.position.x += model.align.x - c.x
       group.position.y += model.align.y - c.y
       group.position.z += model.align.frontSceneZ - b.max.z
+      group.updateMatrixWorld(true)
+      // Read back the PLACED box: b was measured before position.z moved.
+      const placed = new THREE.Box3().setFromObject(group)
+      readout.displayAlignment = {
+        model: model.label,
+        modelVerified: model.align.modelVerified,
+        bboxFrontIsGlass: model.align.bboxFrontIsGlass,
+        glassPanelZ: model.align.glassPanelZ,
+        glassSceneZ: model.align.glassSceneZ,
+        frameAheadOfGlassMm: model.align.frameAheadOfGlassMm,
+        placedBboxFrontSceneZ: +placed.max.z.toFixed(2),
+        requestedFrontSceneZ: model.align.frontSceneZ,
+        orientation: model.align.orientation,
+        placementStatus: model.align.placementStatus,
+        fitClaim: "none - this is a drawn model in a viewer, not a fit",
+      }
+      console.info(
+        `display placement: ${model.label} bbox front -> scene z ${model.align.frontSceneZ} ` +
+        `(glass datum panel z ${model.align.glassPanelZ}, scene z ${model.align.glassSceneZ}); ` +
+        `${model.align.placementStatus}; orientation ${model.align.orientation.status}`)
     }
     group.visible = model.visible !== false
     modelGroups.push({ group, model })
     scene.add(group)
+    // Before the placed box is read out, so the readout and the camera show the
+    // corrected position (see correctEncoderDatum).
+    correctEncoderDatum(group, model)
     // Fit on the PLACED box: `box` from loadStep is in the file's own frame.
     group.updateMatrixWorld(true)
     readout_placed = new THREE.Box3().setFromObject(group)
@@ -358,7 +688,22 @@ async function main() {
   window.__scene.camera = camera
   window.__scene.scene = scene
   window.__scene.controls = controls
-  setStatus(`loaded ${manifest.models.length} file(s), ${loaded} solids`)
+  // Three separate things are reported, and none of them is a fit approval:
+  // a guard that failed, an encoder the viewer refused to identify (ambiguous),
+  // and the drawn-shaft disagreement. `not-applicable` is not a failure.
+  const failed = readout.encoders.filter((e) => e.status === "guard-failed")
+  const ambiguous = readout.encoders.filter((e) => e.status === "ambiguous")
+  // A refused board match is not a guard failure, but it IS something a reader
+  // must see: the encoder was left where the file put it.
+  const refused = readout.encoders.filter((e) => e.boardMatches === false)
+  const parts = [`loaded ${manifest.models.length} file(s), ${loaded} solids`]
+  if (failed.length) parts.push(`ENCODER DATUM GUARD FAILED: ${failed.map((e) => e.model).join(", ")}`)
+  if (ambiguous.length) parts.push(`ENCODER IDENTITY AMBIGUOUS: ${ambiguous.map((e) => e.model).join(", ")}`)
+  if (refused.length) parts.push(`BOARD NOT IDENTIFIED, encoder left as exported: ${refused.map((e) => e.model).join(", ")}`)
+  if (readout.encoderFit?.status === "UNRESOLVED") {
+    parts.push("drawn shaft 27.50 mm vs vendor L15 21.50 mm is UNRESOLVED - no fit claimed")
+  }
+  setStatus(parts.join(" | "), failed.length > 0)
   window.__viewer.ready = true
 }
 

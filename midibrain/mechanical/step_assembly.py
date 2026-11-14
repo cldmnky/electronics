@@ -289,8 +289,23 @@ def check_vendor_model(shape) -> dict:
     return {"bbox": [b.xlen, b.ylen, b.zlen], "bosses": len(bosses)}
 
 
+def _placed_note(layout: dict, found: dict, subject: str) -> str:
+    """`subject` with its PLACED panel Z and its side of the panel front."""
+    panel = float(layout["provisionalZ"]["panelFront"])
+    z = float(found["glass_front"])
+    side = "BEHIND" if z > panel else ("IN FRONT of" if z < panel else "flush with")
+    return (f"{subject}, panel Z = {z:+.2f}: {abs(z - panel):.2f} mm {side} the panel front "
+            f"face (Z = {panel:+.2f}). Illustrative placement, not a fit")
+
+
+def _ahead_of_panel(layout: dict, found: dict) -> float:
+    """How far the placed touch/frame plane stands in FRONT of the panel front."""
+    panel = float(layout["provisionalZ"]["panelFront"])
+    return round(panel - float(found["touch_frame_front"]), 3)
+
+
 def place_display(cq, shape, layout: dict) -> tuple[object, dict]:
-    """Place the vendor model: glass front on the panel front face, electronics rearward.
+    """Place the vendor model: glass front at the layout's display datum, electronics rearward.
 
     Z is forced: the vendor +Z points out of the glass, the layout +Z points
     rearward, so any placement must reverse Z. The IN-PLANE AXIS IS NOT SETTLED
@@ -312,7 +327,9 @@ def place_display(cq, shape, layout: dict) -> tuple[object, dict]:
     if glass_z_rotated not in planes:
         raise GeometryError(
             f"the rotated model has no glass plane at z={glass_z_rotated}; refusing to place it")
-    dz = 0.0 - glass_z_rotated
+    # PROVISIONAL_Z.displayGlassFront is derived from the rear-board carrier
+    # chain; drawing the model there keeps this assembly on the layout datum.
+    dz = layout["provisionalZ"]["displayGlassFront"] - glass_z_rotated
 
     bosses = boss_centres(rotated)
     if len(bosses) != 8:
@@ -338,7 +355,7 @@ def place_display(cq, shape, layout: dict) -> tuple[object, dict]:
     placed = rotated.translate((dx, dy, dz))
 
     # ---- verification on the placed solid ----
-    expected = placed_display_planes()
+    expected = placed_display_planes(layout)
     check_display_plane_order(expected)
     placed_planes = planar_z_planes(cq, placed)
     found = {}
@@ -420,14 +437,21 @@ def place_display(cq, shape, layout: dict) -> tuple[object, dict]:
         },
         "vendor_model_separations_mm": separations,
         "placed_global_z_mm": {k: round(v, 3) for k, v in found.items()},
-        "glass_datum": ("the vendor glass FRONT face at the panel front face, Z = 0 "
-                        "(assumption A); illustrative placement, not a fit"),
+        # Both descriptions come from the layout datum and the PLACED planes, so a
+        # datum change cannot leave a stale number behind. Panel frame: Z = 0 at
+        # the panel FRONT, +Z rearward.
+        "glass_datum": _placed_note(
+            layout, found, "the vendor glass FRONT face at the layout display datum "
+            "(PROVISIONAL_Z.displayGlassFront)"),
         "front_frame_disclosure": (
-            "the vendor touch/frame forward face is 1.90 mm IN FRONT of the glass front "
-            "face in the model, so this placement puts it at global Z = -1.90 mm, i.e. "
-            "1.90 mm proud of the panel front face. It is NOT flush with the panel and "
-            "NOT a fit: the real frame/touch layer, the aperture relief and the seating "
-            "are unmeasured"),
+            "the vendor touch/frame forward face is "
+            f"{round(m['touch_frame_front_z'] - m['glass_front_z'], 3):.2f} mm IN FRONT of the "
+            f"glass front face in the model, so this placement puts it at panel Z = "
+            f"{found['touch_frame_front']:+.2f}, i.e. "
+            f"{_ahead_of_panel(layout, found):.2f} mm in FRONT of the panel front face "
+            f"(Z = {float(layout['provisionalZ']['panelFront']):+.2f}). It is NOT flush with "
+            "the panel and NOT a fit: the real frame/touch layer, the aperture relief and "
+            "the seating are unmeasured"),
         "mounting_centres_verified": True,
         "orientation": {
             "status": DISPLAY_ORIENTATION["status"],
@@ -996,7 +1020,7 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
         "panel_plane_datum": standoff["panelPlaneDatum"],
         "not_claimed": [
             "a part, part number or supplier",
-            "a measured jack-bushing gap (the 9.00 mm is a nominal)",
+            "a measured jack-bushing gap (the 9.00 mm is the jack seating-shoulder nominal)",
             "thread engagement, torque or assembly order",
         ],
     }
@@ -1034,8 +1058,12 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
         solids["DISPLAY_ENVELOPE_PROVISIONAL"] = span_box(e, grow=0.0)
         meta["DISPLAY_ENVELOPE_PROVISIONAL"] = {
             "note": ("no verified vendor STEP was supplied, so this is the 106 x 68 mm module "
-                     "outline between the assumed flush glass front and the 14.05 mm overall "
-                     "depth; it is not vendor geometry"),
+                     "outline between the layout's display datum "
+                     f"(PROVISIONAL_Z.displayGlassFront = "
+                     f"{float(layout['provisionalZ']['displayGlassFront']):+.2f} mm, i.e. "
+                     f"{float(layout['provisionalZ']['displayGlassFront']):.2f} mm behind the "
+                     f"panel front) and the {float(layout['provisionalZ']['displayRearMost']):.2f} mm "
+                     "rear-most envelope; it is not vendor geometry"),
         }
 
     # ---- LCD mount placeholders (model-fit, non-approved) ----------------
@@ -1061,13 +1089,55 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
         if abs(length - mount["model_gap_mm"]) > 0.01:
             raise GeometryError(f"the placeholder length {length} is not the model gap "
                                 f"{mount['model_gap_mm']}")
+        # A spacer needs a POSITIVE span. At the selected 0.60 mm display datum the
+        # drawn boss ends land behind the front board's top face, so no positive
+        # length exists on this chain: the solids are REFUSED, nothing is extruded
+        # (a negative or reversed box would draw an overlap as if it were a part)
+        # and the resulting collision risk is recorded as PENDING, not cleared.
+        if length <= 1e-9:
+            meta["LCD_MOUNT_PLACEHOLDERS"] = {
+                "kind": "REFUSED - NO POSITIVE-LENGTH PLACEHOLDER EXISTS",
+                "count": 0,
+                "axes_xy_mm": [[axis[0], axis[1]] for axis in mount["axes_xy"]],
+                "span_mm": [boss_rear_z, board_top_z],
+                "model_gap_mm": length,
+                "failure_mode": ("the model gap is negative: the drawn boss ends are BEHIND the "
+                                 "front board's top face, so the front-board mounting arithmetic "
+                                 "has no positive spacer length"),
+                "no_solid_drawn": ("nothing is extruded for this block. A negative or reversed "
+                                   "box would draw an overlap as if it were a part"),
+                "collision": "PENDING - UNVERIFIED COLLISION RISK, NOT CLEARED",
+                "collision_note": (
+                    "the module's boss ends and rear-most plane lie inside the front board's "
+                    "Z band, and the U opening's XY containment of every module feature is "
+                    "unmeasured. Nothing here proves the interference harmless; measure the "
+                    "real boss plane and the opening against the module before any fit claim"),
+                "real_carrier_gap": {
+                    "rear_board_front_z_mm": float(layout["provisionalZ"]["rearBoardFront"]),
+                    "display_rear_most_z_mm": float(layout["provisionalZ"]["displayRearMost"]),
+                    "spacer_length_mm": float(layout["displayStandoff"]["spacerLength"]),
+                    "note": ("the carrier bolts to the REAR board; that gap is unchanged and "
+                             "is the only mounting this model shows"),
+                },
+                "not_claimed": [
+                    "an approved spacer length",
+                    "a part, part number or supplier",
+                    "a standoff diameter or a thread",
+                    "any physical fit",
+                    "that the drawn overlap is acceptable",
+                ],
+                "first_article_tasks": mount["first_article_tasks"],
+            }
+            print("  LCD mount placeholders REFUSED: the model gap is "
+                  f"{length:+.2f} mm (no positive spacer exists); collision risk PENDING")
+            length = None
         od, idia = mount["outer_diameter_mm"], mount["inner_diameter_mm"]
         hole = float(layout["display"]["stack"]["holeDiameter"])
-        if od / 2 <= hole / 2:
+        if length is not None and od / 2 <= hole / 2:
             raise GeometryError(
                 f"OD {od} does not exceed the board hole {hole}: no bearing annulus would show")
         spacer_meta = []
-        for index, axis in enumerate(mount["axes_xy"], start=1):
+        for index, axis in enumerate([] if length is None else mount["axes_xy"], start=1):
             name = f"{DISPLAY_MOUNT_PLACEHOLDER['name_prefix']}_{index}"
             spacer = (cq.Workplane("XY").workplane(offset=boss_rear_z)
                       .center(axis[0], axis[1])
@@ -1103,24 +1173,25 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
                 "board_hole_diameter_mm": hole,
                 "annulus_bearing_width_mm": round((od - hole) / 2, 3),
             })
-        meta["LCD_MOUNT_PLACEHOLDERS"] = {
-            "kind": "MODEL-FIT GEOMETRIC PLACEHOLDER, non-approved",
-            "count": len(spacer_meta),
-            "span_mm": [boss_rear_z, board_top_z],
-            "spacers": spacer_meta,
-            "not_claimed": [
-                "an approved spacer length",
-                "a part, part number or supplier",
-                "a standoff diameter or a thread",
-                "thread engagement, torque or assembly order",
-                "any physical fit",
-            ],
-            "first_article_tasks": mount["first_article_tasks"],
-            "intrusion_limit_mm3": INTRUSION_EPS_MM3,
-            "intrusion_note": ("the reported volumes are boolean overlaps. Touching faces "
-                               "measure about 1e-5 mm^3; the limit separates that noise from a "
-                               "real penetration"),
-        }
+        if length is not None:
+            meta["LCD_MOUNT_PLACEHOLDERS"] = {
+                "kind": "MODEL-FIT GEOMETRIC PLACEHOLDER, non-approved",
+                "count": len(spacer_meta),
+                "span_mm": [boss_rear_z, board_top_z],
+                "spacers": spacer_meta,
+                "not_claimed": [
+                    "an approved spacer length",
+                    "a part, part number or supplier",
+                    "a standoff diameter or a thread",
+                    "thread engagement, torque or assembly order",
+                    "any physical fit",
+                ],
+                "first_article_tasks": mount["first_article_tasks"],
+                "intrusion_limit_mm3": INTRUSION_EPS_MM3,
+                "intrusion_note": ("the reported volumes are boolean overlaps. Touching faces "
+                                   "measure about 1e-5 mm^3; the limit separates that noise from "
+                                   "a real penetration"),
+            }
     else:
         meta["LCD_MOUNT_PLACEHOLDERS"] = {
             "kind": "SKIPPED",
@@ -1134,11 +1205,12 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
     # This is NOT a verified connector: the 21.412 x 4.826 mm size has no
     # reliable source in the vendor model (the bodies that carry that size are
     # TFT1 flex bonds, see VENDOR_DISPLAY_MODEL["tft1_flex_bonds"]), and the
-    # marker sits on the PROVISIONAL design-chain plane (displayPcbRear =
-    # 10.05 mm), not on the vendor model's drawn PCB rear plane (6.24 mm).
+    # marker sits on the layout's display PCB rear datum
+    # (PROVISIONAL_Z.displayPcbRear), not on the vendor model's drawn PCB rear
+    # plane (6.24 mm below its glass).
     # Routing, connector identity and fit are unknown.
     fpc = layout["fpcConnector"]
-    vendor_pcb_rear = placed_display_planes()["pcb_rear"]
+    vendor_pcb_rear = placed_display_planes(layout)["pcb_rear"]
     fpc_wp = box(fpc["at"]["x"] - fpc["bodyWidth"] / 2,
                  fpc["at"]["y"] - fpc["bodyLength"] / 2,
                  pz["displayPcbRear"],
@@ -1159,9 +1231,11 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
                             "disputed and the position/length arithmetic needs independent "
                             "re-derivation"),
         "z_mm": [round(pz["displayPcbRear"], 3), round(pz["displayPcbRear"] + 1.8, 3)],
-        "z_basis": ("the PROVISIONAL design-chain plane (assumption A + B + the 10.05 mm "
-                    f"glass-to-PCB-rear split). The drawn vendor model puts its PCB rear face "
-                    f"at global Z = {vendor_pcb_rear:.2f} mm, so this marker is not on it"),
+        "z_basis": ("the layout's display PCB rear datum (PROVISIONAL_Z.displayPcbRear = "
+                    f"{round(pz['displayPcbRear'], 3):.2f} mm panel Z, i.e. the display glass "
+                    "datum plus the provisional glass-to-PCB-rear split). The drawn vendor "
+                    f"model puts its own PCB rear face at panel Z = {vendor_pcb_rear:.2f} mm, "
+                    "so this marker is not on that plane"),
         "fit_and_routing": "UNKNOWN: no clearance, bend radius or cable route is claimed",
     }
 

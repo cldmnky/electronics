@@ -166,10 +166,20 @@ class StepRoundTripTest(unittest.TestCase):
                                  (-71.5, 52.0), (71.5, 52.0)]))
         placeholders = self.document["bodies"]["LCD_MOUNT_PLACEHOLDERS"]
         if self.document["display_step"]["status"] == "verified":
-            # vendor mode: all four model-fit placeholders are drawn
-            self.assertEqual(placeholders["kind"], "MODEL-FIT GEOMETRIC PLACEHOLDER, non-approved")
-            for index in (1, 2, 3, 4):
-                self.assertIn(f"MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_{index}", text)
+            gap = sg.display_mount_gap(sg.load_layout())["model_gap_mm"]
+            if gap > 0:
+                # vendor mode with a POSITIVE model gap: four placeholders drawn
+                self.assertEqual(placeholders["kind"],
+                                 "MODEL-FIT GEOMETRIC PLACEHOLDER, non-approved")
+                for index in (1, 2, 3, 4):
+                    self.assertIn(f"MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_{index}", text)
+            else:
+                # vendor mode with a NEGATIVE model gap: refused, nothing drawn
+                self.assertEqual(placeholders["kind"],
+                                 "REFUSED - NO POSITIVE-LENGTH PLACEHOLDER EXISTS")
+                self.assertAlmostEqual(placeholders["model_gap_mm"], gap, places=6)
+                for index in (1, 2, 3, 4):
+                    self.assertNotIn(f"MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_{index}", text)
         else:
             # envelope mode: no drawn boss plane, so the spacers are SKIPPED
             self.assertEqual(placeholders["kind"], "SKIPPED")
@@ -247,9 +257,10 @@ class StepRoundTripTest(unittest.TestCase):
         self.assertIn("UNVERIFIED", marker["size_source"])
         self.assertIn("TFT1 flex bonds", marker["size_source"])
         self.assertIn("UNKNOWN", marker["fit_and_routing"])
-        self.assertIn("PROVISIONAL", marker["z_basis"])
-        self.assertIn("not on it", marker["z_basis"])
-        self.assertAlmostEqual(marker["z_mm"][0], 10.05, places=3)
+        self.assertIn("display PCB rear datum", marker["z_basis"])
+        self.assertIn("not on that plane", marker["z_basis"])
+        self.assertNotIn("10.05", marker["z_basis"])
+        self.assertAlmostEqual(marker["z_mm"][0], 10.65, places=3)
 
     def test_the_metadata_stays_provisional_and_honest(self) -> None:
         self.assertTrue(self.document["status"].startswith("PROVISIONAL"))
@@ -324,7 +335,11 @@ class DisplayPlacementTest(unittest.TestCase):
         self.assertEqual(self.code, 0)
 
     def test_the_glass_front_face_is_the_panel_front_datum(self) -> None:
-        self.assertAlmostEqual(self.body["placed_global_z_mm"]["glass_front"], 0.0, places=3)
+        # NOT flush: the layout's display datum puts the glass 0.60 mm BEHIND the
+        # panel front, so the drawn glass plane is +0.60 in the panel frame.
+        datum = sg.load_layout()["provisionalZ"]["displayGlassFront"]
+        self.assertAlmostEqual(datum, 0.60, places=6)
+        self.assertAlmostEqual(self.body["placed_global_z_mm"]["glass_front"], datum, places=3)
 
     def test_the_electronics_point_rearward(self) -> None:
         z = self.body["placed_global_z_mm"]
@@ -335,9 +350,18 @@ class DisplayPlacementTest(unittest.TestCase):
 
     def test_the_front_frame_is_disclosed_1_9_mm_proud(self) -> None:
         z = self.body["placed_global_z_mm"]
-        self.assertAlmostEqual(z["touch_frame_front"], -1.9, places=3)
+        # The selected display datum is NOT zero: the glass front is 0.60 mm
+        # behind the panel front, so the touch/frame plane (1.90 mm in front of
+        # the glass) lands at panel Z -1.30, not the flush-datum -1.90.
+        self.assertAlmostEqual(z["glass_front"], 0.60, places=3)
+        self.assertAlmostEqual(z["touch_frame_front"], -1.30, places=3)
         self.assertIn("1.90 mm", self.body["front_frame_disclosure"])
+        self.assertIn("-1.30", self.body["front_frame_disclosure"])
+        self.assertIn("1.30 mm in FRONT of the panel front", self.body["front_frame_disclosure"])
         self.assertIn("NOT flush", self.body["front_frame_disclosure"])
+        # The glass datum note describes the layout datum, never "assumed flush".
+        self.assertIn("+0.60", self.body["glass_datum"])
+        self.assertIn("BEHIND the panel front", self.body["glass_datum"])
         self.assertGreaterEqual(len(self.body["pending"]), 3)
 
     def test_the_placement_is_a_rotation_not_a_mirror(self) -> None:
@@ -458,6 +482,10 @@ class SpacerPlaceholderTest(unittest.TestCase):
         cls.solids = cls.built["solids"]
         cls.meta = cls.built["meta"]["LCD_MOUNT_PLACEHOLDERS"]
         cls.gap = sg.display_mount_gap(cls.layout)
+        # The selected display datum leaves a NEGATIVE model gap, so the
+        # placeholder solids are refused. The positive-gap branch is kept below so
+        # the drawing behaviour is still covered if the chain ever allows it.
+        cls.positive_gap = cls.gap["model_gap_mm"] > 0
 
     def _spacers(self) -> list[dict]:
         return [b for n, b in self.solids.items()
@@ -466,25 +494,80 @@ class SpacerPlaceholderTest(unittest.TestCase):
     def test_four_placeholders_exist_with_distinct_names(self) -> None:
         names = sorted(n for n in self.solids
                        if n.startswith("MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED"))
+        if not self.positive_gap:
+            # ZERO solids, and that is an ASSERTION, not a pass by absence: no
+            # positive-length spacer exists on this chain, so a drawn body would
+            # be a fabricated (negative or reversed) placeholder.
+            self.assertEqual(names, [])
+            self.assertAlmostEqual(self.gap["model_gap_mm"], -0.24, places=6)
+            self.assertEqual(self.meta["kind"],
+                             "REFUSED - NO POSITIVE-LENGTH PLACEHOLDER EXISTS")
+            self.assertEqual(self.meta["count"], 0)
+            self.assertIn("no_solid_drawn", self.meta)
+            return
         self.assertEqual(names, [f"MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_{i}"
                                  for i in (1, 2, 3, 4)])
         self.assertEqual(self.meta["count"], 4)
 
     def test_the_span_comes_from_the_drawn_solids(self) -> None:
+        if not self.positive_gap:
+            # The refusal records the same drawn planes, and the negative gap.
+            self.assertAlmostEqual(self.meta["span_mm"][0], self.gap["boss_rear_z_mm"], places=2)
+            self.assertAlmostEqual(self.meta["span_mm"][1], self.gap["board_top_z_mm"], places=2)
+            self.assertAlmostEqual(self.meta["model_gap_mm"], self.gap["model_gap_mm"], places=2)
+            self.assertLess(self.meta["model_gap_mm"], 0)
+            return
         for body in self.meta["spacers"]:
             # Both planes are DRAWN/model data, never typed: the vendor boss rear
             # and the canonical front-board top face.
             self.assertAlmostEqual(body["z_mm"][0], self.gap["boss_rear_z_mm"], places=2)
             self.assertAlmostEqual(body["z_mm"][1], self.gap["board_top_z_mm"], places=2)
             self.assertAlmostEqual(body["length_mm"], self.gap["model_gap_mm"], places=2)
-            self.assertAlmostEqual(body["length_mm"], 0.36, places=2)
+            self.assertGreater(body["length_mm"], 0.0)
 
     def test_the_axes_are_the_exported_mount_holes(self) -> None:
+        if not self.positive_gap:
+            axes = sorted(tuple(a) for a in self.meta["axes_xy_mm"])
+            expected = sorted((h["x"], h["y"]) for h in self.layout["lcdMountHoles"])
+            self.assertEqual(axes, expected)
+            return
         axes = sorted(tuple(b["axis_xy_mm"]) for b in self.meta["spacers"])
         expected = sorted((h["x"], h["y"]) for h in self.layout["lcdMountHoles"])
         self.assertEqual(axes, expected)
 
+    def test_a_negative_gap_is_refused_with_a_collision_warning(self) -> None:
+        """The selected chain has NO positive spacer: say so, do not draw one.
+
+        The drawn boss ends land BEHIND the front board's top face, so a
+        placeholder would have to be negative or reversed. Neither is drawn, and
+        the resulting interference is recorded as PENDING - never as cleared.
+        """
+        self.assertAlmostEqual(self.gap["model_gap_mm"], -0.24, places=6)
+        self.assertFalse(self.positive_gap)
+        self.assertEqual(self.meta["count"], 0)
+        self.assertEqual(self.meta["kind"],
+                         "REFUSED - NO POSITIVE-LENGTH PLACEHOLDER EXISTS")
+        self.assertIn("negative", self.meta["failure_mode"])
+        self.assertIn("A negative or reversed", self.meta["no_solid_drawn"])
+        self.assertIn("PENDING", self.meta["collision"])
+        self.assertIn("NOT CLEARED", self.meta["collision"])
+        self.assertIn("unmeasured", self.meta["collision_note"])
+        self.assertIn("that the drawn overlap is acceptable", self.meta["not_claimed"])
+        # The real carrier mounting is still recorded, unchanged.
+        carrier = self.meta["real_carrier_gap"]
+        self.assertAlmostEqual(carrier["spacer_length_mm"],
+                               self.layout["displayStandoff"]["spacerLength"], places=6)
+        self.assertAlmostEqual(carrier["rear_board_front_z_mm"],
+                               self.layout["provisionalZ"]["rearBoardFront"], places=6)
+        # And nothing was extruded for it.
+        self.assertEqual([n for n in self.solids if "MODEL_FIT_SPACER" in n], [])
+
     def test_od_and_id_are_only_the_assumed_illustration(self) -> None:
+        if not self.positive_gap:
+            # Nothing is drawn, so no diameter may be claimed at all.
+            self.assertEqual(self.meta["count"], 0)
+            self.assertNotIn("spacers", self.meta)
+            return
         for body in self.meta["spacers"]:
             self.assertAlmostEqual(body["outer_diameter_mm"], 5.0, places=6)
             self.assertAlmostEqual(body["inner_diameter_mm"], 2.7, places=6)
@@ -492,12 +575,34 @@ class SpacerPlaceholderTest(unittest.TestCase):
             self.assertGreater(body["annulus_bearing_width_mm"], 0.0)
 
     def test_no_positive_volume_intrusion_against_display_or_board(self) -> None:
+        if not self.positive_gap:
+            # Nothing is drawn, so there is no body to measure. The REFUSAL and
+            # its pending collision warning are asserted in
+            # test_a_negative_gap_is_refused_with_a_collision_warning.
+            self.assertEqual(self.meta["count"], 0)
+            self.assertNotIn("spacers", self.meta)
+            self.assertIn("NOT CLEARED", self.meta["collision"])
+            return
         for body in self.meta["spacers"]:
             for volume in body["intrusion_volume_mm3"].values():
                 self.assertLessEqual(volume, sa.INTRUSION_EPS_MM3)
 
     def test_the_placeholders_carry_no_fit_or_approval_claim(self) -> None:
         """Non-approval metadata, not a vacuous substring check."""
+        if not self.positive_gap:
+            # The refused branch must still deny every claim, and must add the
+            # one claim that matters most here: that the overlap is acceptable.
+            self.assertIn("REFUSED", self.meta["kind"])
+            denials = " ".join(self.meta["not_claimed"]).lower()
+            for phrase in ("approved", "part", "thread", "fit",
+                           "that the drawn overlap is acceptable"):
+                self.assertIn(phrase, denials)
+            joined = json.dumps(self.meta).lower()
+            for claim in ("fits", "verified fit", "fit is", "is approved",
+                          "approved length", "clearance to", "resolved"):
+                self.assertNotIn(claim, joined)
+            self.assertIn("PENDING", self.meta["collision"])
+            return
         # the block and its definition both say placeholder / non-approved
         self.assertIn("PLACEHOLDER", self.meta["kind"])
         self.assertIn("non-approved", self.meta["kind"])
@@ -520,11 +625,20 @@ class SpacerPlaceholderTest(unittest.TestCase):
         """Two chains, two answers: the spacer plane is 8.99 mm from the bosses."""
         board_top = self.gap["board_top_z_mm"]
         chain_end = board_top - self.gap["design_chain_spacer_mm"]
-        # The derived 9.35 mm spacer reaches Z 1.25 measured from the board face
-        # at 10.60, which is 8.99 mm in FRONT of the drawn boss ends at 10.24: the
-        # two chains do NOT agree and neither is approved.
-        self.assertAlmostEqual(chain_end, 1.25, places=6)
+        # Re-derived, never typed: the 8.75 mm carrier spacer reaches
+        # board_top - 8.75 = 1.85, which is 8.99 mm in FRONT of the drawn boss
+        # ends at 10.84. The two chains do NOT agree and neither is approved.
+        self.assertAlmostEqual(chain_end,
+                               board_top - self.layout["displayStandoff"]["spacerLength"],
+                               places=6)
+        self.assertAlmostEqual(chain_end, 1.85, places=6)
+        self.assertAlmostEqual(chain_end - self.gap["boss_rear_z_mm"],
+                               self.gap["residual_mm"], places=6)
         self.assertAlmostEqual(chain_end - self.gap["boss_rear_z_mm"], -8.99, places=6)
+        # The chain plane lies INSIDE the module's Z span, which is why a spacer
+        # placed there cannot be drawn as a separate body.
+        self.assertGreater(chain_end, self.layout["provisionalZ"]["displayGlassFront"])
+        self.assertLess(chain_end, self.layout["provisionalZ"]["displayRearMost"])
         # At the 10.6 mm panel that plane now lies INSIDE the drawn module, so a
         # spacer placed there cannot even be drawn as a separate body: the chain
         # plane and the vendor model contradict each other. That is the finding,
@@ -540,8 +654,8 @@ class SpacerPlaceholderTest(unittest.TestCase):
                            "the design-chain spacer plane is expected to be inside the "
                            "drawn module at the 10.6 mm panel")
         bb = short.val().BoundingBox()
-        self.assertAlmostEqual(bb.zmin, 1.25, places=2)
-        self.assertAlmostEqual(bb.zmax, 6.25, places=2)
+        self.assertAlmostEqual(bb.zmin, chain_end, places=2)
+        self.assertAlmostEqual(bb.zmax, chain_end + 5.0, places=2)
 
     def test_an_over_long_placeholder_is_rejected(self) -> None:
         """Negative regression: extending a placeholder must fail the limit."""
@@ -562,6 +676,23 @@ class SpacerPlaceholderTest(unittest.TestCase):
             # --display-step; the class recorded which one this run uses
             self.assertEqual(sa.main(["--out", str(out), *self.source_args]), 0)
             shape = cq.importers.importStep(str(out / sa.STEP_NAME)).val()
+            if not self.positive_gap:
+                # The selected chain has NO positive model gap, so no spacer solid
+                # may exist. This asserts the export, not a missing key.
+                document = json.loads((out / sa.ASSUMPTIONS).read_text())
+                block = document["bodies"]["LCD_MOUNT_PLACEHOLDERS"]
+                self.assertEqual(block["kind"],
+                                 "REFUSED - NO POSITIVE-LENGTH PLACEHOLDER EXISTS")
+                self.assertAlmostEqual(block["model_gap_mm"], self.gap["model_gap_mm"],
+                                       places=3)
+                names = [n for n in document["bodies"] if "MODEL_FIT_SPACER" in n]
+                self.assertEqual(names, [])
+                tubes = [s for s in shape.Solids()
+                         if abs(s.BoundingBox().xlen - 5.0) < 0.05
+                         and abs(s.BoundingBox().ylen - 5.0) < 0.05
+                         and abs(s.BoundingBox().zlen) < 6.0]
+                self.assertEqual(len(tubes), 0)
+                return
             tubes = [s for s in shape.Solids()
                      if abs(s.BoundingBox().zlen - self.gap["model_gap_mm"]) < 0.02
                      and abs(s.BoundingBox().xlen - 5.0) < 0.05

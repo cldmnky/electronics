@@ -405,7 +405,7 @@ export default () => (
     {/* The notch and the display opening are one cut now: the board is a U. */}
 
     {/* Display opening. At the 10.6 mm panel the module's body (glass front 0 ->
-        rear-most 14.05 mm) crosses this board's 10.6...12.2 mm plane, so no
+        rear-most 14.65 mm) crosses this board's 10.6...12.2 mm plane, so no
         board material may sit under it. The module hangs from the rear board's
         printed carrier; this board only has to let it through. */}
     <cutout shape="polygon" points={[...FRONT_BOARD_OPENING_POLYGON]} />

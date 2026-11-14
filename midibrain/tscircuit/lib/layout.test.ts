@@ -49,6 +49,7 @@ import {
   FRONT_INTERCONNECT,
   FRONT_PCB,
   FRONT_REAR_MOUNT,
+  JACK_CLAMPED_GAP,
   JACK_Y,
   LCD_MOUNT_HOLES,
   LCD_WINDOW,
@@ -405,13 +406,17 @@ test("LCD aperture is the glass outline plus the stated allowance", () => {
   expect(cut.cornerRadius).toBe(AUTOPROVISIONAL_CORNER)
 })
 
-test("the glass passes through the panel, flush with its front face", () => {
-  // D1 sizing means the window clears the glass on every side, so the glass
-  // front face sits at the panel front face (Assumption A, restored) and the
-  // panel occludes nothing. The vertical fit works because the LED light pipes
-  // moved beside their buttons (fallback 3): the free band is 77.575 mm against
-  // a 68.87 mm window.
-  expect(PROVISIONAL_Z.displayGlassFront).toBe(0)
+test("the glass passes through the panel just behind its front face", () => {
+  // D1 sizing means the window clears the glass on every side. The module now
+  // hangs on the rear board's carrier, so the glass front FALLS OUT of the
+  // stack at a nominal 0.60 mm behind the panel front - still inside the 1.6 mm
+  // aperture, so the panel occludes nothing, and the adjustable carrier
+  // spacers trim it flush at assembly. It is no longer the Z datum.
+  expect(DISPLAY_GLASS_FRONT_Z).toBeCloseTo(
+    PROVISIONAL_Z.rearBoardFront - DISPLAY_STANDOFF.spacerLength - DISPLAY_VENDOR.overallDepth, 6)
+  expect(DISPLAY_GLASS_FRONT_Z).toBeCloseTo(0.6, 6)
+  expect(DISPLAY_GLASS_FRONT_Z).toBeGreaterThan(PROVISIONAL_Z.panelFront)
+  expect(DISPLAY_GLASS_FRONT_Z).toBeLessThan(PROVISIONAL_Z.panelRear)
   expect(PANEL_LCD_CUTOUT.width).toBeGreaterThan(DISPLAY_VENDOR.glass.width)
   expect(PANEL_LCD_CUTOUT.height).toBeGreaterThan(DISPLAY_VENDOR.glass.height)
   const windowReveal = (PANEL_LCD_CUTOUT.width - DISPLAY_VENDOR.glass.width) / 2
@@ -618,9 +623,10 @@ test("provisional Z stack follows the vendor side view, with a stated datum", ()
   const v = DISPLAY_VENDOR
   expect(PROVISIONAL_Z.panelFront).toBe(0)
   expect(PROVISIONAL_Z.panelRear).toBe(PANEL.thickness)
-  // Assumption A: the glass front sits flush with the panel front face, which
-  // the glass-derived aperture allows.
-  expect(PROVISIONAL_Z.displayGlassFront).toBe(0)
+  // The display plane is a consequence of the rear-board carrier, not datum 0:
+  // the glass front sits 0.60 mm behind the panel front nominally, and the
+  // adjustable carrier spacers trim it flush at assembly.
+  expect(PROVISIONAL_Z.displayGlassFront).toBeCloseTo(0.6, 6)
   // 14.05 mm overall (wiki FAQ), split PROVISIONALLY into 10.05 glass front ->
   // PCB rear plus a 4.00 mm boss projection. The split is unmeasured and the
   // two quantities stay named separately so they cannot be conflated.
@@ -628,40 +634,37 @@ test("provisional Z stack follows the vendor side view, with a stated datum", ()
   expect(v.pcbRearToBossEnd).toBe(4.0)
   expect(v.overallDepth).toBeCloseTo(14.05, 6)
   expect(v.overallDepth).toBeCloseTo(v.glassFrontToPcbRear + v.pcbRearToBossEnd, 6)
-  expect(PROVISIONAL_Z.displayPcbRear).toBeCloseTo(10.05, 6)
-  expect(PROVISIONAL_Z.displayRearMost).toBeCloseTo(14.05, 6)
+  expect(PROVISIONAL_Z.displayPcbRear).toBeCloseTo(10.65, 6)
+  expect(PROVISIONAL_Z.displayRearMost).toBeCloseTo(14.65, 6)
   expect("rearEnvelopeDepth" in DISPLAY_STACK).toBe(false)
   // Plane separation and spacer length are separate quantities, both now
   // measured from the REAR board's front face (the display left the front board
-  // on 2026-11-13). They are DERIVED from the panel datum: the rear board's
-  // front face minus the display PCB's rear face, then minus the 4.00 mm boss
-  // projection. 13.35 - 4.00 = 9.35 mm nominal carrier spacer at 10.6 mm.
-  expect(DISPLAY_STANDOFF.planeSeparation).toBeCloseTo(
-    REAR_BOARD_FRONT_Z - DISPLAY_PCB_REAR_Z, 6)
-  expect(DISPLAY_STANDOFF.planeSeparation).toBeCloseTo(13.35, 6)
-  expect(DISPLAY_STANDOFF.spacerLength).toBeCloseTo(9.35, 6)
+  // on 2026-11-13). 12.75 - 4.00 boss = 8.75 mm nominal carrier spacer, and the
+  // cross-check below pins them to the Z chain so they cannot drift: 23.40 rear
+  // board front - 10.65 display PCB rear = 12.75.
+  expect(DISPLAY_STANDOFF.planeSeparation).toBe(12.75)
+  expect(DISPLAY_STANDOFF.spacerLength).toBeCloseTo(8.75, 6)
   expect(DISPLAY_STANDOFF.spacerLength).toBeCloseTo(
     DISPLAY_STANDOFF.planeSeparation - v.pcbRearToBossEnd, 6)
+  expect(REAR_BOARD_FRONT_Z - DISPLAY_PCB_REAR_Z).toBeCloseTo(
+    DISPLAY_STANDOFF.planeSeparation, 6)
+  // To reach flush the spacer must be EXTENDED by 0.60 mm (8.75 -> 9.35), never
+  // cut shorter: cutting moves the glass further behind the panel front.
+  expect(DISPLAY_STANDOFF.spacerLength + PROVISIONAL_Z.displayGlassFront).toBeCloseTo(9.35, 6)
   expect(DISPLAY_STACK.bossProjection).toBe(4)
-  // The panel distance is now the owner-directed input (10.6 mm, provisional),
-  // and every plane below follows it by addition - never re-typed.
+  // The panel front is the jack's 9.0 mm seating shoulder plus the 1.6 mm
+  // panel, and every board/display plane follows from it.
   expect(PANEL_TO_FRONT_BOARD_TOP).toBe(10.6)
   expect(PROVISIONAL_Z.frontBoardTop).toBeCloseTo(PANEL_TO_FRONT_BOARD_TOP, 6)
-  expect(PROVISIONAL_Z.frontBoardRear).toBeCloseTo(
-    PANEL_TO_FRONT_BOARD_TOP + FRONT_PCB.thickness, 6)
   expect(PROVISIONAL_Z.frontBoardRear).toBeCloseTo(12.2, 6)
-  expect(PROVISIONAL_Z.rearBoardFront).toBeCloseTo(
-    PANEL_TO_FRONT_BOARD_TOP + FRONT_PCB.thickness + INTERCONNECT_MECH.seatToSeat, 6)
   expect(PROVISIONAL_Z.rearBoardFront).toBeCloseTo(23.4, 6)
-  expect(PROVISIONAL_Z.rearBoardRear).toBeCloseTo(
-    PROVISIONAL_Z.rearBoardFront + REAR_PCB.thickness, 6)
   expect(PROVISIONAL_Z.rearBoardRear).toBeCloseTo(25.0, 6)
   expect(PROVISIONAL_Z.rearBoardFront - PROVISIONAL_Z.displayRearMost).toBeCloseTo(
     DISPLAY_STANDOFF.spacerLength, 6)
-  // The module's rear 3.45 mm sits behind the front board's top face.
-  expect(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost).toBeCloseTo(-3.45, 6)
-  // 10.60 - 1.60 = 9.00 mm: this gap is a consequence of the owner's panel
-  // datum, which came from the jack seating, not from the display.
+  // The module's rear 4.05 mm sits behind the front board's top face.
+  expect(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost).toBeCloseTo(-4.05, 6)
+  // 10.60 - 1.60 = 9.00 mm: the jack-clamped gap, the anchor rather than a
+  // consequence of a chosen panel front.
   expect(PANEL_TO_FRONT_BOARD_GAP).toBeCloseTo(9.0, 6)
   expect(PANEL_TO_FRONT_BOARD_GAP).toBeCloseTo(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear, 6)
   // The installed-depth chain still passes the owner's 110 mm target.
@@ -699,12 +702,12 @@ test("the B32 reference is PCB top to CAP TOP, so a bought cap sits below the pa
 })
 
 test("display underside gap and light-pipe reach stay pending, not claimed", () => {
-  // The module's rear-most plane is now BEHIND the front board's top face
-  // (10.6 - 14.05 = -3.45), which is exactly why the board carries an opening:
+  // The module's rear-most plane is BEHIND the front board's top face
+  // (10.60 - 14.65 = -4.05), which is exactly why the board carries an opening:
   // no board material may sit under the module. The old 5.0 mm air gap over the
   // SMT parts died with the 19.05 mm chain.
   expect(DISPLAY_UNDERSIDE_GAP).toBeCloseTo(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost, 6)
-  expect(DISPLAY_UNDERSIDE_GAP).toBeCloseTo(-3.45, 6)
+  expect(DISPLAY_UNDERSIDE_GAP).toBeCloseTo(-4.05, 6)
   expect(DISPLAY_UNDERSIDE_GAP).toBeLessThan(0)
   expect(FRONT_TOP_SMD_MAX_HEIGHT.height).toBe(2.2)
   // The light pipe is now too LONG, not too short. The number is SIGNED,
@@ -713,6 +716,7 @@ test("display underside gap and light-pipe reach stay pending, not claimed", () 
   // a measured interference, and the optical gap stays null.
   expect(LIGHT_PIPE_REACH.boardNearFaceZ).toBeCloseTo(PANEL_TO_FRONT_BOARD_TOP, 6)
   expect(LIGHT_PIPE_REACH.nominalTipToBoardPlane).toBeCloseTo(-5.9, 6)
+  expect(LIGHT_PIPE_REACH.nominalTipToBoardPlane).toBeLessThan(0)
   expect(LIGHT_PIPE_REACH.nominalTipToBoardPlane).toBeCloseTo(
     LIGHT_PIPE_REACH.boardNearFaceZ - LIGHT_PIPE_REACH.nominalTipZ, 6)
   expect(LIGHT_PIPE_REACH.opticalGap).toBeNull()
@@ -1086,18 +1090,20 @@ test("the four panel mount points form one frame outside the board opening", () 
 })
 
 test("the four panel standoffs are M3, one length, and adjustable", () => {
-  // The length is DERIVED from the stack, never typed: board top (10.60) to
+  // The length is DERIVED from the jack, never typed: board top (10.60) to
   // panel rear (1.60).
   expect(PANEL_STANDOFF.length).toBeCloseTo(PANEL_STACK.boardToPanelRear, 9)
   expect(PANEL_STANDOFF.length).toBeCloseTo(PANEL_TO_FRONT_BOARD_TOP - PANEL.thickness, 9)
+  expect(PANEL_STANDOFF.length).toBeCloseTo(JACK_CLAMPED_GAP, 9)
   expect(PANEL_STANDOFF.length).toBeCloseTo(9.0, 6)
   expect(PANEL_STANDOFF.thread).toBe("M3")
   // The same M3 clearance tool drills the panel, the board and the rails.
   expect(PANEL_STANDOFF.holeDiameter).toBe(M3_CLEARANCE_HOLE_DIAMETER)
   expect(PANEL_STANDOFF.holeDiameter).toBe(RAIL_HOLE_DIAMETER)
-  // Adjustable, NOT fixed height: the 9.00 mm is a nominal and the real gap is
-  // set by the jack bushing stack (unmeasured). A fixed spacer would either
-  // hold the panel off the jacks or bend it and preload the jack solder joints.
+  // Adjustable, NOT fixed height: the 9.00 mm is the jack's seating-shoulder
+  // nominal and the real gap is set by the jack bushing stack (unmeasured). A
+  // fixed spacer would either hold the panel off the jacks or bend it and
+  // preload the jack solder joints.
   expect(PANEL_STANDOFF.family).toBe("M3 threaded, adjustable")
   expect(PANEL_STANDOFF.panelPlaneDatum).toContain("jack")
   // The exported mechanical data carries the frame and the standoff, so the
@@ -1136,7 +1142,10 @@ test("the panel front face is the jack-clamped gap plus the panel thickness", ()
   expect(PANEL_STACK.boardToPanelFront).toBeCloseTo(10.6, 6)
   expect(PANEL_STACK.boardToPanelFront).toBeCloseTo(
     PANEL_STACK.boardToPanelRear + PANEL_STACK.panelThickness, 6)
-  // ... and that sum is the single source the whole stack chains from.
+  // ... and the jack's 9.0 mm seating shoulder is the anchor, not a value
+  // derived back out of the chosen panel front.
+  expect(PANEL_STACK.boardToPanelRear).toBeCloseTo(JACK_CLAMPED_GAP, 6)
+  expect(JACK_CLAMPED_GAP).toBe(9.0)
   expect(PANEL_STACK.boardToPanelFront).toBeCloseTo(PANEL_TO_FRONT_BOARD_TOP, 6)
 })
 

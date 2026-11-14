@@ -63,28 +63,132 @@ scene z >= -cut, so it still peels the stack along the viewing direction.
   panel-facing side lands on +scene z) and `positionZ = -(T + 0.8)`, where `T`
   is that board's face nearest the panel, straight out of
   `mechanical/layout.json` `provisionalZ` (panel front 0, +z rearward). Result
-  in panel z: panel 0.00…1.60, front board **10.60…12.20**, rear board
-  **23.40…25.00** (owner-directed 10.6 mm panel front, provisional), each
-  board's parts side facing the panel. In scene z that is panel 0…-1.60,
+  in panel z: panel 0.00…1.60, front board 10.60…12.20, rear board 23.40…25.00,
+  each board's parts side facing the panel. In scene z that is panel 0…-1.60,
   front -10.60…-12.20, rear -23.40…-25.00: the panel is nearest the camera and
   the rear board furthest away.
 - The vendor display (Waveshare) is in its **own** frame and its STEP also
   carries non-solid construction geometry (raw points reach x = 106 where the
   solid envelope is 106.1 wide), so it cannot be placed by centre arithmetic.
-  The viewer aligns it on the **loaded** bounding box: centred on
-  `display.x/y` and with its screen on the panel-front plane (scene z 0), i.e.
-  facing the panel and reaching back to -13.82. Which side is the screen is not
-  guessed - it is read off the STEP's own products through OpenCascade: `BOARD`
-  sits at z -3.34…-1.74 and the SMTSO bosses at -7.34…-1.84, while the IPS/touch
-  panel reaches +4.8, so +z is the screen and z is inverted.
+  The viewer aligns it on the **loaded** bounding box, centred on
+  `display.x/y`. Which side is the screen is not guessed - it is read off the
+  STEP's own products through OpenCascade: `BOARD` sits at z -3.34…-1.74 and the
+  SMTSO bosses at -7.34…-1.84, while the IPS/touch panel reaches +4.8, so +z is
+  the screen and z is inverted.
+- **Scene z is negative rearward** (scene z = -panel z), so the selected glass
+  datum **panel z +0.60** is **scene z -0.60**, not +0.60.
+- The bbox front of the **verified** vendor STEP is **not** the glass: its
+  touch/frame plane stands **1.90 mm in front of the glass face** (verified model
+  planes: glass z 2.900, touch/frame z 4.800), so with the glass at panel z 0.60
+  the frame front is at **panel z -1.30**, i.e. **scene z +1.30** and 1.30 mm
+  proud of the panel front. `serve_manifest.py` imports that 1.90 mm offset from
+  `step_geometry.VENDOR_DISPLAY_MODEL` - it is never retyped - and applies it
+  **only** when the STEP on disk hashes to the SHA-256 recorded in
+  `mechanical/reference/waveshare-4.3inch-dsi-lcd.source.json`. For any other
+  STEP the offset is not applied, `align.modelVerified` is false and the page
+  says the glass plane is unproven. A model in a viewer is never a fit.
+- **XY orientation:** the vendor frame's +x runs opposite the layout's +x, and the
+  placement corrects that mirror. The in-plane rotation (**180° about Y**) is the
+  drawn **candidate only** - `DISPLAY_ORIENTATION` records both axes and the
+  physical orientation of the delivered module is **pending** a labelled front/
+  rear photograph.
 - The **display carrier and its four spacers** are drawn as a placeholder from
   `displayStandoff.spacerLength` between the module's rear plane and the rear
   board's front face, at the module's `displayBossPattern`. They stand along
-  scene Z in that 9.35 mm gap (panel z 14.05…23.40, scene z -14.05…-23.40):
+  scene Z in that 8.75 mm gap (panel z 14.65…23.40, scene z -14.65…-23.40):
   behind the module and in front of the rear board's own face, which is where the
   spacers are documented to bolt. There is no STEP for the carrier yet
   (`display_boss_pattern` is open); the spacer and pad diameters are named
   placeholders, so read this as "where it bolts", not as a part.
+
+### The encoder's STEP datum (a viewer workaround, not a model fix)
+
+`front.step` draws U6 (Bourns PEC11R-4015F-S0024, C143789) **4.50 mm too low**.
+The cause is in the vendor CAD, not in the placement: the vendor STEP puts the
+body's **seating plane** - the large down-facing face spanning its 12.5 mm body,
+i.e. the face that stands on the board - at model-local z **-4.50** instead of
+on z 0. (The -4.70 planes beside the terminals and the lugs that reach -8.20 are
+the terminal shoulders and the mounting lugs, not the seat.) tscircuit's STEP
+exporter (`WXo()` in `@tscircuit/cli`'s `dist/lib/index.js`) drops
+`model_origin_position` and places every part from `cad_component.position`
+alone, so no `modelOriginPosition.z` in
+`tscircuit/imports/PEC11R_4015F_S0024.tsx` can move the exported file. Its 3D
+view reads the same part through the OBJ importer and looks right, so the import
+keeps the vendor value and the viewer compensates.
+
+`main.js` (`correctEncoderDatum()`) finds the part by **defect signature**, not
+by name or coordinate. Nothing here demonstrates the encoder's physical fit: the
+viewer draws vendor models and asserts mesh positions. In each loaded board model it locates the board plate
+(the flat body covering the most area) and takes a mesh that
+
+- reaches more than **4 mm behind** the board's far face (`min.z < bottom - 4`), and
+- reaches more than **8 mm in front** of the board's top face (`max.z > top + 8`)
+
+as the encoder. Exactly one mesh matches in `front.step` and in `assembly.step`;
+none matches in `panel.step`, `pi-panel.step` or `rear.step`. That mesh is
+lifted **+4.50 mm** in scene z, and the viewer then asserts the result, logging
+every number to the console:
+
+| check | measured on front.step |
+| --- | --- |
+| seating face on the board's top face (±0.05 mm) | largest face turned toward the board, 128.8 mm², at scene z -10.60: delta **0.000 mm** |
+| shaft/bushing toward the panel (+scene z) | bbox top +16.90, i.e. **27.50 mm** above the board's top face in the drawn model - see the shaft-height conflict below; this is NOT a part dimension |
+| legs through the board | bbox bottom -14.30, i.e. **2.10 mm** behind the board's far face |
+
+Before the shift the same mesh ran scene z -18.80…+12.40, which puts the seat at
+-15.10, i.e. 4.50 mm below the board's top face.
+
+It **self-heals**: if the export is fixed upstream, or a re-datumed STEP is
+vendored, the signature stops matching and nothing is shifted. A missing
+signature is **not** proof that the model is correct - it only means this viewer
+cannot identify the encoder in that file - so the console says just that:
+`no mesh matches the defect signature (0 of 1) - no shift applied; this neither
+confirms nor clears the encoder model`. If more than one mesh matches, the
+viewer refuses to guess: no shift, a visible warning on the page
+(`ENCODER IDENTITY AMBIGUOUS`) and the same in the status line. If no seating
+face can be found after the shift, the guard FAILS visibly instead of throwing.
+A model that carries no encoder at all (the panel, the Pi panel, the rear board)
+is reported as `not-applicable`, not as a failure - there is nothing to correct
+in it. The correction is REFUSED outright when `models.json` does not identify a
+board in the file, so the reference/vendor STEP and any unlabelled export are
+never shifted by this heuristic. If the post-shift guard fails, or no seating
+face can be found, the mesh is put back exactly as exported: a shift that cannot
+be checked is not left in the scene. Every warning stays visible in the HUD (not
+in the board list, which `renderToggles()` clears) and the status line names
+each refused board match.
+
+The board plate is checked against the board's documented footprint before any
+shift (`board` in `models.json`): the largest 1.2-2.0 mm plate in a model is not
+necessarily its board - the assembly export also carries the panel - so a plate
+that does not match the documented size is refused and the page says so.
+
+The results are on the page as `window.__viewer.encoders`. **Remove the
+workaround only when the exporter honours `model_origin_position` or
+`front.step` is re-datumed** - it is not a model fix, and it must not be turned
+into an unconditional offset.
+
+### Shaft height: the model and the drawing disagree (UNRESOLVED)
+
+The vendor L15 dimension runs from the **6.5 mm shoulder** and includes the
+**LB 5.0 mm** body, so the vendor's nominal shaft tip is **21.50 mm** above the
+PCB top. The STEP mesh, after the workaround, reaches **27.50 mm** above the
+board - a **6.00 mm** difference. It is a property of this model, not a part
+measurement: no encoder has been calipered, so the viewer shows both numbers,
+prints `UNRESOLVED` beside them, and makes **no physical-fit claim whatsoever**.
+A guard that passes says only that the shifted mesh sits where the arithmetic
+expects; it says nothing about the part. See `encoder_solder_process` and
+`case_fit` in `docs/acceptance.md`, both pending.
+
+![encoder side view](../../assets/viewer-encoder-side.png)
+
+Profile from +x with the panel edge-on, after the workaround: left to right are
+the printed knob envelope (opaque in the STEP viewer, translucent in
+tscircuit's 3D view), the shaft, the panel's edge and the M7 bushing standing
+through its VALUE aperture, then the encoder body in the 9 mm gap above the
+front board. The 4.50 mm the workaround restores is exactly that gap between
+the body's seating face and the board's top face (scene z -15.10 → -10.60); the
+legs, on the far face, are 2.10 mm short of the bbox and are asserted
+numerically rather than drawn in this view.
 
 ### Panel silkscreen (a texture, not geometry)
 
@@ -171,10 +275,10 @@ Boxes for the parts with no STEP, using the heights in
 | Box | Size (x × y × z, mm) | z0 (panel front = 0) | Source |
 | --- | --- | --- | --- |
 | panel | 152.0 × 128.5 × 1.6 | 0.00 | `PANEL` (30HP, 152.0 actual) |
-| front board | 150.0 × 112.0 × 1.6 | **10.60** | `FRONT_PCB`, `PROVISIONAL_Z.frontBoardTop` |
-| rear board | 148.0 × 112.0 × 1.6 | **23.40** | `REAR_PCB`, `PROVISIONAL_Z.rearBoardFront` |
+| front board | 150.0 × 112.0 × 1.6 | 10.60 | `FRONT_PCB`, `PROVISIONAL_Z.frontBoardTop` |
+| rear board | 148.0 × 112.0 × 1.6 | 23.40 | `REAR_PCB`, `PROVISIONAL_Z.rearBoardFront` |
 | stereo jack (×4) | 10.0 × 12.73 × 15.5 | 0.00 | PJ366ST STEP bounding box |
-| button + cap (×7) | 12.0 × 12.0 × **11.40** | −0.80 (the printed cap top, 0.80 mm proud of the panel front) | printed cap (the standard): `BUTTON_CAP_PRINTED` — top at panel Z −0.80, seat on the board top at 10.60, so 11.40 tall. **Verified** from the Omron drawing: `10.0 ±0.4` runs PCB top → **cap top**, so a bought B32 alternative would be 10.0 tall and its top would sit 0.60 mm behind our panel front, not 0.80 mm proud |
+| button + cap (×7) | 12.0 × 12.0 × 10.0 | 0.00 | Omron reference: **10.0 ±0.4 mm PCB top → CAP TOP** (so a bought cap top would sit 0.60 mm BEHIND the 10.6 mm panel front, nominally; its installed position is unverified). The printed cap is 4.70 tall, top 11.40 above the board |
 
 (The 128 mm / 17.45 mm figures that used to be here were the pre-respin stack;
 `mechanical-steps` above is the accurate route now that the boards export.)

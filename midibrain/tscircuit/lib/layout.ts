@@ -50,22 +50,24 @@ export const FRONT_PCB = { width: 150, height: 112, thickness: 1.6 } as const
 // itself is unchanged; the Pi mounting panel stays 101.2 mm.
 export const REAR_PCB = { width: 148, height: 112, thickness: 1.6 } as const
 
-// OWNER-DIRECTED, PROVISIONAL: the panel's FRONT/outer face sits 10.6 mm above
-// the front board's top face (panel rear 9.0 mm). Basis: the ordered Thonkiconn
-// WQP419GR jack seats the panel with its body shoulder - the 9.0 mm body length
-// along the jack axis plus the 1.6 mm panel gives 10.6 - and the owner accepted
-// 10.6 as the number. It is declared here, above DISPLAY_STANDOFF, because that
-// block's spacer arithmetic is measured from the rear board, which this value
-// moves. The long rationale is beside PROVISIONAL_Z below.
-// NOT an accepted physical fit: the jack's actual seating, its thread runout and
-// pitch, and the nut/washer stack are unmeasured (docs/mechanical-stack.md).
-export const PANEL_TO_FRONT_BOARD_TOP = 10.6 as const
-
 // M2.5 screw clearance for board and panel standoff holes; M3 for the rails.
 export const MOUNT_HOLE_DIAMETER = 2.7 as const
 // Keep derived millimetre values free of floating-point noise, so the exported
 // mechanical/layout.json and the tests compare exactly.
 const mm3 = (v: number) => Math.round(v * 1000) / 1000
+
+// OWNER-CONFIRMED 2026-11-14, PROVISIONAL: the panel stack is ANCHORED ON THE
+// JACK. The ordered Thonkiconn WQP419GR jack's seating shoulder is 9.0 mm from
+// the front board's top face and the panel REAR rests on it, so the panel FRONT
+// is 9.0 plus the 1.6 mm panel = 10.60 mm above that face. The front number is
+// DERIVED here, never typed: the jack sets the gap, the panel thickness adds the
+// rest. It is declared this early, above DISPLAY_STANDOFF, because that block's
+// carrier spacer arithmetic is measured from the rear board, which this value
+// moves. The long rationale is beside PROVISIONAL_Z below.
+// NOT an accepted physical fit: the jack's actual seating, its thread runout and
+// pitch, and the nut/washer stack are unmeasured (docs/mechanical-stack.md).
+export const JACK_CLAMPED_GAP = 9.0 as const // jack seating shoulder, board top -> panel REAR
+export const PANEL_TO_FRONT_BOARD_TOP = mm3(JACK_CLAMPED_GAP + PANEL.thickness) // 10.60
 // One M3 clearance tool for every M3 the stack carries: the four Eurorack rail
 // screws and the four panel-to-front-board mount screws below. 3.2 mm is the
 // Doepfer rail-hole size (A100FP.gif) and clears an M3 screw in both parts.
@@ -426,23 +428,26 @@ export const DISPLAY_CONCEPT = {
 // 2026-11-13: the module no longer sits on the front board. It bolts to a
 // printed carrier fixed to the REAR board's front face, so both distances are
 // measured from that face.
-// The carrier spacer is now DERIVED from the owner-directed panel-to-board
-// distance, not typed: the rear board's front face is PANEL_TO_FRONT_BOARD_TOP
-// + the front board + the 11.20 mm interconnect seat-to-seat, and the display
-// PCB's rear face comes from the glass-flush chain (0 + 10.05). Their difference
-// is planeSeparation; minus the module's 4.00 mm boss projection it is the
-// nominal carrier spacer that trims the glass plane to the panel front. At the
-// 10.6 mm panel that is 13.35 and 9.35 mm (it was 12.75 and 8.75 at 10.0).
+// owner-confirmed 2026-11-14: the carrier spacer length is the INPUT here, and
+// the glass plane is what FALLS OUT of it (see PROVISIONAL_Z: glass front =
+// rear-board front - spacer - the module's 14.05 mm overall depth). The pair is
+// plane separation 12.75 mm and spacer 8.75 mm, the 12.75 being rear-board front
+// face -> display PCB rear face and the 8.75 the adjustable length. To reach
+// flush the spacer must be EXTENDED to 9.35 mm (+0.60), not cut: shortening the
+// 8.75 mm starting length moves the glass further behind the panel front. The
+// two values cannot both be derived: one has to be chosen, and the spacer is the
+// adjustable one.
+// The values agree with the Z chain - REAR_BOARD_FRONT_Z (23.40) - the display
+// PCB rear face (10.65) is 12.75, and 12.75 - 4.00 (boss projection) = 8.75 - and
+// layout.test.ts asserts that agreement so the pair cannot drift.
 // NOTHING IS DRAWN FOR THE CARRIER YET: there is no carrier STL and no outline.
 // The reason is NOT geometry - the rear board is 148 mm wide (x +-74), so all
 // four boss points (x -59.65 / +39.65) are inside it - and the spacer is a
 // nominal length, not a fit (acceptance item `display_dsi`, `first_article`).
 export const REAR_BOARD_FRONT_Z = mm3(PANEL_TO_FRONT_BOARD_TOP + FRONT_PCB.thickness + INTERCONNECT_MECH.seatToSeat) // 23.40
-export const DISPLAY_PCB_REAR_Z = mm3(0 + DISPLAY_VENDOR.glassFrontToPcbRear) // 10.05
 export const DISPLAY_STANDOFF = {
-  planeSeparation: mm3(REAR_BOARD_FRONT_Z - DISPLAY_PCB_REAR_Z),                     // 13.35
-  spacerLength: mm3(REAR_BOARD_FRONT_Z - DISPLAY_PCB_REAR_Z
-    - DISPLAY_VENDOR.pcbRearToBossEnd),                                              // 9.35
+  planeSeparation: 12.75,                                                             // rear board front -> display PCB rear
+  spacerLength: mm3(12.75 - DISPLAY_VENDOR.pcbRearToBossEnd),                          // 8.75
 } as const
 
 export const DISPLAY_STACK = {
@@ -686,64 +691,80 @@ export const FRONT_BOARD_OPENING_POLYGON = (() => {
 // ---- PROVISIONAL Z stack ----
 // Z datum: Z = 0 at the front (operator-side) face of the panel; +Z is
 // rearward, into the rack cavity. Millimetres.
-// NOT a verified clearance. The chain below rests on TWO explicit provisional
-// design assumptions and one candidate part dimension. No value here is a
+// NOT a verified clearance. The panel plane is anchored by the jack (below);
+// the display plane is a consequence of the rear-board carrier, and the
+// module's depth split is a provisional vendor figure. No value here is a
 // measurement, and none of them certifies a gap.
 //
-// Assumption A is the 3.5-inch rule, restored for the 4.3-inch module now that
-// the panel aperture follows the GLASS outline (PANEL_LCD_CUTOUT, 107.22 x
-// 68.87): the glass passes THROUGH the aperture, so the glass front face can
-// sit flush with the panel front face. The panel occludes nothing, so the
-// earlier "glass behind the panel rear face" placement is withdrawn.
-//
-// Assumption B: the plane separation is DISPLAY_STANDOFF.planeSeparation
-// (9.0 mm, front-board top face to display PCB rear face), which needs a 5.0 mm
-// spacer because the module's mounting features already project 4.0 mm behind
-// that plane.
-// Part dimensions: the module is 14.05 mm overall (wiki FAQ); the 10.05 mm
-// glass-front -> PCB-rear split is PROVISIONAL (14.05 - 4.00 boss projection)
-// and the two numbers are kept separate so they cannot be conflated.
-//
-export const DISPLAY_GLASS_FRONT_Z = 0 as const // Assumption A, not a measurement
+// The display is no longer an independent datum: the old 3.5-inch rule
+// ("glass front flush with the panel front") is not assumed any more. The
+// glass front FALLS OUT of the rear board position and the carrier spacer
+// length, nominally 0.60 mm behind the panel front; the adjustable carrier
+// spacers are extended (shimmed) by 0.60 mm, never cut, to reach flush at
+// assembly. Part dimensions: the module is 14.05 mm
+// overall (wiki FAQ); the 10.05 mm glass-front -> PCB-rear split is PROVISIONAL
+// (14.05 - 4.00 boss projection) and the two numbers are kept separate so they
+// cannot be conflated.
 
-// Depths chain from the GLASS FRONT face, which now sits flush with the panel
-// front face: 0.00 + 10.05 = 10.05 display PCB rear, + 4.00 = 14.05 rear-most.
-// OWNER-DIRECTED, PROVISIONAL (2026-11-14): the panel front sits 10.6 mm above
-// the front board's top face, so the panel rear is 9.0 mm above it. Basis: the
-// ordered Thonkiconn WQP419GR jacks clamp the panel at their body shoulder - the
-// jack drawing gives 9.0 mm of body along the axis, and 9.0 + the 1.6 mm panel
-// = 10.6 mm. The chain below is derived from that ONE number, not the other way
-// round: the display used to set it (assumptions A and B), and a 10.0 mm panel
-// was the earlier reading of the same jack.
+// Depths chain. The DISPLAY is NOT an independent datum: it hangs on the
+// rear board's carrier at DISPLAY_STANDOFF.spacerLength behind that board's
+// front face, so the glass front FALLS OUT of the stack below. With the
+// jack-anchored panel the NOMINAL glass front is 0.6 mm BEHIND the panel front;
+// the adjustable carrier spacers are EXTENDED (shimmed) by that 0.6 mm at
+// assembly to bring the glass plane forward to the panel front, which is what
+// those spacers are for. Cutting the 8.75 mm starting length shorter moves the
+// glass the wrong way. That 0.6 mm is a planned adjustment, not a fit.
+//
+// Owner-confirmed 2026-11-14: the panel stack is ANCHORED ON THE JACK, not on
+// a design target. The Thonkiconn jack's seating shoulder is exactly 9.0 mm
+// from the front board's top face (Thonkiconn drawing, the 9.0 mm
+// seating-shoulder dimension), and the panel REAR rests on that shoulder. The
+// 1.6 mm panel adds on top of it, so the panel FRONT (the face the operator
+// touches and the face every "does it reach the panel?" question is measured
+// to) is 10.60 mm above the board. That front number is DERIVED above, never
+// typed: the jack sets the gap, the panel thickness adds the rest. The display
+// no longer sets either plane: it used to (assumptions A and B), which left
+// every panel control 8.5-10.5 mm short.
+//
 // Omron's B32 reference is 10.0 +-0.4 from the PCB TOP to the CAP TOP, so on
 // this 10.6 mm panel a bought B32 cap top lands 0.60 mm BEHIND the panel front
 // instead of the 1.0-2.0 mm OVER it that the drawing wants. See BUTTON_STACK;
 // the bought cap is an alternative and does not suit this stack (nominal).
 // NOT an accepted physical fit. The jack's seating, thread runout and nut/washer
 // stack, the encoder's supplied hardware and the display seating are unmeasured;
-// 10.6 is a design datum the first article has to confirm.
+// 10.60 is a design datum the first article has to confirm.
+const FRONT_BOARD_TOP = PANEL_TO_FRONT_BOARD_TOP
+const FRONT_BOARD_REAR = mm3(FRONT_BOARD_TOP + FRONT_PCB.thickness)
+const REAR_BOARD_FRONT = mm3(FRONT_BOARD_REAR + INTERCONNECT_MECH.seatToSeat)
+const REAR_BOARD_REAR = mm3(REAR_BOARD_FRONT + REAR_PCB.thickness)
+// Glass front -> panel front. Zero was Assumption A (flush) when the display
+// was on the front board; the rear-board carrier makes it a derived consequence.
+export const DISPLAY_GLASS_FRONT_Z = mm3(REAR_BOARD_FRONT - DISPLAY_STANDOFF.spacerLength - DISPLAY_VENDOR.overallDepth) // 0.60
+// The display PCB's rear face, and with it the module's rear-most plane. Both
+// hang on the glass plane above, which hangs on the carrier spacer, so they are
+// declared here and not beside DISPLAY_STANDOFF.
+export const DISPLAY_PCB_REAR_Z = mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.glassFrontToPcbRear) // 10.65
 export const PROVISIONAL_Z = {
   panelFront: 0,
   panelRear: PANEL.thickness,                                                        // 1.60
-  displayGlassFront: DISPLAY_GLASS_FRONT_Z,                                          // 0.00 (assumed flush)
-  displayPcbRear: DISPLAY_PCB_REAR_Z,                                                // 10.05
-  displayRearMost: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.overallDepth),          // 14.05
-  frontBoardTop: PANEL_TO_FRONT_BOARD_TOP,                                           // 10.60
-  frontBoardRear: mm3(PANEL_TO_FRONT_BOARD_TOP + FRONT_PCB.thickness),                // 12.20
-  rearBoardFront: REAR_BOARD_FRONT_Z,                                                // 23.40
-  rearBoardRear: mm3(PANEL_TO_FRONT_BOARD_TOP + FRONT_PCB.thickness + INTERCONNECT_MECH.seatToSeat + REAR_PCB.thickness), // 25.00
+  displayGlassFront: DISPLAY_GLASS_FRONT_Z,                                          // 0.60 (0.60 behind the panel front)
+  displayPcbRear: DISPLAY_PCB_REAR_Z,                                                // 10.65
+  displayRearMost: mm3(DISPLAY_GLASS_FRONT_Z + DISPLAY_VENDOR.overallDepth),          // 14.65
+  frontBoardTop: FRONT_BOARD_TOP,                                                    // 10.60
+  frontBoardRear: FRONT_BOARD_REAR,                                                  // 12.20
+  rearBoardFront: REAR_BOARD_FRONT,                                                  // 23.40
+  rearBoardRear: REAR_BOARD_REAR,                                                    // 25.00
 } as const
-// The panel-to-board gap FALLS OUT of the panel datum and the display chain. It is
-// a consequence of a design target, not evidence for it, and it is not certified.
+// The same jack-clamped gap under its long-standing public name; derived from
+// the Z chain so it cannot disagree with the stack above.
 export const PANEL_TO_FRONT_BOARD_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear) // 9.00
-export const JACK_CLAMPED_GAP = PANEL_TO_FRONT_BOARD_GAP // the jacks clamp the panel at 9.00
 
-// The panel gap is set by the JACKS, not chosen. Their body shoulder and the
-// nut/washer stack are the only thing that clamps the panel, so they fix the
+// The panel gap is set by the JACKS, not chosen. The 9.0 mm seating shoulder and
+// the nut/washer stack are the only thing that clamps the panel, so they fix the
 // CLOSEST the panel can come to the front board - board top to panel REAR face.
 // The panel's own thickness then adds on top of that to give the FRONT face, the
 // surface the operator touches and the face every "does it reach the panel?"
-// question is measured to. At 10.6 mm the jack's 4.5 mm of threaded barrel
+// question is measured to. At 10.60 mm the jack's 4.5 mm of threaded barrel
 // nominally spans 10.0...14.5 mm from the PCB (tip included), i.e. 3.9 mm stands
 // in front of the panel front for the nut and washer - UNMEASURED (the drawing
 // gives the barrel, not the seating, the runout, the pitch or the hardware).
@@ -759,16 +780,21 @@ export const PANEL_STACK = {
 // is PANEL_STACK.boardToPanelRear, DERIVED - never re-typed.
 //
 // They are the ADJUSTABLE family, not a fixed-height spacer, for the same reason
-// the front-to-rear spacers are: the 9.00 mm is a NOMINAL (10.60 mm panel front
-// minus the 1.60 mm panel, the same datum PANEL_TO_FRONT_BOARD_TOP carries), and
-// the real board-top -> panel-rear gap is set by the JACK BUSHING STACK, whose
-// tolerance is not measured. These four points are there to stop the panel
-// rocking, not to set its plane. A rigid 9.00 mm spacer would either hold the
-// panel off the jacks (if the real gap is smaller) or bend the panel and preload
-// the jack solder joints (if it is larger) - the opposite of the intent. So each
-// is a threaded M3 standoff/nut pair trimmed or shimmed to the gap measured on
-// the assembled stack, exactly as the 11.20 +- 0.20 mm seat-to-seat spacers are
-// set. First article records the measured gap.
+// the front-to-rear spacers are: the 9.00 mm is the jack's seating-shoulder
+// nominal, and the real board-top -> panel-rear gap is set by the JACK BUSHING
+// STACK, whose tolerance is not measured. These four points are there to stop
+// the panel rocking, not to set its plane. A rigid 9.00 mm spacer would either
+// hold the panel off the jacks (if the real gap is smaller) or bend the panel
+// and preload the jack solder joints (if it is larger) - the opposite of the
+// intent. So each is a threaded M3 standoff/nut pair trimmed or shimmed to the
+// gap measured on the assembled stack, exactly as the 11.20 +- 0.20 mm
+// seat-to-seat spacers are set. First article records the measured gap.
+//
+// Owner decision 2026-11-14: NO COUNTERSINKS at these four panel mounts. The
+// panel holes stay plain 3.2 mm clearance and the panel front stays flat, so the
+// screw head and washer stand proud of the panel face instead of being recessed
+// into it (docs/decisions.md). A printed legend therefore must not run under the
+// heads; all four holes are outside the LCD aperture and the control rows.
 export const PANEL_STANDOFF = {
   thread: "M3",
   length: PANEL_STACK.boardToPanelRear,                     // 9.00 nominal, board top -> panel rear
@@ -855,8 +881,8 @@ export const LIGHT_PIPE_REACH = {
   // plane, so the pipe crosses it. The direction is part of the number.
   nominalTipToBoardPlane: mm3(PROVISIONAL_Z.frontBoardTop - LIGHT_PIPE.shaftLength), // -5.90
   opticalGap: null,                                    // UNKNOWN: LED height unmeasured
-  // The 16.5 mm shaft is 5.9 mm too long for this stack: the tip plane passes the
-  // front board. A nominal ~9.8 mm shaft (10.6 minus the ~0.8 mm eyeballed LED
+  // The 16.5 mm shaft is 5.9 mm too LONG for this 10.6 mm panel: the tip plane
+  // passes the front board. A ~9.8 mm pipe (10.6 minus the ~0.8 mm eyeballed LED
   // body) is what the formula gives, and NO part is selected at that length.
   requiredShaftLength: mm3(PROVISIONAL_Z.frontBoardTop - 0.8), // 9.80, eyeballed LED height
   status: "incomplete - the selected part is too long for this stack",
@@ -880,9 +906,9 @@ export const FRONT_TOP_SMD_MAX_HEIGHT = {
   height: 2.2,
   source: "manufacturer drawing p.15, max installed height 2.1 +-0.1 mm",
 } as const
-// Negative: at the 10.6 mm panel the module's rear 3.45 mm sits BEHIND the front
-// board's top face, which is why the board carries an opening.
-export const DISPLAY_UNDERSIDE_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost) // -3.45
+// Negative: at the jack-anchored panel the module's rear 4.05 mm sits BEHIND
+// the front board's top face, which is why the board carries an opening.
+export const DISPLAY_UNDERSIDE_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost) // -4.05
 
 // Installed-depth target from the owner. Unchanged; every depth figure below
 // is provisional and none of them releases the target.
@@ -1691,7 +1717,7 @@ export const BUTTON_SWITCH = {
 // Panel z of the switch's plunger face - sourced, so it stays: the B3F-4055 is
 // 7.3 +-0.2 mm above the board. The printed cap's top IS ours to set from the fit
 // (BUTTON_CAP_PRINTED below): the cap is a real printed part and
-// mechanical/printed/button_cap.py builds button-cap.stl/.step, with the
+// mechanical/printed/button_cap.py builds button-cap.step/.stl, with the
 // printed-part tests re-deriving these numbers. `control_actuator` remains
 // PENDING: a design budget is not a measurement, and the recess is nominal
 // clearance rather than a snap. The vendor B3F model already carries its own

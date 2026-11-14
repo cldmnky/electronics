@@ -7,7 +7,7 @@ The rules under test:
 
   * the datum is the panel FRONT face with +Z rearward;
   * the nominal tip plane is the SHAFT length 16.5, not the overall 17.5;
-  * the nominal tip-to-board-plane distance is -5.90 mm (the provisional board
+  * the nominal tip-to-board-plane distance is -5.90 mm (the jack-anchored board
     face is 10.60, the tip 16.5) and is NOT an LED gap;
   * the optical gap is None and the status incomplete while any plane or the
     stack tolerance is unrecorded,
@@ -65,9 +65,8 @@ class DocumentedOnlyTest(unittest.TestCase):
     def test_the_nominal_planes_are_still_reported(self) -> None:
         result = lp.compute_reach(lp.ReachInputs.from_layout())
         self.assertAlmostEqual(result.nominal_tip_z_mm, 16.5, places=6)
-        # 10.60 mm owner-directed board face - 16.5 mm shaft = -5.90 mm and the
-        # sign matters: NEGATIVE is board minus tip, so the tip plane is BEHIND
-        # the board face and the selected part is too long for this stack.
+        # 10.60 mm board face - 16.5 mm shaft = -5.90 mm: the tip is BEHIND the
+        # board plane, i.e. the selected part is too long for this stack
         self.assertAlmostEqual(result.nominal_tip_to_board_plane_mm, -5.9, places=6)
         self.assertLess(result.nominal_tip_to_board_plane_mm, 0.0)
         # a MEASURED seat does not exist yet, so the measured planes are None
@@ -296,7 +295,7 @@ class ReportTest(unittest.TestCase):
         self.assertIn("PGN25L165", lines)
         self.assertIn("16.50 mm", lines)
         self.assertIn("17.50 mm", lines)
-        # the current board face (10.60) puts the tip 5.90 mm BEHIND the plane
+        # the jack-anchored board face (10.60) puts the tip 5.90 mm BEHIND the plane
         self.assertIn("-5.90 mm", lines)
         self.assertIn("None", lines)
         self.assertIn("incomplete", lines)

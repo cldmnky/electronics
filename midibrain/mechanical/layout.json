@@ -45,8 +45,8 @@
       "overallDepth": 14.05,
       "glassFrontToPcbRear": 10.05,
       "bossProjection": 4,
-      "planeSeparation": 13.35,
-      "spacerLength": 9.35,
+      "planeSeparation": 12.75,
+      "spacerLength": 8.75,
       "holeDiameter": 4.3
     }
   },
@@ -59,15 +59,15 @@
     "firstArticlePending": true
   },
   "displayStandoff": {
-    "planeSeparation": 13.35,
-    "spacerLength": 9.35
+    "planeSeparation": 12.75,
+    "spacerLength": 8.75
   },
   "provisionalZ": {
     "panelFront": 0,
     "panelRear": 1.6,
-    "displayGlassFront": 0,
-    "displayPcbRear": 10.05,
-    "displayRearMost": 14.05,
+    "displayGlassFront": 0.6,
+    "displayPcbRear": 10.65,
+    "displayRearMost": 14.65,
     "frontBoardTop": 10.6,
     "frontBoardRear": 12.2,
     "rearBoardFront": 23.4,
@@ -101,7 +101,7 @@
       "zFront": -18.7
     }
   },
-  "displayUndersideGap": -3.45,
+  "displayUndersideGap": -4.05,
   "frontTopSmdMaxHeight": {
     "part": "MIDI receiver, Toshiba 11-4L1S body",
     "height": 2.2,

@@ -126,6 +126,54 @@ VENDOR_DISPLAY_MODEL = {
 }
 
 
+def __arithmetic_vs_proof(data: dict) -> str:
+    """The two arithmetic numbers, DERIVED from the same call the block uses.
+
+    Typing them here let a changed input leave stale text behind; the values now
+    come from `display_mount_gap`, and the warning stays.
+    """
+    mount = display_mount_gap(data)
+    return (f"the {mount['model_gap_mm']:+.2f} mm span and the "
+            f"{mount['residual_mm']:+.2f} mm residual are ARITHMETIC on the drawn model "
+            "planes plus one design assumption. They are not a proof of fit, not an "
+            "approved dimension and not a hardware selection")
+
+
+def _placed_display_z(data: dict) -> tuple[float, float, float]:
+    """(glass front, touch/frame front, panel front) in the panel frame, mm.
+
+    Read from `placed_display_planes`, so a datum change moves all three together
+    and no description can keep a stale number.
+    """
+    planes = placed_display_planes(data)
+    return (float(planes["glass_front"]),
+            float(planes["touch_frame_front"]),
+            float(data["provisionalZ"]["panelFront"]))
+
+
+def _glass_datum_note(data: dict) -> str:
+    """Where the drawn glass face actually is, in words, from the layout."""
+    glass, _frame, panel = _placed_display_z(data)
+    return (f"vendor glass front face at the layout's display datum, panel Z = "
+            f"{glass - panel:+.2f} (PROVISIONAL_Z.displayGlassFront): nominally "
+            f"{glass - panel:.2f} mm BEHIND the panel front face (Z = {panel:+.2f}); "
+            "reaching flush EXTENDS the rear-carrier spacer, it is never cut shorter. "
+            "Illustrative placement, not a fit")
+
+
+def _front_frame_disclosure(data: dict) -> str:
+    """The touch/frame plane, signed against the PANEL front, from the layout."""
+    glass, frame, panel = _placed_display_z(data)
+    m = VENDOR_DISPLAY_MODEL
+    ahead = round(m["touch_frame_front_z"] - m["glass_front_z"], 3)   # +1.90
+    return (f"the model's touch/frame forward face is {ahead:.2f} mm IN FRONT of the glass "
+            f"front face in the vendor frame, so at this datum it sits at panel Z = "
+            f"{frame - panel:+.2f}, i.e. "
+            f"{panel - frame:.2f} mm in FRONT of the panel front face "
+            f"(Z = {panel:+.2f}). NOT flush with the panel and NOT a fit: the real "
+            "frame/touch layer, the aperture relief and the seating are unmeasured")
+
+
 def vendor_model_separations() -> dict:
     """The vendor model's own separations, in mm, from its measured planes."""
     m = VENDOR_DISPLAY_MODEL
@@ -227,19 +275,24 @@ def inner_pattern_candidates() -> dict:
 
 
 # Z = 0 at the panel FRONT face, +Z rearward.
-DISPLAY_GLASS_DATUM_Z = 0.0
 
 
-def placed_display_planes() -> dict[str, float]:
-    """Where the vendor model's planes land when its glass front is at Z = 0.
+def placed_display_planes(layout: dict | None = None) -> dict[str, float]:
+    """Where the vendor model's planes land in the layout frame.
 
-    Derived from the measured vendor planes, never typed in: the placement puts
-    the glass front face on the panel front face (assumption A) and this is
-    what follows for every other plane.
+    The glass front datum is NOT typed: it is ``PROVISIONAL_Z.displayGlassFront``
+    in the export, which falls out of the rear-board carrier chain (nominally
+    0.60 mm behind the panel front; the adjustable spacers are EXTENDED (shimmed)
+    by 0.60 mm to reach flush - cutting the 8.75 mm starting length moves the glass
+    the wrong way).
+    Every other plane is derived from the measured vendor planes and that one
+    datum.
     """
+    data = layout if layout is not None else load_layout()
+    datum = float(data["provisionalZ"]["displayGlassFront"])
     m = VENDOR_DISPLAY_MODEL
     def place(vendor_z: float) -> float:
-        return round(DISPLAY_GLASS_DATUM_Z + (m["glass_front_z"] - vendor_z), 6)
+        return round(datum + (m["glass_front_z"] - vendor_z), 6)
     return {
         "touch_frame_front": place(m["touch_frame_front_z"]),  # negative: in FRONT of the panel
         "glass_front": place(m["glass_front_z"]),
@@ -517,19 +570,43 @@ def classify(a: Envelope, b: Envelope, *, eps: float = EPS) -> CollisionVerdict:
 # the drawn front-board top face. Two different numbers exist and they must not
 # be conflated:
 #
-#   model gap    boss rear -> board top face       +0.36 mm   (drawn solids: the
-#                                                              board face 10.60 is
-#                                                              BEHIND the boss rear
-#                                                              plane 10.24, so the
-#                                                              drawn bodies clear by
-#                                                              0.36 mm nominally)
-#   chain spacer the derived carrier spacer          9.35 mm   (23.40 - 10.05 - 4.0)
-#   residual     what that spacer misses            -8.99 mm   (1.25 vs 10.24)
+#   model gap    boss rear -> board top face       -0.24 mm   (drawn solids: at
+#                                                              the 0.60 glass
+#                                                              datum the model's
+#                                                              boss ends land at
+#                                                              10.84, so they
+#                                                              OVERLAP the board's
+#                                                              10.60...12.20 band)
+#   chain spacer the derived carrier spacer          8.75 mm   (12.75 - 4.0)
+#   residual     what that spacer misses            -8.99 mm   (1.85 vs 10.84)
 #
-# The model gap changed SIGN with the 10.6 mm panel: at the withdrawn 10.00 mm the drawn board
-# overlapped the boss plane by 0.24 mm, and at 10.60 mm it clears it by 0.36 mm.
-# Neither number is an approved dimension and the two chains do NOT agree: a
-# 9.35 mm spacer and a 0.36 mm drawn clearance are still different chains.
+# The overlap is an UNVERIFIED COLLISION RISK, not a cleared one. The U opening in
+# the front board is cut for the DISPLAY ENVELOPE, but nothing here proves that
+# every feature of the model - the boss ends, the rear-most plane (11.92 behind the
+# glass front in the model) and the flex bonds - lies inside that opening in X and
+# Y. Only the Z planes are placed. Compare the opening polygon against the model's
+# XY extents before calling the interference resolved.
+#
+# Both columns move with ONE datum: the placed planes come from
+# PROVISIONAL_Z.displayGlassFront (0.60 mm behind the panel front under the
+# jack-anchored panel), so a datum change moves them together and no number here
+# is typed. Neither number is an approved dimension and the two chains do NOT
+# agree - never conflate them:
+#   vendor MODEL   13.82 mm overall, glass front -> PCB rear 6.24 mm
+#   design CHAIN   14.05 mm overall (wiki maximum), glass front -> PCB rear 10.05
+# so the model's boss ends sit 10.24 mm behind its glass front while the chain
+# assumes 10.05 + 4.00 = 14.05 mm. The 8.75 mm spacer arithmetic and the drawn
+# 10.84 mm plane are different chains, and the first article measures the real
+# boss plane.
+#
+# The model gap is NEGATIVE at the current datum: the placed boss ends (10.84)
+# sit BEHIND the 10.60 board top, so the drawn bodies OVERLAP the board band by
+# 0.24 mm, and nothing here proves the overlap harmless - the U opening's XY
+# containment of every module feature is unmeasured. (At the withdrawn flush-glass
+# datum the same arithmetic read +0.36 mm; that placement no longer exists and
+# must not be quoted as current.) Neither number is an approved dimension, and a
+# 12.75 mm plane separation and a -0.24 mm drawn gap are still different chains:
+# the first article measures the real boss plane.
 DISPLAY_MOUNT_PLACEHOLDER = {
     "name_prefix": "MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED",
     "status": "GEOMETRIC PLACEHOLDER ONLY - non-approved, not a part, not a fit",
@@ -550,15 +627,13 @@ def display_mount_gap(layout: dict | None = None) -> dict:
     assembly sequence are all first-article tasks.
     """
     data = layout if layout is not None else load_layout()
-    planes = placed_display_planes()
-    boss_rear = planes["boss_rear"]
-    board_top = float(data["provisionalZ"]["frontBoardTop"])
-    # Derived from the canonical export (13.35 - 4.0 at the 10.6 mm datum); the
-    # number is never typed here.
-    chain = float(data["displayStandoff"]["spacerLength"])
-    gap = round(board_top - boss_rear, 3)
-    chain_end = round(board_top - chain, 3)
-    residual = round(chain_end - boss_rear, 3)
+    planes = placed_display_planes(data)
+    boss_rear = planes["boss_rear"]                 # 10.84, model boss ends at the 0.60 datum
+    board_top = float(data["provisionalZ"]["frontBoardTop"])   # 10.60
+    chain = float(data["displayStandoff"]["spacerLength"])     # 8.75 design assumption
+    gap = round(board_top - boss_rear, 3)                       # -0.24
+    chain_end = round(board_top - chain, 3)                     # 1.85
+    residual = round(chain_end - boss_rear, 3)                  # -8.99
     return {
         "axes_xy": [(h["x"], h["y"]) for h in data["lcdMountHoles"]],
         "boss_rear_z_mm": round(boss_rear, 3),
@@ -815,7 +890,7 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
         z=Span(pz["displayGlassFront"], pz["displayRearMost"]),
         assumed_axes=("z",),
         note=("XY from the module outline (106 x 68) and therefore documented; Z spans the "
-              "glass front (assumed flush, assumption A) to the 14.05 mm vendor overall depth, "
+              "glass front (0.60 mm behind the panel front nominally) to the 14.05 mm vendor overall depth, "
               "so the Z axis is a candidate value and no Z-based verdict is definitive"),
     )
 
@@ -894,7 +969,8 @@ BODY_LEGEND = (
      "meaning": "four annuli spanning the model gap, to show the LCD mount",
      "status": "GEOMETRIC PLACEHOLDER, non-approved, not a part"},
     {"name": "DISPLAY_CONNECTOR_PLANNING_MARKER",
-     "meaning": "legacy connector record drawn as a box on the provisional 10.05 plane",
+     "meaning": ("legacy connector record drawn as a box on the current display PCB rear "
+                 "datum (PROVISIONAL_Z.displayPcbRear)"),
      "status": "unverified planning data, not a verified connector"},
     {"name": "FEEDTHROUGH_*_FLANGE_PLAN_MARKER",
      "meaning": "Adafruit 908 flange outline on the panel rear face",
@@ -1173,13 +1249,28 @@ def assumptions_document(layout: dict | None = None, *,
             "undetermined. A documented XY overlap is a projection, not a collision, and an "
             "axis with no documented value can never produce a fit verdict"),
         "assumptions": [
-            {"id": "A", "text": "the display glass front sits flush with the panel front face (Z = 0)",
-             "status": "unmeasured"},
-            {"id": "B", "text": "display plane separation 9.0 mm from the front-board top face to "
-                                "the display PCB rear face", "status": "unmeasured"},
+            # The withdrawn Assumptions A (glass flush at Z 0), B (9.0 mm display
+            # plane separation on the front board) and D (20 mm front-to-rear gap)
+            # no longer describe this chain and are not listed as active.
+            {"id": "A", "text": (f"the display glass front sits at the layout display datum, panel "
+                                 f"Z {data['provisionalZ']['displayGlassFront']:+.2f} (nominally "
+                                 f"{data['provisionalZ']['displayGlassFront']:.2f} mm BEHIND the "
+                                 "panel front; the adjustable carrier spacers are extended to "
+                                 "reach flush)"),
+             "status": "design datum, not a measurement"},
+            {"id": "B", "text": (f"the display carrier bolts to the REAR board's front face "
+                                 f"(Z {data['provisionalZ']['rearBoardFront']:.2f}): "
+                                 f"{data['displayStandoff']['planeSeparation']:.2f} mm plane "
+                                 f"separation and "
+                                 f"{data['displayStandoff']['spacerLength']:.2f} mm adjustable "
+                                 "spacer"),
+             "status": "provisional design values, not a measurement"},
             {"id": "C", "text": "display overall depth 14.05 mm, split 10.05 + 4.00 mm",
              "status": "vendor maximum; the split is derived, not measured"},
-            {"id": "D", "text": "front-to-rear board gap 20 mm", "status": "candidate range 18-22 mm"},
+            {"id": "D", "text": (f"front-to-rear board gap "
+                                 f"{data['interconnect']['seatToSeat']:.2f} mm seat-to-seat "
+                                 "(the direct 2 x 13 pair)"),
+             "status": "vendor drawing value +/-0.20 mm; the fitted gap is unmeasured"},
             {"id": "E", "text": "Adafruit 908 flange is drawn between the panel and the board",
              "status": "the drawing states no depth; the flange Z volume is NOT modelled"},
         ],
@@ -1211,10 +1302,7 @@ def assumptions_document(layout: dict | None = None, *,
         "display_mount_placeholders": {
             **display_mount_gap(data),
             "placeholder_definition": DISPLAY_MOUNT_PLACEHOLDER,
-            "arithmetic_vs_proof": (
-                "the -0.24 mm span and the -8.99 mm residual are ARITHMETIC on the drawn "
-                "model planes plus one design assumption. They are not a proof of fit, not "
-                "an approved dimension and not a hardware selection"),
+            "arithmetic_vs_proof": __arithmetic_vs_proof(data),
         },
         "board_mockups": board_mockup_report(),
         "body_legend": list(BODY_LEGEND),
@@ -1248,15 +1336,13 @@ def assumptions_document(layout: dict | None = None, *,
                           "not reproduce the model's 6.24 mm glass-to-PCB separation and is "
                           "not a measurement",
             },
-            "placed_illustrative_global_z_mm": placed_display_planes(),
+            "placed_illustrative_global_z_mm": placed_display_planes(data),
             "placement": {
                 "rotation_candidate_used": DISPLAY_ORIENTATION["candidate_used_for_drawing"],
                 "rotation_alternative": DISPLAY_ORIENTATION["alternative_candidate"],
                 "rotation_determinant": round(rotation_determinant(), 6),
-                "glass_datum": "vendor glass front face at the panel front face, Z = 0",
-                "disclosure": ("the model's touch/frame forward face is 1.90 mm in front of "
-                               "the glass, so it sits at global Z = -1.90 mm: 1.90 mm proud "
-                               "of the panel front face. Not flush, not a fit"),
+                "glass_datum": _glass_datum_note(data),
+                "disclosure": _front_frame_disclosure(data),
             },
             "orientation": {
                 "status": DISPLAY_ORIENTATION["status"],
@@ -1323,6 +1409,15 @@ def assumptions_document(layout: dict | None = None, *,
     }
 
 
+def print_checklist_placeholder_note(layout: dict | None = None) -> tuple[str, ...]:
+    """The placeholder warning with the DERIVED model gap, never a typed one."""
+    gap = display_mount_gap(layout)["model_gap_mm"]
+    return (f"Do NOT print or buy the four MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED "
+            f"bodies: they are 5.0/2.7 mm geometric placeholders over the model's "
+            f"{gap:+.2f} mm gap, not a part. Measure the real boss plane, board face, "
+            "standoff diameter and thread first.",)
+
+
 PRINT_CHECKLIST: tuple[str, ...] = (
     "Print at 1:1, 100 % scale, in millimetres. Do not let the slicer rescale.",
     "Measure the scale-check-100mm.stl bar with calipers: it must be 100.00 mm long. "
@@ -1343,16 +1438,16 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "Do NOT print or use mockup-front-board.stl or mockup-rear-board.stl: their cuts "
     "are not the current PCB. Compare the board sources and the built circuit instead, "
     "and see docs/TODO.md for the all-or-nothing repair.",
-    "Check the light-pipe datum: the provisional board near face is 10.60 mm and "
+    "Check the light-pipe datum: the jack-anchored board near face is 10.60 mm and "
     "the nominal PGN25L165 tip plane is 16.5 mm, so the tip plane lies 5.90 mm "
-    "BEHIND the board plane (signed board minus tip = -5.90 mm). There is no "
-    "positive step to print; the arithmetic is NOT an LED gap and NOT a fit.",
+    "BEHIND the board plane (signed board minus tip = -5.90 mm). The printed step "
+    "gauge draws both NOMINAL planes in either order; the arithmetic is NOT an LED "
+    "gap and NOT a fit.",
     "Offer the real display to the panel aperture from behind and measure the touch "
     "layer, frame and glass: the model places the touch/frame plane 1.90 mm in FRONT "
     "of the glass datum, so the panel relief and seating are still unknown.",
-    "Do NOT print or buy the four MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED bodies: they "
-    "are 5.0/2.7 mm geometric placeholders over the model's -0.24 mm gap, not a part. "
-    "Measure the real boss plane, board face, standoff diameter and thread first.",
+    # The placeholder gap is derived, so a datum change cannot leave stale text.
+    *print_checklist_placeholder_note(),
     "Do not record any result as accepted: every mockup is a print check, not "
     "dimensional evidence. Enter measurements in docs/evidence/ with a date and name. "
     "The board mockups are excluded from this checklist entirely (see the header).",
