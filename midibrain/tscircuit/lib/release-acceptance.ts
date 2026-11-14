@@ -72,7 +72,7 @@ export const REQUIRED_ITEMS: RequiredItem[] = [
   {
     id: "display_fpc_idc",
     title: "Display FPC coexistence",
-    requirement: "The display FPC plug, its latch and the first cable bend coexist with the front board's top-side parts in the assembled stack: the FPC stack rear-most <= ~12.9 mm against the front board top face 19.05 mm, the routed bend at the display's right edge recorded per the route contract in docs/mechanical-stack.md, and the clearance to the J5 female solder tails and their joints recorded (the quoted 3.20 mm is from the SEATING FACE, so the nominal protrusion below a 1.60 mm PCB is 1.60 mm; fillet and PCB tolerance unmeasured). The recorded FPC connector position is a planning marker only: its identity, side and location are unverified, so no distance from it is claimed. The 2 x 13 link is a direct male/female pair with no plug and no ribbon.",
+    requirement: "The display FPC plug, its latch and the first cable bend coexist with the front board's top-side parts in the assembled stack: the FPC stack rear-most <= ~12.9 mm against the front board top face 10.6 mm (owner-directed, provisional), the routed bend at the display's right edge recorded per the route contract in docs/mechanical-stack.md, and the clearance to the J5 female solder tails and their joints recorded (the quoted 3.20 mm is from the SEATING FACE, so the nominal protrusion below a 1.60 mm PCB is 1.60 mm; fillet and PCB tolerance unmeasured). The recorded FPC connector position is a planning marker only: its identity, side and location are unverified, so no distance from it is claimed. The 2 x 13 link is a direct male/female pair with no plug and no ribbon.",
   },
   {
     id: "interconnect_mate",
@@ -246,6 +246,25 @@ export const FINGERPRINT_FILES = [
   // invalidate a DFM/CPL or fit result even when lib/layout.ts is unchanged.
   "mechanical/feedthrough_bracket.py",
   "mechanical/bracket_geometry.py",
+  // The DEFAULT printed actuator generators. Before this change they were NOT in
+  // the fingerprint, so a change to the parts themselves - the very geometry an
+  // accepted `control_actuator` row is about - would not have invalidated that
+  // evidence. The prototypes (`nav_proto.py`) and the analysis (`nav_fit.py`) are
+  // deliberately excluded: they are not the installed hardware.
+  "mechanical/printed/printed_geometry.py",
+  "mechanical/printed/nav_keytop.py",
+  "mechanical/printed/knob.py",
+  "mechanical/printed/button_cap.py",
+  // The six COMMITTED printed-part artefacts. The gate does not run the test
+  // suite, so an edited STL/STEP alone must stale accepted physical evidence just
+  // as a generator change does. Prototypes and fit specimens are NOT here: they
+  // are generated on demand and are not installed hardware.
+  "mechanical/printed/nav-keytop.stl",
+  "mechanical/printed/nav-keytop.step",
+  "mechanical/printed/knob.stl",
+  "mechanical/printed/knob.step",
+  "mechanical/printed/button-cap.stl",
+  "mechanical/printed/button-cap.step",
   // The STEP/STL verification model is the same kind of source: it decides
   // which envelopes are drawn, which axis is treated as unknown and whether a
   // collision result is definitive, and it builds the mockups a first article

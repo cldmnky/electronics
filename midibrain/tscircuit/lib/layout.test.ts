@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { renderMechanical, run } from "../scripts/export-mechanical"
+import { INTERCONNECT_MECH } from "./interconnect"
 import {
   BRACKET_ALLOWANCE,
   BRACKET_POWER_POCKET,
@@ -21,6 +22,7 @@ import {
   DISPLAY_STANDOFFS,
   DISPLAY_STANDOFF,
   DISPLAY_GLASS_FRONT_Z,
+  DISPLAY_PCB_REAR_Z,
   DISPLAY_STACK,
   DISPLAY_VENDOR,
   DISPLAY_UNDERSIDE_GAP,
@@ -32,6 +34,7 @@ import {
   PANEL_TO_FRONT_BOARD_GAP,
   PANEL_TO_FRONT_BOARD_TOP,
   PROVISIONAL_Z,
+  REAR_BOARD_FRONT_Z,
   mechanicalExport,
   provisionalInstalledDepth,
   provisionalModuleDepthBehindPanel,
@@ -119,7 +122,8 @@ test("display, window, cutout and mounting holes share one coordinate source", (
   // 2026-11-13 respin: the opening is cut where the module used to sit above
   // the board, and the encoder/NAV pad fields (column at x = 52) reach 43.59,
   // which left 0.16 mm to the opening edge at 43.75 against a 0.20 mm rule.
-  // The 0.5 mm shift keeps the knob clearance above 2.25 mm. See decisions.md.
+  // The 0.5 mm shift takes the module-to-knob clearance from 2.25 to 2.75 mm
+  // (module right edge +43.00, knob body left 45.75). See decisions.md.
   expect(d.x).toBe(-10)
   expect(d.y).toBe(11)
   // Holes derive from the display centre plus the vendor-local offsets - the
@@ -635,11 +639,18 @@ test("provisional Z stack follows the vendor side view, with a stated datum", ()
   expect("rearEnvelopeDepth" in DISPLAY_STACK).toBe(false)
   // Plane separation and spacer length are separate quantities, both now
   // measured from the REAR board's front face (the display left the front board
-  // on 2026-11-13). 12.75 - 4.00 boss = 8.75 mm carrier spacer.
+  // on 2026-11-13). 12.75 - 4.00 boss = 8.75 mm nominal carrier spacer, and the
+  // cross-check below pins them to the Z chain so they cannot drift: 23.40 rear
+  // board front - 10.65 display PCB rear = 12.75.
   expect(DISPLAY_STANDOFF.planeSeparation).toBe(12.75)
   expect(DISPLAY_STANDOFF.spacerLength).toBeCloseTo(8.75, 6)
   expect(DISPLAY_STANDOFF.spacerLength).toBeCloseTo(
     DISPLAY_STANDOFF.planeSeparation - v.pcbRearToBossEnd, 6)
+  expect(REAR_BOARD_FRONT_Z - DISPLAY_PCB_REAR_Z).toBeCloseTo(
+    DISPLAY_STANDOFF.planeSeparation, 6)
+  // To reach flush the spacer must be EXTENDED by 0.60 mm (8.75 -> 9.35), never
+  // cut shorter: cutting moves the glass further behind the panel front.
+  expect(DISPLAY_STANDOFF.spacerLength + PROVISIONAL_Z.displayGlassFront).toBeCloseTo(9.35, 6)
   expect(DISPLAY_STACK.bossProjection).toBe(4)
   // The panel front is the jack's 9.0 mm seating shoulder plus the 1.6 mm
   // panel, and every board/display plane follows from it.
@@ -652,7 +663,7 @@ test("provisional Z stack follows the vendor side view, with a stated datum", ()
     DISPLAY_STANDOFF.spacerLength, 6)
   // The module's rear 4.05 mm sits behind the front board's top face.
   expect(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.displayRearMost).toBeCloseTo(-4.05, 6)
-  // 10.60 - 1.60 = 9.00 mm: the jack-clamped gap, now the anchor rather than a
+  // 10.60 - 1.60 = 9.00 mm: the jack-clamped gap, the anchor rather than a
   // consequence of a chosen panel front.
   expect(PANEL_TO_FRONT_BOARD_GAP).toBeCloseTo(9.0, 6)
   expect(PANEL_TO_FRONT_BOARD_GAP).toBeCloseTo(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear, 6)
@@ -660,25 +671,34 @@ test("provisional Z stack follows the vendor side view, with a stated datum", ()
   expect(provisionalInstalledDepth()).toBeLessThan(DEPTH_TARGET)
 })
 
-test("the B32 reference stack is deliberately 0.6 mm beyond Omron's band", () => {
-  // Omron's 10.0 +/-0.4 mm is the PC BOARD to PANEL FRONT face reference, not
-  // the cap height. The jack-anchored panel puts the front at 10.6 mm, i.e.
-  // 0.6 mm beyond the reference plane and 0.2 mm outside its +-0.4 band. That
-  // is the cost of anchoring on the jack, not an accident: the printed cap is
-  // dimensioned from the panel front and does not depend on the B32 reference.
-  // A bought B32-13x0 now sits 0.6 mm deeper than Omron's reference and its
-  // undimensioned top must be measured before it can be used; no B32 cap-top Z
-  // is asserted here.
-  expect(BUTTON_CAP.referenceBoardToPanelFront).toBe(10)
-  expect(BUTTON_STACK.omronReferencePanelFrontZ).toBeCloseTo(0.6, 6)
-  expect(BUTTON_STACK.stackDepthExcess).toBeCloseTo(0.6, 6)
-  expect(BUTTON_STACK.stackDepthExcess).toBeCloseTo(
-    BUTTON_STACK.omronReferencePanelFrontZ - BUTTON_STACK.panelFrontZ, 6)
-  // The stored tolerance is Omron's; the overshoot is derived from the stack.
-  expect(BUTTON_STACK.stackDepthExcess - BUTTON_STACK.stackDepthExcessTolerance).toBeCloseTo(0.2, 6)
-  // The panel is inside the cap's stated panel-thickness range.
-  expect(PANEL.thickness).toBeGreaterThanOrEqual(BUTTON_CAP.panelThickness.min)
-  expect(PANEL.thickness).toBeLessThanOrEqual(BUTTON_CAP.panelThickness.max)
+test("the B32 reference is PCB top to CAP TOP, so a bought cap sits below the panel", () => {
+  // VERIFIED from the drawing's vector data (two independent reads of page 3:
+  // PCB top y 146.00, cap top y 105.17, panel top y 113.29): 10.0 +-0.4 mm runs
+  // from the PCB TOP to the CAP TOP, and 1.0-2.0 mm is the cap top's PROTRUSION
+  // OVER the panel. The earlier "PCB to panel FRONT" reading was wrong.
+  expect(BUTTON_CAP.referenceBoardToCapTop).toBe(10)
+  expect(BUTTON_CAP.referenceBoardToCapTopTolerance).toBe(0.4)
+  expect(BUTTON_CAP.capProudAbovePanel).toEqual({ min: 1.0, max: 2.0 })
+  // Cross-check on the same sheet's round-cap drawing: 7.3 - 2.8 + 7.0 = 11.5,
+  // and that drawing dimensions 11.5 from the PCB to the cap top.
+  expect(BUTTON_CAP.roundCapBoardToCapTop).toBeCloseTo(7.3 - 2.8 + 7.0, 6)
+  // On our 10.6 mm stack the bought cap top therefore lands BEHIND the panel
+  // front by 0.60 mm nominal (band 0.20...1.00), i.e. recessed, while Omron's
+  // drawings put it 1.0-2.0 mm OVER the panel face.
+  expect(BUTTON_STACK.referenceCapTopBelowPanelFront).toBeCloseTo(0.6, 6)
+  expect(BUTTON_STACK.referenceCapTopBelowPanelFront).toBeCloseTo(
+    PANEL_TO_FRONT_BOARD_TOP - BUTTON_CAP.referenceBoardToCapTop, 6)
+  expect(BUTTON_STACK.referenceCapTopBelowPanelFrontBand.min).toBeCloseTo(0.2, 6)
+  expect(BUTTON_STACK.referenceCapTopBelowPanelFrontBand.max).toBeCloseTo(1.0, 6)
+  expect(BUTTON_STACK.suitsThisStack).toBe(false)
+  expect(BUTTON_STACK.suitabilityNote).toContain("UNVERIFIED")
+  // The WRONG interpretation must not come back anywhere in the data.
+  expect("stackDepthExcess" in BUTTON_STACK).toBe(false)
+  expect("stackDepthAboveReferenceBand" in BUTTON_STACK).toBe(false)
+  expect("referenceBoardToPanelFront" in BUTTON_CAP).toBe(false)
+  expect("panelThickness" in BUTTON_CAP).toBe(false)
+  // The printed cap is unaffected: its protrusion is its own 0.80 mm design.
+  expect(BUTTON_CAP_PRINTED.proudAbovePanelFront).toBeCloseTo(0.8, 6)
 })
 
 test("display underside gap and light-pipe reach stay pending, not claimed", () => {
@@ -690,10 +710,18 @@ test("display underside gap and light-pipe reach stay pending, not claimed", () 
   expect(DISPLAY_UNDERSIDE_GAP).toBeCloseTo(-4.05, 6)
   expect(DISPLAY_UNDERSIDE_GAP).toBeLessThan(0)
   expect(FRONT_TOP_SMD_MAX_HEIGHT.height).toBe(2.2)
-  // The light pipe is now too LONG, not too short: 16.5 mm shaft against a
-  // 10.6 mm panel puts the tip 5.9 mm through the board plane.
+  // The light pipe is now too LONG, not too short. The number is SIGNED,
+  // board minus tip: 10.6 - 16.5 = -5.9 mm, i.e. the tip plane lies 5.9 mm
+  // BEHIND the board plane under the two assumed planes. It is arithmetic, not
+  // a measured interference, and the optical gap stays null.
+  expect(LIGHT_PIPE_REACH.boardNearFaceZ).toBeCloseTo(PANEL_TO_FRONT_BOARD_TOP, 6)
   expect(LIGHT_PIPE_REACH.nominalTipToBoardPlane).toBeCloseTo(-5.9, 6)
   expect(LIGHT_PIPE_REACH.nominalTipToBoardPlane).toBeLessThan(0)
+  expect(LIGHT_PIPE_REACH.nominalTipToBoardPlane).toBeCloseTo(
+    LIGHT_PIPE_REACH.boardNearFaceZ - LIGHT_PIPE_REACH.nominalTipZ, 6)
+  expect(LIGHT_PIPE_REACH.opticalGap).toBeNull()
+  expect(LIGHT_PIPE_REACH.requiredShaftLength).toBeCloseTo(
+    LIGHT_PIPE_REACH.boardNearFaceZ - 0.8, 6)
 })
 
 test("provisional depth chain stays inside the owner target", () => {

@@ -169,17 +169,26 @@ class StaleActiveReferenceTest(unittest.TestCase):
 
     def test_the_gauge_is_described_with_the_current_planes(self) -> None:
         source = (Path(__file__).resolve().parent / "step_assembly.py").read_text()
-        # the header and the gauge docstring must name the current numbers
-        self.assertIn("19.05", source)
+        # The header and the gauge model must name the CURRENT numbers. The old
+        # 19.05 mm board face is superseded by the owner-directed 10.6 mm one.
         self.assertIn("16.5", source)
-        self.assertIn("2.55", source)
+        self.assertIn("5.9", source)
         self.assertNotIn("17.45 / 10.16", source)
-        # the gauge docstring says explicitly what the step is not
-        doc = source[source.index("def build_reach_gauge"):]
-        doc = doc[:doc.index('"""', doc.index('"""') + 3)]
-        self.assertIn("NOT an LED gap", doc)
-        self.assertIn("NOT a fit", doc)
+        # 19.05 may appear only as explicit history, never as an active plane.
+        for line in source.splitlines():
+            if "19.05" in line:
+                low = line.lower()
+                self.assertTrue("earlier" in low or "old" in low or "withdrawn" in low
+                                or "superseded" in low,
+                                f"19.05 mm is used as an active plane: {line.strip()}")
+        # the gauge model says explicitly what the step is not
+        doc = source[source.index("def reach_gauge_dimensions"):
+                     source.index("def build_reach_gauge")]
+        self.assertIn("not an LED gap", doc)
+        self.assertIn("not a fit", doc)
         self.assertIn("panel FRONT face", doc)
+        # and the signed direction is stated, not implied
+        self.assertIn("SIGNED", doc + source[source.index("def build_reach_gauge"):])
 
     def test_the_envelope_carries_the_active_candidate_only(self) -> None:
         import step_geometry as sg

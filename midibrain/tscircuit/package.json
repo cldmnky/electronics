@@ -24,7 +24,7 @@
     "@tscircuit/cli": "0.1.2454",
     "@types/react": "19.3.0",
     "bun-types": "1.4.4",
-    "sharp": "^0.35.5",
+    "sharp": "0.34.5",
     "typescript": "5.9.3"
   }
 }

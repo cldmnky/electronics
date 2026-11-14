@@ -87,7 +87,7 @@ mechanical:
 	@if [ -f tscircuit/scripts/export-mechanical.ts ] && [ -d mechanical ]; then \
 	  export MIDIBRAIN_BUNX="$$(command -v $(BUN) 2>/dev/null || printf '%s' '$(BUN)')"; \
 	  cd tscircuit && $(BUN) run scripts/export-mechanical.ts --check && cd .. && \
-	  ( cd mechanical/printed && $(PYTHON) -m unittest test_printed_parts ) && \
+	  ( cd mechanical/printed && $(PYTHON) -m unittest test_printed_parts test_nav_fit ) && \
 	  $(PYTHON) -m unittest discover -s mechanical -p 'test_*.py'; \
 	else \
 	  echo "PENDING: the mechanical bridge (tscircuit/scripts/export-mechanical.ts,"; \
@@ -110,6 +110,8 @@ CAD_OUT ?= mechanical/cad-out
 CAD_ARGS ?=
 mechanical-cad:
 	@echo "STEP/STL verification model: PROVISIONAL, not a released drawing"
+	@echo "DO NOT PRINT / DO NOT USE FOR FIT: mockup-front-board.stl and"
+	@echo "mockup-rear-board.stl are NOT the current PCB (see docs/TODO.md)"
 	$(CAD_PYTHON) mechanical/step_assembly.py --out "$(CAD_OUT)" $(CAD_ARGS)
 
 # Local web viewer for the mechanical STEP models (panel, display, boards,

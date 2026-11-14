@@ -244,6 +244,117 @@ def describe(g: BracketGeometry) -> list[str]:
     return lines
 
 
+def panel_mount_vs_bracket(layout: dict | None = None) -> dict:
+    """Plan-view overlap between the PANEL_MOUNT_POINTS frame and the bar.
+
+    The four panel-mount standoff BODIES stand on the front board's PANEL side;
+    the printed bracket sits on its REAR side. Their plan outlines therefore
+    overlap near the upper corners, and the 1.60 mm PCB separates exactly those
+    two modelled bodies - nothing else.
+
+    Three limits on what this returns:
+
+    * the overlap numbers are PLAN-VIEW (X/Y) only. A plan overlap is a
+      projection, never a Z result, so a non-zero number does not mean the two
+      solids touch and a zero number does not mean either is clear;
+    * the Ø7.0 mm head/washer envelope is an ENVELOPE, not a part. It is drawn to
+      show where a head may reach, and it is checked against the board edge
+      below, but no head exists and none is measured;
+    * anything fixed to the board's REAR face - the nut, washer or threaded
+      insert that an M3 screw through a standoff needs - is on the SAME face as
+      the bracket, so NO Z separation is modelled for it. It may collide, and
+      this function cannot say that it does not.
+    """
+    data = layout if layout is not None else load_layout()
+    g = bracket_geometry(data)
+    standoff = data["panelStandoff"]
+    z = data["provisionalZ"]
+    board_top = float(z["frontBoardTop"])
+    board_rear = float(z["frontBoardRear"])
+    body_r = float(standoff["bodyDiameter"]) / 2
+    head_r = float(standoff["headDiameter"]) / 2
+
+    def overlap(x: float, y: float, radius: float) -> float:
+        """How far a circle at (x, y) reaches into the outline's plan area."""
+        dx = max(g.outline.x1 - x, 0.0, x - g.outline.x2)
+        dy = max(g.outline.y1 - y, 0.0, y - g.outline.y2)
+        distance = math.hypot(dx, dy)
+        return round(radius - distance, 3) if radius > distance else 0.0
+
+    points = []
+    for index, point in enumerate(data["panelMountPoints"], start=1):
+        x, y = float(point["x"]), float(point["y"])
+        points.append({
+            "name": f"STAND_{index}",
+            "xy_mm": [x, y],
+            "body_overlap_mm": overlap(x, y, body_r),
+            "head_overlap_mm": overlap(x, y, head_r),
+            "inside_bracket_xy": g.outline.contains_point(x, y),
+        })
+    # Where the head/washer ENVELOPE stands relative to the board and panel edges.
+    # DERIVED from the layout, and a warning rather than a clearance: the envelope
+    # is the 7.0 mm class the block names, not a measured part, so "0.00 mm" means
+    # the assumed envelope reaches the board edge exactly, nothing more.
+    front = data["frontPcb"]
+    panel = data["panel"]
+    xs = [abs(float(p["x"])) for p in data["panelMountPoints"]]
+    ys = [abs(float(p["y"])) for p in data["panelMountPoints"]]
+    edge = {
+        "envelope_diameter_mm": float(standoff["headDiameter"]),
+        "envelope_radius_mm": round(head_r, 3),
+        "x_margin_to_front_board_edge_mm": round(front["width"] / 2 - max(xs) - head_r, 3),
+        "y_margin_to_front_board_edge_mm": round(front["height"] / 2 - max(ys) - head_r, 3),
+        "x_margin_to_panel_edge_mm": round(panel["width"] / 2 - max(xs) - head_r, 3),
+        "y_margin_to_panel_edge_mm": round(panel["height"] / 2 - max(ys) - head_r, 3),
+        "status": "ASSUMED ENVELOPE, not a part: no head or washer is measured",
+    }
+    worst = min(edge["x_margin_to_front_board_edge_mm"],
+                edge["y_margin_to_front_board_edge_mm"])
+    warnings = []
+    if edge["x_margin_to_front_board_edge_mm"] <= 0.0:
+        warnings.append(
+            f"the Ø{edge['envelope_diameter_mm']:g} mm head/washer ENVELOPE at "
+            f"x +-{max(xs):g} reaches the front board's x edge (+-{front['width'] / 2:g} mm) "
+            f"exactly ({edge['x_margin_to_front_board_edge_mm']:+.2f} mm margin) and the "
+            f"y edge with {edge['y_margin_to_front_board_edge_mm']:+.2f} mm: no margin to "
+            "spare. It is an assumed envelope, so whether a real head or washer overhangs "
+            "the board is UNMEASURED - do not read this as a clearance, and do not move a "
+            "hole to suit an imagined part")
+    return {
+        "status": "UNVERIFIED - Z separation only, no hardware is modelled",
+        "overlap_measure": ("PLAN VIEW (X/Y) ONLY: a plan overlap is a projection, never a "
+                            "Z result. body_overlap_mm reaches the bracket outline; "
+                            "head_overlap_mm is the Ø head/washer ENVELOPE, 2D only"),
+        "standoffs": points,
+        "z_mm": {
+            "standoff": [float(z["panelRear"]), board_top],
+            "front_board": [board_top, board_rear],
+            "bracket": [board_rear, round(board_rear + g.thickness, 3)],
+        },
+        "z_separation_mm": round(board_rear - board_top, 3),
+        "z_separation_scope": ("the PCB separates the four modelled STANDOFF BODY annuli "
+                               "from the printed bracket. It separates nothing else"),
+        "rear_face_hardware": {
+            "modelled": False,
+            "note": ("the nut, washer or threaded insert an M3 screw through a standoff "
+                     "needs sits on the board's REAR face - the SAME face as the bracket - "
+                     "so there is no modelled Z separation between them. It may collide "
+                     "with the bar where the plan outlines overlap, and no modelled "
+                     "geometry can say that it does not"),
+        },
+        "head_envelope_edges": edge,
+        "warnings": warnings,
+        "not_claimed": [
+            "that a screw head, washer or nut on the board's rear face clears the bar",
+            "that the rear-side fastener of an M3 panel-mount screw is possible at all",
+            "that the bracket's own fasteners clear the four standoffs",
+            "that the Ø7.0 mm head/washer envelope is a real part",
+            "any printed, measured or bought hardware",
+        ],
+        "smallest_board_edge_margin_mm": round(worst, 3),
+    }
+
+
 def validate(g: BracketGeometry, layout: dict | None = None) -> list[str]:
     """Check every design rule. Returns warnings; raises GeometryError on failure.
 

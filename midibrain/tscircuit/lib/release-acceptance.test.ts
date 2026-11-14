@@ -288,6 +288,44 @@ describe("hardware fingerprint", () => {
     expect(computeHardwareFingerprint(root)).not.toBe(fingerprint)
   })
 
+  test("the printed actuator generators are mandatory, not optional", () => {
+    // Regression: these four were absent from FINGERPRINT_FILES, so the parts a
+    // `control_actuator` acceptance is about could change without invalidating it.
+    for (const rel of [
+      "mechanical/printed/printed_geometry.py",
+      "mechanical/printed/nav_keytop.py",
+      "mechanical/printed/knob.py",
+      "mechanical/printed/button_cap.py",
+      // the six committed artefacts, four generators + six files = 10 entries
+      "mechanical/printed/nav-keytop.stl",
+      "mechanical/printed/nav-keytop.step",
+      "mechanical/printed/knob.stl",
+      "mechanical/printed/knob.step",
+      "mechanical/printed/button-cap.stl",
+      "mechanical/printed/button-cap.step",
+    ]) {
+      expect(FINGERPRINT_FILES).toContain(rel)
+    }
+    // ...and the prototypes / analysis are NOT hardware: they must not be here.
+    expect(FINGERPRINT_FILES).not.toContain("mechanical/printed/nav_proto.py")
+    expect(FINGERPRINT_FILES).not.toContain("mechanical/printed/nav_fit.py")
+  })
+
+  test("a generator-only content change invalidates the fingerprint", () => {
+    const before = computeHardwareFingerprint(root)
+    appendFileSync(join(root, "mechanical/printed/printed_geometry.py"),
+      "\n# geometry-only change\n")
+    expect(computeHardwareFingerprint(root)).not.toBe(before)
+  })
+
+  test("a missing generator fails the gate instead of being skipped", () => {
+    rmSync(join(root, "mechanical/printed/button_cap.py"))
+    const report = hardwareFingerprintReport(root)
+    expect(report.missing).toContain("mechanical/printed/button_cap.py")
+    // computeHardwareFingerprint throws on a partial fingerprint (the gate's rule)
+    expect(() => computeHardwareFingerprint(root)).toThrow(/hardware source missing/)
+  })
+
   test("does not change for a documentation-only change", () => {
     appendFileSync(join(root, "docs/evidence/README.md"), "\nmore notes\n")
     write("docs/acceptance.md", "# acceptance\n")
@@ -315,6 +353,17 @@ describe("hardware fingerprint", () => {
     ["the STEP collision geometry module", "mechanical/step_geometry.py"],
     ["the light-pipe reach computation", "mechanical/light_pipe_reach.py"],
     ["the vendor display inspector", "mechanical/tools/inspect_display_step.py"],
+    // The default printed actuator generators: an accepted `control_actuator`
+    // row is about THESE parts, so a generator-only change must invalidate it.
+    ["the printed-part geometry module", "mechanical/printed/printed_geometry.py"],
+    ["the NAV keytop generator", "mechanical/printed/nav_keytop.py"],
+    ["the value knob generator", "mechanical/printed/knob.py"],
+    ["the button-cap generator", "mechanical/printed/button_cap.py"],
+    // The committed artefacts themselves: the gate never runs the test suite, so
+    // an edited STL must invalidate evidence on its own.
+    ["the committed NAV keytop STL", "mechanical/printed/nav-keytop.stl"],
+    ["the committed knob STL", "mechanical/printed/knob.stl"],
+    ["the committed button-cap STL", "mechanical/printed/button-cap.stl"],
     ["the JLCPCB order settings", "jlc-order.json"],
     ["the curated sourcing selection", "tscircuit/scripts/sourcing-extras.csv"],
   ] as const) {

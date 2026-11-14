@@ -22,8 +22,8 @@ the board. Everything else re-derives from that one part dimension.
 | Rear/base PCB | **148 × 112 × 1.6 mm** | `REAR_PCB` |
 | Front board rear face → rear board front face | 11.20 ±0.20 mm nominal (direct 2 × 13 pair, seat to seat) | `INTERCONNECT_MECH.seatToSeat` |
 | Front-board opening (ONE cut, through the top edge) | 106.50 × 68.90 mm, x −63.25…43.25, y −23.45…through the edge, 3.0 mm chamfers | `FRONT_BOARD_OPENING`, `FRONT_BOARD_OPENING_POLYGON` |
-| Display mount | printed carrier bolted to the **rear** board's top face; 8.75 mm adjustable spacers from that face, 12.75 mm to the display PCB rear. The nominal glass front falls at Z 0.60 (0.60 mm behind the panel front); the spacers are trimmed at assembly to bring it flush | `DISPLAY_STANDOFF`, `PROVISIONAL_Z.displayGlassFront` |
-| Display carrier holes (rear board, Ø2.7) | (−59.15, 41.9) (40.15, 41.9) (−59.15, −19.9) (40.15, −19.9) | `LCD_MOUNT_HOLES` |
+| Display mount | printed carrier bolted to the **rear** board's top face; 8.75 mm adjustable spacers from that face, 12.75 mm to the display PCB rear. The nominal glass front falls at Z 0.60 (0.60 mm behind the panel front); the spacers are EXTENDED (shimmed) to 9.35 mm at assembly to bring it flush - cutting the 8.75 mm starting length shortens the wrong way. **The carrier itself has no geometry yet: missing/unreviewed** | `DISPLAY_STANDOFF`, `PROVISIONAL_Z.displayGlassFront` |
+| Display carrier holes (rear board, Ø2.7) | (−59.65, 41.9) (39.65, 41.9) (−59.65, −19.9) (39.65, −19.9) | `LCD_MOUNT_HOLES` |
 | Front↔rear spacer holes (BOTH boards, Ø2.7) | (−69, −35) (71.5, −35) (−69, 46) (71.5, 46) | `FRONT_REAR_MOUNT` |
 | Panel drilled holes | six feedthrough screws (2 × Ø3.2, 4 × Ø3.5), the four Ø3.2 rail holes and the four Ø3.2 `STAND_` panel-mount screws | `PANEL_DRILLS`, `PANEL_MOUNT_HOLES` |
 | Panel-to-front-board mount frame (BOTH boards, Ø3.2) | (−71.5, −52) (71.5, −52) (−71.5, 52) (71.5, 52), M3, standoff 9.00 mm nominal | `PANEL_MOUNT_POINTS`, `PANEL_STANDOFF` |
@@ -35,7 +35,7 @@ the board. Everything else re-derives from that one part dimension.
 | Transport row (y −34, 24 mm pitch, centred under the opening) | x −46 / −22 / +2 / +26 | `FRONT_COLUMNS`, `TRANSPORT_Y` |
 | MIDI jacks (y −47.5, 12 mm pitch, one block at the left) | x −62 / −50 / −38 / −26 | `MIDI_JACK_X` |
 | MIDI clusters | in1 (−16, −48) in2 (2, −48) out1 (20, −46.1) out2 (38, −46.1) | `MIDI_CLUSTERS` |
-| Button stack vs Omron's reference | **excess 0.60 mm** (the jack-anchored 10.6 mm board-to-panel-front is 0.60 beyond Omron's 10.0 ±0.4 reference plane; recorded, not approved for a bought B32) | `BUTTON_STACK` |
+| Button stack vs Omron's reference | **Omron's 10.0 ±0.4 mm runs PCB TOP → CAP TOP** (verified from the drawing's vector data), so a bought B32 cap top would sit **0.60 mm BEHIND** the jack-anchored 10.6 mm panel front (band 0.20…1.00 mm recessed) instead of the 1.0–2.0 mm over it that the drawing wants. Unapproved as a physical fit: no bought cap has been measured | `BUTTON_STACK` |
 | Button caps (SW1–SW7, 7 off) | **printed cap standard**: 11.80 square plate, 3.85 × 0.60 locator, top Z −0.80 (0.80 proud, 11.40 above the board), part height 4.70; bought B32-13x0 is the documented alternative | `BUTTON_CAP_PRINTED`, `BUTTON_REACH` |
 | Light pipe | the selected PGN25L165 (16.5 mm shaft) is 5.9 mm **too long**; about 9.8 mm is needed and no part is selected | `LIGHT_PIPE_REACH` |
 | Main module installed depth (provisional) | 47.7 mm from the panel front face, 46.1 mm behind the panel back | `provisionalInstalledDepth()` |
@@ -53,7 +53,7 @@ the right-hand strip; MIDI jacks sharing the transport columns. Each replaced va
 |---|---|---|
 | Front panel | **30HP × 3U, 152.0 × 128.5 × 1.6 actual** (owner decision 2026-11-08, replaces the 32HP/162.56 mm panel of 2026-11-07) | Rail holes X ±68.58, Y ±61.25, Ø3.2 (spacing 137.16 = 27 × 5.08, the Doepfer multiple rule; 7.42 mm centre inset, 5.82 mm hole edge to panel edge). 152.0 is OUR ESTIMATE, 0.4 mm under the 152.4 mm nominal (0.2 mm per side): not a Doepfer-stated 30HP value, not owner-exact, not a mandate and not a guaranteed fit. Sources: [Doepfer A-100 mechanical information](https://doepfer.de/a100_man/a100m_e.htm) and its [hole figure A100FP.gif](https://doepfer.de/a100_man/A100FP.gif), which gives 128.5 mm height, a 7.5 mm horizontal and 3.0 mm vertical hole inset, and Ø3.2 mm holes but publishes no 30HP width. The fixed 27 × 5.08 grid on 152.0 mm gives 7.42 mm, i.e. **0.08 mm tighter than the figure's 7.5 mm** - disclosed, not corrected. Display window 107.22 × 68.87 mm centred on the module, unchanged. |
 | Front/UI PCB | **150 × 112 × 1.6**, U-shaped (owner decision 2026-11-13) | The display left this board, so its opening is a hole: two legs (11.75 mm left, 31.75 mm right) joined by a bottom bar. It carries the four front↔rear spacer holes and the four Ø3.2 panel-mount holes of the frame below, but no display holes. `J5`/`J_FRONT` sit at (66, 20) in the right leg. |
-| Rear/base PCB | **148 × 112 × 1.6** (owner decision 2026-11-13, replaced the 20HP 101.6 mm board) | Pico sockets on the left, J_PI (40-pin ribbon header) at the top, J_FRONT male on the TOP face. It carries the four front↔rear spacer holes and the four Ø2.7 display-carrier holes on the module's threaded SMTSO boss pattern (99.30 × 61.80 mm centres, 3.35 / 3.10 insets, layout x −59.15 / +40.15, y +41.90 / −19.90). The drawn 58.00 × 49.04 plain-hole pattern stays as the recorded alternative (`DISPLAY_STANDOFFS`). The Pi and its hole grid are **not** on this board: the Pi moved to its own mounting panel on 2026-11-12. |
+| Rear/base PCB | **148 × 112 × 1.6** (owner decision 2026-11-13, replaced the 20HP 101.6 mm board) | Pico sockets on the left, J_PI (40-pin ribbon header) at the top, J_FRONT male on the TOP face. It carries the four front↔rear spacer holes and the four Ø2.7 display-carrier holes on the module's threaded SMTSO boss pattern (99.30 × 61.80 mm centres, 3.35 / 3.10 insets, layout x −59.65 / +39.65, y +41.90 / −19.90). The drawn 58.00 × 49.04 plain-hole pattern stays as the recorded alternative (`DISPLAY_STANDOFFS`). The Pi and its hole grid are **not** on this board: the Pi moved to its own mounting panel on 2026-11-12. |
 | Pi mounting panel | **20HP × 3U, 101.2 × 128.5 × 1.6 actual** (owner decision 2026-11-12) | Pure mechanical JLCPCB FR-4, no copper and no components, fabricated like the 30HP panel. Same width convention (20 × 5.08 − 0.4) and the same Doepfer rail-hole rule as the 30HP panel: X spacing 86.36 = 17 × 5.08 at the same 7.42 mm centre inset (holes ±43.18), Y ±61.25, Ø3.2. Pi 5 (with Active Cooler + M.2 HAT+ + NVMe SSD) bolts to the panel's **rear** face on 3.5 mm candidate standoffs, **landscape** and mirrored (component side away from the panel): the Pi 5's 58 × 49 pattern (M2.5, Ø2.7) sits 10 mm toward +X, with holes at (−19, ±24.5) and (+39, ±24.5). The Pi board is ±42.5 × ±28 and its connectors reach −45.8…+44.2 × −29.7…+28 (`piBoardToPanel`; Pi 5 drawing RP-008347-DS-1, read from its vector data). Source `tscircuit/pi-panel.circuit.tsx`, geometry `PI_PANEL_*` in `lib/layout.ts`, guard `lib/pi-panel.test.ts`. USB stays on the 30HP panel (no USB opening is added to the Pi mounting panel); the three feedthroughs themselves moved on 2026-11-13, see the respin table. |
 | Installed depth target | ≤110 mm | Target retained. Not verified; see the depth section. |
 
@@ -71,39 +71,45 @@ The chain is anchored on **one part dimension** - the Thonkiconn jack's 9.0 mm s
 
 - Owner-confirmed 2026-11-14 against the Thonkiconn drawing: the jack's seating shoulder is exactly **9.0 mm** from
   the front board's top face, and the panel REAR rests on it. The 1.6 mm panel adds on top, so the panel front is
-  **10.6 mm** above the board (`PANEL_TO_FRONT_BOARD_TOP`, derived - never typed). Omron's B32 reference is
-  10.0 ±0.4 mm from the board to the panel FRONT, so this stack is 0.60 mm beyond that reference plane and 0.20 mm
-  outside its band: the printed cap does not depend on the B32 reference, and a bought B32-13x0 alternative now sits
-  0.60 mm deeper with its undimensioned top still to be measured.
-- The PEC11R M7 thread spans about 6.5…13.5 mm above the board, so its bushing still stands proud of the 10.6 mm
-  panel front. **This chain is measured from the encoder's seating plane, and the encoder's STEP body sits
+  **10.6 mm** above the board (`PANEL_TO_FRONT_BOARD_TOP`, derived - never typed). Omron's 10.0 ±0.4 mm reference
+  runs from the PCB TOP to the **CAP TOP** (verified from the drawing's vector data, 2026-11-14), and 1.0–2.0 mm is
+  how far the cap top should stand OVER the panel. On this stack a bought B32 cap top would therefore sit **0.60 mm
+  BEHIND** the panel front (band 0.20…1.00 mm), so the bought cap does not suit the stack: a nominal, unapproved
+  finding, and the actual installed position stays unverified. The printed cap does not depend on that reference.
+- The selected PEC11R **L15/LB5** has its M7 thread spanning **6.5…11.5 mm** above the board, so its bushing still
+  stands proud of the 10.6 mm panel front. (13.5 mm belongs to the **unapproved L20/LB7** candidate and is not
+  quoted for the selected part.) The thread past the panel front is 0.9 mm against a 2.5 mm nut + washer, which
+  is why `encoder_solder_process` stays pending and the longer candidate is NOT substituted. **This chain is measured from the encoder's seating plane, and the encoder's STEP body sits
   4.50 mm low in `front.step`**: the vendor STEP's seating plane is at model-local z -4.50 (the large
   down-facing face spanning the 12.5 mm body; the -4.70 planes beside the terminals and the -8.20 lugs are not
   the seat) and tscircuit's STEP exporter drops `model_origin_position`, so no value in the import can lift it.
-  `front.step` is therefore **not fit truth for U6's seating or bushing height** - read the OBJ/3D view or the
-  vendor drawing until that is resolved. The mechanical viewer applies a documented, self-healing 4.50 mm
+  `front.step` is therefore **not fit truth for U6's seating or bushing height**. Neither viewer is evidence:
+  tscircuit's OBJ/3D view looks right only because the OBJ importer keeps `model_origin_position`, and it measures
+  nothing. Read the **sourced vendor drawing** for the dimensions and confirm them on a **physical measurement** of a
+  delivered encoder. The mechanical viewer applies a documented, self-healing 4.50 mm
   compensation (`mechanical/viewer/README.md`) and asserts the result; that number is a rendering correction,
   not a measurement, and the bushing height above the panel still has to be re-checked against this 10.60 mm
   stack (`docs/TODO.md`).
 - The display is NOT an independent datum. It hangs on the rear-board carrier at `DISPLAY_STANDOFF.spacerLength`
   (8.75 mm) behind that board's front face, so its glass front falls out of the chain at Z **0.60**: 0.60 mm BEHIND
-  the panel front, still inside the 1.6 mm aperture. The adjustable carrier spacers trim it flush at assembly; that
+  the panel front, still inside the 1.6 mm aperture. The adjustable carrier spacers are extended (shimmed) by 0.60 mm to reach flush at assembly; that
   0.60 mm is the planned adjustment, not a fit. The vendor model puts its touch/frame forward face **1.90 mm in
-  front of the glass front face**, so at the nominal glass datum that frame sits 1.30 mm behind the panel front; the
-  flush-trimmed assembly would put it 1.90 mm in front. That is a property of the supplied model, not a fit.
+  FRONT of the glass front face**, so at the nominal glass datum (panel Z +0.60) the frame sits at panel Z **-1.30**,
+  i.e. 1.30 mm **IN FRONT of** the panel front; a flush assembly (spacer extended to 9.35 mm) would put it 1.90 mm in
+  front. That is a property of the supplied model, not a fit.
 - Vendor figures for the 4.3-inch module: **14.05 mm overall** (wiki FAQ, the vendor's stated maximum), split
   provisionally as 10.05 mm from the **glass front face to the display PCB rear face** plus the **4.0 mm** boss
   projection behind it. Only the 4.0 mm is a vendor-modelled number; the 10.05 mm is derived (14.05 − 4.0), not
   measured, and the split is the thing the first article replaces with two direct measurements. The reference STEP's
   union bbox is 13.82 mm; see the thickness resolution in the display table below.
 - The display no longer hangs off the front board at all. It is carried by a printed part bolted to the **rear**
-  board's top face on 8.75 mm spacers, and those spacers are the adjustment that trims the glass plane to the panel
-  front at assembly.
+  board's top face on **8.75 mm** spacers (the adjustable pair with the 12.75 mm plane separation). Reaching flush
+  EXTENDS them to 9.35 mm; shortening them moves the glass further behind the panel front.
 
 | Feature | Z (mm) | Basis |
 |---|---:|---|
 | Panel front / rear faces | 0 / 1.60 | 1.6 mm FR-4. |
-| Display glass front | **0.60** | `DISPLAY_GLASS_FRONT_Z`, derived: rear-board front − 8.75 spacer − 14.05 overall. 0.60 mm behind the panel front, trimmed flush by the adjustable spacers. |
+| Display glass front | **0.60** | `DISPLAY_GLASS_FRONT_Z`, derived: rear-board front − 8.75 spacer − 14.05 overall. 0.60 mm behind the panel front; reaching flush EXTENDS the spacer to 9.35 mm, it never cuts it. |
 | Display mounting PCB | 9.05 | Glass front + 10.05 − 1.6 mm PCB (provisional split). |
 | Display PCB rear face | 10.65 | Glass front + 10.05 mm (provisional split, not measured). |
 | Display rear-most point (boss ends) | 14.65 | 10.65 + 4.0 mm boss projection; equals the wiki overall depth. |
@@ -162,16 +168,16 @@ that face), so:
 
 | Quantity | Provisional value | Meaning |
 |---|---:|---|
-| Plane separation | 12.75 mm | Rear-board front face to display PCB **rear face**. |
+| Plane separation | **12.75 mm** | Rear-board front face (23.40) to display PCB **rear face** (10.65), both derived from the 10.6 mm datum. |
 | Boss projection | 4.0 mm | Boss ends stand 4.0 mm behind that PCB rear face (primary model). |
-| Spacer length | **8.75 mm** (adjustable) | Rear-board front face to the module's boss ends = 12.75 − 4.0. This is the length the carrier spacers set, and adjusting it is how the glass plane is trimmed to the panel front. |
+| Spacer length | **8.75 mm** (adjustable) | Rear-board front face to the module's boss ends = 12.75 − 4.0. This is the length the carrier spacers set; reaching flush EXTENDS it to 9.35 mm and it is never cut shorter. The carrier itself still has no geometry. |
 
 Ordering a 12.75 mm spacer while intending a 12.75 mm plane separation would add the boss projection a second time and
 push the display through the panel. The 19.05 mm / 9.0 mm / 5.0 mm chain that these numbers replace is **superseded**
 (owner decision 2026-11-13); the drawn STEP placeholders still sit on the old 8.81 mm gap until the CAD is regenerated.
 
 The exact carrier geometry is still to be drawn and checked: all four boss points are now inside the 148 mm rear board
-(at x −59.15 / +40.15), so none has to be carried outboard as it did on the 20HP board. Spacer length, diameter,
+(at x −59.65 / +39.65), so none has to be carried outboard as it did on the 20HP board. Spacer length, diameter,
 thread and assembly remain first-article tasks.
 
 **Display underside — pending, no clearance claimed.** `DISPLAY_UNDERSIDE_GAP` is **−4.05 mm**: with the panel front
@@ -192,8 +198,9 @@ states **17.5 mm overall**, which is 16.5 + 1.0. The panel openings are therefor
 REC / OVER DUB / PLAY at x −34 / −10 / +14, y −34.
 
 Datum: panel FRONT face Z = 0, +Z rearward. With the head underside on the panel front face — an **assumption, not a
-measurement** — the nominal tip plane is **16.5 mm**, and the front-board top face is now at 10.60 mm, so the tip would
-pass the board by **5.90 mm** (`LIGHT_PIPE_REACH.nominalTipToBoardPlane = −5.90`). A pipe of about **9.8 mm** shaft
+measurement** — the nominal tip plane is **16.5 mm**, and the front-board top face is at 10.60 mm, so the tip plane
+lies **5.90 mm BEHIND the board face** (`LIGHT_PIPE_REACH.nominalTipToBoardPlane = −5.90`, SIGNED as board minus tip:
+negative means the pipe crosses the plane). A pipe of about **9.8 mm** shaft
 length is needed (10.6 mm minus an eyeballed ~0.8 mm LED body) and **no part is selected**. That is arithmetic between
 assumed planes and **not the LED-to-pipe optical gap**: the LED height, brightness/coupling, retention in 1.6 mm FR-4,
 the real hole tolerance and the stack tolerances are unmeasured, so `opticalGap` is **null** and the status is
@@ -246,7 +253,7 @@ the **intended nominal** Ø2.6 mm geometry only; they make no manufacturing-capa
 | Panel-to-front-board gap | **9.00 mm** | `JACK_CLAMPED_GAP`: the Thonkiconn drawing's 9.0 mm seating shoulder (owner-confirmed 2026-11-14), now the anchor. The 10.60 mm panel front is the gap plus the 1.60 mm panel, derived. The replaced 17.45 mm (Assumptions A + B, display screwed to the front board) was 14.10 mm for the withdrawn 3.5-inch module. |
 | Light-pipe reach | PGN25L165: shaft 16.5 ±0.1, overall 17.5, head 1.0 | Nominal tip plane **16.5** from the panel front against a **10.60** board plane: the tip would pass the board by **5.90**, so this part is **too long** and a ~9.8 mm shaft is needed with no part selected. Optical gap **null**, status **incomplete**. The retired 10.16 / 7.29 figures are **withdrawn**. |
 
-**Connector model check (2026-11-08, corrected).** The STEP's XCAF label tree shows the two 21.412 × 4.826 mm bodies are `EXTRUDED-106739` / `EXTRUDED-107488` inside `TFT1_ASM` — TFT flex bonds, **not** a panel connector. An earlier revision treated them as the FPC connector and inferred a ~24 mm disagreement with the drawing; that reading is withdrawn. The nearest named body to the recorded position is `DISPLAY_CAM` (4.822 × 22.400 × 5.680 mm, vendor x −51.975…−47.153, y −13.570…8.830, z −9.020…−3.340), placed centre (40.064, 11.000) mm against the recorded (38.837, 11.700) mm — an observation of 1.413 mm, **not a match**. Identity, pin count, electrical side, the long-axis wording and the rear/front frame mapping all stay unverified and need independent re-derivation. The recorded position does not move the PCB. Whether the connector, plug or first bend intersects the front board's top-side parts remains unknown and needs a first-article check. The CAD model draws the connector only as `DISPLAY_CONNECTOR_PLANNING_MARKER` on the provisional Z 10.05 plane.
+**Connector model check (2026-11-08, corrected).** The STEP's XCAF label tree shows the two 21.412 × 4.826 mm bodies are `EXTRUDED-106739` / `EXTRUDED-107488` inside `TFT1_ASM` — TFT flex bonds, **not** a panel connector. An earlier revision treated them as the FPC connector and inferred a ~24 mm disagreement with the drawing; that reading is withdrawn. The nearest named body to the recorded position is `DISPLAY_CAM` (4.822 × 22.400 × 5.680 mm, vendor x −51.975…−47.153, y −13.570…8.830, z −9.020…−3.340), placed centre (40.064, 11.000) mm against the recorded (38.837, 11.700) mm — an observation of 1.413 mm, **not a match**. Identity, pin count, electrical side, the long-axis wording and the rear/front frame mapping all stay unverified and need independent re-derivation. The recorded position does not move the PCB. Whether the connector, plug or first bend intersects the front board's top-side parts remains unknown and needs a first-article check. The CAD model draws the connector only as `DISPLAY_CONNECTOR_PLANNING_MARKER` on the provisional Z 10.65 plane.
 
 Display window (owner decision D1): the aperture follows the GLASS, not the 106 × 68 PCB envelope, and not the
 95.54 × 54.36 printed border. Window = glass + 0.9 mm per side = 107.22 × 68.87 mm, centred on the module at
@@ -338,30 +345,33 @@ makes no compliance claim. Recorded in the assumptions file as `board_face_conve
 
 Every B3F-4055 button (SW1–SW7) takes a **printed cap**, one per switch, seven
 in total. The bought Omron/ARATAS **B32-1380** (red, 12 × 12 mm square) is the
-documented **alternative**; the black equivalent is **B32-1310**. The B32 is no
-longer bought for the standard build because Omron does not dimension its cap
-top, so its seated height was never derivable. The printed cap turns that
-unknown into a number we set: its underside rests on the plunger face and its
-top is placed 0.80 mm proud of the panel front. The part is built by
+documented **alternative**; the black equivalent is **B32-1310**. The printed cap
+is the standard because its height is **ours to set**: its underside rests on the
+plunger face and its top is placed 0.80 mm proud of the panel front. That is a
+design choice, not a measurement: whether it fits, stays on and presses far
+enough stays `control_actuator`, pending. The part is built by
 `mechanical/printed/button_cap.py`; `mechanical/printed/README.md` carries the
 print and first-article instructions.
 
 Facts from the Omron B32 datasheet (SHA-256
-`90834f79bcb19ed59fc242f0a005d8ca47fcdbf2f4583bc53695695bb675d28f`, re-read
-2026-11-12, page 3) still describe the **alternative**:
+`90834f79bcb19ed59fc242f0a005d8ca47fcdbf2f4583bc53695695bb675d28f`, page 3;
+the two reference dimensions were **verified from the drawing's vector data on
+2026-11-14**: PCB top y 146.00, cap top y 105.17, panel top y 113.29) describe the
+**alternative**:
 
 | Fact | Value |
 |---|---|
 | B32 key top | 12 ±0.15 mm square |
-| **Reference: PC board to the panel FRONT face** | **10.0 ±0.4 mm** |
-| Panel thickness range | 1.0 to 2.0 mm |
+| **Reference: PCB TOP → CAP TOP** | **10.0 ±0.4 mm** |
+| **Reference: cap-top protrusion over the panel** | **1.0 to 2.0 mm** |
+| Panel thickness | **NOT specified by this drawing** |
 | Reference panel cutout | **12.2 +0.05/0 mm square** |
 | Corner radii | R0.5 on the key top, R0.2 on the skirt |
+| Round-cap cross-check (same sheet) | 7.3 − 2.8 + 7.0 = **11.5 mm PCB → cap top** |
 
-The 10.0 ±0.4 dimension is **not** a cap height. The reference drawing shows the
-panel's front face 10 mm above the PCB and the B32 cap top just below the
-panel's rear face. With a 1.0–2.0 mm panel that puts the panel rear 8.0–9.0 mm
-above the PCB; Omron does not dimension the cap top. The B3F-4055 datasheet
+**The earlier reading of those two numbers was WRONG and is SUPERSEDED**: they are
+not "PCB → panel front" and "panel thickness". 10.0 ±0.4 runs PCB top → cap top,
+and 1.0–2.0 is how far the cap top stands over the panel. The B3F-4055 datasheet
 (SHA-256 `be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f`)
 gives the switch envelope: a square 3.8 ±0.1 mm projected plunger on a
 12 ±0.2 mm square body, 7.3 ±0.2 mm from the board to the plunger face.
@@ -369,27 +379,32 @@ gives the switch envelope: a square 3.8 ±0.1 mm projected plunger on a
 **Panel opening.** `PANEL_CUTOUTS.button = 12.25` mm square (sharp corners).
 12.25 is the top of Omron's 12.2 +0.05/0 band, so the largest B32 cap
 (12.15 mm) clears by 0.05 mm per side. The printed plate is 11.80 mm square and
-clears by **0.225 mm per side**. The 1.6 mm panel is inside the 1.0–2.0 mm
-range. The routed-square tolerance at JLCPCB is **not verified**; confirm it
-before ordering.
+clears by **0.225 mm per side**. The routed-square tolerance at JLCPCB is **not
+verified**; confirm it before ordering.
 
-**Actuator stack: the jack, not Omron's reference, sets the panel plane.** Z
+**Actuator stack: a bought B32 cap top would sit BEHIND the panel front.** Z
 datum: panel front face Z = 0, +Z rearward. The front board top is at Z 10.60
-(`PANEL_TO_FRONT_BOARD_TOP` = the jack's 9.0 mm seating shoulder + the 1.6 mm
-panel), so the board-to-panel-front distance is 0.60 mm beyond Omron's own
-reference plane and 0.20 mm outside its band, and the board-to-panel-rear
-distance is 9.0 mm.
+(`PANEL_TO_FRONT_BOARD_TOP`, owner-directed and provisional). With the reference
+being PCB → cap top, that cap top plane is Z = 10.60 − 10.0 = **+0.60**, i.e.
+0.60 mm behind the panel front (band: 0.20…1.00 mm behind). Omron's drawing wants
+the cap top 1.0–2.0 mm **over** the panel face, so the bought cap does not suit
+this stack. That is a NOMINAL finding: no bought cap has been measured, so the
+actual fit is unverified.
 
 | Quantity | Value |
 |---|---:|
-| Omron reference board-to-panel-front | 10.0 mm (9.6…10.4) |
-| Our board-to-panel-front | 10.60 mm |
-| **Stack depth excess vs the reference** | **+0.60 mm (0.20 outside ±0.4)** |
-| Omron reference panel rear above PCB (1.6 mm panel) | 8.4 mm |
+| Omron reference PCB top → cap top | 10.0 ±0.4 mm |
+| Omron reference cap-top protrusion over the panel | 1.0…2.0 mm |
+| Omron reference panel thickness | not specified |
+| Our panel front above the PCB | 10.60 mm |
+| **Bought B32 cap top, panel Z** | **+0.60 mm** (0.60 behind the front face) |
+| Bought B32 cap top band, panel Z | +0.20…+1.00 mm (0.20…1.00 behind) |
+| Does the bought cap suit this stack? | **No, nominal finding** — it would be recessed instead of 1.0–2.0 over the panel; fit unverified |
 | Our panel rear above PCB | 9.0 mm |
 | B3F-4055 plunger face (7.3 above board) | Z 3.30 |
 | Printed cap top (0.80 proud of the panel front) | Z −0.80 (11.40 above board) |
 | Printed cap top above the switch | 11.40 − 7.30 = **4.10** |
+| Press budget: cap top to flush vs B3F-4@@5 pretravel 0.3 +0.2/−0.1 | 0.80 mm against 0.50 mm max → **0.30 mm nominal margin**, not a clearance |
 
 **The printed cap is a three-term part, not a two-term one.** The plunger sits
 INSIDE a locator recess, so the cap's rear face stops 0.60 mm behind the plunger
@@ -397,14 +412,17 @@ face:
 
 ```
   cap top           Z -0.80   0.80 proud of the panel front
+  front-board top   Z 10.60
   panel front       Z  0.00
   panel rear        Z  1.60
   recess floor      Z  3.30   = B3F-4055 plunger face (7.30 above the board)
   cap rear face     Z  3.90   = recess floor + 0.60 locator depth
+  fixed body top    Z  6.30   = page-6 body 4.3 above the board
 
   part height = 3.30 flush + 0.60 locator + 0.80 proud = 4.70 mm
   cap top above board = 10.60 + 0.80 = 11.40 mm
   cap top above switch = 11.40 - 7.30 = 4.10 mm
+  ring to body top = 6.30 - 3.90 = 2.40 mm at rest, 1.60 mm at flush after 0.80 mm cap movement
 ```
 
 Deriving the height as flush + proud (4.10) would be the same mistake the 3D
@@ -421,19 +439,20 @@ rearward over the 3.80 mm plunger (0.025 mm per side). The aperture centres the
 cap; there is no other guide. Axial retention is the printed fit on the plunger
 alone.
 
-`BUTTON_STACK.stackDepthExcess` is **+0.60 mm**: the jack-anchored panel is
-0.60 mm beyond Omron's reference plane, i.e. 0.20 mm outside the +-0.4 band.
-The printed cap is dimensioned from the panel front and does not depend on that
-reference; the bought B32 alternative now sits 0.60 mm deeper than Omron's
-reference and its undimensioned top must be measured before use.
-`control_actuator` is **closed by design** for the button height: the cap's
-4.70 mm part and 11.40 mm top are ours to set, not a bought part's undimensioned
-property. It is **not yet closed by measurement**: the
+`BUTTON_STACK.referenceCapTopBelowPanelFront` is **+0.60 mm**: Omron's 10.0 ±0.4
+runs PCB → cap top, so a bought cap top lands behind our 10.6 mm panel front
+(0.60 mm nominal, 0.20…1.00 mm band) instead of the 1.0–2.0 mm over it that the
+drawing wants. (The 19.05 mm chain's 9.05 mm shortfall is superseded history.)
+`control_actuator`
+remains **PENDING** for the button height: the cap's 4.70 mm part and 11.40 mm top
+are set by our printed-cap geometry, independently of the dimensioned bought cap. It is **not yet closed by measurement**: the
 first article must record (a) the installed cap height and press travel, (b)
 the printed locator fit and whether a cap stays on its plunger when the panel is
-lifted, (c) the 0.60 mm locator ring's clearance to the body top at rest and at
-full travel (the datasheet page recorded here gives the 7.3 mm overall height,
-not the body top), and (d) the routed 12.25 mm square's real size. If the bought
+lifted, (c) the 0.60 mm locator ring's clearance to the body top at rest and at flush
+after 0.80 mm of cap movement — NOMINAL 2.40 mm and 1.60 mm from the page-6 body
+height (4.3 ±0.2 mm); the MOVING COLLAR and the overtravel are not dimensioned,
+and full physical travel is not established — and (d) the routed 12.25 mm
+square's real size. If the bought
 B32 alternative is used instead, its seated height and press travel are still
 unmeasured. Recorded as `BUTTON_CAP_PRINTED` and `BUTTON_REACH` in
 `lib/layout.ts`.
@@ -505,7 +524,7 @@ rear-most point:**
 | Rear/base PCB | 1.6 | 1.6 mm FR-4. |
 | Pico socket stack | 12.7 | CANDIDATE: ~8.5 mm female header + the Pico 2's 1.0 mm PCB (Pico 2 datasheet: "1 mm thick PCB") + a ~3.2 mm micro-USB body (unmeasured). The console USB plug adds its own bend; unmeasured. |
 | Harness allowance | 10 | Ribbon fold and cable bends at the module exit (feedthrough bracket slots); unmeasured. |
-| **Total from the panel front face** | **47.1** | `provisionalInstalledDepth()`; **45.5 mm behind the panel back** = `provisionalModuleDepthBehindPanel()`. |
+| **Total from the panel front face** | **47.7** | `provisionalInstalledDepth()`; **46.1 mm behind the panel back** = `provisionalModuleDepthBehindPanel()`. |
 
 With the Pi on its own panel, the J_FRONT male tails (nominal 1.40 mm
 protrusion below the rear PCB) point into open air under the rear board. The
@@ -654,6 +673,6 @@ the print checklist are in [mechanical-cad.md](mechanical-cad.md).
 ## Before freezing the layout
 
 Acquire and measure: the display (rear connectors, underside map, FPC latch, mounting bosses), the Adafruit 908 and
-USB-C feedthrough bodies and flanges, the M2.5/M3 hardware envelopes, the display carrier and its 8.75 mm spacers, a
-~9.2 mm-class light pipe, the Pi 5 sample, the cooler/M.2 HAT+/SSD stack, and every cable bend. Build the stack
+USB-C feedthrough bodies and flanges, the M2.5/M3 hardware envelopes, the display carrier and its 8.75 mm starting spacers (9.35 mm to reach flush), a
+~9.8 mm-class light pipe, the Pi 5 sample, the cooler/M.2 HAT+/SSD stack, and every cable bend. Build the stack
 mock-up, then re-run the gates. No increase of panel width or installed depth without an explicit owner decision.

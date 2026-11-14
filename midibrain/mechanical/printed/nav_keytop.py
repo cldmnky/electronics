@@ -9,10 +9,17 @@ does not match the design rules, and re-reads what it wrote.
 Shape (Z datum: panel FRONT face = 0, +Z rearward):
 
     head   D7.00 x 4.00 in front of the panel   -- the finger pad, 4 mm proud
-    neck   D7.00 x 1.60 through the aperture    -- carries the side load
-    flange D9.60 x 1.20 on the panel rear face  -- traps the cap, bears the load
+    neck   D7.00 x 1.60 through the aperture    -- the only guidance in the hole
+    flange D9.60 x 1.20 on the panel rear face  -- a forward stop against the panel
     shank  D5.60 x 4.15 in the 9.0 mm air gap
-    socket D3.20 x 1.50 over the D3.0 stem      -- floor 0.15 mm above the stem top
+    socket D3.20 x 1.50, floor 0.15 above the stem top
+
+The socket is a CIRCULAR bore over a stem tip that the vendor model shows as a
+rounded square (1.95 +-0.05 across flats, R0.5 corners, +-1.184 mm extent), so the
+radial play is 0.10...0.62 mm per side depending on which feature mates. It is NOT
+a gripping fit: the only claim is that the cap sits on the stem and is stopped
+forward by the flange. Nothing here shows that the cap stays on, that it cannot
+rock, or that the stem sees no bending moment - all three are unmeasured.
 
 The head and the neck are ONE diameter on purpose: the head is the leading
 feature when the cap is dropped through the aperture from the rear, so anything

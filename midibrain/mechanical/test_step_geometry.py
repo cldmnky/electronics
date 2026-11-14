@@ -769,7 +769,82 @@ class DisplayModelSeparationTest(unittest.TestCase):
                               6.24, places=6)
         self.assertIn("no equation", doc["vendor_model"]["note"])
         self.assertIn("1.90 mm", doc["placement"]["disclosure"])
-        self.assertIn("Not flush", doc["placement"]["disclosure"])
+        self.assertIn("NOT flush", doc["placement"]["disclosure"])
+
+    def test_the_placement_prose_is_derived_from_the_nonzero_datum(self) -> None:
+        # The selected glass datum is NOT zero (0.60 mm behind the panel front),
+        # so the drawn glass is at panel Z +0.60 and the touch/frame at -1.30.
+        # Both descriptions must be computed from the layout, never typed: a
+        # hard-coded "Z 0" or "Z -1.90" is the bug this pins.
+        data = layout()
+        self.assertAlmostEqual(data["provisionalZ"]["displayGlassFront"], 0.60, places=6)
+        doc = sg.assumptions_document(data)["display_model_planes"]
+        glass_note = doc["placement"]["glass_datum"]
+        disclosure = doc["placement"]["disclosure"]
+        self.assertIn("+0.60", glass_note)
+        self.assertIn("BEHIND the panel front", glass_note)
+        self.assertIn("-1.30", disclosure)
+        self.assertIn("1.30 mm in FRONT of the panel front", disclosure)
+        self.assertIn("1.90 mm", disclosure)
+        self.assertIn("NOT flush", disclosure)
+        # The stale numbers of the withdrawn flush-glass datum must not appear.
+        self.assertNotIn("Z = -1.90", disclosure)
+        self.assertNotIn("at the panel front face, Z = 0", glass_note)
+        self.assertNotIn("proud", disclosure)
+        # The placed planes agree with the prose.
+        planes = sg.placed_display_planes(data)
+        self.assertAlmostEqual(planes["glass_front"], 0.60, places=6)
+        self.assertAlmostEqual(planes["touch_frame_front"], -1.30, places=6)
+
+    def test_the_assumptions_document_needs_no_argument(self) -> None:
+        """`assumptions_document()` must work with no layout passed in.
+
+        A string built from `layout[...]` instead of `data[...]` raises TypeError
+        on the no-argument path, which is the call the CAD export makes.
+        """
+        doc = sg.assumptions_document()
+        ids = [a["id"] for a in doc["assumptions"]]
+        self.assertEqual(ids, ["A", "B", "C", "D", "E"])
+        by_id = {a["id"]: a["text"] for a in doc["assumptions"]}
+        # The selected display datum and the real carrier/interconnect numbers.
+        self.assertIn("+0.60", by_id["A"])
+        self.assertIn("23.40", by_id["B"])
+        self.assertIn("8.75", by_id["B"])
+        self.assertIn("11.20", by_id["D"])
+        # The withdrawn front-board chain must not be listed as active.
+        self.assertNotIn("flush with the panel front face (Z = 0)", by_id["A"])
+        self.assertNotIn("gap 20 mm", by_id["D"])
+
+    def test_the_arithmetic_note_is_derived(self) -> None:
+        """The two numbers come from display_mount_gap, not from typed text."""
+        data = layout()
+        mount = sg.display_mount_gap(data)
+        note = sg.assumptions_document(data)["display_mount_placeholders"]["arithmetic_vs_proof"]
+        self.assertIn(f"{mount['model_gap_mm']:+.2f} mm", note)
+        self.assertIn(f"{mount['residual_mm']:+.2f} mm", note)
+        self.assertIn("not a proof of fit", note)
+        # A changed datum must move the text with it.
+        moved = json.loads(json.dumps(data))
+        moved["provisionalZ"]["displayGlassFront"] = 0.0
+        moved_mount = sg.display_mount_gap(moved)
+        moved_note = sg.assumptions_document(moved)["display_mount_placeholders"]["arithmetic_vs_proof"]
+        self.assertIn(f"{moved_mount['model_gap_mm']:+.2f} mm", moved_note)
+        self.assertNotEqual(moved_mount["model_gap_mm"], mount["model_gap_mm"])
+        self.assertNotEqual(moved_note, note)
+
+    def test_the_print_checklist_gap_is_derived(self) -> None:
+        note = [x for x in sg.PRINT_CHECKLIST if "MODEL_FIT_SPACER" in x]
+        self.assertEqual(len(note), 1)
+        self.assertIn(f"{sg.display_mount_gap()['model_gap_mm']:+.2f} mm", note[0])
+        self.assertIn("not a part", note[0])
+
+    def test_the_connector_marker_names_the_current_datum(self) -> None:
+        # A stale "provisional 10.05 plane" label would send a reader to a plane
+        # that no longer describes the current display chain.
+        legend = {b["name"]: b for b in sg.BODY_LEGEND}
+        meaning = legend["DISPLAY_CONNECTOR_PLANNING_MARKER"]["meaning"]
+        self.assertIn("display PCB rear datum", meaning)
+        self.assertNotIn("10.05", meaning)
 
     def test_the_connector_size_is_never_sourced_to_the_vendor_step(self) -> None:
         """The withdrawn claim must not come back in code or docs."""
@@ -788,8 +863,88 @@ class DisplayModelSeparationTest(unittest.TestCase):
         todo = (Path(__file__).resolve().parent.parent / "docs" / "TODO.md").read_text()
         self.assertIn("Display in-plane orientation axis", todo)
         self.assertIn("Board face convention (owner decision)", todo)
-        # They are design gaps, not physical evidence rows.
-        self.assertIn("All 28 items pending", todo)
+        # They are design gaps, not physical evidence rows. The count is the
+        # canonical one (31); it must agree with the acceptance state file.
+        self.assertIn("All 31 items pending", todo)
+        state = json.loads((Path(__file__).resolve().parent.parent
+                            / "hardware-acceptance.json").read_text())
+        self.assertEqual(len(state["items"]), 31)
+
+    def test_the_panel_mount_frame_is_recorded_against_the_bracket(self) -> None:
+        """A plan overlap the board separates is recorded, not approved."""
+        block = sg.assumptions_document(layout())["panel_mount_frame"]
+        self.assertTrue(block["status"].startswith("UNVERIFIED"))
+        self.assertEqual(len(block["standoffs"]), 4)
+        self.assertAlmostEqual(block["z_separation_mm"], 1.6, places=6)
+        # The standoff plane ends where the bracket plane starts: the board only.
+        self.assertLessEqual(block["z_mm"]["standoff"][1], block["z_mm"]["bracket"][0])
+        text = " ".join(block["not_claimed"]).lower()
+        for word in ("screw", "washer", "nut", "printed"):
+            self.assertIn(word, text)
+        self.assertIn("panel-mount screw", " ".join(
+            sg.assumptions_document(layout())["unknowns"]).lower())
+
+    def test_the_board_mockup_warning_is_published(self) -> None:
+        """The board-mockup defect is DISCLOSED in the checklist and metadata.
+
+        No CAD kernel is needed: the warning lives in the pure data, so it cannot
+        be skipped away. The panel mockup and the light-pipe gauge stay distinct
+        from the two board mockups that must not be printed.
+        """
+        report = sg.board_mockup_report()
+        self.assertEqual(report["status"], sg.BOARD_MOCKUP_DISCLAIMER)
+        self.assertEqual(sorted(report["files"]),
+                         ["mockup-front-board.stl", "mockup-rear-board.stl"])
+        self.assertTrue(report["repair"])
+        checklist = sg.print_checklist_markdown()
+        self.assertIn(sg.BOARD_MOCKUP_DISCLAIMER, checklist)
+        for file_name, defects in report["files"].items():
+            self.assertIn(file_name, checklist)
+            for defect in defects:
+                self.assertIn(defect, checklist)
+        # The generated metadata carries the same block and the same words.
+        document = sg.assumptions_document(layout())
+        block = document["board_mockups"]
+        self.assertEqual(block["status"], sg.BOARD_MOCKUP_DISCLAIMER)
+        self.assertEqual(sorted(block["files"]), sorted(report["files"]))
+        legend = {entry["name"]: entry["status"] for entry in document["body_legend"]}
+        for body in ("FRONT_BOARD_PROVISIONAL_Z", "REAR_BOARD_PROVISIONAL_Z"):
+            self.assertIn("DO NOT PRINT", legend[body])
+            self.assertIn("DO NOT USE FOR FIT", legend[body])
+        # The panel mockup and the light-pipe gauge stay usable and distinct.
+        still = " ".join(block["still_usable"])
+        self.assertIn("mockup-panel.stl", still)
+        self.assertIn("light-pipe-reach-gauge.stl", still)
+        self.assertNotIn("mockup-panel.stl", block["files"])
+        self.assertNotIn("light-pipe-reach-gauge.stl", block["files"])
+        self.assertNotIn("mockup-panel.stl", legend)
+        # The old checklist instruction to lay the front mockup over the display
+        # module is withdrawn: it would "check" a board that does not exist.
+        self.assertNotIn("Lay the front-board mockup", checklist)
+
+    def test_the_print_checklist_states_the_real_acceptance_count(self) -> None:
+        """The checklist count is READ from hardware-acceptance.json, never typed.
+
+        A hard-coded number drifts: the checklist said 28 while the state file
+        held 31. The checklist is a generated document, so its status line must
+        name the same number of items the gate does.
+        """
+        state = json.loads((Path(__file__).resolve().parent.parent
+                            / "hardware-acceptance.json").read_text())
+        total = sg.acceptance_item_count()
+        pending = sg.acceptance_pending_count()
+        self.assertEqual(total, len(state["items"]))
+        self.assertEqual(pending, sum(1 for item in state["items"]
+                                     if str(item.get("status")) != "accepted"))
+        checklist = sg.print_checklist_markdown()
+        self.assertIn(f"All {total} acceptance items stay pending", checklist)
+        self.assertNotIn("All 28", checklist)
+        # The frame's unmeasured screw/standoff/bracket fit stays a checklist item.
+        self.assertIn("PANEL_STANDOFF", checklist)
+        self.assertIn("bracket", checklist)
+        # A moved or missing state file is an error, not a smaller number.
+        with self.assertRaises(sg.GeometryError):
+            sg.acceptance_item_count(Path("/nonexistent/hardware-acceptance.json"))
 
     def test_the_board_face_convention_is_recorded_as_pending(self) -> None:
         block = sg.assumptions_document(layout())["board_face_convention"]
@@ -840,6 +995,11 @@ class DisplayMountGapTest(unittest.TestCase):
     def test_the_document_records_the_placeholders_and_the_legend(self) -> None:
         doc = sg.assumptions_document(layout())
         block = doc["display_mount_placeholders"]
+        # At the selected 0.60 mm glass datum the drawn boss ends land at 10.84,
+        # BEHIND the 10.60 board top: the drawn model gap is NEGATIVE (-0.24) and
+        # the overlap is an UNVERIFIED collision risk, not a clearance. The +0.36
+        # reading belongs to the withdrawn flush-glass datum.
+        self.assertAlmostEqual(block["boss_rear_z_mm"], 10.84, places=6)
         self.assertAlmostEqual(block["model_gap_mm"], -0.24, places=6)
         self.assertAlmostEqual(block["design_chain_spacer_mm"], 8.75, places=6)
         self.assertAlmostEqual(block["residual_mm"], -8.99, places=6)
@@ -978,7 +1138,8 @@ class AssumptionsDocumentTest(unittest.TestCase):
         text = sg.print_checklist_markdown()
         self.assertIn("100.00 mm", text)
         self.assertIn("PROVISIONAL", text)
-        self.assertIn("28", text)
+        # The pending-item count is the state file's, not a typed number.
+        self.assertIn(str(sg.acceptance_item_count()), text)
         low = text.lower()
         for claim in ("is approved", "approved for", "approved to print", "fit approval "):
             self.assertNotIn(claim, low.replace("not a fit approval", ""))

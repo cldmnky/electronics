@@ -12,6 +12,7 @@ undersized LCD aperture) and prove that the current rules REJECT them.
 from __future__ import annotations
 
 import copy
+import json
 import math
 import unittest
 from pathlib import Path
@@ -478,10 +479,17 @@ class DisplayEnvelopeTest(unittest.TestCase):
 
     def test_spacer_length_and_plane_separation_are_separate(self) -> None:
         stack = self.vendor["stack"]
-        # The spacer now runs from the REAR board's front face (the module left
-        # the front board on 2026-11-13). 12.75 - 4.00 boss = 8.75 mm.
+        # The spacer runs from the REAR board's front face (the module left the
+        # front board on 2026-11-13) and is tied to the Z chain: rear board front
+        # 23.40 - display PCB rear 10.65 = 12.75, minus the 4.00 mm boss
+        # projection = the 8.75 mm nominal carrier spacer. Reaching flush EXTENDS
+        # the spacer to 9.35 mm; it is never cut shorter.
+        z = self.z
+        self.assertAlmostEqual(stack["planeSeparation"],
+                               z["rearBoardFront"] - z["displayPcbRear"], places=6)
         self.assertAlmostEqual(stack["planeSeparation"], 12.75, places=6)
         self.assertAlmostEqual(stack["spacerLength"], 8.75, places=6)
+        self.assertAlmostEqual(stack["spacerLength"] + z["displayGlassFront"], 9.35, places=6)
         self.assertAlmostEqual(stack["spacerLength"],
                                stack["planeSeparation"] - stack["bossProjection"], places=6)
 
@@ -500,7 +508,8 @@ class DisplayEnvelopeTest(unittest.TestCase):
     def test_z_values_follow_the_standoff_datum(self) -> None:
         stack = self.vendor["stack"]
         # The glass front falls out of the rear-board carrier chain: nominally
-        # 0.60 mm behind the panel front, trimmed flush by the adjustable spacers.
+        # 0.60 mm behind the panel front. To reach flush the adjustable spacers
+        # are EXTENDED (shimmed) by 0.60 mm, 8.75 -> 9.35 mm, never cut shorter.
         self.assertAlmostEqual(self.z["displayGlassFront"], 0.6, places=6)
         self.assertAlmostEqual(self.z["displayPcbRear"], 10.65, places=6)
         self.assertAlmostEqual(self.z["displayRearMost"], 14.65, places=6)
@@ -524,7 +533,11 @@ class DisplayEnvelopeTest(unittest.TestCase):
         self.assertAlmostEqual(pipe["shaftLength"], 16.5, places=6)
         self.assertAlmostEqual(pipe["overallLength"], 17.5, places=6)
         self.assertAlmostEqual(reach["nominalTipZ"], pipe["shaftLength"], places=6)
+        # SIGNED: board face minus tip plane. 10.6 - 16.5 = -5.9 means the tip
+        # plane is BEHIND the board face (the pipe crosses it).
         self.assertAlmostEqual(reach["nominalTipToBoardPlane"], -5.9, places=6)
+        self.assertAlmostEqual(reach["nominalTipToBoardPlane"],
+                               reach["boardNearFaceZ"] - reach["nominalTipZ"], places=6)
         self.assertIsNone(reach["opticalGap"])
         self.assertTrue(reach["status"].startswith("incomplete"))
         self.assertNotIn("seatAllowance", pipe)
@@ -561,11 +574,15 @@ class ProvisionalDataTest(unittest.TestCase):
         data = layout()
         gap = data["displayUndersideGap"]
         tallest = data["frontTopSmdMaxHeight"]["height"]
-        # -4.05 mm to the connector rear-most point: the module's rear 4.05 mm
-        # sits BEHIND the front board's top face, which is why the board carries
-        # an opening. Still pending: the display underside map, the FPC latch and
-        # the module tolerance.
+        # -4.05 mm to the module's rear-most point: the rear 4.05 mm sits BEHIND
+        # the front board's top face, which is why the board carries an opening.
+        # Against the tallest sourced top-side part (2.2 mm) that is -6.25 mm, and
+        # it is NOT a clearance: the module's XY containment in the opening, the
+        # display underside map, the FPC latch and the module tolerance are all
+        # unmeasured. Nothing here proves the overlap harmless.
+        self.assertAlmostEqual(gap, -4.05, places=6)
         self.assertAlmostEqual(gap - tallest, -6.25, places=6)
+        self.assertLess(gap - tallest, 0)
         self.assertEqual(data["frontTopSmdMaxHeight"]["height"], 2.2)
 
     def test_depth_chain_stays_inside_the_owner_target(self) -> None:
@@ -588,6 +605,115 @@ class ProvisionalDataTest(unittest.TestCase):
         # Both boards share a centre. 2026-11-13: the front board grew to 150 mm
         # and the rear board to 148 mm, so the front overhangs by 1.0 mm per side.
         self.assertAlmostEqual((data["frontPcb"]["width"] - data["rearPcb"]["width"]) / 2, 1.0, places=6)
+
+
+class PanelMountFrameVsBracketTest(unittest.TestCase):
+    """The four panel mounts and the bar share plan area but not Z.
+
+    The standoffs stand on the FRONT board's panel side and the bar sits on its
+    REAR side, so a plan-view overlap is a projection, not a collision (the same
+    rule as the flange). Only the board thickness separates them, and no screw
+    head, washer, nut or bracket fastener is modelled - so nothing here is a
+    clearance claim.
+    """
+
+    def test_the_frame_and_the_bar_share_plan_area_only_at_the_top(self) -> None:
+        report = bg.panel_mount_vs_bracket(layout())
+        self.assertEqual(report["status"].split(" ")[0], "UNVERIFIED")
+        by_name = {entry["name"]: entry for entry in report["standoffs"]}
+        self.assertEqual(sorted(by_name), ["STAND_1", "STAND_2", "STAND_3", "STAND_4"])
+        # The lower pair is far below the bar (which ends at y 40.96).
+        for name in ("STAND_1", "STAND_2"):
+            self.assertEqual(by_name[name]["body_overlap_mm"], 0.0)
+            self.assertEqual(by_name[name]["head_overlap_mm"], 0.0)
+        # The upper left point reaches furthest into the outline: the bar starts
+        # at x -69.5 and the D5.5 body spans -74.25..-68.75.
+        self.assertAlmostEqual(by_name["STAND_3"]["body_overlap_mm"], 0.75, places=6)
+        self.assertAlmostEqual(by_name["STAND_3"]["head_overlap_mm"], 1.5, places=6)
+        # The upper right keeps its body clear; only the D7.0 head envelope
+        # reaches the bar's right edge at x 68.31.
+        self.assertEqual(by_name["STAND_4"]["body_overlap_mm"], 0.0)
+        self.assertAlmostEqual(by_name["STAND_4"]["head_overlap_mm"], 0.31, places=6)
+
+    def test_the_only_separation_is_the_front_board_thickness(self) -> None:
+        data = layout()
+        report = bg.panel_mount_vs_bracket(data)
+        z = data["provisionalZ"]
+        self.assertAlmostEqual(report["z_mm"]["standoff"][0], z["panelRear"], places=6)
+        self.assertAlmostEqual(report["z_mm"]["standoff"][1], z["frontBoardTop"], places=6)
+        self.assertAlmostEqual(report["z_mm"]["bracket"][0], z["frontBoardRear"], places=6)
+        self.assertAlmostEqual(report["z_separation_mm"], data["frontPcb"]["thickness"], places=6)
+        # The drawn spans do not intersect: the board sits between them.
+        self.assertLessEqual(report["z_mm"]["standoff"][1], report["z_mm"]["bracket"][0])
+
+    def test_no_hardware_clearance_is_claimed(self) -> None:
+        report = bg.panel_mount_vs_bracket(layout())
+        text = " ".join(report["not_claimed"]).lower()
+        self.assertIn("screw", text)
+        self.assertIn("nut", text)
+        self.assertIn("washer", text)
+        self.assertIn("envelope", text)
+        self.assertGreaterEqual(len(report["not_claimed"]), 4)
+
+    def test_the_overlap_numbers_are_plan_view_only(self) -> None:
+        """A plan overlap is a projection: nothing here is a Z or clearance result."""
+        report = bg.panel_mount_vs_bracket(layout())
+        measure = report["overlap_measure"].lower()
+        self.assertIn("plan view", measure)
+        self.assertIn("never a z result", measure)
+        self.assertIn("envelope", measure)
+        # The separation claim names its SCOPE: the modelled bodies, nothing else.
+        scope = report["z_separation_scope"].lower()
+        self.assertIn("standoff body", scope)
+        self.assertIn("nothing else", scope)
+
+    def test_the_board_separates_bodies_but_not_rear_face_hardware(self) -> None:
+        """A rear nut/washer shares the bracket's face and may collide."""
+        report = bg.panel_mount_vs_bracket(layout())
+        rear = report["rear_face_hardware"]
+        self.assertFalse(rear["modelled"])
+        note = rear["note"].lower()
+        self.assertIn("rear face", note)
+        self.assertIn("same face", note)
+        self.assertIn("may collide", note)
+        self.assertIn("does not", note)
+        # Nothing in the report may promote the head envelope to a real part.
+        joined = json.dumps(report).lower()
+        self.assertNotIn("head is clear", joined)
+        self.assertNotIn("head clears", joined)
+        self.assertIn("unmeasured", joined)
+
+    def test_the_head_envelope_reaches_the_front_board_edge_exactly(self) -> None:
+        """DERIVED, LABELLED: the Ø7.0 mm envelope has 0.00 mm at the board edge.
+
+        This pins the arithmetic on the current frame, not a part: x +-71.5 with a
+        3.5 mm envelope radius arrives at the 150 mm board's +-75 mm edge with no
+        margin, and the y edge with 0.50 mm. A future move of the holes fails here.
+        """
+        data = layout()
+        report = bg.panel_mount_vs_bracket(data)
+        edge = report["head_envelope_edges"]
+        standoff = data["panelStandoff"]
+        front = data["frontPcb"]
+        half = standoff["headDiameter"] / 2
+        xs = [abs(p["x"]) for p in data["panelMountPoints"]]
+        ys = [abs(p["y"]) for p in data["panelMountPoints"]]
+        self.assertAlmostEqual(edge["envelope_radius_mm"], half, places=6)
+        self.assertAlmostEqual(edge["x_margin_to_front_board_edge_mm"],
+                               front["width"] / 2 - max(xs) - half, places=6)
+        self.assertAlmostEqual(edge["x_margin_to_front_board_edge_mm"], 0.0, places=6)
+        self.assertAlmostEqual(edge["y_margin_to_front_board_edge_mm"], 0.5, places=6)
+        self.assertAlmostEqual(edge["x_margin_to_panel_edge_mm"], 1.0, places=6)
+        self.assertAlmostEqual(report["smallest_board_edge_margin_mm"], 0.0, places=6)
+        self.assertIn("not a part", edge["status"])
+        # The warning is DERIVED and names both margins, and it denies a clearance.
+        self.assertEqual(len(report["warnings"]), 1)
+        warning = report["warnings"][0].lower()
+        self.assertIn("reaches the front board's x edge", warning)
+        self.assertIn("+0.00 mm margin", warning)
+        self.assertIn("+0.50 mm", warning)
+        self.assertIn("unmeasured", warning)
+        self.assertIn("do not read this as a clearance", warning)
 
 
 if __name__ == "__main__":

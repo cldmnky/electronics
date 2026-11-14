@@ -154,7 +154,7 @@ export default () => (
 
     {/* Front-board spacer grid (shared XY, see lib/layout.ts FRONT_REAR_MOUNT). */}
     {/* 2026-11-13 (owner): the front-to-rear spacer holes are back on both
-        boards; the PANEL standoff holes stay removed.
+        boards, and the four PANEL standoff holes are the ±71.5/±52 frame.
 
         The DISPLAY CARRIER holes are NOT in that category and are added here:
         the 4.3" DSI module left the front board when the panel went to 10.6 mm,

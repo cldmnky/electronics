@@ -19,13 +19,18 @@ Datum: Z = 0 at the panel FRONT face; +Z points rearward (into the rack).
 
     head underside plane   H = 0 + head_underside_offset      ASSUMPTION: 0
     pipe tip plane         T = H + shaft_length                nominal 16.5
-    board near face        B = 19.05 (provisional)             unmeasured
+    board near face        B = PROVISIONAL_Z.frontBoardTop     10.6, owner-directed
+                                                               and provisional
     LED top plane          L = B - led_height                  the LED rises
                                                                TOWARD the panel,
                                                                i.e. in -Z, so its
                                                                offset is NEGATIVE
     optical gap            g = L - T
-    nominal tip to board   t = B - T                           nominal 2.55
+    signed tip to board    t = B - T                           nominal -5.9: NEGATIVE
+                                                               means the tip plane is
+                                                               REARWARD of the board
+                                                               face, i.e. the pipe
+                                                               would cross it
 
 `optical_gap` is **None** and the status is **incomplete** until the head
 underside plane, the shaft length with its tolerance, the board near face, the
@@ -36,6 +41,11 @@ Even a complete result is labelled ``arithmetic_only``. It says nothing about
 brightness, coupling, retention in 1.6 mm FR-4, the real panel hole tolerance or
 any physical fit. The +-0.1 mm shaft tolerance alone never yields a bound: the
 stack tolerance is unknown.
+
+``tip_to_board_plane_mm`` is SIGNED as board minus tip, so the direction survives:
+at the current stack the 16.5 mm tip plane lies 5.9 mm behind the 10.6 mm board face
+under the two assumed planes. That is arithmetic, not a measured interference, not
+an optical gap and not a fit; ``compute_reach`` never returns one.
 
 Units: millimetres. No CAD library, so the rules run everywhere.
 """
