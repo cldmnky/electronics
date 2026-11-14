@@ -15,8 +15,9 @@ mounting, control or board coordinate.
 
 | Body | Geometry | What is certain |
 |---|---|---|
-| `PANEL_30HP_3U` | 152.0 × 128.5 × 1.6 mm; 20 apertures and **10 drills** from `PANEL_APERTURES` / `PANEL_DRILLS`: LCD, three feedthroughs with six screw holes, six buttons, three LED light-pipe openings, encoder, POWER, NAV, four jacks, four rail holes (no panel standoffs since 2026-11-13) | outlines, diameters and positions are canonical (the same arrays `panel.circuit.tsx` renders) |
-| `FRONT_BOARD_PROVISIONAL_Z` | **150 × 112 × 1.6 mm at Z 10.00…11.60**; one U-shaped opening (the old notch merged into the display opening, through the top edge), the four front↔rear spacer holes; **no** display holes, no panel standoffs, no bracket screws | XY canonical; **Z is the `PROVISIONAL_Z` chain, derived from the owner's 10.0 mm `PANEL_TO_FRONT_BOARD_TOP`** |
+| `PANEL_30HP_3U` | 152.0 × 128.5 × 1.6 mm; 20 apertures and **14 drills** from `PANEL_APERTURES` / `PANEL_DRILLS`: LCD, three feedthroughs with six screw holes, six buttons, three LED light-pipe openings, encoder, POWER, NAV, four jacks, four rail holes and the four `STAND_` panel-mount screws | outlines, diameters and positions are canonical (the same arrays `panel.circuit.tsx` renders) |
+| `FRONT_BOARD_PROVISIONAL_Z` | **150 × 112 × 1.6 mm at Z 10.00…11.60**; one U-shaped opening (the old notch merged into the display opening, through the top edge), the four front↔rear spacer holes and the four Ø3.2 `PANEL_MOUNT_POINTS` holes; **no** display holes, no bracket screws | XY canonical; **Z is the `PROVISIONAL_Z` chain, derived from the owner's 10.0 mm `PANEL_TO_FRONT_BOARD_TOP`** |
+| `PANEL_STANDOFF_1…4` | M3 standoff envelopes, Ø5.5 with a Ø3.2 bore, spanning the panel rear face (Z 1.60) to the front-board top face (Z 10.00), at `PANEL_MOUNT_POINTS` | length/diameter come from `PANEL_STANDOFF` (length = `PANEL_STACK.boardToPanelRear`); the length is NOMINAL and adjusted at assembly, not a fit |
 | `REAR_BOARD_PROVISIONAL_Z` | **148 × 112 × 1.6 mm at Z 22.80…24.40**; the four front↔rear spacer holes and the four Ø2.7 display-carrier holes (`LCD_MOUNT_HOLES`), no Pi holes since 2026-11-12 | XY canonical; Z is the 11.20 mm direct-mate seat-to-seat gap on `PROVISIONAL_Z` |
 | `DISPLAY_WAVESHARE_VENDOR_STEP` | the vendor STEP, SHA-256 verified, placed by a rigid 180° rotation so the glass front face is at Z = 0 and the electronics point rearward; X/Y from the outer SMT boss pattern centre. The rotation about **Y is the drawn candidate only** — the in-plane axis is pending | vendor geometry; model depth 13.82 mm is the model, not the 14.05 mm vendor maximum |
 | `DISPLAY_ENVELOPE_PROVISIONAL` | 106 × 68 mm, Z 0…14.05, drawn only when no verified vendor STEP is supplied | an envelope, not vendor geometry |
@@ -27,8 +28,8 @@ mounting, control or board coordinate.
 | `PI_MOUNTING_PANEL_20HP_3U` | 101.2 × 128.5 × 1.6 mm, 4 × M2.5 Pi holes on the Pi 5 58 × 49 pattern (landscape, mirrored, pattern centre 10 mm toward +X) and 4 × Ø3.2 rail holes. Also a separate verification model, `midibrain-pi-panel.step` and `mockup-pi-panel.stl`, carrying the panel and a placeholder Pi board | geometry canonical via `PI_PANEL_*` in `lib/layout.ts`, guarded by `lib/pi-panel.test.ts`; `step_assembly.py` derives the Pi board's holes from the drawing and fails the build unless they coincide with the panel's holes. The Pi is not in the main-module assembly |
 
 The panel carries every opening: 20 apertures (LCD, three feedthroughs, six
-buttons, three LEDs, encoder, POWER, NAV, four jacks) and 10 drills (six
-feedthrough screws, four rails). Both lists come from
+buttons, three LEDs, encoder, POWER, NAV, four jacks) and 14 drills (six
+feedthrough screws, four rails, four `STAND_` panel-mount screws). Both lists come from
 `PANEL_APERTURES` / `PANEL_DRILLS` in `tscircuit/lib/layout.ts`, the same data
 `panel.circuit.tsx` renders. `tscircuit/lib/panel-cutouts.test.ts` compares the
 two element by element against the built `dist/panel/circuit.json`, so the CAD

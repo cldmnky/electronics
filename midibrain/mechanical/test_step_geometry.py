@@ -45,6 +45,7 @@ class CanonicalDataTest(unittest.TestCase):
         for key in ("railHoles", "railHoleDiameter", "frontBoardHoles", "lcdMountHoles",
                     "displayBossPattern", "piBoard", "piProtrusion", "frontRearMount",
                     "mountHoleDiameter", "lcdCutoutOutline", "notchBounds", "bracket",
+                    "panelMountPoints", "panelStandoff",
                     "piPanel", "piPanelProvisionalDepth", "eurorackGoMaxModuleDepth"):
             self.assertIn(key, data, f"{key} is missing from mechanical/layout.json")
         self.assertEqual(data["railHoleDiameter"], 3.2)
@@ -74,20 +75,31 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertEqual(ys, [-24.5, 24.5])
 
     def test_the_canonical_panel_features_are_complete(self) -> None:
-        """20 apertures and 10 drills: every opening the panel board renders.
+        """20 apertures and 14 drills: every opening the panel board renders.
 
-        The drills are the six feedthrough screw holes plus the four RACK
-        fixings. The panel standoff holes (STAND_*) were removed with the rest of
-        the panel mounting, so PANEL_MOUNT_HOLES is the RACK set alone.
+        The drills are the six feedthrough screw holes, the four RACK fixings
+        and the four STAND_ panel-mount screws of the PANEL_MOUNT_POINTS frame.
         """
         data = layout()
         apertures = data["panelApertures"]
         drills = data["panelDrills"]
         self.assertEqual(len(apertures), 20)
-        self.assertEqual(len(drills), 10)
-        self.assertEqual(len(data["panelMountHoles"]), 4)
+        self.assertEqual(len(drills), 14)
+        self.assertEqual(len(data["panelMountHoles"]), 8)
         self.assertEqual([h["name"] for h in data["panelMountHoles"]],
-                         ["RACK_1", "RACK_2", "RACK_3", "RACK_4"])
+                         ["RACK_1", "RACK_2", "RACK_3", "RACK_4",
+                          "STAND_1", "STAND_2", "STAND_3", "STAND_4"])
+        # The four panel-mount points are one frame, and both boards drill them.
+        points = [(p["x"], p["y"]) for p in data["panelMountPoints"]]
+        self.assertEqual(points, [(-71.5, -52), (71.5, -52), (-71.5, 52), (71.5, 52)])
+        self.assertEqual([[h["x"], h["y"]] for h in data["panelMountHoles"][4:]],
+                         [[x, y] for x, y in points])
+        standoff = data["panelStandoff"]
+        self.assertEqual(standoff["thread"], "M3")
+        self.assertAlmostEqual(standoff["length"],
+                               data["provisionalZ"]["frontBoardTop"]
+                               - data["panel"]["thickness"], places=6)
+        self.assertEqual(standoff["holeDiameter"], 3.2)
         names = [a["name"] for a in apertures]
         self.assertEqual(names[0], "LCD_APERTURE")
         self.assertEqual(len(set(names)), len(names), "aperture names must be unique")
@@ -98,7 +110,7 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertEqual([d["name"] for d in drills],
                          ["USB_0_-1", "USB_0_1", "USB_1_-1", "USB_1_1",
                           "USB_2_-1", "USB_2_1", "RACK_1", "RACK_2", "RACK_3",
-                          "RACK_4"])
+                          "RACK_4", "STAND_1", "STAND_2", "STAND_3", "STAND_4"])
 
     def test_the_canonical_panel_diameters_are_the_documented_ones(self) -> None:
         """Diameters come from PANEL_CUTOUTS; nothing is re-derived here."""
@@ -110,9 +122,8 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertEqual(by_name["REC LED"]["radius"], 1.3)      # Ø2.6 provisional PGN25L165
         self.assertEqual(by_name["VALUE ENCODER"]["radius"], 3.6)  # 7.2 mm bushing
         self.assertEqual(by_name["MIDI IN 1 JACK"]["radius"], 3.1)  # 6.2 mm barrel
-        # The feedthrough screws: 3.2 mm for the USB-C slot and the RACK holes,
-        # 3.5 mm for the two Adafruit 908 flanges. The 2.7 mm STAND_ drills went
-        # with the panel standoffs.
+        # The feedthrough screws: 3.2 mm for the USB-C slot, the RACK holes and
+        # the STAND_ panel-mount frame, 3.5 mm for the two Adafruit 908 flanges.
         self.assertEqual({d["diameter"] for d in data["panelDrills"]}, {3.2, 3.5})
 
     def test_the_three_led_holes_are_2_6_and_keep_their_positions(self) -> None:

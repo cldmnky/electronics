@@ -23,7 +23,8 @@ This is the current arrangement. It is geometry from `tscircuit/lib/layout.ts`; 
 | Display mount | printed carrier bolted to the **rear** board's top face; 8.75 mm adjustable spacers from that face, 12.75 mm to the display PCB rear | `DISPLAY_STANDOFF` |
 | Display carrier holes (rear board, Ø2.7) | (−59.15, 41.9) (40.15, 41.9) (−59.15, −19.9) (40.15, −19.9) | `LCD_MOUNT_HOLES` |
 | Front↔rear spacer holes (BOTH boards, Ø2.7) | (−69, −35) (71.5, −35) (−69, 46) (71.5, 46) | `FRONT_REAR_MOUNT` |
-| Panel drilled holes | the four Ø3.2 rail holes only; **no** panel standoff holes | `RAIL_HOLES`, `PANEL_MOUNT_HOLES` |
+| Panel drilled holes | six feedthrough screws (2 × Ø3.2, 4 × Ø3.5), the four Ø3.2 rail holes and the four Ø3.2 `STAND_` panel-mount screws | `PANEL_DRILLS`, `PANEL_MOUNT_HOLES` |
+| Panel-to-front-board mount frame (BOTH boards, Ø3.2) | (−71.5, −52) (71.5, −52) (−71.5, 52) (71.5, 52), M3, standoff 8.40 mm nominal | `PANEL_MOUNT_POINTS`, `PANEL_STANDOFF` |
 | Panel LCD aperture | 107.22 × 68.87 mm at (−10.0, 11), 1.0 mm corner relief | `PANEL_LCD_CUTOUT` |
 | USB panel feedthroughs (y 53.5) | x **−52 / −23.5 / +11** | `USB_FEEDTHROUGHS` |
 | Right control column (x 52) | POWER/SW7 y 49, VALUE/U6 y 31, NAV/U5 y 12, SHIFT/EXIT/SW6 y −5, PLAY START/SW5 y −34 | `POWER_BUTTON`, `RIGHT_CONTROLS`, `PLAY_START` |
@@ -40,7 +41,7 @@ This is the current arrangement. It is geometry from `tscircuit/lib/layout.ts`; 
 **SUPERSEDED by the 2026-11-13 owner decisions** - do not quote these as current: the 19.05 mm panel-to-board
 distance and its 17.45 mm panel-rear gap; the 128 mm front and 101.6 mm rear boards; the display screwed to the
 front board; the 9.0 mm plane separation with a 5.0 mm spacer; the separate 105 × 8 mm top relief notch; the four
-panel standoff holes; J_PWR in the notch at (−2.5, 47); the POWER button at the bottom right; the MIDI clusters in
+panel standoff holes at (±61, ±53) and the closed front board without a display opening; J_PWR in the notch at (−2.5, 47); the POWER button at the bottom right; the MIDI clusters in
 the right-hand strip; MIDI jacks sharing the transport columns. Each replaced value stays visible in
 [decisions.md](decisions.md), which is a log, not a current-state document.
 
@@ -49,7 +50,7 @@ the right-hand strip; MIDI jacks sharing the transport columns. Each replaced va
 | Item | Value | Note |
 |---|---|---|
 | Front panel | **30HP × 3U, 152.0 × 128.5 × 1.6 actual** (owner decision 2026-11-08, replaces the 32HP/162.56 mm panel of 2026-11-07) | Rail holes X ±68.58, Y ±61.25, Ø3.2 (spacing 137.16 = 27 × 5.08, the Doepfer multiple rule; 7.42 mm centre inset, 5.82 mm hole edge to panel edge). 152.0 is OUR ESTIMATE, 0.4 mm under the 152.4 mm nominal (0.2 mm per side): not a Doepfer-stated 30HP value, not owner-exact, not a mandate and not a guaranteed fit. Sources: [Doepfer A-100 mechanical information](https://doepfer.de/a100_man/a100m_e.htm) and its [hole figure A100FP.gif](https://doepfer.de/a100_man/A100FP.gif), which gives 128.5 mm height, a 7.5 mm horizontal and 3.0 mm vertical hole inset, and Ø3.2 mm holes but publishes no 30HP width. The fixed 27 × 5.08 grid on 152.0 mm gives 7.42 mm, i.e. **0.08 mm tighter than the figure's 7.5 mm** - disclosed, not corrected. Display window 107.22 × 68.87 mm centred on the module, unchanged. |
-| Front/UI PCB | **150 × 112 × 1.6**, U-shaped (owner decision 2026-11-13) | The display left this board, so its opening is a hole: two legs (11.75 mm left, 31.75 mm right) joined by a bottom bar. It carries the four front↔rear spacer holes but no display holes and no panel standoff holes. `J5`/`J_FRONT` sit at (66, 20) in the right leg. |
+| Front/UI PCB | **150 × 112 × 1.6**, U-shaped (owner decision 2026-11-13) | The display left this board, so its opening is a hole: two legs (11.75 mm left, 31.75 mm right) joined by a bottom bar. It carries the four front↔rear spacer holes and the four Ø3.2 panel-mount holes of the frame below, but no display holes. `J5`/`J_FRONT` sit at (66, 20) in the right leg. |
 | Rear/base PCB | **148 × 112 × 1.6** (owner decision 2026-11-13, replaced the 20HP 101.6 mm board) | Pico sockets on the left, J_PI (40-pin ribbon header) at the top, J_FRONT male on the TOP face. It carries the four front↔rear spacer holes and the four Ø2.7 display-carrier holes on the module's threaded SMTSO boss pattern (99.30 × 61.80 mm centres, 3.35 / 3.10 insets, layout x −59.15 / +40.15, y +41.90 / −19.90). The drawn 58.00 × 49.04 plain-hole pattern stays as the recorded alternative (`DISPLAY_STANDOFFS`). The Pi and its hole grid are **not** on this board: the Pi moved to its own mounting panel on 2026-11-12. |
 | Pi mounting panel | **20HP × 3U, 101.2 × 128.5 × 1.6 actual** (owner decision 2026-11-12) | Pure mechanical JLCPCB FR-4, no copper and no components, fabricated like the 30HP panel. Same width convention (20 × 5.08 − 0.4) and the same Doepfer rail-hole rule as the 30HP panel: X spacing 86.36 = 17 × 5.08 at the same 7.42 mm centre inset (holes ±43.18), Y ±61.25, Ø3.2. Pi 5 (with Active Cooler + M.2 HAT+ + NVMe SSD) bolts to the panel's **rear** face on 3.5 mm candidate standoffs, **landscape** and mirrored (component side away from the panel): the Pi 5's 58 × 49 pattern (M2.5, Ø2.7) sits 10 mm toward +X, with holes at (−19, ±24.5) and (+39, ±24.5). The Pi board is ±42.5 × ±28 and its connectors reach −45.8…+44.2 × −29.7…+28 (`piBoardToPanel`; Pi 5 drawing RP-008347-DS-1, read from its vector data). Source `tscircuit/pi-panel.circuit.tsx`, geometry `PI_PANEL_*` in `lib/layout.ts`, guard `lib/pi-panel.test.ts`. USB stays on the 30HP panel (no USB opening is added to the Pi mounting panel); the three feedthroughs themselves moved on 2026-11-13, see the respin table. |
 | Installed depth target | ≤110 mm | Target retained. Not verified; see the depth section. |
@@ -430,9 +431,23 @@ U board (−44, −52) lands on the jack row and (45, 43) on the opening's cut e
   The two top spacers at y 46 sit inside the feedthrough bracket envelope, so the printed bracket carries
   head-clearance circles (Ø6.5 planning envelope) there; the M2.5 head/washer envelope is unmeasured. The bracket
   itself must be regenerated from the new positions before it is printed.
-- Panel↔front standoffs: **removed** (owner decision 2026-11-13). `PANEL_MOUNT_HOLES` now emits the four rail holes
-  only; the board carries no panel-standoff holes. How the panel is held to the boards is an open item — today the
-  boards are located by the four jack bushings, the encoder bushings and the 2 × 13 interconnect.
+- Panel↔front standoffs: **four M3 points** (owner decision 2026-11-13, `PANEL_MOUNT_POINTS`), one frame at
+  (±71.5, ±52) drilled through BOTH the panel (`STAND_1…4`) and the front board (`STANDOFF_1…4`). Four, not two:
+  the bushing/clamping hardware sits in the panel's lower half, and two points on one horizontal line leave that line
+  as a free hinge — the panel would still rock top-for-bottom, and the display opening removes its stiffest region.
+  X = ±71.5 is forced by the board (the opening starts at −63.25, so the left leg is 11.75 mm wide); at ±71.5 the hole
+  edge keeps 1.9 mm to the board edge and 2.9 mm to the panel edge, and the Ø5.5 standoff body still lands on FR-4.
+  Y = ±52 is the widest row pair: 6.50 mm to the nearest RACK hole (2D), 3.05 mm to the nearest front↔rear spacer
+  hole, 6.65 mm to the U opening, 9.08 mm to the LCD aperture (2D from the rounded outline), 5.81 mm to the MIDI IN 1
+  jack aperture, 4.5 mm to the J1 jack courtyard, and ≥6.40 mm to any copper (pad, via, trace) on the built board — the nearest
+  drilled hole is the front↔rear spacer at 3.05 mm. scripts/check_placement.ts measures the built JSON, and the GND
+  pour gets its own 0.2 mm anti-pad ring around each new hole.
+  **Length and tolerance discipline:** 8.40 mm nominal = `PANEL_STACK.boardToPanelRear` = board top (10.00) minus
+  panel thickness (1.60) — derived, never typed. They are the SAME **adjustable** family as the front↔rear spacers,
+  NOT fixed-height: the panel plane is set by the MIDI jack bushings (they clamp the panel), the 8.40 mm is a nominal
+  and the bushing-stack tolerance behind it is UNMEASURED, so a rigid spacer would either hold the panel off the
+  jacks or bend the panel and preload the jack solder joints. Each is trimmed/shimmied at assembly to the measured
+  gap. The specific standoff (thread length, material) and the gap are first-article readings.
 - Direct interconnect (J5/J_FRONT at (66, 20), rotation 90; body 7.60 × 40.52 mm): the female socket and the male
   shroud stand in the 11.20 mm gap in the right leg, to the right of the display opening. The recorded FPC connector is
   a planning marker only (identity, side and position unverified), so no clearance from it is claimed. The remaining

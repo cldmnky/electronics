@@ -55,7 +55,11 @@ export const MOUNT_HOLE_DIAMETER = 2.7 as const
 // Keep derived millimetre values free of floating-point noise, so the exported
 // mechanical/layout.json and the tests compare exactly.
 const mm3 = (v: number) => Math.round(v * 1000) / 1000
-export const RAIL_HOLE_DIAMETER = 3.2 as const
+// One M3 clearance tool for every M3 the stack carries: the four Eurorack rail
+// screws and the four panel-to-front-board mount screws below. 3.2 mm is the
+// Doepfer rail-hole size (A100FP.gif) and clears an M3 screw in both parts.
+export const M3_CLEARANCE_HOLE_DIAMETER = 3.2 as const
+export const RAIL_HOLE_DIAMETER = M3_CLEARANCE_HOLE_DIAMETER
 
 // Panel-to-front-board standoffs (M2.5); the panel repeats these holes.
 // Moved out from (±60, ±50) to (±61, ±53): the old bottom-left position put an
@@ -124,6 +128,36 @@ export const FRONT_REAR_MOUNT = [
 export const RAIL_HOLES = [
   { x: -68.58, y: -61.25 }, { x: 68.58, y: -61.25 },
   { x: -68.58, y: 61.25 }, { x: 68.58, y: 61.25 },
+] as const
+
+// ---- Panel-to-front-board mount frame (owner decision 2026-11-13) ----
+// The panel is otherwise held only by the four MIDI jack bushings and the
+// encoder bushing, all of them in the LOWER half of a 152 x 128.5 mm panel whose
+// 107.22 x 68.87 mm display opening removes its stiffest region: the top edge
+// has no support at all and nothing resists rocking about the jack row. The
+// owner authorised 2 or 4 extra points and chose FOUR: two points on one
+// horizontal line leave that line as a free hinge, so the panel would still
+// rock top-for-bottom.
+//
+// FOUR points in ONE frame: two columns (one per front-board leg) and two rows,
+// symmetric in BOTH axes about the panel centre so the load path is obvious and
+// the panel artwork stays symmetric. X = +-71.5 is forced by the board: the
+// display opening starts at -63.25, so the left leg is only 11.75 mm wide
+// (-75...-63.25) and a column at |x| < 65 would sit in the cut. At +-71.5 the
+// hole edge keeps 1.9 mm to the board edge and 2.9 to the panel edge, and the
+// whole Ø5.5 standoff body (r 2.75) still lands on FR-4 (74.25 < 75).
+// Y = +-52 is the widest row pair that clears everything already there: the
+// RACK holes at (+-68.58, +-61.25) keep 6.50 mm, the four front-rear spacer
+// holes keep 3.05 mm (the (71.5, 46) hole is the closest, and it is on the
+// board's REAR side, so the two never share space), the jack apertures keep
+// 5.81, the LCD aperture keeps 9.07, the U opening keeps 6.65 and the board /
+// panel edges keep 1.9 / 2.9. The nearest component body is the J1 jack
+// courtyard at 4.5 mm (1.75 mm to the standoff body).
+// The panel drills are the STAND_ holes in PANEL_MOUNT_HOLES; the front board
+// drills them in front.circuit.tsx; PANEL_STANDOFF below is the Z side.
+export const PANEL_MOUNT_POINTS = [
+  { x: -71.5, y: -52 }, { x: 71.5, y: -52 },
+  { x: -71.5, y: 52 }, { x: 71.5, y: 52 },
 ] as const
 
 // ---- Raspberry Pi 5 board geometry (the Pi lives on the 20HP panel only) ----
@@ -675,6 +709,34 @@ export const PANEL_STACK = {
   boardToPanelFront: mm3(JACK_CLAMPED_GAP + PANEL.thickness),  // 10.00
 } as const
 
+// The four panel mount standoffs (PANEL_MOUNT_POINTS) are M3 and their length
+// is PANEL_STACK.boardToPanelRear, DERIVED - never re-typed.
+//
+// They are the ADJUSTABLE family, not a fixed-height spacer, for the same reason
+// the front-to-rear spacers are: the 8.40 mm is a NOMINAL (10.00 mm panel front
+// minus the 1.60 mm panel), and the real board-top -> panel-rear gap is set by
+// the JACK BUSHING STACK, whose tolerance is not measured. These four points are
+// there to stop the panel rocking, not to set its plane. A rigid 8.40 mm spacer
+// would either hold the panel off the jacks (if the real gap is smaller) or bend
+// the panel and preload the jack solder joints (if it is larger) - the opposite
+// of the intent. So each is a threaded M3 standoff/nut pair trimmed or shimmed
+// to the gap measured on the assembled stack, exactly as the 11.20 +- 0.20 mm
+// seat-to-seat spacers are set. First article records the measured gap.
+export const PANEL_STANDOFF = {
+  thread: "M3",
+  length: PANEL_STACK.boardToPanelRear,                     // 8.40 nominal, board top -> panel rear
+  holeDiameter: M3_CLEARANCE_HOLE_DIAMETER,                 // 3.2 clearance in the panel and the board
+  // Envelopes for the layout checks and the STEP model, not a bought part: an
+  // M3 hex standoff is 5.5 mm across the flats, and an M3 pan head + washer is
+  // the 7.0 mm class. The first article records the hardware actually fitted.
+  bodyDiameter: 5.5,
+  headDiameter: 7.0,
+  family: "M3 threaded, adjustable",
+  adjustment: "trimmed or shimmed at assembly to the measured jack-set gap; it must not set the panel plane",
+  panelPlaneDatum: "the MIDI jack bushings (they clamp the panel), not these standoffs",
+  toleranceStatus: "the jack-bushing tolerance behind the 8.40 nominal is UNMEASURED; first article records it",
+} as const
+
 
 // Where a body at a given panel Z sits in the FRONT BOARD's own 3D frame.
 // A cad model on that board is drawn with jscad +z along the board normal and
@@ -1142,6 +1204,11 @@ export const mechanicalExport = () => ({
   railHoles: RAIL_HOLES,
   railHoleDiameter: RAIL_HOLE_DIAMETER,
   frontBoardHoles: FRONT_BOARD_HOLES,
+  // The four panel mount points and the standoff they carry: the panel and the
+  // front board both drill PANEL_MOUNT_POINTS, and the STEP model draws the
+  // standoff from here.
+  panelMountPoints: PANEL_MOUNT_POINTS,
+  panelStandoff: PANEL_STANDOFF,
   // The canonical panel openings, so the CAD panel cannot drift from the board.
   panelApertures: PANEL_APERTURES,
   panelDrills: PANEL_DRILLS,
@@ -1729,16 +1796,18 @@ export const PANEL_APERTURES: readonly PanelAperture[] = [
   })),
 ]
 
-// Panel-to-front-board standoffs and Eurorack rail holes. `panel.circuit.tsx`
+// Panel-to-front-board mount screws and Eurorack rail holes. `panel.circuit.tsx`
 // emits these after the silkscreen, so they are kept out of PANEL_APERTURES and
 // the built element order stays unchanged.
-// 2026-11-13 (owner): the four STAND_ holes are gone. They only ever existed to
-// pass a screw into a panel standoff on the front board, and the board's mounting
-// holes were removed in the same pass ("we will revisit them later"). The four
-// RACK_ holes stay - those are the Doepfer/3U rail fixings, which the module
-// needs to be mounted at all.
+// The four STAND_ drills are the PANEL_MOUNT_POINTS frame: M3 clearance into the
+// PANEL_STANDOFF under the panel. They were removed on 2026-11-13 with the rest
+// of the panel mounting and came back with the frame decision; the four RACK_
+// holes are the Doepfer/3U rail fixings and never moved.
 export const PANEL_MOUNT_HOLES: readonly PanelDrill[] = [
   ...RAIL_HOLES.map((h, i) => ({ name: `RACK_${i + 1}`, x: h.x, y: h.y, diameter: RAIL_HOLE_DIAMETER })),
+  // The four panel-to-front-board mount screws (PANEL_MOUNT_POINTS): plain M3
+  // clearance, no caption text - the four screw heads are their own legend.
+  ...PANEL_MOUNT_POINTS.map((p, i) => ({ name: `STAND_${i + 1}`, x: p.x, y: p.y, diameter: PANEL_STANDOFF.holeDiameter })),
 ]
 
 // Every drilled hole in the panel, flat, for the CAD model: the feedthrough

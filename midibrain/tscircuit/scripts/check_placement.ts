@@ -14,6 +14,7 @@ import {
   LED_ID,
   LED_Y,
   ledPosition,
+  M3_CLEARANCE_HOLE_DIAMETER,
   MIDI_CLUSTERS,
   midiJackX,
   OUT_RING,
@@ -21,6 +22,8 @@ import {
   PANEL_CUTOUTS,
   PANEL_LABELS,
   PANEL_LCD_CUTOUT,
+  PANEL_MOUNT_POINTS,
+  PANEL_STANDOFF,
   PANEL_TITLES,
   PLAY_START,
   POWER_BUTTON,
@@ -53,6 +56,65 @@ const centre = (c: any) => (c ? { x: c.center.x, y: c.center.y } : undefined)
 
 const read = (p: string) => JSON.parse(readFileSync(p, "utf8")) as any[]
 const byType = (json: any[], type: string) => json.filter(e => e.type === type)
+
+// ---- built-board clearance helpers (panel-mount frame) ----
+type Pt = { x: number; y: number }
+const segPointDist = (p: Pt, a: Pt, b: Pt) => {
+  const dx = b.x - a.x, dy = b.y - a.y
+  const len2 = dx * dx + dy * dy
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+const boxGap = (p: Pt, cx: number, cy: number, w: number, h: number) => {
+  const dx = Math.max(Math.abs(p.x - cx) - w / 2, 0)
+  const dy = Math.max(Math.abs(p.y - cy) - h / 2, 0)
+  return Math.hypot(dx, dy)
+}
+/** Distance from p (a hole CENTRE of radius `ownRadius`) to the nearest copper,
+ * pad or other hole edge on a built board. `own` is the pcb_hole being measured,
+ * so it does not measure itself. */
+const nearestBuiltFeature = (json: any[], p: Pt, own: Pt | undefined, ownRadius: number) => {
+  let best = { distance: Infinity, what: "nothing" }
+  const take = (distance: number, what: string) => {
+    const gap = distance - ownRadius
+    if (gap < best.distance) best = { distance: gap, what }
+  }
+  for (const e of json) {
+    if (e.type === "pcb_smtpad") {
+      if (e.shape === "circle") take(Math.hypot(p.x - e.x, p.y - e.y) - e.radius, "SMD pad")
+      else take(boxGap(p, e.x, e.y, e.width, e.height), "SMD pad")
+    } else if (e.type === "pcb_plated_hole") {
+      if (e.shape === "circle") take(Math.hypot(p.x - e.x, p.y - e.y) - (e.outer_diameter ?? 0) / 2, "plated hole")
+      else take(boxGap(p, e.x, e.y, e.outer_width ?? 0, e.outer_height ?? 0), "plated hole")
+    } else if (e.type === "pcb_via") {
+      take(Math.hypot(p.x - e.x, p.y - e.y) - (e.outer_diameter ?? 0) / 2, "via")
+    } else if (e.type === "pcb_hole") {
+      if (own && Math.abs(e.x - own.x) < 1e-6 && Math.abs(e.y - own.y) < 1e-6) continue
+      take(Math.hypot(p.x - e.x, p.y - e.y) - e.hole_diameter / 2, "hole")
+    } else if (e.type === "pcb_trace") {
+      const route: Pt[] = e.route ?? []
+      const half = (e.width ?? 0) / 2
+      for (let i = 0; i + 1 < route.length; i++) take(segPointDist(p, route[i]!, route[i + 1]!) - half, "trace")
+    }
+  }
+  return best
+}
+/** Distance from p to the nearest board cutout boundary, negative inside. */
+const nearestCutoutEdge = (json: any[], p: Pt) => {
+  let best = Infinity
+  for (const c of byType(json, "pcb_cutout")) {
+    const pts: Pt[] = c.points ?? []
+    if (pts.length < 2) continue
+    let inside = false
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const a = pts[i]!, b = pts[j]!
+      if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside
+    }
+    const d = Math.min(...pts.map((q, i) => segPointDist(p, q, pts[(i + 1) % pts.length]!)))
+    best = Math.min(best, inside ? -d : d)
+  }
+  return best
+}
 
 const panel = read("dist/panel/circuit.json")
 const front = read("dist/front/circuit.json")
@@ -158,14 +220,20 @@ for (const c of FRONT_COLUMNS) {
 }
 ok(`panel: ${FRONT_COLUMNS.length} jack openings, no extras`, circles(PANEL_CUTOUTS.jack / 2).length === FRONT_COLUMNS.length)
 
-// Panel holes: the four RACK fixings and the six feedthrough screws. The four
-// STAND_ holes are gone with the front-board standoffs.
+// Panel holes: the four RACK fixings, the six feedthrough screws and the four
+// STAND_ drills of the panel-mount frame (PANEL_MOUNT_POINTS).
 const panelHoles = byType(panel, "pcb_hole")
 for (const h of RAIL_HOLES) {
   at("panel: rail hole", panelHoles.find(hh => close(hh.x, h.x) && close(hh.y, h.y)), h)
 }
-ok(`panel: ${RAIL_HOLES.length + USB_FEEDTHROUGHS.length * 2} rail/feedthrough holes, no extras`,
-  panelHoles.length === RAIL_HOLES.length + USB_FEEDTHROUGHS.length * 2)
+for (const p of PANEL_MOUNT_POINTS) {
+  const h = panelHoles.find(hh => close(hh.x, p.x) && close(hh.y, p.y))
+  at(`panel: panel-mount screw hole (${p.x}, ${p.y})`, h, p)
+  ok(`panel: panel-mount screw hole Ø${PANEL_STANDOFF.holeDiameter}`,
+    !!h && close(h.hole_diameter, PANEL_STANDOFF.holeDiameter))
+}
+ok(`panel: ${RAIL_HOLES.length + USB_FEEDTHROUGHS.length * 2 + PANEL_MOUNT_POINTS.length} rail/feedthrough/standoff holes, no extras`,
+  panelHoles.length === RAIL_HOLES.length + USB_FEEDTHROUGHS.length * 2 + PANEL_MOUNT_POINTS.length)
 for (const h of FRONT_BOARD_HOLES) {
   ok(`panel: no panel-standoff hole at (${h.x}, ${h.y})`,
     !panelHoles.some(hh => close(hh.x, h.x) && close(hh.y, h.y)))
@@ -279,6 +347,27 @@ ok(`front: exactly ${FRONT_REAR_MOUNT.length} Ø2.7 holes (the front-rear grid)`
 for (const h of FRONT_BOARD_HOLES) {
   ok(`front: no panel-standoff hole at (${h.x}, ${h.y})`,
     !holes.some(hh => close(hh.x, h.x) && close(hh.y, h.y)))
+}
+// The panel-mount frame: four Ø${M3_CLEARANCE_HOLE_DIAMETER} holes, the SAME
+// PANEL_MOUNT_POINTS the panel drills, and no other M3 clearance hole here.
+const m3Holes = byType(front, "pcb_hole").filter(h => close(h.hole_diameter, M3_CLEARANCE_HOLE_DIAMETER))
+for (const p of PANEL_MOUNT_POINTS) {
+  const h = m3Holes.find(hh => close(hh.x, p.x) && close(hh.y, p.y))
+  at(`front: panel-mount hole at (${p.x}, ${p.y})`, h, p)
+}
+ok(`front: exactly ${PANEL_MOUNT_POINTS.length} Ø${M3_CLEARANCE_HOLE_DIAMETER} holes (the panel-mount frame)`,
+  m3Holes.length === PANEL_MOUNT_POINTS.length)
+// The soft rule the positions were chosen against, measured on the BUILT board:
+// every Ø3.2 hole edge keeps 0.8 mm to any copper (pad, via, trace), any other
+// hole and the U cutout. The pour is not listed: the build already gives the
+// hole a 0.2 mm anti-pad ring, so no copper reaches the bore.
+for (const p of PANEL_MOUNT_POINTS) {
+  const near = nearestBuiltFeature(front, p, p, M3_CLEARANCE_HOLE_DIAMETER / 2)
+  ok(`front: panel-mount hole (${p.x}, ${p.y}) keeps ${near.distance.toFixed(3)} mm >= 0.8 to ${near.what}`,
+    near.distance >= 0.8)
+  const cut = nearestCutoutEdge(front, p) - M3_CLEARANCE_HOLE_DIAMETER / 2
+  ok(`front: panel-mount hole (${p.x}, ${p.y}) keeps ${cut.toFixed(3)} mm >= 0.8 to the U opening`,
+    cut >= 0.8)
 }
 for (const h of LCD_MOUNT_HOLES) {
   ok(`front: no LCD mount hole at (${h.x}, ${h.y}) (the module hangs from the rear carrier)`,

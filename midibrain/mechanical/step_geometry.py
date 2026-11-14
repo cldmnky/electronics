@@ -1219,7 +1219,7 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "LCD aperture against the module glass (105.42 x 67.07 mm).",
     "Try every real part in the panel mockup: six buttons, three 4 mm light pipes, "
     "four MIDI jack barrels, the encoder bushing, NAV and POWER. All 20 apertures "
-    "and 10 drills come from the canonical panel data.",
+    "and 14 drills come from the canonical panel data.",
     "Offer the real display to the aperture from behind: the glass must pass with "
     "0.9 mm clearance per side. Record what you measure.",
     "Fit the Adafruit 908 flanges through their panel openings and measure the depth "

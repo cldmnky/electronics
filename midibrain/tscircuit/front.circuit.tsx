@@ -31,6 +31,8 @@ import {
   ledPosition,
   midiJackX,
   MOUNT_HOLE_DIAMETER,
+  PANEL_MOUNT_POINTS,
+  PANEL_STANDOFF,
   POWER_BUTTON,
   PLAY_START,
   POWER_HEADER,
@@ -418,6 +420,13 @@ export default () => (
         standoffs are not - see lib/layout.ts). */}
     {FRONT_REAR_MOUNT.map((h, i) => (
       <Fragment key={`mount-hole-${i}`}><hole name={`MOUNT_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
+    ))}
+    {/* The four PANEL_MOUNT_POINTS, the panel's stiffening frame: M3 clearance
+        through the board for the PANEL_STANDOFF under the panel, outside the U
+        opening (one column per leg). Nothing else shares these holes; the
+        length/tolerance decision is PANEL_STANDOFF in lib/layout.ts. */}
+    {PANEL_MOUNT_POINTS.map((h, i) => (
+      <Fragment key={`panel-mount-${i}`}><hole name={`STANDOFF_${i + 1}`} diameter={`${PANEL_STANDOFF.holeDiameter}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
     ))}
     {/* The module used to be screwed to four SMTSO bosses on this face. It now
         hangs from the rear board's printed carrier, so this board carries no

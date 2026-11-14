@@ -12,7 +12,7 @@
 // CAD model (the stale-binary trap).
 import { expect, test } from "bun:test"
 import { existsSync, readFileSync } from "node:fs"
-import { BUTTON_CAP, PANEL_APERTURES, PANEL_CUTOUTS, PANEL_DRILLS, PANEL_MOUNT_HOLES } from "./layout"
+import { BUTTON_CAP, M3_CLEARANCE_HOLE_DIAMETER, PANEL_APERTURES, PANEL_CUTOUTS, PANEL_DRILLS, PANEL_MOUNT_HOLES, PANEL_MOUNT_POINTS } from "./layout"
 
 const PANEL_JSON = new URL("../dist/panel/circuit.json", import.meta.url)
 
@@ -65,10 +65,10 @@ test("the built panel exists and carries every canonical aperture and drill", ()
   expect(cutouts.length).toBe(PANEL_APERTURES.length)
   expect(holes.length).toBe(PANEL_DRILLS.length)
   // 20 openings (LCD, 3 feedthroughs, 6 buttons, 3 LEDs, encoder, POWER, NAV,
-  // 4 jacks) and 10 holes (6 feedthrough screws + 4 rails). The four panel
-  // standoff holes are gone: the front board carries no standoffs.
+  // 4 jacks) and 14 holes (6 feedthrough screws + 4 rails + the 4 STAND_ panel
+  // mount screws of the PANEL_MOUNT_POINTS frame).
   expect(cutouts.length).toBe(20)
-  expect(holes.length).toBe(10)
+  expect(holes.length).toBe(14)
 })
 
 test("every canonical aperture is built, in order and at its exact geometry", () => {
@@ -100,18 +100,22 @@ test("every canonical panel hole is built, in order and at its exact diameter", 
   expect(built).toEqual(PANEL_DRILLS.map(drillSignature))
 })
 
-test("PANEL_DRILLS is the feedthrough screws, then the rail holes", () => {
-  expect(PANEL_DRILLS.length).toBe(10)
-  expect(PANEL_MOUNT_HOLES.length).toBe(4)
+test("PANEL_DRILLS is the feedthrough screws, then the rails and the standoffs", () => {
+  expect(PANEL_DRILLS.length).toBe(14)
+  expect(PANEL_MOUNT_HOLES.length).toBe(8)
   expect(PANEL_DRILLS.slice(0, 6).map(d => d.name)).toEqual([
     "USB_0_-1", "USB_0_1", "USB_1_-1", "USB_1_1", "USB_2_-1", "USB_2_1",
   ])
   expect(PANEL_DRILLS.slice(6).map(d => d.name)).toEqual([
     "RACK_1", "RACK_2", "RACK_3", "RACK_4",
+    "STAND_1", "STAND_2", "STAND_3", "STAND_4",
   ])
-  // The diameters are the canonical ones; nothing is invented here. The D2.7
-  // tool is gone with the panel standoffs.
-  expect(new Set(PANEL_DRILLS.map(d => d.diameter))).toEqual(new Set([3.2, 3.5]))
+  // The four STAND_ drills are the PANEL_MOUNT_POINTS frame at the M3 clearance
+  // diameter - the same tool as the rail holes, one number for both.
+  expect(PANEL_DRILLS.slice(10).map(d => ({ x: d.x, y: d.y, diameter: d.diameter })))
+    .toEqual(PANEL_MOUNT_POINTS.map(p => ({ x: p.x, y: p.y, diameter: M3_CLEARANCE_HOLE_DIAMETER })))
+  // The diameters are the canonical ones; nothing is invented here.
+  expect(new Set(PANEL_DRILLS.map(d => d.diameter))).toEqual(new Set([M3_CLEARANCE_HOLE_DIAMETER, 3.5]))
 })
 
 test("the canonical apertures cover every opening class with its own diameter", () => {

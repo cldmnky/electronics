@@ -54,8 +54,8 @@ hand-edit generated fabrication files to repair a source problem.
   1 mm corner relief, derived from the glass dimensions rather than PCB height.
   The panel also carries six button openings of **12.25 mm square** (Omron
   reference 12.2 +0.05/0), three Ø2.6 mm light-pipe holes and three USB cutouts;
-  its only drilled holes are the six feedthrough screws and the four Ø3.2 rail
-  holes — the panel standoff holes were removed on 2026-11-13. Physical display
+  its only drilled holes are the six feedthrough screws, the four Ø3.2 rail
+  holes and the four Ø3.2 `STAND_` panel-mount screws. Physical display
   and rail fit remain acceptance items, and the routed-square and Ø2.6 hole
   tolerances plus the duplicate drill/routing feature still need JLCPCB's
   answer.

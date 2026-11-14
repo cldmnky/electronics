@@ -504,6 +504,35 @@
       "y": 41
     }
   ],
+  "panelMountPoints": [
+    {
+      "x": -71.5,
+      "y": -52
+    },
+    {
+      "x": 71.5,
+      "y": -52
+    },
+    {
+      "x": -71.5,
+      "y": 52
+    },
+    {
+      "x": 71.5,
+      "y": 52
+    }
+  ],
+  "panelStandoff": {
+    "thread": "M3",
+    "length": 8.4,
+    "holeDiameter": 3.2,
+    "bodyDiameter": 5.5,
+    "headDiameter": 7,
+    "family": "M3 threaded, adjustable",
+    "adjustment": "trimmed or shimmed at assembly to the measured jack-set gap; it must not set the panel plane",
+    "panelPlaneDatum": "the MIDI jack bushings (they clamp the panel), not these standoffs",
+    "toleranceStatus": "the jack-bushing tolerance behind the 8.40 nominal is UNMEASURED; first article records it"
+  },
   "panelApertures": [
     {
       "shape": "polygon",
@@ -869,6 +898,30 @@
       "x": 68.58,
       "y": 61.25,
       "diameter": 3.2
+    },
+    {
+      "name": "STAND_1",
+      "x": -71.5,
+      "y": -52,
+      "diameter": 3.2
+    },
+    {
+      "name": "STAND_2",
+      "x": 71.5,
+      "y": -52,
+      "diameter": 3.2
+    },
+    {
+      "name": "STAND_3",
+      "x": -71.5,
+      "y": 52,
+      "diameter": 3.2
+    },
+    {
+      "name": "STAND_4",
+      "x": 71.5,
+      "y": 52,
+      "diameter": 3.2
     }
   ],
   "panelMountHoles": [
@@ -894,6 +947,30 @@
       "name": "RACK_4",
       "x": 68.58,
       "y": 61.25,
+      "diameter": 3.2
+    },
+    {
+      "name": "STAND_1",
+      "x": -71.5,
+      "y": -52,
+      "diameter": 3.2
+    },
+    {
+      "name": "STAND_2",
+      "x": 71.5,
+      "y": -52,
+      "diameter": 3.2
+    },
+    {
+      "name": "STAND_3",
+      "x": -71.5,
+      "y": 52,
+      "diameter": 3.2
+    },
+    {
+      "name": "STAND_4",
+      "x": 71.5,
+      "y": 52,
       "diameter": 3.2
     }
   ],

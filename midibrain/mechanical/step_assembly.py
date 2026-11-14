@@ -614,6 +614,10 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
     holes += [(f"bracket mount {i}", {"x": x, "y": layout["bracket"]["mountY"]},
                layout["bracket"]["mountHoleDiameter"])
               for i, x in enumerate(layout["bracket"]["mountX"])]
+    # The panel-mount frame: the SAME points the panel drills, at the M3
+    # clearance the standoff carries (derive, never restate).
+    holes += [(f"panel-mount hole {i}", h, layout["panelStandoff"]["holeDiameter"])
+              for i, h in enumerate(layout["panelMountPoints"])]
     for label, hole, diameter in holes:
         tool = cylinder(hole["x"], hole["y"], e.z.lo - 1.0, e.z.hi + 1.0, diameter / 2)
         if front_wp.val().intersect(tool.val()).Volume() <= VOLUME_EPS:
@@ -623,6 +627,60 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
         raise GeometryError(f"the front board is {front_wp.solids().size()} solids")
     solids["FRONT_BOARD_PROVISIONAL_Z"] = front_wp
     meta["FRONT_BOARD_PROVISIONAL_Z"] = {"features": ["top relief notch"] + [h[0] for h in holes]}
+
+    # ---- panel mount standoffs (M3, adjustable) -------------------------
+    # Four annuli between the panel REAR face and the front-board TOP face, at
+    # the PANEL_MOUNT_POINTS both boards are drilled at. Every number comes from
+    # the exported PANEL_STANDOFF block; the drawn Z span is checked against its
+    # length so the model cannot drift from the layout. These are ENVELOPES: the
+    # panel plane is set by the jack bushings, so nothing here is a fit.
+    standoff = layout["panelStandoff"]
+    z_rear = float(layout["panel"]["thickness"])     # panel rear face
+    z_top = float(pz["frontBoardTop"])               # front-board top face
+    if abs((z_top - z_rear) - float(standoff["length"])) > 1e-6:
+        raise GeometryError(
+            f"PANEL_STANDOFF.length {standoff['length']} is not the drawn "
+            f"{z_top - z_rear:.2f} mm panel-rear -> board-top span")
+    od = float(standoff["bodyDiameter"])
+    od_hole = float(standoff["holeDiameter"])
+    if od <= od_hole:
+        raise GeometryError(
+            f"standoff OD {od} does not exceed the M3 clearance {od_hole}")
+    mount_meta = []
+    for index, point in enumerate(layout["panelMountPoints"], start=1):
+        name = f"PANEL_STANDOFF_{index}"
+        spacer = (cq.Workplane("XY").workplane(offset=z_rear)
+                  .center(float(point["x"]), float(point["y"]))
+                  .circle(od / 2).circle(od_hole / 2)
+                  .extrude(z_top - z_rear))
+        intrusions = {
+            "panel_mm3": round(spacer.val().intersect(panel_wp.val()).Volume(), 6),
+            "board_mm3": round(spacer.val().intersect(front_wp.val()).Volume(), 6),
+        }
+        if max(intrusions.values()) > INTRUSION_EPS_MM3:
+            raise GeometryError(f"{name} intrudes: {intrusions}")
+        solids[name] = spacer
+        mount_meta.append({
+            "name": name,
+            "xy_mm": [point["x"], point["y"]],
+            "z_mm": [z_rear, z_top],
+            "length_mm": round(z_top - z_rear, 3),
+            "outer_diameter_mm": od,
+            "inner_diameter_mm": od_hole,
+            "intrusion_volume_mm3": intrusions,
+        })
+    meta["PANEL_STANDOFFS"] = {
+        "kind": "M3 ADJUSTABLE STANDOFF ENVELOPE, non-approved",
+        "count": len(mount_meta),
+        "span_mm": [z_rear, z_top],
+        "standoffs": mount_meta,
+        "panel_plane_datum": standoff["panelPlaneDatum"],
+        "not_claimed": [
+            "a part, part number or supplier",
+            "a measured jack-bushing gap (the 8.40 mm is a nominal)",
+            "thread engagement, torque or assembly order",
+        ],
+    }
 
     # ---- rear board ---------------------------------------------------
     e = env["REAR_BOARD_PROVISIONAL_Z"]
