@@ -189,3 +189,44 @@ Missing functionality:
   the Pi side stops sending it.
 - midifx pipe schema: a distinct "default for a newly added pipe" (separate
   from the missing-parameter default) would be a new schema field if wanted.
+
+## Queued: panel stack becomes 10.6 mm (owner decision, 2026-11-14)
+
+The Thonkiconn jacks are the anchor, not a design target: they are exactly
+9.0 mm from the front board's top face to the shoulder the panel rear rests
+on, and the panel is 1.6 mm, so
+
+    board top -> panel REAR    9.00   (jack-seated)
+    panel thickness          + 1.60
+                            --------
+    board top -> panel FRONT  10.60
+
+The code currently has this backwards: it treats 10.0 as the board-to-panel-
+front reference and derives the rear gap as 8.40 (10.0 - 1.6). Change the
+anchor and let everything chain from it:
+
+- `JACK_CLAMPED_GAP` 8.40 -> **9.00**, and define it from the Thonkiconn
+  seating face rather than as `PANEL_TO_FRONT_BOARD_TOP - PANEL.thickness`
+  (that subtraction is what made the jack a consequence instead of a cause).
+- `PANEL_TO_FRONT_BOARD_TOP` 10.0 -> **10.60** = the gap plus the panel.
+- Every value derived from the chain moves with it, re-derived and NOT typed:
+  - printed B3F cap 4.10 -> **4.70** tall, top 10.80 -> **11.40** above board
+  - `BUTTON_REACH`: switch-to-panel-rear 1.10 -> **1.70**, to-front 2.70 ->
+    **3.30** (the reach assertion thresholds follow; do not relax them)
+  - four new panel mounts: standoff 8.40 -> **9.00**
+  - display chain: PCB rear 10.05 -> **10.65**, rear-most 14.05 -> **14.65**
+  - rear board 22.80 -> **23.40** front, 24.40 -> **25.00** rear
+  - interconnect seat-to-seat stays 11.20 +- 0.20; the spacers remain the
+    adjustment, so this change must not be absorbed there
+- Re-pin every pinned test value (precedent 9dd96dd re-derived 25 python
+  pins), regenerate `mechanical/layout.json`, then `make mechanical`,
+  `make mechanical-steps`, `make order`, and refresh the viewer screenshot.
+- Documentation to update with the new chain: `docs/mechanical-stack.md`,
+  `docs/assembly.md`, `docs/decisions.md`, `docs/panel.md`, `README.md`, and
+  `mechanical/printed/README.md` (cap height and first-article checks).
+
+ASSUMPTION TO CONFIRM: the 9.0 mm is the board top to the shoulder the panel
+REAR sits on, i.e. it excludes the jack nut and washer. If Thonkiconn's drawing
+gives 9.0 as an overall body height and the panel seats on the nut instead, the
+effective gap is 9.0 minus nut/washer thickness, and the whole chain shifts by
+that amount - confirm before cutting a panel.
