@@ -651,8 +651,9 @@ test("provisional Z stack follows the vendor side view, with a stated datum", ()
 test("the B32 reference stack and the owner's 10 mm panel distance agree", () => {
   // Omron's 10.0 +/-0.4 mm is the PC BOARD to PANEL FRONT face reference, not
   // the cap height. The 2026-11-13 decision puts the panel front at Z 10.0, so
-  // the excess the old 19.05 mm chain carried is gone. The cap top is still not
-  // dimensioned, so no cap-top Z is asserted.
+  // the excess the old 19.05 mm chain carried is gone. The bought B32 cap top
+  // is still not dimensioned, so no B32 cap-top Z is asserted; the printed
+  // cap's top is asserted in the printed-cap test below.
   expect(BUTTON_CAP.referenceBoardToPanelFront).toBe(10)
   expect(BUTTON_STACK.omronReferencePanelFrontZ).toBeCloseTo(0, 6)
   expect(BUTTON_STACK.stackDepthExcess).toBeCloseTo(0, 6)
@@ -979,8 +980,10 @@ test("the panel front face is the jack-clamped gap plus the panel thickness", ()
 })
 
 // A press part that stops at the panel REAR face sits inside the cutout: the
-// finger finds a hole. This is the check the B32 caps failed by eye, twice.
-test("a B32 cap must reach the panel FRONT face, not just the cutout", () => {
+// finger finds a hole. The cap-top number is now the PRINTED cap's by-design
+// value (BUTTON_CAP_PRINTED below); a bought B32-13x0 remains the documented
+// alternative and is still unmeasured.
+test("a cap top must reach the panel FRONT face, not just the cutout", () => {
   expect(BUTTON_REACH.switchTopToPanelRear).toBeCloseTo(1.1, 6)
   expect(BUTTON_REACH.switchTopToPanelFront).toBeCloseTo(2.7, 6)
   // The panel rear face is only 1.10 mm above the switch, so "reaches the
@@ -988,12 +991,13 @@ test("a B32 cap must reach the panel FRONT face, not just the cutout", () => {
   expect(BUTTON_REACH.switchTopToPanelFront).toBeGreaterThan(BUTTON_REACH.switchTopToPanelRear)
   if (BUTTON_REACH.capExtensionAboveSwitch === null) {
     throw new Error(
-      "control_actuator is unmeasured: a B32-13x0 must extend at least " +
+      "control_actuator is unmeasured: a cap must extend at least " +
       BUTTON_REACH.switchTopToPanelFront.toFixed(2) + " mm above the B3F-4055 " +
       "body to stand flush with the panel front (the panel rear face is only " +
       BUTTON_REACH.switchTopToPanelRear.toFixed(2) + " mm above the switch, so a " +
-      "cap that stops there is a recessed button). Caliper a fitted cap - board " +
-      "top to cap top - and set BUTTON_REACH.capExtensionAboveSwitch in lib/layout.ts.",
+      "cap that stops there is a recessed button). Set the cap top by design " +
+      "(BUTTON_CAP_PRINTED) or caliper a fitted bought cap and set " +
+      "BUTTON_REACH.capExtensionAboveSwitch in lib/layout.ts.",
     )
   }
   expect(BUTTON_REACH.capExtensionAboveSwitch).toBeGreaterThanOrEqual(
@@ -1027,6 +1031,8 @@ test("the printed cap design stands proud of the panel front", () => {
   expect(BUTTON_CAP_PRINTED.locatorSquare).toBeGreaterThan(3.8)
   // Forced by the cutout, not chosen: no skirt may pass the plunger face.
   expect(BUTTON_CAP_PRINTED.undersideZ).toBeCloseTo(BUTTON_SWITCH_TOP_Z, 6)
-  // Still a design intent until the part exists and is measured.
-  expect(BUTTON_CAP_PRINTED.implemented).toBe(false)
+  // Implemented as mechanical/printed/button_cap.py and exported as
+  // button-cap.stl/.step. Still PROVISIONAL: the first article has to measure
+  // the fit and the press travel, which is what confirms control_actuator.
+  expect(BUTTON_CAP_PRINTED.implemented).toBe(true)
 })

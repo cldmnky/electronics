@@ -1,8 +1,15 @@
-# Printed front-panel parts: NAV keytop and value knob
+# Printed front-panel parts: NAV keytop, value knob and B3F button cap
 
-Two 3D-printed parts for the MIDI Brain front panel, generated from parametric
-Python: an **NAV keytop** for the ALPS Alpine SKRHABE010 5-way switch (U5) and a
-**value knob** for the Bourns PEC11R-4015F-S0024 encoder (U6).
+Three 3D-printed parts for the MIDI Brain front panel, generated from
+parametric Python: an **NAV keytop** for the ALPS Alpine SKRHABE010 5-way
+switch (U5), a **value knob** for the Bourns PEC11R-4015F-S0024 encoder (U6),
+and a **B3F button cap** printed seven times for the Omron B3F-4055 switches
+(SW1–SW7).
+
+The printed B3F cap is the **standard** key top; a bought Omron/ARATAS
+B32-13x0 is the documented alternative. This is a panel accessory, so it has no
+JLCPCB/SMT BOM row: the seven switches stay on the generated hand BOM and the
+caps are printed from `button-cap.stl`.
 
 Status: **PROVISIONAL printed parts, not released drawings.** Every fit number
 below is either sourced (datasheet / `lib/layout.ts` / `mechanical/layout.json`)
@@ -14,9 +21,11 @@ mechanical/printed/
   printed_geometry.py     pure geometry + the design rules + the STL inspector (no CAD)
   nav_keytop.py           CadQuery builder for the keytop -> nav-keytop.stl / .step
   knob.py                 CadQuery builder for the knob   -> knob.stl / .step
+  button_cap.py           CadQuery builder for the B3F cap -> button-cap.stl / .step
   test_printed_parts.py   the rules, their mutation tests and the artefact checks
   nav-keytop.stl/.step    generated, committed
   knob.stl/.step          generated, committed
+  button-cap.stl/.step    generated, committed
   README.md               this file
 ```
 
@@ -27,19 +36,21 @@ mechanical/printed/
 uv venv /tmp/cq-venv
 uv pip install --python /tmp/cq-venv/bin/python cadquery
 
-# regenerate both artefacts (each run rebuilds, self-validates, exports and re-reads)
+# regenerate the artefacts (each run rebuilds, self-validates, exports and re-reads)
 /tmp/cq-venv/bin/python mechanical/printed/nav_keytop.py
 /tmp/cq-venv/bin/python mechanical/printed/knob.py
+/tmp/cq-venv/bin/python mechanical/printed/button_cap.py
 
 # tests: the pure-geometry and STL checks run anywhere, the rebuild tests need the venv
 cd mechanical/printed && python3 -m unittest test_printed_parts -v
 cd mechanical/printed && /tmp/cq-venv/bin/python -m unittest test_printed_parts -v
 ```
 
-`make test` does not pick this directory up (it is not a package and the suite is
-standalone); run the commands above.
+`make mechanical` (and therefore `make test`) runs the standalone
+`test_printed_parts` suite; the CadQuery-dependent rebuild tests skip cleanly
+when CadQuery is absent, the pure geometry and committed-STL checks still run.
 
-The four generated artefacts are committed even though the repository-wide
+The six generated artefacts are committed even though the repository-wide
 `.gitignore` excludes `*.stl` and `*.step`: the test suite re-reads these exact
 files, so a checkout without them cannot run the artefact and rebuild checks.
 They were added with `git add -f`; regenerating them rewrites the files (the STEP
@@ -60,6 +71,10 @@ header carries a creation timestamp), and the tests compare geometry, not bytes.
 | PEC11R shaft flat depth "C" | 0.5 mm (plane 2.50 mm from the axis) | same datasheet |
 | PEC11R supplied hardware | "one flat washer and one mounting nut" (not dimensioned) | same datasheet |
 | panel thickness, panel front/rear, front-board top | 1.6, 0.0, 1.6, 10.0 mm | `mechanical/layout.json` (`panel`, `provisionalZ`) |
+| B3F-4055 body / plunger | 12.0 ±0.2 / 3.8 ±0.1 mm square | Omron B3F datasheet, SHA-256 `be9cf69e...` |
+| B3F-4055 height above the board | 7.3 ±0.2 mm (plunger face) | same datasheet; `BUTTON_SWITCH` in `lib/layout.ts` |
+| B3F panel opening | 12.25 mm square | `lib/layout.ts` `PANEL_CUTOUTS.button`; seven `* BUTTON` apertures in `mechanical/layout.json` |
+| printed cap plate / locator / proud | 11.80 square / 3.85 square × 0.60 deep / 0.80 | `lib/layout.ts` `BUTTON_CAP_PRINTED`, parsed and re-derived by `button_cap()` |
 | control aperture (NAV and VALUE ENCODER) | 7.2 mm | `mechanical/layout.json` `panelApertures`, cross-checked against `PANEL_CUTOUTS.control` in `lib/layout.ts` |
 | display opening right edge | 43.25 mm | `lib/layout.ts` `DISPLAY_CONCEPT.x` + `FRONT_DISPLAY_OPENING.width` (parsed, cross-checked against the two numbers the source prints beside them) |
 | knob column and body diameter | x = 52, D12.5 | `lib/layout.ts` `RIGHT_COLUMN` and the owner-approved "knob body (D12.5 at x = 52)" note |
@@ -171,17 +186,88 @@ owner-approved D12.5 note in `lib/layout.ts`, not by the display position.
 `test_a_stale_export_does_not_move_the_part` and `LayoutSourceMutationTest` pin
 both halves of that down.
 
+## Part 3: B3F-4055 button cap (`button-cap.stl`), 7 off
+
+One geometry for SW1–SW7: REC, OVER DUB, STOP, PLAY, PLAY START, SHIFT/EXIT and
+POWER. The panel does not choose the shape; the 12.25 mm opening forces it. It
+is only 0.125 mm per side larger than the 12.0 ±0.2 mm switch body, so a skirt
+cannot pass the panel and a printed cap is necessarily a plate on the plunger,
+centred by the aperture.
+
+```
+        Z = -0.80  +----------------+   cap top, 0.80 proud of the panel front
+                   |   11.80 sq     |   4.10 tall
+        Z =  0.00  ==================   PANEL FRONT
+                   |                |   panel 1.60 thick, 12.25 sq cutout
+        Z =  1.60  ==================   PANEL REAR
+                   |   11.80 sq     |   0.225 per side in the cutout
+        Z =  2.70  +---+  3.85  +---+   recess floor = B3F-4055 plunger face
+                   |   |  void  |   |   locator recess 0.60 deep, opens rearward
+        Z =  3.30  +---+--------+---+   cap rear face, 0.025 per side on the 3.80 plunger
+                     (switch body below, no part of the cap)
+```
+
+| dimension | value | source |
+| --- | --- | --- |
+| plate | 11.80 × 11.80 mm | 12.25 cutout − 2 × 0.225 (`BUTTON_CAP_PRINTED`) |
+| part height | 4.10 mm | 2.70 flush + 0.60 locator + 0.80 proud |
+| cap top | Z −0.80 (10.80 above board) | panel front + 0.80 proud |
+| cap rear face | Z 3.30 (6.70 above board) | plunger face + 0.60 locator |
+| locator recess | 3.85 × 3.85 × 0.60 deep | 3.80 plunger + 2 × 0.025 |
+| plate clearance to cutout | 0.225 per side | 12.25 − 11.80 |
+| plate clearance to switch body | 0.10 per side (11.80 vs 12.0) | no skirt |
+| quantity | 7 | SW1–SW7 |
+
+Why the part is 4.10 and not 3.50: the plunger sits INSIDE the recess. The cap's
+rear face stops 0.60 mm behind the plunger face, so the height spans three terms,
+not two. Deriving it as flush + proud (3.50) would put the top 0.6 mm below the
+panel front.
+
+### Assembly order (required)
+
+1. Print seven caps (see the print settings below).
+2. Solder SW1–SW7 and clean the plungers.
+3. Press a cap's 3.85 mm locator recess over each 3.80 ±0.1 mm plunger: the
+   recess floor must land flat on the plunger face. Check that the cap sits
+   straight and does not rock.
+4. Lower the panel. Each plate enters its 12.25 mm opening with 0.225 mm per
+   side; the cap top stands 0.80 mm proud of the panel front. The aperture
+   centres the cap; there is no other guide.
+
+The cap has no snap or skirt. Axial retention is the printed fit on the
+plunger alone, so lifting the panel may lift a cap. That is a first-article
+check (below); if it is loose, do not add a skirt - the cutout cannot accept
+one. Report it and decide between a tighter recess and a small dab of
+adhesive.
+
+### Material and print settings
+
+**Rear face DOWN, solid, no supports, 4 mm brim.** The detail is in
+*Print orientation and material* below; the B3F cap entry there is the single
+source for its print settings.
+
+### First article
+
+See the B3F button cap block under *The first article must measure* below: the
+plate/cutout fit, the locator/plunger fit, the cap height and press travel, and
+the locator ring's clearance to the switch body are the four gates.
+
 ## ASSUMPTIONS
 
 Everything in this table is a print or assembly tolerance, not a datasheet
-value. They are named constants in `printed_geometry.py` and listed in its
-`ASSUMPTIONS` tuple; the first article measures them.
+value. Values owned by this module are named constants in
+`printed_geometry.py` and listed in its `ASSUMPTIONS` tuple; values marked
+**layout.ts** are declared there and read by the geometry. The first article
+measures them.
 
-The parts' SHAPE AND POSITION is not an assumption this module owns: it is
-declared as `PRINTED_PARTS` in `lib/layout.ts`, carried by
-`mechanical/layout.json` and read from there, so the printed STL and the front
-board's 3D view cannot describe different parts. `printed_geometry.py`
-re-derives the two Z planes of each part from the datasheet input and the
+The parts' SHAPE AND POSITION is not an assumption this module owns: the NAV
+keytop and the knob are declared as `PRINTED_PARTS` in `lib/layout.ts`, carried
+by `mechanical/layout.json` and read from there, so the printed STL and the
+front board's 3D view cannot describe different parts. The B3F cap is one
+geometry printed seven times and has no single panel position, so its shape is
+declared once in `BUTTON_CAP_PRINTED` and read from `lib/layout.ts`; its seven
+openings come from `mechanical/layout.json` `panelApertures`. `printed_geometry.py`
+re-derives the Z planes of each part from the datasheet input and the
 tolerances below and fails when its derivation leaves the declared envelope.
 The table keeps the rows whose value moved, marked **layout.ts**.
 
@@ -208,10 +294,13 @@ The table keeps the rows whose value moved, marked **layout.ts**.
 | grub screw / pilot | M3 flat point / D2.50 tap drill | metal-shaft retention |
 | grub screw position | 6.00 mm from the rear face | reachable, on the flat's normal |
 | knob-to-display minimum | 2.50 mm | the layout's own rule, `lib/layout.ts` |
+| B3F cap plate / locator / proud | 11.80 square / 3.85 square × 0.60 / 0.80 mm (**layout.ts**: `square`, `locatorSquare`, `locatorDepth`, `proudAbovePanelFront`) | the 12.25 cutout and the 3.80 plunger set the two fits; the proud height is ours to choose |
+| B3F locator clearance | 0.025 mm per side over the 3.80 ±0.1 plunger (**layout.ts**: `BUTTON_CAP_LOCATOR_CLEARANCE_PER_SIDE`) | a locator, not a snap; FDM holes print undersize, so measure it |
+| B3F cap body-top clearance | unverified | the 0.60 mm locator ring reaches Z 3.30; the datasheet page recorded here gives the 7.3 mm overall height but not the body top |
 
 ## Print orientation and material
 
-Both parts print **in one piece with no supports**, axis vertical.
+All three parts print **in one piece with no supports**, axis vertical.
 
 **NAV keytop: socket mouth DOWN** (the D5.60/D3.20 annular face on the build
 plate, the head at the top).
@@ -236,6 +325,18 @@ plate, the front face at the top).
 * the front face is the last layer (visible, flat);
 * the only bridge is the D2.50 grub pilot through the 3.65 mm wall; its top
   sags slightly, which is why it is **tapped M3 afterwards**.
+
+**B3F button cap: rear face DOWN** (the locator recess opens onto the build
+plate, the finger face at the top).
+
+* every wall is vertical: the 11.80 square outline and the 3.85 square recess;
+* no overhang and no support; the only bridge is the 3.85 mm square recess roof
+  at 0.6 mm, and it is short;
+* the finger face is the flat top layer (visible);
+* the bed contact is an 11.80 mm square with a 3.85 mm square hole - **use a
+  4 mm brim** and keep the first layer slow;
+* **print solid** (100% infill, or 4+ perimeters): the part is only 4.1 mm tall
+  and a press fit must not crush a sparse interior.
 
 **Material: PETG** (0.4 mm nozzle, 0.15-0.2 mm layers, 3 perimeters). PETG
 because (a) the knob is clamped by an M3 set screw - PLA creeps and cracks at a
@@ -281,24 +382,41 @@ Value knob:
    view check; the knob itself is entirely in front of the panel.
 6. rotational feel: no wobble, no axial end-float beyond the grub screw's play.
 
+B3F button cap (7 off):
+
+1. the plate in the real 12.25 mm routed opening: target 0.225 mm per side; no
+   binding, no rattle.
+2. the printed locator (nominal 3.85) on the real 3.80 ±0.1 mm plunger: it must
+   push on, sit flat, and stay on when the panel is lifted. Measure the actual
+   plunger and recess; FDM holes usually print undersize.
+3. the cap top height and press travel: target 0.80 mm proud, 10.80 mm above the
+   board, 3.50 mm above the switch. This is the `control_actuator` measurement:
+   the item is closed by design, not yet by a measured cap.
+4. the 0.60 mm locator ring's clearance to the B3F-4055 body top at rest and at
+   full travel. The datasheet page this repo records gives the 7.3 mm overall
+   height but not the body top, so this clearance is unverified.
+5. all seven switches: the cap must not pre-load the switch, and the panel must
+   not pinch a cap.
+6. the printed recess finish: remove strings, do not drill the locator out.
+
 ## Tool path and self-validation
 
-Both artefacts were produced by **CadQuery** (2.8.0, in `/tmp/cq-venv`), not by a
-fallback mesh writer. Each generator (a) derives every dimension, (b) applies
-each cut and proves it removed material and left none in the cut volume, (c)
-checks one valid watertight solid with one shell and the intended bounding box,
-(d) probes named material/void points that prove each feature, (e) exports STL
-and STEP, then (f) **re-reads both files**: the STL is parsed in pure Python
+All three artefacts were produced by **CadQuery** (2.8.0, in `/tmp/cq-venv`), not
+by a fallback mesh writer. Each generator (a) derives every dimension, (b)
+applies each cut and proves it removed material and left none in the cut volume,
+(c) checks one valid watertight solid with one shell and the intended bounding
+box, (d) probes named material/void points that prove each feature, (e) exports
+STL and STEP, then (f) **re-reads both files**: the STL is parsed in pure Python
 (edge counting: every edge used by exactly two triangles, consistent
 orientation, one connected shell, bounding box, enclosed volume) and the STEP is
 re-imported as one solid with the same volume.
 
-| check | nav keytop | value knob |
-| --- | --- | --- |
-| body / shell | 1 / 1, valid BRep | 1 / 1, valid BRep |
-| volume | 365.2 mm^3 | 1312.5 mm^3 |
-| bounding box | x 47.20-56.80, y 7.20-16.80, z -4.00-6.35 | x 45.75-58.25, y 24.75-37.25, z -18.70--2.70 |
-| cuts | 4 (socket, mouth chamfer, head chamfer, flange chamfer) | 21 (D bore, 16 flutes, grub pilot, 3 chamfers) |
-| quoted feature probes | 10 | 12 |
-| STL | 7556 triangles, 0 open / 0 non-manifold edges, 1 shell | 10032 triangles, 0 open / 0 non-manifold edges, 1 shell |
-| STEP re-import | 1 solid, 365.2 mm^3 | 1 solid, 1312.5 mm^3 |
+| check | nav keytop | value knob | B3F button cap |
+| --- | --- | --- | --- |
+| body / shell | 1 / 1, valid BRep | 1 / 1, valid BRep | 1 / 1, valid BRep |
+| volume | 365.2 mm^3 | 1312.5 mm^3 | 562.0 mm^3 |
+| bounding box | x 47.20-56.80, y 7.20-16.80, z -4.00-6.35 | x 45.75-58.25, y 24.75-37.25, z -18.70--2.70 | x -5.90-5.90, y -5.90-5.90, z -0.80-3.30 |
+| cuts | 4 (socket, mouth chamfer, head chamfer, flange chamfer) | 21 (D bore, 16 flutes, grub pilot, 3 chamfers) | 1 (locator recess) |
+| quoted feature probes | 10 | 12 | 5 |
+| STL | 7556 triangles, 0 open / 0 non-manifold edges, 1 shell | 10032 triangles, 0 open / 0 non-manifold edges, 1 shell | 28 triangles, 0 open / 0 non-manifold edges, 1 shell |
+| STEP re-import | 1 solid, 365.2 mm^3 | 1 solid, 1312.5 mm^3 | 1 solid, 562.0 mm^3 |

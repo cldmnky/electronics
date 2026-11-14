@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Pure geometry for the two 3D-printed MIDI Brain front-panel parts.
+"""Pure geometry for the three 3D-printed MIDI Brain front-panel parts.
 
 Part 1 ``NAV keytop`` caps the ALPS Alpine SKRHABE010 5-way switch (U5).
 Part 2 ``value knob`` caps the Bourns PEC11R-4015F-S0024 encoder (U6).
+Part 3 ``B3F button cap`` is printed seven times, one for each Omron B3F-4055
+switch (SW1-SW7).
 
 Every dimension is either a named input with its source in the comment beside
 it, or an explicit ASSUMPTION collected in ``ASSUMPTIONS`` and repeated in this
@@ -11,25 +13,33 @@ directory's README. Nothing is a silently picked fit-hardware number.
 Sources
 -------
 ``lib/layout.ts`` (canonical PCB/panel source, parsed because the panel
-aperture, the display opening and the knob column are all defined there):
+aperture, the display opening, the knob column and the printed B3F cap all live
+there):
 
   * ``PANEL_CUTOUTS.control`` -- the shared 7.2 mm control aperture.
+  * ``PANEL_CUTOUTS.button`` -- the 12.25 mm square B3F panel opening.
   * ``DISPLAY_CONCEPT.x`` + ``FRONT_DISPLAY_OPENING.width`` -- the front-board
     display opening's right edge, the edge the layout's own 2.50 mm
     knob-body rule is measured from.
   * ``RIGHT_COLUMN.x`` and the ``knob body (D12.5 at x = 52)`` note -- the
     owner-approved knob body diameter and column.
+  * ``BUTTON_SWITCH``, ``BUTTON_REACH`` and ``BUTTON_CAP_PRINTED`` -- the
+    B3F-4055 envelope, the printed cap's plate/locator sizes, its proud
+    height and the by-design cap top. The button cap has no single panel
+    position (one geometry, seven switches), so its shape is declared once
+    there and its seven openings are read from the export below.
 
 ``mechanical/layout.json`` (generated export of the same source; carries the
 panel stack, the real aperture list and the printed parts' envelope):
 
   * ``panel.thickness``, ``provisionalZ.panelFront/panelRear/frontBoardTop``
-  * ``panelApertures`` entries ``NAV`` and ``VALUE ENCODER``
-  * ``printedParts`` -- the shape and position of both printed parts, i.e. the
-    flange, shank, socket bore, head height, socket depth, knob body, height,
-    bore and the two Z planes of each part. This module does not keep a second
-    copy of any of those numbers; it re-derives the Z planes from the datasheet
-    and tolerance chain below and fails when the two disagree.
+  * ``panelApertures`` entries ``NAV``, ``VALUE ENCODER`` and the seven
+    ``* BUTTON`` openings
+  * ``printedParts`` -- the shape and position of the NAV keytop and the value
+    knob, i.e. the flange, shank, socket bore, head height, socket depth, knob
+    body, height, bore and the two Z planes of each part. This module does not
+    keep a second copy of any of those numbers; it re-derives the Z planes from
+    the datasheet and tolerance chain below and fails when the two disagree.
 
 ``lib/layout.ts`` owns the display opening and the knob column, so those are
 parsed from the source and never read from the export's ``display`` block:
@@ -44,6 +54,11 @@ Datasheets (read and hashed by the reviewer, not committed):
   * Bourns PEC11R series datasheet, SHA-256
     ``ac88f657e611bc82fe79b102426fb5abcb7f40740540f0c681727e2d74784491``
     (the hash already recorded in ``docs/decisions.md``).
+  * Omron B3F datasheet, SHA-256
+    ``be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f``:
+    B3F-4055 12 +-0.2 mm square body, 3.8 +-0.1 mm projected plunger,
+    7.3 +-0.2 mm above the board. The B32 cap top is not dimensioned on the
+    page this repository records; that is why the printed cap is the standard.
 
 Z datum: the panel FRONT face is Z = 0 and +Z points REARWARD, the same datum
 ``lib/layout.ts`` and ``mechanical/layout.json`` use. The front board's top face
@@ -54,7 +69,8 @@ No CAD library is imported here, so the design rules run on any machine:
 
     cd mechanical/printed && python3 -m unittest test_printed_parts -v
 
-The solids are built by ``nav_keytop.py`` and ``knob.py`` (CadQuery).
+The solids are built by ``nav_keytop.py``, ``knob.py`` and ``button_cap.py``
+(CadQuery).
 
 Status: PROVISIONAL printed parts, not released drawings. Assembly-height and
 print-fit inputs are assumptions until the first article is measured; the list
@@ -118,6 +134,17 @@ ENC_SHAFT_FLAT_DEPTH = 0.5
 # The datasheet states one flat washer and one mounting nut are supplied with
 # each encoder. It does not dimension them, so their stack is an ASSUMPTION.
 ENC_SUPPLIED_NUT_AND_WASHER = "one flat washer and one mounting nut supplied (not dimensioned)"
+
+# Omron B3F datasheet (SHA-256 be9cf69e...), B3F-4055.
+# 12 +-0.2 mm square body, 3.8 +-0.1 mm projected plunger, 7.3 +-0.2 mm from the
+# board to the plunger face. The same numbers are carried in lib/layout.ts
+# BUTTON_SWITCH; button_cap() refuses to build when the two disagree.
+B3F_HEIGHT_ABOVE_BOARD = 7.3
+B3F_HEIGHT_TOLERANCE = 0.2
+B3F_BODY_SQUARE = 12.0
+B3F_BODY_SQUARE_TOLERANCE = 0.2
+B3F_PLUNGER_SQUARE = 3.8
+B3F_PLUNGER_SQUARE_TOLERANCE = 0.1
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +325,17 @@ class Circle:
         return self.diameter / 2
 
 
+@dataclass(frozen=True)
+class Rect:
+    """A rectangular panel aperture in panel coordinates (mm)."""
+
+    x: float
+    y: float
+    width: float
+    height: float
+    name: str = ""
+
+
 def aperture(layout: dict, name: str) -> Circle:
     """One panel aperture by name. Never invent the diameter."""
     for entry in layout["panelApertures"]:
@@ -344,8 +382,40 @@ def panel_feature_clearances(layout: dict, centre: tuple[float, float],
 
 
 # ---------------------------------------------------------------------------
-# lib/layout.ts source parse (the display opening and the knob column)
+# lib/layout.ts source parse (display opening, knob column, printed B3F cap)
 # ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ButtonCapLayout:
+    """The printed B3F button-cap block of ``lib/layout.ts``.
+
+    Inputs and derived source values are kept together so ``button_cap()`` can
+    re-derive the whole Z chain from the panel stack and the datasheet and
+    refuse any disagreement. ``implemented`` is the design-status flag: the
+    generator refuses to build while it is false.
+    """
+
+    implemented: bool
+    cutout_square: float
+    square: float
+    locator_square: float
+    locator_depth: float
+    proud_above_panel_front: float
+    underside_z: float
+    locator_floor_z: float
+    rear_face_z: float
+    top_z: float
+    height: float
+    clearance_to_cutout_per_side: float
+    locator_clearance_per_side: float
+    cap_extension_above_switch: float
+    switch_height_above_board: float
+    switch_height_tolerance: float
+    switch_body_square: float
+    switch_body_square_tolerance: float
+    switch_plunger_square: float
+    switch_plunger_square_tolerance: float
+
+
 @dataclass(frozen=True)
 class LayoutSource:
     """The values that only ``lib/layout.ts`` carries, with their cross-checks."""
@@ -360,6 +430,7 @@ class LayoutSource:
     knob_body_diameter: float
     knob_body_diameter_column_x: float
     panel_control_aperture: float
+    button_cap: ButtonCapLayout
 
 
 def _ts_block(source: str, header: str) -> str:
@@ -385,8 +456,30 @@ def _ts_number(text: str, pattern: str, what: str) -> float:
     return float(match.group(1))
 
 
+def _ts_flag(text: str, pattern: str, what: str) -> bool:
+    match = re.search(pattern, text, re.MULTILINE)
+    if match is None:
+        raise GeometryError(
+            f"cannot parse {what} from lib/layout.ts with {pattern!r}; the source "
+            "changed shape, so re-derive the printed-part inputs instead of "
+            "falling back to a stale value")
+    return match.group(1) == "true"
+
+
+def _ts_const_number(text: str, name: str) -> float:
+    """One named numeric top-level ``const`` in ``lib/layout.ts``."""
+    match = re.search(rf"^const\s+{re.escape(name)}\s*=\s*(-?\d+(?:\.\d+)?)",
+                      text, re.MULTILINE)
+    if match is None:
+        raise GeometryError(
+            f"cannot parse const {name} from lib/layout.ts; the printed B3F cap "
+            "reads its clearances from that named constant, so re-derive it "
+            "instead of falling back to a stale number")
+    return float(match.group(1))
+
+
 def parse_layout_ts(source: str) -> LayoutSource:
-    """Parse and cross-check the four layout.ts values the printed parts need.
+    """Parse and cross-check every layout.ts value the printed parts need.
 
     Each value is derived from the source expression AND compared with the
     number the source itself prints in its trailing comment. A silent edit to
@@ -438,6 +531,93 @@ def parse_layout_ts(source: str) -> LayoutSource:
 
     cutouts = _ts_block(source, "export const PANEL_CUTOUTS = {")
     control = _ts_number(cutouts, r"^\s*control:\s*(\d+(?:\.\d+)?),", "PANEL_CUTOUTS.control")
+    button_cutout = _ts_number(
+        cutouts, r"^\s*button:\s*[^\n]*?,\s*//\s*(\d+(?:\.\d+)?)",
+        "PANEL_CUTOUTS.button comment")
+
+    # ---- Printed B3F button cap ----
+    # The part is one geometry printed seven times, so its shape is declared
+    # once in BUTTON_CAP_PRINTED rather than in PRINTED_PARTS (which carries a
+    # single x/y position per part). button_cap() re-derives every plane from
+    # the panel stack and the B3F datasheet and fails when the source comments
+    # disagree, so a typo cannot export a cap of the wrong height.
+    cap = _ts_block(source, "export const BUTTON_CAP_PRINTED = {")
+    reach = _ts_block(source, "export const BUTTON_REACH = {")
+    switch = _ts_block(source, "export const BUTTON_SWITCH = {")
+    button_cap = ButtonCapLayout(
+        implemented=_ts_flag(cap, r"^\s*implemented:\s*(true|false),",
+                             "BUTTON_CAP_PRINTED.implemented"),
+        cutout_square=button_cutout,
+        square=_ts_number(cap, r"^\s*square:\s*[^\n]*?,\s*//\s*(\d+(?:\.\d+)?)",
+                          "BUTTON_CAP_PRINTED.square comment"),
+        locator_square=_ts_number(
+            cap, r"^\s*locatorSquare:\s*[^\n]*?,\s*//\s*(\d+(?:\.\d+)?)",
+            "BUTTON_CAP_PRINTED.locatorSquare comment"),
+        locator_depth=_ts_const_number(source, "BUTTON_CAP_LOCATOR_DEPTH"),
+        proud_above_panel_front=_ts_const_number(
+            source, "BUTTON_CAP_PROUD_ABOVE_PANEL_FRONT"),
+        underside_z=_ts_number(
+            cap, r"undersideZ:\s*BUTTON_SWITCH_TOP_Z,\s*//\s*(\d+(?:\.\d+)?) panel z",
+            "BUTTON_CAP_PRINTED.undersideZ comment"),
+        locator_floor_z=_ts_number(
+            cap, r"locatorFloorZ:\s*BUTTON_SWITCH_TOP_Z,\s*//\s*(\d+(?:\.\d+)?)",
+            "BUTTON_CAP_PRINTED.locatorFloorZ comment"),
+        rear_face_z=_ts_number(
+            cap, r"rearFaceZ:\s*[^\n]*?,\s*//\s*(\d+(?:\.\d+)?)",
+            "BUTTON_CAP_PRINTED.rearFaceZ comment"),
+        top_z=_ts_number(
+            cap, r"topZ:\s*[^\n]*?,\s*//\s*(-?\d+(?:\.\d+)?) panel z",
+            "BUTTON_CAP_PRINTED.topZ comment"),
+        height=_ts_number(cap, r"^\s*height:\s*[^\n]*?,\s*//\s*(\d+(?:\.\d+)?)",
+                          "BUTTON_CAP_PRINTED.height comment"),
+        clearance_to_cutout_per_side=_ts_const_number(
+            source, "BUTTON_CAP_CLEARANCE_TO_CUTOUT_PER_SIDE"),
+        locator_clearance_per_side=_ts_const_number(
+            source, "BUTTON_CAP_LOCATOR_CLEARANCE_PER_SIDE"),
+        cap_extension_above_switch=_ts_number(
+            reach, r"capExtensionAboveSwitch:\s*[^\n]*?,\s*//\s*(\d+(?:\.\d+)?)",
+            "BUTTON_REACH.capExtensionAboveSwitch comment"),
+        switch_height_above_board=_ts_number(
+            switch, r"^\s*heightAboveBoard:\s*(\d+(?:\.\d+)?),",
+            "BUTTON_SWITCH.heightAboveBoard"),
+        switch_height_tolerance=_ts_number(
+            switch, r"^\s*heightTolerance:\s*(\d+(?:\.\d+)?),",
+            "BUTTON_SWITCH.heightTolerance"),
+        switch_body_square=_ts_number(
+            switch, r"^\s*bodySquare:\s*(\d+(?:\.\d+)?),", "BUTTON_SWITCH.bodySquare"),
+        switch_body_square_tolerance=_ts_number(
+            switch, r"^\s*bodySquareTolerance:\s*(\d+(?:\.\d+)?),",
+            "BUTTON_SWITCH.bodySquareTolerance"),
+        switch_plunger_square=_ts_number(
+            switch, r"^\s*plungerSquare:\s*(\d+(?:\.\d+)?),",
+            "BUTTON_SWITCH.plungerSquare"),
+        switch_plunger_square_tolerance=_ts_number(
+            switch, r"^\s*plungerSquareTolerance:\s*(\d+(?:\.\d+)?),",
+            "BUTTON_SWITCH.plungerSquareTolerance"),
+    )
+
+    # The block's own arithmetic: plate = cutout - 2 clearance, locator = plunger
+    # + 2 clearance, rear = floor + depth, height = rear - top. A comment edited
+    # without its expression (or the reverse) fails here, not in the STL.
+    need(abs((button_cap.cutout_square - button_cap.square) / 2
+             - button_cap.clearance_to_cutout_per_side) <= 1e-3,
+         "BUTTON_CAP_PRINTED.clearanceToCutoutPerSide: (cutout - square)/2 gives "
+         f"{(button_cap.cutout_square - button_cap.square) / 2:.3f} mm but the source "
+         f"declares {button_cap.clearance_to_cutout_per_side:.3f} mm")
+    need(abs((button_cap.locator_square - button_cap.switch_plunger_square) / 2
+             - button_cap.locator_clearance_per_side) <= 1e-3,
+         "BUTTON_CAP_PRINTED.locatorClearancePerSide: (locator - plunger)/2 gives "
+         f"{(button_cap.locator_square - button_cap.switch_plunger_square) / 2:.3f} mm "
+         f"but the source declares {button_cap.locator_clearance_per_side:.3f} mm")
+    need(abs((button_cap.underside_z + button_cap.locator_depth)
+             - button_cap.rear_face_z) <= 1e-3,
+         "BUTTON_CAP_PRINTED.rearFaceZ: undersideZ + locatorDepth gives "
+         f"{button_cap.underside_z + button_cap.locator_depth:.3f} mm but the source "
+         f"declares {button_cap.rear_face_z:.3f} mm")
+    need(abs((button_cap.rear_face_z - button_cap.top_z) - button_cap.height) <= 1e-3,
+         "BUTTON_CAP_PRINTED.height: rearFaceZ - topZ gives "
+         f"{button_cap.rear_face_z - button_cap.top_z:.3f} mm but the source declares "
+         f"{button_cap.height:.3f} mm")
 
     return LayoutSource(
         display_centre_x=centre_x,
@@ -450,6 +630,7 @@ def parse_layout_ts(source: str) -> LayoutSource:
         knob_body_diameter=knob_od,
         knob_body_diameter_column_x=knob_od_x,
         panel_control_aperture=control,
+        button_cap=button_cap,
     )
 
 
@@ -1044,6 +1225,349 @@ def describe_knob(k: Knob) -> list[str]:
         f"display opening right edge {k.display_opening_right:.2f} "
         f"[lib/layout.ts]: knob left edge {k.left_edge:.2f}, clearance "
         f"{k.display_clearance:.2f} mm (rule {KNOB_TO_DISPLAY_MIN:.2f})",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Part 3: printed B3F-4055 button cap (SW1-SW7)
+# ---------------------------------------------------------------------------
+def button_apertures(layout: dict, cutout_square: float) -> tuple[Rect, ...]:
+    """Every panel opening that takes the printed B3F cap, in aperture order.
+
+    They are the rectangular ``* BUTTON`` entries in the export. A future panel
+    opening of another size is a contradiction, not something to filter out:
+    every SW1-SW7 cap is the same part.
+    """
+    out: list[Rect] = []
+    for entry in layout["panelApertures"]:
+        name = str(entry.get("name", ""))
+        if entry.get("shape") != "rect" or not name.endswith("BUTTON"):
+            continue
+        width, height = float(entry["width"]), float(entry["height"])
+        need(abs(width - cutout_square) <= EPS_MM and abs(height - cutout_square) <= EPS_MM,
+             f"panel opening {name} is {width:.2f} x {height:.2f} mm but "
+             f"PANEL_CUTOUTS.button is {cutout_square:.2f} mm square: the printed "
+             "cap cannot fit every switch opening")
+        out.append(Rect(float(entry["x"]), float(entry["y"]), width, height, name))
+    return tuple(out)
+
+
+@dataclass(frozen=True)
+class ButtonCap:
+    """B3F-4055 button-cap inputs. Derived planes and fits are properties.
+
+    The part is a flat plate on the switch plunger with a square locator recess
+    in its rear face. It has NO skirt: the 12.25 mm panel opening is only
+    0.125 mm per side larger than the 12.0 mm switch body, so a skirt could not
+    pass the panel and could not be assembled. The same geometry is printed
+    seven times; the seven panel openings are read from the export.
+    """
+
+    stack: PanelStack
+    cutout_square: float
+    switch_height_above_board: float
+    switch_height_tolerance: float
+    switch_body_square: float
+    switch_body_square_tolerance: float
+    plunger_square: float
+    plunger_square_tolerance: float
+    plate_square: float
+    locator_square: float
+    locator_depth: float
+    proud_above_panel_front: float
+    plunger_face_z: float
+    apertures: tuple[Rect, ...]
+
+    @property
+    def count(self) -> int:
+        return len(self.apertures)
+
+    @property
+    def top_z(self) -> float:
+        """The cap's finger face (panel Z)."""
+        return self.stack.panel_front_z - self.proud_above_panel_front
+
+    @property
+    def rear_face_z(self) -> float:
+        """The cap's switch-side face, locatorDepth behind the plunger face."""
+        return self.plunger_face_z + self.locator_depth
+
+    @property
+    def height(self) -> float:
+        return self.rear_face_z - self.top_z
+
+    @property
+    def top_above_board(self) -> float:
+        return self.stack.board_top_z - self.top_z
+
+    @property
+    def switch_top_to_panel_front(self) -> float:
+        """The flush reach the cap must beat to be pressable (mm)."""
+        return self.stack.board_top_z - self.switch_height_above_board - self.stack.panel_front_z
+
+    @property
+    def cap_extension_above_switch(self) -> float:
+        """Cap top above the B3F-4055 plunger face (mm)."""
+        return self.top_above_board - self.switch_height_above_board
+
+    @property
+    def three_term_height(self) -> float:
+        """flush + locator + proud: the derivation the layout test asserts."""
+        return ((self.plunger_face_z - self.stack.panel_front_z)
+                + self.locator_depth + self.proud_above_panel_front)
+
+    @property
+    def clearance_per_side(self) -> float:
+        return (self.cutout_square - self.plate_square) / 2
+
+    @property
+    def locator_clearance_per_side(self) -> float:
+        return (self.locator_square - self.plunger_square) / 2
+
+    @property
+    def recess_wall(self) -> float:
+        return (self.plate_square - self.locator_square) / 2
+
+    @property
+    def plate_above_recess(self) -> float:
+        """Plate material between the recess floor and the cap top (mm)."""
+        return self.plunger_face_z - self.top_z
+
+    @property
+    def volume(self) -> float:
+        """Exact volume of a plain plate minus a plain recess (mm^3)."""
+        return (self.plate_square ** 2 * self.height
+                - self.locator_square ** 2 * self.locator_depth)
+
+    @property
+    def envelope(self) -> "Envelope":
+        """Intended solid envelope, centred on the origin (mm)."""
+        r = self.plate_square / 2
+        return Envelope(x=(-r, r), y=(-r, r), z=(self.top_z, self.rear_face_z))
+
+
+def button_cap(layout: dict | None = None,
+               source: str | LayoutSource | None = None) -> ButtonCap:
+    """Derive the printed B3F cap from the sources. Raises rather than guessing."""
+    data = layout if layout is not None else load_layout()
+    src = source if isinstance(source, LayoutSource) else layout_source(source)
+    stack = panel_stack(data)
+    bc = src.button_cap
+
+    need(bc.implemented,
+         "BUTTON_CAP_PRINTED.implemented is false: the printed B3F cap is still "
+         "design intent in lib/layout.ts, so it must not be exported as a part")
+
+    # The datasheet constants live here and in lib/layout.ts BUTTON_SWITCH. One
+    # spelling, two carriers: a disagreement is a bug, not a tolerance.
+    for name, got, want in (
+        ("heightAboveBoard", bc.switch_height_above_board, B3F_HEIGHT_ABOVE_BOARD),
+        ("heightTolerance", bc.switch_height_tolerance, B3F_HEIGHT_TOLERANCE),
+        ("bodySquare", bc.switch_body_square, B3F_BODY_SQUARE),
+        ("bodySquareTolerance", bc.switch_body_square_tolerance, B3F_BODY_SQUARE_TOLERANCE),
+        ("plungerSquare", bc.switch_plunger_square, B3F_PLUNGER_SQUARE),
+        ("plungerSquareTolerance", bc.switch_plunger_square_tolerance,
+         B3F_PLUNGER_SQUARE_TOLERANCE),
+    ):
+        need(abs(got - want) <= EPS_MM,
+             f"lib/layout.ts BUTTON_SWITCH.{name} is {got} but the B3F datasheet "
+             f"constant in printed_geometry.py is {want}: fix one of them")
+
+    # The cap's plate and locator are DERIVED from the cutout/plunger and the
+    # declared clearances, then compared with the source comments.
+    plate = bc.cutout_square - 2 * bc.clearance_to_cutout_per_side
+    need(abs(plate - bc.square) <= EPS_MM,
+         f"PANEL_CUTOUTS.button {bc.cutout_square:.2f} - 2 x "
+         f"{bc.clearance_to_cutout_per_side:.3f} gives a {plate:.2f} plate but "
+         f"BUTTON_CAP_PRINTED.square documents {bc.square:.2f}")
+    locator = B3F_PLUNGER_SQUARE + 2 * bc.locator_clearance_per_side
+    need(abs(locator - bc.locator_square) <= EPS_MM,
+         f"B3F plunger {B3F_PLUNGER_SQUARE:.2f} + 2 x "
+         f"{bc.locator_clearance_per_side:.3f} gives a {locator:.2f} locator but "
+         f"BUTTON_CAP_PRINTED.locatorSquare documents {bc.locator_square:.2f}")
+
+    plunger_face = stack.board_top_z - B3F_HEIGHT_ABOVE_BOARD
+    top = stack.panel_front_z - bc.proud_above_panel_front
+    rear = plunger_face + bc.locator_depth
+    height = rear - top
+    extension = (stack.board_top_z - top) - B3F_HEIGHT_ABOVE_BOARD
+    for label, derived, declared in (
+        ("undersideZ", plunger_face, bc.underside_z),
+        ("locatorFloorZ", plunger_face, bc.locator_floor_z),
+        ("topZ", top, bc.top_z),
+        ("rearFaceZ", rear, bc.rear_face_z),
+        ("height", height, bc.height),
+        ("capExtensionAboveSwitch", extension, bc.cap_extension_above_switch),
+    ):
+        need(abs(derived - declared) <= EPS_MM,
+             f"BUTTON_CAP_PRINTED.{label} is {declared:.3f} mm but the panel stack "
+             f"({stack.panel_front_z:.2f}/{stack.panel_rear_z:.2f}/{stack.board_top_z:.2f}) "
+             f"and the B3F datasheet ({B3F_HEIGHT_ABOVE_BOARD:.2f} +-"
+             f"{B3F_HEIGHT_TOLERANCE:.2f} above the board) give {derived:.3f} mm: "
+             "update lib/layout.ts or the datasheet constants, they must agree")
+
+    apertures = button_apertures(data, bc.cutout_square)
+    need(len(apertures) == 7,
+         f"expected 7 B3F-4055 button openings (SW1-SW7), found {len(apertures)} "
+         "in mechanical/layout.json: update the printed-cap quantity and BOM "
+         "together, not the geometry")
+
+    return ButtonCap(
+        stack=stack,
+        cutout_square=bc.cutout_square,
+        switch_height_above_board=B3F_HEIGHT_ABOVE_BOARD,
+        switch_height_tolerance=B3F_HEIGHT_TOLERANCE,
+        switch_body_square=B3F_BODY_SQUARE,
+        switch_body_square_tolerance=B3F_BODY_SQUARE_TOLERANCE,
+        plunger_square=B3F_PLUNGER_SQUARE,
+        plunger_square_tolerance=B3F_PLUNGER_SQUARE_TOLERANCE,
+        plate_square=plate,
+        locator_square=locator,
+        locator_depth=bc.locator_depth,
+        proud_above_panel_front=bc.proud_above_panel_front,
+        plunger_face_z=plunger_face,
+        apertures=apertures,
+    )
+
+
+def validate_button_cap(g: ButtonCap, layout: dict | None = None) -> list[str]:
+    """Check every printed B3F cap rule. Returns notices; raises on failure."""
+    notices: list[str] = []
+    data = layout if layout is not None else load_layout()
+
+    # 1. Seven switches, one geometry: every opening is the same 12.25 square.
+    need(g.count == 7,
+         f"expected 7 B3F-4055 button openings (SW1-SW7), found {g.count}")
+    apertures = button_apertures(data, g.cutout_square)
+    need(len(apertures) == g.count,
+         f"mechanical/layout.json has {len(apertures)} button openings but the "
+         f"cap geometry was built for {g.count}")
+    for ap in g.apertures:
+        need(abs(ap.width - g.cutout_square) <= EPS_MM
+             and abs(ap.height - g.cutout_square) <= EPS_MM,
+             f"panel opening {ap.name} is {ap.width:.2f} x {ap.height:.2f} mm, not "
+             f"the {g.cutout_square:.2f} mm square the cap is designed for")
+
+    # 2. The plate must pass the panel cutout and stay inside the switch body.
+    need(g.plate_square < g.cutout_square,
+         f"plate {g.plate_square:.2f} does not fit the {g.cutout_square:.2f} cutout")
+    need(g.clearance_per_side > 0.0,
+         f"plate {g.plate_square:.2f} has no clearance in the "
+         f"{g.cutout_square:.2f} cutout")
+    need(abs(g.plate_square + 2 * g.clearance_per_side - g.cutout_square) <= EPS_MM,
+         f"plate {g.plate_square:.2f} + 2 x {g.clearance_per_side:.3f} is not the "
+         f"{g.cutout_square:.2f} cutout")
+    need(g.plate_square <= g.switch_body_square,
+         f"plate {g.plate_square:.2f} is wider than the "
+         f"{g.switch_body_square:.2f} switch body: the panel cutout is only "
+         "0.125 mm per side larger than the body, so a plate or skirt outside "
+         "the body cannot be assembled")
+
+    # 3. The locator must clear the plunger and leave printable walls.
+    need(g.locator_square > g.plunger_square,
+         f"locator {g.locator_square:.2f} does not clear the "
+         f"{g.plunger_square:.2f} plunger")
+    need(g.locator_clearance_per_side > 0.0,
+         f"locator {g.locator_square:.2f} has no clearance on the "
+         f"{g.plunger_square:.2f} plunger")
+    need(g.recess_wall >= PRINT_MIN_WALL,
+         f"recess wall {g.recess_wall:.2f} mm is under the {PRINT_MIN_WALL} mm rule")
+    need(g.plate_above_recess >= PRINT_MIN_WALL,
+         f"plate above the recess is {g.plate_above_recess:.2f} mm, under the "
+         f"{PRINT_MIN_WALL} mm rule")
+
+    # 4. The recess floor is the plunger face; the cap presses the switch.
+    switch_top = g.stack.board_top_z - g.switch_height_above_board
+    need(abs(g.plunger_face_z - switch_top) <= EPS_MM,
+         f"the recess floor is at Z {g.plunger_face_z:.2f} but the B3F-4055 "
+         f"plunger face is at Z {switch_top:.2f}")
+    need(g.plunger_face_z > g.stack.panel_front_z,
+         "the plunger face is in front of the panel front")
+    need(g.plunger_face_z < g.stack.board_top_z,
+         "the plunger face is behind the front board")
+
+    # 5. The cap must stand PROUD and the part is the three-term sum, not two.
+    need(g.top_z < g.stack.panel_front_z,
+         f"cap top Z {g.top_z:.2f} does not stand proud of the panel front "
+         f"(Z {g.stack.panel_front_z:.2f})")
+    need(g.proud_above_panel_front > 0.0,
+         f"proud height {g.proud_above_panel_front:.2f} mm is not positive")
+    need(g.cap_extension_above_switch >= g.switch_top_to_panel_front - EPS_MM,
+         f"cap top is {g.cap_extension_above_switch:.2f} mm above the switch, "
+         f"under the {g.switch_top_to_panel_front:.2f} mm flush reach: the finger "
+         "would find the cutout, not the cap")
+    need(abs(g.height - g.three_term_height) <= EPS_MM,
+         f"part height {g.height:.2f} mm is not flush + locator + proud "
+         f"({g.three_term_height:.2f} mm): the locator recess makes the part "
+         "taller than the distance it spans")
+    need(g.locator_depth > 0.0,
+         f"locator depth {g.locator_depth:.2f} mm is not positive")
+
+    # 6. Nothing hangs below the cap rear face into the switch body.
+    need(g.rear_face_z > g.plunger_face_z,
+         f"cap rear face Z {g.rear_face_z:.2f} is in front of the plunger face "
+         f"Z {g.plunger_face_z:.2f}: the recess opens the wrong way")
+    need(g.rear_face_z < g.stack.board_top_z,
+         f"cap rear face Z {g.rear_face_z:.2f} reaches the board top "
+         f"Z {g.stack.board_top_z:.2f}")
+    need(abs(g.rear_face_z - (g.plunger_face_z + g.locator_depth)) <= EPS_MM,
+         f"cap rear face Z {g.rear_face_z:.2f} is not the plunger face plus the "
+         f"{g.locator_depth:.2f} locator depth")
+
+    # 7. Physical gates the model cannot settle stay visible.
+    notices.append(
+        f"PROVISIONAL: the {g.locator_depth:.2f} mm locator ring around the recess "
+        f"reaches Z {g.rear_face_z:.2f}, behind the plunger face. The B3F-4055 body "
+        "height below that ring is not carried by the datasheet page this repo "
+        "records (only the 7.3 mm overall height), so the first article must "
+        "confirm the ring clears the switch body at rest and through the press "
+        "travel")
+    notices.append(
+        f"PROVISIONAL: the cap is located by a {g.locator_square:.2f} mm recess on "
+        f"the {g.plunger_square:.2f} +-{g.plunger_square_tolerance:.2f} mm plunger "
+        f"({g.locator_clearance_per_side:.3f} mm per side nominal). There is no snap "
+        "or skirt, so axial retention is the printed fit alone: check that it stays "
+        "on the plunger when the panel is lifted and does not rattle. FDM holes "
+        "usually print undersize - measure before changing the recess")
+    notices.append(
+        f"PROVISIONAL: the cap top is {g.proud_above_panel_front:.2f} mm proud of "
+        f"the panel front by design (Z {g.top_z:.2f}, {g.top_above_board:.2f} above "
+        "the board). `control_actuator` is closed BY DESIGN, not by measurement: "
+        "the first article must record the installed cap height and press travel")
+    notices.append(
+        f"{g.count} off, one per B3F-4055 (SW1-SW7). The printed cap is the "
+        "STANDARD; the bought Omron B32-13x0 is the documented alternative and its "
+        "cap top remains undimensioned. No JLCPCB/SMT BOM row is added for a panel "
+        "accessory")
+    return notices
+
+
+def describe_button_cap(g: ButtonCap) -> list[str]:
+    """The printed B3F cap's dimension table, as printed by the generator."""
+    return [
+        f"panel stack: front Z {g.stack.panel_front_z:.2f}, rear Z "
+        f"{g.stack.panel_rear_z:.2f}, board top Z {g.stack.board_top_z:.2f}",
+        f"button openings: {g.count} x {g.cutout_square:.2f} mm square "
+        "[mechanical/layout.json panelApertures]",
+        f"B3F-4055: body {g.switch_body_square:.2f} +-"
+        f"{g.switch_body_square_tolerance:.2f}, plunger {g.plunger_square:.2f} +-"
+        f"{g.plunger_square_tolerance:.2f}, {g.switch_height_above_board:.2f} +-"
+        f"{g.switch_height_tolerance:.2f} above the board; plunger face Z "
+        f"{g.plunger_face_z:.2f}",
+        f"plate: {g.plate_square:.2f} x {g.plate_square:.2f} x {g.height:.2f} tall "
+        f"(Z {g.top_z:.2f}..{g.rear_face_z:.2f}), {g.proud_above_panel_front:.2f} "
+        f"proud, clearance {g.clearance_per_side:.3f} per side in the "
+        f"{g.cutout_square:.2f} cutout",
+        f"locator: {g.locator_square:.2f} x {g.locator_square:.2f} x "
+        f"{g.locator_depth:.2f} deep, floor Z {g.plunger_face_z:.2f}, rear face Z "
+        f"{g.rear_face_z:.2f}, clearance {g.locator_clearance_per_side:.3f} per "
+        f"side on the {g.plunger_square:.2f} plunger",
+        f"height: {g.three_term_height:.2f} = "
+        f"{g.plunger_face_z - g.stack.panel_front_z:.2f} flush + "
+        f"{g.locator_depth:.2f} locator + {g.proud_above_panel_front:.2f} proud; "
+        f"cap top {g.top_above_board:.2f} above the board = "
+        f"{g.cap_extension_above_switch:.2f} above the switch",
+        f"volume: {g.volume:.1f} mm^3 (plate - locator recess); {g.count} off",
     ]
 
 

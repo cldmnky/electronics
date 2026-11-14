@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the two printed front-panel parts.
+"""Tests for the three printed front-panel parts.
 
 Run from this directory (no CAD needed for anything but the rebuild tests):
 
@@ -8,9 +8,9 @@ Run from this directory (no CAD needed for anything but the rebuild tests):
 
 Each test states the rule it protects. The mutation tests at the bottom take a
 reviewed input - the panel aperture, the ALPS keytop fitting area, the shaft
-flat, the display opening in ``lib/layout.ts`` - and prove that the current
-rules REJECT the wrong value instead of quietly exporting a part that does not
-fit.
+flat, the display opening or the printed B3F cap block in ``lib/layout.ts`` -
+and prove that the current rules REJECT the wrong value instead of quietly
+exporting a part that does not fit.
 """
 from __future__ import annotations
 
@@ -203,6 +203,127 @@ class KnobTest(unittest.TestCase):
         self.assertAlmostEqual(self.k.flute_cutter_radius, 7.4, places=9)
 
 
+def printed_button_cap() -> pg.ButtonCap:
+    return pg.button_cap(layout(), layout_source())
+
+
+class ButtonCapTest(unittest.TestCase):
+    """The printed B3F-4055 button-cap rules (7 off, SW1-SW7)."""
+
+    def setUp(self) -> None:
+        self.data = layout()
+        self.src = layout_source()
+        self.g = printed_button_cap()
+
+    def test_derived_dimensions_match_the_layout_source(self) -> None:
+        bc = self.src.button_cap
+        self.assertTrue(bc.implemented, "lib/layout.ts still marks the cap as intent")
+        self.assertAlmostEqual(self.g.cutout_square, bc.cutout_square, places=9)
+        self.assertAlmostEqual(self.g.plate_square, bc.square, places=9)
+        self.assertAlmostEqual(self.g.locator_square, bc.locator_square, places=9)
+        self.assertAlmostEqual(self.g.locator_depth, bc.locator_depth, places=9)
+        self.assertAlmostEqual(self.g.proud_above_panel_front,
+                               bc.proud_above_panel_front, places=9)
+        self.assertAlmostEqual(self.g.plunger_face_z, bc.underside_z, places=9)
+        self.assertAlmostEqual(self.g.plunger_face_z, bc.locator_floor_z, places=9)
+        self.assertAlmostEqual(self.g.top_z, bc.top_z, places=9)
+        self.assertAlmostEqual(self.g.rear_face_z, bc.rear_face_z, places=9)
+        self.assertAlmostEqual(self.g.height, bc.height, places=9)
+        self.assertAlmostEqual(self.g.cap_extension_above_switch,
+                               bc.cap_extension_above_switch, places=9)
+        self.assertAlmostEqual(self.g.clearance_per_side,
+                               bc.clearance_to_cutout_per_side, places=9)
+        self.assertAlmostEqual(self.g.locator_clearance_per_side,
+                               bc.locator_clearance_per_side, places=9)
+
+    def test_the_part_is_the_designed_plate(self) -> None:
+        self.assertAlmostEqual(self.g.plate_square, 11.8, places=9)
+        self.assertAlmostEqual(self.g.locator_square, 3.85, places=9)
+        self.assertAlmostEqual(self.g.locator_depth, 0.6, places=9)
+        self.assertAlmostEqual(self.g.height, 4.1, places=9)
+        self.assertEqual(self.g.count, 7)
+        # The part is a plain plate minus a plain recess: the analytic volume is
+        # an independent check on the mesh and STEP volumes.
+        self.assertAlmostEqual(
+            self.g.volume,
+            11.8 ** 2 * 4.1 - 3.85 ** 2 * 0.6, places=6)
+
+    def test_plate_clears_the_12_25_cutout(self) -> None:
+        self.assertAlmostEqual(self.g.cutout_square, 12.25, places=9)
+        self.assertAlmostEqual(self.g.clearance_per_side, 0.225, places=9)
+        self.assertAlmostEqual(
+            self.g.plate_square + 2 * self.g.clearance_per_side,
+            self.g.cutout_square, places=9)
+        # No skirt can pass the panel: the plate also fits inside the 12.0 body.
+        self.assertLess(self.g.plate_square, self.g.switch_body_square)
+
+    def test_locator_clears_the_3_8_plunger(self) -> None:
+        self.assertAlmostEqual(self.g.plunger_square, 3.8, places=9)
+        self.assertAlmostEqual(self.g.locator_clearance_per_side, 0.025, places=9)
+        self.assertAlmostEqual(
+            self.g.locator_square,
+            self.g.plunger_square + 2 * self.g.locator_clearance_per_side, places=9)
+
+    def test_top_is_proud_of_the_panel_front(self) -> None:
+        self.assertAlmostEqual(self.g.plunger_face_z, 2.7, places=9)
+        self.assertAlmostEqual(self.g.rear_face_z, 3.3, places=9)
+        self.assertAlmostEqual(self.g.top_z, -0.8, places=9)
+        self.assertAlmostEqual(self.g.proud_above_panel_front, 0.8, places=9)
+        self.assertLess(self.g.top_z, self.g.stack.panel_front_z)
+        self.assertAlmostEqual(self.g.top_above_board, 10.8, places=9)
+        self.assertAlmostEqual(self.g.cap_extension_above_switch, 3.5, places=9)
+        self.assertGreaterEqual(self.g.cap_extension_above_switch,
+                                self.g.switch_top_to_panel_front)
+
+    def test_height_is_the_three_term_sum(self) -> None:
+        self.assertAlmostEqual(self.g.three_term_height, 4.1, places=9)
+        self.assertAlmostEqual(self.g.height, self.g.three_term_height, places=9)
+        self.assertAlmostEqual(
+            self.g.height,
+            self.g.cap_extension_above_switch + self.g.locator_depth, places=9)
+
+    def test_no_geometry_hangs_below_the_plunger_face_beyond_the_locator(self) -> None:
+        # The locator ring is the only material behind the plunger face: the cap
+        # rear face is exactly locatorDepth behind it, and nothing reaches past
+        # that plane into the switch body.
+        self.assertAlmostEqual(
+            self.g.rear_face_z,
+            self.g.plunger_face_z + self.g.locator_depth, places=9)
+        self.assertLess(self.g.rear_face_z, self.g.stack.board_top_z)
+        self.assertAlmostEqual(self.g.envelope.z[0], self.g.top_z, places=9)
+        self.assertAlmostEqual(self.g.envelope.z[1], self.g.rear_face_z, places=9)
+        # The builder's probe set carries the same rule into the solid: every
+        # sample on the switch side of the rear face must be void.
+        import button_cap as builder
+        probes = {name: (want, points) for name, want, points in builder.probe_points(self.g)}
+        self.assertIn("nothing hangs below the cap rear face into the switch", probes)
+        want, points = probes["nothing hangs below the cap rear face into the switch"]
+        self.assertFalse(want)
+        self.assertTrue(points)
+        for _, _, z in points:
+            self.assertGreater(z, self.g.rear_face_z)
+        # ... and nothing exists in the 0.225 mm band outside the plate either:
+        # that is the no-skirt rule the 12.25 mm cutout forces.
+        self.assertIn("no skirt in the cutout clearance band", probes)
+        want, points = probes["no skirt in the cutout clearance band"]
+        self.assertFalse(want)
+        for x, y, _ in points:
+            self.assertTrue(abs(x) > self.g.plate_square / 2
+                            or abs(y) > self.g.plate_square / 2)
+
+    def test_every_button_opening_is_the_same_cutout(self) -> None:
+        self.assertEqual(self.g.count, 7)
+        self.assertEqual({ap.width for ap in self.g.apertures}, {12.25})
+        self.assertEqual({ap.height for ap in self.g.apertures}, {12.25})
+
+    def test_validate_reports_the_provisional_gates(self) -> None:
+        notices = pg.validate_button_cap(self.g, self.data)
+        text = " ".join(notices)
+        self.assertIn("control_actuator", text)
+        self.assertIn("7 off", text)
+        self.assertIn("B32-13x0", text)
+
+
 class MutationTest(unittest.TestCase):
     """The reviewed inputs, warped: every rule below must REJECT the part."""
 
@@ -285,6 +406,65 @@ class MutationTest(unittest.TestCase):
         self.assertTrue(any("STALE EXPORT" in notice for notice in notices))
         self.assertEqual(pg.knob(data, layout_source()), pg.knob(stale, layout_source()),
                          "a stale display position changed the printed knob")
+
+
+class ButtonCapMutationTest(unittest.TestCase):
+    """The printed B3F cap inputs, warped: every rule must REJECT the part."""
+
+    def test_a_plate_wider_than_the_cutout_fails(self) -> None:
+        g = replace(printed_button_cap(), plate_square=12.30)
+        with self.assertRaises(pg.GeometryError) as raised:
+            pg.validate_button_cap(g, layout())
+        self.assertIn("cutout", str(raised.exception))
+
+    def test_a_locator_tighter_than_the_plunger_fails(self) -> None:
+        g = replace(printed_button_cap(), locator_square=3.80)
+        with self.assertRaises(pg.GeometryError) as raised:
+            pg.validate_button_cap(g, layout())
+        self.assertIn("plunger", str(raised.exception))
+
+    def test_a_cap_that_does_not_reach_the_panel_front_fails(self) -> None:
+        g = replace(printed_button_cap(), proud_above_panel_front=-0.1)
+        with self.assertRaises(pg.GeometryError) as raised:
+            pg.validate_button_cap(g, layout())
+        self.assertIn("panel front", str(raised.exception))
+
+    def test_a_cap_that_is_not_on_the_plunger_face_fails(self) -> None:
+        g = replace(printed_button_cap(), plunger_face_z=3.0)
+        with self.assertRaises(pg.GeometryError) as raised:
+            pg.validate_button_cap(g, layout())
+        self.assertIn("plunger face", str(raised.exception))
+
+    def test_a_part_without_the_locator_depth_fails(self) -> None:
+        g = replace(printed_button_cap(), locator_depth=0.0)
+        with self.assertRaises(pg.GeometryError) as raised:
+            pg.validate_button_cap(g, layout())
+        self.assertIn("locator depth", str(raised.exception))
+
+    def test_a_stale_button_opening_fails(self) -> None:
+        stale = layout()
+        for entry in stale["panelApertures"]:
+            if entry.get("name") == "REC BUTTON":
+                entry["width"] = 12.0
+                entry["height"] = 12.0
+        with self.assertRaises(pg.GeometryError) as raised:
+            pg.button_cap(stale, layout_source())
+        self.assertIn("printed cap cannot fit every switch opening",
+                      str(raised.exception))
+
+    def test_a_contradictory_height_comment_fails(self) -> None:
+        text = pg.read_layout_ts().replace("// 4.10", "// 4.20", 1)
+        with self.assertRaises(pg.GeometryError) as raised:
+            pg.parse_layout_ts(text)
+        self.assertIn("height", str(raised.exception))
+
+    def test_a_missing_button_cap_block_fails_loudly(self) -> None:
+        text = pg.read_layout_ts().replace(
+            "export const BUTTON_CAP_PRINTED = {",
+            "export const BUTTON_CAP_PRINTED_RETIRED = {", 1)
+        with self.assertRaises(pg.GeometryError) as raised:
+            pg.parse_layout_ts(text)
+        self.assertIn("BUTTON_CAP_PRINTED", str(raised.exception))
 
 
 class LayoutSourceMutationTest(unittest.TestCase):
@@ -370,6 +550,24 @@ class ArtefactTest(unittest.TestCase):
         self.assertAlmostEqual(report.bbox[0], 45.75, delta=0.01)
         self.assertAlmostEqual(report.bbox[5], -2.7, delta=0.01)
 
+    def test_button_cap_stl_is_one_watertight_shell_of_the_right_size(self) -> None:
+        g = printed_button_cap()
+        report = pg.verify_stl(HERE / "button-cap.stl", g.envelope, volume=g.volume)
+        self.assertEqual(report.shells, 1)
+        self.assertEqual(report.open_edges, 0)
+        self.assertEqual(report.non_manifold_edges, 0)
+        half = g.plate_square / 2
+        self.assertAlmostEqual(report.bbox[0], -half, delta=0.01)
+        self.assertAlmostEqual(report.bbox[1], half, delta=0.01)
+        self.assertAlmostEqual(report.bbox[2], -half, delta=0.01)
+        self.assertAlmostEqual(report.bbox[3], half, delta=0.01)
+        self.assertAlmostEqual(report.bbox[4], g.top_z, delta=0.01)
+        self.assertAlmostEqual(report.bbox[5], g.rear_face_z, delta=0.01)
+        # The recess is small, so the mesh must stay just under the plate's
+        # bounding volume - but not equal to it, which would mean the cut failed.
+        self.assertLess(report.volume, g.plate_square ** 2 * g.height)
+        self.assertGreater(report.volume, 0.9 * g.plate_square ** 2 * g.height)
+
     def test_a_missing_or_foreign_stl_fails_loudly(self) -> None:
         with self.assertRaises(pg.GeometryError):
             pg.inspect_stl(HERE / "no-such-part.stl")
@@ -413,6 +611,11 @@ class RebuildTest(unittest.TestCase):
     def test_rebuilt_knob_matches_the_committed_files(self) -> None:
         report = self.rebuild("knob", knob(), "knob.stl")
         step_volume = pg.verify_step(cq, HERE / "knob.step", report.volume)
+        self.assertAlmostEqual(step_volume, report.volume, delta=0.05)
+
+    def test_rebuilt_button_cap_matches_the_committed_files(self) -> None:
+        report = self.rebuild("button_cap", printed_button_cap(), "button-cap.stl")
+        step_volume = pg.verify_step(cq, HERE / "button-cap.step", report.volume)
         self.assertAlmostEqual(step_volume, report.volume, delta=0.05)
 
 

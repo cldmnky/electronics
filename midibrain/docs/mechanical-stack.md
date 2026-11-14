@@ -33,6 +33,7 @@ This is the current arrangement. It is geometry from `tscircuit/lib/layout.ts`; 
 | MIDI jacks (y −47.5, 12 mm pitch, one block at the left) | x −62 / −50 / −38 / −26 | `MIDI_JACK_X` |
 | MIDI clusters | in1 (−16, −48) in2 (2, −48) out1 (20, −46.1) out2 (38, −46.1) | `MIDI_CLUSTERS` |
 | Button stack vs Omron's reference | **excess 0.00 mm** (10.0 mm board-to-panel-front is Omron's own 10.0 ±0.4) | `BUTTON_STACK` |
+| Button caps (SW1–SW7, 7 off) | **printed cap standard**: 11.80 square plate, 3.85 × 0.60 locator, top Z −0.80 (0.80 proud), part height 4.10; bought B32-13x0 is the documented alternative | `BUTTON_CAP_PRINTED`, `BUTTON_REACH` |
 | Light pipe | the selected PGN25L165 (16.5 mm shaft) is 6.5 mm **too long**; about 9.2 mm is needed and no part is selected | `LIGHT_PIPE_REACH` |
 | Main module installed depth (provisional) | 47.1 mm from the panel front face, 45.5 mm behind the panel back | `provisionalInstalledDepth()` |
 
@@ -67,7 +68,8 @@ The chain is now derived from **one owner number** - the panel front sits 10.0 m
 
 - The 10.0 mm is set by the ordered parts, not by the display: the Thonkiconn WQP419GR body is 8.3 mm plus 4.5 mm of
   M6 × 0.5 bushing thread, so its bushing face lands 12.8 mm above the PCB and the panel rear sits at 8.4 mm; Omron's
-  B32 reference is 10.0 ±0.4 mm from the board to the panel FRONT; the PEC11R M7 thread spans about 6.5…13.5 mm.
+  B32 reference is 10.0 ±0.4 mm from the board to the panel FRONT (the printed cap uses the same 10.0 mm plane and
+  stands 0.80 mm proud of it); the PEC11R M7 thread spans about 6.5…13.5 mm.
 - The display is still assumed to sit with its glass front flush with the panel front face (Z = 0,
   `DISPLAY_GLASS_FRONT_Z`, Assumption A). Nothing has measured this. The vendor model puts its touch/frame forward
   face **1.90 mm in front of the glass front face**, so an illustrative placement with the glass at Z = 0 puts that
@@ -314,36 +316,44 @@ board source, SMT side or stackup is changed for it:
 This needs an owner decision and a PCB revision. Until then the CAD model keeps the current board orientation and
 makes no compliance claim. Recorded in the assumptions file as `board_face_convention`.
 
-## Panel button opening: 12.25 mm square; cap height still unmeasured
+## Panel button opening: 12.25 mm square; printed cap is the standard
 
-Every B3F-4055 button (SW1–SW7) takes an Omron/ARATAS **B32-1380** key top: red,
-12 × 12 mm square, one per switch. The black equivalent is **B32-1310**; the
-Omron page 1 table places the red B32-1380 in the 12 × 12 mm column. Facts from
-the Omron B32 datasheet (SHA-256 `90834f79bcb19ed59fc242f0a005d8ca47fcdbf2f4583bc53695695bb675d28f`,
-re-read 2026-11-12, page 3):
+Every B3F-4055 button (SW1–SW7) takes a **printed cap**, one per switch, seven
+in total. The bought Omron/ARATAS **B32-1380** (red, 12 × 12 mm square) is the
+documented **alternative**; the black equivalent is **B32-1310**. The B32 is no
+longer bought for the standard build because Omron does not dimension its cap
+top, so its seated height was never derivable. The printed cap turns that
+unknown into a number we set: its underside rests on the plunger face and its
+top is placed 0.80 mm proud of the panel front. The part is built by
+`mechanical/printed/button_cap.py`; `mechanical/printed/README.md` carries the
+print and first-article instructions.
+
+Facts from the Omron B32 datasheet (SHA-256
+`90834f79bcb19ed59fc242f0a005d8ca47fcdbf2f4583bc53695695bb675d28f`, re-read
+2026-11-12, page 3) still describe the **alternative**:
 
 | Fact | Value |
 |---|---|
-| Key top | 12 ±0.15 mm square |
+| B32 key top | 12 ±0.15 mm square |
 | **Reference: PC board to the panel FRONT face** | **10.0 ±0.4 mm** |
 | Panel thickness range | 1.0 to 2.0 mm |
 | Reference panel cutout | **12.2 +0.05/0 mm square** |
 | Corner radii | R0.5 on the key top, R0.2 on the skirt |
 
 The 10.0 ±0.4 dimension is **not** a cap height. The reference drawing shows the
-panel's front face 10 mm above the PCB and the cap top just below the panel's
-rear face. With a 1.0–2.0 mm panel that puts the panel rear 8.0–9.0 mm above the
-PCB; Omron does not dimension the cap top, so no exact cap height is claimed
-here. The B3F-4055 datasheet (SHA-256
-`be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f`) is unchanged:
-a square 3.8 ±0.1 mm projected plunger on a 12 ±0.2 mm square body, 7.3 ±0.2 mm
-total switch height.
+panel's front face 10 mm above the PCB and the B32 cap top just below the
+panel's rear face. With a 1.0–2.0 mm panel that puts the panel rear 8.0–9.0 mm
+above the PCB; Omron does not dimension the cap top. The B3F-4055 datasheet
+(SHA-256 `be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f`)
+gives the switch envelope: a square 3.8 ±0.1 mm projected plunger on a
+12 ±0.2 mm square body, 7.3 ±0.2 mm from the board to the plunger face.
 
-**Panel opening.** `PANEL_CUTOUTS.button = 12.25` mm square (sharp corners; the
-cap's R0.5 corners sit inside the square). 12.25 is the top of Omron's
-12.2 +0.05/0 band, so the largest cap (12.15 mm) clears by 0.05 mm per side. The
-1.6 mm panel is inside the 1.0–2.0 mm range. The routed-square tolerance at
-JLCPCB is **not verified**; confirm it before ordering.
+**Panel opening.** `PANEL_CUTOUTS.button = 12.25` mm square (sharp corners).
+12.25 is the top of Omron's 12.2 +0.05/0 band, so the largest B32 cap
+(12.15 mm) clears by 0.05 mm per side. The printed plate is 11.80 mm square and
+clears by **0.225 mm per side**. The 1.6 mm panel is inside the 1.0–2.0 mm
+range. The routed-square tolerance at JLCPCB is **not verified**; confirm it
+before ordering.
 
 **Actuator stack: the board now sits at Omron's reference plane.** Z datum:
 panel front face Z = 0, +Z rearward. The front board top is at Z 10.00
@@ -358,15 +368,53 @@ board-to-panel-rear distance is 8.4 mm.
 | **Stack depth excess vs the reference** | **0.00 mm (±0.4)** |
 | Omron reference panel rear above PCB (1.6 mm panel) | 8.4 mm |
 | Our panel rear above PCB | 8.4 mm |
+| B3F-4055 plunger face (7.3 above board) | Z 2.70 |
+| Printed cap top (0.80 proud of the panel front) | Z −0.80 (10.80 above board) |
+| Printed cap top above the switch | 10.80 − 7.30 = **3.50** |
 
-`BUTTON_STACK.stackDepthExcess` is therefore 0.00 mm: the 9.05 mm shortfall the
-button caps, the jack bushings and the encoder bushing all showed under the
-19.05 mm chain is gone. What that number never covered is still open: Omron does
-not dimension the cap top, so the B32-1380's seated height and the actual
-press travel must be measured on a fitted sample, and the routed-square
-tolerance at JLCPCB is unverified. The `control_actuator` acceptance item stays
-**pending**; do not claim the buttons operate from the panel until the press is
-measured. Recorded as `BUTTON_STACK` in `lib/layout.ts`.
+**The printed cap is a three-term part, not a two-term one.** The plunger sits
+INSIDE a locator recess, so the cap's rear face stops 0.60 mm behind the plunger
+face:
+
+```
+  cap top           Z -0.80   0.80 proud of the panel front
+  panel front       Z  0.00
+  panel rear        Z  1.60
+  recess floor      Z  2.70   = B3F-4055 plunger face (7.30 above the board)
+  cap rear face     Z  3.30   = recess floor + 0.60 locator depth
+
+  part height = 2.70 flush + 0.60 locator + 0.80 proud = 4.10 mm
+  cap top above board = 10.00 + 0.80 = 10.80 mm
+  cap top above switch = 10.80 - 7.30 = 3.50 mm
+```
+
+Deriving the height as flush + proud (3.50) would be the same mistake the 3D
+body made twice: it would put the cap top 0.6 mm below the panel front. The
+four-term cross-check (underside 2.70, rear face 3.30, top −0.80, height 4.10)
+is asserted in `tscircuit/lib/layout.test.ts` and re-derived from the panel stack
+and the B3F datasheet in `mechanical/printed/printed_geometry.py`.
+
+**Why a plate and not a skirt.** The 12.25 mm cutout is only 0.125 mm per side
+larger than the 12.0 ±0.2 mm switch body, so a skirt could not pass the panel
+and could not be assembled. The printed cap is therefore a plate on the
+plunger: 11.80 × 11.80 mm, with a 3.85 × 3.85 × 0.60 mm locator recess opening
+rearward over the 3.80 mm plunger (0.025 mm per side). The aperture centres the
+cap; there is no other guide. Axial retention is the printed fit on the plunger
+alone.
+
+`BUTTON_STACK.stackDepthExcess` is 0.00 mm: the 9.05 mm shortfall the button
+caps, the jack bushings and the encoder bushing all showed under the 19.05 mm
+chain is gone. `control_actuator` is now **closed by design** for the button
+height: the cap's 4.10 mm part and 10.80 mm top are ours to set, not a bought
+part's undimensioned property. It is **not yet closed by measurement**: the
+first article must record (a) the installed cap height and press travel, (b)
+the printed locator fit and whether a cap stays on its plunger when the panel is
+lifted, (c) the 0.60 mm locator ring's clearance to the body top at rest and at
+full travel (the datasheet page recorded here gives the 7.3 mm overall height,
+not the body top), and (d) the routed 12.25 mm square's real size. If the bought
+B32 alternative is used instead, its seated height and press travel are still
+unmeasured. Recorded as `BUTTON_CAP_PRINTED` and `BUTTON_REACH` in
+`lib/layout.ts`.
 
 ## Board-to-board relationship
 

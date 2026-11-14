@@ -643,7 +643,7 @@ export const DISPLAY_GLASS_FRONT_Z = 0 as const // Assumption A, not a measureme
 // front face: 0.00 + 10.05 = 10.05 display PCB rear, + 4.00 = 14.05 rear-most.
 // Owner decision 2026-11-13: the panel front sits 10.0 mm above the front
 // board's top face, because that is where the ordered Thonkiconn jacks, the
-// B3F-4055 + B32 caps (Omron reference 10.0 +- 0.4) and the PEC11R bushings all
+// B3F-4055 + printed caps (B32 reference 10.0 +- 0.4) and the PEC11R bushings all
 // put it. The chain below is derived from that ONE number, not the other way
 // round: the display used to set it (assumptions A and B), which left every
 // panel control 8.5-10.5 mm short.
@@ -1478,12 +1478,15 @@ export const FRONT_CONCEPT: readonly FrontConceptPoint[] = [
   ...FRONT_COLUMNS.map(c => ({ id: c.jack, x: midiJackX(c.jack), y: JACK_Y, kind: "jack" as const })),
 ]
 
-// ---- Button key top: Omron/ARATAS B32-1380 (red) on the B3F-4055 ----
-// Dimensions as printed on the Omron B32 datasheet, page 3 (B32-13x0 drawing),
-// tolerance +/-0.4 unless stated. The B32-1380 is the RED 12 x 12 mm square key
-// top; the black 12 x 12 mm equivalent is B32-1310 (page 1 table). The 10.0 mm
-// reference dimension is from the PC BOARD to the PANEL FRONT FACE, not to the
-// cap top: the drawing shows the cap top just below the panel's rear face.
+// ---- Button key top: printed cap STANDARD, Omron/ARATAS B32-1380 alternative ----
+// The standard key top for SW1-SW7 is the printed cap designed in
+// BUTTON_CAP_PRINTED below. The bought B32-13x0 remains the documented
+// alternative, and the facts below are its Omron B32 datasheet, page 3
+// (B32-13x0 drawing), tolerance +/-0.4 unless stated. The B32-1380 is the RED
+// 12 x 12 mm square key top; the black 12 x 12 mm equivalent is B32-1310 (page
+// 1 table). The 10.0 mm reference dimension is from the PC BOARD to the PANEL
+// FRONT FACE, not to the cap top: the drawing shows the B32 cap top just below
+// the panel's rear face.
 export const BUTTON_CAP = {
   part: "Omron/ARATAS B32-1380",
   colour: "red",
@@ -1500,11 +1503,12 @@ export const BUTTON_CAP = {
 
 // The CURRENT stack compared with Omron's reference. Z datum: the panel front
 // face is Z = 0, +Z rearward (docs/mechanical-stack.md). The switch stands on
-// the front board's top face (PROVISIONAL_Z.frontBoardTop = 19.05). Omron's
-// reference puts the panel front 10.0 +/-0.4 mm above the PCB; our board sits
-// 19.05 mm behind it, so the stack is 9.05 mm deeper than the reference. The
-// cap top is NOT dimensioned in the drawing, so a fitted extension must be
-// measured on a sample: do not convert 10.0 mm into a cap height here.
+// the front board's top face (PROVISIONAL_Z.frontBoardTop = 10.0). Omron's
+// reference puts the panel front 10.0 +/-0.4 mm above the PCB, so the panel sits
+// at Omron's own reference plane. The B32 cap top is NOT dimensioned in that
+// drawing, which is why the printed cap is the standard: its top is ours to set
+// in BUTTON_CAP_PRINTED below. A bought B32-13x0 is the documented alternative
+// and its seated height must still be measured if it is used.
 export const BUTTON_STACK = {
   omronReferencePanelFrontZ: mm3(PROVISIONAL_Z.frontBoardTop - BUTTON_CAP.referenceBoardToPanelFront),
   panelFrontZ: PROVISIONAL_Z.panelFront,
@@ -1513,28 +1517,36 @@ export const BUTTON_STACK = {
   stackDepthExcessTolerance: BUTTON_CAP.referenceBoardToPanelFrontTolerance,
 } as const
 
-// B3F-4055 overall height above the board, from its datasheet (the same
+// B3F-4055 overall envelope above the board, from its datasheet (the same
 // document whose SHA-256 is recorded for the cap): a square 3.8 +-0.1 mm
 // projected plunger on a 12 +-0.2 mm body, 7.3 +-0.2 mm total. Needed to place
 // the key-top body in 3D: the cap sits on this face, and Omron does NOT
-// dimension the cap top (see BUTTON_CAP).
+// dimension the B32 cap top (see BUTTON_CAP). The body and plunger squares are
+// carried here as well, because the printed cap's locator and its no-skirt
+// shape are derived from them.
 export const BUTTON_SWITCH = {
   part: "Omron B3F-4055",
   heightAboveBoard: 7.3,
   heightTolerance: 0.2,
+  bodySquare: 12.0,
+  bodySquareTolerance: 0.2,
+  plungerSquare: 3.8,
+  plungerSquareTolerance: 0.1,
   source: "Omron B3F datasheet, SHA-256 be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f",
 } as const
 
 // Panel z of the switch's plunger face - sourced, so it stays: the B3F-4055 is
-// 7.3 +-0.2 mm above the board. What is NOT known is where the B32 key top ends.
-// Omron does not dimension the cap top, and the reference 10.0 +-0.4 mm is
-// board-to-PANEL-FRONT, not board-to-cap-top. Drawing a cap body therefore means
-// inventing its height, which this repo does not do: two attempts (1.1 mm to the
-// panel rear, 2.7 mm to the panel front) gave two different renders and neither
-// is measured. The open item is `control_actuator` - cap top measured on a real
-// sample - and until it is closed the cap is NOT modelled in 3D. The vendor B3F
-// model already carries its own actuator, so the switch still renders.
+// 7.3 +-0.2 mm above the board. The B32 cap top is not dimensioned, but the
+// printed cap's top IS ours to set from the fit (BUTTON_CAP_PRINTED below), so
+// the cap is now a real printed part: mechanical/printed/button_cap.py builds
+// button-cap.stl/.step and the printed-part tests re-derive these numbers.
+// `control_actuator` is closed BY DESIGN and still needs first-article
+// confirmation. The vendor B3F model already carries its own actuator, so the
+// switch still renders.
 export const BUTTON_SWITCH_TOP_Z = mm3(PROVISIONAL_Z.frontBoardTop - BUTTON_SWITCH.heightAboveBoard) // 2.70
+
+// The printed cap's plate stands this far PROUD of the panel front.
+const BUTTON_CAP_PROUD_ABOVE_PANEL_FRONT = 0.8
 
 // A press part only counts as reaching the panel if its top gets PAST the rear
 // face - flush with the FRONT face at minimum. This is the test the B32 caps kept
@@ -1543,37 +1555,48 @@ export const BUTTON_REACH = {
   switchTopAboveBoard: BUTTON_SWITCH.heightAboveBoard,                                     // 7.30
   switchTopToPanelRear: mm3(JACK_CLAMPED_GAP - BUTTON_SWITCH.heightAboveBoard),             // 1.10
   switchTopToPanelFront: mm3(PANEL_STACK.boardToPanelFront - BUTTON_SWITCH.heightAboveBoard), // 2.70
-  // OPEN: cap top above the B3F-4055 body, measured on a fitted B32-13x0
-  // (`control_actuator` in the mechanical research). Omron does not dimension the
-  // cap top, so this cannot be derived - only measured. It must be >=
-  // switchTopToPanelFront to stand flush with the panel front, and > it to stand
-  // proud; anything less lands the cap INSIDE the 12.25 mm cutout.
-  capExtensionAboveSwitch: null as number | null,
+  // BY DESIGN for the printed cap, which is now the STANDARD for SW1-SW7:
+  // 10.80 above the board (panel front + 0.80) minus the 7.30 plunger face.
+  // This is the cap TOP above the switch, not the part height: the locator
+  // recess makes the part 4.10 tall (see BUTTON_CAP_PRINTED). A bought B32-13x0
+  // is the documented alternative and is NOT measured, so this is not its height.
+  capExtensionAboveSwitch: mm3(PANEL_STACK.boardToPanelFront - BUTTON_SWITCH.heightAboveBoard + BUTTON_CAP_PROUD_ABOVE_PANEL_FRONT), // 3.50
 } as const
 
-// Owner option 2026-11-13: print our own caps instead of buying B32-13x0s.
-// Printing removes the whole measurement problem, because the height stops being
-// a property of a bought part and becomes ours to set from the fit:
+// The 12.25 mm square panel opening is both the B32 reference cutout's top of
+// band and the printed cap's assembly clearance. It is declared once here so the
+// panel aperture and BUTTON_CAP_PRINTED's plate size cannot drift apart.
+const BUTTON_PANEL_CUTOUT_SQUARE = 12.25
+const BUTTON_CAP_CLEARANCE_TO_CUTOUT_PER_SIDE = 0.225
+const BUTTON_CAP_LOCATOR_DEPTH = 0.6
+const BUTTON_CAP_LOCATOR_CLEARANCE_PER_SIDE = 0.025
+
+// Owner option 2026-11-13, now the STANDARD: print our own caps instead of
+// buying B32-13x0s. Printing removes the whole measurement problem, because the
+// height stops being a property of a bought part and becomes ours to set from
+// the fit:
 //
 //   plate underside  = 7.30  the B3F-4055 plunger face (so the cap rests ON the
 //                            plunger and presses it, which a bought cap does too)
 //   plate top        = 10.80 panel front + 0.80 proud, so the finger meets cap
-//   plate height     =  3.50 = BUTTON_REACH.switchTopToPanelFront + proud
 //   plate size       = 11.80 x 11.80, 0.225 per side inside the 12.25 cutout
 //   locator          = 3.85 x 3.85 x 0.60 recess in the underside over the
 //                      3.80 plunger, 0.025 per side
+//   part height      = 2.70 flush + 0.60 locator + 0.80 proud = 4.10
 //
-// Those are design INTENT, not measurements, which is why they are a separate
-// block and why `implemented` is false: the part has to be modelled, printed and
-// measured before it can close `control_actuator`. The shape is forced by the
-// cutout and not chosen - the 12.25 aperture is only 0.125 per side larger than
-// the 12.0 +-0.2 switch body, so NO skirt can reach down past the plunger face:
-// a printed cap is necessarily a plate on the plunger, guided by the aperture.
+// The part is IMPLEMENTED in mechanical/printed/button_cap.py (CadQuery),
+// exported as button-cap.stl/.step and re-derived by
+// mechanical/printed/test_printed_parts.py. It is still PROVISIONAL until the
+// first article measures the fit: that measurement is what confirms
+// `control_actuator`. The shape is forced by the cutout and not chosen - the
+// 12.25 aperture is only 0.125 per side larger than the 12.0 +-0.2 switch body,
+// so NO skirt can reach down past the plunger face: a printed cap is necessarily
+// a plate on the plunger, guided by the aperture.
 export const BUTTON_CAP_PRINTED = {
-  implemented: false,
-  undersideZ: BUTTON_SWITCH_TOP_Z,                                   // 7.30 relative: 2.70 panel z
-  proudAbovePanelFront: 0.8,
-  topZ: mm3(PROVISIONAL_Z.panelFront - 0.8),                         // -0.80 panel z = 10.80 above board
+  implemented: true,
+  undersideZ: BUTTON_SWITCH_TOP_Z,                                   // 2.70 panel z = the plunger face
+  proudAbovePanelFront: BUTTON_CAP_PROUD_ABOVE_PANEL_FRONT,
+  topZ: mm3(PROVISIONAL_Z.panelFront - BUTTON_CAP_PROUD_ABOVE_PANEL_FRONT), // -0.80 panel z = 10.80 above board
   // The locator recess makes the PART taller than the distance it has to span:
   // the plunger sits INSIDE the recess, so the cap's rear face stops
   // locatorDepth behind the plunger face. Height is therefore flush + locator +
@@ -1581,26 +1604,29 @@ export const BUTTON_CAP_PRINTED = {
   // wrong puts the cap 0.6 mm below the panel front - the identical mistake the
   // 3D body made twice, so it is derived here instead of typed.
   locatorFloorZ: BUTTON_SWITCH_TOP_Z,                                // 2.70, on the plunger face
-  rearFaceZ: mm3(BUTTON_SWITCH_TOP_Z + 0.6),                         // 3.30, 0.6 behind it
-  height: mm3(BUTTON_SWITCH_TOP_Z + 0.6 - (PROVISIONAL_Z.panelFront - 0.8)), // 4.10
-  square: 11.8,
-  locatorSquare: 3.85,
-  locatorDepth: 0.6,
-  clearanceToCutoutPerSide: mm3((12.25 - 11.8) / 2),                 // 0.225
+  rearFaceZ: mm3(BUTTON_SWITCH_TOP_Z + BUTTON_CAP_LOCATOR_DEPTH),    // 3.30, locatorDepth behind it
+  height: mm3(BUTTON_SWITCH_TOP_Z + BUTTON_CAP_LOCATOR_DEPTH - (PROVISIONAL_Z.panelFront - BUTTON_CAP_PROUD_ABOVE_PANEL_FRONT)), // 4.10
+  square: mm3(BUTTON_PANEL_CUTOUT_SQUARE - 2 * BUTTON_CAP_CLEARANCE_TO_CUTOUT_PER_SIDE), // 11.80
+  locatorSquare: mm3(BUTTON_SWITCH.plungerSquare + 2 * BUTTON_CAP_LOCATOR_CLEARANCE_PER_SIDE), // 3.85
+  locatorDepth: BUTTON_CAP_LOCATOR_DEPTH,
+  clearanceToCutoutPerSide: BUTTON_CAP_CLEARANCE_TO_CUTOUT_PER_SIDE, // 0.225
   material: "PLA/PETG print, solid; first article must be measured",
 } as const
 
 // ---- Panel openings (front FR-4 panel) ----
 export const PANEL_CUTOUTS = {
-  // B3F-4055 buttons take an Omron/ARATAS B32 SQUARE key top, 12 x 12 mm
-  // (B32-13x0). Omron's reference panel cutout for it is 12.2 +0.05/-0 mm square
-  // (B32 datasheet en-b32.pdf, SHA-256 90834f79..., page 3). 12.25 mm is the top
-  // of that band, so the largest cap (12 +0.15 = 12.15 mm) clears by 0.05 mm per
-  // side. The 1.6 mm panel is inside Omron's 1.0-2.0 mm panel range. The square
-  // is a routed cut: confirm JLCPCB's routed tolerance before ordering. THE CAP
-  // DOES NOT MATCH Omron's reference stack: see BUTTON_STACK below.
+  // B3F-4055 buttons take a 12 x 12 mm key top. The STANDARD is the printed cap
+  // in BUTTON_CAP_PRINTED (11.80 square); a bought Omron/ARATAS B32-13x0 is the
+  // documented alternative. Omron's reference panel cutout for the B32 is
+  // 12.2 +0.05/-0 mm square (B32 datasheet en-b32.pdf, SHA-256 90834f79...,
+  // page 3). 12.25 mm is the top of that band, so the largest B32 cap
+  // (12 +0.15 = 12.15 mm) clears by 0.05 mm per side and the printed plate
+  // clears by 0.225 mm per side. The 1.6 mm panel is inside Omron's 1.0-2.0 mm
+  // panel range. The square is a routed cut: confirm JLCPCB's routed tolerance
+  // before ordering. THE CAP DOES NOT MATCH Omron's reference stack: see
+  // BUTTON_STACK below.
   // Opening side length, mm (square).
-  button: 12.25,
+  button: BUTTON_PANEL_CUTOUT_SQUARE, // 12.25
   // 2.6 is the owner-approved PROVISIONAL mounting hole for the candidate
   // Signal Construct PGN25L165 (manufacturer drawing, SHA-256 5350ad1f...:
   // mounting hole Ø2.6 -0.05 mm, i.e. 2.55-2.60). It is NOT a fit approval and
