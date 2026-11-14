@@ -125,11 +125,13 @@ const maleShroudEnvelope = (() => {
   return {
     type: "union",
     shapes: [
-      maleSlab(INTERCONNECT_MALE_W, len, baseH, [0, 0, z0 + baseH / 2]),
-      maleSlab(INTERCONNECT_MALE_WALL, len, wallH, [-INTERCONNECT_MALE_W / 2 + INTERCONNECT_MALE_WALL / 2, 0, z0 + baseH + wallH / 2]),
-      maleSlab(INTERCONNECT_MALE_WALL, len, wallH, [INTERCONNECT_MALE_W / 2 - INTERCONNECT_MALE_WALL / 2, 0, z0 + baseH + wallH / 2]),
-      maleSlab(innerW, INTERCONNECT_MALE_WALL, wallH, [0, -len / 2 + INTERCONNECT_MALE_WALL / 2, z0 + baseH + wallH / 2]),
-      maleSlab(innerW, INTERCONNECT_MALE_WALL, wallH, [0, len / 2 - INTERCONNECT_MALE_WALL / 2, z0 + baseH + wallH / 2]),
+      // 13-position axis along LOCAL X, for the same reason as the front board's
+      // socket: the 90 deg rotation carries it to global Y, where the pins step.
+      maleSlab(len, INTERCONNECT_MALE_W, baseH, [0, 0, z0 + baseH / 2]),
+      maleSlab(len, INTERCONNECT_MALE_WALL, wallH, [0, -INTERCONNECT_MALE_W / 2 + INTERCONNECT_MALE_WALL / 2, z0 + baseH + wallH / 2]),
+      maleSlab(len, INTERCONNECT_MALE_WALL, wallH, [0, INTERCONNECT_MALE_W / 2 - INTERCONNECT_MALE_WALL / 2, z0 + baseH + wallH / 2]),
+      maleSlab(INTERCONNECT_MALE_WALL, innerW, wallH, [-len / 2 + INTERCONNECT_MALE_WALL / 2, 0, z0 + baseH + wallH / 2]),
+      maleSlab(INTERCONNECT_MALE_WALL, innerW, wallH, [len / 2 - INTERCONNECT_MALE_WALL / 2, 0, z0 + baseH + wallH / 2]),
     ],
   }
 })()

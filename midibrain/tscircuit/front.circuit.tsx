@@ -371,11 +371,15 @@ const femaleSocketEnvelope = (() => {
   return {
     type: "union",
     shapes: [
-      interconnectSlab(INTERCONNECT_FEMALE_W, len, baseH, [0, 0, top + baseH / 2]),
-      interconnectSlab(INTERCONNECT_WALL, len, wallH, [-INTERCONNECT_FEMALE_W / 2 + INTERCONNECT_WALL / 2, 0, top + baseH + wallH / 2]),
-      interconnectSlab(INTERCONNECT_WALL, len, wallH, [INTERCONNECT_FEMALE_W / 2 - INTERCONNECT_WALL / 2, 0, top + baseH + wallH / 2]),
-      interconnectSlab(innerW, INTERCONNECT_WALL, wallH, [0, -len / 2 + INTERCONNECT_WALL / 2, top + baseH + wallH / 2]),
-      interconnectSlab(innerW, INTERCONNECT_WALL, wallH, [0, len / 2 - INTERCONNECT_WALL / 2, top + baseH + wallH / 2]),
+      // 13-position axis along LOCAL X: the part is placed with the connector's
+      // 90 deg rotation, which carries X to GLOBAL Y - and Y is where the pins
+      // actually step (2.54 apart in Y, the two rows differing in X, measured on
+      // the built J5 pads). Built along local Y it lay across the board.
+      interconnectSlab(len, INTERCONNECT_FEMALE_W, baseH, [0, 0, top + baseH / 2]),
+      interconnectSlab(len, INTERCONNECT_WALL, wallH, [0, -INTERCONNECT_FEMALE_W / 2 + INTERCONNECT_WALL / 2, top + baseH + wallH / 2]),
+      interconnectSlab(len, INTERCONNECT_WALL, wallH, [0, INTERCONNECT_FEMALE_W / 2 - INTERCONNECT_WALL / 2, top + baseH + wallH / 2]),
+      interconnectSlab(INTERCONNECT_WALL, innerW, wallH, [-len / 2 + INTERCONNECT_WALL / 2, 0, top + baseH + wallH / 2]),
+      interconnectSlab(INTERCONNECT_WALL, innerW, wallH, [len / 2 - INTERCONNECT_WALL / 2, 0, top + baseH + wallH / 2]),
     ],
   }
 })()
