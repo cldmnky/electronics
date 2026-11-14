@@ -87,7 +87,7 @@ mechanical:
 	@if [ -f tscircuit/scripts/export-mechanical.ts ] && [ -d mechanical ]; then \
 	  export MIDIBRAIN_BUNX="$$(command -v $(BUN) 2>/dev/null || printf '%s' '$(BUN)')"; \
 	  cd tscircuit && $(BUN) run scripts/export-mechanical.ts --check && cd .. && \
-	  ( cd mechanical/printed && $(PYTHON) -m unittest test_printed_parts ) && \
+	  ( cd mechanical/printed && $(PYTHON) -m unittest test_printed_parts test_nav_fit ) && \
 	  $(PYTHON) -m unittest discover -s mechanical -p 'test_*.py'; \
 	else \
 	  echo "PENDING: the mechanical bridge (tscircuit/scripts/export-mechanical.ts,"; \

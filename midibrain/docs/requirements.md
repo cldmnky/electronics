@@ -7,7 +7,7 @@
   The front/UI PCB is **150 × 112 mm** (U-shaped, with the display opening through
   its top edge); the rear/base PCB is **148 × 112 mm**; the Pi mounting panel is
   101.2 × 128.5 mm; installed depth target ≤110 mm per module. The panel front sits
-  **10.0 mm** above the front board's top face (owner decision 2026-11-13). CAD top faces the panel and the rear faces the rack
+  **10.6 mm** above the front board's top face (owner-directed, provisional; introduced at 10.0 on 2026-11-13). CAD top faces the panel and the rear faces the rack
   cavity. The 30HP panel width (which replaced 32HP on 2026-11-08) and the knob-column move (47 → 52 mm) are owner decisions
   recorded in [decisions.md](decisions.md).
 - Removable Raspberry Pi 5, mechanically supported through its mounting holes

@@ -45,8 +45,8 @@
       "overallDepth": 14.05,
       "glassFrontToPcbRear": 10.05,
       "bossProjection": 4,
-      "planeSeparation": 12.75,
-      "spacerLength": 8.75,
+      "planeSeparation": 13.35,
+      "spacerLength": 9.35,
       "holeDiameter": 4.3
     }
   },
@@ -59,8 +59,8 @@
     "firstArticlePending": true
   },
   "displayStandoff": {
-    "planeSeparation": 12.75,
-    "spacerLength": 8.75
+    "planeSeparation": 13.35,
+    "spacerLength": 9.35
   },
   "provisionalZ": {
     "panelFront": 0,
@@ -68,10 +68,10 @@
     "displayGlassFront": 0,
     "displayPcbRear": 10.05,
     "displayRearMost": 14.05,
-    "frontBoardTop": 10,
-    "frontBoardRear": 11.6,
-    "rearBoardFront": 22.8,
-    "rearBoardRear": 24.4
+    "frontBoardTop": 10.6,
+    "frontBoardRear": 12.2,
+    "rearBoardFront": 23.4,
+    "rearBoardRear": 25
   },
   "printedParts": {
     "navKeytop": {
@@ -87,7 +87,7 @@
       "socketBore": 3.2,
       "socketDepth": 1.5,
       "zFront": -4,
-      "zRear": 6.35
+      "zRear": 6.95
     },
     "knob": {
       "part": "Bourns PEC11R-4015F-S0024 value knob",
@@ -101,7 +101,7 @@
       "zFront": -18.7
     }
   },
-  "displayUndersideGap": -4.05,
+  "displayUndersideGap": -3.45,
   "frontTopSmdMaxHeight": {
     "part": "MIDI receiver, Toshiba 11-4L1S body",
     "height": 2.2,
@@ -132,10 +132,10 @@
     "overallLength": 17.5,
     "headHeight": 1,
     "nominalTipZ": 16.5,
-    "boardNearFaceZ": 10,
-    "nominalTipToBoardPlane": -6.5,
+    "boardNearFaceZ": 10.6,
+    "nominalTipToBoardPlane": -5.9,
     "opticalGap": null,
-    "requiredShaftLength": 9.2,
+    "requiredShaftLength": 9.8,
     "status": "incomplete - the selected part is too long for this stack",
     "missing": [
       "LED body height above the front-board top face",
@@ -144,7 +144,7 @@
       "brightness and optical coupling"
     ]
   },
-  "panelToFrontBoardGap": 8.4,
+  "panelToFrontBoardGap": 9,
   "depthTarget": 110,
   "provisionalDepth": {
     "frontToRearGap": 11.2,

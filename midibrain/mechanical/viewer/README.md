@@ -36,7 +36,8 @@ the real heights.
 - So each model carries `scaleY = -1` and `positionY = T + 0.8`, where `T` is
   that board's TOP face in the panel frame, straight out of
   `mechanical/layout.json` `provisionalZ` (panel front 0, +z rearward). Result:
-  panel 0.00…1.60, front board 10.00…11.60, rear board 22.80…24.40.
+  panel 0.00…1.60, front board **10.60…12.20**, rear board **23.40…25.00**
+  (owner-directed 10.6 mm panel front, provisional).
 - The vendor display (Waveshare) is in its **own** frame and its STEP also
   carries non-solid construction geometry (raw points reach x = 106 where the
   solid envelope is 106.1 wide), so it cannot be placed by centre arithmetic.
@@ -101,10 +102,10 @@ Boxes for the parts with no STEP, using the heights in
 | Box | Size (x × y × z, mm) | z0 (panel front = 0) | Source |
 | --- | --- | --- | --- |
 | panel | 152.0 × 128.5 × 1.6 | 0.00 | `PANEL` (30HP, 152.0 actual) |
-| front board | 150.0 × 112.0 × 1.6 | 10.00 | `FRONT_PCB`, `PROVISIONAL_Z.frontBoardTop` |
-| rear board | 148.0 × 112.0 × 1.6 | 22.80 | `REAR_PCB`, `PROVISIONAL_Z.rearBoardFront` |
+| front board | 150.0 × 112.0 × 1.6 | **10.60** | `FRONT_PCB`, `PROVISIONAL_Z.frontBoardTop` |
+| rear board | 148.0 × 112.0 × 1.6 | **23.40** | `REAR_PCB`, `PROVISIONAL_Z.rearBoardFront` |
 | stereo jack (×4) | 10.0 × 12.73 × 15.5 | 0.00 | PJ366ST STEP bounding box |
-| button + cap (×7) | 12.0 × 12.0 × 10.0 | 0.00 | Omron B32/B3F reference, 10.0 ±0.4 board→panel front |
+| button + cap (×7) | 12.0 × 12.0 × 10.0 | 0.00 | Omron B32/B3F reference box. **Verified**: `10.0 ±0.4` is PCB top → **cap top**, so a bought B32 top sits 0.60 mm behind our panel front; the printed cap's own height is `BUTTON_CAP_PRINTED` (4.70, top 0.80 proud) |
 
 (The 128 mm / 17.45 mm figures that used to be here were the pre-respin stack;
 `mechanical-steps` above is the accurate route now that the boards export.)

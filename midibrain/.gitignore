@@ -30,3 +30,15 @@ mechanical/viewer/node_modules/
 mechanical/viewer/models.json
 # CWD dropping from `tsci check` (writes <entry>.circuit.json beside the source)
 *.circuit.circuit.json
+
+# The six committed printed-part artefacts are the exception to the *.stl/*.step
+# rule above: the printed-part tests re-read these exact files, so a checkout
+# without them cannot run the artefact and rebuild checks. The negation rules
+# keep them VISIBLE to git (an unstaged one shows in `git status` instead of
+# being silently ignored). Prototypes and fit specimens stay generated on demand.
+!mechanical/printed/nav-keytop.stl
+!mechanical/printed/nav-keytop.step
+!mechanical/printed/knob.stl
+!mechanical/printed/knob.step
+!mechanical/printed/button-cap.stl
+!mechanical/printed/button-cap.step

@@ -21,10 +21,13 @@ holds files it does not write):
     midibrain-pi-panel.step        the 20HP Pi mounting panel and a placeholder
                                    Pi 5 board behind it (its own frame)
     mockup-pi-panel.stl            1:1 Pi mounting panel mockup
-    light-pipe-reach-gauge.stl     19.05 / 16.5 mm same-datum step gauge:
-                                   provisional board near face and the nominal
-                                   PGN25L165 tip plane; the 2.55 mm step is NOT
-                                   an LED gap and NOT a fit (see below)
+    light-pipe-reach-gauge.stl     same-datum step gauge on the two NOMINAL
+                                   planes: the PGN25L165 tip (16.5 mm) and the
+                                   provisional board face (10.6 mm), in either
+                                   order - tall 16.5, low 10.6, step 5.9 and the
+                                   SIGNED board-minus-tip -5.9 (the tip plane lies
+                                   behind the board face). NOT an LED gap and NOT
+                                   a fit (see reach_gauge_dimensions)
     assumptions.json               provenance, unknowns and pair verdicts
     print-checklist.md             the physical print check
 
@@ -521,6 +524,283 @@ def boss_at(shape, axis: tuple[float, float]) -> tuple[float, float, float, floa
     return (best[1], best[2], best[3], best[4])
 
 
+# ---------------------------------------------------------------------------
+# Canonical panel features: 20 apertures + 10 drills, checked by IDENTITY
+# ---------------------------------------------------------------------------
+# The panel model cuts exactly the features the panel BOARD emits, in the same
+# order: PANEL_APERTURES (20) and PANEL_DRILLS (10 = the six feedthrough screw
+# holes plus the four RACK fixings). The two tuples below are the EXPECTED
+# IDENTITIES, written out rather than counted, so a dropped, duplicated, renamed
+# or re-shaped feature fails here instead of quietly shrinking the model.
+#
+# 2026-11-14: the four STAND_ standoff drills are gone from the canonical data -
+# the owner removed the panel standoffs together with the board mounting holes -
+# so 20 + 10 = 30 features is the current set. The earlier 20 + 14 = 34 count
+# describes a panel that no longer exists. This is an identity change, not a
+# tolerance: nothing here was loosened to absorb it.
+#
+# The order is part of the identity: panel.circuit.tsx emits these features in
+# this sequence, and lib/panel-cutouts.test.ts compares the built board with the
+# same arrays. A reordered export would be a different board.
+PANEL_APERTURE_IDENTITIES: tuple[str, ...] = (
+    "LCD_APERTURE",
+    "USB_FEEDTHROUGH_0", "USB_FEEDTHROUGH_1", "USB_FEEDTHROUGH_2",
+    "REC BUTTON", "OVER DUB BUTTON", "STOP BUTTON", "PLAY BUTTON",
+    "PLAY START BUTTON", "SHIFT/EXIT BUTTON",
+    "REC LED", "OVERDUB LED", "PLAY LED",
+    "VALUE ENCODER", "POWER BUTTON", "NAV",
+    "MIDI IN 1 JACK", "MIDI IN 2 JACK", "MIDI OUT 1 JACK", "MIDI OUT 2 JACK",
+)
+PANEL_DRILL_IDENTITIES: tuple[str, ...] = (
+    "USB_0_-1", "USB_0_1", "USB_1_-1", "USB_1_1", "USB_2_-1", "USB_2_1",
+    "RACK_1", "RACK_2", "RACK_3", "RACK_4",
+)
+# The seven rectangular B3F-4055 openings: one geometry, seven switches.
+PANEL_BUTTON_IDENTITIES: tuple[str, ...] = (
+    "REC BUTTON", "OVER DUB BUTTON", "STOP BUTTON", "PLAY BUTTON",
+    "PLAY START BUTTON", "SHIFT/EXIT BUTTON", "POWER BUTTON",
+)
+# The round openings, with the diameter the canonical data must carry: the three
+# LED light pipes, the two 7.2 mm control holes and the four 6.2 mm jack barrels.
+PANEL_CIRCLE_DIAMETERS: dict[str, float] = {
+    "REC LED": 2.6, "OVERDUB LED": 2.6, "PLAY LED": 2.6,
+    "VALUE ENCODER": 7.2, "NAV": 7.2,
+    "MIDI IN 1 JACK": 6.2, "MIDI IN 2 JACK": 6.2,
+    "MIDI OUT 1 JACK": 6.2, "MIDI OUT 2 JACK": 6.2,
+}
+# The B3F-4055 opening: 12.25 mm square (Omron's 12.2 +0.05/-0 reference, top of
+# band, and the printed cap's assembly clearance - lib/layout.ts PANEL_CUTOUTS).
+PANEL_BUTTON_SQUARE = 12.25
+# The LCD aperture's outline: the rounded rectangle from PANEL_LCD_CUTOUT.
+PANEL_LCD_OUTLINE_POINTS = 28
+
+
+def _polygon_area(points: list[dict]) -> float:
+    """Shoelace area of a closed polygon given as {x, y} points (mm^2)."""
+    total = 0.0
+    n = len(points)
+    for i in range(n):
+        a, b = points[i], points[(i + 1) % n]
+        total += float(a["x"]) * float(b["y"]) - float(b["x"]) * float(a["y"])
+    return abs(total) / 2.0
+
+
+def _feature_spec(aperture: dict) -> dict:
+    """The exact tool specification for one canonical aperture, validated."""
+    name = str(aperture["name"])
+    shape = aperture.get("shape")
+    if shape == "polygon":
+        if name != "LCD_APERTURE":
+            raise GeometryError(f"unexpected polygon aperture {name}")
+        points = aperture["points"]
+        if len(points) != PANEL_LCD_OUTLINE_POINTS:
+            raise GeometryError(
+                f"the LCD aperture has {len(points)} outline points, expected "
+                f"{PANEL_LCD_OUTLINE_POINTS}: the corner relief changed shape")
+        return {"shape": "polygon",
+                "points": [(float(p["x"]), float(p["y"])) for p in points]}
+    if shape == "rect":
+        width, height = float(aperture["width"]), float(aperture["height"])
+        if name in PANEL_BUTTON_IDENTITIES:
+            if (abs(width - PANEL_BUTTON_SQUARE) > 1e-6
+                    or abs(height - PANEL_BUTTON_SQUARE) > 1e-6):
+                raise GeometryError(
+                    f"button opening {name} is {width} x {height} mm, not the "
+                    f"{PANEL_BUTTON_SQUARE} mm square the panel emits")
+        elif not name.startswith("USB_FEEDTHROUGH_"):
+            raise GeometryError(f"unexpected rectangular aperture {name}")
+        return {"shape": "rect", "x": float(aperture["x"]), "y": float(aperture["y"]),
+                "width": width, "height": height}
+    if shape == "circle":
+        diameter = 2.0 * float(aperture["radius"])
+        expected = PANEL_CIRCLE_DIAMETERS.get(name)
+        if expected is None:
+            raise GeometryError(f"unexpected circular aperture {name}")
+        if abs(diameter - expected) > 1e-6:
+            raise GeometryError(
+                f"aperture {name} is D{diameter:.2f} mm, not the canonical "
+                f"D{expected:.2f} mm")
+        return {"shape": "circle", "x": float(aperture["x"]), "y": float(aperture["y"]),
+                "radius": diameter / 2}
+    raise GeometryError(f"panel aperture {name} has an unknown shape {shape!r}")
+
+
+def _spec_area(spec: dict) -> float:
+    shape = spec["shape"]
+    if shape == "circle":
+        return math.pi * spec["radius"] ** 2
+    if shape == "rect":
+        return spec["width"] * spec["height"]
+    return _polygon_area([{"x": x, "y": y} for x, y in spec["points"]])
+
+
+def _spec_probes(spec: dict) -> tuple[tuple[float, float], tuple[float, float]]:
+    """(void probe at the centre, material probe just outside the cut)."""
+    shape = spec["shape"]
+    if shape == "circle":
+        cx, cy, r = spec["x"], spec["y"], spec["radius"]
+        return (cx, cy), (cx + r + 0.2, cy)
+    if shape == "rect":
+        cx, cy = spec["x"], spec["y"]
+        return (cx, cy), (cx + spec["width"] / 2 + 0.2, cy)
+    xs = [x for x, _ in spec["points"]]
+    ys = [y for _, y in spec["points"]]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    return (cx, cy), (cx, max(ys) + 0.2)
+
+
+def _inside_spec(point: tuple[float, float], spec: dict) -> bool:
+    """True when an XY point is inside a feature, with a 0.05 mm margin."""
+    x, y = point
+    shape = spec["shape"]
+    if shape == "circle":
+        return math.hypot(x - spec["x"], y - spec["y"]) <= spec["radius"] + 0.05
+    if shape == "rect":
+        return (abs(x - spec["x"]) <= spec["width"] / 2 + 0.05
+                and abs(y - spec["y"]) <= spec["height"] / 2 + 0.05)
+    # Convex rounded rectangle: compare against the outline's bounding box.
+    xs = [px for px, _ in spec["points"]]
+    ys = [py for _, py in spec["points"]]
+    return (min(xs) - 0.05 <= x <= max(xs) + 0.05
+            and min(ys) - 0.05 <= y <= max(ys) + 0.05)
+
+
+def panel_feature_plan(layout: dict) -> dict:
+    """Validate every canonical panel feature and return the cut plan.
+
+    Nothing is counted from the data it is checking: the identities come from the
+    tuples above, the shapes from the categories, and the drills from the union of
+    the apertures' own ``drills`` plus ``panelMountHoles``. Any disagreement is a
+    GeometryError, never a smaller model.
+
+    Each planned feature carries its exact tool specification, the material/void
+    probe points and the volume it must remove from the panel stock, so the built
+    panel is compared with the DECLARED shape rather than only counted.
+    """
+    apertures = layout["panelApertures"]
+    drills = layout["panelDrills"]
+    names = [str(a.get("name", "")) for a in apertures]
+    if names != list(PANEL_APERTURE_IDENTITIES):
+        raise GeometryError(
+            "the canonical panel apertures are not the expected set/order: "
+            f"{names} != {list(PANEL_APERTURE_IDENTITIES)}; a dropped, duplicated, "
+            "renamed or reordered aperture would silently change the panel model")
+    drill_names = [str(d.get("name", "")) for d in drills]
+    if drill_names != list(PANEL_DRILL_IDENTITIES):
+        raise GeometryError(
+            "the canonical panel drills are not the expected set/order: "
+            f"{drill_names} != {list(PANEL_DRILL_IDENTITIES)}")
+
+    # The drill array must be the apertures' own drills plus the mount holes, so a
+    # drill edited in one place only is caught instead of drawn twice or lost.
+    derived_drills: list[dict] = []
+    for aperture in apertures:
+        derived_drills.extend(aperture.get("drills") or [])
+    derived_drills.extend(layout["panelMountHoles"])
+
+    def key(entry: dict) -> tuple:
+        return (str(entry["name"]), round(float(entry["x"]), 6),
+                round(float(entry["y"]), 6), round(float(entry["diameter"]), 6))
+
+    if sorted(key(d) for d in derived_drills) != sorted(key(d) for d in drills):
+        raise GeometryError(
+            "panelDrills is not the apertures' own drills plus panelMountHoles: "
+            f"{sorted(key(d) for d in drills)} != "
+            f"{sorted(key(d) for d in derived_drills)}")
+
+    half_w = float(layout["panel"]["width"]) / 2
+    half_h = float(layout["panel"]["height"]) / 2
+    thickness = float(layout["panel"]["thickness"])
+    features: list[dict] = []
+
+    def add(name: str, kind: str, spec: dict) -> None:
+        void, outside = _spec_probes(spec)
+        if abs(void[0]) >= half_w or abs(void[1]) >= half_h:
+            raise GeometryError(f"panel {kind} {name} at {void} is off the panel")
+        area = _spec_area(spec)
+        if area <= 0.0:
+            raise GeometryError(f"panel {kind} {name} has no area")
+        features.append({
+            "name": name,
+            "kind": kind,
+            "spec": spec,
+            "area_mm2": round(area, 6),
+            "cut_volume_mm3": round(area * thickness, 6),
+            "void": void,
+            "outside": outside,
+        })
+
+    for aperture in apertures:
+        add(str(aperture["name"]), "aperture", _feature_spec(aperture))
+    for drill in drills:
+        radius = float(drill["diameter"]) / 2
+        if radius <= 0.0:
+            raise GeometryError(f"panel drill {drill['name']} has no diameter")
+        add(str(drill["name"]), "drill",
+            {"shape": "circle", "x": float(drill["x"]), "y": float(drill["y"]),
+             "radius": radius})
+
+    # A probe point outside one feature must not land inside another, or the
+    # material check would be measuring a different feature.
+    for feature in features:
+        for other in features:
+            if other is feature:
+                continue
+            if _inside_spec(feature["outside"], other["spec"]):
+                feature["outside"] = None
+                break
+
+    return {
+        "features": features,
+        "apertures": len(apertures),
+        "drills": len(drills),
+        "total": len(features),
+        "note": (f"{len(apertures)} canonical apertures and {len(drills)} canonical "
+                 "drills, matched by identity and order against PANEL_APERTURES / "
+                 "PANEL_DRILLS; the same arrays lib/panel-cutouts.test.ts compares "
+                 "with the built panel JSON"),
+    }
+
+
+def panel_cut_tool(cq, feature: dict, envelope):
+    """The cutting solid for one planned feature, through the whole panel stock."""
+    zlo, zhi = envelope.z.lo - 1.0, envelope.z.hi + 1.0
+    spec = feature["spec"]
+    shape = spec["shape"]
+    if shape == "circle":
+        return _cylinder(cq, spec["x"], spec["y"], zlo, zhi, spec["radius"])
+    if shape == "rect":
+        return _box(cq, spec["x"] - spec["width"] / 2, spec["y"] - spec["height"] / 2,
+                    zlo, spec["x"] + spec["width"] / 2,
+                    spec["y"] + spec["height"] / 2, zhi)
+    return (cq.Workplane("XY").workplane(offset=zlo)
+            .polyline(spec["points"]).close().extrude(zhi - zlo))
+
+
+def _box(cq, x1: float, y1: float, z1: float, x2: float, y2: float, z2: float):
+    """Axis-aligned box from two corners."""
+    return (cq.Workplane("XY").workplane(offset=z1)
+            .center((x1 + x2) / 2, (y1 + y2) / 2)
+            .rect(abs(x2 - x1), abs(y2 - y1))
+            .extrude(z2 - z1))
+
+
+def _cylinder(cq, x: float, y: float, z1: float, z2: float, radius: float):
+    return (cq.Workplane("XY").workplane(offset=z1).center(x, y)
+            .circle(radius).extrude(z2 - z1))
+
+
+def probe_panel_point(cq, body, point: tuple[float, float], z: float, want_material: bool,
+                      what: str) -> None:
+    """Check one XY point of a panel at mid-thickness for material or void."""
+    inside = body.val().isInside(cq.Vector(point[0], point[1], z))
+    if inside != want_material:
+        raise GeometryError(
+            f"{what}: ({point[0]:.2f}, {point[1]:.2f}, {z:.2f}) is "
+            f"{'material' if inside else 'void'}, expected "
+            f"{'material' if want_material else 'void'}")
+
+
 def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> dict:
     """Build every solid and return name -> object, ready to export."""
     pz = layout["provisionalZ"]
@@ -528,15 +808,11 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
     env = assembly_envelopes(layout, include_usbc_candidate=include_usbc)
 
     def box(x1, y1, z1, x2, y2, z2):
-        """Axis-aligned box from two corners, grown a little where a cut needs it."""
-        return (cq.Workplane("XY").workplane(offset=z1)
-                .center((x1 + x2) / 2, (y1 + y2) / 2)
-                .rect(abs(x2 - x1), abs(y2 - y1))
-                .extrude(z2 - z1))
+        """Axis-aligned box from two corners (one implementation, module level)."""
+        return _box(cq, x1, y1, z1, x2, y2, z2)
 
     def cylinder(x, y, z1, z2, radius):
-        return (cq.Workplane("XY").workplane(offset=z1).center(x, y)
-                .circle(radius).extrude(z2 - z1))
+        return _cylinder(cq, x, y, z1, z2, radius)
 
     def span_box(e, grow: float = 1.0):
         """Box for an envelope, grown in Z so a cut passes through it."""
@@ -551,52 +827,46 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
     # Every panel opening and every panel drill comes from the canonical
     # PANEL_APERTURES / PANEL_DRILLS arrays in layout.ts, the same data the
     # panel board renders and lib/panel-cutouts.test.ts compares with the built
-    # panel JSON. Nothing is restated here.
-    cuts = []
-    for aperture in layout["panelApertures"]:
-        name = aperture["name"]
-        if aperture["shape"] == "polygon":
-            tool = (cq.Workplane("XY").workplane(offset=e.z.lo - 1.0)
-                    .polyline([(p["x"], p["y"]) for p in aperture["points"]]).close()
-                    .extrude((e.z.hi - e.z.lo) + 2.0))
-            cuts.append((f"aperture {name}", tool))
-        elif aperture["shape"] == "rect":
-            cuts.append((f"aperture {name}",
-                         box(aperture["x"] - aperture["width"] / 2,
-                             aperture["y"] - aperture["height"] / 2,
-                             e.z.lo - 1.0,
-                             aperture["x"] + aperture["width"] / 2,
-                             aperture["y"] + aperture["height"] / 2,
-                             e.z.hi + 1.0)))
-        elif aperture["shape"] == "circle":
-            cuts.append((f"aperture {name}",
-                         cylinder(aperture["x"], aperture["y"], e.z.lo - 1.0,
-                                  e.z.hi + 1.0, aperture["radius"])))
-        else:  # pragma: no cover - the data union has three shapes
-            raise GeometryError(f"panel aperture {name} has an unknown shape")
-    for drill in layout["panelDrills"]:
-        cuts.append((f"drill {drill['name']}",
-                     cylinder(drill["x"], drill["y"], e.z.lo - 1.0, e.z.hi + 1.0,
-                              drill["diameter"] / 2)))
-
-    expected_cuts = len(layout["panelApertures"]) + len(layout["panelDrills"])
-    if expected_cuts != 34:
-        raise GeometryError(
-            f"the canonical panel data holds {expected_cuts} features, expected 34 "
-            "(20 apertures + 14 drills); the panel model would silently lose geometry")
-
-    for label, tool in cuts:
-        if panel_wp.val().intersect(tool.val()).Volume() <= VOLUME_EPS:
-            raise GeometryError(f"panel cut '{label}' removes nothing: it is outside the stock")
+    # panel JSON. Nothing is restated here; the EXPECTED identities and the
+    # per-feature shape are validated by panel_feature_plan().
+    plan = panel_feature_plan(layout)
+    mid_z = (e.z.lo + e.z.hi) / 2
+    for feature in plan["features"]:
+        label = f"{feature['kind']} {feature['name']}"
+        tool = panel_cut_tool(cq, feature, e)
+        before = panel_wp.val()
+        removed = before.intersect(tool.val()).Volume()
+        if removed <= VOLUME_EPS:
+            raise GeometryError(
+                f"panel cut '{label}' removes nothing: it is outside the stock, a "
+                "duplicate of another feature, or the feature is the wrong size")
+        expected = feature["cut_volume_mm3"]
+        if abs(removed - expected) > max(1e-6, 1e-4 * expected):
+            raise GeometryError(
+                f"panel cut '{label}' removes {removed:.6f} mm^3, but the declared "
+                f"{feature['spec']['shape']} of {feature['area_mm2']:.6f} mm^2 "
+                f"through the {e.z.hi - e.z.lo:.2f} mm panel is {expected:.6f} mm^3: "
+                "the cut shape does not match the canonical feature")
+        # The centre must be material before the cut and void after it; a point
+        # just outside the cut must still be material. Together these pin the
+        # feature's position, not only its volume.
+        probe_panel_point(cq, panel_wp, feature["void"], mid_z, True,
+                          f"panel {label} centre before the cut")
         panel_wp = panel_wp.cut(tool)
+        probe_panel_point(cq, panel_wp, feature["void"], mid_z, False,
+                          f"panel {label} cut")
+        if feature["outside"] is not None:
+            probe_panel_point(cq, panel_wp, feature["outside"], mid_z, True,
+                              f"panel {label} surrounding material")
     if panel_wp.solids().size() != 1:
         raise GeometryError(f"the panel is {panel_wp.solids().size()} solids after its cuts")
     solids["PANEL_30HP_3U"] = panel_wp
     meta["PANEL_30HP_3U"] = {
-        "features": [label for label, _ in cuts],
-        "feature_count": len(cuts),
-        "note": ("20 canonical apertures and 14 canonical drills, the same arrays "
-                 "lib/panel-cutouts.test.ts compares with the built panel JSON"),
+        "features": [f"{f['kind']} {f['name']}" for f in plan["features"]],
+        "feature_count": plan["total"],
+        "apertures": plan["apertures"],
+        "drills": plan["drills"],
+        "note": plan["note"],
     }
 
     # ---- front board --------------------------------------------------
@@ -816,43 +1086,76 @@ def build_scale_check(cq):
             .translate((50.0, 0.0, 1.5)))
 
 
-def build_reach_gauge(cq, layout: dict):
-    """A same-datum step gauge built from two documented planes.
+def reach_gauge_dimensions(layout: dict) -> dict:
+    """The two same-datum planes the gauge shows, and the SIGNED distance.
 
     Both heights start at the panel FRONT face (Z = 0, +Z rearward):
 
-      tall 19.05 mm = the provisional front-board NEAR face (PROVISIONAL_Z)
-      low  16.5 mm  = the nominal PGN25L165 tip plane (the shaft length x)
-      step 2.55 mm  = the NOMINAL tip-to-board-PLANE distance, arithmetic between
-                      two assumed planes
+      tall  = max(tip plane, board plane)     the taller of the two planes
+      low   = min(tip plane, board plane)     the shorter one
+      step  = tall - low                       magnitude only, always >= 0
+      signed = board plane - tip plane         NEGATIVE means the tip plane lies
+                                               BEHIND the board face, i.e. the
+                                               pipe crosses it
 
-    The step is NOT an LED gap, NOT an optical result and NOT a fit. The head
-    underside on the panel front is an ASSUMPTION; the LED height, retention and
-    stack tolerances are unmeasured. No text is engraved and no dimension is
-    claimed as measured.
+    EITHER ORDER IS VALID MODEL GEOMETRY. The earlier version raised whenever the
+    pipe was not in front of the board, which rejected the only case the current
+    stack has (16.5 mm tip vs a 10.6 mm board face) and could not draw it at all.
+
+    What the numbers are NOT: the step is not an LED gap, not an optical result and
+    not a fit. The head underside on the panel front face is an ASSUMPTION, the LED
+    height, the retention in 1.6 mm FR-4 and the stack tolerances are unmeasured, so
+    `opticalGap` stays null in the reach document.
     """
-    # Both heights are measured from the panel FRONT face (Z = 0, +Z rearward):
-    # tall = the provisional front-board near face (19.05);
-    # low  = the nominal pipe tip plane (16.5 = the shaft length).
-    # The step is the nominal tip-to-board-plane distance only. It is NOT an LED
-    # gap, NOT a fit and NOT a measured stack value.
-    gap = float(layout["lightPipeReach"]["boardNearFaceZ"])          # 19.05
-    pipe = float(layout["lightPipeReach"]["nominalTipZ"])            # 16.5
-    if pipe >= gap:
-        raise GeometryError(
-            f"the nominal tip plane ({pipe} mm) is not in front of the board face "
-            f"({gap} mm); the gauge would have no step to show")
+    tip = float(layout["lightPipeReach"]["nominalTipZ"])              # 16.5 shaft length
+    board = float(layout["lightPipeReach"]["boardNearFaceZ"])         # 10.6 board face
+    if tip <= 0.0 or board <= 0.0:
+        raise GeometryError(f"the gauge needs two positive planes, got tip {tip} "
+                            f"and board {board}")
+    tall, low = max(tip, board), min(tip, board)
+    signed = round(board - tip, 6)
+    order = "tip_behind_board" if signed < 0 else (
+        "tip_flush_with_board" if signed == 0 else "tip_in_front_of_board")
+    return {
+        "datum": "panel FRONT face, Z = 0, +Z rearward",
+        "tall": tall,
+        "low": low,
+        "step": round(tall - low, 6),
+        "signed_board_minus_tip": signed,
+        "direction": order,
+        "penetrates_board_plane": signed < 0,
+        "step_meaning": ("the distance between the nominal pipe tip plane and the "
+                         "provisional board face. Not an LED gap, not a fit, not a "
+                         "measured stack value"),
+    }
+
+
+def build_reach_gauge(cq, layout: dict):
+    """A same-datum step gauge that draws BOTH plane orders.
+
+    Two bars start on the panel FRONT face: the TALL bar reaches the taller of the
+    two planed heights, the SHORT bar the other one, so the step is always
+    ``|board - tip|``. The gauge is a viewing and print aid for the two NOMINAL
+    planes; it is not a fit, an optical gap or a measured stack.
+    """
+    dims = reach_gauge_dimensions(layout)
+    tall, low = dims["tall"], dims["low"]
     width, depth = 20.0, 8.0
-    tall = (cq.Workplane("XY").box(depth, width / 2, gap)
-            .translate((depth / 2, -width / 4, gap / 2)))
-    low = (cq.Workplane("XY").box(depth, width / 2, pipe)
-           .translate((depth / 2, width / 4, pipe / 2)))
-    gauge = tall.union(low)
+    tall_body = (cq.Workplane("XY").box(depth, width / 2, tall)
+                 .translate((depth / 2, -width / 4, tall / 2)))
+    low_body = (cq.Workplane("XY").box(depth, width / 2, low)
+                .translate((depth / 2, width / 4, low / 2)))
+    gauge = tall_body.union(low_body)
     if gauge.solids().size() != 1:
         raise GeometryError(f"the reach gauge is {gauge.solids().size()} solids, expected 1")
     bb = gauge.val().BoundingBox()
-    if abs(bb.zlen - gap) > 1e-6:
-        raise GeometryError(f"the gauge height {bb.zlen:.3f} is not the gap {gap:.3f}")
+    if abs(bb.zlen - tall) > 1e-6:
+        raise GeometryError(f"the gauge height {bb.zlen:.3f} is not the taller plane "
+                            f"{tall:.3f}")
+    if abs(bb.zmin) > 1e-6:
+        raise GeometryError(f"the gauge starts at Z {bb.zmin:.3f}, not the panel front 0")
+    if low <= 0.0:
+        raise GeometryError(f"the shorter plane {low:.3f} is not above the gauge's datum")
     return gauge
 
 
@@ -1098,15 +1401,7 @@ def main(argv: list[str] | None = None) -> int:
         "optical_gap_mm": reach.optical_gap_mm,
         "status": reach.status,
         "missing": list(reach.missing),
-        "gauge_mm": {
-            "datum": "panel FRONT face, Z = 0, +Z rearward",
-            "tall": float(layout["lightPipeReach"]["boardNearFaceZ"]),
-            "low": float(layout["lightPipeReach"]["nominalTipZ"]),
-            "step": round(float(layout["lightPipeReach"]["boardNearFaceZ"])
-                          - float(layout["lightPipeReach"]["nominalTipZ"]), 6),
-            "step_meaning": ("nominal tip-plane to provisional board-plane distance only. "
-                             "Not an LED gap, not a fit, not a measured stack value"),
-        },
+        "gauge_mm": reach_gauge_dimensions(layout),
     }
     (out / ASSUMPTIONS).write_text(json.dumps(document, indent=2) + "\n")
     (out / CHECKLIST).write_text(print_checklist_markdown())

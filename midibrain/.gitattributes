@@ -1,0 +1,3 @@
+# Open Cascade's STEP exporter writes harmless trailing spaces. Preserve the
+# generated files exactly; keep normal whitespace checks for all other files.
+mechanical/printed/*.step whitespace=-blank-at-eol

@@ -169,16 +169,23 @@ class StepRoundTripTest(unittest.TestCase):
         self.assertAlmostEqual(hi[1] - lo[1], 10.0, delta=0.01)
         self.assertAlmostEqual(hi[2] - lo[2], 3.0, delta=0.01)
 
-    def test_the_reach_gauge_uses_one_datum_and_the_nominal_tip(self) -> None:
-        """tall = board near face 19.05, low = nominal tip 16.5, step 2.55."""
+    def test_the_reach_gauge_uses_one_datum_and_both_planes(self) -> None:
+        """tall = max(16.5 tip, 10.6 board) = 16.5; low = 10.6; step 5.9."""
         data = sg.load_layout()
         lo, hi, _ = stl_bounds(self.out / sa.STL_GAUGE)
-        self.assertAlmostEqual(hi[2] - lo[2], data["lightPipeReach"]["boardNearFaceZ"],
-                               delta=0.01)
+        # Both bars stand on the panel FRONT face, so the gauge's own height is
+        # the TALLER of the two planes, not a difference.
+        self.assertAlmostEqual(lo[2], 0.0, delta=0.01)
         height = self.document["light_pipe_reach"]["gauge_mm"]
-        self.assertAlmostEqual(height["tall"], 19.05, delta=1e-9)
-        self.assertAlmostEqual(height["low"], 16.5, delta=1e-9)
-        self.assertAlmostEqual(height["tall"] - height["low"], 2.55, delta=1e-6)
+        self.assertAlmostEqual(hi[2] - lo[2], height["tall"], delta=0.02)
+        self.assertAlmostEqual(height["tall"], 16.5, delta=1e-9)
+        self.assertAlmostEqual(height["low"], 10.6, delta=1e-9)
+        self.assertAlmostEqual(height["tall"] - height["low"], 5.9, delta=1e-6)
+        # The SIGNED distance keeps its direction: board minus tip is negative,
+        # i.e. the tip plane is BEHIND the board face.
+        self.assertAlmostEqual(height["signed_board_minus_tip"], -5.9, delta=1e-9)
+        self.assertEqual(height["direction"], "tip_behind_board")
+        self.assertTrue(height["penetrates_board_plane"])
         self.assertIn("Not an LED gap", height["step_meaning"])
         self.assertIn("panel FRONT face", height["datum"])
         # the gauge must not present itself as a physical LED gap or fit
@@ -228,12 +235,27 @@ class StepRoundTripTest(unittest.TestCase):
                 self.document["bodies"]["DISPLAY_WAVESHARE_VENDOR_STEP"]["placed_bbox_mm"][2],
                 13.82, delta=0.02)
         else:
-            # The committed reference STEP is the default. The builder verified it
-            # by SHA-256, so the vendor body is drawn and the envelope is not.
-            self.assertEqual(display["status"], "verified")
-            self.assertEqual(display["step_sha256_actual"], display["step_sha256_expected"])
-            self.assertIn("DISPLAY_WAVESHARE_VENDOR_STEP", self.document["bodies"])
-            self.assertNotIn("DISPLAY_ENVELOPE_PROVISIONAL", self.document["bodies"])
+            # No environment source. The vendor STEP is NOT tracked (it may not be
+            # redistributed), so the DEFAULT is absent unless someone put a verified
+            # file in place. Both outcomes are correct and the test must accept the
+            # one that actually happened instead of assuming a file is there:
+            #   absent  -> an explicitly PROVISIONAL 106 x 68 x 14.05 envelope
+            #   verified-> the SHA-256 checked vendor body, no envelope
+            default = sa.DEFAULT_DISPLAY_STEP
+            if not default.is_file():
+                self.assertEqual(display["status"], "absent")
+                self.assertIn("note", display)
+                self.assertIn("provisional envelope", display["note"])
+                self.assertIn("DISPLAY_ENVELOPE_PROVISIONAL", self.document["bodies"])
+                self.assertNotIn("DISPLAY_WAVESHARE_VENDOR_STEP", self.document["bodies"])
+                envelope = self.document["bodies"]["DISPLAY_ENVELOPE_PROVISIONAL"]
+                self.assertIn("not vendor geometry", envelope["note"])
+            else:
+                self.assertEqual(display["status"], "verified")
+                self.assertEqual(display["step_sha256_actual"],
+                                 display["step_sha256_expected"])
+                self.assertIn("DISPLAY_WAVESHARE_VENDOR_STEP", self.document["bodies"])
+                self.assertNotIn("DISPLAY_ENVELOPE_PROVISIONAL", self.document["bodies"])
 
 
 @unittest.skipIf(cq is None, SKIP_REASON)
@@ -407,9 +429,12 @@ class SpacerPlaceholderTest(unittest.TestCase):
 
     def test_the_span_comes_from_the_drawn_solids(self) -> None:
         for body in self.meta["spacers"]:
-            self.assertAlmostEqual(body["z_mm"][0], 10.24, places=2)   # boss rear
-            self.assertAlmostEqual(body["z_mm"][1], 19.05, places=2)   # board top face
-            self.assertAlmostEqual(body["length_mm"], 8.81, places=2)
+            # Both planes are DRAWN/model data, never typed: the vendor boss rear
+            # and the canonical front-board top face.
+            self.assertAlmostEqual(body["z_mm"][0], self.gap["boss_rear_z_mm"], places=2)
+            self.assertAlmostEqual(body["z_mm"][1], self.gap["board_top_z_mm"], places=2)
+            self.assertAlmostEqual(body["length_mm"], self.gap["model_gap_mm"], places=2)
+            self.assertAlmostEqual(body["length_mm"], 0.36, places=2)
 
     def test_the_axes_are_the_exported_mount_holes(self) -> None:
         axes = sorted(tuple(b["axis_xy_mm"]) for b in self.meta["spacers"])
@@ -448,31 +473,38 @@ class SpacerPlaceholderTest(unittest.TestCase):
         self.assertIn("ASSUMED", definition["dimension_basis"])
         self.assertIn("not a specification", definition["dimension_basis"])
 
-    def test_a_5_00_mm_spacer_does_not_reach_the_drawn_boss_plane(self) -> None:
-        """The design-chain candidate is 3.81 mm short of the model's boss ends."""
+    def test_the_design_chain_plane_and_the_drawn_boss_plane_disagree(self) -> None:
+        """Two chains, two answers: the spacer plane is 8.99 mm from the bosses."""
         board_top = self.gap["board_top_z_mm"]
         chain_end = board_top - self.gap["design_chain_spacer_mm"]
-        self.assertAlmostEqual(chain_end, 14.05, places=6)
-        self.assertAlmostEqual(chain_end - self.gap["boss_rear_z_mm"], 3.81, places=6)
+        # The derived 9.35 mm spacer reaches Z 1.25 measured from the board face
+        # at 10.60, which is 8.99 mm in FRONT of the drawn boss ends at 10.24: the
+        # two chains do NOT agree and neither is approved.
+        self.assertAlmostEqual(chain_end, 1.25, places=6)
+        self.assertAlmostEqual(chain_end - self.gap["boss_rear_z_mm"], -8.99, places=6)
+        # At the 10.6 mm panel that plane now lies INSIDE the drawn module, so a
+        # spacer placed there cannot even be drawn as a separate body: the chain
+        # plane and the vendor model contradict each other. That is the finding,
+        # not a tolerance to absorb.
         display = self.solids["DISPLAY_WAVESHARE_VENDOR_STEP"]
-        # A 5.00 mm spacer ANCHORED ON THE BOARD TOP FACE: it spans 14.05..19.05,
-        # so it stops 3.81 mm short of the drawn boss ends at 10.24.
         short = (cq.Workplane("XY").workplane(offset=chain_end)
                  .center(-59.15, 41.9).circle(2.5).circle(1.35).extrude(5.0))
         intrusions = sa.spacer_intrusions(cq, short, display,
                                           self.solids["FRONT_BOARD_PROVISIONAL_Z"].val())
-        self.assertEqual(intrusions["display_mm3"], 0.0)
+        self.assertGreater(intrusions["display_mm3"], sa.INTRUSION_EPS_MM3,
+                           "the design-chain spacer plane is expected to be inside the "
+                           "drawn module at the 10.6 mm panel")
         bb = short.val().BoundingBox()
-        self.assertAlmostEqual(bb.zmin, 14.05, places=2)
-        self.assertAlmostEqual(bb.zmax, 19.05, places=2)
-        self.assertAlmostEqual(bb.zmin - self.gap["boss_rear_z_mm"], 3.81, places=2)
+        self.assertAlmostEqual(bb.zmin, 1.25, places=2)
+        self.assertAlmostEqual(bb.zmax, 6.25, places=2)
 
     def test_an_over_long_placeholder_is_rejected(self) -> None:
         """Negative regression: extending a placeholder must fail the limit."""
         display = self.solids["DISPLAY_WAVESHARE_VENDOR_STEP"]
         board = self.solids["FRONT_BOARD_PROVISIONAL_Z"].val()
+        # One 0.2 mm longer than the drawn gap, so it must reach INTO the board.
         over = (cq.Workplane("XY").workplane(offset=10.24).center(-59.15, 41.9)
-                .circle(2.5).circle(1.35).extrude(8.81 + 0.2))
+                .circle(2.5).circle(1.35).extrude(self.gap["model_gap_mm"] + 0.2))
         intrusions = sa.spacer_intrusions(cq, over, display, board)
         self.assertGreater(max(intrusions.values()), sa.INTRUSION_EPS_MM3)
 
@@ -484,7 +516,7 @@ class SpacerPlaceholderTest(unittest.TestCase):
             self.assertEqual(sa.main(["--out", str(out), *self.source_args]), 0)
             shape = cq.importers.importStep(str(out / sa.STEP_NAME)).val()
             tubes = [s for s in shape.Solids()
-                     if abs(s.BoundingBox().zlen - 8.81) < 0.02
+                     if abs(s.BoundingBox().zlen - self.gap["model_gap_mm"]) < 0.02
                      and abs(s.BoundingBox().xlen - 5.0) < 0.05
                      and abs(s.BoundingBox().ylen - 5.0) < 0.05]
             self.assertEqual(len(tubes), 4)

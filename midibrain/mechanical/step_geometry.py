@@ -515,11 +515,19 @@ def classify(a: Envelope, b: Envelope, *, eps: float = EPS) -> CollisionVerdict:
 # the drawn front-board top face. Two different numbers exist and they must not
 # be conflated:
 #
-#   model gap    boss rear -> board top face       -0.24 mm   (drawn solids)
-#   chain spacer the existing design assumption      8.75 mm   (12.75 - 4.0)
-#   residual     what an 8.75 mm spacer misses      -8.99 mm   (1.25 vs 10.24)
+#   model gap    boss rear -> board top face       +0.36 mm   (drawn solids: the
+#                                                              board face 10.60 is
+#                                                              BEHIND the boss rear
+#                                                              plane 10.24, so the
+#                                                              drawn bodies clear by
+#                                                              0.36 mm nominally)
+#   chain spacer the derived carrier spacer          9.35 mm   (23.40 - 10.05 - 4.0)
+#   residual     what that spacer misses            -8.99 mm   (1.25 vs 10.24)
 #
-# Neither number is an approved dimension and the two chains do NOT agree.
+# The model gap changed SIGN with the 10.6 mm panel: at 10.00 mm the drawn board
+# overlapped the boss plane by 0.24 mm, and at 10.60 mm it clears it by 0.36 mm.
+# Neither number is an approved dimension and the two chains do NOT agree: a
+# 9.35 mm spacer and a 0.36 mm drawn clearance are still different chains.
 DISPLAY_MOUNT_PLACEHOLDER = {
     "name_prefix": "MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED",
     "status": "GEOMETRIC PLACEHOLDER ONLY - non-approved, not a part, not a fit",
@@ -541,12 +549,14 @@ def display_mount_gap(layout: dict | None = None) -> dict:
     """
     data = layout if layout is not None else load_layout()
     planes = placed_display_planes()
-    boss_rear = planes["boss_rear"]                 # 10.24, model boss ends
-    board_top = float(data["provisionalZ"]["frontBoardTop"])   # 10.00
-    chain = float(data["displayStandoff"]["spacerLength"])     # 8.75 design assumption
-    gap = round(board_top - boss_rear, 3)                       # -0.24
-    chain_end = round(board_top - chain, 3)                     # 14.05
-    residual = round(chain_end - boss_rear, 3)                  # 3.81
+    boss_rear = planes["boss_rear"]
+    board_top = float(data["provisionalZ"]["frontBoardTop"])
+    # Derived from the canonical export (13.35 - 4.0 at the 10.6 mm datum); the
+    # number is never typed here.
+    chain = float(data["displayStandoff"]["spacerLength"])
+    gap = round(board_top - boss_rear, 3)
+    chain_end = round(board_top - chain, 3)
+    residual = round(chain_end - boss_rear, 3)
     return {
         "axes_xy": [(h["x"], h["y"]) for h in data["lcdMountHoles"]],
         "boss_rear_z_mm": round(boss_rear, 3),
@@ -556,8 +566,10 @@ def display_mount_gap(layout: dict | None = None) -> dict:
         "design_chain_display_end_z_mm": chain_end,
         "residual_mm": residual,
         "chains_agree": False,
-        "chains_agree_note": ("the 8.75 mm design candidate and the -0.24 mm model gap are two "
-                              "different chains; they do not agree and neither is approved"),
+        # Built from the values above, so a datum change cannot leave stale text.
+        "chains_agree_note": (f"the {chain:.2f} mm derived spacer and the "
+                              f"{gap:+.2f} mm model gap are two different chains; they "
+                              "do not agree and neither is approved"),
         "spacer_length_mm": gap,
         "length_status": "model-derived placeholder length, NOT an approved dimension",
         "outer_diameter_mm": DISPLAY_MOUNT_PLACEHOLDER["outer_diameter_mm"],

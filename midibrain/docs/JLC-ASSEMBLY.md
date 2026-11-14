@@ -82,7 +82,7 @@ process, profile and inspection must be accepted before production.
 `DISP1` is the 4.3-inch DSI module. Since the 2026-11-13 respin it is **not**
 bolted to the front board: the front board carries a 106.50 × 68.90 mm opening
 and the module hangs on a printed carrier bolted to the **rear** board's top
-face at `LCD_MOUNT_HOLES`, on 8.75 mm adjustable spacers. It has no pads and no
+face at `LCD_MOUNT_HOLES`, on **9.35 mm** adjustable spacers (derived from the 10.6 mm datum). It has no pads and no
 LCSC part, is drawn in the tscircuit 3D view as a translucent envelope from
 `DISPLAY_STACK` (106.00 x 68.00 x 14.05 mm) and appears on the hand BOM with the
 ElectroKit article. It is not on the SMT CPL. The envelope is a reference box -
@@ -127,9 +127,9 @@ never edit a CPL merely to force a match.
 
 - CAB-15455 is **3 A and rejected for the 5 A power path**. The exact suitable
   feedthrough/cable chain and PD/droop/temperature tests are still pending.
-- Light pipe: candidate Signal Construct PGN25L165 (Ø2.6 panel hole, shaft 16.5 ±0.1, overall 17.5), which is **6.5 mm too long** for the 10.0 mm stack (`LIGHT_PIPE_REACH`; ~9.2 mm is needed and no part is selected). Not an approved fit: the seated plane, LED height, retention in 1.6 mm FR-4, hole tolerance and stack tolerances are unmeasured, and the optical gap is null. The retired Bivar PLP2-400-C 10.16 mm reference and the 7.29 mm subtraction are withdrawn. Select the final part after the reach and seating checks. The 2.55-2.60 mm hole is NOT guaranteed: the JLCPCB NPTH bands conflict and the panel emits each circular cutout in both the NPTH drill file and Edge_Cuts; the JLC viewer and support must confirm the de-duplication and the achievable hole size.
-- The display uses **8.75 mm adjustable spacer length beyond the 4.0 mm bosses**,
-  measured from the rear board's front face, giving a 12.75 mm plane separation
+- Light pipe: candidate Signal Construct PGN25L165 (Ø2.6 panel hole, shaft 16.5 ±0.1, overall 17.5), which is **5.9 mm too long** for the 10.6 mm stack: the tip plane lies 5.9 mm BEHIND the board face (signed board − tip = −5.9 mm, `LIGHT_PIPE_REACH`; a ~9.8 mm shaft is what the formula gives and no part is selected). Not an approved fit: the seated plane, LED height, retention in 1.6 mm FR-4, hole tolerance and stack tolerances are unmeasured, and the optical gap is null. The retired Bivar PLP2-400-C 10.16 mm reference and the 7.29 mm subtraction are withdrawn. Select the final part after the reach and seating checks. The 2.55-2.60 mm hole is NOT guaranteed: the JLCPCB NPTH bands conflict and the panel emits each circular cutout in both the NPTH drill file and Edge_Cuts; the JLC viewer and support must confirm the de-duplication and the achievable hole size.
+- The display uses **9.35 mm adjustable spacer length beyond the 4.0 mm bosses**,
+  measured from the rear board's front face, giving a 13.35 mm plane separation
   (`DISPLAY_STANDOFF`). Plane separation is not the spacer purchase length, and
   both numbers are provisional design values until the carrier is drawn and a
   sample measured.

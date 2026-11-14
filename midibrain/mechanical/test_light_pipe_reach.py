@@ -65,9 +65,10 @@ class DocumentedOnlyTest(unittest.TestCase):
     def test_the_nominal_planes_are_still_reported(self) -> None:
         result = lp.compute_reach(lp.ReachInputs.from_layout())
         self.assertAlmostEqual(result.nominal_tip_z_mm, 16.5, places=6)
-        # 10.00 mm provisional board face - 16.5 mm shaft = -6.50 mm: the tip is
-        # BEHIND the board plane, i.e. the selected part is too long for this stack
-        self.assertAlmostEqual(result.nominal_tip_to_board_plane_mm, -6.5, places=6)
+        # 10.60 mm owner-directed board face - 16.5 mm shaft = -5.90 mm and the
+        # sign matters: NEGATIVE is board minus tip, so the tip plane is BEHIND
+        # the board face and the selected part is too long for this stack.
+        self.assertAlmostEqual(result.nominal_tip_to_board_plane_mm, -5.9, places=6)
         self.assertLess(result.nominal_tip_to_board_plane_mm, 0.0)
         # a MEASURED seat does not exist yet, so the measured planes are None
         self.assertIsNone(result.tip_z_mm)
@@ -83,8 +84,8 @@ class DocumentedOnlyTest(unittest.TestCase):
 
     def test_tip_to_board_is_not_called_an_led_gap(self) -> None:
         result = lp.compute_reach(lp.ReachInputs.from_layout())
-        self.assertAlmostEqual(result.nominal_tip_to_board_plane_mm, -6.5, places=6)
-        self.assertIsNone(result.optical_gap_mm, "-6.50 mm must never be reported as an LED gap")
+        self.assertAlmostEqual(result.nominal_tip_to_board_plane_mm, -5.9, places=6)
+        self.assertIsNone(result.optical_gap_mm, "-5.90 mm must never be reported as an LED gap")
 
     def test_there_is_no_gap_minus_length_field(self) -> None:
         result = lp.compute_reach(lp.ReachInputs.from_layout())
@@ -169,17 +170,26 @@ class StaleActiveReferenceTest(unittest.TestCase):
 
     def test_the_gauge_is_described_with_the_current_planes(self) -> None:
         source = (Path(__file__).resolve().parent / "step_assembly.py").read_text()
-        # the header and the gauge docstring must name the current numbers
-        self.assertIn("19.05", source)
+        # The header and the gauge model must name the CURRENT numbers. The old
+        # 19.05 mm board face is superseded by the owner-directed 10.6 mm one.
         self.assertIn("16.5", source)
-        self.assertIn("2.55", source)
+        self.assertIn("5.9", source)
         self.assertNotIn("17.45 / 10.16", source)
-        # the gauge docstring says explicitly what the step is not
-        doc = source[source.index("def build_reach_gauge"):]
-        doc = doc[:doc.index('"""', doc.index('"""') + 3)]
-        self.assertIn("NOT an LED gap", doc)
-        self.assertIn("NOT a fit", doc)
+        # 19.05 may appear only as explicit history, never as an active plane.
+        for line in source.splitlines():
+            if "19.05" in line:
+                low = line.lower()
+                self.assertTrue("earlier" in low or "old" in low or "withdrawn" in low
+                                or "superseded" in low,
+                                f"19.05 mm is used as an active plane: {line.strip()}")
+        # the gauge model says explicitly what the step is not
+        doc = source[source.index("def reach_gauge_dimensions"):
+                     source.index("def build_reach_gauge")]
+        self.assertIn("not an LED gap", doc)
+        self.assertIn("not a fit", doc)
         self.assertIn("panel FRONT face", doc)
+        # and the signed direction is stated, not implied
+        self.assertIn("SIGNED", doc + source[source.index("def build_reach_gauge"):])
 
     def test_the_envelope_carries_the_active_candidate_only(self) -> None:
         import step_geometry as sg
@@ -287,7 +297,7 @@ class ReportTest(unittest.TestCase):
         self.assertIn("16.50 mm", lines)
         self.assertIn("17.50 mm", lines)
         # the current board face (10.00) puts the tip 6.50 mm BEHIND the plane
-        self.assertIn("-6.50 mm", lines)
+        self.assertIn("-5.90 mm", lines)
         self.assertIn("None", lines)
         self.assertIn("incomplete", lines)
         self.assertIn("NOT an LED gap", lines)

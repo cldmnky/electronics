@@ -479,9 +479,14 @@ class DisplayEnvelopeTest(unittest.TestCase):
     def test_spacer_length_and_plane_separation_are_separate(self) -> None:
         stack = self.vendor["stack"]
         # The spacer now runs from the REAR board's front face (the module left
-        # the front board on 2026-11-13). 12.75 - 4.00 boss = 8.75 mm.
-        self.assertAlmostEqual(stack["planeSeparation"], 12.75, places=6)
-        self.assertAlmostEqual(stack["spacerLength"], 8.75, places=6)
+        # the front board on 2026-11-13), and it is DERIVED from the panel datum:
+        # rear board front 23.40 - display PCB rear 10.05 = 13.35, minus the
+        # 4.00 mm boss projection = the 9.35 mm nominal carrier spacer.
+        z = self.z
+        self.assertAlmostEqual(stack["planeSeparation"],
+                               z["rearBoardFront"] - z["displayPcbRear"], places=6)
+        self.assertAlmostEqual(stack["planeSeparation"], 13.35, places=6)
+        self.assertAlmostEqual(stack["spacerLength"], 9.35, places=6)
         self.assertAlmostEqual(stack["spacerLength"],
                                stack["planeSeparation"] - stack["bossProjection"], places=6)
 
@@ -504,14 +509,14 @@ class DisplayEnvelopeTest(unittest.TestCase):
         self.assertAlmostEqual(self.z["displayGlassFront"], 0.0, places=6)
         self.assertAlmostEqual(self.z["displayPcbRear"], 10.05, places=6)
         self.assertAlmostEqual(self.z["displayRearMost"], 14.05, places=6)
-        # The panel-to-board distance is the owner's 10.0 mm input; the display
-        # hangs from the REAR board's front face, so the chain starts there:
-        # rearBoardFront - displayRearMost = the 8.75 mm carrier spacer.
-        self.assertAlmostEqual(self.z["frontBoardTop"], 10.0, places=6)
+        # The panel-to-board distance is the owner-directed 10.6 mm input; the
+        # display hangs from the REAR board's front face, so the chain starts
+        # there: rearBoardFront - displayRearMost = the 9.35 mm carrier spacer.
+        self.assertAlmostEqual(self.z["frontBoardTop"], 10.6, places=6)
         self.assertAlmostEqual(self.z["rearBoardFront"] - self.z["displayRearMost"],
                                stack["spacerLength"], places=6)
-        self.assertAlmostEqual(self.data["panelToFrontBoardGap"], 8.4, places=6)
-        self.assertAlmostEqual(self.data["displayUndersideGap"], -4.05, places=6)
+        self.assertAlmostEqual(self.data["panelToFrontBoardGap"], 9.0, places=6)
+        self.assertAlmostEqual(self.data["displayUndersideGap"], -3.45, places=6)
         self.assertAlmostEqual(self.data["displayUndersideGap"],
                                self.z["frontBoardTop"] - self.z["displayRearMost"], places=6)
 
@@ -524,7 +529,11 @@ class DisplayEnvelopeTest(unittest.TestCase):
         self.assertAlmostEqual(pipe["shaftLength"], 16.5, places=6)
         self.assertAlmostEqual(pipe["overallLength"], 17.5, places=6)
         self.assertAlmostEqual(reach["nominalTipZ"], pipe["shaftLength"], places=6)
-        self.assertAlmostEqual(reach["nominalTipToBoardPlane"], -6.5, places=6)
+        # SIGNED: board face minus tip plane. 10.6 - 16.5 = -5.9 means the tip
+        # plane is BEHIND the board face (the pipe crosses it).
+        self.assertAlmostEqual(reach["nominalTipToBoardPlane"], -5.9, places=6)
+        self.assertAlmostEqual(reach["nominalTipToBoardPlane"],
+                               reach["boardNearFaceZ"] - reach["nominalTipZ"], places=6)
         self.assertIsNone(reach["opticalGap"])
         self.assertTrue(reach["status"].startswith("incomplete"))
         self.assertNotIn("seatAllowance", pipe)
@@ -561,11 +570,11 @@ class ProvisionalDataTest(unittest.TestCase):
         data = layout()
         gap = data["displayUndersideGap"]
         tallest = data["frontTopSmdMaxHeight"]["height"]
-        # -4.05 mm to the connector rear-most point: the module's rear 4.05 mm
+        # -3.45 mm to the connector rear-most point: the module's rear 3.45 mm
         # sits BEHIND the front board's top face, which is why the board carries
         # an opening. Still pending: the display underside map, the FPC latch and
         # the module tolerance.
-        self.assertAlmostEqual(gap - tallest, -6.25, places=6)
+        self.assertAlmostEqual(gap - tallest, -5.65, places=6)
         self.assertEqual(data["frontTopSmdMaxHeight"]["height"], 2.2)
 
     def test_depth_chain_stays_inside_the_owner_target(self) -> None:

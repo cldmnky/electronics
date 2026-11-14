@@ -9,13 +9,20 @@ does not match the design rules, and re-reads what it wrote.
 Shape (Z datum: panel FRONT face = 0, +Z rearward):
 
     body   D12.50 x 16.00      Z -18.70 .. -2.70 (2.70 mm in front of the panel)
-    bore   D6.20 through, D-flat 2.60 mm from the axis (shaft flat is at 2.50)
+    bore   D6.20 THROUGH (nothing covers the shaft tip), D-flat 1.60 mm from the
+           axis (the sourced shaft flat is at 1.50: page 2 `4.5 +0/-0.05` from the
+           shaft's top surface on a D6 +-0.1 shaft; `C 0.5` on page 3 is the TIP
+           CHAMFER, not the flat depth)
     grip   16 x R1.60 flutes, 0.45 mm deep
-    grub   radial D2.50 pilot (M3 x 0.5 tap drill) on the flat's normal
+    grub   radial D2.50 pilot (M3 x 0.5 TAP DRILL - not a key across-flats) on the
+           flat's normal
 
-The knob rear face clears the supplied M7 nut and washer by the assumed stack,
-and the 15.0 mm shaft ends 0.20 mm inside the knob's front face. Both numbers
-are ASSUMPTIONS (README.md) that the first article has to measure.
+Three findings are BLOCKERS (printed_geometry.validate_knob, and README.md
+*Encoder blockers*): the supplied nut cannot be fitted on this encoder at the
+10.6 mm panel (0.90 mm of thread against a 2.50 mm nut+washer), the D-bore's flat
+cannot pass the ROUND part of the shaft (1.20 mm of shaft, 1.40 mm radial
+interference), and the full 0.5 +-0.3 mm centre travel is not guaranteed. The
+encoder stays in the BOM unchanged and no remedy is applied here.
 
 CadQuery, installed in a local environment (do NOT install into the system
 Python):
