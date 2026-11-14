@@ -607,7 +607,11 @@ PANEL_BUTTON_IDENTITIES: tuple[str, ...] = (
 # LED light pipes, the two 7.2 mm control holes and the four 6.2 mm jack barrels.
 PANEL_CIRCLE_DIAMETERS: dict[str, float] = {
     "REC LED": 2.6, "OVERDUB LED": 2.6, "PLAY LED": 2.6,
-    "VALUE ENCODER": 7.2, "NAV": 7.2,
+    "VALUE ENCODER": 7.2,
+    # NAV stopped sharing the control diameter on 2026-11-14: the ALPS
+    # RKJXT1F42001's Ø7.20 stationary collar stands inside the opening, so the
+    # panel has its own PANEL_CUTOUTS.nav (lib/layout.ts).
+    "NAV": 8.0,
     "MIDI IN 1 JACK": 6.2, "MIDI IN 2 JACK": 6.2,
     "MIDI OUT 1 JACK": 6.2, "MIDI OUT 2 JACK": 6.2,
 }

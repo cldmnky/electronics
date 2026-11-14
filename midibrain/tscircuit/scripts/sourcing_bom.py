@@ -53,7 +53,12 @@ THT = {
               # Panel POWER momentary and the 1x2 jumper header that takes the
               # owner's 6-inch F-F DuPont pair to the Pi 5 PWR connector.
               "SW7", "J_PWR",
-              "U6", "J5",
+              # U5 NAV: the 2026-11-14 owner decision replaced the SMD
+              # SKRHABE010 with the THT ALPS RKJXT1F42001, so it leaves the SMT
+              # CPL and joins the hand BOM. ALPS publishes a manual-soldering
+              # reference for it (page 412: 350 +-5 C, 3 s max, one time), so
+              # "hand" is a documented method here, not an assumption.
+              "U5", "U6", "J5",
               # The 4.3-inch DSI module bolts to the four SMTSO bosses on the
               # front face. It carries no pads, so nothing about it is SMT; the
               # tscircuit render draws it as a translucent envelope

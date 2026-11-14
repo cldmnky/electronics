@@ -1,30 +1,33 @@
 #!/usr/bin/env python3
-"""NAV keytop for the ALPS Alpine SKRHABE010 5-way switch (U5).
+"""NAV cap for the ALPS Alpine RKJXT1F42001 4-direction stick switch (U5).
 
 The part is built ONLY from ``printed_geometry.py``, which derives every
 dimension from ``mechanical/layout.json``, ``tscircuit/lib/layout.ts`` and the
-two datasheets. This script builds the solid, refuses to export when the solid
+ALPS drawing. This script builds the solid, refuses to export when the solid
 does not match the design rules, and re-reads what it wrote.
 
 Shape (Z datum: panel FRONT face = 0, +Z rearward):
 
-    head   D7.00 x 4.00 in front of the panel   -- the finger pad, 4 mm proud
-    neck   D7.00 x 1.60 through the aperture    -- the only guidance in the hole
-    flange D9.60 x 1.20 on the panel rear face  -- a forward stop against the panel
-    shank  D5.60 x 4.15 in the 9.0 mm air gap
-    socket D3.20 x 1.50, floor 0.15 above the stem top
+    head  D7.00 x 4.00 in front of the shaft tip   -- the finger pad
+    shank D5.40 x 4.00 behind the head             -- carries the blind bore
+    bore  D2.90 x 4.00, floor 0.15 above the tip   -- over the Ø2.5 flatted shaft
 
-The socket is a CIRCULAR bore over a stem tip that the vendor model shows as a
-rounded square (1.95 +-0.05 across flats, R0.5 corners, +-1.184 mm extent), so the
-radial play is 0.10...0.62 mm per side depending on which feature mates. It is NOT
-a gripping fit: the only claim is that the cap sits on the stem and is stopped
-forward by the flange. Nothing here shows that the cap stays on, that it cannot
-rock, or that the stem sees no bending moment - all three are unmeasured.
+WHAT CHANGED WITH THE PART (owner decision 2026-11-14): the SMD SKRHABE010 put
+its stem 5.0 mm above the board, so the old cap had to reach it through the
+panel: a D7.00 neck guided in the 7.2 mm aperture and a D9.60 flange trapped
+behind the panel. The RKJXT1F42001's shaft stands 17.4 mm above the board, i.e.
+6.80 mm proud of the panel front, so this cap is a PUSH-ON CAP that sits on the
+projecting shaft entirely IN FRONT of the panel:
 
-The head and the neck are ONE diameter on purpose: the head is the leading
-feature when the cap is dropped through the aperture from the rear, so anything
-in front of the flange that is wider than the aperture could never be
-assembled through a one-piece panel. Assembly order is in README.md.
+  * no part of it enters the panel opening, so there is no neck fit and no
+    flange. The panel opening now exists for the switch's own Ø7.20 stationary
+    collar that stands inside it (lib/layout.ts PANEL_CUTOUTS.nav);
+  * the bore is round over a shaft with one flat (1.80 across). A round bore
+    cannot key on the flat, so the cap can rotate freely under a finger: there is
+    no grip, no detent and no set screw, and nothing here shows that the cap
+    stays on when the panel is lifted off. All three are unmeasured;
+  * the old rounded-square-socket analysis belonged to the SKRHABE010 stem and
+    is obsolete; it was removed with that part (docs/TODO.md).
 
 CadQuery, installed in a local environment (do NOT install into the system
 Python):
@@ -78,20 +81,18 @@ def frustum(cq, r0: float, r1: float, z0: float, height: float, x: float = 0.0, 
 
 
 def build_solid(cq, g: NavKeytop):
-    """Build the keytop stock and its named cutters (the cuts are applied later)."""
+    """Build the cap's stock and its named cutters (the cuts are applied later)."""
     cx, cy = g.centre
-    r_head = g.neck_diameter / 2          # head and neck are one diameter
-    r_flange = g.flange_diameter / 2
+    r_head = g.head_diameter / 2
     r_shank = g.shank_diameter / 2
     r_bore = g.socket_bore / 2
 
-    stock = cylinder(cq, r_head, g.head_front_z, g.flange_front_z, cx, cy)
-    stock = stock.union(cylinder(cq, r_flange, g.flange_front_z, g.flange_rear_z, cx, cy))
-    stock = stock.union(cylinder(cq, r_shank, g.flange_rear_z, g.socket_mouth_z, cx, cy))
+    stock = cylinder(cq, r_head, g.head_front_z, g.head_rear_z, cx, cy)
+    stock = stock.union(cylinder(cq, r_shank, g.head_rear_z, g.socket_mouth_z, cx, cy))
 
     features: list[tuple[str, object]] = []
 
-    # 1. Blind socket over the stem, open toward the board.
+    # 1. Blind socket over the flatted shaft, open toward the board (+Z).
     features.append(("socket bore", cylinder(cq, r_bore, g.socket_floor_z,
                                              g.socket_mouth_z + 1.0, cx, cy)))
     # 2. Socket mouth lead-in chamfer.
@@ -107,12 +108,13 @@ def build_solid(cq, g: NavKeytop):
     outer = cylinder(cq, r_head + 1.0, g.head_front_z - 1.0, g.head_front_z + c, cx, cy)
     features.append(("head edge chamfer", outer.cut(cone)))
 
-    # 4. Flange rear edge break: the flange rear face is the part's only
-    #    overhang, so it is chamfered 45 deg down to the shank.
-    c = g.flange_rear_chamfer
-    keep = frustum(cq, r_flange, r_flange - c, g.flange_rear_z - c, c, cx, cy)
-    outer = cylinder(cq, r_flange + 0.1, g.flange_rear_z - c, g.flange_rear_z, cx, cy)
-    features.append(("flange rear chamfer", outer.cut(keep)))
+    # 4. Shank rear edge break: the shank's rear face is the part's only
+    #    overhang once the cap is on the shaft, so it is chamfered 45 deg. The
+    #    kept core runs full diameter at mouth - c and r - c at the rear face.
+    c = g.shank_rear_chamfer
+    keep = frustum(cq, r_shank, r_shank - c, g.socket_mouth_z - c, c, cx, cy)
+    outer = cylinder(cq, r_shank + 0.1, g.socket_mouth_z - c, g.socket_mouth_z, cx, cy)
+    features.append(("shank rear chamfer", outer.cut(keep)))
 
     return stock, features
 
@@ -125,15 +127,12 @@ def probe_points(g: NavKeytop) -> list[tuple[str, bool, list[tuple[float, float,
     cx, cy = g.centre
     r_bore = g.socket_bore / 2
     r_shank = g.shank_diameter / 2
-    r_head = g.neck_diameter / 2
-    r_flange = g.flange_diameter / 2
+    r_head = g.head_diameter / 2
     return [
         ("head is solid", True, [(cx + r_head - 1.0, cy, g.head_front_z + 1.0)]),
-        ("neck is solid in the aperture", True,
-         [(cx + r_head - 1.0, cy, (g.stack.panel_front_z + g.stack.panel_rear_z) / 2)]),
-        ("flange ring is solid outside the shank", True,
-         [(cx + (r_shank + r_flange) / 2, cy, g.flange_front_z + 0.5)]),
-        ("socket wall is solid", True,
+        ("head underside ring is solid outside the shank", True,
+         [(cx + (r_shank + r_head) / 2, cy, g.head_rear_z - 0.5)]),
+        ("shank wall is solid", True,
          [(cx + (r_bore + r_shank) / 2, cy, g.socket_floor_z + 0.6)]),
         ("socket floor keeps material", True,
          [(cx, cy, g.socket_floor_z - 0.4)]),
@@ -143,10 +142,14 @@ def probe_points(g: NavKeytop) -> list[tuple[str, bool, list[tuple[float, float,
          [(cx + r_bore + g.mouth_chamfer - 0.2, cy, g.socket_mouth_z - 0.1)]),
         ("head chamfer removes the front corner", False,
          [(cx + r_head - 0.1, cy, g.head_front_z + 0.1)]),
-        ("flange chamfer removes the rear corner", False,
-         [(cx + r_flange - 0.1, cy, g.flange_rear_z - 0.1)]),
+        ("shank chamfer removes the rear corner", False,
+         [(cx + r_shank - 0.1, cy, g.socket_mouth_z + 0.1)]),
         ("nothing hangs below the socket mouth", False,
          [(cx, cy, g.socket_mouth_z + 0.4)]),
+        # The cap must stay entirely in FRONT of the panel front plane: if this
+        # sample were solid, the part would sit in the panel opening.
+        ("no material inside the panel opening", False,
+         [(cx, cy, g.stack.panel_front_z + 0.3)]),
     ]
 
 

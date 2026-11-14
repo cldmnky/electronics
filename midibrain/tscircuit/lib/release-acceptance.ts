@@ -249,8 +249,9 @@ export const FINGERPRINT_FILES = [
   // The DEFAULT printed actuator generators. Before this change they were NOT in
   // the fingerprint, so a change to the parts themselves - the very geometry an
   // accepted `control_actuator` row is about - would not have invalidated that
-  // evidence. The prototypes (`nav_proto.py`) and the analysis (`nav_fit.py`) are
-  // deliberately excluded: they are not the installed hardware.
+  // evidence. Specimens and analyses are deliberately excluded: they are not the
+  // installed hardware. The NAV motion model and its square-socket prototypes
+  // were removed on 2026-11-14 with the switch they described.
   "mechanical/printed/printed_geometry.py",
   "mechanical/printed/nav_keytop.py",
   "mechanical/printed/knob.py",

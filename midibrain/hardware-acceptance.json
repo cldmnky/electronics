@@ -1,7 +1,7 @@
 {
   "schema": "midibrain-hardware-acceptance/1",
   "note": "Physical acceptance state for the MIDI Brain hardware. An item moves to \"accepted\" only with measured evidence in docs/evidence/ that names a reviewer, a date and the current hardware fingerprint. The fingerprint covers the canonical PCB/panel sources, the mechanical TS-to-CAD bridge and its exported layout, the CAD algorithm, the JLCPCB order settings and the curated cable/hardware selection, so any hardware, algorithm, order-setting or part-selection change makes old evidence stale. Refresh hardware_fingerprint with `bun run scripts/release_gate.ts --fingerprint` after such a change; a documentation-only commit does not change it. There is no override key: unknown keys are errors. See docs/acceptance.md.",
-  "hardware_fingerprint": "8fbc07cee26f00d9f3de81589a0f2ebb74bc1e1f4b02f5489f63e246b1565443",
+  "hardware_fingerprint": "2e050b102a48553d2305204f6e58674e229ed6e0f6c179dbce3b90d572b0c682",
   "items": [
     {
       "id": "zstack",
@@ -11,7 +11,7 @@
     {
       "id": "control_actuator",
       "state": "pending",
-      "note": "Knob, button caps and the 5-way nav actuator fitted and measured against the panel: shaft, detent, cap height and direction legends. Include a sample continuity check on every fitted B3F-4055: the Omron B3F drawing (page 6) shows pins 1-2 internally common and 3-4 internally common with the switch opening/closing between those pairs, and the boards wire pin 1 to ground and pin 3 to the signal. That pairing is a source-design reading, not a sample measurement."
+      "note": "Knob, button caps and the 4-way nav actuator fitted and measured against the panel: shaft, detent, cap height and direction legends. NAV has been the THT ALPS Alpine RKJXT1F42001 since the 2026-11-14 owner decision, so this item also carries: (1) a meter check of every terminal pair before soldering - in particular Push to com and Push to Ground terminal, because the ALPS page-399 circuit diagram and output-relation chart disagree about the centre-push return and both are tied to GND on the board; (2) the collar diameter (D7.20, model geometry) and the housing tab height (9.00, one model) against the 8.0 mm NAV panel opening and the panel rear plane; (3) whether the printed push-on cap stays on the D2.50 flatted shaft, cannot rock and does not bind. Include a sample continuity check on every fitted B3F-4055: the Omron B3F drawing (page 6) shows pins 1-2 internally common and 3-4 internally common with the switch opening/closing between those pairs, and the boards wire pin 1 to ground and pin 3 to the signal. That pairing is a source-design reading, not a sample measurement."
     },
     {
       "id": "jack_retention",

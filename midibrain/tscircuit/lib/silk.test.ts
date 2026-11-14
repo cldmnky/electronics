@@ -316,7 +316,7 @@ test("every hand-soldered through-hole part has a ref and a hint at its own posi
       .sort()
     expect(tht).toEqual(
       spec.board === "front"
-        ? ["J1", "J2", "J3", "J4", "J5", "J_PWR", "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "SW7", "U6"]
+        ? ["J1", "J2", "J3", "J4", "J5", "J_PWR", "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "SW7", "U5", "U6"]
         : [
           // Bare plated probe points are through-hole "parts" with no SMT pad
           // and no BOM line (doNotPlace); each still prints its own net label.

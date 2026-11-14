@@ -75,19 +75,17 @@
   },
   "printedParts": {
     "navKeytop": {
-      "part": "ALPS Alpine SKRHABE010 keytop",
+      "part": "ALPS Alpine RKJXT1F42001 NAV cap",
       "model": "mechanical/printed/nav-keytop",
-      "x": 52,
+      "x": 52.5,
       "y": 12,
       "headHeight": 4,
-      "neckDiameter": 7,
-      "flangeDiameter": 9.6,
-      "flangeThickness": 1.2,
-      "shankDiameter": 5.6,
-      "socketBore": 3.2,
-      "socketDepth": 1.5,
-      "zFront": -4,
-      "zRear": 6.95
+      "headDiameter": 7,
+      "shankDiameter": 5.4,
+      "socketBore": 2.9,
+      "socketDepth": 4,
+      "zFront": -10.95,
+      "zRear": -2.95
     },
     "knob": {
       "part": "Bourns PEC11R-4015F-S0024 value knob",
@@ -819,9 +817,9 @@
     {
       "shape": "circle",
       "name": "NAV",
-      "x": 52,
+      "x": 52.5,
       "y": 12,
-      "radius": 3.6
+      "radius": 4
     },
     {
       "shape": "circle",

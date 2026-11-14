@@ -85,11 +85,17 @@ class CanonicalDataTest(unittest.TestCase):
 
     def test_apertures_come_from_the_export_and_match_the_source(self) -> None:
         data, src = layout(), layout_source()
-        for name in ("NAV", "VALUE ENCODER"):
-            ap = pg.aperture(data, name)
-            self.assertAlmostEqual(ap.diameter, src.panel_control_aperture, places=6,
-                                   msg=f"{name} aperture does not match lib/layout.ts")
-        self.assertAlmostEqual(pg.aperture(data, "NAV").diameter, 7.2, places=9)
+        # NAV has had its OWN aperture since 2026-11-14: the replacement switch's
+        # Ø7.20 collar stands inside it, so it is no longer the shared control
+        # size that the value encoder keeps.
+        self.assertAlmostEqual(pg.aperture(data, "NAV").diameter, src.panel_nav_aperture, places=6,
+                               msg="NAV aperture does not match lib/layout.ts PANEL_CUTOUTS.nav")
+        self.assertAlmostEqual(pg.aperture(data, "VALUE ENCODER").diameter,
+                               src.panel_control_aperture, places=6,
+                               msg="VALUE ENCODER aperture does not match PANEL_CUTOUTS.control")
+        self.assertAlmostEqual(src.panel_nav_aperture, 8.0, places=9)
+        self.assertAlmostEqual(src.panel_control_aperture, 7.2, places=9)
+        self.assertGreater(src.panel_nav_aperture, src.panel_control_aperture)
 
     def test_display_opening_edge_is_derived_from_the_source(self) -> None:
         src = layout_source()
@@ -111,61 +117,86 @@ class CanonicalDataTest(unittest.TestCase):
 
 
 class NavKeytopTest(unittest.TestCase):
-    """The ALPS SKRHABE010 keytop rules."""
+    """The ALPS RKJXT1F42001 cap rules (owner decision 2026-11-14)."""
 
     def setUp(self) -> None:
         self.data = layout()
         self.g = keytop()
 
-    def test_the_whole_cap_assembles_through_the_aperture(self) -> None:
-        """Everything in front of the flange is the leading end: it must pass."""
-        self.assertAlmostEqual(self.g.neck_diameter, 7.0, places=9)
-        self.assertGreater(self.g.aperture_diameter, self.g.neck_diameter)
-        self.assertAlmostEqual(self.g.aperture_clearance, 0.2, places=9)
+    def test_the_cap_sits_on_the_projected_shaft_in_front_of_the_panel(self) -> None:
+        # 17.4 above the PCB, board top at 10.60 -> the shaft tip is at Z -6.80.
+        self.assertAlmostEqual(self.g.shaft_tip_z, -6.8, places=9)
+        # The whole cap stays in front of the panel front plane: it never enters
+        # the opening (the switch's own collar does).
+        self.assertLess(self.g.socket_mouth_z, self.g.stack.panel_front_z)
+        self.assertAlmostEqual(self.g.rear_face_above_panel_front, 2.95, places=9)
+        self.assertGreater(self.g.rear_face_above_panel_front,
+                           pg.NAV_CENTRE_PUSH_TRAVEL + pg.NAV_CENTRE_PUSH_TOLERANCE)
 
-    def test_flange_traps_the_cap_on_the_panel_rear_face(self) -> None:
-        self.assertGreater(self.g.flange_diameter, self.g.aperture_diameter)
-        self.assertAlmostEqual(self.g.flange_front_z, self.g.stack.panel_rear_z, places=9)
-        self.assertAlmostEqual(self.g.bearing_ring, 1.2, places=9)
-        self.assertGreaterEqual(self.g.bearing_ring, pg.PRINT_MIN_WALL)
-
-    def test_socket_clears_the_stem_inside_the_alps_fitting_area(self) -> None:
-        self.assertAlmostEqual(self.g.socket_bore, 3.2, places=9)
-        self.assertGreater(self.g.socket_bore, self.g.stem_diameter)
-        self.assertAlmostEqual(self.g.socket_depth, 1.5, places=9)
-        self.assertLessEqual(self.g.socket_depth, 1.7 + 1e-9)
+    def test_the_bore_clears_the_flatted_shaft(self) -> None:
+        self.assertAlmostEqual(self.g.socket_bore, 2.9, places=9)
+        self.assertAlmostEqual(self.g.shaft_diameter, 2.5, places=9)
+        self.assertAlmostEqual(self.g.shaft_across_flat, 1.8, places=9)
+        loose = pg.nav_socket_clearance(self.g.socket_bore)
+        self.assertAlmostEqual(loose["shaft_round_side_mm"], 0.2, places=9)
+        # The flat is 0.55 mm from the axis, so the bore is looser on that side.
+        self.assertAlmostEqual(loose["flat_plane_from_axis_mm"], 0.55, places=9)
+        self.assertAlmostEqual(loose["shaft_flat_side_mm"], 0.9, places=9)
+        self.assertFalse(loose["keys_on_the_flat"])
         self.assertGreaterEqual(self.g.socket_wall, pg.PRINT_MIN_WALL)
 
     def test_cap_has_axial_free_play_at_rest(self) -> None:
         self.assertAlmostEqual(self.g.free_play, 0.15, places=9)
         self.assertGreaterEqual(self.g.free_play, 0.1 - 1e-9)
         self.assertLessEqual(self.g.free_play, 0.2 + 1e-9)
-        # The socket must still reach past the stem top, or it just rests on it.
-        self.assertGreater(self.g.stem_engagement, 1.0)
-        # Stem top 5.60, socket floor 5.45, 1.50 deep socket -> mouth 6.95.
-        self.assertAlmostEqual(self.g.stem_top_z, 5.6, places=9)
-        self.assertAlmostEqual(self.g.socket_floor_z, 5.45, places=9)
-        self.assertAlmostEqual(self.g.socket_mouth_z, 6.95, places=9)
-        self.assertAlmostEqual(self.g.stem_engagement, 1.35, places=9)
+        # The bore must reach well down the shaft, not just kiss its tip.
+        self.assertGreater(self.g.shaft_in_socket, self.g.shaft_diameter)
+        self.assertAlmostEqual(self.g.socket_floor_z, -6.95, places=9)
+        self.assertAlmostEqual(self.g.socket_mouth_z, -2.95, places=9)
+        self.assertAlmostEqual(self.g.shaft_in_socket, 3.85, places=9)
 
-    def test_head_is_three_to_five_mm_proud_of_the_panel_front(self) -> None:
+    def test_head_is_a_finger_pad_of_three_to_five_mm(self) -> None:
         self.assertGreaterEqual(self.g.head_height, 3.0 - 1e-9)
         self.assertLessEqual(self.g.head_height, 5.0 + 1e-9)
-        self.assertAlmostEqual(self.g.head_front_z, -4.0, places=9)
+        self.assertAlmostEqual(self.g.head_front_z, -10.95, places=9)
+        self.assertGreater(self.g.head_diameter, self.g.shank_diameter)
+        self.assertGreaterEqual(self.g.head_ring, pg.PRINT_MIN_WALL - pg.EPS_MM)
 
-    def test_cap_fits_the_panel_to_board_gap(self) -> None:
-        self.assertLess(self.g.socket_mouth_z, self.g.stack.board_top_z)
-        self.assertGreaterEqual(self.g.switch_body_clearance, 0.5)
-        self.assertGreaterEqual(self.g.gap_below, 0.5)
-        # The flange hangs in the gap, so it cannot be deeper than the gap.
-        self.assertLess(self.g.flange_rear_z, self.g.stack.board_top_z)
+    def test_the_total_protrusion_is_the_shaft_plus_the_head(self) -> None:
+        # 6.80 mm of shaft stands proud of the 10.60 mm panel front, so the cap
+        # cannot be within the old 3-5 mm intent: 10.95 mm in total, derived.
+        self.assertAlmostEqual(self.g.proud_of_panel, 10.95, places=9)
+        self.assertAlmostEqual(self.g.overall_length, 8.0, places=9)
 
-    def test_flange_hangs_clear_of_the_panel_hardware(self) -> None:
+    def test_the_switch_heights_are_the_drawing_values(self) -> None:
+        self.assertAlmostEqual(pg.NAV_HOUSING_TOP_ABOVE_PCB, 8.6, places=9)
+        self.assertAlmostEqual(pg.NAV_COLLAR_TOP_ABOVE_PCB, 10.5, places=9)
+        self.assertAlmostEqual(pg.NAV_SHAFT_TIP_ABOVE_PCB, 17.4, places=9)
+        # The collar pokes 1.5 mm into the opening from the panel REAR face and
+        # stays 0.1 mm short of its front face.
+        self.assertAlmostEqual(self.g.collar_top_z, 0.1, places=9)
+        self.assertAlmostEqual(self.g.stack.panel_front_z - self.g.collar_top_z, -0.1, places=9)
+        self.assertAlmostEqual(self.g.collar_clearance, 3.05, places=9)
+        # The tabs sit at the panel REAR plane: a zero-gap contact RISK, never
+        # a clearance. Asserted so a future edit cannot turn it into one.
+        self.assertAlmostEqual(pg.NAV_TAB_TOP_ABOVE_PCB, 9.0, places=9)
+        self.assertAlmostEqual(self.g.stack.board_top_z - pg.NAV_TAB_TOP_ABOVE_PCB,
+                               self.g.stack.panel_rear_z, places=9)
+
+    def test_the_hand_stays_clear_of_the_panel_hardware(self) -> None:
         clearances = pg.panel_feature_clearances(
-            self.data, self.g.centre, self.g.flange_diameter / 2, skip=self.g.aperture.name)
-        self.assertTrue(clearances, "no panel feature was compared with the flange")
+            self.data, self.g.centre, self.g.head_diameter / 2, skip=self.g.aperture.name)
+        self.assertTrue(clearances, "no panel feature was compared with the cap")
         self.assertGreater(clearances[0][1], 0.0,
-                           f"flange overlaps {clearances[0][0]}")
+                           f"the head overlaps {clearances[0][0]}")
+
+    def test_the_nav_opening_is_its_own_size_not_the_encoder_hole(self) -> None:
+        src = layout_source()
+        self.assertAlmostEqual(src.panel_nav_aperture, 8.0, places=9)
+        self.assertAlmostEqual(src.panel_control_aperture, 7.2, places=9)
+        self.assertAlmostEqual(self.g.aperture_diameter, 8.0, places=9)
+        # 0.40 mm per side over the Ø7.20 collar, before the routed tolerance.
+        self.assertGreater((self.g.aperture_diameter - pg.NAV_COLLAR_DIAMETER) / 2, 0.35)
 
 
 class KnobTest(unittest.TestCase):
@@ -493,180 +524,6 @@ class ButtonCapTest(unittest.TestCase):
         self.assertIn("B32-13x0", text)
 
 
-class NavProtoTest(unittest.TestCase):
-    """The printable prototype socket matched to the rounded-square tip."""
-
-    def setUp(self) -> None:
-        self.g = keytop()
-        self.specs = pg.nav_proto_specimens(self.g)
-
-    def test_the_four_specimens_are_labelled_and_ordered(self) -> None:
-        self.assertEqual([s.name for s in self.specs],
-                         ["square-2.00", "square-2.10", "square-2.20",
-                          "rock-square-2.10"])
-        for spec in self.specs:
-            self.assertIn("PROTOTYPE", spec.status)
-            self.assertNotEqual(spec.status, "STANDARD")
-        self.assertIn("ROCK", self.specs[-1].status)
-
-    def test_the_square_sizes_are_clearances_around_the_tip(self) -> None:
-        for spec, per_side in zip(self.specs, (0.025, 0.075, 0.125)):
-            numbers = pg.nav_proto_numbers(spec, self.g)
-            self.assertAlmostEqual(numbers["clearance_per_side_mm"], per_side, places=4)
-            self.assertAlmostEqual(numbers["corner_clearance_mm"], 0.10, places=4)
-            self.assertGreater(numbers["socket_wall_to_shank_mm"], pg.PRINT_MIN_WALL)
-
-    def test_every_specimen_engages_only_the_square_tip(self) -> None:
-        for spec in self.specs:
-            numbers = pg.nav_proto_numbers(spec, self.g)
-            self.assertTrue(numbers["only_engages_the_square_tip"], spec.name)
-            self.assertFalse(numbers["reaches_the_circular_collar"], spec.name)
-            self.assertAlmostEqual(numbers["socket_depth_mm"], 1.4, places=9)
-            self.assertLessEqual(numbers["socket_depth_mm"],
-                                 pg.NAV_KEYTOP_FITTING_AREA_MAX)
-
-    def test_the_rock_variant_changes_only_the_neck(self) -> None:
-        stock = self.specs[1]
-        rock = self.specs[3]
-        self.assertAlmostEqual(stock.square_mm, rock.square_mm, places=9)
-        self.assertAlmostEqual(rock.neck_diameter_mm, pg.NAV_PROTO_ROCK_NECK, places=9)
-        plain = pg.nav_proto_numbers(stock, self.g)
-        loose = pg.nav_proto_numbers(rock, self.g)
-        self.assertGreater(loose["tilt_before_binding_deg"],
-                           plain["tilt_before_binding_deg"])
-        # the wider aperture clearance also costs guidance: both numbers are shown
-        self.assertAlmostEqual(plain["tilt_before_binding_deg"], 7.125, places=3)
-        self.assertAlmostEqual(loose["tilt_before_binding_deg"], 14.036, places=3)
-
-    def test_the_installed_part_is_not_changed(self) -> None:
-        # The standard keytop still has its circular socket and its D7.00 neck.
-        self.assertAlmostEqual(self.g.socket_bore, 3.2, places=9)
-        self.assertAlmostEqual(self.g.neck_diameter, 7.0, places=9)
-        self.assertNotIn("nav-keytop-proto", str(pg.PRINTED_PART_KEYS)
-                         if hasattr(pg, "PRINTED_PART_KEYS") else "")
-        # No prototype may be described as the standard or as released.
-        for spec in self.specs:
-            self.assertIn("installed part", spec.status.lower())
-
-    def test_no_specimen_claims_grip_or_retention(self) -> None:
-        for spec in self.specs:
-            numbers = pg.nav_proto_numbers(spec, self.g)
-            text = " ".join(numbers["not_claimed"]).lower()
-            for claim in ("grips", "retains", "cannot rock"):
-                self.assertIn(claim, text)
-
-    def test_unprintable_or_unreachable_specimens_are_refused(self) -> None:
-        from dataclasses import replace
-        base = self.specs[1]
-        cases = [
-            replace(base, square_mm=1.96),                    # no room for the tip
-            replace(base, square_mm=2.90),                    # sloppy past the wall rule
-            replace(base, corner_radius_mm=0.45),             # hairline corner
-            replace(base, socket_depth_mm=1.8),               # past the fitting area
-            replace(base, socket_depth_mm=0.5),               # too shallow to guide
-            replace(base, neck_diameter_mm=7.1),              # does not fit the hole
-        ]
-        for spec in cases:
-            with self.assertRaises(pg.GeometryError, msg=spec):
-                pg.validate_nav_proto(spec, self.g)
-
-
-@unittest.skipIf(cq is None, SKIP)
-class NavProtoSolidTest(unittest.TestCase):
-    """Measure the BUILT prototype: the planes must be the ones it reports.
-
-    The earlier prototype reused the installed stock, whose rear face is
-    socket_mouth_z 6.95, and cut a "1.40 mm" socket through it: the real socket
-    was 1.50 mm and sat 0.10 mm lower on the stem. These tests section the built
-    solid instead of trusting the label.
-    """
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        import nav_proto
-        from printed_geometry import nav_keytop, nav_proto_floor_z, nav_proto_rear_z
-        cls.g = nav_keytop()
-        cls.builder = nav_proto
-        cls.spec = [s for s in pg.nav_proto_specimens(cls.g) if s.name == "square-2.10"][0]
-        cls.floor_z = nav_proto_floor_z(cls.g)
-        cls.rear_z = nav_proto_rear_z(cls.g, cls.spec)
-        stock, features = nav_proto.build_specimen(cq, cls.g, cls.spec)
-        cls.body, cls.removed = pg.apply_cuts(cq, stock, features)
-
-    def inside(self, x: float, y: float, z: float) -> bool:
-        return self.body.val().isInside(cq.Vector(x, y, z))
-
-    def test_the_built_solid_ends_at_the_prototype_rear_face(self) -> None:
-        bb = self.body.val().BoundingBox()
-        self.assertAlmostEqual(bb.zmax, self.rear_z, places=4)
-        # 6.85, i.e. 0.10 SHORT of the installed part's socket_mouth_z 6.95
-        self.assertAlmostEqual(self.rear_z, 6.85, places=4)
-        self.assertAlmostEqual(self.g.socket_mouth_z - self.rear_z, 0.10, places=4)
-
-    def test_the_socket_is_the_declared_depth_and_blind_at_the_floor(self) -> None:
-        reported = pg.nav_proto_numbers(self.spec, self.g)
-        self.assertAlmostEqual(reported["socket_depth_mm"], 1.40, places=4)
-        cx, cy = self.g.centre
-        mid = (self.floor_z + self.rear_z) / 2
-        # open through the socket
-        for z in (self.floor_z + 0.20, mid, self.rear_z - 0.10):
-            self.assertFalse(self.inside(cx, cy, z), f"the socket is not open at z {z}")
-        # closed below the floor: this is a BLIND socket
-        self.assertTrue(self.inside(cx, cy, self.floor_z - 0.20),
-                        "the socket must be blind below its floor")
-        # and nothing exists beyond the rear plane
-        self.assertFalse(self.inside(cx, cy, self.rear_z + 0.10))
-        # the engagement band is the reported one
-        above_floor = self.g.stack.board_top_z - self.floor_z
-        above_rear = self.g.stack.board_top_z - self.rear_z
-        self.assertAlmostEqual(above_floor, 5.15, places=4)
-        self.assertAlmostEqual(above_rear, 3.75, places=4)
-        self.assertGreaterEqual(above_rear, pg.NAV_STEP_SQUARE_SLICE_Z[0],
-                                "the mouth must stay above the square tip band")
-
-    def test_the_corner_is_a_true_radius_not_a_chord(self) -> None:
-        """R0.60 corner: the diagonal reach is core*sqrt(2) + r, not the chord."""
-        import math
-        half = self.spec.square_mm / 2
-        r = self.spec.corner_radius_mm
-        core = half - r
-        reach = core * math.sqrt(2) + r                 # 1.236 mm for 2.10 / R0.60
-        cx, cy = self.g.centre
-        z = (self.floor_z + self.rear_z) / 2
-        # a point at the corner's diagonal reach - 0.02 is VOID (inside the true
-        # radius); a chorded corner would have made it material.
-        d = reach - 0.02
-        self.assertFalse(self.inside(cx + d * math.cos(math.radians(45)),
-                                     cy + d * math.sin(math.radians(45)), z),
-                         "the corner is cut with chords, not the declared radius")
-        # and just beyond the radius plus the print margin it is material again
-        d2 = reach + 0.10
-        self.assertTrue(self.inside(cx + d2 * math.cos(math.radians(45)),
-                                    cy + d2 * math.sin(math.radians(45)), z))
-
-    def test_the_lead_in_is_the_declared_depth(self) -> None:
-        half_lead = self.spec.square_mm / 2 + 0.30 - 0.02
-        cx, cy = self.g.centre
-        # inside the lead-in relief, just off the socket wall: void
-        self.assertFalse(self.inside(cx + half_lead, cy, self.rear_z - 0.10),
-                         "the lead-in is not cut at the mouth")
-        # below the lead-in, the same point must be MATERIAL (the flat wall)
-        self.assertTrue(self.inside(cx + half_lead, cy, self.rear_z - 0.45))
-
-    def test_the_rock_variant_really_narrows_the_neck(self) -> None:
-        rock = [s for s in pg.nav_proto_specimens(self.g)
-                if s.name == "rock-square-2.10"][0]
-        stock, features = self.builder.build_specimen(cq, self.g, rock)
-        body, _ = pg.apply_cuts(cq, stock, features)
-        z = (self.g.stack.panel_front_z + self.g.stack.panel_rear_z) / 2
-        cx, cy = self.g.centre
-        # 6.80 neck = r 3.40: r 3.30 is material, r 3.45 is the removed annulus.
-        # (At 7.00 the neck would be material out to r 3.50.)
-        self.assertTrue(body.val().isInside(cq.Vector(cx + 3.30, cy, z)))
-        self.assertFalse(body.val().isInside(cq.Vector(cx + 3.45, cy, z)))
-        self.assertFalse(body.val().isInside(cq.Vector(cx + 3.55, cy, z)))
-
-
 class FitSpecimenTest(unittest.TestCase):
     """Four locator sizes, nothing else changed, no retention claimed."""
 
@@ -782,8 +639,9 @@ class ClaimRecurrenceTest(unittest.TestCase):
         self.assertAlmostEqual(c.top_above_board, 11.40, places=9)
         self.assertAlmostEqual(c.ring_to_body_rest, 2.40, places=9)
         self.assertAlmostEqual(c.ring_to_body_at_flush, 1.60, places=9)
-        self.assertAlmostEqual(g.overall_length, 10.95, places=9)
-        self.assertAlmostEqual(g.switch_body_clearance, 1.85, places=9)
+        self.assertAlmostEqual(g.overall_length, 8.0, places=9)
+        self.assertAlmostEqual(g.proud_of_panel, 10.95, places=9)
+        self.assertAlmostEqual(g.collar_clearance, 3.05, places=9)
         data = layout()
         # 12.75 / 8.75: the owner's carrier pair. Reaching flush EXTENDS the
         # 8.75 mm spacer to 9.35 mm; it is never cut shorter.
@@ -797,36 +655,36 @@ class ClaimRecurrenceTest(unittest.TestCase):
 class MutationTest(unittest.TestCase):
     """The reviewed inputs, warped: every rule below must REJECT the part."""
 
-    def test_shrinking_the_aperture_makes_the_neck_no_longer_fit(self) -> None:
-        g = keytop()
-        shrunk = replace(g, aperture=pg.Circle(g.aperture.x, g.aperture.y,
-                                               g.neck_diameter, g.aperture.name))
-        with self.assertRaises(pg.GeometryError) as raised:
-            pg.validate_nav_keytop(shrunk, layout())
-        self.assertIn("sliding fit", str(raised.exception))
-
-    def test_a_socket_tighter_than_the_stem_fails(self) -> None:
-        g = replace(keytop(), socket_bore=pg.NAV_STEM_DIAMETER)
+    def test_a_socket_tighter_than_the_shaft_fails(self) -> None:
+        g = replace(keytop(), socket_bore=pg.NAV_SHAFT_DIAMETER)
         with self.assertRaises(pg.GeometryError):
             pg.validate_nav_keytop(g, layout())
 
-    def test_a_socket_deeper_than_the_alps_fitting_area_fails(self) -> None:
-        base = keytop()
-        g = replace(base, socket_mouth_z=base.socket_floor_z + 1.75)
-        with self.assertRaises(pg.GeometryError) as raised:
-            pg.validate_nav_keytop(g, layout())
-        self.assertIn("keytop fitting area", str(raised.exception))
-
     def test_zero_free_play_fails(self) -> None:
         base = keytop()
-        g = replace(base, socket_floor_z=base.stem_top_z)
+        g = replace(base, socket_floor_z=base.shaft_tip_z)
         with self.assertRaises(pg.GeometryError) as raised:
             pg.validate_nav_keytop(g, layout())
         self.assertIn("free play", str(raised.exception))
 
-    def test_a_cap_that_seats_on_the_switch_body_fails(self) -> None:
+    def test_a_cap_that_reaches_into_the_panel_opening_fails(self) -> None:
         base = keytop()
-        g = replace(base, socket_mouth_z=base.switch_body_top_z - 0.1)
+        g = replace(base, socket_mouth_z=base.stack.panel_rear_z - 0.2)
+        with self.assertRaises(pg.GeometryError) as raised:
+            pg.validate_nav_keytop(g, layout())
+        self.assertIn("aperture", str(raised.exception))
+
+    def test_a_cap_that_meets_the_panel_at_full_travel_fails(self) -> None:
+        base = keytop()
+        g = replace(base, socket_mouth_z=base.stack.panel_front_z - 0.5)
+        with self.assertRaises(pg.GeometryError) as raised:
+            pg.validate_nav_keytop(g, layout())
+        self.assertIn("push travel", str(raised.exception))
+
+    def test_a_bore_that_barely_reaches_the_shaft_tip_fails(self) -> None:
+        base = keytop()
+        g = replace(base, socket_floor_z=base.shaft_tip_z - 0.125,
+                    socket_mouth_z=base.shaft_tip_z + 0.375)
         with self.assertRaises(pg.GeometryError):
             pg.validate_nav_keytop(g, layout())
 
@@ -1011,11 +869,16 @@ class ArtefactTest(unittest.TestCase):
         self.assertEqual(report.shells, 1)
         self.assertEqual(report.open_edges, 0)
         self.assertEqual(report.non_manifold_edges, 0)
-        self.assertAlmostEqual(report.bbox[2], 7.2, delta=0.01)
-        # The socket mouth is the part's rear-most point: stem top 5.60 + the
-        # 1.50 socket less the 0.15 free play = 6.95.
+        # D7.00 head in X; the Y extent is the same because the cap is revolved.
+        self.assertAlmostEqual(report.bbox[1] - report.bbox[0], 7.0, delta=0.01)
+        self.assertAlmostEqual(report.bbox[3] - report.bbox[2], 7.0, delta=0.01)
+        self.assertAlmostEqual(report.bbox[0], keytop().centre[0] - 3.5, delta=0.01)
+        # Head front (shaft tip -6.80, free play 0.15, head 4.00) and socket
+        # mouth (shaft tip + 4.00 - 0.15): the part hangs in front of the panel.
         self.assertAlmostEqual(report.bbox[5], keytop().socket_mouth_z, delta=0.01)
-        self.assertAlmostEqual(report.bbox[5], 6.95, delta=0.01)
+        self.assertAlmostEqual(report.bbox[5], -2.95, delta=0.01)
+        self.assertAlmostEqual(report.bbox[4], keytop().head_front_z, delta=0.01)
+        self.assertAlmostEqual(report.bbox[4], -10.95, delta=0.01)
 
     def test_knob_stl_is_one_watertight_shell_of_the_right_size(self) -> None:
         report = self.check("knob.stl", knob())

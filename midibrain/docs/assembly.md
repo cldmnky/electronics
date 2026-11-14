@@ -42,7 +42,26 @@ stay out of the SMT CPL.
 | Bulk | 10 µF, CL31A106KBHNNNE | C13585 | 1206 |
 | REC / OVER DUB LEDs | KT-0805R | C2295 | 0805 |
 | PLAY LED | KT-0805G | C2297 | 0805 |
-| NAV | Alps SKRHABE010 | C139794 | SMD 8-pad |
+| NAV | **ALPS Alpine RKJXT1F42001** (owner decision 2026-11-14) | — | **THT, 11 holes** |
+
+The NAV switch is **through-hole and hand-soldered**. It replaced the SMD Alps
+SKRHABE010 (C139794) because that part's actuator could not reach the panel at
+the jack-anchored 10.60 mm stack; the RKJXT1F42001's shaft stands 17.4 mm above
+the board. It has no LCSC/JLCPCB number in this design and it is **not** on the
+SMT CPL. ALPS publishes a manual-soldering reference for the part (page 412:
+tip 350 ±5 °C, 3 s max, one time), so hand soldering is a documented method
+here, not an assumption. It is a 4-direction stick switch with a centre push and
+an encoder whose three encoder terminals are unconnected (`noConnect`): the
+design has no encoder feature on the NAV stick. The five control nets are
+unchanged (`NAV_UP`, `NAV_DOWN`, `NAV_LEFT`, `NAV_RIGHT`, `NAV_PRESS`) plus the
+GND common, and are mapped by FUNCTION from the ALPS output-relation chart, not
+by pad order. **First-article job for this part:** (1) meter every terminal pair
+before soldering, in particular the centre-push return — the ALPS page-399
+circuit diagram draws the push between `Push` and `Com` while the page-399 chart
+shows `Push-Com` on in every column, so both `com` and `Ground terminal` are
+tied to GND and the true return must be confirmed; (2) confirm the ten Ø1.0
+holes and the Ø1.1 position-lug hole against the sample; (3) confirm that the
+Ø7.20 collar clears the 8.0 mm NAV panel opening. See `docs/TODO.md`.
 
 TLP2361 is inverting **totem-pole**, unlike the old TLP2362 open-collector
 receiver. The retained pull-up and 100 nF local bypass are intentional. Its
@@ -77,9 +96,9 @@ See [mechanical-stack.md](mechanical-stack.md) for the display datums, the Z cha
 ## U6 encoder: THT fallback and bench technique
 
 U6 is the Bourns PEC11R-4015F-S0024 (C143789): 0 detents, 24 pulses per 360°,
-push switch, THT signal pins and two THT anchor lugs. SMT panel controls are
-acceptable in principle - the NAV switch is SMT and takes repeated presses -
-but the knob applies torque. The 2026-11-06 JLC/LCSC catalog search found no SMD
+push switch, THT signal pins and two THT anchor lugs. THT panel controls are
+acceptable here - the NAV switch is THT since 2026-11-14, and ALPS documents a
+manual-soldering process for it - but the knob applies torque. The 2026-11-06 JLC/LCSC catalog search found no SMD
 encoder with 0 detents, 24+ pulses/rev and through-hole anchor lugs: the SMD
 PEC11S, PEC11J and EC11J families are 30 detents/15 pulses, the PEC11R `K`
 suffix is a knurled shaft rather than an SMD terminal, and the `B2` EC11E

@@ -29,7 +29,7 @@ the board. Everything else re-derives from that one part dimension.
 | Panel-to-front-board mount frame (BOTH boards, Ø3.2) | (−71.5, −52) (71.5, −52) (−71.5, 52) (71.5, 52), M3, standoff 9.00 mm nominal | `PANEL_MOUNT_POINTS`, `PANEL_STANDOFF` |
 | Panel LCD aperture | 107.22 × 68.87 mm at (−10.0, 11), 1.0 mm corner relief | `PANEL_LCD_CUTOUT` |
 | USB panel feedthroughs (y 53.5) | x **−52 / −23.5 / +11** | `USB_FEEDTHROUGHS` |
-| Right control column (x 52) | POWER/SW7 y 49, VALUE/U6 y 31, NAV/U5 y 12, SHIFT/EXIT/SW6 y −5, PLAY START/SW5 y −34 | `POWER_BUTTON`, `RIGHT_CONTROLS`, `PLAY_START` |
+| Right control column (x 52; **NAV at x 52.5**) | POWER/SW7 y 49, VALUE/U6 y 31, NAV/U5 y 12, SHIFT/EXIT/SW6 y −5, PLAY START/SW5 y −34 | `POWER_BUTTON`, `RIGHT_CONTROLS`, `PLAY_START` |
 | J_PWR (rear face, rotation 180, mating axis +Y) | (64, 44.5) | `POWER_HEADER` |
 | J5 / J_FRONT (direct 2 × 13 pair) | (66, 20), rotation 90, right of the display | `FRONT_INTERCONNECT` |
 | Transport row (y −34, 24 mm pitch, centred under the opening) | x −46 / −22 / +2 / +26 | `FRONT_COLUMNS`, `TRANSPORT_Y` |
@@ -59,7 +59,9 @@ the right-hand strip; MIDI jacks sharing the transport columns. Each replaced va
 
 Owner control centres (2026-11-13, `RIGHT_CONTROLS`, `FRONT_COLUMNS`, `MIDI_JACK_X` in `lib/layout.ts`): transport
 buttons REC / OVER DUB / STOP / PLAY at x −46 / −22 / +2 / +26, y −34 (24 mm pitch, centred under the opening whose
-centre is −10.0); PLAY START at (52, −34); VALUE (52, 31); NAV (52, 12); SHIFT/EXIT (52, −5); POWER (52, 49); LEDs
+centre is −10.0); PLAY START at (52, −34); VALUE (52, 31); **NAV (52.5, 12: 0.5 mm right of the column since the
+2026-11-14 switch replacement - the 17 × 17 mm ALPS RKJXT1F42001 body would otherwise enter `FRONT_DISPLAY_KEEPOUT`)**;
+SHIFT/EXIT (52, −5); POWER (52, 49); LEDs
 12 mm beside REC / OVER DUB / PLAY at y −34; MIDI jacks at y −47.5 in one 12 mm-pitch block at x −62 / −50 / −38 /
 −26; display centre (−10.0, 11). The jacks deliberately no longer share the transport X: cables under SW1–SW4 fouled
 the buttons and the hand pressing them (commit `cf26c42`).
@@ -507,6 +509,18 @@ U board (−44, −52) lands on the jack row and (45, 43) on the opening's cut e
 - C5/C6 and the rest of the right column: the column moved to POWER 49 / VALUE 31 / NAV 12 / SHIFT·EXIT −5, so the
   old "C5 (50, 46) against the right bracket mount" check no longer describes this board; re-derive the head and web
   checks from `layout.ts` plus `check_placement.ts` output rather than from memory.
+- NAV switch stack (added 2026-11-14, owner decision): the ALPS RKJXT1F42001 is a **17 × 17 mm THT body** whose
+  heights above the front board's top face (Z 10.60) are housing **8.6 mm** (Z 2.00), stationary collar **10.5 mm**
+  (Z 0.10) and shaft tip **17.4 mm** (Z −6.80). Three consequences, none measured:
+  1. The **collar clears the panel FRONT face by only 0.10 mm**: it stands 1.50 mm into the 8.0 mm NAV opening from
+     the panel rear (Z 1.60) and ends at Z 0.10, so the opening must clear Ø7.20 plus the panel/routed tolerance
+     (`PANEL_CUTOUTS.nav`, PROVISIONAL).
+  2. The housing top is **0.40 mm behind the panel rear plane** (Z 2.00 against 1.60) - a 0.40 mm nominal gap, and
+     the four housing tabs are modelled at **9.00 mm** above the board, i.e. exactly the panel rear plane: a
+     **0.00 mm nominal CONTACT RISK**, not a clearance. The tab height is model geometry (one model shows 9.00, the
+     other 8.60); measure it.
+  3. The cap is a push-on cap **in front of** the panel: rear face Z −2.95 (2.95 mm proud), head front Z −10.95
+     (**10.95 mm proud in total**). Nothing of it enters the opening; see `mechanical/printed/README.md`.
 
 ## Provisional installed-depth chain
 

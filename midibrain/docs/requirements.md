@@ -23,7 +23,11 @@
 - A powered external USB MIDI hub, 2 × Type-A TRS MIDI inputs and 2 × outputs;
   master clock, transport, MIDI routing/filtering/merging.
 - **Waveshare 4.3inch DSI LCD** (ElectroKit 4103 5687), 800 × 480, DSI video
-  and I2C touch on one 15-pin cable; no HDMI or touch-USB cable. Five-way nav,
+  and I2C touch on one 15-pin cable; no HDMI or touch-USB cable. **NAV: a
+  4-direction stick switch with a centre push and a separate `NAV_PRESS` net -
+  ALPS Alpine RKJXT1F42001 (THT) since the 2026-11-14 owner decision, which
+  replaced the SMD Alps SKRHABE010 so the actuator reaches the panel; the
+  replacement's own encoder section is NOT used and has no firmware feature.** A
   context-aware **VALUE** encoder (Bourns PEC11R-4015F-S0024), five transport
   buttons (REC, OVER DUB, STOP, PLAY, PLAY START), SHIFT/EXIT, and three LEDs
   (REC / OVER DUB / PLAY) beside their buttons on light pipes. Retain SPI

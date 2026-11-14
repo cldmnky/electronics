@@ -1391,17 +1391,26 @@ export const RIGHT_COLUMN = { x: 52 } as const
 // courtyard (20.60) can take C5 and C6 side by side. The column keeps its 17 mm
 // pitch: TEMPO 29, NAV 12, SHIFT/EXIT -5.
 const RIGHT_TEMPO_Y = 31
+// 2026-11-14: NAV alone moves 0.5 mm right of the column centreline. The owner
+// approved replacing the 5.3 x 4.5 mm SMD SKRHABE010 with the ALPS RKJXT1F42001
+// (a 17 x 17 mm THT stick switch), whose left-hand pads at -7.8 mm would
+// otherwise sit 0.3 mm inside FRONT_DISPLAY_KEEPOUT (right edge 43.75). That is
+// a hard placement-DRC collision, not a preference. TEMPO and SHIFT/EXIT do not
+// move: the owner decision moved the switch only. NAV is therefore 0.5 mm off
+// the column centreline, and the panel opening, its legend and the printed
+// keytop follow it because all three derive from this number.
 export const RIGHT_CONTROLS = {
   TEMPO: { x: RIGHT_COLUMN.x, y: RIGHT_TEMPO_Y },
-  NAV: { x: RIGHT_COLUMN.x, y: 12 },
+  NAV: { x: 52.5, y: 12 },
   SHIFT_EXIT: { x: RIGHT_COLUMN.x, y: -5 },
 } as const
 
 // ---- 3D-printed front-panel parts (owner's two printed parts) ----
-// One keytop for the NAV switch U5 (ALPS Alpine SKRHABE010) and one value knob
-// for the encoder U6 (Bourns PEC11R-4015F-S0024). Both are printed plastic, so
-// neither is a board part and neither has pads: they are drawn in the front
-// board's 3D view as reference envelopes and BUILT by mechanical/printed/.
+// One cap for the NAV switch U5 (ALPS Alpine RKJXT1F42001 since the 2026-11-14
+// owner decision; it replaced the SMD SKRHABE010) and one value knob for the
+// encoder U6 (Bourns PEC11R-4015F-S0024). Both are printed plastic, so neither
+// is a board part and neither has pads: they are drawn in the front board's 3D
+// view as reference envelopes and BUILT by mechanical/printed/.
 //
 // This block is the single source of truth for their SHAPE AND POSITION.
 // mechanical/layout.json carries it (mechanicalExport below), and
@@ -1414,11 +1423,13 @@ export const RIGHT_CONTROLS = {
 //
 // NOT A FIT MODEL: every number below is a design intent that the first article
 // has to measure. The parts' own README lists what is assumed.
-const NAV_KEYTOP_HEAD_HEIGHT = 4.0     // 3-5 mm proud of the panel front
-const NAV_KEYTOP_SOCKET_DEPTH = 1.5    // under the ALPS 1.7 mm keytop fitting area
-// ALPS SKRH drawing No.1: overall switch height above the mounting surface. The
-// socket floor floats this far minus the free play above the front-board top.
-const NAV_SWITCH_HEIGHT_ABOVE_BOARD = 5.0
+const NAV_KEYTOP_HEAD_HEIGHT = 4.0     // the finger pad, in front of the shaft tip
+const NAV_KEYTOP_SOCKET_DEPTH = 4.0    // blind bore over the flatted shaft
+// ALPS RKJXT1F42001 drawing (page 398) "17.4": the shaft tip above the PC board's
+// top face. The shaft stands 6.80 mm proud of the 10.60 mm panel front, so this
+// cap is a PUSH-ON CAP on that shaft, not a plunger inside the panel opening: no
+// part of it enters the opening and there is no flange behind the panel.
+const NAV_SWITCH_SHAFT_TIP_ABOVE_BOARD = 17.4
 const NAV_KEYTOP_AXIAL_FREE_PLAY = 0.15
 const KNOB_HEIGHT = 16.0
 // Panel front to the knob's rear face: the assumed supplied M7 nut + flat
@@ -1428,24 +1439,23 @@ const KNOB_REAR_STANDOFF = 2.7
 
 export const PRINTED_PARTS = {
   navKeytop: {
-    part: "ALPS Alpine SKRHABE010 keytop",
+    part: "ALPS Alpine RKJXT1F42001 NAV cap",
     model: "mechanical/printed/nav-keytop",
     // U5's centre: the keytop is coaxial with the switch stem.
     x: RIGHT_CONTROLS.NAV.x,
     y: RIGHT_CONTROLS.NAV.y,
-    // Revolved envelope. Head and neck are one diameter because the head leads
-    // when the cap is fitted through the panel aperture from the rear; the
-    // flange then traps it on the panel's rear face.
+    // Revolved envelope: a finger head on a skirt with a blind bore. It slides
+    // onto the projecting flatted shaft from the FRONT, so nothing has to pass
+    // through the panel opening and no retainer is needed behind the panel.
     headHeight: NAV_KEYTOP_HEAD_HEIGHT,
-    neckDiameter: 7.0,                 // 7.20 panel aperture - 0.20 sliding fit
-    flangeDiameter: 9.6,
-    flangeThickness: 1.2,
-    shankDiameter: 5.6,
-    socketBore: 3.2,                   // D3.00 stem + 0.20 clearance
+    headDiameter: 7.0,
+    shankDiameter: 5.4,                 // 0.80 mm head ring outside the Ø2.90 bore
+    socketBore: 2.9,                   // D2.50 shaft (1.80 across the flat) + 0.40
     socketDepth: NAV_KEYTOP_SOCKET_DEPTH,
-    zFront: mm3(PROVISIONAL_Z.panelFront - NAV_KEYTOP_HEAD_HEIGHT),                     // -4.00 head front
-    zRear: mm3(PROVISIONAL_Z.frontBoardTop - NAV_SWITCH_HEIGHT_ABOVE_BOARD
-      - NAV_KEYTOP_AXIAL_FREE_PLAY + NAV_KEYTOP_SOCKET_DEPTH),                          // 6.95 socket mouth
+    zFront: mm3(PROVISIONAL_Z.frontBoardTop - NAV_SWITCH_SHAFT_TIP_ABOVE_BOARD
+      - NAV_KEYTOP_AXIAL_FREE_PLAY - NAV_KEYTOP_HEAD_HEIGHT),                           // -10.95 head front
+    zRear: mm3(PROVISIONAL_Z.frontBoardTop - NAV_SWITCH_SHAFT_TIP_ABOVE_BOARD
+      - NAV_KEYTOP_AXIAL_FREE_PLAY + NAV_KEYTOP_SOCKET_DEPTH),                          // -2.95 socket mouth
   },
   knob: {
     part: "Bourns PEC11R-4015F-S0024 value knob",
@@ -1835,7 +1845,22 @@ export const PANEL_CUTOUTS = {
   // the drawing; grip is unknown. Retention in 1.6 mm FR-4 and the LED coupling
   // are unverified.
   led: 2.6,
-  control: 7.2, // PEC11R M7 x 0.75 bushing (7.0 mm thread) / SKRHABE010 nav actuator
+  control: 7.2, // PEC11R M7 x 0.75 bushing (7.0 mm thread) - VALUE ENCODER only
+  // The NAV opening stopped sharing `control` on 2026-11-14. The replacement
+  // switch (ALPS RKJXT1F42001, owner decision) puts a STATIONARY collar of
+  // D7.20 - model geometry, page 398 prints no collar diameter - into the
+  // opening, 1.50 mm deep from the panel rear face, so 7.2 would be a rubbing
+  // fit. 8.0 is chosen from the recorded terms and NOT from a measurement:
+  //   collar radius max   3.60
+  //   switch in its O1.0 holes (0.7 x 0.25 flat blades) +-0.15
+  //   panel on its M3 STAND_ screws in O3.2 holes        +-0.10
+  //   JLCPCB routed-hole tolerance (their capabilities page) +0.13/-0.08
+  //   -> radius needed 3.93; 4.00 gives 0.40 mm per side nominal, 0.36 mm at
+  //      the worst undersize limit. The routed tolerance source itself is
+  //      contested in this file (see `led`), and the collar diameter is model
+  //      geometry, so the opening stays UNVERIFIED until the first article is
+  //      measured (docs/TODO.md).
+  nav: 8.0,
   jack: 6.2,    // PJ-301M-3-B barrel
 } as const
 
@@ -1907,7 +1932,7 @@ export const PANEL_APERTURES: readonly PanelAperture[] = [
   // 5. Encoder, POWER button, NAV switch: the right-hand control column.
   { shape: "circle", name: "VALUE ENCODER", x: RIGHT_CONTROLS.TEMPO.x, y: RIGHT_CONTROLS.TEMPO.y, radius: PANEL_CUTOUTS.control / 2 },
   { shape: "rect", name: "POWER BUTTON", x: POWER_BUTTON.x, y: POWER_BUTTON.y, width: PANEL_CUTOUTS.button, height: PANEL_CUTOUTS.button },
-  { shape: "circle", name: "NAV", x: RIGHT_CONTROLS.NAV.x, y: RIGHT_CONTROLS.NAV.y, radius: PANEL_CUTOUTS.control / 2 },
+  { shape: "circle", name: "NAV", x: RIGHT_CONTROLS.NAV.x, y: RIGHT_CONTROLS.NAV.y, radius: PANEL_CUTOUTS.nav / 2 },
   // 6. MIDI jack barrels in the four transport columns.
   ...FRONT_COLUMNS.map(c => ({
     shape: "circle" as const, name: `${c.jack} JACK`,
@@ -1972,7 +1997,7 @@ const LABEL_OFFSET = {
   encoder: 7,        // ABOVE the VALUE / NAV cutouts
   // ABOVE the 12.25 mm button cutouts: POWER 49 -> 56.825, SHIFT/EXIT -5 ->
   // 2.825. SHIFT/EXIT fits between its own cutout (top edge 1.125) and the NAV
-  // cutout (bottom edge 8.40), i.e. inside that 2.5...7.0 band.
+  // cutout (bottom edge 8.00), i.e. inside that 2.1...7.0 band.
   button: labelAbove(PANEL_CUTOUTS.button),
 }
 

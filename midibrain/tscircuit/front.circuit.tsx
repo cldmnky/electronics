@@ -9,7 +9,7 @@ import { M20_9960245 } from "./imports/M20_9960245"
 import { INTERCONNECT_MECH, INTERCONNECT_NETS, SFH11_PBPC_D13_ST_BK } from "./lib/interconnect"
 import { MIDI_OUT_SERIES_OHM, MIDI_OUT_GATE_OHM, MIDI_RECEIVER_OHM } from "./lib/electrical-midi"
 import { FP_JACK_TRS } from "./lib/jack"
-import { SKRHABE010 } from "./imports/SKRHABE010"
+import { RKJXT1F42001 } from "./imports/RKJXT1F42001"
 import { FrontSilk } from "./lib/silk"
 import { TLP2361_TPL_E } from "./imports/TLP2361_TPL_E"
 import {
@@ -306,22 +306,21 @@ const printCylinder = (diameter: number, zAt: number, zTo: number): JscadShape =
 })
 
 const NAV_KEYTOP = PRINTED_PARTS.navKeytop
-const NAV_FLANGE_REAR_Z = PROVISIONAL_Z.panelRear + NAV_KEYTOP.flangeThickness
+// Push-on cap on the switch's projecting flatted shaft: head, shank, blind bore.
+// It hangs entirely IN FRONT of the panel, so the envelope has no feature inside
+// the panel opening (Z 0...1.6) and none behind it.
+const NAV_KEYTOP_HEAD_REAR_Z = NAV_KEYTOP.zFront + NAV_KEYTOP.headHeight
 const navKeytopEnvelope = {
   type: "subtract",
   shapes: [
     {
       type: "union",
       shapes: [
-        // head + neck are one diameter through the panel aperture
-        printCylinder(NAV_KEYTOP.neckDiameter, NAV_KEYTOP.zFront, PROVISIONAL_Z.panelRear),
-        // flange bearing on the panel rear face
-        printCylinder(NAV_KEYTOP.flangeDiameter, PROVISIONAL_Z.panelRear, NAV_FLANGE_REAR_Z),
-        // shank down to the socket mouth
-        printCylinder(NAV_KEYTOP.shankDiameter, NAV_FLANGE_REAR_Z, NAV_KEYTOP.zRear),
+        printCylinder(NAV_KEYTOP.headDiameter, NAV_KEYTOP.zFront, NAV_KEYTOP_HEAD_REAR_Z),
+        printCylinder(NAV_KEYTOP.shankDiameter, NAV_KEYTOP_HEAD_REAR_Z, NAV_KEYTOP.zRear),
       ],
     },
-    // the stem socket
+    // the blind bore over the shaft
     printCylinder(NAV_KEYTOP.socketBore, NAV_KEYTOP.zRear - NAV_KEYTOP.socketDepth, NAV_KEYTOP.zRear),
   ],
 }
@@ -452,14 +451,37 @@ export default () => (
     <MidiOut ch={1} jackX={midiJackX("MIDI OUT 1")} jackY={JACK_Y} at={MIDI_CLUSTERS.out1} />
     <MidiOut ch={2} jackX={midiJackX("MIDI OUT 2")} jackY={JACK_Y} at={MIDI_CLUSTERS.out2} />
 
-    <SKRHABE010
+    {/* U5 NAV: ALPS Alpine RKJXT1F42001 (owner decision 2026-11-14), a THT
+        4-direction stick switch with centre push and an unused encoder. It
+        replaced the SMD SKRHABE010 because that switch could not reach the
+        panel; it is hand-soldered (manual soldering 350 +-5 C, 3 s max, one
+        time: ALPS page 412, docs/assembly.md).
+
+        The nets are mapped BY FUNCTION from the ALPS output-relation chart,
+        never by pad position: direction A is the lever's up way, C down, B
+        left, D right, and each direction's contact sits on the far side of its
+        own lettered hole. com and "Ground terminal" are both on GND: the
+        centre-push return is drawn as Push-Com on the page-399 circuit diagram,
+        while the page-399 chart shows Push-Com on in every column, so the push
+        return is NOT proven. Tying both closes the push under either reading;
+        the first article must confirm it with a meter (docs/TODO.md). */}
+    <RKJXT1F42001
       name="U5"
       pcbX={`${RIGHT_CONTROLS.NAV.x}mm`}
       pcbY={`${RIGHT_CONTROLS.NAV.y}mm`}
       layer="top"
       schSheetName="front"
       schSectionName="controls"
-      connections={{ COM: "net.GND", A: "net.NAV_UP", B: "net.NAV_DOWN", C: "net.NAV_LEFT", D: "net.NAV_RIGHT", CEN: "net.NAV_PRESS", pin7: "net.GND", pin8: "net.GND" }}
+      noConnect={["EncoderA", "EncoderB", "EncoderCom"]}
+      connections={{
+        A: "net.NAV_UP",
+        B: "net.NAV_LEFT",
+        C: "net.NAV_DOWN",
+        D: "net.NAV_RIGHT",
+        com: "net.GND",
+        Push: "net.NAV_PRESS",
+        Ground: "net.GND",
+      }}
     />
     {/* Value knob U6: Bourns PEC11R-4015F-S0024, LCSC C143789 - the detentless
         member of the PEC11R family (0 detents, 24 pulses/rev, 360 deg
@@ -546,11 +568,15 @@ export default () => (
         />
       </Fragment>
     ))}
-    {/* C5/C6 rotate 180 deg after the board widened and the interconnect moved:
-        `tsci check placement` flagged both as "connections cross the routing path
-        between its pads" at 0 deg. Value, net and footprint unchanged. */}
-    <C name="C5" value="10uF" sec="power" x="49mm" y="19.9mm" rot="180deg" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
-    <C name="C6" value="100nF" sec="power" x="54.6mm" y="19.9mm" rot="180deg" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
+    {/* C5/C6 are the 3V3 rail's decoupling pair. They sat at y 19.9 in the band
+        between U6's courtyard and the old NAV switch. The 2026-11-14 switch
+        replacement (owner decision: SKRHABE010 -> ALPS RKJXT1F42001) makes U5 a
+        17 x 17 mm through-hole body whose pads reach y 20.55, so that band is
+        gone. Both caps move into the free corridor between U5's right pad edge
+        (x 61.05) and J5's pads (x 63.93), rotated 90 deg to fit it. Value, net,
+        footprint and side are unchanged; only position and rotation move. */}
+    <C name="C5" value="10uF" sec="power" x="62.5mm" y="9.5mm" rot="90deg" lcsc="C13585" mpn="CL31A106KBHNNNE" footprint="1206" p1="net.P3V3" p2="net.GND" />
+    <C name="C6" value="100nF" sec="power" x="62.5mm" y="13.8mm" rot="90deg" lcsc="C14663" mpn="CC0603KRX7R9BB104" p1="net.P3V3" p2="net.GND" />
 
     {/* Direct 2 x 13 interconnect, FEMALE side: Sullins SFH11-PBPC-D13-ST-BK
         straight socket on the front board's BOTTOM face, mating the rear

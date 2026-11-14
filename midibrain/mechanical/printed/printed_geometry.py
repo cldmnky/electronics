@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pure geometry for the three 3D-printed MIDI Brain front-panel parts.
 
-Part 1 ``NAV keytop`` caps the ALPS Alpine SKRHABE010 5-way switch (U5).
+Part 1 ``NAV cap`` fits the ALPS Alpine RKJXT1F42001 4-way stick switch (U5).
 Part 2 ``value knob`` caps the Bourns PEC11R-4015F-S0024 encoder (U6).
 Part 3 ``B3F button cap`` is printed seven times, one for each Omron B3F-4055
 switch (SW1-SW7).
@@ -49,8 +49,10 @@ fixed by the owner-approved layout note, not by the display position.
 
 Datasheets (read and hashed by the reviewer, not committed):
 
-  * ALPS Alpine SKRH series catalog, ``product_catalog_mu_02_skrh_en_34aeb8c2e3.pdf``
-    (tech.alpsalpine.com, SHA-256 starts 83a37124, "Update 2510").
+  * ALPS Alpine RKJXT1F catalogue extract, ``rkjxt-1890304-1-4.pdf`` (pages 398,
+    399, 391 and 412; SHA-256 starts 8b048444). It replaced the SKRH series
+    catalog with the retired SKRHABE010: the cap is now a push-on cap on the
+    switch's projecting shaft, not a plunger in the panel opening.
   * Bourns PEC11R series datasheet, SHA-256
     ``ac88f657e611bc82fe79b102426fb5abcb7f40740540f0c681727e2d74784491``
     (the hash already recorded in ``docs/decisions.md``).
@@ -111,64 +113,56 @@ def need(condition: bool, message: str) -> None:
 # ---------------------------------------------------------------------------
 # Datasheet inputs
 # ---------------------------------------------------------------------------
-# ALPS Alpine SKRH series catalog (SHA-256 83a37124..., "Update 2510").
-# SKRHABE010 product-list row "7.35 x 7.5 x 1.8": body height above the PCB.
-NAV_BODY_HEIGHT_ABOVE_MOUNTING = 1.8
-# Drawing No.2 (the SKRHABE010 row) side view: overall height above the mounting
-# surface.
-NAV_HEIGHT_ABOVE_MOUNTING = 5.0
-# Drawing No.2: stem diameter (Ø3 side view).
-NAV_STEM_DIAMETER = 3.0
-# Drawing No.2: vertical callout "1.7 max." on the keytop fitting area -- the
-# tallest keytop socket ALPS qualifies over the stem.
-NAV_KEYTOP_FITTING_AREA_MAX = 1.7
-# Drawing No.2: travel, 4-direction and centre push.
-# The product page for the EXACT part says, verbatim:
-#   "4-directional operating force and travel are measured at 4.3mm height from
-#    the bottom of the switch."
-# (https://tech.alpsalpine.com/e/products/detail/SKRHABE010/). So the height at
-# which the 0.25 mm 4-direction figure is measured IS specified: 4.3 mm from the
-# bottom of the switch. The direction of the four arrows is still drawn at +-45
-# deg to the part's axes, and no centre-push measurement height is stated.
-NAV_TRAVEL_DIRECTION = 0.25
-NAV_TRAVEL_CENTRE = 0.15
-NAV_TRAVEL_MEASUREMENT_HEIGHT_MM = 4.3
-NAV_TRAVEL_MEASUREMENT_NOTE = (
-    'ALPS product page for SKRHABE010, verbatim: "4-directional operating force '
-    'and travel are measured at 4.3mm height from the bottom of the switch."')
-# The same page also carries, under notes COMMON to the series/models:
-#   "Do not apply a force from the side of the stem"
-# quoted here WITH that context. It sits beside a 4-direction control, so its
-# applicability and the permitted force/method are NOT interpreted here: they are
-# questions for the supplier or the sample, not a prohibition invented in code.
-NAV_SIDE_FORCE_NOTE = ("ALPS product page, notes common to the series/models, "
-                       "verbatim: 'Do not apply a force from the side of the stem'. "
-                       "Applicability and the permitted force/method are UNRESOLVED "
-                       "and must be clarified with ALPS or on a sample")
-# The exact SKRHABE010 row points at DRAWING No.2 (the version with guide
-# bosses), and that drawing's stem tip is NOT a plain Ø3 circle:
-#   * the top view shows a rotated ROUNDED SQUARE at the tip, "□1.95 +-0.05" with
-#     "R0.5" corners;
-#   * the side view marks "Ø3".
-# Which dimension controls the MATING surface (the square tip, the round stem
-# above it, or the circumscribed circle of the tip) is NOT resolved here. A Ø3.2
-# circular socket is therefore somewhere between a snug 0.10 mm per side fit and
-# a very loose one, and no grip may be inferred from either.
-NAV_STEM_TIP_SQUARE = 1.95
-NAV_STEM_TIP_SQUARE_TOLERANCE = 0.05
-NAV_STEM_TIP_CORNER_RADIUS = 0.5
-NAV_STEM_SIDE_VIEW_DIAMETER = 3.0
-# A sectioning of the locally downloaded ALPS `SKRHAB.STEP` (a TEMPORARY vendor
-# file that is NOT committed and must not be redistributed) agrees with the
-# drawing and settles the question: on an axis Z, the stem tip is at Z 5.0 above
-# the mounting face, horizontal slices from Z 3.5 to Z 4.9 are a ROUNDED SQUARE
-# of XY extent +-1.184 mm, and the Ø3 CIRCULAR section appears lower, at Z 2.5.
-# These are MODEL geometry, not a measured or guaranteed tolerance.
-NAV_STEP_TIP_EXTENT_MM = 1.184          # +-XY extent of the tip slices
-NAV_STEP_SQUARE_SLICE_Z = (3.5, 4.9)    # above the mounting face
-NAV_STEP_CIRCULAR_SECTION_Z = 2.5       # above the mounting face
-NAV_STEP_PROVENANCE = ("vendor STEP sectioning, temporary local file, NOT committed "
-                       "and NOT redistributable; model geometry only")
+# ALPS Alpine RKJXT1F42001, 4-directional stick switch with centre push and an
+# encoder (owner decision 2026-11-14: it replaces the SMD SKRHABE010, which could
+# not reach the panel). PRIMARY SOURCE: ALPS catalogue page 398, the "Dimensions"
+# drawing, retrieved 2026-11-14 -
+# https://mm.digikey.com/Volume0/opasdata/d220001/medias/docus/6727/rkjxt-1890304-1-4.pdf
+# (SHA-256 recorded in mechanical/reference/sources-midibrain.md). The drawing's
+# side view dimensions every height from the PC board's top face:
+NAV_HOUSING_TOP_ABOVE_PCB = 8.6        # page 398, "8.6": the housing/body top
+NAV_COLLAR_TOP_ABOVE_PCB = 10.5        # page 398, "10.5": the stationary collar top
+NAV_SHAFT_TIP_ABOVE_PCB = 17.4         # page 398, "17.4": the shaft tip (overall)
+NAV_TERMINAL_BELOW_PCB = 3.2           # page 398, "3.2" below the seating plane
+NAV_FULCRUM_ABOVE_PCB = 5.55           # page 398, "5.55 Fulcrum of lever operation"
+NAV_BODY_SQUARE = 17.0                 # page 398, "4-17": the body square
+NAV_BODY_ACROSS_FLATS = 14.5           # page 398, "4-14.5"
+# Page 398 prints Ø2.5 for the shaft and "1.8" beside it: the shaft is a Ø2.5
+# cylinder with one flat, leaving 1.8 mm across. Both local models agree:
+# horizontal sections from 12 to 16 mm above the plane are x +-1.25 with the
+# surface cut at y = +0.55, i.e. 1.25 + 0.55 = 1.80 mm across the flat.
+NAV_SHAFT_DIAMETER = 2.5               # page 398, "ø2.5"
+NAV_SHAFT_ACROSS_FLAT = 1.8            # page 398, "1.8"
+NAV_OPERATING_ANGLE_DEG = 9.0          # page 398, "9 deg max." per direction
+NAV_CENTRE_PUSH_TRAVEL = 0.3           # page 398, "0.3" centre-push ON stroke
+NAV_CENTRE_PUSH_TOLERANCE = 0.2        # page 398 typical spec, "0.3+-0.2mm"
+NAV_DIRECTION_FORCE_MNM = 40           # page 398, "40+-25mN*m" per direction
+NAV_PUSH_FORCE_N = 5                   # page 398, "5+-2N" centre push
+NAV_RATING = "10 mA 5 V DC resistive (page 398, stick switch and encoder)"
+NAV_LIFE_DIRECTIONS = 50000           # page 398, "Total with 4-direction"
+NAV_LIFE_CENTRE = 50000               # page 398, "Center-push"
+NAV_LIFE_ENCODER = 15000              # page 398, encoder operating life
+# Page 412, "Reference for Manual Soldering": RKJXT1F is listed with tip
+# temperature 350 +-5 C, 3 s max, one time. Hand soldering is therefore a
+# documented process for this part, unlike the PEC11R encoder.
+NAV_MANUAL_SOLDER = "350 +-5 C, 3 s max, 1 time (ALPS page 412)"
+# The collar's diameter is NOT printed on page 398. Both local, non-redistributable
+# STEP models of the part give the same number (sections at 8.9...10.0 mm above the
+# plane are exactly +-3.60 mm, chamfered to about Ø6.2 at 10.5). MODEL GEOMETRY,
+# not a datasheet value.
+NAV_COLLAR_DIAMETER = 7.20
+NAV_COLLAR_DIAMETER_PROVENANCE = (
+    "measured from two local STEP models of the part; page 398 prints NO collar "
+    "diameter, so this is model geometry, not a datasheet value")
+# The four housing tabs. ONE model puts them at 9.00 mm above the plane (sections
+# at 8.70...9.00 still show material out to +-5.5 mm); the other ends the tabs at
+# the 8.60 mm housing top. Page 398 has no dimension for them either. 9.00 is the
+# panel REAR plane of the 10.6 mm stack, so this is a zero-gap contact risk that is
+# reported and never claimed as a clearance.
+NAV_TAB_TOP_ABOVE_PCB = 9.00
+NAV_TAB_PROVENANCE = (
+    "one local STEP model only (the other ends the tabs at the 8.60 mm housing "
+    "top); no datasheet dimension exists")
 
 # Bourns PEC11R series datasheet (SHA-256 ac88f657...), PEC11R-4015F-S0024.
 # PRIMARY SOURCE, read on page 2 (the `PEC11R-4xxxF-Sxxxx` drawing, bottom) and
@@ -413,17 +407,15 @@ class Assumption:
     note: str
 
 
-# NAV keytop. The aperture, stem and heights come from the sources above; each
+# NAV cap. The shaft, panel and switch heights come from the sources above; each
 # number below is a print or assembly tolerance that the first article has to
-# confirm (README.md, "first article"). The printed SHAPE (flange, shank, socket
-# bore, head height, socket depth) is not declared here: lib/layout.ts owns it in
-# PRINTED_PARTS and this module reads it from the export.
-NAV_APERTURE_FIT_TOTAL = 0.20          # 0.10 mm per side, printed sliding fit in the panel hole
+# confirm (README.md, "first article"). The printed SHAPE (head, shank, socket
+# bore and depth) is not declared here: lib/layout.ts owns it in PRINTED_PARTS and
+# this module reads it from the export.
 NAV_AXIAL_FREE_PLAY = 0.15             # 0.10-0.20 mm band; the cap must not pre-load the switch
 NAV_HEAD_EDGE_CHAMFER = 0.80           # print + finger friendly
-NAV_FLANGE_REAR_CHAMFER = 0.60         # 45 deg, removes the flange overhang
-NAV_SOCKET_MOUTH_CHAMFER = 0.40        # lead-in over the stem
-NAV_ASSEMBLY_CLEARANCE_MIN = 0.50      # cap bottom to the switch body top
+NAV_SHANK_REAR_CHAMFER = 0.60          # 45 deg, removes the shank's rear corner
+NAV_SOCKET_MOUTH_CHAMFER = 0.40        # lead-in over the flatted shaft
 
 # Value knob.
 # SOURCED, not assumed: page 3 dimensions the supplied nut (2.0 +-0.2) and the
@@ -445,17 +437,14 @@ KNOB_GRUB_TIP_FROM_REAR = 6.00         # screw axis distance from the knob rear 
 KNOB_TO_DISPLAY_MIN = 2.50             # the layout's own knob-body clearance rule
 
 ASSUMPTIONS: tuple[Assumption, ...] = (
-    Assumption("NAV_APERTURE_FIT_TOTAL", NAV_APERTURE_FIT_TOTAL,
-               "0.10 mm per side sliding fit in the 7.2 mm panel aperture; "
-               "measure the printed neck on the first article"),
     Assumption("NAV_AXIAL_FREE_PLAY", NAV_AXIAL_FREE_PLAY,
-               "0.10-0.20 mm band: the socket floor must not touch the stem top "
-               "at rest, or the switch is pre-loaded"),
+               "0.10-0.20 mm band: the blind bore's floor must not touch the shaft "
+               "tip at rest, or the switch is pre-loaded"),
     Assumption("NAV_HEAD_EDGE_CHAMFER", NAV_HEAD_EDGE_CHAMFER, "print + finger edge break"),
-    Assumption("NAV_FLANGE_REAR_CHAMFER", NAV_FLANGE_REAR_CHAMFER,
-               "45 deg: the flange rear face is the part's only overhang"),
+    Assumption("NAV_SHANK_REAR_CHAMFER", NAV_SHANK_REAR_CHAMFER,
+               "45 deg: the shank's rear face is the part's only overhang"),
     Assumption("NAV_SOCKET_MOUTH_CHAMFER", NAV_SOCKET_MOUTH_CHAMFER,
-               "lead-in so the socket finds the D3.0 stem at assembly"),
+               "lead-in so the bore finds the D2.5 flatted shaft at assembly"),
     Assumption("PRINT_MIN_WALL", PRINT_MIN_WALL,
                "0.4 mm nozzle, two perimeters; every wall is checked against it"),
     Assumption("KNOB_NUT_AND_WASHER_STACK", KNOB_NUT_AND_WASHER_STACK,
@@ -690,6 +679,7 @@ class LayoutSource:
     knob_body_diameter: float
     knob_body_diameter_column_x: float
     panel_control_aperture: float
+    panel_nav_aperture: float
     button_cap: ButtonCapLayout
 
 
@@ -791,6 +781,9 @@ def parse_layout_ts(source: str) -> LayoutSource:
 
     cutouts = _ts_block(source, "export const PANEL_CUTOUTS = {")
     control = _ts_number(cutouts, r"^\s*control:\s*(\d+(?:\.\d+)?),", "PANEL_CUTOUTS.control")
+    # The NAV opening stopped sharing the 7.2 mm control aperture on 2026-11-14:
+    # the new switch's Ø7.2 collar sits inside it (lib/layout.ts PANEL_CUTOUTS.nav).
+    nav = _ts_number(cutouts, r"^\s*nav:\s*(\d+(?:\.\d+)?),", "PANEL_CUTOUTS.nav")
     button_cutout = _ts_number(
         cutouts, r"^\s*button:\s*[^\n]*?,\s*//\s*(\d+(?:\.\d+)?)",
         "PANEL_CUTOUTS.button comment")
@@ -890,6 +883,7 @@ def parse_layout_ts(source: str) -> LayoutSource:
         knob_body_diameter=knob_od,
         knob_body_diameter_column_x=knob_od_x,
         panel_control_aperture=control,
+        panel_nav_aperture=nav,
         button_cap=button_cap,
     )
 
@@ -917,37 +911,48 @@ def layout_export_notices(layout: dict, src: LayoutSource) -> list[str]:
     return out
 
 
+
 # ---------------------------------------------------------------------------
-# Part 1: NAV keytop for the ALPS Alpine SKRHABE010
+# Part 1: NAV cap for the ALPS Alpine RKJXT1F42001
 # ---------------------------------------------------------------------------
+# Owner decision 2026-11-14: the SMD SKRHABE010 is replaced by the THT
+# RKJXT1F42001. That switch's shaft stands 17.4 mm above the board, so the cap is
+# no longer a plunger guided by the panel hole: it is a PUSH-ON CAP that sits on
+# the projecting Ø2.5 flatted shaft, IN FRONT of the panel.
+#
+# What that changes for this part, and what it does not:
+#  * no neck in the aperture and no flange behind it - nothing of the cap passes
+#    through the panel, so the old "does the neck bind in the 7.2 mm hole" model
+#    and its prototype specimens are obsolete with the part (docs/TODO.md);
+#  * the stationary collar (Ø7.20, up to 10.5 mm above the PCB) is inside the
+#    panel opening instead, which is why the NAV opening is no longer 7.2 mm
+#    (lib/layout.ts PANEL_CUTOUTS.nav);
+#  * the cap still has a finger head, a shank and a blind socket, so the shape
+#    code, the Z chain, the probes and the committed STEP/STL keep working.
 @dataclass(frozen=True)
 class NavKeytop:
-    """NAV keytop inputs. Derived positions are properties, never stored twice.
+    """NAV cap inputs. Derived positions are properties, never stored twice.
 
-    The part is a pin: the head (in front of the panel) and the neck (in the
-    aperture) are one D7.00 diameter, because the head is the LEADING feature
-    when the cap is fitted through the aperture from the rear. A flange
-    (D9.60) then traps it on the panel rear face. Anything wider than the
-    aperture in front of the flange could never be assembled through a
-    one-piece panel.
+    Z datum: the panel FRONT face is Z = 0, +Z is rearward (see the module
+    docstring), so everything in front of the panel has a NEGATIVE Z.
     """
 
     stack: PanelStack
     aperture: Circle
-    stem_diameter: float
-    stem_top_z: float
-    switch_body_top_z: float
-    fitting_area_max: float
+    shaft_diameter: float
+    shaft_across_flat: float
+    shaft_tip_z: float
+    collar_top_z: float
+    housing_top_z: float
+    shaft_tip_above_pcb: float
+    head_diameter: float
     head_height: float
-    neck_diameter: float
-    flange_diameter: float
-    flange_thickness: float
     shank_diameter: float
     socket_bore: float
     socket_floor_z: float
     socket_mouth_z: float
     head_edge_chamfer: float
-    flange_rear_chamfer: float
+    shank_rear_chamfer: float
     mouth_chamfer: float
 
     @property
@@ -959,525 +964,287 @@ class NavKeytop:
         return self.aperture.diameter
 
     @property
-    def aperture_clearance(self) -> float:
-        """Diametral clearance of the neck in the aperture (mm)."""
-        return self.aperture_diameter - self.neck_diameter
-
-    @property
     def head_front_z(self) -> float:
-        return self.stack.panel_front_z - self.head_height
+        return self.socket_floor_z - self.head_height
 
     @property
-    def neck_length(self) -> float:
-        return self.stack.thickness
-
-    @property
-    def flange_front_z(self) -> float:
-        """The flange face that bears on the panel REAR face."""
-        return self.stack.panel_rear_z
-
-    @property
-    def flange_rear_z(self) -> float:
-        return self.flange_front_z + self.flange_thickness
+    def head_rear_z(self) -> float:
+        return self.head_front_z + self.head_height
 
     @property
     def shank_length(self) -> float:
-        return self.socket_mouth_z - self.flange_rear_z
+        return self.socket_mouth_z - self.head_rear_z
 
     @property
     def socket_depth(self) -> float:
+        """Blind bore depth measured from the cap's rear face (mm)."""
         return self.socket_mouth_z - self.socket_floor_z
 
     @property
     def free_play(self) -> float:
-        """Axial gap between the socket floor and the stem top at rest (mm)."""
-        return self.stem_top_z - self.socket_floor_z
+        """Axial gap between the socket floor and the shaft tip at rest (mm)."""
+        return self.shaft_tip_z - self.socket_floor_z
 
     @property
-    def stem_engagement(self) -> float:
-        """Length of stem inside the socket when the flange is seated (mm)."""
-        return self.socket_mouth_z - self.stem_top_z
-
-    @property
-    def bearing_ring(self) -> float:
-        """Radial width of the flange's bearing face outside the aperture (mm)."""
-        return (self.flange_diameter - self.aperture_diameter) / 2
+    def shaft_in_socket(self) -> float:
+        """Shaft length inside the bore at rest (mm)."""
+        return self.socket_mouth_z - self.shaft_tip_z
 
     @property
     def socket_wall(self) -> float:
         return (self.shank_diameter - self.socket_bore) / 2
 
     @property
-    def switch_body_clearance(self) -> float:
-        """Socket mouth to the switch body top: the cap must not seat on it."""
-        return self.switch_body_top_z - self.socket_mouth_z
+    def head_ring(self) -> float:
+        """Radial width of the head's underside outside the shank (mm)."""
+        return (self.head_diameter - self.shank_diameter) / 2
 
     @property
-    def gap_below(self) -> float:
-        return self.stack.board_top_z - self.socket_mouth_z
+    def rear_face_above_panel_front(self) -> float:
+        """Air between the cap's rear face and the panel front face (mm)."""
+        return self.stack.panel_front_z - self.socket_mouth_z
+
+    @property
+    def collar_clearance(self) -> float:
+        """Axial gap from the cap's rear face to the collar top (mm)."""
+        return self.rear_face_above_panel_front - (self.stack.panel_front_z
+                                                   - self.collar_top_z)
+
+    @property
+    def proud_of_panel(self) -> float:
+        """How far the head's front face stands in front of the panel (mm)."""
+        return self.stack.panel_front_z - self.head_front_z
+
+    @property
+    def shaft_exposed(self) -> float:
+        """Shaft left visible between the panel front and the cap's rear face."""
+        return self.rear_face_above_panel_front
 
     @property
     def overall_length(self) -> float:
         return self.socket_mouth_z - self.head_front_z
 
     @property
+    def flat_radial_play(self) -> float:
+        """Radial gap from the bore to the shaft's FLAT plane (mm)."""
+        return self.socket_bore / 2 - (self.shaft_across_flat - self.shaft_diameter / 2)
+
+    @property
     def envelope(self) -> "Envelope":
         """Intended solid envelope in panel coordinates (mm)."""
-        r_flange = self.flange_diameter / 2
+        r = self.head_diameter / 2
         return Envelope(
-            x=(self.aperture.x - r_flange, self.aperture.x + r_flange),
-            y=(self.aperture.y - r_flange, self.aperture.y + r_flange),
+            x=(self.aperture.x - r, self.aperture.x + r),
+            y=(self.aperture.y - r, self.aperture.y + r),
             z=(self.head_front_z, self.socket_mouth_z),
         )
 
 
 def nav_keytop(layout: dict | None = None, source: str | LayoutSource | None = None) -> NavKeytop:
-    """Derive the keytop from the sources. Raises rather than guessing."""
+    """Derive the cap from the sources. Raises rather than guessing."""
     data = layout if layout is not None else load_layout()
     src = source if isinstance(source, LayoutSource) else layout_source(source)
     stack = panel_stack(data)
     ap = aperture(data, "NAV")
-    need(abs(ap.diameter - src.panel_control_aperture) <= EPS_MM,
+    # The NAV opening has its own size since the switch changed; it is NOT the
+    # shared 7.2 mm control aperture that serves the value encoder.
+    need(abs(ap.diameter - src.panel_nav_aperture) <= EPS_MM,
          f"mechanical/layout.json aperture {ap.name} is D{ap.diameter:.2f} but "
-         f"lib/layout.ts PANEL_CUTOUTS.control is {src.panel_control_aperture:.2f}: "
+         f"lib/layout.ts PANEL_CUTOUTS.nav is {src.panel_nav_aperture:.2f}: "
          "the export is stale, regenerate it before printing this part")
     part = printed_part(data, "navKeytop")
     need(abs(float(part["x"]) - ap.x) <= EPS_MM and abs(float(part["y"]) - ap.y) <= EPS_MM,
          f"PRINTED_PARTS.navKeytop sits at ({part['x']}, {part['y']}) but the panel "
-         f"aperture is at ({ap.x}, {ap.y}): the keytop must be coaxial with U5")
+         f"aperture is at ({ap.x}, {ap.y}): the cap must be coaxial with U5")
 
-    # The neck is the aperture fit: the printed D must follow the panel hole.
-    neck = ap.diameter - NAV_APERTURE_FIT_TOTAL
-    need(abs(neck - float(part["neckDiameter"])) <= EPS_MM,
-         f"PRINTED_PARTS.navKeytop.neckDiameter is {part['neckDiameter']} but a "
-         f"D{ap.diameter:.2f} aperture with a {NAV_APERTURE_FIT_TOTAL:.2f} mm sliding "
-         f"fit gives {neck:.2f}: the two sources disagree")
-
-    # The Z chain is re-derived here from the datasheet and the tolerance band and
-    # must land on the envelope lib/layout.ts declares. Change either side alone
-    # and this fails instead of exporting a cap the 3D view does not show.
-    head_front_z = stack.panel_front_z - float(part["headHeight"])
-    socket_floor_z = stack.board_top_z - NAV_HEIGHT_ABOVE_MOUNTING - NAV_AXIAL_FREE_PLAY
-    socket_mouth_z = socket_floor_z + float(part["socketDepth"])
+    # The Z chain is re-derived here from the datasheet heights and the tolerance
+    # band and must land on the envelope lib/layout.ts declares. Change either side
+    # alone and this fails instead of exporting a cap the 3D view does not show.
+    shaft_tip_z = round(stack.board_top_z - NAV_SHAFT_TIP_ABOVE_PCB, 3)
+    socket_floor_z = round(shaft_tip_z - NAV_AXIAL_FREE_PLAY, 3)
+    socket_mouth_z = round(socket_floor_z + float(part["socketDepth"]), 3)
+    head_front_z = round(socket_floor_z - float(part["headHeight"]), 3)
     for label, derived, declared in (("zFront", head_front_z, part_z(part, "zFront")),
                                      ("zRear", socket_mouth_z, part_z(part, "zRear"))):
         need(abs(derived - declared) <= EPS_MM,
              f"PRINTED_PARTS.navKeytop.{label} is {declared:.3f} mm but the datasheet "
-             f"and tolerance chain gives {derived:.3f} mm (panel stack "
-             f"{stack.panel_front_z:.2f}/{stack.panel_rear_z:.2f}/{stack.board_top_z:.2f}, "
-             f"head {part['headHeight']}, socket {part['socketDepth']}): update "
-             "lib/layout.ts or the assumptions, they must agree")
+             f"heights and the tolerance chain give {derived:.3f} mm (board top "
+             f"{stack.board_top_z:.2f}, shaft tip {NAV_SHAFT_TIP_ABOVE_PCB} above the "
+             f"PCB, free play {NAV_AXIAL_FREE_PLAY}, socket {part['socketDepth']}, "
+             f"head {part['headHeight']}): update lib/layout.ts or the assumptions")
 
     return NavKeytop(
         stack=stack,
         aperture=ap,
-        stem_diameter=NAV_STEM_DIAMETER,
-        stem_top_z=stack.board_top_z - NAV_HEIGHT_ABOVE_MOUNTING,
-        switch_body_top_z=stack.board_top_z - NAV_BODY_HEIGHT_ABOVE_MOUNTING,
-        fitting_area_max=NAV_KEYTOP_FITTING_AREA_MAX,
+        shaft_diameter=NAV_SHAFT_DIAMETER,
+        shaft_across_flat=NAV_SHAFT_ACROSS_FLAT,
+        shaft_tip_z=shaft_tip_z,
+        collar_top_z=round(stack.board_top_z - NAV_COLLAR_TOP_ABOVE_PCB, 3),
+        housing_top_z=round(stack.board_top_z - NAV_HOUSING_TOP_ABOVE_PCB, 3),
+        shaft_tip_above_pcb=NAV_SHAFT_TIP_ABOVE_PCB,
+        head_diameter=float(part["headDiameter"]),
         head_height=float(part["headHeight"]),
-        neck_diameter=float(part["neckDiameter"]),
-        flange_diameter=float(part["flangeDiameter"]),
-        flange_thickness=float(part["flangeThickness"]),
         shank_diameter=float(part["shankDiameter"]),
         socket_bore=float(part["socketBore"]),
         socket_floor_z=socket_floor_z,
         socket_mouth_z=socket_mouth_z,
         head_edge_chamfer=NAV_HEAD_EDGE_CHAMFER,
-        flange_rear_chamfer=NAV_FLANGE_REAR_CHAMFER,
+        shank_rear_chamfer=NAV_SHANK_REAR_CHAMFER,
         mouth_chamfer=NAV_SOCKET_MOUTH_CHAMFER,
     )
 
 
-def nav_socket_looseness(socket_bore: float) -> dict:
-    """Radial looseness of the socket over the SKRHABE010 stem tip, BOTH readings.
+def nav_socket_clearance(socket_bore: float) -> dict:
+    """Radial clearance of a circular bore over the Ø2.5 FLATTED shaft.
 
-    Drawing No.2 puts a rotated rounded square at the stem tip (``1.95 +-0.05``
-    across flats with ``R0.5`` corners) and marks ``Ø3`` in its side view. A
-    circular socket cannot be "0.10 mm per side" against both:
+    The shaft's cross-section is a Ø2.5 circle cut by one flat that leaves 1.8 mm
+    across, i.e. the flat plane is (1.8 - 1.25) = 0.55 mm from the axis. A round
+    bore is therefore loose in TWO different ways, and both are facts, not
+    opinions:
 
-      * if the mating feature is the Ø3 circle: (3.20 - 3.00)/2 = 0.10 mm;
-      * if it is the 1.95 square ACROSS FLATS: (3.20 - 1.95)/2 = 0.625 mm;
-      * at that square's CORNERS the tip reaches
-        (1.95/2 - 0.5) * sqrt(2) + 0.5 = 1.172 mm, so (3.20 - 2.343)/2 = 0.428 mm.
+      * over the ROUND side: (bore - 2.50) / 2 mm;
+      * over the FLAT side: bore / 2 - 0.55 mm, i.e. 0.35 mm MORE than the round
+        side for a 2.90 mm bore.
 
-    The result is a RANGE, and which reading applies is a measurement (which
-    feature the stem actually presents in the socket, and at what rotation).
+    A round bore cannot key on the flat, so the cap can also rotate until the
+    bore touches the flat's edges. No detent and no grip may be claimed from
+    either number.
     """
     if socket_bore <= 0.0:
         raise GeometryError(f"socket bore {socket_bore} is not positive")
+    if not NAV_SHAFT_DIAMETER / 2 <= NAV_SHAFT_ACROSS_FLAT <= NAV_SHAFT_DIAMETER:
+        raise GeometryError("the shaft's across-flat value must be between the "
+                            "radius and the diameter of the round shaft")
     radius = socket_bore / 2
-    half_flat = NAV_STEM_TIP_SQUARE / 2
-    corner_radius = (half_flat - NAV_STEM_TIP_CORNER_RADIUS) * math.sqrt(2) \
-        + NAV_STEM_TIP_CORNER_RADIUS
-    circle = radius - NAV_STEM_SIDE_VIEW_DIAMETER / 2
-    across_flats = radius - half_flat
-    at_corners = radius - corner_radius
-    step = radius - NAV_STEP_TIP_EXTENT_MM
-    values = {
-        "socket_bore_mm": socket_bore,
-        "if_tip_is_circle_3_00_mm": round(circle, 4),
-        "if_tip_is_square_1_95_across_flats_mm": round(across_flats, 4),
-        "if_tip_is_square_corner_radius_mm": round(corner_radius, 4),
-        "if_tip_is_square_at_corners_mm": round(at_corners, 4),
-        # Independent reading of the VENDOR MODEL: +-1.184 mm at the tip.
-        "if_tip_is_rounded_square_step_slice_mm": round(step, 4),
-        "step_tip_extent_mm": NAV_STEP_TIP_EXTENT_MM,
-        "step_provenance": NAV_STEP_PROVENANCE,
-        "step_vs_drawing_corner_delta_mm": round(abs(NAV_STEP_TIP_EXTENT_MM
-                                                     - corner_radius), 4),
-        "tip_square_tolerance_mm": NAV_STEM_TIP_SQUARE_TOLERANCE,
-        "looseness_min_mm": round(min(circle, across_flats, at_corners, step), 4),
-        "looseness_max_mm": round(max(circle, across_flats, at_corners, step), 4),
-        "rotation_centre_0_49_dimension": ("Drawing No.2 labels 'Center of stem "
-                                           "rotation 0.49'; the dimension's "
-                                           "endpoints and its sign in the PCB "
-                                           "plane are NOT established here"),
-    }
-    return values
-
-
-def nav_socket_engagement(socket_mouth_z: float, socket_floor_z: float,
-                          stem_top_z: float, mounting_face_z: float) -> dict:
-    """Which part of the stem the socket actually surrounds.
-
-    Measured from the MOUNTING FACE (the board's top face), the vendor model puts
-    the rounded square from Z 3.5 to Z 4.9 and the Ø3 circular section at Z 2.5.
-    The socket spans mouth z to floor z in panel Z, i.e. the same heights measured
-    from the board face, so the engagement can be compared with the shape bands
-    DIRECTLY: if the socket only covers the square band, its Ø3.2 circular bore
-    never touches the Ø3 collar and there is no cylindrical guide at all.
-    """
-    mount = mounting_face_z
-    top = round(mount - socket_floor_z, 4)          # highest point of the socket
-    bottom = round(mount - socket_mouth_z, 4)       # lowest point (the mouth)
-    square = NAV_STEP_SQUARE_SLICE_Z
+    flat_plane = NAV_SHAFT_ACROSS_FLAT - NAV_SHAFT_DIAMETER / 2
     return {
-        "socket_above_mounting_face_mm": [bottom, top],
-        "socket_engages_stem_length_mm": round(top - bottom, 4),
-        "stem_tip_above_mounting_face_mm": round(mount - stem_top_z, 4),
-        "square_band_above_mounting_face_mm": list(square),
-        "circular_section_above_mounting_face_mm": NAV_STEP_CIRCULAR_SECTION_Z,
-        "surrounds_rounded_square": bottom < square[1] and top > square[0],
-        "reaches_the_circular_collar": bottom <= NAV_STEP_CIRCULAR_SECTION_Z,
-        "provenance": NAV_STEP_PROVENANCE,
+        "socket_bore_mm": socket_bore,
+        "shaft_round_side_mm": round(radius - NAV_SHAFT_DIAMETER / 2, 4),
+        "flat_plane_from_axis_mm": round(flat_plane, 4),
+        "shaft_flat_side_mm": round(radius - flat_plane, 4),
+        "across_flat_mm": NAV_SHAFT_ACROSS_FLAT,
+        "keys_on_the_flat": False,
+        "rotation_freely_possible": True,
     }
 
 
 def validate_nav_keytop(g: NavKeytop, layout: dict | None = None) -> list[str]:
-    """Check every keytop rule. Returns notices; raises GeometryError on failure."""
+    """Check every cap rule. Returns notices; raises GeometryError on failure."""
     notices: list[str] = []
 
-    # 1. The cap is assembled through the panel hole: the head leads, so the
-    #    head and the neck are one diameter and both must clear the aperture.
-    need(0.1 - EPS_MM <= g.aperture_clearance <= 0.2 + EPS_MM,
-         f"neck D{g.neck_diameter:.2f} in the D{g.aperture_diameter:.2f} aperture "
-         f"gives {g.aperture_clearance:.2f} mm diametral clearance, outside the "
-         "0.10-0.20 mm sliding fit")
-    # 2. The flange is the retainer: wider than the aperture, and bearing on it.
-    need(g.flange_diameter > g.aperture_diameter + 2 * PRINT_MIN_WALL,
-         f"flange D{g.flange_diameter:.2f} leaves only {g.bearing_ring:.2f} mm of "
-         f"bearing ring on the D{g.aperture_diameter:.2f} aperture")
-    need(g.bearing_ring >= PRINT_MIN_WALL,
-         f"bearing ring {g.bearing_ring:.2f} mm is under the {PRINT_MIN_WALL} mm wall rule")
-    # 3. The socket must clear the stem, stay inside the ALPS fitting area and
-    #    leave printable walls.
-    need(g.socket_bore > g.stem_diameter,
-         f"socket D{g.socket_bore:.2f} does not clear the D{g.stem_diameter:.1f} stem")
-    need(0.1 - EPS_MM <= g.socket_bore - g.stem_diameter <= 0.4 + EPS_MM,
-         f"socket bore clearance {g.socket_bore - g.stem_diameter:.2f} mm is outside "
-         "0.10-0.40 mm: a tighter bore will not print, a looser one will not hold")
-    need(g.socket_depth <= g.fitting_area_max + EPS_MM,
-         f"socket depth {g.socket_depth:.2f} mm exceeds the ALPS {g.fitting_area_max:.1f} mm "
-         "keytop fitting area")
-    need(g.socket_depth >= 1.0,
-         f"socket depth {g.socket_depth:.2f} mm is too shallow to guide the stem")
+    # 1. The socket must clear the Ø2.5 shaft and still be printable.
+    need(g.socket_bore > g.shaft_diameter,
+         f"socket D{g.socket_bore:.2f} does not clear the D{g.shaft_diameter:.1f} shaft")
+    need(0.1 - EPS_MM <= g.socket_bore - g.shaft_diameter <= 0.4 + EPS_MM,
+         f"socket bore clearance {g.socket_bore - g.shaft_diameter:.2f} mm is outside "
+         "0.10-0.40 mm: a tighter bore will not print, a looser one will not centre")
     need(g.socket_wall >= PRINT_MIN_WALL,
          f"socket wall {g.socket_wall:.2f} mm is under the {PRINT_MIN_WALL} mm rule")
-    # 4. At rest the socket floor must float above the stem top.
+    # 2. Enough shaft in the bore to hold the cap, and a floor that floats.
+    need(g.shaft_in_socket >= g.shaft_diameter,
+         f"the bore only reaches {g.shaft_in_socket:.2f} mm down the shaft, less than "
+         f"one shaft diameter ({g.shaft_diameter:.1f} mm): the cap could rock off")
+    need(g.socket_depth >= g.shaft_diameter,
+         f"the blind bore is {g.socket_depth:.2f} mm deep, less than one shaft "
+         f"diameter ({g.shaft_diameter:.1f} mm)")
     need(0.1 - EPS_MM <= g.free_play <= 0.2 + EPS_MM,
          f"axial free play {g.free_play:.2f} mm is outside 0.10-0.20 mm: the switch "
-         "is either pre-loaded or the cap rattles")
-    need(g.stem_engagement >= 1.0,
-         f"the socket only reaches {g.stem_engagement:.2f} mm past the stem top")
-    # 5. The head is 3-5 mm proud, and the finger must not reach the panel.
+         "is either pre-loaded or the cap rattles before it pushes")
+    # 3. Nothing of the cap enters the panel opening, and it cannot reach the panel
+    #    even at the full centre-push travel.
+    need(g.socket_mouth_z < g.stack.panel_front_z,
+         f"the cap's rear face is at Z {g.socket_mouth_z:.2f}, behind the panel "
+         f"front {g.stack.panel_front_z:.2f}: it would sit in the aperture")
+    travel = NAV_CENTRE_PUSH_TRAVEL + NAV_CENTRE_PUSH_TOLERANCE
+    need(g.rear_face_above_panel_front > travel,
+         f"the cap's rear face is {g.rear_face_above_panel_front:.2f} mm in front of "
+         f"the panel, less than the {travel:.2f} mm worst-case push travel: it would "
+         "meet the panel before the switch is fully operated")
+    # 4. The head is a finger pad and must stand clear of the shank.
     need(3.0 - EPS_MM <= g.head_height <= 5.0 + EPS_MM,
-         f"head is {g.head_height:.2f} mm proud of the panel front, outside 3-5 mm")
-    # 6. The part must fit the 9.0 mm gap (board top -> panel rear at the 10.6 mm
-    #    datum) without seating on the switch body.
-    need(g.switch_body_clearance >= NAV_ASSEMBLY_CLEARANCE_MIN,
-         f"the cap bottom is {g.switch_body_clearance:.2f} mm above the switch body "
-         f"top, under the {NAV_ASSEMBLY_CLEARANCE_MIN:.2f} mm assembly clearance")
-    need(g.gap_below > 0.0,
-         f"the cap reaches Z {g.socket_mouth_z:.2f}, below the front board top "
-         f"{g.stack.board_top_z:.2f}")
-    need(g.socket_mouth_z < g.stack.board_top_z,
-         "the cap is longer than the panel-to-board gap")
-    # 7. The flange hangs in the gap beside the panel hardware.
+         f"head is {g.head_height:.2f} mm thick, outside 3-5 mm")
+    need(g.head_diameter > g.shank_diameter,
+         f"head D{g.head_diameter:.2f} is not wider than the shank "
+         f"D{g.shank_diameter:.2f}")
+    need(g.head_ring >= PRINT_MIN_WALL - EPS_MM,
+         f"head underside ring {g.head_ring:.2f} mm is under the {PRINT_MIN_WALL} mm rule")
+    # 5. The cap hangs in the middle of the opening: check the panel hardware.
     data = layout if layout is not None else load_layout()
-    clearances = panel_feature_clearances(data, g.centre, g.flange_diameter / 2,
+    clearances = panel_feature_clearances(data, g.centre, g.head_diameter / 2,
                                           skip=g.aperture.name)
     if clearances:
         nearest, distance = clearances[0]
         need(distance > 0.0,
-             f"the flange overlaps panel feature {nearest} by {-distance:.2f} mm")
-        notices.append(f"flange clearance to the nearest panel feature ({nearest}) "
+             f"the head overlaps panel feature {nearest} by {-distance:.2f} mm")
+        notices.append(f"head clearance to the nearest panel feature ({nearest}) "
                        f"is {distance:.2f} mm")
-    # 8. The socket is a CIRCLE over a ROUNDED-SQUARE tip: report the range.
-    loose = nav_socket_looseness(g.socket_bore)
-    engage = nav_socket_engagement(g.socket_mouth_z, g.socket_floor_z, g.stem_top_z,
-                                   g.stack.board_top_z)
+    # 6. Facts the model cannot settle stay visible on every run.
+    loose = nav_socket_clearance(g.socket_bore)
     notices.append(
-        f"socket ENGAGEMENT (vendor-model shape): the bore spans Z "
-        f"{engage['socket_above_mounting_face_mm'][0]:.2f}..."
-        f"{engage['socket_above_mounting_face_mm'][1]:.2f} mm above the mounting "
-        f"face, which is the rounded-square band {engage['square_band_above_mounting_face_mm']} "
-        f"and NOT the Ø3 collar at Z "
-        f"{engage['circular_section_above_mounting_face_mm']:.1f}. So the D"
-        f"{g.socket_bore:.2f} bore surrounds the SQUARE, not a cylinder: nominal "
-        f"radial play {loose['if_tip_is_rounded_square_step_slice_mm']:.2f} mm at "
-        f"the tip's farthest points and more toward its flats, and the collar is "
-        f"never reached. There is no cylindrical guide, no press fit and no grip "
-        "to claim - MEASURE the real part")
+        f"socket over the flatted shaft: D{g.socket_bore:.2f} bore gives "
+        f"{loose['shaft_round_side_mm']:.2f} mm radial play on the round side and "
+        f"{loose['shaft_flat_side_mm']:.2f} mm on the flat side (the flat plane is "
+        f"{loose['flat_plane_from_axis_mm']:.2f} mm from the axis, so "
+        f"{NAV_SHAFT_ACROSS_FLAT} mm across). A round bore does NOT key on the flat: "
+        "the cap can rotate freely under a finger. No grip and no detent is claimed")
     notices.append(
-        f"socket looseness over the stem tip is a RANGE, not "
-        f"{g.socket_bore - g.stem_diameter:.2f} mm per side: drawing No.2 shows a "
-        f"rotated rounded square at the tip ({NAV_STEM_TIP_SQUARE:.2f} +-"
-        f"{NAV_STEM_TIP_SQUARE_TOLERANCE:.2f} across flats, R{NAV_STEM_TIP_CORNER_RADIUS:.1f} "
-        f"corners) and marks Ø{NAV_STEM_SIDE_VIEW_DIAMETER:.1f} in its side view. "
-        f"Against the D{g.socket_bore:.2f} socket that is "
-        f"{loose['looseness_min_mm']:.2f}...{loose['looseness_max_mm']:.2f} mm per "
-        "side depending on which feature mates and at what rotation. MEASURE the "
-        "real engagement; a circular bore cannot be claimed as a gripping fit")
-    # 9. Travel datum and the manufacturer's side-force note, both quoted.
+        f"the collar (D{NAV_COLLAR_DIAMETER} to Z "
+        f"{g.collar_top_z:.2f}, i.e. {NAV_COLLAR_TOP_ABOVE_PCB} mm above the PCB) is "
+        f"{g.collar_clearance:.2f} mm behind the cap's rear face and lies inside the "
+        "panel opening; the CAP never enters the opening")
     notices.append(
-        f"travel datum: {NAV_TRAVEL_MEASUREMENT_NOTE} The printed cap's engagement "
-        f"({g.stem_engagement:.2f} mm over the tip) is measured at a different height "
-        f"from that {NAV_TRAVEL_MEASUREMENT_HEIGHT_MM:.1f} mm figure, so no travel "
-        "value may be transferred to the cap without a measurement")
+        f"cap {g.proud_of_panel:.2f} mm proud of the panel front in total "
+        f"(head {g.head_height:.2f} + {g.shaft_exposed:.2f} mm of exposed shaft): the "
+        "old 3-5 mm proud intent was written for the SKRHABE010 stack and no longer "
+        "measures anything - the shaft's 17.4 mm above the PCB sets it")
     notices.append(
-        f"ALPS side-force note: {NAV_SIDE_FORCE_NOTE}. The printed cap is a 4-way "
-        "control surface, so whether the note restricts a finger pushing the cap "
-        "sideways must be clarified with the supplier or on a sample - it is NOT "
-        "treated here as a proven prohibition or as a proven permission")
-    # 10. Physical gates the model cannot settle stay visible.
+        f"centre push of the switch is {NAV_CENTRE_PUSH_TRAVEL} +-"
+        f"{NAV_CENTRE_PUSH_TOLERANCE} mm (page 398); at rest the bore floor floats "
+        f"{g.free_play:.2f} mm above the shaft tip, so {g.free_play:.2f} mm of a push "
+        "moves the cap before it moves the switch - NOT verified on a sample")
     notices.append(
-        f"cap free play {g.free_play:.2f} mm equals the {NAV_TRAVEL_CENTRE:.2f} mm "
-        "centre-push travel: the first 0.15 mm of a push closes the gap before the "
-        "switch moves (not verified on a sample)")
+        f"housing tabs: {NAV_TAB_PROVENANCE}, modelled at "
+        f"{NAV_TAB_TOP_ABOVE_PCB:.2f} mm above the PCB against a panel rear plane at "
+        f"{g.stack.panel_rear_z:.2f} (Z = {g.stack.board_top_z - NAV_TAB_TOP_ABOVE_PCB:.2f}): "
+        "0.00 mm NOMINAL gap. That is a contact risk, not a clearance; measure it")
     notices.append(
-        "PROVISIONAL: the keytop presses onto the D3.0 stem with a 0.10 mm/side "
-        "clearance and is held axially by the stem fit and by the flange under the "
-        "panel; whether it stays on the stem when the panel is lifted off must be "
-        "checked on the first article")
+        "PROVISIONAL: the cap is held on the shaft by the printed bore fit alone - "
+        "no set screw, no key, no clip. Whether it stays on, cannot rock and does "
+        "not bend the shaft must be checked on the first article")
     notices.append(
-        "PROVISIONAL: the switch's moving-stem collar above the 1.7 mm keytop "
-        "fitting area is not dimensioned in the catalog, so the socket floor "
-        "clearance to anything other than the stem top is unverified")
+        f"the switch is hand-soldered: {NAV_MANUAL_SOLDER}; the four-direction "
+        f"contact force is {NAV_DIRECTION_FORCE_MNM} mN m and the push force "
+        f"{NAV_PUSH_FORCE_N} N, so the cap sees a finger load the printed bore must "
+        "carry (unmeasured)")
     return notices
 
 
 def describe_nav_keytop(g: NavKeytop) -> list[str]:
-    """The keytop's dimension table, as printed by the generator."""
+    """The cap's dimension table, as printed by the generator."""
     return [
         f"panel stack: front Z {g.stack.panel_front_z:.2f}, rear Z "
         f"{g.stack.panel_rear_z:.2f}, board top Z {g.stack.board_top_z:.2f} "
         f"(gap {g.stack.gap:.2f} mm)",
         f"aperture {g.aperture.name}: D{g.aperture_diameter:.2f} at "
         f"({g.aperture.x:.2f}, {g.aperture.y:.2f})  [mechanical/layout.json]",
-        f"head/neck: D{g.neck_diameter:.2f}, head {g.head_height:.2f} proud "
-        f"(Z {g.head_front_z:.2f}..{g.stack.panel_front_z:.2f}), neck "
-        f"{g.neck_length:.2f} through the panel, aperture clearance "
-        f"{g.aperture_clearance:.2f} mm",
-        f"flange: D{g.flange_diameter:.2f} x {g.flange_thickness:.2f} thick "
-        f"(Z {g.flange_front_z:.2f}..{g.flange_rear_z:.2f}), bearing ring "
-        f"{g.bearing_ring:.2f} mm",
+        f"switch heights above the PCB: housing {NAV_HOUSING_TOP_ABOVE_PCB}, collar "
+        f"{NAV_COLLAR_TOP_ABOVE_PCB} (D{NAV_COLLAR_DIAMETER}), shaft tip "
+        f"{g.shaft_tip_above_pcb} (D{g.shaft_diameter:.1f}, {g.shaft_across_flat} "
+        "across the flat)",
+        f"head: D{g.head_diameter:.2f} x {g.head_height:.2f} "
+        f"(Z {g.head_front_z:.2f}..{g.head_rear_z:.2f})",
         f"shank: D{g.shank_diameter:.2f} x {g.shank_length:.2f} long "
-        f"(Z {g.flange_rear_z:.2f}..{g.socket_mouth_z:.2f})",
+        f"(Z {g.head_rear_z:.2f}..{g.socket_mouth_z:.2f})",
         f"socket: D{g.socket_bore:.2f} x {g.socket_depth:.2f} deep "
         f"(Z {g.socket_floor_z:.2f}..{g.socket_mouth_z:.2f}), wall "
         f"{g.socket_wall:.2f} mm",
-        f"stem: D{g.stem_diameter:.1f}, top Z {g.stem_top_z:.2f}, engagement "
-        f"{g.stem_engagement:.2f} mm, axial free play {g.free_play:.2f} mm",
-        f"switch body top Z {g.switch_body_top_z:.2f}: cap clearance "
-        f"{g.switch_body_clearance:.2f} mm; overall length {g.overall_length:.2f} mm",
+        f"shaft: D{g.shaft_diameter:.1f}, tip Z {g.shaft_tip_z:.2f}, "
+        f"{g.shaft_in_socket:.2f} mm in the bore, axial free play "
+        f"{g.free_play:.2f} mm",
+        f"panel: cap rear face {g.rear_face_above_panel_front:.2f} mm in front of the "
+        f"panel, collar {g.collar_clearance:.2f} mm behind it; overall length "
+        f"{g.overall_length:.2f} mm, {g.proud_of_panel:.2f} mm proud",
     ]
-
-
-# ---------------------------------------------------------------------------
-# PROTOTYPE NAV socket matched to the rounded-square stem
-# ---------------------------------------------------------------------------
-# The installed part keeps its D3.2 CIRCULAR socket (unchanged). These are
-# PRINTABLE PROTOTYPES: the same head, neck, flange and shank, with the socket
-# cut as a SQUARE matched to the tip that the vendor model actually shows
-# (1.95 +-0.05 across flats, R0.5 corners, +-1.184 mm extent). A square bore on a
-# square tip is the only shape that can guide this stem at all; a circular bore
-# cannot.
-#
-# They are labelled specimens, not a chosen design: three clearance sizes plus one
-# ROCK variant, so the first article decides between them by measurement. Nothing
-# here is released, and the installed `nav-keytop.stl` does not change.
-@dataclass(frozen=True)
-class NavProtoSpec:
-    """One numbered prototype: a square socket, optionally a narrower neck."""
-
-    name: str
-    square_mm: float
-    corner_radius_mm: float
-    socket_depth_mm: float
-    neck_diameter_mm: float
-    status: str = "PROTOTYPE, not the installed part"
-
-
-# Square across flats, chosen around the 1.95 mm tip: 0.025 / 0.075 / 0.125 mm
-# per side. The corner radius is 0.6 mm: the tip's corners are R0.5, so every
-# specimen clears them by at least 0.1 mm (a 0.5 mm corner on both would need an
-# exact match to slide, which no FDM print achieves).
-NAV_PROTO_SQUARES = (2.00, 2.10, 2.20)
-NAV_PROTO_CORNER_RADIUS = 0.6
-NAV_PROTO_SOCKET_DEPTH = 1.4
-NAV_PROTO_LEAD_IN = 0.30         # square lead-in at the mouth, printed on the bed
-NAV_PROTO_ROCK_NECK = 6.8        # 0.20 mm per side in the 7.2 mm aperture
-
-
-def nav_proto_specimens(g: "NavKeytop") -> list[NavProtoSpec]:
-    """The four printable prototypes, each validated before it can be built."""
-    specs = [
-        NavProtoSpec(name=f"square-{square:.2f}", square_mm=square,
-                     corner_radius_mm=NAV_PROTO_CORNER_RADIUS,
-                     socket_depth_mm=NAV_PROTO_SOCKET_DEPTH,
-                     neck_diameter_mm=g.neck_diameter)
-        for square in NAV_PROTO_SQUARES
-    ]
-    specs.append(NavProtoSpec(
-        name=f"rock-square-{NAV_PROTO_SQUARES[1]:.2f}",
-        square_mm=NAV_PROTO_SQUARES[1],
-        corner_radius_mm=NAV_PROTO_CORNER_RADIUS,
-        socket_depth_mm=NAV_PROTO_SOCKET_DEPTH,
-        neck_diameter_mm=NAV_PROTO_ROCK_NECK,
-        status="PROTOTYPE, ROCK variant: narrower neck, NOT the installed part",
-    ))
-    for spec in specs:
-        validate_nav_proto(spec, g)
-    return specs
-
-
-def nav_proto_numbers(spec: NavProtoSpec, g: "NavKeytop") -> dict:
-    """Everything a reader needs to compare one prototype with the installed part."""
-    half = spec.square_mm / 2
-    corner = (half - spec.corner_radius_mm) * math.sqrt(2) + spec.corner_radius_mm
-    aperture_clearance = g.aperture_diameter - spec.neck_diameter_mm
-    thickness = g.stack.thickness
-    # Tilt available before both faces of the neck touch: atan(cl_total/thickness).
-    tilt = math.degrees(math.atan(aperture_clearance / thickness))
-    # Free rotation of a square socket over the square tip before the flats meet.
-    per_side = (spec.square_mm - NAV_STEM_TIP_SQUARE) / 2
-    backlash = math.degrees(math.atan(2 * per_side / spec.square_mm))
-    floor_z = nav_proto_floor_z(g)
-    mouth_z = nav_proto_rear_z(g, spec)      # a BLIND socket: the mouth IS the rear face
-    mount = g.stack.board_top_z
-    return {
-        "name": spec.name,
-        "status": spec.status,
-        "square_across_flats_mm": spec.square_mm,
-        "corner_radius_mm": spec.corner_radius_mm,
-        "clearance_per_side_mm": round(per_side, 4),
-        "corner_clearance_mm": round(spec.corner_radius_mm
-                                     - NAV_STEM_TIP_CORNER_RADIUS, 4),
-        "circumscribed_radius_mm": round(corner, 4),
-        "socket_wall_to_shank_mm": round(g.shank_diameter / 2 - corner, 4),
-        "socket_depth_mm": round(nav_proto_rear_z(g, spec) - floor_z, 4),
-        "socket_floor_z": round(floor_z, 4),
-        "socket_rear_face_z": round(nav_proto_rear_z(g, spec), 4),
-        "lead_in_depth_mm": round(min(NAV_PROTO_LEAD_IN, nav_proto_rear_z(g, spec)
-                                      - floor_z), 4),
-        "installed_part_mouth_z": round(g.socket_mouth_z, 4),
-        "neck_diameter_mm": spec.neck_diameter_mm,
-        "aperture_clearance_mm": round(aperture_clearance, 4),
-        "tilt_before_binding_deg": round(tilt, 3),
-        "square_rotation_backlash_deg": round(backlash, 3),
-        "socket_above_mounting_face_mm": [round(mount - mouth_z, 3),
-                                          round(mount - floor_z, 3)],
-        "square_tip_band_above_mounting_face_mm": list(NAV_STEP_SQUARE_SLICE_Z),
-        "only_engages_the_square_tip": bool(
-            (mount - mouth_z) >= NAV_STEP_SQUARE_SLICE_Z[0]),
-        "reaches_the_circular_collar": bool(
-            (mount - mouth_z) <= NAV_STEP_CIRCULAR_SECTION_Z),
-        "prints_mouth_down_on_the_bed": True,
-        "not_claimed": [
-            "that the socket grips, retains or centres the cap",
-            "that the square/radius/rotation match the supplied part",
-            "that the cap cannot rock or press the switch",
-            "any measured engagement; the stem shape is vendor MODEL geometry",
-        ],
-    }
-
-
-def nav_proto_floor_z(g: "NavKeytop") -> float:
-    """The prototype's socket floor: the stem top less the intended free play.
-
-    The free play is the SAME as the installed part's, so the switch is not
-    pre-loaded by a prototype either.
-    """
-    return round(g.stem_top_z - NAV_AXIAL_FREE_PLAY, 4)
-
-
-def nav_proto_rear_z(g: "NavKeytop", spec: NavProtoSpec) -> float:
-    """The prototype's own REAR face, i.e. the blind socket's mouth.
-
-    The installed part's rear face is at ``socket_mouth_z`` 6.95 because its
-    socket is 1.50 deep. A prototype that promises a 1.40 mm socket must therefore
-    END 0.10 mm EARLIER; reusing the installed stock would cut 1.50 mm instead and
-    silently shift the socket 0.10 mm down the stem.
-    """
-    return round(nav_proto_floor_z(g) + spec.socket_depth_mm, 4)
-
-
-def nav_proto_envelope(g: "NavKeytop", spec: NavProtoSpec) -> "Envelope":
-    """The prototype's intended solid envelope: its OWN rear face, not the installed one."""
-    r = g.flange_diameter / 2
-    return Envelope(
-        x=(g.centre[0] - r, g.centre[0] + r),
-        y=(g.centre[1] - r, g.centre[1] + r),
-        z=(g.head_front_z, nav_proto_rear_z(g, spec)),
-    )
-
-
-def validate_nav_proto(spec: NavProtoSpec, g: "NavKeytop") -> None:
-    """Refuse a prototype that cannot be printed or cannot reach the tip."""
-    need(0.02 <= (spec.square_mm - NAV_STEM_TIP_SQUARE) / 2 <= 0.30,
-         f"{spec.name}: {spec.square_mm:.2f} mm square gives "
-         f"{(spec.square_mm - NAV_STEM_TIP_SQUARE) / 2:.3f} mm per side over the "
-         f"{NAV_STEM_TIP_SQUARE:.2f} mm tip, outside the 0.02-0.30 mm prototype band")
-    need(spec.corner_radius_mm >= NAV_STEM_TIP_CORNER_RADIUS + 0.05,
-         f"{spec.name}: corner R{spec.corner_radius_mm:.2f} does not clear the tip's "
-         f"R{NAV_STEM_TIP_CORNER_RADIUS:.1f} corners")
-    need(spec.corner_radius_mm >= 0.4,
-         f"{spec.name}: a corner under R0.4 is a hairline in a 0.4 mm print")
-    half = spec.square_mm / 2
-    corner = (half - spec.corner_radius_mm) * math.sqrt(2) + spec.corner_radius_mm
-    need(g.shank_diameter / 2 - corner >= PRINT_MIN_WALL,
-         f"{spec.name}: only {g.shank_diameter / 2 - corner:.2f} mm of wall between "
-         f"the socket corner and the D{g.shank_diameter:.2f} shank")
-    need(1.0 <= spec.socket_depth_mm <= NAV_KEYTOP_FITTING_AREA_MAX,
-         f"{spec.name}: socket depth {spec.socket_depth_mm:.2f} mm is outside "
-         f"1.0-{NAV_KEYTOP_FITTING_AREA_MAX:.1f} mm")
-    need(spec.neck_diameter_mm <= g.aperture_diameter - 0.2 + EPS_MM,
-         f"{spec.name}: neck D{spec.neck_diameter_mm:.2f} leaves less than 0.10 mm "
-         f"per side in the D{g.aperture_diameter:.2f} aperture")
-    floor_z = nav_proto_floor_z(g)
-    mouth_z = nav_proto_rear_z(g, spec)
-    above = round(g.stack.board_top_z - mouth_z, 4)
-    need(above >= NAV_STEP_SQUARE_SLICE_Z[0],
-         f"{spec.name}: the socket mouth reaches {above:.2f} mm above the mounting "
-         f"face, below the square tip band {NAV_STEP_SQUARE_SLICE_Z}: it would swallow "
-         "the Ø3 collar and could not guide the tip")
-    need(mouth_z < g.stack.board_top_z,
-         f"{spec.name}: the socket mouth is behind the front board")
-    need(spec.socket_depth_mm < g.socket_depth,
-         f"{spec.name}: a {spec.socket_depth_mm:.2f} mm socket is not shorter than the "
-         f"installed {g.socket_depth:.2f} mm, so its rear face would not move")
-
 
 # ---------------------------------------------------------------------------
 # Part 2: value knob for the Bourns PEC11R-4015F-S0024

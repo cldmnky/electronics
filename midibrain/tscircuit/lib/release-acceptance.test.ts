@@ -306,9 +306,10 @@ describe("hardware fingerprint", () => {
     ]) {
       expect(FINGERPRINT_FILES).toContain(rel)
     }
-    // ...and the prototypes / analysis are NOT hardware: they must not be here.
-    expect(FINGERPRINT_FILES).not.toContain("mechanical/printed/nav_proto.py")
-    expect(FINGERPRINT_FILES).not.toContain("mechanical/printed/nav_fit.py")
+    // ...and the fit specimens are NOT hardware: they must not be here. (The
+    // NAV motion model and square-socket prototypes were deleted on 2026-11-14
+    // with the SKRHABE010 switch they described, so only the specimens remain.)
+    expect(FINGERPRINT_FILES).not.toContain("mechanical/printed/fit-specimens")
   })
 
   test("a generator-only content change invalidates the fingerprint", () => {

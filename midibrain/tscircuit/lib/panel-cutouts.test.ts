@@ -138,6 +138,11 @@ test("the canonical apertures cover every opening class with its own diameter", 
   expect(PANEL_CUTOUTS.button - (BUTTON_CAP.topSquare + BUTTON_CAP.topSquareTolerance)).toBeGreaterThan(0)
   expect(radius("REC LED")).toBe(1.3)      // Ø2.6 provisional PGN25L165 hole
   expect(radius("VALUE ENCODER")).toBe(3.6) // 7.2 mm bushing
+  // NAV stopped sharing the 7.2 mm control aperture on 2026-11-14 (owner
+  // decision): the new switch's Ø7.20 collar sits inside the opening, so NAV has
+  // its own PANEL_CUTOUTS.nav. The two must not silently merge again.
+  expect(radius("NAV")).toBe(PANEL_CUTOUTS.nav / 2)
+  expect(PANEL_CUTOUTS.nav).toBeGreaterThan(PANEL_CUTOUTS.control)
   expect(radius("MIDI IN 1 JACK")).toBe(3.1) // 6.2 mm barrel
   const lcd = byName.get("LCD_APERTURE")
   expect(lcd?.shape).toBe("polygon")
@@ -147,7 +152,10 @@ test("the canonical apertures cover every opening class with its own diameter", 
   // is explicit (TEMPO 31, NAV 12, SHIFT/EXIT -5); POWER sits at (52, 48.9) - 49
   // transport row is centred on the U opening (-46/-22/2/26) and the jacks are
   // their own block 12 mm apart from -62.
-  for (const p of ["52,31", "52,12", "52,-5", "52,-34", "52,48.9",
+  // NAV is at 52.5 since the 2026-11-14 switch replacement: the 17 x 17 mm
+  // ALPS RKJXT1F42001 would otherwise put its left pads inside the display
+  // keepout (lib/layout.ts RIGHT_CONTROLS).
+  for (const p of ["52,31", "52.5,12", "52,-5", "52,-34", "52,48.9",
                    "-46,-34", "-22,-34", "2,-34", "26,-34",
                    "-62,-47.5", "-50,-47.5", "-38,-47.5", "-26,-47.5"]) {
     expect(positions).toContain(p)

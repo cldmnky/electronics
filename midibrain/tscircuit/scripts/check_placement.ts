@@ -203,11 +203,20 @@ for (const c of ledColumns) {
 }
 ok("panel: 3 light-pipe openings, no extras", circles(PANEL_CUTOUTS.led / 2).length === ledColumns.length)
 
-// Encoder / nav openings in the right-hand control column.
-for (const c of [RIGHT_CONTROLS.TEMPO, RIGHT_CONTROLS.NAV]) {
-  at(`panel: control opening Ø${PANEL_CUTOUTS.control}`, centre(circles(PANEL_CUTOUTS.control / 2).find(o => close(o.center.x, c.x) && close(o.center.y, c.y))), c)
-}
-ok("panel: 2 control openings, no extras", circles(PANEL_CUTOUTS.control / 2).length === 2)
+// Encoder opening in the right-hand control column. NAV has had its OWN
+// aperture since 2026-11-14 (owner decision: the ALPS RKJXT1F42001 leaves its
+// Ø7.20 stationary collar inside the opening), so the two diameters are checked
+// separately and neither may borrow the other's.
+at(`panel: value-encoder opening Ø${PANEL_CUTOUTS.control}`,
+  centre(circles(PANEL_CUTOUTS.control / 2).find(o => close(o.center.x, RIGHT_CONTROLS.TEMPO.x) && close(o.center.y, RIGHT_CONTROLS.TEMPO.y))),
+  RIGHT_CONTROLS.TEMPO)
+ok("panel: 1 value-encoder opening, no extras", circles(PANEL_CUTOUTS.control / 2).length === 1)
+at(`panel: NAV opening Ø${PANEL_CUTOUTS.nav}`,
+  centre(circles(PANEL_CUTOUTS.nav / 2).find(o => close(o.center.x, RIGHT_CONTROLS.NAV.x) && close(o.center.y, RIGHT_CONTROLS.NAV.y))),
+  RIGHT_CONTROLS.NAV)
+ok("panel: 1 NAV opening, no extras", circles(PANEL_CUTOUTS.nav / 2).length === 1)
+ok(`panel: NAV opening Ø${PANEL_CUTOUTS.nav} clears the Ø7.2 collar by ${(PANEL_CUTOUTS.nav - 7.2) / 2} mm per side`,
+  PANEL_CUTOUTS.nav - 7.2 >= 0.6)
 
 // MIDI jack barrels, in their own grouped block at the left of the bottom edge.
 for (const c of FRONT_COLUMNS) {
