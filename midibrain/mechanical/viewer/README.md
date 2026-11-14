@@ -22,7 +22,7 @@ that file is the panel's **silkscreen**, which no STEP can carry - see below.
 | `front.step` | 85 | 150.0 x 112.0 x 37.7 | front/UI board **with every placed part** in its real Z |
 | `rear.step` | 40 | 148.0 x 112.0 x 26.0 | rear/base board with its parts |
 | `pi-panel.step` | 1 | 101.2 x 128.5 x 1.6 | the 20HP Pi mounting panel |
-| `assembly.step` | 87 | 152.0 x 128.5 x 43.1 | the whole stack: front board at the Z = 0 anchor, panel and rear board as envelopes |
+| `assembly.step` | 95 | 152.0 x 128.5 x 43.1 | the whole stack: front board at the Z = 0 anchor, panel and rear board as envelopes, plus the seven printed B3F button caps (88 + 7) |
 
 These are tscircuit's own board export, so the parts are the real footprints at
 the real heights.
@@ -92,6 +92,23 @@ scene z >= -cut, so it still peels the stack along the viewing direction.
   drawn **candidate only** - `DISPLAY_ORIENTATION` records both axes and the
   physical orientation of the delivered module is **pending** a labelled front/
   rear photograph.
+- The **printed parts** come from two places, and both are inside the stack.
+  The NAV keytop and the value knob are `assembly.printedpart` envelopes in the
+  front board's own circuit (`front.circuit.tsx`), so they travel inside
+  `front.step` and stand on the panel's front side there: `front.step` reaches
+  scene z +18.70 (the knob's front face, panel z -18.70) and +4.00 (the keytop,
+  panel z -4.00), i.e. in FRONT of the panel face at scene z 0. The seven
+  **printed B3F-4055 button caps** do not belong to a board; they are added to
+  `tscircuit/assembly.circuit.tsx` and appear in `assembly.step` (88 → **95**
+  `MANIFOLD_SOLID_BREP` entities, +7). Because that export is the hidden
+  duplicate view of the stack, the manifest lists the cap's own STEP
+  (`mechanical/printed/button-cap.step`) once per panel opening and places it
+  from `mechanical/layout.json`: x/y are the seven `* BUTTON` apertures and z is
+  left alone, because button-cap.step is built on the panel frame already
+  (`button_cap.py`; plate z -0.80…3.90, so 0.80 mm proud of the panel front and
+  not sunk below it). `assets/viewer-printed-parts.png` is that view. The viewer
+  draws STEP files: it proves where the parts are modelled, nothing about the
+  printed fit.
 - The **display carrier and its four spacers** are drawn as a placeholder from
   `displayStandoff.spacerLength` between the module's rear plane and the rear
   board's front face, at the module's `displayBossPattern`. They stand along

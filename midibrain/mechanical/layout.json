@@ -99,6 +99,20 @@
       "boreDiameter": 6.2,
       "zRear": -2.7,
       "zFront": -18.7
+    },
+    "buttonCap": {
+      "implemented": true,
+      "undersideZ": 3.3,
+      "proudAbovePanelFront": 0.8,
+      "topZ": -0.8,
+      "locatorFloorZ": 3.3,
+      "rearFaceZ": 3.9,
+      "height": 4.7,
+      "square": 11.8,
+      "locatorSquare": 3.85,
+      "locatorDepth": 0.6,
+      "clearanceToCutoutPerSide": 0.225,
+      "material": "PLA/PETG print, solid; first article must be measured"
     }
   },
   "displayUndersideGap": -4.05,

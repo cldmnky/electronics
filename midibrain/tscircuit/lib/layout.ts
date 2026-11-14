@@ -1249,9 +1249,11 @@ export const mechanicalExport = () => ({
   displayDatum: DISPLAY_DATUM,
   displayStandoff: DISPLAY_STANDOFF,
   provisionalZ: PROVISIONAL_Z,
-  // The two 3D-printed front-panel parts: shape and position, panel
-  // coordinates. printed_geometry.py reads this block instead of owning a copy.
-  printedParts: PRINTED_PARTS,
+  // The 3D-printed front-panel parts: shape and position, panel coordinates.
+  // printed_geometry.py reads this block instead of owning a copy; the button
+  // cap travels with it so the viewer places the seven caps from the same
+  // export instead of retyping their square (BUTTON_CAP_PRINTED).
+  printedParts: { ...PRINTED_PARTS, buttonCap: BUTTON_CAP_PRINTED },
   displayUndersideGap: DISPLAY_UNDERSIDE_GAP,
   frontTopSmdMaxHeight: FRONT_TOP_SMD_MAX_HEIGHT,
   lightPipe: LIGHT_PIPE,

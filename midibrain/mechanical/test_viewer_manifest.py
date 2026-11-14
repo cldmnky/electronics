@@ -33,7 +33,8 @@ PROJECT = HERE.parent
 SERVE = HERE / "viewer" / "serve_manifest.py"
 
 
-def run_manifest(models: list[str], reference: dict | None = None) -> dict:
+def run_manifest(models: list[str], reference: dict | None = None,
+                 printed: list[str] | None = None) -> dict:
     """Generate the manifest for a temporary root holding the real layout.
 
     `reference` optionally writes a vendor STEP under mechanical/reference/ and a
@@ -41,6 +42,9 @@ def run_manifest(models: list[str], reference: dict | None = None) -> dict:
     SHA-256 is the file's own, which is the VERIFIED branch; otherwise the
     recorded hash is deliberately wrong and the generator must fall back to the
     unverified placement.
+
+    `printed` optionally copies files from mechanical/printed/ into the same
+    place, which is what makes the manifest list the printed button caps.
     """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -51,6 +55,11 @@ def run_manifest(models: list[str], reference: dict | None = None) -> dict:
         directory.mkdir(parents=True)
         for stem in models:
             (directory / f"{stem}.step").write_text("ISO-10303-21;\n", encoding="utf-8")
+        if printed is not None:
+            out_dir = root / "mechanical" / "printed"
+            out_dir.mkdir(parents=True)
+            for name in printed:
+                shutil.copy(PROJECT / "mechanical" / "printed" / name, out_dir / name)
         if reference is not None:
             ref_dir = root / "mechanical" / "reference"
             ref_dir.mkdir(parents=True)
@@ -127,6 +136,52 @@ class ManifestPlacementTest(unittest.TestCase):
         # stack instead of showing it somewhere wrong.
         self.assertEqual(sorted(entry["label"] for entry in self.manifest["models"]),
                          ["viewer: front.step", "viewer: panel.step", "viewer: rear.step"])
+
+
+class PrintedPartsTest(unittest.TestCase):
+    """The printed button caps land in the seven panel openings.
+
+    The caps are the one printed part the viewer has to place itself: the knob and
+    the NAV keytop travel inside front.step, but no board carries the B3F caps, so
+    a missing or mis-placed cap entry is invisible until someone looks for seven
+    plates in the panel. Every coordinate comes from the layout export.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.layout = json.loads((PROJECT / "mechanical" / "layout.json").read_text())
+        cls.manifest = run_manifest([], printed=["button-cap.step"])
+
+    def button_openings(self) -> list[dict]:
+        return [a for a in self.layout["panelApertures"]
+                if a.get("shape") == "rect" and a.get("name", "").endswith(" BUTTON")]
+
+    def test_one_cap_per_button_opening(self) -> None:
+        openings = self.button_openings()
+        self.assertEqual(len(openings), 7)
+        caps = [m for m in self.manifest["models"] if "printedPart" in m]
+        self.assertEqual([m["printedPart"]["opening"] for m in caps],
+                         [a["name"] for a in openings])
+        for entry, opening in zip(caps, openings):
+            self.assertTrue(entry["visible"])
+            self.assertEqual(entry["url"], "mechanical/printed/button-cap.step")
+            # x/y only: the cap STEP is already on the panel Z datum.
+            self.assertAlmostEqual(entry["positionX"], opening["x"], places=6)
+            self.assertAlmostEqual(entry["positionY"], opening["y"], places=6)
+            self.assertNotIn("positionZ", entry)
+            self.assertNotIn("scaleZ", entry)
+
+    def test_the_cap_is_proud_of_the_panel_and_fits_its_opening(self) -> None:
+        cap = self.layout["printedParts"]["buttonCap"]
+        panel_front = self.layout["provisionalZ"]["panelFront"]
+        # 0.80 mm in front of the panel face, never flush and never behind it.
+        self.assertAlmostEqual(panel_front - cap["topZ"], 0.80, places=6)
+        for opening in self.button_openings():
+            self.assertLess(cap["square"], opening["width"])
+
+    def test_no_cap_entry_without_the_step_file(self) -> None:
+        # A missing export must not leave seven empty transforms in the manifest.
+        self.assertEqual([m for m in run_manifest([])["models"] if "printedPart" in m], [])
 
 
 class DisplayAlignmentTest(unittest.TestCase):

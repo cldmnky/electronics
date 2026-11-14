@@ -600,6 +600,11 @@ async function main() {
     // model sat at its own origin, which is why six boards used to overlap.
     group.scale.x = model.scaleX ?? 1
     group.scale.z = model.scaleZ ?? 1
+    // A printed part (the seven button caps) is already in the panel frame, so
+    // it carries an x/y move onto its opening and no z transform at all: one
+    // STEP file, one copy per panel opening.
+    group.position.x = model.positionX ?? 0
+    group.position.y = model.positionY ?? 0
     group.position.z = model.positionZ ?? 0
     if (model.align) {
       // Own-frame model: align on the loaded bbox, centre it on the display

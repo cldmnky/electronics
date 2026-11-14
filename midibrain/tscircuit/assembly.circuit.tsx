@@ -44,11 +44,18 @@
 import { assembly } from "tscircuit"
 import FrontBoard from "./front.circuit"
 import {
+  BUTTON_CAP_PRINTED,
   frontBoardUpZ,
+  FRONT_COLUMNS,
   PANEL,
   PANEL_LCD_CUTOUT,
+  PLAY_START,
+  POWER_BUTTON,
   PROVISIONAL_Z,
   REAR_PCB,
+  RIGHT_CONTROLS,
+  TRANSPORT_Y,
+  transportButtonX,
 } from "./lib/layout"
 
 // The frame here is the front/UI board's own (lib/layout.ts frontBoardUpZ): the
@@ -109,6 +116,48 @@ const rearBoardEnvelope = boardCage(
   REAR_PCB.width, REAR_PCB.height, PROVISIONAL_Z.rearBoardFront, PROVISIONAL_Z.rearBoardRear,
 )
 
+// ---- The seven printed B3F-4055 button caps (SW1-SW7) ----
+// The key top for every B3F-4055 is the printed cap (BUTTON_CAP_PRINTED, built by
+// mechanical/printed/button_cap.py): no pads, no footprint, no schematic symbol,
+// so like the panel and rear cages it is an `assembly.printedpart` and adds no
+// BOM row and no placement. Without them the stack shows seven bare switches
+// behind seven empty panel openings.
+//
+// POSITION IS THE SWITCH'S OWN: the transport row through the same helpers
+// front.circuit.tsx places SW1-SW5 with (transportButtonX + TRANSPORT_Y), and
+// SW6 / SW7 from RIGHT_CONTROLS.SHIFT_EXIT / POWER_BUTTON. The caps have no
+// plinth and are centred by the 12.25 mm panel opening, so one X/Y per switch is
+// the whole placement; nothing here is typed from a drawing.
+const BUTTON_CAP_SWITCHES = [
+  ...FRONT_COLUMNS.map((column, i) => ({
+    switchName: `SW${i + 1}`,
+    x: transportButtonX(column.button),
+    y: TRANSPORT_Y,
+  })),
+  { switchName: "SW5", x: transportButtonX(PLAY_START.button), y: TRANSPORT_Y },
+  { switchName: "SW6", x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y },
+  { switchName: "SW7", x: POWER_BUTTON.x, y: POWER_BUTTON.y },
+] as const
+
+// A cuboid between two panel-Z planes, in this assembly's frame (frontBoardUpZ):
+// the cap spans panel z topZ -0.80 (0.80 mm proud of the panel front) to rearFaceZ
+// 3.90, and the plunger recess is cut into that rear face down to locatorFloorZ.
+const zSlab = (square: number, zFront: number, zRear: number): JscadShape => ({
+  type: "translate",
+  vector: [0, 0, (frontBoardUpZ(zFront) + frontBoardUpZ(zRear)) / 2],
+  shape: { type: "cuboid", size: [square, square, Math.abs(frontBoardUpZ(zRear) - frontBoardUpZ(zFront))] },
+})
+
+// A fresh object per cap: seven printedparts must not share one CSG node.
+const buttonCapEnvelope = (): JscadShape => ({
+  type: "subtract",
+  shapes: [
+    zSlab(BUTTON_CAP_PRINTED.square, BUTTON_CAP_PRINTED.topZ, BUTTON_CAP_PRINTED.rearFaceZ),
+    zSlab(BUTTON_CAP_PRINTED.locatorSquare,
+      BUTTON_CAP_PRINTED.locatorFloorZ, BUTTON_CAP_PRINTED.rearFaceZ),
+  ],
+})
+
 export default () => (
   <assembly.device name="MIDI_BRAIN_STACK">
     {/* The front board arrives with its own two printed parts (PRINT_NAV_KEYTOP
@@ -133,5 +182,17 @@ export default () => (
         showAsTranslucentModel: true,
       }}
     />
+    {BUTTON_CAP_SWITCHES.map(cap => (
+      <assembly.printedpart
+        key={cap.switchName}
+        name={`PRINT_BUTTON_CAP_${cap.switchName}`}
+        color="#c96a4f"
+        cadModel={{
+          jscad: buttonCapEnvelope(),
+          positionOffset: { x: cap.x, y: cap.y, z: 0 },
+          showAsTranslucentModel: true,
+        }}
+      />
+    ))}
   </assembly.device>
 )

@@ -181,6 +181,56 @@ for pattern, label in (
                 entry["board"] = {"kind": "rear", **layout["rearPcb"]}
         models.append(entry)
 
+# ---- The printed button caps ----
+# One printed B3F-4055 cap (mechanical/printed/button-cap.step, built by
+# button_cap.py from BUTTON_CAP_PRINTED) sits in each of the seven 12.25 mm panel
+# button openings: SW1-SW5 in the transport row, SW6 SHIFT/EXIT, SW7 POWER. They
+# travel inside the assembly export, but that export is the hidden duplicate view
+# of the stack, so the viewer lists the cap's OWN STEP and places one copy per
+# opening.
+#
+# THE CAP STEP IS ALREADY IN THE PANEL FRAME. button_cap.py builds it with z = 0
+# on the panel FRONT face and +z rearward (button-cap.step spans -0.80...3.90),
+# which is the frame the viewer's toScene(z -> -z) expects: no scaleZ and no
+# positionZ, and the plate stands 0.80 mm in front of the panel face by itself.
+# A copy therefore only moves in x/y, onto its opening's centre from
+# mechanical/layout.json panelApertures - the same coordinates the panel emits,
+# never a typed list. The cap square is checked against that opening, so a stale
+# export or a resized aperture shows up here instead of as a floating part.
+CAP_STEP = root / "mechanical/printed/button-cap.step"
+if CAP_STEP.is_file():
+    # Shape and Z come from the layout export, so a stale layout.json or a
+    # resized opening fails here instead of drawing a cap in the wrong place.
+    cap = layout["printedParts"]["buttonCap"]
+    assert cap["topZ"] < z["panelFront"] < cap["rearFaceZ"], (
+        f"printed cap z {cap['topZ']}..{cap['rearFaceZ']} is not proud of the "
+        f"panel front {z['panelFront']}")
+    openings = [a for a in layout["panelApertures"]
+                if a.get("shape") == "rect" and a.get("name", "").endswith(" BUTTON")]
+    for opening in openings:
+        assert cap["square"] < opening["width"], (
+            f"printed cap {cap['square']} mm does not fit the {opening['width']} mm "
+            f"{opening['name']} opening")
+        models.append({
+            "label": f"printed: {opening['name']} cap",
+            "url": str(CAP_STEP.relative_to(root)),
+            "bytes": CAP_STEP.stat().st_size,
+            "visible": True,
+            # Panel frame == scene frame in x/y; only z is flipped, and the cap
+            # STEP is already on panel z, so a copy moves in x/y alone.
+            "positionX": opening["x"],
+            "positionY": opening["y"],
+            "printedPart": {
+                "part": "printed B3F-4055 button cap",
+                "model": "mechanical/printed/button-cap",
+                "opening": opening["name"],
+                "openingSquare": opening["width"],
+                "capSquare": cap["square"],
+                "panelZ": [cap["topZ"], cap["rearFaceZ"]],
+                "zDatum": "panel front face: button-cap.step is already in the panel frame",
+            },
+        })
+
 carrier = {
     "bosses": layout["displayBossPattern"],
     "offsetX": layout["display"]["x"],
@@ -209,6 +259,9 @@ print(f"mechanical-view: {len(models)} STEP file(s) listed in {out}")
 for m in models:
     if "positionZ" in m:
         where = f"panel z {m['panelTopZ']:5.2f}..{m['panelTopZ'] + 2 * half:5.2f}  (scene z {m['positionZ']:+7.2f})"
+    elif "positionX" in m:
+        where = (f"opening centre x {m['positionX']:6.2f} y {m['positionY']:6.2f}  "
+                 f"(panel z {m['printedPart']['panelZ'][0]:+.2f}..{m['printedPart']['panelZ'][1]:+.2f})")
     else:
         where = "own frame, aligned on its loaded bbox, screen toward the panel"
     print(f"  {'shown ' if m['visible'] else 'hidden'} {m['label']:<46} {where}")

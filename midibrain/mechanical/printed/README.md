@@ -421,6 +421,22 @@ both halves of that down.
 One geometry for SW1–SW7: REC, OVER DUB, STOP, PLAY, PLAY START, SHIFT/EXIT and
 POWER. The panel does not choose the shape; the 12.25 mm opening forces it.
 
+**Fit the caps AFTER SW1–SW7 are soldered and cleaned** (Omron's B3F handling
+precaution: nothing may sit on the plunger while the switch is soldered). The
+3.85 mm recess covers the moving plunger and its collar, so a fitted cap is in
+the way of the iron, traps flux against the switch, and leaves no access to clean
+it afterwards - the caps go on at panel assembly, never at board assembly.
+
+**The caps are no longer files only.** `tscircuit/assembly.circuit.tsx` draws one
+`assembly.printedpart` per switch, sized from `BUTTON_CAP_PRINTED` (plate 11.80,
+height 4.70, panel Z -0.80…3.90 with the locator recess cut into the rear face):
+`make mechanical-steps` therefore writes seven caps into
+`mechanical/viewer/models/assembly.step` (88 → 95 solids), and
+`mechanical/viewer/serve_manifest.py` places `button-cap.step` in each of the
+seven panel openings in the viewer (`assets/viewer-printed-parts.png`). A drawn
+part is a model: neither render proves the fit, the retention or the press
+travel that the first article has to measure.
+
 **The bought B32 alternative does not suit this stack, and the reason is now
 verified**: Omron's `10.0 ±0.4` is PCB top → **cap top** and `1.0–2.0` is the cap
 top's **protrusion over the panel** (drawing vector data; round-cap cross-check
