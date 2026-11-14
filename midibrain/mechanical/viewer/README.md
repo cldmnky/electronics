@@ -63,23 +63,24 @@ scene z >= -cut, so it still peels the stack along the viewing direction.
   panel-facing side lands on +scene z) and `positionZ = -(T + 0.8)`, where `T`
   is that board's face nearest the panel, straight out of
   `mechanical/layout.json` `provisionalZ` (panel front 0, +z rearward). Result
-  in panel z: panel 0.00…1.60, front board 10.00…11.60, rear board 22.80…24.40,
+  in panel z: panel 0.00…1.60, front board 10.60…12.20, rear board 23.40…25.00,
   each board's parts side facing the panel. In scene z that is panel 0…-1.60,
-  front -10.00…-11.60, rear -22.80…-24.40: the panel is nearest the camera and
+  front -10.60…-12.20, rear -23.40…-25.00: the panel is nearest the camera and
   the rear board furthest away.
 - The vendor display (Waveshare) is in its **own** frame and its STEP also
   carries non-solid construction geometry (raw points reach x = 106 where the
   solid envelope is 106.1 wide), so it cannot be placed by centre arithmetic.
   The viewer aligns it on the **loaded** bounding box: centred on
-  `display.x/y` and with its screen on the panel-front plane (scene z 0), i.e.
-  facing the panel and reaching back to -13.82. Which side is the screen is not
+  `display.x/y` and with its screen at `PROVISIONAL_Z.displayGlassFront`
+  (0.60 mm behind the panel front nominally), facing the panel and reaching
+  back by the 14.05 mm envelope. Which side is the screen is not
   guessed - it is read off the STEP's own products through OpenCascade: `BOARD`
   sits at z -3.34…-1.74 and the SMTSO bosses at -7.34…-1.84, while the IPS/touch
   panel reaches +4.8, so +z is the screen and z is inverted.
 - The **display carrier and its four spacers** are drawn as a placeholder from
   `displayStandoff.spacerLength` between the module's rear plane and the rear
   board's front face, at the module's `displayBossPattern`. They stand along
-  scene Z in that 8.75 mm gap (panel z 14.05…22.80, scene z -14.05…-22.80):
+  scene Z in that 8.75 mm gap (panel z 14.65…23.40, scene z -14.65…-23.40):
   behind the module and in front of the rear board's own face, which is where the
   spacers are documented to bolt. There is no STEP for the carrier yet
   (`display_boss_pattern` is open); the spacer and pad diameters are named
@@ -170,10 +171,10 @@ Boxes for the parts with no STEP, using the heights in
 | Box | Size (x × y × z, mm) | z0 (panel front = 0) | Source |
 | --- | --- | --- | --- |
 | panel | 152.0 × 128.5 × 1.6 | 0.00 | `PANEL` (30HP, 152.0 actual) |
-| front board | 150.0 × 112.0 × 1.6 | 10.00 | `FRONT_PCB`, `PROVISIONAL_Z.frontBoardTop` |
-| rear board | 148.0 × 112.0 × 1.6 | 22.80 | `REAR_PCB`, `PROVISIONAL_Z.rearBoardFront` |
+| front board | 150.0 × 112.0 × 1.6 | 10.60 | `FRONT_PCB`, `PROVISIONAL_Z.frontBoardTop` |
+| rear board | 148.0 × 112.0 × 1.6 | 23.40 | `REAR_PCB`, `PROVISIONAL_Z.rearBoardFront` |
 | stereo jack (×4) | 10.0 × 12.73 × 15.5 | 0.00 | PJ366ST STEP bounding box |
-| button + cap (×7) | 12.0 × 12.0 × 10.0 | 0.00 | Omron B32/B3F reference, 10.0 ±0.4 board→panel front |
+| button + cap (×7) | 12.0 × 12.0 × 10.0 | 0.00 | Omron B32/B3F reference, 10.0 ±0.4 board→panel front (the jack-anchored stack is 10.6; the printed cap is 4.70 tall, top 11.40 above the board) |
 
 (The 128 mm / 17.45 mm figures that used to be here were the pre-respin stack;
 `mechanical-steps` above is the accurate route now that the boards export.)

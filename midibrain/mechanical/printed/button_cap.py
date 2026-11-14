@@ -8,12 +8,12 @@ solid does not match the design rules, and re-reads what it wrote.
 
 Shape (Z datum: panel FRONT face = 0, +Z rearward):
 
-    plate   11.80 x 11.80 x 4.10 tall, Z -0.80..3.30
+    plate   11.80 x 11.80 x 4.70 tall, Z -0.80..3.90
             - top at -0.80 (0.80 proud of the panel front)
             - 0.225 per side inside the 12.25 mm panel cutout
     recess  3.85 x 3.85 x 0.60 deep, opening REARWARD
-            - floor at Z 2.70 = the B3F-4055 plunger face
-            - rear face at Z 3.30, 0.025 per side on the 3.80 plunger
+            - floor at Z 3.30 = the B3F-4055 plunger face
+            - rear face at Z 3.90, 0.025 per side on the 3.80 plunger
 
 There is NO skirt. The 12.25 mm cutout is only 0.125 mm per side larger than
 the 12.0 mm switch body, so a skirt could not pass the panel: the part is a

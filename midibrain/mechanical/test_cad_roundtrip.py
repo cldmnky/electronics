@@ -123,7 +123,7 @@ class StepRoundTripTest(unittest.TestCase):
         self.assertGreaterEqual(len(shape.Solids()), 7)
         text = path.read_text(errors="replace")
         # metadata-only blocks are not solids
-        metadata_only = {"LCD_MOUNT_PLACEHOLDERS"}
+        metadata_only = {"LCD_MOUNT_PLACEHOLDERS", "PANEL_STANDOFFS"}
         for name in self.document["bodies"]:
             if name in metadata_only:
                 continue
@@ -170,15 +170,18 @@ class StepRoundTripTest(unittest.TestCase):
         self.assertAlmostEqual(hi[2] - lo[2], 3.0, delta=0.01)
 
     def test_the_reach_gauge_uses_one_datum_and_the_nominal_tip(self) -> None:
-        """tall = board near face 19.05, low = nominal tip 16.5, step 2.55."""
+        """tall = pipe tip 16.5, low = board face 10.6, step 5.9 (the pipe is too long)."""
         data = sg.load_layout()
         lo, hi, _ = stl_bounds(self.out / sa.STL_GAUGE)
-        self.assertAlmostEqual(hi[2] - lo[2], data["lightPipeReach"]["boardNearFaceZ"],
+        self.assertAlmostEqual(hi[2] - lo[2],
+                               max(data["lightPipeReach"]["boardNearFaceZ"],
+                                   data["lightPipeReach"]["nominalTipZ"]),
                                delta=0.01)
         height = self.document["light_pipe_reach"]["gauge_mm"]
-        self.assertAlmostEqual(height["tall"], 19.05, delta=1e-9)
-        self.assertAlmostEqual(height["low"], 16.5, delta=1e-9)
-        self.assertAlmostEqual(height["tall"] - height["low"], 2.55, delta=1e-6)
+        self.assertAlmostEqual(height["tall"], 16.5, delta=1e-9)
+        self.assertAlmostEqual(height["low"], 10.6, delta=1e-9)
+        self.assertAlmostEqual(height["tall"] - height["low"], 5.9, delta=1e-6)
+        self.assertIn("pipe tip", height["taller_plane"])
         self.assertIn("Not an LED gap", height["step_meaning"])
         self.assertIn("panel FRONT face", height["datum"])
         # the gauge must not present itself as a physical LED gap or fit
@@ -198,7 +201,7 @@ class StepRoundTripTest(unittest.TestCase):
         self.assertIn("UNKNOWN", marker["fit_and_routing"])
         self.assertIn("PROVISIONAL", marker["z_basis"])
         self.assertIn("not on it", marker["z_basis"])
-        self.assertAlmostEqual(marker["z_mm"][0], 10.05, places=3)
+        self.assertAlmostEqual(marker["z_mm"][0], 10.65, places=3)
 
     def test_the_metadata_stays_provisional_and_honest(self) -> None:
         self.assertTrue(self.document["status"].startswith("PROVISIONAL"))

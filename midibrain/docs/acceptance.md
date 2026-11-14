@@ -89,10 +89,10 @@ instead of being skipped. Print it with
 
 | Item | What the evidence must show |
 |---|---|
-| `zstack` | Board, spacer, display, carrier, Pi, HAT, cooler and panel thicknesses that add up; installed depth recorded against the current 10.0 mm panel distance (`PANEL_TO_FRONT_BOARD_TOP`) |
+| `zstack` | Board, spacer, display, carrier, Pi, HAT, cooler and panel thicknesses that add up; installed depth recorded against the current 10.6 mm panel distance (`PANEL_TO_FRONT_BOARD_TOP`, jack-anchored) |
 | `control_actuator` | Knob, button caps and 5-way nav actuator fitted and measured against the panel; direction legends |
 | `jack_retention` | TRS barrel/nut/panel-hole fit, tip/ring/sleeve continuity, pull-out retention |
-| `light_pipes` | Fitted pipe (the 16.5 mm PGN25L165 is 6.5 mm too long for the 10.0 mm stack - a ~9.2 mm part or a documented cut is needed) seated plane, measured LED-to-pipe distance and LED visible through each of the three Ø2.6 mm nominal holes |
+| `light_pipes` | Fitted pipe (the 16.5 mm PGN25L165 is 5.9 mm too long for the 10.6 mm stack - a ~9.8 mm part or a documented cut is needed) seated plane, measured LED-to-pipe distance and LED visible through each of the three Ø2.6 mm nominal holes |
 | `display_dsi` | Waveshare 4.3" DSI panel mounted at the fitted SMTSO boss pattern with a DSI cable routed; bend radius, latch and underside clearance. The kit ships 50/120 mm 15→22 cables; the Pi now sits on its own mounting panel, so the fitted (longer) cable and its result are recorded under `pi_panel_harness` |
 | `display_boss_pattern` | The module's own SMTSO-M2.5 bosses (99.30 × 61.80 pattern) confirmed as the only threading, and the carrier spacers measured: 12.75 mm plane separation = 4.0 mm boss + 8.75 mm spacer from the rear board's front face |
 | `display_fpc_idc` | Display FPC plug/cable coexist with the carrier, the rear-board parts and the front board's opening: Z clearances, the routed bend per the route contract in mechanical-stack.md, and the clearance to the J5 female solder tails. The 2 × 13 link is a direct pair, so there is no plug or ribbon |

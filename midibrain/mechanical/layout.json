@@ -65,13 +65,13 @@
   "provisionalZ": {
     "panelFront": 0,
     "panelRear": 1.6,
-    "displayGlassFront": 0,
-    "displayPcbRear": 10.05,
-    "displayRearMost": 14.05,
-    "frontBoardTop": 10,
-    "frontBoardRear": 11.6,
-    "rearBoardFront": 22.8,
-    "rearBoardRear": 24.4
+    "displayGlassFront": 0.6,
+    "displayPcbRear": 10.65,
+    "displayRearMost": 14.65,
+    "frontBoardTop": 10.6,
+    "frontBoardRear": 12.2,
+    "rearBoardFront": 23.4,
+    "rearBoardRear": 25
   },
   "printedParts": {
     "navKeytop": {
@@ -87,7 +87,7 @@
       "socketBore": 3.2,
       "socketDepth": 1.5,
       "zFront": -4,
-      "zRear": 6.35
+      "zRear": 6.95
     },
     "knob": {
       "part": "Bourns PEC11R-4015F-S0024 value knob",
@@ -132,10 +132,10 @@
     "overallLength": 17.5,
     "headHeight": 1,
     "nominalTipZ": 16.5,
-    "boardNearFaceZ": 10,
-    "nominalTipToBoardPlane": -6.5,
+    "boardNearFaceZ": 10.6,
+    "nominalTipToBoardPlane": -5.9,
     "opticalGap": null,
-    "requiredShaftLength": 9.2,
+    "requiredShaftLength": 9.8,
     "status": "incomplete - the selected part is too long for this stack",
     "missing": [
       "LED body height above the front-board top face",
@@ -144,7 +144,7 @@
       "brightness and optical coupling"
     ]
   },
-  "panelToFrontBoardGap": 8.4,
+  "panelToFrontBoardGap": 9,
   "depthTarget": 110,
   "provisionalDepth": {
     "frontToRearGap": 11.2,
@@ -524,14 +524,14 @@
   ],
   "panelStandoff": {
     "thread": "M3",
-    "length": 8.4,
+    "length": 9,
     "holeDiameter": 3.2,
     "bodyDiameter": 5.5,
     "headDiameter": 7,
     "family": "M3 threaded, adjustable",
     "adjustment": "trimmed or shimmed at assembly to the measured jack-set gap; it must not set the panel plane",
     "panelPlaneDatum": "the MIDI jack bushings (they clamp the panel), not these standoffs",
-    "toleranceStatus": "the jack-bushing tolerance behind the 8.40 nominal is UNMEASURED; first article records it"
+    "toleranceStatus": "the jack-bushing tolerance behind the 9.00 nominal is UNMEASURED; first article records it"
   },
   "panelApertures": [
     {

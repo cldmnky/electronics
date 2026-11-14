@@ -599,12 +599,12 @@ class CoordinateDriftTest(unittest.TestCase):
 
     def test_envelope_z_follows_the_provisional_chain(self) -> None:
         env = sg.assembly_envelopes(layout())
-        self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.lo, 10.0)   # frontBoardTop
-        self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.hi, 11.6)   # frontBoardRear
-        self.assertAlmostEqual(env["DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z"].z.hi, 14.05)
-        # 11.60 mm front-board rear face + the direct 2 x 13 pair's 11.20 mm
+        self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.lo, 10.6)   # frontBoardTop
+        self.assertAlmostEqual(env["FRONT_BOARD_PROVISIONAL_Z"].z.hi, 12.2)   # frontBoardRear
+        self.assertAlmostEqual(env["DISPLAY_WAVESHARE_4_3_DSI_PROVISIONAL_Z"].z.hi, 14.65)
+        # 12.20 mm front-board rear face + the direct 2 x 13 pair's 11.20 mm
         # nominal seat-to-seat drawing dimension (NOT a measured gap).
-        self.assertAlmostEqual(env["REAR_BOARD_PROVISIONAL_Z"].z.lo, 22.8)
+        self.assertAlmostEqual(env["REAR_BOARD_PROVISIONAL_Z"].z.lo, 23.4)
         self.assertAlmostEqual(env["PANEL_30HP_3U"].z.hi, 1.6)
 
     def test_the_light_pipe_is_not_drawn_as_a_placed_body(self) -> None:
@@ -627,13 +627,15 @@ class DisplayPlaneTest(unittest.TestCase):
 
     def test_the_placed_planes_follow_from_the_measured_vendor_planes(self) -> None:
         planes = sg.placed_display_planes()
-        self.assertAlmostEqual(planes["glass_front"], 0.0, places=6)
-        self.assertAlmostEqual(planes["touch_frame_front"], -1.9, places=6)
-        self.assertAlmostEqual(planes["glass_rear"], 2.9, places=6)
-        self.assertAlmostEqual(planes["pcb_front"], 4.64, places=6)
-        self.assertAlmostEqual(planes["pcb_rear"], 6.24, places=6)
-        self.assertAlmostEqual(planes["boss_rear"], 10.24, places=6)
-        self.assertAlmostEqual(planes["rear_most"], 11.92, places=6)
+        # The glass front datum is the layout's derived 0.60 mm (behind the panel
+        # front); every vendor plane follows from it.
+        self.assertAlmostEqual(planes["glass_front"], 0.6, places=6)
+        self.assertAlmostEqual(planes["touch_frame_front"], -1.3, places=6)
+        self.assertAlmostEqual(planes["glass_rear"], 3.5, places=6)
+        self.assertAlmostEqual(planes["pcb_front"], 5.24, places=6)
+        self.assertAlmostEqual(planes["pcb_rear"], 6.84, places=6)
+        self.assertAlmostEqual(planes["boss_rear"], 10.84, places=6)
+        self.assertAlmostEqual(planes["rear_most"], 12.52, places=6)
 
     def test_the_correct_placement_passes_the_order_check(self) -> None:
         sg.check_display_plane_order(sg.placed_display_planes())
@@ -801,16 +803,16 @@ class DisplayMountGapTest(unittest.TestCase):
 
     def test_the_model_gap_is_measured_from_the_drawn_planes(self) -> None:
         gap = sg.display_mount_gap(layout())
-        self.assertAlmostEqual(gap["boss_rear_z_mm"], 10.24, places=6)
-        self.assertAlmostEqual(gap["board_top_z_mm"], 10.0, places=6)  # PROVISIONAL_Z
-        # the board's top face is 10.00 and the vendor boss rear plane 10.24: the
+        self.assertAlmostEqual(gap["boss_rear_z_mm"], 10.84, places=6)
+        self.assertAlmostEqual(gap["board_top_z_mm"], 10.6, places=6)  # PROVISIONAL_Z
+        # the board's top face is 10.60 and the vendor boss rear plane 10.84: the
         # drawn bodies OVERLAP by 0.24 mm, which is why no spacer is a fit
         self.assertAlmostEqual(gap["model_gap_mm"], -0.24, places=6)
 
     def test_the_chain_candidate_is_a_different_chain(self) -> None:
         gap = sg.display_mount_gap(layout())
         self.assertAlmostEqual(gap["design_chain_spacer_mm"], 8.75, places=6)
-        self.assertAlmostEqual(gap["design_chain_display_end_z_mm"], 1.25, places=6)
+        self.assertAlmostEqual(gap["design_chain_display_end_z_mm"], 1.85, places=6)
         self.assertAlmostEqual(gap["residual_mm"], -8.99, places=6)
         self.assertFalse(gap["chains_agree"])
         self.assertIn("do not agree", gap["chains_agree_note"])
@@ -952,9 +954,9 @@ class AssumptionsDocumentTest(unittest.TestCase):
         self.assertEqual(block["status"], "incomplete")
         self.assertIsNone(block["optical_gap_mm"])
         self.assertAlmostEqual(block["nominal_tip_z_mm"], 16.5, places=6)
-        # 10.00 mm provisional board face - 16.5 mm shaft: the tip is 6.50 mm
-        # BEHIND the board plane, so the selected part is too long for this stack
-        self.assertAlmostEqual(block["nominal_tip_to_board_plane_mm"], -6.5, places=6)
+        # 10.60 mm board face - 16.5 mm shaft: the tip is 5.90 mm BEHIND the
+        # board plane, so the selected part is too long for this stack
+        self.assertAlmostEqual(block["nominal_tip_to_board_plane_mm"], -5.9, places=6)
         self.assertLess(block["nominal_tip_to_board_plane_mm"], 0.0)
         self.assertIn("PGN25L165", block["part"])
         self.assertIn("5350ad1f", block["source_sha256"])

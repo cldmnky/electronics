@@ -499,18 +499,18 @@ class DisplayEnvelopeTest(unittest.TestCase):
 
     def test_z_values_follow_the_standoff_datum(self) -> None:
         stack = self.vendor["stack"]
-        # Assumption A: the glass front is flush with the panel front face,
-        # which the glass-sized aperture allows (D1).
-        self.assertAlmostEqual(self.z["displayGlassFront"], 0.0, places=6)
-        self.assertAlmostEqual(self.z["displayPcbRear"], 10.05, places=6)
-        self.assertAlmostEqual(self.z["displayRearMost"], 14.05, places=6)
-        # The panel-to-board distance is the owner's 10.0 mm input; the display
-        # hangs from the REAR board's front face, so the chain starts there:
-        # rearBoardFront - displayRearMost = the 8.75 mm carrier spacer.
-        self.assertAlmostEqual(self.z["frontBoardTop"], 10.0, places=6)
+        # The glass front falls out of the rear-board carrier chain: nominally
+        # 0.60 mm behind the panel front, trimmed flush by the adjustable spacers.
+        self.assertAlmostEqual(self.z["displayGlassFront"], 0.6, places=6)
+        self.assertAlmostEqual(self.z["displayPcbRear"], 10.65, places=6)
+        self.assertAlmostEqual(self.z["displayRearMost"], 14.65, places=6)
+        # The panel front is the jack's 9.0 mm seating shoulder plus the 1.6 mm
+        # panel; the display hangs from the REAR board's front face, so its
+        # distance is: rearBoardFront - displayRearMost = the 8.75 mm spacer.
+        self.assertAlmostEqual(self.z["frontBoardTop"], 10.6, places=6)
         self.assertAlmostEqual(self.z["rearBoardFront"] - self.z["displayRearMost"],
                                stack["spacerLength"], places=6)
-        self.assertAlmostEqual(self.data["panelToFrontBoardGap"], 8.4, places=6)
+        self.assertAlmostEqual(self.data["panelToFrontBoardGap"], 9.0, places=6)
         self.assertAlmostEqual(self.data["displayUndersideGap"], -4.05, places=6)
         self.assertAlmostEqual(self.data["displayUndersideGap"],
                                self.z["frontBoardTop"] - self.z["displayRearMost"], places=6)
@@ -524,7 +524,7 @@ class DisplayEnvelopeTest(unittest.TestCase):
         self.assertAlmostEqual(pipe["shaftLength"], 16.5, places=6)
         self.assertAlmostEqual(pipe["overallLength"], 17.5, places=6)
         self.assertAlmostEqual(reach["nominalTipZ"], pipe["shaftLength"], places=6)
-        self.assertAlmostEqual(reach["nominalTipToBoardPlane"], -6.5, places=6)
+        self.assertAlmostEqual(reach["nominalTipToBoardPlane"], -5.9, places=6)
         self.assertIsNone(reach["opticalGap"])
         self.assertTrue(reach["status"].startswith("incomplete"))
         self.assertNotIn("seatAllowance", pipe)

@@ -70,7 +70,7 @@ header carries a creation timestamp), and the tests compare geometry, not bytes.
 | PEC11R shaft length / diameter | 15.0 / 6.0 mm | same datasheet |
 | PEC11R shaft flat depth "C" | 0.5 mm (plane 2.50 mm from the axis) | same datasheet |
 | PEC11R supplied hardware | "one flat washer and one mounting nut" (not dimensioned) | same datasheet |
-| panel thickness, panel front/rear, front-board top | 1.6, 0.0, 1.6, 10.0 mm | `mechanical/layout.json` (`panel`, `provisionalZ`) |
+| panel thickness, panel front/rear, front-board top | 1.6, 0.0, 1.6, **10.6 mm** | `mechanical/layout.json` (`panel`, `provisionalZ`) |
 | B3F-4055 body / plunger | 12.0 ±0.2 / 3.8 ±0.1 mm square | Omron B3F datasheet, SHA-256 `be9cf69e...` |
 | B3F-4055 height above the board | 7.3 ±0.2 mm (plunger face) | same datasheet; `BUTTON_SWITCH` in `lib/layout.ts` |
 | B3F panel opening | 12.25 mm square | `lib/layout.ts` `PANEL_CUTOUTS.button`; seven `* BUTTON` apertures in `mechanical/layout.json` |
@@ -81,8 +81,9 @@ header carries a creation timestamp), and the tests compare geometry, not bytes.
 
 Z datum everywhere: the panel FRONT face is Z = 0 and +Z points REARWARD, the
 same datum `lib/layout.ts` and `mechanical/layout.json` use. The panel occupies
-Z 0..1.6, the front board's top face is Z 10.0, and the clear gap between them is
-8.4 mm.
+Z 0..1.6, the front board's top face is Z **10.6** (the Thonkiconn jack's 9.0 mm
+seating shoulder plus the 1.6 mm panel), and the clear gap between them is
+**9.0 mm**.
 
 ## Part 1: NAV keytop (`nav-keytop.stl`)
 
@@ -94,11 +95,11 @@ Z 0..1.6, the front board's top face is Z 10.0, and the clear gap between them i
         Z =  1.60  +---------+------ PANEL REAR
                  +-+ D9.60  +-+      flange, 1.20 thick, bears on the panel rear
         Z =  2.80  +---------+------ flange rear (chamfered 45 deg)
-                     | D5.60 |      shank in the 8.4 mm gap
+                     | D5.60 |      shank in the 9.0 mm gap
         Z =  4.85   |  floor |      socket floor, 0.15 mm above the stem top
                      | D3.20 |      blind socket (chamfered mouth)
         Z =  5.00   = stem top of the switch
-        Z =  6.35  +---------+      socket mouth, 1.85 mm above the switch body
+        Z =  6.95  +---------+      socket mouth, 1.85 mm above the switch body
 ```
 
 | dimension | value | source |
@@ -117,7 +118,7 @@ Z 0..1.6, the front board's top face is Z 10.0, and the clear gap between them i
 | axial free play at rest | 0.15 mm | ASSUMPTION inside the owner's 0.10-0.20 mm band |
 | stem engagement in the socket | 1.35 mm | derived (mouth - stem top) |
 | cap clearance to the switch body top | 1.85 mm | derived (switch body top Z 8.20) |
-| overall length / widest diameter | 10.35 mm / 9.60 mm | derived |
+| overall length / widest diameter | 10.95 mm / 9.60 mm | derived |
 | flange clearance to the nearest panel feature | 6.08 mm (SHIFT/EXIT button) | derived from `panelApertures` + `panelMountHoles` |
 
 ### Why the head is the same diameter as the neck
@@ -151,8 +152,8 @@ never sees a bending moment.
    Z =  -2.70  +-----------+   rear face, 2.70 mm in front of the panel front
    Z =   0.00  =============   PANEL FRONT
    Z =  -2.50  ( assumed nut + washer stack, 2.50 mm )
-   Z =  -3.50  =============   encoder bushing face, 3.50 mm proud
-   Z = -18.50  =============   shaft tip (15.0 mm shaft)
+   Z =  -2.90  =============   encoder bushing face, 2.90 mm proud
+   Z = -17.90  =============   shaft tip (15.0 mm shaft)
 ```
 
 | dimension | value | source |
@@ -164,7 +165,7 @@ never sees a bending moment.
 | wall at the bore | 3.15 mm | derived |
 | knob rear face | Z -2.70 (2.70 mm in front of the panel) | 2.50 assumed nut/washer + 0.20 air (ASSUMPTION) |
 | knob front face | Z -18.70 | rear face - height |
-| shaft tip cover | 0.20 mm inside the front face | derived (shaft tip Z -18.50) |
+| shaft tip cover | 0.80 mm inside the front face | derived (shaft tip Z -17.90) |
 | grip | 16 x R1.60 flutes, 0.45 mm deep | ASSUMPTION; 22.5 deg pitch keeps full-radius lands on +X/+Y/-X/-Y |
 | retention | radial D2.50 pilot (M3 x 0.5 tap drill) 3.65 mm long, on the flat's normal | ASSUMPTION (a press fit alone is not acceptable on a metal shaft) |
 | set screw | M3 flat point, reaches 0.35 mm past the bore flat | derived |
@@ -196,31 +197,31 @@ centred by the aperture.
 
 ```
         Z = -0.80  +----------------+   cap top, 0.80 proud of the panel front
-                   |   11.80 sq     |   4.10 tall
+                   |   11.80 sq     |   4.70 tall
         Z =  0.00  ==================   PANEL FRONT
                    |                |   panel 1.60 thick, 12.25 sq cutout
         Z =  1.60  ==================   PANEL REAR
                    |   11.80 sq     |   0.225 per side in the cutout
-        Z =  2.70  +---+  3.85  +---+   recess floor = B3F-4055 plunger face
+        Z =  3.30  +---+  3.85  +---+   recess floor = B3F-4055 plunger face
                    |   |  void  |   |   locator recess 0.60 deep, opens rearward
-        Z =  3.30  +---+--------+---+   cap rear face, 0.025 per side on the 3.80 plunger
+        Z =  3.90  +---+--------+---+   cap rear face, 0.025 per side on the 3.80 plunger
                      (switch body below, no part of the cap)
 ```
 
 | dimension | value | source |
 | --- | --- | --- |
 | plate | 11.80 × 11.80 mm | 12.25 cutout − 2 × 0.225 (`BUTTON_CAP_PRINTED`) |
-| part height | 4.10 mm | 2.70 flush + 0.60 locator + 0.80 proud |
-| cap top | Z −0.80 (10.80 above board) | panel front + 0.80 proud |
-| cap rear face | Z 3.30 (6.70 above board) | plunger face + 0.60 locator |
+| part height | 4.70 mm | 3.30 flush + 0.60 locator + 0.80 proud |
+| cap top | Z −0.80 (11.40 above board) | panel front + 0.80 proud |
+| cap rear face | Z 3.90 (7.30 above board) | plunger face + 0.60 locator |
 | locator recess | 3.85 × 3.85 × 0.60 deep | 3.80 plunger + 2 × 0.025 |
 | plate clearance to cutout | 0.225 per side | 12.25 − 11.80 |
 | plate clearance to switch body | 0.10 per side (11.80 vs 12.0) | no skirt |
 | quantity | 7 | SW1–SW7 |
 
-Why the part is 4.10 and not 3.50: the plunger sits INSIDE the recess. The cap's
+Why the part is 4.70 and not 4.10: the plunger sits INSIDE the recess. The cap's
 rear face stops 0.60 mm behind the plunger face, so the height spans three terms,
-not two. Deriving it as flush + proud (3.50) would put the top 0.6 mm below the
+not two. Deriving it as flush + proud (4.10) would put the top 0.6 mm below the
 panel front.
 
 ### Assembly order (required)
@@ -285,7 +286,7 @@ The table keeps the rows whose value moved, marked **layout.ts**.
 | minimum wall | 0.80 mm | 0.4 mm nozzle, two perimeters |
 | supplied nut + washer stack | 2.50 mm | the datasheet only says they are supplied - MEASURE IT |
 | knob rear air | 0.20 mm | air between nut and knob |
-| knob height | 16.00 mm (**layout.ts**: `height`) | 18.5 mm of shaft proud of the panel, minus the nut standoff |
+| knob height | 16.00 mm (**layout.ts**: `height`) | 17.9 mm of shaft proud of the panel, minus the nut standoff |
 | knob bore clearance | 0.20 mm diametral (**layout.ts**: `boreDiameter` 6.20) | slides on cold, grub screw takes the torque |
 | knob bore mouth chamfer | 0.50 mm | lead-in onto the shaft |
 | knob edge chamfers | 0.80 front / 0.40 rear | print and finger edge |
@@ -296,7 +297,7 @@ The table keeps the rows whose value moved, marked **layout.ts**.
 | knob-to-display minimum | 2.50 mm | the layout's own rule, `lib/layout.ts` |
 | B3F cap plate / locator / proud | 11.80 square / 3.85 square × 0.60 / 0.80 mm (**layout.ts**: `square`, `locatorSquare`, `locatorDepth`, `proudAbovePanelFront`) | the 12.25 cutout and the 3.80 plunger set the two fits; the proud height is ours to choose |
 | B3F locator clearance | 0.025 mm per side over the 3.80 ±0.1 plunger (**layout.ts**: `BUTTON_CAP_LOCATOR_CLEARANCE_PER_SIDE`) | a locator, not a snap; FDM holes print undersize, so measure it |
-| B3F cap body-top clearance | unverified | the 0.60 mm locator ring reaches Z 3.30; the datasheet page recorded here gives the 7.3 mm overall height but not the body top |
+| B3F cap body-top clearance | unverified | the 0.60 mm locator ring reaches Z 3.90; the datasheet page recorded here gives the 7.3 mm overall height but not the body top |
 
 ## Print orientation and material
 
@@ -389,8 +390,8 @@ B3F button cap (7 off):
 2. the printed locator (nominal 3.85) on the real 3.80 ±0.1 mm plunger: it must
    push on, sit flat, and stay on when the panel is lifted. Measure the actual
    plunger and recess; FDM holes usually print undersize.
-3. the cap top height and press travel: target 0.80 mm proud, 10.80 mm above the
-   board, 3.50 mm above the switch. This is the `control_actuator` measurement:
+3. the cap top height and press travel: target 0.80 mm proud, 11.40 mm above the
+   board, 4.10 mm above the switch. This is the `control_actuator` measurement:
    the item is closed by design, not yet by a measured cap.
 4. the 0.60 mm locator ring's clearance to the B3F-4055 body top at rest and at
    full travel. The datasheet page this repo records gives the 7.3 mm overall
@@ -414,9 +415,9 @@ re-imported as one solid with the same volume.
 | check | nav keytop | value knob | B3F button cap |
 | --- | --- | --- | --- |
 | body / shell | 1 / 1, valid BRep | 1 / 1, valid BRep | 1 / 1, valid BRep |
-| volume | 365.2 mm^3 | 1312.5 mm^3 | 562.0 mm^3 |
-| bounding box | x 47.20-56.80, y 7.20-16.80, z -4.00-6.35 | x 45.75-58.25, y 24.75-37.25, z -18.70--2.70 | x -5.90-5.90, y -5.90-5.90, z -0.80-3.30 |
+| volume | 379.9 mm^3 | 1312.5 mm^3 | 645.5 mm^3 |
+| bounding box | x 47.20-56.80, y 7.20-16.80, z -4.00-6.95 | x 45.75-58.25, y 24.75-37.25, z -18.70--2.70 | x -5.90-5.90, y -5.90-5.90, z -0.80-3.90 |
 | cuts | 4 (socket, mouth chamfer, head chamfer, flange chamfer) | 21 (D bore, 16 flutes, grub pilot, 3 chamfers) | 1 (locator recess) |
 | quoted feature probes | 10 | 12 | 5 |
 | STL | 7556 triangles, 0 open / 0 non-manifold edges, 1 shell | 10032 triangles, 0 open / 0 non-manifold edges, 1 shell | 28 triangles, 0 open / 0 non-manifold edges, 1 shell |
-| STEP re-import | 1 solid, 365.2 mm^3 | 1 solid, 1312.5 mm^3 | 1 solid, 562.0 mm^3 |
+| STEP re-import | 1 solid, 379.9 mm^3 | 1 solid, 1312.5 mm^3 | 1 solid, 645.5 mm^3 |

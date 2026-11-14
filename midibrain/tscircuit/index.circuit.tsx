@@ -157,7 +157,7 @@ export default () => (
         boards; the PANEL standoff holes stay removed.
 
         The DISPLAY CARRIER holes are NOT in that category and are added here:
-        the 4.3" DSI module left the front board when the panel went to 10.0 mm,
+        the 4.3" DSI module left the front board when the panel went to 10.6 mm,
         and it now hangs on a printed carrier bolted to this board's top face.
         The centres are the module's own SMTSO boss pattern (the only M2.5
         threads it offers), offset by the display's placement - lib/layout.ts

@@ -37,11 +37,12 @@ hand-edit generated fabrication files to repair a source problem.
   30HP panel). Each board is 2-layer, 1.6 mm FR-4. The sizes and the board count come from
   `FRONT_PCB`/`REAR_PCB` in `tscircuit/lib/layout.ts`.
 
-  **This packet is stale.** The generated `fab/` files are dated 2026-11-13 12:47, before the
-  10 mm decision commit (`45ddd1c`, 13:14) and the later panel/board commits, so they describe
-  the pre-respin boards. Re-export (`make order`) and re-check every count, side and aperture
-  before uploading anything (`docs/TODO.md`, "Tests not re-derived"), and confirm the panel CAM
-  items in the panel bullet below.
+  **This packet is regenerated for the jack-anchored 10.6 mm stack.** `make order` re-exported
+  the four orders after the panel-stack change; the mechanical Z chain moved (panel front
+  10.60, front board 10.60…12.20, rear board 23.40…25.00) but the panel/board XY geometry and
+  the aperture lists did not. Re-check every count, side and aperture against the current
+  `make order` output before uploading anything, and confirm the panel CAM items in the panel
+  bullet below.
 - Front and rear use 1 oz copper and candidate lead-free HASL. Apply the
   actual emitted source rules, reviewed Gerbers and
   [fab-check.md](fab-check.md), not obsolete defaults from an older export.
@@ -55,9 +56,13 @@ hand-edit generated fabrication files to repair a source problem.
   The panel also carries six button openings of **12.25 mm square** (Omron
   reference 12.2 +0.05/0), three Ø2.6 mm light-pipe holes and three USB cutouts;
   its only drilled holes are the six feedthrough screws, the four Ø3.2 rail
-  holes and the four Ø3.2 `STAND_` panel-mount screws. Physical display
-  and rail fit remain acceptance items, and the routed-square and Ø2.6 hole
-  tolerances plus the duplicate drill/routing feature still need JLCPCB's
+  holes and the four Ø3.2 `STAND_` panel-mount screws.
+  **NO COUNTERSINKS (owner decision 2026-11-14):** those four panel-mount screws
+  are plain Ø3.2 mm clearance through the 1.6 mm panel. Do not add a countersink,
+  counterbore or flush-head callout; a flat/pan head is accepted and the panel
+  FRONT stays flat. There is no countersink layer in the Gerbers. Physical
+  display and rail fit remain acceptance items, and the routed-square and Ø2.6
+  hole tolerances plus the duplicate drill/routing feature still need JLCPCB's
   answer.
 
 ## SMT and THT assignment
@@ -127,7 +132,7 @@ never edit a CPL merely to force a match.
 
 - CAB-15455 is **3 A and rejected for the 5 A power path**. The exact suitable
   feedthrough/cable chain and PD/droop/temperature tests are still pending.
-- Light pipe: candidate Signal Construct PGN25L165 (Ø2.6 panel hole, shaft 16.5 ±0.1, overall 17.5), which is **6.5 mm too long** for the 10.0 mm stack (`LIGHT_PIPE_REACH`; ~9.2 mm is needed and no part is selected). Not an approved fit: the seated plane, LED height, retention in 1.6 mm FR-4, hole tolerance and stack tolerances are unmeasured, and the optical gap is null. The retired Bivar PLP2-400-C 10.16 mm reference and the 7.29 mm subtraction are withdrawn. Select the final part after the reach and seating checks. The 2.55-2.60 mm hole is NOT guaranteed: the JLCPCB NPTH bands conflict and the panel emits each circular cutout in both the NPTH drill file and Edge_Cuts; the JLC viewer and support must confirm the de-duplication and the achievable hole size.
+- Light pipe: candidate Signal Construct PGN25L165 (Ø2.6 panel hole, shaft 16.5 ±0.1, overall 17.5), which is **5.9 mm too long** for the jack-anchored 10.6 mm stack (`LIGHT_PIPE_REACH`; ~9.8 mm is needed and no part is selected). Not an approved fit: the seated plane, LED height, retention in 1.6 mm FR-4, hole tolerance and stack tolerances are unmeasured, and the optical gap is null. The retired Bivar PLP2-400-C 10.16 mm reference and the 7.29 mm subtraction are withdrawn. Select the final part after the reach and seating checks. The 2.55-2.60 mm hole is NOT guaranteed: the JLCPCB NPTH bands conflict and the panel emits each circular cutout in both the NPTH drill file and Edge_Cuts; the JLC viewer and support must confirm the de-duplication and the achievable hole size.
 - The display uses **8.75 mm adjustable spacer length beyond the 4.0 mm bosses**,
   measured from the rear board's front face, giving a 12.75 mm plane separation
   (`DISPLAY_STANDOFF`). Plane separation is not the spacer purchase length, and

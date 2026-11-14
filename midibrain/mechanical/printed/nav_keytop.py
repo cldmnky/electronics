@@ -11,7 +11,7 @@ Shape (Z datum: panel FRONT face = 0, +Z rearward):
     head   D7.00 x 4.00 in front of the panel   -- the finger pad, 4 mm proud
     neck   D7.00 x 1.60 through the aperture    -- carries the side load
     flange D9.60 x 1.20 on the panel rear face  -- traps the cap, bears the load
-    shank  D5.60 x 3.55 in the 8.4 mm air gap
+    shank  D5.60 x 4.15 in the 9.0 mm air gap
     socket D3.20 x 1.50 over the D3.0 stem      -- floor 0.15 mm above the stem top
 
 The head and the neck are ONE diameter on purpose: the head is the leading

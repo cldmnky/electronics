@@ -63,8 +63,8 @@ class CanonicalDataTest(unittest.TestCase):
         stack = pg.panel_stack(layout())
         self.assertAlmostEqual(stack.panel_front_z, 0.0, places=9)
         self.assertAlmostEqual(stack.panel_rear_z, 1.6, places=9)
-        self.assertAlmostEqual(stack.board_top_z, 10.0, places=9)
-        self.assertAlmostEqual(stack.gap, 8.4, places=9)
+        self.assertAlmostEqual(stack.board_top_z, 10.6, places=9)
+        self.assertAlmostEqual(stack.gap, 9.0, places=9)
 
     def test_apertures_come_from_the_export_and_match_the_source(self) -> None:
         data, src = layout(), layout_source()
@@ -125,7 +125,7 @@ class NavKeytopTest(unittest.TestCase):
         self.assertLessEqual(self.g.free_play, 0.2 + 1e-9)
         # The socket must still reach past the stem top, or it just rests on it.
         self.assertGreater(self.g.stem_engagement, 1.0)
-        self.assertAlmostEqual(self.g.socket_mouth_z, 6.35, places=9)
+        self.assertAlmostEqual(self.g.socket_mouth_z, 6.95, places=9)
 
     def test_head_is_three_to_five_mm_proud_of_the_panel_front(self) -> None:
         self.assertGreaterEqual(self.g.head_height, 3.0 - 1e-9)
@@ -169,7 +169,7 @@ class KnobTest(unittest.TestCase):
     def test_knob_height_is_in_band_and_covers_the_shaft_tip(self) -> None:
         self.assertGreaterEqual(self.k.height, 12.0 - 1e-9)
         self.assertLessEqual(self.k.height, 16.0 + 1e-9)
-        self.assertAlmostEqual(self.k.shaft_tip_z, -18.5, places=9)
+        self.assertAlmostEqual(self.k.shaft_tip_z, -17.9, places=9)
         self.assertAlmostEqual(self.k.front_z, -18.7, places=9)
         self.assertGreater(self.k.tip_cover, 0.0,
                            "the shaft would stand proud of the knob's front face")
@@ -240,13 +240,13 @@ class ButtonCapTest(unittest.TestCase):
         self.assertAlmostEqual(self.g.plate_square, 11.8, places=9)
         self.assertAlmostEqual(self.g.locator_square, 3.85, places=9)
         self.assertAlmostEqual(self.g.locator_depth, 0.6, places=9)
-        self.assertAlmostEqual(self.g.height, 4.1, places=9)
+        self.assertAlmostEqual(self.g.height, 4.7, places=9)
         self.assertEqual(self.g.count, 7)
         # The part is a plain plate minus a plain recess: the analytic volume is
         # an independent check on the mesh and STEP volumes.
         self.assertAlmostEqual(
             self.g.volume,
-            11.8 ** 2 * 4.1 - 3.85 ** 2 * 0.6, places=6)
+            11.8 ** 2 * 4.7 - 3.85 ** 2 * 0.6, places=6)
 
     def test_plate_clears_the_12_25_cutout(self) -> None:
         self.assertAlmostEqual(self.g.cutout_square, 12.25, places=9)
@@ -265,18 +265,18 @@ class ButtonCapTest(unittest.TestCase):
             self.g.plunger_square + 2 * self.g.locator_clearance_per_side, places=9)
 
     def test_top_is_proud_of_the_panel_front(self) -> None:
-        self.assertAlmostEqual(self.g.plunger_face_z, 2.7, places=9)
-        self.assertAlmostEqual(self.g.rear_face_z, 3.3, places=9)
+        self.assertAlmostEqual(self.g.plunger_face_z, 3.3, places=9)
+        self.assertAlmostEqual(self.g.rear_face_z, 3.9, places=9)
         self.assertAlmostEqual(self.g.top_z, -0.8, places=9)
         self.assertAlmostEqual(self.g.proud_above_panel_front, 0.8, places=9)
         self.assertLess(self.g.top_z, self.g.stack.panel_front_z)
-        self.assertAlmostEqual(self.g.top_above_board, 10.8, places=9)
-        self.assertAlmostEqual(self.g.cap_extension_above_switch, 3.5, places=9)
+        self.assertAlmostEqual(self.g.top_above_board, 11.4, places=9)
+        self.assertAlmostEqual(self.g.cap_extension_above_switch, 4.1, places=9)
         self.assertGreaterEqual(self.g.cap_extension_above_switch,
                                 self.g.switch_top_to_panel_front)
 
     def test_height_is_the_three_term_sum(self) -> None:
-        self.assertAlmostEqual(self.g.three_term_height, 4.1, places=9)
+        self.assertAlmostEqual(self.g.three_term_height, 4.7, places=9)
         self.assertAlmostEqual(self.g.height, self.g.three_term_height, places=9)
         self.assertAlmostEqual(
             self.g.height,
@@ -453,7 +453,7 @@ class ButtonCapMutationTest(unittest.TestCase):
                       str(raised.exception))
 
     def test_a_contradictory_height_comment_fails(self) -> None:
-        text = pg.read_layout_ts().replace("// 4.10", "// 4.20", 1)
+        text = pg.read_layout_ts().replace("// 4.70", "// 4.80", 1)
         with self.assertRaises(pg.GeometryError) as raised:
             pg.parse_layout_ts(text)
         self.assertIn("height", str(raised.exception))
@@ -540,7 +540,7 @@ class ArtefactTest(unittest.TestCase):
         self.assertEqual(report.open_edges, 0)
         self.assertEqual(report.non_manifold_edges, 0)
         self.assertAlmostEqual(report.bbox[2], 7.2, delta=0.01)
-        self.assertAlmostEqual(report.bbox[5], 6.35, delta=0.01)
+        self.assertAlmostEqual(report.bbox[5], 6.95, delta=0.01)
 
     def test_knob_stl_is_one_watertight_shell_of_the_right_size(self) -> None:
         report = self.check("knob.stl", knob())

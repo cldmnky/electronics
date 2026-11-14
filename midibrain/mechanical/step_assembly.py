@@ -271,7 +271,7 @@ def check_vendor_model(shape) -> dict:
 
 
 def place_display(cq, shape, layout: dict) -> tuple[object, dict]:
-    """Place the vendor model: glass front on the panel front face, electronics rearward.
+    """Place the vendor model: glass front at the layout's display datum, electronics rearward.
 
     Z is forced: the vendor +Z points out of the glass, the layout +Z points
     rearward, so any placement must reverse Z. The IN-PLANE AXIS IS NOT SETTLED
@@ -293,7 +293,9 @@ def place_display(cq, shape, layout: dict) -> tuple[object, dict]:
     if glass_z_rotated not in planes:
         raise GeometryError(
             f"the rotated model has no glass plane at z={glass_z_rotated}; refusing to place it")
-    dz = 0.0 - glass_z_rotated
+    # PROVISIONAL_Z.displayGlassFront is derived from the rear-board carrier
+    # chain; drawing the model there keeps this assembly on the layout datum.
+    dz = layout["provisionalZ"]["displayGlassFront"] - glass_z_rotated
 
     bosses = boss_centres(rotated)
     if len(bosses) != 8:
@@ -319,7 +321,7 @@ def place_display(cq, shape, layout: dict) -> tuple[object, dict]:
     placed = rotated.translate((dx, dy, dz))
 
     # ---- verification on the placed solid ----
-    expected = placed_display_planes()
+    expected = placed_display_planes(layout)
     check_display_plane_order(expected)
     placed_planes = planar_z_planes(cq, placed)
     found = {}
@@ -677,7 +679,7 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
         "panel_plane_datum": standoff["panelPlaneDatum"],
         "not_claimed": [
             "a part, part number or supplier",
-            "a measured jack-bushing gap (the 8.40 mm is a nominal)",
+            "a measured jack-bushing gap (the 9.00 mm is the jack seating-shoulder nominal)",
             "thread engagement, torque or assembly order",
         ],
     }
@@ -814,7 +816,7 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
     # 10.05 mm), not on the vendor model's drawn PCB rear plane (6.24 mm).
     # Routing, connector identity and fit are unknown.
     fpc = layout["fpcConnector"]
-    vendor_pcb_rear = placed_display_planes()["pcb_rear"]
+    vendor_pcb_rear = placed_display_planes(layout)["pcb_rear"]
     fpc_wp = box(fpc["at"]["x"] - fpc["bodyWidth"] / 2,
                  fpc["at"]["y"] - fpc["bodyLength"] / 2,
                  pz["displayPcbRear"],
@@ -875,42 +877,40 @@ def build_scale_check(cq):
 
 
 def build_reach_gauge(cq, layout: dict):
-    """A same-datum step gauge built from two documented planes.
+    """A same-datum step gauge built from the two documented planes.
 
     Both heights start at the panel FRONT face (Z = 0, +Z rearward):
 
-      tall 19.05 mm = the provisional front-board NEAR face (PROVISIONAL_Z)
-      low  16.5 mm  = the nominal PGN25L165 tip plane (the shaft length x)
-      step 2.55 mm  = the NOMINAL tip-to-board-PLANE distance, arithmetic between
-                      two assumed planes
+      front-board NEAR face = PROVISIONAL_Z.frontBoardTop (10.6, jack-anchored)
+      nominal pipe tip plane = the PGN25L165 shaft length x (16.5)
 
-    The step is NOT an LED gap, NOT an optical result and NOT a fit. The head
+    The selected 16.5 mm pipe is TOO LONG for the jack-anchored 10.6 mm board
+    face, so the TIP is the taller block and the step is +5.9 mm: the tip passes
+    the board plane. The step is the NOMINAL tip-to-board-plane distance only.
+    It is NOT an LED gap, NOT an optical result and NOT a fit. The head
     underside on the panel front is an ASSUMPTION; the LED height, retention and
     stack tolerances are unmeasured. No text is engraved and no dimension is
     claimed as measured.
     """
-    # Both heights are measured from the panel FRONT face (Z = 0, +Z rearward):
-    # tall = the provisional front-board near face (19.05);
-    # low  = the nominal pipe tip plane (16.5 = the shaft length).
-    # The step is the nominal tip-to-board-plane distance only. It is NOT an LED
-    # gap, NOT a fit and NOT a measured stack value.
-    gap = float(layout["lightPipeReach"]["boardNearFaceZ"])          # 19.05
+    board = float(layout["lightPipeReach"]["boardNearFaceZ"])        # 10.60
     pipe = float(layout["lightPipeReach"]["nominalTipZ"])            # 16.5
-    if pipe >= gap:
+    tall_z, low_z = max(board, pipe), min(board, pipe)
+    step = round(tall_z - low_z, 6)
+    if step <= 1e-9:
         raise GeometryError(
-            f"the nominal tip plane ({pipe} mm) is not in front of the board face "
-            f"({gap} mm); the gauge would have no step to show")
+            f"the pipe tip plane ({pipe} mm) and the board face ({board} mm) "
+            "coincide; the gauge would have no step to show")
     width, depth = 20.0, 8.0
-    tall = (cq.Workplane("XY").box(depth, width / 2, gap)
-            .translate((depth / 2, -width / 4, gap / 2)))
-    low = (cq.Workplane("XY").box(depth, width / 2, pipe)
-           .translate((depth / 2, width / 4, pipe / 2)))
+    tall = (cq.Workplane("XY").box(depth, width / 2, tall_z)
+            .translate((depth / 2, -width / 4, tall_z / 2)))
+    low = (cq.Workplane("XY").box(depth, width / 2, low_z)
+           .translate((depth / 2, width / 4, low_z / 2)))
     gauge = tall.union(low)
     if gauge.solids().size() != 1:
         raise GeometryError(f"the reach gauge is {gauge.solids().size()} solids, expected 1")
     bb = gauge.val().BoundingBox()
-    if abs(bb.zlen - gap) > 1e-6:
-        raise GeometryError(f"the gauge height {bb.zlen:.3f} is not the gap {gap:.3f}")
+    if abs(bb.zlen - tall_z) > 1e-6:
+        raise GeometryError(f"the gauge height {bb.zlen:.3f} is not the tall plane {tall_z:.3f}")
     return gauge
 
 
@@ -1158,11 +1158,17 @@ def main(argv: list[str] | None = None) -> int:
         "missing": list(reach.missing),
         "gauge_mm": {
             "datum": "panel FRONT face, Z = 0, +Z rearward",
-            "tall": float(layout["lightPipeReach"]["boardNearFaceZ"]),
-            "low": float(layout["lightPipeReach"]["nominalTipZ"]),
-            "step": round(float(layout["lightPipeReach"]["boardNearFaceZ"])
-                          - float(layout["lightPipeReach"]["nominalTipZ"]), 6),
-            "step_meaning": ("nominal tip-plane to provisional board-plane distance only. "
+            "tall": max(float(layout["lightPipeReach"]["boardNearFaceZ"]),
+                        float(layout["lightPipeReach"]["nominalTipZ"])),
+            "low": min(float(layout["lightPipeReach"]["boardNearFaceZ"]),
+                       float(layout["lightPipeReach"]["nominalTipZ"])),
+            "step": round(abs(float(layout["lightPipeReach"]["boardNearFaceZ"])
+                              - float(layout["lightPipeReach"]["nominalTipZ"])), 6),
+            "taller_plane": ("pipe tip (the selected part is too long)"
+                             if float(layout["lightPipeReach"]["nominalTipZ"])
+                             > float(layout["lightPipeReach"]["boardNearFaceZ"])
+                             else "front-board near face"),
+            "step_meaning": ("nominal tip-plane to jack-anchored board-plane distance only. "
                              "Not an LED gap, not a fit, not a measured stack value"),
         },
     }

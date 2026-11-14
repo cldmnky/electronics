@@ -225,19 +225,22 @@ def inner_pattern_candidates() -> dict:
 
 
 # Z = 0 at the panel FRONT face, +Z rearward.
-DISPLAY_GLASS_DATUM_Z = 0.0
 
 
-def placed_display_planes() -> dict[str, float]:
-    """Where the vendor model's planes land when its glass front is at Z = 0.
+def placed_display_planes(layout: dict | None = None) -> dict[str, float]:
+    """Where the vendor model's planes land in the layout frame.
 
-    Derived from the measured vendor planes, never typed in: the placement puts
-    the glass front face on the panel front face (assumption A) and this is
-    what follows for every other plane.
+    The glass front datum is NOT typed: it is ``PROVISIONAL_Z.displayGlassFront``
+    in the export, which falls out of the rear-board carrier chain (nominally
+    0.60 mm behind the panel front, trimmed flush by the adjustable spacers).
+    Every other plane is derived from the measured vendor planes and that one
+    datum.
     """
+    data = layout if layout is not None else load_layout()
+    datum = float(data["provisionalZ"]["displayGlassFront"])
     m = VENDOR_DISPLAY_MODEL
     def place(vendor_z: float) -> float:
-        return round(DISPLAY_GLASS_DATUM_Z + (m["glass_front_z"] - vendor_z), 6)
+        return round(datum + (m["glass_front_z"] - vendor_z), 6)
     return {
         "touch_frame_front": place(m["touch_frame_front_z"]),  # negative: in FRONT of the panel
         "glass_front": place(m["glass_front_z"]),
@@ -517,7 +520,7 @@ def classify(a: Envelope, b: Envelope, *, eps: float = EPS) -> CollisionVerdict:
 #
 #   model gap    boss rear -> board top face       -0.24 mm   (drawn solids)
 #   chain spacer the existing design assumption      8.75 mm   (12.75 - 4.0)
-#   residual     what an 8.75 mm spacer misses      -8.99 mm   (1.25 vs 10.24)
+#   residual     what an 8.75 mm spacer misses      -8.99 mm   (1.85 vs 10.84)
 #
 # Neither number is an approved dimension and the two chains do NOT agree.
 DISPLAY_MOUNT_PLACEHOLDER = {
@@ -540,13 +543,13 @@ def display_mount_gap(layout: dict | None = None) -> dict:
     assembly sequence are all first-article tasks.
     """
     data = layout if layout is not None else load_layout()
-    planes = placed_display_planes()
+    planes = placed_display_planes(data)
     boss_rear = planes["boss_rear"]                 # 10.24, model boss ends
-    board_top = float(data["provisionalZ"]["frontBoardTop"])   # 10.00
+    board_top = float(data["provisionalZ"]["frontBoardTop"])   # 10.60
     chain = float(data["displayStandoff"]["spacerLength"])     # 8.75 design assumption
     gap = round(board_top - boss_rear, 3)                       # -0.24
-    chain_end = round(board_top - chain, 3)                     # 14.05
-    residual = round(chain_end - boss_rear, 3)                  # 3.81
+    chain_end = round(board_top - chain, 3)                     # 1.85
+    residual = round(chain_end - boss_rear, 3)                  # -8.99
     return {
         "axes_xy": [(h["x"], h["y"]) for h in data["lcdMountHoles"]],
         "boss_rear_z_mm": round(boss_rear, 3),
@@ -801,7 +804,7 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
         z=Span(pz["displayGlassFront"], pz["displayRearMost"]),
         assumed_axes=("z",),
         note=("XY from the module outline (106 x 68) and therefore documented; Z spans the "
-              "glass front (assumed flush, assumption A) to the 14.05 mm vendor overall depth, "
+              "glass front (0.60 mm behind the panel front nominally) to the 14.05 mm vendor overall depth, "
               "so the Z axis is a candidate value and no Z-based verdict is definitive"),
     )
 
@@ -1136,12 +1139,12 @@ def assumptions_document(layout: dict | None = None, *,
                           "not reproduce the model's 6.24 mm glass-to-PCB separation and is "
                           "not a measurement",
             },
-            "placed_illustrative_global_z_mm": placed_display_planes(),
+            "placed_illustrative_global_z_mm": placed_display_planes(data),
             "placement": {
                 "rotation_candidate_used": DISPLAY_ORIENTATION["candidate_used_for_drawing"],
                 "rotation_alternative": DISPLAY_ORIENTATION["alternative_candidate"],
                 "rotation_determinant": round(rotation_determinant(), 6),
-                "glass_datum": "vendor glass front face at the panel front face, Z = 0",
+                "glass_datum": "vendor glass front face at PROVISIONAL_Z.displayGlassFront (0.60 mm behind the panel front, adjustable to flush)",
                 "disclosure": ("the model's touch/frame forward face is 1.90 mm in front of "
                                "the glass, so it sits at global Z = -1.90 mm: 1.90 mm proud "
                                "of the panel front face. Not flush, not a fit"),
@@ -1186,7 +1189,7 @@ def assumptions_document(layout: dict | None = None, *,
         "light_pipe": {
             # One datum (panel FRONT face, +Z rearward), one parameterisation.
             # The nominal tip plane is the SHAFT length, not the overall length,
-            # and the -6.50 mm to the board plane is arithmetic, not an LED gap.
+            # and the -5.90 mm to the board plane is arithmetic, not an LED gap.
             "part": data["lightPipe"]["part"],
             "candidate_status": data["lightPipe"]["status"],
             "source_url": data["lightPipe"]["sourceUrl"],
@@ -1226,10 +1229,10 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "from flange seat to the rear-most body point. That number is missing today.",
     "Lay the front-board mockup over the real display bosses and check the four "
     "LCD mount holes; the top relief notch must clear all three feedthrough bodies.",
-    "Check the light-pipe datum: the provisional board near face is 10.00 mm and "
-    "the nominal PGN25L165 tip plane is 16.5 mm, so the tip is 6.50 mm BEHIND the "
-    "board plane. There is no positive step to print; the arithmetic is NOT an LED "
-    "gap and NOT a fit.",
+    "Check the light-pipe datum: the jack-anchored board near face is 10.60 mm and "
+    "the nominal PGN25L165 tip plane is 16.5 mm, so the tip is 5.90 mm BEHIND the "
+    "board plane. The printed step gauge shows those two planes; the arithmetic is "
+    "NOT an LED gap and NOT a fit.",
     "Offer the real display to the panel aperture from behind and measure the touch "
     "layer, frame and glass: the model places the touch/frame plane 1.90 mm in FRONT "
     "of the glass datum, so the panel relief and seating are still unknown.",
