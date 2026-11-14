@@ -7,7 +7,9 @@ import {
   BRACKET_ALLOWANCE,
   BRACKET_POWER_POCKET,
   BUTTON_CAP,
+  BUTTON_REACH,
   BUTTON_STACK,
+  PANEL_STACK,
   DEPTH_TARGET,
   EURORACK_GO_MAX_MODULE_DEPTH,
   DISPLAY_CONCEPT,
@@ -652,6 +654,8 @@ test("the B32 reference stack and the owner's 10 mm panel distance agree", () =>
   expect(BUTTON_CAP.referenceBoardToPanelFront).toBe(10)
   expect(BUTTON_STACK.omronReferencePanelFrontZ).toBeCloseTo(0, 6)
   expect(BUTTON_STACK.stackDepthExcess).toBeCloseTo(0, 6)
+
+
   expect(Math.abs(BUTTON_STACK.stackDepthExcess)).toBeLessThanOrEqual(
     BUTTON_CAP.referenceBoardToPanelFrontTolerance)
   // The panel is inside the cap's stated panel-thickness range.
@@ -957,4 +961,39 @@ test("the aperture clears the transport row and the feedthrough label row", () =
   // Feedthrough labels sit 6.0 mm below their cutouts (layout LABEL_OFFSET).
   const labelBottom = USB_FEEDTHROUGHS[0]!.y - 6.0 - 1.8 / 2
   expect(labelBottom - (cut.y + cut.height / 2)).toBeCloseTo(1.165, 2)
+})
+
+// The panel is a SUM, not a free parameter: the jacks clamp it at a known
+// distance from the front board and its own thickness adds the rest. If a
+// future respin moves the front face, one of those two must have changed.
+test("the panel front face is the jack-clamped gap plus the panel thickness", () => {
+  expect(PANEL_STACK.boardToPanelRear).toBeCloseTo(8.4, 6)
+  expect(PANEL_STACK.panelThickness).toBeCloseTo(1.6, 6)
+  expect(PANEL_STACK.boardToPanelFront).toBeCloseTo(10.0, 6)
+  expect(PANEL_STACK.boardToPanelFront).toBeCloseTo(
+    PANEL_STACK.boardToPanelRear + PANEL_STACK.panelThickness, 6)
+  // ... and that sum is the single source the whole stack chains from.
+  expect(PANEL_STACK.boardToPanelFront).toBeCloseTo(PANEL_TO_FRONT_BOARD_TOP, 6)
+})
+
+// A press part that stops at the panel REAR face sits inside the cutout: the
+// finger finds a hole. This is the check the B32 caps failed by eye, twice.
+test("a B32 cap must reach the panel FRONT face, not just the cutout", () => {
+  expect(BUTTON_REACH.switchTopToPanelRear).toBeCloseTo(1.1, 6)
+  expect(BUTTON_REACH.switchTopToPanelFront).toBeCloseTo(2.7, 6)
+  // The panel rear face is only 1.10 mm above the switch, so "reaches the
+  // panel" cannot mean "reaches its rear face".
+  expect(BUTTON_REACH.switchTopToPanelFront).toBeGreaterThan(BUTTON_REACH.switchTopToPanelRear)
+  if (BUTTON_REACH.capExtensionAboveSwitch === null) {
+    throw new Error(
+      "control_actuator is unmeasured: a B32-13x0 must extend at least " +
+      BUTTON_REACH.switchTopToPanelFront.toFixed(2) + " mm above the B3F-4055 " +
+      "body to stand flush with the panel front (the panel rear face is only " +
+      BUTTON_REACH.switchTopToPanelRear.toFixed(2) + " mm above the switch, so a " +
+      "cap that stops there is a recessed button). Caliper a fitted cap - board " +
+      "top to cap top - and set BUTTON_REACH.capExtensionAboveSwitch in lib/layout.ts.",
+    )
+  }
+  expect(BUTTON_REACH.capExtensionAboveSwitch).toBeGreaterThanOrEqual(
+    BUTTON_REACH.switchTopToPanelFront)
 })

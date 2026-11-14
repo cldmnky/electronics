@@ -662,6 +662,19 @@ export const PROVISIONAL_Z = {
 // The panel-to-board gap FALLS OUT of assumptions A and B. It is a
 // consequence of a design target, not evidence for it, and it is not certified.
 export const PANEL_TO_FRONT_BOARD_GAP = mm3(PROVISIONAL_Z.frontBoardTop - PROVISIONAL_Z.panelRear) // 8.40
+export const JACK_CLAMPED_GAP = PANEL_TO_FRONT_BOARD_GAP // the jacks clamp the panel at 8.40
+
+// The panel gap is set by the JACKS, not chosen. Their bushing/nut stack is the
+// only thing that clamps the panel, so it fixes the CLOSEST the panel can come to
+// the front board - board top to panel REAR face. The panel's own thickness then
+// adds on top of that to give the FRONT face, the surface the operator touches
+// and the face every "does it reach the panel?" question is measured to.
+export const PANEL_STACK = {
+  boardToPanelRear: JACK_CLAMPED_GAP,                          // 8.40, set by the jacks
+  panelThickness: PANEL.thickness,                             // 1.60
+  boardToPanelFront: mm3(JACK_CLAMPED_GAP + PANEL.thickness),  // 10.00
+} as const
+
 
 // Where a body at a given panel Z sits in the FRONT BOARD's own 3D frame.
 // A cad model on that board is drawn with jscad +z along the board normal and
@@ -1522,6 +1535,21 @@ export const BUTTON_SWITCH = {
 // sample - and until it is closed the cap is NOT modelled in 3D. The vendor B3F
 // model already carries its own actuator, so the switch still renders.
 export const BUTTON_SWITCH_TOP_Z = mm3(PROVISIONAL_Z.frontBoardTop - BUTTON_SWITCH.heightAboveBoard) // 2.70
+
+// A press part only counts as reaching the panel if its top gets PAST the rear
+// face - flush with the FRONT face at minimum. This is the test the B32 caps kept
+// failing by eye, so it is computed here for the test to assert against.
+export const BUTTON_REACH = {
+  switchTopAboveBoard: BUTTON_SWITCH.heightAboveBoard,                                     // 7.30
+  switchTopToPanelRear: mm3(JACK_CLAMPED_GAP - BUTTON_SWITCH.heightAboveBoard),             // 1.10
+  switchTopToPanelFront: mm3(PANEL_STACK.boardToPanelFront - BUTTON_SWITCH.heightAboveBoard), // 2.70
+  // OPEN: cap top above the B3F-4055 body, measured on a fitted B32-13x0
+  // (`control_actuator` in the mechanical research). Omron does not dimension the
+  // cap top, so this cannot be derived - only measured. It must be >=
+  // switchTopToPanelFront to stand flush with the panel front, and > it to stand
+  // proud; anything less lands the cap INSIDE the 12.25 mm cutout.
+  capExtensionAboveSwitch: null as number | null,
+} as const
 
 // ---- Panel openings (front FR-4 panel) ----
 export const PANEL_CUTOUTS = {
