@@ -1008,8 +1008,16 @@ test("the printed cap design stands proud of the panel front", () => {
   // the board. They describe the same face, so the conversion must land on it.
   expect(BUTTON_CAP_PRINTED.undersideZ).toBeCloseTo(
     PANEL_STACK.boardToPanelFront - BUTTON_REACH.switchTopAboveBoard, 6)
+  // Height spans three things, not two: the plunger sits INSIDE the locator
+  // recess, so the cap's rear face stops locatorDepth behind the plunger face.
   expect(BUTTON_CAP_PRINTED.height).toBeCloseTo(
-    BUTTON_REACH.switchTopToPanelFront + BUTTON_CAP_PRINTED.proudAbovePanelFront, 6)
+    BUTTON_REACH.switchTopToPanelFront + BUTTON_CAP_PRINTED.locatorDepth
+    + BUTTON_CAP_PRINTED.proudAbovePanelFront, 6)
+  expect(BUTTON_CAP_PRINTED.height).toBeCloseTo(4.1, 6)
+  expect(BUTTON_CAP_PRINTED.rearFaceZ).toBeCloseTo(
+    BUTTON_CAP_PRINTED.locatorFloorZ + BUTTON_CAP_PRINTED.locatorDepth, 6)
+  expect(BUTTON_CAP_PRINTED.topZ).toBeCloseTo(
+    BUTTON_CAP_PRINTED.rearFaceZ - BUTTON_CAP_PRINTED.height, 6)
   // >= is the rule; proud means strictly greater than flush.
   expect(BUTTON_CAP_PRINTED.height).toBeGreaterThan(BUTTON_REACH.switchTopToPanelFront)
   // It has to drop into the 12.25 mm cutout with printable clearance, and the

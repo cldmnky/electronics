@@ -1574,7 +1574,15 @@ export const BUTTON_CAP_PRINTED = {
   undersideZ: BUTTON_SWITCH_TOP_Z,                                   // 7.30 relative: 2.70 panel z
   proudAbovePanelFront: 0.8,
   topZ: mm3(PROVISIONAL_Z.panelFront - 0.8),                         // -0.80 panel z = 10.80 above board
-  height: mm3(BUTTON_SWITCH_TOP_Z - (PROVISIONAL_Z.panelFront - 0.8)), // 3.50 (panel z 2.70 -> -0.80)
+  // The locator recess makes the PART taller than the distance it has to span:
+  // the plunger sits INSIDE the recess, so the cap's rear face stops
+  // locatorDepth behind the plunger face. Height is therefore flush + locator +
+  // proud = 2.70 + 0.60 + 0.80 = 4.10, not flush + proud = 3.50. Getting this
+  // wrong puts the cap 0.6 mm below the panel front - the identical mistake the
+  // 3D body made twice, so it is derived here instead of typed.
+  locatorFloorZ: BUTTON_SWITCH_TOP_Z,                                // 2.70, on the plunger face
+  rearFaceZ: mm3(BUTTON_SWITCH_TOP_Z + 0.6),                         // 3.30, 0.6 behind it
+  height: mm3(BUTTON_SWITCH_TOP_Z + 0.6 - (PROVISIONAL_Z.panelFront - 0.8)), // 4.10
   square: 11.8,
   locatorSquare: 3.85,
   locatorDepth: 0.6,
