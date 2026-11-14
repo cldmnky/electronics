@@ -1,10 +1,11 @@
 import { Fragment } from "react"
+import { assembly } from "tscircuit"
 import { B5819W_SL } from "./imports/B5819W_SL"
 import { BH254V_40P } from "./imports/BH254V_40P"
 import { C8545_2N7002 } from "./imports/C8545_2N7002"
 import { SN74LVC1G126DBVR } from "./imports/SN74LVC1G126DBVR"
 import { BOARD_POLICY } from "./lib/electrical"
-import { INTERCONNECT_NETS, SBH11_PBPC_D13_ST_BK } from "./lib/interconnect"
+import { INTERCONNECT_MECH, INTERCONNECT_NETS, SBH11_PBPC_D13_ST_BK } from "./lib/interconnect"
 import { DISPLAY_CONCEPT, DISPLAY_VENDOR, FRONT_REAR_MOUNT, LCD_MOUNT_HOLES, MOUNT_HOLE_DIAMETER, REAR_INTERCONNECT, REAR_PCB } from "./lib/layout"
 import { PROBE_FOOTPRINT, PROBE_HOLE_DIAMETER_MM, PROBE_PAD_DIAMETER_MM, PROBE_POINTS } from "./lib/probe-points"
 import { RearSilk } from "./lib/silk"
@@ -94,6 +95,45 @@ const SPARE_PI_PINS = Object.fromEntries(
 // disagree. Pin n carries the same net on both boards and lands on the same
 // physical pad; lib/interconnect.test.ts proves that on the built JSON.
 
+// ---- 2 x 13 interconnect body (male shroud side) ----------------------------
+// The other half of the pair. Same reasoning as the front board's socket body:
+// `<connector cadModel>` takes only `null` in tscircuit 0.0.3169, so the body is
+// an `assembly.printedpart` - one cad_component, no footprint, no BOM row.
+//
+// REFERENCE ENVELOPE, NOT A FIT MODEL: a union of five slabs built only from
+// INTERCONNECT_MECH (Sullins drawing 11091): maleHeight 9.1 (.358), bodyLength
+// 40.52 (B), bodyEnvelope 8.8 (the conservative across-rows upper bound the
+// module already uses). Local frame matches the footprint - Y is the
+// 13-position axis, X across the two rows, +Z away from the board - and J_FRONT
+// sits on this board's TOP face, so the shroud stands on +Z.
+const maleSlab = (x: number, y: number, z: number, at: [number, number, number]) => ({
+  type: "translate",
+  vector: [at[0], at[1], at[2]],
+  shape: { type: "cuboid", size: [x, y, z] },
+})
+
+const INTERCONNECT_MALE_W = INTERCONNECT_MECH.bodyEnvelope
+const INTERCONNECT_MALE_BASE = 1.5
+const INTERCONNECT_MALE_WALL = 1.15
+const maleShroudEnvelope = (() => {
+  const len = INTERCONNECT_MECH.bodyLength
+  const h = INTERCONNECT_MECH.maleHeight
+  const baseH = INTERCONNECT_MALE_BASE
+  const wallH = h - baseH
+  const innerW = INTERCONNECT_MALE_W - 2 * INTERCONNECT_MALE_WALL
+  const z0 = REAR_PCB.thickness / 2
+  return {
+    type: "union",
+    shapes: [
+      maleSlab(INTERCONNECT_MALE_W, len, baseH, [0, 0, z0 + baseH / 2]),
+      maleSlab(INTERCONNECT_MALE_WALL, len, wallH, [-INTERCONNECT_MALE_W / 2 + INTERCONNECT_MALE_WALL / 2, 0, z0 + baseH + wallH / 2]),
+      maleSlab(INTERCONNECT_MALE_WALL, len, wallH, [INTERCONNECT_MALE_W / 2 - INTERCONNECT_MALE_WALL / 2, 0, z0 + baseH + wallH / 2]),
+      maleSlab(innerW, INTERCONNECT_MALE_WALL, wallH, [0, -len / 2 + INTERCONNECT_MALE_WALL / 2, z0 + baseH + wallH / 2]),
+      maleSlab(innerW, INTERCONNECT_MALE_WALL, wallH, [0, len / 2 - INTERCONNECT_MALE_WALL / 2, z0 + baseH + wallH / 2]),
+    ],
+  }
+})()
+
 export default () => (
   <board
     width={`${REAR_PCB.width}mm`}
@@ -163,6 +203,17 @@ export default () => (
     <silkscreentext layer="top" text="DISPLAY CARRIER - 4x M2.5" fontSize="1.2mm" anchorAlignment="center"
       pcbX={`${DISPLAY_CONCEPT.x}mm`} pcbY={`${DISPLAY_CONCEPT.y + DISPLAY_VENDOR.outline.height / 2 + 8.5}mm`} />
 
+    {/* Male box-header shroud of the 2 x 13 pair. */}
+    <assembly.printedpart
+      name="PRINT_IC_MALE"
+      color="#8a8f98"
+      cadModel={{
+        jscad: maleShroudEnvelope,
+        positionOffset: { x: REAR_INTERCONNECT.x, y: REAR_INTERCONNECT.y, z: 0 },
+        rotationOffset: { x: 0, y: 0, z: REAR_INTERCONNECT.rotation },
+        showAsTranslucentModel: true,
+      }}
+    />
     {/* Pico sockets on the left margin; 51 mm module length vertical. */}
     <connector
       name="J_PICO_L"

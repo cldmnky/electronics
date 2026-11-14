@@ -6,7 +6,7 @@ import { B3F_4055 } from "./imports/B3F_4055"
 import { PEC11R_4015F_S0024 } from "./imports/PEC11R_4015F_S0024"
 import { BOARD_POLICY } from "./lib/electrical"
 import { M20_9960245 } from "./imports/M20_9960245"
-import { INTERCONNECT_NETS, SFH11_PBPC_D13_ST_BK } from "./lib/interconnect"
+import { INTERCONNECT_MECH, INTERCONNECT_NETS, SFH11_PBPC_D13_ST_BK } from "./lib/interconnect"
 import { MIDI_OUT_SERIES_OHM, MIDI_OUT_GATE_OHM, MIDI_RECEIVER_OHM } from "./lib/electrical-midi"
 import { FP_JACK_TRS } from "./lib/jack"
 import { SKRHABE010 } from "./imports/SKRHABE010"
@@ -332,6 +332,50 @@ const knobEnvelope = {
   ],
 }
 
+// ---- 2 x 13 interconnect body (female socket side) --------------------------
+// Neither half of the interconnect had a CAD model, so the mating pair was
+// invisible in every 3D view. `<connector cadModel>` only accepts `null` in
+// tscircuit 0.0.3169 (an inline CSG body is rejected: 'Expected null, received
+// object'), so the body is an `assembly.printedpart` like the printed parts:
+// one cad_component, no footprint, no BOM row.
+//
+// REFERENCE ENVELOPE, NOT A FIT MODEL. A union of five slabs (base plus two long
+// walls and two end walls): no booleans, because that is the CSG form proven in
+// this repo. Every dimension is INTERCONNECT_MECH - the Sullins drawing 11091
+// numbers - and nothing else:
+//   femaleHeight 8.5 (catalog .335), insulatorLength 38.32 (drawing C),
+//   7.00 across the rows (catalog .276).
+// Local frame matches the footprint: Y is the 13-position axis, X across the
+// two rows, +Z away from the board. The component sits on the BOTTOM face at
+// FRONT_INTERCONNECT, so the body stands on -Z in panel terms.
+const interconnectSlab = (x: number, y: number, z: number, at: [number, number, number]) => ({
+  type: "translate",
+  vector: [at[0], at[1], frontBoardUpZ(at[2])],
+  shape: { type: "cuboid", size: [x, y, z] },
+})
+
+const INTERCONNECT_FEMALE_W = 7.0
+const INTERCONNECT_BASE = 2.0
+const INTERCONNECT_WALL = 1.0
+const femaleSocketEnvelope = (() => {
+  const len = INTERCONNECT_MECH.insulatorLength
+  const h = INTERCONNECT_MECH.femaleHeight
+  const baseH = INTERCONNECT_BASE
+  const wallH = h - baseH
+  const innerW = INTERCONNECT_FEMALE_W - 2 * INTERCONNECT_WALL
+  const top = PROVISIONAL_Z.frontBoardRear
+  return {
+    type: "union",
+    shapes: [
+      interconnectSlab(INTERCONNECT_FEMALE_W, len, baseH, [0, 0, top + baseH / 2]),
+      interconnectSlab(INTERCONNECT_WALL, len, wallH, [-INTERCONNECT_FEMALE_W / 2 + INTERCONNECT_WALL / 2, 0, top + baseH + wallH / 2]),
+      interconnectSlab(INTERCONNECT_WALL, len, wallH, [INTERCONNECT_FEMALE_W / 2 - INTERCONNECT_WALL / 2, 0, top + baseH + wallH / 2]),
+      interconnectSlab(innerW, INTERCONNECT_WALL, wallH, [0, -len / 2 + INTERCONNECT_WALL / 2, top + baseH + wallH / 2]),
+      interconnectSlab(innerW, INTERCONNECT_WALL, wallH, [0, len / 2 - INTERCONNECT_WALL / 2, top + baseH + wallH / 2]),
+    ],
+  }
+})()
+
 export default () => (
   <board
     width={`${FRONT_PCB.width}mm`}
@@ -424,6 +468,17 @@ export default () => (
         U6's own centre; Z comes from PRINTED_PARTS.zFront/zRear on the
         PROVISIONAL_Z datum. Translucent so the switch and the encoder stay
         visible through them. */}
+    {/* Female socket body of the 2 x 13 pair. */}
+    <assembly.printedpart
+      name="PRINT_IC_FEMALE"
+      color="#8a8f98"
+      cadModel={{
+        jscad: femaleSocketEnvelope,
+        positionOffset: { x: FRONT_INTERCONNECT.x, y: FRONT_INTERCONNECT.y, z: 0 },
+        rotationOffset: { x: 0, y: 0, z: FRONT_INTERCONNECT.rotation },
+        showAsTranslucentModel: true,
+      }}
+    />
     <assembly.printedpart
       name="PRINT_NAV_KEYTOP"
       color="#3f6f8f"
