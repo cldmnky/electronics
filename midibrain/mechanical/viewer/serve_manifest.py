@@ -2,15 +2,25 @@
 
 Why this is not just a file list: every `tsci export -f step` board comes out in
 its OWN frame - x/y are panel-aligned, but z is measured from that board's
-mid-plane with +z pointing out of the board's parts side. Loading them all at
-their own origin piles six solids on top of each other, which is what the viewer
-used to do. Each model now carries a scene transform:
+mid-plane with +z pointing out of the face that looks at the panel. Loading them
+all at their own origin piles six solids on top of each other, which is what the
+viewer used to do. Each model now carries a scene transform:
 
-    scaleY = -1           invert z, because +z in the export points at the panel
-                          front while the panel frame counts z rearward
-    positionY = T + 0.8   puts the board's parts-side face at panel z = T
+    scaleZ = -1            main.js maps panel z (rearward) to scene -z; the
+                           export's +z already points at the panel, so negating
+                           it puts the panel-facing side on +scene z
+    positionZ = -(T + 0.8) shift it rearward until the panel-facing face sits at
+                           panel z = T, i.e. scene z = -T
 
-`T` is that board's TOP face in the panel frame, straight out of
+SCENE CONVENTION (do not regress this): the stack runs along SCENE Z with the
+PANEL FRONT at z = 0 and everything else at NEGATIVE z, panel nearest the
+camera; the camera stands on +z looking down -z, with +y up. That is the same
+orientation tscircuit's 3D view draws: screen-right = +x, screen-up = +y. It
+used to run along scene Y with the camera behind the rear board, and a left-
+handed panel frame (x right, y up, z rearward) then read mirrored. Only a
+z-along-the-view fix can correct that; no camera position can.
+
+`T` is that board's face nearest the panel in the panel frame, straight out of
 mechanical/layout.json provisionalZ (panel front = 0, +z rearward). 0.8 is half
 the 1.6 mm board thickness, i.e. the mid-plane the export is centred on.
 
@@ -26,7 +36,7 @@ layout = json.loads((root / "mechanical/layout.json").read_text(encoding="utf-8"
 z = layout["provisionalZ"]
 half = layout["frontPcb"]["thickness"] / 2.0
 
-# model stem -> (panel-frame TOP face of that board, shown on load)
+# model stem -> (panel-frame face nearest the panel, shown on load)
 PLACEMENT = {
     "panel": (z["panelFront"], True),
     "front": (z["frontBoardTop"], True),
@@ -63,17 +73,17 @@ for pattern, label in (
             # Ground truth from the STEP itself (occt product bboxes): BOARD at
             # z -3.34..-1.74, SMTSO bosses -7.34..-1.84, IPS/touch panel up to
             # +4.8. So +z is the SCREEN side, and the screen must end up facing
-            # the panel: invert z only (scaleY), which keeps board x/y intact.
-            entry["scaleY"] = -1
+            # the panel: negate z only (scaleZ), which keeps board x/y intact.
+            entry["scaleZ"] = -1
             entry["align"] = {
                 "x": layout["display"]["x"],
                 "y": layout["display"]["y"],
-                "frontSceneY": z["displayGlassFront"],
+                "frontSceneZ": z["displayGlassFront"],
                 "depth": round(z["displayRearMost"] - z["displayGlassFront"], 3),
             }
         if top is not None:
-            entry["scaleY"] = -1
-            entry["positionY"] = round(top + half, 3)
+            entry["scaleZ"] = -1
+            entry["positionZ"] = round(-(top + half), 3)
             entry["panelTopZ"] = round(top, 3)
         models.append(entry)
 
@@ -87,8 +97,8 @@ carrier = {
 out.write_text(json.dumps({"base": "/", "models": models, "carrier": carrier}, indent=2) + "\n", encoding="utf-8")
 print(f"mechanical-view: {len(models)} STEP file(s) listed in {out}")
 for m in models:
-    if "positionY" in m:
-        where = f"panel z {m['panelTopZ']:5.2f}..{m['panelTopZ'] + 2 * half:5.2f}  (scene y {m['positionY']:+6.2f})"
+    if "positionZ" in m:
+        where = f"panel z {m['panelTopZ']:5.2f}..{m['panelTopZ'] + 2 * half:5.2f}  (scene z {m['positionZ']:+7.2f})"
     else:
         where = "own frame, aligned on its loaded bbox, screen toward the panel"
     print(f"  {'shown ' if m['visible'] else 'hidden'} {m['label']:<46} {where}")

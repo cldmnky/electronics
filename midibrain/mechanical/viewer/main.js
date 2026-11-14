@@ -45,14 +45,22 @@ fill.position.set(-220, -120, -160)
 scene.add(fill)
 
 const grid = new THREE.GridHelper(400, 40, 0x2a2f37, 0x232833)
+// Floor, 6 mm under the 128.5 mm panel's bottom edge: at scene y 0 the grid and
+// the axes would slice through the middle of the panel and draw over its face.
+grid.position.y = -70
 scene.add(grid)
-scene.add(new THREE.AxesHelper(40))
+const axes = new THREE.AxesHelper(40)
+// On the floor AND clear of the panel footprint (x -100; the panel spans +-76):
+// an axes line on scene z 0 is coplanar with the panel front face, so it paints
+// straight over whatever is drawn there.
+axes.position.set(-100, grid.position.y, 0)
+scene.add(axes)
 
-// The stack runs along SCENE Y (= CAD z = panel z, panel front at 0). The plane
-// used to be (0,0,-1), i.e. scene Z, which is the board's own y axis: it sliced
-// the boards lengthways instead of peeling the stack, and its -1 default hid
-// everything. Keep panel z <= cut, and start above the whole stack.
-const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6)
+// The stack runs along SCENE Z: the panel front face is at scene z 0 and the
+// stack recedes to negative z, so a camera on +z looks at the panel face. Keep
+// panel z <= cut, which is scene z >= -cut, so the constant is the cut itself
+// and the default 1e6 leaves everything visible.
+const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 1e6)
 renderer.clippingPlanes = [clipPlane]
 const zcut = document.getElementById("zcut")
 const applyCut = () => {
@@ -62,8 +70,17 @@ const applyCut = () => {
 }
 zcut.addEventListener("input", applyCut)
 
-// CAD is Z-up in millimetres; three is Y-up. x->x, y->-z, z->y.
-const toScene = (x, y, z) => new THREE.Vector3(x, z, -y)
+// STEP coordinates are millimetres in the PANEL frame: x right, y up, z
+// REARWARD (into the rack, away from the operator). That frame is left-handed
+// against a viewer whose +z points at you, so loading x/y/z straight into three
+// is what made every front-face layout read mirrored from the rear. Mapping
+// z -> -z turns it into the viewer's right-handed frame: the panel face lands
+// at scene z 0, the stack recedes to -z, and a camera on +z shows screen-right
+// = +x and screen-up = +y, i.e. the same way tscircuit's 3D view draws it.
+// A model's own STEP z, though, is NOT the panel frame: it runs from the
+// board's mid-plane out of its panel-facing side, i.e. the other way round, so
+// the manifest negates it again (scaleZ = -1) and shifts it (positionZ).
+const toScene = (x, y, z) => new THREE.Vector3(x, y, -z)
 
 // ------------------------------------------------------------------ STEP load
 const PALETTE = [0x8fb7d6, 0xd6b98f, 0x9fd6a4, 0xd69fb7, 0xc7c7d6, 0xd6d08f, 0x8fd6d0]
@@ -134,15 +151,19 @@ function buildCarrier(spec) {
     color: 0xb8b0a0, metalness: 0.1, roughness: 0.8,
   })
   for (const boss of spec.bosses) {
-    // boss is in board coordinates; scene x = board x, scene z = -board y
+    // boss is in board coordinates; scene x/y = board x/y, and the board's z
+    // (rearward) is scene -z. The spacers therefore stand along SCENE Z, in the
+    // gap behind the module and in front of the rear board's own face.
     const x = boss.x + spec.offsetX
-    const z = -(boss.y + spec.offsetY)
+    const y = boss.y + spec.offsetY
     const h = spec.rearBoardFront - spec.moduleRear
     const spacer = new THREE.Mesh(new THREE.CylinderGeometry(CARRIER_D / 2, CARRIER_D / 2, h, 20), material)
-    spacer.position.set(x, spec.moduleRear + h / 2, z)
+    spacer.rotation.x = Math.PI / 2 // cylinder axis Y -> Z
+    spacer.position.set(x, y, -(spec.moduleRear + h / 2))
     group.add(spacer)
     const pad = new THREE.Mesh(new THREE.CylinderGeometry(CARRIER_PAD_D / 2, CARRIER_PAD_D / 2, CARRIER_PAD_Z, 20), material)
-    pad.position.set(x, spec.rearBoardFront - CARRIER_PAD_Z / 2, z)
+    pad.rotation.x = Math.PI / 2
+    pad.position.set(x, y, -(spec.rearBoardFront - CARRIER_PAD_Z / 2))
     group.add(pad)
   }
   group.visible = true
@@ -211,24 +232,24 @@ async function main() {
     const url = new URL(model.url, modelBase)
     const { group, box, materials, meshes } = await loadStep(url.href, index)
     // Placement comes from the manifest, computed from mechanical/layout.json:
-    // the export's +z points at the panel front while the panel frame counts z
-    // rearward, so z is inverted and shifted until the board's parts-side face
-    // lands on its documented panel z. Without this every model sat at its own
-    // origin, which is why six boards used to overlap.
+    // the export's +z points out of the board's panel-facing side, the opposite
+    // of the panel frame, so z is negated once more and shifted until that face
+    // lands at its documented panel z (scene z = -panel z). Without this every
+    // model sat at its own origin, which is why six boards used to overlap.
     group.scale.x = model.scaleX ?? 1
-    group.scale.y = model.scaleY ?? 1
-    group.position.y = model.positionY ?? 0
+    group.scale.z = model.scaleZ ?? 1
+    group.position.z = model.positionZ ?? 0
     if (model.align) {
       // Own-frame model: align on the loaded bbox. Centre it on the display
-      // position and park its glass face on the panel-front plane, so the
-      // screen points at the panel and the module reaches displayRearMost.
-      // `scale.y` is applied first, so the scene-space bbox is already final.
+      // position and park its screen face on the panel-front plane (scene z 0),
+      // so the screen points at the panel and the module reaches displayRearMost.
+      // `scale.z` is applied first, so the scene-space bbox is already final.
       group.updateMatrixWorld(true)
       const b = new THREE.Box3().setFromObject(group)
       const c = b.getCenter(new THREE.Vector3())
       group.position.x += model.align.x - c.x
-      group.position.z += -model.align.y - c.z
-      group.position.y += model.align.frontSceneY - b.min.y
+      group.position.y += model.align.y - c.y
+      group.position.z += model.align.frontSceneZ - b.max.z
     }
     group.visible = model.visible !== false
     modelGroups.push({ group, model })
@@ -271,7 +292,14 @@ function fitCamera(box) {
   const size = box.getSize(new THREE.Vector3())
   const radius = Math.max(size.x, size.y, size.z)
   controls.target.copy(centre)
-  camera.position.copy(centre).add(new THREE.Vector3(radius * 0.9, radius * 0.75, radius * 1.1))
+  // Stand in FRONT of the panel (+z, because the stack recedes to -z) with the
+  // viewer's up along +y: the panel face is then what you see, unmirrored. The
+  // panel is 152 x 128.5 mm and the vertical field is 40 degrees, so the
+  // stand-off has to reach ~1.6 radii for the whole panel plus the stack behind
+  // it to stay in frame (0.97 radii framed the middle of the panel and nothing
+  // else; 1.3 still cut its top and bottom edges off).
+  camera.position.copy(centre).add(new THREE.Vector3(radius * 0.55, radius * 0.42, radius * 1.45))
+  camera.up.set(0, 1, 0)
   camera.near = radius / 200
   camera.far = radius * 40
   camera.updateProjectionMatrix()
