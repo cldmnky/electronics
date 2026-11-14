@@ -7,7 +7,9 @@ import {
   BRACKET_ALLOWANCE,
   BRACKET_POWER_POCKET,
   BUTTON_CAP,
+  BUTTON_CAP_PRINTED,
   BUTTON_REACH,
+  BUTTON_SWITCH_TOP_Z,
   BUTTON_STACK,
   PANEL_STACK,
   DEPTH_TARGET,
@@ -996,4 +998,27 @@ test("a B32 cap must reach the panel FRONT face, not just the cutout", () => {
   }
   expect(BUTTON_REACH.capExtensionAboveSwitch).toBeGreaterThanOrEqual(
     BUTTON_REACH.switchTopToPanelFront)
+})
+
+// The printed-cap route (owner option, 2026-11-13) has to satisfy the same reach
+// rule as a bought cap, and it is checkable now because its height is OURS: the
+// plate sits on the plunger face and its top clears the panel front.
+test("the printed cap design stands proud of the panel front", () => {
+  // Datums differ on purpose: undersideZ is panel Z, the switch height is above
+  // the board. They describe the same face, so the conversion must land on it.
+  expect(BUTTON_CAP_PRINTED.undersideZ).toBeCloseTo(
+    PANEL_STACK.boardToPanelFront - BUTTON_REACH.switchTopAboveBoard, 6)
+  expect(BUTTON_CAP_PRINTED.height).toBeCloseTo(
+    BUTTON_REACH.switchTopToPanelFront + BUTTON_CAP_PRINTED.proudAbovePanelFront, 6)
+  // >= is the rule; proud means strictly greater than flush.
+  expect(BUTTON_CAP_PRINTED.height).toBeGreaterThan(BUTTON_REACH.switchTopToPanelFront)
+  // It has to drop into the 12.25 mm cutout with printable clearance, and the
+  // locator has to swallow the 3.8 mm plunger with room to spare.
+  expect(BUTTON_CAP_PRINTED.square + 2 * BUTTON_CAP_PRINTED.clearanceToCutoutPerSide)
+    .toBeCloseTo(12.25, 6)
+  expect(BUTTON_CAP_PRINTED.locatorSquare).toBeGreaterThan(3.8)
+  // Forced by the cutout, not chosen: no skirt may pass the plunger face.
+  expect(BUTTON_CAP_PRINTED.undersideZ).toBeCloseTo(BUTTON_SWITCH_TOP_Z, 6)
+  // Still a design intent until the part exists and is measured.
+  expect(BUTTON_CAP_PRINTED.implemented).toBe(false)
 })

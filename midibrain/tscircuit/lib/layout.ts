@@ -1551,6 +1551,37 @@ export const BUTTON_REACH = {
   capExtensionAboveSwitch: null as number | null,
 } as const
 
+// Owner option 2026-11-13: print our own caps instead of buying B32-13x0s.
+// Printing removes the whole measurement problem, because the height stops being
+// a property of a bought part and becomes ours to set from the fit:
+//
+//   plate underside  = 7.30  the B3F-4055 plunger face (so the cap rests ON the
+//                            plunger and presses it, which a bought cap does too)
+//   plate top        = 10.80 panel front + 0.80 proud, so the finger meets cap
+//   plate height     =  3.50 = BUTTON_REACH.switchTopToPanelFront + proud
+//   plate size       = 11.80 x 11.80, 0.225 per side inside the 12.25 cutout
+//   locator          = 3.85 x 3.85 x 0.60 recess in the underside over the
+//                      3.80 plunger, 0.025 per side
+//
+// Those are design INTENT, not measurements, which is why they are a separate
+// block and why `implemented` is false: the part has to be modelled, printed and
+// measured before it can close `control_actuator`. The shape is forced by the
+// cutout and not chosen - the 12.25 aperture is only 0.125 per side larger than
+// the 12.0 +-0.2 switch body, so NO skirt can reach down past the plunger face:
+// a printed cap is necessarily a plate on the plunger, guided by the aperture.
+export const BUTTON_CAP_PRINTED = {
+  implemented: false,
+  undersideZ: BUTTON_SWITCH_TOP_Z,                                   // 7.30 relative: 2.70 panel z
+  proudAbovePanelFront: 0.8,
+  topZ: mm3(PROVISIONAL_Z.panelFront - 0.8),                         // -0.80 panel z = 10.80 above board
+  height: mm3(BUTTON_SWITCH_TOP_Z - (PROVISIONAL_Z.panelFront - 0.8)), // 3.50 (panel z 2.70 -> -0.80)
+  square: 11.8,
+  locatorSquare: 3.85,
+  locatorDepth: 0.6,
+  clearanceToCutoutPerSide: mm3((12.25 - 11.8) / 2),                 // 0.225
+  material: "PLA/PETG print, solid; first article must be measured",
+} as const
+
 // ---- Panel openings (front FR-4 panel) ----
 export const PANEL_CUTOUTS = {
   // B3F-4055 buttons take an Omron/ARATAS B32 SQUARE key top, 12 x 12 mm
