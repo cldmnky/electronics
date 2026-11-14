@@ -1512,16 +1512,16 @@ export const BUTTON_SWITCH = {
   source: "Omron B3F datasheet, SHA-256 be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f",
 } as const
 
-// Panel z of the switch's plunger face, and the cap's VISIBLE slab: from the
-// panel rear face up to that face. Omron's reference drawing shows the cap top
-// just below the panel rear face and never dimensions it, so only this 1.1 mm
-// protrusion is claimed; the skirt that wraps the switch body is not modelled.
-export const BUTTON_SWITCH_TOP_Z = mm3(PANEL_TO_FRONT_BOARD_TOP - BUTTON_SWITCH.heightAboveBoard) // 2.70
-export const BUTTON_CAP_VISIBLE = {
-  top: PROVISIONAL_Z.panelRear,          // 1.60, just under the panel rear face
-  bottom: BUTTON_SWITCH_TOP_Z,           // 2.70, the plunger face
-  thickness: mm3(BUTTON_SWITCH_TOP_Z - PROVISIONAL_Z.panelRear), // 1.10
-} as const
+// Panel z of the switch's plunger face - sourced, so it stays: the B3F-4055 is
+// 7.3 +-0.2 mm above the board. What is NOT known is where the B32 key top ends.
+// Omron does not dimension the cap top, and the reference 10.0 +-0.4 mm is
+// board-to-PANEL-FRONT, not board-to-cap-top. Drawing a cap body therefore means
+// inventing its height, which this repo does not do: two attempts (1.1 mm to the
+// panel rear, 2.7 mm to the panel front) gave two different renders and neither
+// is measured. The open item is `control_actuator` - cap top measured on a real
+// sample - and until it is closed the cap is NOT modelled in 3D. The vendor B3F
+// model already carries its own actuator, so the switch still renders.
+export const BUTTON_SWITCH_TOP_Z = mm3(PROVISIONAL_Z.frontBoardTop - BUTTON_SWITCH.heightAboveBoard) // 2.70
 
 // ---- Panel openings (front FR-4 panel) ----
 export const PANEL_CUTOUTS = {
