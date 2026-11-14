@@ -28,11 +28,13 @@ to draw a picture can never produce a definitive fit result.
 """
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from bracket_geometry import EPS, GeometryError, Rect, load_layout
+from bracket_geometry import (EPS, GeometryError, Rect, load_layout,
+                             panel_mount_vs_bracket)
 
 # ---------------------------------------------------------------------------
 # Provenance labels. A verdict quotes these, so a reader can see what the
@@ -524,7 +526,7 @@ def classify(a: Envelope, b: Envelope, *, eps: float = EPS) -> CollisionVerdict:
 #   chain spacer the derived carrier spacer          9.35 mm   (23.40 - 10.05 - 4.0)
 #   residual     what that spacer misses            -8.99 mm   (1.25 vs 10.24)
 #
-# The model gap changed SIGN with the 10.6 mm panel: at 10.00 mm the drawn board
+# The model gap changed SIGN with the 10.6 mm panel: at the withdrawn 10.00 mm the drawn board
 # overlapped the boss plane by 0.24 mm, and at 10.60 mm it clears it by 0.36 mm.
 # Neither number is an approved dimension and the two chains do NOT agree: a
 # 9.35 mm spacer and a 0.36 mm drawn clearance are still different chains.
@@ -870,11 +872,18 @@ def assembly_envelopes(layout: dict, *, include_usbc_candidate: bool = False) ->
 # what its status is, so the visualization cannot imply more than it shows.
 BODY_LEGEND = (
     {"name": "PANEL_30HP_3U", "meaning": "bare 30HP panel, 152.0 mm actual",
-     "status": "provisional model, not a released drawing"},
-    {"name": "FRONT_BOARD_PROVISIONAL_Z", "meaning": "150 x 112 mm front/UI board with the U opening",
-     "status": "XY canonical, Z provisional (assumption A and B)"},
-    {"name": "REAR_BOARD_PROVISIONAL_Z", "meaning": "148 x 112 mm rear/base board",
-     "status": "XY canonical, Z provisional (candidate gap)"},
+     "status": "provisional model, not a released drawing; its 20 apertures and 14 drills "
+               "are validated feature by feature against the canonical plan"},
+    {"name": "FRONT_BOARD_PROVISIONAL_Z",
+     "meaning": "150 x 112 mm front/UI board slab with the OBSOLETE notch rectangle cut "
+                "and four LCD holes, four old standoff holes and two bracket holes drilled",
+     "status": "STALE CUTS - DO NOT PRINT / DO NOT USE FOR FIT: the slab outline and Z are "
+               "current but the cuts are not the current PCB (see board_mockups)"},
+    {"name": "REAR_BOARD_PROVISIONAL_Z",
+     "meaning": "148 x 112 mm rear/base board slab with only the four front-rear spacer "
+                "holes drilled",
+     "status": "STALE CUTS - DO NOT PRINT / DO NOT USE FOR FIT: the four Ø2.7 LCD carrier "
+               "holes the current board carries are missing (see board_mockups)"},
     {"name": "DISPLAY_WAVESHARE_VENDOR_STEP",
      "meaning": "vendor display model, SHA-256 verified",
      "status": "illustrative placement; in-plane axis PENDING"},
@@ -894,6 +903,81 @@ BODY_LEGEND = (
      "meaning": "opt-in advertised USB-C flange",
      "status": "NON-APPROVED candidate, no fit claim"},
 )
+
+# ---------------------------------------------------------------------------
+# KNOWN DEFECT, DISCLOSED: the two BOARD mockups are not the current PCB
+# ---------------------------------------------------------------------------
+# `mechanical/step_assembly.py` builds `mockup-front-board.stl` and
+# `mockup-rear-board.stl` from `mechanical/layout.json`, and the CUTS it applies
+# are not the cuts the current board sources carry. Both files therefore stay
+# marked unusable for any fit question. This block is the single source for that
+# warning: the builder's own output and metadata, the generated print checklist
+# and assumptions.json all read it from here, so the disclosure cannot drift from
+# the code it describes.
+#
+# The defect is NOT repaired here. Repairing one board's cuts without the other,
+# the placeholder carrier and the built-circuit comparison would leave a mockup
+# that looks current and is not, which is worse than a marked one. The
+# all-or-nothing repair is recorded in docs/TODO.md.
+BOARD_MOCKUP_DISCLAIMER = "DO NOT PRINT / DO NOT USE FOR FIT"
+
+BOARD_MOCKUP_DEFECTS: dict[str, tuple[str, ...]] = {
+    "mockup-front-board.stl": (
+        "cuts the OBSOLETE `notchBounds` rectangle (x -55...50, y 48...56) instead of the "
+        "current U-shaped display opening (the six-point FRONT_BOARD_OPENING_POLYGON "
+        "through the top edge, x -63.25...43.25)",
+        "drills four Ø4.3 mm holes at the retired LCD carrier positions - Ø4.3 is the "
+        "display stack's hole size, and the current front board carries NO hole there at "
+        "all, because the carrier moved to the rear board (whose real holes are Ø2.7 mm "
+        "and are missing from the rear solid)",
+        "drills the four OLD panel-standoff holes at (-61, -53), (61, -53), (-61, 53) and "
+        "(57, 41), which the current front board does not have",
+        "drills the two feedthrough-bracket mount holes at (-66.5, 53) and (55, 53), which "
+        "the current front board does not have",
+        "does drill the four front-rear spacer holes and the four PANEL_MOUNT_POINTS M3 "
+        "holes, which the current board does have",
+    ),
+    "mockup-rear-board.stl": (
+        "lacks the four Ø2.7 mm LCD carrier holes (LCD_MOUNT_HOLES) that the current rear "
+        "board carries",
+        "does drill the four front-rear spacer holes, which the current board does have",
+    ),
+}
+
+BOARD_MOCKUP_REPAIR = (
+    "replace the `notchBounds` cut with the real FRONT_BOARD_OPENING_POLYGON in one piece",
+    "delete the front board's LCD, old-standoff and bracket-mount cuts; keep the "
+    "front-rear and PANEL_MOUNT_POINTS holes",
+    "add the four LCD_MOUNT_HOLES to the rear board",
+    "re-derive the rear-carrier placeholder from the current carrier record",
+    "compare the built board's drill and cutout sets with the modelled ones, so the two "
+    "cannot part company again without a test failure",
+)
+
+BOARD_MOCKUPS_STILL_USABLE = (
+    "mockup-panel.stl: its 20 apertures and 14 drills are validated against the canonical "
+    "feature plan, so it remains a panel print check (still not a fit approval)",
+    "mockup-pi-panel.stl and the Pi board placeholder: their holes are re-derived and "
+    "checked against the drawing on every build",
+    "scale-check-100mm.stl: a printer scale bar, not a board",
+    "light-pipe-reach-gauge.stl: arithmetic on two nominal planes, not a board",
+)
+
+
+def board_mockup_report() -> dict:
+    """What the two board mockups really are, and why neither may be used."""
+    return {
+        "status": BOARD_MOCKUP_DISCLAIMER,
+        "reason": ("the modelled cuts of the two board mockups are not the cuts the current "
+                   "PCB sources carry; the slab outlines and Z planes are current"),
+        "files": {name: list(defects) for name, defects in BOARD_MOCKUP_DEFECTS.items()},
+        "not_usable_for": ("printing a board, laying a board mockup over a real PCB or part, "
+                           "and any fit, clearance or collision question about a board"),
+        "repair": list(BOARD_MOCKUP_REPAIR),
+        "still_usable": list(BOARD_MOCKUPS_STILL_USABLE),
+        "tracked_in": "docs/TODO.md (all-or-nothing board-mockup repair)",
+    }
+
 
 # Pairs whose relationship the metadata reports. Order is fixed so the file is
 # byte-stable across runs.
@@ -1107,8 +1191,23 @@ def assumptions_document(layout: dict | None = None, *,
             "M2.5 screw-head and washer envelope",
             "display underside component map and FPC latch height",
             "LED position, LED height and light-pipe seat allowance",
+            "panel-mount screw, washer, nut or insert on the front board's rear face, "
+            "and the printed bracket's own fastener beside it",
             "measured panel, board and standoff thicknesses",
         ],
+        # The four-point panel mount frame against the printed bracket: a plan
+        # overlap that the board thickness separates. Recorded, never approved.
+        "panel_mount_frame": {
+            **panel_mount_vs_bracket(data),
+            "note": ("the four standoff BODIES stand on the front board's PANEL side and "
+                     "the printed bracket sits on its REAR side, so the plan-view overlap "
+                     "near the upper corners is a projection, not a collision, and the "
+                     "1.60 mm PCB separates exactly those two modelled bodies. The head "
+                     "overlap is a 2D ENVELOPE, not a part. A nut, washer or insert on the "
+                     "board's REAR face shares the bracket's face with NO modelled Z "
+                     "separation, so it may collide. No clearance is claimed for any "
+                     "hardware"),
+        },
         "display_mount_placeholders": {
             **display_mount_gap(data),
             "placeholder_definition": DISPLAY_MOUNT_PLACEHOLDER,
@@ -1117,6 +1216,7 @@ def assumptions_document(layout: dict | None = None, *,
                 "model planes plus one design assumption. They are not a proof of fit, not "
                 "an approved dimension and not a hardware selection"),
         },
+        "board_mockups": board_mockup_report(),
         "body_legend": list(BODY_LEGEND),
         "display_model_planes": {
             # Three separate things, never interchangeable.
@@ -1198,7 +1298,7 @@ def assumptions_document(layout: dict | None = None, *,
         "light_pipe": {
             # One datum (panel FRONT face, +Z rearward), one parameterisation.
             # The nominal tip plane is the SHAFT length, not the overall length,
-            # and the -6.50 mm to the board plane is arithmetic, not an LED gap.
+            # and the -5.90 mm to the board plane is arithmetic, not an LED gap.
             "part": data["lightPipe"]["part"],
             "candidate_status": data["lightPipe"]["status"],
             "source_url": data["lightPipe"]["sourceUrl"],
@@ -1231,17 +1331,22 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "LCD aperture against the module glass (105.42 x 67.07 mm).",
     "Try every real part in the panel mockup: six buttons, three 4 mm light pipes, "
     "four MIDI jack barrels, the encoder bushing, NAV and POWER. All 20 apertures "
-    "and 10 drills come from the canonical panel data.",
+    "and 14 drills come from the canonical panel data.",
     "Offer the real display to the aperture from behind: the glass must pass with "
     "0.9 mm clearance per side. Record what you measure.",
     "Fit the Adafruit 908 flanges through their panel openings and measure the depth "
     "from flange seat to the rear-most body point. That number is missing today.",
-    "Lay the front-board mockup over the real display bosses and check the four "
-    "LCD mount holes; the top relief notch must clear all three feedthrough bodies.",
-    "Check the light-pipe datum: the provisional board near face is 10.00 mm and "
-    "the nominal PGN25L165 tip plane is 16.5 mm, so the tip is 6.50 mm BEHIND the "
-    "board plane. There is no positive step to print; the arithmetic is NOT an LED "
-    "gap and NOT a fit.",
+    # The old item 7 told the reader to lay the front-board mockup over the real
+    # display bosses. That instruction is withdrawn: the mockup's cuts are not
+    # the current PCB's (see board_mockup_report), so it would "check" a board
+    # that does not exist. The panel mockup checks above stay valid.
+    "Do NOT print or use mockup-front-board.stl or mockup-rear-board.stl: their cuts "
+    "are not the current PCB. Compare the board sources and the built circuit instead, "
+    "and see docs/TODO.md for the all-or-nothing repair.",
+    "Check the light-pipe datum: the provisional board near face is 10.60 mm and "
+    "the nominal PGN25L165 tip plane is 16.5 mm, so the tip plane lies 5.90 mm "
+    "BEHIND the board plane (signed board minus tip = -5.90 mm). There is no "
+    "positive step to print; the arithmetic is NOT an LED gap and NOT a fit.",
     "Offer the real display to the panel aperture from behind and measure the touch "
     "layer, frame and glass: the model places the touch/frame plane 1.90 mm in FRONT "
     "of the glass datum, so the panel relief and seating are still unknown.",
@@ -1249,8 +1354,40 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "are 5.0/2.7 mm geometric placeholders over the model's -0.24 mm gap, not a part. "
     "Measure the real boss plane, board face, standoff diameter and thread first.",
     "Do not record any result as accepted: every mockup is a print check, not "
-    "dimensional evidence. Enter measurements in docs/evidence/ with a date and name.",
+    "dimensional evidence. Enter measurements in docs/evidence/ with a date and name. "
+    "The board mockups are excluded from this checklist entirely (see the header).",
+    "Measure the four PANEL_STANDOFF envelopes with the bracket fitted: the standoff "
+    "BODIES sit on the FRONT board's panel side while the printed bracket sits on its "
+    "REAR side, so their plan outlines overlap near the upper corners and the 1.60 mm "
+    "PCB separates exactly those bodies. Nothing else is separated: a nut, washer or "
+    "insert on the board's rear face shares the bracket's face and may collide, and the "
+    "D7.0 mm head/washer envelope (2D only, not a part) reaches the board's x edge with "
+    "0.00 mm and its y edge with 0.50 mm. Record the fitted stack; assume nothing.",
 )
+
+# The acceptance state is READ, never restated: a hard-coded item count drifts
+# from hardware-acceptance.json the moment an item is added or retired.
+ACCEPTANCE_PATH = Path(__file__).resolve().parent.parent / "hardware-acceptance.json"
+
+
+def acceptance_item_count(path: Path | str = ACCEPTANCE_PATH) -> int:
+    """The number of recorded acceptance items. Fail loudly, never default."""
+    p = Path(path)
+    if not p.is_file():
+        raise GeometryError(
+            f"{p} is missing; the print checklist cannot state the acceptance count")
+    data = json.loads(p.read_text())
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        raise GeometryError(f"{p} carries no acceptance items")
+    return len(items)
+
+
+def acceptance_pending_count(path: Path | str = ACCEPTANCE_PATH) -> int:
+    """How many of those items are still pending (every one, today)."""
+    p = Path(path)
+    data = json.loads(p.read_text())
+    return sum(1 for item in data["items"] if str(item.get("status")) != "accepted")
 
 
 def print_checklist_markdown() -> str:
@@ -1260,9 +1397,25 @@ def print_checklist_markdown() -> str:
         "PROVISIONAL. These mockups contain planning geometry from `mechanical/layout.json`,",
         "not measurements. A print check is not a fit approval.",
         "",
+        f"**{BOARD_MOCKUP_DISCLAIMER}: `mockup-front-board.stl` and "
+        "`mockup-rear-board.stl` are NOT the current PCB geometry.** Their modelled cuts "
+        "do not follow the board sources, so neither file may be printed, laid over a "
+        "real board or part, or used to judge any fit. What each one gets wrong:",
+        "",
     ]
+    for file_name, defects in BOARD_MOCKUP_DEFECTS.items():
+        lines.append(f"- `{file_name}`")
+        lines += [f"  - {defect}" for defect in defects]
+    lines += [""]
     lines += [f"{i}. {item}" for i, item in enumerate(PRINT_CHECKLIST, 1)]
-    lines += ["", "Status: no item below is accepted. All 28 acceptance items stay pending.", ""]
+    total = acceptance_item_count()
+    pending = acceptance_pending_count()
+    if pending == total:
+        lines += ["", f"Status: no item below is accepted. All {total} acceptance "
+                      "items stay pending.", ""]
+    else:
+        lines += ["", f"Status: {pending} of {total} acceptance items stay pending; "
+                      "see hardware-acceptance.json and docs/evidence/.", ""]
     return "\n".join(lines)
 
 

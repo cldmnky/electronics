@@ -41,8 +41,9 @@
 
 - Front/UI PCB 150 × 112 mm and rear/base PCB 148 × 112 mm, each 1.6 mm and
   two layers. The front↔rear spacer holes are on both boards, the display-carrier
-  holes on the rear board, and the panel standoff holes are removed (the Pi is on its
-  own panel). The Pi drawing is not production data.
+  holes on the rear board, and the four M3 panel-mount holes are on both the panel
+  and the front board (the Pi is on its own panel). The Pi drawing is not production
+  data.
   Both boards contain prototype circuits and routed copper but are **not
   fabrication-released**.
 - Positions and dimensions in `tscircuit/lib/layout.ts` are planning values.

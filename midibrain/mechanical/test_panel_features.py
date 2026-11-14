@@ -5,13 +5,14 @@
 
 Why these tests exist
 ---------------------
-The CAD assembly used to insist on ``20 apertures + 14 drills = 34`` panel
-features. The canonical panel no longer has 14 drills: the owner removed the four
-panel standoffs, so it has 20 apertures and 10 drills (six feedthrough screw
-holes and four RACK fixings). Lowering the number would have hidden any future
-loss, so the check now validates IDENTITIES, ORDER, SHAPE and the drills' own
-derivation, and these tests prove that a dropped, duplicated, renamed or
-re-shaped feature is still refused.
+The CAD assembly insists on ``20 apertures + 14 drills = 34`` panel
+features. The fourteen drills are the six feedthrough screw holes, the four RACK
+rail fixings and the four STAND_ panel-mount screws of the PANEL_MOUNT_POINTS
+frame. Lowering the number would hide a future loss, so the check validates
+IDENTITIES, ORDER, SHAPE, POSITION and the drills' own derivation, and these
+tests prove that a dropped, duplicated, renamed or re-shaped feature is still
+refused - including a dropped or renamed STAND_ drill, which is the hole the
+panel mount frame is carried by.
 
 The gauge model is tested in BOTH plane orders, because the current stack has the
 pipe tip BEHIND the board face (16.5 mm against 10.6 mm) and the earlier code
@@ -51,6 +52,10 @@ def mutated(**changes) -> dict:
     if "drop_drill" in changes:
         data["panelDrills"] = [d for d in data["panelDrills"]
                                if d["name"] != changes["drop_drill"]]
+    if "rename_drill" in changes:
+        for d in data["panelDrills"]:
+            if d["name"] == changes["rename_drill"]:
+                d["name"] = changes["new_name"]
     if "resize_aperture" in changes:
         for a in data["panelApertures"]:
             if a["name"] == changes["resize_aperture"]:
@@ -64,13 +69,13 @@ def mutated(**changes) -> dict:
 
 
 class PanelIdentityTest(unittest.TestCase):
-    """20 apertures + 10 drills, matched by identity, order and shape."""
+    """20 apertures + 14 drills, matched by identity, order and shape."""
 
     def test_the_plan_is_the_current_canonical_set(self) -> None:
         plan = sa.panel_feature_plan(layout())
         self.assertEqual(plan["apertures"], 20)
-        self.assertEqual(plan["drills"], 10)
-        self.assertEqual(plan["total"], 30)
+        self.assertEqual(plan["drills"], 14)
+        self.assertEqual(plan["total"], 34)
         names = [f["name"] for f in plan["features"] if f["kind"] == "aperture"]
         self.assertEqual(names, list(sa.PANEL_APERTURE_IDENTITIES))
         drills = [f["name"] for f in plan["features"] if f["kind"] == "drill"]
@@ -79,6 +84,50 @@ class PanelIdentityTest(unittest.TestCase):
         data = layout()
         self.assertEqual(plan["total"],
                          len(data["panelApertures"]) + len(data["panelDrills"]))
+
+    def test_the_drill_set_is_the_feedthrough_rack_and_stand_frame(self) -> None:
+        """Six feedthrough screws + four rails + four panel mounts, by name."""
+        identities = list(sa.PANEL_DRILL_IDENTITIES)
+        self.assertEqual(len(identities), 14)
+        self.assertEqual([n for n in identities if n.startswith("USB_")],
+                         ["USB_0_-1", "USB_0_1", "USB_1_-1", "USB_1_1",
+                          "USB_2_-1", "USB_2_1"])
+        self.assertEqual([n for n in identities if n.startswith("RACK_")],
+                         ["RACK_1", "RACK_2", "RACK_3", "RACK_4"])
+        self.assertEqual([n for n in identities if n.startswith("STAND_")],
+                         ["STAND_1", "STAND_2", "STAND_3", "STAND_4"])
+
+    def test_the_stand_drills_are_the_panel_mount_frame(self) -> None:
+        """The four STAND_ holes sit on PANEL_MOUNT_POINTS, at the M3 clearance."""
+        data = layout()
+        stand = {d["name"]: d for d in data["panelDrills"]
+                 if str(d["name"]).startswith("STAND_")}
+        points = data["panelMountPoints"]
+        self.assertEqual(len(stand), 4)
+        self.assertEqual(len(points), 4)
+        for index, point in enumerate(points, start=1):
+            drill = stand[f"STAND_{index}"]
+            self.assertAlmostEqual(float(drill["x"]), float(point["x"]), places=9)
+            self.assertAlmostEqual(float(drill["y"]), float(point["y"]), places=9)
+            self.assertAlmostEqual(float(drill["diameter"]),
+                                   float(data["panelStandoff"]["holeDiameter"]),
+                                   places=9)
+        # ONE frame, symmetric in BOTH axes about the panel centre.
+        self.assertEqual(sorted(float(p["x"]) for p in points), [-71.5, -71.5, 71.5, 71.5])
+        self.assertEqual(sorted(float(p["y"]) for p in points), [-52.0, -52.0, 52.0, 52.0])
+
+    def test_the_panel_standoff_length_is_the_derived_nominal(self) -> None:
+        """9.00 mm = the 10.60 mm panel front datum minus the 1.60 mm panel."""
+        data = layout()
+        standoff = data["panelStandoff"]
+        self.assertAlmostEqual(float(standoff["length"]),
+                               float(data["panelToFrontBoardGap"]), places=9)
+        self.assertAlmostEqual(
+            float(standoff["length"]),
+            float(data["provisionalZ"]["frontBoardTop"])
+            - float(data["provisionalZ"]["panelRear"]), places=9)
+        self.assertAlmostEqual(float(standoff["length"]), 9.0, places=9)
+        self.assertEqual(standoff["family"], "M3 threaded, adjustable")
 
     def test_the_seven_button_openings_are_the_switch_set(self) -> None:
         plan = sa.panel_feature_plan(layout())
@@ -130,6 +179,30 @@ class PanelIdentityTest(unittest.TestCase):
     def test_a_dropped_drill_is_refused(self) -> None:
         with self.assertRaises(bracket_geometry.GeometryError):
             sa.panel_feature_plan(mutated(drop_drill="RACK_4"))
+
+    def test_a_dropped_stand_drill_is_refused(self) -> None:
+        """A panel-mount hole may not disappear silently."""
+        with self.assertRaises(bracket_geometry.GeometryError) as raised:
+            sa.panel_feature_plan(mutated(drop_drill="STAND_2"))
+        self.assertIn("expected set/order", str(raised.exception))
+
+    def test_a_renamed_stand_drill_is_refused(self) -> None:
+        with self.assertRaises(bracket_geometry.GeometryError) as raised:
+            sa.panel_feature_plan(mutated(rename_drill="STAND_3",
+                                          new_name="STANDOFF_3"))
+        self.assertIn("expected set/order", str(raised.exception))
+
+    def test_a_moved_stand_drill_is_refused(self) -> None:
+        """The four holes are one frame: a moved hole is not the canonical set."""
+        data = layout()
+        data["panelMountHoles"] = [
+            dict(hole, x=hole["x"] + 2.0) if hole["name"] == "STAND_1" else hole
+            for hole in data["panelMountHoles"]]
+        data["panelDrills"] = [
+            dict(drill, x=drill["x"] + 2.0) if drill["name"] == "STAND_1" else drill
+            for drill in data["panelDrills"]]
+        with self.assertRaises(bracket_geometry.GeometryError):
+            sa.panel_feature_plan(data)
 
     def test_a_resized_button_opening_is_refused(self) -> None:
         with self.assertRaises(bracket_geometry.GeometryError) as raised:

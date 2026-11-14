@@ -57,12 +57,17 @@ import {
   midiJackX,
   LED_ID,
   LED_Y,
+  M3_CLEARANCE_HOLE_DIAMETER,
   RAIL_HOLE_DIAMETER,
   RAIL_HOLES,
   PANEL,
+  PANEL_APERTURES,
   PANEL_CUTOUTS,
   PANEL_LCD_CUTOUT,
   PANEL_LABELS,
+  PANEL_MOUNT_HOLES,
+  PANEL_MOUNT_POINTS,
+  PANEL_STANDOFF,
   PANEL_TITLES,
   panelTitleExtents,
   PLAY_START,
@@ -116,7 +121,8 @@ test("display, window, cutout and mounting holes share one coordinate source", (
   // 2026-11-13 respin: the opening is cut where the module used to sit above
   // the board, and the encoder/NAV pad fields (column at x = 52) reach 43.59,
   // which left 0.16 mm to the opening edge at 43.75 against a 0.20 mm rule.
-  // The 0.5 mm shift keeps the knob clearance above 2.25 mm. See decisions.md.
+  // The 0.5 mm shift takes the module-to-knob clearance from 2.25 to 2.75 mm
+  // (module right edge +43.00, knob body left 45.75). See decisions.md.
   expect(d.x).toBe(-10)
   expect(d.y).toBe(11)
   // Holes derive from the display centre plus the vendor-local offsets - the
@@ -978,6 +984,127 @@ test("the retained standoff data is inside the board and is not a drilled hole",
         .toBeGreaterThan(MOUNT_HOLE_DIAMETER / 2 + RAIL_HOLE_DIAMETER / 2)
     }
   }
+})
+
+// ---- The four panel mount points (owner decision 2026-11-13) --------------
+// One frame, two columns, two rows. The clearances below are the numbers the
+// layout comment and docs/mechanical-stack.md quote, so a moved point or a
+// grown aperture fails here instead of quietly eating the web.
+test("the four panel mount points form one frame outside the board opening", () => {
+  // FOUR, not two: the jack bushings and the encoder nut all sit in the panel's
+  // lower half, and two extra points on one horizontal line would leave that
+  // line as a free hinge - the panel would still rock top-for-bottom, which is
+  // the failure the owner asked to remove. The display opening removes the
+  // panel's stiffest region, so the top edge needs a real support.
+  expect(PANEL_MOUNT_POINTS).toHaveLength(4)
+  const xs = [...new Set(PANEL_MOUNT_POINTS.map(p => p.x))].sort((a, b) => a - b)
+  const ys = [...new Set(PANEL_MOUNT_POINTS.map(p => p.y))].sort((a, b) => a - b)
+  // Symmetric in BOTH axes about the panel centre, one point per corner of the
+  // frame: 143 x 104 mm, wider than the display opening in both directions.
+  expect(xs).toEqual([-71.5, 71.5])
+  expect(ys).toEqual([-52, 52])
+  expect(xs[1]! + xs[0]!).toBe(0)
+  expect(ys[1]! + ys[0]!).toBe(0)
+  expect(xs[1]! - xs[0]!).toBeGreaterThan(PANEL_LCD_CUTOUT.width)
+  expect(ys[1]! - ys[0]!).toBeGreaterThan(PANEL_LCD_CUTOUT.height)
+
+  const r = M3_CLEARANCE_HOLE_DIAMETER / 2
+  const standoff = PANEL_STANDOFF.bodyDiameter / 2
+  const head = PANEL_STANDOFF.headDiameter / 2
+  // The X is forced by the board's two legs: the display opening starts at
+  // -63.25, so the left leg is only 11.75 mm wide (-75...-63.25).
+  expect(xs[0]!).toBeGreaterThan(-FRONT_PCB.width / 2)
+  expect(xs[1]!).toBeLessThan(FRONT_PCB.width / 2)
+  for (const p of PANEL_MOUNT_POINTS) {
+    // On a leg, never over the U opening.
+    const onLeftLeg = p.x < FRONT_BOARD_OPENING.left
+    const onRightLeg = p.x > FRONT_BOARD_OPENING.right
+    expect(onLeftLeg || onRightLeg).toBe(true)
+    const openingWeb = onLeftLeg ? FRONT_BOARD_OPENING.left - p.x : p.x - FRONT_BOARD_OPENING.right
+    expect(openingWeb - r).toBeGreaterThanOrEqual(0.8)
+    // Edge distances: 1.5 mm on the board, 2.0 mm on the panel (soft limits).
+    const boardEdge = Math.min(FRONT_PCB.width / 2 - Math.abs(p.x), FRONT_PCB.height / 2 - Math.abs(p.y))
+    const panelEdge = Math.min(PANEL.width / 2 - Math.abs(p.x), PANEL.height / 2 - Math.abs(p.y))
+    expect(boardEdge - r).toBeGreaterThanOrEqual(1.5)
+    expect(panelEdge - r).toBeGreaterThanOrEqual(2.0)
+    // The whole standoff body and the screw-head envelope stay on the panel and
+    // on the board, so neither the washer nor the hex fouls an edge.
+    expect(Math.abs(p.x) + head).toBeLessThan(PANEL.width / 2)
+    expect(Math.abs(p.x) + standoff).toBeLessThan(FRONT_PCB.width / 2)
+    expect(Math.abs(p.y) + standoff).toBeLessThan(FRONT_PCB.height / 2)
+    // Every drilled hole already on the front board keeps the 0.8 mm rule.
+    for (const h of FRONT_REAR_MOUNT) {
+      const web = Math.hypot(p.x - h.x, p.y - h.y) - r - MOUNT_HOLE_DIAMETER / 2
+      expect(web).toBeGreaterThanOrEqual(0.8)
+    }
+    // ... and so does every other panel drill: the rail holes and the
+    // feedthrough screws.
+    for (const d of PANEL_MOUNT_HOLES) {
+      if (PANEL_MOUNT_POINTS.some(q => q.x === d.x && q.y === d.y)) continue
+      const web = Math.hypot(p.x - d.x, p.y - d.y) - r - d.diameter / 2
+      expect(web).toBeGreaterThanOrEqual(0.8)
+    }
+    // ... and every panel aperture, measured 2D against its real shape.
+    for (const a of PANEL_APERTURES) {
+      let gap: number
+      if (a.shape === "polygon") gap = polygonDistance(p.x, p.y, a.points ?? []) - r
+      else if (a.shape === "rect") {
+        const dx = Math.max(Math.abs(p.x - (a.x ?? NaN)) - (a.width ?? 0) / 2, 0)
+        const dy = Math.max(Math.abs(p.y - (a.y ?? NaN)) - (a.height ?? 0) / 2, 0)
+        gap = Math.hypot(dx, dy) - r
+      } else gap = Math.hypot(p.x - (a.x ?? NaN), p.y - (a.y ?? NaN)) - (a.radius ?? 0) - r
+      expect(gap).toBeGreaterThanOrEqual(0.8)
+    }
+  }
+  // The frame SURROUNDS the existing supports instead of crowding them: its
+  // lower row sits below the jack-bushing row (JACK_Y -47.5) and its upper row
+  // above the encoder (TEMPO y 31), so the panel is held at both extremes.
+  expect(Math.min(...PANEL_MOUNT_POINTS.map(p => p.y))).toBeLessThan(JACK_Y)
+  expect(Math.max(...PANEL_MOUNT_POINTS.map(p => p.y))).toBeGreaterThan(RIGHT_CONTROLS.TEMPO.y)
+  expect(Math.max(...PANEL_MOUNT_POINTS.map(p => p.y)) - Math.min(...PANEL_MOUNT_POINTS.map(p => p.y)))
+    .toBeGreaterThan(RIGHT_CONTROLS.TEMPO.y - JACK_Y)
+  // Quoted numbers: the 2.40 mm edge ligament at (71.5, 46) is the nearest
+  // existing front-board hole, and 6.50 is the nearest RACK hole.
+  const nearestFrontRear = Math.min(...PANEL_MOUNT_POINTS.flatMap(p =>
+    FRONT_REAR_MOUNT.map(h => Math.hypot(p.x - h.x, p.y - h.y) - r - MOUNT_HOLE_DIAMETER / 2)))
+  expect(nearestFrontRear).toBeCloseTo(3.05, 6)
+  const nearestRack = Math.min(...PANEL_MOUNT_POINTS.flatMap(p =>
+    RAIL_HOLES.map(h => Math.hypot(p.x - h.x, p.y - h.y) - r - RAIL_HOLE_DIAMETER / 2)))
+  expect(nearestRack).toBeCloseTo(6.5, 3)
+  // Board edge 1.9, panel edge 2.9, U opening 6.65, LCD aperture 7.48 (2D from
+  // the rounded outline), MIDI jack aperture 5.81.
+  expect(FRONT_PCB.width / 2 - Math.abs(xs[1]!) - r).toBeCloseTo(1.9, 6)
+  expect(PANEL.width / 2 - Math.abs(xs[1]!) - r).toBeCloseTo(2.9, 6)
+  expect(Math.abs(xs[1]!) - FRONT_BOARD_OPENING.right - r).toBeCloseTo(26.65, 6)
+  expect(FRONT_BOARD_OPENING.left - xs[0]! - r).toBeCloseTo(6.65, 6)
+  const lcdGap = Math.min(...PANEL_MOUNT_POINTS.map(p =>
+    polygonDistance(p.x, p.y, roundedRectOutline(PANEL_LCD_CUTOUT)) - r))
+  expect(lcdGap).toBeCloseTo(9.077, 2)
+  const jackGap = Math.min(...PANEL_MOUNT_POINTS.map(p =>
+    Math.hypot(p.x - midiJackX("MIDI IN 1"), p.y - JACK_Y) - PANEL_CUTOUTS.jack / 2 - r))
+  expect(jackGap).toBeCloseTo(5.812, 2)
+})
+
+test("the four panel standoffs are M3, one length, and adjustable", () => {
+  // The length is DERIVED from the stack, never typed: board top (10.60) to
+  // panel rear (1.60).
+  expect(PANEL_STANDOFF.length).toBeCloseTo(PANEL_STACK.boardToPanelRear, 9)
+  expect(PANEL_STANDOFF.length).toBeCloseTo(PANEL_TO_FRONT_BOARD_TOP - PANEL.thickness, 9)
+  expect(PANEL_STANDOFF.length).toBeCloseTo(9.0, 6)
+  expect(PANEL_STANDOFF.thread).toBe("M3")
+  // The same M3 clearance tool drills the panel, the board and the rails.
+  expect(PANEL_STANDOFF.holeDiameter).toBe(M3_CLEARANCE_HOLE_DIAMETER)
+  expect(PANEL_STANDOFF.holeDiameter).toBe(RAIL_HOLE_DIAMETER)
+  // Adjustable, NOT fixed height: the 9.00 mm is a nominal and the real gap is
+  // set by the jack bushing stack (unmeasured). A fixed spacer would either
+  // hold the panel off the jacks or bend it and preload the jack solder joints.
+  expect(PANEL_STANDOFF.family).toBe("M3 threaded, adjustable")
+  expect(PANEL_STANDOFF.panelPlaneDatum).toContain("jack")
+  // The exported mechanical data carries the frame and the standoff, so the
+  // STEP model and the docs derive from one place.
+  const exported = mechanicalExport() as Record<string, unknown>
+  expect(exported.panelMountPoints).toEqual(PANEL_MOUNT_POINTS)
+  expect(exported.panelStandoff).toEqual(PANEL_STANDOFF)
 })
 
 test("the aperture clears the transport row and the feedthrough label row", () => {

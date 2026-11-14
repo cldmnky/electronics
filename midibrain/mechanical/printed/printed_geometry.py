@@ -1203,7 +1203,8 @@ def validate_nav_keytop(g: NavKeytop, layout: dict | None = None) -> list[str]:
     # 5. The head is 3-5 mm proud, and the finger must not reach the panel.
     need(3.0 - EPS_MM <= g.head_height <= 5.0 + EPS_MM,
          f"head is {g.head_height:.2f} mm proud of the panel front, outside 3-5 mm")
-    # 6. The part must fit the 8.4 mm gap without seating on the switch body.
+    # 6. The part must fit the 9.0 mm gap (board top -> panel rear at the 10.6 mm
+    #    datum) without seating on the switch body.
     need(g.switch_body_clearance >= NAV_ASSEMBLY_CLEARANCE_MIN,
          f"the cap bottom is {g.switch_body_clearance:.2f} mm above the switch body "
          f"top, under the {NAV_ASSEMBLY_CLEARANCE_MIN:.2f} mm assembly clearance")

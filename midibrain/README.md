@@ -8,7 +8,8 @@ The front/UI PCB is **150 × 112 mm** (U-shaped: a 106.50 × 68.90 mm opening le
 module through), the rear/base PCB is **148 × 112 mm**, the panel is a separate 30HP (152.0 mm)
 FR-4 board. The display is the Waveshare **4.3inch DSI LCD** (ElectroKit 4103 5687), 800 × 480
 with DSI video and I2C touch on one 15-pin cable; it hangs on a printed carrier bolted to the
-rear board, and the panel front sits 10.0 mm above the front board's top face.
+rear board, and the panel front sits **10.6 mm** above the front board's top face
+(owner-directed, provisional; the panel rear is 9.0 mm above it).
 
 Manufacturing target: **JLCPCB fabrication and SMD assembly**, SMD parts from
 JLCPCB/LCSC. Through-hole parts are hand-soldered except the Bourns PEC11R

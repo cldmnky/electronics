@@ -343,9 +343,10 @@ class ClearanceGeometryTest(unittest.TestCase):
         self.assertEqual(len(openings), len(layout["panelApertures"]) + len(layout["panelDrills"]))
         self.assertEqual(sum(1 for o in openings if o.kind == "polygon"), 1)
         # 3 USB feedthroughs and 7 B3F-4055 button squares are rects; the rest are
-        # circles (9 apertures + 10 drills: 6 feedthrough screws and 4 RACK).
+        # circles (9 apertures + 14 drills: 6 feedthrough screws, 4 RACK and the
+        # 4 STAND_ panel-mount screws).
         self.assertEqual(sum(1 for o in openings if o.kind == "rect"), 10)
-        self.assertEqual(sum(1 for o in openings if o.kind == "circle"), 19)
+        self.assertEqual(sum(1 for o in openings if o.kind == "circle"), 23)
 
 
 class EmittedPanelSilkTest(unittest.TestCase):

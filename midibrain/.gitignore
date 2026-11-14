@@ -28,6 +28,9 @@ __pycache__/
 *.pyc
 mechanical/viewer/node_modules/
 mechanical/viewer/models.json
+# The viewer's panel silkscreen texture, exported by `make mechanical-steps`
+# (`tsci export -f pcb-svg`, reproducible; not a hand-drawn asset).
+mechanical/viewer/panel-silk.svg
 # CWD dropping from `tsci check` (writes <entry>.circuit.json beside the source)
 *.circuit.circuit.json
 

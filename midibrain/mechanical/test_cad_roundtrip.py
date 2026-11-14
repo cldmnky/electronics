@@ -60,6 +60,29 @@ SKIP_REASON = "; ".join(
 ) or "CAD not available"
 
 
+_BUILT_MODEL: dict = {}
+
+
+def built_model() -> dict:
+    """The verification model, built ONCE per test process and reused.
+
+    ``sa.build`` writes nothing, so one instance is safe to share. Several test
+    classes probe the same solids, and building them once keeps the suite's cost
+    in one place instead of once per class that needs a body.
+    """
+    if not _BUILT_MODEL:
+        archive = os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
+        if archive:
+            step_path, _ = sa.resolve_display_archive(archive)
+        else:
+            step_path, _ = sa.resolve_display_step(os.environ.get("MIDIBRAIN_DISPLAY_STEP"))
+        layout = sa.load_layout()
+        _BUILT_MODEL["layout"] = layout
+        _BUILT_MODEL["step_path"] = step_path
+        _BUILT_MODEL["built"] = sa.build(cq, layout, step_path, False)
+    return _BUILT_MODEL
+
+
 def display_argv() -> list[str]:
     """Arguments that choose the vendor display model.
 
@@ -122,12 +145,25 @@ class StepRoundTripTest(unittest.TestCase):
         shape = cq.importers.importStep(str(path)).val()
         self.assertGreaterEqual(len(shape.Solids()), 7)
         text = path.read_text(errors="replace")
-        # metadata-only blocks are not solids
-        metadata_only = {"LCD_MOUNT_PLACEHOLDERS"}
+        # metadata-only blocks are not solids: LCD_MOUNT_PLACEHOLDERS records the
+        # four carrier holes, PANEL_STANDOFFS the four mount-standoff envelopes
+        # (whose bodies are the PANEL_STANDOFF_1..4 products, checked below).
+        metadata_only = {"LCD_MOUNT_PLACEHOLDERS", "PANEL_STANDOFFS"}
         for name in self.document["bodies"]:
             if name in metadata_only:
                 continue
             self.assertIn(name, text, f"{name} is not a named body in the STEP file")
+        # The four-point panel mount frame is carried as four named bodies at the
+        # canonical points, so a dropped standoff cannot hide behind the metadata.
+        standoffs = self.document["bodies"]["PANEL_STANDOFFS"]["standoffs"]
+        self.assertEqual(len(standoffs), 4)
+        for entry in standoffs:
+            self.assertIn(entry["name"], text,
+                          f"{entry['name']} is not a named body in the STEP file")
+            self.assertAlmostEqual(entry["length_mm"], 9.0, places=3)
+        self.assertEqual(sorted(tuple(e["xy_mm"]) for e in standoffs),
+                         sorted([(-71.5, -52.0), (71.5, -52.0),
+                                 (-71.5, 52.0), (71.5, 52.0)]))
         placeholders = self.document["bodies"]["LCD_MOUNT_PLACEHOLDERS"]
         if self.document["display_step"]["status"] == "verified":
             # vendor mode: all four model-fit placeholders are drawn
@@ -153,7 +189,15 @@ class StepRoundTripTest(unittest.TestCase):
         self.assertLess(panel_volume, solid_plate, "the aperture and holes removed nothing")
         self.assertGreater(panel_volume, 0.5 * solid_plate, "too much material was removed")
 
-    def test_the_board_mockups_are_1_to_1(self) -> None:
+    def test_the_board_mockup_outlines_are_the_right_size(self) -> None:
+        """ONLY the slab outline is checked here, never the cuts.
+
+        The two board mockups print at 1:1 as slabs, and that is all this test
+        may claim: their CUTS are not the current PCB (see
+        test_the_front_board_mockup_is_the_current_pcb and the checklist
+        warning), so the old name - "the board mockups are 1:1" - overstated
+        what a passing bounding box proves.
+        """
         front = sg.load_layout()["frontPcb"]
         lo, hi, _ = stl_bounds(self.out / sa.STL_FRONT)
         self.assertAlmostEqual(hi[0] - lo[0], front["width"], delta=0.01)
@@ -404,14 +448,13 @@ class SpacerPlaceholderTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        archive = os.environ.get("MIDIBRAIN_DISPLAY_ARCHIVE")
+        # The same shared build the board-mockup probes use: sa.build writes
+        # nothing, so one instance serves both classes.
+        shared = built_model()
         cls.source_args = display_argv()
-        if archive:
-            cls.step_path, _ = sa.resolve_display_archive(archive)
-        else:
-            cls.step_path, _ = sa.resolve_display_step(os.environ.get("MIDIBRAIN_DISPLAY_STEP"))
-        cls.layout = sa.load_layout()
-        cls.built = sa.build(cq, cls.layout, cls.step_path, False)
+        cls.step_path = shared["step_path"]
+        cls.layout = shared["layout"]
+        cls.built = shared["built"]
         cls.solids = cls.built["solids"]
         cls.meta = cls.built["meta"]["LCD_MOUNT_PLACEHOLDERS"]
         cls.gap = sg.display_mount_gap(cls.layout)
@@ -487,8 +530,10 @@ class SpacerPlaceholderTest(unittest.TestCase):
         # plane and the vendor model contradict each other. That is the finding,
         # not a tolerance to absorb.
         display = self.solids["DISPLAY_WAVESHARE_VENDOR_STEP"]
+        # The probe stands on the first canonical carrier hole, never a literal.
+        hole = self.layout["lcdMountHoles"][0]
         short = (cq.Workplane("XY").workplane(offset=chain_end)
-                 .center(-59.15, 41.9).circle(2.5).circle(1.35).extrude(5.0))
+                 .center(hole["x"], hole["y"]).circle(2.5).circle(1.35).extrude(5.0))
         intrusions = sa.spacer_intrusions(cq, short, display,
                                           self.solids["FRONT_BOARD_PROVISIONAL_Z"].val())
         self.assertGreater(intrusions["display_mm3"], sa.INTRUSION_EPS_MM3,
@@ -503,7 +548,9 @@ class SpacerPlaceholderTest(unittest.TestCase):
         display = self.solids["DISPLAY_WAVESHARE_VENDOR_STEP"]
         board = self.solids["FRONT_BOARD_PROVISIONAL_Z"].val()
         # One 0.2 mm longer than the drawn gap, so it must reach INTO the board.
-        over = (cq.Workplane("XY").workplane(offset=10.24).center(-59.15, 41.9)
+        hole = self.layout["lcdMountHoles"][0]
+        over = (cq.Workplane("XY").workplane(offset=10.24)
+                .center(hole["x"], hole["y"])
                 .circle(2.5).circle(1.35).extrude(self.gap["model_gap_mm"] + 0.2))
         intrusions = sa.spacer_intrusions(cq, over, display, board)
         self.assertGreater(max(intrusions.values()), sa.INTRUSION_EPS_MM3)
@@ -525,6 +572,133 @@ class SpacerPlaceholderTest(unittest.TestCase):
                           for t in tubes)
             expected = sorted((h["x"], h["y"]) for h in self.layout["lcdMountHoles"])
             self.assertEqual(axes, expected)
+
+
+@unittest.skipIf(cq is None, SKIP_REASON)
+class BoardMockupCutTest(unittest.TestCase):
+    """The two BOARD mockups must be the current PCB - they are not, today.
+
+    Both tests assert the CORRECT geometry, so they FAIL today and are marked
+    ``expectedFailure`` rather than being rewritten to bless the wrong shape.
+    Each aggregates EVERY probe into one message, so the failure is the defect
+    and not the first assert the test happens to meet. When the tracked
+    all-or-nothing repair lands (docs/TODO.md) they turn green, and unittest
+    reports an unexpected success - that is the signal, not a bug.
+
+    A probe only earns its place if it can tell the current board from the
+    mockup. The four retired LCD carrier positions cannot: every one of them lies
+    INSIDE the U cut, so the current front board is void there whether or not a
+    hole was drilled (the mockup drills them at the display stack's Ø4.3 mm, not
+    at the rear board's real Ø2.7 mm). They are therefore never probed for
+    material on the front board; their retirement is stated in the metadata
+    (``step_geometry.BOARD_MOCKUP_DEFECTS``) and the real Ø2.7 mm holes are
+    probed on the rear board, where they must be void.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        shared = built_model()
+        cls.layout = shared["layout"]
+        cls.solids = shared["built"]["solids"]
+
+    def _is_material(self, body, x: float, y: float, z: float) -> bool:
+        """True when the built solid carries material at the point."""
+        return bool(body.val().isInside(cq.Vector(x, y, z)))
+
+    def _inside_u_cut(self, x: float, y: float) -> bool:
+        """The U opening spans this rectangle; the corner chamfers are far away."""
+        opening = self.layout["frontBoardOpening"]
+        return (opening["left"] < x < opening["right"]
+                and opening["bottom"] < y < opening["top"])
+
+    def _front_board_cut_probe(self) -> tuple[float, float]:
+        """A point INSIDE the real U opening and OUTSIDE the obsolete notch."""
+        opening = self.layout["frontBoardOpening"]
+        notch = self.layout["notchBounds"]
+        probe = (-58.0, 20.0)
+        x, y = probe
+        self.assertLess(opening["left"], x, "the probe must be INSIDE the U opening")
+        self.assertLess(x, opening["right"])
+        self.assertLess(opening["bottom"], y)
+        self.assertLess(y, opening["top"])
+        in_notch = (notch["left"] <= x <= notch["right"]
+                    and notch["bottom"] <= y <= notch["top"])
+        self.assertFalse(in_notch, "the probe must be OUTSIDE the obsolete notch, or a "
+                                   "mockup with the old cut would be void there too")
+        return probe
+
+    @unittest.expectedFailure
+    def test_the_front_board_mockup_is_the_current_pcb(self) -> None:
+        """Cut the U opening, keep the real holes, drop the retired ones."""
+        body = self.solids["FRONT_BOARD_PROVISIONAL_Z"]
+        front = self.layout["frontPcb"]
+        z = self.layout["provisionalZ"]["frontBoardTop"] + front["thickness"] / 2
+        x, y = self._front_board_cut_probe()
+        problems: list[str] = []
+
+        # 1. The U opening: the current board is VOID at the probe.
+        if self._is_material(body, x, y, z):
+            problems.append(
+                f"the U opening is MATERIAL at ({x:.2f}, {y:.2f}, {z:.2f}) but the current "
+                "board is void there: the mockup cuts the obsolete notchBounds rectangle "
+                "instead of FRONT_BOARD_OPENING_POLYGON")
+
+        # 2. Retired holes that still land on real board MATERIAL: the current
+        #    board has no hole there. A retired hole inside the U cut is skipped -
+        #    it is void on the current board anyway, so the probe proves nothing.
+        retired = ([("LCD", h) for h in self.layout["lcdMountHoles"]]
+                   + [("old standoff", h) for h in self.layout["frontBoardHoles"]]
+                   + [("bracket", {"x": bx, "y": self.layout["bracket"]["mountY"]})
+                      for bx in self.layout["bracket"]["mountX"]])
+        on_material = [(kind, h) for kind, h in retired
+                       if abs(h["x"]) < front["width"] / 2
+                       and abs(h["y"]) < front["height"] / 2
+                       and not self._inside_u_cut(h["x"], h["y"])]
+        self.assertTrue(on_material, "no retired hole lies on board material, so this "
+                                     "test could not see a retired hole at all")
+        for kind, hole in on_material:
+            if not self._is_material(body, hole["x"], hole["y"], z):
+                problems.append(
+                    f"a retired {kind} hole is cut at ({hole['x']:.2f}, {hole['y']:.2f}) "
+                    "but the current front board has no hole there")
+
+        # 3. The holes the current board DOES drill, so both must be VOID: the
+        #    four front-rear spacers and the four PANEL_MOUNT_POINTS of the frame.
+        for label, hole in ([("front-rear spacer", h) for h in self.layout["frontRearMount"]]
+                            + [("panel-mount frame", h)
+                               for h in self.layout["panelMountPoints"]]):
+            if self._is_material(body, hole["x"], hole["y"], z):
+                problems.append(
+                    f"the real {label} hole at ({hole['x']:.2f}, {hole['y']:.2f}) is not "
+                    "drilled")
+
+        self.assertFalse(problems, "front-board mockup is not the current PCB:\n  - "
+                         + "\n  - ".join(problems))
+
+    @unittest.expectedFailure
+    def test_the_rear_board_mockup_is_the_current_pcb(self) -> None:
+        """Drill the four LCD carrier holes and the real spacers."""
+        body = self.solids["REAR_BOARD_PROVISIONAL_Z"]
+        rear = self.layout["rearPcb"]
+        z = self.layout["provisionalZ"]["rearBoardFront"] + rear["thickness"] / 2
+        problems: list[str] = []
+
+        # The four Ø2.7 mm LCD carrier holes: the current board is VOID at each.
+        for hole in self.layout["lcdMountHoles"]:
+            if self._is_material(body, hole["x"], hole["y"], z):
+                problems.append(
+                    f"the LCD carrier hole at ({hole['x']:.2f}, {hole['y']:.2f}) is "
+                    "MATERIAL: the mockup does not drill it")
+
+        # The holes the current board DOES drill, so both must be VOID.
+        for hole in self.layout["frontRearMount"]:
+            if self._is_material(body, hole["x"], hole["y"], z):
+                problems.append(
+                    f"the front-rear spacer hole at ({hole['x']:.2f}, {hole['y']:.2f}) is "
+                    "not drilled")
+
+        self.assertFalse(problems, "rear-board mockup is not the current PCB:\n  - "
+                         + "\n  - ".join(problems))
 
 
 class EnoughPlaceholdersEnvelopeModeTest(unittest.TestCase):

@@ -11,7 +11,7 @@ import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 
 const statusEl = document.getElementById("status")
-const readout = { files: [], meshes: 0, status: "starting", error: null }
+const readout = { files: [], meshes: 0, status: "starting", error: null, silk: null }
 const modelGroups = []
 window.__viewer = readout
 window.__scene = { camera: null, controls: null, scene: null }
@@ -45,14 +45,22 @@ fill.position.set(-220, -120, -160)
 scene.add(fill)
 
 const grid = new THREE.GridHelper(400, 40, 0x2a2f37, 0x232833)
+// Floor, 6 mm under the 128.5 mm panel's bottom edge: at scene y 0 the grid and
+// the axes would slice through the middle of the panel and draw over its face.
+grid.position.y = -70
 scene.add(grid)
-scene.add(new THREE.AxesHelper(40))
+const axes = new THREE.AxesHelper(40)
+// On the floor AND clear of the panel footprint (x -100; the panel spans +-76):
+// an axes line on scene z 0 is coplanar with the panel front face, so it paints
+// straight over the silkscreen wherever the two overlap.
+axes.position.set(-100, grid.position.y, 0)
+scene.add(axes)
 
-// The stack runs along SCENE Y (= CAD z = panel z, panel front at 0). The plane
-// used to be (0,0,-1), i.e. scene Z, which is the board's own y axis: it sliced
-// the boards lengthways instead of peeling the stack, and its -1 default hid
-// everything. Keep panel z <= cut, and start above the whole stack.
-const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6)
+// The stack runs along SCENE Z: the panel front face is at scene z 0 and the
+// stack recedes to negative z, so a camera on +z looks at the panel face. Keep
+// panel z <= cut, which is scene z >= -cut, so the constant is the cut itself
+// and the default 1e6 leaves everything visible.
+const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 1e6)
 renderer.clippingPlanes = [clipPlane]
 const zcut = document.getElementById("zcut")
 const applyCut = () => {
@@ -62,8 +70,17 @@ const applyCut = () => {
 }
 zcut.addEventListener("input", applyCut)
 
-// CAD is Z-up in millimetres; three is Y-up. x->x, y->-z, z->y.
-const toScene = (x, y, z) => new THREE.Vector3(x, z, -y)
+// STEP coordinates are millimetres in the PANEL frame: x right, y up, z
+// REARWARD (into the rack, away from the operator). That frame is left-handed
+// against a viewer whose +z points at you, so loading x/y/z straight into three
+// is what made every front-face layout read mirrored from the rear. Mapping
+// z -> -z turns it into the viewer's right-handed frame: the panel face lands
+// at scene z 0, the stack recedes to -z, and a camera on +z shows screen-right
+// = +x and screen-up = +y, i.e. the same way tscircuit's 3D view draws it.
+// A model's own STEP z, though, is NOT the panel frame: it runs from the
+// board's mid-plane out of its panel-facing side, i.e. the other way round, so
+// the manifest negates it again (scaleZ = -1) and shifts it (positionZ).
+const toScene = (x, y, z) => new THREE.Vector3(x, y, -z)
 
 // ------------------------------------------------------------------ STEP load
 const PALETTE = [0x8fb7d6, 0xd6b98f, 0x9fd6a4, 0xd69fb7, 0xc7c7d6, 0xd6d08f, 0x8fd6d0]
@@ -134,20 +151,83 @@ function buildCarrier(spec) {
     color: 0xb8b0a0, metalness: 0.1, roughness: 0.8,
   })
   for (const boss of spec.bosses) {
-    // boss is in board coordinates; scene x = board x, scene z = -board y
+    // boss is in board coordinates; scene x/y = board x/y, and the board's z
+    // (rearward) is scene -z. The spacers therefore stand along SCENE Z, in the
+    // gap behind the module and in front of the rear board's own face.
     const x = boss.x + spec.offsetX
-    const z = -(boss.y + spec.offsetY)
+    const y = boss.y + spec.offsetY
     const h = spec.rearBoardFront - spec.moduleRear
     const spacer = new THREE.Mesh(new THREE.CylinderGeometry(CARRIER_D / 2, CARRIER_D / 2, h, 20), material)
-    spacer.position.set(x, spec.moduleRear + h / 2, z)
+    spacer.rotation.x = Math.PI / 2 // cylinder axis Y -> Z
+    spacer.position.set(x, y, -(spec.moduleRear + h / 2))
     group.add(spacer)
     const pad = new THREE.Mesh(new THREE.CylinderGeometry(CARRIER_PAD_D / 2, CARRIER_PAD_D / 2, CARRIER_PAD_Z, 20), material)
-    pad.position.set(x, spec.rearBoardFront - CARRIER_PAD_Z / 2, z)
+    pad.rotation.x = Math.PI / 2
+    pad.position.set(x, y, -(spec.rearBoardFront - CARRIER_PAD_Z / 2))
     group.add(pad)
   }
   group.visible = true
   scene.add(group)
   modelGroups.push({ group, model: { label: "placeholder: display carrier + 4 spacers" } })
+}
+
+// --------------------------------------------------------------- panel silk
+// A STEP carries surfaces, not printed ink, so the panel's silkscreen exists
+// only in tscircuit's board data. `make mechanical-steps` exports the panel's
+// top-layer PCB SVG alongside the STEPs and it is mapped here as a TEXTURE:
+// JLCPCB's silkscreen is flat ink on the FR-4, so extruding it into geometry
+// would draw a part that is not on the panel. The plane sits a twentieth of a
+// millimetre in FRONT of the panel face (scene z 0, which is where the panel
+// STEP's front surface is by construction) and writes no depth, so it cannot
+// z-fight its own substrate.
+const SILK_STANDOFF = 0.05 // mm in front of the panel front face
+const SILK_PX_PER_MM = 12 // 2.6x the exported drawing (4.6 px/mm), so 5 mm text stays crisp
+
+function keepSilkOnly(svg) {
+  // The export draws the board edge, the cutouts and the drills too; the STEP
+  // already carries those as real holes, and only ink belongs on the panel face.
+  const board = svg.querySelector("[data-type='pcb_boundary']")
+  const crop = board
+    ? ["x", "y", "width", "height"].map((a) => Number(board.getAttribute(a)))
+    : [0, 0, Number(svg.getAttribute("width")), Number(svg.getAttribute("height"))]
+  for (const el of svg.querySelectorAll("[data-type]")) {
+    if (!el.getAttribute("data-type").startsWith("pcb_silkscreen_")) el.remove()
+  }
+  return crop
+}
+
+async function buildSilk(spec, base) {
+  const response = await fetch(new URL(spec.url, base), { cache: "no-store" })
+  if (!response.ok) throw new Error(`${spec.url}: HTTP ${response.status}`)
+  // The exported SVG embeds its own TscircuitAlphabet font as a data URL, so the
+  // raster keeps the drawn glyphs instead of the browser's fallback face.
+  const svg = new DOMParser().parseFromString(await response.text(), "image/svg+xml").documentElement
+  const [cx, cy, cw, ch] = keepSilkOnly(svg)
+  const image = new Image()
+  image.src = "data:image/svg+xml;charset=utf-8," +
+    encodeURIComponent(new XMLSerializer().serializeToString(svg))
+  await image.decode()
+  const canvas = document.createElement("canvas")
+  canvas.width = Math.round(spec.width * SILK_PX_PER_MM)
+  canvas.height = Math.round(spec.height * SILK_PX_PER_MM)
+  canvas.getContext("2d").drawImage(image, cx, cy, cw, ch, 0, 0, canvas.width, canvas.height)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.anisotropy = renderer.capabilities.getMaxAnisotropy()
+  const plane = new THREE.Mesh(
+    // The panel is centred on panel x = y = 0; CanvasTexture flips the image
+    // rows (flipY), so the artwork's top row lands on the plane's +y side.
+    new THREE.PlaneGeometry(spec.width, spec.height),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }),
+  )
+  const group = new THREE.Group()
+  group.name = "panel silkscreen (texture)"
+  group.position.z = SILK_STANDOFF
+  group.add(plane)
+  scene.add(group)
+  modelGroups.push({ group, model: { label: "silk (panel artwork, texture)" } })
+  readout.silk = `panel silkscreen texture, ${spec.width} x ${spec.height} mm`
 }
 
 // ------------------------------------------------------------- model toggles
@@ -211,24 +291,24 @@ async function main() {
     const url = new URL(model.url, modelBase)
     const { group, box, materials, meshes } = await loadStep(url.href, index)
     // Placement comes from the manifest, computed from mechanical/layout.json:
-    // the export's +z points at the panel front while the panel frame counts z
-    // rearward, so z is inverted and shifted until the board's parts-side face
-    // lands on its documented panel z. Without this every model sat at its own
-    // origin, which is why six boards used to overlap.
+    // the export's +z points out of the board's panel-facing side, the opposite
+    // of the panel frame, so z is negated once more and shifted until that face
+    // lands at its documented panel z (scene z = -panel z). Without this every
+    // model sat at its own origin, which is why six boards used to overlap.
     group.scale.x = model.scaleX ?? 1
-    group.scale.y = model.scaleY ?? 1
-    group.position.y = model.positionY ?? 0
+    group.scale.z = model.scaleZ ?? 1
+    group.position.z = model.positionZ ?? 0
     if (model.align) {
       // Own-frame model: align on the loaded bbox. Centre it on the display
-      // position and park its glass face on the panel-front plane, so the
-      // screen points at the panel and the module reaches displayRearMost.
-      // `scale.y` is applied first, so the scene-space bbox is already final.
+      // position and park its screen face on the panel-front plane (scene z 0),
+      // so the screen points at the panel and the module reaches displayRearMost.
+      // `scale.z` is applied first, so the scene-space bbox is already final.
       group.updateMatrixWorld(true)
       const b = new THREE.Box3().setFromObject(group)
       const c = b.getCenter(new THREE.Vector3())
       group.position.x += model.align.x - c.x
-      group.position.z += -model.align.y - c.z
-      group.position.y += model.align.frontSceneY - b.min.y
+      group.position.y += model.align.y - c.y
+      group.position.z += model.align.frontSceneZ - b.max.z
     }
     group.visible = model.visible !== false
     modelGroups.push({ group, model })
@@ -254,8 +334,26 @@ async function main() {
   }
 
   readout.meshes = loaded
+  if (manifest.silk) {
+    try {
+      await buildSilk(manifest.silk, modelBase)
+    } catch (error) {
+      // The silk is an aid drawn on top of the mechanical models: a missing
+      // export must not blank the stack, so say what is missing and carry on.
+      readout.silk = `unavailable: ${error.message}`
+      console.warn(`panel silkscreen ${readout.silk}`)
+    }
+  }
   buildCarrier(manifest.carrier)
   renderToggles()
+  if (!modelGroups.some((g) => g.group.name === "panel silkscreen (texture)")) {
+    // No silk block in the manifest, or its SVG did not load. Say so rather than
+    // let a panel with no printing read as "this panel has no silkscreen".
+    const hint = document.createElement("span")
+    hint.className = "hint"
+    hint.textContent = "silk: none loaded (make mechanical-steps)"
+    document.getElementById("models").appendChild(hint)
+  }
   fitCamera(union)
   window.__scene.camera = camera
   window.__scene.scene = scene
@@ -271,7 +369,14 @@ function fitCamera(box) {
   const size = box.getSize(new THREE.Vector3())
   const radius = Math.max(size.x, size.y, size.z)
   controls.target.copy(centre)
-  camera.position.copy(centre).add(new THREE.Vector3(radius * 0.9, radius * 0.75, radius * 1.1))
+  // Stand in FRONT of the panel (+z, because the stack recedes to -z) with the
+  // viewer's up along +y: the panel face is then what you see, unmirrored. The
+  // panel is 152 x 128.5 mm and the vertical field is 40 degrees, so the
+  // stand-off has to reach ~1.6 radii for the whole panel plus the stack behind
+  // it to stay in frame (0.97 radii framed the middle of the panel and nothing
+  // else; 1.3 still cut its top and bottom edges off).
+  camera.position.copy(centre).add(new THREE.Vector3(radius * 0.55, radius * 0.42, radius * 1.45))
+  camera.up.set(0, 1, 0)
   camera.near = radius / 200
   camera.far = radius * 40
   camera.updateProjectionMatrix()

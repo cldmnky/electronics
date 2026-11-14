@@ -45,6 +45,7 @@ class CanonicalDataTest(unittest.TestCase):
         for key in ("railHoles", "railHoleDiameter", "frontBoardHoles", "lcdMountHoles",
                     "displayBossPattern", "piBoard", "piProtrusion", "frontRearMount",
                     "mountHoleDiameter", "lcdCutoutOutline", "notchBounds", "bracket",
+                    "panelMountPoints", "panelStandoff",
                     "piPanel", "piPanelProvisionalDepth", "eurorackGoMaxModuleDepth"):
             self.assertIn(key, data, f"{key} is missing from mechanical/layout.json")
         self.assertEqual(data["railHoleDiameter"], 3.2)
@@ -74,20 +75,31 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertEqual(ys, [-24.5, 24.5])
 
     def test_the_canonical_panel_features_are_complete(self) -> None:
-        """20 apertures and 10 drills: every opening the panel board renders.
+        """20 apertures and 14 drills: every opening the panel board renders.
 
-        The drills are the six feedthrough screw holes plus the four RACK
-        fixings. The panel standoff holes (STAND_*) were removed with the rest of
-        the panel mounting, so PANEL_MOUNT_HOLES is the RACK set alone.
+        The drills are the six feedthrough screw holes, the four RACK fixings
+        and the four STAND_ panel-mount screws of the PANEL_MOUNT_POINTS frame.
         """
         data = layout()
         apertures = data["panelApertures"]
         drills = data["panelDrills"]
         self.assertEqual(len(apertures), 20)
-        self.assertEqual(len(drills), 10)
-        self.assertEqual(len(data["panelMountHoles"]), 4)
+        self.assertEqual(len(drills), 14)
+        self.assertEqual(len(data["panelMountHoles"]), 8)
         self.assertEqual([h["name"] for h in data["panelMountHoles"]],
-                         ["RACK_1", "RACK_2", "RACK_3", "RACK_4"])
+                         ["RACK_1", "RACK_2", "RACK_3", "RACK_4",
+                          "STAND_1", "STAND_2", "STAND_3", "STAND_4"])
+        # The four panel-mount points are one frame, and both boards drill them.
+        points = [(p["x"], p["y"]) for p in data["panelMountPoints"]]
+        self.assertEqual(points, [(-71.5, -52), (71.5, -52), (-71.5, 52), (71.5, 52)])
+        self.assertEqual([[h["x"], h["y"]] for h in data["panelMountHoles"][4:]],
+                         [[x, y] for x, y in points])
+        standoff = data["panelStandoff"]
+        self.assertEqual(standoff["thread"], "M3")
+        self.assertAlmostEqual(standoff["length"],
+                               data["provisionalZ"]["frontBoardTop"]
+                               - data["panel"]["thickness"], places=6)
+        self.assertEqual(standoff["holeDiameter"], 3.2)
         names = [a["name"] for a in apertures]
         self.assertEqual(names[0], "LCD_APERTURE")
         self.assertEqual(len(set(names)), len(names), "aperture names must be unique")
@@ -98,7 +110,7 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertEqual([d["name"] for d in drills],
                          ["USB_0_-1", "USB_0_1", "USB_1_-1", "USB_1_1",
                           "USB_2_-1", "USB_2_1", "RACK_1", "RACK_2", "RACK_3",
-                          "RACK_4"])
+                          "RACK_4", "STAND_1", "STAND_2", "STAND_3", "STAND_4"])
 
     def test_the_canonical_panel_diameters_are_the_documented_ones(self) -> None:
         """Diameters come from PANEL_CUTOUTS; nothing is re-derived here."""
@@ -110,9 +122,8 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertEqual(by_name["REC LED"]["radius"], 1.3)      # Ø2.6 provisional PGN25L165
         self.assertEqual(by_name["VALUE ENCODER"]["radius"], 3.6)  # 7.2 mm bushing
         self.assertEqual(by_name["MIDI IN 1 JACK"]["radius"], 3.1)  # 6.2 mm barrel
-        # The feedthrough screws: 3.2 mm for the USB-C slot and the RACK holes,
-        # 3.5 mm for the two Adafruit 908 flanges. The 2.7 mm STAND_ drills went
-        # with the panel standoffs.
+        # The feedthrough screws: 3.2 mm for the USB-C slot, the RACK holes and
+        # the STAND_ panel-mount frame, 3.5 mm for the two Adafruit 908 flanges.
         self.assertEqual({d["diameter"] for d in data["panelDrills"]}, {3.2, 3.5})
 
     def test_the_three_led_holes_are_2_6_and_keep_their_positions(self) -> None:
@@ -782,6 +793,82 @@ class DisplayModelSeparationTest(unittest.TestCase):
                             / "hardware-acceptance.json").read_text())
         self.assertEqual(len(state["items"]), 31)
 
+    def test_the_panel_mount_frame_is_recorded_against_the_bracket(self) -> None:
+        """A plan overlap the board separates is recorded, not approved."""
+        block = sg.assumptions_document(layout())["panel_mount_frame"]
+        self.assertTrue(block["status"].startswith("UNVERIFIED"))
+        self.assertEqual(len(block["standoffs"]), 4)
+        self.assertAlmostEqual(block["z_separation_mm"], 1.6, places=6)
+        # The standoff plane ends where the bracket plane starts: the board only.
+        self.assertLessEqual(block["z_mm"]["standoff"][1], block["z_mm"]["bracket"][0])
+        text = " ".join(block["not_claimed"]).lower()
+        for word in ("screw", "washer", "nut", "printed"):
+            self.assertIn(word, text)
+        self.assertIn("panel-mount screw", " ".join(
+            sg.assumptions_document(layout())["unknowns"]).lower())
+
+    def test_the_board_mockup_warning_is_published(self) -> None:
+        """The board-mockup defect is DISCLOSED in the checklist and metadata.
+
+        No CAD kernel is needed: the warning lives in the pure data, so it cannot
+        be skipped away. The panel mockup and the light-pipe gauge stay distinct
+        from the two board mockups that must not be printed.
+        """
+        report = sg.board_mockup_report()
+        self.assertEqual(report["status"], sg.BOARD_MOCKUP_DISCLAIMER)
+        self.assertEqual(sorted(report["files"]),
+                         ["mockup-front-board.stl", "mockup-rear-board.stl"])
+        self.assertTrue(report["repair"])
+        checklist = sg.print_checklist_markdown()
+        self.assertIn(sg.BOARD_MOCKUP_DISCLAIMER, checklist)
+        for file_name, defects in report["files"].items():
+            self.assertIn(file_name, checklist)
+            for defect in defects:
+                self.assertIn(defect, checklist)
+        # The generated metadata carries the same block and the same words.
+        document = sg.assumptions_document(layout())
+        block = document["board_mockups"]
+        self.assertEqual(block["status"], sg.BOARD_MOCKUP_DISCLAIMER)
+        self.assertEqual(sorted(block["files"]), sorted(report["files"]))
+        legend = {entry["name"]: entry["status"] for entry in document["body_legend"]}
+        for body in ("FRONT_BOARD_PROVISIONAL_Z", "REAR_BOARD_PROVISIONAL_Z"):
+            self.assertIn("DO NOT PRINT", legend[body])
+            self.assertIn("DO NOT USE FOR FIT", legend[body])
+        # The panel mockup and the light-pipe gauge stay usable and distinct.
+        still = " ".join(block["still_usable"])
+        self.assertIn("mockup-panel.stl", still)
+        self.assertIn("light-pipe-reach-gauge.stl", still)
+        self.assertNotIn("mockup-panel.stl", block["files"])
+        self.assertNotIn("light-pipe-reach-gauge.stl", block["files"])
+        self.assertNotIn("mockup-panel.stl", legend)
+        # The old checklist instruction to lay the front mockup over the display
+        # module is withdrawn: it would "check" a board that does not exist.
+        self.assertNotIn("Lay the front-board mockup", checklist)
+
+    def test_the_print_checklist_states_the_real_acceptance_count(self) -> None:
+        """The checklist count is READ from hardware-acceptance.json, never typed.
+
+        A hard-coded number drifts: the checklist said 28 while the state file
+        held 31. The checklist is a generated document, so its status line must
+        name the same number of items the gate does.
+        """
+        state = json.loads((Path(__file__).resolve().parent.parent
+                            / "hardware-acceptance.json").read_text())
+        total = sg.acceptance_item_count()
+        pending = sg.acceptance_pending_count()
+        self.assertEqual(total, len(state["items"]))
+        self.assertEqual(pending, sum(1 for item in state["items"]
+                                     if str(item.get("status")) != "accepted"))
+        checklist = sg.print_checklist_markdown()
+        self.assertIn(f"All {total} acceptance items stay pending", checklist)
+        self.assertNotIn("All 28", checklist)
+        # The frame's unmeasured screw/standoff/bracket fit stays a checklist item.
+        self.assertIn("PANEL_STANDOFF", checklist)
+        self.assertIn("bracket", checklist)
+        # A moved or missing state file is an error, not a smaller number.
+        with self.assertRaises(sg.GeometryError):
+            sg.acceptance_item_count(Path("/nonexistent/hardware-acceptance.json"))
+
     def test_the_board_face_convention_is_recorded_as_pending(self) -> None:
         block = sg.assumptions_document(layout())["board_face_convention"]
         self.assertFalse(block["implemented"])
@@ -948,7 +1035,7 @@ class AssumptionsDocumentTest(unittest.TestCase):
         self.assertEqual(block["status"], "incomplete")
         self.assertIsNone(block["optical_gap_mm"])
         self.assertAlmostEqual(block["nominal_tip_z_mm"], 16.5, places=6)
-        # 10.00 mm provisional board face - 16.5 mm shaft: the tip is 6.50 mm
+        # 10.60 mm provisional board face - 16.5 mm shaft: the tip is 5.90 mm
         # BEHIND the board plane, so the selected part is too long for this stack
         self.assertAlmostEqual(block["nominal_tip_to_board_plane_mm"], -5.9, places=6)
         self.assertLess(block["nominal_tip_to_board_plane_mm"], 0.0)
@@ -972,7 +1059,8 @@ class AssumptionsDocumentTest(unittest.TestCase):
         text = sg.print_checklist_markdown()
         self.assertIn("100.00 mm", text)
         self.assertIn("PROVISIONAL", text)
-        self.assertIn("28", text)
+        # The pending-item count is the state file's, not a typed number.
+        self.assertIn(str(sg.acceptance_item_count()), text)
         low = text.lower()
         for claim in ("is approved", "approved for", "approved to print", "fit approval "):
             self.assertNotIn(claim, low.replace("not a fit approval", ""))

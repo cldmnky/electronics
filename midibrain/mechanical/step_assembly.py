@@ -13,10 +13,23 @@ holds files it does not write):
 
     midibrain-step-assembly.step   named solids: panel, front board, rear board,
                                    display (vendor STEP when available), flange
-                                   and FPC envelopes, optional USB-C candidate
-    mockup-panel.stl               1:1 panel mockup
-    mockup-front-board.stl         1:1 front/UI board mockup
-    mockup-rear-board.stl          1:1 rear/base board mockup
+                                   and FPC envelopes, optional USB-C candidate.
+                                   The front and rear board solids are STALE -
+                                   see the board mockups below
+    mockup-panel.stl               1:1 panel mockup (its 20 apertures and 14
+                                   drills are validated against the canonical
+                                   feature plan: still a print check, not a fit)
+    mockup-front-board.stl         DO NOT PRINT / DO NOT USE FOR FIT - its cuts are
+                                   not the current PCB: an obsolete notch
+                                   rectangle instead of the U opening, four Ø4.3 mm
+                                   holes at retired LCD positions, the four old
+                                   standoff holes (-61,-53) (61,-53) (-61,53)
+                                   (57,41) and the two bracket holes (-66.5,53)
+                                   (55,53) that this board does not have (raised by
+                                   the 2026-11-14 review; see docs/TODO.md)
+    mockup-rear-board.stl          DO NOT PRINT / DO NOT USE FOR FIT - it lacks the
+                                   four Ø2.7 mm LCD carrier holes the current board
+                                   carries (same review)
     scale-check-100mm.stl          100.00 x 10.00 x 3.00 mm printer scale bar
     midibrain-pi-panel.step        the 20HP Pi mounting panel and a placeholder
                                    Pi 5 board behind it (its own frame)
@@ -74,6 +87,9 @@ from pathlib import Path
 from bracket_geometry import GeometryError, load_layout
 from light_pipe_reach import ReachInputs, compute_reach
 from step_geometry import (
+    BOARD_MOCKUP_DEFECTS,
+    BOARD_MOCKUP_DISCLAIMER,
+    BOARD_MOCKUP_REPAIR,
     DISPLAY_MOUNT_PLACEHOLDER,
     DISPLAY_ORIENTATION,
     VENDOR_DISPLAY_MODEL,
@@ -525,19 +541,21 @@ def boss_at(shape, axis: tuple[float, float]) -> tuple[float, float, float, floa
 
 
 # ---------------------------------------------------------------------------
-# Canonical panel features: 20 apertures + 10 drills, checked by IDENTITY
+# Canonical panel features: 20 apertures + 14 drills, checked by IDENTITY
 # ---------------------------------------------------------------------------
 # The panel model cuts exactly the features the panel BOARD emits, in the same
-# order: PANEL_APERTURES (20) and PANEL_DRILLS (10 = the six feedthrough screw
-# holes plus the four RACK fixings). The two tuples below are the EXPECTED
-# IDENTITIES, written out rather than counted, so a dropped, duplicated, renamed
-# or re-shaped feature fails here instead of quietly shrinking the model.
+# order: PANEL_APERTURES (20) and PANEL_DRILLS (14 = the six feedthrough screw
+# holes, the four RACK fixings and the four STAND_ panel-mount screws). The two
+# tuples below are the EXPECTED IDENTITIES, written out rather than counted, so a
+# dropped, duplicated, renamed or re-shaped feature fails here instead of quietly
+# shrinking the model.
 #
-# 2026-11-14: the four STAND_ standoff drills are gone from the canonical data -
-# the owner removed the panel standoffs together with the board mounting holes -
-# so 20 + 10 = 30 features is the current set. The earlier 20 + 14 = 34 count
-# describes a panel that no longer exists. This is an identity change, not a
-# tolerance: nothing here was loosened to absorb it.
+# The four STAND_ drills are the PANEL_MOUNT_POINTS frame at (+-71.5, +-52) mm:
+# M3 clearance through BOTH the panel and the front board, carried by the
+# adjustable PANEL_STANDOFF. They were dropped together with the board mounting
+# holes on 2026-11-13 and came back with the four-point frame decision, so
+# 20 + 14 = 34 features is the current set. Losing one of them again is an
+# identity change, not a tolerance: nothing here may be loosened to absorb it.
 #
 # The order is part of the identity: panel.circuit.tsx emits these features in
 # this sequence, and lib/panel-cutouts.test.ts compares the built board with the
@@ -554,6 +572,7 @@ PANEL_APERTURE_IDENTITIES: tuple[str, ...] = (
 PANEL_DRILL_IDENTITIES: tuple[str, ...] = (
     "USB_0_-1", "USB_0_1", "USB_1_-1", "USB_1_1", "USB_2_-1", "USB_2_1",
     "RACK_1", "RACK_2", "RACK_3", "RACK_4",
+    "STAND_1", "STAND_2", "STAND_3", "STAND_4",
 )
 # The seven rectangular B3F-4055 openings: one geometry, seven switches.
 PANEL_BUTTON_IDENTITIES: tuple[str, ...] = (
@@ -707,6 +726,26 @@ def panel_feature_plan(layout: dict) -> dict:
             "panelDrills is not the apertures' own drills plus panelMountHoles: "
             f"{sorted(key(d) for d in drills)} != "
             f"{sorted(key(d) for d in derived_drills)}")
+
+    # Each mount drill must be the point it is drilled from: the four STAND_
+    # drills are the PANEL_MOUNT_POINTS frame the front board and the standoffs
+    # are also placed at, and the four RACK_ drills are the RAIL_HOLES. Identity
+    # and order cannot see a move, so position is compared here: a pair drifted
+    # apart in the export would drill the panel somewhere the standoff is not.
+    def positions(entries: list[dict]) -> list[tuple]:
+        return [(round(float(e["x"]), 6), round(float(e["y"]), 6))
+                for e in entries]
+
+    stand_drills = [d for d in drills if str(d["name"]).startswith("STAND_")]
+    rack_drills = [d for d in drills if str(d["name"]).startswith("RACK_")]
+    if positions(stand_drills) != positions(list(layout["panelMountPoints"])):
+        raise GeometryError(
+            "the STAND_ panel drills are not the PANEL_MOUNT_POINTS frame: "
+            f"{positions(stand_drills)} != {positions(list(layout['panelMountPoints']))}")
+    if positions(rack_drills) != positions(list(layout["railHoles"])):
+        raise GeometryError(
+            "the RACK_ panel drills are not the RAIL_HOLES: "
+            f"{positions(rack_drills)} != {positions(list(layout['railHoles']))}")
 
     half_w = float(layout["panel"]["width"]) / 2
     half_h = float(layout["panel"]["height"]) / 2
@@ -884,6 +923,10 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
     holes += [(f"bracket mount {i}", {"x": x, "y": layout["bracket"]["mountY"]},
                layout["bracket"]["mountHoleDiameter"])
               for i, x in enumerate(layout["bracket"]["mountX"])]
+    # The panel-mount frame: the SAME points the panel drills, at the M3
+    # clearance the standoff carries (derive, never restate).
+    holes += [(f"panel-mount hole {i}", h, layout["panelStandoff"]["holeDiameter"])
+              for i, h in enumerate(layout["panelMountPoints"])]
     for label, hole, diameter in holes:
         tool = cylinder(hole["x"], hole["y"], e.z.lo - 1.0, e.z.hi + 1.0, diameter / 2)
         if front_wp.val().intersect(tool.val()).Volume() <= VOLUME_EPS:
@@ -892,7 +935,71 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
     if front_wp.solids().size() != 1:
         raise GeometryError(f"the front board is {front_wp.solids().size()} solids")
     solids["FRONT_BOARD_PROVISIONAL_Z"] = front_wp
-    meta["FRONT_BOARD_PROVISIONAL_Z"] = {"features": ["top relief notch"] + [h[0] for h in holes]}
+    # These are the cuts this script APPLIES, not the current PCB's cuts. The
+    # block below states the difference so no reader can mistake the solid for
+    # the board; the repair is recorded in docs/TODO.md and deliberately not
+    # attempted here (a partial repair would look current and not be).
+    meta["FRONT_BOARD_PROVISIONAL_Z"] = {
+        "status": BOARD_MOCKUP_DISCLAIMER,
+        "cuts_applied": [f"obsolete notch rectangle (notchBounds x {n['left']:g}...{n['right']:g}, "
+                         f"y {n['bottom']:g}...{n['top']:g})"] + [h[0] for h in holes],
+        "not_the_current_pcb": list(BOARD_MOCKUP_DEFECTS["mockup-front-board.stl"]),
+        "repair": list(BOARD_MOCKUP_REPAIR),
+    }
+
+    # ---- panel mount standoffs (M3, adjustable) -------------------------
+    # Four annuli between the panel REAR face and the front-board TOP face, at
+    # the PANEL_MOUNT_POINTS both boards are drilled at. Every number comes from
+    # the exported PANEL_STANDOFF block; the drawn Z span is checked against its
+    # length so the model cannot drift from the layout. These are ENVELOPES: the
+    # panel plane is set by the jack bushings, so nothing here is a fit.
+    standoff = layout["panelStandoff"]
+    z_rear = float(layout["panel"]["thickness"])     # panel rear face
+    z_top = float(pz["frontBoardTop"])               # front-board top face
+    if abs((z_top - z_rear) - float(standoff["length"])) > 1e-6:
+        raise GeometryError(
+            f"PANEL_STANDOFF.length {standoff['length']} is not the drawn "
+            f"{z_top - z_rear:.2f} mm panel-rear -> board-top span")
+    od = float(standoff["bodyDiameter"])
+    od_hole = float(standoff["holeDiameter"])
+    if od <= od_hole:
+        raise GeometryError(
+            f"standoff OD {od} does not exceed the M3 clearance {od_hole}")
+    mount_meta = []
+    for index, point in enumerate(layout["panelMountPoints"], start=1):
+        name = f"PANEL_STANDOFF_{index}"
+        spacer = (cq.Workplane("XY").workplane(offset=z_rear)
+                  .center(float(point["x"]), float(point["y"]))
+                  .circle(od / 2).circle(od_hole / 2)
+                  .extrude(z_top - z_rear))
+        intrusions = {
+            "panel_mm3": round(spacer.val().intersect(panel_wp.val()).Volume(), 6),
+            "board_mm3": round(spacer.val().intersect(front_wp.val()).Volume(), 6),
+        }
+        if max(intrusions.values()) > INTRUSION_EPS_MM3:
+            raise GeometryError(f"{name} intrudes: {intrusions}")
+        solids[name] = spacer
+        mount_meta.append({
+            "name": name,
+            "xy_mm": [point["x"], point["y"]],
+            "z_mm": [z_rear, z_top],
+            "length_mm": round(z_top - z_rear, 3),
+            "outer_diameter_mm": od,
+            "inner_diameter_mm": od_hole,
+            "intrusion_volume_mm3": intrusions,
+        })
+    meta["PANEL_STANDOFFS"] = {
+        "kind": "M3 ADJUSTABLE STANDOFF ENVELOPE, non-approved",
+        "count": len(mount_meta),
+        "span_mm": [z_rear, z_top],
+        "standoffs": mount_meta,
+        "panel_plane_datum": standoff["panelPlaneDatum"],
+        "not_claimed": [
+            "a part, part number or supplier",
+            "a measured jack-bushing gap (the 9.00 mm is a nominal)",
+            "thread engagement, torque or assembly order",
+        ],
+    }
 
     # ---- rear board ---------------------------------------------------
     e = env["REAR_BOARD_PROVISIONAL_Z"]
@@ -906,8 +1013,13 @@ def build(cq, layout: dict, display_step: Path | None, include_usbc: bool) -> di
         rear_wp = rear_wp.cut(tool)
     solids["REAR_BOARD_PROVISIONAL_Z"] = rear_wp
     meta["REAR_BOARD_PROVISIONAL_Z"] = {
-        "features": [h[0] for h in rear_holes],
-        "note": f"Z from PROVISIONAL_Z plus the candidate {depth['frontToRearGap']:.2f} mm gap",
+        "status": BOARD_MOCKUP_DISCLAIMER,
+        "cuts_applied": [h[0] for h in rear_holes],
+        "not_the_current_pcb": list(BOARD_MOCKUP_DEFECTS["mockup-rear-board.stl"]),
+        "repair": list(BOARD_MOCKUP_REPAIR),
+        "note": (f"Z from PROVISIONAL_Z plus the candidate "
+                 f"{depth['frontToRearGap']:.2f} mm gap; the slab outline and Z are "
+                 "current, the CUTS are not"),
     }
 
     # ---- display ------------------------------------------------------
@@ -1417,6 +1529,13 @@ def main(argv: list[str] | None = None) -> int:
           f"drawing-derived holes within {pi_panel['checks']['worst_hole_offset_mm']:.4f} mm")
     for file_name in [STEP_NAME, PI_PANEL_STEP] + sorted(stls):
         print(f"  wrote {out / file_name}")
+    print(f"{BOARD_MOCKUP_DISCLAIMER}: {STL_FRONT} and {STL_REAR} are NOT the "
+          "current PCB geometry; their cuts do not follow the board sources.")
+    for file_name, defects in BOARD_MOCKUP_DEFECTS.items():
+        for defect in defects:
+            print(f"  {file_name}: {defect}")
+    print("  the panel mockup, the Pi panel mockup, the scale bar and the light-pipe "
+          "gauge are unaffected; see the print checklist and docs/TODO.md")
     print("pair verdicts:")
     for pair in document["pairs"]:
         print(f"  {pair['a']} vs {pair['b']}: {pair['status']}"

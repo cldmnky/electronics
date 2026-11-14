@@ -66,7 +66,11 @@ export const MOUNT_HOLE_DIAMETER = 2.7 as const
 // Keep derived millimetre values free of floating-point noise, so the exported
 // mechanical/layout.json and the tests compare exactly.
 const mm3 = (v: number) => Math.round(v * 1000) / 1000
-export const RAIL_HOLE_DIAMETER = 3.2 as const
+// One M3 clearance tool for every M3 the stack carries: the four Eurorack rail
+// screws and the four panel-to-front-board mount screws below. 3.2 mm is the
+// Doepfer rail-hole size (A100FP.gif) and clears an M3 screw in both parts.
+export const M3_CLEARANCE_HOLE_DIAMETER = 3.2 as const
+export const RAIL_HOLE_DIAMETER = M3_CLEARANCE_HOLE_DIAMETER
 
 // Panel-to-front-board standoffs (M2.5); the panel repeats these holes.
 // Moved out from (±60, ±50) to (±61, ±53): the old bottom-left position put an
@@ -87,14 +91,14 @@ export const FRONT_BOARD_HOLES = [
 // (top 38.4) and C5; bottom pair sits below the jack courtyards (bottom
 // −54.9) with 2.65 mm edge ligament. The top pair was moved ±44 → ±45 when the
 // display mounting switched to the SMTSO boss pattern: the new display hole
-// at (+40.15, +41.90) kept only 0.50 mm of FR-4 web to a (44, 43) spacer hole
+// at (+39.65, +41.90) kept only 0.50 mm of FR-4 web to a (44, 43) spacer hole
 // (centre distance 4.00 − half-diameters 3.50); at (±45, 43) the web is 1.47
 // mm. ±46 was tried first and REJECTED: it shifted the rear-board autorouter
 // to a via at (50.46, 6.56) violating the 0.20 mm copper-to-edge rule
 // (0.118 mm), a build failure; ±45 clears the router and keeps every web
 // (rear ligament 4.45 mm, C5 centre distance 5.83 mm, J_PWR pads 4.3 mm, the
 // same class as at ±44). The bottom pair stays at ±44: the bottom display
-// hole (+40.15, −19.90) is 32 mm above it and nothing else asked for the
+// hole (+39.65, −19.90) is 32 mm above it and nothing else asked for the
 // move. See docs/mechanical-stack.md for the residual: top positions need
 // bracket clearance holes at regen time.
 // 2026-11-13 (owner): the front-to-rear spacers are back, at positions chosen
@@ -135,6 +139,36 @@ export const FRONT_REAR_MOUNT = [
 export const RAIL_HOLES = [
   { x: -68.58, y: -61.25 }, { x: 68.58, y: -61.25 },
   { x: -68.58, y: 61.25 }, { x: 68.58, y: 61.25 },
+] as const
+
+// ---- Panel-to-front-board mount frame (owner decision 2026-11-13) ----
+// The panel is otherwise held only by the four MIDI jack bushings and the
+// encoder bushing, all of them in the LOWER half of a 152 x 128.5 mm panel whose
+// 107.22 x 68.87 mm display opening removes its stiffest region: the top edge
+// has no support at all and nothing resists rocking about the jack row. The
+// owner authorised 2 or 4 extra points and chose FOUR: two points on one
+// horizontal line leave that line as a free hinge, so the panel would still
+// rock top-for-bottom.
+//
+// FOUR points in ONE frame: two columns (one per front-board leg) and two rows,
+// symmetric in BOTH axes about the panel centre so the load path is obvious and
+// the panel artwork stays symmetric. X = +-71.5 is forced by the board: the
+// display opening starts at -63.25, so the left leg is only 11.75 mm wide
+// (-75...-63.25) and a column at |x| < 65 would sit in the cut. At +-71.5 the
+// hole edge keeps 1.9 mm to the board edge and 2.9 to the panel edge, and the
+// whole Ø5.5 standoff body (r 2.75) still lands on FR-4 (74.25 < 75).
+// Y = +-52 is the widest row pair that clears everything already there: the
+// RACK holes at (+-68.58, +-61.25) keep 6.50 mm, the four front-rear spacer
+// holes keep 3.05 mm (the (71.5, 46) hole is the closest, and it is on the
+// board's REAR side, so the two never share space), the jack apertures keep
+// 5.81, the LCD aperture keeps 9.07, the U opening keeps 6.65 and the board /
+// panel edges keep 1.9 / 2.9. The nearest component body is the J1 jack
+// courtyard at 4.5 mm (1.75 mm to the standoff body).
+// The panel drills are the STAND_ holes in PANEL_MOUNT_HOLES; the front board
+// drills them in front.circuit.tsx; PANEL_STANDOFF below is the Z side.
+export const PANEL_MOUNT_POINTS = [
+  { x: -71.5, y: -52 }, { x: 71.5, y: -52 },
+  { x: -71.5, y: 52 }, { x: 71.5, y: 52 },
 ] as const
 
 // ---- Raspberry Pi 5 board geometry (the Pi lives on the 20HP panel only) ----
@@ -339,8 +373,9 @@ export const DISPLAY_STANDOFFS = [
 // FITTED outer 4-hole pattern (99.30 x 61.80 centres, 3.35 / 3.10 edge
 // insets). The corner features that carry the module's own SMT standoffs sit
 // here; the reference STEP names them `SMTSO-M2_5-4ET`, i.e. these are the
-// ONLY M2.5 threads the module offers, so our spacers screw into them and the
-// front board carries its holes at these centres (LCD_MOUNT_HOLES).
+// ONLY M2.5 threads the module offers, so the carrier spacers screw into them.
+// The holes that carry them are on the REAR board - the module left the front
+// board on 2026-11-13 - at these centres (LCD_MOUNT_HOLES).
 export const DISPLAY_BOSS_PATTERN = [
   { x: mm3(3.35 - DISPLAY_VENDOR.outline.width / 2), y: mm3(DISPLAY_VENDOR.outline.height / 2 - 3.1) },
   { x: mm3(DISPLAY_VENDOR.outline.width - 3.35 - DISPLAY_VENDOR.outline.width / 2), y: mm3(DISPLAY_VENDOR.outline.height / 2 - 3.1) },
@@ -348,12 +383,20 @@ export const DISPLAY_BOSS_PATTERN = [
   { x: mm3(DISPLAY_VENDOR.outline.width - 3.35 - DISPLAY_VENDOR.outline.width / 2), y: mm3(DISPLAY_VENDOR.outline.height / 2 - 64.9) },
 ] as const // x -49.65 / +49.65, y +30.90 / -30.90
 
-// Centre (-9.5, 11). The horizontal position is fixed by owner decision D2:
-//   module left edge -62.5 vs FRONT_PCB left edge -64   -> 1.5 mm ligament
-//   module right edge +43.5 vs knob body left 45.75     -> 2.25 mm clear
-//   window left edge -63.11 vs M3 rail-hole edge -66.98 -> 3.87 mm in X ONLY,
-//   at a different Y, so not a web; the real 2D distance is in layout.test.ts
-//   window left edge to panel edge -76.0                -> 12.89 mm (30HP panel)
+// Centre (-10.0, 11). The module OUTLINE is the vendor's 106 x 68 mm, so its
+// edges are x -63 / +43 and y -23 / +45. The horizontal position is fixed by
+// owner decision D2 (2026-11-07) and moved -9.5 -> -10.0 on 2026-11-13 (see
+// DISPLAY_CONCEPT.x). Every distance below is a PROJECTION on the sourced
+// layout numbers - X or the 2D distance where the axes differ - and NOT a fit:
+// no module, knob or panel has been measured, so none of them is a clearance.
+//   module left edge  -63.00 vs FRONT_PCB left edge -75.00  -> 12.00 mm outboard (X);
+//     the board's own left leg is 11.75 mm wide (-75.00...-63.25), so the module
+//     edge sits 0.25 mm inside the opening it passes through
+//   module right edge +43.00 vs knob body left 45.75        ->  2.75 mm, and the same
+//     as a 2D distance because the knob centre (y 31) is inside the module's y band
+//   window left edge  -63.61 vs panel edge -76.00           -> 12.39 mm (X, 30HP panel)
+//   window left edge  -63.61 vs M3 rail-hole edge -66.98    ->  3.37 mm in X ONLY, at a
+//     different Y, so it is not a web; the real 2D distance is asserted in layout.test.ts
 // width/height are the MODULE OUTLINE (the physical envelope behind the panel).
 // innerWidth/innerHeight are the ACTIVE area; bezelWidth/bezelHeight are the
 // printed border; glassWidth/glassHeight are what the panel aperture follows.
@@ -390,9 +433,10 @@ export const DISPLAY_CONCEPT = {
 // is planeSeparation; minus the module's 4.00 mm boss projection it is the
 // nominal carrier spacer that trims the glass plane to the panel front. At the
 // 10.6 mm panel that is 13.35 and 9.35 mm (it was 12.75 and 8.75 at 10.0).
-// NOTHING IS DRAWN FOR THE CARRIER YET: there is no carrier STL, its two
-// outboard boss points (x -59.15) lie outside the rear board, and the spacer is
-// a nominal length, not a fit (acceptance item `display_dsi`, `first_article`).
+// NOTHING IS DRAWN FOR THE CARRIER YET: there is no carrier STL and no outline.
+// The reason is NOT geometry - the rear board is 148 mm wide (x +-74), so all
+// four boss points (x -59.65 / +39.65) are inside it - and the spacer is a
+// nominal length, not a fit (acceptance item `display_dsi`, `first_article`).
 export const REAR_BOARD_FRONT_Z = mm3(PANEL_TO_FRONT_BOARD_TOP + FRONT_PCB.thickness + INTERCONNECT_MECH.seatToSeat) // 23.40
 export const DISPLAY_PCB_REAR_Z = mm3(0 + DISPLAY_VENDOR.glassFrontToPcbRear) // 10.05
 export const DISPLAY_STANDOFF = {
@@ -422,9 +466,11 @@ export const DISPLAY_STACK = {
 // Display depth behind the display PCB, to the rear-most point: the boss ends.
 export const DISPLAY_BEHIND_PCB = DISPLAY_VENDOR.pcbRearToBossEnd // 4.0
 
-// Front-board LCD standoff holes derive from the display centre plus the
-// mounted display-local offsets above (the SMTSO boss pattern, see
-// DISPLAY_BOSS_PATTERN). Do not re-state their positions.
+// REAR-board display-carrier holes: the module hangs on a printed carrier bolted
+// to the rear board's front-facing side (owner decision 2026-11-13), so these
+// four Ø2.7 mm holes are drilled THERE and not on the front board. They derive
+// from the display centre plus the mounted display-local offsets above (the
+// SMTSO boss pattern, see DISPLAY_BOSS_PATTERN). Do not re-state their positions.
 export const LCD_MOUNT_HOLES = DISPLAY_BOSS_PATTERN.map(o => ({
   x: DISPLAY_CONCEPT.x + o.x,
   y: DISPLAY_CONCEPT.y + o.y,
@@ -707,6 +753,35 @@ export const PANEL_STACK = {
   boardToPanelRear: JACK_CLAMPED_GAP,                          // 9.00, set by the jacks
   panelThickness: PANEL.thickness,                             // 1.60
   boardToPanelFront: mm3(JACK_CLAMPED_GAP + PANEL.thickness),  // 10.60
+} as const
+
+// The four panel mount standoffs (PANEL_MOUNT_POINTS) are M3 and their length
+// is PANEL_STACK.boardToPanelRear, DERIVED - never re-typed.
+//
+// They are the ADJUSTABLE family, not a fixed-height spacer, for the same reason
+// the front-to-rear spacers are: the 9.00 mm is a NOMINAL (10.60 mm panel front
+// minus the 1.60 mm panel, the same datum PANEL_TO_FRONT_BOARD_TOP carries), and
+// the real board-top -> panel-rear gap is set by the JACK BUSHING STACK, whose
+// tolerance is not measured. These four points are there to stop the panel
+// rocking, not to set its plane. A rigid 9.00 mm spacer would either hold the
+// panel off the jacks (if the real gap is smaller) or bend the panel and preload
+// the jack solder joints (if it is larger) - the opposite of the intent. So each
+// is a threaded M3 standoff/nut pair trimmed or shimmed to the gap measured on
+// the assembled stack, exactly as the 11.20 +- 0.20 mm seat-to-seat spacers are
+// set. First article records the measured gap.
+export const PANEL_STANDOFF = {
+  thread: "M3",
+  length: PANEL_STACK.boardToPanelRear,                     // 9.00 nominal, board top -> panel rear
+  holeDiameter: M3_CLEARANCE_HOLE_DIAMETER,                 // 3.2 clearance in the panel and the board
+  // Envelopes for the layout checks and the STEP model, not a bought part: an
+  // M3 hex standoff is 5.5 mm across the flats, and an M3 pan head + washer is
+  // the 7.0 mm class. The first article records the hardware actually fitted.
+  bodyDiameter: 5.5,
+  headDiameter: 7.0,
+  family: "M3 threaded, adjustable",
+  adjustment: "trimmed or shimmed at assembly to the measured jack-set gap; it must not set the panel plane",
+  panelPlaneDatum: "the MIDI jack bushings (they clamp the panel), not these standoffs",
+  toleranceStatus: "the jack-bushing tolerance behind the 9.00 nominal is UNMEASURED; first article records it",
 } as const
 
 
@@ -1181,6 +1256,11 @@ export const mechanicalExport = () => ({
   railHoles: RAIL_HOLES,
   railHoleDiameter: RAIL_HOLE_DIAMETER,
   frontBoardHoles: FRONT_BOARD_HOLES,
+  // The four panel mount points and the standoff they carry: the panel and the
+  // front board both drill PANEL_MOUNT_POINTS, and the STEP model draws the
+  // standoff from here.
+  panelMountPoints: PANEL_MOUNT_POINTS,
+  panelStandoff: PANEL_STANDOFF,
   // The canonical panel openings, so the CAD panel cannot drift from the board.
   panelApertures: PANEL_APERTURES,
   panelDrills: PANEL_DRILLS,
@@ -1809,16 +1889,18 @@ export const PANEL_APERTURES: readonly PanelAperture[] = [
   })),
 ]
 
-// Panel-to-front-board standoffs and Eurorack rail holes. `panel.circuit.tsx`
+// Panel-to-front-board mount screws and Eurorack rail holes. `panel.circuit.tsx`
 // emits these after the silkscreen, so they are kept out of PANEL_APERTURES and
 // the built element order stays unchanged.
-// 2026-11-13 (owner): the four STAND_ holes are gone. They only ever existed to
-// pass a screw into a panel standoff on the front board, and the board's mounting
-// holes were removed in the same pass ("we will revisit them later"). The four
-// RACK_ holes stay - those are the Doepfer/3U rail fixings, which the module
-// needs to be mounted at all.
+// The four STAND_ drills are the PANEL_MOUNT_POINTS frame: M3 clearance into the
+// PANEL_STANDOFF under the panel. They were removed on 2026-11-13 with the rest
+// of the panel mounting and came back with the frame decision; the four RACK_
+// holes are the Doepfer/3U rail fixings and never moved.
 export const PANEL_MOUNT_HOLES: readonly PanelDrill[] = [
   ...RAIL_HOLES.map((h, i) => ({ name: `RACK_${i + 1}`, x: h.x, y: h.y, diameter: RAIL_HOLE_DIAMETER })),
+  // The four panel-to-front-board mount screws (PANEL_MOUNT_POINTS): plain M3
+  // clearance, no caption text - the four screw heads are their own legend.
+  ...PANEL_MOUNT_POINTS.map((p, i) => ({ name: `STAND_${i + 1}`, x: p.x, y: p.y, diameter: PANEL_STANDOFF.holeDiameter })),
 ]
 
 // Every drilled hole in the panel, flat, for the CAD model: the feedthrough

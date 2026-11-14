@@ -7,8 +7,8 @@ The rules under test:
 
   * the datum is the panel FRONT face with +Z rearward;
   * the nominal tip plane is the SHAFT length 16.5, not the overall 17.5;
-  * the nominal tip-to-board-plane distance is -6.50 mm (the provisional board
-    face is 10.00, the tip 16.5) and is NOT an LED gap;
+  * the nominal tip-to-board-plane distance is -5.90 mm (the provisional board
+    face is 10.60, the tip 16.5) and is NOT an LED gap;
   * the optical gap is None and the status incomplete while any plane or the
     stack tolerance is unrecorded,
   * an LED rises TOWARD the panel, so its height SUBTRACTS from the board plane;
@@ -296,7 +296,7 @@ class ReportTest(unittest.TestCase):
         self.assertIn("PGN25L165", lines)
         self.assertIn("16.50 mm", lines)
         self.assertIn("17.50 mm", lines)
-        # the current board face (10.00) puts the tip 6.50 mm BEHIND the plane
+        # the current board face (10.60) puts the tip 5.90 mm BEHIND the plane
         self.assertIn("-5.90 mm", lines)
         self.assertIn("None", lines)
         self.assertIn("incomplete", lines)

@@ -12,7 +12,9 @@ make mechanical-view NOOPEN=1   # serve only
 
 `make mechanical-steps` runs `tsci export -f step` for each board circuit and
 writes the results into `mechanical/viewer/models/` (gitignored - they are 0.03
-to 13 MB of generated binary each):
+to 13 MB of generated binary each). It also exports the panel once more as
+`-f pcb-svg --layer top` into `mechanical/viewer/panel-silk.svg` (gitignored):
+that file is the panel's **silkscreen**, which no STEP can carry - see below.
 
 | model | solids | envelope (mm) | what it is |
 | --- | ---: | --- | --- |
@@ -25,40 +27,106 @@ to 13 MB of generated binary each):
 These are tscircuit's own board export, so the parts are the real footprints at
 the real heights.
 
+### The scene frame (and why the view used to read mirrored)
+
+Panel coordinates are millimetres with x right, y up and **z rearward** (into
+the rack, away from the operator). That frame is **left-handed** against a
+viewer whose +z points at you, so loading x/y/z straight into three.js draws a
+front-face layout mirrored when you stand anywhere behind it - and it put the
+stack along scene Y with the panel at the bottom, i.e. the default camera sat
+behind the rear board.
+
+The viewer converts the frame instead (see `toScene()` in `main.js`):
+
+| scene axis | panel axis | result |
+| --- | --- | --- |
+| +X | +x | screen-right is +x, the operator's right |
+| +Y | +y | screen-up is +y |
+| +Z | -z | the panel front face is at **scene z 0**, the stack recedes to negative z, so a camera on +z sees the panel face |
+
+That is the orientation tscircuit's 3D view draws, by construction rather than
+by picking a camera. `fitCamera()` stands on +z (`+0.55/+0.42/+1.45 x radius`,
+~1.6 radii out, which is what holds a 152 x 128.5 mm panel in a 40 degree field)
+with `camera.up = +y`, and the grid and axes sit 70 mm below the panel centre so
+they never draw over its face. The **Z cut** is a `Plane((0,0,1), cut)`, i.e.
+scene z >= -cut, so it still peels the stack along the viewing direction.
+
 ### How the models are placed
 
 `serve_manifest.py` writes the placement, so nothing is eyeballed:
 
 - Each board's STEP comes out in **its own frame**: x/y are panel-aligned, but z
-  is measured from that board's mid-plane with +z pointing out of the board's
-  parts side. Loaded at their own origins they piled up on each other - that is
-  what the viewer used to do.
-- So each model carries `scaleY = -1` and `positionY = T + 0.8`, where `T` is
-  that board's TOP face in the panel frame, straight out of
-  `mechanical/layout.json` `provisionalZ` (panel front 0, +z rearward). Result:
-  panel 0.00…1.60, front board **10.60…12.20**, rear board **23.40…25.00**
-  (owner-directed 10.6 mm panel front, provisional).
+  is measured from that board's mid-plane with +z pointing out of its
+  panel-facing side - the opposite of the panel frame's z. Loaded at their own
+  origins they piled up on each other - that is what the viewer used to do.
+- So each model carries `scaleZ = -1` (undo `toScene()`'s z flip, so the
+  panel-facing side lands on +scene z) and `positionZ = -(T + 0.8)`, where `T`
+  is that board's face nearest the panel, straight out of
+  `mechanical/layout.json` `provisionalZ` (panel front 0, +z rearward). Result
+  in panel z: panel 0.00…1.60, front board **10.60…12.20**, rear board
+  **23.40…25.00** (owner-directed 10.6 mm panel front, provisional), each
+  board's parts side facing the panel. In scene z that is panel 0…-1.60,
+  front -10.60…-12.20, rear -23.40…-25.00: the panel is nearest the camera and
+  the rear board furthest away.
 - The vendor display (Waveshare) is in its **own** frame and its STEP also
   carries non-solid construction geometry (raw points reach x = 106 where the
   solid envelope is 106.1 wide), so it cannot be placed by centre arithmetic.
   The viewer aligns it on the **loaded** bounding box: centred on
-  `display.x/y` and with its screen on the panel-front plane, i.e. facing the
-  panel. Which side is the screen is not guessed - it is read off the STEP's own
-  products through OpenCascade: `BOARD` sits at z -3.34…-1.74 and the SMTSO
-  bosses at -7.34…-1.84, while the IPS/touch panel reaches +4.8, so +z is the
-  screen and z is inverted.
+  `display.x/y` and with its screen on the panel-front plane (scene z 0), i.e.
+  facing the panel and reaching back to -13.82. Which side is the screen is not
+  guessed - it is read off the STEP's own products through OpenCascade: `BOARD`
+  sits at z -3.34…-1.74 and the SMTSO bosses at -7.34…-1.84, while the IPS/touch
+  panel reaches +4.8, so +z is the screen and z is inverted.
 - The **display carrier and its four spacers** are drawn as a placeholder from
   `displayStandoff.spacerLength` between the module's rear plane and the rear
-  board's front face, at the module's `displayBossPattern`. There is no STEP for
-  the carrier yet (`display_boss_pattern` is open); the spacer and pad diameters
-  are named placeholders, so read this as "where it bolts", not as a part.
+  board's front face, at the module's `displayBossPattern`. They stand along
+  scene Z in that 9.35 mm gap (panel z 14.05…23.40, scene z -14.05…-23.40):
+  behind the module and in front of the rear board's own face, which is where the
+  spacers are documented to bolt. There is no STEP for the carrier yet
+  (`display_boss_pattern` is open); the spacer and pad diameters are named
+  placeholders, so read this as "where it bolts", not as a part.
+
+### Panel silkscreen (a texture, not geometry)
+
+A STEP carries surfaces, so `panel.step` has the outline and every aperture but
+no wordmark and no legends. `make mechanical-steps` therefore exports the panel
+one more time, as `-f pcb-svg --layer top` (the same `tsci export` format
+`tscircuit/scripts/render_boards.ts` uses for the board renders), and the viewer
+maps that artwork onto the panel front face as a **texture**:
+
+- The SVG is cropped to the board outline it carries itself, and only the
+  `pcb_silkscreen_*` marks are kept. The board edge, the cutouts and the drill
+  hits are dropped: the STEP already has those as real holes, and they are not
+  ink.
+- It is rasterised in the browser (SVG -> `<img>` -> `canvas` at 12 px/mm, i.e.
+  2.6x the exported 800 x 600 drawing) into a `THREE.CanvasTexture` on a
+  `PlaneGeometry` sized to the panel (152 x 128.5 mm), with `transparent: true`,
+  `depthWrite: false`, and 0.05 mm **in front of** the panel face (scene z 0).
+  It neither z-fights the FR-4 nor hides the apertures.
+- The exported SVG embeds the TscircuitAlphabet font it draws with as a data
+  URL, so the raster keeps the drawn glyphs rather than a fallback face.
+- Silk is a texture and not extruded geometry **on purpose**: JLCPCB prints it as
+  flat ink on the board surface. Extruding it would add solids at a height the
+  panel does not have, i.e. it would draw a part that is not there and could be
+  mistaken for a clearance.
+- The **silk** toggle in the model bar shows and hides it (default on). If the
+  SVG is missing, the stack still loads and the bar says `silk: none loaded (make
+  mechanical-steps)`: a missing texture must not blank the mechanical model.
+
+![panel view from the viewer](../../assets/viewer-panel-view.png)
+
+The default camera (+z, see above): the mnkybox wordmark and its waves, REC /
+OVER DUB / STOP / PLAY, PLAY START, IN 1 / IN 2 / OUT 1 / OUT 2 (with the bold
+OUT rings), MIDI TRS TYPE A, VALUE, NAV, SHIFT/EXIT, POWER and the three USB
+legends all read the way they will on the fabricated panel. Every mark is the
+panel's own exported silk, so these are the fabrication positions, not a redraw.
 
 ### The Z cut
 
 `Z cut (panel z, mm)` peels the stack at that panel z: everything with
-`panel z <= cut` is kept. It starts at 100 (above the whole stack, so it looks
-off). It previously clipped along the board's own y axis instead of the stack
-direction, and started at -1, which hid most of the module.
+`panel z <= cut` (scene z >= -cut) is kept. It starts at 100 (above the whole
+stack, so it looks off) and clips along the viewing direction, so dragging it
+down removes the panel first, then the boards.
 
 The old `STACK_MM` placeholder boxes are gone: they were a sketch of the
 **pre-respin** stack (128 mm board at z 17.45) and duplicated real geometry. They are
@@ -89,9 +157,10 @@ generated placeholders. No dimension here is a measurement of a delivered part.
 | Control | What it does |
 | --- | --- |
 | drag / wheel / right-drag | orbit / zoom / pan |
-| **Z cut (mm)** | clips everything above that CAD z; drag it down to slice through the stack |
+| **Z cut (mm)** | clips everything beyond that panel z; drag it down to slice the stack from the panel rearward |
 | **fit view** | re-fit the camera to the loaded meshes |
 | **shaded / wireframe** | toggle |
+| **silk** (model bar) | show/hide the panel silkscreen texture, on by default |
 | **show stack boxes** | overlay the documented stack as translucent boxes |
 
 ## The stack overlay
@@ -105,7 +174,7 @@ Boxes for the parts with no STEP, using the heights in
 | front board | 150.0 × 112.0 × 1.6 | **10.60** | `FRONT_PCB`, `PROVISIONAL_Z.frontBoardTop` |
 | rear board | 148.0 × 112.0 × 1.6 | **23.40** | `REAR_PCB`, `PROVISIONAL_Z.rearBoardFront` |
 | stereo jack (×4) | 10.0 × 12.73 × 15.5 | 0.00 | PJ366ST STEP bounding box |
-| button + cap (×7) | 12.0 × 12.0 × 10.0 | 0.00 | Omron B32/B3F reference box. **Verified**: `10.0 ±0.4` is PCB top → **cap top**, so a bought B32 top sits 0.60 mm behind our panel front; the printed cap's own height is `BUTTON_CAP_PRINTED` (4.70, top 0.80 proud) |
+| button + cap (×7) | 12.0 × 12.0 × **11.40** | −0.80 (the printed cap top, 0.80 mm proud of the panel front) | printed cap (the standard): `BUTTON_CAP_PRINTED` — top at panel Z −0.80, seat on the board top at 10.60, so 11.40 tall. **Verified** from the Omron drawing: `10.0 ±0.4` runs PCB top → **cap top**, so a bought B32 alternative would be 10.0 tall and its top would sit 0.60 mm behind our panel front, not 0.80 mm proud |
 
 (The 128 mm / 17.45 mm figures that used to be here were the pre-respin stack;
 `mechanical-steps` above is the accurate route now that the boards export.)

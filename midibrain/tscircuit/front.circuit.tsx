@@ -31,6 +31,8 @@ import {
   ledPosition,
   midiJackX,
   MOUNT_HOLE_DIAMETER,
+  PANEL_MOUNT_POINTS,
+  PANEL_STANDOFF,
   POWER_BUTTON,
   PLAY_START,
   POWER_HEADER,
@@ -402,22 +404,26 @@ export default () => (
     </schematicsheet>
     {/* The notch and the display opening are one cut now: the board is a U. */}
 
-    {/* Display opening. At the 10 mm panel the module's body (glass front 0 ->
-        rear-most 14.05 mm) crosses this board's 10.0...11.6 mm plane, so no
+    {/* Display opening. At the 10.6 mm panel the module's body (glass front 0 ->
+        rear-most 14.05 mm) crosses this board's 10.6...12.2 mm plane, so no
         board material may sit under it. The module hangs from the rear board's
         printed carrier; this board only has to let it through. */}
     <cutout shape="polygon" points={[...FRONT_BOARD_OPENING_POLYGON]} />
     <keepout shape="rect" width={`${FRONT_DISPLAY_KEEPOUT.width}mm`} height={`${FRONT_DISPLAY_KEEPOUT.height}mm`} pcbX={`${FRONT_DISPLAY_KEEPOUT.x}mm`} pcbY={`${FRONT_DISPLAY_KEEPOUT.y}mm`} excludeRefs={[".J_PWR"]} />
-    {/* 2026-11-13 (owner): ALL mounting holes are removed for now - panel
-        standoffs, front/rear spacer grid and the feedthrough-bracket screws.
-        The boards are still positioned by the four jack bushings, the encoder
-        bushings and the 2 x 13 interconnect; how the stack is finally fastened
-        is an open item (docs/TODO.md). The constants in lib/layout.ts are kept,
-        so putting them back is a one-line change per group. */}
-    {/* 2026-11-13 (owner): the front-to-rear spacer holes are back (the panel
-        standoffs are not - see lib/layout.ts). */}
+    {/* 2026-11-13 (owner): the front/rear spacer grid came back. 2026-11-13
+        (owner, four-point frame decision): the panel mounts came back too - the
+        four PANEL_MOUNT_POINTS holes below. Still removed are the
+        feedthrough-bracket screws only. The boards are otherwise positioned by
+        the four jack bushings, the encoder bushings and the 2 x 13 interconnect. */}
     {FRONT_REAR_MOUNT.map((h, i) => (
       <Fragment key={`mount-hole-${i}`}><hole name={`MOUNT_${i + 1}`} diameter={`${MOUNT_HOLE_DIAMETER}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
+    ))}
+    {/* The four PANEL_MOUNT_POINTS, the panel's stiffening frame: M3 clearance
+        through the board for the PANEL_STANDOFF under the panel, outside the U
+        opening (one column per leg). Nothing else shares these holes; the
+        length/tolerance decision is PANEL_STANDOFF in lib/layout.ts. */}
+    {PANEL_MOUNT_POINTS.map((h, i) => (
+      <Fragment key={`panel-mount-${i}`}><hole name={`STANDOFF_${i + 1}`} diameter={`${PANEL_STANDOFF.holeDiameter}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} /></Fragment>
     ))}
     {/* The module used to be screwed to four SMTSO bosses on this face. It now
         hangs from the rear board's printed carrier, so this board carries no
