@@ -1,4 +1,4 @@
-.PHONY: test release gate reports electrical mechanical mechanical-export mechanical-cad mechanical-view host midifx spice panel-preview firmware order bench-test bench-clock
+.PHONY: test release gate reports electrical mechanical mechanical-export mechanical-cad mechanical-steps mechanical-view host midifx spice panel-preview firmware order bench-test bench-clock
 
 # Defaults cover the setup in firmware/README.md; override on the command
 # line (PICO_SDK_PATH=/path/to/sdk make firmware) if yours lives elsewhere.
@@ -116,6 +116,24 @@ mechanical-cad:
 # composed assembly). Not part of the gate: it renders vendor/placeholder CAD as
 # a viewing aid, so it can never approve a fit. `make mechanical-cad` first if
 # you want the composed assembly in the list. PORT and NOOPEN are honoured.
+# The boards tscircuit can draw, as real STEP with components and pads. `tsci
+# export -f step` is a board-circuit export, so the panel and the Pi panel (bare
+# FR-4) and the composed assembly all work, and the front/rear boards come out
+# with every placed part in their real Z. Written into the viewer's model
+# directory, which is gitignored: these are generated binaries (13 MB for the
+# front board), reproducible with this target.
+mechanical-steps:
+	@set -eu; mkdir -p mechanical/viewer/models; \
+	for pair in panel:panel.circuit.tsx front:front.circuit.tsx rear:index.circuit.tsx \
+	            pi-panel:pi-panel.circuit.tsx assembly:assembly.circuit.tsx; do \
+	  name=$${pair%%:*}; file=$${pair#*:}; \
+	  printf '  %-9s <- %s\n' "$$name" "$$file"; \
+	  ( cd tscircuit && $(BUN) x tsci export -f step -o "../mechanical/viewer/models/$$name.step" "$$file" >/dev/null 2>&1 ) \
+	    || { echo "FAILED to export $$file" >&2; exit 1; }; \
+	done; \
+	ls -l mechanical/viewer/models/*.step | awk '{ printf "  %8.1f MB  %s\n", $$5/1048576, $$9 }'; \
+	echo "  now: make mechanical-view"
+
 mechanical-view:
 	@PORT="$(PORT)" NOOPEN="$(NOOPEN)" bash mechanical/viewer/serve.sh
 

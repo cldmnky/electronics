@@ -4,10 +4,29 @@ A local web page that renders the midibrain mechanical STEP models, so the
 panel/board/display stack can be looked at without FreeCAD.
 
 ```bash
+make mechanical-steps           # export every board + the stack as real STEP
 make mechanical-view            # installs deps once, serves :8161, opens the browser
 make mechanical-view PORT=9000  # another port
 make mechanical-view NOOPEN=1   # serve only
 ```
+
+`make mechanical-steps` runs `tsci export -f step` for each board circuit and
+writes the results into `mechanical/viewer/models/` (gitignored - they are 0.03
+to 13 MB of generated binary each):
+
+| model | solids | envelope (mm) | what it is |
+| --- | ---: | --- | --- |
+| `panel.step` | 1 | 152.0 x 128.5 x 1.6 | the 30HP FR-4 panel, apertures and drills included |
+| `front.step` | 85 | 150.0 x 112.0 x 37.7 | front/UI board **with every placed part** in its real Z |
+| `rear.step` | 40 | 148.0 x 112.0 x 26.0 | rear/base board with its parts |
+| `pi-panel.step` | 1 | 101.2 x 128.5 x 1.6 | the 20HP Pi mounting panel |
+| `assembly.step` | 87 | 152.0 x 128.5 x 43.1 | the whole stack: front board at the Z = 0 anchor, panel and rear board as envelopes |
+
+These are tscircuit's own board export, so the parts are the real footprints at
+the real heights - not the placeholder boxes in the overlay below. They are
+still a viewing aid, not a fit approval: tscircuit derives component Z from its
+own CAD models, and a vendor model with a wrong origin shows up as a wrong
+height here.
 
 Stop it with Ctrl-C. `serve.sh` regenerates `models.json` on every start (it is
 gitignored) and lists every STEP it finds under:
@@ -45,9 +64,13 @@ Boxes for the parts with no STEP, using the heights in
 | Box | Size (x × y × z, mm) | z0 (panel front = 0) | Source |
 | --- | --- | --- | --- |
 | panel | 152.0 × 128.5 × 1.6 | 0.00 | `PANEL` (30HP, 152.0 actual) |
-| front board | 128.0 × 112.0 × 1.6 | 17.45 | `FRONT_PCB`, `PROVISIONAL_Z.frontBoardTop` 19.05 |
+| front board | 150.0 × 112.0 × 1.6 | 10.00 | `FRONT_PCB`, `PROVISIONAL_Z.frontBoardTop` |
+| rear board | 148.0 × 112.0 × 1.6 | 22.80 | `REAR_PCB`, `PROVISIONAL_Z.rearBoardFront` |
 | stereo jack (×4) | 10.0 × 12.73 × 15.5 | 0.00 | PJ366ST STEP bounding box |
 | button + cap (×7) | 12.0 × 12.0 × 10.0 | 0.00 | Omron B32/B3F reference, 10.0 ±0.4 board→panel front |
+
+(The 128 mm / 17.45 mm figures that used to be here were the pre-respin stack;
+`mechanical-steps` above is the accurate route now that the boards export.)
 
 Positions are the connector/button XY from `lib/layout.ts` at the time of
 writing; if the layout moves, these do too — update them here or read them from
