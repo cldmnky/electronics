@@ -1500,6 +1500,29 @@ export const BUTTON_STACK = {
   stackDepthExcessTolerance: BUTTON_CAP.referenceBoardToPanelFrontTolerance,
 } as const
 
+// B3F-4055 overall height above the board, from its datasheet (the same
+// document whose SHA-256 is recorded for the cap): a square 3.8 +-0.1 mm
+// projected plunger on a 12 +-0.2 mm body, 7.3 +-0.2 mm total. Needed to place
+// the key-top body in 3D: the cap sits on this face, and Omron does NOT
+// dimension the cap top (see BUTTON_CAP).
+export const BUTTON_SWITCH = {
+  part: "Omron B3F-4055",
+  heightAboveBoard: 7.3,
+  heightTolerance: 0.2,
+  source: "Omron B3F datasheet, SHA-256 be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f",
+} as const
+
+// Panel z of the switch's plunger face, and the cap's VISIBLE slab: from the
+// panel rear face up to that face. Omron's reference drawing shows the cap top
+// just below the panel rear face and never dimensions it, so only this 1.1 mm
+// protrusion is claimed; the skirt that wraps the switch body is not modelled.
+export const BUTTON_SWITCH_TOP_Z = mm3(PANEL_TO_FRONT_BOARD_TOP - BUTTON_SWITCH.heightAboveBoard) // 2.70
+export const BUTTON_CAP_VISIBLE = {
+  top: PROVISIONAL_Z.panelRear,          // 1.60, just under the panel rear face
+  bottom: BUTTON_SWITCH_TOP_Z,           // 2.70, the plunger face
+  thickness: mm3(BUTTON_SWITCH_TOP_Z - PROVISIONAL_Z.panelRear), // 1.10
+} as const
+
 // ---- Panel openings (front FR-4 panel) ----
 export const PANEL_CUTOUTS = {
   // B3F-4055 buttons take an Omron/ARATAS B32 SQUARE key top, 12 x 12 mm

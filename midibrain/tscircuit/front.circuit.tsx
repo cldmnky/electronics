@@ -20,6 +20,7 @@ import {
   FRONT_DISPLAY_OPENING,
   FRONT_BOARD_OPENING_POLYGON,
   FRONT_DISPLAY_KEEPOUT,
+  FRONT_COLUMNS,
   FRONT_INTERCONNECT,
   FRONT_PCB,
   FRONT_REAR_MOUNT,
@@ -30,7 +31,10 @@ import {
   ledPosition,
   midiJackX,
   MOUNT_HOLE_DIAMETER,
+  BUTTON_CAP,
+  BUTTON_CAP_VISIBLE,
   POWER_BUTTON,
+  PLAY_START,
   POWER_HEADER,
   PRINTED_PARTS,
   PROVISIONAL_Z,
@@ -376,6 +380,31 @@ const femaleSocketEnvelope = (() => {
   }
 })()
 
+// ---- button key-top bodies --------------------------------------------------
+// Seven B3F-4055s carry a B32-13x0 cap, and the cap was the one part of the
+// front-panel stack with no 3D body: the switch footprint stops at its own
+// 7.3 mm face, so every render showed a gap where the operator presses. Each cap
+// is an `assembly.printedpart` - one cad_component, no footprint, no BOM row -
+// placed at its switch's own coordinates and drawn as the VISIBLE slab only
+// (panel rear face up to the plunger face, BUTTON_CAP_VISIBLE). The skirt that
+// wraps the switch body is not modelled and Omron does not dimension the cap
+// top, so this shows where the finger lands, not a cap height claim.
+const BUTTON_SWITCHES = [
+  ...FRONT_COLUMNS.map((c) => ({ ref: c.button, x: c.x, y: TRANSPORT_Y })),
+  { ref: PLAY_START.button, x: PLAY_START.x, y: TRANSPORT_Y },
+  { ref: "SHIFT/EXIT", x: RIGHT_CONTROLS.SHIFT_EXIT.x, y: RIGHT_CONTROLS.SHIFT_EXIT.y },
+  { ref: "POWER", x: POWER_BUTTON.x, y: POWER_BUTTON.y },
+]
+
+const buttonCapEnvelope = {
+  type: "translate",
+  vector: [0, 0, frontBoardUpZ((BUTTON_CAP_VISIBLE.top + BUTTON_CAP_VISIBLE.bottom) / 2)],
+  shape: {
+    type: "cuboid",
+    size: [BUTTON_CAP.topSquare, BUTTON_CAP.topSquare, BUTTON_CAP_VISIBLE.thickness],
+  },
+}
+
 export default () => (
   <board
     width={`${FRONT_PCB.width}mm`}
@@ -468,6 +497,18 @@ export default () => (
         U6's own centre; Z comes from PRINTED_PARTS.zFront/zRear on the
         PROVISIONAL_Z datum. Translucent so the switch and the encoder stay
         visible through them. */}
+    {BUTTON_SWITCHES.map((sw) => (
+      <assembly.printedpart
+        key={`CAP_${sw.ref}`}
+        name={`PRINT_CAP_${sw.ref.replace(/[^A-Za-z0-9]/g, "_")}`}
+        color="#b03a3a"
+        cadModel={{
+          jscad: buttonCapEnvelope,
+          positionOffset: { x: sw.x, y: sw.y, z: 0 },
+          showAsTranslucentModel: true,
+        }}
+      />
+    ))}
     {/* Female socket body of the 2 x 13 pair. */}
     <assembly.printedpart
       name="PRINT_IC_FEMALE"
