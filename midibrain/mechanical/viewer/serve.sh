@@ -23,34 +23,6 @@ if [ ! -d "$VIEWER/node_modules/three" ] || [ ! -d "$VIEWER/node_modules/occt-im
   ( cd "$VIEWER" && npm install --silent )
 fi
 
-python3 - "$ROOT" "$VIEWER/models.json" <<'PY'
-import json, sys
-from pathlib import Path
+python3 "$VIEWER/serve_manifest.py" "$ROOT" "$VIEWER/models.json"
 
-root = Path(sys.argv[1])
-out = Path(sys.argv[2])
-models = []
-for pattern, label in (
-    ("mechanical/reference/*.step", "reference"),
-    ("mechanical/cad-out/*.step", "assembly"),
-    ("mechanical/viewer/models/*.step", "viewer"),
-):
-    for path in sorted(root.glob(pattern)):
-        models.append({
-            "label": f"{label}: {path.name}",
-            "url": str(path.relative_to(root)),
-            "bytes": path.stat().st_size,
-        })
-out.write_text(json.dumps({"base": "/", "models": models}, indent=2) + "\n", encoding="utf-8")
-print(f"mechanical-view: {len(models)} STEP file(s) listed in {out}")
-for m in models:
-    print(f"  {m['bytes']/1e6:6.2f} MB  {m['url']}")
-PY
-
-URL="http://localhost:${PORT}/mechanical/viewer/index.html"
-echo "mechanical-view: serving $ROOT on http://localhost:${PORT}"
-echo "mechanical-view: open $URL"
-if [ "${NOOPEN:-0}" != "1" ]; then
-  ( sleep 1; command -v open >/dev/null && open "$URL" || true ) &
-fi
 exec python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$ROOT"

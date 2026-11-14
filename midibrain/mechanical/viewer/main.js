@@ -11,9 +11,10 @@ import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 
 const statusEl = document.getElementById("status")
-const filesEl = document.getElementById("files")
 const readout = { files: [], meshes: 0, status: "starting", error: null }
+const modelGroups = []
 window.__viewer = readout
+window.__scene = { camera: null, controls: null, scene: null }
 
 const setStatus = (text, isError = false) => {
   readout.status = text
@@ -47,11 +48,14 @@ const grid = new THREE.GridHelper(400, 40, 0x2a2f37, 0x232833)
 scene.add(grid)
 scene.add(new THREE.AxesHelper(40))
 
-const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 1e6)
+// The stack runs along SCENE Y (= CAD z = panel z, panel front at 0). The plane
+// used to be (0,0,-1), i.e. scene Z, which is the board's own y axis: it sliced
+// the boards lengthways instead of peeling the stack, and its -1 default hid
+// everything. Keep panel z <= cut, and start above the whole stack.
+const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6)
 renderer.clippingPlanes = [clipPlane]
 const zcut = document.getElementById("zcut")
 const applyCut = () => {
-  // keep everything with CAD z <= cut; a big number disables the cut
   const cut = Number(zcut.value)
   clipPlane.constant = Number.isFinite(cut) ? cut : 1e6
   readout.zCut = Number.isFinite(cut) ? cut : null
@@ -109,75 +113,78 @@ async function loadStep(url, colourIndex) {
 }
 
 
-// ------------------------------------------------------- stack placeholders
-// Boxes for the parts whose STEP we do not have (panel, front board, jacks,
-// buttons) drawn from the documented dimensions, so the height relationships are
-// visible without a circuit or a vendor file. Heights are the ones in
-// tscircuit/lib/layout.ts (PROVISIONAL_Z) and the jack STEP bounding boxes:
-//   panel front z=0, panel rear 1.60, front board top 19.05 (gap 17.45),
-//   stereo jack top 15.50, mono jack 14.00, B3F+B32 cap top ~10.00.
-// This is a sketch of the stack as documented, not measured geometry.
-const STACK_MM = {
-  panel: { x: 152.0, y: 128.5, z: 1.6, z0: 0.0 },
-  frontBoard: { x: 128.0, y: 112.0, z: 1.6, z0: 17.45 },
-  jack: { x: 10.0, y: 12.73, z: 15.5, z0: 0.0 },
-  button: { x: 12.0, y: 12.0, z: 10.0, z0: 0.0 },
-  jacks: [
-    { x: -53, y: -48 }, { x: -37, y: -48 }, { x: -21, y: -48 }, { x: -5, y: -48 },
-  ],
-  buttons: [
-    { x: -53, y: -30 }, { x: -37, y: -30 }, { x: -21, y: -30 }, { x: -5, y: -30 },
-    { x: 11, y: -30 }, { x: 27, y: -30 }, { x: 43, y: -30 },
-  ],
-}
+// ------------------------------------------- display carrier + spacers (sketch)
+// The 4.3" module hangs on a printed carrier bolted to the REAR board's front
+// face on adjustable spacers - without them the module floats in the gap and
+// reads as unmounted. There is no STEP for the carrier yet (open item
+// `display_boss_pattern`), so this draws the documented geometry as a sketch:
+// four spacer cylinders of displayStandoff.spacerLength between the module's
+// rear plane and the rear board's front face, at the module's own boss pattern.
+// Lengths and positions come from mechanical/layout.json; the diameters are
+// placeholders and are named as such.
+const CARRIER_D = 5.0 // placeholder: spacer OD
+const CARRIER_PAD_D = 9.0 // placeholder: carrier pad footprint
+const CARRIER_PAD_Z = 1.5 // placeholder: pad thickness at the rear-board face
 
-function boxMesh({ x, y, z, z0 }, colour, opacity = 0.28) {
-  const geometry = new THREE.BoxGeometry(x, z, y)
+function buildCarrier(spec) {
+  if (!spec) return
+  const group = new THREE.Group()
+  group.name = "display carrier (placeholder)"
   const material = new THREE.MeshStandardMaterial({
-    color: colour,
-    transparent: true,
-    opacity,
-    roughness: 0.8,
-    metalness: 0.0,
-    depthWrite: false,
+    color: 0xb8b0a0, metalness: 0.1, roughness: 0.8,
   })
-  const mesh = new THREE.Mesh(geometry, material)
-  // scene: y is CAD z, so the box centre sits at z0 + z/2 in scene-Y
-  mesh.position.set(0, z0 + z / 2, 0)
-  return { mesh, material }
-}
-
-const stackGroup = new THREE.Group()
-stackGroup.name = "stack placeholders"
-stackGroup.visible = false
-
-function buildStack() {
-  const add = (spec, colour, at, opacity) => {
-    const { mesh } = boxMesh(spec, colour, opacity)
-    if (at) mesh.position.x = at.x, mesh.position.z = -at.y
-    stackGroup.add(mesh)
-    return mesh
+  for (const boss of spec.bosses) {
+    // boss is in board coordinates; scene x = board x, scene z = -board y
+    const x = boss.x + spec.offsetX
+    const z = -(boss.y + spec.offsetY)
+    const h = spec.rearBoardFront - spec.moduleRear
+    const spacer = new THREE.Mesh(new THREE.CylinderGeometry(CARRIER_D / 2, CARRIER_D / 2, h, 20), material)
+    spacer.position.set(x, spec.moduleRear + h / 2, z)
+    group.add(spacer)
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(CARRIER_PAD_D / 2, CARRIER_PAD_D / 2, CARRIER_PAD_Z, 20), material)
+    pad.position.set(x, spec.rearBoardFront - CARRIER_PAD_Z / 2, z)
+    group.add(pad)
   }
-  add(STACK_MM.panel, 0x4a5568, null, 0.22)
-  add(STACK_MM.frontBoard, 0x2f6f4f, null, 0.35)
-  for (const at of STACK_MM.jacks) add(STACK_MM.jack, 0x8fb7d6, at, 0.45)
-  for (const at of STACK_MM.buttons) add(STACK_MM.button, 0xd6d08f, at, 0.45)
-  scene.add(stackGroup)
-  return stackGroup
+  group.visible = true
+  scene.add(group)
+  modelGroups.push({ group, model: { label: "placeholder: display carrier + 4 spacers" } })
 }
 
-document.getElementById("stack").addEventListener("click", () => {
-  stackGroup.visible = !stackGroup.visible
-  readout.stackVisible = stackGroup.visible
-  document.getElementById("stack").textContent = stackGroup.visible
-    ? "hide stack boxes"
-    : "show stack boxes"
-})
+// ------------------------------------------------------------- model toggles
+// Loading six solids at once is unreadable, and the STACK_MM placeholder boxes
+// that used to live here were a sketch of the pre-respin stack (128 mm board at
+// z 17.45). Both are gone: the manifests now carry real placement computed from
+// mechanical/layout.json, and the stack is built up by ticking models.
+function renderToggles() {
+  const host = document.getElementById("models")
+  host.textContent = ""
+  if (!modelGroups.length) return
+  for (const { group, model } of modelGroups) {
+    const label = document.createElement("label")
+    label.className = "toggle"
+    const input = document.createElement("input")
+    input.type = "checkbox"
+    input.checked = group.visible
+    input.addEventListener("change", () => {
+      group.visible = input.checked
+      const entry = readout.files.find((f) => f.label === model.label)
+      if (entry) entry.visible = input.checked
+      const shown = modelGroups.filter((g) => g.group.visible)
+      if (shown.length) {
+        const box = new THREE.Box3()
+        for (const g of shown) box.union(new THREE.Box3().setFromObject(g.group))
+        fitCamera(box)
+      }
+    })
+    label.appendChild(input)
+    label.appendChild(document.createTextNode(" " + model.label.replace(/^\w+: /, "")))
+    host.appendChild(label)
+  }
+}
 
 // ------------------------------------------------------------------- manifest
 async function main() {
   applyCut()
-  buildStack()
   if (!window.occtimportjs) throw new Error("occt-import-js did not load")
   setStatus("loading OpenCascade…")
   window.__occt = await window.occtimportjs({
@@ -194,32 +201,65 @@ async function main() {
   // two levels up from mechanical/viewer/.
   const modelBase = new URL(manifest.base ?? "../../", manifestUrl)
 
-  filesEl.textContent = manifest.models.map((m) => m.label).join(" · ")
+  readout.manifest = manifest.models.map((m) => m.label)
   const union = new THREE.Box3()
   let loaded = 0
+  let readout_placed = null
 
   for (const [index, model] of manifest.models.entries()) {
     setStatus(`loading ${model.label}…`)
     const url = new URL(model.url, modelBase)
     const { group, box, materials, meshes } = await loadStep(url.href, index)
+    // Placement comes from the manifest, computed from mechanical/layout.json:
+    // the export's +z points at the panel front while the panel frame counts z
+    // rearward, so z is inverted and shifted until the board's parts-side face
+    // lands on its documented panel z. Without this every model sat at its own
+    // origin, which is why six boards used to overlap.
+    group.scale.x = model.scaleX ?? 1
+    group.scale.y = model.scaleY ?? 1
+    group.position.y = model.positionY ?? 0
+    if (model.align) {
+      // Own-frame model: align on the loaded bbox. Centre it on the display
+      // position and park its glass face on the panel-front plane, so the
+      // screen points at the panel and the module reaches displayRearMost.
+      // `scale.y` is applied first, so the scene-space bbox is already final.
+      group.updateMatrixWorld(true)
+      const b = new THREE.Box3().setFromObject(group)
+      const c = b.getCenter(new THREE.Vector3())
+      group.position.x += model.align.x - c.x
+      group.position.z += -model.align.y - c.z
+      group.position.y += model.align.frontSceneY - b.min.y
+    }
+    group.visible = model.visible !== false
+    modelGroups.push({ group, model })
     scene.add(group)
-    union.union(box)
+    // Fit on the PLACED box: `box` from loadStep is in the file's own frame.
+    group.updateMatrixWorld(true)
+    readout_placed = new THREE.Box3().setFromObject(group)
+    if (group.visible) union.union(readout_placed)
     loaded += meshes
     readout.files.push({
       label: model.label,
       url: model.url,
       meshes,
+      visible: model.visible !== false,
+      panelTopZ: model.panelTopZ ?? null,
       box: {
-        x: [+box.min.x.toFixed(2), +box.max.x.toFixed(2)],
-        y: [+box.min.y.toFixed(2), +box.max.y.toFixed(2)],
-        z: [+box.min.z.toFixed(2), +box.max.z.toFixed(2)],
+        x: [+readout_placed.min.x.toFixed(2), +readout_placed.max.x.toFixed(2)],
+        y: [+readout_placed.min.y.toFixed(2), +readout_placed.max.y.toFixed(2)],
+        z: [+readout_placed.min.z.toFixed(2), +readout_placed.max.z.toFixed(2)],
       },
     })
     group.userData.materials = materials
   }
 
   readout.meshes = loaded
+  buildCarrier(manifest.carrier)
+  renderToggles()
   fitCamera(union)
+  window.__scene.camera = camera
+  window.__scene.scene = scene
+  window.__scene.controls = controls
   setStatus(`loaded ${manifest.models.length} file(s), ${loaded} solids`)
   window.__viewer.ready = true
 }

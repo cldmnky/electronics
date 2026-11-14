@@ -23,7 +23,44 @@ to 13 MB of generated binary each):
 | `assembly.step` | 87 | 152.0 x 128.5 x 43.1 | the whole stack: front board at the Z = 0 anchor, panel and rear board as envelopes |
 
 These are tscircuit's own board export, so the parts are the real footprints at
-the real heights - not the placeholder boxes in the overlay below. They are
+the real heights.
+
+### How the models are placed
+
+`serve_manifest.py` writes the placement, so nothing is eyeballed:
+
+- Each board's STEP comes out in **its own frame**: x/y are panel-aligned, but z
+  is measured from that board's mid-plane with +z pointing out of the board's
+  parts side. Loaded at their own origins they piled up on each other - that is
+  what the viewer used to do.
+- So each model carries `scaleY = -1` and `positionY = T + 0.8`, where `T` is
+  that board's TOP face in the panel frame, straight out of
+  `mechanical/layout.json` `provisionalZ` (panel front 0, +z rearward). Result:
+  panel 0.00…1.60, front board 10.00…11.60, rear board 22.80…24.40.
+- The vendor display (Waveshare) is in its **own** frame and its STEP also
+  carries non-solid construction geometry (raw points reach x = 106 where the
+  solid envelope is 106.1 wide), so it cannot be placed by centre arithmetic.
+  The viewer aligns it on the **loaded** bounding box: centred on
+  `display.x/y` and with its screen on the panel-front plane, i.e. facing the
+  panel. Which side is the screen is not guessed - it is read off the STEP's own
+  products through OpenCascade: `BOARD` sits at z -3.34…-1.74 and the SMTSO
+  bosses at -7.34…-1.84, while the IPS/touch panel reaches +4.8, so +z is the
+  screen and z is inverted.
+- The **display carrier and its four spacers** are drawn as a placeholder from
+  `displayStandoff.spacerLength` between the module's rear plane and the rear
+  board's front face, at the module's `displayBossPattern`. There is no STEP for
+  the carrier yet (`display_boss_pattern` is open); the spacer and pad diameters
+  are named placeholders, so read this as "where it bolts", not as a part.
+
+### The Z cut
+
+`Z cut (panel z, mm)` peels the stack at that panel z: everything with
+`panel z <= cut` is kept. It starts at 100 (above the whole stack, so it looks
+off). It previously clipped along the board's own y axis instead of the stack
+direction, and started at -1, which hid most of the module.
+
+The old `STACK_MM` placeholder boxes are gone: they were a sketch of the
+**pre-respin** stack (128 mm board at z 17.45) and duplicated real geometry. They are
 still a viewing aid, not a fit approval: tscircuit derives component Z from its
 own CAD models, and a vendor model with a wrong origin shows up as a wrong
 height here.
