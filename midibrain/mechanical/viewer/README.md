@@ -12,7 +12,9 @@ make mechanical-view NOOPEN=1   # serve only
 
 `make mechanical-steps` runs `tsci export -f step` for each board circuit and
 writes the results into `mechanical/viewer/models/` (gitignored - they are 0.03
-to 13 MB of generated binary each):
+to 13 MB of generated binary each). It also exports the panel once more as
+`-f pcb-svg --layer top` into `mechanical/viewer/panel-silk.svg` (gitignored):
+that file is the panel's **silkscreen**, which no STEP can carry - see below.
 
 | model | solids | envelope (mm) | what it is |
 | --- | ---: | --- | --- |
@@ -83,6 +85,41 @@ scene z >= -cut, so it still peels the stack along the viewing direction.
   (`display_boss_pattern` is open); the spacer and pad diameters are named
   placeholders, so read this as "where it bolts", not as a part.
 
+### Panel silkscreen (a texture, not geometry)
+
+A STEP carries surfaces, so `panel.step` has the outline and every aperture but
+no wordmark and no legends. `make mechanical-steps` therefore exports the panel
+one more time, as `-f pcb-svg --layer top` (the same `tsci export` format
+`tscircuit/scripts/render_boards.ts` uses for the board renders), and the viewer
+maps that artwork onto the panel front face as a **texture**:
+
+- The SVG is cropped to the board outline it carries itself, and only the
+  `pcb_silkscreen_*` marks are kept. The board edge, the cutouts and the drill
+  hits are dropped: the STEP already has those as real holes, and they are not
+  ink.
+- It is rasterised in the browser (SVG -> `<img>` -> `canvas` at 12 px/mm, i.e.
+  2.6x the exported 800 x 600 drawing) into a `THREE.CanvasTexture` on a
+  `PlaneGeometry` sized to the panel (152 x 128.5 mm), with `transparent: true`,
+  `depthWrite: false`, and 0.05 mm **in front of** the panel face (scene z 0).
+  It neither z-fights the FR-4 nor hides the apertures.
+- The exported SVG embeds the TscircuitAlphabet font it draws with as a data
+  URL, so the raster keeps the drawn glyphs rather than a fallback face.
+- Silk is a texture and not extruded geometry **on purpose**: JLCPCB prints it as
+  flat ink on the board surface. Extruding it would add solids at a height the
+  panel does not have, i.e. it would draw a part that is not there and could be
+  mistaken for a clearance.
+- The **silk** toggle in the model bar shows and hides it (default on). If the
+  SVG is missing, the stack still loads and the bar says `silk: none loaded (make
+  mechanical-steps)`: a missing texture must not blank the mechanical model.
+
+![panel view from the viewer](../../assets/viewer-panel-view.png)
+
+The default camera (+z, see above): the mnkybox wordmark and its waves, REC /
+OVER DUB / STOP / PLAY, PLAY START, IN 1 / IN 2 / OUT 1 / OUT 2 (with the bold
+OUT rings), MIDI TRS TYPE A, VALUE, NAV, SHIFT/EXIT, POWER and the three USB
+legends all read the way they will on the fabricated panel. Every mark is the
+panel's own exported silk, so these are the fabrication positions, not a redraw.
+
 ### The Z cut
 
 `Z cut (panel z, mm)` peels the stack at that panel z: everything with
@@ -122,6 +159,7 @@ generated placeholders. No dimension here is a measurement of a delivered part.
 | **Z cut (mm)** | clips everything beyond that panel z; drag it down to slice the stack from the panel rearward |
 | **fit view** | re-fit the camera to the loaded meshes |
 | **shaded / wireframe** | toggle |
+| **silk** (model bar) | show/hide the panel silkscreen texture, on by default |
 | **show stack boxes** | overlay the documented stack as translucent boxes |
 
 ## The stack overlay

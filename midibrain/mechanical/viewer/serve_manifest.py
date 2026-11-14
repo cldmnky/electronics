@@ -94,7 +94,23 @@ carrier = {
     "moduleRear": z["displayRearMost"],
     "rearBoardFront": z["rearBoardFront"],
 }
-out.write_text(json.dumps({"base": "/", "models": models, "carrier": carrier}, indent=2) + "\n", encoding="utf-8")
+
+# The panel's printed silkscreen. A STEP carries surfaces, not ink, so the only
+# way the viewer can show the wordmark and the legends is the panel's own 2D
+# artwork: `make mechanical-steps` exports panel.circuit.tsx with
+# `tsci export -f pcb-svg --layer top` (the same format scripts/render_boards.ts
+# uses) into the viewer directory. main.js crops it to the board outline, keeps
+# the pcb_silkscreen_* marks and maps them onto the panel front face as a
+# texture - flat ink, never extruded geometry.
+silk_svg = root / "mechanical/viewer/panel-silk.svg"
+data = {"base": "/", "models": models, "carrier": carrier}
+if silk_svg.is_file():
+    data["silk"] = {
+        "url": str(silk_svg.relative_to(root)),
+        "width": layout["panel"]["width"],
+        "height": layout["panel"]["height"],
+    }
+out.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 print(f"mechanical-view: {len(models)} STEP file(s) listed in {out}")
 for m in models:
     if "positionZ" in m:
@@ -102,3 +118,7 @@ for m in models:
     else:
         where = "own frame, aligned on its loaded bbox, screen toward the panel"
     print(f"  {'shown ' if m['visible'] else 'hidden'} {m['label']:<46} {where}")
+if "silk" in data:
+    print(f"  silk    {data['silk']['url']}  ({data['silk']['width']} x {data['silk']['height']} mm panel)")
+else:
+    print("  silk    MISSING: run `make mechanical-steps` for the panel silkscreen svg")

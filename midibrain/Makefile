@@ -122,15 +122,22 @@ mechanical-cad:
 # with every placed part in their real Z. Written into the viewer's model
 # directory, which is gitignored: these are generated binaries (13 MB for the
 # front board), reproducible with this target.
+# The panel's SILKSCREEN is not geometry and no STEP can carry it, so the same
+# export is run once more as `-f pcb-svg --layer top` into
+# mechanical/viewer/panel-silk.svg (also gitignored). scripts/render_boards.ts
+# uses that format for the board renders; the viewer maps it as a texture.
 mechanical-steps:
 	@set -eu; mkdir -p mechanical/viewer/models; \
 	for pair in panel:panel.circuit.tsx front:front.circuit.tsx rear:index.circuit.tsx \
 	            pi-panel:pi-panel.circuit.tsx assembly:assembly.circuit.tsx; do \
 	  name=$${pair%%:*}; file=$${pair#*:}; \
-	  printf '  %-9s <- %s\n' "$$name" "$$file"; \
+	  printf '  %-10s <- %s\n' "$$name" "$$file"; \
 	  ( cd tscircuit && $(BUN) x tsci export -f step -o "../mechanical/viewer/models/$$name.step" "$$file" >/dev/null 2>&1 ) \
 	    || { echo "FAILED to export $$file" >&2; exit 1; }; \
 	done; \
+	printf '  %-10s <- %s\n' panel-silk panel.circuit.tsx; \
+	( cd tscircuit && $(BUN) x tsci export -f pcb-svg --layer top -o "../mechanical/viewer/panel-silk.svg" panel.circuit.tsx >/dev/null 2>&1 ) \
+	  || { echo "FAILED to export the panel silkscreen svg" >&2; exit 1; }; \
 	ls -l mechanical/viewer/models/*.step | awk '{ printf "  %8.1f MB  %s\n", $$5/1048576, $$9 }'; \
 	echo "  now: make mechanical-view"
 

@@ -11,7 +11,7 @@ import * as THREE from "three"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 
 const statusEl = document.getElementById("status")
-const readout = { files: [], meshes: 0, status: "starting", error: null }
+const readout = { files: [], meshes: 0, status: "starting", error: null, silk: null }
 const modelGroups = []
 window.__viewer = readout
 window.__scene = { camera: null, controls: null, scene: null }
@@ -52,7 +52,7 @@ scene.add(grid)
 const axes = new THREE.AxesHelper(40)
 // On the floor AND clear of the panel footprint (x -100; the panel spans +-76):
 // an axes line on scene z 0 is coplanar with the panel front face, so it paints
-// straight over whatever is drawn there.
+// straight over the silkscreen wherever the two overlap.
 axes.position.set(-100, grid.position.y, 0)
 scene.add(axes)
 
@@ -171,6 +171,65 @@ function buildCarrier(spec) {
   modelGroups.push({ group, model: { label: "placeholder: display carrier + 4 spacers" } })
 }
 
+// --------------------------------------------------------------- panel silk
+// A STEP carries surfaces, not printed ink, so the panel's silkscreen exists
+// only in tscircuit's board data. `make mechanical-steps` exports the panel's
+// top-layer PCB SVG alongside the STEPs and it is mapped here as a TEXTURE:
+// JLCPCB's silkscreen is flat ink on the FR-4, so extruding it into geometry
+// would draw a part that is not on the panel. The plane sits a twentieth of a
+// millimetre in FRONT of the panel face (scene z 0, which is where the panel
+// STEP's front surface is by construction) and writes no depth, so it cannot
+// z-fight its own substrate.
+const SILK_STANDOFF = 0.05 // mm in front of the panel front face
+const SILK_PX_PER_MM = 12 // 2.6x the exported drawing (4.6 px/mm), so 5 mm text stays crisp
+
+function keepSilkOnly(svg) {
+  // The export draws the board edge, the cutouts and the drills too; the STEP
+  // already carries those as real holes, and only ink belongs on the panel face.
+  const board = svg.querySelector("[data-type='pcb_boundary']")
+  const crop = board
+    ? ["x", "y", "width", "height"].map((a) => Number(board.getAttribute(a)))
+    : [0, 0, Number(svg.getAttribute("width")), Number(svg.getAttribute("height"))]
+  for (const el of svg.querySelectorAll("[data-type]")) {
+    if (!el.getAttribute("data-type").startsWith("pcb_silkscreen_")) el.remove()
+  }
+  return crop
+}
+
+async function buildSilk(spec, base) {
+  const response = await fetch(new URL(spec.url, base), { cache: "no-store" })
+  if (!response.ok) throw new Error(`${spec.url}: HTTP ${response.status}`)
+  // The exported SVG embeds its own TscircuitAlphabet font as a data URL, so the
+  // raster keeps the drawn glyphs instead of the browser's fallback face.
+  const svg = new DOMParser().parseFromString(await response.text(), "image/svg+xml").documentElement
+  const [cx, cy, cw, ch] = keepSilkOnly(svg)
+  const image = new Image()
+  image.src = "data:image/svg+xml;charset=utf-8," +
+    encodeURIComponent(new XMLSerializer().serializeToString(svg))
+  await image.decode()
+  const canvas = document.createElement("canvas")
+  canvas.width = Math.round(spec.width * SILK_PX_PER_MM)
+  canvas.height = Math.round(spec.height * SILK_PX_PER_MM)
+  canvas.getContext("2d").drawImage(image, cx, cy, cw, ch, 0, 0, canvas.width, canvas.height)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.anisotropy = renderer.capabilities.getMaxAnisotropy()
+  const plane = new THREE.Mesh(
+    // The panel is centred on panel x = y = 0; CanvasTexture flips the image
+    // rows (flipY), so the artwork's top row lands on the plane's +y side.
+    new THREE.PlaneGeometry(spec.width, spec.height),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }),
+  )
+  const group = new THREE.Group()
+  group.name = "panel silkscreen (texture)"
+  group.position.z = SILK_STANDOFF
+  group.add(plane)
+  scene.add(group)
+  modelGroups.push({ group, model: { label: "silk (panel artwork, texture)" } })
+  readout.silk = `panel silkscreen texture, ${spec.width} x ${spec.height} mm`
+}
+
 // ------------------------------------------------------------- model toggles
 // Loading six solids at once is unreadable, and the STACK_MM placeholder boxes
 // that used to live here were a sketch of the pre-respin stack (128 mm board at
@@ -275,8 +334,26 @@ async function main() {
   }
 
   readout.meshes = loaded
+  if (manifest.silk) {
+    try {
+      await buildSilk(manifest.silk, modelBase)
+    } catch (error) {
+      // The silk is an aid drawn on top of the mechanical models: a missing
+      // export must not blank the stack, so say what is missing and carry on.
+      readout.silk = `unavailable: ${error.message}`
+      console.warn(`panel silkscreen ${readout.silk}`)
+    }
+  }
   buildCarrier(manifest.carrier)
   renderToggles()
+  if (!modelGroups.some((g) => g.group.name === "panel silkscreen (texture)")) {
+    // No silk block in the manifest, or its SVG did not load. Say so rather than
+    // let a panel with no printing read as "this panel has no silkscreen".
+    const hint = document.createElement("span")
+    hint.className = "hint"
+    hint.textContent = "silk: none loaded (make mechanical-steps)"
+    document.getElementById("models").appendChild(hint)
+  }
   fitCamera(union)
   window.__scene.camera = camera
   window.__scene.scene = scene
