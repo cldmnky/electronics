@@ -55,7 +55,7 @@
     "board": {
       "layers": 2,
       "dimensions_mm": [
-        101.6,
+        148,
         112
       ],
       "thickness_mm": 1.6,
@@ -67,7 +67,7 @@
     "assembly": {
       "service": "JLCPCB SMT assembly",
       "sides": 1,
-      "sides_reason": "All 20 SMT placements are on the bottom (Pi side); THT sockets/headers are hand-soldered after SMT. The one body on the front-facing top side is the direct interconnect's J_FRONT male header, opposite the Pi.",
+      "sides_reason": "All 20 SMT placements are on the bottom face, which faces away from the front board; THT sockets/headers are hand-soldered after SMT. The other (top) face carries the direct interconnect's J_FRONT male header and faces the front board, where that header mates the front board's J5 socket; the board is fitted this way round and mates as drawn.",
       "stencil": "bottom only, if separately required",
       "through_hole": "hand solder",
       "through_hole_parts": [
@@ -76,7 +76,7 @@
         "J_PI",
         "J_FRONT"
       ],
-      "through_hole_note": "J_PI uses the selected XFCN imported header with its reference C-number; the Pico sockets need exact bench sourcing. J_FRONT is the Sullins SBH11-PBPC-D13-ST-BK male box header of the direct 2 x 13 mate, THT on the rear board's TOP (front-facing) face opposite the Pi; its 1.00 mm drill is the manufacturer recommendation and it has no LCSC number. Sourcing is a checked-date source lead only (DigiKey observed once in a live browser on 2026-11-10, no snapshot, stock subject to reconfirmation; not an approved DigiKey source; Conrad is the owner's target). All four headers/sockets are THT and stay out of the SMT CPL.",
+      "through_hole_note": "J_PI uses the selected XFCN imported header with its reference C-number; the Pico sockets need exact bench sourcing. J_FRONT is the Sullins SBH11-PBPC-D13-ST-BK male box header of the direct 2 x 13 mate, THT on the rear board's TOP (front-facing) face, where it mates the front board's J5 socket; its 1.00 mm drill is the manufacturer recommendation and it has no LCSC number. Sourcing is a checked-date source lead only (DigiKey observed once in a live browser on 2026-11-10, no snapshot, stock subject to reconfirmation; not an approved DigiKey source; Conrad is the owner's target). All four headers/sockets are THT and stay out of the SMT CPL.",
       "files": {
         "gerbers": "fab/rear/rear-gerbers.zip",
         "bom": "fab/rear/rear-bom-smt.csv",

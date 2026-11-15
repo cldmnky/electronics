@@ -1,9 +1,11 @@
 // Mounting sides and power-button net isolation, measured on the BUILT JSON.
 //
 // Owner requirements this file guards:
-//  * the Pico module sits on the SAME rear-board side as the Raspberry Pi, i.e.
-//    opposite J_FRONT: the sockets' bodies and their insertion direction must
-//    both face the Pi side, and J_FRONT must be the only body on the other side;
+//  * the Pico module's sockets sit on ONE rear-board face, opposite J_FRONT:
+//    the sockets' bodies and their insertion direction must both face that
+//    side, and J_FRONT must be the only body on the other side. That side is
+//    the SMT face, which faces away from the front board; J_FRONT faces the
+//    front board and mates J5 as drawn, so the board is fitted this way round;
 //  * J_PWR is a switch-only contact pair: its two nets may reach SW7 and J_PWR
 //    and nothing else (no rail, no ground, no interconnect pin).
 //
@@ -75,8 +77,8 @@ function allPads(json: Json[]) {
   return out
 }
 
-describe("the Pico module sits on the Pi side of the rear board", () => {
-  test("every rear-board body is on the Pi side except J_FRONT", () => {
+describe("the Pico module's sockets sit on the rear board's SMT face", () => {
+  test("every rear-board body is on that face except J_FRONT", () => {
     const bottom = byType(rear, "pcb_component").filter((c: Json) => c.layer === "bottom")
     const top = byType(rear, "pcb_component").filter((c: Json) => c.layer === "top")
     expect(top.length).toBe(1)
@@ -90,10 +92,10 @@ describe("the Pico module sits on the Pi side of the rear board", () => {
     expect(bottom.map((c: Json) => c.pcb_component_id)).toContain(pcb(rear, "J_PI").pcb_component_id)
   })
 
-  test("the socket bodies and insertion directions face the Pi, J_FRONT faces the front board", () => {
+  test("the socket bodies and insertion directions face that side, J_FRONT faces the front board", () => {
     for (const name of ["J_PICO_L", "J_PICO_R", "J_PI"]) {
       const c = pcb(rear, name)
-      // The module plugs in from the Pi side, so the socket opens rearward.
+      // The module plugs in from the SMT side, so the socket opens rearward.
       expect({ name, layer: c.layer, insertion: c.insertion_direction }).toEqual({
         name, layer: "bottom", insertion: "from_below",
       })
@@ -140,8 +142,8 @@ describe("the Pico module sits on the Pi side of the rear board", () => {
     expect(gapX).toBeGreaterThan(0)
   })
 
-  test("J_FRONT is on the rear board's front-facing side, opposite the Pi side", () => {
-    // The male's solder tails land on the Pi side: that is the known pending
+  test("J_FRONT is on the rear board's front-facing side, opposite the SMT side", () => {
+    // The male's solder tails land on the SMT side: that is the known pending
     // tail/spacer condition recorded in lib/layout.ts PROVISIONAL_DEPTH.
     expect(pcb(rear, "J_FRONT").layer).toBe("top")
     expect(REAR_INTERCONNECT).toEqual(FRONT_INTERCONNECT)

@@ -141,19 +141,24 @@ STEP) the placeholders are **skipped and recorded as skipped**, because the
 `assumptions.json` records the mount block, the residual and a `body_legend` that
 names every drawn body with its status.
 
-## Board face convention — requested, not implemented
+## Board faces and orientation
 
-The separate request for both boards' CAD-bottom faces toward the panel is **not implemented**, and no PCB source, SMT
-side or stackup is changed for it:
+The faces follow what each board carries and the keyed mate; the decision record is [decisions.md](decisions.md) and
+is not restated here.
 
-- the board models are plain slabs, so a flipped slab looks identical and proves nothing;
-- the front/UI board puts its SMT parts and the control actuators on top today, and the rear/base board already puts
-  its SMT parts on the bottom;
-- turning either board over is a real PCB layer/side reassignment that moves every part, the silkscreen, the assembly
-  drawing and the CPL side.
+- the front/UI board's top carries its SMT parts and the control actuators and faces the panel; its bottom,
+  rear-facing face carries the J5 female socket body, the J_PWR right-angle 1 x 2 header body and the through-hole
+  solder tails;
+- the rear/base board's top faces the front board and carries the J_FRONT male header, which mates J5 across
+  `INTERCONNECT_MECH.seatToSeat` (11.20 ±0.20 mm), plus the display-carrier bolts (`LCD_MOUNT_HOLES`); its bottom
+  carries the SMT parts, the Pico sockets and J_PI;
+- the rear board is fitted this way round and mates as drawn: turned over, J_FRONT would face away from J5 and the
+  SMT parts and sockets would enter the 11.20 mm board gap;
+- the board models are plain slabs with no top/bottom feature marker, so the model draws them as designed.
 
-It needs a decision and a PCB revision. The model keeps the current orientation and makes no compliance claim;
-`assumptions.json` records it under `board_face_convention`.
+Nothing in the PCB source, SMT side, placement or stackup changes for this; `assumptions.json` records it under
+`board_face_convention`. The **display's** in-plane orientation and fit are separate and stay unverified
+(`DISPLAY_ORIENTATION`, `docs/TODO.md`).
 
 ## The collision rule
 

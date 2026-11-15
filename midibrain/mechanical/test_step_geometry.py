@@ -865,7 +865,11 @@ class DisplayModelSeparationTest(unittest.TestCase):
     def test_the_two_design_gap_rows_are_in_todo(self) -> None:
         todo = (Path(__file__).resolve().parent.parent / "docs" / "TODO.md").read_text()
         self.assertIn("Display in-plane orientation axis", todo)
-        self.assertIn("Board face convention (owner decision)", todo)
+        # Open work belongs in TODO.md and decisions belong in decisions.md, so
+        # the board-face item is not open work and its record is not here.
+        self.assertNotIn("Board face convention (owner decision)", todo)
+        decisions = (Path(__file__).resolve().parent.parent / "docs" / "decisions.md").read_text()
+        self.assertIn("Board faces and orientation (owner decision 2026-11-15)", decisions)
         # They are design gaps, not physical evidence rows. The count is the
         # canonical one (31); it must agree with the acceptance state file.
         self.assertIn("All 31 items pending", todo)
@@ -949,11 +953,53 @@ class DisplayModelSeparationTest(unittest.TestCase):
         with self.assertRaises(sg.GeometryError):
             sg.acceptance_item_count(Path("/nonexistent/hardware-acceptance.json"))
 
-    def test_the_board_face_convention_is_recorded_as_pending(self) -> None:
+    def test_the_board_face_convention_states_the_current_faces(self) -> None:
         block = sg.assumptions_document(layout())["board_face_convention"]
-        self.assertFalse(block["implemented"])
-        self.assertEqual(block["status"], "PENDING owner decision")
-        self.assertIn("no PCB source", block["action"])
+        # Each board's faces are fixed by its parts and by the keyed mate, and the
+        # rear board mates J_FRONT to J5 as drawn.
+        self.assertEqual(block["decision_record"], "docs/decisions.md")
+        self.assertTrue(block["status"].startswith("CURRENT DESIGN"))
+        self.assertIn("TOP face", block["front_board"])
+        self.assertIn("panel", block["front_board"])
+        # Both bodies on the rear-facing face: the J5 socket and the J_PWR header.
+        for word in ("J5", "J_PWR", "solder tails"):
+            self.assertIn(word, block["front_board"])
+        self.assertIn("TOP face faces the front board", block["rear_board"])
+        for word in ("J_FRONT", "seatToSeat", "LCD_MOUNT_HOLES"):
+            self.assertIn(word, block["rear_board"])
+        # The rear board cannot be turned over in the stack.
+        self.assertTrue(block["rear_board_flip"].startswith("not possible"))
+        self.assertIn("not mate as drawn", block["rear_board_flip"])
+        self.assertTrue(block["orientation_preference_waived"])
+        self.assertFalse(block["pcb_change_required"])
+        self.assertEqual(block["mate_gate"], "interconnect_mate")
+        self.assertIn("DISPLAY_ORIENTATION", block["display_note"])
+        # The model is drawn from the design, not from a physical board.
+        self.assertIn("as designed", block["model_note"])
+        self.assertNotIn("as they are built", block["model_note"])
+        # No key may read as a permission, compliance or history flag: every
+        # assertion above names the current state directly.
+        for stale in ("implemented", "requested", "withdrawn_request", "action"):
+            self.assertNotIn(stale, block)
+        self.assertNotIn("superseded", json.dumps(block))
+
+    def test_the_mechanical_docs_do_not_offer_a_flip(self) -> None:
+        """The docs state the faces the parts and the mate fix, not a choice."""
+        docs = Path(__file__).resolve().parent.parent / "docs"
+        stack = (docs / "mechanical-stack.md").read_text()
+        cad = (docs / "mechanical-cad.md").read_text()
+        for text in (stack, cad):
+            self.assertIn("mates as drawn", text)
+            self.assertIn("J_PWR", text)
+            self.assertIn("as designed", text)
+            self.assertNotIn("as they are built", text)
+            self.assertNotIn("draws them as built", text)
+            self.assertNotIn("orientation in the stack is unconstrained", text)
+            self.assertNotIn("either of its faces may sit", text)
+            self.assertNotIn("does not depend on it", text)
+        # The record lives in decisions.md; a mechanical doc points at it.
+        for text in (stack, cad):
+            self.assertIn("[decisions.md](decisions.md)", text)
 
 
 class DisplayMountGapTest(unittest.TestCase):

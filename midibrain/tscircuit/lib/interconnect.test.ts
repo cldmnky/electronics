@@ -159,7 +159,7 @@ describe("2 x 13 direct interconnect on the built boards", () => {
     expect(J5.pads.size).toBe(INTERCONNECT_PIN_COUNT)
     expect(JFRONT.pads.size).toBe(INTERCONNECT_PIN_COUNT)
     // Female socket on the front board's rear-facing (bottom) face, male
-    // header on the rear board's front-facing (top) face, opposite the Pi.
+    // header on the rear board's other face from its SMT parts (top).
     expect(J5.pcb.layer).toBe("bottom")
     expect(JFRONT.pcb.layer).toBe("top")
     expect(J5.pcb.rotation).toBe(FRONT_INTERCONNECT.rotation)

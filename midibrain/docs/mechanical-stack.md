@@ -4,8 +4,10 @@ Coordinates are mm with panel centre (0, 0), +X right and +Y up looking at the *
 planning value from `tscircuit/lib/layout.ts`, which is the single source; nothing below is a measurement or a fit
 approval. Open physical gates: [acceptance.md](acceptance.md) and [TODO.md](TODO.md).
 
-**Z datum: Z = 0 is the front (operator-side) face of the panel; +Z points rearward into the rack cavity.** PCB
-FRONT / CAD top faces the panel; REAR / CAD bottom faces the rack cavity. Looking from behind reverses the apparent
+**Z datum: Z = 0 is the front (operator-side) face of the panel; +Z points rearward into the rack cavity.** Each
+PCB is drawn and fitted with its CAD top toward the panel: the front/UI board's top carries the SMT parts and faces
+the panel, and the rear/base board's top faces the front board, where its J_FRONT male header mates the J5 female
+socket (see [Board faces and orientation](#board-faces-and-orientation)). Looking from behind reverses the apparent
 X direction.
 
 ## Current arrangement
@@ -321,20 +323,26 @@ inside that band. Only the USB-C flange (26.4 mm, SparkFun CAB-15455 at x −52)
 the flange's depth below the panel is not published. This stays an XY-projection finding and a named physical gate —
 measure the purchased flange first.
 
-## Board face convention — requested, not implemented (pending)
+## Board faces and orientation
 
-A separate requirement asks for **both boards' CAD-bottom faces toward the panel**. It is not implemented, and no
-board source, SMT side or stackup is changed for it:
+The faces are fixed by what each board carries and by the keyed mate, not by a preference; the decision record is
+[decisions.md](decisions.md). `tscircuit/lib/layout.ts` is authoritative for every board dimension.
 
-- The printed board models in the CAD file are plain slabs. A bare slab has no top/bottom feature marker, so a
-  flipped slab would look identical and prove nothing.
-- The front/UI board carries its SMT parts and the control actuators on the **top** face today, and the rear/base
-  board already carries its SMT parts on the **bottom** face.
-- Putting either board's bottom face toward the panel is therefore a real PCB layer/side reassignment: it moves every
-  part, the silkscreen, the assembly drawing and the CPL side.
+- The front/UI board's **top** face carries its SMT parts and the control actuators and faces the panel. Its bottom,
+  rear-facing face carries the J5 female socket body, the J_PWR right-angle 1 x 2 header body and the through-hole
+  solder tails.
+- The rear/base board's **top** face faces the front board. That face carries the J_FRONT male header, which plugs
+  into J5 across the `INTERCONNECT_MECH.seatToSeat` dimension of 11.20 ±0.20 mm, and it is the face the display
+  carrier bolts to (`LCD_MOUNT_HOLES`). Its bottom face carries the SMT parts, the Pico sockets and J_PI, and faces
+  away from the front board.
+- **The rear board is fitted this way round and mates as drawn.** Turning it over would face J_FRONT away from J5, so
+  the pair could not mate, and it would move the SMT parts, the Pico sockets and J_PI into the 11.20 mm board gap.
+  The mate itself is unproven and stays an acceptance item (`interconnect_mate`).
+- A bare slab in the CAD file has no top/bottom feature marker, so the model draws the boards as designed and
+  claims no orientation beyond that. Recorded in the assumptions file as `board_face_convention`.
 
-This needs a decision and a PCB revision. Until then the CAD model keeps the current board orientation and
-makes no compliance claim. Recorded in the assumptions file as `board_face_convention`.
+The **display's** own in-plane orientation and its fit are a different question and stay unverified: see
+`DISPLAY_ORIENTATION` in `mechanical/step_geometry.py` and the display rows above.
 
 ## Panel button opening: 12.25 mm square; printed cap is the standard
 
@@ -488,8 +496,9 @@ front board actually has material (its two legs) and both boards are solid; the 
   a planning marker only (identity, side and position unverified), so no clearance from it is claimed. The remaining
   FPC question is the module's own tail and the female solder tail (3.20 mm from the seating face, i.e. a nominal
   1.60 mm beyond a 1.60 mm PCB, fillet unmeasured; see `display_fpc_idc` above).
-- Pi side of J_FRONT: the male tail is **3.00 mm from the connector seating face** (drawing 11091 sheet 1), so it
-  protrudes a **nominal 1.40 mm beyond a 1.60 mm rear PCB**; the 26 pads have no Pi board above them (the Pi is on its own panel). A **candidate** Pi
+- Tail side of J_FRONT (that board's SMT face): the male tail is **3.00 mm from the connector seating face** (drawing
+  11091 sheet 1), so it protrudes a **nominal 1.40 mm beyond a 1.60 mm rear PCB**; the 26 pads have no Pi board above
+  them (the Pi is on its own panel). A **candidate** Pi
   spacer of 3.5 mm is recorded, but it is a candidate only and NOT a safety claim: the solder fillet height, the PCB
   thickness tolerance, the Pi hardware, the actual clearance, the Pi's own connectors and the cooler/HAT stack are all
   unmeasured, so this stays pending.

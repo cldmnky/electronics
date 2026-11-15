@@ -426,7 +426,8 @@ for (const h of FRONT_REAR_MOUNT.filter(hh => hh.y > 0)) {
 }
 
 // Rear-board placements: the male interconnect sits at the shared point on the
-// front-facing (top) side, opposite the Pi. No other body may share that side.
+// front-facing (top) side, the one face without SMT parts. No other body may
+// share that side.
 const rearSrc = new Map(byType(rear, "source_component").map(s => [s.source_component_id, s]))
 const rearComp = (name: string) => {
   const id = byType(rear, "source_component").find(s => s.name === name)?.source_component_id
@@ -435,7 +436,7 @@ const rearComp = (name: string) => {
 }
 at("rear: J_FRONT male interconnect", rearComp("J_FRONT"), { x: REAR_INTERCONNECT.x, y: REAR_INTERCONNECT.y })
 ok(`rear: J_FRONT rotated ${REAR_INTERCONNECT.rotation} deg`, rearComp("J_FRONT")?.rotation === REAR_INTERCONNECT.rotation)
-ok("rear: J_FRONT is on the TOP (front-facing) side, opposite the Pi", rearComp("J_FRONT")?.layer === "top")
+ok("rear: J_FRONT is on the TOP (front-facing) side, alone on that face", rearComp("J_FRONT")?.layer === "top")
 ok("rear: J_FRONT and front J5 share one placement",
   REAR_INTERCONNECT.x === FRONT_INTERCONNECT.x && REAR_INTERCONNECT.y === FRONT_INTERCONNECT.y &&
   REAR_INTERCONNECT.rotation === FRONT_INTERCONNECT.rotation)

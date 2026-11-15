@@ -1363,18 +1363,32 @@ def assumptions_document(layout: dict | None = None, *,
             "status": "ILLUSTRATIVE placement; every display gate stays pending",
         },
         "board_face_convention": {
-            "requested": ("both boards' CAD-bottom faces toward the panel"),
-            "implemented": False,
-            "status": "PENDING owner decision",
-            "conflict": (
-                "the bare board models are plain slabs with no top/bottom feature marker. The "
-                "existing front/UI board carries its SMT parts and the control actuators on "
-                "top, and the rear/base board already has its SMT parts on the bottom. Moving "
-                "either board's CAD bottom toward the panel is a real PCB layer/side "
-                "reassignment, not a display transform: it would change the assembly, the "
-                "silkscreen and every part placement"),
-            "action": ("no PCB source, SMT side or stackup was changed. The request needs an "
-                       "owner decision and a PCB revision before any model follows it"),
+            # Current state, not history: what each face carries and why it is on that side.
+            # The record of the owner's decision is docs/decisions.md and is not repeated here.
+            "decision_record": "docs/decisions.md",
+            "status": "CURRENT DESIGN: each board is fitted and drawn with its CAD top toward the panel",
+            "front_board": (
+                "the TOP face carries the SMT parts and the control actuators and faces the "
+                "panel; the bottom, rear-facing face carries the J5 female socket body, the "
+                "J_PWR right-angle 1 x 2 header body and the through-hole solder tails"),
+            "rear_board": (
+                "the TOP face faces the front board: it carries the J_FRONT male header, which "
+                "mates J5 across INTERCONNECT_MECH.seatToSeat (11.20 +-0.20 mm), and the "
+                "display-carrier bolts (LCD_MOUNT_HOLES); the BOTTOM face carries the SMT "
+                "parts, the Pico sockets and J_PI, and faces away from the front board"),
+            "rear_board_flip": (
+                "not possible in the stack: J_FRONT would face away from J5, so the pair could "
+                "not mate as drawn, and the SMT parts and sockets would enter the 11.20 mm "
+                "board gap"),
+            "orientation_preference_waived": True,
+            "pcb_change_required": False,
+            "model_note": (
+                "a bare slab has no top/bottom feature marker, so the model draws the boards "
+                "as designed and claims no orientation beyond that"),
+            "mate_gate": "interconnect_mate",
+            "display_note": (
+                "the display's own in-plane orientation and fit are separate unverified "
+                "items (DISPLAY_ORIENTATION)"),
         },
         "flange_source": flange_source,
         "flange_projections": overlaps,

@@ -8,10 +8,13 @@
   its top edge); the rear/base PCB is **148 × 112 mm**; the Pi mounting panel is
   101.2 × 128.5 mm; installed depth target ≤110 mm per module. The panel front sits
   **10.6 mm** above the front board's top face: it is the Thonkiconn jack's 9.0 mm seating shoulder plus the 1.6 mm panel,
-  so the jack is the anchor and not a chosen panel-front target. **Board-face orientation is not decided:** the front
-  board carries its SMT parts and actuators on its top face and the rear board its SMT parts on its bottom face, and a
-  request to turn both CAD-bottom faces toward the panel is open (`docs/TODO.md`). Panel width and the knob-column
-  position are recorded in [decisions.md](decisions.md).
+  so the jack is the anchor and not a chosen panel-front target. **Board faces are fixed by the parts and the keyed
+  mate:** the front panel faces the user, the front/UI PCB's top face faces the panel and carries its SMT parts, and
+  the rear/base PCB carries its SMT parts on its bottom face and faces the front board with its top face, where
+  J_FRONT mates the front board's J5 socket as drawn. Each PCB carries SMT on one side only, and
+  `tscircuit/lib/layout.ts` is authoritative for every board dimension. No PCB source, SMT side or stackup changes
+  for it, and the display's own in-plane orientation stays a separate unverified item. Panel width and the
+  knob-column position are recorded in [decisions.md](decisions.md).
 - Removable Raspberry Pi 5, mechanically supported through its mounting holes
   on the Pi mounting panel (the base board carries no Pi holes); removable Pico 2, socketed on the base board. Pi ↔ Pico SPI with
   READY/IRQ and common ground runs over the 40-wire GPIO ribbon between the two
