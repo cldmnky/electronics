@@ -1,4 +1,4 @@
-.PHONY: test release gate reports electrical mechanical mechanical-export mechanical-cad mechanical-steps mechanical-view host midifx spice panel-preview firmware order bench-test bench-clock
+.PHONY: test release gate reports electrical mechanical mechanical-export mechanical-cad mechanical-steps mechanical-view local-cad-serve host midifx spice panel-preview firmware order bench-test bench-clock
 
 # Defaults cover the setup in firmware/README.md; override on the command
 # line (PICO_SDK_PATH=/path/to/sdk make firmware) if yours lives elsewhere.
@@ -6,6 +6,16 @@ PICO_SDK_PATH ?= $(HOME)/pico/pico-sdk
 FW_TOOLCHAIN := $(firstword $(wildcard $(HOME)/pico/arm-gnu-toolchain-*/bin))
 BUN ?= bun
 PYTHON ?= python3
+
+# U5's STEP body for the STEP export and the mechanical viewer. The default is
+# the library's authored, Apache-2.0 model (library/cad/rkjxt1f42001/model.step),
+# so a fresh checkout has the part. NAV_STEP can point at another copy, for
+# example the owner's local, non-redistributable 16-solid alternate STEP under
+# mechanical/local-cad/ (gitignored) for a comparison render. With no model at
+# all the export still succeeds; the tscircuit 3D view falls back to the inline
+# JSCAD envelope in front.circuit.tsx.
+NAV_STEP ?= $(if $(wildcard ../library/cad/rkjxt1f42001/model.step),$(abspath ../library/cad/rkjxt1f42001/model.step),)
+LOCAL_CAD_PORT ?= 8765
 firmware:
 	@set -eu; export PICO_SDK_PATH="$(PICO_SDK_PATH)"; \
 	[ -d "$$PICO_SDK_PATH" ] || { echo "PICO_SDK_PATH=$$PICO_SDK_PATH not found (see firmware/README.md)"; exit 1; }; \
@@ -128,13 +138,17 @@ mechanical-cad:
 # export is run once more as `-f pcb-svg --layer top` into
 # mechanical/viewer/panel-silk.svg (also gitignored). scripts/render_boards.ts
 # uses that format for the board renders; the viewer maps it as a texture.
+# `tsci export` reuses a built circuit under tscircuit/dist when the entry has
+# one. `make test` builds WITHOUT MIDIBRAIN_NAV_STEP, so a stale dist would
+# silently drop the U5 body; remove it before every export. dist is
+# generated and `make test` rebuilds it.
 mechanical-steps:
-	@set -eu; mkdir -p mechanical/viewer/models; \
+	@set -eu; rm -rf tscircuit/dist; mkdir -p mechanical/viewer/models; \
 	for pair in panel:panel.circuit.tsx front:front.circuit.tsx rear:index.circuit.tsx \
 	            pi-panel:pi-panel.circuit.tsx assembly:assembly.circuit.tsx; do \
 	  name=$${pair%%:*}; file=$${pair#*:}; \
 	  printf '  %-10s <- %s\n' "$$name" "$$file"; \
-	  ( cd tscircuit && $(BUN) x tsci export -f step -o "../mechanical/viewer/models/$$name.step" "$$file" >/dev/null 2>&1 ) \
+	  ( cd tscircuit && MIDIBRAIN_NAV_STEP="$(NAV_STEP)" $(BUN) x tsci export -f step -o "../mechanical/viewer/models/$$name.step" "$$file" >/dev/null 2>&1 ) \
 	    || { echo "FAILED to export $$file" >&2; exit 1; }; \
 	done; \
 	printf '  %-10s <- %s\n' panel-silk panel.circuit.tsx; \
@@ -145,6 +159,15 @@ mechanical-steps:
 
 mechanical-view:
 	@PORT="$(PORT)" NOOPEN="$(NOOPEN)" bash mechanical/viewer/serve.sh
+
+# Serve the local-only part CAD over HTTP for tscircuit's browser 3D view,
+# which fetches model URLs instead of reading files. The STEP export reads the
+# local file directly and does not need this server. In another shell:
+#   make mechanical-steps NAV_STEP=http://127.0.0.1:8765/rkjxt1f42001.step
+local-cad-serve:
+	@echo "serving mechanical/local-cad on http://127.0.0.1:$(LOCAL_CAD_PORT)/"
+	@echo "use NAV_STEP=http://127.0.0.1:$(LOCAL_CAD_PORT)/rkjxt1f42001.step"
+	@python3 -m http.server $(LOCAL_CAD_PORT) --bind 127.0.0.1 --directory mechanical/local-cad
 
 host: midifx
 	@set -eu; exe=$$(mktemp "$${TMPDIR:-/tmp}/midibrain-test.XXXXXX"); trap 'rm -f "$$exe"' EXIT; \

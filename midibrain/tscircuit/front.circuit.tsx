@@ -383,6 +383,123 @@ const femaleSocketEnvelope = (() => {
   }
 })()
 
+// ---- U5's 3D body (ALPS RKJXT1F42001) ---------------------------------------
+// The ALPS RKJXT1F42001 has no redistributable vendor STEP
+// (library/cad/rkjxt1f42001/SOURCE.md), so no vendor model is committed. The
+// library's own Apache-2.0 STEP cannot be used here: tscircuit's browser/GLB 3D
+// view fetches a URL, and a path beside this file is not reliably reachable from
+// it. So the DEFAULT body is this inline JSCAD envelope, built from the same
+// drawing dimensions as library/cad/rkjxt1f42001/model.py and with no network
+// fetch at all.
+//
+// REFERENCE ENVELOPE, NOT A FIT MODEL: housing, octagonal body, collar, flatted
+// shaft, the ten terminal blades and the position lug only. The corner rounds,
+// the collar chamfer, the four housing tabs and the internal mechanism are
+// omitted. Fit, panel and stack checks use the authored STEP; the footprint owns
+// the mounting geometry.
+//
+// COMPONENT FRAME, not panel frame. U5's cad_component origin is ON THE BOARD
+// TOP at (RIGHT_CONTROLS.NAV), so local z 0 is the seating plane and the drawing's
+// own z values can be used directly. frontBoardUpZ() - what the printed parts
+// above use - maps a PANEL z onto the board's mid-plane frame; calling it here
+// would add the 0.8 mm board-top offset twice.
+const navSwitchCylinder = (
+  diameter: number,
+  zBottom: number,
+  zTop: number,
+  at: [number, number] = [0, 0],
+  segments?: number,
+): JscadShape => ({
+  type: "translate",
+  vector: [at[0], at[1], (zBottom + zTop) / 2],
+  shape: {
+    type: "cylinder",
+    radius: diameter / 2,
+    height: zTop - zBottom,
+    ...(segments === undefined ? {} : { segments }),
+  },
+})
+
+const navSwitchBox = (size: [number, number, number], at: [number, number, number]): JscadShape => ({
+  type: "translate",
+  vector: at,
+  shape: { type: "cuboid", size },
+})
+
+// The ten electrical terminal holes, millimetres from the shaft axis in the
+// footprint frame: the same table as `HOLES` in imports/RKJXT1F42001.tsx and
+// library/cad/rkjxt1f42001/footprint.tsx (A, B, C, D, com, Push, Ground,
+// EncoderA, EncoderB, EncoderCom = pin1..pin10). Repeated here, not imported,
+// because the blades only have to drop through the holes that footprint draws;
+// a changed hole table has to change both.
+const NAV_SWITCH_TERMINALS: [number, number][] = [
+  [-1.5, -7.8],
+  [7.8, -1.5],
+  [1.5, 7.8],
+  [-7.8, 1.5],
+  [-1.0, 5.78],
+  [1.0, -6.98],
+  [6.86, -3.75],
+  [-7.8, -1.5],
+  [7.8, 1.5],
+  [-1.5, 7.8],
+]
+const NAV_SWITCH_LUG: [number, number] = [-3.8, -1.5]
+
+// Upper body, 14.5 mm across the flats, z 3.0..8.6. A JSCAD cylinder is a
+// regular n-gon prism with its VERTICES on the circle, so the circumscribed
+// diameter that leaves the flats 14.5 mm apart is 14.5 / cos(22.5 deg); rotating
+// the 8-gon by half a segment turns two flats square to +-x and +-y, as the
+// drawing's "4-14.5" has them.
+const NAV_SWITCH_BODY_ACROSS_FLATS = 14.5
+const navSwitchUpperBody: JscadShape = {
+  type: "rotateZ",
+  angle: -Math.PI / 8,
+  shape: navSwitchCylinder(NAV_SWITCH_BODY_ACROSS_FLATS / Math.cos(Math.PI / 8), 3.0, 8.6, [0, 0], 8),
+}
+
+// D2.5 shaft, z 10.5..17.4, with the 1.8 mm across-flat D: the flat plane is at
+// y = +0.55 (2.5 - 1.8 = 0.7, round side at y = -1.25), so a box reaching from
+// y = +0.55 outward cuts it. Subtracted from the shaft alone, never from the
+// collar under it. The printed keytop's 2.4 mm bore is round, so this flat is
+// cosmetic here; it keeps the envelope the same D as the STEP.
+const NAV_SWITCH_FLAT_Y = 0.55
+const navSwitchShaft: JscadShape = {
+  type: "subtract",
+  shapes: [
+    navSwitchCylinder(2.5, 10.5, 17.4),
+    navSwitchBox([5, 5, 8], [0, NAV_SWITCH_FLAT_Y + 2.5, (10.5 + 17.4) / 2]),
+  ],
+}
+
+const navSwitchEnvelope: JscadShape = {
+  type: "union",
+  shapes: [
+    // lower housing, 17.0 x 17.0 mm, z 0..3.0
+    navSwitchBox([17.0, 17.0, 3.0], [0, 0, 1.5]),
+    // upper body, z 3.0..8.6
+    navSwitchUpperBody,
+    // stationary collar, D7.20, z 8.6..10.5 - the panel opening's clearance feature
+    navSwitchCylinder(7.2, 8.6, 10.5),
+    // shaft, z 10.5..17.4
+    navSwitchShaft,
+    // ten flat terminal blades, 0.7 x 0.25 mm, z -3.2..0 (through the plated holes)
+    ...NAV_SWITCH_TERMINALS.map(([x, y]) => navSwitchBox([0.7, 0.25, 3.2], [x, y, -1.6])),
+    // position lug, D1.1, z -1.2..0 (the non-plated locator hole)
+    navSwitchCylinder(1.1, -1.2, 0, NAV_SWITCH_LUG),
+  ],
+}
+
+
+// MIDIBRAIN_NAV_STEP OVERRIDES the envelope with a STEP URL or a file path the
+// exporter can read, for a local render against the owner's 16-solid alternate
+// model. That file carries no redistribution grant, so it is never committed:
+// it sits at mechanical/local-cad/rkjxt1f42001.step (gitignored) and
+// `make mechanical-steps` passes its path here. Unset - the normal case - the
+// envelope above is the body and nothing is fetched.
+const NAV_SWITCH_STEP_URL =
+  typeof process !== "undefined" ? process.env.MIDIBRAIN_NAV_STEP ?? "" : ""
+
 export default () => (
   <board
     width={`${FRONT_PCB.width}mm`}
@@ -481,6 +598,11 @@ export default () => (
       schSheetName="front"
       schSectionName="controls"
       noConnect={["EncoderA", "EncoderB", "EncoderCom"]}
+      cadModel={
+        NAV_SWITCH_STEP_URL
+          ? { stepUrl: NAV_SWITCH_STEP_URL }
+          : { jscad: navSwitchEnvelope, positionOffset: { x: 0, y: 0, z: 0 } }
+      }
       connections={{
         A: "net.NAV_UP",
         B: "net.NAV_LEFT",

@@ -23,6 +23,11 @@ assets/base-pcb.svg
 # the doc-linked renders stay tracked so docs read on any platform)
 assets/front-panel-pcb.png
 assets/front-3d.png
+# Local-only, non-redistributable part CAD. The README is tracked; every STEP
+# here is ignored and must never be added. See mechanical/local-cad/README.md.
+mechanical/local-cad/*.step
+mechanical/local-cad/*.stp
+
 # Python caches
 __pycache__/
 *.pyc

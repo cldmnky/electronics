@@ -12,16 +12,24 @@
   `midibrain` board build at `midibrain/tscircuit/imports/RKJXT1F42001.tsx`,
   and `midibrain/tscircuit/lib/rkjxt-nav.test.ts` compares the pad coordinates
   of the two files so they cannot drift.
-- STEP: **none, and none may be committed.** The ALPS vendor STEP (single fused
-  solid, `RKJXT1F42001.STEP` in the vendor zip) and the owner-supplied alternate
-  STEP (16 solids) carry no redistribution grant. Both were used LOCALLY only,
-  to cross-check pad positions and heights, and neither file is in this
-  repository. A SamacSys model archive (`LIB_RKJXT1F42001.zip`) was also
-  consulted locally; its `license.txt` forbids redistributing the models "in any
-  form useable as a PCB Library Component", so no SamacSys file is committed and
-  it was used only as a second opinion on the hole pattern.
-- License: the footprint is authored from the manufacturer's published
+- STEP: `cad/rkjxt1f42001/model.step`, AUTHORED here by `model.py` from the
+  drawing and licensed Apache-2.0 — see "STEP model (authored here)" below. No
+  vendor CAD file is committed. The ALPS vendor STEP (single fused solid,
+  `RKJXT1F42001.STEP` in the vendor zip), the owner-supplied alternate STEP (16
+  solids) and a SamacSys model archive (`LIB_RKJXT1F42001.zip`) carry no
+  redistribution grant. All three were used LOCALLY only, to cross-check pad
+  positions and heights; none of their geometry is copied, converted or
+  tessellated into ours. (The SamacSys `license.txt` forbids redistributing its
+  models "in any form useable as a PCB Library Component".)
+- License: the Apache-2.0 repository license covers both authored assets. The
+  footprint and the STEP are authored from the manufacturer's published
   dimensions, so the geometry is ours, not the vendor's.
+- Local comparison only: the authored `model.step` above is the default. The
+  owner-supplied 16-solid alternate STEP remains an optional local override at
+  `midibrain/mechanical/local-cad/rkjxt1f42001.step` (gitignored, SHA-256
+  `24d6b9e11b8d8c59f97125d3e65a39cd0e1573fd43e1b9c091272566be1aeae1`, origin on
+  the shaft axis at the seating plane, +z toward the panel). It is not part of
+  this library and is never committed.
 - SHA-256 of this footprint: compute with
   `shasum -a 256 library/cad/rkjxt1f42001/footprint.tsx`. It changes whenever the
   footprint is edited, so it is not repeated here.
@@ -64,6 +72,104 @@ Cross-checks (local only, not committed):
   side of its own lettered hole, which is what a lever on a fulcrum does and
   what the drawing draws.
 
+## STEP model (authored here)
+
+- File: `cad/rkjxt1f42001/model.step`, written by `cad/rkjxt1f42001/model.py`
+  with CadQuery 2.8.0 (OCCT 7.9) in a private virtualenv — the same convention
+  as `midibrain/docs/mechanical-cad.md`:
+  ```bash
+  /tmp/cq-venv/bin/python library/cad/rkjxt1f42001/model.py \
+    --out library/cad/rkjxt1f42001/model.step --verify
+  ```
+- Source: the same ALPS drawing as the footprint (catalogue page 398). The
+  generator builds the part from CadQuery primitives — boxes, cylinders and an
+  octagon polygon — and reads no CAD file at all. The ALPS vendor STEP, the
+  owner-supplied 16-solid alternate STEP and the SamacSys archive are not
+  imported, converted or tessellated by it, and none of their geometry is in
+  the committed file. The geometry is ours.
+- License: Apache-2.0, the repository license. No part of the file is licensed
+  by ALPS or by a CAD vendor.
+- SHA-256: `953f3b17cc825ddeb99b76bea85de59662938b3658c8488cc2c6edc7bc49e2a1`
+  (308 371 bytes; recompute with `shasum -a 256 library/cad/rkjxt1f42001/model.step`).
+  The hash of `model.py` is not repeated here because it changes with the
+  script.
+- Frame: origin on the shaft axis at the PCB seating plane, +z toward the
+  panel, +x/+y as in the printed hole table — identical to `footprint.tsx`.
+  Units mm, one fused ISO-10303-21 solid, no external references. The export
+  names the part `RKJXT1F42001.step` in `FILE_NAME` and pins the timestamp, so a
+  re-run of the generator is byte-identical.
+
+### Dimensions used
+
+| feature | value | source |
+| --- | --- | --- |
+| lower housing | 17.0 x 17.0 mm in plan, z 0.0..3.0 | drawing "4-17", page 398 |
+| upper body | regular octagon, 14.5 mm across the flats, z 3.0..8.6 | drawing "4-14.5" plus the 8.6 body top, page 398 |
+| octagon corners | vertices at (±7.25, ±3.003) and (±3.003, ±7.25) | derived from the across-flats figure: 7.25·(√2−1) = 3.003 |
+| collar top | z 10.5 | drawing "10.5", page 398 |
+| shaft | Ø2.5, z 11.2..17.4 | drawing "oe2.5" and "17.4", page 398 |
+| D-flat | 1.8 mm across; flat plane at y = +0.55, round side at y = −1.25 | drawing "1.8" with the 2.5 shaft: −1.25 + 1.8 = 0.55 |
+| terminal blades | 0.7 x 0.25 mm, z −3.2..0.0 | drawing "flat blades 0.7 x 0.25" and "3.2", page 398 |
+| terminal positions | the ten printed hole positions in the table above | page 398 |
+| position lug | Ø1.1 at (−3.8, −1.5) | "for position lug" hole, page 398 (NPTH Ø1.1) |
+
+### Model-derived (no printed value)
+
+| feature | value | why |
+| --- | --- | --- |
+| lower-housing corner rounds | R1.0 | the drawing prints the square envelope only; the vendor lower frame is a 17.2 mm square with lead cut-outs |
+| collar | Ø7.20, z 8.6..10.5, 0.2 mm top chamfer | page 398 prints no collar diameter; Ø7.20 is the 3.6 mm silkscreen circle of `footprint.tsx` |
+| four housing tabs | 0.8 mm tangential x 1.3 mm radial x 0.4 mm high at (0, ±5.18) and (±5.18, 0), z 8.6..9.0 | position and size read from the local alternate STEP, simplified to boxes |
+| shaft base neck | Ø1.8, z 10.5..11.2 | no printed neck diameter or height |
+| tip chamfer | 0.2 mm around the D profile | no printed edge break |
+| D-flat orientation | flat faces +y | the drawing prints the across-the-flat figure, not which side it faces; +y is what the local alternate STEP shows |
+| D-flat extent | the whole main shaft, z 11.2..17.4 | no printed flat start; the local alternate STEP's flat starts between 12.0 and 12.5, so ours is longer |
+| blade orientation | 0.25 mm radial, 0.7 mm tangential, one rule for all ten posts | the vendor rotates individual blades to suit its internal contacts; a single rule is reproducible and keeps every post inside the 17.0 mm envelope |
+| position-lug depth | 1.2 mm below the seating plane | no printed value; the local alternate STEP's lug ends 1.2 mm below the plane |
+
+### Simplified or not modelled
+
+- The ten terminal posts are straight 0.7 x 0.25 mm prisms. The vendor's are
+  kinked blades that reach the internal contacts, and its encoder pair also
+  climbs the outside of the housing: that is why a z = 4.0 section of the vendor
+  model measures 15.73 mm across while ours is the printed 14.5 mm octagon.
+- No internal switch or encoder contacts, no springs, no frame lead cut-outs.
+- The four tabs are boxes, not bent clips; their extent is close to, not equal
+  to, the vendor's.
+- The octagon corners are sharp. (The vendor body itself measures 14.45 mm
+  across the flats, i.e. the same flats with a small corner radius; the printed
+  14.5 mm is what is modelled.)
+- The STEP is a body model for 3D viewing and panel/stack checks. It does not
+  prove pin numbering, contact behaviour or soldering, which the drawing and
+  the footprint own.
+
+### Verification of the written STEP
+
+`--verify` re-loads `model.step` and checks 29 conditions; all pass. Measured
+values:
+
+| check | measured | expected |
+| --- | --- | --- |
+| header / units | `ISO-10303-21;`, `SI_UNIT(.MILLI.,.METRE.)`, `END-ISO-10303-21;` | mm, no `EXTERNAL_REFERENCE` |
+| solids | 1 solid, OCCT-valid, 102 faces | no nested assembly |
+| overall bbox | x −8.500..+8.500, y −8.500..+8.500, z −3.200..+17.400 | 17.0 x 17.0, z −3.2..17.4 |
+| z = 1.0 | x ±8.500, y ±8.500 | 17.0 mm lower housing |
+| z = 4.0 | x ±7.250, y ±7.250 | 14.5 mm across flats |
+| z = 9.5 | x ±3.600, y ±3.600 | collar Ø7.20 |
+| z = 12.0 | x ±1.250, y −1.250..+0.550 | shaft Ø2.5 with the 1.8 mm D-flat |
+| z = 17.3 | x ±1.150, y −1.150..+0.450 | inside Ø2.5, 0.2 mm tip chamfer |
+| ten posts | a probe at each printed hole centre at z = −3.19 is solid | blades reach z = −3.2 |
+| lug | a probe at (−3.8, −1.5) at z = −1.19 is solid | lug reaches z = −1.2 |
+| four tabs | a probe at each tab centre at z = 8.8 is solid | tabs present, z 8.6..9.0 |
+
+One-time cross-check against the local alternate STEP (sanity only — that file
+is NOT a source and is not committed): vendor bbox 17.2 x 17.2 x
+(−3.236..17.400) versus our 17.0 x 17.0 x (−3.200..17.400); vendor volume
+1 679.6 mm³ in 16 solids versus our 1 950.2 mm³ in one solid, the difference
+being the missing internal mechanism and the simplified straight posts. The
+shaft, flat side and seating plane land on the same figures; the vendor collar
+is slightly tapered (7.13 mm at z = 9.5) where ours is a Ø7.20 cylinder.
+
 ## Verified
 
 - Hole count, positions, diameters: from the drawing's own vector geometry,
@@ -97,9 +203,13 @@ Cross-checks (local only, not committed):
 
 ## NOT verified (why the row stays `draft`)
 
-- No STEP model may be committed, so the library row has no `step` and cannot
-  be promoted. The 3D check of body, origin and axis is therefore a local,
-  one-off cross-check, not a reproducible asset.
+- The row's `step` and `cad_license` columns are still empty: the authored
+  `model.step` is redistributable and its hash is recorded above, but wiring it
+  into `library/components.csv` (and into the footprint's `cadModel`) is a
+  separate edit that has not been made, so the row still has no reproducible
+  3D asset from the library tool's point of view and stays `draft`. The model
+  itself has not been checked against a physical switch either — see the STEP
+  section above for what is model geometry.
 - The collar diameter (Ø7.20) and the four housing tabs (9.00 mm) are model
   geometry: page 398 prints neither. They drive the panel opening
   (`PANEL_CUTOUTS.nav = 8.2`, provisional) and the zero-gap tab contact risk.

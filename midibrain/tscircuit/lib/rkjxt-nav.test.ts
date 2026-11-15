@@ -1,6 +1,6 @@
 // U5, the NAV switch: ALPS Alpine RKJXT1F42001 (owner decision 2026-11-14).
 //
-// Three things are checked here, all on the BUILT front board and on the two
+// Four things are checked here, all on the BUILT front board and on the two
 // copies of the footprint, because a wrong terminal map on a 4-direction stick
 // switch is invisible in the netlist and only shows up as a stick that navigates
 // the wrong way.
@@ -14,6 +14,9 @@
 //  3. `library/cad/rkjxt1f42001/footprint.tsx` (the shared library's copy) and
 //     `imports/RKJXT1F42001.tsx` (the copy the board build uses) still hold the
 //     same coordinates, so the two cannot drift apart silently.
+//  4. The schematic symbol carries one port per terminal. The stock two-pin
+//     switch symbol drew only A and B, which hid three of the five control
+//     contacts and the body terminal on the sheet while the netlist was right.
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { RIGHT_CONTROLS } from "./layout"
@@ -174,6 +177,53 @@ test("the ten terminals are the whole part: nothing else shares the NAV footprin
     `${(RIGHT_CONTROLS.NAV.x + LUG.x).toFixed(3)},${(RIGHT_CONTROLS.NAV.y + LUG.y).toFixed(3)}`,
   ])
   expect([...xs].sort()).toEqual([...want].sort())
+})
+
+test("U5's schematic symbol carries every terminal on its functional net", () => {
+  const els = built()
+  const { source } = u5(els)
+  const nets = new Map(
+    els.filter((e) => e.type === "source_net").map((e) => [e.source_net_id, e.name]),
+  )
+  const sourcePorts = els.filter(
+    (e) => e.type === "source_port" && e.source_component_id === source.source_component_id,
+  )
+  const schComponent = els.find(
+    (e) =>
+      e.type === "schematic_component" &&
+      e.source_component_id === source.source_component_id,
+  )
+  expect(schComponent).toBeDefined()
+  const schPorts = els.filter(
+    (e) =>
+      e.type === "schematic_port" &&
+      e.schematic_component_id === schComponent!.schematic_component_id,
+  )
+  // Ten terminals means ten drawn ports: two would hide five control contacts
+  // and the body terminal from the sheet while the netlist still looked right.
+  expect(schPorts.length).toBe(TERMINALS.length)
+  for (const t of TERMINALS) {
+    const port = sourcePorts.find((p) => p.pin_number === t.pin)!
+    const drawn = schPorts.find((p) => p.source_port_id === port.source_port_id)!
+    expect({ terminal: t.name, drawn: drawn?.display_pin_label }).toEqual({
+      terminal: t.name,
+      drawn: t.name,
+    })
+    expect({ terminal: t.name, noConnect: !!port.do_not_connect }).toEqual({
+      terminal: t.name,
+      noConnect: t.net === "",
+    })
+    const trace = els.find(
+      (e) =>
+        e.type === "source_trace" &&
+        (e.connected_source_port_ids ?? []).includes(port.source_port_id),
+    )
+    const netId = (trace?.connected_source_net_ids ?? [])[0]
+    expect({ terminal: t.name, net: netId ? nets.get(netId) ?? "" : "" }).toEqual({
+      terminal: t.name,
+      net: t.net,
+    })
+  }
 })
 
 /** The hole table of a footprint file: every entry of its `HOLES` object plus

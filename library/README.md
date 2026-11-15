@@ -86,17 +86,20 @@ project imports after the part is chosen.
 
 ## The list as it stands
 
-The list holds 56 parts, all `draft`, recorded on 2026-11-09: 39 with an
-Electrokit article number, 17 bought in from LCSC, and one of the Electrokit
-parts also from Conrad. Each article number was checked against its own shop
-page or, for LCSC, against the order that was placed. The **DigiKey column is
-still empty**: fill it from the search links, in the same way as Conrad.
+The list holds 59 parts, all `draft`. The earliest snapshot is 2026-11-09: 39
+with an Electrokit article number, 17 bought in from LCSC, and one of the
+Electrokit parts also from Conrad. Each article number was checked against its
+own shop page or, for LCSC, against the order that was placed. The **DigiKey
+column is still empty**: fill it from the search links, in the same way as
+Conrad.
 
-26 rows now carry an `mpn`, 9 of them from the part value and 17 from the LCSC
-order notes; 4 rows name a manufacturer (`ALPS`, `XUNPU`, `XKB`). **No row yet
-carries a datasheet, footprint or STEP model**, so no row may be promoted to
-`preferred` or `alternate` until those assets are added and verified. The
-first promotion is a real task, not a status edit.
+29 rows now carry an `mpn`; 7 name a manufacturer (`QingPu (Thonkiconn
+family)`, `XKB`, `XUNPU`, `ALPS`, `ALPS Alpine`). Three rows carry CAD: the two QingPu 3.5 mm jacks
+(`jack-35-wqp518ma`, `jack-35-wqp419gr`) and the ALPS Alpine RKJXT1F42001
+(`sw-rkjxt1f42001`, an authored footprint and Apache-2.0 STEP). The others
+still need datasheet, footprint and STEP assets before they can be promoted;
+no row may be promoted to `preferred` or `alternate` until those are added and
+verified. The first promotion is a real task, not a status edit.
 
 - **Electrokit** covers the most rows in the current list: THT carbon film
   resistors, ceramic and electrolytic capacitors, diodes, LEDs, TO-92

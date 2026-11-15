@@ -61,6 +61,70 @@ export const RKJXT1F42001 = (props: ChipProps<typeof pinLabels>) => {
     <switch
       type="spst"
       pinLabels={pinLabels}
+      // The stock spst symbol has two terminals and cannot show this part: five
+      // control contacts share one common (four directions plus the centre
+      // push), the body has its own terminal, and the encoder is unused. So the
+      // symbol is drawn as a multi-contact switch - a common bus on the left
+      // with one blade per direction contact, the push contact as its own pair
+      // below, `Ground` on the common side as the body terminal, and the three
+      // encoder terminals as no-connect stubs along the bottom (front.circuit
+      // declares them noConnect). Each port carries the functional label as
+      // its name, so the connections below and the drawing stay spelled the
+      // same way; the physical pin number is the port's pinNumber.
+      // A=UP, B=LEFT, C=DOWN, D=RIGHT is the function map of the ALPS
+      // output-relation chart, not the pad order.
+      symbol={
+        <symbol>
+          {/* Common: com joins the four direction blades and the push contact. */}
+          <schematicpath points={[{ x: -1.5, y: 0.75 }, { x: -1.5, y: -1.5 }]} strokeColor="#8D2323" />
+          <schematiccircle center={{ x: -1.5, y: 0 }} radius={0.03} isFilled color="#8D2323" />
+          <port name="com" pinNumber={5} aliases={["pin5"]} direction="left" schX={-1.9} schY={0} schStemLength={0.4} />
+
+          {/* Direction contacts: a blade off the common bus, lifted off the
+              fixed contact at the port, direction word under the blade. The
+              blade stops clear of the port label, which tscircuit draws just
+              inside the stem. */}
+          <schematicpath points={[{ x: -1.5, y: 0.75 }, { x: 1.15, y: 0.97 }]} strokeColor="#8D2323" />
+          <schematicpath points={[{ x: 1.5, y: 0.61 }, { x: 1.5, y: 0.89 }]} strokeColor="#8D2323" />
+          <schematictext schX={0} schY={0.68} text="UP" fontSize={0.2} anchor="center" />
+          <port name="A" pinNumber={1} aliases={["pin1"]} direction="right" schX={1.9} schY={0.75} schStemLength={0.4} />
+
+          <schematicpath points={[{ x: -1.5, y: 0.25 }, { x: 1.15, y: 0.47 }]} strokeColor="#8D2323" />
+          <schematicpath points={[{ x: 1.5, y: 0.11 }, { x: 1.5, y: 0.39 }]} strokeColor="#8D2323" />
+          <schematictext schX={0} schY={0.18} text="LEFT" fontSize={0.2} anchor="center" />
+          <port name="B" pinNumber={2} aliases={["pin2"]} direction="right" schX={1.9} schY={0.25} schStemLength={0.4} />
+
+          <schematicpath points={[{ x: -1.5, y: -0.25 }, { x: 1.15, y: -0.03 }]} strokeColor="#8D2323" />
+          <schematicpath points={[{ x: 1.5, y: -0.39 }, { x: 1.5, y: -0.11 }]} strokeColor="#8D2323" />
+          <schematictext schX={0} schY={-0.32} text="DOWN" fontSize={0.2} anchor="center" />
+          <port name="C" pinNumber={3} aliases={["pin3"]} direction="right" schX={1.9} schY={-0.25} schStemLength={0.4} />
+
+          <schematicpath points={[{ x: -1.5, y: -0.75 }, { x: 1.15, y: -0.53 }]} strokeColor="#8D2323" />
+          <schematicpath points={[{ x: 1.5, y: -0.89 }, { x: 1.5, y: -0.61 }]} strokeColor="#8D2323" />
+          <schematictext schX={0} schY={-0.82} text="RIGHT" fontSize={0.2} anchor="center" />
+          <port name="D" pinNumber={4} aliases={["pin4"]} direction="right" schX={1.9} schY={-0.75} schStemLength={0.4} />
+
+          {/* Centre push: the same blade-and-contact drawing as a direction,
+              with the actuator above it and extra space so it reads as its own
+              contact. It shares the common bus. */}
+          <schematicpath points={[{ x: -1.5, y: -1.5 }, { x: 1.15, y: -1.28 }]} strokeColor="#8D2323" />
+          <schematicpath points={[{ x: 1.5, y: -1.64 }, { x: 1.5, y: -1.36 }]} strokeColor="#8D2323" />
+          <schematicpath points={[{ x: 0.4, y: -1.16 }, { x: 1.1, y: -1.16 }]} strokeColor="#8D2323" />
+          <schematicpath points={[{ x: 0.75, y: -1.16 }, { x: 0.75, y: -1.04 }]} strokeColor="#8D2323" />
+          <schematicpath points={[{ x: 0.6, y: -1.04 }, { x: 0.9, y: -1.04 }]} strokeColor="#8D2323" />
+          <port name="Push" pinNumber={6} aliases={["pin6"]} direction="right" schX={1.9} schY={-1.5} schStemLength={0.4} />
+
+          {/* "Ground terminal": the metal body, a separate terminal that this
+              board also ties to GND. */}
+          <port name="Ground" pinNumber={7} aliases={["pin7"]} direction="left" schX={-1.9} schY={-2} schStemLength={0.4} />
+
+          {/* Encoder: unused on this board, so three bare no-connect stubs at
+              the bottom, where nothing else is drawn. */}
+          <port name="EncoderA" pinNumber={8} aliases={["pin8"]} direction="down" schX={0} schY={-2.5} schStemLength={0.2} />
+          <port name="EncoderB" pinNumber={9} aliases={["pin9"]} direction="down" schX={0.4} schY={-2.5} schStemLength={0.2} />
+          <port name="EncoderCom" pinNumber={10} aliases={["pin10"]} direction="down" schX={0.8} schY={-2.5} schStemLength={0.2} />
+        </symbol>
+      }
       manufacturerPartNumber="RKJXT1F42001"
       footprint={
         <footprint>
@@ -103,7 +167,9 @@ export const RKJXT1F42001 = (props: ChipProps<typeof pinLabels>) => {
           <silkscreencircle pcbX="0mm" pcbY="0mm" radius="3.6mm" strokeWidth="0.15mm" />
           {/* No cadModel: no redistributable STEP exists for this part
               (SOURCE.md). An omitted model leaves the 3D view empty instead of
-              pointing at a vendor file that may not be redistributed. */}
+              pointing at a vendor file that may not be redistributed. A board
+              may pass a local-only cadModel at build time (front.circuit.tsx);
+              this library copy stays free of vendor CAD. */}
           <courtyardrect pcbX="0mm" pcbY="0mm" width="17.2mm" height="17.2mm" />
         </footprint>
       }
