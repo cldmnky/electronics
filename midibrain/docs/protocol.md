@@ -55,13 +55,16 @@ bad CRC, invalid length and zero session.
   survive. The Pi treats the new session exactly like a Pico reboot:
   `LinkLost`, outbound flush, re-handshake, `Linked`.
 - Link-up in this revision = Pi HELLO seen. ACK type 2 with length 0 is the
-  handshake ACK. A length-2 ACK carries the Pi sequence it acknowledges
-  (payload[0..1] LE) for every accepted CONTROL_EVENT; duplicates are acked
-  again but never re-applied. The Pi keeps a control frame at the head of its
-  queue until that ACK arrives and replays the same (session, sequence) — the
-  receiver's dedup makes delivery exactly-once. Generic queue overflow is
-  still counted (`txov`, `rxov`), printed on the Pico USB console and reported
-  in the `0x21` status response.
+  handshake ACK. A length-2 ACK echoes the Pi sequence it acknowledges
+  (payload[0..1] LE) and is returned only for the routed-byte frames
+  `0x15` EV_MIDI_SEND and `0x1A` EV_MIDI_ROUTE_SEND (`frame_needs_ack()` in
+  `firmware/pico/main.cpp`, mirrored in `pi/link/link.cpp`). A repeat of one of
+  those frames is acked again and never re-applied. The Pi keeps such a frame at
+  the head of its queue until that ACK arrives and repeats the same
+  (session, sequence); the receiver deduplicates repeats. Other control frames
+  are not acknowledged by this mechanism. Delivery on hardware is unverified.
+  Generic queue overflow is still counted (`txov`, `rxov`), printed on the
+  Pico USB console and reported in the `0x21` status response.
 
 ## CONTROL_EVENT registry (payload[0] = kind)
 
@@ -98,7 +101,7 @@ Pi → Pico:
 | `0x14` CLOCK_ROUTE | port, flags | Per-output TRS clock/transport gate. port 0 = OUT1 (uart0), 1 = OUT2 (uart1); flags bit 0 = clock on/off, bit 1 = transport on/off, reserved bits must be zero (length 3). Both default on (legacy behavior); RAM state resets at boot, so the Pi re-sends after HELLO. USB is gated Pi-side with the same semantics |
 | `0x15` MIDI_SEND | port, size, bytes | Immediate UART emit (no scheduled timeline yet) |
 | `0x16` MODE | 0 local, 1 manual | Panel-transport authority; resets to local on boot/HELLO |
-| `0x17` CLOCK_SOURCE | source, follow mask | External clock follow. source 0 = internal, 1 = TRS IN1, 2 = TRS IN2 (3+ rejected); mask bit 0 = TRS IN1 transport follow, bit 1 = TRS IN2, reserved bits (including USB bit 2, Pi-side only) rejected (length 3). RAM state resets to internal/no-follow at boot, so the Pi re-sends after HELLO. The Pico always sends clock; follow retunes tempo and pulls generator phase with a bounded slew and coasts at the last locked period on source loss |
+| `0x17` CLOCK_SOURCE | source, follow mask | External clock follow. source 0 = internal, 1 = TRS IN1, 2 = TRS IN2 (3+ rejected); mask bit 0 = TRS IN1 transport follow, bit 1 = TRS IN2, reserved bits (including USB bit 2, Pi-side only) rejected (length 3). RAM state resets to internal/no-follow at boot. The app does not send this command yet. The Pico always sends clock; follow retunes tempo and pulls generator phase with a bounded slew and coasts at the last locked period on source loss |
 | `0x18` MIDI_ROUTE | src, dst, flags | Starts a fresh pipe chain for one physical TRS route, generator route or output insert and clears its runtime state (dispatcher rotation, sustain latch, pending note lengths, clocked pipe holds and grids). dst 0 = TRS OUT1, 1 = TRS OUT2. src is the route-source byte (below): 0/1 = TRS IN1/IN2, `0xFF` = generator (`kSrcGenerator`, -1), `0xFE`..`0xFB` = output insert slot 0..3 (`kSrcOutputInsert`, -2). Pseudo-source frames are new; a pre-pseudo frame only carries src 0/1 and keeps exactly that meaning. flags bit 0 = route on, reserved bits must be zero (length 4). RAM only; the Pi re-sends after HELLO. |
 | `0x19` MIDI_ROUTE_PIPE | src, dst, index, type, bypass, paramOffset, paramCount, params[paramCount] int16 LE, chMask LE16 | Sets/replaces one pipe in that route's chain. src uses the same route-source byte as `0x18`, so pipe chunks address a TRS route, a generator chain or one output-insert slot. A generator chain's head (index 0, offset 0) must have the schema role `generator`; a modifier head is refused as a bad frame and leaves the chain untouched. index 0..7 (send pipes in order: index <= the current pipe count; index == count appends, index < count replaces), type 1..16 (both waves are evaluated on this firmware; Wave-2 ids 12..16 are clocked, see below), bypass 0/1, paramOffset+paramCount <= 10, paramCount <= 4 (length 10 + 2×paramCount: header, params, then the 2-byte per-pipe channel scope; send more parameter chunks with a larger offset). chMask bit n admits 0-based channel n to that pipe, every other message passes the pipe unchanged; 0xFFFF (all) is the default and 0 makes the pipe inert. The mask takes effect on the offset-0 chunk, a continuation chunk keeps the established scope. A legacy frame without the trailing mask (length 8 + 2×paramCount, up to 5 params) is still decoded and means chMask = 0xFFFF, so new firmware accepts old frames. Positional parameter order is the `MidiPipeType` contract in `pi/session/session.hpp` and the frozen `0x19` order in `midibrain/midifx/wire-order.txt`; missing parameters use the generated schema defaults in `midibrain/midifx/gen/generated/midifx_params.hpp` (`midibrain/midifx/pipes.json` is the single source, `midibrain/midifx/gen/generated/pipes-docs.md` the docs table). Pipe chains are evaluated in index order for the bytes routed through `0x1A`. |
 | `0x1A` MIDI_ROUTE_SEND | src, dst, size, bytes | Emits one routed message through the configured `(src,dst)` pipe chain and then every enabled output insert for dst, in slot order. src/dst 0..1, size 1..3 (length 4 + size); there is no pseudo-source send: generator output is produced on the Pico's tick grid and insert output on its own deadline. A route that is not enabled drops the message; plain `0x15` remains the unprocessed immediate path and does not pass the output inserts. |
@@ -183,7 +186,7 @@ main-loop stall replays at most 8 missed steps per pass and then rejoins the
 current grid; transport START resets the tick count the grid is derived from,
 so the arp/LFO phase restarts with transport.
 
-Control-plane use on the Pi: `0x20` STATUS_REQ is the liveness probe. Send itwhen the link has been quiet and use the uptime/ticks/counters to distinguish
+Control-plane use on the Pi: `0x20` STATUS_REQ is the liveness probe. Send it when the link has been quiet and use the uptime/ticks/counters to distinguish
 an idle Pico from a wedged one; a host-side watchdog can treat repeated
 missing or stale responses as a link failure. `0x22` mode 0 is recovery —
 restart the Pico firmware when the link cannot be resynced. Mode 1 enters
@@ -276,4 +279,4 @@ arm toggle, so the Pi mirror converges without polling.
 
 ## Prototype limitations (not yet implemented)
 
-SysEx forwarding (content skipped in v1; running-status/system-common/realtime/undefined-byte handling is byte-exact per the midi.hpp comments, with EOX preserving running status), app-scheduled `MIDI_SEND` (still immediate; clocked FX output is timestamped at the tick grid), credit-based flow control (the app path is stop-and-wait per control frame), SPI rates above 1 MHz, clock jitter measurement, and thermal/EMC behaviour. See [TODO.md](TODO.md). The framed loopback, debounce, parser, SPI-abort and reliability tests are host simulations, not hardware validation.
+SysEx forwarding (content skipped in v1; running-status/system-common/realtime/undefined-byte handling is byte-exact per the midi.hpp comments, with EOX preserving running status), app-scheduled `MIDI_SEND` (still immediate; clocked FX output is timestamped at the tick grid), credit-based flow control (the app path is stop-and-wait per routed MIDI frame), SPI rates above 1 MHz, clock jitter measurement, and thermal/EMC behaviour. See [TODO.md](TODO.md). The framed loopback, debounce, parser, SPI-abort and reliability tests are host simulations, not hardware validation.

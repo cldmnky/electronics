@@ -52,14 +52,12 @@ make test          # prototype verification: typecheck, Bun/Python/host C++ test
 ```
 
 `make test` proves the sources, netlist, placement, geometry, host code and
-simplified SPICE models agree with each other. **On the 10 mm respin branch
-(`wip/10mm-panel`, 2026-11-13) it is red**: `tsci build` is green (four
-circuits, 0 DRC errors) but the geometry tests and `mechanical/layout.json` still
-describe the previous layout and are being re-derived (see
-[docs/TODO.md](docs/TODO.md)). It does **not** prove a light
+simplified SPICE models agree with each other. It does **not** prove a light
 pipe fits, a cable bends, a receiver stays inside its current limit, the stack
 depth, the encoder solder process, JLCPCB's CAM or a first article. The SPICE
-models are behavioural, not datasheet models.
+models are behavioural, not datasheet models. Its result is a run output, not a
+recorded state: `docs/acceptance.md` says what it covers, `docs/evidence/` holds
+measurements.
 
 ```sh
 make gate          # physical acceptance state + hardware fingerprint
@@ -98,7 +96,8 @@ Start with the [user manual](docs/USER-MANUAL.md) for the instrument and
 - [Evidence format and hardware fingerprint](docs/evidence/README.md)
 
 Prototype PCB renders: [front/UI](assets/front-pcb.png) and
-[20HP base](assets/base-pcb.png). The panel artwork
+[rear/base](assets/base-pcb.png); they are illustrations and may predate the
+current board outlines. The panel artwork
 ([`assets/front-panel.svg`](assets/front-panel.svg),
 [PNG](assets/front-panel-preview.png)) is generated from tentative centres in
 `tscircuit/lib/layout.ts`; it is illustrative, **not a cutting template**.

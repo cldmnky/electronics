@@ -1,6 +1,6 @@
 # UI refresh spec — declutter, modern, graphic
 
-Owner direction (2026-11-06): "the UI is a bit cluttered and could be more
+The brief: "the UI is a bit cluttered and could be more
 modern. Use popups more where we do selections on a button, integrate nice
 graphics." This spec turns that into executable rules. Qt 6.4-compatible
 QML only; 800x480; touch-first; panel focus ring + value popups survive
@@ -72,7 +72,7 @@ Primary faces keep: meters, faders, transport, take list, wires, grids.
 macOS build + tests + --ui-taps clean + offscreen 39-*.png set; one Pi
 pass for real-render sanity (offscreen only — never the live desktop).
 
-## 6. The slider law (owner rule, 2026-11-06)
+## 6. The slider law
 
 **Tight space => knob card or popup chip, never a slider.** Sliders exist
 only for dedicated wide faders (mixer strip fader, master fader, channel
@@ -84,10 +84,9 @@ popup selectors. `ConfigSlider` is deleted and must not return.
 
 The active area is **95.04 x 53.856 mm** at 800 x 480 (Waveshare 4.3inch DSI
 LCD: 0.1188 x 0.1122 mm per pixel), so **800 px / 95.04 mm = 8.42 px/mm** and one
-logical pixel is ~0.119 mm. The px targets are unchanged - it is the same 800 x
-480 raster - but every millimetre figure is now larger, because the 4.3-inch
-panel replaces the 3.5-inch one (75.8 x 45.36 mm at 0.095 mm/px). The policy is
-measured in millimetres, not in "it fits":
+logical pixel is ~0.119 mm. The raster is 800 x 480, so the px token values
+translate directly; the millimetre figures below are what the same numbers mean
+on this panel. The policy is measured in millimetres, not in "it fits":
 
 | Token | px | Physical | Role |
 |---|---|---|---|

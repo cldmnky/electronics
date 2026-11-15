@@ -11,6 +11,15 @@ aarch64 binaries in `/opt/mnkybox/bin` plus systemd units. Until the application
 team lands the real binaries, stub scripts with documented exit codes stand in
 (see [application overlay contract](#application-overlay-contract)).
 
+**Scope: this image is parked and it targets the older panel.** The overlay,
+the `dsi1` default and the touch calibration here are written for the
+**Waveshare 3.5inch DSI LCD (H)**. The current hardware is the **Waveshare
+4.3inch DSI LCD** (ElectroKit 4103 5687, 800 x 480), with its own touch
+controller, so this image does not describe - and no measurement here
+supports - the shipping display. The panel port is not the only open item: the
+image is not part of the current build (see the repo map in
+[../README.md](../README.md)).
+
 Nothing in this directory has been run on Raspberry Pi 5 hardware yet. See
 [What is unverified](#what-is-unverified-without-pi-5-hardware).
 

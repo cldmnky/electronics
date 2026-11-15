@@ -1,11 +1,11 @@
 # MIDI Brain project contract
 
 - All implementation and generated local artifacts stay in `midibrain/`; do not modify Froemix.
-- `tscircuit/` is the canonical PCB source. The hardware has passed a production-readiness review (GO for fab and assembly, conditional on the first-article checklist in `docs/acceptance.md` + `hardware-acceptance.json`). Never bypass the release gate (`make release` refuses while any acceptance item is pending).
+- `tscircuit/` is the canonical PCB source. No fabrication or purchase is approved: every physical acceptance item in `hardware-acceptance.json` is `pending` and `make release` refuses while any is. Never bypass the release gate.
 - Dimensions and placement candidates must cite primary drawings; do not invent footprints, part numbers, pinouts or assembly assignments. Unverified dimensions and missing collision data stay explicitly pending.
 - `tscircuit/lib/layout.ts` is the single source of tentative panel and mechanical coordinates. Panel coordinates, the display window (glass-derived) and control positions come from it only.
 - Pi drawing dimensions are reference-only; do not treat the skeleton's hole positions as production geometry. The complete display, cable, USB-C power, Pi, cooling and NVMe stack must be proven before routing or release.
-- Honor the owner-approved 30HP/3U front panel (152.0 mm actual; owner decision 2026-11-08, replacing the 32HP/162.56 mm panel of 2026-11-07), the 20HP/3U Pi mounting panel (101.2 mm actual; owner decision 2026-11-12), 20HP (101.6 mm) base board and <=110 mm installed depth per module; document conflicts rather than silently expanding any of them. The target architecture is a 128 x 112 mm front/UI PCB, a 101.6 x 112 mm rear/base PCB, the 30HP panel and the 20HP Pi mounting panel beside the main module in the same row (the Pi 5 with cooler + M.2 HAT+ + SSD bolts to that panel's rear face; USB stays on the 30HP panel; the two modules are joined by the USB feedthrough cables, the DSI FPC, the 40-wire GPIO ribbon and the J_PWR pigtail).
+- Honor the owner-approved 30HP/3U front panel (152.0 mm actual), the 20HP/3U Pi mounting panel (101.2 mm actual), the 150 x 112 mm front/UI PCB, the 148 x 112 mm rear/base PCB and <=110 mm installed depth per module; document conflicts rather than silently expanding any of them. The panel front sits 10.6 mm above the front board's top face (the Thonkiconn jack's 9.0 mm seating shoulder plus the 1.6 mm panel) and `tscircuit/lib/layout.ts` is the only source of those numbers; `docs/mechanical-stack.md` owns the chain. The Pi 5 with cooler + M.2 HAT+ + SSD bolts to the Pi mounting panel's rear face beside the main module in the same row; USB stays on the 30HP panel; the two modules are joined by the USB feedthrough cables, the DSI FPC, the 40-wire GPIO ribbon and the J_PWR pigtail.
 - No bare microcontroller or unidentified navigation footprint. Pico and Pi are removable. Never couple their 3.3 V regulator outputs; power/backfeed isolation is unresolved.
 - UART0 and UART1 are reserved for MIDI; SPI0 and READY are separate. Pin allocation is in `docs/pin-map.md` and `tscircuit/lib/pin-map.ts`; change both together.
 - Do not claim a signal-integrity, timing, collision, power, manufacturing or hardware test has passed without the actual measurement. A successful skeleton build is not a validated electrical design.
@@ -52,6 +52,25 @@
 - UI sizing and interaction law: `docs/ui-refresh-spec.md` (touch
   targets, control vocabulary) and `docs/panel-interaction.md` (panel =
   touch parity). ASCII strings only.
+
+## Documentation
+
+- Every document states what the tree does **today**. Missing work goes to
+  `docs/TODO.md`; a decision, including a replaced one, lives only in
+  `docs/decisions.md`.
+- Quote geometry, part numbers and positions from their source: a constant in
+  `tscircuit/lib/layout.ts`, `mechanical/layout.json`, or a primary drawing with
+  its SHA-256. Name the constant or file; never restate a number from memory.
+- Link the file that owns a fact instead of copying it. One home per fact is
+  what keeps the set consistent.
+- A requirement, a simulation or a plan is not evidence. Physical claims stay
+  `pending` in `hardware-acceptance.json` until a measured record exists in
+  `docs/evidence/`.
+- No results of a transient run, no wave/stage/bug narrative, no colloquial
+  history. Archive text is a row in `docs/decisions.md`, never a second copy
+  elsewhere.
+- Keep third-party sources to URL, retrieval date, SHA-256 and the quoted
+  value; do not commit whole documents.
 
 ## Workflow
 

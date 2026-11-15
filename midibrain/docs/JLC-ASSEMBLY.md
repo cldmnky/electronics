@@ -37,14 +37,11 @@ hand-edit generated fabrication files to repair a source problem.
   30HP panel). Each board is 2-layer, 1.6 mm FR-4. The sizes and the board count come from
   `FRONT_PCB`/`REAR_PCB` in `tscircuit/lib/layout.ts`.
 
-  **This packet is STALE and UNVERIFIED for this tree: `make order` was NOT run.** The merge
-  that brought the jack-anchored 10.6 mm stack together changed the mechanical Z chain (panel
-  front 10.60, front board 10.60…12.20, rear board 23.40…25.00, display glass front 0.60,
-  rear-most 14.65), so every count, side and aperture below is unconfirmed against generated
-  output. Do not upload any of it. Re-export with `make order` **only after the required
-  authorization**, then re-check each count, side and aperture against that output and confirm
-  the panel CAM items in the panel bullet below. No packet in this repository was regenerated
-  for this merge.
+  **Regenerate this packet with `make order` after the required authorization, then re-check
+every count, side and aperture against that output and `jlc-order.json` before uploading.** A packet
+exported before the jack-anchored 10.6 mm stack does not describe this tree: that change moved the
+mechanical Z chain (panel front 10.60, front board 10.60…12.20, rear board 23.40…25.00, display glass
+front 0.60, rear-most 14.65). No count on this page is a substitute for the generated file.
 - Front and rear use 1 oz copper and candidate lead-free HASL. Apply the
   actual emitted source rules, reviewed Gerbers and
   [fab-check.md](fab-check.md), not obsolete defaults from an older export.
@@ -60,7 +57,7 @@ hand-edit generated fabrication files to repair a source problem.
   POWER button; plus three Ø2.6 mm light-pipe holes and three USB cutouts;
   its only drilled holes are the six feedthrough screws, the four Ø3.2 rail
   holes and the four Ø3.2 `STAND_` panel-mount screws.
-  **NO COUNTERSINKS (owner decision 2026-11-14):** those four panel-mount screws
+  **NO COUNTERSINKS:** those four panel-mount screws
   are plain Ø3.2 mm clearance through the 1.6 mm panel. Do not add a countersink,
   counterbore or flush-head callout; a flat/pan head is accepted and the panel
   FRONT stays flat. There is no countersink layer in the Gerbers. Physical
@@ -72,13 +69,14 @@ hand-edit generated fabrication files to repair a source problem.
 
 ### Front
 
-Expected raw source/BOM count: **45** = **30** SMT placements + **15** hand/BOM-only lines, matching `jlc-order.json`; **re-verify both numbers from the regenerated export** before uploading. Expected SMT CPL count: **30**, all on
-**top/panel side**. This includes the MIDI circuits, passives and LEDs. The
-rear face carries the J5 THT female socket body and the solder tails of the
-other through-hole parts, not SMT.
+The placement counts live in `jlc-order.json` (`expected_counts`) and are
+verified against the generated BOM/CPL on every release. Read them there or from a
+current `make order` run; never quote a count from this page. Every front SMT
+placement is on the **top/panel side**, which includes the MIDI circuits, passives
+and LEDs. The rear face carries the J5 THT female socket body and the solder tails
+of the other through-hole parts, not SMT.
 
-**NAV left the SMT CPL on 2026-11-14** (owner decision): U5 is now the THT ALPS
-Alpine RKJXT1F42001, which replaced the SMD Alps SKRHABE010 (C139794). It has no
+**U5 is not on the SMT CPL**: it is the THT ALPS Alpine RKJXT1F42001. It has no
 LCSC number in this design and is hand-soldered; ALPS publishes a
 manual-soldering reference for it (page 412: 350 ±5 °C, 3 s max, one time).
 Its encoder terminals are unconnected on purpose, so proto/assembly inspection
@@ -86,7 +84,7 @@ must not expect any wire on them.
 
 THT exclusions: `J1`–`J4`, `SW1`–`SW7`, `U5`, `U6`, `J5`, `J_PWR` and `DISP1`. They remain in the bench/
 combined BOM. `U6` is the Bourns PEC11R-4015F-S0024 (C143789), detentless
-24 PPR with two THT anchor lugs; the 2026-11-06 JLC/LCSC search found no SMD
+24 PPR with two THT anchor lugs; the JLC/LCSC catalogue holds no SMD
 encoder with 0 detents, 24+ PPR and through-hole anchor lugs (the SMD
 anchor-lug families top out at 15 PPR), and a lug-less SMD knob encoder is
 not accepted. It stays THT and out of the SMT CPL: request JLCPCB THT/hand-
@@ -94,8 +92,7 @@ solder assembly for it if offered, otherwise bench-qualify per
 [assembly.md](assembly.md). Bourns does not recommend hand soldering, so the
 process, profile and inspection must be accepted before production.
 
-`DISP1` is the 4.3-inch DSI module. Since the 2026-11-13 respin it is **not**
-bolted to the front board: the front board carries a 106.50 × 68.90 mm opening
+`DISP1` is the 4.3-inch DSI module. It is **not** bolted to the front board: the front board carries a 106.50 × 68.90 mm opening
 and the module hangs on a printed carrier bolted to the **rear** board's top
 face at `LCD_MOUNT_HOLES`, on **8.75 mm nominal adjustable spacers**. Reaching a flush glass datum requires extending or shimming them to 9.35 mm. It has no pads and no
 LCSC part, is drawn in the tscircuit 3D view as a translucent envelope from
@@ -106,8 +103,10 @@ unverified (`display_boss_pattern`, `display_fpc_idc`).
 
 ### Rear
 
-Expected raw source/BOM count: **24**. Expected SMT CPL count: **20** (re-verify from the regenerated export), all on
-**bottom/rear side**, including the two new local bypass capacitors C13/C14.
+See `jlc-order.json` for the rear-side placement counts (the same `expected_counts`
+rule as the front board: read them from a current run, not from this page). Every
+rear SMT placement is on the **bottom/rear side**, including the local bypass
+capacitors C13/C14.
 
 THT exclusions: `J_PICO_L`, `J_PICO_R`, `J_PI`, `J_FRONT`. `J_PI` uses the
 XFCN BH254V-40P import with its reference C-number (not a perimeter-numbered
@@ -142,7 +141,7 @@ never edit a CPL merely to force a match.
 
 - CAB-15455 is **3 A and rejected for the 5 A power path**. The exact suitable
   feedthrough/cable chain and PD/droop/temperature tests are still pending.
-- Light pipe: candidate Signal Construct PGN25L165 (Ø2.6 panel hole, shaft 16.5 ±0.1, overall 17.5), which is **5.9 mm too long** for the jack-anchored 10.6 mm stack: the tip plane lies 5.9 mm BEHIND the board face (signed board − tip = −5.9 mm, `LIGHT_PIPE_REACH`; ~9.8 mm is needed and no part is selected). Not an approved fit: the seated plane, LED height, retention in 1.6 mm FR-4, hole tolerance and stack tolerances are unmeasured, and the optical gap is null. The retired Bivar PLP2-400-C 10.16 mm reference and the 7.29 mm subtraction are withdrawn. Select the final part after the reach and seating checks. The 2.55-2.60 mm hole is NOT guaranteed: the JLCPCB NPTH bands conflict and the panel emits each circular cutout in both the NPTH drill file and Edge_Cuts; the JLC viewer and support must confirm the de-duplication and the achievable hole size.
+- Light pipe: candidate Signal Construct PGN25L165 (Ø2.6 panel hole, shaft 16.5 ±0.1, overall 17.5), which is **5.9 mm too long** for the jack-anchored 10.6 mm stack: the tip plane lies 5.9 mm BEHIND the board face (signed board − tip = −5.9 mm, `LIGHT_PIPE_REACH`; ~9.8 mm is needed and no part is selected). Not an approved fit: the seated plane, LED height, retention in 1.6 mm FR-4, hole tolerance and stack tolerances are unmeasured, and the optical gap is null. Select the final part after the reach and seating checks. The 2.55-2.60 mm hole is NOT guaranteed: the JLCPCB NPTH bands conflict and the panel emits each circular cutout in both the NPTH drill file and Edge_Cuts; the JLC viewer and support must confirm the de-duplication and the achievable hole size.
 - The display uses **8.75 mm adjustable spacer length beyond the 4.0 mm bosses**,
   measured from the rear board's front face, giving a 12.75 mm plane separation
   (`DISPLAY_STANDOFF`). Plane separation is not the spacer purchase length, and
