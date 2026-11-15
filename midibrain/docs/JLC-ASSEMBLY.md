@@ -72,12 +72,19 @@ hand-edit generated fabrication files to repair a source problem.
 
 ### Front
 
-Expected raw source/BOM count: **46** = **31** SMT placements + **15** hand/BOM-only lines, matching `jlc-order.json`; **re-verify both numbers from the regenerated export** after the respin before uploading. Expected SMT CPL count: **31**, all on
-**top/panel side**. This includes the MIDI circuits, passives, LEDs and NAV.
-The rear face carries the J5 THT female socket body and the solder tails of the
+Expected raw source/BOM count: **45** = **30** SMT placements + **15** hand/BOM-only lines, matching `jlc-order.json`; **re-verify both numbers from the regenerated export** before uploading. Expected SMT CPL count: **30**, all on
+**top/panel side**. This includes the MIDI circuits, passives and LEDs. The
+rear face carries the J5 THT female socket body and the solder tails of the
 other through-hole parts, not SMT.
 
-THT exclusions: `J1`–`J4`, `SW1`–`SW7`, `U6`, `J5`, `J_PWR` and `DISP1`. They remain in the bench/
+**NAV left the SMT CPL on 2026-11-14** (owner decision): U5 is now the THT ALPS
+Alpine RKJXT1F42001, which replaced the SMD Alps SKRHABE010 (C139794). It has no
+LCSC number in this design and is hand-soldered; ALPS publishes a
+manual-soldering reference for it (page 412: 350 ±5 °C, 3 s max, one time).
+Its encoder terminals are unconnected on purpose, so proto/assembly inspection
+must not expect any wire on them.
+
+THT exclusions: `J1`–`J4`, `SW1`–`SW7`, `U5`, `U6`, `J5`, `J_PWR` and `DISP1`. They remain in the bench/
 combined BOM. `U6` is the Bourns PEC11R-4015F-S0024 (C143789), detentless
 24 PPR with two THT anchor lugs; the 2026-11-06 JLC/LCSC search found no SMD
 encoder with 0 detents, 24+ PPR and through-hole anchor lugs (the SMD
@@ -141,7 +148,8 @@ never edit a CPL merely to force a match.
   (`DISPLAY_STANDOFF`). Plane separation is not the spacer purchase length, and
   both numbers are provisional design values until the carrier is drawn and a
   sample measured.
-- Knob, NAV/button actuators, Pi spacers (provisional 3.5 mm), the direct
+- Knob, NAV/button actuators, the NAV panel opening's clearance to the switch
+  collar, Pi spacers (provisional 3.5 mm), the direct
   2 × 13 connector pair, the Pi GPIO ribbon and cooler/HAT/SSD remain subject
   to the recorded physical acceptance checks.
 - The bracket generator and CAD self-check now agree with canonical layout

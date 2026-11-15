@@ -347,6 +347,12 @@ export interface JsonRules {
  */
 export const DECLARED_UNCONNECTED: Record<string, Record<string, string[]>> = {
   front: {
+    // U5 NAV, ALPS Alpine RKJXT1F42001 (owner decision 2026-11-14): the part
+    // carries an encoder that this design does not use. The three encoder
+    // terminals are unconnected on purpose - there is no firmware feature, no
+    // net and no test pad for them - and the choice is recorded in
+    // docs/decisions.md rather than left as a missing trace.
+    U5: ["EncoderA", "EncoderB", "EncoderCom"],
     SW1: ["pin2", "pin4"],
     SW2: ["pin2", "pin4"],
     SW3: ["pin2", "pin4"],

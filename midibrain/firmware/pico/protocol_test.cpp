@@ -44,6 +44,43 @@ std::vector<Emitted> drive(mb::PanelControl& control, const std::vector<Feed>& f
   return events;
 }
 
+// Grouped NAV decoding (ALPS RKJXT1F42001). Drives the NAV_PRESS
+// PanelControl through a NavPressGate together with a NAV_UP direction
+// control, wired exactly as main.cpp's scan_controls: the gate qualifies the
+// raw Push level before the press decoder, the direction level feeds the gate
+// and its own decoder ungated.
+struct NavFeed {
+  std::uint32_t at_ms;
+  bool dir;
+  bool push;
+};
+
+struct NavPairEvents {
+  std::vector<Emitted> press;
+  std::vector<Emitted> dir;
+};
+
+NavPairEvents drive_nav_pair(const std::vector<NavFeed>& feeds, std::uint32_t until_ms) {
+  mb::NavPressGate gate;
+  mb::PanelControl press(mb::CTL_NAV_PRESS);
+  mb::PanelControl up(mb::CTL_NAV_UP);
+  NavPairEvents out;
+  std::size_t next = 0;
+  bool dir = false, push = false;
+  for (std::uint32_t t = 0; t <= until_ms; ++t) {
+    while (next < feeds.size() && feeds[next].at_ms == t) {
+      dir = feeds[next].dir;
+      push = feeds[next].push;
+      ++next;
+    }
+    const mb::PanelControl::Result pu = up.update(dir, t);
+    if (pu.event) out.dir.push_back({t, up.id(), pu.value});
+    const mb::PanelControl::Result pr = press.update(gate.update(dir, push), t);
+    if (pr.event) out.press.push_back({t, press.id(), pr.value});
+  }
+  return out;
+}
+
 // Encode one EV_CONTROL exactly as the Pico would (fixed session and sequence
 // make the log reproducible; payload bytes are the contract).
 void print_control_event(std::uint32_t at_ms, std::uint8_t id, std::uint8_t value) {
@@ -1540,6 +1577,47 @@ int main(int argc, char** argv) {
   assert(click.size() == 2);
   assert(click[0].at_ms == 110 && click[0].value == CTL_STATE_PRESSED);
   assert(click[1].at_ms == 1510 && click[1].value == CTL_STATE_RELEASED);
+
+  // Grouped NAV decoding: the page-399 chart closes Push-Com in EVERY lever
+  // position, so a tilt grounds NAV_PRESS together with its direction line and
+  // must never look like a select.
+  {
+    // 1. Tilt with the chart's Push closure: direction events only.
+    const auto tilt = drive_nav_pair({{100, true, true}, {300, false, false}}, 400);
+    assert(tilt.press.empty());
+    assert(tilt.dir.size() == 2 && tilt.dir[0].at_ms == 110 && tilt.dir[1].at_ms == 310);
+    // 2. Pure centre press: counts exactly once, never repeats.
+    const auto centre = drive_nav_pair({{100, false, true}, {1500, false, false}}, 1600);
+    assert(centre.press.size() == 2 && centre.press[0].at_ms == 110 &&
+           centre.press[0].value == CTL_STATE_PRESSED && centre.press[1].at_ms == 1510 &&
+           centre.press[1].value == CTL_STATE_RELEASED);
+    assert(centre.dir.empty());
+    // 3. Press held through a tilt: the press counts, then ends at the tilt;
+    //    no second press until a fresh edge after the release.
+    const auto held = drive_nav_pair({{100, false, true},    // clean press edge
+                                      {300, true, true},     // tilt while holding
+                                      {600, false, true},    // neutral again, still held
+                                      {800, false, false},   // release
+                                      {1000, false, true}, {1200, false, false}}, 1300);
+    assert(held.press.size() == 4);
+    const std::uint32_t held_press_times[] = {110, 310, 1010, 1210};
+    for (std::size_t i = 0; i < held.press.size(); ++i)
+      assert(held.press[i].at_ms == held_press_times[i]);
+    assert(held.dir.size() == 2 && held.dir[0].at_ms == 310 && held.dir[1].at_ms == 610);
+    // 4. Simultaneous rise (the tilt's Push closure), Push dropping first: no
+    //    press at all; the direction is unaffected.
+    const auto both = drive_nav_pair({{100, true, true}, {200, true, false},
+                                      {300, false, false}}, 400);
+    assert(both.press.empty());
+    assert(both.dir.size() == 2 && both.dir[0].at_ms == 110 && both.dir[1].at_ms == 310);
+    // 5. Tilt, return to neutral still pushing: no press (the gate stays
+    //    disarmed); only a fresh press edge after the release selects.
+    const auto late = drive_nav_pair({{100, true, true}, {300, false, true},
+                                      {700, false, false}, {900, false, true},
+                                      {1100, false, false}}, 1200);
+    assert(late.press.size() == 2 && late.press[0].at_ms == 910 &&
+           late.press[1].at_ms == 1110);
+  }
 
   // SHIFT/EXIT: short press never reports 2; long hold reports it once.
   PanelControl exit_short(CTL_SHIFT_EXIT);

@@ -175,11 +175,16 @@ test("right-hand controls are one explicit column, not a pitch", () => {
   // The 2026-11-13 column is explicit: TEMPO/NAV/SHIFT-EXIT are 19 and then
   // 17 mm apart, deliberately not an arithmetic progression. Deriving NAV from
   // TEMPO would drag NAV every time TEMPO moves.
+  // 2026-11-14 (owner decision): NAV alone sits 0.5 mm right of the column,
+  // because the replacement switch's 17 x 17 mm body would otherwise put its
+  // left pads inside FRONT_DISPLAY_KEEPOUT. The X offset is asserted here so a
+  // silent re-centring fails.
   expect([rc.TEMPO, rc.NAV, rc.SHIFT_EXIT]).toEqual([
     { x: RIGHT_COLUMN.x, y: 31 },
-    { x: RIGHT_COLUMN.x, y: 12 },
+    { x: 52.5, y: 12 },
     { x: RIGHT_COLUMN.x, y: -5 },
   ])
+  expect(rc.NAV.x - RIGHT_COLUMN.x).toBe(0.5)
   expect(rc.TEMPO.y - rc.NAV.y).toBe(19)
   expect(rc.NAV.y - rc.SHIFT_EXIT.y).toBe(17)
   for (const [id, c] of [["VALUE", rc.TEMPO], ["NAV", rc.NAV], ["SHIFT / EXIT", rc.SHIFT_EXIT]] as const) {

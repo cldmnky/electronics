@@ -68,4 +68,44 @@ class PanelControl {
   NavRepeat repeat_;
 };
 
+// Grouped decoding for the NAV stick (ALPS RKJXT1F42001). The page-399
+// output-relation chart closes `Push-Com` in EVERY lever position - the A, B,
+// C, D columns and the Center push column alike - and the board ties `com` to
+// GND and `Push` to NAV_PRESS. A tilt therefore grounds NAV_PRESS together
+// with its direction line, so five independent decoders report every
+// navigation step as a select as well. No wiring can separate them: the fix
+// is that a centre press is a qualified gesture.
+//
+// NavPressGate qualifies the raw Push level before the press decoder sees it:
+// a press counts only when it starts with all four direction lines inactive
+// and the gate armed. Any direction activity disarms the gate (a tilt's Push
+// closure is swallowed, and a press held through a tilt is released), and the
+// gate re-arms only after the direction lines are neutral again AND Push has
+// been released - so the next select needs a fresh press edge in a neutral
+// group. Directions are never gated: the chart's Push-Com closure is what
+// makes them work.
+//
+// The gate takes RAW levels (before debounce): suppression must not lag the
+// contact that causes it. Feed its return value to the NAV_PRESS PanelControl.
+class NavPressGate {
+ public:
+  // direction_raw_any: at least one direction input active in this scan.
+  // push_raw: the NAV_PRESS input active in this scan.
+  // Returns the level the press decoder must see.
+  bool update(bool direction_raw_any, bool push_raw) {
+    if (direction_raw_any) {
+      armed_ = false;
+      return false;
+    }
+    if (!push_raw) {
+      armed_ = true;
+      return false;
+    }
+    return armed_;
+  }
+
+ private:
+  bool armed_ = true;
+};
+
 }  // namespace mb

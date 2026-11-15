@@ -863,9 +863,20 @@ Button buttons[] = {
 // that control is tempo.
 mb::ValueEncoder value_encoder;
 
+// NAV grouped decoding: the RKJXT1F42001 grounds NAV_PRESS in every lever
+// position (ALPS page-399 chart), so the press level is qualified before its
+// decoder sees it. See mb::NavPressGate and protocol_test.cpp.
+mb::NavPressGate nav_press_gate;
+
 void scan_controls(uint32_t now_ms) {
+  const bool nav_dir_raw_any =
+      !gpio_get(MB_PIN_NAV_UP) || !gpio_get(MB_PIN_NAV_DOWN) ||
+      !gpio_get(MB_PIN_NAV_LEFT) || !gpio_get(MB_PIN_NAV_RIGHT);
   for (auto& b : buttons) {
-    const bool raw_pressed = !gpio_get(b.gpio);  // active-low against GND
+    bool raw_pressed = !gpio_get(b.gpio);  // active-low against GND
+    if (b.control.id() == mb::CTL_NAV_PRESS) {
+      raw_pressed = nav_press_gate.update(nav_dir_raw_any, raw_pressed);
+    }
     const mb::PanelControl::Result r = b.control.update(raw_pressed, now_ms);
     const uint8_t id = b.control.id();
     const bool pressed = b.control.pressed();

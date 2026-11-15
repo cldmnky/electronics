@@ -228,9 +228,11 @@ export const FRONT_SILK: BoardSilkSpec = {
       y: MIDI_CLUSTERS[k].y + FRONT_GATE_PIN1.dy + FRONT_GATE_DOT.dy,
       source: "silk" as const,
     })),
-    // Derived from the control column, which owner decision D2 moved 47 -> 52
-    // and the 2026-11-13 column move dropped to y 20/1/-18.
-    { ref: "U5", x: RIGHT_CONTROLS.NAV.x - 4.9, y: RIGHT_CONTROLS.NAV.y + 1.43, source: "silk" },
+    // U5 is the THT ALPS RKJXT1F42001 since the 2026-11-14 owner decision. Its
+    // terminal A (direction "up", i.e. pin 1 of the library footprint) is the
+    // hole at -1.5/-7.8 mm from the shaft axis; the dot sits 1.5 mm above that
+    // pad, inside the 17 mm body and clear of every other hole.
+    { ref: "U5", x: RIGHT_CONTROLS.NAV.x - 1.5, y: RIGHT_CONTROLS.NAV.y - 7.8 + 1.5, source: "silk" },
     { ref: "U6", x: RIGHT_CONTROLS.TEMPO.x - 4.0, y: RIGHT_CONTROLS.TEMPO.y + 7.9, source: "silk" },
     // TRS jacks: pin 1 is the sleeve contact, the pad furthest from the panel.
     ...frontJacks.map(({ ref, x }) => ({ ref, x: x + FRONT_JACK_PIN1_DX, y: JACK_Y + FRONT_JACK_PIN1_DY, source: "silk" as const })),
@@ -272,6 +274,10 @@ export const FRONT_SILK: BoardSilkSpec = {
     // (39.4) and below SW7's (42.75) - the band between the two encoders is now
     // taken by C5/C6.
     { text: "U6: LUGS FIRST", x: 52, y: 41.2, fontSize: 0.8, role: "hint", part: "U6" },
+    // U5's hand-solder tag, in the 2.3 mm strip between U5's top pads (20.55)
+    // and U6's lowest pad row (22.85): the switch is THT and its ALPS
+    // manual-solder reference is 350 +-5 C / 3 s / once (docs/assembly.md).
+    { text: "U5 THT", x: RIGHT_CONTROLS.NAV.x, y: RIGHT_CONTROLS.NAV.y + 9.7, fontSize: 0.7, role: "hint", part: "U5" },
     ...frontJacks.map(({ ref, x }) => ({ text: `${ref} THT`, x, y: JACK_Y + 7.5, fontSize: 0.7, role: "hint" as const, part: ref })),
     // Hand-soldered buttons: the ref print sits above each body, so the tag
     // goes on the same line just left of it ("THT SW1").

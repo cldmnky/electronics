@@ -273,12 +273,13 @@ INTERCONNECT_PAD_MM = 1.6
 EXPECTED_POUR = {"index": "top", "front": "bottom"}
 EXPECTED_SMT_SIDE = {"index": "bottom", "front": "top"}
 # Through-hole parts: the box headers, the Pico sockets, the TRS jacks, the
-# tactile switches and the encoder. U5 (SKRHABE010) is an SMD part.
+# tactile switches, the encoder and - since the 2026-11-14 owner decision - U5,
+# the ALPS RKJXT1F42001 stick switch that replaced the SMD SKRHABE010.
 # J_PWR (right-angle 1 x 2) and SW7 (panel POWER) are THT too: J_PWR sits on the
 # REAR (bottom) face at the top notch, so without it here the single-sided SMT
 # rule would wrongly flag it.
 THT_PARTS = {"J5", "J_PI", "J_FRONT", "J_PICO_L", "J_PICO_R", "J1", "J2", "J3", "J4",
-             "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "SW7", "J_PWR", "U6",
+             "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "SW7", "J_PWR", "U5", "U6",
              # The display is bolted to the front face but is not an SMT part.
              "DISP1"}
 
