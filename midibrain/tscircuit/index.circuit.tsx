@@ -136,6 +136,26 @@ const maleShroudEnvelope = (() => {
   }
 })()
 
+// Schematic-only positions for the probe points: `tsci check
+// schematic-placement index.circuit.tsx` reported TP4-TP9 and TP11-TP15
+// colliding with each other, and the auto-placed column below them ran past
+// the A4 sheet's bottom margin. Two rows, 2.4 schematic units apart, hold all
+// fifteen without a label collision. These move labels, not pads: the PCB
+// position is still PROBE_POINTS in lib/probe-points.ts and the probe order is
+// unchanged.
+const PROBE_SCH_X: Record<string, string | undefined> = {
+  TP1: "2.00", TP2: "4.40", TP3: "6.80",
+  TP4: "-7.60", TP5: "-5.20", TP6: "-2.80", TP7: "-0.40", TP8: "2.00",
+  TP9: "4.40", TP10: "9.20", TP11: "-7.60", TP12: "-5.20", TP13: "-2.80",
+  TP14: "-0.40", TP15: "6.80",
+}
+const PROBE_SCH_Y: Record<string, string | undefined> = {
+  TP1: "-19.60", TP2: "-19.60", TP3: "-19.60",
+  TP4: "-17.60", TP5: "-17.60", TP6: "-17.60", TP7: "-17.60", TP8: "-17.60",
+  TP9: "-17.60", TP10: "-17.60", TP11: "-19.60", TP12: "-19.60",
+  TP13: "-19.60", TP14: "-19.60", TP15: "-17.60",
+}
+
 export default () => (
   <board
     width={`${REAR_PCB.width}mm`}
@@ -228,6 +248,10 @@ export default () => (
       layer="bottom"
       schSheetName="rear"
       schSectionName="headers"
+      // Schematic-only: separates the 26/20/40-pin label fans the checker
+      // reported colliding (no pcbX/pcbY change).
+      schX="-2.11"
+      schY="-10.21"
       connections={picoLeft}
     />
     {/* J_PICO_R polarity/label facts. Each 1 x 20 socket numbers its own pads
@@ -270,6 +294,8 @@ export default () => (
       layer="bottom"
       schSheetName="rear"
       schSectionName="headers"
+      schX="-11.59"
+      schY="-9.83"
       pinAttributes={SPARE_PI_PINS}
       connections={piHeader}
     />
@@ -294,6 +320,8 @@ export default () => (
       layer="top"
       schSheetName="rear"
       schSectionName="headers"
+      schX="-6.97"
+      schY="-9.93"
       connections={INTERCONNECT_NETS}
     />
 
@@ -388,6 +416,8 @@ export default () => (
         pcbY={`${p.y}mm`}
         schSheetName="rear"
         schSectionName="probe"
+        schX={PROBE_SCH_X[p.ref]}
+        schY={PROBE_SCH_Y[p.ref]}
         connections={{ pin1: `net.${p.net}` }}
       />
     ))}

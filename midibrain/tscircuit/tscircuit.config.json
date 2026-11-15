@@ -1,0 +1,9 @@
+{
+  "includeBoardFiles": [
+    "assembly.circuit.tsx",
+    "front.circuit.tsx",
+    "index.circuit.tsx",
+    "panel.circuit.tsx",
+    "pi-panel.circuit.tsx"
+  ]
+}

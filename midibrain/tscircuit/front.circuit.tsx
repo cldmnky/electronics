@@ -661,11 +661,13 @@ export default () => (
         showAsTranslucentModel: true,
       }}
     />
-    {/* B3F-4055 is a 4-pin button with two internal contact pairs (1-2 and
-        3-4). Only pin1 (GND) and pin3 (signal) are wired; pin2/pin4 are the
-        duplicated contacts and are declared noConnect so the build does not
-        report a missing trace for a pin the circuit deliberately leaves open.
-        A real lost net still prints and still fails. */}
+    {/* B3F-4055 is a 4-pin button with two internal contact pairs, 1-2 and 3-4
+        (Omron B3F page 6; the reading and why it is not declared with
+        internallyConnectedPins are in imports/B3F_4055.tsx). Only pin1 (GND)
+        and pin3 (signal) are wired: they are the opposite contact nodes, so
+        pressing closes GND to the signal. pin2/pin4 are the duplicated
+        contacts of those same nodes, carry no copper and are declared
+        noConnect. A real lost net still prints and still fails. */}
     {TRANSPORT_SWITCHES.map(sw => (
       <B3F_4055
         key={sw.name}
@@ -715,6 +717,11 @@ export default () => (
         lib/interconnect.test.ts proves on the built JSON that both boards put
         every net on the same physical pad. Physical fit, keying and pre-power
         continuity are pending (acceptance item interconnect_mate). */}
+    {/* Schematic-only placement: the 26 net labels fan to the RIGHT of J5 and
+        ran past the ANSI B drawing area at its auto-placed spot beside the
+        controls. It (and J_PWR) sit in the free band below the controls, so
+        the fan stays on the sheet. Every pin keeps its net; only schX/schY
+        move (no pcbX/pcbY change). */}
     <SFH11_PBPC_D13_ST_BK
       name="J5"
       pcbX={`${FRONT_INTERCONNECT.x}mm`}
@@ -723,6 +730,8 @@ export default () => (
       layer="bottom"
       schSheetName="front"
       schSectionName="headers"
+      schX="8.5"
+      schY="-20.6"
       connections={INTERCONNECT_NETS}
     />
 
@@ -730,9 +739,10 @@ export default () => (
         power circuitry. The two INNER contacts (pin1/pin3) go to J_PWR; the
         duplicated outer contacts (pin2/pin4) stay open and are declared
         noConnect, exactly like the transport row; the Omron B3F drawing
-        (page 6) documents 1-2 and 3-4 as internally common pairs. From J_PWR
-        the owner's 6-inch F-F DuPont jumpers leave the board. The Pi end is
-        NOT a connector: the Raspberry Pi power-button documentation and its
+        (page 6) documents 1-2 and 3-4 as internally common pairs, so
+        pin1/pin3 are the two separate nodes of one normally-open contact.
+        From J_PWR the owner's 6-inch F-F DuPont jumpers leave the board.
+        The Pi end is NOT a connector: the Raspberry Pi power-button documentation and its
         official images/j2.jpg (retrieved 2026-11-10) show J2 as two BARE PADS,
         so a fitted header or a qualified wired connection is needed there and
         its pitch, part, clearance, insulation and method are pending. Nothing
@@ -767,6 +777,9 @@ export default () => (
       layer={POWER_HEADER.layer}
       schSheetName="front"
       schSectionName="headers"
+      // Same schematic-only move as J5; its two labels stay on their pins.
+      schX="8.5"
+      schY="-23.4"
       connections={{ pin1: "net.PWR_SW_A", pin2: "net.PWR_SW_B" }}
     />
 

@@ -75,6 +75,10 @@ export const RKJXT1F42001 = (props: ChipProps<typeof pinLabels>) => {
       // output-relation chart, not the pad order.
       symbol={
         <symbol>
+          {/* The symbol is custom, so the reference designator has to be drawn:
+              tscircuit substitutes {NAME} inside a symbol and the schematic
+              checker looks for it inside the component bounds. */}
+          <schematictext schX={0} schY={1.15} text="{NAME}" fontSize={0.2} anchor="center" />
           {/* Common: com joins the four direction blades and the push contact. */}
           <schematicpath points={[{ x: -1.5, y: 0.75 }, { x: -1.5, y: -1.5 }]} strokeColor="#8D2323" />
           <schematiccircle center={{ x: -1.5, y: 0 }} radius={0.03} isFilled color="#8D2323" />

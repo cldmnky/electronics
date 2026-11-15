@@ -50,6 +50,7 @@
 //     availability is claimed. Conrad is the owner's target for non-SMT parts
 //     and the owner's DigiKey exception covers switches and caps only.
 import type { ConnectorProps } from "@tscircuit/props"
+import { Fragment } from "react"
 
 /** Contact pitch in both directions, mm (drawings: .100[2.54]). */
 export const INTERCONNECT_PITCH = 2.54
@@ -191,15 +192,21 @@ export const InterconnectFootprint = ({ side }: { side: InterconnectSide }) => {
   // WHICH physical side the real key sits on is not verifiable from the pages
   // read: the key position relative to pin 1 stays a physical check.
   const keyY = INTERCONNECT_MECH.bodyEnvelope / 2
+  // One React key per pad: this table renders as a child list and React warns
+  // without keys. `platedhole`'s props type carries no key (unlike the
+  // component props above), so the key goes on a Fragment, which the
+  // reconciler flattens - the emitted pads are unchanged.
   const pads = INTERCONNECT_PAD_TABLE.map(({ pin, x, y }) => (
-    <platedhole
-      portHints={[`pin${pin}`]}
-      pcbX={`${(male ? -x : x).toFixed(4)}mm`}
-      pcbY={`${y.toFixed(4)}mm`}
-      shape="circle"
-      outerDiameter={`${INTERCONNECT_PAD_MM}mm`}
-      holeDiameter={`${INTERCONNECT_DRILL_MM}mm`}
-    />
+    <Fragment key={`pin-${pin}`}>
+      <platedhole
+        portHints={[`pin${pin}`]}
+        pcbX={`${(male ? -x : x).toFixed(4)}mm`}
+        pcbY={`${y.toFixed(4)}mm`}
+        shape="circle"
+        outerDiameter={`${INTERCONNECT_PAD_MM}mm`}
+        holeDiameter={`${INTERCONNECT_DRILL_MM}mm`}
+      />
+    </Fragment>
   ))
   const halfLength = INTERCONNECT_MECH.bodyLength / 2
   const halfWidth = INTERCONNECT_MECH.bodyEnvelope / 2

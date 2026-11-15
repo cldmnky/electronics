@@ -20,6 +20,25 @@ export const B3F_4055 = (props: PushButtonProps<typeof pinLabels> & { refTextAt?
     <pushbutton
       name={name}
       pinLabels={pinLabels}
+      // INTERNAL CONNECTIONS, VERIFIED BUT NOT DECLARED. Omron B3F datasheet
+      // (en-b3f.pdf, SHA-256 be9cf69e5f43fb7689448a2097c19858e5643c0e2e49cd77d018881543e27a1f,
+      // retrieved 2026-11-15), page 6, the 12 x 12 mm "B3F-4050, B3F-4055, ...
+      // Projected Plunger Type (without Ground Terminal)" column: the
+      // "Terminal Arrangement/Internal Connections (Top View)" drawing links 4
+      // to 3 along the top side and 2 to 1 along the bottom side, with the one
+      // normally-open contact between those two nodes. The internally common
+      // pairs are therefore 1-2 and 3-4 (NOT 1-3 / 2-4), and they stay separate
+      // until the plunger is pressed. This footprint's pads are placed in the
+      // same top-view arrangement (pin1 bottom-right, pin2 bottom-left, pin3
+      // top-right, pin4 top-left), so pin1/pin3 are the two opposite nodes and
+      // the board wiring pin1 = GND / pin3 = signal closes the contact.
+      // `internallyConnectedPins={[["pin1", "pin2"], ["pin3", "pin4"]]}` states
+      // exactly that, but on tscircuit 0.0.3169 it also re-plans the autorouter
+      // (the pads become net-assignable through the internal links): two GND
+      // trace shapes and one via moved, and `tsci check pcb-style` then fails
+      // the front board. Declaring it is pending that routing decision, so the
+      // upstream "datasheet reports pin1/pin2 internally connected" warning
+      // stays. No copper connects pin2/pin4 (noConnect at the call sites).
       supplierPartNumbers={{
   "jlcpcb": [
     "C84931"
