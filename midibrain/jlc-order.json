@@ -16,7 +16,7 @@
     "assembly": {
       "service": "JLCPCB SMT assembly",
       "sides": 1,
-      "sides_reason": "All 30 SMT placements are on the top (panel side); the 31st top-side body is the hand-fitted display module, which has no pads. The rear face carries the direct interconnect's J5 THT female socket body and the solder tails of the other through-hole parts. U5 left the SMT CPL on 2026-11-14 (owner decision: THT ALPS RKJXT1F42001 replaces the SMD SKRHABE010).",
+      "sides_reason": "All 30 SMT placements are on the top (panel side). The rear face carries the direct interconnect's J5 THT female socket body and the solder tails of the other through-hole parts. U5 left the SMT CPL on 2026-11-14 (owner decision: THT ALPS RKJXT1F42001 replaces the SMD SKRHABE010).",
       "through_hole": "hand solder except U6: request JLCPCB THT/hand-solder assembly for U6 if offered, else bench-qualify per docs/assembly.md; the 2026-11-06 JLC/LCSC search found no SMD 0-detent 24 PPR encoder with THT anchor lugs, and a lug-less SMD knob encoder is NOT accepted. U5 is hand-soldered: ALPS publishes a manual-soldering reference for the RKJXT1F42001 (page 412: 350 +-5 C, 3 s max, one time).",
       "through_hole_parts": [
         "DISP1",

@@ -55,13 +55,15 @@ an encoder whose three encoder terminals are unconnected (`noConnect`): the
 design has no encoder feature on the NAV stick. The five control nets are
 unchanged (`NAV_UP`, `NAV_DOWN`, `NAV_LEFT`, `NAV_RIGHT`, `NAV_PRESS`) plus the
 GND common, and are mapped by FUNCTION from the ALPS output-relation chart, not
-by pad order. **First-article job for this part:** (1) meter every terminal pair
-before soldering, in particular the centre-push return — the ALPS page-399
-circuit diagram draws the push between `Push` and `Com` while the page-399 chart
-shows `Push-Com` on in every column, so both `com` and `Ground terminal` are
-tied to GND and the true return must be confirmed; (2) confirm the ten Ø1.0
-holes and the Ø1.1 position-lug hole against the sample; (3) confirm that the
-Ø7.20 collar clears the 8.0 mm NAV panel opening. See `docs/TODO.md`.
+by pad order. The page-399 chart also shows `Push-Com` ON in EVERY lever
+position, so a tilt grounds NAV_PRESS together with its direction line: the
+firmware decodes the five contacts as one group (`mb::NavPressGate`) and a
+navigation step can never double as a select. **First-article job for this
+part:** (1) meter every terminal pair before soldering - the pin numbers are
+this library's own (ALPS prints terminal names only), so confirm which physical
+post is which, and confirm no unintended permanent connection; (2) confirm the
+ten Ø1.0 holes and the Ø1.1 position-lug hole against the sample; (3) confirm
+that the Ø7.20 collar clears the 8.2 mm NAV panel opening. See `docs/TODO.md`.
 
 TLP2361 is inverting **totem-pole**, unlike the old TLP2362 open-collector
 receiver. The retained pull-up and 100 nF local bypass are intentional. Its

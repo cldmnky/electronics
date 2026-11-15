@@ -512,7 +512,7 @@ U board (−44, −52) lands on the jack row and (45, 43) on the opening's cut e
 - NAV switch stack (added 2026-11-14, owner decision): the ALPS RKJXT1F42001 is a **17 × 17 mm THT body** whose
   heights above the front board's top face (Z 10.60) are housing **8.6 mm** (Z 2.00), stationary collar **10.5 mm**
   (Z 0.10) and shaft tip **17.4 mm** (Z −6.80). Three consequences, none measured:
-  1. The **collar clears the panel FRONT face by only 0.10 mm**: it stands 1.50 mm into the 8.0 mm NAV opening from
+  1. The **collar clears the panel FRONT face by only 0.10 mm**: it stands 1.50 mm into the 8.2 mm NAV opening from
      the panel rear (Z 1.60) and ends at Z 0.10, so the opening must clear Ø7.20 plus the panel/routed tolerance
      (`PANEL_CUTOUTS.nav`, PROVISIONAL).
   2. The housing top is **0.40 mm behind the panel rear plane** (Z 2.00 against 1.60) - a 0.40 mm nominal gap, and

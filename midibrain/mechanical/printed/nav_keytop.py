@@ -10,7 +10,9 @@ Shape (Z datum: panel FRONT face = 0, +Z rearward):
 
     head  D7.00 x 4.00 in front of the shaft tip   -- the finger pad
     shank D5.40 x 4.00 behind the head             -- carries the blind bore
-    bore  D2.90 x 4.00, floor 0.15 above the tip   -- over the Ø2.5 flatted shaft
+    bore  D2.40 x 4.00, floor 0.15 above the tip   -- PRESS FIT on the Ø2.5 flatted
+                                                     shaft (0.05 mm radial interference
+                                                     at nominal)
 
 WHAT CHANGED WITH THE PART (owner decision 2026-11-14): the SMD SKRHABE010 put
 its stem 5.0 mm above the board, so the old cap had to reach it through the
@@ -22,10 +24,13 @@ projecting shaft entirely IN FRONT of the panel:
   * no part of it enters the panel opening, so there is no neck fit and no
     flange. The panel opening now exists for the switch's own Ø7.20 stationary
     collar that stands inside it (lib/layout.ts PANEL_CUTOUTS.nav);
-  * the bore is round over a shaft with one flat (1.80 across). A round bore
-    cannot key on the flat, so the cap can rotate freely under a finger: there is
-    no grip, no detent and no set screw, and nothing here shows that the cap
-    stays on when the panel is lifted off. All three are unmeasured;
+  * the bore is round over a shaft with one flat (1.80 across). Retention is
+    the PRESS FIT alone: the bore interferes with the round shaft by 0.05 mm
+    radial at nominal, and the flat (0.55 mm from the axis) always clears a
+    round bore so the clocking does not matter. A round bore cannot key on the
+    flat, so the cap is not rotationally keyed and no detent is claimed. What a
+    printed bore actually does to the shaft is a print-process question (fit
+    specimen, acceptance item control_actuator), not a CAD fact;
   * the old rounded-square-socket analysis belonged to the SKRHABE010 stem and
     is obsolete; it was removed with that part (docs/TODO.md).
 

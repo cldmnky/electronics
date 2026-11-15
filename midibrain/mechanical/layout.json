@@ -82,7 +82,7 @@
       "headHeight": 4,
       "headDiameter": 7,
       "shankDiameter": 5.4,
-      "socketBore": 2.9,
+      "socketBore": 2.4,
       "socketDepth": 4,
       "zFront": -10.95,
       "zRear": -2.95
@@ -819,7 +819,7 @@
       "name": "NAV",
       "x": 52.5,
       "y": 12,
-      "radius": 4
+      "radius": 4.1
     },
     {
       "shape": "circle",

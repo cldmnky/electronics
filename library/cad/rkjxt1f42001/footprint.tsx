@@ -75,7 +75,9 @@ export const RKJXT1F42001 = (props: ChipProps<typeof pinLabels>) => {
               "4-14.5"). Only the four corner chamfers are drawn: the 1.5 mm
               pads at +-7.8 reach 8.55 mm, i.e. past the 8.5 mm body edge, so a
               full outline (or a mark on the +Y edge) would sit on copper. The
-              designator is printed from lib/silk.tsx, not from here, and the
+              chords are offset OUTWARD from the true chamfer flat so they clear
+              the copper too - they are a body-corner hint, not the body edge.
+              The designator is printed from lib/silk.tsx, not from here, and the
               part is keyed in rotation by its position lug. */}
           <silkscreenpath route={[
             { x: -7.25, y: 4.55 }, { x: -4.55, y: 7.25 }

@@ -610,8 +610,10 @@ PANEL_CIRCLE_DIAMETERS: dict[str, float] = {
     "VALUE ENCODER": 7.2,
     # NAV stopped sharing the control diameter on 2026-11-14: the ALPS
     # RKJXT1F42001's Ø7.20 stationary collar stands inside the opening, so the
-    # panel has its own PANEL_CUTOUTS.nav (lib/layout.ts).
-    "NAV": 8.0,
+    # panel has its own PANEL_CUTOUTS.nav (lib/layout.ts). Ø8.2 leaves 0.17 mm
+    # per side over the collar at the worst routed/placement limit (Ø8.0 would
+    # leave 0.07); the size stays PROVISIONAL until a sample is measured.
+    "NAV": 8.2,
     "MIDI IN 1 JACK": 6.2, "MIDI IN 2 JACK": 6.2,
     "MIDI OUT 1 JACK": 6.2, "MIDI OUT 2 JACK": 6.2,
 }

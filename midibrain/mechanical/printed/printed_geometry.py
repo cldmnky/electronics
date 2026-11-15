@@ -1030,6 +1030,16 @@ class NavKeytop:
         return self.socket_bore / 2 - (self.shaft_across_flat - self.shaft_diameter / 2)
 
     @property
+    def press_interference(self) -> float:
+        """Radial interference of the bore on the round shaft (mm).
+
+        Positive = the bore is smaller than the shaft and grips it (press fit).
+        The grip this gives on a printed part depends on the print process; the
+        design intent, not a measurement, is what this number states.
+        """
+        return (self.shaft_diameter - self.socket_bore) / 2
+
+    @property
     def envelope(self) -> "Envelope":
         """Intended solid envelope in panel coordinates (mm)."""
         r = self.head_diameter / 2
@@ -1094,21 +1104,24 @@ def nav_keytop(layout: dict | None = None, source: str | LayoutSource | None = N
     )
 
 
-def nav_socket_clearance(socket_bore: float) -> dict:
-    """Radial clearance of a circular bore over the Ø2.5 FLATTED shaft.
+def nav_socket_fit(socket_bore: float) -> dict:
+    """Fit of a circular bore over the Ø2.5 FLATTED shaft.
 
     The shaft's cross-section is a Ø2.5 circle cut by one flat that leaves 1.8 mm
-    across, i.e. the flat plane is (1.8 - 1.25) = 0.55 mm from the axis. A round
-    bore is therefore loose in TWO different ways, and both are facts, not
-    opinions:
+    across, i.e. the flat plane is (1.8 - 1.25) = 0.55 mm from the axis. The bore
+    is a PRESS FIT on the round side and stays clear over the flat side, and both
+    are facts, not opinions:
 
-      * over the ROUND side: (bore - 2.50) / 2 mm;
-      * over the FLAT side: bore / 2 - 0.55 mm, i.e. 0.35 mm MORE than the round
-        side for a 2.90 mm bore.
+      * over the ROUND side: (bore - 2.50) / 2 mm - NEGATIVE is interference,
+        and interference is the cap's only retention (no clip, no screw, no
+        flange behind the panel);
+      * over the FLAT side: bore / 2 - 0.55 mm - the flat always clears a round
+        bore, so the bore's clocking around the shaft does not matter.
 
-    A round bore cannot key on the flat, so the cap can also rotate until the
-    bore touches the flat's edges. No detent and no grip may be claimed from
-    either number.
+    A round bore cannot key on the flat, so the cap is not rotationally keyed;
+    the press fit also has to resist rotation by friction. How tight a PRINTED
+    bore lands on the shaft is a print-process question (fit specimen and the
+    control_actuator acceptance item), not a CAD fact.
     """
     if socket_bore <= 0.0:
         raise GeometryError(f"socket bore {socket_bore} is not positive")
@@ -1123,8 +1136,8 @@ def nav_socket_clearance(socket_bore: float) -> dict:
         "flat_plane_from_axis_mm": round(flat_plane, 4),
         "shaft_flat_side_mm": round(radius - flat_plane, 4),
         "across_flat_mm": NAV_SHAFT_ACROSS_FLAT,
+        "press_fit": socket_bore < NAV_SHAFT_DIAMETER,
         "keys_on_the_flat": False,
-        "rotation_freely_possible": True,
     }
 
 
@@ -1132,12 +1145,15 @@ def validate_nav_keytop(g: NavKeytop, layout: dict | None = None) -> list[str]:
     """Check every cap rule. Returns notices; raises GeometryError on failure."""
     notices: list[str] = []
 
-    # 1. The socket must clear the Ø2.5 shaft and still be printable.
-    need(g.socket_bore > g.shaft_diameter,
-         f"socket D{g.socket_bore:.2f} does not clear the D{g.shaft_diameter:.1f} shaft")
-    need(0.1 - EPS_MM <= g.socket_bore - g.shaft_diameter <= 0.4 + EPS_MM,
-         f"socket bore clearance {g.socket_bore - g.shaft_diameter:.2f} mm is outside "
-         "0.10-0.40 mm: a tighter bore will not print, a looser one will not centre")
+    # 1. The socket must PRESS onto the Ø2.5 shaft and still be printable.
+    need(g.socket_bore < g.shaft_diameter,
+         f"socket D{g.socket_bore:.2f} does not interfere with the "
+         f"D{g.shaft_diameter:.1f} shaft: a clearance bore has no retention "
+         "(no clip, no screw, no flange behind the panel) and the cap slides off")
+    need(0.05 - EPS_MM <= g.shaft_diameter - g.socket_bore <= 0.20 + EPS_MM,
+         f"socket press interference {g.shaft_diameter - g.socket_bore:.2f} mm "
+         "is outside 0.05-0.20 mm diametral: less will not grip, more will split "
+         "the wall or refuse to seat")
     need(g.socket_wall >= PRINT_MIN_WALL,
          f"socket wall {g.socket_wall:.2f} mm is under the {PRINT_MIN_WALL} mm rule")
     # 2. Enough shaft in the bore to hold the cap, and a floor that floats.
@@ -1179,14 +1195,16 @@ def validate_nav_keytop(g: NavKeytop, layout: dict | None = None) -> list[str]:
         notices.append(f"head clearance to the nearest panel feature ({nearest}) "
                        f"is {distance:.2f} mm")
     # 6. Facts the model cannot settle stay visible on every run.
-    loose = nav_socket_clearance(g.socket_bore)
+    fit = nav_socket_fit(g.socket_bore)
     notices.append(
-        f"socket over the flatted shaft: D{g.socket_bore:.2f} bore gives "
-        f"{loose['shaft_round_side_mm']:.2f} mm radial play on the round side and "
-        f"{loose['shaft_flat_side_mm']:.2f} mm on the flat side (the flat plane is "
-        f"{loose['flat_plane_from_axis_mm']:.2f} mm from the axis, so "
-        f"{NAV_SHAFT_ACROSS_FLAT} mm across). A round bore does NOT key on the flat: "
-        "the cap can rotate freely under a finger. No grip and no detent is claimed")
+        f"socket over the flatted shaft: D{g.socket_bore:.2f} bore is a PRESS FIT "
+        f"({-fit['shaft_round_side_mm']:.2f} mm radial interference on the round "
+        f"side at nominal) while the flat side keeps {fit['shaft_flat_side_mm']:.2f} "
+        f"mm of clearance (the flat plane is {fit['flat_plane_from_axis_mm']:.2f} mm "
+        f"from the axis, {NAV_SHAFT_ACROSS_FLAT} mm across). Retention is the press "
+        "fit alone - no clip, no screw, no flange - and a round bore does NOT key on "
+        "the flat. What a printed bore actually does to the shaft is a print-process "
+        "question (fit specimen, acceptance item control_actuator), not a CAD fact")
     notices.append(
         f"the collar (D{NAV_COLLAR_DIAMETER} to Z "
         f"{g.collar_top_z:.2f}, i.e. {NAV_COLLAR_TOP_ABOVE_PCB} mm above the PCB) is "
@@ -1237,7 +1255,8 @@ def describe_nav_keytop(g: NavKeytop) -> list[str]:
         f"(Z {g.head_rear_z:.2f}..{g.socket_mouth_z:.2f})",
         f"socket: D{g.socket_bore:.2f} x {g.socket_depth:.2f} deep "
         f"(Z {g.socket_floor_z:.2f}..{g.socket_mouth_z:.2f}), wall "
-        f"{g.socket_wall:.2f} mm",
+        f"{g.socket_wall:.2f} mm, press fit {g.press_interference:.2f} mm radial "
+        "interference on the round shaft (nominal)",
         f"shaft: D{g.shaft_diameter:.1f}, tip Z {g.shaft_tip_z:.2f}, "
         f"{g.shaft_in_socket:.2f} mm in the bore, axial free play "
         f"{g.free_play:.2f} mm",

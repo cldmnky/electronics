@@ -116,10 +116,6 @@ test("every U5 terminal is on its printed hole and carries its functional net", 
       terminal: t.name,
       atPrintedHole: true,
     })
-    expect({ terminal: t.name, hints: hole!.port_hints }).toEqual({
-      terminal: t.name,
-      hints: hole!.port_hints,
-    })
     expect(hole!.port_hints).toContain(`pin${t.pin}`)
     // 2. The net, mapped by function.
     const port = ports.find((p) => p.pin_number === t.pin)
@@ -180,20 +176,28 @@ test("the ten terminals are the whole part: nothing else shares the NAV footprin
   expect([...xs].sort()).toEqual([...want].sort())
 })
 
-/** Every `pcbX`/`pcbY` pair in a footprint file, sorted, as "x,y" strings. */
-const coordinates = (path: URL): string[] => {
+/** The hole table of a footprint file: every entry of its `HOLES` object plus
+ *  the `LUG` position, as sorted "name:x,y" strings. The pads are placed from
+ *  these tables through template literals (`pcbX={`${HOLES.A.x}mm`}`), which no
+ *  literal-coordinate regex can match - so comparing the TABLES is what a drift
+ *  between the two copies would actually change. */
+const holeTable = (path: URL): string[] => {
   const text = readFileSync(path, "utf8")
+  const holes = text.match(/const HOLES = \{([\s\S]*?)\} as const/)
+  const lug = text.match(/const LUG = \{ x: (-?[\d.]+), y: (-?[\d.]+) \} as const/)
+  if (!holes || !lug) throw new Error(`no HOLES/LUG table in ${path.pathname}`)
   const out: string[] = []
-  const re = /pcbX=\{?"?(-?[\d.]+)mm"?\}?[^>]*?pcbY=\{?"?(-?[\d.]+)mm"?/g
-  for (const m of text.matchAll(re)) out.push(`${Number(m[1])},${Number(m[2])}`)
-  const re2 = /pcbY=\{?"?(-?[\d.]+)mm"?\}?[^>]*?pcbX=\{?"?(-?[\d.]+)mm"?/g
-  for (const m of text.matchAll(re2)) out.push(`${Number(m[2])},${Number(m[1])}`)
+  for (const m of holes[1].matchAll(/(\w+): \{ x: (-?[\d.]+), y: (-?[\d.]+) \}/g)) {
+    out.push(`${m[1]}:${m[2]},${m[3]}`)
+  }
+  out.push(`LUG:${lug[1]},${lug[2]}`)
   return out.sort()
 }
 
 test("the board's footprint copy matches the shared library footprint", () => {
-  const project = coordinates(PROJECT_FOOTPRINT)
-  const library = coordinates(LIBRARY_FOOTPRINT)
-  expect(project.length).toBeGreaterThan(0)
+  const project = holeTable(PROJECT_FOOTPRINT)
+  const library = holeTable(LIBRARY_FOOTPRINT)
+  // Ten terminals plus the position lug: a missing row is a missing hole.
+  expect(project.length).toBe(11)
   expect(project).toEqual(library)
 })

@@ -102,12 +102,15 @@ Cross-checks (local only, not committed):
   one-off cross-check, not a reproducible asset.
 - The collar diameter (Ø7.20) and the four housing tabs (9.00 mm) are model
   geometry: page 398 prints neither. They drive the panel opening
-  (`PANEL_CUTOUTS.nav = 8.0`, provisional) and the zero-gap tab contact risk.
-- The centre-push return terminal is NOT proven: the page-399 circuit diagram
-  draws the push between "Push" and "Com", while the page-399 chart shows
-  "Push-Com" on in every column. The midibrain board ties both `com` and
-  `Ground terminal` to GND so the push closes under either reading, and records
-  a first-article meter check. Nothing here says which reading is right.
+  (`PANEL_CUTOUTS.nav = 8.2`, provisional) and the zero-gap tab contact risk.
+- The page-399 output-relation chart is NOT ambiguous about the centre push:
+  the pair "Push-Com" is ON in EVERY lever position - the four direction
+  columns and the Center push column alike - and that closure is what makes the
+  directions work. Every tilt therefore grounds NAV_PRESS together with its
+  direction line; the midibrain firmware decodes the five contacts as one group
+  (`mb::NavPressGate`) so a tilt cannot select. The board ties both `com` and
+  `Ground terminal` to GND, and a first-article meter check confirms the
+  terminal identity (the pin numbers are this library's own).
 - No shop column is filled. **DigiKey SKU `4809-RKJXT1F42001-ND`** was read from
   a Wayback capture of digikey.com product 19529127 (snapshot **2024-10-01**); the
   live site answers HTTP 403 from this environment, so it is an ARCHIVE FACT and

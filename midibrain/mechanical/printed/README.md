@@ -105,8 +105,6 @@ uv pip install --python /tmp/cq-venv/bin/python cadquery
 # the four button-cap fit specimens (3.80 / 3.85 / 3.90 / 4.00 mm locator recess)
 /tmp/cq-venv/bin/python mechanical/printed/button_cap.py --specimens
 
-# the NAV motion analysis: standard vs the experimental variant
-
 # tests: the pure-geometry and STL checks run anywhere, the rebuild tests need the venv
 cd mechanical/printed && python3 -m unittest test_printed_parts -v
 cd mechanical/printed && /tmp/cq-venv/bin/python -m unittest test_printed_parts -v
@@ -151,7 +149,7 @@ header carries a creation timestamp), and the tests compare geometry, not bytes.
 | B3F panel opening | 12.25 mm square | `lib/layout.ts` `PANEL_CUTOUTS.button`; seven `* BUTTON` apertures in `mechanical/layout.json` |
 | printed cap plate / locator / proud | 11.80 square / 3.85 square × 0.60 deep / 0.80 | `lib/layout.ts` `BUTTON_CAP_PRINTED`, parsed and re-derived by `button_cap()` |
 | VALUE ENCODER aperture | 7.2 mm | `mechanical/layout.json` `panelApertures`, cross-checked against `PANEL_CUTOUTS.control` in `lib/layout.ts` |
-| NAV aperture | 8.0 mm | `PANEL_CUTOUTS.nav`: the switch's Ø7.20 collar stands inside it. 0.40 mm per side over the collar before the routed tolerance; PROVISIONAL, not measured |
+| NAV aperture | 8.2 mm | `PANEL_CUTOUTS.nav`: the switch's Ø7.20 collar stands inside it. 0.50 mm per side over the collar nominally, 0.17 mm at the worst routed/placement limit; PROVISIONAL, not measured |
 | display opening right edge | 43.25 mm | `lib/layout.ts` `DISPLAY_CONCEPT.x` + `FRONT_DISPLAY_OPENING.width` (parsed, cross-checked against the two numbers the source prints beside them) |
 | knob column and body diameter | x = 52, D12.5 | `lib/layout.ts` `RIGHT_COLUMN` and the owner-approved "knob body (D12.5 at x = 52)" note |
 
@@ -176,13 +174,13 @@ projecting shaft** and hangs entirely IN FRONT of the panel:
                     |  head   |      4.00 thick
         Z =  -6.95 +---------+      head rear = bore floor
                     | D5.40   |      shank, 4.00 long
-                    |  bore   |      D2.90 blind bore over the shaft
+                    |  bore   |      D2.40 blind bore, PRESS FIT on the shaft
         Z =  -2.95 +---------+      cap rear face (bore mouth)
                       :   :         2.95 mm of EXPOSED shaft
         Z =  -6.80   shaft tip of the switch (17.4 above the PCB)
         Z =   0.00  -------- PANEL FRONT (10.60 above the PCB)
                     | collar  |      the switch's OWN Ø7.20 collar, inside the
-        Z =   0.10  ---------         8.0 mm NAV opening (1.60 panel)
+        Z =   0.10  ---------         8.2 mm NAV opening (1.60 panel)
         Z =   1.60  -------- PANEL REAR
                     | D17 body |      switch housing top at Z 2.00
         Z =   2.00  +---------+
@@ -197,10 +195,10 @@ projecting shaft** and hangs entirely IN FRONT of the panel:
 | housing top above the PCB | 8.6 mm | ALPS page 398 (`8.6`) |
 | head diameter / height | 7.00 / 4.00 mm | `lib/layout.ts` `PRINTED_PARTS.navKeytop` (height = the ASSUMPTION band 3-5 mm) |
 | shank diameter | 5.40 mm | derived: 0.80 mm head ring outside the bore (print wall rule) |
-| socket bore / depth | 2.90 / 4.00 mm | shaft 2.50 + 0.40 clearance (ASSUMPTION); depth from `layout.ts` |
+| socket bore / depth | 2.40 / 4.00 mm | PRESS FIT on the Ø2.50 shaft: 0.05 mm radial interference at nominal (ASSUMPTION); depth from `layout.ts` |
 | axial free play at rest | 0.15 mm | ASSUMPTION inside the 0.10-0.20 mm band |
 | shaft length in the bore | 3.85 mm | derived (mouth − shaft tip) |
-| radial play, round side / flat side | 0.20 / 0.90 mm | derived (bore 2.90 against Ø2.50 and a flat plane 0.55 mm from the axis) |
+| radial interference, round side | 0.05 mm (press fit) | derived (bore 2.40 against Ø2.50); the flat plane 0.55 mm from the axis keeps 0.65 mm of clearance over the flat, so the bore's clocking does not matter |
 | cap rear face above the panel front | 2.95 mm | derived; it must exceed the 0.5 mm worst-case push travel |
 | collar clearance behind the cap | 3.05 mm | derived |
 | total protrusion over the panel front | **10.95 mm** | derived (head 4.00 + bore 4.00 + exposed shaft 2.95) |
@@ -217,12 +215,15 @@ projecting shaft** and hangs entirely IN FRONT of the panel:
 * **Obsolete: the rounded-square-socket analysis.** The SKRHABE010's stem tip was
   a rotated 1.95 mm rounded square; the RKJXT1F42001's shaft is a Ø2.50 cylinder
   with one flat, so the socket is a round bore and the old "which feature mates,
-  0.10...0.62 mm" range does not apply. What replaces it is the flat: a round
-  bore **cannot key** on a flat, so the cap can rotate freely under a finger.
+  0.10...0.62 mm" range does not apply. A round bore **cannot key** on a flat,
+  so the cap is not rotationally keyed; retention is the PRESS FIT (the bore
+  interferes with the round shaft by 0.05 mm radial at nominal) and what a
+  printed bore actually does is a print-process question, not a CAD fact.
 * **Now required: the panel opening is the switch's, not the cap's.** The
   Ø7.20 collar stands 1.50 mm into the opening from the panel rear, so NAV has
-  its own `PANEL_CUTOUTS.nav = 8.0` (provisional; 0.40 mm per side over the
-  collar before the routed tolerance) instead of the 7.2 mm control aperture.
+  its own `PANEL_CUTOUTS.nav = 8.2` (provisional; 0.50 mm per side over the
+  collar nominally, 0.17 mm at the worst routed/placement limit) instead of the
+  7.2 mm control aperture.
 
 ### Assembly order
 
@@ -232,9 +233,10 @@ projecting shaft** and hangs entirely IN FRONT of the panel:
 
 ### First article for this part
 
-* Does the cap stay on, and does it rock? The bore is a print fit only - no set
-  screw, no key, no clip - and the finger load is carried by 3.85 mm of Ø2.90
-  bore on a Ø2.50 shaft.
+* Does the cap stay on, and does it rock? Retention is the press fit alone -
+  no set screw, no key, no clip - and the finger load is carried by 3.85 mm of
+  Ø2.40 bore on a Ø2.50 shaft. A printed bore's real grip depends on the print
+  process: print a fit specimen before trusting the retention.
 * Measure the real collar diameter and the real tab height (see ASSUMPTIONS):
   the collar sets the panel opening and the tabs sit at the panel rear plane.
 * Measure the shaft: is the flat really 1.80 across, and at what clocking does
@@ -475,11 +477,11 @@ The table keeps the rows whose value moved, marked **layout.ts**.
 
 | assumption | value | why |
 | --- | --- | --- |
-| socket bore clearance | 0.40 mm diametral over the Ø2.50 shaft (**layout.ts**: `socketBore` 2.90); the flat side gets 0.90 mm per side because the flat plane is 0.55 mm from the axis | slides on; **NOT a retention feature** — no grip, no press fit, no key on the flat, nothing is held |
+| socket bore fit | 0.10 mm diametral INTERFERENCE on the Ø2.50 shaft (**layout.ts**: `socketBore` 2.40) = 0.05 mm radial press fit at nominal; the flat side keeps 0.65 mm of clearance because the flat plane is 0.55 mm from the axis | the cap's ONLY retention - no clip, no screw, no key, no flange; what a printed bore does to the shaft is a print-process question (fit specimen) |
 | axial free play | 0.15 mm | the switch must not be pre-loaded at rest |
 | socket depth | 4.00 mm (**layout.ts**: `socketDepth`) | 3.85 mm of shaft engagement, more than one shaft diameter |
 | head diameter | 7.00 mm (**layout.ts**: `headDiameter`) | a finger pad wider than the shank; sets the 0.80 mm head ring |
-| shank diameter | 5.40 mm (**layout.ts**: `shankDiameter`) | 0.80 mm head ring outside the Ø2.90 bore (print wall rule) |
+| shank diameter | 5.40 mm (**layout.ts**: `shankDiameter`) | 0.80 mm head ring over the shank (print wall rule); 1.50 mm wall around the bore |
 | head height / chamfer | 4.00 / 0.80 mm (height **layout.ts**: `headHeight`) | inside the owner's 3-5 mm band; print and finger edge |
 | shank rear chamfer | 0.60 mm 45 deg | the shank rear face is the only overhang in the print |
 | socket mouth chamfer | 0.40 mm 45 deg | lead-in over the flatted shaft |
@@ -513,7 +515,7 @@ part 180° to reach this setup** - do not let the slicer choose.
 
 This orientation does **NOT** print without support: the head (D7.00) overhangs
 the D5.40 shank by 0.80 mm radial (a 45 deg chamfer ring relieves most of it),
-and the blind D2.90 bore is a **bridge** that closes with no material
+and the blind D2.40 bore is a **bridge** that closes with no material
 underneath. The bed contact is a 0.80 mm wide annulus (about 17 mm^2) - **use a
 4 mm brim** and keep the first layer slow. Check the slicer preview before
 printing; nothing here is proven on a printer.
@@ -553,16 +555,18 @@ fit-check prototype only.
 NAV cap:
 
 1. the real **shaft**: measure the diameter and the across-flat (nominal Ø2.50 /
-   1.80) and note its clocking. The bore is Ø2.90, so the round side has 0.20 mm
-   and the flat side 0.90 mm of radial play and the cap cannot key on the flat.
-   **No friction fit and no retention is assumed**; record whether the cap stays
-   on, whether it rocks and whether it spins freely. The ALPS page also carries,
+   1.80) and note its clocking. The bore is Ø2.40, a **press fit** (0.05 mm
+   radial interference at nominal on the round side, 0.65 mm of clearance over
+   the flat), so the cap should be pushed on with light force and hold by
+   friction alone - no key on the flat. Record whether the cap stays on, whether
+   it rocks and how hard it is to fit and remove. Print a fit specimen first:
+   FDM shrinks holes (more grip), resin does not. The ALPS page also carries,
    under notes common to the series, "Do not apply a force from the side of the
    stem" - ask ALPS, or check on the sample, whether that restricts pushing a
    4-way cap sideways.
 2. the real **collar diameter** (model geometry says Ø7.20) and the **tab height**
    (9.00 mm in one model, 8.60 in the other): the collar decides whether the
-   8.0 mm NAV opening is right, and the tabs sit at the panel rear plane Z 1.60,
+   8.2 mm NAV opening is right, and the tabs sit at the panel rear plane Z 1.60,
    i.e. a 0.00 mm nominal gap against the panel - measure both.
 3. the **centre-push travel** (drawing 0.3 ±0.2) and the resulting
    0.15 mm free play: the first 0.15 mm of a push moves the cap before it moves

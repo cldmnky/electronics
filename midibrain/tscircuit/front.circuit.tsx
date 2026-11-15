@@ -460,11 +460,19 @@ export default () => (
         The nets are mapped BY FUNCTION from the ALPS output-relation chart,
         never by pad position: direction A is the lever's up way, C down, B
         left, D right, and each direction's contact sits on the far side of its
-        own lettered hole. com and "Ground terminal" are both on GND: the
-        centre-push return is drawn as Push-Com on the page-399 circuit diagram,
-        while the page-399 chart shows Push-Com on in every column, so the push
-        return is NOT proven. Tying both closes the push under either reading;
-        the first article must confirm it with a meter (docs/TODO.md). */}
+        own lettered hole. com and "Ground terminal" are both on GND.
+
+        PROVEN from the page-399 output-relation chart: the pair `Push-Com` is
+        ON in EVERY lever position - the A, B, C, D columns and the Center push
+        column alike. That closure is also what makes the directions work. So
+        every tilt grounds NAV_PRESS together with its direction line, and the
+        firmware must qualify the press: mb::NavPressGate (panel_input.hpp)
+        swallows a Push closure that arrives with a direction active and re-arms
+        only on a fresh press edge in a neutral group (protocol_test.cpp).
+        Tying `com` and the "Ground terminal" both to GND keeps the board valid
+        under either reading of the diagram; the first article still meters the
+        terminal identity, because the pin numbers are this library's own
+        (docs/TODO.md). */}
     <RKJXT1F42001
       name="U5"
       pcbX={`${RIGHT_CONTROLS.NAV.x}mm`}

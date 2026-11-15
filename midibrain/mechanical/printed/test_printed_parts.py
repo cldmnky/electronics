@@ -93,7 +93,7 @@ class CanonicalDataTest(unittest.TestCase):
         self.assertAlmostEqual(pg.aperture(data, "VALUE ENCODER").diameter,
                                src.panel_control_aperture, places=6,
                                msg="VALUE ENCODER aperture does not match PANEL_CUTOUTS.control")
-        self.assertAlmostEqual(src.panel_nav_aperture, 8.0, places=9)
+        self.assertAlmostEqual(src.panel_nav_aperture, 8.2, places=9)
         self.assertAlmostEqual(src.panel_control_aperture, 7.2, places=9)
         self.assertGreater(src.panel_nav_aperture, src.panel_control_aperture)
 
@@ -133,17 +133,22 @@ class NavKeytopTest(unittest.TestCase):
         self.assertGreater(self.g.rear_face_above_panel_front,
                            pg.NAV_CENTRE_PUSH_TRAVEL + pg.NAV_CENTRE_PUSH_TOLERANCE)
 
-    def test_the_bore_clears_the_flatted_shaft(self) -> None:
-        self.assertAlmostEqual(self.g.socket_bore, 2.9, places=9)
+    def test_the_bore_presses_onto_the_flatted_shaft(self) -> None:
+        self.assertAlmostEqual(self.g.socket_bore, 2.4, places=9)
         self.assertAlmostEqual(self.g.shaft_diameter, 2.5, places=9)
         self.assertAlmostEqual(self.g.shaft_across_flat, 1.8, places=9)
-        loose = pg.nav_socket_clearance(self.g.socket_bore)
-        self.assertAlmostEqual(loose["shaft_round_side_mm"], 0.2, places=9)
-        # The flat is 0.55 mm from the axis, so the bore is looser on that side.
-        self.assertAlmostEqual(loose["flat_plane_from_axis_mm"], 0.55, places=9)
-        self.assertAlmostEqual(loose["shaft_flat_side_mm"], 0.9, places=9)
-        self.assertFalse(loose["keys_on_the_flat"])
-        self.assertGreaterEqual(self.g.socket_wall, pg.PRINT_MIN_WALL)
+        fit = pg.nav_socket_fit(self.g.socket_bore)
+        # Retention is the press fit alone (no clip, screw or flange): the bore
+        # must interfere with the round shaft, by 0.05 mm radial at nominal.
+        self.assertTrue(fit["press_fit"])
+        self.assertAlmostEqual(self.g.press_interference, 0.05, places=9)
+        self.assertAlmostEqual(fit["shaft_round_side_mm"], -0.05, places=9)
+        # The flat is 0.55 mm from the axis and always clears a round bore, so
+        # the bore's clocking around the shaft does not matter.
+        self.assertAlmostEqual(fit["flat_plane_from_axis_mm"], 0.55, places=9)
+        self.assertAlmostEqual(fit["shaft_flat_side_mm"], 0.65, places=9)
+        self.assertFalse(fit["keys_on_the_flat"])
+        self.assertGreater(self.g.socket_wall, pg.PRINT_MIN_WALL - pg.EPS_MM)
 
     def test_cap_has_axial_free_play_at_rest(self) -> None:
         self.assertAlmostEqual(self.g.free_play, 0.15, places=9)
@@ -192,11 +197,17 @@ class NavKeytopTest(unittest.TestCase):
 
     def test_the_nav_opening_is_its_own_size_not_the_encoder_hole(self) -> None:
         src = layout_source()
-        self.assertAlmostEqual(src.panel_nav_aperture, 8.0, places=9)
+        self.assertAlmostEqual(src.panel_nav_aperture, 8.2, places=9)
         self.assertAlmostEqual(src.panel_control_aperture, 7.2, places=9)
-        self.assertAlmostEqual(self.g.aperture_diameter, 8.0, places=9)
-        # 0.40 mm per side over the Ø7.20 collar, before the routed tolerance.
-        self.assertGreater((self.g.aperture_diameter - pg.NAV_COLLAR_DIAMETER) / 2, 0.35)
+        self.assertAlmostEqual(self.g.aperture_diameter, 8.2, places=9)
+        # Worst-case clearance over the Ø7.20 collar: the routed undersize
+        # (-0.08) plus the switch (±0.15) and panel (±0.10) placement terms.
+        # Ø8.0 would leave 0.07 mm per side - thin against a collar diameter
+        # that is itself model geometry - so the opening is Ø8.2 (0.17 mm).
+        min_radius = self.g.aperture_diameter / 2 - 0.08
+        worst = min_radius - (pg.NAV_COLLAR_DIAMETER / 2 + 0.15 + 0.10)
+        self.assertGreater(worst, 0.15)
+        self.assertGreater((self.g.aperture_diameter - pg.NAV_COLLAR_DIAMETER) / 2, 0.45)
 
 
 class KnobTest(unittest.TestCase):

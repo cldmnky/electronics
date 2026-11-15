@@ -1449,8 +1449,12 @@ export const PRINTED_PARTS = {
     // through the panel opening and no retainer is needed behind the panel.
     headHeight: NAV_KEYTOP_HEAD_HEIGHT,
     headDiameter: 7.0,
-    shankDiameter: 5.4,                 // 0.80 mm head ring outside the Ø2.90 bore
-    socketBore: 2.9,                   // D2.50 shaft (1.80 across the flat) + 0.40
+    shankDiameter: 5.4,                 // 1.50 mm wall around the bore
+    socketBore: 2.4,                   // PRESS FIT on the D2.50 shaft (1.80 across
+                                       // the flat): 0.05 mm radial interference at
+                                       // nominal. Retention is this press fit alone
+                                       // (no clip, screw or flange) - see
+                                       // mechanical/printed/README.md
     socketDepth: NAV_KEYTOP_SOCKET_DEPTH,
     zFront: mm3(PROVISIONAL_Z.frontBoardTop - NAV_SWITCH_SHAFT_TIP_ABOVE_BOARD
       - NAV_KEYTOP_AXIAL_FREE_PLAY - NAV_KEYTOP_HEAD_HEIGHT),                           // -10.95 head front
@@ -1850,17 +1854,21 @@ export const PANEL_CUTOUTS = {
   // switch (ALPS RKJXT1F42001, owner decision) puts a STATIONARY collar of
   // D7.20 - model geometry, page 398 prints no collar diameter - into the
   // opening, 1.50 mm deep from the panel rear face, so 7.2 would be a rubbing
-  // fit. 8.0 is chosen from the recorded terms and NOT from a measurement:
+  // fit. The size is chosen from the recorded terms and NOT from a measurement:
   //   collar radius max   3.60
   //   switch in its O1.0 holes (0.7 x 0.25 flat blades) +-0.15
   //   panel on its M3 STAND_ screws in O3.2 holes        +-0.10
-  //   JLCPCB routed-hole tolerance (their capabilities page) +0.13/-0.08
-  //   -> radius needed 3.93; 4.00 gives 0.40 mm per side nominal, 0.36 mm at
-  //      the worst undersize limit. The routed tolerance source itself is
-  //      contested in this file (see `led`), and the collar diameter is model
-  //      geometry, so the opening stays UNVERIFIED until the first article is
-  //      measured (docs/TODO.md).
-  nav: 8.0,
+  //   -> needed hole radius 3.85 at nominal; the routed-hole undersize
+  //      (JLCPCB capabilities page: +0.13/-0.08) takes the hole to >= R - 0.08,
+  //      so a nominal radius R clears worst case by R - 0.08 - 3.85.
+  //   O8.0 (R 4.00) would leave 0.07 mm per side at the worst limit - thin
+  //   against a collar diameter that is itself model geometry; O8.2 (R 4.10)
+  //   leaves 0.17. Nothing seats in this opening (the cap sits in front of the
+  //   panel), so the extra 0.2 mm costs nothing. The routed tolerance source
+  //   itself is contested in this file (see `led`), and the collar diameter is
+  //   model geometry, so the opening stays UNVERIFIED until the first article
+  //   is measured (docs/TODO.md).
+  nav: 8.2,
   jack: 6.2,    // PJ-301M-3-B barrel
 } as const
 

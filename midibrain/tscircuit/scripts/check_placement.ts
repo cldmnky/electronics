@@ -215,8 +215,17 @@ at(`panel: NAV opening Ø${PANEL_CUTOUTS.nav}`,
   centre(circles(PANEL_CUTOUTS.nav / 2).find(o => close(o.center.x, RIGHT_CONTROLS.NAV.x) && close(o.center.y, RIGHT_CONTROLS.NAV.y))),
   RIGHT_CONTROLS.NAV)
 ok("panel: 1 NAV opening, no extras", circles(PANEL_CUTOUTS.nav / 2).length === 1)
-ok(`panel: NAV opening Ø${PANEL_CUTOUTS.nav} clears the Ø7.2 collar by ${(PANEL_CUTOUTS.nav - 7.2) / 2} mm per side`,
-  PANEL_CUTOUTS.nav - 7.2 >= 0.6)
+// Worst case over the recorded terms, not the nominal diameter: the collar
+// radius is 3.60 (MODEL GEOMETRY), the switch sits up to +-0.15 off in its
+// Ø1.0 holes, the panel up to +-0.10 on its M3 screws, and the routed hole can
+// come out 0.08 undersize (JLCPCB capabilities page, itself contested in
+// layout.ts - see `led`). Ø8.0 would leave 0.07 mm per side at that limit;
+// Ø8.2 leaves 0.17. The opening stays UNVERIFIED until the first article
+// measures the collar and a test piece.
+const navCollarRadius = 3.60
+const navWorstCaseClearance = PANEL_CUTOUTS.nav / 2 - 0.08 - (navCollarRadius + 0.15 + 0.10)
+ok(`panel: NAV opening Ø${PANEL_CUTOUTS.nav} clears the Ø${2 * navCollarRadius} collar worst case by ${navWorstCaseClearance.toFixed(2)} mm per side`,
+  navWorstCaseClearance > 0.15)
 
 // MIDI jack barrels, in their own grouped block at the left of the bottom edge.
 for (const c of FRONT_COLUMNS) {
