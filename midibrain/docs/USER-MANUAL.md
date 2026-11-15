@@ -68,7 +68,7 @@ the Pi mirrors it to USB (section 16).
 
 ## 1A. The POWER button and safe shutdown
 
-The panel POWER button (bottom right of the front panel) drives the Pi's
+The panel POWER button (top right of the front panel, in the control column) drives the Pi's
 power input. It has no hard off switch - the module draws standby power
 while plugged in.
 
@@ -138,8 +138,8 @@ meter without lighting the crown.
   tab; outside it, LEFT/RIGHT move the ring.
 - **Value knob (TEMPO)**: smooth and endless - no detents, no end stops. It
   edits the focused value only while that value is in EDIT, or while a
-  config popup is open; otherwise the turn trims tempo, one BPM per detent
-  and 0.1 BPM with SHIFT held, and pops the tempo readout. PRESS enters
+  config popup is open; otherwise the turn trims tempo, one BPM per step
+  of the encoder and 0.1 BPM with SHIFT held, and pops the tempo readout. PRESS enters
   EDIT on a focused value and PRESS again leaves it; every change applies
   as you make it, and only a config popup's CANCEL restores the captured
   snapshot. There are no macros and no Q-Link: the knob is the focused
@@ -571,9 +571,11 @@ firmware is flashed over USB (section 17).
 **PANIC** sends CC123 on all 16 channels and says so in the notice slot.
 
 **Device outputs.** The three DEVICE OUT CHANNEL pairs on the primary face
-are saved with the project, but the audio backend does not map them onto
-interface channels yet, and the screen says so. Treat them as a stored
-intent, not a routing.
+are saved with the project and reloaded unchanged, and the audio engine can
+map three buses onto interface channels. This build does not hand the saved
+pairs to the engine, so Main 1&2, OUT3&4 and the phones bus keep the engine
+default (channels 1&2, 3&4, 5&6) whatever you select, and the screen says so.
+Treat a changed pair as a stored intent, not a routing.
 
 ## 13. Recording and playing takes
 
@@ -678,17 +680,18 @@ START/CONTINUE/STOP on the outputs you leave gated on (TRS OUT 1, TRS OUT 2
 and, via the Pi, USB OUT). Tempo edits ride out live. Follow never stops the
 clock - it only retunes it, so downstream gear never sees a gap.
 
-**Clock source.** With a Pico linked, SYSTEM SHIFT chooses where the clock
-comes from: the internal generator, or following an incoming stream on TRS
-IN 1 or TRS IN 2. Follow retunes tempo and phase to the incoming clock; if
-the source disappears the generator coasts at its last estimate. Beat-synced
-delay, the metronome and punch measures all lock to the running tempo,
-whether that tempo is internal or followed.
+**Clock source.** SYSTEM SHIFT stores a clock-source choice with the project:
+the internal generator, following TRS IN 1, or following USB transport. This
+build does not send that choice to the Pico yet, so the Pico always runs its
+own internal generator and the screen states the same. The Pico's follow
+engine itself exists: it retunes tempo and phase to an incoming clock and
+coasts at its last locked period when the source disappears.
 
-**Transport.** Incoming start/stop can drive the transport only when
-transport follow is enabled; this build stores that setting but has no
-control for it yet, so the transport starts from the panel or the
-touchscreen, and a take starts the moment you press REC.
+**Transport.** Incoming start/stop can drive the transport only when the
+Pico's follow mask names that source. This build stores a transport-follow
+setting with the project but never sends it, and it has no dedicated control
+for it, so the transport always starts from the panel or the touchscreen and
+a take starts the moment you press REC.
 
 **USB.** The Pi mirrors the Pico's clock and transport to USB MIDI, so a
 computer follows the same clock as the rack. Thru is not provided: route,

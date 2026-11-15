@@ -38,37 +38,32 @@ claim and it is not HDI.
 
 ## Geometry results
 
-`python3 tscircuit/scripts/fab_check.py` (measured on the **2026-11-08 pre-respin build**; the
-autorouter is deliberately re-run per build, so trace/via counts and the exact
-via/route geometry are build-dependent and move between builds, while the SMT
-pad, PTH and NPTH hole sets do not):
+`python3 tscircuit/scripts/fab_check.py` compares one build with the limits
+above. The autorouter is re-run on every build, so trace, via and route counts
+are build-dependent; do not quote a count from an older run. Quote a number
+only from a run of this script on the tree in front of you.
 
-**Re-run this script after the 10 mm respin before quoting any row below.** The board sizes are
-current; every routed-element, drill and NPTH count in the table was measured on the older boards
-and still describes the 128 × 112 mm / 101.6 × 112 mm pair.
+Invariants that the script checks on every run:
 
 | Item | Front/UI | Rear/base | Limit |
 |---|---|---|---|
 | Size | **150 × 112 mm** (U-shaped) | **148 × 112 mm** | ≥ 3 × 3 mm |
 | Layers / thickness | 2 / 1.6 mm | 2 / 1.6 mm | 2 / 1.6 mm |
-| Routed elements (build-dependent) | 93 traces, 68 vias, 76 SMT pads, 61 round plated holes, 30 NPTH | 102 traces, 316 vias, 47 SMT pads, 121 round plated holes, 8 NPTH | required data |
-| Min trace | 0.200 mm (built widths 0.200/0.225/0.250 mm) | 0.200 mm (same widths) | ≥ 0.10 mm |
-| Via drill / pad / ring | 0.200 / 0.450 / 0.125 mm | 0.200 / 0.450 / 0.125 mm | ≥ 0.15 / 0.25 / 0.05 mm |
-| Via target | 0.200 / 0.450 mm, target met | same | 0.20 / 0.45 mm |
-| PTH drill | 1.000–1.300 mm round holes (61) plus 14 plated slots | 0.800–1.100 mm (119 round, no plated slots) | 0.15–6.3 mm |
-| PTH annular ring | 0.250 mm min | 0.250 mm | ≥ 0.18 mm (recommend 0.25) |
-| Plated slot width | 1.200 mm min (14 slots: 12 oval jack contacts, 2 pill encoder lugs) | none | ≥ 0.50 mm |
-| NPTH | 0.900–2.700 mm (30 holes) | 2.700 mm (8 holes) | ≥ 0.50 mm |
-| Min SMT pad | 0.600 mm | 0.600 mm | ≥ 0.25 mm (project floor) |
-| Board-edge rule | 0.20 mm | 0.20 mm | ≥ 0.20 mm |
+| Track width and spacing | checked on the routed copper | checked on the routed copper | ≥ 0.10 mm |
+| Via drill / pad | project target 0.20 / 0.45 mm (`TARGET_VIA_DRILL` in the script) | same | ≥ 0.15 / 0.25 mm |
+| PTH annular ring | checked on the built pads | checked on the built pads | ≥ 0.18 mm (recommend 0.25) |
+| Plated drill range | checked per hole | checked per hole | 0.15–6.3 mm |
+| Plated slot width | checked per slot | none designed | ≥ 0.50 mm |
+| NPTH | checked per hole | checked per hole | ≥ 0.50 mm |
+| Copper to routed edge | 0.20 mm rule | 0.20 mm rule | ≥ 0.20 mm |
+| Smallest SMT pad | project floor | project floor | ≥ 0.25 mm (project floor, not a published limit) |
 
-No TARGET item is open: every via is 0.20 mm drill / 0.45 mm pad (0.125 mm
-ring), the electrical work's retarget, and both board rules that the script
-compares with a published clearance are at or above it. The rear board's
-0.800 mm PTH drills are the 15 probe points (`platedhole_d0.8mm_pd1.6mm`,
-0.40 mm ring, bare copper, `doNotPlace`). The SMD pad-to-pad and track-to-pad
-**rules** are settings, not measured copper, so the actual copper still has to
-be confirmed in the JLCPCB DFM preview (acceptance item `scope_dfm_cpl`).
+The rear board's probe points are authored as `platedhole_d0.8mm_pd1.6mm`
+(0.80 mm drill, 1.60 mm pad, 0.40 mm ring, bare copper, `doNotPlace`);
+`tscircuit/lib/probe-points.ts` is their source. The SMD pad-to-pad and
+track-to-pad **rules** are settings, not measured copper, so the actual copper
+still has to be confirmed in the JLCPCB DFM preview (acceptance item
+`scope_dfm_cpl`).
 
 Missing data fails instead of passing quietly: no board element, no traces, no
 vias, no pads, no plated holes, a route segment or pad without a size, or an
@@ -78,35 +73,33 @@ unknown plated-hole shape all count as failures.
 
 `bun run scripts/check_reports.ts` runs six reports on each board with both entry
 files named explicitly (`front.circuit.tsx`, `index.circuit.tsx`), then judges
-the text — not the exit code:
+the text - not the exit code:
 
-| Report | Front/UI | Rear/base |
-|---|---|---|
-| source | 0 errors, 0 warnings | 0 errors, 0 warnings |
-| pin_specification | 0 errors, 0 warnings | 0 errors, 0 warnings |
-| netlist | 0 errors, 0 warnings | 0 errors, 0 warnings |
-| placement | 0 errors, 0 warnings, exit 0 | 0 errors, 0 warnings, exit 0 |
-| shorts | "No shorts detected" | "No shorts detected" |
-| pcb-style | "No PCB style issues detected" | "No PCB style issues detected" |
+| Report | What the gate requires on each board |
+|---|---|
+| source | no error and no warning |
+| pin_specification | no error and no warning |
+| netlist | no error and no warning |
+| placement | no error, no warning, no flagged rotation outside the pinned set |
+| shorts | "No shorts detected" |
+| pcb-style | "No PCB style issues detected" |
 
-- No `pin_specification` warning is allowed on either board today: the former
-  passive-control warnings are gone because U5/U6 are declared as switches with
-  per-pin attributes. A **new** warning or any error fails; the allowed set is
-  empty in `tscircuit/lib/reports.ts`.
-- The placement exit code is parsed, not trusted: only the pinned informational
+- The allowed warning set is empty in `tscircuit/lib/reports.ts`: U5/U6 are
+  declared as switches with per-pin attributes, so no passive-control warning
+  exists. A **new** warning or any error fails.
+- The placement exit code is parsed, not trusted: only pinned informational
   rotations may exit 1, and only when the counters read 0/0. The pinned set is
-  empty today (C2, R9 and R10 were rotated in the source). Zero output, a crash
-  line, a missing counter, a missing marker, an unexpected flagged component,
-  an unexpected issue text or a non-zero exit on any other report fails.
+  empty. Zero output, a crash line, a missing counter, a missing marker, an
+  unexpected flagged component, an unexpected issue text or a non-zero exit on
+  any other report fails.
 - The upstream autorouter line "Could not save autorouting paths ... unique PCB
-  port" still appears on both boards. It is printed as a known note and remains
-  a manufacturing acceptance item (`autoroute_upstream_warning`); it is not
+  port" appears on both boards. It is printed as a known note and remains a
+  manufacturing acceptance item (`autoroute_upstream_warning`); it is not
   counted as a pass.
 - The built `dist/` JSON is also checked for emitted error elements and for
   unconnected pins. The pins the design leaves open (tact switch pin 2/4 pairs,
-  unused Pi/Pico header pins) are pinned by refdes and pin; a new unconnected
-  pin fails. The current build declares 26 open pins on the rear board and 14 on
-  the front board, all from those two sources.
+  unused Pi/Pico header pins) are pinned by refdes and pin in the script, so a
+  new unconnected pin fails instead of joining the set silently.
 
 ## Silkscreen
 

@@ -27,13 +27,13 @@ that file is the panel's **silkscreen**, which no STEP can carry - see below.
 These are tscircuit's own board export, so the parts are the real footprints at
 the real heights.
 
-### The scene frame (and why the view used to read mirrored)
+### The scene frame
 
 Panel coordinates are millimetres with x right, y up and **z rearward** (into
 the rack, away from the operator). That frame is **left-handed** against a
 viewer whose +z points at you, so loading x/y/z straight into three.js draws a
-front-face layout mirrored when you stand anywhere behind it - and it put the
-stack along scene Y with the panel at the bottom, i.e. the default camera sat
+front-face layout mirrored when you stand anywhere behind it - and it lays the
+stack along scene Y with the panel at the bottom, which puts the default camera
 behind the rear board.
 
 The viewer converts the frame instead (see `toScene()` in `main.js`):
@@ -58,7 +58,7 @@ scene z >= -cut, so it still peels the stack along the viewing direction.
 - Each board's STEP comes out in **its own frame**: x/y are panel-aligned, but z
   is measured from that board's mid-plane with +z pointing out of its
   panel-facing side - the opposite of the panel frame's z. Loaded at their own
-  origins they piled up on each other - that is what the viewer used to do.
+  origins they pile up on each other, so the placement below is mandatory.
 - So each model carries `scaleZ = -1` (undo `toScene()`'s z flip, so the
   panel-facing side lands on +scene z) and `positionZ = -(T + 0.8)`, where `T`
   is that board's face nearest the panel, straight out of
@@ -249,11 +249,9 @@ panel's own exported silk, so these are the fabrication positions, not a redraw.
 stack, so it looks off) and clips along the viewing direction, so dragging it
 down removes the panel first, then the boards.
 
-The old `STACK_MM` placeholder boxes are gone: they were a sketch of the
-**pre-respin** stack (128 mm board at z 17.45) and duplicated real geometry. They are
-still a viewing aid, not a fit approval: tscircuit derives component Z from its
-own CAD models, and a vendor model with a wrong origin shows up as a wrong
-height here.
+The viewer is a viewing aid, not a fit approval: tscircuit derives component Z
+from its own CAD models, and a vendor model with a wrong origin shows up as a
+wrong height here.
 
 Stop it with Ctrl-C. `serve.sh` regenerates `models.json` on every start (it is
 gitignored) and lists every STEP it finds under:
@@ -297,8 +295,9 @@ Boxes for the parts with no STEP, using the heights in
 | stereo jack (×4) | 10.0 × 12.73 × 15.5 | 0.00 | PJ366ST STEP bounding box |
 | button + cap (×7) | 12.0 × 12.0 × 10.0 | 0.00 | Omron reference: **10.0 ±0.4 mm PCB top → CAP TOP** (so a bought cap top would sit 0.60 mm BEHIND the 10.6 mm panel front, nominally; its installed position is unverified). The printed cap is 4.70 tall, top 11.40 above the board |
 
-(The 128 mm / 17.45 mm figures that used to be here were the pre-respin stack;
-`mechanical-steps` above is the accurate route now that the boards export.)
+`mechanical-steps` above prints these boxes from the current layout; re-read
+them from `mechanical/layout.json` rather than from this table if the layout
+moves.
 
 Positions are the connector/button XY from `lib/layout.ts` at the time of
 writing; if the layout moves, these do too — update them here or read them from

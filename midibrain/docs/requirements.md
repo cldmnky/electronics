@@ -3,14 +3,15 @@
 ## Confirmed by owner
 
 - Two custom PCBs, a separate **30HP/3U** front panel and a separate **20HP/3U
-  Pi mounting panel** (owner decision 2026-11-12) beside the main module in the same row.
+  Pi mounting panel** beside the main module in the same row.
   The front/UI PCB is **150 × 112 mm** (U-shaped, with the display opening through
   its top edge); the rear/base PCB is **148 × 112 mm**; the Pi mounting panel is
   101.2 × 128.5 mm; installed depth target ≤110 mm per module. The panel front sits
-  **10.6 mm** above the front board's top face: it is the Thonkiconn jack's 9.0 mm seating shoulder plus the 1.6 mm panel
-  (owner-confirmed 2026-11-14; the jack is the anchor, not a chosen panel-front target). CAD top faces the panel and the
-  rear faces the rack cavity. The 30HP panel width (which replaced 32HP on 2026-11-08) and the knob-column move (47 → 52 mm) are owner decisions
-  recorded in [decisions.md](decisions.md).
+  **10.6 mm** above the front board's top face: it is the Thonkiconn jack's 9.0 mm seating shoulder plus the 1.6 mm panel,
+  so the jack is the anchor and not a chosen panel-front target. **Board-face orientation is not decided:** the front
+  board carries its SMT parts and actuators on its top face and the rear board its SMT parts on its bottom face, and a
+  request to turn both CAD-bottom faces toward the panel is open (`docs/TODO.md`). Panel width and the knob-column
+  position are recorded in [decisions.md](decisions.md).
 - Removable Raspberry Pi 5, mechanically supported through its mounting holes
   on the Pi mounting panel (the base board carries no Pi holes); removable Pico 2, socketed on the base board. Pi ↔ Pico SPI with
   READY/IRQ and common ground runs over the 40-wire GPIO ribbon between the two
@@ -25,9 +26,8 @@
 - **Waveshare 4.3inch DSI LCD** (ElectroKit 4103 5687), 800 × 480, DSI video
   and I2C touch on one 15-pin cable; no HDMI or touch-USB cable. **NAV: a
   4-direction stick switch with a centre push and a separate `NAV_PRESS` net -
-  ALPS Alpine RKJXT1F42001 (THT) since the 2026-11-14 owner decision, which
-  replaced the SMD Alps SKRHABE010 so the actuator reaches the panel; the
-  replacement's own encoder section is NOT used and has no firmware feature.** A
+  ALPS Alpine RKJXT1F42001 (THT), selected because its actuator reaches the
+  panel; its own encoder section is NOT used and has no firmware feature.** A
   context-aware **VALUE** encoder (Bourns PEC11R-4015F-S0024), five transport
   buttons (REC, OVER DUB, STOP, PLAY, PLAY START), SHIFT/EXIT, and three LEDs
   (REC / OVER DUB / PLAY) beside their buttons on light pipes. Retain SPI

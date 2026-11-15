@@ -6,10 +6,8 @@ verification; `make release` is the production path and it is gated.
 
 ## `make test` — prototype verification, not an approval
 
-**State on branch `wip/10mm-panel` (2026-11-13): `make test` is RED.** `tsci build` is green (four
-circuits, 0 DRC errors), but the geometry tests and the mechanical freshness check still pin
-pre-respin values and are being re-derived; `mechanical/layout.json` is stale. Nothing below is a
-claim that it currently passes - see [TODO.md](TODO.md).
+No test result is stored in this document. Run `make test` and read its output;
+what it covers and what it cannot cover are fixed below.
 
 `make test` typechecks the tscircuit project, runs the Bun unit tests, checks
 that `firmware/pico/pins.h` matches `lib/pin-map.ts`, builds and routes both
@@ -100,10 +98,9 @@ instead of being skipped. Print it with
 | `pi_panel_harness` | The 20HP/3U Pi mounting panel (101.2 × 128.5 mm bare FR-4) fitted beside the main module in the same row with the Pi 5 + Active Cooler + M.2 HAT+ + SSD bolted to its rear face on recorded standoffs, its installed depth measured against the Go's 62 mm upper row (the 40 mm lower row is not claimed), and all six harness runs recorded end to end: the three USB feedthrough cables (5 A power feed droop/temperature included), the DSI FPC run (cable/extension, 15→22 adaptation, touch and signal integrity over the fitted length), the 40-wire GPIO ribbon (pin-1, all-40 continuity, coexistence with the M.2 HAT+'s GPIO usage) and the J_PWR pigtail to the bare J2 pads |
 | `module_label_sku_read` | The delivered module label/SKU read and matches the selected Waveshare 4.3inch DSI LCD (ElectroKit 4103 5687) |
 | `touch_window_alignment` | With the display seated in the 107.22 × 68.87 window, touch input stays aligned with the UI across the active area |
-
 | `pi_microsd` | microSD insert/remove with the Pi bolted on its mounting panel and the case closed; clearance recorded |
 | `cooler_hat_ssd` | Active Cooler + M.2 HAT+ + SSD stacked; height, airflow, connector clearance |
-| `case_fit` | 30HP/3U panel (152.0 mm), 20HP base board, the 20HP/3U Pi mounting panel (101.2 mm) and all rail/standoff positions in the case for both modules, with the harness routed clear |
+| `case_fit` | 30HP/3U panel (152.0 mm), the 148 mm rear/base board, the 20HP/3U Pi mounting panel (101.2 mm) and all rail/standoff positions in the case for both modules, with the harness routed clear |
 | `usb_c_5a_path` | An exact 5 A rated feedthrough from a primary source; CAB-15455 is 3 A and rejected for this path |
 | `usb_pd_droop_thermal` | Full-load PD negotiation, voltage droop, connector/feedthrough temperature, both orientations |
 | `encoder_solder_process` | Bourns PEC11R process qualified (selective/wave or validated manual) with profile and inspection |
@@ -124,38 +121,27 @@ instead of being skipped. Print it with
 Requirements are not evidence. The table states what to record; the state file
 holds what has actually been recorded, which is nothing yet.
 
-## Reviewed engineering prototype (how the evidence gets produced)
+## Engineering prototype and first-article material
 
-> **Superseded 2026-11-06 (owner decision): the prototype ceremony is
-> retired.** Boards are ordered production-intent through `make order`
-> (no decision rows, no prototype labeling). This gate remains the
-> ACCEPTANCE HARNESS: its items are closed by measurements recorded in
-> `docs/evidence/` as the hardware is built and exercised — the boards
-> ordered today are what produce that evidence.
+`make order` exports the upload set and is not blocked by the acceptance gate;
+`make release` is. The gate is the acceptance harness: its items close from
+measurements recorded in `docs/evidence/` as the hardware is built and
+exercised. An **engineering prototype** build follows the rule in
+[AGENTS.md](../AGENTS.md): it is an owner-approved decision recorded in
+[decisions.md](decisions.md), its outputs are labelled **"engineering prototype
+- not production ready"**, and it does not pass the gate.
 
-The DFM/CPL and first-article evidence can only come from prototype material, so
-the project needs an explicit prototype path that is *not* the production
-release. Policy:
-
-- An **engineering prototype build** is a separate, owner-approved activity. The
-  owner records the approval as a dated decision in [decisions.md](decisions.md)
-  (who, why, what is being built, what is explicitly *not* claimed). No tool flag
-  grants it, and `make release` does not accept it.
-- A prototype may be ordered only with the outputs marked **"engineering
-  prototype — not production ready"** in the order notes and in the record.
 - The prototype provides the material for `scope_dfm_cpl`, `zstack`, `case_fit`
   and `first_article` evidence; its inspection results are recorded in
   `docs/evidence/` like any other measurement.
-- Engineering-prototype material does **not** satisfy `first_article` by
-  existence: `first_article` asks for a build inspected against the full list.
-  Until then, nothing is called production-ready.
+- Prototype material does **not** satisfy `first_article` by existence:
+  `first_article` asks for a build inspected against the full list.
 - When every required item is accepted against the current fingerprint,
   `make release` passes the gate and produces the production order set.
 
-The exports that a prototype would need are the same `bunx tsci export` commands
-used in `tscircuit/scripts/release.sh` (gerbers, step, schematic-svg, pcb-svg per
-entry). Run them by hand under the recorded approval, and keep the outputs out of
-the production `fab/` set.
+The exports that a prototype needs are the same `bunx tsci export` commands used
+in `tscircuit/scripts/release.sh` (gerbers, step, schematic-svg, pcb-svg per
+entry). Keep those outputs out of the production `fab/` set.
 
 ## Recorded measurements vs requirements
 
@@ -166,16 +152,17 @@ the production `fab/` set.
 | USB-C 5 A path | no 5 A rated feedthrough selected; CAB-15455 is 3 A |
 | TLP2361 receiver current/temperature | datasheet limits only, no bench data |
 | MIDI interoperability | not tested with real devices |
-| SPICE (behavioural, baseline) | passes; not datasheet qualification |
-| PCB geometry vs published JLC limits | passes, with two open TARGET items (see [fab-check.md](fab-check.md)) |
+| SPICE (behavioural, baseline) | simplified behavioural models only; see [spice.md](spice.md) |
+| PCB geometry vs published JLC limits | checked by `tscircuit/scripts/fab_check.py`; the review and its open items are in [fab-check.md](fab-check.md) |
 
 ## Actual physical blockers (unchanged)
 
 - 3D envelope and service access: no top/rear/side model, no cable bend radii and
   no measured installed depth; the Pi, HAT, cooler and SSD stack is unproven.
-- Display: sample not bought; rear connector envelope, cable path and mounting
-  bosses unmeasured.
-- Controls: knob, button caps and nav actuator not selected against the panel.
+- Display: the module's connector envelope, cable path, mounting bosses and
+  carrier fit are unmeasured.
+- Controls: knob, button caps and the NAV stick are selected part numbers, but
+  their fitted shaft, cap height, retention and press travel are unmeasured.
 - Jacks: tip/ring/sleeve mapping and retention not measured on a sample.
 - USB-C: 5 A feedthrough not selected; PD behaviour, droop, thermal and strain
   relief unmeasured.

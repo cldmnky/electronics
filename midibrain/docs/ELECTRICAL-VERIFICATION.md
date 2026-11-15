@@ -6,8 +6,9 @@ datasheet limit, a stated tolerance, or the built circuit JSON in `dist/`.
 
 Boards: rear/base `index.circuit.tsx` (148 × 112 mm, 2 layers, parts on the
 bottom) and front/UI `front.circuit.tsx` (150 × 112 mm, U-shaped, 2 layers, parts
-on the top). The numbers below were measured on a pre-respin build; re-run the
-scripts after the respin before quoting them as current.
+on the top). No count or measurement in this file is current by itself: run the
+scripts in section 1 against the tree in front of you, and read the numbers from
+their output.
 
 ## 1. How to reproduce
 
@@ -35,8 +36,7 @@ The logical net names were right; the copper was not. Pin 3 landed 5.08 mm
 along the first row instead of in the second pair, so every net after pin 2 sat
 on the wrong physical pad.
 
-Fix: both connectors now use the exact parts already selected in
-the historical design-review record (removed in the 2026-11-06 consolidation; git history):
+Fix: both connectors use these exact parts:
 
 | Ref | Part | LCSC | Pads |
 |---|---|---|---|
@@ -88,31 +88,13 @@ the net on each pad changed:
 | 2 | `GND` | `GND` |
 | 3 | `RUN` | `RESET_GATE` (gate) |
 
-## 4. MIDI receiver: TLP2362 replaced by TLP2361
+## 4. MIDI receiver: TLP2361
 
-### Why
-
-The input loop can deliver 3.435 mA at its worst-case minimum (section 4). The
-TLP2362 guarantees a threshold input current of 5.0 mA maximum and recommends
-7.5–14 mA on-state; the loop is below both, so nothing was guaranteed.
-
-### Replacement
-
-| Item | Old | New |
-|---|---|---|
-| Part | Toshiba TLP2362(TPL,E | Toshiba **TLP2361(TPL,E** |
-| LCSC | C37658 | **C107626** |
-| Package | 11-4L1S (SO6) | 11-4L1S (SO6), same land pattern |
-| Pins | 1 anode, 3 cathode, 4 GND, 5 VO, 6 VCC | identical |
-| Output | open collector | inverting **totem pole** |
-| Threshold IFHL max | 5.0 mA | **1.3 mA at Ta ≤ 105 °C, 1.6 mA at 125 °C** |
-| Recommended IF(ON) | 7.5–14 mA | **2–6 mA** |
-| Absolute maximum IF | 25 mA | **10 mA at Ta = 25 °C**, derating −0.13 mA/°C for Ta ≥ 110 °C → **8.05 mA at 125 °C** |
-| Height | 2.2 mm (same package) | **2.2 mm max** (2.1 ± 0.1, package drawing) |
-
-`imports/TLP2361_TPL_E.tsx` reuses the verified 11-4L1S pad geometry, carries
-the new part number and C-number, and deliberately has **no CAD model**, so the
-TLP2362 model cannot follow the new part.
+The input uses Toshiba TLP2361(TPL,E), LCSC C107626, in the 11-4L1S package.
+Its output is an inverting totem pole. Its maximum input threshold is 1.3 mA
+at Ta ≤ 105 °C and 1.6 mA at 125 °C. The recommended on-state input current
+is 2–6 mA. The absolute maximum is 10 mA at 25 °C, derated by 0.13 mA/°C
+above 110 °C to 8.05 mA at 125 °C. Physical measurements remain pending.
 
 ### Worst-case loop current
 
@@ -128,12 +110,12 @@ the maximum-current corner assumes 0 V because no minimum loss is guaranteed
 (a low-loss sender can drop almost nothing). Both are stated assumptions
 about the external device; the model includes both.
 
-| Corner | Loop current | Against the 125 °C TLP2361 threshold (1.6 mA) | Against TLP2362 |
-|---|---|---|---|
-| 5 V sender, minimum | **3.435 mA** | 2.15× | **0.69× — not guaranteed** |
-| 5 V sender, maximum | **6.527 mA** | above the 6 mA recommended maximum; 65 % of the 25 °C absolute max (10 mA) and 81 % of the 125 °C derated limit (8.05 mA) | — |
-| 3.3 V sender, minimum | **3.684 mA** | 2.30× | 0.74× |
-| 3.3 V sender, maximum | **8.177 mA** | above the 6 mA recommended maximum; 82 % of the 25 °C absolute max (10 mA) and 1.6 % above the 8.05 mA 125 °C derated limit **in this model** (illustrative only, see below) | — |
+| Corner | Modelled loop current | Comparison |
+|---|---|---|
+| 5 V sender, minimum | **3.435 mA** | 2.15× the 125 °C threshold (1.6 mA) |
+| 5 V sender, maximum | **6.527 mA** | Above the 6 mA recommended maximum |
+| 3.3 V sender, minimum | **3.684 mA** | 2.30× the 125 °C threshold |
+| 3.3 V sender, maximum | **8.177 mA** | Above 6 mA recommended and 8.05 mA derated limits; illustrative model only |
 
 The datasheet's absolute maximum is a **25 °C** rating (10 mA) with a stated
 derating of −0.13 mA/°C above 110 °C; it is not a full-temperature limit. The
@@ -162,13 +144,12 @@ are unresolved until measured.**
   level, never pull it down.
 - In the low state the pull-up sinks about 1.3 mA, inside the 3.2 mA sink
   condition at which `VOL ≤ 0.4 V` is guaranteed.
-- The pull-up is therefore redundant but harmless, and it keeps the option of
-  the old open-collector part.
+- The pull-up is redundant for the selected totem-pole output under these assumptions.
 - **Pending:** compare `VOH ≥ 3.2 V` with the RP2350 input threshold from the
   RP2350 datasheet. The design assumption is VIH ≤ 0.7 × IOVDD = 2.31 V; that
   value was not read from a primary source in this pass.
 
-### Legacy receiver compatibility: the AO3401A stage now meets it
+### Legacy receiver compatibility: modelled AO3401A stage
 
 CA-033 page 4 models a legacy receiver as an LED of up to 1.9 V in series with
 220 Ω, and gives the PC900V a worst-case forward current of 4 mA at
@@ -176,7 +157,7 @@ RD = 280 Ω, VRX = 5 V. The transmitter must satisfy
 VTX ≥ 0.005 × 220 + 1.9 = 3.0 V and (RA + RC) = (VTX − 3.0) / 0.005, which is
 27 Ω at 3.135 V.
 
-The output stage is now a **high-side P-channel switch**:
+The output stage uses a **high-side P-channel switch**:
 
 | Item | Part | LCSC |
 |---|---|---|
@@ -194,13 +175,11 @@ to ground through RC.
 |---|---|
 | Worst case: 3.135 V rail, 1.9 V LED, 1 % resistors at +tolerance, RDS(ON) 85 mΩ | **4.309 mA** |
 | Same with a 150 mΩ hot RDS(ON) assumption | 4.308 mA |
-| Replaced PNP stage (22 Ω ring, 33 Ω tip, 0.25 V VCE(sat)) | 3.437 mA |
 
-The new stage therefore **meets the 4 mA PC900V worst case** at 25 °C, at
-107 % of the requirement, and the conclusion is insensitive to RDS(ON). The
-old PNP stage did not: the checker keeps that calculation as a negative
-reference. The 4 mA figure is the receiver's worst case, not a measurement of
-any real device.
+The modelled 25 °C current exceeds the 4 mA PC900V figure under these
+assumptions. It is not a measurement of a real device. The output topology
+and legacy-load performance remain subject to independent review and bench
+acceptance (`midi_out_legacy`).
 
 ### Gate drive and off state (25 °C calculations)
 
@@ -302,37 +281,23 @@ boards and visible in the emitted `pcb_board` element:
 Ground pours: rear board on the **top** layer (parts are on the bottom), front
 board on the **bottom** layer (parts are on the top). No blind or buried vias.
 
-### Recount: before the electrical work → current build
+### Who checks this, and what cannot be quoted
 
-The right-hand column is measured on the current build. The autorouter re-runs
-on every build, so via and trace counts are **build-dependent**; the hole and
-pad sets are not.
+`python3 tscircuit/scripts/check_electrical.py` reads the built circuit JSON,
+re-derives the copper from the connectivity tables and fails on a violation of
+the rules above, on an open pad that should be connected, or on a probe point
+whose drill/pad pair is not the authored `platedhole_d0.8mm_pd1.6mm`. Its report
+is the only place to read counts, widths and clearances: the autorouter re-runs
+on every build, so trace and via counts change between builds and must never be
+quoted from a page. The router's output is not an optimum and not a quality
+measurement either; it is reported so a later change can be compared.
 
-| Metric | Rear board | Front board |
-|---|---|---|
-| Trace width | 0.15 mm everywhere → 0.20/0.225/0.25 mm | 0.15 mm → 0.20/0.225/0.25 mm |
-| Via drill / pad | 0.20 / 0.30 mm → **0.20 / 0.45 mm** | 0.20 / 0.30 mm → **0.20 / 0.45 mm** |
-| Vias (build-dependent) | 207 → **316** | 88 → **68** |
-| Routed traces (build-dependent) | 83 → **102** | 91 → **93** |
-| Unconnected pads (declared do-not-connect) | 26, all deliberate unused header pins | 14, unused switch contacts |
-| Routing / DRC errors | 0 → **0** | 0 → **0** |
-| Ground pours | none → **1 (top, GND)** | none → **1 (bottom, GND)** |
-
-The 26 rear pads are the 23 Pi-header pins this design does not use plus
-`J_PICO_R` pins 15, 17 and 20 (unused Pico GPIO). The 14 front pads are the
-second contact pair of the seven B3F-4055 tact switches (six transport buttons
-plus the panel POWER momentary). The checker no longer keeps a flat allowlist:
-it derives the open set from the connectivity tables, so a pin that *should* be
-connected and is not fails the check. The earlier "26 → 3" figure came from the
-`<chip>` element suppressing the warnings and was not a connectivity
-improvement.
-
-The rear board still needs 316 vias on this build: about 47 SMT pads on a board
-whose other layer is the ground plane need one layer change each, the rest are
-signal layer changes, and the 15 probe points add a fan-out each. The
-autorouter is re-run per build, so the count is **build-dependent**. No router
-preset was changed, so **no claim is made that this is an optimum**; the count
-is reported so a later change can be compared.
+The open pads are deliberate. **26** on the rear board are the 23 Pi-header pins
+this design does not use plus `J_PICO_R` pins 15, 17 and 20 (unused Pico GPIO);
+**14** on the front board are the second contact pair of the seven B3F-4055 tact
+switches (six transport buttons plus the panel POWER momentary). The checker
+keeps no flat allowlist: it derives the open set from the connectivity tables,
+so a pin that should be connected and is not fails the check.
 
 ### Probe points (testability)
 
@@ -630,9 +595,9 @@ fixed:
 7. **Not re-verified here:** SN74LVC1G126 pinout and maximum height, AO3401A
    pinout (the checker verifies pad 1/2/3 = gate/source/drain on the built
    pads), B5819W polarity (the checker verifies the net pair only), TRS jack
-   contact continuity, and every mechanical question in
-   the historical design-review record. The 2.2 mm TLP2361 height fits the existing SO-6
-   land area; no 3D clearance check was run.
+   contact continuity, and every mechanical question, which the acceptance items
+   carry. The 2.2 mm TLP2361 height fits the existing SO-6 land area; no 3D
+   clearance check was run.
 8. No ERC, DRC sign-off, Gerber review, first article or hardware measurement
    was performed. The 5 V sender source, the resistor tolerances and the
    cable drop come from the MIDI specification, not from a measurement of the

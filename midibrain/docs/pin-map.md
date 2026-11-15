@@ -28,7 +28,7 @@ Pico pins 39 (VSYS), 40 (VBUS), 36 (3V3 OUT), 37 (3V3 EN), 30 (RUN) are not gene
 
 Connector part, mating-face pin order, wire length, shielding, decoupling and power branch protection remain open. Hardware pin mux and continuity must be tested with actual Pi OS/Pico SDK versions.
 
-## Pi mounting panel and the harness (owner decision 2026-11-12)
+## Pi mounting panel and the harness
 
 The Pi 5 (with Active Cooler + M.2 HAT+ + NVMe SSD) bolts to the rear face of its
 own 20HP/3U mounting panel beside the main module in the same row; the table above is unchanged as a
@@ -49,7 +49,7 @@ fitted HAT's MPN and connection method are pending (`docs/TODO.md`). Evidence:
 acceptance item `pi_panel_harness`; geometry: `PI_PANEL_*` in
 `tscircuit/lib/layout.ts`.
 
-## Panel POWER button (owner-approved 2026-11-06; pigtail amended 2026-11-06)
+## Panel POWER button
 
 A panel momentary switch (B3F-4055 family, same as the transport row) is
 wired to the **Pi 5's remote power-button connector** (the 2-pin header
@@ -57,12 +57,11 @@ paralleling the onboard power button — no custom power logic):
 
 | Function | Path | Notes |
 |---|---|---|
-| POWER | front-board SW7 at (52, 49) → J_PWR (right-angle Harwin M20-9960245, 1 x 2, on the front board's REAR face at (64, 44.5), rotation 180, mating axis +Y into the 11.2 mm board gap) → 2x 6-inch 2.54 mm female-female DuPont jumpers (user-supplied) → the Pi end: J2 is TWO BARE PADS (Raspberry Pi power-button documentation and `images/j2.jpg`, retrieved 2026-11-10), so a correctly fitted header or a qualified wired connection is required and pending | off→press = power on; on→press = graceful shutdown request (OS handles clean halt); long-press = PMIC hard cut, last resort only |
+| POWER | front-board SW7 at (52, 48.9) → J_PWR (right-angle Harwin M20-9960245, 1 x 2, on the front board's REAR face at (64, 44.5), rotation 180, mating axis +Y into the 11.2 mm board gap) → 2x 6-inch 2.54 mm female-female DuPont jumpers (user-supplied) → the Pi end: J2 is TWO BARE PADS (Raspberry Pi power-button documentation and `images/j2.jpg`, retrieved 2026-11-10), so a correctly fitted header or a qualified wired connection is required and pending | off→press = power on; on→press = graceful shutdown request (OS handles clean halt); long-press = PMIC hard cut, last resort only |
 
-The jumpers are **ACC A-0270 stock 6-inch F-F DuPont** leads the owner already
-owns; they are not a board part. The earlier "front SW7 → 2 IDC conductors →
-rear J_PWR" route is superseded: the direct 2 x 13 front/rear pair keeps every
-conductor it had (all three ground conductors stay ground), the rear board
+The jumpers are **ACC A-0270 stock 6-inch F-F DuPont** leads; they are not a
+board part. The direct 2 x 13 front/rear pair carries no power-button
+conductor (all three ground conductors stay ground), the rear board
 carries no power-button part, and no net in the 2 x 13 interconnect table (`INTERCONNECT_NETS` in
 `tscircuit/lib/interconnect.tsx`, used by both boards) changes.
 J_PWR is the right-angle Harwin M20-9960245 for those leads only — it has no

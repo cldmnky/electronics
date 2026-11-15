@@ -166,7 +166,7 @@ Evidence chain:
    mounted by systemd since 2026-10-07 and was left alone).
 
 **Verdict:** a 2-in/2-out class-compliant USB audio device is not achievable on
-the Pi 5's own ports by any software configuration. `docs/USER-MANUAL.md` §15
+the Pi 5's own ports by any software configuration. `docs/USER-MANUAL.md` §14
 ("class-compliant 2-in/2-out USB audio device on its data port") does not
 describe this hardware; it needs a separate USB-audio codec on the base board or
 an amendment to the manual. That is a product decision, not something this bench
@@ -184,7 +184,7 @@ measurement (PID 39904) also exited; the operator started a new one at 23:05.
 Separately worth recording: with the app fanning every input to every output, an
 already-cabled MIDI loop turns the app into a MIDI Thru and re-injects its own
 clock (card 0 and card 2 Rx counters rose faster than the 48 B/s emission rate).
-`docs/USER-MANUAL.md` §17 says "Thru is not provided" — true for the Pico's TRS
+`docs/USER-MANUAL.md` §16 says "Thru is not provided" — true for the Pico's TRS
 routing, but the USB fan-out behaves like one when a cable loops back.
 
 ## 6. Files

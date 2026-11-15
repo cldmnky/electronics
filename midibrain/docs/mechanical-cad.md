@@ -18,10 +18,10 @@ mounting, control or board coordinate.
 | `PANEL_30HP_3U` | 152.0 × 128.5 × 1.6 mm; 20 apertures and **14 drills** from `PANEL_APERTURES` / `PANEL_DRILLS`: LCD, three feedthroughs with six screw holes, seven buttons (six transport/control plus POWER), three LED light-pipe openings, encoder, POWER, NAV, four jacks, four rail holes and the four `STAND_` panel-mount screws | outlines, diameters and positions are canonical (the same arrays `panel.circuit.tsx` renders) |
 | `FRONT_BOARD_PROVISIONAL_Z` | **150 × 112 × 1.6 mm at Z 10.60…12.20**; one U-shaped opening (the old notch merged into the display opening, through the top edge), the four front↔rear spacer holes and the four Ø3.2 `PANEL_MOUNT_POINTS` holes; **no** display holes, no bracket screws | XY canonical; **Z is the `PROVISIONAL_Z` chain, derived from the Thonkiconn jack's 9.0 mm seating shoulder + the 1.6 mm panel (`PANEL_TO_FRONT_BOARD_TOP` = 10.60)** |
 | `PANEL_STANDOFF_1…4` | M3 standoff envelopes, Ø5.5 with a Ø3.2 bore, spanning the panel rear face (Z 1.60) to the front-board top face (Z 10.60), at `PANEL_MOUNT_POINTS` | length/diameter come from `PANEL_STANDOFF` (length = `PANEL_STACK.boardToPanelRear`); the length is NOMINAL and adjusted at assembly, not a fit |
-| `REAR_BOARD_PROVISIONAL_Z` | **148 × 112 × 1.6 mm at Z 23.40…25.00**; the four front↔rear spacer holes and the four Ø2.7 display-carrier holes (`LCD_MOUNT_HOLES`), no Pi holes since 2026-11-12 | XY canonical; Z is the 11.20 mm direct-mate seat-to-seat gap on `PROVISIONAL_Z` |
+| `REAR_BOARD_PROVISIONAL_Z` | **148 × 112 × 1.6 mm at Z 23.40…25.00**; the four front↔rear spacer holes and the four Ø2.7 display-carrier holes (`LCD_MOUNT_HOLES`), no Pi holes | XY canonical; Z is the 11.20 mm direct-mate seat-to-seat gap on `PROVISIONAL_Z` |
 | `DISPLAY_WAVESHARE_VENDOR_STEP` | the vendor STEP, SHA-256 verified, placed by a rigid 180° rotation so the glass front face is at the layout datum **Z 0.60** (nominally 0.60 mm behind the panel front; reaching flush EXTENDS the carrier spacer to 9.35 mm, never cuts it) and the electronics point rearward. The model's touch/frame face is 1.90 mm in front of the glass, so it is placed at panel Z −1.30, **1.30 mm proud of the panel front**: a property of this model, not a fit. The **+X mirror** of the vendor frame against the layout frame is corrected by the placement; the 180° rotation about **Y is a candidate only**; X/Y from the outer SMT boss pattern centre. The rotation about **Y is the drawn candidate only** — the in-plane axis is pending | vendor geometry; model depth 13.82 mm is the model, not the 14.05 mm vendor maximum |
 | `DISPLAY_ENVELOPE_PROVISIONAL` | 106 × 68 mm, Z 0.60…14.65, drawn only when no verified vendor STEP is supplied | an envelope on the derived display datum (0.60 behind the panel front), not vendor geometry |
-| `MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_1..4` | four annuli (OD 5.0, ID 2.7 mm **assumed for illustration**) drawn across the gap between the drawn boss rear plane and the board face. At the current datum the drawn boss rear (10.84) is BEHIND the board top (10.60): the model gap is **-0.24 mm**, so no positive-length spacer exists on this chain. The overlap is an UNVERIFIED COLLISION RISK: the module's rear-most plane crosses the board band too, and nothing proves every module feature lies inside the U opening in X and Y | **geometric placeholder only, not a part**: the carrier sits on the rear board with an 8.75 mm adjustable spacer (`DISPLAY_STANDOFF`), while these placeholders illustrate the superseded front-board mounting arithmetic. Length, diameter, thread and assembly are first-article tasks |
+| `MODEL_FIT_SPACER_PLACEHOLDER_NON_APPROVED_1..4` | four annuli (OD 5.0, ID 2.7 mm **assumed for illustration**) drawn across the gap between the drawn boss rear plane and the board face. At the current datum the drawn boss rear (10.84) is BEHIND the board top (10.60): the model gap is **-0.24 mm**, so no positive-length spacer exists on this chain. The overlap is an UNVERIFIED COLLISION RISK: the module's rear-most plane crosses the board band too, and nothing proves every module feature lies inside the U opening in X and Y | **geometric placeholder only, not a part**: the carrier sits on the rear board with an 8.75 mm adjustable spacer (`DISPLAY_STANDOFF`), while these placeholders still show the front-board mounting arithmetic. Length, diameter, thread and assembly are first-article tasks |
 | `DISPLAY_CONNECTOR_PLANNING_MARKER` | 21.412 × 4.826 × 1.8 mm box at (38.84, 11.7) on the **provisional** design-chain plane Z 10.65, not the model's drawn PCB rear Z 6.84 | **legacy unverified planning data, not a verified connector.** The size has no reliable source: the model's 21.412 × 4.826 mm bodies are TFT1 flex bonds (`EXTRUDED-106739` / `EXTRUDED-107488`), not this connector. Position is an unverified drawing record; routing and fit are unknown |
 | `FEEDTHROUGH_*_FLANGE_PLAN_MARKER` | the Adafruit 908 flange outline, 38.30 × 11.90 mm, as a 0.2 mm marker on the panel rear face | flange size from the drawing; **no depth is published, so no flange volume exists** |
 | `USB_C_CANDIDATE_FLANGE_NON_APPROVED` | opt-in only (`--usbc-candidate-envelope`): advertised 25 × 10.2 × 5 mm from a marketplace listing | NON-APPROVED advertisement, no pitch, no current rating, no PD result |
@@ -86,9 +86,7 @@ aperture; that arithmetic is illustrative and is not a clearance result.
 the vendor's stated **14.05 mm** maximum overall depth, and not the provisional **10.05 mm** glass-front-to-PCB-rear
 design chain. No equation relates the three; the automated tests assert that 6.24 and 10.05 are not equated.
 
-**Connector — identity not established.** An earlier revision of this file called the two 21.412 × 4.826 mm bodies
-the DSI FPC connector and reported a ~24 mm disagreement with the drawing. **That was a misidentification and is
-withdrawn.** Reading the STEP's XCAF label tree shows those two bodies are `EXTRUDED-106739` / `EXTRUDED-107488`
+**Connector — identity not established.** The STEP's XCAF label tree shows those two bodies are `EXTRUDED-106739` / `EXTRUDED-107488`
 inside `TFT1_ASM` — TFT flex bonds, not a panel connector — and that they carry no connector-position evidence.
 
 The body nearest the recorded connector position is a separate named part, `DISPLAY_CAM`, a direct child of
@@ -154,7 +152,7 @@ side or stackup is changed for it:
 - turning either board over is a real PCB layer/side reassignment that moves every part, the silkscreen, the assembly
   drawing and the CPL side.
 
-It needs an owner decision and a PCB revision. The model keeps the current orientation and makes no compliance claim;
+It needs a decision and a PCB revision. The model keeps the current orientation and makes no compliance claim;
 `assumptions.json` records it under `board_face_convention`.
 
 ## The collision rule
@@ -174,8 +172,9 @@ longer projects over board material where it used to. The flange's depth below
 the panel is not in the drawing, so the flange-versus-board result is
 **UNDETERMINED**. There is no threshold in the code that converts an unknown
 depth into a verdict, and a candidate Z volume used for drawing can never
-produce a definitive result. The recorded 0.45 mm / 17.235 mm² / 50.435 mm²
-figures were measured on the pre-respin notch.
+produce a definitive result. Do not quote a flange-versus-board area or overlap
+figure: the search cannot settle it, and any number it prints is a property of
+the drawn volume, not of the part.
 
 ## Outputs
 
@@ -360,10 +359,9 @@ is committed). The owner's screenshot states 17.5 mm overall, which is 16.5 + 1.
 
 Two things this section deliberately does not do:
 
-- it does not turn 16.5 or 17.5 into a subtraction against a stack: the retired
-  Bivar PLP2-400-C 10.16 mm reference and the `17.45 − 10.16 = 7.29 mm` figure
-  are **withdrawn** (they compared different reference planes and the 10.16 mm
-  value is not in the current Bivar datasheet);
+- it does not turn 16.5 or 17.5 into a subtraction against a stack: the Bivar
+  PLP2-400-C 10.16 mm reference and the `17.45 − 10.16 = 7.29 mm` figure are
+  withdrawn and must not be used ([decisions.md](decisions.md));
 - it does not call the resulting number an LED gap. The optical gap needs the LED height,
   the seated plane, the stack tolerances, retention in 1.6 mm FR-4 and the real
   hole tolerance; all are unmeasured, so `optical_gap_mm` is `None` and the

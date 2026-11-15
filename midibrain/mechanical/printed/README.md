@@ -24,7 +24,7 @@ all.
 
 | # | Part | Qty | State | Source of truth |
 |---|---|---|---|---|
-| 1 | NAV cap (ALPS RKJXT1F42001, U5 since the 2026-11-14 owner decision) | 1 | **generated + committed**: `nav-keytop.stl/.step` | `nav_keytop.py`, `printed_geometry.py` |
+| 1 | NAV cap (ALPS RKJXT1F42001, U5) | 1 | **generated + committed**: `nav-keytop.stl/.step` | `nav_keytop.py`, `printed_geometry.py` |
 | 2 | Value knob (Bourns PEC11R-4015F-S0024, U6) | 1 | **generated + committed**: `knob.stl/.step` — GEOMETRY GATED, see *Encoder blockers* | `knob.py`, `printed_geometry.py` |
 | 3 | B3F button cap (Omron B3F-4055, SW1–SW7) | 7 | **generated + committed**: `button-cap.stl/.step` | `button_cap.py`, `BUTTON_CAP_PRINTED` in `lib/layout.ts` |
 | 3a | Button-cap fit specimens | 4 | **generated on demand, NOT committed** (ignored by `*.stl`, reproducible from the command below): `fit-specimens/*.stl` (3.80 / 3.85 / 3.90 / 4.00 locator) | `button_cap.py --specimens` — needs CadQuery in a private venv |
@@ -67,10 +67,12 @@ dedicated board screw holes are removed from `front.circuit.tsx`) and its printe
 fit is unmeasured. Items 7–9 are PRINT AIDS: nothing in them is a fit approval,
 and the mockups reproduce the model's own geometry.
 
-The **display carrier is the one printed part this review could not improve**: its
-outline depends on where the module's two outboard boss points can be carried,
-which is unresolved, so drawing it now would invent geometry. Its dependencies are
-the module seating, the DSI route and the rear-board hole pattern, all open.
+The **display carrier is the one printed part this review could not improve**:
+no carrier geometry exists, and drawing it now would invent it. The rear board is
+148 mm wide, so all four SMTSO boss points (x −59.65 / +39.65, `LCD_MOUNT_HOLES`)
+already land on it and nothing has to be carried outboard. Its dependencies are
+the module seating, the DSI route and the carrier's own outline, thickness and
+fastening - all open (`docs/TODO.md`).
 
 **Retention language is deliberate everywhere in this directory**: there is no
 snap, no detent and no proven grip in any part. The words to look for are
@@ -151,7 +153,7 @@ header carries a creation timestamp), and the tests compare geometry, not bytes.
 | VALUE ENCODER aperture | 7.2 mm | `mechanical/layout.json` `panelApertures`, cross-checked against `PANEL_CUTOUTS.control` in `lib/layout.ts` |
 | NAV aperture | 8.2 mm | `PANEL_CUTOUTS.nav`: the switch's Ø7.20 collar stands inside it. 0.50 mm per side over the collar nominally, 0.17 mm at the worst routed/placement limit; PROVISIONAL, not measured |
 | display opening right edge | 43.25 mm | `lib/layout.ts` `DISPLAY_CONCEPT.x` + `FRONT_DISPLAY_OPENING.width` (parsed, cross-checked against the two numbers the source prints beside them) |
-| knob column and body diameter | x = 52, D12.5 | `lib/layout.ts` `RIGHT_COLUMN` and the owner-approved "knob body (D12.5 at x = 52)" note |
+| knob column and body diameter | x = 52, D12.5 | `lib/layout.ts` `RIGHT_COLUMN` and the "knob body (D12.5 at x = 52)" note |
 
 Z datum everywhere: the panel FRONT face is Z = 0 and +Z points REARWARD, the
 same datum `lib/layout.ts` and `mechanical/layout.json` use. The panel occupies
@@ -161,10 +163,9 @@ seating shoulder plus the 1.6 mm panel), and the clear gap between them is
 
 ## Part 1: NAV cap (`nav-keytop.stl`)
 
-Owner decision 2026-11-14: the NAV switch is the **ALPS Alpine RKJXT1F42001**,
-a THT 4-direction stick switch with centre push and an (unused) encoder. It
-replaced the SMD SKRHABE010, whose actuator could not reach the panel. The
-switch's shaft stands **17.4 mm above the board**, i.e. **6.80 mm proud of the
+The NAV switch is the **ALPS Alpine RKJXT1F42001**, a THT 4-direction stick
+switch with centre push and an (unused) encoder, selected because its actuator
+reaches the panel. The switch's shaft stands **17.4 mm above the board**, i.e. **6.80 mm proud of the
 panel front** (10.60 mm above the board), so the cap is a **push-on cap on that
 projecting shaft** and hangs entirely IN FRONT of the panel:
 
@@ -265,7 +266,7 @@ projecting shaft** and hangs entirely IN FRONT of the panel:
 
 | dimension | value | source |
 | --- | --- | --- |
-| body diameter | 12.50 mm | owner-approved `lib/layout.ts` knob-body note |
+| body diameter | 12.50 mm | `lib/layout.ts` knob-body note |
 | body height | 16.00 mm | ASSUMPTION, top of the owner's 12-16 mm band |
 | bore | 6.20 mm through | shaft 6.0 + 0.20 clearance (ASSUMPTION) |
 | bore D-flat | plane 1.60 mm from the axis, at 0 deg | **sourced** shaft flat 1.50 + 0.10 clearance; the clocking is an ASSUMPTION |
@@ -337,7 +338,7 @@ The committed export currently carries `display.x = -10.0`, i.e. it agrees with
 opening edge from the source, and `layout_export_notices()` reports a
 `STALE EXPORT` notice whenever the export's display position disagrees with it.
 The printed knob is unaffected either way - its diameter is fixed by the
-owner-approved D12.5 note in `lib/layout.ts`, not by the display position.
+D12.5 note in `lib/layout.ts`, not by the display position.
 `test_a_stale_export_does_not_move_the_part` and `LayoutSourceMutationTest` pin
 both halves of that down.
 
@@ -402,8 +403,7 @@ centred by the aperture.
 
 Why the part is 4.70 and not 4.10: the plunger sits INSIDE the recess. The cap's
 rear face stops 0.60 mm behind the plunger face, so the height spans three terms,
-not two. Deriving it as flush + proud would put the top 0.60 mm below the panel
-front (it was 4.10 at the superseded 10.0 mm panel).
+not two. Deriving it as flush + proud would put the top 0.60 mm below the panel front.
 
 ### Assembly order (required)
 

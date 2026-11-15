@@ -121,6 +121,15 @@ pin-order traps, IDC rules, debug headers, 3.5 mm jack families) lives in the
 `connectors` skill at `.pi/skills/connectors/SKILL.md`. Read it before choosing
 or replacing any connector.
 
+## Documentation
+
+Current-state documents — designs, part lists, READMEs, contracts — must match
+the sources they describe: quote a number, part or position from its source file
+rather than from memory, and never present an unverified claim as measured. Each
+project keeps its decisions in one log and its open work in one list; do not
+restate a decision in a design page. Inventory, provenance and decision records
+keep their own history, because that history is what makes them auditable.
+
 ## Project boundaries
 
 - `froemix/AGENTS.md` and `midibrain/AGENTS.md` are the project contracts;
