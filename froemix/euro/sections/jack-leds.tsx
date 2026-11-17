@@ -23,7 +23,7 @@
 import { Fragment } from "react"
 
 import { JACK_LEDS } from "../lib/layout"
-import { easyedaStep } from "../lib/cad-models"
+import { LED_3MM_MODEL, R0603_MODEL, SOD323_MODEL } from "../lib/cad-models"
 import { FP_LED_3MM, FP_R0603, FP_SOD323 } from "../lib/footprints"
 
 export const JackLedsSection = () => (
@@ -36,7 +36,7 @@ export const JackLedsSection = () => (
           footprint={FP_R0603}
           mpn="0603WAF2201T5E"
           supplierPartNumbers={{ jlcpcb: ["C4190"] }}
-          cadModel={{ stepUrl: easyedaStep("C4190"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
+          cadModel={R0603_MODEL}
           layer="bottom"
           pcbX={`${jl.x}mm`}
           pcbY="-24mm"
@@ -47,7 +47,7 @@ export const JackLedsSection = () => (
           footprint={FP_SOD323}
           mpn="1N4148WS"
           supplierPartNumbers={{ jlcpcb: ["C2128"] }}
-          cadModel={{ stepUrl: easyedaStep("C2128"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
+          cadModel={SOD323_MODEL}
           layer="bottom"
           pinLabels={{ pin1: "cathode", pin2: "anode" }}
           pcbX={`${jl.x}mm`}
@@ -59,7 +59,7 @@ export const JackLedsSection = () => (
           footprint={FP_LED_3MM}
           mpn="TJ-L3FYTLDRMFCSFLC2R-A5"
           supplierPartNumbers={{ jlcpcb: ["C440523"] }}
-          cadModel={{ stepUrl: easyedaStep("C440523"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
+          cadModel={LED_3MM_MODEL}
           pinLabels={{ pin1: "anode", pin2: "cathode" }}
           pcbX={`${jl.x}mm`}
           pcbY={`${jl.y}mm`}

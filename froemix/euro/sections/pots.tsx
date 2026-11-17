@@ -10,7 +10,7 @@
 // clockwise raises the value the firmware reads.
 
 import { POTS } from "../lib/layout"
-import { easyedaStep } from "../lib/cad-models"
+import { POT_MODEL } from "../lib/cad-models"
 import { FP_POT_RK09K_R90 } from "../lib/footprints"
 
 export const PotsSection = () => (
@@ -23,15 +23,7 @@ export const PotsSection = () => (
         maxResistance="10k"
         mpn="RK09K1130A8G"
         supplierPartNumbers={{ jlcpcb: ["C470294"] }}
-        /* The EasyEDA model's own frame sits 8.5mm below the board plane with
-           the shaft axis at (0, 0.51) - measured from the STEP on 2026-11-17
-           (lowest geometry is the mounting-lug/pin plane at z=8.5; bushing and
-           shaft cylinders are concentric about (0, 0.51)). Without this the
-           pots render floating 8.5mm above the board. */
-        cadModel={{
-          stepUrl: easyedaStep("C470294"),
-          modelOriginPosition: { x: 0, y: 0.51, z: 8.5 },
-        }}
+        cadModel={POT_MODEL}
         pcbX={`${pot.x}mm`}
         pcbY={`${pot.y}mm`}
         schPinArrangement={{ leftSide: [1, 3], rightSide: [2] }}
