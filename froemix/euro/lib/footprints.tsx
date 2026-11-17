@@ -229,10 +229,10 @@ export const FP_LED_3MM = (
 // silk still carries the refdes and the bushing circle.
 //
 // 3D: PJ301M-12.step from clacktronics/AudioJacks (MIT, SHA-256 in
-// library/cad/jack-35-wqp518ma/SOURCE.md), pinned to commit 14a88866. It is
-// authored in the KiCad footprint frame (S at +6.48), which is this
-// footprint's frame, so no rotation offset. A rendering aid, not a mechanical
-// proof.
+// library/cad/jack-35-wqp518ma/SOURCE.md), pinned to commit 14a88866. It does
+// not mesh in the tscircuit viewer (2026-11-17), so the sections use a
+// drawing-derived envelope instead; the STEP remains the provenance copy for
+// CAD tools.
 // --------------------------------------------------------------------------
 
 export const FP_JACK_MONO = (
@@ -295,10 +295,10 @@ export const FP_JACK_MONO = (
 // and the bushing circle.
 //
 // 3D: PJ366ST.step from clacktronics/AudioJacks (MIT, SHA-256 in
-// library/cad/jack-35-wqp419gr/SOURCE.md), pinned to commit 14a88866. It is
-// authored in the KiCad footprint frame (S at +6.48); this footprint's pads are
-// that frame rotated 180 degrees, hence pcbRotationOffset 180 in the
-// sections' cadModel. A rendering aid, not a mechanical proof.
+// library/cad/jack-35-wqp419gr/SOURCE.md), pinned to commit 14a88866. It does
+// not mesh in the tscircuit viewer (2026-11-17), so the sections use a
+// drawing-derived envelope instead; the STEP remains the provenance copy for
+// CAD tools.
 // --------------------------------------------------------------------------
 
 export const FP_JACK_TRS = (

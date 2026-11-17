@@ -12,13 +12,13 @@
 // origin for both jacks, so lib/layout.ts holds one coordinate per part,
 // shared with the panel.
 //
-// 3D: the two jack models come from the shared library (clacktronics/AudioJacks
-// MIT, provenance in library/cad/*/SOURCE.md) and are rendering aids, not
-// mechanical proof. The mono footprint keeps the model's KiCad frame; the TRS
-// pads are that frame rotated 180 degrees.
+// 3D: the viewer gets drawing-derived ENVELOPE models (cad/jack-*-envelope.obj);
+// the vendor STEPs (clacktronics/AudioJacks MIT, pinned commit 14a88866) are
+// held with provenance in library/cad/jack-35-wqp*/SOURCE.md but do not mesh in
+// the tscircuit viewer (verified 2026-11-17), so they are not wired as cadModel.
 
 import { JACKS, JACK_MONO_ORIGIN, atHole } from "../lib/layout"
-import { JACK_MONO_STEP, JACK_TRS_STEP } from "../lib/cad-models"
+import { ENVELOPE_JACK_MONO, ENVELOPE_JACK_TRS } from "../lib/cad-models"
 import { FP_JACK_MONO, FP_JACK_TRS } from "../lib/footprints"
 
 export const JacksSection = () => (
@@ -39,8 +39,7 @@ export const JacksSection = () => (
           pinLabels={{ pin1: "sleeve", pin2: "tip" }}
           mpn="WQP518MA"
           cadModel={{
-            stepUrl: JACK_MONO_STEP,
-            pcbRotationOffset: 0,
+            objUrl: ENVELOPE_JACK_MONO,
             modelOriginPosition: { x: 0, y: 0, z: 0 },
           }}
           pcbX={`${at.x}mm`}
@@ -60,8 +59,7 @@ export const JacksSection = () => (
           pinLabels={{ pin1: "tip", pin2: "ring", pin3: "sleeve" }}
           mpn="WQP419GR"
           cadModel={{
-            stepUrl: JACK_TRS_STEP,
-            pcbRotationOffset: 180,
+            objUrl: ENVELOPE_JACK_TRS,
             modelOriginPosition: { x: 0, y: 0, z: 0 },
           }}
           pcbX={`${at.x}mm`}
