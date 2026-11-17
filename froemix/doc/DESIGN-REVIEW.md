@@ -119,7 +119,8 @@ first fabrication order:
 
 `check_madc.py` now asserts the 10 kΩ R8 connection and rejects the removed
 audio-LED refs; the panel fixture records the four-hole removal as an audited
-mechanical revision. Counts: 12 SMT + 27 THT placements, 27 panel holes.
+mechanical revision. At that revision: 12 SMT + 27 THT placements and 27
+panel holes; the later OLED-support revision adds 2 panel holes.
 
 ### DFM disposition before ordering
 

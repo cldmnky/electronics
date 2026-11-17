@@ -77,6 +77,39 @@ class FabMechanicsTests(unittest.TestCase):
             "inner_rings": []}})
         self.assertTrue(any("J3" in e and "copper pour" in e for e in verify(b)))
 
+    def test_missing_oled_support_keepout_fails(self):
+        b = self.changed()
+        k = next(e for e in b if e["type"] == "pcb_keepout" and e["center"] == {"x": -15.2, "y": 26.5})
+        b.remove(k)
+        self.assertTrue(any("OLED support" in e and "keepout" in e for e in verify(b)))
+
+    def test_trace_in_oled_support_fails(self):
+        b = self.changed()
+        b.append({"type": "pcb_trace", "pcb_trace_id": "injected-support", "route": [
+            {"route_type": "wire", "layer": "bottom", "x": -17, "y": 26.5, "width": .25},
+            {"route_type": "wire", "layer": "bottom", "x": -13, "y": 26.5, "width": .25},
+        ]})
+        self.assertTrue(any("OLED support" in e and "trace" in e for e in verify(b)))
+
+    def test_via_in_oled_support_fails(self):
+        b = self.changed()
+        b.append({"type": "pcb_via", "x": 15.2, "y": 26.5, "outer_diameter": .45})
+        self.assertTrue(any("OLED support" in e and "via" in e for e in verify(b)))
+
+    def test_pad_in_oled_support_fails(self):
+        b = self.changed()
+        b.append({"type": "pcb_smtpad", "pcb_smtpad_id": "injected-support", "shape": "rect",
+                  "layer": "top", "x": 15.2, "y": 26.5, "width": .5, "height": .5})
+        self.assertTrue(any("OLED support" in e and "pad" in e for e in verify(b)))
+
+    def test_pour_in_oled_support_fails(self):
+        b = self.changed()
+        b.append({"type": "pcb_copper_pour", "shape": "brep", "layer": "top", "brep_shape": {
+            "outer_ring": {"vertices": [{"x": -15.3, "y": 26.4}, {"x": -15.1, "y": 26.4},
+                                        {"x": -15.1, "y": 26.6}, {"x": -15.3, "y": 26.6}]},
+            "inner_rings": []}})
+        self.assertTrue(any("OLED support" in e and "pour" in e for e in verify(b)))
+
     def test_trace_too_close_to_pot_lug_fails(self):
         b = self.changed()
         b.append({"type": "pcb_trace", "pcb_trace_id": "injected-lug", "route": [

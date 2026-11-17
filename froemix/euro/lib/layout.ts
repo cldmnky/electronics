@@ -253,11 +253,13 @@ export const JACK_LEDS: JackLed[] = [
 
 /**
  * 1.3" 128x64 SPI OLED, HS13L02B4S01 (LCSC C42432559), SH1106, 35.4 x 33.5mm
- * PCB, 7-pin 2.54 header (GND VCC SCK SDI RES DC CS). The module is soldered flat to the TOP of the board on a 1x7
- * footprint, directly under a 30 x 15.5mm window in the panel. It is not
- * plugged into CN4: CN4 is the base board's OLED header, and the 7 signals are
+ * PCB, 7-pin 2.54 header (GND VCC SCK SDI RES DC CS). A 1x7 female socket
+ * sits on the control-board top under the panel window. The module's height
+ * and support still need measurement; its pins are not a mounting system.
+ * It is not plugged into CN4: CN4 is the base board's OLED header, and the 7 signals are
  * wired straight across from the mating socket to the module - that keeps the
- * module at panel height instead of 11mm further back.
+ * module on the control-board side instead of 11mm further back. Socket and
+ * mating-pin heights still need qualification against the panel stack.
  */
 export const OLED = {
   // module origin = centre of the 7-pin header row
@@ -266,13 +268,21 @@ export const OLED = {
   bodyW: 35.4,
   bodyH: 33.5,
   // active area 29.42 x 14.70mm; the view area is 31.42 x 16.70mm
-  windowW: 30.5,
-  windowH: 16.0,
+  windowW: 33.5,
+  windowH: 19.0,
   windowOffsetY: -12.7, // window centre, relative to the header row (datasheet)
 } as const
 
 /** Header row centre; the module body hangs below it. */
 export const OLED_AT: Pt = { x: 0, y: 55.5 }
+
+/** Lower pair of the OLED module's four nominal Ø3.2mm mounting holes.
+ * Its drawing gives 30.4 × 28.5mm mounting-hole pitch. The upper holes are
+ * omitted from the panel because their screw heads can overlap rack rails. */
+export const PANEL_MOUNT_HOLES: Pt[] = [
+  { x: OLED_AT.x - 15.2, y: OLED_AT.y - 29.0 },
+  { x: OLED_AT.x + 15.2, y: OLED_AT.y - 29.0 },
+]
 
 /** Panel window centre (the glass), derived from the module position. */
 export const OLED_WINDOW: Pt = {

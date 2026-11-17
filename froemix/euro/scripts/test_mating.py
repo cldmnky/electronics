@@ -11,6 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parent.parent
 BASE = json.loads((ROOT / "../tscircuit/dist/index/circuit.json").read_text())
 FRONT = json.loads((ROOT / "dist/index/circuit.json").read_text())
+PANEL = json.loads((ROOT / "dist/panel/circuit.json").read_text())
 
 
 def source(cj, name):
@@ -28,18 +29,18 @@ def port(cj, name, pin):
 
 
 class MatingMutations(unittest.TestCase):
-    def run_check(self, base=None, front=None):
+    def run_check(self, base=None, front=None, panel=None):
         with tempfile.TemporaryDirectory(prefix="froemix-mating-test-") as temp:
             args = [sys.executable, str(ROOT / "scripts/check_mating.py")]
-            for flag, data in (("base", base), ("board", front)):
+            for flag, data in (("base", base), ("board", front), ("panel", panel)):
                 if data is not None:
                     path = Path(temp) / f"{flag}.json"
                     path.write_text(json.dumps(data))
                     args += [f"--{flag}", str(path)]
             return subprocess.run(args, capture_output=True, text=True)
 
-    def assert_rejected(self, *, base=None, front=None, message):
-        result = self.run_check(base, front)
+    def assert_rejected(self, *, base=None, front=None, panel=None, message):
+        result = self.run_check(base, front, panel)
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn(message, result.stdout + result.stderr)
 
@@ -90,6 +91,24 @@ class MatingMutations(unittest.TestCase):
         front = copy.deepcopy(FRONT)
         next(e for e in front if e["type"] == "pcb_hole")["hole_diameter"] = 2.5
         self.assert_rejected(front=front, message="missing 3.2mm standoff")
+
+    def test_missing_lower_oled_panel_mount(self):
+        panel = copy.deepcopy(PANEL)
+        hole = next(e for e in panel if e["type"] == "pcb_hole" and abs(e["x"] + 15.2) < .01 and abs(e["y"] - 26.5) < .01)
+        panel.remove(hole)
+        self.assert_rejected(panel=panel, message="panel support: missing")
+
+    def test_shifted_lower_oled_board_mount(self):
+        front = copy.deepcopy(FRONT)
+        hole = next(e for e in front if e["type"] == "pcb_hole" and abs(e["x"] - 15.2) < .01 and abs(e["y"] - 26.5) < .01)
+        hole["x"] += .1
+        self.assert_rejected(front=front, message="front board support: missing")
+
+    def test_oled_mount_must_belong_to_display_footprint(self):
+        front = copy.deepcopy(FRONT)
+        hole = next(e for e in front if e["type"] == "pcb_hole" and abs(e["x"] - 15.2) < .01 and abs(e["y"] - 26.5) < .01)
+        hole["pcb_component_id"] = None
+        self.assert_rejected(front=front, message="not owned by the OLED footprint")
 
     def test_visible_led_drift(self):
         front = copy.deepcopy(FRONT)

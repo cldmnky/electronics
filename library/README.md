@@ -86,14 +86,14 @@ project imports after the part is chosen.
 
 ## The list as it stands
 
-The list holds 59 parts, all `draft`. The earliest snapshot is 2026-11-09: 39
+The list holds 60 parts, all `draft`. The earliest snapshot is 2026-11-09: 39
 with an Electrokit article number, 17 bought in from LCSC, and one of the
 Electrokit parts also from Conrad. Each article number was checked against its
 own shop page or, for LCSC, against the order that was placed. The **DigiKey
 column is still empty**: fill it from the search links, in the same way as
 Conrad.
 
-29 rows now carry an `mpn`; 7 name a manufacturer (`QingPu (Thonkiconn
+30 rows now carry an `mpn`; 8 name a manufacturer (`QingPu (Thonkiconn
 family)`, `XKB`, `XUNPU`, `ALPS`, `ALPS Alpine`). Three rows carry CAD: the two QingPu 3.5 mm jacks
 (`jack-35-wqp518ma`, `jack-35-wqp419gr`) and the ALPS Alpine RKJXT1F42001
 (`sw-rkjxt1f42001`, an authored footprint and Apache-2.0 STEP). The others

@@ -176,8 +176,9 @@ for cj, label, side in ((base, "base header", "top"), (board, "front socket", "b
 standoffs = {(x, y) for x in (-36.95, 36.95) for y in (-60.75, 60.75)}
 for cj, label in ((base, "base"), (board, "front")):
     holes = [e for e in cj if e["type"] == "pcb_hole"]
-    if len(holes) != 4:
-        fail(f"{label}: expected four board-to-board NPTH standoffs, got {len(holes)}")
+    expected_count = 4 if label == "base" else 6
+    if len(holes) != expected_count:
+        fail(f"{label}: expected {expected_count} PCB NPTH mounting holes, got {len(holes)}")
     for x, y in standoffs:
         if not any(abs(h["x"] - x) < 0.01 and abs(h["y"] - y) < 0.01
                    and abs(h["hole_diameter"] - 3.2) < 0.01 for h in holes):
@@ -271,6 +272,29 @@ for rx in (-rail_x, rail_x):
             fail(f"no rail screw hole at ({rx:.2f}, {ry:.2f})")
         claimed.append((rx, ry))
 
+# The panel's two dedicated supports share the lower OLED module mounting
+# holes and lie below the rack rails. Base-to-front standoffs remain separate.
+for x in (-15.2, 15.2):
+    y = 26.5
+    for label, holes in (("panel", p_holes), ("front board", [e for e in board if e["type"] == "pcb_hole"])):
+        matches = [h for h in holes if abs(h["x"] - x) < 0.01 and abs(h["y"] - y) < 0.01 and
+                   abs(h["hole_diameter"] - 3.2) < 0.01]
+        if len(matches) != 1:
+            fail(f"{label} support: missing 3.2mm hole at ({x}, {y})")
+        if label == "front board" and matches:
+            ds1 = next((e for e in board if e["type"] == "pcb_component" and
+                        source_names.get(e.get("source_component_id")) == "DS1"), None)
+            if not ds1 or matches[0].get("pcb_component_id") != ds1["pcb_component_id"]:
+                fail(f"front board support ({x}, {y}) is not owned by the OLED footprint")
+    display = centres.get("DS1")
+    if not display or abs(abs(x - display["x"]) - 15.2) > 0.01 or abs(y - (display["y"] - 29.0)) > 0.01:
+        fail(f"panel support ({x}, {y}) is not on a lower OLED mounting-hole axis")
+    # Even the screw head must fit below an assumed 10mm rail band; verify
+    # the real rack profile before ordering.
+    if y + 5.5 / 2 > panel_h / 2 - 10 or y - 5.5 / 2 < -panel_h / 2 + 10:
+        fail(f"panel support ({x}, {y}) enters an assumed rail band")
+    claimed.append((x, y))
+
 orphans = [h for h in p_holes
            if not any(abs(h["x"] - cx) < 0.01 and abs(h["y"] - cy) < 0.01 for cx, cy in claimed)]
 if orphans:
@@ -279,15 +303,15 @@ if orphans:
 print(f"  {len(p_holes)} panel holes, all claimed")
 
 # ---------------------------------------------------------------------------
-# Display window. The opening must keep the centre and the 30.5 x 16.0mm
-# bounding box the panel has always had, and its internal corners must be R0.5:
+# Display window. The opening keeps its centre with a revised 33.5 x 19.0mm
+# bounding box, and its internal corners must be R0.5:
 # JLCPCB will not route a sharp internal rectangle. `RectCutoutProps` has no
 # corner radius and core drops the field, so the panel emits the window as a
 # polygon of chords - this check measures the polygon, it does not trust the
 # shape name. `lib/panel-checks.ts` runs the same tests on the same numbers.
 # ---------------------------------------------------------------------------
 WINDOW_RADIUS = 0.5
-WINDOW_SIZE = (30.5, 16.0)  # OLED.windowW x OLED.windowH in lib/layout.ts
+WINDOW_SIZE = (33.5, 19.0)  # OLED.windowW x OLED.windowH in lib/layout.ts
 MAX_VERTEX_DEVIATION = 0.05
 MAX_CHORD_SAGITTA = 0.1
 MIN_CHORDS_PER_CORNER = 8

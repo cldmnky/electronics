@@ -5,6 +5,23 @@ import { serialize } from "@jscad/stl-serializer"
 import { ACTUATORS, HEADERS, SOCKETS, STACK, actuatorFit, checkStack, measureStack, nominalStack } from "./mechanical"
 import { mechanicalParts, modePlunger, navCap, partMeasurements } from "./mechanical-parts"
 import { checkMechanicalNumbers, checkMechanicalParts } from "../scripts/mechanical_check"
+import { OLED, OLED_AT, OLED_WINDOW, PANEL_H, PANEL_MOUNT_HOLES } from "./layout"
+
+test("OLED mounting axes and head envelopes stay clear of 10mm rail bands", () => {
+  expect(PANEL_MOUNT_HOLES).toEqual([
+    { x: OLED_AT.x - 15.2, y: OLED_AT.y - 29 },
+    { x: OLED_AT.x + 15.2, y: OLED_AT.y - 29 },
+  ])
+  for (const h of PANEL_MOUNT_HOLES) {
+    // 5.5mm maximum panel-side head, 10mm rail depth is an engineering
+    // assumption, not a claim that every Eurorack rail has this profile.
+    expect(h.y + 5.5 / 2).toBeLessThan(PANEL_H / 2 - 10)
+    expect(h.y - 5.5 / 2).toBeGreaterThan(-PANEL_H / 2 + 10)
+  }
+  expect(OLED_WINDOW).toEqual({ x: 0, y: 42.8 })
+  expect((OLED.windowW - 29.42) / 2).toBeCloseTo(2.04, 6)
+  expect((OLED.windowH - 14.70) / 2).toBeCloseTo(2.15, 6)
+})
 
 test("the selected stack and actuator envelopes pass", () => {
   expect(checkMechanicalNumbers()).toEqual([])

@@ -1,5 +1,5 @@
 {
-  "note": "Pre-artwork geometry with audited mechanical revisions below. Original source hashes remain historical provenance, NOT hashes of this revised fixture. All 27 remaining centres and the outline stay frozen. OLED corners remain R0.5 within the original bounds.",
+  "note": "Pre-artwork geometry with audited mechanical revisions below. Original source hashes remain historical provenance, NOT hashes of this revised fixture. All 27 original remaining hole centres and the outline stay frozen; two lower OLED support holes are added. The OLED window keeps its centre and R0.5 corners but is enlarged.",
   "mechanicalRevisions": [
     {
       "hole": {
@@ -46,6 +46,14 @@
       "fromDiameter": 3.2,
       "toDiameter": 3.5,
       "reason": "Increase lens clearance for the selected 3mm LED and manufacturing tolerances. The flange may not retain the LED at all tolerances; jig and support it."
+    },
+    {
+      "addedHoles": [{ "x": -15.2, "y": 26.5, "diameter": 3.2 }, { "x": 15.2, "y": 26.5, "diameter": 3.2 }],
+      "reason": "Add panel-to-control-board fasteners at the lower OLED mounting-hole centres, below the rack rail band. Actual module fit and sleeve heights need first-article checks."
+    },
+    {
+      "window": { "center": { "x": 0, "y": 42.8 }, "fromWidth": 30.5, "fromHeight": 16, "toWidth": 33.5, "toHeight": 19 },
+      "reason": "Give the display more viewing-angle and alignment margin while retaining its centre and R0.5 corners. Actual glass and panel fit remain unverified."
     }
   ],
   "source": {
@@ -190,6 +198,16 @@
       "diameter": 3.5
     },
     {
+      "x": -15.2,
+      "y": 26.5,
+      "diameter": 3.2
+    },
+    {
+      "x": 15.2,
+      "y": 26.5,
+      "diameter": 3.2
+    },
+    {
       "x": -43.3,
       "y": 61.25,
       "diameter": 3.2
@@ -206,7 +224,7 @@
       "x": 0,
       "y": 42.8
     },
-    "width": 30.5,
-    "height": 16
+    "width": 33.5,
+    "height": 19
   }
 }

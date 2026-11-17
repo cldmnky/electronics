@@ -67,8 +67,12 @@ here so nobody discovers them at the soldering bench:
    function, never by pad number (barrel/thread to sleeve is the 0 Ω check).
    The 30 XKB mono jacks and 5 stereo jacks stay on the shelf as spares or for a
    wire-mounted build.
-6. **`310-43-107-41-001000` (DS1 socket) is discontinued at DigiKey** — only two
-   were available. Any 2.79 mm-body machined 1×7 does the same job.
+6. **`310-43-107-41-001000` (DS1 socket):** 2 are stocked; DigiKey previously
+   listed the part discontinued. Mill-Max specifies 0.381–0.635mm diameter
+   mating leads, not generic 0.64mm square pins. The 2.79mm plastic body is not
+   the complete seated height: measure barrel seating, pin insertion and OLED
+   recess. A same-height socket is not automatically interchangeable. The shared
+   library row is a draft; CAD, mating and sourcing remain open.
 7. **Daisy sockets:** 4 × 1×20 Würth were ordered; a board needs **two**, so
    that is two boards' worth, not five.
 8. **The ST-LINK-V3MINIE speaks STDC14**, not the Seed's 2×5 Cortex pads: it

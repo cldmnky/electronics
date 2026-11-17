@@ -14,7 +14,7 @@ import {
 } from "./panel-geometry"
 import { signedDistanceToRoundedRect } from "./panel-checks"
 
-const WINDOW = { cx: 0, cy: 42.8, width: 30.5, height: 16, radius: 0.5 }
+const WINDOW = { cx: 0, cy: 42.8, width: 33.5, height: 19, radius: 0.5 }
 
 describe("rounded rectangle polygon", () => {
   const polygon = roundedRectPolygon({
@@ -28,8 +28,8 @@ describe("rounded rectangle polygon", () => {
 
   test("keeps the exact bounding box, so the window size does not change", () => {
     const b = polylineBounds(polygon)!
-    expect(b.width).toBeCloseTo(30.5, 6)
-    expect(b.height).toBeCloseTo(16, 6)
+    expect(b.width).toBeCloseTo(33.5, 6)
+    expect(b.height).toBeCloseTo(19, 6)
     expect(b.cx).toBeCloseTo(0, 6)
     expect(b.cy).toBeCloseTo(42.8, 6)
   })
@@ -64,7 +64,7 @@ describe("distance and containment", () => {
 
   test("a point inside the window measures 0, a point outside measures its gap", () => {
     expect(distPolylineToPolygon([{ x: 0, y: 42.8 }], polygon)).toBe(0)
-    expect(distPolylineToPolygon([{ x: 0, y: 60 }], polygon)).toBeCloseTo(60 - (42.8 + 8), 6)
+    expect(distPolylineToPolygon([{ x: 0, y: 60 }], polygon)).toBeCloseTo(60 - (42.8 + 9.5), 6)
     expect(pointInPolygon({ x: 0, y: 42.8 }, polygon)).toBe(true)
     expect(pointInPolygon({ x: 0, y: 60 }, polygon)).toBe(false)
   })

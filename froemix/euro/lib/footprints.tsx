@@ -101,10 +101,10 @@ export const FP_SOCKET_2P00_7 = (
 )
 
 // --------------------------------------------------------------------------
-// 1.3" 128x64 SPI OLED module - 7 pads at 2.54mm along the header row, plus the
-// module body as a courtyard so nothing else lands under the glass. Pins are
-// numbered in the module's own order: 1 GND, 2 VCC, 3 SCL, 4 SDA, 5 RES,
-// 6 DC, 7 CS.
+// 1.3" 128x64 SPI OLED module - seven signal pads at 2.54mm pitch for a
+// 7-way female socket. The selected socket's tail size, body height, mating
+// pins, insertion and OLED Z must be checked before committing to the stack.
+// Pin order: 1 GND, 2 VCC, 3 SCL, 4 SDA, 5 RES, 6 DC, 7 CS.
 // --------------------------------------------------------------------------
 
 export const FP_OLED_1P3 = (
@@ -137,10 +137,12 @@ export const FP_OLED_1P3 = (
         />
       )
     })}
+    {/* NPTH mounts are part of the display footprint, at its lower hole pair. */}
+    <hole diameter="3.2mm" pcbX="-15.2mm" pcbY="-29mm" />
+    <hole diameter="3.2mm" pcbX="15.2mm" pcbY="-29mm" />
     {/* Module: 35.4 x 33.5mm, header row 2.0mm from the connector-side edge
-        (datasheet HS13L02B4S01). Body from +2.0 to -31.5mm. The module's four
-        3.2mm mounting holes are NOT used: the module is soldered on its seven
-        pins - add them if a bracket is ever wanted. */}
+        (datasheet HS13L02B4S01). Body from +2.0 to -31.5mm. The lower two
+        module mounting holes align with independent board/panel holes. */}
     <silkscreenpath route={[{ x: -17.7, y: 2 }, { x: 17.7, y: 2 }]} />
     <silkscreenpath route={[{ x: -17.7, y: 2 }, { x: -17.7, y: -31.5 }]} />
     <silkscreenpath route={[{ x: 17.7, y: 2 }, { x: 17.7, y: -31.5 }]} />

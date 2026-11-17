@@ -14,6 +14,7 @@
 //
 // Cutouts/holes:
 //   4x M3 rail screws   (+/-43.3, +/-61.25)   Doepfer 3U
+//   2x OLED / panel supports (+/-15.2, +26.5) lower OLED mounting holes
 //   6x pot shafts       7.2mm                  Alps RK09K, unthreaded
 //  12x jack bushings    6.2mm                  QingPu/Thonkiconn WQP518MA (mono) /
 //                                               WQP419GR (TRS), M6x0.5
@@ -21,7 +22,7 @@
 //   1x panel LED         3.5mm
 //   1x navigation switch 9.5mm
 //   1x MODE button      12.2mm
-//   1x OLED window      30.5 x 16.0mm, R0.5 internal corners, rounded polygon
+//   1x OLED window      33.5 x 19.0mm, R0.5 internal corners, rounded polygon
 
 import { Fragment } from "react"
 import { PANEL_REAR_STROKE, panelRearPaths } from "./lib/panel-rear"
@@ -36,6 +37,7 @@ import {
   LED_AT,
   POTS,
   RAIL_HOLES,
+  PANEL_MOUNT_HOLES,
 } from "./lib/layout"
 import {
   DEFAULT_PANEL_DESIGN,
@@ -74,6 +76,13 @@ export default ({ design }: { design?: string } = {}) => {
       {RAIL_HOLES.map((h, i) => (
         <Fragment key={`rail-${i}`}>
           <hole diameter={`${HOLE.rail}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} />
+        </Fragment>
+      ))}
+
+      {/* The lower OLED mounting holes support the panel and front board. */}
+      {PANEL_MOUNT_HOLES.map((h, i) => (
+        <Fragment key={`panel-mount-${i}`}>
+          <hole diameter={`${HOLE.standoff}mm`} pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} />
         </Fragment>
       ))}
 
@@ -120,7 +129,7 @@ export default ({ design }: { design?: string } = {}) => {
       {/*
         1.3" display window. A rounded polygon, not a rect: R0.5 internal
         corners are routable, sharp ones are not, and `RectCutoutProps` has no
-        corner radius. The bounding box (30.5 x 16.0 at 0,42.8) is unchanged.
+        corner radius. The revised box is 33.5 x 19.0 at the same (0,42.8).
       */}
       <cutout shape="polygon" points={art.window.polygon} />
 

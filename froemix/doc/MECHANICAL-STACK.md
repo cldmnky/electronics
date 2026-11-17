@@ -5,9 +5,10 @@ connector sides, electrical nets and both PCB outlines are unchanged. Panel
 machining changes: **NAV Ø7.0 → Ø8.0 → Ø9.5mm at (−28, 25)** for the
 extended actuator and an unverified shaft-datum allowance; the three remaining
 LED holes are now Ø3.5mm. The four audio activity-LED holes at y = −3 were
-removed with their LEDs (the direct LED load distorted the audio jacks). All
-remaining centres and the OLED opening (30.5 × 16mm, R0.5, at 0, 42.8) stay
-unchanged.
+removed with their LEDs (the direct LED load distorted the audio jacks). The
+OLED opening is now 33.5 × 19mm at its original centre (0, 42.8), R0.5. Two
+new Ø3.2mm holes at (±15.2, 26.5) align the panel and control PCB with the
+OLED module's lower pair of mounting holes. All prior centres remain unchanged.
 
 **Status: dimensioned design and printable prototypes, not physical approval.**
 No parts were measured and no rack/CAM order was approved by the software gate.
@@ -24,6 +25,7 @@ No parts were measured and no rack/CAM order was approved by the software gate.
 | Bare NAV stem/cap unspecified | Current XUNPU drawing gives 10mm overall height and 3.15mm square stem, not the old Alps assumption. Added a dimensioned cap/neck and enlarged only its panel hole. |
 | J1 inaccessible after stacking | Expected service constraint, not an XY mistake. Select/test Type A/B before stacking; separate the boards to change it. No extra front-board MIDI selector or new electrical path was introduced. |
 | Rack width, OLED support, knobs/thread engagement | Part/rack-dependent acceptance items, not proven defects to “fix” by guessing. Explicit limits and first-article checks below. |
+| OLED socket / panel support | Use the stocked 7-way Mill-Max socket and the lower 2 module holes. The socket's seated height, round mating pins, spacer lengths and real rack rail profile remain unverified. |
 
 ## 2. Parts and board-to-board Z dimensions
 
@@ -165,15 +167,52 @@ qualified by its tests.
   Do not seat the LED bodies against the PCB: the lens does not span the gap.
   Jig, support and solder each LED, then check lens and flange fit on a real panel.
 - **OLED:** C42432559 / HS13L02B4S01, 35.4 ×33.5mm PCB. Header (0,55.5), window
-  (0,42.8), offset −12.7mm. Nominal active area 29.42 ×14.70mm leaves 0.54/0.65mm
-  per edge in the 30.5 ×16mm opening. Confirm the module/bezel and support it
-  without stressing glass or hanging the panel on its pins. Actual Z/bezel and
-  viewing-angle approval cannot be extracted from a seven-pad footprint.
+  (0,42.8), offset −12.7mm. The 33.5 ×19mm opening leaves nominal 2.04/2.15mm
+  per edge around the 29.42 ×14.70mm active area. The actual glass, bezel,
+  viewing angle, support and clearance remain first-article checks. The window
+  is only nominally 1.0mm narrower than the drawing's 34.5mm glass: do not use
+  the panel to retain or press on the glass.
 - **Rack:** 101.6mm is the 20HP pitch. The unchanged 101.6mm finished panel AND
   control PCB need a real adjacent-module/rail test at routing tolerance. The
   128.5mm PCB heights also need rail-lip clearance. Do not assume these outlines
   fit every rack, or shrink one PCB and move frozen mounting holes to hide a
   failure. A failed rack test requires a separate outline/mechanical revision.
+
+### OLED and panel support: provisional assembly
+
+The display PCB drawing shows 4 Ø3.2mm holes on a 30.4 ×28.5mm pattern. The
+**lower pair only**, at (±15.2, 26.5), matches new Ø3.2mm NPTH holes in the
+control PCB and panel. These 2 fasteners also support the panel. Their maximum
+5.5mm panel-side head ends 35mm below the panel top, well below the assumed
+10mm upper rail band. This is an engineering envelope, not a guarantee for
+all rail profiles. The OLED PCB itself extends to 6.75mm below the panel top;
+check the actual rack rail against the display, socket and all components.
+
+Use insulating screws/spacers and an OLED-PCB washer OD ≤4.5mm. The support
+areas on the control PCB keep a 5mm diameter clear of copper on both faces.
+Do not clamp the glass, flex tail or PCB against the panel. The other two
+OLED mounting holes are not panel fasteners because they sit near the rail.
+A separate insulating clip or cradle must support the OLED's upper edge without
+loading the socket; its design and fit remain open. Leave the front-board rear
+screw-head/washer projection ≤1mm, or recheck clearances to the base board.
+
+The selected stocked socket is Mill-Max `310-43-107-41-001000` (7-way,
+2.54mm). Its product drawing specifies a 2.79mm plastic body **and a protruding
+metal barrel**, so the body height alone does not establish seated height.
+Its contacts accept round leads Ø0.381–0.635mm; do not force ordinary 0.64mm
+square headers. The drawing shows a 3.175mm solder tail; even if its shoulder
+seats on the 1.6mm control PCB, about 1.575mm would project behind it before
+trimming. Trim/check every tail to the existing ≤1mm rear-projection limit.
+The socket is in the shared library as `draft`: verify the tail and barrel in
+the 1mm holes, module pins, insertion/bottoming and actual seated height.
+
+Set the lower insulating sleeve length to the **measured gap between the 2
+PCBs** when the display is correctly seated in the socket. Set the upper sleeve
+length to `measured jack gap − measured PCB gap − OLED PCB thickness`. These
+sleeves must support the PCB without pulling against the socket or bowing either
+board. Measure glass-to-panel clearance and screw length with the real stack.
+The 9mm nominal jack gap is not a measured value, so neither sleeve length is
+an approved part. The pre-existing 4 board-to-board standoffs stay unchanged.
 
 ## 5. Verification and first-article acceptance
 
@@ -197,12 +236,15 @@ Before paying for a batch:
 4. Jig and solder the LEDs at the panel height; check polarity on SW2 with a
    current-limited LED test before soldering. The K6 drawing doesn't number
    LED +/− positions reliably; this is still a physical polarity check.
-5. Confirm OLED alignment/support, knob/nut/washer envelopes and thread depth.
+5. Confirm OLED screw-hole pitch and socket/pin fit. Measure the 2 sleeve
+   lengths, glass clearance and rail clearance; support the upper display edge.
+   Check knob/nut/washer envelopes and thread depth.
 6. Test adjacent-module and rack-rail fit with the actual panel/PCBs and
    socketed Daisy; measure its total depth and check rear USB access. Print the
    1:1 template at actual size and measure its 100mm calibration bar first.
 7. Approve actual Gerber/profile/NPTH production files with CAM, including the
-   new Ø9.5mm NAV and Ø3.5mm LED openings, 2mm material and empty copper.
+   Ø9.5mm NAV / Ø3.5mm LED holes, the enlarged OLED window and its 2 mounting
+   holes, 2mm material and empty copper.
 
 None of these physical checkboxes is marked done by this software change.
 
@@ -235,3 +277,8 @@ heights. Product pages carry the current datasheet; catalogue stock can change.
   WS-1004-ARL10026, 10mm overall, 5.9mm body, 3.15 ±0.05mm square actuator.
 - [TOGIALED C440523](https://www.lcsc.com/product-detail/C440523.html):
   package dimensions PDF page 2, lens Ø3 / flange Ø3.8 / height 5.3mm.
+- [Mill-Max 310-43-107-41-001000](https://www.mill-max.com/products/interconnect/machined-pin-socket/310/41-001000/310-43-107-41-001000):
+  7-position socket, dimensional drawing and round lead range. Its pressed-in
+  barrel makes seated height and fit in the existing 1mm drills an open check.
+- [HS13L02B4S01 OLED drawing](https://datasheet.lcsc.com/datasheet/pdf/565b3dac134f5fd0fe1f88d3e93af3d3.pdf?productCode=C42432559):
+  page 6, hole centres and PCB/glass envelope; inspect actual parts.

@@ -80,7 +80,7 @@ describe("frozen geometry", () => {
     const i = circuitJson.findIndex((e) => e.type === "pcb_hole")
     circuitJson.splice(i, 1)
     const problems = checks(circuitJson)
-    expect(hasProblem(problems, "holes", /panel has 26 holes/)).toBe(true)
+    expect(hasProblem(problems, "holes", /panel has 28 holes/)).toBe(true)
   })
 
   test("an extra hole is caught", () => {
@@ -111,8 +111,8 @@ describe("OLED window", () => {
     const circuitJson = fresh()
     const cut = circuitJson.find((e) => e.type === "pcb_cutout")!
     cut.shape = "rect"
-    cut.width = 30.5
-    cut.height = 16
+    cut.width = 33.5
+    cut.height = 19
     cut.center = { x: 0, y: 42.8 }
     expect(hasProblem(checks(circuitJson), "window", /rounded polygon/)).toBe(true)
   })
@@ -143,8 +143,8 @@ describe("OLED window", () => {
     const measured = measureRoundedCorners(art.window.polygon, {
       cx: 0,
       cy: 42.8,
-      width: 30.5,
-      height: 16,
+      width: 33.5,
+      height: 19,
       radius: 0.5,
     })
     expect(measured.segmentsPerCorner).toBe(8)

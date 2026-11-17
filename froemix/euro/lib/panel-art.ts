@@ -41,6 +41,7 @@ import {
   OLED_WINDOW,
   POTS,
   RAIL_HOLES,
+  PANEL_MOUNT_HOLES,
 } from "./layout"
 import {
   distPathsToPaths,
@@ -61,7 +62,7 @@ import {
 export const PANEL_OUTLINE = { width: 101.6, height: 128.5, thickness: 2 } as const
 
 /**
- * The OLED opening keeps its 30.5 x 16.0mm bounding box and its centre. Its
+ * The OLED opening is 33.5 x 19.0mm at the existing centre. Its
  * internal corners need R0.5 so JLCPCB can route it: `RectCutoutProps` has no
  * `cornerRadius` and core drops the field even when the circuit JSON schema
  * carries one, so the window is emitted as a rounded polygon instead.
@@ -125,6 +126,7 @@ export const HARDWARE = {
   knobDiameter: 12.5,
   jackNutDiameter: 11.5,
   railWasherDiameter: 6.0,
+  panelScrewHeadDiameter: 5.5,
   /** clearance around the small control holes: hole diameter + 0.6mm */
   holeClearance: 0.6,
 } as const
@@ -163,6 +165,13 @@ export const hardwareKeepouts = (): Keepout[] => [
     x: h.x,
     y: h.y,
     radius: HARDWARE.railWasherDiameter / 2,
+  })),
+  ...PANEL_MOUNT_HOLES.map((h, i) => ({
+    id: `keepout-panel-mount-${i}`,
+    source: `panel screw head ${HARDWARE.panelScrewHeadDiameter}mm at support ${i + 1}`,
+    x: h.x,
+    y: h.y,
+    radius: HARDWARE.panelScrewHeadDiameter / 2,
   })),
   ...[
     { id: "led", source: "panel LED", x: LED_AT.x, y: LED_AT.y, hole: HOLE.led },

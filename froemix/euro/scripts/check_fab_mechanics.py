@@ -58,6 +58,32 @@ def disk_intersects_pour(x, y, radius, pour):
     return False
 
 
+def disk_intersects_pad(x, y, radius, p):
+    """Conservatively bound copper pads, including rotated rectangular lands."""
+    shape = p.get("shape")
+    if p["type"] == "pcb_smtpad":
+        if shape == "circle":
+            w = h = p.get("radius", 0) * 2
+        else:
+            w, h = p.get("width", 0), p.get("height", 0)
+    elif shape == "circle":
+        w = h = p.get("outer_diameter", 0)
+    elif shape == "oval":
+        w, h = p.get("outer_width", 0), p.get("outer_height", 0)
+    elif shape == "circular_hole_with_rect_pad":
+        w, h = p.get("rect_pad_width", 0), p.get("rect_pad_height", 0)
+    else:
+        raise ValueError(f"unsupported copper pad shape {shape}")
+    if w <= 0 or h <= 0:
+        raise ValueError(f"unmeasured pad {p.get('pcb_smtpad_id', p.get('pcb_plated_hole_id'))}")
+    angle = math.radians(p.get("ccw_rotation", p.get("rect_ccw_rotation", 0)) or 0)
+    w, h = (abs(w * math.cos(angle)) + abs(h * math.sin(angle)),
+            abs(w * math.sin(angle)) + abs(h * math.cos(angle)))
+    dx = max(0, abs(p["x"] - x) - w / 2)
+    dy = max(0, abs(p["y"] - y) - h / 2)
+    return math.hypot(dx, dy) < radius - EPS
+
+
 def verify(board):
     errors = []
     sources = {e["source_component_id"]: e for e in board if e["type"] == "source_component"}
@@ -128,35 +154,51 @@ def verify(board):
         # Use a conservative bounding rectangle for each copper pad. This
         # also covers PTH lands; allowPlacements must not hide a pad collision.
         for p in copper_pads:
-            shape = p.get("shape")
-            if p["type"] == "pcb_smtpad":
-                if shape == "circle":
-                    w = h = p.get("radius", 0) * 2
-                else:
-                    w, h = p.get("width", 0), p.get("height", 0)
-            elif shape == "circle":
-                w = h = p.get("outer_diameter", 0)
-            elif shape == "oval":
-                w, h = p.get("outer_width", 0), p.get("outer_height", 0)
-            elif shape == "circular_hole_with_rect_pad":
-                w, h = p.get("rect_pad_width", 0), p.get("rect_pad_height", 0)
-            else:
-                errors.append(f"{ref}: unsupported copper pad shape {shape}")
-                continue
-            if w <= 0 or h <= 0:
-                errors.append(f"{ref}: cannot verify unmeasured pad {p.get('pcb_smtpad_id', p.get('pcb_plated_hole_id'))}")
-                continue
-            angle = math.radians(p.get("ccw_rotation", p.get("rect_ccw_rotation", 0)) or 0)
-            w, h = (abs(w * math.cos(angle)) + abs(h * math.sin(angle)),
-                    abs(w * math.sin(angle)) + abs(h * math.cos(angle)))
-            dx = max(0, abs(p["x"] - x) - w / 2)
-            dy = max(0, abs(p["y"] - y) - h / 2)
-            if math.hypot(dx, dy) < BARREL_RADIUS - EPS:
-                errors.append(f"{ref}: copper pad enters the barrel disk")
+            try:
+                if disk_intersects_pad(x, y, BARREL_RADIUS, p):
+                    errors.append(f"{ref}: copper pad enters the barrel disk")
+            except (KeyError, ValueError) as exc:
+                errors.append(f"{ref}: cannot check copper pad: {exc}")
         for pour in pours:
             try:
                 if disk_intersects_pour(x, y, BARREL_RADIUS, pour):
                     errors.append(f"{ref}: {pour.get('layer')} copper pour enters the barrel disk")
+            except (KeyError, ValueError) as exc:
+                errors.append(f"{ref}: cannot check copper pour: {exc}")
+
+    # OLED support: allowPlacements permits the display body, so verify the
+    # emitted traces, vias, pads and pours independently on both faces.
+    # A 5mm diameter is the maximum allowed front-board washer/spacer OD.
+    for x in (-15.2, 15.2):
+        y, radius = 26.5, 2.5
+        ref = f"OLED support ({x},{y})"
+        match = [k for k in keepouts if k.get("shape") == "circle" and
+                 close(k["center"]["x"], x) and close(k["center"]["y"], y) and
+                 k.get("radius", 0) >= 3 - EPS and set(k.get("layers", [])) >= {"top", "bottom"}]
+        if len(match) != 1:
+            errors.append(f"{ref}: expected one two-layer hardware keepout")
+        for trace in traces:
+            route = trace.get("route", [])
+            for a, b in zip(route, route[1:]):
+                if a.get("route_type") != "wire" or b.get("route_type") != "wire" or a.get("layer") != b.get("layer"):
+                    continue
+                width = max(a.get("width", 0), b.get("width", 0))
+                if point_segment(x, y, (a["x"], a["y"]), (b["x"], b["y"])) < radius + width / 2 - EPS:
+                    errors.append(f"{ref}: trace enters hardware disk")
+                    break
+        for via in vias:
+            if math.hypot(x - via["x"], y - via["y"]) < radius + via["outer_diameter"] / 2 - EPS:
+                errors.append(f"{ref}: via enters hardware disk")
+        for pad in copper_pads:
+            try:
+                if disk_intersects_pad(x, y, radius, pad):
+                    errors.append(f"{ref}: copper pad enters hardware disk")
+            except (KeyError, ValueError) as exc:
+                errors.append(f"{ref}: cannot check copper pad: {exc}")
+        for pour in pours:
+            try:
+                if disk_intersects_pour(x, y, radius, pour):
+                    errors.append(f"{ref}: {pour.get('layer')} pour enters hardware disk")
             except (KeyError, ValueError) as exc:
                 errors.append(f"{ref}: cannot check copper pour: {exc}")
 
@@ -257,5 +299,5 @@ if __name__ == "__main__":
         print("FAIL", error)
     if errors:
         sys.exit(f"FAIL fabrication geometry: {len(errors)} problem(s)")
-    print("PASS - jack slots/barrel copper, pot lug holes/clearance, switch pins and SW2 peg rings")
+    print("PASS - jack and OLED support copper, pot lug clearance, switch pins and peg rings")
     print("Physical first-article fit and CAM acceptance remain required.")

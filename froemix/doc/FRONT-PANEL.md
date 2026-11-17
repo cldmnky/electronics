@@ -49,21 +49,19 @@ the mechanical geometry is identical.
 
 ## Geometry contract
 
-The panel has **27 circular holes**, read from `euro/lib/layout.ts`. The
-fixture records the revisions: NAV at (−28,25) is **Ø9.5mm** (originally Ø7),
-the 3 remaining LED holes are **Ø3.5mm** (originally Ø3.2), and the 4 audio
-activity-LED holes at y = −3 were removed with those LEDs. All remaining
-centres, the 101.6 ×128.5mm outline and the 2mm nominal thickness stay
-unchanged. The wider NAV hole leaves a visible gap around its cap: approve its
-appearance and fit on a first article. Original hashes are historical provenance,
-not hashes of the revised fixture. The base remains 16HP.
+The panel has **29 circular holes**, read from `euro/lib/layout.ts`. The 2 new
+Ø3.2mm holes at **(±15.2, 26.5)** match the lower OLED mounting holes and new
+control-board holes. The upper OLED pair is not used as panel fasteners: it
+sits near the rack rails. The fixture also records NAV Ø7→9.5mm, 3 LED holes
+Ø3.2→3.5mm and removal of the 4 audio activity-LED holes. Prior hole centres,
+the 101.6 ×128.5mm outline and 2mm nominal thickness stay unchanged. Original
+hashes are historical provenance, not hashes of the revised fixture.
 
-The OLED opening retains its **30.5 × 16.0mm bounding box** and centre
-**(0, 42.8)mm**. Its formerly sharp internal corners need a routing radius of at
-least **0.5mm**. Rounded internal corners are the one intentional mechanical
-change in the artwork revision; the later NAV enlargement is recorded above.
-They must appear in the actual profile export,
-not only in a mockup.
+The OLED opening is now **33.5 × 19.0mm**, at its existing centre
+**(0, 42.8)mm**, with **R0.5mm** internal corners. This adds viewing and
+alignment margin, but leaves only 0.5mm nominal overlap per side against the
+supplier drawing's 34.5mm glass width. Do not clamp or use the panel to retain
+the glass. Verify the actual module and view through the finished panel.
 
 ### What the manufacturing files mean
 
@@ -173,7 +171,9 @@ A passing circuit or artwork test does not establish real mechanical fit.
    its ±8° travel is a test bound, not a datasheet specification. Measure the
    actual part. See the mechanical guide and `fab/euro/mechanical/` STLs.
 7. Check OLED glass, bezel and rounded opening alignment with the actual module.
-   Verify viewing angle, module support and the clearance behind the panel.
+   Verify viewing angle, socket/pin fit, support spacers and glass clearance.
+   Check the actual rail profile against the top of the display PCB; the lower
+   support screw heads are outside a 10mm assumed top-rail band.
 8. Review the actual Gerber silk/profile and all NPTH holes in the uploaded CAM
    preview. Confirm the white graphic is top-facing and not mirrored.
 
@@ -183,8 +183,9 @@ The implementation has automated panel-artwork and fabrication-file checks, plus
 manual inspection of an independently rendered Gerber silk/profile/drill view.
 The original artwork revision compared all holes directly with the old panel
 export. The later mechanical fixes preserve all remaining centres and record
-NAV Ø7→8→9.5mm, the three LED holes Ø3.2→3.5mm and removal of the four audio
-LED holes explicitly; exported Gerber/NPTH checks use that revised contract.
+NAV Ø7→8→9.5mm, the three LED holes Ø3.2→3.5mm, removal of the four audio
+LED holes, the enlarged OLED window and the two lower OLED support holes;
+exported Gerber/NPTH checks use that revised contract.
 
 Historical artwork-revision verification (before the later mechanical-stack
 fix; current gate additionally checks Z/part identities and actuator prototypes):
@@ -194,7 +195,7 @@ fix; current gate additionally checks Z/part identities and actuator prototypes)
 | `bun run panel:test` | 121 pass, 0 fail across 6 test files |
 | `bun run panel:check --variants` | Nord and Signal pass; minimum artwork stroke 0.25mm |
 | `bun run panel:release` and `--design nord` | Both ZIPs pass actual Gerber/profile/NPTH inspection |
-| `bun run gate` | historical: 10 euro steps at that revision; the current gate has 11, including the mechanical stack |
+| `bun run gate` | historical: 10 euro steps at that revision |
 | Original vs exported holes | All 27 positions and diameters identical |
 | Profile | 2 closed loops; original outer size, R0.5 OLED opening at the original centre and bounds |
 | Copper / paste / bottom legend | No drawn features |
@@ -207,9 +208,8 @@ unapplied responsive SVG selector; both were corrected and have regression
 tests. Style detection also now rejects a mismatched `--design` instead of
 writing a misleadingly named preview. The later mechanical fix changes only the
 three base-header purchase identities (no pad/position/net changes), the Z/assembly
-contract and the NAV opening/nearby ticks. After it, the full euro gate (11 steps)
-and `make release` pass; `tsc --noEmit` still has the same 8 pre-existing errors,
-none in the new mechanical/panel files.
+contract and the NAV opening/nearby ticks. That historical revision passed its
+then-current gate and `make release`; current geometry needs its own checks.
 
 Readable checked previews and print templates are committed in `euro/panel/`.
 The HTML bundles in `doc/panel-concepts/` are only the earlier concept studies.

@@ -1,9 +1,9 @@
 // Froemix euro board (front board) - 1.3" OLED module + panel indicator LED.
 //
-// The module is soldered flat on the TOP of the board on a 1x7 2.54mm pad row.
-// It is not plugged into CN4: CN4 is the base board's OLED header on this
-// board's bottom side, and the seven OLED_* nets run straight across the board
-// between the two (doc/EURO-BOARD.md §4).
+// A 1x7 2.54mm female socket is fitted on the control-board TOP. Its exact
+// body height, mating pins, insertion and display Z are not yet qualified.
+// CN4 is the base-board interface socket on the opposite side; the 7 signals
+// run straight across between the 2 (doc/EURO-BOARD.md §4).
 //
 // Module pin order (its own header): 1 GND, 2 VCC, 3 SCL, 4 SDA, 5 RES, 6 DC,
 // 7 CS - which is not CN4's order, hence the explicit wiring below.

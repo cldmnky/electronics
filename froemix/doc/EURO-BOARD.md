@@ -182,15 +182,18 @@ a jack name under each jack.
 Selected 1.3" 128x64 SPI OLED module HS13L02B4S01 / C42432559 (SH1106),
 35.4 x 33.5mm PCB, 7-pin 2.54mm header, active area 29.42 x 14.70mm.
 
-The module is soldered **flat to the top of the front board**, header row at
-(0, 55.5): its 7 pads are a plain 1x7 2.54mm pattern, and the seven `OLED_*`
-signals run straight across the board from the CN4 socket (bottom side,
-(24.5, 59.63)) to those pads. It is *not* plugged into CN4, because a 2.54mm
-socket plus the module's own header would put the glass roughly a centimetre
-further back and outside the 9mm actuator/panel budget.
+A stocked 7-way Mill-Max `310-43-107-41-001000` socket is planned on the
+front-board top at (0, 55.5). Its 7 pads are 2.54mm pitch; the `OLED_*` nets
+run across from CN4 on the bottom. This socket is an extra hand-fitted part,
+not the display module itself and not a JLC SMT placement. Its library entry
+is `draft`; check the barrel in the 1mm drills, round mating leads, insertion
+and actual seated height. The 2.79mm plastic body is not the whole Z stack.
 
-The panel window is 30.5 x 16.0mm, centred on the active area at (0, 42.8):
-`OLED_AT.y` (55.5) + `windowOffsetY` (-12.7).
+The 33.5 × 19mm panel window is centred at (0, 42.8): `OLED_AT.y` (55.5) +
+`windowOffsetY` (-12.7). Two Ø3.2mm support holes at (±15.2, 26.5) align the
+panel, OLED lower mounting holes and front board. The top module holes are not
+panel fasteners because of rail clearance. Measure the sleeve lengths and
+actual glass/rail clearance; see [MECHANICAL-STACK.md](MECHANICAL-STACK.md).
 
 ## 5. Assembly
 
@@ -225,17 +228,17 @@ goes through the panel-specific actual Gerber/profile/NPTH verifier.
 
 | Step | Result |
 | --- | --- |
-| `tsci build` | 2 circuits, 86 traces / 64 vias / approximately 2395mm copper, 0 unconnected |
+| `tsci build` | 2 circuits, 86 traces / 56 vias / approximately 2353mm copper, 0 unconnected |
 | `tsci check netlist` | source diagnostics, no errors |
 | `tsci check placement` | Errors 0, Warnings 0 |
 | `tsci check shorts` | no shorts |
 | `tsci check pcb-style` | clean |
-| `scripts/check_mating.py` | all 39 actual base/front pads and nets; faces, standoffs, 27 panel holes, R0.5 OLED window |
+| `scripts/check_mating.py` | all 39 actual base/front pads and nets; faces, standoffs, 29 panel holes, lower OLED support axes and R0.5 window |
 | `scripts/mechanical_check.ts` | selected built supplier identities, stack insertion/clearance and actuator envelopes |
 | `scripts/test_mating.py` / `bun test lib/mechanical` | negative mating/part/Z tests and printable-solid topology/dimensions |
 | `scripts/check_madc.py` | the 8 `M_ADC_*` nets are closed islands of pots/joystick/button referenced only to `P3V3_A`/`GND`; MODE has its own 10k pull-up |
-| `scripts/panel_check.ts` | frozen 27-hole geometry, OLED bounds/radius, stroked artwork and hardware keepouts pass |
-| `scripts/check_fab_mechanics.py` | built jack slots/centres, copper exclusion, pot lug holes, switch pin geometry/nets and peg rings |
+| `scripts/panel_check.ts` | revised 29-hole geometry, OLED bounds/radius, stroked artwork and hardware keepouts pass |
+| `scripts/check_fab_mechanics.py` | jack and OLED-support copper exclusions, pot lug clearance, switch pin geometry/nets and peg rings |
 | `scripts/test_fab_mechanics.py` | negative geometry, switch-pin, trace/via/pad and copper-pour mutations |
 | `bun test lib/panel lib/mechanical` | panel geometry/art/export/preview plus mechanical regression tests |
 | `tsci snapshot --test` | schematic + PCB baselines match |
@@ -275,8 +278,10 @@ channels:
    reliably number the +/− pin positions.
 4. **CN3 / micro SD.** Left unmated; the Daisy's own slot is used from the back.
    Options: mate CN3 and add a front micro-SD socket, or a 1x8 test header.
-5. **OLED module.** C42432559 is selected and the XY/window offsets are checked.
-   Actual glass/bezel Z, support and viewing angle still need a physical check.
+5. **OLED module.** C42432559 and the stocked 7-way socket are selected. The
+   2 lower mounting axes and enlarged opening are drawn, not physically proven.
+   Verify socket seating and round pins, spacers, upper-edge support, glass
+   clearance, viewing angle and the rack rail against the module's upper edge.
 6. **Panel material.** Recommended: 2mm FR4, black mask / white print. See
    [FRONT-PANEL.md](FRONT-PANEL.md) for the comparison and JLCPCB settings.
    An anodised aluminium alternative needs the separate JLCCNC mechanical-CAD
@@ -430,11 +435,12 @@ do not assume either family fits.
    corrected holes.** The WS-1004 row order (2.80 gap toward pins 1/4) must
    match the part as mounted actuator-up; if the fitted part's gaps come out
    reversed, mirror `FP_JOY_5WAY` in Y.
-3. **OLED module, resolved.** The footprint now follows the `HS13L02B4S01`
-   drawing: 35.4 x 33.5mm body, header row 2.0mm from the connector-side edge,
-   active area 29.42 x 14.70mm centred 12.70mm below the header row, panel
-   window 30.5 x 16.0mm at (0, 42.8). The module's four 3.2mm holes are not
-   used - it is soldered on its seven pins.
+3. **OLED module and stack — first article required.** The footprint follows
+   the `HS13L02B4S01` drawing: 35.4 × 33.5mm body, header 2mm from the upper
+   edge and active area centred 12.70mm below it. The 33.5 × 19mm panel window
+   remains at (0, 42.8). Two lower module mounting holes match the panel and
+   control board; upper OLED support, socket insertion, spacers, rail and glass
+   clearance remain open. Use the stocked 7-way socket, not an 8mm-tall one.
 
 ### Electrokit (historical comparison; recheck availability and fit)
 

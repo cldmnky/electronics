@@ -8,7 +8,7 @@
 // What this proves, and what it cannot:
 //   * every hole centre and diameter is exactly the frozen one, and the outline
 //     and thickness are unchanged - drift is caught, not tolerated
-//   * the OLED window keeps its 30.5 x 16.0mm box at (0, 42.8) and has R0.5
+//   * the OLED window keeps its 33.5 x 19.0mm box at (0, 42.8) and has R0.5
 //     internal corners, sampled finely enough for JLCPCB to route
 //   * every printed stroke is at least 0.2mm wide, every legend at least 1.2mm
 //     tall (measured from drawn geometry), glyphs keep clear of each other

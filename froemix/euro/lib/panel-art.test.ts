@@ -131,18 +131,18 @@ describe.each(designs.map((art) => [art.design, art] as const))("%s artwork", (d
   })
 })
 
-test("both designs print the same 27 hardware keepouts", () => {
+test("both designs print the same 29 hardware keepouts", () => {
   for (const art of designs) {
-    expect(art.keepouts).toHaveLength(27)
-    expect(new Set(art.keepouts.map((k) => k.id)).size).toBe(27)
+    expect(art.keepouts).toHaveLength(29)
+    expect(new Set(art.keepouts.map((k) => k.id)).size).toBe(29)
   }
 })
 
 test("the window is a rounded polygon at the frozen position", () => {
   for (const art of designs) {
     expect(art.window.polygon.length).toBeGreaterThanOrEqual(32)
-    expect(art.window.width).toBe(30.5)
-    expect(art.window.height).toBe(16)
+    expect(art.window.width).toBe(33.5)
+    expect(art.window.height).toBe(19)
     expect(art.window.centre).toEqual({ x: 0, y: 42.8 })
     expect(art.window.radius).toBe(0.5)
   }

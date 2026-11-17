@@ -12,7 +12,7 @@
 // board (the three 2.00mm sockets). Nothing tall on the bottom but the sockets.
 
 import { Fragment } from "react"
-import { BOARD_H, BOARD_W, BUTTON, JACKS, STANDOFF_HOLES } from "./lib/layout"
+import { BOARD_H, BOARD_W, BUTTON, JACKS, PANEL_MOUNT_HOLES, STANDOFF_HOLES } from "./lib/layout"
 import { BOARD_REVISION, buildDate } from "./lib/build-info"
 import { Nets } from "./lib/nets"
 import { MatingSockets } from "./sections/mating"
@@ -46,6 +46,16 @@ export default () => (
     {/* M3 standoffs to the base board, at the base board's own hole positions */}
     {STANDOFF_HOLES.map((h, i) => (
       <hole key={`standoff-${i}`} diameter="3.2mm" pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} />
+    ))}
+
+    {/* Copper clearance for the OLED / panel support hardware on both faces.
+        3mm radius also compensates for the pour's polygon chords. The holes
+        themselves belong to the OLED footprint; the display may overlap. */}
+    {PANEL_MOUNT_HOLES.map((h, i) => (
+      <Fragment key={`oled-support-clearance-${i}`}>
+        <keepout shape="circle" radius="3mm" pcbX={`${h.x}mm`} pcbY={`${h.y}mm`}
+          layers={["top", "bottom"]} allowPlacements />
+      </Fragment>
     ))}
 
     {/* Thonk's drawing calls for a 3mm barrel precaution. A 1.8mm radius
