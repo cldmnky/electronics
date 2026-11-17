@@ -52,15 +52,24 @@ export const easyedaObj = (code: string) =>
 // MEASURED MODEL TRANSFORMS (tsci import, 2026-11-17). tsci import reports the
 // pcbRotationOffset and modelOriginPosition each EasyEDA model needs relative to
 // the EasyEDA footprint; these are those numbers, adapted where this project's
-// footprint frame differs from EasyEDA's:
+// footprint frame differs from EasyEDA's. The model point M that the import
+// places at EasyEDA's origin must land at OUR origin, which sits at D in
+// EasyEDA's frame, so the adapted value is M' = M + D:
 //   - pot (RK09K): EasyEDA's pads are at y=-3.10 and lugs at +3.90; ours are at
-//     -7.50 / -0.50 (= their frame shifted by +4.40), so the y origin moves by
-//     -4.40. The lug positions cross-check the shift exactly.
-//   - WS-1004: EasyEDA's rows are 3.25/0.45/-3.25; ours are 2.80/0/-3.70 (= a
-//     -0.45 shift), so the y origin moves by -0.45.
-//   K6, LED, diode, resistor and the 1x16 socket share EasyEDA's frame; their
-//   numbers are copied unchanged. Pads-only differences (e.g. the resistor
-//   pitch 1.5067 vs our 1.575) do not affect the model frame.
+//     -7.50 / -0.50 (= their frame shifted by +4.40), so D = (0, +4.40, 0) and
+//     the import's y=-2.788 becomes +1.612. The lug positions cross-check the
+//     shift exactly. (The vendor model's own pins sit ~0.1mm off its footprint
+//     and ~0.4mm in x - sloppy vendor geometry, not a frame error.)
+//   - WS-1004: EasyEDA's rows are 3.25/0.45/-3.25; ours are 2.80/0/-3.70
+//     (a -0.45 shift => D = (0, +0.45, 0)), so the import's y -0.000013
+//     becomes +0.450. The vendor model's pin pattern is itself sloppy
+//     (2.50/4.00 rows, columns +-5.00 vs the drawing's 2.80/3.70 and +-5.25),
+//     which is why its claimed body centre is not trusted - the datasheet
+//     layout stays the footprint authority.
+//   K6, LED, diode, resistor and the 1x16 socket share EasyEDA's frame (pads
+//   coincide), so D = 0 and their numbers are copied unchanged. Pads-only
+//   differences (e.g. the resistor pitch 1.5067 vs our 1.575) do not affect
+//   the model frame.
 // Without these the parts render rotated or sunk/floating - the first import
 // pass had SW2 at the wrong rotation and its base below the board, and the pots
 // offset 4mm.
@@ -73,9 +82,9 @@ const cadModel = (code: string, pcbRotationOffset: number, x: number, y: number,
 })
 
 /** RK09K pot, footprint = our shaft-origin R90 variant. */
-export const POT_MODEL = cadModel("C470294", 0, -0.0000127, -7.1884869, 12.499992)
+export const POT_MODEL = cadModel("C470294", 0, -0.0000127, 1.6115131, 12.499992)
 /** WS-1004 5-way switch, footprint = our row layout. */
-export const NAV_SWITCH_MODEL = cadModel("C42377836", 0, 0.0000127, -0.4500127, -3.1493238)
+export const NAV_SWITCH_MODEL = cadModel("C42377836", 0, 0.0000127, 0.4499873, -3.1493238)
 /** K6-1212A02 illuminated button. */
 export const BUTTON_MODEL = cadModel("C692901", 270, 0, 0.0000254, -1.9500066)
 /** 3mm LED. */

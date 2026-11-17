@@ -144,7 +144,14 @@ the measured switch travel must stay below 0.5mm or the lip will preload it. The
 not a XUNPU datasheet rating: minimum radial clearance is about 0.20mm including
 those allowances. Test full operation of all four directions and centre press
 with the real switch. If its required travel exceeds that envelope, this design
-is not qualified merely because its tests pass.
+is not qualified merely because its tests pass. The allowance does **not** cover
+a possible 0.45mm actuator-to-pin-row offset: the vendor 3D model's body origin
+suggests it, but that model's own pin pattern is wrong against the drawing
+(2.50/4.00mm rows at ±5.00 vs 2.80/3.70 at ±5.25) and the datasheet layout puts
+the middle row on the centreline. At first article, measure the real switch's
+pin rows against its actuator centre and operate the NAV cap through the panel
+at full travel; if the actuator is offset, move the panel-hole datum in
+`lib/layout.ts` and re-run the panel checks.
 
 ## 4. Hardware and optical limits
 

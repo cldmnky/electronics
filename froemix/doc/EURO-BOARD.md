@@ -383,6 +383,17 @@ in.
    LED span (EasyEDA exactly ±6.75) and the drawing geometry runs ~3% long -
    the drawing is not perfectly to scale.
 
+   **LED pin numbering and polarity (2026-11-17).** The footprint now numbers
+   the LED pins like the library (pin 5 = +6.75, the supply side; pin 6 =
+   -6.75); the first revision had them reversed. Polarity is not in the
+   datasheet and the library mapping is unverified: identify anode/cathode with
+   a diode tester before soldering, and check contact continuity. If the
+   fitted LED works only reversed, rotating the part 180° swaps the LED pins
+   because the switch-contact pairs are symmetric. The two locating holes are
+   Ø1.9mm (drawing Ø1.80) and are modelled as PLATED holes only because the
+   placement DRC rejects board-level NPTH inside a courtyard - confirm the
+   finished diameter and peg fit with JLCPCB/at first article.
+
    | Feature | WS-1004-ARL10026 datasheet + EasyEDA CAD | old footprint | now |
    | --- | --- | --- | --- |
    | pin columns | 10.50 (±5.25) | ±5.25 | ±5.25 |
@@ -393,6 +404,19 @@ in.
    are asymmetric (2.80 above the middle row, 3.70 below) - verified against
    the drawing's pad centres (2.795 / 3.697mm) and the EasyEDA CAD (rows
    3.25 / 0.45 / -3.25 in its frame, the same 2.80 / 3.70 chain).
+
+   **Open question - actuator centre vs the middle pin row (2026-11-17).** The
+   EasyEDA 3D model's body origin sits 0.45mm from the middle row, which would
+   put the fitted actuator 0.45mm off the panel-hole centre our layout uses
+   (footprint origin = middle row = panel hole). That model is NOT reliable
+   evidence: its own pin pattern is 2.50 / 4.00mm rows at ±5.00mm, not the
+   drawing's 2.80 / 3.70 at ±5.25, and the datasheet layout's centreline runs
+   exactly through the middle pad row. The footprint therefore stays on the
+   datasheet. The nav-cap fit allowance (~0.20mm worst-case radial clearance)
+   does not account for a 0.45mm offset, so at first article: measure the real
+   switch's pin rows against its actuator centre, and operate the printed NAV
+   cap through the panel at full travel; if the actuator really is offset, move
+   the panel-hole/actuator datum in `lib/layout.ts` and re-run the panel checks.
 
    **Before the next fab run, dry-fit both parts into a 1:1 print of the
    corrected holes.** The WS-1004 row order (2.80 gap toward pins 1/4) must

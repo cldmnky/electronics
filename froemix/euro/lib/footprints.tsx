@@ -565,19 +565,25 @@ export const FP_BUTTON_12MM = (
     {/* LED pins at 13.50mm spacing (±6.75), Ø1.0 holes: the LED leads are thin
         0.50 x 0.20mm flats (drawing side view), and the EasyEDA CAD puts the
         diode (symbol pins 5/6) on these pads. The 8.70 pair is NOT the LED -
-        see the peg note below. Polarity is NOT in the datasheet: check the part
-        before soldering. */}
-    <platedhole pcbX="0mm" pcbY="-6.75mm" portHints={["pin5"]} shape="circle" holeDiameter="1mm" outerDiameter="2mm" />
-    <platedhole pcbX="0mm" pcbY="6.75mm" portHints={["pin6"]} shape="circle" holeDiameter="1mm" outerDiameter="2mm" />
+        see the peg note below. Pin numbering now follows the JLCEDA/EasyEDA
+        library (pin 5 = +6.75, the LED supply side; pin 6 = -6.75); the first
+        revision had them the other way round. POLARITY IS NOT IN THE DATASHEET
+        and the library's mapping is not verified against the physical part:
+        identify anode/cathode with a diode tester before soldering; if the
+        fitted LED ends up reversed, rotating the part 180 degrees swaps the
+        LED pins because the switch-contact pairs are symmetric. */}
+    <platedhole pcbX="0mm" pcbY="6.75mm" portHints={["pin5"]} shape="circle" holeDiameter="1mm" outerDiameter="2mm" />
+    <platedhole pcbX="0mm" pcbY="-6.75mm" portHints={["pin6"]} shape="circle" holeDiameter="1mm" outerDiameter="2mm" />
     {/* Locating pegs at (0, +/-4.35), Ø1.9 holes (drawing calls the holes
-        Ø1.80; EasyEDA uses 1.9 NPTH). These plastic snap pegs have BULB heads
-        and cannot pass the Ø0.80-1.0 holes: the 8.70mm pair is theirs, the
-        13.50mm pair belongs to the LED (EasyEDA CAD, C692901). The first
-        revision had LED and pegs swapped, which would not have fitted at all.
-        They are plastic and unplated on the real part; they are modelled as
-        plated holes here because the placement DRC rejects a board-level
-        <hole> inside a footprint courtyard, and the pegs sit inside the pad
-        span. No port, no net. */}
+        Ø1.80; the JLCEDA/EasyEDA library uses 1.9). These plastic snap pegs
+        have BULB heads and cannot pass the Ø0.80-1.0 holes: the 8.70mm pair is
+        theirs, the 13.50mm pair belongs to the LED (EasyEDA CAD, C692901). The
+        first revision had LED and pegs swapped, which would not have fitted at
+        all. On the real part the pegs are plastic and unplated; here they are
+        modelled as PLATED holes because the placement DRC rejects a board-level
+        <hole> inside a footprint courtyard, and they sit inside the pad span.
+        No port, no net. Confirm the finished (plated) diameter and peg fit with
+        JLCPCB / at first article. */}
     <platedhole pcbX="0mm" pcbY="4.35mm" shape="circle" holeDiameter="1.9mm" outerDiameter="2.1mm" />
     <platedhole pcbX="0mm" pcbY="-4.35mm" shape="circle" holeDiameter="1.9mm" outerDiameter="2.1mm" />
     {/* body 12 x 12mm, cap dia 8.2mm on top */}
