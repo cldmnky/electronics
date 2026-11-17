@@ -25,15 +25,23 @@
 // lib/mechanical.ts's numbers and first-article measurements, never from a
 // STEP file.
 //
-// WHY SOME URLS POINT AT RAW GITHUB: the tscircuit 3D view fetches models over
-// http(s) - relative/local file paths are NOT served by the dev app (verified
-// 2026-11-17: /cad/*.obj and ../../library/... both 404 from the dev server),
-// so the viewer showed no jack or envelope models. The jack STEPs stay in
-// library/cad/ as the provenance copies (SOURCE.md, SHA-256) and are fetched
-// from the same upstream commit midibrain pins; the envelope OBJs live in this
-// repo (froemix/euro/cad/) and are fetched from the raw URL of the tracked
-// path. If a file is edited, its raw URL keeps working once the commit is
-// pushed.
+// MODEL URLS MUST BE ABSOLUTE http(s). The viewer fetches each model relative
+// to the app origin; the dev server does NOT serve project files on that route
+// (verified 2026-11-17: /cad/*.obj -> 404 in the browser, while the IDE's
+// /api/files/get source API is a different endpoint that model loading does not
+// use). The envelope OBJs therefore live in froemix/euro/cad/ and are fetched
+// from this repo's raw URLs, so an edited envelope only re-renders after the
+// commit is pushed (GitHub raw can 404 for a short propagation window on a
+// fresh file).
+//
+// The Thonkiconn jack vendor STEPs (clacktronics/AudioJacks, MIT, commit
+// 14a88866 - the same files midibrain pins) are held with provenance in
+// library/cad/jack-35-wqp518ma/ and library/cad/jack-35-wqp419gr/ but DO NOT
+// MESH in the tscircuit 3D viewer (they fetch with 200 yet render nothing,
+// while every EasyEDA STEP in the same scene renders). The viewer therefore
+// gets envelope OBJs for the jacks too: body box 9.0 x 10.45mm from the library
+// CAD F.Fab outline, bushing Ø6.4 from the STEP's own cylinder radii, body top
+// 6.5, shoulder 9.0 + 0.6mm thread stub.
 
 /** EasyEDA/JLCEDA model for an LCSC C-number (verified reachable 2026-11-16). */
 export const easyedaStep = (code: string) =>
@@ -44,15 +52,6 @@ export const ENVELOPE_1X7_SOCKET =
   "https://raw.githubusercontent.com/cldmnky/electronics/main/froemix/euro/cad/hx-pm200-1x7-envelope.obj"
 export const ENVELOPE_OLED_MODULE =
   "https://raw.githubusercontent.com/cldmnky/electronics/main/froemix/euro/cad/hs13l02b4s01-envelope.obj"
-
-/** The two Thonkiconn-family jacks. The vendor STEPs (clacktronics/AudioJacks,
- * MIT, commit 14a88866 - the same files midibrain pins) are held with provenance
- * in library/cad/jack-35-wqp518ma/ and library/cad/jack-35-wqp419gr/ but DO NOT
- * MESH in the tscircuit 3D viewer (verified 2026-11-17: the files fetch with
- * 200 yet no geometry appears, while every EasyEDA STEP renders). The viewer
- * therefore gets envelope OBJs: body box 9.0 x 10.45mm from the library CAD
- * F.Fab outline, bushing Ø6.4 from the STEP's own cylinder radii, body top 6.5
- * and 9.0 shoulder + 0.6mm thread stub. */
 export const ENVELOPE_JACK_MONO =
   "https://raw.githubusercontent.com/cldmnky/electronics/main/froemix/euro/cad/jack-mono-envelope.obj"
 export const ENVELOPE_JACK_TRS =
