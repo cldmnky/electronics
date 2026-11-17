@@ -14,6 +14,7 @@
 // direction beyond the resistor node.
 
 import { JOYSTICK } from "../lib/layout"
+import { easyedaStep } from "../lib/cad-models"
 import { FP_JOY_5WAY, FP_R0603 } from "../lib/footprints"
 
 export const JoystickSection = () => (
@@ -24,6 +25,7 @@ export const JoystickSection = () => (
       pinCount={6}
       mpn="WS-1004-ARL10026"
       supplierPartNumbers={{ jlcpcb: ["C42377836"] }}
+      cadModel={{ stepUrl: easyedaStep("C42377836"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
       pinLabels={{
         pin1: "common",
         pin2: "left",
@@ -55,6 +57,7 @@ export const JoystickSection = () => (
       footprint={FP_R0603}
       mpn="0603WAF1002T5E"
       supplierPartNumbers={{ jlcpcb: ["C25804"] }}
+      cadModel={{ stepUrl: easyedaStep("C25804"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
       layer="bottom"
       pcbX="-33mm"
       pcbY="18mm"
@@ -70,6 +73,10 @@ export const JoystickSection = () => (
         footprint={FP_R0603}
         mpn={JOYSTICK.ladder[i].mpn}
         supplierPartNumbers={{ jlcpcb: [JOYSTICK.ladder[i].lcsc] }}
+        cadModel={{
+          stepUrl: easyedaStep(JOYSTICK.ladder[i].lcsc),
+          modelOriginPosition: { x: 0, y: 0, z: 0 },
+        }}
         layer="bottom"
         pcbX={`${-29.5 + i * 3.5}mm`}
         pcbY="18mm"

@@ -10,6 +10,7 @@
 // clockwise raises the value the firmware reads.
 
 import { POTS } from "../lib/layout"
+import { easyedaStep } from "../lib/cad-models"
 import { FP_POT_RK09K_R90 } from "../lib/footprints"
 
 export const PotsSection = () => (
@@ -22,6 +23,7 @@ export const PotsSection = () => (
         maxResistance="10k"
         mpn="RK09K1130A8G"
         supplierPartNumbers={{ jlcpcb: ["C470294"] }}
+        cadModel={{ stepUrl: easyedaStep("C470294"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
         pcbX={`${pot.x}mm`}
         pcbY={`${pot.y}mm`}
         schPinArrangement={{ leftSide: [1, 3], rightSide: [2] }}

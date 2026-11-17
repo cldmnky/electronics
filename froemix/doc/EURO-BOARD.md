@@ -295,8 +295,8 @@ unresolved: see [EU-SOURCING.md](EU-SOURCING.md).
 
 | Qty | Part | LCSC | Stock | Basic/Ext | Note |
 | --- | --- | --- | --- | --- | --- |
-| 10 | 3.5mm mono jack + tip switch, M6x0.5 | C381126 | 745 | Ext | XKB `PJ-301M-2-B`; **replaces the Thonkiconn** |
-| 2 | 3.5mm stereo jack (TRS MIDI), M6x0.5 | C381127 | 620 | Ext | XKB `PJ-301M-3-B` |
+| 10 | 3.5mm mono jack + tip switch, M6x0.5 | — | — | — | QingPu/Thonkiconn `WQP518MA`; Exploding Shed `100515P020` 20-pack |
+| 2 | 3.5mm stereo jack (TRS MIDI), M6x0.5 | — | — | — | QingPu/Thonkiconn `WQP419GR`; Exploding Shed `100516P020` 20-pack |
 | 1 | 5-way navigation switch, 10.2 x 10.2mm | C42377836 | 2,669 | Ext | XUNPU `WS-1004-ARL10026`, 6 pins |
 | 1 | 12mm illuminated button, red | C692901 | — | — | Hroparts `K6-1212A02` |
 | 6 | 9mm pot, 10k lin, knurled 6mm, LM1 15mm | C470294 | 125 | Ext | Alps `RK09K1130A8G` (slotted-shaft `RK09K1130AP5` = C470295, 3,022) |
@@ -311,12 +311,27 @@ unresolved: see [EU-SOURCING.md](EU-SOURCING.md).
 | 3 | 10k 0603 | C25804 | — | Basic | joystick pull-up, ladder "right", MODE pull-up R8 |
 
 Thonkiconn `PJ398SM` / `PJ366ST` return **0 results at LCSC** and Electrokit has
-no PCB-mount mono jack at all, so the jacks move to the XKB `PJ-301M` family —
-the same M6x0.5 bushing and the same 6.0mm panel hole, so **the panel does not
-change**.
+no PCB-mount mono jack at all, so the jacks were briefly moved to the XKB
+`PJ-301M` family - and then, owner decision 2026-11-16, back to the
+**PCB-mountable Thonkiconn family**: QingPu `WQP518MA` (mono) and `WQP419GR`
+(stereo), the same parts midibrain uses (library rows `jack-35-wqp518ma` /
+`jack-35-wqp419gr`, hand-soldered Exploding Shed packs). The M6x0.5 bushing and
+the 6.0mm panel hole are the same family dimensions, so **the panel does not
+change**. The new slotted pads (1.6 x 0.6mm, library CAD table) take the
+Thonkiconn blades and still accept the XKB flat tabs, so either family solders
+in.
 
 ### Decisions taken
 
+- **Jacks move to the Thonkiconn family (2026-11-16).** The front board uses
+  the same jacks as midibrain: QingPu/Thonkiconn `WQP518MA` (10 x mono audio
+  /CV/sync) and `WQP419GR` (2 x stereo TRS-MIDI), hand-soldered from Exploding
+  Shed packs (library rows `jack-35-wqp518ma` / `jack-35-wqp419gr`, CAD and
+  provenance in `library/cad/`). The pads follow the library CAD table
+  (1.6 x 0.6mm slots, 2.6 x 2.6mm lands, sleeve 3.1 x 2.1mm). The same
+  decision fixes the panel stack: the jack's 9.0mm seating shoulder clamps the
+  panel-to-board gap at 9.0mm (panel front = 9.0 + panel thickness), the same
+  anchor midibrain uses.
 - **Jacks stay PCB-mount.** A panel-mount ("hole mount") variant was considered
   and rejected: it would move 12 jacks off the board onto a wire harness (24
   panel solder joints plus crimps) and gain nothing, because the panel holes are
@@ -330,23 +345,59 @@ change**.
 
 ### Still to verify before ordering
 
-1. **Jack pad line — resolved to a tolerant footprint** (see also "Decisions",
-   above: the PCB-mount jack stays). The XKB `PJ-301M`
-   datasheet has **no PCB land pattern**, so the pads were cross-checked against
-   two independent footprints of the same family:
+1. **Jack pad line — resolved twice over.** The XKB `PJ-301M`
+   datasheet has **no PCB land pattern**, so the pads were first made tolerant
+   (1.2 x 2.0mm slots). The 2026-11-16 Thonkiconn-family decision replaced them
+   with the library CAD's exact table (1.6 x 0.6mm slots; 2.6 x 2.6mm lands,
+   sleeve 3.1 x 2.1mm), cross-checked against clacktronics/AudioJacks (MIT)
+   and Thonk's `PJ301M-12` drawing:
 
    | Source | short gap | long gap | span |
    | --- | --- | --- | --- |
    | KiCad official (QingPu WQP-PJ398SM) | 3.1mm | 8.3mm | 11.4mm |
+   | clacktronics `WQP-PJ301M-12` (library CAD) | 3.1mm | 8.3mm | 11.4mm |
    | 4ms `PJ301M-12` (shipping product) | 2.41mm | 8.56mm | 10.97mm |
-   | XKB drawing (prints only the long gap) | — | 8.20mm | — |
 
-   The long gap agrees within 0.4mm; the short gap disagrees by 0.7mm. The real
-   pins are 1.0 x 0.2mm **flat tabs**, which want slots anyway, so all three
-   pads are 1.2 x 2.0mm slots along the pin line: that takes the tab the way the
-   part is designed to fit and covers either short gap. A first-article check is
-   still worth ten minutes, but the footprint no longer depends on which
-   variant arrives — **the same board takes the XKB part or a Thonkiconn.**
+   The Thonkiconn blades (0.5-0.6 x 1.3-1.5mm) need the 1.6mm slot the XKB
+   1.2 x 2.0mm pads did not give them; the XKB flat tabs (1.0 x 0.2mm) still
+   fit the new slots, so either family solders in. A first-article fit check of
+   the ordered WQP parts is still worth ten minutes.
+2. **SW1/SW2 footprints — corrected 2026-11-16 after the first board did not
+   fit.** The first fab run's holes for the two hand-soldered switches came out
+   wrong because the datasheet dims were assigned to the wrong features:
+
+   | Feature | K6-1212A02 datasheet + EasyEDA CAD | old footprint | now |
+   | --- | --- | --- | --- |
+   | switch pins Ø1.30 | 12.10 x 5.00 (±6.05, ±2.50) | ±6.05, ±4.35 | ±6.05, ±2.50 |
+   | LED pins, Ø1.0 holes | 13.50 apart (0, ±6.75) | 0, ±1.75 | 0, ±6.75 |
+   | pegs, Ø1.9 NPTH | 8.70 apart (0, ±4.35) | 0, ±6.75 | 0, ±4.35 |
+
+   The 5.00 and 8.70 values were swapped onto the wrong features, and the LED
+   and peg holes were swapped as well (2026-11-17, after the 2026-11-16 fix):
+   the **LED leads are the thin 0.50 x 0.20mm flats at 13.50mm spacing** and the
+   **plastic snap pegs (bulb heads) are the Ø1.8 pair at 8.70mm**. Three
+   independent sources agree: the JLCEDA/EasyEDA Official Library CAD for
+   C692901 (diode pins at ±6.75, NPTH Ø1.9 at ±4.35), the datasheet side view
+   (lead shapes), and the physical argument that a snap bulb cannot pass a
+   Ø0.8mm hole. The 13.50 vs 14.00 "peg span" question is closed: 13.50 is the
+   LED span (EasyEDA exactly ±6.75) and the drawing geometry runs ~3% long -
+   the drawing is not perfectly to scale.
+
+   | Feature | WS-1004-ARL10026 datasheet + EasyEDA CAD | old footprint | now |
+   | --- | --- | --- | --- |
+   | pin columns | 10.50 (±5.25) | ±5.25 | ±5.25 |
+   | pin rows | 2.80 / 3.70 from the middle row (6.50 overall) | ±1.85 (3.70 overall) | +2.80 / 0 / -3.70 |
+   | drills / pads | Ø1.3 / 2.0 sq (EasyEDA) | Ø1.0 / 1.6 | Ø1.3 / 2.0 |
+
+   The 3.70 was read as the overall row span; it is the *lower* gap. The rows
+   are asymmetric (2.80 above the middle row, 3.70 below) - verified against
+   the drawing's pad centres (2.795 / 3.697mm) and the EasyEDA CAD (rows
+   3.25 / 0.45 / -3.25 in its frame, the same 2.80 / 3.70 chain).
+
+   **Before the next fab run, dry-fit both parts into a 1:1 print of the
+   corrected holes.** The WS-1004 row order (2.80 gap toward pins 1/4) must
+   match the part as mounted actuator-up; if the fitted part's gaps come out
+   reversed, mirror `FP_JOY_5WAY` in Y.
 3. **OLED module, resolved.** The footprint now follows the `HS13L02B4S01`
    drawing: 35.4 x 33.5mm body, header row 2.0mm from the connector-side edge,
    active area 29.42 x 14.70mm centred 12.70mm below the header row, panel

@@ -9,6 +9,7 @@
 // 7 CS - which is not CN4's order, hence the explicit wiring below.
 
 import { LED_AT, LED_R_AT, OLED_AT } from "../lib/layout"
+import { ENVELOPE_OLED_MODULE, easyedaStep } from "../lib/cad-models"
 import { FP_LED_3MM, FP_OLED_1P3, FP_R0603 } from "../lib/footprints"
 
 export const DisplaySection = () => (
@@ -19,6 +20,10 @@ export const DisplaySection = () => (
       pinCount={7}
       mpn="HS13L02B4S01"
       supplierPartNumbers={{ jlcpcb: ["C42432559"] }}
+      cadModel={{
+        objUrl: ENVELOPE_OLED_MODULE,
+        modelOriginPosition: { x: 0, y: 0, z: 0 },
+      }}
       pcbX={`${OLED_AT.x}mm`}
       pcbY={`${OLED_AT.y}mm`}
       schPinArrangement={{ leftSide: [1, 3, 5, 7], rightSide: [2, 4, 6] }}
@@ -40,6 +45,7 @@ export const DisplaySection = () => (
       footprint={FP_R0603}
       mpn="0603WAF1001T5E"
       supplierPartNumbers={{ jlcpcb: ["C21190"] }}
+      cadModel={{ stepUrl: easyedaStep("C21190"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
       layer="bottom"
       pcbX={`${LED_R_AT.x}mm`}
       pcbY={`${LED_R_AT.y}mm`}
@@ -50,6 +56,7 @@ export const DisplaySection = () => (
       footprint={FP_LED_3MM}
       mpn="TJ-L3FYTLDRMFCSFLC2R-A5"
       supplierPartNumbers={{ jlcpcb: ["C440523"] }}
+      cadModel={{ stepUrl: easyedaStep("C440523"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
       pcbX={`${LED_AT.x}mm`}
       pcbY={`${LED_AT.y}mm`}
       pinLabels={{ pin1: "anode", pin2: "cathode" }}

@@ -6,8 +6,14 @@
 export const STACK = {
   baseGap: 11.0, // clear distance: base TOP to control-board BOTTOM
   baseGapTolerance: 0.1,
-  panelGap: 9.0, // control-board TOP to panel UNDERSIDE, assembly target
-  // Covers the XKB jack drawing/assembly uncertainty; not a measured shoulder.
+  // ANCHORED ON THE JACK (owner decision 2026-11-16): the Thonkiconn-family
+  // WQP jacks' 9.0mm seating shoulder clamps this gap - the panel rear rests
+  // on the shoulders, so control-board TOP to panel UNDERSIDE is 9.0mm (the
+  // same anchor midibrain uses). The panel FRONT is 9.0 + panel thickness
+  // above the board. The min/max band is an engineering allowance for panel
+  // flatness, washer stack and nut torque, NOT a supplier tolerance: the
+  // seated gap is unmeasured until first article (doc/MECHANICAL-STACK.md).
+  panelGap: 9.0,
   panelGapMin: 8.5,
   panelGapMax: 9.6,
   panelThicknessMin: 1.8,

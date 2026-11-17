@@ -10,6 +10,7 @@
 // 2V forward voltage) plus 0.33mA through R8. Verify brightness and settling.
 
 import { BUTTON } from "../lib/layout"
+import { easyedaStep } from "../lib/cad-models"
 import { FP_BUTTON_12MM, FP_R0603 } from "../lib/footprints"
 
 export const ButtonSection = () => (
@@ -20,6 +21,7 @@ export const ButtonSection = () => (
       pinCount={6}
       mpn="K6-1212A02"
       supplierPartNumbers={{ jlcpcb: ["C692901"] }}
+      cadModel={{ stepUrl: easyedaStep("C692901"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
       pinLabels={{ pin1: "swA1", pin2: "swA2", pin3: "swB1", pin4: "swB2", pin5: "led1", pin6: "led2" }}
       pcbX={`${BUTTON.x}mm`}
       pcbY={`${BUTTON.y}mm`}
@@ -41,6 +43,7 @@ export const ButtonSection = () => (
       footprint={FP_R0603}
       mpn="0603WAF1001T5E"
       supplierPartNumbers={{ jlcpcb: ["C21190"] }}
+      cadModel={{ stepUrl: easyedaStep("C21190"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
       layer="bottom"
       pcbX="33mm"
       pcbY="13.5mm"
@@ -55,6 +58,7 @@ export const ButtonSection = () => (
       footprint={FP_R0603}
       mpn="0603WAF1002T5E"
       supplierPartNumbers={{ jlcpcb: ["C25804"] }}
+      cadModel={{ stepUrl: easyedaStep("C25804"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
       layer="bottom"
       pcbX="28mm"
       pcbY="16.5mm"

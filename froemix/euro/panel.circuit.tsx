@@ -15,8 +15,8 @@
 // Cutouts/holes:
 //   4x M3 rail screws   (+/-43.3, +/-61.25)   Doepfer 3U
 //   6x pot bushings     M7                     Alps RK09K
-//  12x jack bushings    6.2mm                  XKB PJ-301M-2-B (mono) /
-//                                               XKB PJ-301M-3-B (TRS)
+//  12x jack bushings    6.2mm                  QingPu/Thonkiconn WQP518MA (mono) /
+//                                               WQP419GR (TRS), M6x0.5
 //   2x CV jack LEDs      3.2mm
 //   1x panel LED         3.2mm
 //   1x navigation switch 7.0mm

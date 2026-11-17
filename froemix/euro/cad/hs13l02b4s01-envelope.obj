@@ -1,0 +1,25 @@
+# ENVELOPE model - NOT vendor CAD. OLED module HS13L02B4S01 (LCSC C42432559).
+# No vendor 3D model exists for this module (verified 2026-11-16: no EasyEDA
+# component for the C-number). Box drawn from the documented body outline only:
+# 35.4 x 33.5mm with the header row 2.0mm from the connector-side edge
+# (datasheet, via FP_OLED_1P3 in froemix/euro/lib/footprints.tsx).
+#
+# THIS ENVELOPE IS THE MODULE PCB ONLY (1.6mm). The glass/bezel Z above the PCB
+# is NOT vendor-documented (doc/MECHANICAL-STACK.md) and stays a first-article
+# measurement - extend the envelope height once the module is measured.
+# Origin = footprint origin (centre of the 7-pin header row) on the board
+# surface. Units: mm.
+v -17.7 -31.5 0
+v 17.7 -31.5 0
+v 17.7 2 0
+v -17.7 2 0
+v -17.7 -31.5 1.6
+v 17.7 -31.5 1.6
+v 17.7 2 1.6
+v -17.7 2 1.6
+f 1 2 3 4
+f 5 8 7 6
+f 1 5 6 2
+f 2 6 7 3
+f 3 7 8 4
+f 4 8 5 1

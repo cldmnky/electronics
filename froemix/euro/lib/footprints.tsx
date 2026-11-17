@@ -200,29 +200,39 @@ export const FP_LED_3MM = (
 )
 
 // --------------------------------------------------------------------------
-// Mono 3.5mm Eurorack jack, PJ-301M family: XKB `PJ-301M-2-B` (LCSC C381126) or
-// the Thonkiconn PJ398SM / PJ301M-12, which share the mechanics.
+// Mono 3.5mm Eurorack jack - QingPu/Thonkiconn `WQP518MA` (M6 x 0.5 bushing,
+// PCB mount, 3 terminals: S, TN, T). Owner decision 2026-11-16: the front
+// board uses the same Thonkiconn-family jacks as midibrain (library row
+// `jack-35-wqp518ma`), replacing XKB `PJ-301M-2-B`.
 //
-// PAD LINE. Three pads in one line with a LONG gap (sleeve to tip) and a SHORT
-// gap (sleeve to tip-switch). Two published footprints of this family give:
-//   KiCad official (QingPu WQP-PJ398SM): sleeve 0, tip switch 3.1, tip 11.4
-//   4ms PJ301M-12 (shipping Eurorack product): 0 / 8.56 / 10.97 from the other
-//     end, i.e. the same two gaps in reverse order
-// and the XKB drawing prints 8.20mm across the long gap (vs 8.3 / 8.56).
-// The long gap agrees within 0.4mm; the SHORT gap disagrees by 0.7mm (3.1 vs
-// 2.41). The real pins are 1.0 x 0.2mm flat tabs that want slots anyway, so
-// every pad here is a 1.2 x 2.0mm slot along the pin line: it swallows the
-// family tolerance AND takes the tab the way the part was designed to be
-// fitted. Pad ring 0.4/0.3mm, and the 2.6mm pad height keeps 0.5mm to the
-// neighbouring pad (3.1mm apart).
+// PAD LINE. Three pads in one line through the barrel datum: S at +6.48, TN at
+// +3.38, T at -4.92mm, verified 2026-11-13 against clacktronics/AudioJacks
+// (MIT) Jack_3.5mm_QingPu_WQP-PJ301M-12_Vertical and Thonk's PJ301M-12
+// drawing (3.10 / 8.30 spacings); the same numbers as midibrain's stereo
+// footprint (which sees the part rotated 180 degrees in-plane, S at -6.48).
 //
-// Origin = the jack barrel (the panel hole), not pad S: the KiCad footprint's
-// origin is 6.48mm away from the barrel, so every pad is shifted by that much
-// and the Y axis is flipped (KiCad is Y-down). Padding the barrel at the origin
-// is what lets lib/layout.ts hold one coordinate per part, shared with the panel.
+// Slots, not round holes: the terminals are flat blades (0.5 x 1.5, 0.6 x 1.5
+// and 0.6 x 1.3mm per Thonk's PCB layout), so the hole is 1.6 x 0.6mm and the
+// land 2.6 x 2.6mm (sleeve 3.1 x 2.1) - the library CAD's table
+// (library/cad/jack-35-wqp518ma). The retired PJ-301M-2-B pads were 1.2 x
+// 2.0mm ovals, which a 1.5mm blade cannot enter.
+//
+// Origin = the jack barrel (the panel hole), not pad S: that is what lets
+// lib/layout.ts hold one coordinate per part, shared with the panel.
 //
 // pin1 = S (sleeve), pin2 = T (tip), pin3 = TN (tip switch). The switch carries
 // no port: it is a normal contact that this design does not use.
+//
+// Body outline is not drawn: the clacktronics CAD's outline is untested (its
+// README says so) and midibrain's inspection of the sibling WQP419GR found a
+// different body, so nothing is drawn rather than something wrong. The board
+// silk still carries the refdes and the bushing circle.
+//
+// 3D: PJ301M-12.step from clacktronics/AudioJacks (MIT, SHA-256 in
+// library/cad/jack-35-wqp518ma/SOURCE.md), pinned to commit 14a88866. It is
+// authored in the KiCad footprint frame (S at +6.48), which is this
+// footprint's frame, so no rotation offset. A rendering aid, not a mechanical
+// proof.
 // --------------------------------------------------------------------------
 
 export const FP_JACK_MONO = (
@@ -232,19 +242,19 @@ export const FP_JACK_MONO = (
       pcbY="6.48mm"
       portHints={["pin1"]}
       shape="oval"
-      holeWidth="1.2mm"
-      holeHeight="2mm"
-      outerWidth="2mm"
-      outerHeight="2.6mm"
+      holeWidth="1.6mm"
+      holeHeight="0.6mm"
+      outerWidth="3.1mm"
+      outerHeight="2.1mm"
     />
     <platedhole
       pcbX="0mm"
       pcbY="-4.92mm"
       portHints={["pin2"]}
       shape="oval"
-      holeWidth="1.2mm"
-      holeHeight="2mm"
-      outerWidth="2mm"
+      holeWidth="1.6mm"
+      holeHeight="0.6mm"
+      outerWidth="2.6mm"
       outerHeight="2.6mm"
     />
     {/* tip switch - no port, not used */}
@@ -252,29 +262,43 @@ export const FP_JACK_MONO = (
       pcbX="0mm"
       pcbY="3.38mm"
       shape="oval"
-      holeWidth="1.2mm"
-      holeHeight="2mm"
-      outerWidth="2mm"
+      holeWidth="1.6mm"
+      holeHeight="0.6mm"
+      outerWidth="2.6mm"
       outerHeight="2.6mm"
     />
-    {/* body 9.0 x 10.45mm, barrel towards -Y */}
-    <silkscreenpath route={[{ x: -4.5, y: -6.0 }, { x: 4.5, y: -6.0 }]} />
-    <silkscreenpath route={[{ x: -4.5, y: -6.0 }, { x: -4.5, y: 4.45 }]} />
-    <silkscreenpath route={[{ x: 4.5, y: -6.0 }, { x: 4.5, y: 4.45 }]} />
-    <silkscreenpath route={[{ x: -4.5, y: 4.45 }, { x: 4.5, y: 4.45 }]} />
     <silkscreencircle pcbX="0mm" pcbY="0mm" radius="3mm" />
     <courtyardrect pcbX="0mm" pcbY="0.7mm" width="10mm" height="14.4mm" />
   </footprint>
 )
 
 // --------------------------------------------------------------------------
-// Stereo (TRS) 3.5mm jack - the TRS-MIDI socket. XKB `PJ-301M-3-B` (LCSC
-// C381127), same body and bushing as the mono part, or the QingPu PJ366ST.
-// Same slotted-pad treatment as the mono jack (see above).
+// Stereo (TRS) 3.5mm jack - the TRS-MIDI socket. QingPu/Thonkiconn `WQP419GR`
+// (M6 x 0.5 bushing, PCB mount, 3 terminals: S, R, T). Owner decision
+// 2026-11-16: same Thonkiconn family as midibrain (library row
+// `jack-35-wqp419gr`), replacing XKB `PJ-301M-3-B`.
 //
-// Origin = the jack barrel. Pads are slotted (1.6 x 0.6mm) with 2.6 x 2.6mm
-// pads; tscircuit models a slot as an oval plated hole.
-// pin1 = T (tip), pin2 = R (ring), pin3 = S (sleeve).
+// Same slotted pads as the mono jack (see above): 1.6 x 0.6mm holes with
+// 2.6 x 2.6mm lands (sleeve 3.1 x 2.1), from the library CAD table
+// (library/cad/jack-35-wqp419gr) and Thonk's drawing's blade sizes.
+//
+// Origin = the jack barrel. The pads here are the part rotated 180 degrees
+// in-plane relative to midibrain's FP_JACK_TRS bookkeeping: pin1 = T at +4.92,
+// pin2 = R at -3.38, pin3 = S at -6.48. The froemix pin numbering is kept (this
+// board is documented "solder by function"); midibrain labels the same pads
+// S/R/T and connects by letter. Netlist-wise nothing changes.
+//
+// Body outline is not drawn: the clacktronics CAD's outline is untested (its
+// README says so) and does not match the observed WQP419GR body (about
+// 10 x 7.8mm with the barrel 4.5mm from one edge), so nothing is drawn rather
+// than something wrong. The board silk still carries the refdes, the THT hint
+// and the bushing circle.
+//
+// 3D: PJ366ST.step from clacktronics/AudioJacks (MIT, SHA-256 in
+// library/cad/jack-35-wqp419gr/SOURCE.md), pinned to commit 14a88866. It is
+// authored in the KiCad footprint frame (S at +6.48); this footprint's pads are
+// that frame rotated 180 degrees, hence pcbRotationOffset 180 in the
+// sections' cadModel. A rendering aid, not a mechanical proof.
 // --------------------------------------------------------------------------
 
 export const FP_JACK_TRS = (
@@ -284,9 +308,9 @@ export const FP_JACK_TRS = (
       pcbY="4.92mm"
       portHints={["pin1"]}
       shape="oval"
-      holeWidth="1.2mm"
-      holeHeight="2mm"
-      outerWidth="2mm"
+      holeWidth="1.6mm"
+      holeHeight="0.6mm"
+      outerWidth="2.6mm"
       outerHeight="2.6mm"
     />
     <platedhole
@@ -294,9 +318,9 @@ export const FP_JACK_TRS = (
       pcbY="-3.38mm"
       portHints={["pin2"]}
       shape="oval"
-      holeWidth="1.2mm"
-      holeHeight="2mm"
-      outerWidth="2mm"
+      holeWidth="1.6mm"
+      holeHeight="0.6mm"
+      outerWidth="2.6mm"
       outerHeight="2.6mm"
     />
     <platedhole
@@ -304,15 +328,11 @@ export const FP_JACK_TRS = (
       pcbY="-6.48mm"
       portHints={["pin3"]}
       shape="oval"
-      holeWidth="1.2mm"
-      holeHeight="2mm"
-      outerWidth="2mm"
-      outerHeight="2.6mm"
+      holeWidth="1.6mm"
+      holeHeight="0.6mm"
+      outerWidth="3.1mm"
+      outerHeight="2.1mm"
     />
-    <silkscreenpath route={[{ x: -4.5, y: -4.47 }, { x: 4.5, y: -4.47 }]} />
-    <silkscreenpath route={[{ x: -4.5, y: -4.47 }, { x: -4.5, y: 5.98 }]} />
-    <silkscreenpath route={[{ x: 4.5, y: -4.47 }, { x: 4.5, y: 5.98 }]} />
-    <silkscreenpath route={[{ x: -4.5, y: 5.98 }, { x: 4.5, y: 5.98 }]} />
     <silkscreencircle pcbX="0mm" pcbY="0mm" radius="3mm" />
     <courtyardrect pcbX="0mm" pcbY="-0.165mm" width="10mm" height="14.83mm" />
   </footprint>
@@ -455,17 +475,30 @@ export const FP_POT_RK09K_R90 = (
 // --------------------------------------------------------------------------
 // 5-way navigation switch, XUNPU `WS-1004-ARL10026` (LCSC C42377836).
 //
-// Numbers from the datasheet's PCB layout: six equal columns 10.50mm apart in
-// X, three rows 1.85mm apart in Y, square pads, 0.70mm pins. Functions from the
-// printed function table - pin 1 is the COMMON pin and every direction closes
-// to it:
+// Numbers from the datasheet's "Layout" view: two pad columns 10.50mm apart
+// in X, three rows in Y. The rows are NOT symmetric: the printed 2.80mm and
+// 3.70mm dims stack from the top row over the middle row to the bottom row,
+// so with the middle row (pins 2/5) at y=0 the pin 1/4 row is at +2.80mm and
+// the pin 3/6 row at -3.70mm (6.50mm overall). Verified against the drawing
+// geometry itself: the pad centres measure 2.795mm and 3.697mm. Functions from
+// the printed function table - pin 1 is the COMMON pin and every direction
+// closes to it:
 //   F1 up    = 1-4     F2 left  = 1-2     F3 down = 1-6
 //   F4 right = 1-5     F5 press = 1-3
 //
+// The earlier revision of this footprint used a symmetric 1.85mm row pitch
+// (3.70mm read as the overall span); the real part does not fit that.
 // The pad map does not say which side faces the panel, so up/down may swap on
-// the fitted part - a mounting/firmware detail, not a board change.
-// Drill 1.0mm and pad 1.8mm are our choice: the drawing prints the pin width
-// (0.70mm) but no pad size.
+// the fitted part - a mounting/firmware detail, not a board change. The row
+// ORDER (2.80 short gap toward pins 1/4) must match the part as mounted; if
+// the fitted part's gaps come out reversed, mirror the footprint in Y.
+// Drills 1.3mm and 2.0mm square pads are the JLCEDA/EasyEDA Official Library
+// footprint for C42377836 (SW-TH_WS-1004-ARL10026), cross-checked 2026-11-17;
+// its positions match the datasheet exactly. Source declaration required by
+// that library's terms: "JLCEDA/EasyEDA Official Library", https://lceda.cn/
+// and https://easyeda.com. The first revision's 1.0mm drills were sized from a
+// 0.70mm pin-width reading the vendor CAD does not confirm - 1.3mm takes the
+// blades either way.
 // --------------------------------------------------------------------------
 
 export const FP_JOY_5WAY = (
@@ -473,25 +506,25 @@ export const FP_JOY_5WAY = (
     {/* pin1 common */}
     <platedhole
       pcbX="-5.25mm"
-      pcbY="1.85mm"
+      pcbY="2.8mm"
       portHints={["pin1"]}
       shape="circular_hole_with_rect_pad"
-      holeDiameter="1mm"
-      rectPadWidth="1.6mm"
-      rectPadHeight="1.6mm"
+      holeDiameter="1.3mm"
+      rectPadWidth="2mm"
+      rectPadHeight="2mm"
       holeOffsetX="0mm"
       holeOffsetY="0mm"
     />
     {/* pin2 left (F2) */}
-    <platedhole pcbX="-5.25mm" pcbY="0mm" portHints={["pin2"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    <platedhole pcbX="-5.25mm" pcbY="0mm" portHints={["pin2"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
     {/* pin3 centre press (F5) */}
-    <platedhole pcbX="-5.25mm" pcbY="-1.85mm" portHints={["pin3"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    <platedhole pcbX="-5.25mm" pcbY="-3.7mm" portHints={["pin3"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
     {/* pin4 up (F1) */}
-    <platedhole pcbX="5.25mm" pcbY="1.85mm" portHints={["pin4"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    <platedhole pcbX="5.25mm" pcbY="2.8mm" portHints={["pin4"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
     {/* pin5 right (F4) */}
-    <platedhole pcbX="5.25mm" pcbY="0mm" portHints={["pin5"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    <platedhole pcbX="5.25mm" pcbY="0mm" portHints={["pin5"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
     {/* pin6 down (F3) */}
-    <platedhole pcbX="5.25mm" pcbY="-1.85mm" portHints={["pin6"]} shape="circle" holeDiameter="1mm" outerDiameter="1.6mm" />
+    <platedhole pcbX="5.25mm" pcbY="-3.7mm" portHints={["pin6"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
     {/* body 10.2 x 10.2mm, 3.15mm button on top */}
     <silkscreenpath route={[{ x: -5.1, y: 5.1 }, { x: 5.1, y: 5.1 }]} />
     <silkscreenpath route={[{ x: -5.1, y: 5.1 }, { x: -5.1, y: -5.1 }]} />
@@ -504,10 +537,19 @@ export const FP_JOY_5WAY = (
 
 export const FP_BUTTON_12MM = (
   <footprint insertionDirection="from_above">
-    {/* switch rail 1 (C1, C2) - the pair is internally connected */}
+    {/* switch rail 1 (C1, C2) - the pair is internally connected.
+        Rows are 5.00mm apart (±2.50), columns 12.10mm (±6.05): the datasheet
+        PCB layout dims 12.10 / 5.00±0.1 / 8.70 / 13.50 and the drawing
+        geometry confirms the nested chain. Cross-checked 2026-11-17 against
+        the JLCEDA/EasyEDA Official Library footprint for C692901
+        (SW-TH_6P-L12.0-W12.0-P5.00-LS12.1-TL; source declaration required by
+        that library's terms: "JLCEDA/EasyEDA Official Library", https://lceda.cn/
+        and https://easyeda.com): identical positions. The earlier revision had
+        8.70 on the switch rows and 3.50 on the LED pins - the real part does
+        not fit that. */}
     <platedhole
       pcbX="-6.05mm"
-      pcbY="4.35mm"
+      pcbY="2.5mm"
       portHints={["pin1"]}
       shape="circular_hole_with_rect_pad"
       holeDiameter="1.3mm"
@@ -516,27 +558,35 @@ export const FP_BUTTON_12MM = (
       holeOffsetX="0mm"
       holeOffsetY="0mm"
     />
-    <platedhole pcbX="6.05mm" pcbY="4.35mm" portHints={["pin2"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
+    <platedhole pcbX="6.05mm" pcbY="2.5mm" portHints={["pin2"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
     {/* switch rail 2 (C3, C4) */}
-    <platedhole pcbX="-6.05mm" pcbY="-4.35mm" portHints={["pin3"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
-    <platedhole pcbX="6.05mm" pcbY="-4.35mm" portHints={["pin4"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
-    {/* LED - the 1.8mm drills are larger than the switch drills on purpose.
-        Polarity is NOT in the datasheet: check the part before soldering. */}
-    <platedhole pcbX="0mm" pcbY="-1.75mm" portHints={["pin5"]} shape="circle" holeDiameter="1.8mm" outerDiameter="2.4mm" />
-    <platedhole pcbX="0mm" pcbY="1.75mm" portHints={["pin6"]} shape="circle" holeDiameter="1.8mm" outerDiameter="2.4mm" />
-    {/* locating pegs at (0, +/-6.75), 0.8mm. They are plastic and unplated on
-        the real part; they are modelled as plated holes here because the
-        placement DRC rejects a board-level <hole> inside a footprint
-        courtyard, and the pegs sit inside the pad span. No port, no net. */}
-    <platedhole pcbX="0mm" pcbY="6.75mm" shape="circle" holeDiameter="0.8mm" outerDiameter="1mm" />
-    <platedhole pcbX="0mm" pcbY="-6.75mm" shape="circle" holeDiameter="0.8mm" outerDiameter="1mm" />
+    <platedhole pcbX="-6.05mm" pcbY="-2.5mm" portHints={["pin3"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
+    <platedhole pcbX="6.05mm" pcbY="-2.5mm" portHints={["pin4"]} shape="circle" holeDiameter="1.3mm" outerDiameter="2mm" />
+    {/* LED pins at 13.50mm spacing (±6.75), Ø1.0 holes: the LED leads are thin
+        0.50 x 0.20mm flats (drawing side view), and the EasyEDA CAD puts the
+        diode (symbol pins 5/6) on these pads. The 8.70 pair is NOT the LED -
+        see the peg note below. Polarity is NOT in the datasheet: check the part
+        before soldering. */}
+    <platedhole pcbX="0mm" pcbY="-6.75mm" portHints={["pin5"]} shape="circle" holeDiameter="1mm" outerDiameter="2mm" />
+    <platedhole pcbX="0mm" pcbY="6.75mm" portHints={["pin6"]} shape="circle" holeDiameter="1mm" outerDiameter="2mm" />
+    {/* Locating pegs at (0, +/-4.35), Ø1.9 holes (drawing calls the holes
+        Ø1.80; EasyEDA uses 1.9 NPTH). These plastic snap pegs have BULB heads
+        and cannot pass the Ø0.80-1.0 holes: the 8.70mm pair is theirs, the
+        13.50mm pair belongs to the LED (EasyEDA CAD, C692901). The first
+        revision had LED and pegs swapped, which would not have fitted at all.
+        They are plastic and unplated on the real part; they are modelled as
+        plated holes here because the placement DRC rejects a board-level
+        <hole> inside a footprint courtyard, and the pegs sit inside the pad
+        span. No port, no net. */}
+    <platedhole pcbX="0mm" pcbY="4.35mm" shape="circle" holeDiameter="1.9mm" outerDiameter="2.1mm" />
+    <platedhole pcbX="0mm" pcbY="-4.35mm" shape="circle" holeDiameter="1.9mm" outerDiameter="2.1mm" />
     {/* body 12 x 12mm, cap dia 8.2mm on top */}
     <silkscreenpath route={[{ x: -6, y: 6 }, { x: 6, y: 6 }]} />
     <silkscreenpath route={[{ x: -6, y: 6 }, { x: -6, y: -6 }]} />
     <silkscreenpath route={[{ x: 6, y: 6 }, { x: 6, y: -6 }]} />
     <silkscreenpath route={[{ x: -6, y: -6 }, { x: 6, y: -6 }]} />
     <silkscreencircle pcbX="0mm" pcbY="0mm" radius="4.1mm" />
-    <courtyardrect pcbX="0mm" pcbY="0mm" width="15.5mm" height="14mm" />
+    <courtyardrect pcbX="0mm" pcbY="0mm" width="15.5mm" height="16mm" />
   </footprint>
 )
 

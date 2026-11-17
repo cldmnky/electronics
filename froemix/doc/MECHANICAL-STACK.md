@@ -128,11 +128,15 @@ connector centre is moved.
 
 The fit calculation conservatively covers a panel-under-PCB distance of
 **8.5…9.6mm**, panel thickness **1.8…2.2mm**, print dimensional error 0.1mm and
-hole undersize 0.2mm. The nominal panel gap remains **9mm**. The selected XKB
-jack drawing gives an 8.8mm body, with additional bushing geometry: it does
-**not** justify copying a retired PJ398SM's “exact 9mm shoulder” claim. Assemble
-jacks/pots against the actual panel before soldering; reject a forced or bowed
-PCB and measure the resulting gap.
+hole undersize 0.2mm. The nominal panel gap remains **9mm**, and as of the
+2026-11-16 jack decision it is **anchored on the jack**: the Thonkiconn-family
+WQP jacks' seating shoulder is 9.0mm from the front board's top face (Thonk
+drawing; the same anchor midibrain uses) and the panel rear rests on those
+shoulders. The panel FRONT is therefore 9.0 + panel thickness above the board.
+The 8.5…9.6 band is an engineering allowance for panel flatness, washer stack
+and nut torque - the seated gap itself is **unmeasured until first article**.
+Assemble jacks/pots against the actual panel before soldering; reject a forced
+or bowed PCB and measure the resulting gap.
 
 At the highest/thickest panel the supplied MODE plunger is ≥1.0mm proud and NAV
 ≥2.8mm proud; the MODE lip keeps ≥0.5mm to the panel at the worst-case gap, so
@@ -214,8 +218,14 @@ heights. Product pages carry the current datasheet; catalogue stock can change.
   HX PM2.0-1x7P ZC, H=4.3 ±0.15mm.
 - [Old CJT C225268](https://www.lcsc.com/product-detail/C225268.html): A2005
   catalogue page A-115 (PDF page 28), 2mm shoulder / 4mm post.
-- [XKB jack C381126](https://www.lcsc.com/product-detail/C381126.html):
-  PJ-301M-X-X, body 8.8mm, M6×0.5 thread, not a PJ398SM shoulder specification.
+- [XKB jack C381126](https://www.lcsc.com/product-detail/C381126.html)
+  (retired 2026-11-16): PJ-301M-X-X, body 8.8mm, M6×0.5 thread, not a PJ398SM
+  shoulder specification.
+- QingPu/Thonkiconn `WQP518MA` / `WQP419GR` (2026-11-16, the selected jacks;
+  library rows `jack-35-wqp518ma` / `jack-35-wqp419gr`): M6×0.5 bushing,
+  **9.0mm seating shoulder** (Thonk PJ301M-12 drawing) anchoring the panel gap.
+  Pad line and CAD: clacktronics/AudioJacks (MIT), `library/cad/*/SOURCE.md`.
+  Sourced from Exploding Shed 20-piece packs (`100515P020` / `100516P020`).
 - [Hroparts C692901](https://www.lcsc.com/product-detail/C692901.html): K6-1212A,
   7.30 ±0.2mm overall height, 8.2mm cap; 3.3mm leads (not a 5mm riser solution).
 - [XUNPU C42377836](https://www.lcsc.com/product-detail/C42377836.html):

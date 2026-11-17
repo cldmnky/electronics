@@ -1,0 +1,22 @@
+# ENVELOPE model - NOT vendor CAD. 2.00mm 1x7 female socket (HX PM2.0-1x7P ZC,
+# LCSC C22438139). No vendor 3D model exists for this part (verified 2026-11-16:
+# no EasyEDA component for the C-number). Box drawn from project-documented
+# dimensions only: body length 14.13 and width 2.03 from the FP_SOCKET_2P00
+# silk family (froemix/euro/lib/footprints.tsx), height 4.3 from CONNECTOR_Z
+# socketHeight (froemix/euro/lib/mechanical.ts). Origin = footprint origin
+# (centre of the pad row) on the board surface; Z 0..4.3.
+# Units: mm.
+v -7.065 -1.015 0
+v 7.065 -1.015 0
+v 7.065 1.015 0
+v -7.065 1.015 0
+v -7.065 -1.015 4.3
+v 7.065 -1.015 4.3
+v 7.065 1.015 4.3
+v -7.065 1.015 4.3
+f 1 2 3 4
+f 5 8 7 6
+f 1 5 6 2
+f 2 6 7 3
+f 3 7 8 4
+f 4 8 5 1

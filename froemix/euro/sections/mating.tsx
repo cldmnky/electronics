@@ -8,6 +8,7 @@
 // CN3 (micro SD) is deliberately not mated - doc/EURO-BOARD.md §6.
 
 import { CN1_NETS, CN2_NETS, CN4_NETS, MATE } from "../lib/layout"
+import { ENVELOPE_1X7_SOCKET, easyedaStep } from "../lib/cad-models"
 import { FP_SOCKET_2P00_16, FP_SOCKET_2P00_7 } from "../lib/footprints"
 
 /** { pin1: "net.X", pin2: ... } from a pin -> net table; null = leave open. */
@@ -28,6 +29,7 @@ export const MatingSockets = () => (
       pinCount={MATE.CN1.pins}
       mpn="HC-PM200-4.3H-1x16PZ"
       supplierPartNumbers={{ jlcpcb: ["C22373851"] }}
+      cadModel={{ stepUrl: easyedaStep("C22373851"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
       layer="bottom"
       pcbX={`${MATE.CN1.x}mm`}
       pcbY={`${MATE.CN1.y}mm`}
@@ -46,6 +48,7 @@ export const MatingSockets = () => (
       pinCount={MATE.CN2.pins}
       mpn="HC-PM200-4.3H-1x16PZ"
       supplierPartNumbers={{ jlcpcb: ["C22373851"] }}
+      cadModel={{ stepUrl: easyedaStep("C22373851"), modelOriginPosition: { x: 0, y: 0, z: 0 } }}
       layer="bottom"
       pcbX={`${MATE.CN2.x}mm`}
       pcbY={`${MATE.CN2.y}mm`}
@@ -63,6 +66,7 @@ export const MatingSockets = () => (
       pinCount={MATE.CN4.pins}
       mpn="HX PM2.0-1x7P ZC"
       supplierPartNumbers={{ jlcpcb: ["C22438139"] }}
+      cadModel={{ objUrl: ENVELOPE_1X7_SOCKET, modelOriginPosition: { x: 0, y: 0, z: 0 } }}
       layer="bottom"
       pcbX={`${MATE.CN4.x}mm`}
       pcbY={`${MATE.CN4.y}mm`}
