@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -108,7 +109,7 @@ def main():
     ap.add_argument("--circuit", default=os.path.join(root, "tscircuit", "dist", "index", "circuit.json"))
     ap.add_argument(
         "--kicad-cli",
-        default="/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+        default=shutil.which("kicad-cli") or "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
     )
     args = ap.parse_args()
 

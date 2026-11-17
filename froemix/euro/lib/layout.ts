@@ -287,13 +287,13 @@ export const LED_R_AT: Pt = { x: -34.5, y: 56.0 }
 /** Panel hole diameters (bushing + clearance). */
 export const HOLE = {
   jack: 6.2, // PJ398SM / PJ366ST 6.0mm bushing
-  pot: 7.2, // Alps 9mm, M7 bushing
-  led: 3.2,
-  jackLed: 3.2,
+  pot: 7.2, // clearance for the Alps RK09K's unthreaded 6mm shaft
+  led: 3.5, // clearance for a 3mm LED lens with supplier tolerance
+  jackLed: 3.5,
   rail: 3.2, // M3
   standoff: 3.2, // M3 clear
   button: 12.2, // 12mm illuminated tactile
-  joy: ACTUATORS.joystick.holeDiameter, // 8mm: swept envelope of the extended XUNPU stem/cap
+  joy: ACTUATORS.joystick.holeDiameter, // 9.5mm: includes an unverified shaft datum allowance
 } as const
 
 /** Control TOP to panel UNDERSIDE. Assembly target, not a measured XKB shoulder. */

@@ -11,7 +11,8 @@
 // Sides: TOP faces the panel (jacks, pots, OLED, LED). BOTTOM faces the base
 // board (the three 2.00mm sockets). Nothing tall on the bottom but the sockets.
 
-import { BOARD_H, BOARD_W, BUTTON, STANDOFF_HOLES } from "./lib/layout"
+import { Fragment } from "react"
+import { BOARD_H, BOARD_W, BUTTON, JACKS, STANDOFF_HOLES } from "./lib/layout"
 import { BOARD_REVISION, buildDate } from "./lib/build-info"
 import { Nets } from "./lib/nets"
 import { MatingSockets } from "./sections/mating"
@@ -26,6 +27,7 @@ export default () => (
   <board
     width={`${BOARD_W}mm`}
     height={`${BOARD_H}mm`}
+    thickness="1.6mm"
     layers={2}
     autorouter="auto-local"
     defaultTraceWidth="0.25mm"
@@ -44,6 +46,16 @@ export default () => (
     {/* M3 standoffs to the base board, at the base board's own hole positions */}
     {STANDOFF_HOLES.map((h, i) => (
       <hole key={`standoff-${i}`} diameter="3.2mm" pcbX={`${h.x}mm`} pcbY={`${h.y}mm`} />
+    ))}
+
+    {/* Thonk's drawing calls for a 3mm barrel precaution. A 1.8mm radius
+        keeps the 3mm disk clear even where the pour approximates a circle
+        with chords. No extra hole. Each jack body may cover its own keepout. */}
+    {JACKS.map((j) => (
+      <Fragment key={`barrel-${j.name}`}>
+        <keepout shape="circle" radius="1.8mm" pcbX={`${j.x}mm`} pcbY={`${j.y}mm`}
+          layers={["top", "bottom"]} allowPlacements />
+      </Fragment>
     ))}
 
     <MatingSockets />

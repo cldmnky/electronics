@@ -47,11 +47,12 @@ build: ## compile both designs (base + euro board and panel)
 # The gates are the regression contracts: base board ERC -> build -> netlist ->
 # footprints -> parts -> value literals -> tsci source/pin_spec/netlist/
 # placement/shorts/pcb-style -> silkscreen bounds -> snapshots (15 steps), then
-# the euro board's 11 steps (build, netlist, placement, shorts, style, mating,
-# mux-input contract, mechanical stack, panel artwork, regression tests, snapshots).
+# the euro board's 12 steps (build, netlist, placement, shorts, style, mating,
+# mux-input contract, mechanical stack, panel artwork, fabrication geometry,
+# regression tests, snapshots).
 # Euro's gate reads BOTH built boards: this target builds the base first; for a
 # standalone `cd euro && bun run gate`, run `make build` first.
-gate: ## full base-board (15 steps) + euro-board (11 steps) regression gates
+gate: ## full base-board (15 steps) + euro-board (12 steps) regression gates
 	cd $(TSCIRCUIT) && $(BUN) run gate
 	cd $(EURO) && $(BUN) run gate
 
@@ -104,13 +105,13 @@ order: release ## print the order sheet and the files to upload for both boards
 	@printf 'euro board + panel - upload these:\n'
 	@printf '  front   : %s/euro-gerbers.zip + %s/euro-bom-smt.csv\n' "$(EURO_FAB)" "$(EURO_FAB)"
 	@printf '            hand list: %s/euro-bom-hand.csv\n' "$(EURO_FAB)"
-	@printf '            %s/euro-cpl-jlc.csv (19 SMT; THT hand-solder)\n' "$(EURO_FAB)"
+	@printf '            %s/euro-cpl-jlc.csv (12 SMT; THT hand-solder)\n' "$(EURO_FAB)"
 	@printf '  panel   : %s/panel/panel-gerbers.zip (2mm FR4, holes + silk only; verified by panel:release)\n' "$(EURO_FAB)"
 	@printf '  mech    : %s/mechanical/ (MODE/NAV STLs, hardware list, stack + acceptance guide)\n\n' "$(EURO_FAB)"
 	@printf 'tick on the order page:\n'
 	@printf '  [ ] surface finish lead-free HASL (confirm quote and assembly preview)\n'
 	@printf '  [ ] base SMT assembly on BOTTOM only (all 107 placements); THT fitted by hand\n'
-	@printf '  [ ] 4 layers, 1.6 mm, 1 oz outer copper (base) / 2 layers, 2 mm, empty copper (panel)\n'
+	@printf '  [ ] base: 4 layers, 1.6 mm, 1 oz outer; front: 2 layers, 1.6 mm; panel: 2 mm, empty copper\n'
 	@printf '  [ ] headers are 6mm-shoulder X4612 (not old short A2005WV); CN4 cut to 7 ways\n'
 	@printf '  [ ] stack: 11mm clear spacers; J1+shunts <=9.5mm; front tails <=1mm\n'
 	@printf '  [ ] inspect: fiducials bright, bottom rotations sane, Daisy footprint empty\n'

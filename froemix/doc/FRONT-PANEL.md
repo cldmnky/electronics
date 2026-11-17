@@ -49,14 +49,14 @@ the mechanical geometry is identical.
 
 ## Geometry contract
 
-The panel has **27 circular holes**, read from `euro/lib/layout.ts`. Two
-audited mechanical revisions are recorded in the fixture: NAV at (−28,25) is
-**Ø8mm** (from Ø7) for the extended cap's swept envelope, and the four audio
-activity-LED holes at y = −3 were removed with the audio LEDs. The other 26
-diameters, the 101.6 ×128.5mm outline and the 2mm nominal thickness stay
-unchanged. The fixture retains its pre-artwork hashes as historical provenance,
-not as hashes of the revised geometry. The base remains 16HP. Do not reposition
-controls/connectors to fit artwork.
+The panel has **27 circular holes**, read from `euro/lib/layout.ts`. The
+fixture records the revisions: NAV at (−28,25) is **Ø9.5mm** (originally Ø7),
+the 3 remaining LED holes are **Ø3.5mm** (originally Ø3.2), and the 4 audio
+activity-LED holes at y = −3 were removed with those LEDs. All remaining
+centres, the 101.6 ×128.5mm outline and the 2mm nominal thickness stay
+unchanged. The wider NAV hole leaves a visible gap around its cap: approve its
+appearance and fit on a first article. Original hashes are historical provenance,
+not hashes of the revised fixture. The base remains 16HP.
 
 The OLED opening retains its **30.5 × 16.0mm bounding box** and centre
 **(0, 42.8)mm**. Its formerly sharp internal corners need a routing radius of at
@@ -78,7 +78,7 @@ not only in a mockup.
 
 JLCPCB says holes at or above 6.3mm are CNC-routed from a smaller drilled hole.
 The exporter can describe circular holes in the NPTH file. This does not prove
-how CAM will process them. Ask CAM to confirm the 8.0, 7.2 and 12.2mm holes are
+how CAM will process them. Ask CAM to confirm the 9.5, 7.2 and 12.2mm holes are
 routed to their finished sizes. If CAM requests profile circles instead, change
 the export and rerun the geometry checks; do not duplicate a hole in both files.
 
@@ -160,17 +160,18 @@ A passing circuit or artwork test does not establish real mechanical fit.
    width is preserved; decide any narrower finished width with the actual rack.
 3. Check rack screw locations, nut/washer diameter and knob diameter against the
    real hardware. Preserve readable labels after assembly.
-4. Check jack/pot bushing thread engagement through a **2.2mm worst-case** panel.
-   Confirm the control PCB's 128.5mm height clears the rack rails; that pre-existing
-   board dimension is not changed by this artwork revision.
+4. Check jack bushing thread engagement through a **2.2mm worst-case** panel.
+   The selected ALPS pot shafts are unthreaded and have no panel nuts. Confirm
+   shaft/knob clearance, board support and control-PCB clearance to the rails.
 5. The nominal `PANEL_GAP` is **9mm, PCB top to panel underside**. Fit the
    supplied translucent **MODE plunger**, 5.8mm above the original 7.3mm cap,
    with its flange behind the panel. Test free return/no preload. Do not raise
    the switch on a 2mm riser: that still doesn't reach through a thick panel.
 6. Fit the supplied **NAV cap** to the current XUNPU 3.15mm square stem and test
-   full directional/centre travel through the new **Ø8mm** opening. Its ±8°
-   swept-envelope calculation is a prototype test bound, not a datasheet travel
-   specification. See the mechanical guide and `fab/euro/mechanical/` STLs.
+   full directional/centre travel through the new **Ø9.5mm** opening. The
+   calculation includes an unmeasured 0.65mm shaft-datum/assembly allowance;
+   its ±8° travel is a test bound, not a datasheet specification. Measure the
+   actual part. See the mechanical guide and `fab/euro/mechanical/` STLs.
 7. Check OLED glass, bezel and rounded opening alignment with the actual module.
    Verify viewing angle, module support and the clearance behind the panel.
 8. Review the actual Gerber silk/profile and all NPTH holes in the uploaded CAM
@@ -181,10 +182,9 @@ A passing circuit or artwork test does not establish real mechanical fit.
 The implementation has automated panel-artwork and fabrication-file checks, plus
 manual inspection of an independently rendered Gerber silk/profile/drill view.
 The original artwork revision compared all holes directly with the old panel
-export. The later mechanical fixes preserve all remaining centres and 26 diameters and
-record the NAV Ø7→8mm change and the removal of the four audio-LED holes
-explicitly; artwork and actual exported Gerber/NPTH checks use that revised
-contract.
+export. The later mechanical fixes preserve all remaining centres and record
+NAV Ø7→8→9.5mm, the three LED holes Ø3.2→3.5mm and removal of the four audio
+LED holes explicitly; exported Gerber/NPTH checks use that revised contract.
 
 Historical artwork-revision verification (before the later mechanical-stack
 fix; current gate additionally checks Z/part identities and actuator prototypes):

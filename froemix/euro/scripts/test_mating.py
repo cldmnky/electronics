@@ -47,6 +47,16 @@ class MatingMutations(unittest.TestCase):
         result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_base_thickness_regression(self):
+        base = copy.deepcopy(BASE)
+        next(e for e in base if e["type"] == "pcb_board")["thickness"] = 1.4
+        self.assert_rejected(base=base, message="base board thickness must be 1.6mm")
+
+    def test_front_thickness_regression(self):
+        front = copy.deepcopy(FRONT)
+        next(e for e in front if e["type"] == "pcb_board")["thickness"] = 1.4
+        self.assert_rejected(front=front, message="front board thickness must be 1.6mm")
+
     def test_interior_pin_drift_not_only_endpoints(self):
         front = copy.deepcopy(FRONT)
         pid = port(front, "CN1", "pin8")["source_port_id"]

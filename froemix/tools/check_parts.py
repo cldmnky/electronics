@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 import time
 import urllib.error
@@ -156,7 +157,7 @@ def main():
     ap.add_argument("--pcb", default=os.path.join(root, "tmp", "froemix.kicad_pcb"))
     ap.add_argument(
         "--kicad-cli",
-        default="/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+        default=shutil.which("kicad-cli") or "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
     )
     ap.add_argument("--offline", action="store_true")
     ap.add_argument("--cache", default=os.path.join(root, "tscircuit", ".parts-cache.json"))

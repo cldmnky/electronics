@@ -76,7 +76,11 @@ export const ACTUATORS = {
     // A design/test envelope, NOT an angle specified by the XUNPU datasheet.
     // First article must operate all directions without touching the panel.
     tiltDegrees: 8,
-    holeDiameter: 8.0,
+    // The 2D drawing suggests an offset of ~0.45mm, but does not dimension
+    // the datum. Budget 0.65mm for that indication and assembly variation.
+    // This is an engineering allowance, not a measurement of the part.
+    datumOffsetAllowance: 0.65,
+    holeDiameter: 9.5,
   },
   printTolerance: 0.1, // maximum diametral oversize / height error after finishing
   holeUndersize: 0.2, // regular-routing fit allowance, confirm with CAM
@@ -134,7 +138,7 @@ export const actuatorFit = () => {
     // Press travel must stay below buttonFlangeClearance or the lip loads the switch.
     buttonRadialClearance: (12.2 - a.holeUndersize - a.button.barrelDiameter - a.printTolerance) / 2,
     joystickProud: a.joystick.bareHeight - a.joystick.heightTolerance + a.joystick.extension - a.printTolerance - panelTop,
-    joystickRadialClearance: holeRadius - Math.max(cupSweep, neckSweep),
+    joystickRadialClearance: holeRadius - Math.max(cupSweep, neckSweep) - a.joystick.datumOffsetAllowance,
     joystickHeadClearance: a.joystick.bareHeight - a.joystick.heightTolerance
       + a.joystick.extension - a.joystick.headHeight - a.printTolerance
       - a.joystick.headDiameter / 2 * Math.sin(angle) - panelTop,

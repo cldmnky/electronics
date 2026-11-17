@@ -13,8 +13,9 @@
 #   7. check_madc.py         mux inputs are pot/joystick/button islands on P3V3_A
 #   8. mechanical_check.ts   actual supplier identities + Z/actuator envelopes
 #   9. panel_check.ts        audited holes, rounded window, artwork/keepouts
-#  10. regression tests     mating mutations + panel/stack/printable CAD tests
-#  11. tsci snapshot --test  schematic/PCB match __snapshots__/
+#  10. check_fab_mechanics.py built slots, peg rings, pot holes, barrel copper
+#  11. regression tests     mating/fabrication mutations + panel/stack tests
+#  12. tsci snapshot --test schematic/PCB match __snapshots__/
 #
 # Runtime ~1min warm. Per-step logs land in $TMPDIR/froemix-euro-gate/. The
 # panel steps read the panel circuit JSON the build step just wrote.
@@ -56,7 +57,8 @@ step "mating contract" python3 scripts/check_mating.py
 step "mux input contract" python3 scripts/check_madc.py
 step "mechanical stack" bun scripts/mechanical_check.ts
 step "panel artwork"  bun scripts/panel_check.ts
-step "regression tests" bash -c 'python3 scripts/test_mating.py && python3 scripts/test_madc.py && bun test lib/panel lib/mechanical'
+step "fabrication geometry" python3 scripts/check_fab_mechanics.py
+step "regression tests" bash -c 'python3 scripts/test_mating.py && python3 scripts/test_madc.py && python3 scripts/test_fab_mechanics.py && bun test lib/panel lib/mechanical'
 # tsci snapshot reads dist rather than rebuilding; preserve the actual dated
 # build for later release checks while comparing a deterministic snapshot.
 snapshot_diff() (

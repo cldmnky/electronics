@@ -19,7 +19,7 @@ import { SilkSection } from "./sections/silk"
 // floor would let GND/power rails drop to 0.15mm. Signal nets are nominal
 // 0.25mm, power/GND/reset 0.25-0.6mm (see sections/nets.tsx).
 export default () => (
-  <board width="80.9mm" height="128.5mm" layers={4} autorouter="auto-local"
+  <board width="80.9mm" height="128.5mm" thickness="1.6mm" layers={4} autorouter="auto-local"
     defaultTraceWidth="0.25mm" minTraceWidth="0.25mm" minTraceToPadEdgeClearance="0.1mm"
     minViaHoleDiameter="0.2mm" minViaPadDiameter="0.45mm" minBoardEdgeClearance="0.4mm"
     routeRemaining={false}>

@@ -97,6 +97,12 @@ base = load(args.base)
 ports, centres = index(board)
 base_ports, base_centres = index(base)
 
+# The Z-stack and ordering contract assume both electrical PCBs are 1.6mm.
+for label, cj in (("base", base), ("front", board)):
+    boards = [e for e in cj if e["type"] == "pcb_board"]
+    if len(boards) != 1 or abs(boards[0].get("thickness", 0) - 1.6) > 1e-6:
+        fail(f"{label} board thickness must be 1.6mm")
+
 
 def net_names(cj):
     """Transitive source_trace graph: compare named nets, not JSON-local IDs."""

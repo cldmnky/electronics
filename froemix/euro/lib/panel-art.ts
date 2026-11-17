@@ -933,10 +933,10 @@ const navTicks = (style: PanelStyle): ArtElement => ({
   kind: "tick",
   strokeWidth: style.groupStroke,
   paths: [
-    radialTick(JOYSTICK.x, JOYSTICK.y, 90, HOLE.joy / 2 + 0.8, 5.7),
-    radialTick(JOYSTICK.x, JOYSTICK.y, 0, HOLE.joy / 2 + 0.8, 5.7),
-    radialTick(JOYSTICK.x, JOYSTICK.y, 270, HOLE.joy / 2 + 0.8, 5.7),
-    radialTick(JOYSTICK.x, JOYSTICK.y, 180, HOLE.joy / 2 + 0.8, 5.7),
+    radialTick(JOYSTICK.x, JOYSTICK.y, 90, HOLE.joy / 2 + 0.8, 6.5),
+    radialTick(JOYSTICK.x, JOYSTICK.y, 0, HOLE.joy / 2 + 0.8, 6.5),
+    radialTick(JOYSTICK.x, JOYSTICK.y, 270, HOLE.joy / 2 + 0.8, 6.5),
+    radialTick(JOYSTICK.x, JOYSTICK.y, 180, HOLE.joy / 2 + 0.8, 6.5),
   ],
 })
 
@@ -1197,9 +1197,9 @@ export const panelArtwork = (design: PanelDesignId = DEFAULT_PANEL_DESIGN): Pane
   if (style.ioMark === "squares") {
     elements.push(navTicks(style))
     elements.push(...inputOutputSquares(style, portElements))
-    elements.push(...JACK_LEDS.map((l) => holeRing(`ring-${l.name}`, l.x, l.y, 2.1, style.groupStroke)))
+    elements.push(...JACK_LEDS.map((l) => holeRing(`ring-${l.name}`, l.x, l.y, 2.6, style.groupStroke)))
     elements.push(holeRing("ring-mode", BUTTON.x, BUTTON.y, 6.7, style.groupStroke))
-    elements.push(holeRing("ring-status-led", LED_AT.x, LED_AT.y, 2.1, style.groupStroke))
+    elements.push(holeRing("ring-status-led", LED_AT.x, LED_AT.y, 2.6, style.groupStroke))
     elements.push(
       label({
         id: "legend-status",
@@ -1207,7 +1207,7 @@ export const panelArtwork = (design: PanelDesignId = DEFAULT_PANEL_DESIGN): Pane
         text: "STATUS",
         capHeight: style.controlCap,
         strokeWidth: style.controlStroke,
-        x: LED_AT.x + 2.9,
+        x: LED_AT.x + 3.2,
         y: LED_AT.y,
         align: "left",
       }),

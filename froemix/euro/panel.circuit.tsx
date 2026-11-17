@@ -14,12 +14,12 @@
 //
 // Cutouts/holes:
 //   4x M3 rail screws   (+/-43.3, +/-61.25)   Doepfer 3U
-//   6x pot bushings     M7                     Alps RK09K
+//   6x pot shafts       7.2mm                  Alps RK09K, unthreaded
 //  12x jack bushings    6.2mm                  QingPu/Thonkiconn WQP518MA (mono) /
 //                                               WQP419GR (TRS), M6x0.5
-//   2x CV jack LEDs      3.2mm
-//   1x panel LED         3.2mm
-//   1x navigation switch 7.0mm
+//   2x CV jack LEDs      3.5mm
+//   1x panel LED         3.5mm
+//   1x navigation switch 9.5mm
 //   1x MODE button      12.2mm
 //   1x OLED window      30.5 x 16.0mm, R0.5 internal corners, rounded polygon
 

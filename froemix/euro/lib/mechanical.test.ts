@@ -68,8 +68,11 @@ test("bare actuators are too short; supplied extensions clear the thick panel", 
   expect(fit.buttonFlangeClearance).toBeGreaterThanOrEqual(0.45)
   expect(fit.joystickRadialClearance).toBeGreaterThan(0.2)
   expect(fit.joystickHeadClearance).toBeGreaterThan(0)
-  // Old 7mm NAV hole cannot carry the extended, tilted cup at tolerance limits.
-  expect(fit.joystickRadialClearance - (ACTUATORS.joystick.holeDiameter - 7) / 2).toBeLessThan(0)
+  // The offset allowance is part of the clearance, not an unmeasured claim.
+  expect(ACTUATORS.joystick.datumOffsetAllowance).toBe(0.65)
+  expect(ACTUATORS.joystick.holeDiameter).toBe(9.5)
+  // The former 8mm opening fails with the same offset/tilt budget.
+  expect(fit.joystickRadialClearance - (ACTUATORS.joystick.holeDiameter - 8) / 2).toBeLessThan(0)
 })
 
 test("printable models are valid solids and serialise to non-empty STL", () => {

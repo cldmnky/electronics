@@ -25,6 +25,18 @@ Redistribution of the model is permitted with the licence notice.
   **S 6.48 / R 3.38 / T 4.92 mm from the barrel datum** (stereo).
 - `DATA.md` in that repository classifies the part family and its mounting.
 
+## 2026-11-17 footprint warning
+
+The stored upstream footprint has **1.6 × 0.6mm oval slots**. The available
+[Thonk mono drawing](https://www.thonk.co.uk/wp-content/uploads/2014/02/Thonkiconn_Jack_Datasheet.pdf)
+shows blades up to 1.5 × 0.6mm: such a blade has no width clearance and its
+corners do not fit the rounded slot ends. That drawing does not establish the
+stereo blade dimensions. Do not use this footprint for a new board. Froemix
+uses provisional 2.4 × 1.2mm slots and a barrel copper keepout; the actual
+stereo blades, terminal functions, finished slots and fit still need physical
+and CAM verification. The library CAD remains unchanged and this row stays
+`draft`.
+
 ## What was NOT verified
 
 - The upstream README says **"WARNING NOT YET COMPLETE, DO NOT USE"** and

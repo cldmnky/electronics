@@ -2,10 +2,11 @@
 
 This supersedes the old 12mm-spacer / “8.5mm socket” description. Coordinates,
 connector sides, electrical nets and both PCB outlines are unchanged. Panel
-machining changes: **NAV Ø7.0 → Ø8.0mm at (−28, 25)** for the extended
-actuator's swept envelope, and **removal of the four audio activity-LED holes**
-at y = −3 with their LEDs (the direct LED load distorted the audio jacks). The
-other 26 diameters and the OLED opening (30.5 × 16mm, R0.5, at 0, 42.8) stay
+machining changes: **NAV Ø7.0 → Ø8.0 → Ø9.5mm at (−28, 25)** for the
+extended actuator and an unverified shaft-datum allowance; the three remaining
+LED holes are now Ø3.5mm. The four audio activity-LED holes at y = −3 were
+removed with their LEDs (the direct LED load distorted the audio jacks). All
+remaining centres and the OLED opening (30.5 × 16mm, R0.5, at 0, 42.8) stay
 unchanged.
 
 **Status: dimensioned design and printable prototypes, not physical approval.**
@@ -18,7 +19,7 @@ No parts were measured and no rack/CAM order was approved by the software gate.
 | 12mm clear spacers with 2mm-shoulder male / 4.3mm female | Real fault: the male tip is 1.7mm short of even entering the socket. Replaced the three mated base headers with 6mm-shoulder XKB parts; clear spacers are now 11mm. |
 | Reduce the gap to 6.3mm without another change | Rejected: the base-top J1 header/shunts would obstruct the front board. |
 | CN4 “0.03mm drift” | Not a fault. Both footprint origins are **(24.50, 59.63)**; the base pad bounding-box centre is 24.47 because its pin-1 pad is wider. Moving the front socket to 24.47 would introduce a real error. CN3's corresponding origin is 8.14, bbox centre 8.11. Neither connector was moved. |
-| 3.2mm LED holes let the selected LEDs fall through | Incorrect for C440523: its drawing gives a **3.8mm flange**, 3mm lens, ±0.25mm general tolerance. Holes remain 3.2mm. They are clearance holes, not snap-in holders; set and solder the LED height with the panel as a jig. |
+| LED hole clearance | The C440523 drawing gives a 3mm lens, 3.8mm flange and ±0.25mm general tolerance. Holes are now Ø3.5mm for lens clearance. The flange is **not guaranteed to retain the LED** at all tolerances; jig, support and solder it. |
 | Bare MODE cap too short | Confirmed: 7.3 ±0.2mm above the PCB. Supplied a captive translucent plunger, **5.8mm added height**, rather than lifting a switch on leads that are too short for a riser. |
 | Bare NAV stem/cap unspecified | Current XUNPU drawing gives 10mm overall height and 3.15mm square stem, not the old Alps assumption. Added a dimensioned cap/neck and enlarged only its panel hole. |
 | J1 inaccessible after stacking | Expected service constraint, not an XY mistake. Select/test Type A/B before stacking; separate the boards to change it. No extra front-board MIDI selector or new electrical path was introduced. |
@@ -121,10 +122,10 @@ against a hard stop or a pin that has bottomed out.
   a JLC SMT upload. Custom printed parts are fabricated from these files, not
   represented as fictitious LCSC components.
 
-The cap opening is now **8mm**, not 7mm. `panel-baseline.json` records this one
-explicit revision while retaining the original source hashes as history.
-Nord's navigation ticks move outward to preserve ink clearance; no control or
-connector centre is moved.
+The cap opening is now **9.5mm**, not 7mm. `panel-baseline.json` records the
+revisions while retaining the original source hashes as history. The wider
+opening leaves a visible gap around the 6.8mm cap; approve its appearance and
+fit on a first article. Nord's ticks move outward; no control centre is moved.
 
 The fit calculation conservatively covers a panel-under-PCB distance of
 **8.5…9.6mm**, panel thickness **1.8…2.2mm**, print dimensional error 0.1mm and
@@ -141,17 +142,13 @@ or bowed PCB and measure the resulting gap.
 At the highest/thickest panel the supplied MODE plunger is ≥1.0mm proud and NAV
 ≥2.8mm proud; the MODE lip keeps ≥0.5mm to the panel at the worst-case gap, so
 the measured switch travel must stay below 0.5mm or the lip will preload it. The NAV swept-envelope check uses **±8° as a design/test envelope**,
-not a XUNPU datasheet rating: minimum radial clearance is about 0.20mm including
-those allowances. Test full operation of all four directions and centre press
-with the real switch. If its required travel exceeds that envelope, this design
-is not qualified merely because its tests pass. The allowance does **not** cover
-a possible 0.45mm actuator-to-pin-row offset: the vendor 3D model's body origin
-suggests it, but that model's own pin pattern is wrong against the drawing
-(2.50/4.00mm rows at ±5.00 vs 2.80/3.70 at ±5.25) and the datasheet layout puts
-the middle row on the centreline. At first article, measure the real switch's
-pin rows against its actuator centre and operate the NAV cap through the panel
-at full travel; if the actuator is offset, move the panel-hole datum in
-`lib/layout.ts` and re-run the panel checks.
+not a XUNPU datasheet rating. The Ø9.5mm hole and calculation include a 0.65mm
+shaft-datum/assembly offset allowance, leaving about 0.30mm worst-case radial
+clearance under the stated assumptions. The 2D drawing and CAD suggest about
+0.45mm offset, but do not establish the purchased part's measured datum. Measure
+it and test full travel in all directions with the printed cap. If the offset,
+travel, print size or manufactured hole exceeds the budget, this design is not
+qualified by its tests.
 
 ## 4. Hardware and optical limits
 
@@ -163,11 +160,10 @@ at full travel; if the actuator is offset, move the panel-hole datum in
   are purchasing limits matching artwork checks, not measurements of supplied
   nuts. Check bushing thread engagement through a 2.2mm panel with actual
   nuts/washers. Do not assume a replacement jack shares its predecessor's Z.
-- **LEDs:** retain Ø3.2mm holes for C440523 (Ø3.8mm flange). Do not seat the LED
-  bodies against the PCB: their lens height alone does not span the panel gap.
-  Use the panel as the height/alignment jig, tack the leads, check visibility
-  and flange/lead clearance, then solder. Keep the bodies supported while
-  soldering; holes are not friction-fit LED retainers.
+- **LEDs:** Ø3.5mm holes give the C440523's nominal 3mm lens more clearance.
+  Its Ø3.8mm flange is not guaranteed to retain it at the tolerance extremes.
+  Do not seat the LED bodies against the PCB: the lens does not span the gap.
+  Jig, support and solder each LED, then check lens and flange fit on a real panel.
 - **OLED:** C42432559 / HS13L02B4S01, 35.4 ×33.5mm PCB. Header (0,55.5), window
   (0,42.8), offset −12.7mm. Nominal active area 29.42 ×14.70mm leaves 0.54/0.65mm
   per edge in the 30.5 ×16mm opening. Confirm the module/bezel and support it
@@ -206,7 +202,7 @@ Before paying for a batch:
    socketed Daisy; measure its total depth and check rear USB access. Print the
    1:1 template at actual size and measure its 100mm calibration bar first.
 7. Approve actual Gerber/profile/NPTH production files with CAM, including the
-   new Ø8mm NAV opening, 2mm material and empty copper.
+   new Ø9.5mm NAV and Ø3.5mm LED openings, 2mm material and empty copper.
 
 None of these physical checkboxes is marked done by this software change.
 

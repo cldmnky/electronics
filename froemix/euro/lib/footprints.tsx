@@ -211,11 +211,13 @@ export const FP_LED_3MM = (
 // drawing (3.10 / 8.30 spacings); the same numbers as midibrain's stereo
 // footprint (which sees the part rotated 180 degrees in-plane, S at -6.48).
 //
-// Slots, not round holes: the terminals are flat blades (0.5 x 1.5, 0.6 x 1.5
-// and 0.6 x 1.3mm per Thonk's PCB layout), so the hole is 1.6 x 0.6mm and the
-// land 2.6 x 2.6mm (sleeve 3.1 x 2.1) - the library CAD's table
-// (library/cad/jack-35-wqp518ma). The retired PJ-301M-2-B pads were 1.2 x
-// 2.0mm ovals, which a 1.5mm blade cannot enter.
+// Slots, not round holes: the Thonk mono drawing shows rectangular blades
+// 0.5 x 1.5, 0.6 x 1.5 and 0.6 x 1.3mm, with a general +/-0.15mm tolerance.
+// The library CAD's 1.6 x 0.6mm obround has no width clearance, and its rounded
+// ends do not contain the nominal blade corners. Use 2.4 x 1.2mm plated slots,
+// with >=0.3mm nominal copper rings. The 2:1 aspect follows JLC slot guidance.
+// Measure the actual mono AND stereo blades and test the finished holes; the
+// drawing and this allowance do not prove physical fit.
 //
 // Origin = the jack barrel (the panel hole), not pad S: that is what lets
 // lib/layout.ts hold one coordinate per part, shared with the panel.
@@ -242,8 +244,8 @@ export const FP_JACK_MONO = (
       pcbY="6.48mm"
       portHints={["pin1"]}
       shape="oval"
-      holeWidth="1.6mm"
-      holeHeight="0.6mm"
+      holeWidth="2.4mm"
+      holeHeight="1.2mm"
       outerWidth="3.1mm"
       outerHeight="2.1mm"
     />
@@ -252,9 +254,9 @@ export const FP_JACK_MONO = (
       pcbY="-4.92mm"
       portHints={["pin2"]}
       shape="oval"
-      holeWidth="1.6mm"
-      holeHeight="0.6mm"
-      outerWidth="2.6mm"
+      holeWidth="2.4mm"
+      holeHeight="1.2mm"
+      outerWidth="3mm"
       outerHeight="2.6mm"
     />
     {/* tip switch - no port, not used */}
@@ -262,9 +264,9 @@ export const FP_JACK_MONO = (
       pcbX="0mm"
       pcbY="3.38mm"
       shape="oval"
-      holeWidth="1.6mm"
-      holeHeight="0.6mm"
-      outerWidth="2.6mm"
+      holeWidth="2.4mm"
+      holeHeight="1.2mm"
+      outerWidth="3mm"
       outerHeight="2.6mm"
     />
     <silkscreencircle pcbX="0mm" pcbY="0mm" radius="3mm" />
@@ -278,9 +280,10 @@ export const FP_JACK_MONO = (
 // 2026-11-16: same Thonkiconn family as midibrain (library row
 // `jack-35-wqp419gr`), replacing XKB `PJ-301M-3-B`.
 //
-// Same slotted pads as the mono jack (see above): 1.6 x 0.6mm holes with
-// 2.6 x 2.6mm lands (sleeve 3.1 x 2.1), from the library CAD table
-// (library/cad/jack-35-wqp419gr) and Thonk's drawing's blade sizes.
+// Same 2.4 x 1.2mm plated slots as the mono jack (see above). The original
+// library CAD used 1.6 x 0.6mm, with no clearance for a 0.6mm blade. Verify
+// the purchased stereo blades and functions; the mono drawing alone is not
+// an authoritative stereo drawing.
 //
 // Origin = the jack barrel. The pads here are the part rotated 180 degrees
 // in-plane relative to midibrain's FP_JACK_TRS bookkeeping: pin1 = T at +4.92,
@@ -308,9 +311,9 @@ export const FP_JACK_TRS = (
       pcbY="4.92mm"
       portHints={["pin1"]}
       shape="oval"
-      holeWidth="1.6mm"
-      holeHeight="0.6mm"
-      outerWidth="2.6mm"
+      holeWidth="2.4mm"
+      holeHeight="1.2mm"
+      outerWidth="3mm"
       outerHeight="2.6mm"
     />
     <platedhole
@@ -318,9 +321,9 @@ export const FP_JACK_TRS = (
       pcbY="-3.38mm"
       portHints={["pin2"]}
       shape="oval"
-      holeWidth="1.6mm"
-      holeHeight="0.6mm"
-      outerWidth="2.6mm"
+      holeWidth="2.4mm"
+      holeHeight="1.2mm"
+      outerWidth="3mm"
       outerHeight="2.6mm"
     />
     <platedhole
@@ -328,8 +331,8 @@ export const FP_JACK_TRS = (
       pcbY="-6.48mm"
       portHints={["pin3"]}
       shape="oval"
-      holeWidth="1.6mm"
-      holeHeight="0.6mm"
+      holeWidth="2.4mm"
+      holeHeight="1.2mm"
       outerWidth="3.1mm"
       outerHeight="2.1mm"
     />
@@ -344,7 +347,8 @@ export const FP_JACK_TRS = (
 //
 // Origin = the shaft axis. In the KiCad library the origin is pad 1, 7.5mm in X
 // and 2.5mm in Y away from the shaft; the pads below are therefore at -7.5mm in
-// X. The two MP mounting lugs are slotted holes (2.1 x 1.8mm) and carry no port.
+// X. The unused unrotated variant below retains its historical slotted lugs.
+// The placed R90 variant uses 3mm round lug holes for JLC compatibility.
 // pin1 = CCW, pin2 = wiper, pin3 = CW.
 // --------------------------------------------------------------------------
 
@@ -445,24 +449,10 @@ export const FP_POT_RK09K_R90 = (
       holeDiameter="1mm"
       outerDiameter="1.8mm"
     />
-    <platedhole
-      pcbX="-4.4mm"
-      pcbY="-0.5mm"
-      shape="oval"
-      holeWidth="1.8mm"
-      holeHeight="2.1mm"
-      outerWidth="3mm"
-      outerHeight="4mm"
-    />
-    <platedhole
-      pcbX="4.4mm"
-      pcbY="-0.5mm"
-      shape="oval"
-      holeWidth="1.8mm"
-      holeHeight="2.1mm"
-      outerWidth="3mm"
-      outerHeight="4mm"
-    />
+    {/* Round holes avoid the nonstandard short slot. A 3mm circle contains
+        the datasheet's 1.8 x 2.1mm rectangular recommended opening. */}
+    <platedhole pcbX="-4.4mm" pcbY="-0.5mm" shape="circle" holeDiameter="3mm" outerDiameter="4mm" />
+    <platedhole pcbX="4.4mm" pcbY="-0.5mm" shape="circle" holeDiameter="3mm" outerDiameter="4mm" />
     <silkscreenpath route={[{ x: -4.9, y: -6.5 }, { x: 4.9, y: -6.5 }]} />
     <silkscreenpath route={[{ x: -4.9, y: -6.5 }, { x: -4.9, y: 5.5 }]} />
     <silkscreenpath route={[{ x: 4.9, y: -6.5 }, { x: 4.9, y: 5.5 }]} />
@@ -582,10 +572,10 @@ export const FP_BUTTON_12MM = (
         all. On the real part the pegs are plastic and unplated; here they are
         modelled as PLATED holes because the placement DRC rejects a board-level
         <hole> inside a footprint courtyard, and they sit inside the pad span.
-        No port, no net. Confirm the finished (plated) diameter and peg fit with
-        JLCPCB / at first article. */}
-    <platedhole pcbX="0mm" pcbY="4.35mm" shape="circle" holeDiameter="1.9mm" outerDiameter="2.1mm" />
-    <platedhole pcbX="0mm" pcbY="-4.35mm" shape="circle" holeDiameter="1.9mm" outerDiameter="2.1mm" />
+        No port, no net. The 2.4mm lands give a nominal 0.25mm ring. Confirm
+        the finished (plated) diameter and peg fit with JLCPCB / at first article. */}
+    <platedhole pcbX="0mm" pcbY="4.35mm" shape="circle" holeDiameter="1.9mm" outerDiameter="2.4mm" />
+    <platedhole pcbX="0mm" pcbY="-4.35mm" shape="circle" holeDiameter="1.9mm" outerDiameter="2.4mm" />
     {/* body 12 x 12mm, cap dia 8.2mm on top */}
     <silkscreenpath route={[{ x: -6, y: 6 }, { x: 6, y: 6 }]} />
     <silkscreenpath route={[{ x: -6, y: 6 }, { x: -6, y: -6 }]} />

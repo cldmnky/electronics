@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Froemix front panel - release.
 //
-//   bun run panel:release                 fabricate-ready panel, selected signal design
+//   bun run panel:release                 export selected signal panel for review
 //   bun run panel:release --design nord   the alternative artwork
 //
 // What it does, in order:

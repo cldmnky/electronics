@@ -54,16 +54,15 @@ base board BOTTOM     23.2 mm    tall bodies / power / Daisy toward rack cavity
 ```
 
 `PANEL_GAP = 9.0mm` means **front PCB top to panel underside**, an assembly
-target, not a measured shoulder on the currently selected XKB jack. The XKB
-drawing gives an 8.8mm body and additional bushing geometry; old PJ398SM/Alps
-height claims are not evidence for replacement parts. Jig the actual panel,
-jacks and pots before soldering. Actuator calculations cover an 8.5–9.6mm gap
-and the 1.8–2.2mm panel thickness range.
+target for the selected WQP jacks, not a measurement of the purchased parts.
+Jig the actual panel, jacks and pots before soldering. Actuator calculations
+cover an 8.5–9.6mm gap and the 1.8–2.2mm panel thickness range.
 
 The bare K6-1212A02 cap (7.3mm) and XUNPU stem (10mm) do not reach beyond the
 panel front. Release now includes a **5.8mm-added-height captive MODE plunger**
 and **5mm-added-height NAV cap** as printable STL prototypes. NAV alone changes
-from Ø7 to Ø8mm; every centre stays fixed. A 2mm button riser was not a solution
+from Ø7 to Ø9.5mm; the three LED holes are now Ø3.5mm. Every centre stays fixed.
+A 2mm button riser was not a solution
 through a 2.2mm panel, and its short pins cannot simply span a taller riser.
 See [MECHANICAL-STACK.md](MECHANICAL-STACK.md) for dimensions, assembly and tests.
 
@@ -71,14 +70,14 @@ See [MECHANICAL-STACK.md](MECHANICAL-STACK.md) for dimensions, assembly and test
 
 | Group | Count | Part | Net |
 | --- | --- | --- | --- |
-| pots | 6 | Alps RK09K1130A5R, 10k linear | `M_ADC_0`..`M_ADC_5` |
+| pots | 6 | Alps RK09K1130A8G, 10k linear, unthreaded shaft | `M_ADC_0`..`M_ADC_5` |
 | UI joystick | 1 | 5-way multi-control, 5 momentary contacts | `M_ADC_6` (ladder) |
 | UI button | 1 | 12mm illuminated tactile, switch + LED | `M_ADC_7` |
-| audio in | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_AUDIO_IN_L/R` |
-| audio out | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_AUDIO_OUT_L/R` |
-| CV in | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_CV_IN_1/2` |
-| CV out | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_CV_OUT_1/2` |
-| sync in/out | 2 | XKB PJ-301M-2-B mono jack, C381126 | `J_SYNC_IN`, `J_SYNC_OUT` |
+| audio in | 2 | WQP518MA mono jack | `J_AUDIO_IN_L/R` |
+| audio out | 2 | WQP518MA mono jack | `J_AUDIO_OUT_L/R` |
+| CV in | 2 | WQP518MA mono jack | `J_CV_IN_1/2` |
+| CV out | 2 | WQP518MA mono jack | `J_CV_OUT_1/2` |
+| sync in/out | 2 | WQP518MA mono jack | `J_SYNC_IN`, `J_SYNC_OUT` |
 | MIDI in/out | 2 | PJ366ST stereo jack (TRS MIDI) | `J_MIDI_IN_TIP/RING`, `J_MIDI_OUT_TIP/RING` |
 | jack LEDs | 2 | 3mm LED + 2.2k + 1N4148 per CV output | CV out 1/2 only; audio LEDs removed |
 | display | 1 | 1.3" 128x64 SPI OLED | `OLED_CS/SCL/DC/SDA/RES` |
@@ -117,7 +116,7 @@ Part: Korean Hroparts `K6-1212A02` (LCSC `C692901`, JLCPCB-stocked, 12mm, red
 LED). Its bare 7.3mm cap does not reach the panel; the supplied `mode-plunger.stl`
 adds 5.8mm (see [MECHANICAL-STACK.md](MECHANICAL-STACK.md)). Six electrical pins — C1/C2 are one internally connected switch rail and
 C3/C4 the other, so the two pads of each rail are wired in parallel — plus two
-0.8mm locating pegs that sit at (0, ±6.75) from the centre.
+locating pegs at (0, ±4.35) and two LED leads at (0, ±6.75).
 
 The button's LED is an indicator only; R8 is the real pull-up, so the released
 level is defined without GPIO or firmware:
@@ -226,7 +225,7 @@ goes through the panel-specific actual Gerber/profile/NPTH verifier.
 
 | Step | Result |
 | --- | --- |
-| `tsci build` | 2 circuits, 86 traces / 53 vias / 2351mm copper, 0 unconnected |
+| `tsci build` | 2 circuits, 86 traces / 64 vias / approximately 2395mm copper, 0 unconnected |
 | `tsci check netlist` | source diagnostics, no errors |
 | `tsci check placement` | Errors 0, Warnings 0 |
 | `tsci check shorts` | no shorts |
@@ -236,6 +235,8 @@ goes through the panel-specific actual Gerber/profile/NPTH verifier.
 | `scripts/test_mating.py` / `bun test lib/mechanical` | negative mating/part/Z tests and printable-solid topology/dimensions |
 | `scripts/check_madc.py` | the 8 `M_ADC_*` nets are closed islands of pots/joystick/button referenced only to `P3V3_A`/`GND`; MODE has its own 10k pull-up |
 | `scripts/panel_check.ts` | frozen 27-hole geometry, OLED bounds/radius, stroked artwork and hardware keepouts pass |
+| `scripts/check_fab_mechanics.py` | built jack slots/centres, copper exclusion, pot lug holes, switch pin geometry/nets and peg rings |
+| `scripts/test_fab_mechanics.py` | negative geometry, switch-pin, trace/via/pad and copper-pour mutations |
 | `bun test lib/panel lib/mechanical` | panel geometry/art/export/preview plus mechanical regression tests |
 | `tsci snapshot --test` | schematic + PCB baselines match |
 
@@ -266,7 +267,7 @@ channels:
    replacement, is still required for this hand-soldered part.
 2. **Joystick cap — dimensioned prototype supplied.** XUNPU's drawing gives
    10mm overall height, 3.15mm square stem. Print/finish `nav-cap.stl` and test
-   all directions and centre press through the revised Ø8mm hole. The ±8° CAD
+   all directions and centre press through the revised Ø9.5mm hole. The ±8° CAD
    test envelope is not a datasheet travel guarantee.
 3. **Button reach — captive plunger supplied.** Print `mode-plunger.stl` in
    translucent resin, flange behind the panel. Test free return and no preload.
@@ -284,11 +285,16 @@ channels:
    limit, both boards move together — do not change one.
 8. **Encoder dropped.** Base board CN2 pads 11–15 stay reserved and unconnected;
    the UI is the 5-way plus the button.
+9. **Pot mounting lugs.** The new Ø3mm plated holes need a physical fit and CAM
+   review. The built RV6 outer lug has approximately 0.116mm nominal clearance
+   to its nearest trace, above the board's 0.1mm rule but with little margin.
+   Confirm fabrication tolerances; the software check does not establish them.
 
 ## 9. BOM and sourcing
 
-Rule (`froemix/AGENTS.md` §9): hand-soldered parts must be sourced from **RS,
-Electrokit or DigiKey with EU sales**; JLCPCB/LCSC may supply JLC-placed SMT.
+Rule (repository `AGENTS.md`): hand-soldered parts need the shared library gate
+and a main source at **Electrokit, DigiKey Sweden or Conrad Sweden**. RS is an
+alternate. JLCPCB/LCSC may supply JLC-placed SMT.
 The table below records the original design identities and historical LCSC
 stock, **not an EU shopping list**. Sourcing and compatible substitutes remain
 unresolved: see [EU-SOURCING.md](EU-SOURCING.md).
@@ -316,10 +322,11 @@ no PCB-mount mono jack at all, so the jacks were briefly moved to the XKB
 **PCB-mountable Thonkiconn family**: QingPu `WQP518MA` (mono) and `WQP419GR`
 (stereo), the same parts midibrain uses (library rows `jack-35-wqp518ma` /
 `jack-35-wqp419gr`, hand-soldered Exploding Shed packs). The M6x0.5 bushing and
-the 6.0mm panel hole are the same family dimensions, so **the panel does not
-change**. The new slotted pads (1.6 x 0.6mm, library CAD table) take the
-Thonkiconn blades and still accept the XKB flat tabs, so either family solders
-in.
+the existing Ø6.2mm panel clearance hole remain compatible in principle, so
+this jack-family change did not move the panel hole. The earlier library-derived
+1.6 × 0.6mm slots left no clearance for 0.6mm blades; the current slots are
+2.4 × 1.2mm. Measure the purchased jacks and dry-fit a fabricated first article;
+do not assume either family fits.
 
 ### Decisions taken
 
@@ -327,8 +334,8 @@ in.
   the same jacks as midibrain: QingPu/Thonkiconn `WQP518MA` (10 x mono audio
   /CV/sync) and `WQP419GR` (2 x stereo TRS-MIDI), hand-soldered from Exploding
   Shed packs (library rows `jack-35-wqp518ma` / `jack-35-wqp419gr`, CAD and
-  provenance in `library/cad/`). The pads follow the library CAD table
-  (1.6 x 0.6mm slots, 2.6 x 2.6mm lands, sleeve 3.1 x 2.1mm). The same
+  provenance in `library/cad/`). The slots are now 2.4 × 1.2mm, with enlarged
+  lands; the library's smaller slots had insufficient blade clearance. The same
   decision fixes the panel stack: the jack's 9.0mm seating shoulder clamps the
   panel-to-board gap at 9.0mm (panel front = 9.0 + panel thickness), the same
   anchor midibrain uses.
@@ -345,12 +352,10 @@ in.
 
 ### Still to verify before ordering
 
-1. **Jack pad line — resolved twice over.** The XKB `PJ-301M`
-   datasheet has **no PCB land pattern**, so the pads were first made tolerant
-   (1.2 x 2.0mm slots). The 2026-11-16 Thonkiconn-family decision replaced them
-   with the library CAD's exact table (1.6 x 0.6mm slots; 2.6 x 2.6mm lands,
-   sleeve 3.1 x 2.1mm), cross-checked against clacktronics/AudioJacks (MIT)
-   and Thonk's `PJ301M-12` drawing:
+1. **Jack pad line and slots — first article required.** The XKB `PJ-301M`
+   drawing has no PCB land pattern. Thonk's mono drawing and secondary CAD
+   support the following centre spacing, but the actual mono/stereo terminals
+   must be metered and measured:
 
    | Source | short gap | long gap | span |
    | --- | --- | --- | --- |
@@ -358,10 +363,13 @@ in.
    | clacktronics `WQP-PJ301M-12` (library CAD) | 3.1mm | 8.3mm | 11.4mm |
    | 4ms `PJ301M-12` (shipping product) | 2.41mm | 8.56mm | 10.97mm |
 
-   The Thonkiconn blades (0.5-0.6 x 1.3-1.5mm) need the 1.6mm slot the XKB
-   1.2 x 2.0mm pads did not give them; the XKB flat tabs (1.0 x 0.2mm) still
-   fit the new slots, so either family solders in. A first-article fit check of
-   the ordered WQP parts is still worth ten minutes.
+   The previous 1.6 × 0.6mm obrounds did not clear the nominal blade corners;
+   0.6mm-wide blades also had no width clearance. This revision uses 2.4 ×
+   1.2mm plated obrounds with larger lands and a 3.6mm-diameter keepout under
+   each jack barrel on both layers. The extra radius keeps the 3mm precaution
+   clear despite the generated pour's polygon chords. Verify the real mono and
+   stereo blades, finished slots, terminal functions, and Thonk's barrel
+   clearance on a first article.
 2. **SW1/SW2 footprints — corrected 2026-11-16 after the first board did not
    fit.** The first fab run's holes for the two hand-soldered switches came out
    wrong because the datasheet dims were assigned to the wrong features:
@@ -370,7 +378,7 @@ in.
    | --- | --- | --- | --- |
    | switch pins Ø1.30 | 12.10 x 5.00 (±6.05, ±2.50) | ±6.05, ±4.35 | ±6.05, ±2.50 |
    | LED pins, Ø1.0 holes | 13.50 apart (0, ±6.75) | 0, ±1.75 | 0, ±6.75 |
-   | pegs, Ø1.9 NPTH | 8.70 apart (0, ±4.35) | 0, ±6.75 | 0, ±4.35 |
+   | pegs, Ø1.9 PTH | 8.70 apart (0, ±4.35) | 0, ±6.75 | 0, ±4.35 |
 
    The 5.00 and 8.70 values were swapped onto the wrong features, and the LED
    and peg holes were swapped as well (2026-11-17, after the 2026-11-16 fix):
@@ -391,8 +399,9 @@ in.
    fitted LED works only reversed, rotating the part 180° swaps the LED pins
    because the switch-contact pairs are symmetric. The two locating holes are
    Ø1.9mm (drawing Ø1.80) and are modelled as PLATED holes only because the
-   placement DRC rejects board-level NPTH inside a courtyard - confirm the
-   finished diameter and peg fit with JLCPCB/at first article.
+   placement DRC rejects board-level NPTH inside a courtyard. Pads now have
+   Ø2.4mm copper for a nominal 0.25mm ring; confirm the finished plated diameter
+   and peg fit with JLCPCB and on the first article.
 
    | Feature | WS-1004-ARL10026 datasheet + EasyEDA CAD | old footprint | now |
    | --- | --- | --- | --- |
@@ -412,11 +421,10 @@ in.
    evidence: its own pin pattern is 2.50 / 4.00mm rows at ±5.00mm, not the
    drawing's 2.80 / 3.70 at ±5.25, and the datasheet layout's centreline runs
    exactly through the middle pad row. The footprint therefore stays on the
-   datasheet. The nav-cap fit allowance (~0.20mm worst-case radial clearance)
-   does not account for a 0.45mm offset, so at first article: measure the real
-   switch's pin rows against its actuator centre, and operate the printed NAV
-   cap through the panel at full travel; if the actuator really is offset, move
-   the panel-hole/actuator datum in `lib/layout.ts` and re-run the panel checks.
+   datasheet. The NAV hole is now Ø9.5mm and the fit calculation budgets
+   0.65mm for a possible datum offset and assembly variation. This is an
+   engineering allowance, not a measurement. Measure the real pin rows against
+   the shaft and test full travel with the printed cap on a first article.
 
    **Before the next fab run, dry-fit both parts into a 1:1 print of the
    corrected holes.** The WS-1004 row order (2.80 gap toward pins 1/4) must
