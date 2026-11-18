@@ -3,6 +3,7 @@
   "skills": {
     "tscircuit": {
       "source": "tscircuit/skill",
+      "commit": "ccfd1afbefa0d1fb0f995795e805030ee5e96de1",
       "sourceType": "github",
       "skillPath": "SKILL.md",
       "computedHash": "37bcf75dfb5a99fc53cffdb4cae1fc31b2da8c8162dbcc1ba29b35177f4fee86"
