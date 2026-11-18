@@ -2,7 +2,8 @@
 // sockets that mate with the 16HP base board.
 //
 // Base board: froemix/tscircuit/ (electrical source of truth, 4 layers).
-// This board: mechanical + panel I/O, 2 layers, all through-hole, hand-soldered.
+// This board: mechanical + panel I/O, 2 layers. 27 through-hole parts are hand
+// soldered; 12 SMT parts (10x 0603, 2x SOD-323) are assembled by JLCPCB.
 // Stack-up, panel floorplan and open questions: froemix/doc/EURO-BOARD.md.
 //
 // Coordinates come from lib/layout.ts, which panel.circuit.tsx also imports, so
@@ -22,6 +23,7 @@ import { JoystickSection } from "./sections/joystick"
 import { ButtonSection } from "./sections/button"
 import { JackLedsSection } from "./sections/jack-leds"
 import { DisplaySection } from "./sections/display"
+import { SilkSection } from "./sections/silk"
 
 export default () => (
   <board
@@ -75,6 +77,7 @@ export default () => (
     <ButtonSection />
     <JackLedsSection />
     <DisplaySection />
+    <SilkSection />
 
     {/* Board identity on the rear, clear of sockets and mounting holes. */}
     <silkscreentext text={`FROEMIX EURO REV ${BOARD_REVISION}`} layer="bottom"

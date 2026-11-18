@@ -14,8 +14,9 @@
 #   8. mechanical_check.ts   actual supplier identities + Z/actuator envelopes
 #   9. panel_check.ts        audited holes, rounded window, artwork/keepouts
 #  10. check_fab_mechanics.py built slots, peg rings, pot holes, barrel copper
-#  11. regression tests     mating/fabrication mutations + panel/stack tests
-#  12. tsci snapshot --test schematic/PCB match __snapshots__/
+#  11. check_silk.py        silk width, pad/hole clearance, board edge margin
+#  12. regression tests     mating/fabrication mutations + panel/stack tests
+#  13. tsci snapshot --test schematic/PCB/3D match __snapshots__/
 #
 # Runtime ~1min warm. Per-step logs land in $TMPDIR/froemix-euro-gate/. The
 # panel steps read the panel circuit JSON the build step just wrote.
@@ -58,6 +59,7 @@ step "mux input contract" python3 scripts/check_madc.py
 step "mechanical stack" bun scripts/mechanical_check.ts
 step "panel artwork"  bun scripts/panel_check.ts
 step "fabrication geometry" python3 scripts/check_fab_mechanics.py
+step "silk"           python3 scripts/check_silk.py
 step "regression tests" bash -c 'python3 scripts/test_mating.py && python3 scripts/test_madc.py && python3 scripts/test_fab_mechanics.py && bun test lib/panel lib/mechanical'
 # tsci snapshot reads dist rather than rebuilding; preserve the actual dated
 # build for later release checks while comparing a deterministic snapshot.
@@ -68,7 +70,7 @@ snapshot_diff() (
   cp dist/panel/circuit.json "$saved/panel.json"
   trap 'cp "$saved/index.json" dist/index/circuit.json; cp "$saved/panel.json" dist/panel/circuit.json; rm -rf "$saved"' EXIT
   export FROEMIX_BUILD_DATE=2024-08-10
-  npx tsci build && npx tsci snapshot --test
+  npx tsci build && npx tsci snapshot --test --3d
 )
 step "snapshot diff" snapshot_diff
 

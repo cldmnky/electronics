@@ -9,7 +9,10 @@ Live design: `euro/index.circuit.tsx` (front board) and `euro/panel.circuit.tsx`
 board cannot drift apart — `euro/scripts/check_mating.py` proves it from the
 built circuit JSON on every gate run.
 
-Status: **designed, routed, gated; physical first article pending.** Not ordered.
+Status: **rev 0.2 ordered and assembled; rev 0.3 in preparation** (silk and
+assembly markings only — no copper, footprint or mechanical change). The 0.3
+change: SMD refdes/value labels and the jack terminal letters with the
+hand-assembly rules, see §5.
 [MECHANICAL-STACK.md](MECHANICAL-STACK.md) is the corrected Z/part/preparation
 contract and supersedes the former 12mm spacer and actuator-height assumptions.
 
@@ -202,6 +205,30 @@ Mixed, like the base board: **12 SMD parts on the bottom** (9 × 0603 resistor,
 hand: 10 mono jacks, 2 TRS jacks, 6 pots, the joystick, the button, 3 LEDs
 (2 CV jack + 1 panel), the 1x7 OLED header and the three 2.00mm sockets (CN1,
 CN2, CN4) on the bottom. R8 is the added 10k MODE pull-up.
+
+**Silk.** The board is printed for the person fitting it, not for a legend:
+
+- bottom (the side the SMT parts go on): `REF VALUE` for all twelve parts, at
+  0.8mm cap height in 0.15mm strokes. The four ladder resistors R3-R6 sit on a
+  3.5mm pitch, too tight for a 5.4mm string between neighbours, so those five
+  labels alternate over two rows and each one is tied to its part by a leader
+  tick. The SOD-323 footprints print the cathode bar; the 0603s print their
+  body dashes. `SMD SIDE - 12 PARTS` states the side is fully populated.
+- top (the side the panel covers): the pad letter of every jack terminal -
+  `S`, `R`, `T` beside the actual pads - plus the five assembly rules. This is
+  the one instruction that cannot be inferred: the vendor numbers the stereo
+  jack 1 = sleeve, 2 = ring, 3 = tip while this board's TRS footprint is
+  numbered pin1 = tip, pin2 = ring, pin3 = sleeve (verified against the vendor
+  drawing 2026-11-18; `library/cad/jack-35-wqp419gr/SOURCE.md`). Soldering by
+  number shorts a MIDI line to ground. Every other THT part already marks
+  pin 1 with a square pad.
+
+`<silkscreentext>` prints at 0.09 x font size, so only the 1.7mm identity lines
+(0.153mm) survive JLCPCB's 0.15mm minimum; every smaller label is drawn as
+single-stroke polylines with an explicit width (`lib/silk.tsx`), and bottom-layer
+paths are mirrored about their own centre so the text reads correctly when the
+board is turned over. `scripts/check_silk.py` (gate step 11) keeps every stroke
+at or above 0.15mm and every item clear of pads, holes and the outline.
 
 `make release` writes the JLCPCB-shaped assembly files next to the fabrication
 data: `fab/euro/euro-bom-jlc.csv` (14 unique parts, 39 placements) and
