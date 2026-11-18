@@ -28,23 +28,25 @@
 // so the model is a rendering aid, not a mechanical proof.
 export const FP_JACK_TRS = (
   <footprint insertionDirection="from_above">
-    {/* Slots, not round holes: the terminals are flat blades. Thonk's own PCB
-        layout ("Thonkiconn Stereo WQP419GR", "PCB LAYOUT (TOP VIEW)") sizes them
-        0.5 x 1.5, 0.6 x 1.5 and 0.6 x 1.3 mm, so the hole must be wider than
-        1.5 mm in one direction and does not need 2 mm in the other. The retired
-        PJ-301M-3-B pads were a 1.2 x 2.0 mm oval, which a 1.5 mm blade cannot
-        enter. 1.6 x 0.6 mm with a 2.6 x 2.6 land (sleeve 3.1 x 2.1) is the
-        library CAD's table (library/cad/jack-35-wqp419gr) and matches the
-        drawing's blade sizes.
+    {/* Slots, not round holes: the terminals are flat blades. The QingPu
+        "Thonkiconn Stereo (WQP419GR)" drawing sizes them 0.5 x 1.5, 0.6 x 1.5
+        and 0.6 x 1.3 mm with a +/-0.15 mm general tolerance, so the library
+        CAD's 1.6 x 0.6 mm obround has no width clearance for the 0.6 mm ring
+        and sleeve blades and its rounded ends do not contain the blade
+        corners. The slots are 2.4 x 1.2 mm with lands enlarged to keep
+        >=0.3 mm nominal rings - the same dimensions froemix shipped after the
+        same finding (froemix/euro/lib/footprints.tsx, 2026-11-17). Finished
+        slot fit is still a first-article check: plating and routing tolerance
+        are not modelled here.
 
         The body outline and barrel ring that used to be drawn here were the
         retired part's; both crossed the new lands, and the WQP419GR body is a
         different shape (about 10 x 7.8 mm with the barrel 4.5 mm from one
         edge), so nothing is drawn rather than something wrong. The board silk
         still carries the refdes, the THT hint and the pin-1 dot. */}
-    <platedhole pcbX="0mm" pcbY="-6.48mm" portHints={["pin1"]} shape="oval" holeWidth="1.6mm" holeHeight="0.6mm" outerWidth="3.1mm" outerHeight="2.1mm" />
-    <platedhole pcbX="0mm" pcbY="-3.38mm" portHints={["pin2"]} shape="oval" holeWidth="1.6mm" holeHeight="0.6mm" outerWidth="2.6mm" outerHeight="2.6mm" />
-    <platedhole pcbX="0mm" pcbY="4.92mm" portHints={["pin3"]} shape="oval" holeWidth="1.6mm" holeHeight="0.6mm" outerWidth="2.6mm" outerHeight="2.6mm" />
+    <platedhole pcbX="0mm" pcbY="-6.48mm" portHints={["pin1"]} shape="oval" holeWidth="2.4mm" holeHeight="1.2mm" outerWidth="3.1mm" outerHeight="2.1mm" />
+    <platedhole pcbX="0mm" pcbY="-3.38mm" portHints={["pin2"]} shape="oval" holeWidth="2.4mm" holeHeight="1.2mm" outerWidth="3mm" outerHeight="2.6mm" />
+    <platedhole pcbX="0mm" pcbY="4.92mm" portHints={["pin3"]} shape="oval" holeWidth="2.4mm" holeHeight="1.2mm" outerWidth="3mm" outerHeight="2.6mm" />
     <courtyardrect pcbX="0mm" pcbY="-0.165mm" width="10mm" height="14.83mm" />
   </footprint>
 )

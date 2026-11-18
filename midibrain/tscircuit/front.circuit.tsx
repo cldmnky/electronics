@@ -31,6 +31,8 @@ import {
   ledPosition,
   midiJackX,
   MOUNT_HOLE_DIAMETER,
+  MIDI_JACK_NAMES,
+  MIDI_JACK_X,
   PANEL_MOUNT_POINTS,
   PANEL_STANDOFF,
   POWER_BUTTON,
@@ -560,6 +562,33 @@ export default () => (
         female socket's body is on the rear-facing side so the rear board's
         male header plugs straight into it, and its solder tails are the only
         through-hole joints on the panel side. */}
+    {/* The QingPu WQP419GR drawing asks for a 3 mm hole below the barrel, or
+        a copper/trace keepout, as a precaution for the barrel's low-profile
+        contact. The contact sits ABOVE the board, so the top keepout is the
+        strict one: no top trace, via, pad or pour may enter the 3 mm disk
+        (1.5 mm radius). On the bottom a 1.8 mm keepout (the extra 0.3 mm
+        absorbs the pour's polygon chords, the same effect froemix measured)
+        still pulls the GND pour back from the barrel but allows traces, because this board's bottom
+        edge corridor (jack sleeve lands end 0.97 mm from the edge) cannot
+        host the vias a fully strict bottom keepout forces onto it - the
+        router then places vias that violate the board-edge clearance. The
+        residual risk, documented instead of hidden: bottom signal traces
+        pass near the barrel centres, which only matters if the barrel
+        feature protrudes through the 1.6 mm board; measure that on the first
+        article and tighten if it does. Froemix, whose jack rows have room,
+        keeps both layers strict. No extra hole is drilled; the jack bodies
+        may overlap their own keepouts. */}
+    {MIDI_JACK_NAMES.map((name) => (
+      <Fragment key={`barrel-${name}`}>
+        <keepout shape="circle" radius="1.5mm"
+          pcbX={`${MIDI_JACK_X[name]}mm`} pcbY={`${JACK_Y}mm`}
+          layers={["top"]} allowPlacements />
+        <keepout shape="circle" radius="1.8mm"
+          pcbX={`${MIDI_JACK_X[name]}mm`} pcbY={`${JACK_Y}mm`}
+          layers={["bottom"]} allowTraces allowPlacements />
+      </Fragment>
+    ))}
+
     <MidiIn ch={1} jackX={midiJackX("MIDI IN 1")} jackY={JACK_Y} at={MIDI_CLUSTERS.in1} />
     <MidiIn ch={2} jackX={midiJackX("MIDI IN 2")} jackY={JACK_Y} at={MIDI_CLUSTERS.in2} />
     {/* ch1 cluster shifted 4 mm left (x -45 -> -49) to clear the 4.3-inch

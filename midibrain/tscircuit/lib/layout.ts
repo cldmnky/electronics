@@ -1539,7 +1539,7 @@ const LED_X_OFFSET = 12
 // 12 mm gives 4.6 mm to the square edge.
 export const JACK_Y = -47.5
 const TRANSPORT_BUTTON_NAMES = ["REC", "OVER DUB", "STOP", "PLAY"] as const
-const MIDI_JACK_NAMES = ["MIDI IN 1", "MIDI IN 2", "MIDI OUT 1", "MIDI OUT 2"] as const
+export const MIDI_JACK_NAMES = ["MIDI IN 1", "MIDI IN 2", "MIDI OUT 1", "MIDI OUT 2"] as const
 export type TransportColumn = { button: string; jack: string; x: number }
 export const FRONT_COLUMNS: readonly TransportColumn[] = TRANSPORT_BUTTON_NAMES.map((button, i) => ({
   button,
@@ -1559,9 +1559,10 @@ export const transportButtonX = (button: string): number => {
 // 2026-11-13 (owner, ergonomics): the MIDI jacks no longer share their X with
 // the transport buttons. Four cables leave the board far better from one grouped
 // block at the left of the bottom edge than from under SW1-SW4, where they foul
-// the buttons and the hand pressing them. The WQP419GR's THT pads are only
-// 3.10 mm wide and its courtyard 10.00 x 14.83 mm (both measured from the built
-// footprint), so 12 mm pitch is legal: 2 mm between courtyards.
+// the buttons and the hand pressing them. The WQP419GR's sleeve land is 3.10 mm
+// wide (ring/tip 3.0 since the 2026-11-18 slot widening) and its courtyard
+// 10.00 x 14.83 mm (both measured from the built footprint), so 12 mm pitch is
+// legal: 2 mm between courtyards.
 export const MIDI_JACK_PITCH = 12
 export const MIDI_JACK_LEFT_X = -62
 export const MIDI_JACK_X: Record<string, number> = Object.fromEntries(
