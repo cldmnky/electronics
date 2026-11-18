@@ -10,12 +10,17 @@
 // Pads are therefore labelled by their electrical function - S / R / T - and
 // the connections in front.circuit.tsx use those letters, not numbers.
 //
-// The vendor drawing numbers the terminals 1 = sleeve, 2 = tip, 3 = ring, and
-// the KiCad footprint's pad *names* (S/R/T) are the authority here; assigning
-// numbers to the three pads invites the tip/sleeve swap this note exists to
-// prevent. A 3 mm barrel keepout (the drawing's "PCB HOLE" note) is marked on
-// the Clacktronics footprint but is NOT cut here: the jack sits near the board
-// edge and no clearance to the outline has been checked.
+// The vendor drawing (QingPu "Thonkiconn Stereo (WQP419GR)", PCB LAYOUT TOP
+// VIEW) puts the three pads at 4.92 / 3.38 / 6.48 mm from the barrel datum,
+// spacings 8.30 and 3.10, with blades 0.5 x 1.5 (pin 3), 0.6 x 1.5 (pin 2) and
+// 0.6 x 1.3 (pin 1); its schematic marks pin 1 as the SLEEVE. The Clacktronics
+// footprint and its named STEP solids (tip at +4.92, ring at -3.38, sleeve at
+// -6.48) give the rest: 1 = sleeve, 2 = ring, 3 = tip. That numbering was
+// recorded the other way round until 2026-11-18; the drawing does not letter
+// pins 2 and 3, so the tip/ring assignment still rests on that CAD naming until
+// a delivered jack is buzzed out (docs/TODO.md, `jack_retention`). The pad
+// names S / R / T below are the authority here: numbering the pads 1/2/3 is
+// what invited the tip/sleeve swap this note exists to prevent.
 //
 // 3D: PJ366ST.step from the same repository (MIT, SHA-256 in
 // library/cad/jack-35-wqp419gr/SOURCE.md), pinned to commit 14a88866. That

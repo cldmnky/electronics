@@ -49,3 +49,46 @@ and CAM verification. The library CAD remains unchanged and this row stays
   the 3D view — do not move the footprint to compensate.
 - Body height, bushing length and nut geometry come from the model only; the
   panel plane and the 9 mm stack are not asserted by it.
+
+## 2026-11-18 vendor drawing (the part actually ordered)
+
+The assembled order uses Exploding Shed `100516P020` (20 pieces,
+<https://www.exploding-shed.com/thonkiconn-stereo-wqp419gr-20-pcs/100516P020>).
+That page carries QingPu's own drawing, *Thonkiconn Stereo (WQP419GR)*, and
+states the mapping this library had only inferred:
+
+- **WQP419GR = the former PJ366ST**; "footprint and dimensions are the same",
+  the only change is a rectangular tab where the old part had a semi-round one.
+  So this directory's PJ366ST CAD is the right identity for the ordered part.
+- **No switching function**: three terminals only (S, R, T). The mono
+  WQP518MA has the switch; the stereo does not.
+- Body height 10 mm, thread 4.5 mm, panel hole 6 mm, M6 x 0.5; the stereo body
+  is 1 mm wider than the mono; nuts are not included.
+
+Reading of the drawing's "PCB LAYOUT (TOP VIEW)", pads measured from the barrel
+datum, spacings 8.30 and 3.10 mm:
+
+| pad | offset | blade | drawing pin | function |
+| --- | --- | --- | --- | --- |
+| 3 | +4.92 mm | 0.5 x 1.5 mm | 3 | tip |
+| 2 | −3.38 mm | 0.6 x 1.5 mm | 2 | ring |
+| 1 | −6.48 mm | 0.6 x 1.3 mm | 1 | sleeve |
+
+The drawing's schematic marks **pin 1 as the sleeve**; it does not letter pins
+2 and 3. The tip/ring split above comes from this CAD (pad names in the KiCad
+footprint, and STEP solids named `T` at +4.92, `R` at −3.38, `S` at −6.48).
+Note that the same naming was recorded as "1 = sleeve, 2 = tip, 3 = ring" in
+the boards until 2026-11-18 and corrected here.
+
+Consequences recorded elsewhere:
+
+- Froemix `euro/lib/footprints.tsx` and midibrain `tscircuit/lib/jack.tsx`
+  both use these three copper positions with the pads named by function, so
+  their copper agrees with this drawing.
+- **The stored 1.6 x 0.6 mm slots are too tight**: the ring and sleeve blades
+  are 0.6 mm wide, leaving zero width clearance. Froemix's 2.4 x 1.2 mm slots
+  are the dimension to copy; midibrain's 1.6 x 0.6 mm slots need widening in
+  its next revision.
+- Tip-vs-ring is still a CAD claim, not a measurement: buzz a delivered jack
+  (plug tip to the +4.92 pad, plug ring to −3.38, barrel to −6.48) before the
+  row leaves `draft`.

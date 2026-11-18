@@ -48,3 +48,32 @@ and CAM verification. The library CAD remains unchanged and this row stays
   the 3D view — do not move the footprint to compensate.
 - Body height, bushing length and nut geometry come from the model only; the
   panel plane and the 9 mm stack are not asserted by it.
+
+## 2026-11-18 vendor drawing (the part actually ordered)
+
+The assembled order uses Exploding Shed `100515` / `100515P020`
+(<https://www.exploding-shed.com/thonkiconn-mono-wqp518ma/100515>). That page
+carries QingPu's drawing, *Thonkiconn Mono (WQP518MA)*:
+
+- **WQP518MA = the former PJ398SM and PJ301M-12**; "footprint and dimensions
+  are the same", only the tab shape changed (rectangular now).
+- **With switching function**: three terminals — sleeve, tip, tip switch.
+- Body height 10 mm, thread 4.5 mm, panel hole 6 mm, M6 x 0.5.
+
+Its "PCB LAYOUT (TOP VIEW)" is the same pad line as the stereo part: pins at
+**4.92 / 3.38 / 6.48 mm** from the barrel datum (spacings 8.30 and 3.10), blades
+**0.5 x 1.5 (pin 3, the switch), 0.6 x 1.5 (pin 2, tip), 0.6 x 1.3 (pin 1,
+sleeve)**; the schematic marks pin 1 as the sleeve. So on this part the tip is
+the middle pad and the switch occupies +4.92 mm.
+
+Caveat: `PJ301M-12.step` in this directory is the *stereo* model reused — its
+solids are named `T`, `R`, `S`, and it has no switch contact. It is usable for
+the pad line, body envelope and barrel only; it does not prove the terminal
+functions.
+
+Froemix's mono footprint keeps pin1/2/3 labels with sleeve at +6.48 and tip at
+−4.92 mm, i.e. the drawing mirrored: the part is mounted rotated 180° in plane.
+The copper is consistent with the part in that orientation (the silk prints
+S/T on the pads), but it is the opposite of the stereo jacks on the same board
+and of the drawing a builder will have in hand. Normalise the two in the next
+revision or keep the letters as the authority.

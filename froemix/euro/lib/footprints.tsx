@@ -287,11 +287,23 @@ export const FP_JACK_MONO = (
 // the purchased stereo blades and functions; the mono drawing alone is not
 // an authoritative stereo drawing.
 //
-// Origin = the jack barrel. The pads here are the part rotated 180 degrees
-// in-plane relative to midibrain's FP_JACK_TRS bookkeeping: pin1 = T at +4.92,
-// pin2 = R at -3.38, pin3 = S at -6.48. The froemix pin numbering is kept (this
-// board is documented "solder by function"); midibrain labels the same pads
-// S/R/T and connects by letter. Netlist-wise nothing changes.
+// Origin = the jack barrel. Pads are at the three positions the QingPu drawing
+// gives ("Thonkiconn Stereo (WQP419GR)", PCB LAYOUT TOP VIEW): 4.92 / 3.38 /
+// 6.48 mm from the datum, spacings 8.30 and 3.10, blades 0.5 x 1.5 (pin 3),
+// 0.6 x 1.5 (pin 2), 0.6 x 1.3 (pin 1). The vendor schematic marks pin 1 as the
+// sleeve; the CAD names the tip at +4.92 and the ring at -3.38, so this board's
+// pin1 = T, pin2 = R, pin3 = S are electrically right but NOT the vendor's
+// numbers (1 = S, 2 = R, 3 = T). Solder by the printed letters: the silk prints
+// S / R / T on the pads (sections/silk.tsx).
+//
+// Midibrain's stereo footprint uses the same three copper positions with the
+// pads named S / R / T instead of 1 / 2 / 3, so the copper is identical and no
+// netlist changes; only the labels differ.
+//
+// Slot width: the blades are 0.5 to 0.6 mm wide, so 2.4 x 1.2 mm plated slots
+// leave 0.6 mm of width clearance. Midibrain's 1.6 x 0.6 mm slots have none for
+// the 0.6 mm ring and sleeve blades and must be widened in its next revision
+// (library/cad/jack-35-wqp419gr/SOURCE.md, 2026-11-18).
 //
 // Body outline is not drawn: the clacktronics CAD's outline is untested (its
 // README says so) and does not match the observed WQP419GR body (about
